@@ -3,6 +3,7 @@ section: 47
 title: Semantic Prompt State Management
 status: not-started
 reviewed: false
+last_verified: "2026-03-29"
 tier: 5
 goal: Cell-level and row-level semantic content tracking (OSC 133), prompt-aware resize, prompt iteration — the deep grid-level infrastructure that makes prompt navigation, smart selection, and command output extraction robust and fast
 sections:
@@ -47,6 +48,12 @@ sections:
 - Improves Section 40 (Vi Mode) — semantic motions (`[[`, `]]` to jump between prompts) become trivial with row flags
 - Improves Section 41 (Hints) — command output region detection becomes exact
 - Enables future features: per-command scrollback folding, command history extraction
+
+> **Verification Notes (2026-03-29):** Confirmed not started -- no `SemanticContentType`, `RowPromptFlag`, or `semantic_range` types exist. Existing infrastructure to build upon: `PromptState` enum (None/PromptStart/CommandStart/OutputStart), `PromptMarker` struct, `prompt_markers: Vec<PromptMarker>`, `shell_state.rs` (353 lines of prompt navigation/marker management), OSC 133 interception in `oriterm_mux/src/shell_integration/interceptor.rs`, shell integration scripts for bash/zsh/fish/powershell, and `PendingMarks` bitflags for deferred marking.
+>
+> **CRITICAL BLOCKER: CellFlags is full (16/16 bits used).** All 16 bits of the `u16` CellFlags are occupied (bits 0-7: SGR attributes, bits 8-10: wide char/spacer/wrap, bits 11-14: underline variants, bit 15: leading wide char spacer). The plan says "use 2 bits from the existing bitflags" but there are none available. Options: (1) expand to `u32` (risks increasing Cell size beyond the 24-byte compile-time assertion), (2) use a separate `u8` field in Cell (also increases size), (3) use the 2-byte padding slot between `CellFlags(2)` and `Option<Arc>(8)` in the current Cell layout (`char(4) + Color(4) + Color(4) + CellFlags(2) + pad(2) + Option<Arc>(8)` = 24 bytes). Option 3 fits without increasing Cell size. The plan must explicitly address this constraint.
+>
+> Additional gaps: plan does not mention the `PendingMarks` bitflags mechanism (must be preserved or adapted), does not address VTE parsing of OSC 133 parameters (`k=s`, `k=c`, `redraw=0`), and does not note that scrollback eviction naturally handles flag cleanup (simplification over current `prune_prompt_markers()`).
 
 **Reference:**
 - Ghostty PR #10455: "Rewritten semantic prompt state management (OSC 133)" — merged

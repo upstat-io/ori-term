@@ -143,6 +143,8 @@ impl ApplicationHandler<TermEvent> for App {
                 } else {
                     // Freeze cursor visible when window loses focus.
                     self.blinking_active = false;
+                    // Commit any active tab title edit.
+                    self.commit_tab_edit();
                     // Restore mouse cursor so it isn't stuck hidden in other apps.
                     self.restore_mouse_cursor(window_id);
                     // Transient popups should never survive window deactivation.
@@ -151,12 +153,22 @@ impl ApplicationHandler<TermEvent> for App {
                     // the PTY focus-out escape should be suppressed.
                     self.pending_focus_out = Some(super::PendingFocusOut { window_id });
                 }
+                // Apply focus-dependent window transparency.
+                let opacity = if focused {
+                    self.config.window.effective_opacity()
+                } else {
+                    self.config.window.effective_unfocused_opacity()
+                };
+                if let Some(ctx) = self.windows.get(&window_id) {
+                    ctx.window
+                        .set_transparency(opacity, self.config.window.blur);
+                }
                 // Reset blink timer so cursor is visible immediately
                 // (on focus-in: fresh start; on focus-out: frozen visible).
                 self.cursor_blink.reset();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.set_active(focused);
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
 
@@ -283,6 +295,10 @@ impl ApplicationHandler<TermEvent> for App {
                 if self.try_tab_bar_mouse(button, state, event_loop) {
                     return;
                 }
+                // Commit any active tab title edit when clicking the grid.
+                if state == winit::event::ElementState::Pressed {
+                    self.commit_tab_edit();
+                }
                 self.handle_mouse_input(button, state);
             }
 
@@ -300,7 +316,7 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::DroppedFile(path) => {
                 self.paste_dropped_files(&[path]);
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
 
@@ -367,7 +383,7 @@ impl ApplicationHandler<TermEvent> for App {
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
 
@@ -378,24 +394,22 @@ impl ApplicationHandler<TermEvent> for App {
         {
             let now = std::time::Instant::now();
             for ctx in self.windows.values_mut() {
-                if !ctx.layer_animator.is_any_animating() {
+                if !ctx.root.layer_animator().is_any_animating() {
                     continue;
                 }
-                let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
-                ctx.overlays
-                    .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
+                let animating = ctx.root.tick_overlay_animations(now);
 
                 // Clean up finished tab slide layers and sync offsets to widget.
                 if ctx.tab_slide.has_active() {
-                    ctx.tab_slide
-                        .cleanup(&mut ctx.layer_tree, &ctx.layer_animator);
+                    let (tree, animator) = ctx.root.layer_tree_mut_and_animator();
+                    ctx.tab_slide.cleanup(tree, animator);
                     let count = ctx.tab_bar.tab_count();
                     ctx.tab_slide
-                        .sync_to_widget(count, &ctx.layer_tree, &mut ctx.tab_bar);
+                        .sync_to_widget(count, ctx.root.layer_tree(), &mut ctx.tab_bar);
                 }
 
                 if animating {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
             }
@@ -404,18 +418,23 @@ impl ApplicationHandler<TermEvent> for App {
         // Tick dialog overlay animations (dropdown fade-in/fade-out).
         self.tick_dialog_animations();
 
+        // Lifecycle: show Primed dialogs (first frame committed) and
+        // destroy Closing dialogs (deferred from close_dialog()).
+        self.show_primed_dialogs();
+        self.drain_pending_destroy();
+
         // Check if any window (terminal or dialog) is dirty and render it.
-        let any_dirty = self.windows.values().any(|ctx| ctx.dirty)
-            || self.dialogs.values().any(|ctx| ctx.dirty);
+        let any_dirty = self.windows.values().any(|ctx| ctx.root.is_dirty())
+            || self.dialogs.values().any(|ctx| ctx.root.is_dirty());
         let now = std::time::Instant::now();
         let urgent_redraw = self
             .windows
             .values()
-            .any(|ctx| ctx.dirty && ctx.urgent_redraw)
+            .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw())
             || self
                 .dialogs
                 .values()
-                .any(|ctx| ctx.dirty && ctx.urgent_redraw);
+                .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw());
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         if any_dirty && (budget_elapsed || urgent_redraw) {
@@ -427,16 +446,16 @@ impl ApplicationHandler<TermEvent> for App {
         self.perf.maybe_log();
 
         // Decide ControlFlow via pure function (testable without winit).
-        let still_dirty =
-            self.windows.values().any(|c| c.dirty) || self.dialogs.values().any(|c| c.dirty);
+        let still_dirty = self.windows.values().any(|c| c.root.is_dirty())
+            || self.dialogs.values().any(|c| c.root.is_dirty());
         let has_animations = self
             .windows
             .values()
-            .any(|c| c.layer_animator.is_any_animating())
+            .any(|c| c.root.layer_animator().is_any_animating())
             || self
                 .dialogs
                 .values()
-                .any(|c| c.layer_animator.is_any_animating());
+                .any(|c| c.root.layer_animator().is_any_animating());
         let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {
@@ -449,6 +468,7 @@ impl ApplicationHandler<TermEvent> for App {
             next_toggle: self.cursor_blink.next_toggle(),
             budget_remaining: remaining,
             now,
+            scheduler_wake: None, // TODO(§05.5): Wire RenderScheduler::next_wake_time()
         };
         match compute_control_flow(&input) {
             ControlFlowDecision::Wait => event_loop.set_control_flow(ControlFlow::Wait),

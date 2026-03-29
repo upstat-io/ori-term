@@ -6,11 +6,12 @@ use crate::compositor::layer_animator::LayerAnimator;
 use crate::compositor::layer_tree::LayerTree;
 use crate::geometry::Rect;
 
+use super::super::constants::TAB_BAR_HEIGHT;
 use super::{SlideContext, TabBarWidget, TabSlideState};
 
 /// Creates a tree + animator for testing.
 fn make_test_env() -> (LayerTree, LayerAnimator) {
-    let tree = LayerTree::new(Rect::new(0.0, 0.0, 1200.0, 46.0));
+    let tree = LayerTree::new(Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT));
     let animator = LayerAnimator::new();
     (tree, animator)
 }
@@ -177,7 +178,7 @@ fn sync_populates_offsets() {
 #[test]
 fn sync_idle_is_noop() {
     let mut state = TabSlideState::new();
-    let tree = LayerTree::new(Rect::new(0.0, 0.0, 1200.0, 46.0));
+    let tree = LayerTree::new(Rect::new(0.0, 0.0, 1200.0, TAB_BAR_HEIGHT));
     let mut widget = TabBarWidget::new(1200.0);
 
     state.sync_to_widget(3, &tree, &mut widget);

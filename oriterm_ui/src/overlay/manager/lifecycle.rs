@@ -53,6 +53,7 @@ impl OverlayManager {
             placement,
             kind: OverlayKind::Popup,
             computed_rect: Rect::default(),
+            layout_node: None,
             layer_id,
             dim_layer_id: None,
         });
@@ -132,6 +133,7 @@ impl OverlayManager {
             placement,
             kind: OverlayKind::Modal,
             computed_rect: Rect::default(),
+            layout_node: None,
             layer_id,
             dim_layer_id: Some(dim_layer_id),
         });

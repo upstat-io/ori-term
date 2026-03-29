@@ -1,0 +1,195 @@
+//! `Widget` trait implementation for `SliderWidget`.
+//!
+//! Separated from `mod.rs` to keep files under 500 lines.
+
+use winit::window::CursorIcon;
+
+use crate::color::Color;
+use crate::controllers::EventController;
+use crate::draw::RectStyle;
+use crate::geometry::{Point, Rect};
+use crate::layout::{LayoutBox, SizeSpec};
+use crate::sense::Sense;
+use crate::text::TextStyle;
+use crate::visual_state::transition::VisualStateAnimator;
+use crate::widget_id::WidgetId;
+
+use super::super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
+use super::{SliderWidget, VALUE_GAP, VALUE_LABEL_WIDTH, ValueDisplay};
+
+impl Widget for SliderWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
+    fn is_focusable(&self) -> bool {
+        !self.disabled
+    }
+
+    fn sense(&self) -> Sense {
+        Sense::click_and_drag()
+    }
+
+    fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
+        let height = self.style.thumb_height.max(self.style.track_height);
+        let label_w = if self.display == ValueDisplay::Hidden {
+            0.0
+        } else {
+            VALUE_GAP + VALUE_LABEL_WIDTH
+        };
+        let total_w = self.style.width + label_w;
+        // Expand hit area vertically so users can grab the thin slider track
+        // without pixel-perfect precision. The 6px radius extends the
+        // clickable zone without affecting visual bounds.
+        LayoutBox::leaf(total_w, height)
+            .with_width(SizeSpec::Fixed(total_w))
+            .with_widget_id(self.id)
+            .with_interact_radius(6.0)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
+    }
+
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused();
+        let s = &self.style;
+        let tb = self.track_bounds(ctx.bounds);
+
+        // Focus ring around track area.
+        if focused {
+            let ring = tb.inset(crate::geometry::Insets::all(-2.0));
+            let ring_style = RectStyle::filled(Color::TRANSPARENT)
+                .with_border(2.0, s.focus_ring_color)
+                .with_radius(s.track_radius + 2.0);
+            ctx.scene.push_quad(ring, ring_style);
+        }
+
+        // Track background.
+        let track_y = tb.y() + (tb.height() - s.track_height) / 2.0;
+        let track_rect = Rect::new(tb.x(), track_y, tb.width(), s.track_height);
+        let bg_color = if self.disabled {
+            s.disabled_bg
+        } else {
+            s.track_bg
+        };
+        let track_style = RectStyle::filled(bg_color).with_radius(s.track_radius);
+        ctx.scene.push_quad(track_rect, track_style);
+
+        // Filled portion (left of thumb).
+        let norm = self.normalized();
+        let fill_width = norm * tb.width();
+        if fill_width > 0.0 {
+            let fill_rect = Rect::new(tb.x(), track_y, fill_width, s.track_height);
+            let fill_color = if self.disabled {
+                s.disabled_fill
+            } else {
+                s.fill_color
+            };
+            let fill_style = RectStyle::filled(fill_color).with_radius(s.track_radius);
+            ctx.scene.push_quad(fill_rect, fill_style);
+        }
+
+        // Thumb — rectangular, no corner radius.
+        let travel = tb.width() - s.thumb_width;
+        let thumb_x = tb.x() + travel * norm;
+        let thumb_y = tb.y() + (tb.height() - s.thumb_height) / 2.0;
+        let thumb_rect = Rect::new(thumb_x, thumb_y, s.thumb_width, s.thumb_height);
+        let thumb_bg = if self.disabled {
+            s.disabled_bg
+        } else {
+            self.animator.get_bg_color()
+        };
+        let thumb_style =
+            RectStyle::filled(thumb_bg).with_border(s.thumb_border_width, s.thumb_border_color);
+        ctx.scene.push_quad(thumb_rect, thumb_style);
+
+        // Value label to the right of the track.
+        if self.display != ValueDisplay::Hidden {
+            let value_text = self.format_value();
+            let text_style = TextStyle::new(s.value_font_size, ctx.theme.fg_secondary);
+            let shaped = ctx
+                .measurer
+                .shape(&value_text, &text_style, VALUE_LABEL_WIDTH);
+            let label_x = tb.right() + VALUE_GAP;
+            // Right-align within the label area.
+            let text_x = label_x + VALUE_LABEL_WIDTH - shaped.width;
+            let text_y = ctx.bounds.y() + (ctx.bounds.height() - shaped.height) / 2.0;
+            ctx.scene
+                .push_text(Point::new(text_x, text_y), shaped, ctx.theme.fg_secondary);
+        }
+
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating() {
+            ctx.request_anim_frame();
+        }
+    }
+
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::DragStart { pos, .. } => {
+                // Cache bounds at drag start. During capture the dispatch
+                // system may pass fallback bounds from a different widget
+                // if the mouse leaves the slider.
+                self.drag_origin = Some(pos);
+                self.drag_bounds = Some(bounds);
+                let tb = self.track_bounds(bounds);
+                self.set_value_action(self.value_from_x(pos.x, tb))
+            }
+            WidgetAction::DragUpdate { total_delta, .. } => {
+                if let Some(origin) = self.drag_origin {
+                    let cached = self.drag_bounds.unwrap_or(bounds);
+                    let tb = self.track_bounds(cached);
+                    let x = origin.x + total_delta.x;
+                    self.set_value_action(self.value_from_x(x, tb))
+                } else {
+                    None
+                }
+            }
+            WidgetAction::DragEnd { .. } => {
+                self.drag_origin = None;
+                self.drag_bounds = None;
+                None
+            }
+            other => Some(other),
+        }
+    }
+
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Slider")
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        match action.name() {
+            "widget::IncrementValue" => {
+                let v = self.snap_to_step(self.value + self.step);
+                self.set_value_action(v)
+            }
+            "widget::DecrementValue" => {
+                let v = self.snap_to_step(self.value - self.step);
+                self.set_value_action(v)
+            }
+            "widget::ValueToMin" => self.set_value_action(self.min),
+            "widget::ValueToMax" => self.set_value_action(self.max),
+            _ => None,
+        }
+    }
+}

@@ -46,7 +46,7 @@ pub(crate) enum ProcessModel {
 }
 
 /// Top-level configuration structure.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
     pub process_model: ProcessModel,
@@ -57,6 +57,7 @@ pub(crate) struct Config {
     pub behavior: BehaviorConfig,
     pub bell: BellConfig,
     pub pane: PaneConfig,
+    pub rendering: RenderingConfig,
     #[serde(default)]
     pub keybind: Vec<KeybindConfig>,
 }
@@ -87,7 +88,7 @@ impl CursorStyle {
 }
 
 /// Terminal behavior configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct TerminalConfig {
     /// Override shell (default: system shell).
@@ -156,9 +157,37 @@ pub(crate) enum Decorations {
     Buttonless,
 }
 
+/// Tab bar position in the window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TabBarPosition {
+    /// Tab bar at top of window (default).
+    #[default]
+    Top,
+    /// Tab bar at bottom of window.
+    Bottom,
+    /// Tab bar hidden.
+    Hidden,
+}
+
+/// Tab bar visual density.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TabBarStyle {
+    /// Standard tab bar height and padding.
+    #[default]
+    Default,
+    /// Reduced height and padding for a more compact appearance.
+    Compact,
+}
+
 /// Window size and opacity configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "window config has independent boolean toggles: blur, resize_increments, show_status_bar, restore_session"
+)]
 pub(crate) struct WindowConfig {
     /// Initial terminal columns (default: 120).
     pub columns: usize,
@@ -166,6 +195,9 @@ pub(crate) struct WindowConfig {
     pub rows: usize,
     /// Window opacity 0.0-1.0 (default: 1.0).
     pub opacity: f32,
+    /// Opacity when the window loses focus, 0.3-1.0 (default: 1.0).
+    #[serde(default = "default_unfocused_opacity")]
+    pub unfocused_opacity: f32,
     /// Independent tab bar opacity (falls back to `opacity`).
     pub tab_bar_opacity: Option<f32>,
     /// Enable backdrop blur (default: true).
@@ -174,6 +206,31 @@ pub(crate) struct WindowConfig {
     pub decorations: Decorations,
     /// Snap resize to cell boundaries (default: true).
     pub resize_increments: bool,
+    /// Tab bar position (default: `Top`).
+    #[serde(default)]
+    pub tab_bar_position: TabBarPosition,
+    /// Tab bar visual density (default: `Default`).
+    #[serde(default)]
+    pub tab_bar_style: TabBarStyle,
+    /// Grid padding in logical pixels (default: 0.0).
+    #[serde(default)]
+    pub grid_padding: f32,
+    /// Show the status bar at the bottom of the window (default: true).
+    #[serde(default = "default_true")]
+    pub show_status_bar: bool,
+    /// Restore previous session on launch (default: false).
+    #[serde(default)]
+    pub restore_session: bool,
+}
+
+/// Default value for `unfocused_opacity` serde default.
+fn default_unfocused_opacity() -> f32 {
+    1.0
+}
+
+/// Default value for boolean fields that default to `true`.
+fn default_true() -> bool {
+    true
 }
 
 impl Default for WindowConfig {
@@ -182,10 +239,16 @@ impl Default for WindowConfig {
             columns: 120,
             rows: 30,
             opacity: 1.0,
+            unfocused_opacity: 1.0,
             tab_bar_opacity: None,
             blur: true,
             decorations: Decorations::default(),
             resize_increments: true,
+            tab_bar_position: TabBarPosition::default(),
+            tab_bar_style: TabBarStyle::default(),
+            grid_padding: 0.0,
+            show_status_bar: true,
+            restore_session: false,
         }
     }
 }
@@ -196,6 +259,11 @@ impl WindowConfig {
         clamp_or_default(self.opacity, 0.0, 1.0, 1.0)
     }
 
+    /// Returns unfocused opacity clamped to [0.3, 1.0], defaulting to 1.0 for NaN.
+    pub fn effective_unfocused_opacity(&self) -> f32 {
+        clamp_or_default(self.unfocused_opacity, 0.3, 1.0, 1.0)
+    }
+
     /// Returns tab bar opacity clamped to [0.0, 1.0].
     /// Falls back to `opacity` when not explicitly set.
     #[allow(dead_code, reason = "used in tab bar rendering (Section 16)")]
@@ -204,13 +272,18 @@ impl WindowConfig {
     }
 }
 
+mod rendering;
+
 pub(crate) use behavior::{BehaviorConfig, NotifyOnCommandFinish};
 pub(crate) use paste_warning::PasteWarning;
+#[allow(unused_imports, reason = "used in settings panel rebuild (Section 10)")]
+pub(crate) use rendering::GpuBackend;
+pub(crate) use rendering::RenderingConfig;
 
 pub(crate) use bell::{BellAnimation, BellConfig};
 
 /// Pane splitting and layout configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct PaneConfig {
     /// Divider thickness in logical pixels between split panes.
@@ -227,23 +300,23 @@ pub(crate) struct PaneConfig {
     pub focus_border_color: Option<String>,
 }
 
-/// Default divider color: neutral gray (`#505050`).
+/// Default divider color: border (`#2a2a36`).
 const DEFAULT_DIVIDER_COLOR: Rgb = Rgb {
-    r: 80,
-    g: 80,
-    b: 80,
+    r: 42,
+    g: 42,
+    b: 54,
 };
-/// Default focus border accent: cornflower blue (`#6495ED`).
+/// Default focus border accent: accent (`#6d9be0`).
 const DEFAULT_FOCUS_BORDER_COLOR: Rgb = Rgb {
-    r: 100,
-    g: 149,
-    b: 237,
+    r: 109,
+    g: 155,
+    b: 224,
 };
 
 impl Default for PaneConfig {
     fn default() -> Self {
         Self {
-            divider_px: 1.0,
+            divider_px: 2.0,
             min_cells: (10, 3),
             dim_inactive: false,
             inactive_opacity: 0.7,
@@ -259,7 +332,7 @@ impl PaneConfig {
         clamp_or_default(self.inactive_opacity, 0.0, 1.0, 0.7)
     }
 
-    /// Resolved divider color, falling back to the default neutral gray.
+    /// Resolved divider color, falling back to the default border color.
     pub fn effective_divider_color(&self) -> Rgb {
         self.divider_color
             .as_deref()
@@ -267,7 +340,7 @@ impl PaneConfig {
             .unwrap_or(DEFAULT_DIVIDER_COLOR)
     }
 
-    /// Resolved focus border color, falling back to the default cornflower blue.
+    /// Resolved focus border color, falling back to the default accent color.
     pub fn effective_focus_border_color(&self) -> Rgb {
         self.focus_border_color
             .as_deref()
@@ -277,7 +350,7 @@ impl PaneConfig {
 }
 
 /// TOML-serializable keybinding entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct KeybindConfig {
     /// Key name (e.g. "c", "Tab", "F1").
     pub key: String,

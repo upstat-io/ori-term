@@ -1,19 +1,25 @@
 //! Checkbox widget — a toggleable check box with label.
 //!
-//! Emits `WidgetAction::Toggled` when clicked or activated via Space.
-//! The check box and label are laid out horizontally with a configurable gap.
+//! Emits `WidgetAction::Toggled` when clicked (via [`ClickController`]) or
+//! activated via Space. Uses [`VisualStateAnimator`] with `common_states()`
+//! for hover color transitions on the unchecked box.
+
+use winit::window::CursorIcon;
 
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, HoverController};
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::text::TextStyle;
+use crate::visual_state::common_states;
+use crate::visual_state::transition::VisualStateAnimator;
 use crate::widget_id::WidgetId;
 
 use crate::theme::UiTheme;
 
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 /// Visual style for a [`CheckboxWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -59,7 +65,7 @@ impl CheckboxStyle {
             checked_bg: theme.accent,
             border_color: theme.border,
             border_width: 1.0,
-            corner_radius: 3.0,
+            corner_radius: theme.corner_radius,
             check_color: Color::WHITE,
             label_color: theme.fg_primary,
             font_size: theme.font_size,
@@ -79,33 +85,39 @@ impl Default for CheckboxStyle {
 /// A checkbox with label text.
 ///
 /// Toggles between checked and unchecked on click or Space.
-/// Emits `WidgetAction::Toggled { id, value }`.
-#[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent UI state flags: checked, disabled, hovered, pressed"
-)]
+/// Emits `WidgetAction::Toggled { id, value }`. Hover transitions
+/// use [`VisualStateAnimator`] with `common_states()`.
 pub struct CheckboxWidget {
     id: WidgetId,
     label: String,
     checked: bool,
     disabled: bool,
-    hovered: bool,
-    pressed: bool,
     style: CheckboxStyle,
+    controllers: Vec<Box<dyn EventController>>,
+    /// Animator for unchecked-state hover bg transition.
+    animator: VisualStateAnimator,
 }
 
 impl CheckboxWidget {
     /// Creates an unchecked checkbox with the given label.
     pub fn new(label: impl Into<String>) -> Self {
+        let style = CheckboxStyle::default();
         Self {
             id: WidgetId::next(),
             label: label.into(),
             checked: false,
             disabled: false,
-            hovered: false,
-            pressed: false,
-            style: CheckboxStyle::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![common_states(
+                style.bg,
+                style.hover_bg,
+                style.hover_bg,
+                style.disabled_bg,
+            )]),
+            style,
         }
     }
 
@@ -127,19 +139,17 @@ impl CheckboxWidget {
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-        }
-    }
-
-    /// Returns whether the checkbox is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
     }
 
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: CheckboxStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![common_states(
+            style.bg,
+            style.hover_bg,
+            style.hover_bg,
+            style.disabled_bg,
+        )]);
         self.style = style;
         self
     }
@@ -167,20 +177,6 @@ impl CheckboxWidget {
         }
     }
 
-    /// Returns the box background color based on state.
-    fn box_bg(&self) -> Color {
-        if self.disabled {
-            return self.style.disabled_bg;
-        }
-        if self.checked {
-            return self.style.checked_bg;
-        }
-        if self.pressed || self.hovered {
-            return self.style.hover_bg;
-        }
-        self.style.bg
-    }
-
     /// Returns the label text color based on state.
     fn label_fg(&self) -> Color {
         if self.disabled {
@@ -196,6 +192,20 @@ impl CheckboxWidget {
     }
 }
 
+impl std::fmt::Debug for CheckboxWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckboxWidget")
+            .field("id", &self.id)
+            .field("label", &self.label)
+            .field("checked", &self.checked)
+            .field("disabled", &self.disabled)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .finish()
+    }
+}
+
 impl Widget for CheckboxWidget {
     fn id(&self) -> WidgetId {
         self.id
@@ -205,16 +215,39 @@ impl Widget for CheckboxWidget {
         !self.disabled
     }
 
+    fn sense(&self) -> Sense {
+        Sense::click()
+    }
+
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
         let style = self.text_style();
         let metrics = ctx.measurer.measure(&self.label, &style, f32::INFINITY);
         let w = self.style.box_size + self.style.gap + metrics.width;
         let h = self.style.box_size.max(metrics.height);
-        LayoutBox::leaf(w, h).with_widget_id(self.id)
+        LayoutBox::leaf(w, h)
+            .with_widget_id(self.id)
+            .with_disabled(self.disabled)
+            .with_cursor_icon(CursorIcon::Pointer)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let focused = ctx.focused_widget == Some(self.id);
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
+    }
+
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
+    }
+
+    fn visual_states(&self) -> Option<&VisualStateAnimator> {
+        Some(&self.animator)
+    }
+
+    fn visual_states_mut(&mut self) -> Option<&mut VisualStateAnimator> {
+        Some(&mut self.animator)
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        let focused = ctx.is_interaction_focused();
         let bounds = ctx.bounds;
         let s = &self.style;
 
@@ -228,14 +261,21 @@ impl Widget for CheckboxWidget {
             let ring_style = RectStyle::filled(Color::TRANSPARENT)
                 .with_border(2.0, s.focus_ring_color)
                 .with_radius(s.corner_radius + 2.0);
-            ctx.draw_list.push_rect(ring, ring_style);
+            ctx.scene.push_quad(ring, ring_style);
         }
 
-        // Box background + border.
-        let box_style = RectStyle::filled(self.box_bg())
+        // Box bg: checked_bg when checked, animator-driven hover when unchecked.
+        let box_bg = if self.disabled {
+            s.disabled_bg
+        } else if self.checked {
+            s.checked_bg
+        } else {
+            self.animator.get_bg_color()
+        };
+        let box_style = RectStyle::filled(box_bg)
             .with_border(s.border_width, s.border_color)
             .with_radius(s.corner_radius);
-        ctx.draw_list.push_rect(box_rect, box_style);
+        ctx.scene.push_quad(box_rect, box_style);
 
         // Check mark — simple diagonal lines forming a check.
         if self.checked {
@@ -252,9 +292,9 @@ impl Widget for CheckboxWidget {
             let x2 = box_rect.right() - inset;
             let y2 = box_rect.y() + inset;
 
-            ctx.draw_list
+            ctx.scene
                 .push_line(Point::new(x0, y0), Point::new(x1, y1), 2.0, color);
-            ctx.draw_list
+            ctx.scene
                 .push_line(Point::new(x1, y1), Point::new(x2, y2), 2.0, color);
         }
 
@@ -265,61 +305,37 @@ impl Widget for CheckboxWidget {
             let text_w = bounds.width() - s.box_size - s.gap;
             let shaped = ctx.measurer.shape(&self.label, &style, text_w);
             let text_y = bounds.y() + (bounds.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(text_x, text_y), shaped, self.label_fg());
         }
-    }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.pressed = true;
-                WidgetResponse::handled().with_capture()
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                let was_pressed = self.pressed;
-                self.pressed = false;
-                if was_pressed && ctx.bounds.contains(event.pos) {
-                    let action = self.toggle();
-                    WidgetResponse::focus()
-                        .with_action(action)
-                        .with_release_capture()
-                } else {
-                    WidgetResponse::paint().with_release_capture()
-                }
-            }
-            _ => WidgetResponse::ignored(),
+        // Signal continued redraws while the animator is transitioning.
+        if self.animator.is_animating() {
+            ctx.request_anim_frame();
         }
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
-            return WidgetResponse::ignored();
-        }
-        match event {
-            HoverEvent::Enter => {
-                self.hovered = true;
-                WidgetResponse::paint()
-            }
-            HoverEvent::Leave => {
-                self.hovered = false;
-                WidgetResponse::paint()
-            }
+    fn on_action(&mut self, action: WidgetAction, _bounds: Rect) -> Option<WidgetAction> {
+        match action {
+            WidgetAction::Clicked(_) => Some(self.toggle()),
+            other => Some(other),
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled || !ctx.is_focused {
-            return WidgetResponse::ignored();
+    fn key_context(&self) -> Option<&'static str> {
+        Some("Button")
+    }
+
+    fn handle_keymap_action(
+        &mut self,
+        action: &dyn crate::action::KeymapAction,
+        _bounds: Rect,
+    ) -> Option<WidgetAction> {
+        if action.name() == "widget::Activate" {
+            Some(WidgetAction::Clicked(self.id))
+        } else {
+            None
         }
-        if event.key == Key::Space {
-            let action = self.toggle();
-            return WidgetResponse::paint().with_action(action);
-        }
-        WidgetResponse::ignored()
     }
 }
 

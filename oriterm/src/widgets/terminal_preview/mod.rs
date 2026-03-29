@@ -6,11 +6,11 @@
 //! system are wired (later sections).
 #![allow(dead_code, reason = "scaffold — wired in tab hover preview section")]
 
-use oriterm_ui::draw::RectStyle;
-use oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent};
+use oriterm_ui::draw::{BorderSides, RectStyle};
 use oriterm_ui::layout::LayoutBox;
+use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
-use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 /// Default preview width in logical pixels.
 const DEFAULT_PREVIEW_WIDTH: f32 = 320.0;
@@ -27,7 +27,7 @@ const CORNER_RADIUS: f32 = 6.0;
 /// Scaled-down live preview of a terminal tab.
 ///
 /// Currently a placeholder that draws a rounded rectangle frame.
-/// Full rendering (offscreen texture → `DrawCommand::Image`) is deferred
+/// Full rendering (offscreen texture → `ImagePrimitive`) is deferred
 /// until the Image pipeline and overlay system are available.
 pub(crate) struct TerminalPreviewWidget {
     /// Unique widget ID.
@@ -69,36 +69,24 @@ impl Widget for TerminalPreviewWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(self.preview_width, self.preview_height).with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         // Placeholder: rounded rectangle frame with theme background.
         let style = RectStyle {
             fill: Some(ctx.theme.bg_secondary),
-            border: None,
+            border: BorderSides::default(),
             corner_radius: [CORNER_RADIUS; 4],
             shadow: None,
             gradient: None,
         };
-        ctx.draw_list.push_rect(ctx.bounds, style);
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
+        ctx.scene.push_quad(ctx.bounds, style);
     }
 }
 

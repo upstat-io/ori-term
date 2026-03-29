@@ -1,6 +1,10 @@
 //! Computed layout output node.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::Rect;
+use crate::hit_test_behavior::HitTestBehavior;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 /// A computed layout node — the output of the layout solver.
@@ -8,6 +12,8 @@ use crate::widget_id::WidgetId;
 /// Each node stores its outer rectangle (including margin offset), the
 /// content rectangle (outer rect inset by padding), and child nodes
 /// for flex containers. Optionally carries a `WidgetId` for hit testing.
+/// Sense flags and hit-test behavior control how the node participates
+/// in hit testing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutNode {
     /// Outer bounding rectangle (position relative to parent's content area).
@@ -18,6 +24,30 @@ pub struct LayoutNode {
     pub children: Vec<Self>,
     /// Widget that owns this node (used by hit testing).
     pub widget_id: Option<WidgetId>,
+    /// Sense flags for hit-test filtering.
+    pub sense: Sense,
+    /// Hit-test behavior relative to children.
+    pub hit_test_behavior: HitTestBehavior,
+    /// When `true`, children are clipped to this node's `rect` during
+    /// hit testing and rendering.
+    pub clip: bool,
+    /// When `true`, widget is disabled and treated as `Sense::none()`.
+    pub disabled: bool,
+    /// Expands the hit area beyond `rect` for small targets.
+    /// `0.0` means no expansion (default).
+    pub interact_radius: f32,
+    /// Content offset applied to children (scroll offset).
+    ///
+    /// Hit testing translates the test point by this offset before checking
+    /// children. Matches the visual translate applied during rendering.
+    pub content_offset: (f32, f32),
+    /// Whether this subtree participates in pointer hit testing.
+    ///
+    /// When `false`, the entire subtree is skipped during pointer event
+    /// dispatch. Layout and paint are unaffected.
+    pub pointer_events: bool,
+    /// OS cursor to show when this widget is hovered.
+    pub cursor_icon: CursorIcon,
 }
 
 impl LayoutNode {
@@ -28,6 +58,14 @@ impl LayoutNode {
             content_rect,
             children: Vec::new(),
             widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
+            pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 
@@ -43,5 +81,64 @@ impl LayoutNode {
     pub fn with_widget_id(mut self, id: WidgetId) -> Self {
         self.widget_id = Some(id);
         self
+    }
+
+    /// Sets the sense flags for hit-test filtering.
+    #[must_use]
+    pub fn with_sense(mut self, sense: Sense) -> Self {
+        self.sense = sense;
+        self
+    }
+
+    /// Sets the hit-test behavior relative to children.
+    #[must_use]
+    pub fn with_hit_test_behavior(mut self, behavior: HitTestBehavior) -> Self {
+        self.hit_test_behavior = behavior;
+        self
+    }
+
+    /// Sets the clip flag for child hit testing and rendering.
+    #[must_use]
+    pub fn with_clip(mut self, clip: bool) -> Self {
+        self.clip = clip;
+        self
+    }
+
+    /// Sets the disabled flag.
+    #[must_use]
+    pub fn with_disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Sets the interact radius for expanding hit areas.
+    #[must_use]
+    pub fn with_interact_radius(mut self, radius: f32) -> Self {
+        self.interact_radius = radius;
+        self
+    }
+
+    /// Find a widget's rect in the layout tree by its ID.
+    ///
+    /// Returns the node's `rect` in local coordinates (relative to the
+    /// layout root). Returns `None` if the widget isn't in the tree.
+    pub fn find_rect(&self, target: WidgetId) -> Option<Rect> {
+        if self.widget_id == Some(target) {
+            return Some(self.rect);
+        }
+        for child in &self.children {
+            if let Some(r) = child.find_rect(target) {
+                // Child rects are relative to parent's content area; offset
+                // by the parent's content_rect origin to get root-relative.
+                let offset = Rect::new(
+                    r.x() + self.content_rect.x(),
+                    r.y() + self.content_rect.y(),
+                    r.width(),
+                    r.height(),
+                );
+                return Some(offset);
+            }
+        }
+        None
     }
 }

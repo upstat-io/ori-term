@@ -11,9 +11,8 @@ use oriterm_ui::icons::ResolvedIcons;
 
 use super::WindowRenderer;
 use super::helpers::ShapingScratch;
-use crate::font::FontCollection;
+use crate::font::UiFontSizes;
 use crate::gpu::bind_groups::{AtlasBindGroup, UniformBuffer};
-use crate::gpu::draw_list_convert::TierClips;
 use crate::gpu::frame_input::ViewportSize;
 use crate::gpu::icon_rasterizer::IconCache;
 use crate::gpu::image_render::ImageTextureCache;
@@ -41,32 +40,53 @@ pub enum RendererMode {
 impl WindowRenderer {
     /// Create a UI-only renderer for dialog windows.
     ///
-    /// Uses `ui_font_collection` as the primary font (the terminal font
-    /// field). `active_ui_collection()` falls back to `font_collection`
-    /// when `ui_font_collection` is `None`, so UI text shaping uses the
-    /// same font either way.
+    /// A standalone `FontCollection` is created from the registry at the
+    /// default body text size for atlas seeding and fallback access.
+    /// The full [`UiFontSizes`] registry is stored for multi-size text
+    /// rendering.
     ///
     /// Terminal instance buffers remain `None` — the render pipeline
     /// naturally skips draws for absent buffers.
     pub fn new_ui_only(
         gpu: &GpuState,
         pipelines: &GpuPipelines,
-        mut ui_font_collection: FontCollection,
+        mut ui_font_sizes: UiFontSizes,
     ) -> Self {
         let device = &gpu.device;
         let queue = &gpu.queue;
 
         let uniform_buffer = UniformBuffer::new(device, &pipelines.uniform_layout);
 
-        // Atlases: mono + subpixel (with ASCII pre-cached) + color (empty).
-        let (atlas, subpixel_atlas, color_atlas) =
-            super::helpers::create_atlases(device, queue, &mut ui_font_collection);
+        // Pre-cache atlases from the default-size collection in the registry.
+        let (mut atlas, mut subpixel_atlas, color_atlas) = {
+            let default_fc = ui_font_sizes
+                .default_collection_mut()
+                .expect("UI font registry must have a default collection");
+            super::helpers::create_atlases(device, queue, default_fc)
+        };
+
+        // Pre-cache all preloaded UI font sizes (10px sidebar, 18px titles, etc.).
+        let t_ui = std::time::Instant::now();
+        super::helpers::prewarm_ui_font_sizes(
+            &mut ui_font_sizes,
+            &mut atlas,
+            &mut subpixel_atlas,
+            device,
+            queue,
+        );
+        log::info!("UI font prewarm (ui-only): {:?}", t_ui.elapsed());
 
         let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
         let subpixel_atlas_bind_group =
             AtlasBindGroup::new(device, &pipelines.atlas_layout, subpixel_atlas.view());
         let color_atlas_bind_group =
             AtlasBindGroup::new(device, &pipelines.atlas_layout, color_atlas.view());
+
+        // Create a standalone FontCollection for the terminal font slot.
+        // UiOnly doesn't render terminal text, but the slot must be populated.
+        let font_collection = ui_font_sizes
+            .create_default_collection()
+            .expect("default collection creation must succeed");
 
         log::info!("window renderer init (ui-only)");
 
@@ -83,12 +103,9 @@ impl WindowRenderer {
             subpixel_atlas_generation: 0,
             color_atlas_generation: 0,
             empty_keys: HashSet::new(),
-            // UI font serves as primary — terminal shaping won't be invoked.
-            font_collection: ui_font_collection,
-            ui_font_collection: None,
+            font_collection,
+            ui_font_sizes: Some(ui_font_sizes),
             ui_raster_keys: Vec::new(),
-            clip_stack: Vec::new(),
-            overlay_scratch_clips: TierClips::default(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             // Terminal buffers intentionally None — render skips absent draws.
@@ -126,7 +143,7 @@ impl WindowRenderer {
     ///
     /// Clears all instance buffers, sets the viewport and background color,
     /// and begins atlas frame tracking. After this call, the caller appends
-    /// draw lists via [`append_ui_draw_list_with_text`] then calls
+    /// scenes via [`append_ui_scene_with_text`] then calls
     /// [`render_to_surface`].
     pub fn prepare_ui_frame(&mut self, width: u32, height: u32, background: Rgb, opacity: f64) {
         self.prepared.viewport = ViewportSize::new(width, height);

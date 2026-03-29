@@ -60,12 +60,17 @@ impl App {
             return;
         }
 
+        // Tab title inline editing: intercept keys before overlays/PTY.
+        if self.handle_tab_editing_key(event) {
+            return;
+        }
+
         // Modal overlay: intercept keyboard events before anything else.
         // Only check active overlays — dismissing (fading-out) overlays are
         // visual-only and must not intercept keyboard input.
         let has_overlays = self
             .focused_ctx()
-            .is_some_and(|ctx| !ctx.overlays.is_active_empty());
+            .is_some_and(|ctx| !ctx.root.overlays().is_active_empty());
         if has_overlays && event.state == ElementState::Pressed {
             if let Some(key) = winit_key_to_ui_key(&event.logical_key) {
                 let ui_event = oriterm_ui::input::KeyEvent {
@@ -85,17 +90,15 @@ impl App {
                         return;
                     };
                     let measurer = crate::font::CachedTextMeasurer::new(
-                        crate::font::UiFontMeasurer::new(renderer.active_ui_collection(), scale),
+                        renderer.ui_measurer(scale),
                         &ctx.text_cache,
                         scale,
                     );
-                    ctx.overlays.process_key_event(
+                    ctx.root.process_overlay_key_event(
                         ui_event,
                         &measurer,
                         &self.ui_theme,
                         None,
-                        &mut ctx.layer_tree,
-                        &mut ctx.layer_animator,
                         now,
                     )
                 };
@@ -206,7 +209,7 @@ impl App {
                 mark_mode::MarkAction::Ignored => {}
             }
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
         true
@@ -248,14 +251,14 @@ impl App {
             self.cursor_blink.reset();
 
             // Hide the mouse cursor while the user types.
-            let hide_ctx = super::cursor_hide::HideContext {
+            let hide_ctx = oriterm_ui::interaction::cursor_hide::HideContext {
                 config_enabled: self.config.behavior.hide_mouse_when_typing,
                 already_hidden: self.mouse_cursor_hidden,
                 key: &event.logical_key,
                 mouse_reporting: mode.intersects(oriterm_core::TermMode::ANY_MOUSE),
                 ime_active: self.ime.should_suppress_key(),
             };
-            if super::cursor_hide::should_hide_cursor(&hide_ctx) {
+            if oriterm_ui::interaction::cursor_hide::should_hide_cursor(&hide_ctx) {
                 self.mouse_cursor_hidden = true;
                 if let Some(ctx) = self.focused_ctx() {
                     ctx.window.window().set_cursor_visible(false);
@@ -267,7 +270,7 @@ impl App {
                 // prompt with a visible cursor. That frame can consume the
                 // render budget and push the echoed glyph to the next tick.
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.dirty = true;
+                    ctx.root.mark_dirty();
                 }
             }
         }
@@ -304,7 +307,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
         true
     }

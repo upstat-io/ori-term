@@ -1,23 +1,24 @@
 ---
 section: 45
 title: Security Hardening
-status: not-started
+status: partially-started
 reviewed: false
+last_verified: "2026-03-29"
 tier: 5
 goal: "Harden terminal escape sequence handling against clipboard exfiltration, paste injection, and other security-sensitive operations. Defense-in-depth: require focus for clipboard access, confirmation dialogs for dangerous operations, configurable allow/deny policies."
 sections:
   - id: "45.1"
     title: OSC 52 Clipboard Restrictions
-    status: not-started
+    status: partially-started
   - id: "45.2"
     title: Paste Safety
-    status: not-started
+    status: partially-started
   - id: "45.3"
     title: Escape Sequence Sandboxing
-    status: not-started
+    status: partially-started
   - id: "45.4"
     title: Drag-Drop & Hyperlink Safety
-    status: not-started
+    status: partially-started
   - id: "45.5"
     title: Section Completion
     status: not-started
@@ -25,7 +26,7 @@ sections:
 
 # Section 45: Security Hardening
 
-**Status:** Not Started
+**Status:** Partially Started
 **Goal:** Harden the terminal against malicious escape sequences and clipboard attacks. Browsers restrict clipboard access to user-initiated interactions — terminals should apply the same principle. Defense-in-depth: focus-gated clipboard, confirmation dialogs, configurable policies.
 
 **Crate:** `oriterm_core` (policy checks in handler), `oriterm` (focus state, confirmation UI), `oriterm_mux` (event filtering)
@@ -77,6 +78,16 @@ sections:
 - **Image storage limit** (source: `Config.zig:2305`, `Screen.zig:258`): `image-storage-limit = 320MB` (default), configurable up to 4GB, `0` disables all image protocols. Per-screen (primary + alternate separately). *Lesson: our image memory cap should be configurable and split per-screen.*
 
 **Why this matters:** A malicious program (or crafted `cat` output) can silently write to the system clipboard via OSC 52, then social-engineer the user into pasting it elsewhere. OSC 52 read is even worse — it exfiltrates clipboard contents without user awareness. These are real attack vectors documented in terminal security advisories.
+
+> **Verification Notes (2026-03-29):** Partially started -- significant security infrastructure already exists in production code. **Already implemented:** (1) OSC 52 clipboard store/load handlers (`oriterm_core/src/term/handler/osc.rs`) with base64 decode and 20+ tests. (2) Paste safety pipeline (`oriterm_core/src/paste/mod.rs`) with `filter_paste()`, `normalize_line_endings()`, `strip_escape_chars()`, `count_newlines()`, `prepare_paste()`. (3) `PasteWarning` enum with Always/Never/Threshold and confirmation dialog infrastructure. (4) Title stack depth limit at 4096 (matches Alacritty). (5) URL scheme validation via `ALLOWED_SCHEMES`. (6) Ctrl+click modifier required for URL opening. (7) Sixel resource limits (`MAX_DIMENSION=10000`, `MAX_PIXEL_BYTES=100MB`, `checked_mul`, `aborted` flag). (8) Image cache limits (320 MiB default, per-screen, LRU eviction).
+>
+> **4 pre-existing vulnerabilities found:**
+> 1. **No OSC 52 focus gating** -- background panes can write to system clipboard unconditionally (WT #19051 vector).
+> 2. **No title sanitization** -- C0/C1 control characters pass through in `osc_set_title()` (WT #12206, #10312 vector).
+> 3. **No drag-drop shell escaping** -- `format_dropped_paths()` only wraps spaces in double quotes, does not escape single quotes or special shell characters (WT #18006 vector: `John's Archive` breaks POSIX quoting).
+> 4. **No URL detection line-length cap** -- `url_detect/mod.rs` runs regex on all lines without length limit (WezTerm #714 DoS vector: 1.5MB single-line JSON causes 3.8GB memory, 100% CPU).
+>
+> **Not yet implemented:** clipboard focus gating, clipboard policy config (`[security]` section), confirmation dialog for OSC 52, dangerous content detection in paste, homograph attack detection, C0/C1 filtering in paste, title sanitization, title reporting restriction, window manipulation restriction, hyperlink regex line-length cap, notification focus-gating, child process env hygiene verification, VT parser fuzz tests, drag-drop shell escaping. Known bug: paste confirmation dialog does not trigger even with `warn_on_paste: Always`.
 
 ---
 

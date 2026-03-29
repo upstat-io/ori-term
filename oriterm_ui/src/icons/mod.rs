@@ -4,9 +4,13 @@
 //! and rasterized at the target pixel size via `tiny_skia` in the GPU layer.
 //! Color is applied at draw time by the shader, not baked into the bitmap.
 //!
-//! The [`IconResolver`] trait bridges the library and binary crates: widgets
-//! call `resolve()` at draw time to get atlas coordinates, and the binary
-//! crate provides the concrete implementation backed by `IconCache`.
+//! Icon definitions are split by consumer:
+//! - [`chrome`] — tab bar and window title bar icons
+//! - [`sidebar_nav`] — settings sidebar icons (generated from mockup SVGs)
+
+mod chrome;
+mod footer;
+mod sidebar_nav;
 
 /// A single path drawing command in normalized 0.0–1.0 coordinate space.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,22 +65,98 @@ pub enum IconId {
     Restore,
     /// Window close button (×, slightly larger proportions than tab close).
     WindowClose,
+    /// Sun icon — Appearance settings page.
+    Sun,
+    /// Palette icon — Colors settings page.
+    Palette,
+    /// Type/font icon — Font settings page.
+    Type,
+    /// Terminal prompt icon — Terminal settings page.
+    Terminal,
+    /// Keyboard icon — Keybindings settings page.
+    Keyboard,
+    /// Window frame icon — Window settings page.
+    Window,
+    /// Bell icon — Bell settings page.
+    Bell,
+    /// Activity/pulse icon — Rendering settings page.
+    Activity,
+    /// Search/magnifying glass icon — sidebar search field.
+    Search,
+    /// Alert circle icon — unsaved changes indicator in settings footer.
+    AlertCircle,
+    /// Filled downward triangle for dropdown select triggers (10×6 in 10×10 box).
+    DropdownArrow,
+    /// Filled upward triangle for number input stepper (up arrow).
+    StepperUp,
+    /// Filled downward triangle for number input stepper (down arrow).
+    StepperDown,
 }
 
 impl IconId {
+    /// All icon variants, in definition order.
+    ///
+    /// Used by tests to verify every variant is covered by the icon
+    /// pre-resolution list and rasterizer.
+    pub const ALL: &[Self] = &[
+        Self::Close,
+        Self::Plus,
+        Self::ChevronDown,
+        Self::Minimize,
+        Self::Maximize,
+        Self::Restore,
+        Self::WindowClose,
+        Self::Sun,
+        Self::Palette,
+        Self::Type,
+        Self::Terminal,
+        Self::Keyboard,
+        Self::Window,
+        Self::Bell,
+        Self::Activity,
+        Self::Search,
+        Self::AlertCircle,
+        Self::DropdownArrow,
+        Self::StepperUp,
+        Self::StepperDown,
+    ];
+
     /// Returns the icon path definition for this icon.
     pub fn path(self) -> &'static IconPath {
         match self {
-            Self::Close => &ICON_CLOSE,
-            Self::Plus => &ICON_PLUS,
-            Self::ChevronDown => &ICON_CHEVRON_DOWN,
-            Self::Minimize => &ICON_MINIMIZE,
-            Self::Maximize => &ICON_MAXIMIZE,
-            Self::Restore => &ICON_RESTORE,
-            Self::WindowClose => &ICON_WINDOW_CLOSE,
+            // Chrome icons (tab bar + window controls).
+            Self::Close => &chrome::ICON_CLOSE,
+            Self::Plus => &chrome::ICON_PLUS,
+            Self::ChevronDown => &chrome::ICON_CHEVRON_DOWN,
+            Self::Minimize => &chrome::ICON_MINIMIZE,
+            Self::Maximize => &chrome::ICON_MAXIMIZE,
+            Self::Restore => &chrome::ICON_RESTORE,
+            Self::WindowClose => &chrome::ICON_WINDOW_CLOSE,
+            // Sidebar nav icons (generated from mockup SVGs).
+            Self::Sun => &sidebar_nav::ICON_SUN,
+            Self::Palette => &sidebar_nav::ICON_PALETTE,
+            Self::Type => &sidebar_nav::ICON_TYPE,
+            Self::Terminal => &sidebar_nav::ICON_TERMINAL,
+            Self::Keyboard => &sidebar_nav::ICON_KEYBOARD,
+            Self::Window => &sidebar_nav::ICON_WINDOW,
+            Self::Bell => &sidebar_nav::ICON_BELL,
+            Self::Activity => &sidebar_nav::ICON_ACTIVITY,
+            Self::Search => &sidebar_nav::ICON_SEARCH,
+            // Footer icons.
+            Self::AlertCircle => &footer::ICON_ALERT_CIRCLE,
+            // Dropdown trigger filled triangle.
+            Self::DropdownArrow => &chrome::ICON_DROPDOWN_ARROW,
+            // Number input stepper arrows.
+            Self::StepperUp => &chrome::ICON_STEPPER_UP,
+            Self::StepperDown => &chrome::ICON_STEPPER_DOWN,
         }
     }
 }
+
+/// Logical pixel size for settings sidebar nav icons.
+///
+/// Used by both the sidebar widget and the icon pre-resolution list.
+pub const SIDEBAR_NAV_ICON_SIZE: u32 = 16;
 
 /// Atlas coordinates for a resolved icon bitmap.
 #[derive(Debug, Clone, Copy)]
@@ -130,112 +210,13 @@ impl ResolvedIcons {
     }
 }
 
-/// Stroke width for tab bar icons (logical pixels).
-const TAB_STROKE: f32 = 1.0;
+/// Source SVG fixtures for the 8 settings sidebar icons. Used for fidelity
+/// verification against the runtime [`IconPath`] definitions.
+pub mod sidebar_fixtures;
 
-/// Stroke width for window chrome icons (logical pixels).
-const CHROME_STROKE: f32 = 1.0;
-
-/// Tab close button: two diagonal lines forming ×.
-///
-/// Fills most of the bitmap (0.1–0.9) with a small margin for stroke caps.
-/// The widget's `CLOSE_ICON_INSET` handles positioning within the button.
-static ICON_CLOSE: IconPath = IconPath {
-    commands: &[
-        // Top-left to bottom-right diagonal.
-        PathCommand::MoveTo(0.1, 0.1),
-        PathCommand::LineTo(0.9, 0.9),
-        // Top-right to bottom-left diagonal.
-        PathCommand::MoveTo(0.9, 0.1),
-        PathCommand::LineTo(0.1, 0.9),
-    ],
-    style: IconStyle::Stroke(TAB_STROKE),
-};
-
-/// New tab button: horizontal + vertical lines forming +.
-///
-/// Fills most of the bitmap (0.1–0.9) with a small margin for stroke caps.
-/// The widget centers the icon rect in the button.
-static ICON_PLUS: IconPath = IconPath {
-    commands: &[
-        // Horizontal arm.
-        PathCommand::MoveTo(0.1, 0.5),
-        PathCommand::LineTo(0.9, 0.5),
-        // Vertical arm.
-        PathCommand::MoveTo(0.5, 0.1),
-        PathCommand::LineTo(0.5, 0.9),
-    ],
-    style: IconStyle::Stroke(TAB_STROKE),
-};
-
-/// Dropdown chevron: two lines forming a downward-pointing V (▾).
-///
-/// Fills the bitmap width (0.1–0.9) with proportional vertical extent.
-/// The widget centers the icon rect in the dropdown button.
-static ICON_CHEVRON_DOWN: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.15, 0.35),
-        PathCommand::LineTo(0.5, 0.75),
-        PathCommand::LineTo(0.85, 0.35),
-    ],
-    style: IconStyle::Stroke(TAB_STROKE),
-};
-
-/// Window minimize: single horizontal dash centered vertically.
-///
-/// Derived from: `SYMBOL_SIZE = 10.0` on `CONTROL_BUTTON_WIDTH`.
-/// Half = 5/10 = 0.5 of symbol region → stroke from 0.0 to 1.0 at y=0.5.
-static ICON_MINIMIZE: IconPath = IconPath {
-    commands: &[PathCommand::MoveTo(0.0, 0.5), PathCommand::LineTo(1.0, 0.5)],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Window maximize: square outline.
-static ICON_MAXIMIZE: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.0, 0.0),
-        PathCommand::LineTo(1.0, 0.0),
-        PathCommand::LineTo(1.0, 1.0),
-        PathCommand::LineTo(0.0, 1.0),
-        PathCommand::Close,
-    ],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Window restore: two overlapping square outlines.
-///
-/// Back window offset up-right by 2/10 = 0.2 of symbol size.
-/// Front window at origin, slightly smaller (8/10 = 0.8).
-static ICON_RESTORE: IconPath = IconPath {
-    commands: &[
-        // Back window (offset up-right).
-        PathCommand::MoveTo(0.2, 0.0),
-        PathCommand::LineTo(1.0, 0.0),
-        PathCommand::LineTo(1.0, 0.8),
-        PathCommand::LineTo(0.8, 0.8),
-        // Front window (offset down-left).
-        PathCommand::MoveTo(0.0, 0.2),
-        PathCommand::LineTo(0.8, 0.2),
-        PathCommand::LineTo(0.8, 1.0),
-        PathCommand::LineTo(0.0, 1.0),
-        PathCommand::Close,
-    ],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
-
-/// Window close button: × with full-extent diagonals (corner to corner).
-///
-/// Slightly different proportions than tab close — fills the entire
-/// symbol region for a bolder appearance on the title bar.
-static ICON_WINDOW_CLOSE: IconPath = IconPath {
-    commands: &[
-        PathCommand::MoveTo(0.0, 0.0),
-        PathCommand::LineTo(1.0, 1.0),
-        PathCommand::MoveTo(1.0, 0.0),
-        PathCommand::LineTo(0.0, 1.0),
-    ],
-    style: IconStyle::Stroke(CHROME_STROKE),
-};
+/// SVG-to-[`PathCommand`] importer. Converts SVG elements into normalized
+/// path commands for icon definitions and fidelity tests.
+pub mod svg_import;
 
 #[cfg(test)]
 mod tests;

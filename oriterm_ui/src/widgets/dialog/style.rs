@@ -65,7 +65,7 @@ impl DialogStyle {
         primary_button.border_color = theme.accent;
 
         Self {
-            bg: theme.bg_primary,
+            bg: theme.bg_card,
             border_color: theme.border,
             border_width: 1.0,
             corner_radius: theme.corner_radius * 2.0,

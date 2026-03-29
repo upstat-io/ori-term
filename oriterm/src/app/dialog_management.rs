@@ -11,14 +11,24 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use oriterm_ui::scale::ScaleFactor;
+use oriterm_ui::surface::SurfaceLifecycle;
 use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
 use oriterm_ui::widgets::settings_panel::SettingsPanel;
 
 use super::App;
 use super::dialog_context::{DialogContent, DialogWindowContext};
 use super::settings_overlay::form_builder;
+
+/// Caption height for the drag region at the top of the settings dialog.
+///
+/// The top `DIALOG_DRAG_CAPTION_HEIGHT` pixels of the dialog window are
+/// treated as the draggable caption area by the platform chrome (Windows
+/// `WM_NCHITTEST`). The sidebar region is excluded via an interactive rect
+/// so clicks on the search field and nav items are not intercepted as drags.
+/// The remaining area (content header) becomes the drag zone.
+pub(super) const DIALOG_DRAG_CAPTION_HEIGHT: f32 = 48.0;
+
 use crate::event::ConfirmationRequest;
-use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
 use crate::window_manager::platform::platform_ops;
@@ -54,7 +64,7 @@ impl App {
             .window
             .set_min_inner_size(Some(winit::dpi::LogicalSize::new(600u32, 400u32)));
 
-        let content = self.build_settings_content(&parts.window, parts.renderer.as_ref());
+        let content = self.build_settings_content();
         self.finalize_dialog(parts, kind, content);
     }
 
@@ -117,6 +127,8 @@ impl App {
                 position.1 as f32,
             )),
             resizable: kind.is_resizable(),
+            // Dialogs always use frameless CSD regardless of main-window decoration config.
+            decoration: oriterm_ui::window::DecorationMode::Frameless,
         };
 
         let window = match oriterm_ui::window::create_window(event_loop, &window_config) {
@@ -173,7 +185,6 @@ impl App {
             kind,
             content,
             scale_factor,
-            &self.ui_theme,
         );
 
         self.window_manager.register(ManagedWindow::with_parent(
@@ -182,15 +193,16 @@ impl App {
             parts.parent_wid,
         ));
         self.dialogs.insert(winit_id, ctx);
+
+        self.setup_dialog_focus(winit_id);
         self.install_dialog_chrome(winit_id);
         self.render_dialog(winit_id);
 
-        if let Some(ctx) = self.dialogs.get(&winit_id) {
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
-            ctx.window.set_visible(true);
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, true);
+        // Transition to Primed — the event loop's about_to_wait handler
+        // will show the window on the next tick (after the first frame is
+        // committed). This prevents any flash of uninitialized content.
+        if let Some(ctx) = self.dialogs.get_mut(&winit_id) {
+            ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Primed);
         }
 
         log::info!(
@@ -201,12 +213,27 @@ impl App {
     }
 
     /// Close a dialog window, discarding any pending changes.
+    ///
+    /// Transitions to `Closing`: hides the window, clears modal state,
+    /// and suppresses further input. Actual destruction (unregister +
+    /// context removal) is deferred to the next `about_to_wait` tick
+    /// to avoid mutable borrow issues during event dispatch.
     pub(super) fn close_dialog(&mut self, winit_id: WindowId) {
-        // Clear platform modal state if applicable.
-        if let Some(ctx) = self.dialogs.get(&winit_id) {
+        // Transition to Closing: hide and clear modal state.
+        if let Some(ctx) = self.dialogs.get_mut(&winit_id) {
+            if ctx.lifecycle == SurfaceLifecycle::Closing
+                || ctx.lifecycle == SurfaceLifecycle::Destroyed
+            {
+                return; // Already closing/closed.
+            }
+            ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Closing);
             #[cfg(target_os = "windows")]
             oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
             ctx.window.set_visible(false);
+        }
+
+        // Clear platform modal state.
+        if let Some(ctx) = self.dialogs.get(&winit_id) {
             if let Some(managed) = self.window_manager.get(winit_id) {
                 if let Some(parent_wid) = managed.parent {
                     if let Some(parent_ctx) = self.windows.get(&parent_wid) {
@@ -217,16 +244,49 @@ impl App {
             }
         }
 
-        // Unregister from window manager (cascades to children).
-        self.window_manager.unregister(winit_id);
+        // Defer destruction to the next event loop tick.
+        self.pending_destroy.push(winit_id);
 
-        // Remove context (drops GPU resources).
-        self.dialogs.remove(&winit_id);
+        log::info!("dialog closing: {winit_id:?}");
+    }
 
-        log::info!(
-            "dialog closed: {winit_id:?}, {} dialogs remaining",
-            self.dialogs.len()
-        );
+    /// Complete deferred dialog destruction.
+    ///
+    /// Called from `about_to_wait` to transition `Closing → Destroyed`,
+    /// unregister from the window manager, and drop GPU resources.
+    pub(super) fn drain_pending_destroy(&mut self) {
+        if self.pending_destroy.is_empty() {
+            return;
+        }
+        for wid in self.pending_destroy.drain(..) {
+            if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Destroyed);
+            }
+            self.window_manager.unregister(wid);
+            self.dialogs.remove(&wid);
+            log::info!(
+                "dialog destroyed: {wid:?}, {} dialogs remaining",
+                self.dialogs.len()
+            );
+        }
+    }
+
+    /// Show all Primed dialogs (first frame rendered, ready to be visible).
+    ///
+    /// Called from `about_to_wait` to transition `Primed → Visible`.
+    /// Platform DWM transition suppression is handled here.
+    pub(super) fn show_primed_dialogs(&mut self) {
+        for ctx in self.dialogs.values_mut() {
+            if ctx.lifecycle != SurfaceLifecycle::Primed {
+                continue;
+            }
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, false);
+            ctx.window.set_visible(true);
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::set_transitions_enabled(&ctx.window, true);
+            ctx.lifecycle = ctx.lifecycle.transition(SurfaceLifecycle::Visible);
+        }
     }
 
     /// Check if a dialog of the given kind is already open.
@@ -289,19 +349,34 @@ impl App {
         gpu: &GpuState,
         pipelines: &crate::gpu::GpuPipelines,
     ) -> Option<WindowRenderer> {
-        let scale = window.scale_factor() as f32;
+        let scale = ScaleFactor::new(window.scale_factor()).factor() as f32;
         let physical_dpi = super::DEFAULT_DPI * scale;
-        let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
-        let format =
-            super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale))
+        // UI font uses fixed grayscale + no hinting; terminal hinting/format
+        // not needed here since dialog renderers are UI-only.
+        let _hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
+        let _format =
+            super::config_reload::resolve_subpixel_mode(&self.config.font, f64::from(scale), 1.0)
                 .glyph_format();
 
-        let ui_fc = self.ui_font_set.as_ref().and_then(|fs| {
-            crate::font::FontCollection::new(fs.clone(), 11.0, physical_dpi, format, 400, hinting)
-                .ok()
+        let ui_sizes = crate::font::UiFontSizes::new(
+            crate::font::FontSet::ui_embedded(),
+            physical_dpi,
+            crate::font::GlyphFormat::Alpha,
+            crate::font::HintingMode::None,
+            400,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
+        )
+        .ok()
+        .map(|mut sizes| {
+            super::config_reload::apply_font_config_to_ui_sizes(
+                &mut sizes,
+                &self.config.font,
+                &self.user_fallback_map,
+            );
+            sizes
         })?;
 
-        Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_fc))
+        Some(WindowRenderer::new_ui_only(gpu, pipelines, ui_sizes))
     }
 
     /// Build dialog content for a confirmation dialog.
@@ -322,38 +397,24 @@ impl App {
     }
 
     /// Build dialog content for the settings panel.
-    fn build_settings_content(
-        &self,
-        window: &Arc<winit::window::Window>,
-        renderer: Option<&WindowRenderer>,
-    ) -> DialogContent {
-        let (mut form, ids) = form_builder::build_settings_form(&self.config);
-
-        // Compute label widths for aligned form layout.
-        if let Some(renderer) = renderer {
-            let scale = window.scale_factor() as f32;
-            let cache = TextShapeCache::new();
-            let measurer = CachedTextMeasurer::new(
-                UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-                &cache,
-                scale,
-            );
-            form.compute_label_widths(&measurer, &self.ui_theme);
-        }
+    fn build_settings_content(&self) -> DialogContent {
+        let (content, ids, footer_ids) =
+            form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0, None);
 
         DialogContent::Settings {
-            panel: Box::new(SettingsPanel::embedded(form)),
-            ids,
+            panel: Box::new(SettingsPanel::embedded(content, footer_ids)),
+            ids: Box::new(ids),
             pending_config: Box::new(self.config.clone()),
             original_config: Box::new(self.config.clone()),
+            active_page: 0,
         }
     }
 
     /// Install platform chrome on a dialog window.
     ///
-    /// Enables proper OS-level hit testing so the close button receives
-    /// cursor events and the caption area supports drag. Routes through
-    /// [`NativeChromeOps`] — no-op on non-Windows platforms.
+    /// Installs platform chrome so the DWM shadow is drawn and the top
+    /// content area acts as a drag-to-move caption region. The sidebar is
+    /// excluded via an interactive rect so search and nav clicks work.
     fn install_dialog_chrome(&self, winit_id: WindowId) {
         let Some(ctx) = self.dialogs.get(&winit_id) else {
             return;
@@ -362,13 +423,8 @@ impl App {
         let mode = crate::window_manager::platform::ChromeMode::Dialog {
             resizable: ctx.kind.is_resizable(),
         };
-        super::chrome::install_chrome(
-            &ctx.window,
-            mode,
-            ctx.chrome.interactive_rects(),
-            ctx.chrome.caption_height(),
-            scale,
-        );
+        let rects = dialog_interactive_rects();
+        super::chrome::install_chrome(&ctx.window, mode, &rects, DIALOG_DRAG_CAPTION_HEIGHT, scale);
     }
 
     /// Update platform hit test rects and chrome metrics after a dialog resize.
@@ -379,12 +435,31 @@ impl App {
             return;
         };
         let scale = ctx.scale_factor.factor() as f32;
+        let rects = dialog_interactive_rects();
         super::chrome::refresh_chrome(
             &ctx.window,
-            ctx.chrome.interactive_rects(),
-            ctx.chrome.caption_height(),
+            &rects,
+            DIALOG_DRAG_CAPTION_HEIGHT,
             scale,
             ctx.kind.is_resizable(),
         );
     }
+}
+
+/// Sidebar exclusion rect for the dialog caption area.
+///
+/// The sidebar (search field, nav items) occupies the left 200px of the
+/// dialog. Within the caption height, this region must be marked as
+/// "interactive" (client area) so the OS doesn't intercept clicks as
+/// window drags. The content area to the right of the sidebar remains
+/// caption (draggable).
+fn dialog_interactive_rects() -> Vec<oriterm_ui::geometry::Rect> {
+    use oriterm_ui::widgets::sidebar_nav::SIDEBAR_WIDTH;
+
+    vec![oriterm_ui::geometry::Rect::new(
+        0.0,
+        0.0,
+        SIDEBAR_WIDTH,
+        DIALOG_DRAG_CAPTION_HEIGHT,
+    )]
 }

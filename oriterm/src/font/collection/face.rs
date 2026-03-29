@@ -8,10 +8,23 @@ use std::sync::Arc;
 
 use swash::scale::{Render, ScaleContext, Source, StrikeWith, image::Content};
 use swash::zeno::{Angle, Format, Transform, Vector};
-use swash::{CacheKey, FontRef};
+use swash::{CacheKey, FontRef, NormalizedCoord};
 
 use super::RasterizedGlyph;
+use super::loading::FontBytes;
 use crate::font::{GlyphFormat, SyntheticFlags};
+
+/// Convert variation settings to swash normalized coordinates.
+///
+/// Returns an empty `Vec` for non-variable fonts (empty settings).
+pub(super) fn normalize_coords(fr: &FontRef<'_>, settings: &[(&str, f32)]) -> Vec<NormalizedCoord> {
+    if settings.is_empty() {
+        return Vec::new();
+    }
+    fr.variations()
+        .normalized_coords(settings.iter().copied())
+        .collect()
+}
 
 /// A variable font axis with its valid range.
 ///
@@ -33,14 +46,14 @@ pub(super) struct AxisInfo {
 
 /// Validated font data with swash metadata.
 ///
-/// Raw bytes are kept in [`Arc<Vec<u8>>`] for shared ownership with rustybuzz
+/// Raw bytes are kept in [`Arc<FontBytes>`] for shared ownership with rustybuzz
 /// faces (Section 6). The `offset` and `cache_key` enable fast transient
 /// [`FontRef`] construction without re-parsing.
 pub(crate) struct FaceData {
     /// Raw font file bytes.
-    pub(crate) bytes: Arc<Vec<u8>>,
+    pub(super) bytes: Arc<FontBytes>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
-    pub(crate) face_index: u32,
+    pub(super) face_index: u32,
     /// Byte offset to the font table directory.
     offset: u32,
     /// Unique cache key for [`ScaleContext`] reuse.
@@ -57,11 +70,11 @@ pub(super) fn validate_font(data: &[u8], face_index: u32) -> Option<(u32, CacheK
     Some((fr.offset, fr.key))
 }
 
-/// Build a [`FaceData`] from an [`Arc<Vec<u8>>`] and face index.
+/// Build a [`FaceData`] from an [`Arc<FontBytes>`] and face index.
 ///
 /// Returns `None` if the font bytes are invalid. Discovers variable font
 /// axes from the `fvar` table (empty for non-variable fonts).
-pub(super) fn build_face(bytes: Arc<Vec<u8>>, face_index: u32) -> Option<FaceData> {
+pub(super) fn build_face(bytes: Arc<FontBytes>, face_index: u32) -> Option<FaceData> {
     let (offset, cache_key) = validate_font(&bytes, face_index)?;
     let axes = discover_axes(&bytes, face_index);
     Some(FaceData {
@@ -170,7 +183,11 @@ pub(super) fn rasterize_from_face(
     ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
     let fr = font_ref(fd);
-    let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
+    let coords = normalize_coords(&fr, variations);
+    let advance = fr
+        .glyph_metrics(&coords)
+        .scale(size_px)
+        .advance_width(glyph_id);
 
     let builder = ctx.builder(fr).size(size_px).hint(hinted);
     let mut scaler = if variations.is_empty() {
@@ -276,14 +293,20 @@ pub(super) struct FontMetrics {
 /// OS/2 and post tables via swash.
 ///
 /// Returns `None` if `bytes` does not contain a valid font at `face_index`.
-pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> Option<FontMetrics> {
+pub(super) fn compute_metrics(
+    bytes: &[u8],
+    face_index: u32,
+    size_px: f32,
+    variations: &[(&str, f32)],
+) -> Option<FontMetrics> {
     let fr = FontRef::from_index(bytes, face_index as usize)?;
-    let metrics = fr.metrics(&[]).scale(size_px);
+    let coords = normalize_coords(&fr, variations);
+    let metrics = fr.metrics(&coords).scale(size_px);
     let baseline = metrics.ascent.ceil();
     let cell_height = baseline + metrics.descent.abs().ceil();
     let gid = fr.charmap().map('M');
     let cell_width = fr
-        .glyph_metrics(&[])
+        .glyph_metrics(&coords)
         .scale(size_px)
         .advance_width(gid)
         .ceil();

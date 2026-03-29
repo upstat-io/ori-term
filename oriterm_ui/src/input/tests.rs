@@ -1,14 +1,20 @@
 //! Tests for widget-level hit testing and input routing.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::{Point, Rect};
+use crate::hit_test_behavior::HitTestBehavior;
+use crate::interaction::InteractionManager;
+use crate::interaction::lifecycle::LifecycleEvent;
 use crate::layout::LayoutNode;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
-use super::event::{
-    EventResponse, HoverEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind, ScrollDelta,
+use super::dispatch::{DeliveryAction, plan_propagation};
+use super::event::{EventPhase, InputEvent, Modifiers, MouseButton, ScrollDelta};
+use super::hit_test::{
+    layout_hit_test, layout_hit_test_clipped, layout_hit_test_disabled_at, layout_hit_test_path,
 };
-use super::hit_test::{layout_hit_test, layout_hit_test_clipped};
-use super::routing::{InputState, RouteAction};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -19,38 +25,14 @@ fn make_node(x: f32, y: f32, w: f32, h: f32, id: Option<WidgetId>) -> LayoutNode
         content_rect: rect,
         children: Vec::new(),
         widget_id: id,
-    }
-}
-
-fn mouse_move(x: f32, y: f32) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Move,
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn mouse_down(x: f32, y: f32, button: MouseButton) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(button),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn mouse_up(x: f32, y: f32, button: MouseButton) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Up(button),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn mouse_scroll(x: f32, y: f32, dy: f32) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: dy }),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
+        sense: Sense::all(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: false,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, 0.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
     }
 }
 
@@ -65,17 +47,58 @@ fn two_widget_tree() -> (LayoutNode, WidgetId, WidgetId) {
     (root, a, b)
 }
 
-fn hover_count(actions: &[RouteAction]) -> usize {
-    actions
-        .iter()
-        .filter(|a| matches!(a, RouteAction::Hover { .. }))
-        .count()
+fn mouse_move_input(x: f32, y: f32) -> InputEvent {
+    InputEvent::MouseMove {
+        pos: Point::new(x, y),
+        modifiers: Modifiers::NONE,
+    }
 }
 
-fn delivers_to(actions: &[RouteAction], target: WidgetId) -> bool {
-    actions
+fn mouse_down_input(x: f32, y: f32, button: MouseButton) -> InputEvent {
+    InputEvent::MouseDown {
+        pos: Point::new(x, y),
+        button,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn scroll_input(x: f32, y: f32, dy: f32) -> InputEvent {
+    InputEvent::Scroll {
+        pos: Point::new(x, y),
+        delta: ScrollDelta::Lines { x: 0.0, y: dy },
+        modifiers: Modifiers::NONE,
+    }
+}
+
+/// Simulates a mouse event: hit test → update hot path → plan propagation.
+///
+/// Returns the delivery actions and any pending lifecycle events.
+fn simulate_mouse(
+    event: &InputEvent,
+    layout: &LayoutNode,
+    mgr: &mut InteractionManager,
+    actions: &mut Vec<DeliveryAction>,
+) -> Vec<LifecycleEvent> {
+    let pos = event.pos().expect("mouse event has pos");
+    let hit = layout_hit_test_path(layout, pos);
+    mgr.update_hot_path(&hit.widget_ids());
+    let events = mgr.drain_events();
+    plan_propagation(event, &hit, mgr.active_widget(), &[], actions);
+    events
+}
+
+fn delivers_to(actions: &[DeliveryAction], target: WidgetId) -> bool {
+    actions.iter().any(|a| a.widget_id == target)
+}
+
+fn hot_changed_events(events: &[LifecycleEvent]) -> Vec<(WidgetId, bool)> {
+    events
         .iter()
-        .any(|a| matches!(a, RouteAction::Deliver { target: t, .. } if *t == target))
+        .filter_map(|e| match e {
+            LifecycleEvent::HotChanged { widget_id, is_hot } => Some((*widget_id, *is_hot)),
+            _ => None,
+        })
+        .collect()
 }
 
 // ── Hit Testing ──────────────────────────────────────────────────────
@@ -210,160 +233,109 @@ fn hit_test_clipped_excludes_outside_clip() {
     );
 }
 
-// ── Event Response ───────────────────────────────────────────────────
-
-#[test]
-fn event_response_is_handled() {
-    assert!(EventResponse::Handled.is_handled());
-    assert!(EventResponse::RequestFocus.is_handled());
-    assert!(EventResponse::RequestPaint.is_handled());
-    assert!(EventResponse::RequestLayout.is_handled());
-    assert!(!EventResponse::Ignored.is_handled());
-}
-
-#[test]
-fn event_response_merge_priority() {
-    // Layout beats everything.
-    assert_eq!(
-        EventResponse::RequestLayout.merge(EventResponse::RequestPaint),
-        EventResponse::RequestLayout,
-    );
-    assert_eq!(
-        EventResponse::RequestPaint.merge(EventResponse::RequestLayout),
-        EventResponse::RequestLayout,
-    );
-    // Paint beats focus/handled.
-    assert_eq!(
-        EventResponse::RequestPaint.merge(EventResponse::RequestFocus),
-        EventResponse::RequestPaint,
-    );
-    assert_eq!(
-        EventResponse::Handled.merge(EventResponse::RequestPaint),
-        EventResponse::RequestPaint,
-    );
-    // Focus beats handled.
-    assert_eq!(
-        EventResponse::RequestFocus.merge(EventResponse::Handled),
-        EventResponse::RequestFocus,
-    );
-    // Handled beats ignored.
-    assert_eq!(
-        EventResponse::Handled.merge(EventResponse::Ignored),
-        EventResponse::Handled,
-    );
-    // Ignored + ignored = ignored.
-    assert_eq!(
-        EventResponse::Ignored.merge(EventResponse::Ignored),
-        EventResponse::Ignored,
-    );
-}
-
-// ── Input Routing ────────────────────────────────────────────────────
+// ── Integrated Routing (InteractionManager + plan_propagation) ───────
 
 #[test]
 fn routing_hover_enter_leave() {
-    let a = WidgetId::next();
-    let b = WidgetId::next();
+    let (root, a, b) = two_widget_tree();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.drain_events(); // Clear registration events.
 
-    let child_a = make_node(0.0, 0.0, 50.0, 100.0, Some(a));
-    let child_b = make_node(50.0, 0.0, 50.0, 100.0, Some(b));
-    let mut root = make_node(0.0, 0.0, 100.0, 100.0, None);
-    root.children.push(child_a);
-    root.children.push(child_b);
+    let mut actions = Vec::new();
 
-    let mut state = InputState::new();
+    // Move into widget A → HotChanged(a, true).
+    let events = simulate_mouse(&mouse_move_input(25.0, 50.0), &root, &mut mgr, &mut actions);
+    let hot = hot_changed_events(&events);
+    assert!(hot.contains(&(a, true)), "Enter A");
+    assert!(mgr.get_state(a).is_hot());
 
-    // Move into widget A.
-    let actions = state.process_mouse_event(mouse_move(25.0, 50.0), &root);
-    assert!(actions.contains(&RouteAction::Hover {
-        target: a,
-        kind: HoverEvent::Enter,
-    }));
-    assert_eq!(state.hovered(), Some(a));
-
-    // Move into widget B → Leave A, Enter B.
-    let actions = state.process_mouse_event(mouse_move(75.0, 50.0), &root);
-    assert!(actions.contains(&RouteAction::Hover {
-        target: a,
-        kind: HoverEvent::Leave,
-    }));
-    assert!(actions.contains(&RouteAction::Hover {
-        target: b,
-        kind: HoverEvent::Enter,
-    }));
-    assert_eq!(state.hovered(), Some(b));
+    // Move into widget B → HotChanged(a, false) + HotChanged(b, true).
+    let events = simulate_mouse(&mouse_move_input(75.0, 50.0), &root, &mut mgr, &mut actions);
+    let hot = hot_changed_events(&events);
+    assert!(hot.contains(&(a, false)), "Leave A");
+    assert!(hot.contains(&(b, true)), "Enter B");
+    assert!(mgr.get_state(b).is_hot());
+    assert!(!mgr.get_state(a).is_hot());
 }
 
 #[test]
 fn routing_mouse_capture_on_down() {
     let id = WidgetId::next();
     let root = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
-    let mut state = InputState::new();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(id);
+    mgr.drain_events();
+    let mut actions = Vec::new();
 
-    // Mouse down → auto-capture.
-    state.process_mouse_event(mouse_down(50.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), Some(id));
+    // Mouse down → set_active.
+    simulate_mouse(
+        &mouse_down_input(50.0, 50.0, MouseButton::Left),
+        &root,
+        &mut mgr,
+        &mut actions,
+    );
+    mgr.set_active(id);
+    assert_eq!(mgr.active_widget(), Some(id));
 
-    // Mouse up → release capture.
-    state.process_mouse_event(mouse_up(50.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), None);
+    // Mouse up → clear_active.
+    mgr.clear_active();
+    assert_eq!(mgr.active_widget(), None);
 }
 
 #[test]
 fn routing_captured_widget_receives_events_outside_bounds() {
-    let a = WidgetId::next();
-    let b = WidgetId::next();
+    let (root, a, _b) = two_widget_tree();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(a);
+    mgr.drain_events();
 
-    let child_a = make_node(0.0, 0.0, 50.0, 100.0, Some(a));
-    let child_b = make_node(50.0, 0.0, 50.0, 100.0, Some(b));
-    let mut root = make_node(0.0, 0.0, 100.0, 100.0, None);
-    root.children.push(child_a);
-    root.children.push(child_b);
+    // Capture A.
+    mgr.set_active(a);
+    let mut actions = Vec::new();
 
-    let mut state = InputState::new();
+    // Move cursor over B while captured → event delivered to A.
+    let event = mouse_move_input(75.0, 50.0);
+    let hit = layout_hit_test_path(&root, Point::new(75.0, 50.0));
+    plan_propagation(&event, &hit, mgr.active_widget(), &[], &mut actions);
 
-    // Move to A, then mouse down to capture.
-    state.process_mouse_event(mouse_move(25.0, 50.0), &root);
-    state.process_mouse_event(mouse_down(25.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), Some(a));
-
-    // Move cursor over B while captured → event delivered to A (captured).
-    let actions = state.process_mouse_event(mouse_move(75.0, 50.0), &root);
-    let delivered = actions.iter().any(|action| {
-        matches!(
-            action,
-            RouteAction::Deliver { target, .. } if *target == a
-        )
-    });
-    assert!(delivered, "captured widget should receive the event");
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].widget_id, a);
+    assert_eq!(actions[0].phase, EventPhase::Target);
 }
 
 #[test]
-fn routing_cursor_left_generates_leave() {
+fn routing_cursor_left_clears_hot() {
     let id = WidgetId::next();
     let root = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
-    let mut state = InputState::new();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(id);
+    mgr.drain_events();
+    let mut actions = Vec::new();
 
     // Enter.
-    state.process_mouse_event(mouse_move(50.0, 50.0), &root);
-    assert_eq!(state.hovered(), Some(id));
+    simulate_mouse(&mouse_move_input(50.0, 50.0), &root, &mut mgr, &mut actions);
+    assert!(mgr.get_state(id).is_hot());
 
-    // Cursor leaves window.
-    let actions = state.process_cursor_left();
-    assert!(actions.contains(&RouteAction::Hover {
-        target: id,
-        kind: HoverEvent::Leave,
-    }));
-    assert_eq!(state.hovered(), None);
-    assert_eq!(state.cursor_pos(), None);
+    // Cursor leaves window → update_hot_path(&[]) clears all hot.
+    mgr.update_hot_path(&[]);
+    let events = mgr.drain_events();
+    let hot = hot_changed_events(&events);
+    assert!(
+        hot.contains(&(id, false)),
+        "HotChanged(false) on cursor leave"
+    );
+    assert!(!mgr.get_state(id).is_hot());
 }
 
 #[test]
 fn routing_no_actions_on_empty_tree() {
     let root = make_node(0.0, 0.0, 100.0, 100.0, None);
-    let mut state = InputState::new();
-    let actions = state.process_mouse_event(mouse_move(50.0, 50.0), &root);
-    // No widget_id anywhere → no actions.
+    let event = mouse_move_input(50.0, 50.0);
+    let hit = layout_hit_test_path(&root, Point::new(50.0, 50.0));
+    let mut actions = Vec::new();
+    plan_propagation(&event, &hit, None, &[], &mut actions);
     assert!(actions.is_empty());
 }
 
@@ -371,65 +343,371 @@ fn routing_no_actions_on_empty_tree() {
 fn routing_move_within_same_widget_no_hover_events() {
     let id = WidgetId::next();
     let root = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
-    let mut state = InputState::new();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(id);
+    mgr.drain_events();
+    let mut actions = Vec::new();
 
-    // First move → Enter.
-    let actions = state.process_mouse_event(mouse_move(25.0, 25.0), &root);
-    assert_eq!(
-        actions
-            .iter()
-            .filter(|a| matches!(a, RouteAction::Hover { .. }))
-            .count(),
-        1,
+    // First move → HotChanged(true).
+    let events = simulate_mouse(&mouse_move_input(25.0, 25.0), &root, &mut mgr, &mut actions);
+    assert_eq!(hot_changed_events(&events).len(), 1);
+
+    // Second move within same widget → no HotChanged events.
+    let events = simulate_mouse(&mouse_move_input(75.0, 75.0), &root, &mut mgr, &mut actions);
+    assert!(
+        hot_changed_events(&events).is_empty(),
+        "no hot change within same widget"
     );
-
-    // Second move within same widget → no hover events.
-    let actions = state.process_mouse_event(mouse_move(75.0, 75.0), &root);
-    let hover_count = actions
-        .iter()
-        .filter(|a| matches!(a, RouteAction::Hover { .. }))
-        .count();
-    assert_eq!(hover_count, 0, "no hover change within same widget");
 }
 
 #[test]
-fn routing_manual_capture_overrides_hit() {
-    let a = WidgetId::next();
-    let b = WidgetId::next();
+fn routing_active_capture_overrides_hit() {
+    let (root, a, b) = two_widget_tree();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.drain_events();
 
-    let child_a = make_node(0.0, 0.0, 50.0, 100.0, Some(a));
-    let child_b = make_node(50.0, 0.0, 50.0, 100.0, Some(b));
-    let mut root = make_node(0.0, 0.0, 100.0, 100.0, None);
-    root.children.push(child_a);
-    root.children.push(child_b);
-
-    let mut state = InputState::new();
-    state.set_capture(a);
+    mgr.set_active(a);
+    let mut actions = Vec::new();
 
     // Move over B with A captured → event delivered to A.
-    let actions = state.process_mouse_event(mouse_move(75.0, 50.0), &root);
-    let delivered_to_a = actions.iter().any(|action| {
-        matches!(
-            action,
-            RouteAction::Deliver { target, .. } if *target == a
-        )
-    });
-    assert!(delivered_to_a);
+    let event = mouse_move_input(75.0, 50.0);
+    let hit = layout_hit_test_path(&root, Point::new(75.0, 50.0));
+    plan_propagation(&event, &hit, mgr.active_widget(), &[], &mut actions);
 
-    state.release_capture();
-    assert_eq!(state.captured(), None);
+    assert!(delivers_to(&actions, a), "captured widget receives event");
+    assert!(!delivers_to(&actions, b));
+
+    mgr.clear_active();
+    assert_eq!(mgr.active_widget(), None);
 }
 
 #[test]
 fn routing_mouse_down_outside_all_widgets() {
     let id = WidgetId::next();
     let root = make_node(10.0, 10.0, 50.0, 50.0, Some(id));
-    let mut state = InputState::new();
+    let event = mouse_down_input(5.0, 5.0, MouseButton::Left);
+    let hit = layout_hit_test_path(&root, Point::new(5.0, 5.0));
+    let mut actions = Vec::new();
 
-    // Click outside any widget.
-    let actions = state.process_mouse_event(mouse_down(5.0, 5.0, MouseButton::Left), &root);
+    plan_propagation(&event, &hit, None, &[], &mut actions);
     assert!(actions.is_empty());
-    assert_eq!(state.captured(), None);
+}
+
+// ── Hover during capture (new behavior) ──────────────────────────────
+// The new system intentionally allows hot tracking during capture.
+// This enables drag-and-drop visual feedback on drop targets.
+
+#[test]
+fn routing_hover_changes_during_capture() {
+    // NEW BEHAVIOR: hover transitions continue during capture.
+    let (root, a, b) = two_widget_tree();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.drain_events();
+    let mut actions = Vec::new();
+
+    // Hover A, capture A.
+    simulate_mouse(&mouse_move_input(25.0, 50.0), &root, &mut mgr, &mut actions);
+    mgr.set_active(a);
+    mgr.drain_events(); // Clear registration + hot events.
+
+    // Move over B while captured → hot path updates to B.
+    let events = simulate_mouse(&mouse_move_input(75.0, 50.0), &root, &mut mgr, &mut actions);
+    let hot = hot_changed_events(&events);
+    assert!(
+        hot.contains(&(a, false)),
+        "A loses hot during capture (new behavior)"
+    );
+    assert!(
+        hot.contains(&(b, true)),
+        "B gains hot during capture (new behavior)"
+    );
+    // But the delivery still goes to captured widget A.
+    assert!(delivers_to(&actions, a));
+}
+
+#[test]
+fn routing_capture_release_hover_already_current() {
+    // Since hover updates during capture, on release the hover is
+    // already at the correct widget — no deferred transition needed.
+    let (root, a, b) = two_widget_tree();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.drain_events();
+    let mut actions = Vec::new();
+
+    // Hover A, capture A.
+    simulate_mouse(&mouse_move_input(25.0, 50.0), &root, &mut mgr, &mut actions);
+    mgr.set_active(a);
+    mgr.drain_events();
+
+    // Drag to B — hot already updates.
+    simulate_mouse(&mouse_move_input(75.0, 50.0), &root, &mut mgr, &mut actions);
+    mgr.drain_events();
+    assert!(mgr.get_state(b).is_hot());
+    assert!(!mgr.get_state(a).is_hot());
+
+    // Release over B.
+    mgr.clear_active();
+    let events = mgr.drain_events();
+    // Only ActiveChanged events, no HotChanged (hot is already correct).
+    assert!(
+        hot_changed_events(&events).is_empty(),
+        "no deferred hot transition on release"
+    );
+    assert!(mgr.get_state(b).is_hot());
+}
+
+#[test]
+fn routing_captured_move_outside_all_bounds() {
+    let id = WidgetId::next();
+    let root = make_node(10.0, 10.0, 50.0, 50.0, Some(id));
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(id);
+    mgr.drain_events();
+    let mut actions = Vec::new();
+
+    // Hover, capture.
+    simulate_mouse(&mouse_move_input(25.0, 25.0), &root, &mut mgr, &mut actions);
+    mgr.set_active(id);
+    mgr.drain_events();
+
+    // Move outside all bounds → delivery still goes to captured widget.
+    let event = mouse_move_input(200.0, 200.0);
+    let hit = layout_hit_test_path(&root, Point::new(200.0, 200.0));
+    mgr.update_hot_path(&hit.widget_ids());
+    let events = mgr.drain_events();
+    plan_propagation(&event, &hit, mgr.active_widget(), &[], &mut actions);
+
+    assert!(delivers_to(&actions, id), "captured widget receives event");
+    // Hot changes: widget loses hot (pointer outside its bounds).
+    let hot = hot_changed_events(&events);
+    assert!(
+        hot.contains(&(id, false)),
+        "hot cleared when pointer leaves"
+    );
+}
+
+// ── Scroll routing ───────────────────────────────────────────────────
+
+#[test]
+fn routing_scroll_routes_to_hit_target() {
+    let (root, a, _b) = two_widget_tree();
+    let event = scroll_input(25.0, 50.0, -3.0);
+    let hit = layout_hit_test_path(&root, Point::new(25.0, 50.0));
+    let mut actions = Vec::new();
+
+    plan_propagation(&event, &hit, None, &[], &mut actions);
+    assert!(delivers_to(&actions, a), "scroll delivered to hit widget");
+}
+
+#[test]
+fn routing_scroll_uses_hit_path_during_capture() {
+    // Scroll always uses normal hit testing, even during capture.
+    let (root, a, b) = two_widget_tree();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(a);
+    mgr.register_widget(b);
+    mgr.set_active(a);
+
+    // Scroll over B while A is captured → scroll goes to B's hit path.
+    let event = scroll_input(75.0, 50.0, -3.0);
+    let hit = layout_hit_test_path(&root, Point::new(75.0, 50.0));
+    let mut actions = Vec::new();
+    plan_propagation(&event, &hit, mgr.active_widget(), &[], &mut actions);
+
+    assert!(
+        delivers_to(&actions, b),
+        "scroll uses hit path, not capture"
+    );
+    assert!(
+        !delivers_to(&actions, a),
+        "scroll does not go to captured widget"
+    );
+}
+
+// ── Rapid sequence ───────────────────────────────────────────────────
+
+#[test]
+fn routing_rapid_down_up_sequence() {
+    let id = WidgetId::next();
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(id);
+
+    // Rapid click: down, up, down, up.
+    mgr.set_active(id);
+    assert_eq!(mgr.active_widget(), Some(id));
+    mgr.clear_active();
+    assert_eq!(mgr.active_widget(), None);
+    mgr.set_active(id);
+    assert_eq!(mgr.active_widget(), Some(id));
+    mgr.clear_active();
+    assert_eq!(mgr.active_widget(), None);
+}
+
+// ── Move outside all bounds then cursor leave ────────────────────────
+
+#[test]
+fn routing_move_outside_all_then_leave() {
+    let id = WidgetId::next();
+    let root = make_node(10.0, 10.0, 50.0, 50.0, Some(id));
+    let mut mgr = InteractionManager::new();
+    mgr.register_widget(id);
+    mgr.drain_events();
+    let mut actions = Vec::new();
+
+    // Enter widget.
+    simulate_mouse(&mouse_move_input(30.0, 30.0), &root, &mut mgr, &mut actions);
+    assert!(mgr.get_state(id).is_hot());
+
+    // Move outside all widget bounds but still in window.
+    let events = simulate_mouse(&mouse_move_input(5.0, 5.0), &root, &mut mgr, &mut actions);
+    let hot = hot_changed_events(&events);
+    assert!(
+        hot.contains(&(id, false)),
+        "Leave when moving out of widget"
+    );
+    assert!(!mgr.get_state(id).is_hot());
+
+    // Cursor leaves window — no duplicate leave.
+    mgr.update_hot_path(&[]);
+    let events = mgr.drain_events();
+    assert!(hot_changed_events(&events).is_empty(), "no widget to leave");
+}
+
+#[test]
+fn modifiers_bitmask_operations() {
+    let ctrl_shift = Modifiers::CTRL_ONLY.union(Modifiers::SHIFT_ONLY);
+    assert!(ctrl_shift.ctrl());
+    assert!(ctrl_shift.shift());
+    assert!(!ctrl_shift.alt());
+    assert!(!ctrl_shift.logo());
+
+    assert_eq!(Modifiers::NONE, Modifiers::default());
+    assert!(!Modifiers::NONE.shift());
+}
+
+// ── Sense filtering ─────────────────────────────────────────────────
+
+#[test]
+fn hit_test_sense_none_skipped() {
+    let btn_id = WidgetId::next();
+    let label_id = WidgetId::next();
+
+    // Label (Sense::none) sits on top of button (Sense::click).
+    let button = make_node(0.0, 0.0, 100.0, 100.0, Some(btn_id));
+    let mut label = make_node(0.0, 0.0, 100.0, 100.0, Some(label_id));
+    label.sense = Sense::none();
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+    )
+    .with_children(vec![button, label]);
+
+    // Label is last child (frontmost) but has Sense::none — button should win.
+    let hit = layout_hit_test(&root, Point::new(50.0, 50.0));
+    assert_eq!(hit, Some(btn_id));
+}
+
+#[test]
+fn hit_test_disabled_widget_skipped() {
+    let btn_id = WidgetId::next();
+    let disabled_id = WidgetId::next();
+
+    let button = make_node(0.0, 0.0, 100.0, 100.0, Some(btn_id));
+    let mut disabled = make_node(0.0, 0.0, 100.0, 100.0, Some(disabled_id));
+    disabled.disabled = true;
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+    )
+    .with_children(vec![button, disabled]);
+
+    // Disabled widget on top — button behind should receive the hit.
+    let hit = layout_hit_test(&root, Point::new(50.0, 50.0));
+    assert_eq!(hit, Some(btn_id));
+}
+
+// ── interact_radius ─────────────────────────────────────────────────
+
+#[test]
+fn hit_test_interact_radius_expands_hit_area() {
+    let id = WidgetId::next();
+    let mut node = make_node(50.0, 50.0, 10.0, 10.0, Some(id));
+    node.interact_radius = 5.0;
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+    )
+    .with_children(vec![node]);
+
+    // Point outside the 10x10 widget but within 5px interact radius.
+    let hit = layout_hit_test(&root, Point::new(48.0, 55.0));
+    assert_eq!(hit, Some(id));
+}
+
+#[test]
+fn hit_test_interact_radius_tie_breaking() {
+    let left_id = WidgetId::next();
+    let right_id = WidgetId::next();
+
+    let mut left = make_node(10.0, 10.0, 10.0, 10.0, Some(left_id));
+    left.interact_radius = 10.0;
+    let mut right = make_node(30.0, 10.0, 10.0, 10.0, Some(right_id));
+    right.interact_radius = 10.0;
+
+    let root = LayoutNode::new(
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+        Rect::new(0.0, 0.0, 200.0, 200.0),
+    )
+    .with_children(vec![left, right]);
+
+    // Point closer to left's center (15, 15) than right's center (35, 15).
+    let hit = layout_hit_test(&root, Point::new(20.0, 15.0));
+    assert_eq!(hit, Some(left_id));
+
+    // Point closer to right's center.
+    let hit = layout_hit_test(&root, Point::new(30.0, 15.0));
+    assert_eq!(hit, Some(right_id));
+}
+
+// ── HitTestBehavior ─────────────────────────────────────────────────
+
+#[test]
+fn hit_test_opaque_blocks_children() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    let child = make_node(10.0, 10.0, 80.0, 80.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.hit_test_behavior = HitTestBehavior::Opaque;
+    parent.children = vec![child];
+
+    // Parent is opaque — child should NOT appear in hit test.
+    let hit = layout_hit_test(&parent, Point::new(50.0, 50.0));
+    assert_eq!(hit, Some(parent_id));
+}
+
+#[test]
+fn hit_test_translucent_includes_parent_and_child() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+
+    let child = make_node(10.0, 10.0, 80.0, 80.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.hit_test_behavior = HitTestBehavior::Translucent;
+    parent.children = vec![child];
+
+    // Translucent — both parent and child should be in the path.
+    let result = layout_hit_test_path(&parent, Point::new(50.0, 50.0));
+    assert_eq!(result.widget_ids(), vec![parent_id, child_id]);
 }
 
 // ── Chromium-Inspired Edge Cases ─────────────────────────────────────
@@ -542,186 +820,623 @@ fn hit_test_no_id_middle_layer_falls_through() {
     );
 }
 
+// ── Clip ─────────────────────────────────────────────────────────────
+
 #[test]
-fn routing_no_hover_change_while_captured() {
-    // Chromium pattern: suppress hover transitions during capture.
-    let (root, a, _b) = two_widget_tree();
-    let mut state = InputState::new();
+fn hit_test_clip_prevents_child_outside_bounds() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
 
-    // Hover A, then capture A.
-    state.process_mouse_event(mouse_move(25.0, 50.0), &root);
-    state.process_mouse_event(mouse_down(25.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), Some(a));
-    assert_eq!(state.hovered(), Some(a));
+    // Child extends beyond parent's rect.
+    let child = make_node(80.0, 0.0, 50.0, 50.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.clip = true;
+    parent.children = vec![child];
 
-    // Move over B while captured → NO hover Leave(A)/Enter(B).
-    let actions = state.process_mouse_event(mouse_move(75.0, 50.0), &root);
-    assert_eq!(hover_count(&actions), 0, "hover suppressed during capture");
-    assert_eq!(state.hovered(), Some(a), "hovered frozen during capture");
-    assert!(delivers_to(&actions, a), "captured widget receives event");
+    // Point at (110, 25) is inside child but outside parent's clip.
+    let hit = layout_hit_test(&parent, Point::new(110.0, 25.0));
+    assert_eq!(hit, None);
+
+    // Point at (90, 25) is inside child AND inside parent's clip.
+    let hit = layout_hit_test(&parent, Point::new(90.0, 25.0));
+    assert_eq!(hit, Some(child_id));
+}
+
+// ── InputEvent from/to roundtrips ────────────────────────────────────
+
+use super::event::{Key, KeyEvent, MouseEvent, MouseEventKind};
+
+#[test]
+fn from_mouse_event_roundtrip_down() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(10.0, 20.0),
+        modifiers: Modifiers::CTRL_ONLY,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
 }
 
 #[test]
-fn routing_capture_release_restores_hover() {
-    // After mouseup releases capture, hover should update to the widget
-    // under the cursor (which may have changed during the drag).
-    let (root, a, b) = two_widget_tree();
-    let mut state = InputState::new();
-
-    // Hover A, capture A.
-    state.process_mouse_event(mouse_move(25.0, 50.0), &root);
-    state.process_mouse_event(mouse_down(25.0, 50.0, MouseButton::Left), &root);
-
-    // Drag to B.
-    state.process_mouse_event(mouse_move(75.0, 50.0), &root);
-    assert_eq!(state.hovered(), Some(a), "still frozen");
-
-    // Release over B → hover transitions fire: Leave(A), Enter(B).
-    let actions = state.process_mouse_event(mouse_up(75.0, 50.0, MouseButton::Left), &root);
-    assert!(
-        actions.contains(&RouteAction::Hover {
-            target: a,
-            kind: HoverEvent::Leave,
-        }),
-        "Leave(A) on capture release"
-    );
-    assert!(
-        actions.contains(&RouteAction::Hover {
-            target: b,
-            kind: HoverEvent::Enter,
-        }),
-        "Enter(B) on capture release"
-    );
-    assert_eq!(state.hovered(), Some(b));
-    assert_eq!(state.captured(), None);
+fn from_mouse_event_roundtrip_up() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Right),
+        pos: Point::new(5.0, 15.0),
+        modifiers: Modifiers::NONE,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
 }
 
 #[test]
-fn routing_captured_move_outside_all_bounds() {
+fn from_mouse_event_roundtrip_move() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Move,
+        pos: Point::new(30.0, 40.0),
+        modifiers: Modifiers::SHIFT_ONLY,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
+}
+
+#[test]
+fn from_mouse_event_roundtrip_scroll() {
+    let mouse = MouseEvent {
+        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -3.0 }),
+        pos: Point::new(50.0, 60.0),
+        modifiers: Modifiers::ALT_ONLY,
+    };
+    let input = InputEvent::from_mouse_event(&mouse);
+    let back = input.to_mouse_event().expect("should convert back");
+    assert_eq!(back, mouse);
+}
+
+#[test]
+fn from_key_event_produces_key_down() {
+    let key = KeyEvent {
+        key: Key::Enter,
+        modifiers: Modifiers::CTRL_ONLY,
+    };
+    let input = InputEvent::from_key_event(key);
+    assert_eq!(
+        input,
+        InputEvent::KeyDown {
+            key: Key::Enter,
+            modifiers: Modifiers::CTRL_ONLY,
+        }
+    );
+    // Round-trips back to KeyEvent.
+    let back = input.to_key_event().expect("should convert back");
+    assert_eq!(back, key);
+}
+
+// ── Scroll offset hit testing ─────────────────────────────────────────
+
+#[test]
+fn hit_test_with_content_offset_translates_point() {
+    // Simulate a scroll container (200px tall viewport) with a child
+    // button at y=300 in content space. After scrolling down 250px,
+    // the button is visually at y=50 in the viewport.
+    let btn_id = WidgetId::next();
+    let scroll_id = WidgetId::next();
+
+    let button = make_node(0.0, 300.0, 200.0, 40.0, Some(btn_id));
+
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        // Scrolled down 250px: content_offset = (0, -250).
+        content_offset: (0.0, -250.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    };
+
+    // Click at y=50 in viewport → should hit button at y=300 in content
+    // because the scroll offset translates the point.
+    let result = layout_hit_test(&scroll, Point::new(100.0, 50.0));
+    assert_eq!(
+        result,
+        Some(btn_id),
+        "should hit button through scroll offset"
+    );
+}
+
+#[test]
+fn hit_test_with_content_offset_misses_outside_clip() {
+    // Button at y=300, scroll offset 50px → button visually at y=250,
+    // which is outside the 200px viewport.
+    let btn_id = WidgetId::next();
+    let scroll_id = WidgetId::next();
+
+    let button = make_node(0.0, 300.0, 200.0, 40.0, Some(btn_id));
+
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, -50.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    };
+
+    // Click at y=50 → adjusted to y=100 in content space.
+    // Button is at y=300..340, so this should miss.
+    let result = layout_hit_test(&scroll, Point::new(100.0, 50.0));
+    assert_eq!(
+        result,
+        Some(scroll_id),
+        "should hit scroll container, not button"
+    );
+}
+
+#[test]
+fn hit_test_path_with_content_offset() {
+    let btn_id = WidgetId::next();
+    let scroll_id = WidgetId::next();
+
+    let button = make_node(0.0, 300.0, 200.0, 40.0, Some(btn_id));
+
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, -250.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    };
+
+    // Click at y=50 → should produce path [scroll, button].
+    let result = layout_hit_test_path(&scroll, Point::new(100.0, 50.0));
+    assert_eq!(result.path.len(), 2);
+    assert_eq!(result.path[0].widget_id, scroll_id);
+    assert_eq!(result.path[1].widget_id, btn_id);
+
+    // Button bounds should be in viewport space, not content space.
+    // Content-space y=300, content_offset=(0,-250) → viewport y=50.
+    let btn_bounds = result.path[1].bounds;
+    assert!(
+        (btn_bounds.y() - 50.0).abs() < f32::EPSILON,
+        "button bounds should be in viewport space (y=50), got y={}",
+        btn_bounds.y()
+    );
+}
+
+/// Helper: builds a scroll container with N children evenly spaced.
+fn scroll_with_children(
+    scroll_id: WidgetId,
+    children: Vec<(WidgetId, f32, f32)>, // (id, y, height)
+    viewport_h: f32,
+    offset_y: f32,
+) -> LayoutNode {
+    let rect = Rect::new(0.0, 0.0, 200.0, viewport_h);
+    let child_nodes = children
+        .into_iter()
+        .map(|(id, y, h)| make_node(0.0, y, 200.0, h, Some(id)))
+        .collect();
+    LayoutNode {
+        rect,
+        content_rect: rect,
+        children: child_nodes,
+        widget_id: Some(scroll_id),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, offset_y),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    }
+}
+
+#[test]
+fn scroll_zero_offset_is_identity() {
+    // No scroll: content_offset = (0, 0). Child at y=50 hit at y=50.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 50.0, 40.0)], 200.0, 0.0);
+
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 70.0)), Some(btn));
+    let path = layout_hit_test_path(&scroll, Point::new(100.0, 70.0));
+    assert_eq!(path.path.len(), 2);
+    // Bounds unchanged when offset is zero.
+    assert!((path.path[1].bounds.y() - 50.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_multiple_children_hit_correct_one() {
+    // Three buttons at y=0, 100, 200 in content space.
+    // Scroll offset -150 → visible content y=150..350.
+    // Button B (y=200) is at viewport y=50; button C (y=300 if existed) not present.
+    let a = WidgetId::next();
+    let b = WidgetId::next();
+    let c = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(
+        scr,
+        vec![(a, 0.0, 40.0), (b, 100.0, 40.0), (c, 200.0, 40.0)],
+        200.0,
+        -150.0,
+    );
+
+    // y=10 in viewport → content y=160. Button B is at 100..140 → miss.
+    // Button A at 0..40 → miss. Button C at 200..240 → miss.
+    // Hits scroll container only.
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 10.0)), Some(scr));
+
+    // y=60 in viewport → content y=210. Button C at 200..240 → hit!
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 60.0)), Some(c));
+
+    // Verify bounds are in viewport space.
+    let path = layout_hit_test_path(&scroll, Point::new(100.0, 60.0));
+    let c_bounds = path.path.last().unwrap().bounds;
+    assert!(
+        (c_bounds.y() - 50.0).abs() < f32::EPSILON,
+        "button C bounds should be viewport y=50, got {}",
+        c_bounds.y()
+    );
+}
+
+#[test]
+fn scroll_child_above_viewport_not_hittable() {
+    // Button at y=0 in content, scroll offset -100. Button at viewport y=-100.
+    // Clipped: not hittable.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 0.0, 40.0)], 200.0, -100.0);
+
+    // Click in the viewport — button is above, only scroll container is hit.
+    assert_eq!(layout_hit_test(&scroll, Point::new(100.0, 50.0)), Some(scr));
+}
+
+#[test]
+fn scroll_child_below_viewport_not_hittable() {
+    // Button at y=500 in content, scroll offset -100. Button at viewport y=400.
+    // Viewport is 200px tall, so button is below — clipped.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 500.0, 40.0)], 200.0, -100.0);
+
+    assert_eq!(
+        layout_hit_test(&scroll, Point::new(100.0, 150.0)),
+        Some(scr)
+    );
+}
+
+#[test]
+fn scroll_child_partially_visible_still_hittable() {
+    // Button at y=180 in content (height 40), scroll offset 0.
+    // Button spans y=180..220 but viewport is 0..200.
+    // Top 20px visible. Click at y=190 should hit.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![(btn, 180.0, 40.0)], 200.0, 0.0);
+
+    assert_eq!(
+        layout_hit_test(&scroll, Point::new(100.0, 190.0)),
+        Some(btn)
+    );
+}
+
+#[test]
+fn scroll_horizontal_offset() {
+    // Horizontal scroll: content_offset.x = -100.
+    // Button at x=150 in content → viewport x=50.
+    let btn = WidgetId::next();
+    let scr = WidgetId::next();
+    let rect = Rect::new(0.0, 0.0, 200.0, 200.0);
+    let button = make_node(150.0, 0.0, 40.0, 200.0, Some(btn));
+    let scroll = LayoutNode {
+        rect,
+        content_rect: rect,
+        children: vec![button],
+        widget_id: Some(scr),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (-100.0, 0.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    };
+
+    // Click at viewport x=50 → content x=150 → hits button.
+    assert_eq!(layout_hit_test(&scroll, Point::new(50.0, 100.0)), Some(btn));
+
+    // Verify bounds translated to viewport space.
+    let path = layout_hit_test_path(&scroll, Point::new(50.0, 100.0));
+    let b = path.path.last().unwrap().bounds;
+    assert!(
+        (b.x() - 50.0).abs() < f32::EPSILON,
+        "button x should be 50 in viewport, got {}",
+        b.x()
+    );
+}
+
+#[test]
+fn scroll_container_itself_always_hittable() {
+    // Even with large scroll offset, clicking anywhere in the viewport
+    // should at least hit the scroll container.
+    let scr = WidgetId::next();
+    let scroll = scroll_with_children(scr, vec![], 200.0, -99999.0);
+
+    assert_eq!(
+        layout_hit_test(&scroll, Point::new(100.0, 100.0)),
+        Some(scr)
+    );
+}
+
+#[test]
+fn scroll_path_bounds_all_in_viewport_space() {
+    // Deep path: scroll → container → button.
+    // Verify ALL entries have viewport-space bounds.
+    let btn = WidgetId::next();
+    let ctr = WidgetId::next();
+    let scr = WidgetId::next();
+
+    let button = make_node(10.0, 400.0, 180.0, 30.0, Some(btn));
+    let container = LayoutNode {
+        rect: Rect::new(0.0, 380.0, 200.0, 70.0),
+        content_rect: Rect::new(0.0, 380.0, 200.0, 70.0),
+        children: vec![button],
+        widget_id: Some(ctr),
+        sense: Sense::all(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: false,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, 0.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    };
+    let scroll = LayoutNode {
+        rect: Rect::new(0.0, 0.0, 200.0, 200.0),
+        content_rect: Rect::new(0.0, 0.0, 200.0, 200.0),
+        children: vec![container],
+        widget_id: Some(scr),
+        sense: Sense::hover(),
+        hit_test_behavior: HitTestBehavior::default(),
+        clip: true,
+        disabled: false,
+        interact_radius: 0.0,
+        content_offset: (0.0, -350.0),
+        pointer_events: true,
+        cursor_icon: CursorIcon::Default,
+    };
+
+    // Click at viewport y=60 → content y=410 → button at 400..430 → hit.
+    let path = layout_hit_test_path(&scroll, Point::new(100.0, 60.0));
+    assert_eq!(path.path.len(), 3, "should hit scroll, container, button");
+
+    // Scroll bounds: unchanged (viewport space).
+    assert!((path.path[0].bounds.y() - 0.0).abs() < f32::EPSILON);
+    // Container bounds: content y=380, offset -350 → viewport y=30.
+    assert!(
+        (path.path[1].bounds.y() - 30.0).abs() < f32::EPSILON,
+        "container viewport y should be 30, got {}",
+        path.path[1].bounds.y()
+    );
+    // Button bounds: content y=400, offset -350 → viewport y=50.
+    assert!(
+        (path.path[2].bounds.y() - 50.0).abs() < f32::EPSILON,
+        "button viewport y should be 50, got {}",
+        path.path[2].bounds.y()
+    );
+}
+
+// ── pointer_events tests ─────────────────────────────────────────────
+
+#[test]
+fn pointer_events_false_blocks_hit_test() {
+    let btn = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 50.0, Some(btn));
+    node.pointer_events = false;
+
+    assert_eq!(layout_hit_test(&node, Point::new(50.0, 25.0)), None);
+    assert!(layout_hit_test_path(&node, Point::new(50.0, 25.0)).is_empty());
+}
+
+#[test]
+fn pointer_events_false_blocks_subtree() {
+    let parent_id = WidgetId::next();
+    let child_id = WidgetId::next();
+    let child = make_node(10.0, 10.0, 30.0, 30.0, Some(child_id));
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.children.push(child);
+    parent.pointer_events = false;
+
+    // Neither parent nor child should be hit.
+    assert_eq!(layout_hit_test(&parent, Point::new(20.0, 20.0)), None);
+}
+
+#[test]
+fn pointer_events_true_by_default() {
+    let node = make_node(0.0, 0.0, 100.0, 50.0, Some(WidgetId::next()));
+    assert!(node.pointer_events, "pointer_events should default to true");
+}
+
+#[test]
+fn pointer_events_false_preserves_layout_geometry() {
+    // Verify that pointer_events=false doesn't affect the node's rect or children.
+    let child_id = WidgetId::next();
+    let child = make_node(10.0, 10.0, 30.0, 30.0, Some(child_id));
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, None);
+    node.children.push(child);
+    node.pointer_events = false;
+
+    // Geometry is unchanged.
+    assert_eq!(node.rect.width(), 100.0);
+    assert_eq!(node.children[0].rect.width(), 30.0);
+    assert_eq!(node.children[0].widget_id, Some(child_id));
+}
+
+// ── Cursor icon tests ────────────────────────────────────────────────
+
+#[test]
+fn hit_entry_carries_cursor_icon() {
     let id = WidgetId::next();
-    let root = make_node(10.0, 10.0, 50.0, 50.0, Some(id));
-    let mut state = InputState::new();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.cursor_icon = CursorIcon::Pointer;
 
-    // Hover, capture.
-    state.process_mouse_event(mouse_move(25.0, 25.0), &root);
-    state.process_mouse_event(mouse_down(25.0, 25.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), Some(id));
-
-    // Move outside all bounds → still delivered to captured widget.
-    let actions = state.process_mouse_event(mouse_move(200.0, 200.0), &root);
-    assert!(
-        delivers_to(&actions, id),
-        "captured widget receives even outside bounds"
-    );
-    assert_eq!(hover_count(&actions), 0, "no hover change while captured");
+    let hit = layout_hit_test_path(&node, Point::new(50.0, 50.0));
+    assert_eq!(hit.path.last().unwrap().cursor_icon, CursorIcon::Pointer);
 }
 
 #[test]
-fn routing_scroll_routes_to_hovered() {
-    let (root, a, _b) = two_widget_tree();
-    let mut state = InputState::new();
-
-    // Hover A.
-    state.process_mouse_event(mouse_move(25.0, 50.0), &root);
-
-    // Scroll on A.
-    let actions = state.process_mouse_event(mouse_scroll(25.0, 50.0, -3.0), &root);
-    assert!(
-        delivers_to(&actions, a),
-        "scroll delivered to hovered widget"
-    );
-    // Scroll should not capture.
-    assert_eq!(state.captured(), None, "scroll does not set capture");
-}
-
-#[test]
-fn routing_scroll_routes_to_captured() {
-    let (root, a, _b) = two_widget_tree();
-    let mut state = InputState::new();
-
-    // Hover A, capture A.
-    state.process_mouse_event(mouse_move(25.0, 50.0), &root);
-    state.process_mouse_event(mouse_down(25.0, 50.0, MouseButton::Left), &root);
-
-    // Scroll over B while A is captured → delivered to A.
-    let actions = state.process_mouse_event(mouse_scroll(75.0, 50.0, -3.0), &root);
-    assert!(delivers_to(&actions, a), "scroll goes to captured widget");
-}
-
-#[test]
-fn routing_rapid_down_up_sequence() {
+fn hit_entry_cursor_default_for_no_cursor_widget() {
     let id = WidgetId::next();
-    let root = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
-    let mut state = InputState::new();
+    let node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
 
-    // Hover.
-    state.process_mouse_event(mouse_move(50.0, 50.0), &root);
-
-    // Rapid click: down, up, down, up.
-    state.process_mouse_event(mouse_down(50.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), Some(id));
-    state.process_mouse_event(mouse_up(50.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), None);
-    state.process_mouse_event(mouse_down(50.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), Some(id));
-    state.process_mouse_event(mouse_up(50.0, 50.0, MouseButton::Left), &root);
-    assert_eq!(state.captured(), None);
-
-    // Hover should still be correct.
-    assert_eq!(state.hovered(), Some(id));
+    let hit = layout_hit_test_path(&node, Point::new(50.0, 50.0));
+    assert_eq!(hit.path.last().unwrap().cursor_icon, CursorIcon::Default);
 }
 
 #[test]
-fn routing_move_outside_all_then_leave() {
-    // Move to widget, then move outside all bounds (still in window),
-    // then cursor leaves window.
+fn hit_path_nested_cursor_leaf_wins() {
+    let child_id = WidgetId::next();
+    let mut child = make_node(10.0, 10.0, 30.0, 30.0, Some(child_id));
+    child.cursor_icon = CursorIcon::Pointer;
+
+    let parent_id = WidgetId::next();
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, Some(parent_id));
+    parent.children.push(child);
+
+    let hit = layout_hit_test_path(&parent, Point::new(20.0, 20.0));
+    assert_eq!(hit.path.last().unwrap().cursor_icon, CursorIcon::Pointer);
+    assert_eq!(hit.path.first().unwrap().cursor_icon, CursorIcon::Default);
+}
+
+#[test]
+fn disabled_scan_hits_disabled_pointer_node() {
     let id = WidgetId::next();
-    let root = make_node(10.0, 10.0, 50.0, 50.0, Some(id));
-    let mut state = InputState::new();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.disabled = true;
+    node.cursor_icon = CursorIcon::Pointer;
 
-    // Enter widget.
-    state.process_mouse_event(mouse_move(30.0, 30.0), &root);
-    assert_eq!(state.hovered(), Some(id));
-
-    // Move outside all widget bounds but still in window.
-    let actions = state.process_mouse_event(mouse_move(5.0, 5.0), &root);
-    assert!(
-        actions.contains(&RouteAction::Hover {
-            target: id,
-            kind: HoverEvent::Leave,
-        }),
-        "Leave when moving out of widget"
-    );
-    assert_eq!(state.hovered(), None);
-
-    // Cursor leaves window — no duplicate leave.
-    let actions = state.process_cursor_left();
-    assert_eq!(hover_count(&actions), 0, "no widget to leave");
+    assert!(layout_hit_test_disabled_at(&node, Point::new(50.0, 50.0)));
 }
 
 #[test]
-fn routing_cursor_pos_always_latest() {
-    let root = make_node(0.0, 0.0, 100.0, 100.0, None);
-    let mut state = InputState::new();
+fn disabled_scan_misses_outside_point() {
+    let id = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.disabled = true;
+    node.cursor_icon = CursorIcon::Pointer;
 
-    state.process_mouse_event(mouse_move(10.0, 20.0), &root);
-    assert_eq!(state.cursor_pos(), Some(Point::new(10.0, 20.0)));
-
-    state.process_mouse_event(mouse_move(50.0, 60.0), &root);
-    assert_eq!(state.cursor_pos(), Some(Point::new(50.0, 60.0)));
-
-    state.process_cursor_left();
-    assert_eq!(state.cursor_pos(), None);
+    assert!(!layout_hit_test_disabled_at(
+        &node,
+        Point::new(150.0, 150.0)
+    ));
 }
 
 #[test]
-fn modifiers_bitmask_operations() {
-    let ctrl_shift = Modifiers::CTRL_ONLY.union(Modifiers::SHIFT_ONLY);
-    assert!(ctrl_shift.ctrl());
-    assert!(ctrl_shift.shift());
-    assert!(!ctrl_shift.alt());
-    assert!(!ctrl_shift.logo());
+fn disabled_scan_ignores_default_cursor() {
+    let id = WidgetId::next();
+    let mut node = make_node(0.0, 0.0, 100.0, 100.0, Some(id));
+    node.disabled = true;
+    // cursor_icon is Default — non-interactive disabled container.
 
-    assert_eq!(Modifiers::NONE, Modifiers::default());
-    assert!(!Modifiers::NONE.shift());
+    assert!(!layout_hit_test_disabled_at(&node, Point::new(50.0, 50.0)));
+}
+
+#[test]
+fn disabled_scan_skips_pointer_events_false() {
+    let id = WidgetId::next();
+    let mut child = make_node(10.0, 10.0, 30.0, 30.0, Some(id));
+    child.disabled = true;
+    child.cursor_icon = CursorIcon::Pointer;
+    child.pointer_events = false;
+
+    let mut parent = make_node(0.0, 0.0, 100.0, 100.0, None);
+    parent.children.push(child);
+
+    assert!(!layout_hit_test_disabled_at(
+        &parent,
+        Point::new(20.0, 20.0)
+    ));
+}
+
+#[test]
+fn disabled_scan_respects_content_offset() {
+    // Child in content space at (10, 110)-(40, 140).
+    let id = WidgetId::next();
+    let mut child = make_node(10.0, 110.0, 30.0, 30.0, Some(id));
+    child.disabled = true;
+    child.cursor_icon = CursorIcon::Pointer;
+
+    // Scrolled 100px down: content_offset = (0, -100).
+    // Viewport point.y is translated: child_point.y = point.y - (-100) = point.y + 100.
+    // So viewport y=20 maps to content y=120, hitting the child.
+    let mut parent = make_node(0.0, 0.0, 200.0, 200.0, None);
+    parent.content_offset = (0.0, -100.0);
+    parent.children.push(child);
+
+    // Point (20, 20) → content (20, 120) → inside child (10,110)-(40,140).
+    assert!(layout_hit_test_disabled_at(&parent, Point::new(20.0, 20.0)));
+    // Point (20, 150) → content (20, 250) → outside child.
+    assert!(!layout_hit_test_disabled_at(
+        &parent,
+        Point::new(20.0, 150.0)
+    ));
+}
+
+#[test]
+fn disabled_scan_respects_interact_radius() {
+    let id = WidgetId::next();
+    let mut node = make_node(50.0, 50.0, 20.0, 20.0, Some(id));
+    node.disabled = true;
+    node.cursor_icon = CursorIcon::Pointer;
+    node.interact_radius = 8.0;
+
+    // Point (45, 55) is outside the 20x20 rect but within the 8px radius.
+    assert!(layout_hit_test_disabled_at(&node, Point::new(45.0, 55.0)));
+    // Point (40, 55) is outside even the expanded area.
+    assert!(!layout_hit_test_disabled_at(&node, Point::new(40.0, 55.0)));
+}
+
+#[test]
+fn disabled_scan_respects_clip() {
+    let id = WidgetId::next();
+    let mut child = make_node(10.0, 10.0, 30.0, 30.0, Some(id));
+    child.disabled = true;
+    child.cursor_icon = CursorIcon::Pointer;
+
+    let mut parent = make_node(0.0, 0.0, 20.0, 20.0, None);
+    parent.clip = true;
+    parent.children.push(child);
+
+    // Child at (10,10)-(40,40) but parent clips to (0,0)-(20,20).
+    // Point (15,15) is inside both parent clip and child rect.
+    assert!(layout_hit_test_disabled_at(&parent, Point::new(15.0, 15.0)));
+    // Point (25,25) is inside child but outside parent clip rect.
+    assert!(!layout_hit_test_disabled_at(
+        &parent,
+        Point::new(25.0, 25.0)
+    ));
 }

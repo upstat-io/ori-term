@@ -876,12 +876,15 @@ fn assert_content_rect_invariant(node: &super::LayoutNode, padding: Insets, path
 fn walk_invariant(node: &super::LayoutNode, layout_box: &LayoutBox, path: &str) {
     assert_content_rect_invariant(node, layout_box.padding, path);
 
-    if let super::BoxContent::Flex { children, .. } = &layout_box.content {
-        for (idx, (child_node, child_box)) in node.children.iter().zip(children.iter()).enumerate()
-        {
-            let child_path = format!("{path}[{idx}]");
-            walk_invariant(child_node, child_box, &child_path);
+    let children = match &layout_box.content {
+        super::BoxContent::Flex { children, .. } | super::BoxContent::Grid { children, .. } => {
+            children
         }
+        super::BoxContent::Leaf { .. } => return,
+    };
+    for (idx, (child_node, child_box)) in node.children.iter().zip(children.iter()).enumerate() {
+        let child_path = format!("{path}[{idx}]");
+        walk_invariant(child_node, child_box, &child_path);
     }
 }
 
@@ -1113,4 +1116,157 @@ fn nested_flex_align_center_children_offset_correctly() {
     assert_approx(col_node.children[0].rect.y(), 270.0, "grandchild0 y");
     // Second grandchild at y = 270 + 30 = 300.
     assert_approx(col_node.children[1].rect.y(), 300.0, "grandchild1 y");
+}
+
+// ── Grid layout ──
+
+#[test]
+fn grid_auto_fill_6_items_2_columns() {
+    // 6 items at AutoFill(240px) in 600px → 2 columns, 3 rows.
+    let grid = LayoutBox::grid(
+        super::GridColumns::AutoFill { min_width: 240.0 },
+        vec![
+            LayoutBox::leaf(100.0, 40.0),
+            LayoutBox::leaf(100.0, 60.0),
+            LayoutBox::leaf(100.0, 30.0),
+            LayoutBox::leaf(100.0, 50.0),
+            LayoutBox::leaf(100.0, 20.0),
+            LayoutBox::leaf(100.0, 45.0),
+        ],
+    )
+    .with_width(SizeSpec::Fixed(600.0));
+
+    let node = compute_layout(&grid, viewport(600.0, 800.0));
+    assert_eq!(node.children.len(), 6);
+
+    // 2 columns → column width = 300.
+    let col_w = 300.0;
+    // Row 0: items 0,1 — height = max(40, 60) = 60.
+    assert_approx(node.children[0].rect.x(), 0.0, "item0 x");
+    assert_approx(node.children[1].rect.x(), col_w, "item1 x");
+    assert_approx(node.children[0].rect.y(), 0.0, "item0 y");
+    assert_approx(node.children[1].rect.y(), 0.0, "item1 y");
+
+    // Row 1: items 2,3 — y = 60.
+    assert_approx(node.children[2].rect.y(), 60.0, "item2 y");
+    assert_approx(node.children[3].rect.y(), 60.0, "item3 y");
+    assert_approx(node.children[2].rect.x(), 0.0, "item2 x");
+    assert_approx(node.children[3].rect.x(), col_w, "item3 x");
+
+    // Row 2: items 4,5 — y = 60 + max(30,50) = 110.
+    assert_approx(node.children[4].rect.y(), 110.0, "item4 y");
+    assert_approx(node.children[5].rect.y(), 110.0, "item5 y");
+
+    // Total height = 60 + 50 + 45 = 155.
+    assert_approx(node.rect.height(), 155.0, "grid height");
+}
+
+#[test]
+fn grid_empty_children_zero_height() {
+    let grid = LayoutBox::grid(super::GridColumns::AutoFill { min_width: 100.0 }, vec![])
+        .with_width(SizeSpec::Fixed(400.0));
+
+    let node = compute_layout(&grid, viewport(400.0, 600.0));
+    assert_eq!(node.children.len(), 0);
+    assert_approx(node.rect.height(), 0.0, "empty grid height");
+}
+
+#[test]
+fn grid_single_child_full_width() {
+    let grid = LayoutBox::grid(
+        super::GridColumns::AutoFill { min_width: 100.0 },
+        vec![LayoutBox::leaf(50.0, 30.0)],
+    )
+    .with_width(SizeSpec::Fixed(400.0));
+
+    let node = compute_layout(&grid, viewport(400.0, 600.0));
+    assert_eq!(node.children.len(), 1);
+    // AutoFill(100) in 400px → 4 columns. Single child at col 0.
+    assert_approx(node.children[0].rect.x(), 0.0, "child x");
+    assert_approx(node.children[0].rect.y(), 0.0, "child y");
+    assert_approx(node.rect.height(), 30.0, "grid height");
+}
+
+#[test]
+fn grid_auto_fill_min_width_exceeds_available() {
+    // min_width > available_width → 1 column.
+    let grid = LayoutBox::grid(
+        super::GridColumns::AutoFill { min_width: 500.0 },
+        vec![LayoutBox::leaf(100.0, 40.0), LayoutBox::leaf(100.0, 60.0)],
+    )
+    .with_width(SizeSpec::Fixed(300.0));
+
+    let node = compute_layout(&grid, viewport(300.0, 600.0));
+    assert_eq!(node.children.len(), 2);
+    // 1 column → 2 rows.
+    assert_approx(node.children[0].rect.y(), 0.0, "item0 y");
+    assert_approx(node.children[1].rect.y(), 40.0, "item1 y");
+    assert_approx(node.rect.height(), 100.0, "grid height");
+}
+
+#[test]
+fn grid_fixed_3_columns_9_items() {
+    let items: Vec<LayoutBox> = (0..9).map(|_| LayoutBox::leaf(80.0, 30.0)).collect();
+    let grid =
+        LayoutBox::grid(super::GridColumns::Fixed(3), items).with_width(SizeSpec::Fixed(300.0));
+
+    let node = compute_layout(&grid, viewport(300.0, 600.0));
+    assert_eq!(node.children.len(), 9);
+    // 3 columns, 3 rows. Column width = 100.
+    let col_w = 100.0;
+    for row in 0..3 {
+        for col in 0..3 {
+            let idx = row * 3 + col;
+            assert_approx(
+                node.children[idx].rect.x(),
+                col as f32 * col_w,
+                &format!("item{idx} x"),
+            );
+            assert_approx(
+                node.children[idx].rect.y(),
+                row as f32 * 30.0,
+                &format!("item{idx} y"),
+            );
+        }
+    }
+    assert_approx(node.rect.height(), 90.0, "grid height");
+}
+
+#[test]
+fn grid_with_gaps() {
+    let grid = LayoutBox::grid(
+        super::GridColumns::Fixed(2),
+        vec![
+            LayoutBox::leaf(100.0, 40.0),
+            LayoutBox::leaf(100.0, 40.0),
+            LayoutBox::leaf(100.0, 40.0),
+            LayoutBox::leaf(100.0, 40.0),
+        ],
+    )
+    .with_width(SizeSpec::Fixed(300.0))
+    .with_row_gap(10.0)
+    .with_column_gap(20.0);
+
+    let node = compute_layout(&grid, viewport(300.0, 600.0));
+    // Column width = (300 - 20) / 2 = 140.
+    let col_w = 140.0;
+    assert_approx(node.children[0].rect.x(), 0.0, "item0 x");
+    assert_approx(node.children[1].rect.x(), col_w + 20.0, "item1 x");
+    assert_approx(node.children[2].rect.y(), 50.0, "item2 y (40+10 gap)");
+    assert_approx(node.rect.height(), 90.0, "grid height (40+10+40)");
+}
+
+#[test]
+fn grid_content_rect_invariant() {
+    use crate::geometry::Insets;
+
+    let grid = LayoutBox::grid(
+        super::GridColumns::Fixed(2),
+        vec![LayoutBox::leaf(50.0, 30.0), LayoutBox::leaf(50.0, 30.0)],
+    )
+    .with_width(SizeSpec::Fixed(200.0))
+    .with_padding(Insets::all(8.0));
+
+    let node = compute_layout(&grid, viewport(200.0, 200.0));
+    walk_invariant(&node, &grid, "grid_root");
 }

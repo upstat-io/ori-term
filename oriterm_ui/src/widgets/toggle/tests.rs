@@ -1,54 +1,19 @@
-use std::time::{Duration, Instant};
+use winit::window::CursorIcon;
 
-use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{CaptureRequest, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{LayoutCtx, Widget};
 
 use super::{ToggleStyle, ToggleWidget};
 
-static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
-
-fn event_ctx() -> EventCtx<'static> {
-    EventCtx {
-        measurer: &MEASURER,
-        bounds: Rect::new(0.0, 0.0, 40.0, 22.0),
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    }
-}
-
-fn left_down() -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn left_up() -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-fn space_key() -> KeyEvent {
-    KeyEvent {
-        key: Key::Space,
-        modifiers: Modifiers::NONE,
-    }
-}
+// -- Construction and state --
 
 #[test]
 fn default_state() {
     let t = ToggleWidget::new();
     assert!(!t.is_on());
     assert!(!t.is_disabled());
-    assert!(!t.is_hovered());
     assert!(t.is_focusable());
     assert_eq!(t.toggle_progress(), 0.0);
 }
@@ -59,6 +24,26 @@ fn with_on_builder() {
     assert!(t.is_on());
     assert_eq!(t.toggle_progress(), 1.0);
 }
+
+#[test]
+fn sense_returns_click_and_drag() {
+    let t = ToggleWidget::new();
+    assert_eq!(t.sense(), Sense::click_and_drag());
+}
+
+#[test]
+fn has_two_controllers() {
+    let t = ToggleWidget::new();
+    assert_eq!(t.controllers().len(), 2, "hover + scrub");
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let t = ToggleWidget::new();
+    assert!(t.visual_states().is_some());
+}
+
+// -- Layout --
 
 #[test]
 fn layout_fixed_size() {
@@ -83,87 +68,7 @@ fn layout_fixed_size() {
     }
 }
 
-#[test]
-fn click_toggles() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    // Down acquires capture, Up inside bounds toggles.
-    let r = t.handle_mouse(&left_down(), &ctx);
-    assert_eq!(r.capture, CaptureRequest::Acquire);
-    let r = t.handle_mouse(&left_up(), &ctx);
-    assert!(t.is_on());
-    assert_eq!(t.toggle_progress(), 1.0);
-    assert_eq!(r.capture, CaptureRequest::Release);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Toggled {
-            id: t.id(),
-            value: true,
-        })
-    );
-
-    let r = t.handle_mouse(&left_down(), &ctx);
-    assert_eq!(r.capture, CaptureRequest::Acquire);
-    let r = t.handle_mouse(&left_up(), &ctx);
-    assert!(!t.is_on());
-    assert_eq!(t.toggle_progress(), 0.0);
-    assert_eq!(r.capture, CaptureRequest::Release);
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Toggled {
-            id: t.id(),
-            value: false,
-        })
-    );
-}
-
-#[test]
-fn space_toggles() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    let r = t.handle_key(space_key(), &ctx);
-    assert!(t.is_on());
-    assert_eq!(
-        r.action,
-        Some(WidgetAction::Toggled {
-            id: t.id(),
-            value: true,
-        })
-    );
-}
-
-#[test]
-fn disabled_ignores() {
-    let mut t = ToggleWidget::new().with_disabled(true);
-    let ctx = event_ctx();
-
-    assert!(!t.is_focusable());
-
-    let r = t.handle_mouse(&left_down(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-    let r = t.handle_mouse(&left_up(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = t.handle_key(space_key(), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = t.handle_hover(HoverEvent::Enter, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-}
-
-#[test]
-fn hover_transitions() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    t.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(t.is_hovered());
-
-    t.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(!t.is_hovered());
-}
+// -- Programmatic state --
 
 #[test]
 fn set_on_programmatic() {
@@ -176,128 +81,47 @@ fn set_on_programmatic() {
     assert_eq!(t.toggle_progress(), 0.0);
 }
 
-#[test]
-fn enter_key_does_not_toggle() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    // Only Space toggles, not Enter.
-    let r = t.handle_key(
-        KeyEvent {
-            key: Key::Enter,
-            modifiers: Modifiers::NONE,
-        },
-        &ctx,
-    );
-    assert_eq!(r, WidgetResponse::ignored());
-    assert!(!t.is_on());
-}
-
-#[test]
-fn right_click_ignored() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    let right_click = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Right),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let r = t.handle_mouse(&right_click, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-    assert!(!t.is_on());
-}
-
-#[test]
-fn release_outside_bounds_no_toggle() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    // Press inside, then release outside — should not toggle but release capture.
-    t.handle_mouse(&left_down(), &ctx);
-    let outside_up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(300.0, 300.0),
-        modifiers: Modifiers::NONE,
-    };
-    let r = t.handle_mouse(&outside_up, &ctx);
-    assert!(!t.is_on());
-    assert_eq!(r.capture, CaptureRequest::Release);
-    assert!(r.action.is_none());
-}
-
-#[test]
-fn disable_while_hovered_clears_state() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    t.handle_hover(HoverEvent::Enter, &ctx);
-    assert!(t.is_hovered());
-
-    t.set_disabled(true);
-    assert!(!t.is_hovered());
-}
-
-#[test]
-fn rapid_toggle_maintains_consistency() {
-    let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    for i in 0..6 {
-        t.handle_key(space_key(), &ctx);
-        assert_eq!(t.is_on(), i % 2 == 0);
-        let expected_progress = if t.is_on() { 1.0 } else { 0.0 };
-        assert_eq!(t.toggle_progress(), expected_progress);
-    }
-}
-
-// Animation-specific tests
+// -- Animation --
 
 #[test]
 fn set_on_is_immediate_no_animation() {
     let mut t = ToggleWidget::new();
-    let now = Instant::now();
     t.set_on(true);
 
-    // set_on uses set_immediate — no animation should be running.
-    assert!(!t.toggle_progress.is_animating(now));
-    assert_eq!(t.toggle_progress.get(now), 1.0);
+    assert!(!t.toggle_progress.is_animating());
+    assert_eq!(t.toggle_progress.get(), 1.0);
 }
 
 #[test]
 fn toggle_starts_animation() {
     let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-    t.handle_key(space_key(), &ctx);
+    t.toggle();
 
-    let now = Instant::now();
-    // Animation should be running right after toggle.
-    assert!(t.toggle_progress.is_animating(now));
-    // Target is 1.0 (on).
+    assert!(t.toggle_progress.is_animating());
     assert_eq!(t.toggle_progress.target(), 1.0);
 }
 
 #[test]
 fn animation_completes_to_target() {
     let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-    t.handle_key(space_key(), &ctx);
+    t.toggle();
 
-    // After the animation duration, value should be at target.
-    let later = Instant::now() + Duration::from_millis(200);
-    assert!(!t.toggle_progress.is_animating(later));
-    assert_eq!(t.toggle_progress.get(later), 1.0);
+    // 150ms at 60fps = 9 frames. Tick past completion.
+    for _ in 0..10 {
+        t.toggle_progress.tick();
+    }
+    assert!(!t.toggle_progress.is_animating());
+    assert_eq!(t.toggle_progress.get(), 1.0);
 }
 
 #[test]
 fn with_on_builder_is_immediate() {
     let t = ToggleWidget::new().with_on(true);
-    let now = Instant::now();
-    assert!(!t.toggle_progress.is_animating(now));
-    assert_eq!(t.toggle_progress.get(now), 1.0);
+    assert!(!t.toggle_progress.is_animating());
+    assert_eq!(t.toggle_progress.get(), 1.0);
 }
 
-// with_style builder test
+// -- Style --
 
 #[test]
 fn with_style_applies_custom_style() {
@@ -309,15 +133,19 @@ fn with_style_applies_custom_style() {
         off_bg: Color::BLACK,
         off_hover_bg: Color::rgb(0.2, 0.2, 0.2),
         on_bg: Color::rgb(0.0, 1.0, 0.0),
-        thumb_color: Color::rgb(0.9, 0.9, 0.9),
+        off_thumb_color: Color::rgb(0.9, 0.9, 0.9),
+        on_thumb_color: Color::rgb(0.0, 0.8, 0.0),
         thumb_padding: 4.0,
+        thumb_size: 22.0,
+        border_width: 2.0,
+        off_border_color: Color::rgb(0.3, 0.3, 0.3),
+        on_border_color: Color::rgb(0.0, 0.8, 0.0),
         disabled_bg: Color::rgb(0.1, 0.1, 0.1),
         disabled_thumb: Color::rgb(0.3, 0.3, 0.3),
         focus_ring_color: Color::rgb(0.0, 0.0, 1.0),
     };
     let t = ToggleWidget::new().with_style(style);
 
-    // Layout should reflect the custom size.
     let m = MockMeasurer::new();
     let ctx = LayoutCtx {
         measurer: &m,
@@ -336,27 +164,24 @@ fn with_style_applies_custom_style() {
     }
 }
 
-// Animation interpolation output verification (Chromium blend tests)
+// -- Paint --
 
 #[test]
 fn toggle_animation_interpolates_thumb_position() {
     let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
+    t.toggle();
 
-    // Toggle on — starts animation.
-    t.handle_key(space_key(), &ctx);
-    let now = Instant::now();
-
-    // At animation start, progress should be near 0 (starting from off).
-    let start_progress = t.toggle_progress.get(now);
+    let start_progress = t.toggle_progress.get();
     assert!(
         start_progress < 0.1,
         "at start of toggle animation, progress should be near 0, got {start_progress}"
     );
 
-    // After animation completes, progress should be 1.0.
-    let after = now + Duration::from_millis(200);
-    let end_progress = t.toggle_progress.get(after);
+    // 150ms at 60fps = 9 frames. Tick past completion.
+    for _ in 0..10 {
+        t.toggle_progress.tick();
+    }
+    let end_progress = t.toggle_progress.get();
     assert_eq!(
         end_progress, 1.0,
         "after toggle animation completes, progress should be 1.0"
@@ -364,108 +189,106 @@ fn toggle_animation_interpolates_thumb_position() {
 }
 
 #[test]
-fn toggle_draw_signals_animations_running() {
-    use crate::draw::DrawList;
+fn paint_signals_animation_while_toggling() {
+    use std::time::Instant;
+
+    use crate::animation::FrameRequestFlags;
+    use crate::draw::Scene;
+    use crate::geometry::Rect;
 
     let mut t = ToggleWidget::new();
-    let ctx = event_ctx();
-
-    // Toggle on to start animation.
-    t.handle_key(space_key(), &ctx);
+    t.toggle();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
-    let anim_flag = std::cell::Cell::new(false);
+    let flags = FrameRequestFlags::new();
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: Some(&flags),
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
     assert!(
-        anim_flag.get(),
-        "draw() should signal animations_running while toggle animates"
+        flags.anim_frame_requested(),
+        "paint() should request anim frame while toggle animates"
     );
 }
 
 #[test]
-fn toggle_draw_no_animation_signal_when_idle() {
-    use crate::draw::DrawList;
+fn paint_no_animation_signal_when_idle() {
+    use std::time::Instant;
+
+    use crate::animation::FrameRequestFlags;
+    use crate::draw::Scene;
+    use crate::geometry::Rect;
 
     let t = ToggleWidget::new();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
-    let anim_flag = std::cell::Cell::new(false);
+    let flags = FrameRequestFlags::new();
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: Some(&flags),
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
     assert!(
-        !anim_flag.get(),
-        "draw() should not signal animations_running when idle"
+        !flags.anim_frame_requested(),
+        "paint() should not request anim frame when idle"
     );
 }
 
 #[test]
-fn toggle_draws_thumb_at_correct_position() {
-    use crate::draw::{DrawCommand, DrawList};
+fn paint_thumb_at_on_position() {
+    use std::time::Instant;
 
-    // Toggle in ON state (immediate, no animation).
+    use crate::draw::Scene;
+    use crate::geometry::Rect;
+
     let t = ToggleWidget::new().with_on(true);
     let style = ToggleStyle::default();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, style.width, style.height);
-    let anim_flag = std::cell::Cell::new(false);
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
-    // The toggle draws: [optional focus ring], track rect, thumb rect.
-    // Thumb is the last Rect command.
-    let rects: Vec<_> = draw_list
-        .commands()
-        .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Rect { rect, .. } => Some(*rect),
-            _ => None,
-        })
-        .collect();
+    let rects: Vec<_> = scene.quads().iter().map(|q| q.bounds).collect();
     assert!(rects.len() >= 2, "should have track + thumb rects");
 
     let thumb_rect = rects.last().unwrap();
-    let thumb_diameter = style.height - style.thumb_padding * 2.0;
-    let travel = style.width - style.thumb_padding * 2.0 - thumb_diameter;
-    // ON state: thumb is at rightmost position.
+    let travel = style.width - style.thumb_padding * 2.0 - style.thumb_size;
     let expected_x = bounds.x() + style.thumb_padding + travel;
     assert!(
         (thumb_rect.x() - expected_x).abs() < 0.1,
@@ -475,45 +298,360 @@ fn toggle_draws_thumb_at_correct_position() {
 }
 
 #[test]
-fn toggle_draws_thumb_at_off_position() {
-    use crate::draw::{DrawCommand, DrawList};
+fn paint_thumb_at_off_position() {
+    use std::time::Instant;
 
-    let t = ToggleWidget::new(); // OFF, no animation.
+    use crate::draw::Scene;
+    use crate::geometry::Rect;
+
+    let t = ToggleWidget::new();
     let style = ToggleStyle::default();
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, style.width, style.height);
-    let anim_flag = std::cell::Cell::new(false);
     let now = Instant::now();
     let mut draw_ctx = super::super::DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now,
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    t.draw(&mut draw_ctx);
+    t.paint(&mut draw_ctx);
 
-    let rects: Vec<_> = draw_list
-        .commands()
-        .iter()
-        .filter_map(|c| match c {
-            DrawCommand::Rect { rect, .. } => Some(*rect),
-            _ => None,
-        })
-        .collect();
+    let rects: Vec<_> = scene.quads().iter().map(|q| q.bounds).collect();
     assert!(rects.len() >= 2, "should have track + thumb rects");
 
     let thumb_rect = rects.last().unwrap();
-    // OFF state: thumb is at leftmost position.
     let expected_x = bounds.x() + style.thumb_padding;
     assert!(
         (thumb_rect.x() - expected_x).abs() < 0.1,
         "OFF state thumb x: expected {expected_x}, got {}",
         thumb_rect.x()
+    );
+}
+
+// -- on_action unit tests --
+
+#[test]
+fn on_action_click_toggles() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+    let center = Point::new(20.0, 11.0);
+
+    // Simulate DragStart + DragEnd at same position (click).
+    let r = t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: center,
+        },
+        bounds,
+    );
+    assert!(r.is_none(), "DragStart should not emit action");
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: center,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: true, .. })),
+        "click should toggle ON, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+#[test]
+fn on_action_drag_right_turns_on() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Start at left edge, drag to right.
+    let start = Point::new(5.0, 11.0);
+    let end = Point::new(35.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: true, .. })),
+        "drag right should toggle ON, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+#[test]
+fn on_action_drag_left_turns_off() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new().with_on(true);
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Start at right edge, drag to left.
+    let start = Point::new(35.0, 11.0);
+    let end = Point::new(5.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: false, .. })),
+        "drag left should toggle OFF, got: {r:?}"
+    );
+    assert!(!t.is_on());
+}
+
+#[test]
+fn on_action_small_drag_treated_as_click() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    let mut t = ToggleWidget::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Small drag (< half travel) in the OFF zone — should toggle like a click.
+    let start = Point::new(15.0, 11.0);
+    let end = Point::new(10.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    assert!(
+        matches!(r, Some(WidgetAction::Toggled { value: true, .. })),
+        "small drag should toggle like a click, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+#[test]
+fn on_action_long_drag_snap_back_when_same_state() {
+    use crate::action::WidgetAction;
+    use crate::geometry::{Point, Rect};
+
+    // Toggle is ON, drag from right past midpoint then release in ON zone.
+    // Travel = 18px, so movement must be >= 9px to be a positional drag.
+    let mut t = ToggleWidget::new().with_on(true);
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+
+    // Start at left edge (unusual), drag 10px right — ends in ON zone.
+    let start = Point::new(5.0, 11.0);
+    let end = Point::new(35.0, 11.0);
+    let delta = Point::new(end.x - start.x, 0.0);
+
+    t.on_action(
+        WidgetAction::DragStart {
+            id: t.id(),
+            pos: start,
+        },
+        bounds,
+    );
+    t.on_action(
+        WidgetAction::DragUpdate {
+            id: t.id(),
+            delta,
+            total_delta: delta,
+        },
+        bounds,
+    );
+    let r = t.on_action(
+        WidgetAction::DragEnd {
+            id: t.id(),
+            pos: end,
+        },
+        bounds,
+    );
+    // Already ON, drag ends in ON zone → snap back, no action.
+    assert!(
+        r.is_none(),
+        "long drag ending in same state should snap back, got: {r:?}"
+    );
+    assert!(t.is_on());
+}
+
+// -- Harness integration tests --
+
+#[test]
+fn harness_toggle_click_flips_value() {
+    use std::time::Duration;
+
+    use crate::action::WidgetAction;
+    use crate::testing::WidgetTestHarness;
+
+    let toggle = ToggleWidget::new();
+    let toggle_id = toggle.id();
+    let mut h = WidgetTestHarness::new(toggle);
+
+    // First click -> toggled ON.
+    let actions = h.click(toggle_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Toggled { id, value: true } if *id == toggle_id)),
+        "first click should produce Toggled(true), got: {actions:?}"
+    );
+
+    // Advance clock past double-click timeout before second click.
+    h.advance_time(Duration::from_millis(600));
+
+    // Second click -> toggled OFF.
+    let actions = h.click(toggle_id);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Toggled { id, value: false } if *id == toggle_id)),
+        "second click should produce Toggled(false), got: {actions:?}"
+    );
+}
+
+#[test]
+fn harness_toggle_drag_right_turns_on() {
+    use crate::action::WidgetAction;
+    use crate::geometry::Point;
+    use crate::testing::WidgetTestHarness;
+
+    let toggle = ToggleWidget::new();
+    let toggle_id = toggle.id();
+    let mut h = WidgetTestHarness::new(toggle);
+
+    // Drag from left to right across the toggle.
+    let start = Point::new(5.0, 11.0);
+    let end = Point::new(35.0, 11.0);
+    let actions = h.drag(start, end, 5);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Toggled { id, value: true } if *id == toggle_id)),
+        "drag right should produce Toggled(true), got: {actions:?}"
+    );
+}
+
+// -- Geometry invariants (section 13.6) --
+
+#[test]
+fn toggle_thumb_size_is_12px() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    assert_eq!(style.thumb_size, 12.0);
+}
+
+#[test]
+fn toggle_travel_is_20px() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    // travel = width - 2*thumb_padding - thumb_size = 38 - 6 - 12 = 20.
+    let travel = style.width - 2.0 * style.thumb_padding - style.thumb_size;
+    assert_eq!(travel, 20.0);
+}
+
+#[test]
+fn toggle_off_thumb_position() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    // When off, thumb sits at x = thumb_padding.
+    let expected_x = style.thumb_padding;
+    assert_eq!(expected_x, 3.0);
+}
+
+#[test]
+fn toggle_on_thumb_position() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    let travel = style.width - 2.0 * style.thumb_padding - style.thumb_size;
+    // When on, thumb sits at x = thumb_padding + travel = 3 + 20 = 23.
+    let expected_x = style.thumb_padding + travel;
+    assert_eq!(expected_x, 23.0);
+}
+
+#[test]
+fn toggle_outer_size_38x20() {
+    let style = ToggleStyle::from_theme(&crate::theme::UiTheme::dark());
+    assert_eq!(style.width, 38.0);
+    assert_eq!(style.height, 20.0);
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_pointer() {
+    let t = ToggleWidget::new();
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = t.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Pointer,
+        "toggle should declare Pointer cursor"
     );
 }

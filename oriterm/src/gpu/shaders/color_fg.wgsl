@@ -3,6 +3,7 @@
 // Same vertex pulling pattern as the foreground shader. The fragment shader
 // samples an Rgba8Unorm atlas texture array and outputs the color directly
 // without fg_color tinting — color emoji carry their own RGBA data.
+// Per-instance clip rect discards out-of-bounds fragments.
 
 struct Uniform {
     screen_size: vec2<f32>,
@@ -26,12 +27,15 @@ struct InstanceInput {
     @location(4) bg_color: vec4<f32>,
     @location(5) kind: u32,
     @location(6) atlas_page: u32,
+    @location(7) clip: vec4<f32>,
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) tex_coord: vec2<f32>,
     @location(1) @interpolate(flat) atlas_page: u32,
+    @location(2) clip_min: vec2<f32>,
+    @location(3) clip_max: vec2<f32>,
 }
 
 @vertex
@@ -60,11 +64,20 @@ fn vs_main(
     out.position = vec4<f32>(ndc, 0.0, 1.0);
     out.tex_coord = tex_coord;
     out.atlas_page = instance.atlas_page;
+    out.clip_min = instance.clip.xy;
+    out.clip_max = instance.clip.xy + instance.clip.zw;
     return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // Per-instance clip rect test.
+    let frag_pos = input.position.xy;
+    if frag_pos.x < input.clip_min.x || frag_pos.x > input.clip_max.x
+        || frag_pos.y < input.clip_min.y || frag_pos.y > input.clip_max.y {
+        discard;
+    }
+
     // Sample RGBA directly — color emoji data is premultiplied.
     return textureSample(color_atlas_texture, color_atlas_sampler, input.tex_coord, input.atlas_page);
 }

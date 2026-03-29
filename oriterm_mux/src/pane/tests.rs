@@ -63,3 +63,25 @@ fn dirty_flag_cross_thread_pattern() {
     // "Main thread" reads dirty.
     assert!(dirty.load(Ordering::Acquire));
 }
+
+/// Unseen output flag: set and clear round-trip (simulated with bool).
+///
+/// Mirrors the `has_bell` pattern: set on background output, clear on focus.
+#[test]
+fn unseen_output_set_and_clear() {
+    // Starts false (no unseen output).
+    let flag = AtomicBool::new(false);
+    assert!(!flag.load(Ordering::Acquire));
+
+    // Background output arrives → set.
+    flag.store(true, Ordering::Release);
+    assert!(flag.load(Ordering::Acquire));
+
+    // Idempotent: setting again is harmless.
+    flag.store(true, Ordering::Release);
+    assert!(flag.load(Ordering::Acquire));
+
+    // Pane gains focus → clear.
+    flag.store(false, Ordering::Release);
+    assert!(!flag.load(Ordering::Acquire));
+}

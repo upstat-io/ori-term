@@ -2,7 +2,7 @@
 //!
 //! Extracts the leading emoji grapheme cluster from an icon name string
 //! (set by OSC 0/1). Only recognizes codepoints in the `Emoji_Presentation`
-//! set — alphanumeric or symbol prefixes are not treated as icons.
+//! set — symbols, ASCII punctuation, and braille characters are not icons.
 
 use oriterm_core::is_emoji_presentation;
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,7 +13,7 @@ use super::widget::TabIcon;
 ///
 /// Returns `Some(TabIcon::Emoji(grapheme))` when the first grapheme cluster
 /// starts with an `Emoji_Presentation` codepoint. Returns `None` for plain
-/// text, empty strings, or non-emoji leading characters.
+/// text, empty strings, symbols, and non-emoji leading characters.
 pub fn extract_emoji_icon(icon_name: &str) -> Option<TabIcon> {
     let grapheme = icon_name.graphemes(true).next()?;
     let first_cp = grapheme.chars().next()?;

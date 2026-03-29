@@ -2,26 +2,20 @@
 //!
 //! Handles widget actions emitted by dialog content (settings panel,
 //! confirmation dialog): Save, Cancel, OK, dropdown open, selection,
-//! toggle. Also manages dropdown popup overlays within dialog windows
-//! and keyboard routing to confirmation dialog widgets.
+//! toggle, and keyboard routing to confirmation dialog widgets.
 
-use std::time::Instant;
-
-use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::{
-    EventResponse, HoverEvent, Key as UiKey, KeyEvent as UiKeyEvent, Modifiers as UiModifiers,
-};
-use oriterm_ui::overlay::OverlayEventResult;
-use oriterm_ui::widgets::{EventCtx, Widget, WidgetAction};
-use winit::keyboard::{Key, NamedKey};
+use oriterm_ui::widgets::settings_panel::SettingsPanel;
+use oriterm_ui::widgets::sidebar_nav::FooterTarget;
+use oriterm_ui::widgets::{Widget, WidgetAction};
 use winit::window::WindowId;
 
 use crate::app::settings_overlay;
+use crate::app::widget_pipeline::collect_focusable_ids;
 use crate::event::ConfirmationKind;
-use crate::font::{CachedTextMeasurer, UiFontMeasurer};
 
 use super::DialogContent;
 use crate::app::App;
+use crate::config::Config;
 
 impl App {
     /// Process a `WidgetAction` emitted by dialog content widgets.
@@ -49,18 +43,40 @@ impl App {
             } => {
                 self.open_dialog_dropdown(window_id, id, options, selected, anchor);
             }
-            WidgetAction::Toggled { .. } | WidgetAction::Selected { .. } => {
+            WidgetAction::Toggled { .. }
+            | WidgetAction::Selected { .. }
+            | WidgetAction::ValueChanged { .. }
+            | WidgetAction::TextChanged { .. } => {
                 self.dispatch_dialog_settings_action(window_id, &action);
+            }
+            WidgetAction::ResetDefaults => {
+                self.reset_dialog_settings(window_id);
             }
             WidgetAction::Clicked(_) => {
                 // OK button clicked in a confirmation dialog.
                 self.execute_confirmation(window_id);
             }
+            WidgetAction::FooterAction(ref target) => {
+                self.handle_footer_action(window_id, target);
+            }
             WidgetAction::DismissOverlay(_) => {
                 // Cancel button clicked in a confirmation dialog.
                 self.close_dialog(window_id);
             }
-            _ => {}
+            // Controller-emitted actions that don't apply to dialog content.
+            WidgetAction::DoubleClicked(_)
+            | WidgetAction::TripleClicked(_)
+            | WidgetAction::DragStart { .. }
+            | WidgetAction::DragUpdate { .. }
+            | WidgetAction::DragEnd { .. }
+            | WidgetAction::ScrollBy { .. }
+            | WidgetAction::MoveOverlay { .. }
+            | WidgetAction::WindowMinimize
+            | WidgetAction::WindowMaximize
+            | WidgetAction::WindowClose
+            | WidgetAction::SettingsUnsaved(_)
+            | WidgetAction::PageDirty { .. }
+            | WidgetAction::TabTitleChanged { .. } => {}
         }
     }
 
@@ -84,8 +100,122 @@ impl App {
         self.close_dialog(window_id);
     }
 
+    /// Reset the pending settings config to defaults.
+    ///
+    /// Rebuilds the entire form panel from the default config so all widgets
+    /// (dropdowns, toggles, sliders, number inputs) reflect the new values.
+    fn reset_dialog_settings(&mut self, window_id: WindowId) {
+        let ui_theme = self.ui_theme;
+        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+            return;
+        };
+        let DialogContent::Settings {
+            pending_config,
+            original_config,
+            ids,
+            panel,
+            active_page,
+        } = &mut ctx.content
+        else {
+            return;
+        };
+        log::info!("settings dialog: resetting to defaults");
+        **pending_config = Config::default();
+        // Keep `original_config` pinned to the persisted on-disk config so dirty
+        // detection correctly treats reset-to-defaults as an unsaved change when
+        // the persisted config differs from defaults (TPR-12-011).
+
+        // Rebuild the form widgets so they reflect the default config values.
+        // Preserve the current page so the user stays where they were.
+        let (content, new_ids, footer_ids) = settings_overlay::form_builder::build_settings_dialog(
+            pending_config,
+            &ui_theme,
+            *active_page,
+            None,
+        );
+        // Deregister old panel to avoid leaking InteractionManager state (TPR-11-009).
+        crate::app::widget_pipeline::deregister_widget_tree(
+            &mut **panel,
+            ctx.root.interaction_mut(),
+        );
+        **ids = new_ids;
+        **panel = SettingsPanel::embedded(content, footer_ids);
+        // Register new tree; WidgetAdded events delivered next frame (TPR-04-003).
+        crate::app::widget_pipeline::register_widget_tree(&mut **panel, ctx.root.interaction_mut());
+
+        // Rebuild key contexts so keymap scope gating covers the new widgets.
+        ctx.root.key_contexts_mut().clear();
+        oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
+
+        // Rebuild focus order and sync InteractionManager if the previously
+        // focused widget disappeared from the rebuilt tree.
+        let mut focusable = Vec::new();
+        collect_focusable_ids(&mut **panel, &mut focusable);
+        ctx.root.sync_focus_order(focusable);
+
+        // Rebuild parent map for dirty-ancestor tracking (TPR-04-002).
+        if let Some(r) = ctx.renderer.as_ref() {
+            let s = ctx.scale_factor.factor() as f32;
+            ctx.root
+                .interaction_mut()
+                .set_parent_map(super::content_parent_map(
+                    &**panel,
+                    r,
+                    s,
+                    &ctx.text_cache,
+                    &ctx.surface_config,
+                    &ui_theme,
+                ));
+        }
+
+        // Recompute hot path to preserve hover on surviving widgets (TPR-04-007).
+        super::recompute_dialog_hot_path(
+            &mut ctx.root,
+            &**panel,
+            ctx.last_cursor_pos,
+            ctx.renderer.as_ref(),
+            ctx.scale_factor.factor() as f32,
+            &ctx.text_cache,
+            &ctx.surface_config,
+            &ui_theme,
+        );
+
+        // Invalidate all caches.
+        ctx.cached_layout = None;
+
+        let dirty = *pending_config != *original_config;
+        let title = if dirty {
+            "Settings \u{2022}"
+        } else {
+            "Settings"
+        };
+        ctx.window.set_title(title);
+
+        // Update per-page dirty dots after reset.
+        panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
+        let page_dirty = settings_overlay::per_page_dirty(pending_config, original_config);
+        for (page, &is_dirty) in page_dirty.iter().enumerate() {
+            panel.accept_action(&WidgetAction::PageDirty {
+                page,
+                dirty: is_dirty,
+            });
+        }
+
+        ctx.request_urgent_redraw();
+    }
+
     /// Dispatch a settings widget action to update the pending config.
-    fn dispatch_dialog_settings_action(&mut self, window_id: WindowId, action: &WidgetAction) {
+    ///
+    /// Always propagates to the panel via `accept_action`, even when the config
+    /// is unchanged — widgets may need to update visuals (e.g. sidebar page
+    /// switching, dropdown selection display). After config changes, compares
+    /// pending vs original to track dirty state.
+    pub(super) fn dispatch_dialog_settings_action(
+        &mut self,
+        window_id: WindowId,
+        action: &WidgetAction,
+    ) {
+        let ui_theme = self.ui_theme;
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
         };
@@ -93,119 +223,107 @@ impl App {
             ids,
             pending_config,
             panel,
-            ..
+            original_config,
+            active_page,
         } = &mut ctx.content
         else {
             return;
         };
 
-        if settings_overlay::action_handler::handle_settings_action(action, ids, pending_config) {
+        let config_changed =
+            settings_overlay::action_handler::handle_settings_action(action, ids, pending_config);
+        if config_changed {
             log::info!("settings dialog: pending config updated (deferred until Save)");
-            // Propagate selection back to widget so it updates its display.
-            panel.accept_action(action);
-            ctx.request_urgent_redraw();
-        }
-    }
+            // Update dirty indicator — shows in chrome title bar, taskbar, and footer.
+            let dirty = **pending_config != **original_config;
+            let title = if dirty {
+                "Settings \u{2022}"
+            } else {
+                "Settings"
+            };
+            ctx.window.set_title(title);
+            panel.accept_action(&WidgetAction::SettingsUnsaved(dirty));
 
-    /// Open a dropdown popup within a dialog window's overlay manager.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "forwarding OpenDropdown fields + window ID"
-    )]
-    fn open_dialog_dropdown(
-        &mut self,
-        window_id: WindowId,
-        dropdown_id: oriterm_ui::widget_id::WidgetId,
-        options: Vec<String>,
-        selected: usize,
-        anchor: Rect,
-    ) {
-        use oriterm_ui::overlay::Placement;
-        use oriterm_ui::widgets::menu::{MenuEntry, MenuStyle, MenuWidget};
-
-        let entries: Vec<MenuEntry> = options
-            .into_iter()
-            .map(|label| MenuEntry::Item { label })
-            .collect();
-
-        let mut style = MenuStyle::from_theme(&self.ui_theme);
-        style.min_width = anchor.width();
-        style.extra_width = 24.0;
-        style.corner_radius = 4.0;
-        style.shadow_color = self.ui_theme.shadow.with_alpha(0.15);
-        style.max_height = Some(300.0);
-        style.selected_bg = self.ui_theme.accent.with_alpha(0.12);
-
-        let mut widget = MenuWidget::new(entries).with_style(style);
-        if selected < widget.entries().len() {
-            widget = widget.with_selected_index(selected);
-            widget.ensure_visible(selected);
+            // Per-page dirty state drives the sidebar modified dots.
+            let page_dirty = settings_overlay::per_page_dirty(pending_config, original_config);
+            for (page, &is_dirty) in page_dirty.iter().enumerate() {
+                panel.accept_action(&WidgetAction::PageDirty {
+                    page,
+                    dirty: is_dirty,
+                });
+            }
         }
 
-        let now = Instant::now();
+        // Always propagate — widgets update visuals (page switch, selection).
+        let widget_handled = panel.accept_action(action);
 
-        // Store the dropdown ID so we can route the selection back.
-        self.pending_dropdown_id = Some(dropdown_id);
+        // Track page switches for reset preservation.
+        // Only sidebar nav selections represent actual page switches — not
+        // scheme card, cursor picker, or dropdown selections (TPR-11-001).
+        if let WidgetAction::Selected { id, index } = action {
+            if widget_handled && *id == ids.sidebar_id && *index < 8 {
+                *active_page = *index;
 
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
-            return;
-        };
-        ctx.overlays.replace_popup(
-            Box::new(widget),
-            anchor,
-            Placement::BelowFlush,
-            &mut ctx.layer_tree,
-            &mut ctx.layer_animator,
-            now,
-        );
-        ctx.request_urgent_redraw();
-    }
+                // Page switch: register the new page's widgets and rebuild
+                // focus/keymap state so keyboard navigation targets the
+                // correct page. WidgetAdded events stay pending for
+                // delivery on the next render frame (TPR-04-003).
+                crate::app::widget_pipeline::register_widget_tree(
+                    &mut **panel,
+                    ctx.root.interaction_mut(),
+                );
+                // GC stale registrations from the old page (TPR-11-009).
+                let root_id = ctx.root.widget().id();
+                let mut valid = vec![root_id];
+                crate::app::widget_pipeline::collect_all_widget_ids(&mut **panel, &mut valid);
+                let stale = ctx.root.interaction_mut().gc_stale_widgets(&valid);
+                ctx.root.mark_widgets_prepaint_dirty(&stale);
 
-    /// Process an overlay event result from a dialog window.
-    pub(in crate::app) fn handle_dialog_overlay_result(
-        &mut self,
-        window_id: WindowId,
-        result: OverlayEventResult,
-    ) {
-        match result {
-            OverlayEventResult::Delivered { response, .. } => {
-                if let Some(WidgetAction::Selected { index, .. }) = response.action {
-                    // Route selection through settings action handler.
-                    if let Some(dropdown_id) = self.pending_dropdown_id.take() {
-                        // Dismiss the popup overlay.
-                        self.dismiss_dialog_overlay(window_id);
+                ctx.root.key_contexts_mut().clear();
+                oriterm_ui::action::collect_key_contexts(&mut **panel, ctx.root.key_contexts_mut());
 
-                        let action = WidgetAction::Selected {
-                            id: dropdown_id,
-                            index,
-                        };
-                        self.dispatch_dialog_settings_action(window_id, &action);
-                    }
+                let mut focusable = Vec::new();
+                collect_focusable_ids(&mut **panel, &mut focusable);
+                ctx.root.sync_focus_order(focusable);
+
+                // Rebuild parent map for dirty-ancestor tracking (TPR-04-002).
+                if let Some(r) = ctx.renderer.as_ref() {
+                    let s = ctx.scale_factor.factor() as f32;
+                    let pm = super::content_parent_map(
+                        &**panel,
+                        r,
+                        s,
+                        &ctx.text_cache,
+                        &ctx.surface_config,
+                        &ui_theme,
+                    );
+                    ctx.root.interaction_mut().set_parent_map(pm);
                 }
+
+                // Recompute hot path to preserve hover on surviving widgets (TPR-04-007).
+                super::recompute_dialog_hot_path(
+                    &mut ctx.root,
+                    &**panel,
+                    ctx.last_cursor_pos,
+                    ctx.renderer.as_ref(),
+                    ctx.scale_factor.factor() as f32,
+                    &ctx.text_cache,
+                    &ctx.surface_config,
+                    &ui_theme,
+                );
             }
-            OverlayEventResult::Dismissed(_) => {
-                self.pending_dropdown_id = None;
-            }
-            OverlayEventResult::Blocked | OverlayEventResult::PassThrough => {}
         }
-    }
 
-    /// Check if a dialog window has an active overlay (dropdown popup).
-    pub(in crate::app) fn dialog_has_overlay(&self, window_id: WindowId) -> bool {
-        self.dialogs
-            .get(&window_id)
-            .is_some_and(|ctx| !ctx.overlays.is_empty())
-    }
-
-    /// Dismiss the topmost overlay in a dialog window.
-    pub(in crate::app) fn dismiss_dialog_overlay(&mut self, window_id: WindowId) {
-        let now = Instant::now();
-        if let Some(ctx) = self.dialogs.get_mut(&window_id) {
-            ctx.overlays
-                .begin_dismiss_topmost(&mut ctx.layer_tree, &mut ctx.layer_animator, now);
+        if config_changed || widget_handled {
+            // Invalidate both layout caches: the dialog context's cached
+            // layout tree AND the panel's internal paint-time cache. Page
+            // switching changes which widgets appear in the layout tree, so
+            // stale cached layouts would cause hit testing against the old
+            // page's widgets — making the new page's controls unresponsive.
+            ctx.cached_layout = None;
+            panel.invalidate_cache();
             ctx.request_urgent_redraw();
         }
-        self.pending_dropdown_id = None;
     }
 
     /// Execute the confirmation action and close the dialog.
@@ -241,121 +359,32 @@ impl App {
         self.close_dialog(window_id);
     }
 
-    /// Try routing a key event to the dialog content widget.
-    ///
-    /// Returns the emitted `WidgetAction` if the content handled the key.
-    /// Only confirmation dialogs handle key events (Tab/Enter/Space for
-    /// button focus cycling and activation).
-    pub(in crate::app) fn try_dialog_content_key(
-        &mut self,
-        window_id: WindowId,
-        event: &winit::event::KeyEvent,
-    ) -> Option<WidgetAction> {
-        let ui_key = match &event.logical_key {
-            Key::Named(NamedKey::Tab) => UiKey::Tab,
-            Key::Named(NamedKey::Enter) => UiKey::Enter,
-            Key::Named(NamedKey::Space) => UiKey::Space,
-            _ => return None,
-        };
-
-        let ctx = self.dialogs.get_mut(&window_id)?;
-        if !matches!(ctx.content, DialogContent::Confirmation { .. }) {
-            return None;
-        }
-
-        let ui_event = UiKeyEvent {
-            key: ui_key,
-            modifiers: UiModifiers::NONE,
-        };
-        let renderer = ctx.renderer.as_ref()?;
-        let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let chrome_h = ctx.chrome.caption_height();
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: true,
-            focused_widget: None,
-            theme: &self.ui_theme,
-        };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_key(ui_event, &event_ctx);
-        if matches!(
-            resp.response,
-            EventResponse::RequestPaint | EventResponse::RequestLayout
-        ) {
-            ctx.request_urgent_redraw();
-        }
-        resp.action
-    }
-
-    /// Clear hover state for chrome and content.
-    pub(in crate::app) fn clear_dialog_hover(&mut self, window_id: WindowId) {
-        let ui_theme = self.ui_theme;
-        let Some(ctx) = self.dialogs.get_mut(&window_id) else {
+    /// Handle a sidebar footer action (config path click, update link click).
+    fn handle_footer_action(&self, window_id: WindowId, target: &FooterTarget) {
+        let Some(ctx) = self.dialogs.get(&window_id) else {
             return;
         };
-        let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
-        };
-        let scale = ctx.scale_factor.factor() as f32;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            &ctx.text_cache,
-            scale,
-        );
-        let mut needs_redraw = false;
-
-        // Chrome hover clear.
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: Rect::default(),
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-        };
-        let resp = ctx.chrome.handle_hover(HoverEvent::Leave, &event_ctx);
-        if matches!(
-            resp.response,
-            EventResponse::RequestPaint | EventResponse::RequestLayout
-        ) {
-            needs_redraw = true;
-        }
-
-        // Content hover clear.
-        let w = ctx.surface_config.width as f32 / scale;
-        let h = ctx.surface_config.height as f32 / scale;
-        let chrome_h = ctx.chrome.caption_height();
-        let content_bounds = Rect::new(0.0, chrome_h, w, h - chrome_h);
-        let event_ctx = EventCtx {
-            measurer: &measurer,
-            bounds: content_bounds,
-            is_focused: false,
-            focused_widget: None,
-            theme: &ui_theme,
-        };
-        let resp = ctx
-            .content
-            .content_widget_mut()
-            .handle_hover(HoverEvent::Leave, &event_ctx);
-        if matches!(
-            resp.response,
-            EventResponse::RequestPaint | EventResponse::RequestLayout
-        ) {
-            needs_redraw = true;
-        }
-
-        if needs_redraw {
-            ctx.request_urgent_redraw();
+        match target {
+            FooterTarget::ConfigPath => {
+                let DialogContent::Settings { .. } = &ctx.content else {
+                    return;
+                };
+                let path = crate::config::config_path();
+                log::info!("footer: opening config file: {}", path.display());
+                if let Err(e) = open::that(&path) {
+                    log::warn!("footer: failed to open config file: {e}");
+                }
+            }
+            FooterTarget::UpdateLink(url) => {
+                if let Some(url) = url {
+                    log::info!("footer: opening update URL: {url}");
+                    if let Err(e) = open::that(url) {
+                        log::warn!("footer: failed to open update URL: {e}");
+                    }
+                } else {
+                    log::info!("footer: update link clicked (no URL configured)");
+                }
+            }
         }
     }
 }

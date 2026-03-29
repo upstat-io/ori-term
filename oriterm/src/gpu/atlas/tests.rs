@@ -23,6 +23,7 @@ fn test_key(glyph_id: u16) -> RasterKey {
     RasterKey {
         glyph_id,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 896, // ~14px
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -537,6 +538,7 @@ fn q6_keying_distinct_sizes() {
     let key_14 = RasterKey {
         glyph_id: 65,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 896, // ~14px
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -546,6 +548,7 @@ fn q6_keying_distinct_sizes() {
     let key_16 = RasterKey {
         glyph_id: 65,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024, // ~16px
         synthetic: SyntheticFlags::NONE,
         hinted: true,

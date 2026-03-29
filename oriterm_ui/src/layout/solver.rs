@@ -9,6 +9,7 @@ use crate::geometry::Rect;
 
 use super::constraints::LayoutConstraints;
 use super::flex::{Align, Direction, Justify};
+use super::grid_solver;
 use super::layout_box::{BoxContent, LayoutBox};
 use super::layout_node::LayoutNode;
 use super::size_spec::SizeSpec;
@@ -23,7 +24,7 @@ pub fn compute_layout(root: &LayoutBox, viewport: Rect) -> LayoutNode {
 }
 
 /// Recursively solves layout for a single box at a given position.
-fn solve(
+pub(super) fn solve(
     layout_box: &LayoutBox,
     constraints: LayoutConstraints,
     pos_x: f32,
@@ -60,6 +61,21 @@ fn solve(
             *justify,
             *gap,
             children,
+        ),
+        BoxContent::Grid {
+            columns,
+            row_gap,
+            column_gap,
+            children,
+        } => grid_solver::solve_grid(
+            layout_box,
+            columns,
+            *row_gap,
+            *column_gap,
+            children,
+            constrained,
+            mx,
+            my,
         ),
     }
 }
@@ -98,6 +114,14 @@ fn solve_leaf(
     let content_rect = rect.inset(layout_box.padding);
     let mut node = LayoutNode::new(rect, content_rect);
     node.widget_id = layout_box.widget_id;
+    node.sense = layout_box.sense;
+    node.hit_test_behavior = layout_box.hit_test_behavior;
+    node.clip = layout_box.clip;
+    node.disabled = layout_box.disabled;
+    node.interact_radius = layout_box.interact_radius;
+    node.content_offset = layout_box.content_offset;
+    node.pointer_events = layout_box.pointer_events;
+    node.cursor_icon = layout_box.cursor_icon;
     node
 }
 
@@ -158,7 +182,14 @@ fn solve_flex(
         f32::INFINITY
     };
 
-    let measured = measure_children(children, dir, content_main, content_cross, gap);
+    // Scroll containers use infinite main-axis constraints so children can
+    // grow beyond the viewport. The container itself stays at viewport size.
+    let measure_main = if layout_box.overflow {
+        f32::INFINITY
+    } else {
+        content_main
+    };
+    let measured = measure_children(children, dir, measure_main, content_cross, gap);
 
     // Resolve container's own size.
     let container_main = resolve_container_main(
@@ -325,6 +356,14 @@ fn arrange_children(
     let content_rect = rect.inset(layout_box.padding);
     let mut node = LayoutNode::new(rect, content_rect).with_children(child_nodes);
     node.widget_id = layout_box.widget_id;
+    node.sense = layout_box.sense;
+    node.hit_test_behavior = layout_box.hit_test_behavior;
+    node.clip = layout_box.clip;
+    node.disabled = layout_box.disabled;
+    node.interact_radius = layout_box.interact_radius;
+    node.content_offset = layout_box.content_offset;
+    node.pointer_events = layout_box.pointer_events;
+    node.cursor_icon = layout_box.cursor_icon;
     node
 }
 
@@ -351,6 +390,14 @@ fn solve_empty(
     let content_rect = rect.inset(layout_box.padding);
     let mut node = LayoutNode::new(rect, content_rect);
     node.widget_id = layout_box.widget_id;
+    node.sense = layout_box.sense;
+    node.hit_test_behavior = layout_box.hit_test_behavior;
+    node.clip = layout_box.clip;
+    node.disabled = layout_box.disabled;
+    node.interact_radius = layout_box.interact_radius;
+    node.content_offset = layout_box.content_offset;
+    node.pointer_events = layout_box.pointer_events;
+    node.cursor_icon = layout_box.cursor_icon;
     node
 }
 

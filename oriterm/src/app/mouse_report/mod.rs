@@ -172,7 +172,7 @@ impl App {
                 }
             }
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
             return;
         }
@@ -186,7 +186,7 @@ impl App {
                 self.write_pane_input(pane_id, arrow);
             }
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
             return;
         }
@@ -202,7 +202,7 @@ impl App {
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.dirty = true;
+            ctx.root.mark_dirty();
         }
     }
 

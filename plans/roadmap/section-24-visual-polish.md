@@ -3,6 +3,7 @@ section: 24
 title: Visual Polish
 status: in-progress
 reviewed: false
+last_verified: "2026-03-29"
 tier: 6
 goal: Cursor blinking, hide-while-typing, minimum contrast, HiDPI, vector icons, background images, gradients, backdrop effects, scrollable menus
 sections:
@@ -32,7 +33,7 @@ sections:
     status: in-progress
   - id: "24.9"
     title: Scrollable Menus
-    status: not-started
+    status: in-progress
   - id: "24.10"
     title: Section Completion
     status: not-started
@@ -40,7 +41,7 @@ sections:
 
 # Section 24: Visual Polish
 
-**Status:** In Progress (24.1 cursor blink complete; 24.4 HiDPI and 24.8 backdrop effects partially implemented)
+**Status:** In Progress (24.1, 24.2, 24.5 complete; 24.4 HiDPI, 24.8 backdrop, 24.9 scrollable menus partially implemented)
 **Goal:** Small visual features that collectively create a polished, modern feel. Each is low-to-medium effort but highly visible. These are the details people notice in the first 5 minutes. Missing cursor blink, broken HiDPI, or unreadable colors are dealbreakers.
 
 **Crate:** `oriterm` (app layer + GPU rendering in `oriterm/src/gpu/`), `oriterm_ui` (widgets)
@@ -67,11 +68,11 @@ Toggle cursor visibility on a timer. **Complete**: `CursorBlink` state machine e
 
 **File:** `oriterm/src/app/cursor_blink/mod.rs` (blink state -- exists), `oriterm/src/app/event_loop.rs` (`about_to_wait` blink timer -- exists), `oriterm/src/app/redraw/mod.rs` (cursor blink visible flag -- exists), `oriterm/src/gpu/prepare/mod.rs` (cursor emission gating -- exists)
 
-- [x] Blink state tracking:
+- [x] Blink state tracking: (verified 2026-03-29, 13 tests pass)
   - [x] `CursorBlink` struct with `last_visible`, `epoch`, `interval` fields on `App`
   - [x] Blink interval: 530ms on / 530ms off (configurable via `cursor_blink_interval_ms`)
   - [x] `update()` checks `is_visible()` (pure function of elapsed time since epoch), caches the result, and returns `true` if visibility changed
-- [x] DECSCUSR blinking style detection:
+- [x] DECSCUSR blinking style detection: (verified 2026-03-29)
   - [x] DECSCUSR values 1 (blinking block), 3 (blinking underline), 5 (blinking bar) enable blink
   - [x] Even values (2, 4, 6) = steady -- no blink
   - [x] Default (0) = implementation-defined -- follow config
@@ -82,14 +83,14 @@ Toggle cursor visibility on a timer. **Complete**: `CursorBlink` state machine e
   - [x] Compare `last_cursor_pos` between frames in `handle_redraw()` and `handle_redraw_multi_pane()`; reset blink only on actual position change (not on every PTY byte)
 - [x] Reset blink to visible on mouse click in grid:
   - [x] `cursor_blink.reset()` called from `handle_mouse_input()` on any grid press (after overlays/chrome/dividers return early)
-- [x] Timer implementation using winit:
+- [x] Timer implementation using winit: (verified 2026-03-29)
   - [x] `ControlFlow::WaitUntil(cursor_blink.next_toggle())` in `about_to_wait` when `blinking_active`
   - [x] `about_to_wait` calls `cursor_blink.update()`, marks dirty, sets next deadline
   - [x] When no blink needed: falls through to default `ControlFlow::Wait`
-- [x] Renderer integration:
+- [x] Renderer integration: (verified 2026-03-29)
   - [x] `cursor_blink_visible` passed to `WindowRenderer::prepare()` and `prepare_frame_shaped_into()`
   - [x] `prepare/mod.rs` skips cursor emission when `!cursor_blink_visible`
-- [x] Focus handling:
+- [x] Focus handling: (verified 2026-03-29)
   - [x] Window loses focus (`WindowEvent::Focused(false)` in `event_loop.rs`): set `blinking_active = false` and call `cursor_blink.reset()` to freeze cursor visible
   - [x] Window gains focus (`WindowEvent::Focused(true)` in `event_loop.rs`): re-evaluate `blinking_active` from pane's `TermMode::CURSOR_BLINKING` and call `cursor_blink.reset()`
   - [x] Unfocused window renders cursor as hollow block (outline only). `focused_window_id` on `App` tracks which window has OS focus; `window_focused: bool` on `FrameInput` is set from `ctx.window.window().has_focus()` and propagated to the shaped prepare path
@@ -113,20 +114,20 @@ Mouse cursor disappears when typing, reappears on mouse move.
 
 **File:** `oriterm/src/app/cursor_hide/mod.rs` (pure decision logic), `oriterm/src/app/mod.rs` (state + `restore_mouse_cursor`), `oriterm/src/app/keyboard_input/mod.rs` (keypress hiding), `oriterm/src/app/event_loop.rs` (`CursorMoved`/`CursorLeft`/`Focused` restore), `oriterm/src/config/behavior.rs` (config)
 
-- [x] Hide mouse cursor on keypress:
+- [x] Hide mouse cursor on keypress: (verified 2026-03-29, 7 tests pass)
   - [x] Track `mouse_cursor_hidden: bool` on `App`
   - [x] Pure decision function `should_hide_cursor(HideContext)` in `app/cursor_hide/mod.rs`
   - [x] Called from `encode_key_to_pty()` — hides via `window.set_cursor_visible(false)`
   - [x] Skip modifier-only keys (`NamedKey::Shift`, `NamedKey::Control`, `NamedKey::Alt`, `NamedKey::Super`, `Hyper`, `Meta`)
   - [x] Skip when IME composition active (`ime.should_suppress_key()`)
-- [x] Restore mouse cursor on mouse move:
+- [x] Restore mouse cursor on mouse move: (verified 2026-03-29)
   - [x] `restore_mouse_cursor()` helper on `App` — only calls `set_cursor_visible(true)` when `mouse_cursor_hidden` is true
   - [x] Called on `CursorMoved` event in `event_loop.rs`
   - [x] Called on `CursorLeft` event to avoid sticky hidden state
-- [x] Suppress hiding during mouse reporting mode:
+- [x] Suppress hiding during mouse reporting mode: (verified 2026-03-29)
   - [x] Check `TermMode::ANY_MOUSE` inline at the call site (already have `mode` from `pane_mode()`)
   - [x] Passed as `mouse_reporting` field in `HideContext`
-- [x] Restore cursor on window focus loss:
+- [x] Restore cursor on window focus loss: (verified 2026-03-29)
   - [x] `restore_mouse_cursor()` called on `WindowEvent::Focused(false)`
 - [x] Config: `hide_mouse_when_typing: bool` (default: true) on `BehaviorConfig`
   - [x] All hide/show logic gated on `self.config.behavior.hide_mouse_when_typing`
@@ -254,7 +255,7 @@ Replace jagged geometric-primitive icons with properly anti-aliased vector path 
 
 **Dependency:** `tiny-skia` crate -- already in `oriterm/Cargo.toml` (used by COLRv1 rasterization)
 
-- [x] **Phase 1: Library crate types** (`oriterm_ui` -- must be implemented before binary crate code):
+- [x] **Phase 1: Library crate types** (`oriterm_ui` -- must be implemented before binary crate code): (verified 2026-03-29, 9 icon tests pass)
   - [x] Create `oriterm_ui/src/icons/mod.rs` -- icon path definitions. Add `#[cfg(test)] mod tests;` at bottom
   - [x] Add `pub mod icons;` to `oriterm_ui/src/lib.rs`
   - [x] `PathCommand` enum: `MoveTo(f32, f32)`, `LineTo(f32, f32)`, `CubicTo(f32, f32, f32, f32, f32, f32)`, `Close`
@@ -271,7 +272,7 @@ Replace jagged geometric-primitive icons with properly anti-aliased vector path 
   - [x] `ICON_MAXIMIZE`: square outline (window control)
   - [x] `ICON_RESTORE`: two overlapping rectangles (window control, maximized state)
   - [x] `ICON_WINDOW_CLOSE`: two diagonal lines x (window close, slightly different proportions than tab close)
-- [x] **Phase 2: Rasterization + cache** (`oriterm` binary crate -- depends on Phase 1):
+- [x] **Phase 2: Rasterization + cache** (`oriterm` binary crate -- depends on Phase 1): (verified 2026-03-29, 9 rasterizer tests pass)
   - [x] Create `oriterm/src/gpu/icon_rasterizer/mod.rs` -- `rasterize_icon()` function + re-exports. Add `#[cfg(test)] mod tests;` at bottom
   - [x] Create `oriterm/src/gpu/icon_rasterizer/cache.rs` -- `IconCache` struct (HashMap-based atlas region cache, invalidation on DPI change). Keep under 500 lines
   - [x] Create `oriterm/src/gpu/icon_rasterizer/tests.rs` -- tests for rasterization + cache
@@ -287,13 +288,13 @@ Replace jagged geometric-primitive icons with properly anti-aliased vector path 
   - [x] `IconCache` struct: `HashMap<(IconId, u32), AtlasRegion>` -- maps icon+size to atlas UV coords
   - [x] On DPI scale change: invalidate icon cache, re-rasterize at new physical size
   - [x] Wire `IconCache` into `WindowRenderer` -- initialized on construction, invalidated on DPI change
-- [x] **Phase 3: Draw list integration**:
+- [x] **Phase 3: Draw list integration**: (verified 2026-03-29)
   - [x] Add a `DrawCommand::Icon { rect: Rect, atlas_page: u32, uv: [f32; 4] }` variant that routes through the existing glyph pipeline. Do NOT reuse `DrawCommand::Image` -- that variant implies per-image texture bind groups (routed through `record_image_draws()`), while icons live in the shared glyph atlas
   - [x] Add `push_icon(rect, atlas_page, uv)` convenience method to `DrawList` -- emits a `DrawCommand::Icon`
   - [x] In `oriterm/src/gpu/draw_list_convert/mod.rs`: handle `DrawCommand::Icon { .. }` by emitting a glyph instance via `push_glyph()` on the mono writer with the atlas page and UV from the icon cache
   - [x] **FILE SIZE NOTE:** `draw_list_convert/mod.rs` is at 444 lines. Adding `DrawCommand::Icon` handling (~10 lines) stays within the 500-line limit
   - [x] Icons must be resolved to `(atlas_page, uv)` BEFORE draw list emission (in the widget's `draw()` method). Pass `&ResolvedIcons` through `DrawCtx` so widgets can look up atlas regions at draw time
-- [x] **Phase 4: Widget integration** (one widget at a time -- depends on Phases 1-3):
+- [x] **Phase 4: Widget integration** (one widget at a time -- depends on Phases 1-3): (verified 2026-03-29, tab bar + window chrome + dropdown all using push_icon)
   - [x] Widget integration -- tab bar:
     - [x] `draw.rs`: replace `push_line()` calls for close x, + button, and chevron with `push_icon()` referencing cached atlas region (with push_line fallback when icons not resolved)
     - [x] `drag_draw.rs`: replace `push_line()` calls for close x on dragged tab with `push_icon()` (with fallback)
@@ -306,7 +307,7 @@ Replace jagged geometric-primitive icons with properly anti-aliased vector path 
   - [x] Widget integration -- dropdown:
     - [x] `oriterm_ui/src/widgets/dropdown/mod.rs`: replace `push_line()` calls for chevron indicator with `push_icon()` referencing `ICON_CHEVRON_DOWN` atlas region (with fallback)
     - [x] Chevron uses the same icon definition but may need a smaller size variant (4px arrow_half vs tab bar's `CHEVRON_HALF_W`)
-- [x] **Phase 5: Cleanup** (after all widgets migrated and `ResolvedIcons` wired into `WindowRenderer`):
+- [x] **Phase 5: Cleanup** (after all widgets migrated and `ResolvedIcons` wired into `WindowRenderer`): (verified 2026-03-29, no push_line fallback branches remain for icons)
   - [x] Remove icon-specific `push_line()` fallback branches from `draw.rs`, `drag_draw.rs`, `controls.rs`, and `dropdown/mod.rs`
   - [x] Keep the general `push_line()` / `convert_line()` infrastructure (still used for menu checkmarks, menu separators, tab separators, checkbox checkmarks, dialog separators, and `separator/mod.rs`) and `push_rect()` (still used everywhere for non-icon rectangles)
 
@@ -323,7 +324,7 @@ Replace jagged geometric-primitive icons with properly anti-aliased vector path 
 
 **COMPLEXITY WARNING:** New GPU pipeline + texture management. The `record_draw_passes()` function already has a `#[expect(clippy::too_many_lines)]` annotation -- adding another pipeline makes it longer. Consider extracting per-tier draw helpers if any logical block exceeds 50 lines.
 
-**FILE SIZE WARNING:** `render.rs` is at 455 lines. Adding background image rendering (render pass setup, bind group binding, draw call) will approach or exceed 500. Extract existing render pass helper functions into a sibling file within `window_renderer/` (e.g., `window_renderer/render_passes.rs`) BEFORE adding the background image pass. Note: `render.rs` is a plain file inside the `window_renderer/` directory module -- extraction creates sibling files. Similarly, `pipeline/mod.rs` is at 500 lines -- new pipeline creation functions MUST go in a new submodule (e.g., `pipeline/bg_image.rs`).
+**FILE SIZE WARNING (UPDATED 2026-03-29):** `render.rs` is now at 735 lines -- ALREADY exceeds the 500-line limit. This is a pre-existing hygiene violation that MUST be addressed before 24.6 work begins. Extract existing render pass helper functions into a sibling file within `window_renderer/` (e.g., `window_renderer/render_passes.rs`) BEFORE adding the background image pass. Note: `render.rs` is a plain file inside the `window_renderer/` directory module -- extraction creates sibling files. Similarly, `pipeline/mod.rs` is at exactly 500 lines -- new pipeline creation functions MUST go in a new submodule (e.g., `pipeline/bg_image.rs`).
 
 **CONFIG WARNING:** `config/mod.rs` is at 331 lines. Sections 24.6, 24.7, and 24.8 collectively add ~40 lines of config structs/fields/impls to `WindowConfig`. Consider extracting `WindowConfig` and its impls into a `config/window.rs` submodule if the file approaches 400 lines after 24.6.
 
@@ -515,51 +516,44 @@ Platform-specific compositor effects: Acrylic/Mica on Windows, blur on macOS/Lin
 
 Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g., 50+ theme entries) do not overflow the window.
 
-**COMPLEXITY WARNING:** `menu/mod.rs` is at 499 lines. Adding scroll support directly will exceed the 500-line limit. Extract drawing into a submodule first, then add scroll logic.
+**COMPLEXITY WARNING:** `menu/mod.rs` was at 499 lines. The drawing split was done (as `widget_impl.rs` instead of `draw.rs`) and scroll logic was added.
 
-**File:** `oriterm_ui/src/widgets/menu/mod.rs` (`MenuWidget` + `MenuStyle` -- exist, 499 lines), `oriterm_ui/src/widgets/menu/draw.rs` (new -- extracted drawing logic), `oriterm_ui/src/widgets/menu/scroll.rs` (new -- scroll state + scrollbar drawing, keep under 500 lines), `oriterm_ui/src/widgets/scroll/mod.rs` (existing scroll widget for reference)
+**File:** `oriterm_ui/src/widgets/menu/mod.rs` (`MenuWidget` + `MenuStyle` -- 376 lines post-split), `oriterm_ui/src/widgets/menu/widget_impl.rs` (drawing + Widget impl -- 336 lines), `oriterm_ui/src/widgets/scroll/mod.rs` (existing scroll widget for reference)
 
-**NOTE:** `scroll.rs` is a plain submodule of `menu/`, not a directory module. It does not get its own `tests.rs` -- scroll behavior tests go in the existing `menu/tests.rs` alongside other menu tests. If `scroll.rs` grows enough to warrant its own tests, convert to `menu/scroll/mod.rs` + `menu/scroll/tests.rs` at that time.
+- [x] **Prerequisite: split `menu/mod.rs`** to make room for scroll code: (verified 2026-03-29, split done as `widget_impl.rs` instead of planned `draw.rs` -- same effect, mod.rs now 376 lines)
+  - [x] Extract drawing logic into `oriterm_ui/src/widgets/menu/widget_impl.rs` (verified 2026-03-29)
+  - [x] Widget struct, entry types, style, layout, and event handling remain in `mod.rs` (verified 2026-03-29)
+  - [x] `mod.rs` well under 500 lines after split (376 lines) (verified 2026-03-29)
+- [x] `max_height: Option<f32>` on `MenuStyle` (default: None = unlimited) (verified 2026-03-29)
+- [x] `scroll_offset: f32` field on `MenuWidget` -- vertical scroll position (0.0 = top) (verified 2026-03-29)
+- [x] When content height exceeds `max_height`: clip entries and show vertical scrollbar (verified 2026-03-29)
+  - [x] `visible_height()` clamped by `max_height` (verified 2026-03-29)
+  - [x] In `draw()`: `push_clip()` / `pop_clip()` when scrollable (verified 2026-03-29, widget_impl.rs lines 55-63, 68-71)
+  - [x] Offset all entry Y positions by `-scroll_offset` during draw (verified 2026-03-29)
+- [x] Scrollbar: thin track on right edge, thumb sized proportionally to visible/total ratio (verified 2026-03-29)
+  - [x] `SCROLLBAR_WIDTH` and `SCROLLBAR_MIN_THUMB` constants (verified 2026-03-29)
+  - [x] `draw_scrollbar()` with proportional thumb (verified 2026-03-29, widget_impl.rs lines 307-334)
+  - [x] Only visible when `is_scrollable()` (verified 2026-03-29)
+- [x] Mouse wheel scrolls menu content: (verified 2026-03-29)
+  - [x] Handle `ScrollDelta::Pixels` and `ScrollDelta::Lines` (verified 2026-03-29, widget_impl.rs lines 99-110)
+  - [x] `scroll_by(delta)` with clamping (verified 2026-03-29)
+- [x] Keyboard navigation auto-scrolls to keep hovered item visible: (verified 2026-03-29)
+  - [x] `ensure_visible(index)` for keyboard navigation auto-scroll (verified 2026-03-29, mod.rs line 249)
+  - [x] ArrowDown/ArrowUp call `ensure_visible()` after `navigate()` (verified 2026-03-29, widget_impl.rs lines 135-152)
+  - [ ] `PageUp`/`PageDown` keys in `handle_key()` -- NOT IMPLEMENTED (only ArrowDown, ArrowUp, Enter, Space, Escape handled)
+  - [ ] `Home`/`End` keys in `handle_key()` -- NOT IMPLEMENTED
+- [x] Scroll position resets to top when menu opens: (verified 2026-03-29, `MenuWidget::new()` starts at `scroll_offset: 0.0`)
+- [x] `entry_at_y()` accounts for scroll offset (verified 2026-03-29, mod.rs line 274)
+- [ ] **ZERO scroll-related tests** -- all 8 planned test items are unaddressed despite substantial implementation (gap identified 2026-03-29)
 
-- [ ] **Prerequisite: split `menu/mod.rs`** to make room for scroll code (currently 499 lines):
-  - [ ] Extract drawing logic into `oriterm_ui/src/widgets/menu/draw.rs`: the `draw()` method body (lines 308-414), `draw_checkmark()` helper (lines 256-278), and the free functions `draw_separator`, `draw_item`, `draw_check` extracted from the match arms
-  - [ ] Add `mod draw;` to `mod.rs`
-  - [ ] Keep widget struct, entry types, style, layout, and event handling in `mod.rs`
-  - [ ] Verify `mod.rs` is well under 500 lines after split (target ~300 lines)
-  - [ ] Run `./test-all.sh` to verify no regressions from the extraction
-- [ ] `max_height: Option<f32>` on `MenuStyle` (default: None = unlimited)
-- [ ] `scroll_offset: f32` field on `MenuWidget` -- vertical scroll position (0.0 = top)
-- [ ] When content height exceeds `max_height`: clip entries and show vertical scrollbar
-  - [ ] In `layout()`: return `LayoutBox` with height capped to `max_height` when set and content exceeds it
-  - [ ] In `draw()`: emit `DrawCommand::PushClip(bounds)` before entry rendering and `DrawCommand::PopClip` after (integrates with existing clipping in `oriterm/src/gpu/draw_list_convert/clip.rs`)
-  - [ ] Offset all entry Y positions by `-scroll_offset` during draw
-- [ ] Scrollbar: thin track on right edge, thumb sized proportionally to visible/total ratio
-  - [ ] Style values from `ScrollbarStyle` (reuse from `oriterm_ui/src/widgets/scroll/mod.rs`) or add `scrollbar_width`, `scrollbar_color` to `MenuStyle`
-  - [ ] Only visible when `total_height() > max_height`
-- [ ] Mouse wheel scrolls menu content:
-  - [ ] Handle `MouseEventKind::Scroll(delta)` in `handle_mouse()` (currently `Move`, `Down`, `Up` are handled -- line 442 returns `WidgetResponse::ignored()` for unmatched variants, which includes `Scroll`)
-  - [ ] Convert `ScrollDelta::Lines { y, .. }` to pixel offset: `y * style.item_height`
-  - [ ] Convert `ScrollDelta::Pixels { y, .. }` directly
-  - [ ] Clamp `scroll_offset` to `[0.0, total_height - max_height]`
-  - [ ] Return `WidgetResponse::paint()` when scroll offset actually changes (avoid redundant repaints)
-- [ ] Keyboard navigation auto-scrolls to keep hovered item visible:
-  - [ ] Add `entry_y_position(index: usize) -> f32` helper that computes the Y offset of entry `index` from menu top (sum of heights of preceding entries + padding)
-  - [ ] After `navigate()`: compute the Y position of the hovered entry and adjust `scroll_offset` to keep it within the visible window. Scroll down if entry bottom exceeds `scroll_offset + max_height`; scroll up if entry top is above `scroll_offset`
-  - [ ] `PageUp`/`PageDown` keys in `handle_key()`: scroll by `max_height.unwrap_or(total_height())` pixels, then update `hovered` to the entry at the new scroll position
-  - [ ] `Home`/`End` keys in `handle_key()`: jump to first/last clickable entry and set `scroll_offset` to 0.0 / `total_height - max_height` respectively
-- [ ] Scroll position resets to top when menu opens:
-  - [ ] Reset `scroll_offset = 0.0` in `MenuWidget::new()` and when entries are replaced
-- [ ] Update `entry_at_y()` to account for scroll offset: add `scroll_offset` to the visible Y position to convert to content Y before hit testing
-- [ ] Update `handle_mouse()` `MouseEventKind::Move` branch: the `entry_at_y()` call at line 420 uses `event.pos.y - ctx.bounds.y()` which needs scroll offset adjustment
-
-**Tests:**
+**Tests:** (all UNIMPLEMENTED as of 2026-03-29 -- 0 of 8 tests exist despite substantial scroll implementation)
 - [ ] Menu with 5 entries and no `max_height`: no clipping, no scrollbar, full height
 - [ ] Menu with 50 entries and `max_height = 300.0`: layout height is 300.0, not `50 * item_height`
 - [ ] Mouse wheel scroll adjusts `scroll_offset`, clamped to valid range
 - [ ] `scroll_offset` cannot go negative or past `total_height - max_height`
 - [ ] Keyboard navigate to entry beyond visible area auto-scrolls to reveal it
-- [ ] `Home` key scrolls to top and hovers first clickable entry
-- [ ] `End` key scrolls to bottom and hovers last clickable entry
+- [ ] `Home` key scrolls to top and hovers first clickable entry (blocked: Home key not implemented)
+- [ ] `End` key scrolls to bottom and hovers last clickable entry (blocked: End key not implemented)
 - [ ] Scroll position resets on menu rebuild (new entries)
 
 ---
@@ -567,20 +561,20 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 ## 24.10 Section Completion
 
 - [ ] All 24.1--24.9 items complete
-- [ ] Cursor blinks at configured rate for blinking DECSCUSR styles
-- [ ] Cursor blink resets on keypress, mouse click, and PTY cursor movement
-- [ ] Unfocused windows show steady hollow cursor (no blink)
-- [ ] Mouse cursor hides when typing, reappears on move
-- [ ] Mouse hiding respects mouse reporting mode (does not hide when app uses mouse)
+- [x] Cursor blinks at configured rate for blinking DECSCUSR styles (verified 2026-03-29)
+- [x] Cursor blink resets on keypress, mouse click, and PTY cursor movement (verified 2026-03-29)
+- [x] Unfocused windows show steady hollow cursor (no blink) (verified 2026-03-29)
+- [x] Mouse cursor hides when typing, reappears on move (verified 2026-03-29)
+- [x] Mouse hiding respects mouse reporting mode (does not hide when app uses mouse) (verified 2026-03-29)
 - [ ] Minimum contrast enforces readable text (WCAG 2.0 in shader)
 - [ ] `minimum_contrast = 1.0` (default) adds zero per-vertex overhead (shader short-circuits)
 - [ ] HIDDEN cells (SGR 8) are not revealed by minimum contrast at any setting
 - [ ] HiDPI displays render crisp text at correct scale
 - [ ] Moving between monitors with different DPI works
 - [ ] Font zoom (Ctrl+=/Ctrl+-/Ctrl+0) works correctly at all DPI scales
-- [ ] Vector icons (close x, +, chevron, minimize, maximize, restore, window close) render with smooth anti-aliasing at all DPI scales
-- [ ] No jagged staircase artifacts on diagonal lines in any icon
-- [ ] Dropdown chevron icons render with smooth anti-aliasing (same as tab bar)
+- [x] Vector icons (close x, +, chevron, minimize, maximize, restore, window close) render with smooth anti-aliasing at all DPI scales (verified 2026-03-29)
+- [x] No jagged staircase artifacts on diagonal lines in any icon (verified 2026-03-29)
+- [x] Dropdown chevron icons render with smooth anti-aliasing (same as tab bar) (verified 2026-03-29)
 - [ ] Background images render behind terminal content
 - [ ] Background gradients render behind terminal content
 - [ ] Backdrop effects (blur/acrylic/mica) apply on supported platforms
@@ -590,3 +584,11 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] No new `#[allow(clippy)]` without `reason`
 
 **Exit Criteria:** Terminal feels visually polished at first launch -- cursor blinks, text is readable, HiDPI is crisp, icons are smooth, scrolling works, and all features are configurable and hot-reloadable.
+
+**Verification Notes (2026-03-29):**
+- **HYGIENE-001:** `render.rs` at 735 lines exceeds 500-line limit. Must be split before 24.6/24.7 work.
+- **HYGIENE-002:** `pipeline/mod.rs` at exactly 500 lines. New pipelines must go in submodules.
+- **GAP-001:** Zero scroll tests for menu widget (24.9) despite substantial implementation. 8 planned test items unaddressed.
+- **GAP-002:** Zero tests for `handle_dpi_change()` (24.4). Font re-rasterization logic untested.
+- **GAP-003:** Zero tests for backdrop/transparency (24.8). Low severity (thin platform dispatch).
+- **STALE-001:** 24.9 was marked not-started but is substantially implemented. Updated to in-progress.

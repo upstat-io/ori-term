@@ -1,14 +1,14 @@
-use crate::draw::{DrawCommand, DrawList};
+use crate::controllers::ControllerRequests;
+use crate::draw::Scene;
+use crate::draw::scene::ContentMask;
 use crate::geometry::{Point, Rect};
-use crate::input::{
-    Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind, ScrollDelta,
-};
+use crate::input::{InputEvent, Key, Modifiers, ScrollDelta};
+use crate::interaction::LifecycleEvent;
 use crate::layout::compute_layout;
-use crate::widgets::button::ButtonWidget;
 use crate::widgets::container::ContainerWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget};
+use crate::widgets::{DrawCtx, LayoutCtx, LifecycleCtx, Widget};
 
 use super::ScrollWidget;
 
@@ -28,6 +28,18 @@ fn tall_content() -> Box<dyn Widget> {
 
 fn make_scroll(child: Box<dyn Widget>) -> ScrollWidget {
     ScrollWidget::vertical(child)
+}
+
+/// Standard test bounds: 200x100 viewport.
+fn bounds() -> Rect {
+    Rect::new(0.0, 0.0, 200.0, 100.0)
+}
+
+/// Pre-populates the scroll widget's cached child layout by computing it.
+fn populate_cache(scroll: &ScrollWidget, bounds: Rect) {
+    let measurer = MockMeasurer::STANDARD;
+    let theme = super::super::tests::TEST_THEME;
+    scroll.child_natural_size(&measurer, &theme, bounds);
 }
 
 #[test]
@@ -82,215 +94,136 @@ fn scroll_is_focusable() {
 fn scroll_draws_with_clip() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // Should have PushClip and PopClip commands (balanced).
-    let push_count = draw_list
-        .commands()
+    // Content primitives should have a clipped ContentMask (not unclipped).
+    let clipped_texts = scene
+        .text_runs()
         .iter()
-        .filter(|c| matches!(c, DrawCommand::PushClip { .. }))
+        .filter(|t| t.content_mask != ContentMask::unclipped())
         .count();
-    let pop_count = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::PopClip))
-        .count();
-    assert_eq!(push_count, 1);
-    assert_eq!(pop_count, 1);
+    assert!(
+        clipped_texts > 0,
+        "text runs should be clipped to scroll viewport"
+    );
 }
 
 #[test]
 fn scroll_wheel_changes_offset() {
-    // tall_content = 20 labels * 16px = 320px tall.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    // Viewport 100px tall — content (320px) overflows by 220px.
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Scroll down (negative delta_y means scroll down in our convention).
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -3.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Lines { x: 0.0, y: -3.0 },
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_mouse(&event, &ctx);
+    let result = scroll.on_input(&event, bounds());
 
-    // Should have scrolled (redraw).
-    assert!(resp.response.is_handled());
-    // Offset should have increased (scrolled down).
-    assert!(scroll.scroll_offset() > 0.0);
+    assert!(result.handled, "scroll event should be handled");
+    assert!(scroll.scroll_offset() > 0.0, "offset should increase");
 }
 
 #[test]
 fn key_home_resets_to_top() {
-    // tall_content = 320px tall.
     let mut scroll = ScrollWidget::vertical(tall_content());
-    // Manually set offset.
     scroll.set_scroll_offset(100.0, 320.0, 100.0);
-    assert!(scroll.scroll_offset() > 0.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::Home,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
 
 #[test]
 fn key_end_scrolls_to_bottom() {
-    // tall_content = 320px tall, viewport 100px → max offset 220.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::End,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Content 320px, view 100px → max offset = 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
 }
 
 #[test]
 fn key_arrow_down_scrolls() {
-    // tall_content = 320px tall, viewport 100px.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::ArrowDown,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Should have scrolled down by line_height (20px).
     assert_eq!(scroll.scroll_offset(), 20.0);
 }
 
 #[test]
 fn key_page_down_scrolls_by_viewport() {
-    // tall_content = 320px tall, viewport 100px.
     let mut scroll = ScrollWidget::vertical(tall_content());
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageDown,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Should scroll down by one viewport height (100px).
     assert_eq!(scroll.scroll_offset(), 100.0);
 }
 
 #[test]
 fn key_page_up_scrolls_by_viewport() {
-    // tall_content = 320px tall, viewport 100px.
     let mut scroll = ScrollWidget::vertical(tall_content());
     scroll.set_scroll_offset(200.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageUp,
         modifiers: Modifiers::NONE,
     };
-    let resp = scroll.handle_key(event, &ctx);
-    assert!(resp.response.is_handled());
+    let result = scroll.on_input(&event, bounds());
+    assert!(result.handled);
     // Should scroll up by one viewport height (100px): 200 - 100 = 100.
     assert_eq!(scroll.scroll_offset(), 100.0);
 }
 
 #[test]
 fn key_page_down_clamps_at_bottom() {
-    // tall_content = 320px, viewport 100px → max offset 220.
     let mut scroll = ScrollWidget::vertical(tall_content());
     scroll.set_scroll_offset(200.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageDown,
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_key(event, &ctx);
+    scroll.on_input(&event, bounds());
     // 200 + 100 = 300, clamped to max 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
 }
@@ -299,22 +232,13 @@ fn key_page_down_clamps_at_bottom() {
 fn key_page_up_clamps_at_top() {
     let mut scroll = ScrollWidget::vertical(tall_content());
     scroll.set_scroll_offset(30.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::PageUp,
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_key(event, &ctx);
+    scroll.on_input(&event, bounds());
     // 30 - 100 = -70, clamped to 0.
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
@@ -325,27 +249,28 @@ fn key_page_up_clamps_at_top() {
 fn scroll_clip_rect_matches_viewport() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(10.0, 20.0, 150.0, 80.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // The PushClip should use the scroll widget's bounds exactly.
-    let clip = draw_list.commands().iter().find_map(|c| match c {
-        DrawCommand::PushClip { rect } => Some(*rect),
-        _ => None,
-    });
-    assert_eq!(clip, Some(bounds), "clip rect must match scroll viewport");
+    // Content primitives should be clipped to the scroll viewport bounds.
+    let first_clip = scene.text_runs().first().map(|t| t.content_mask.clip);
+    assert_eq!(
+        first_clip,
+        Some(bounds),
+        "clip rect must match scroll viewport"
+    );
 }
 
 #[test]
@@ -354,35 +279,31 @@ fn scroll_child_drawn_offset_by_scroll() {
     scroll.set_scroll_offset(40.0, 320.0, 100.0);
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // The scroll widget clips to bounds (0,0,200,100) and offsets child by
-    // -40px. With 16px-tall labels, label 0 is at y=-40..-24, label 1 at
-    // y=-24..-8, label 2 at y=-8..8. Container visibility culling skips
-    // children fully outside the clip, so the first drawn text should be
-    // label 2 at y=-8 (partially visible).
-    let first_text = draw_list.commands().iter().find_map(|c| match c {
-        DrawCommand::Text { position, .. } => Some(*position),
-        _ => None,
-    });
-    assert!(first_text.is_some(), "should have text commands");
-    let pos = first_text.unwrap();
+    // Scene bakes the translate offset into positions directly.
+    // With 40px scroll offset, the first visible text (y=32 content space)
+    // should have position y = 32 - 40 = -8, but labels outside the clip
+    // are culled. The first drawn text should be the one intersecting the viewport.
+    let first_text = scene.text_runs().first();
+    assert!(first_text.is_some(), "should have text runs");
+    let pos = first_text.unwrap().position;
     assert_eq!(
         pos.y, -8.0,
-        "first visible text should be offset to partially visible position"
+        "first text y should be offset by scroll amount (32 - 40 = -8)"
     );
 }
 
@@ -390,32 +311,30 @@ fn scroll_child_drawn_offset_by_scroll() {
 fn scroll_draws_scrollbar_when_overflowing() {
     let scroll = make_scroll(tall_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    // Viewport 100px < content 320px → scrollbar should appear.
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // Should have a Rect command after PopClip (the scrollbar thumb).
-    let after_pop = draw_list
-        .commands()
+    // Scrollbar rects are drawn outside the clip scope (unclipped).
+    let unclipped_rects = scene
+        .quads()
         .iter()
-        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .filter(|q| q.content_mask == ContentMask::unclipped())
         .count();
     assert!(
-        after_pop >= 1,
-        "scrollbar thumb rect should be drawn after clip"
+        unclipped_rects >= 1,
+        "scrollbar thumb rect should be unclipped"
     );
 }
 
@@ -423,53 +342,42 @@ fn scroll_draws_scrollbar_when_overflowing() {
 fn scroll_no_scrollbar_when_content_fits() {
     let scroll = make_scroll(short_content());
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    // Viewport 100px > content 16px → no scrollbar.
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 1000.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // No Rect commands after PopClip (no scrollbar).
-    let after_pop = draw_list
-        .commands()
+    // No unclipped rects when content fits (no scrollbar).
+    let unclipped_rects = scene
+        .quads()
         .iter()
-        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .filter(|q| q.content_mask == ContentMask::unclipped())
         .count();
-    assert_eq!(after_pop, 0, "no scrollbar when content fits");
+    assert_eq!(unclipped_rects, 0, "no scrollbar when content fits");
 }
 
 #[test]
 fn scroll_multiple_wheel_events_accumulate() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Scroll down 3 times.
     for _ in 0..3 {
-        let event = MouseEvent {
-            kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -1.0 }),
+        let event = InputEvent::Scroll {
             pos: Point::new(25.0, 25.0),
+            delta: ScrollDelta::Lines { x: 0.0, y: -1.0 },
             modifiers: Modifiers::NONE,
         };
-        scroll.handle_mouse(&event, &ctx);
+        scroll.on_input(&event, bounds());
     }
 
     // 3 lines * 20px line_height = 60px offset.
@@ -479,23 +387,14 @@ fn scroll_multiple_wheel_events_accumulate() {
 #[test]
 fn scroll_wheel_clamps_at_bottom() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Scroll way past the bottom.
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: -999.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Lines { x: 0.0, y: -999.0 },
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_mouse(&event, &ctx);
+    scroll.on_input(&event, bounds());
 
     // Content 320px, viewport 100px → max offset 220.
     assert_eq!(scroll.scroll_offset(), 220.0);
@@ -504,328 +403,42 @@ fn scroll_wheel_clamps_at_bottom() {
 #[test]
 fn scroll_wheel_clamps_at_top() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Scroll up from top (should stay at 0).
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Lines { x: 0.0, y: 5.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Lines { x: 0.0, y: 5.0 },
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_mouse(&event, &ctx);
+    scroll.on_input(&event, bounds());
     assert_eq!(scroll.scroll_offset(), 0.0);
 }
 
 #[test]
 fn scroll_pixel_delta_works() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
+    populate_cache(&scroll, bounds());
 
-    // Trackpad-style pixel delta.
-    let event = MouseEvent {
-        kind: MouseEventKind::Scroll(ScrollDelta::Pixels { x: 0.0, y: -35.0 }),
+    let event = InputEvent::Scroll {
         pos: Point::new(25.0, 25.0),
+        delta: ScrollDelta::Pixels { x: 0.0, y: -35.0 },
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_mouse(&event, &ctx);
+    scroll.on_input(&event, bounds());
     assert_eq!(scroll.scroll_offset(), 35.0);
-}
-
-#[test]
-fn scroll_delegates_non_scroll_mouse_to_child() {
-    // Button inside scroll container — click should reach it.
-    let btn = ButtonWidget::new("Click");
-    let btn_id = btn.id();
-    let mut scroll = ScrollWidget::vertical(Box::new(btn));
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = scroll.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(10.0, 10.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = scroll.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(crate::widgets::WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked through scroll, got {other:?}"),
-    }
-}
-
-#[test]
-fn scroll_delegates_click_with_nonzero_origin() {
-    // Button inside scroll container at non-zero origin —
-    // verifies coordinate system is correct when scroll widget isn't at (0,0).
-    let btn = ButtonWidget::new("Click");
-    let btn_id = btn.id();
-    let mut scroll = ScrollWidget::vertical(Box::new(btn));
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(100.0, 200.0, 300.0, 150.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Click inside the button area (offset from bounds origin).
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(110.0, 210.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = scroll.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(110.0, 210.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = scroll.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(crate::widgets::WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked through scroll at non-zero origin, got {other:?}"),
-    }
-}
-
-#[test]
-fn scroll_delegates_checkbox_toggle_through_form_hierarchy() {
-    // Full form hierarchy: ScrollWidget → FormLayout → FormSection → FormRow → Checkbox
-    // This tests the complete settings panel event chain.
-    use crate::widgets::checkbox::CheckboxWidget;
-    use crate::widgets::form_layout::FormLayout;
-    use crate::widgets::form_row::FormRow;
-    use crate::widgets::form_section::FormSection;
-
-    let checkbox = CheckboxWidget::new("Enable feature");
-    let checkbox_id = checkbox.id();
-
-    let mut form = FormLayout::new().with_section(
-        FormSection::new("Test Section").with_row(FormRow::new("My Setting", Box::new(checkbox))),
-    );
-    form.compute_label_widths(&MockMeasurer::STANDARD, &super::super::tests::TEST_THEME);
-
-    let mut scroll = ScrollWidget::vertical(Box::new(form));
-
-    let measurer = MockMeasurer::STANDARD;
-    // Non-zero origin simulating a centered overlay panel.
-    let bounds = Rect::new(150.0, 100.0, 500.0, 400.0);
-
-    // First, draw to populate layout caches (matching real app behavior).
-    let mut draw_list = DrawList::new();
-    let anim_flag = std::cell::Cell::new(false);
-    let mut draw_ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: std::time::Instant::now(),
-        animations_running: &anim_flag,
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-    };
-    scroll.draw(&mut draw_ctx);
-
-    // Now send mouse events. The click target needs to be within the
-    // control column of the form row. The label column is on the left,
-    // the control is on the right. We click far enough right to be in
-    // the control zone.
-    let event_ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Click in the right half of the form (control column area).
-    // Form padding top (16) + section header (28) + row gap (12) = 56,
-    // so +60 is in the first row. Label column is ~100px, control is right.
-    let click_x = bounds.x() + 150.0; // In the control column (checkbox natural width)
-    let click_y = bounds.y() + 60.0; // Below form padding + section header + gap
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(click_x, click_y),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = scroll.handle_mouse(&down, &event_ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(click_x, click_y),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = scroll.handle_mouse(&up, &event_ctx);
-
-    match resp.action {
-        Some(crate::widgets::WidgetAction::Toggled { id, value }) => {
-            assert_eq!(id, checkbox_id, "toggled wrong checkbox");
-            assert!(value, "checkbox should be checked after toggle");
-        }
-        other => panic!(
-            "expected Toggled action from checkbox click at ({click_x}, {click_y}), got {other:?}"
-        ),
-    }
-}
-
-#[test]
-fn container_with_scroll_form_click_reaches_checkbox() {
-    // Simulates the SettingsPanel structure: Container(column) with
-    // header + scroll(FormLayout). Verifies click events route through
-    // the Container's capture semantics to the checkbox.
-    use crate::layout::SizeSpec;
-    use crate::widgets::checkbox::CheckboxWidget;
-    use crate::widgets::form_layout::FormLayout;
-    use crate::widgets::form_row::FormRow;
-    use crate::widgets::form_section::FormSection;
-    use crate::widgets::separator::SeparatorWidget;
-
-    let checkbox = CheckboxWidget::new("Test toggle");
-    let checkbox_id = checkbox.id();
-
-    let mut form = FormLayout::new().with_section(
-        FormSection::new("General").with_row(FormRow::new("My option", Box::new(checkbox))),
-    );
-    form.compute_label_widths(&MockMeasurer::STANDARD, &super::super::tests::TEST_THEME);
-
-    let scroll = ScrollWidget::vertical(Box::new(form));
-
-    // Simulate SettingsPanel's container structure.
-    let header = LabelWidget::new("Settings");
-    let separator = SeparatorWidget::horizontal();
-
-    let mut container = ContainerWidget::column()
-        .with_width(SizeSpec::Fixed(500.0))
-        .with_height(SizeSpec::Hug)
-        .with_child(Box::new(header))
-        .with_child(Box::new(separator))
-        .with_child(Box::new(scroll));
-
-    let measurer = MockMeasurer::STANDARD;
-    // Simulate centered overlay at a non-zero position.
-    let bounds = Rect::new(140.0, 80.0, 500.0, 400.0);
-
-    // Draw first to populate caches.
-    let mut draw_list = DrawList::new();
-    let anim_flag = std::cell::Cell::new(false);
-    let mut draw_ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: std::time::Instant::now(),
-        animations_running: &anim_flag,
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-    };
-    container.draw(&mut draw_ctx);
-
-    // Compute layout to find exact scroll widget position for click targeting.
-    let layout_ctx = LayoutCtx {
-        measurer: &measurer,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let layout_box = container.layout(&layout_ctx);
-    let layout = compute_layout(&layout_box, bounds);
-
-    // Click in the control column area, below the header + separator.
-    // header=child[0], separator=child[1], scroll=child[2].
-    let scroll_node = &layout.children[2];
-    // Offset 60 = past form padding(16) + section header(28) + gap(12) into row.
-    let click_x = scroll_node.rect.x() + 150.0;
-    let click_y = scroll_node.rect.y() + 60.0;
-
-    let event_ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(click_x, click_y),
-        modifiers: Modifiers::NONE,
-    };
-    let down_resp = container.handle_mouse(&down, &event_ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(click_x, click_y),
-        modifiers: Modifiers::NONE,
-    };
-    let up_resp = container.handle_mouse(&up, &event_ctx);
-
-    match up_resp.action {
-        Some(crate::widgets::WidgetAction::Toggled { id, value }) => {
-            assert_eq!(id, checkbox_id, "toggled wrong checkbox");
-            assert!(value, "checkbox should be checked after toggle");
-        }
-        other => panic!(
-            "expected Toggled action from container→scroll→form→checkbox click at ({click_x}, {click_y}), \
-             down_resp={down_resp:?}, got {other:?}"
-        ),
-    }
 }
 
 #[test]
 fn arrow_up_scrolls_upward() {
     let mut scroll = ScrollWidget::vertical(tall_content());
-    // Start scrolled down.
     scroll.set_scroll_offset(100.0, 320.0, 100.0);
+    populate_cache(&scroll, bounds());
 
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
+    let event = InputEvent::KeyDown {
         key: Key::ArrowUp,
         modifiers: Modifiers::NONE,
     };
-    scroll.handle_key(event, &ctx);
+    scroll.on_input(&event, bounds());
     assert_eq!(scroll.scroll_offset(), 80.0); // 100 - 20
 }
 
@@ -858,97 +471,97 @@ fn both_direction_new_constructor() {
 fn horizontal_scroll_draws_with_clip() {
     let scroll = ScrollWidget::new(wide_content(), super::ScrollDirection::Horizontal);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // Clip should be balanced.
-    let push_count = draw_list
-        .commands()
+    // Content primitives should be clipped to the scroll viewport.
+    let clipped_texts = scene
+        .text_runs()
         .iter()
-        .filter(|c| matches!(c, DrawCommand::PushClip { .. }))
+        .filter(|t| t.content_mask != ContentMask::unclipped())
         .count();
-    let pop_count = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::PopClip))
-        .count();
-    assert_eq!(push_count, 1);
-    assert_eq!(pop_count, 1);
+    assert!(
+        clipped_texts > 0,
+        "text runs should be clipped to scroll viewport"
+    );
 }
 
 #[test]
 fn scroll_content_exactly_fits_viewport() {
-    // When content height == viewport height, max offset should be 0.
     let mut scroll = ScrollWidget::vertical(tall_content());
-    // tall_content = 320px. Set viewport to 320px.
     scroll.set_scroll_offset(50.0, 320.0, 320.0);
     assert_eq!(scroll.scroll_offset(), 0.0, "no scroll when content fits");
 }
 
 #[test]
 fn scroll_content_exactly_fits_no_scrollbar() {
-    // Content exactly fitting the viewport should not draw a scrollbar.
-    let label = LabelWidget::new("A".repeat(10)); // 80px wide, 16px tall
+    let label = LabelWidget::new("A".repeat(10));
     let scroll = ScrollWidget::vertical(Box::new(label));
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    // Viewport exactly matches content height (16px).
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 16.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
+    scroll.paint(&mut ctx);
 
-    // No scrollbar rects after PopClip.
-    let after_pop = draw_list
-        .commands()
+    // No unclipped rects when content exactly fits (no scrollbar).
+    let unclipped_rects = scene
+        .quads()
         .iter()
-        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .filter(|q| q.content_mask == ContentMask::unclipped())
         .count();
-    assert_eq!(after_pop, 0, "no scrollbar when content exactly fits");
+    assert_eq!(unclipped_rects, 0, "no scrollbar when content exactly fits");
 }
 
 #[test]
-fn scroll_hover_delegates_to_child() {
-    use crate::input::HoverEvent;
+fn scroll_hover_resets_on_leave_but_drag_persists() {
+    let mut scroll = ScrollWidget::vertical(tall_content());
 
-    let btn = ButtonWidget::new("HoverMe");
-    let mut scroll = ScrollWidget::vertical(Box::new(btn));
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
+    // Simulate active drag + hover.
+    scroll.v_bar.track_hovered = true;
+    scroll.v_bar.thumb_hovered = true;
+    scroll.v_bar.dragging = true;
+
+    // HotChanged(false) should clear hover but NOT drag — the drag
+    // owns the pointer via capture until MouseUp, matching native
+    // scrollbar behavior where you can drag outside the widget.
+    let event = LifecycleEvent::HotChanged {
+        widget_id: scroll.id(),
+        is_hot: false,
     };
-
-    // Hover should delegate to the child.
-    let resp = scroll.handle_hover(HoverEvent::Enter, &ctx);
-    // ButtonWidget returns redraw on hover enter.
-    assert!(resp.response.is_handled());
+    let mut lctx = LifecycleCtx {
+        widget_id: scroll.id(),
+        interaction: &crate::interaction::InteractionState::default(),
+        requests: ControllerRequests::NONE,
+    };
+    scroll.lifecycle(&event, &mut lctx);
+    assert!(!scroll.v_bar.track_hovered, "track_hovered should reset");
+    assert!(!scroll.v_bar.thumb_hovered, "thumb_hovered should reset");
+    assert!(
+        scroll.v_bar.dragging,
+        "dragging must persist through hot loss"
+    );
 }
 
 #[test]
@@ -956,29 +569,272 @@ fn scroll_with_scrollbar_style() {
     use super::ScrollbarStyle;
     use crate::color::Color;
 
-    let custom_style = ScrollbarStyle {
-        width: 10.0,
-        thumb_color: Color::WHITE,
-        track_color: Color::BLACK,
-        thumb_radius: 5.0,
-        min_thumb_height: 30.0,
-    };
+    let mut custom_style = ScrollbarStyle::default();
+    custom_style.thickness = 10.0;
+    custom_style.thumb_color = Color::WHITE;
+    custom_style.track_color = Color::BLACK;
+    custom_style.thumb_radius = 5.0;
+    custom_style.min_thumb_length = 30.0;
+
     let scroll = ScrollWidget::vertical(tall_content()).with_scrollbar_style(custom_style);
-    // Just verify it doesn't panic and produces valid output.
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    scroll.draw(&mut ctx);
-    assert!(!draw_list.is_empty());
+    scroll.paint(&mut ctx);
+    assert!(!scene.is_empty());
+}
+
+// -- reset_scroll --
+
+#[test]
+fn reset_scroll_clears_offset() {
+    let mut scroll = make_scroll(tall_content());
+    scroll.set_scroll_offset(100.0, 320.0, 100.0);
+    assert!((scroll.scroll_offset() - 100.0).abs() < f32::EPSILON);
+
+    scroll.reset_scroll();
+    assert!((scroll.scroll_offset()).abs() < f32::EPSILON);
+}
+
+#[test]
+fn reset_scroll_invalidates_cached_child_layout() {
+    let mut scroll = make_scroll(tall_content());
+
+    // Populate the layout cache by computing child natural size.
+    let measurer = MockMeasurer::STANDARD;
+    let theme = crate::widgets::tests::TEST_THEME;
+    let viewport = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let _ = scroll.child_natural_size(&measurer, &theme, viewport);
+    assert!(
+        scroll.cached_child_layout.borrow().is_some(),
+        "cache should be populated after child_natural_size"
+    );
+
+    scroll.reset_scroll();
+    assert!(
+        scroll.cached_child_layout.borrow().is_none(),
+        "reset_scroll must invalidate cached_child_layout"
+    );
+}
+
+// -- per-axis scrollbar state --
+
+#[test]
+fn scroll_per_axis_bar_state_defaults_to_rest() {
+    let scroll = ScrollWidget::vertical(tall_content());
+    assert!(!scroll.v_bar.dragging);
+    assert!(!scroll.v_bar.track_hovered);
+    assert!(!scroll.v_bar.thumb_hovered);
+    assert!(!scroll.h_bar.dragging);
+    assert!(!scroll.h_bar.track_hovered);
+    assert!(!scroll.h_bar.thumb_hovered);
+}
+
+#[test]
+fn scroll_horizontal_bar_hover_resets_on_leave() {
+    let mut scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Both);
+    scroll.h_bar.track_hovered = true;
+    scroll.h_bar.thumb_hovered = true;
+    scroll.h_bar.dragging = true;
+
+    let event = LifecycleEvent::HotChanged {
+        widget_id: scroll.id(),
+        is_hot: false,
+    };
+    let mut lctx = LifecycleCtx {
+        widget_id: scroll.id(),
+        interaction: &crate::interaction::InteractionState::default(),
+        requests: ControllerRequests::NONE,
+    };
+    scroll.lifecycle(&event, &mut lctx);
+    assert!(!scroll.h_bar.track_hovered);
+    assert!(!scroll.h_bar.thumb_hovered);
+    assert!(
+        scroll.h_bar.dragging,
+        "dragging must persist through hot loss"
+    );
+}
+
+#[test]
+fn scroll_visual_state_reflects_interaction() {
+    use crate::widgets::scrollbar::ScrollbarVisualState;
+
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    assert_eq!(scroll.v_bar.visual_state(), ScrollbarVisualState::Rest);
+
+    scroll.v_bar.track_hovered = true;
+    assert_eq!(scroll.v_bar.visual_state(), ScrollbarVisualState::Hovered);
+
+    scroll.v_bar.dragging = true;
+    assert_eq!(scroll.v_bar.visual_state(), ScrollbarVisualState::Dragging);
+}
+
+#[test]
+fn scroll_default_style_is_theme_backed() {
+    use super::ScrollbarStyle;
+    use crate::theme::UiTheme;
+
+    let scroll = ScrollWidget::vertical(tall_content());
+    let expected = ScrollbarStyle::from_theme(&UiTheme::dark());
+    assert_eq!(scroll.scrollbar_style.thumb_color, expected.thumb_color);
+    assert_eq!(scroll.scrollbar_style.thickness, expected.thickness);
+}
+
+#[test]
+fn scroll_vertical_emits_scrollbar_quad() {
+    let scroll = make_scroll(tall_content());
+    let measurer = MockMeasurer::STANDARD;
+    let mut scene = Scene::new();
+    let b = bounds();
+    // Populate cache first so draw_scrollbars sees overflow.
+    let theme = super::super::tests::TEST_THEME;
+    scroll.child_natural_size(&measurer, &theme, b);
+
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        scene: &mut scene,
+        bounds: b,
+        now: std::time::Instant::now(),
+        theme: &theme,
+        icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    scroll.paint(&mut ctx);
+
+    // Should have at least one quad for the thumb.
+    assert!(
+        scene.quads().iter().any(|q| q.bounds.width() <= 8.0),
+        "expected a thin scrollbar quad"
+    );
+}
+
+#[test]
+fn scroll_horizontal_mode_scroll_by_x() {
+    let mut scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Horizontal);
+    // Scroll_by_x should work.
+    let changed = scroll.scroll_by_x(50.0, 600.0, 200.0);
+    assert!(changed);
+    assert!((scroll.scroll_offset_x - 50.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_both_wheel_applies_both_axes() {
+    let mut scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Both);
+    populate_cache(&scroll, bounds());
+
+    let event = InputEvent::Scroll {
+        pos: Point::new(100.0, 50.0),
+        delta: ScrollDelta::Pixels { x: -30.0, y: -40.0 },
+        modifiers: Modifiers::NONE,
+    };
+    let result = scroll.on_input(&event, bounds());
+    // Wheel input in Both mode should be handled.
+    assert!(result.handled);
+}
+
+// -- Harness integration tests (full propagation pipeline) --
+
+#[test]
+fn harness_scrollbar_drag_captures_and_releases() {
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+
+    let scroll = ScrollWidget::vertical(tall_content());
+    let scroll_id = scroll.id();
+    let mut h = WidgetTestHarness::with_size(scroll, 200.0, 100.0);
+
+    // Render to populate scrollbar hit zones (updated during paint).
+    h.render();
+
+    // Scrollbar thumb position: right edge of viewport.
+    // Default style: thickness=6, edge_inset=2, hit_slop=4.
+    // Thumb x center ≈ 200 - 2 - 3 = 195.
+    // Thumb y near top (scroll_offset=0): ≈ 15.
+    let thumb_x = 195.0;
+    let thumb_y = 15.0;
+
+    // Move to scrollbar thumb, then press.
+    h.mouse_move(Point::new(thumb_x, thumb_y));
+    h.mouse_down(MouseButton::Left);
+    assert!(
+        h.is_active(scroll_id),
+        "ScrollWidget should capture on scrollbar thumb press"
+    );
+
+    // Drag down — controller emits DragUpdate, ScrollWidget updates offset.
+    h.mouse_move(Point::new(thumb_x, thumb_y + 40.0));
+
+    // Release — controller emits DragEnd, clears active.
+    h.mouse_up(MouseButton::Left);
+    assert!(
+        !h.is_active(scroll_id),
+        "capture should release after scrollbar drag"
+    );
+}
+
+#[test]
+fn harness_content_click_reaches_child() {
+    use crate::input::MouseButton;
+    use crate::testing::WidgetTestHarness;
+    use crate::widgets::WidgetAction;
+    use crate::widgets::button::ButtonWidget;
+
+    let button = ButtonWidget::new("Click Me");
+    let button_id = button.id();
+
+    // Build tall content with button at top so the viewport overflows
+    // (enabling the scrollbar) while the button remains visible.
+    let mut children: Vec<Box<dyn Widget>> = vec![Box::new(button)];
+    let labels: Vec<Box<dyn Widget>> = (0..20)
+        .map(|i| Box::new(LabelWidget::new(format!("Line {i}"))) as Box<dyn Widget>)
+        .collect();
+    children.extend(labels);
+    let container = ContainerWidget::column().with_children(children);
+
+    let scroll = ScrollWidget::vertical(Box::new(container));
+    let scroll_id = scroll.id();
+    let mut h = WidgetTestHarness::with_size(scroll, 200.0, 100.0);
+
+    // Render to populate scrollbar hit zones.
+    h.render();
+
+    // Click in the content area (left side, center of button row).
+    // Button is the first child at approximately y=0..16, center at y=8.
+    let content_pos = Point::new(50.0, 8.0);
+    h.mouse_move(content_pos);
+    h.mouse_down(MouseButton::Left);
+
+    // ScrollbarCaptureController should pass through (click outside scrollbar).
+    // The button should capture instead.
+    assert!(
+        !h.is_active(scroll_id),
+        "ScrollWidget should not capture content-area clicks"
+    );
+    assert!(
+        h.is_active(button_id),
+        "button should receive the click through the pipeline"
+    );
+
+    h.mouse_up(MouseButton::Left);
+
+    let actions = h.take_actions();
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, WidgetAction::Clicked(id) if *id == button_id)),
+        "expected Clicked action from button, got: {actions:?}",
+    );
 }

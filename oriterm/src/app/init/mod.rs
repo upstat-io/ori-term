@@ -36,6 +36,7 @@ impl App {
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
+            decoration: decoration_to_mode(self.config.window.decorations),
             ..WindowConfig::default()
         };
 
@@ -67,7 +68,7 @@ impl App {
         let window = TermWindow::from_window(window_arc, &window_config, &gpu, session_wid)?;
 
         // 6. Join font thread (GPU init + surface setup ran concurrently).
-        let (mut font_collection, cached_font_set, mut font_cache, user_fb_count, t_fonts) =
+        let (mut font_collection, cached_font_set, font_cache, fallback_map, t_fonts) =
             match font_handle.join() {
                 Ok(Ok(result)) => result,
                 Ok(Err(e)) => return Err(e.into()),
@@ -88,12 +89,16 @@ impl App {
         // Config overrides take priority over auto-detection.
         let hinting = config_reload::resolve_hinting(&self.config.font, scale);
         font_collection.set_hinting(hinting);
-        let subpixel_format =
-            config_reload::resolve_subpixel_mode(&self.config.font, scale).glyph_format();
+        let subpixel_format = config_reload::resolve_subpixel_mode(
+            &self.config.font,
+            scale,
+            f64::from(self.config.window.effective_opacity()),
+        )
+        .glyph_format();
         font_collection.set_format(subpixel_format);
 
         // 6d. Apply font config: features, per-fallback metadata, codepoint map.
-        config_reload::apply_font_config(&mut font_collection, &self.config.font, user_fb_count);
+        config_reload::apply_font_config(&mut font_collection, &self.config.font, &fallback_map);
 
         // 7a. Create shared pipelines (once).
         let t_renderer_start = std::time::Instant::now();
@@ -102,23 +107,31 @@ impl App {
         // 7b. FontSet cached from thread (Arc-cloned before FontCollection
         // consumed it — zero disk reads).
 
-        // 7c. UI font discovery + cache (reuses font_cache for shared fallbacks).
-        let ui_font_set = discover_ui_font_set(&mut font_cache);
+        // 7c. UI font registry: exact-size collections for all UI text sizes.
+        // Uses embedded IBM Plex Mono with forced grayscale + no hinting so
+        // the settings dialog renders identically on all platforms.
         drop(font_cache);
-        let ui_fc = ui_font_set.as_ref().and_then(|fs| {
-            FontCollection::new(
-                fs.clone(),
-                11.0,
-                physical_dpi,
-                subpixel_format,
-                400,
-                hinting,
-            )
-            .ok()
+        let ui_font_set = FontSet::ui_embedded();
+        let ui_sizes = crate::font::UiFontSizes::new(
+            ui_font_set,
+            physical_dpi,
+            GlyphFormat::Alpha,
+            HintingMode::None,
+            400,
+            crate::font::ui_font_sizes::PRELOAD_SIZES,
+        )
+        .ok()
+        .map(|mut sizes| {
+            config_reload::apply_font_config_to_ui_sizes(
+                &mut sizes,
+                &self.config.font,
+                &fallback_map,
+            );
+            sizes
         });
 
         // 7d. Create per-window renderer.
-        let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_fc);
+        let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_sizes);
         let t_renderer = t_renderer_start.elapsed();
 
         // 8. Create tab bar widget and apply platform effects.
@@ -128,7 +141,14 @@ impl App {
         // 9. Compute grid dimensions via layout engine (Column { TabBar, Grid }).
         let cell = renderer.cell_metrics();
         let scale = window.scale_factor().factor() as f32;
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale);
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let tb_h = tab_bar_widget.metrics().height;
+        let sb_h = if self.config.window.show_status_bar {
+            oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
 
         // 10. Create grid widget with cell metrics and layout-computed size.
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, wl.cols, wl.rows);
@@ -148,7 +168,7 @@ impl App {
             "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
              renderer={t_renderer:?} mux={t_mux:?} total={t_total:?}",
         );
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let tab_bar_h = if hidden { 0.0 } else { tb_h };
         log::info!(
             "app: initialized — {w}x{h} px, {} cols × {} rows, \
              chrome={tab_bar_h}px, font={} {:.1}pt",
@@ -171,13 +191,22 @@ impl App {
         // immediately interactive.
         window.window().focus_window();
 
+        // Status bar widget (bottom metadata bar).
+        let status_bar_widget =
+            oriterm_ui::widgets::status_bar::StatusBarWidget::new(w as f32 / scale, &self.ui_theme);
+
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
+        let ctx = WindowContext::new(
+            window,
+            tab_bar_widget,
+            status_bar_widget,
+            grid_widget,
+            Some(renderer),
+        );
         self.gpu = Some(gpu);
         self.pipelines = Some(pipelines);
         self.font_set = Some(cached_font_set);
-        self.ui_font_set = ui_font_set;
-        self.user_fb_count = user_fb_count;
+        self.user_fallback_map = fallback_map;
         self.windows.insert(winit_id, ctx);
         self.window_manager
             .register(ManagedWindow::new(winit_id, WindowKind::Main));
@@ -189,7 +218,7 @@ impl App {
 
     /// Spawn font discovery on a background thread.
     ///
-    /// Returns `(FontCollection, FontSet, FontByteCache, user_fb_count, elapsed)`.
+    /// Returns `(FontCollection, FontSet, FontByteCache, fallback_map, elapsed)`.
     /// The `FontSet` is an `Arc`-cloned copy preserved before `FontCollection`
     /// consumes the original — zero additional disk reads. The `FontByteCache`
     /// is returned so the caller can reuse it for UI font loading.
@@ -206,7 +235,7 @@ impl App {
                     FontCollection,
                     FontSet,
                     FontByteCache,
-                    usize,
+                    Vec<usize>,
                     std::time::Duration,
                 ),
                 crate::font::FontError,
@@ -233,7 +262,7 @@ impl App {
                     .iter()
                     .map(|f| f.family.as_str())
                     .collect();
-                let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
+                let fallback_map = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
 
                 // Clone before FontCollection consumes the FontSet (Arc clone, no disk I/O).
                 let cached_set = font_set.clone();
@@ -248,7 +277,7 @@ impl App {
                     font_weight,
                     HintingMode::Full,
                 )?;
-                Ok((fc, cached_set, cache, user_fb_count, t0.elapsed()))
+                Ok((fc, cached_set, cache, fallback_map, t0.elapsed()))
             })
             .map_err(|e| -> Box<dyn std::error::Error> {
                 format!("failed to spawn font discovery thread: {e}").into()
@@ -267,7 +296,18 @@ impl App {
         let (w, _) = window.size_px();
         let scale = window.scale_factor().factor() as f32;
         let logical_w = w as f32 / scale;
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let metrics = metrics_from_style(self.config.window.tab_bar_style);
+
+        // When the tab bar is hidden, chrome should report zero caption height
+        // so macOS traffic lights and Windows Aero Snap use the correct geometry
+        // from the start, not just after the first relayout.
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let chrome_h = if hidden { 0.0 } else { metrics.height };
+
+        // Publish the active tab bar height so macOS fullscreen notification
+        // callbacks can center traffic lights at the correct height.
+        #[cfg(target_os = "macos")]
+        crate::window_manager::platform::macos::set_tab_bar_height(chrome_h);
 
         // Install platform chrome (Aero Snap subclass on Windows, no-op elsewhere).
         // Empty rects — the tab bar widget is created next.
@@ -275,12 +315,14 @@ impl App {
             window.window(),
             crate::window_manager::platform::ChromeMode::Main,
             &[],
-            tab_bar_h,
+            chrome_h,
             scale,
         );
-
-        let mut tab_bar_widget =
-            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
+        let mut tab_bar_widget = oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme_and_metrics(
+            logical_w,
+            &self.ui_theme,
+            metrics,
+        );
 
         // Reserve space for macOS traffic light buttons on the left.
         #[cfg(target_os = "macos")]
@@ -293,14 +335,46 @@ impl App {
         super::chrome::refresh_chrome(
             window.window(),
             &tab_bar_widget.interactive_rects(),
-            tab_bar_h,
+            chrome_h,
             scale,
             true,
         );
 
         tab_bar_widget
     }
+}
 
+/// Convert a [`Decorations`](crate::config::Decorations) config value into
+/// [`DecorationMode`](oriterm_ui::window::DecorationMode).
+pub(super) fn decoration_to_mode(
+    decorations: crate::config::Decorations,
+) -> oriterm_ui::window::DecorationMode {
+    match decorations {
+        crate::config::Decorations::None => oriterm_ui::window::DecorationMode::Frameless,
+        crate::config::Decorations::Full => oriterm_ui::window::DecorationMode::Native,
+        crate::config::Decorations::Transparent => {
+            oriterm_ui::window::DecorationMode::TransparentTitlebar
+        }
+        crate::config::Decorations::Buttonless => oriterm_ui::window::DecorationMode::Buttonless,
+    }
+}
+
+/// Convert a [`TabBarStyle`](crate::config::TabBarStyle) config value into
+/// [`TabBarMetrics`](oriterm_ui::widgets::tab_bar::constants::TabBarMetrics).
+pub(super) fn metrics_from_style(
+    style: crate::config::TabBarStyle,
+) -> oriterm_ui::widgets::tab_bar::constants::TabBarMetrics {
+    match style {
+        crate::config::TabBarStyle::Default => {
+            oriterm_ui::widgets::tab_bar::constants::TabBarMetrics::DEFAULT
+        }
+        crate::config::TabBarStyle::Compact => {
+            oriterm_ui::widgets::tab_bar::constants::TabBarMetrics::COMPACT
+        }
+    }
+}
+
+impl App {
     /// Create an initial tab with one pane in the given mux window.
     ///
     /// The mux backend and window must already exist. The pane is stored
@@ -345,16 +419,4 @@ impl App {
 
         Ok(())
     }
-}
-
-/// Discover the system UI font (proportional sans-serif) for tab bar and overlays.
-///
-/// Reuses `cache` for shared fallback fonts (e.g., `NotoColorEmoji` loaded
-/// once for both terminal and UI collections).
-///
-/// Returns `None` if no suitable font is found — the terminal font is used
-/// as a fallback in that case.
-fn discover_ui_font_set(cache: &mut FontByteCache) -> Option<FontSet> {
-    let discovery = crate::font::discovery::discover_ui_fonts();
-    FontSet::from_discovery(&discovery, cache).ok()
 }

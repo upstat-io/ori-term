@@ -7,34 +7,15 @@
 //! All grid queries operate on [`SnapshotGrid`] — no terminal lock required.
 //! Mark cursor and selection state live on [`App`](super::App), not on `Pane`.
 
-pub(crate) mod motion;
-
 use winit::event::KeyEvent;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
 use oriterm_mux::MarkCursor;
+use oriterm_ui::interaction::mark_mode::motion::{self, AbsCursor, GridBounds, WordContext};
+pub(crate) use oriterm_ui::interaction::mark_mode::{MarkAction, SelectionUpdate};
 
-use self::motion::{AbsCursor, GridBounds, WordContext};
 use super::snapshot_grid::SnapshotGrid;
-
-/// Result of processing a key event in mark mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MarkAction {
-    /// Key was handled (consumed by mark mode).
-    ///
-    /// `scroll_delta` is `Some(delta)` when the viewport needs to scroll
-    /// to keep the mark cursor visible. The caller applies the scroll via
-    /// `MuxBackend::scroll_display`.
-    Handled { scroll_delta: Option<isize> },
-    /// Key was not recognized by mark mode (fall through).
-    Ignored,
-    /// Exit mark mode. `copy` indicates whether to copy the selection.
-    Exit {
-        /// Whether to copy the selection to the clipboard on exit.
-        copy: bool,
-    },
-}
 
 /// Cursor motion direction.
 #[derive(Clone, Copy)]
@@ -63,14 +44,6 @@ pub(crate) struct MarkModeResult {
     pub new_cursor: Option<MarkCursor>,
     /// Updated selection (if shift+motion or select-all occurred).
     pub new_selection: Option<SelectionUpdate>,
-}
-
-/// Selection state update from mark mode.
-pub(crate) enum SelectionUpdate {
-    /// Set or replace the selection.
-    Set(Selection),
-    /// Clear the selection.
-    Clear,
 }
 
 /// Dispatch a key event while mark mode is active.

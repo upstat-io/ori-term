@@ -2,7 +2,7 @@
 
 use oriterm_core::Rgb;
 
-use super::{INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
+use super::{CLIP_UNCLIPPED, INSTANCE_SIZE, InstanceKind, InstanceWriter, ScreenRect};
 use crate::gpu::srgb_to_linear;
 
 /// Read a little-endian `f32` from the given byte offset.
@@ -26,12 +26,12 @@ const RED: Rgb = Rgb { r: 255, g: 0, b: 0 };
 // --- Record layout ---
 
 #[test]
-fn instance_size_is_80_bytes() {
-    assert_eq!(INSTANCE_SIZE, 80);
+fn instance_size_is_96_bytes() {
+    assert_eq!(INSTANCE_SIZE, 96);
 }
 
 #[test]
-fn push_rect_produces_80_byte_record() {
+fn push_rect_produces_96_byte_record() {
     let mut w = InstanceWriter::new();
     w.push_rect(
         ScreenRect {
@@ -45,7 +45,7 @@ fn push_rect_produces_80_byte_record() {
     );
 
     assert_eq!(w.len(), 1);
-    assert_eq!(w.byte_len(), 80);
+    assert_eq!(w.byte_len(), 96);
 }
 
 #[test]
@@ -114,6 +114,7 @@ fn push_glyph_field_offsets() {
         WHITE,
         1.0,
         0,
+        CLIP_UNCLIPPED,
     );
 
     let rec = w.as_bytes();
@@ -195,6 +196,7 @@ fn push_glyph_with_bg_field_offsets() {
         RED,   // bg
         0.9,
         3,
+        CLIP_UNCLIPPED,
     );
 
     let rec = w.as_bytes();
@@ -337,6 +339,7 @@ fn multiple_pushes_accumulate() {
         WHITE,
         1.0,
         0,
+        CLIP_UNCLIPPED,
     );
     w.push_cursor(
         ScreenRect {
@@ -350,13 +353,13 @@ fn multiple_pushes_accumulate() {
     );
 
     assert_eq!(w.len(), 3);
-    assert_eq!(w.byte_len(), 240);
+    assert_eq!(w.byte_len(), 288);
 
     // Each record starts at the right offset.
     let bytes = w.as_bytes();
     assert_eq!(read_u32(bytes, 64), InstanceKind::Rect as u32);
-    assert_eq!(read_u32(bytes, 80 + 64), InstanceKind::Glyph as u32);
-    assert_eq!(read_u32(bytes, 160 + 64), InstanceKind::Cursor as u32);
+    assert_eq!(read_u32(bytes, 96 + 64), InstanceKind::Glyph as u32);
+    assert_eq!(read_u32(bytes, 192 + 64), InstanceKind::Cursor as u32);
 }
 
 #[test]
@@ -410,6 +413,7 @@ fn clear_and_reuse() {
         WHITE,
         1.0,
         0,
+        CLIP_UNCLIPPED,
     );
 
     assert_eq!(w.len(), 1);
@@ -432,7 +436,7 @@ fn push_raw_valid() {
 }
 
 #[test]
-#[should_panic(expected = "raw instance must be exactly 80 bytes")]
+#[should_panic(expected = "raw instance must be exactly 96 bytes")]
 fn push_raw_wrong_size_panics() {
     let mut w = InstanceWriter::new();
     w.push_raw(&[0u8; 40]);
@@ -453,84 +457,6 @@ fn instance_kind_discriminants() {
     assert_eq!(InstanceKind::Rect as u32, 0);
     assert_eq!(InstanceKind::Glyph as u32, 1);
     assert_eq!(InstanceKind::Cursor as u32, 2);
-    assert_eq!(InstanceKind::UiRect as u32, 3);
 }
 
-// --- UI rect instances ---
-
-#[test]
-fn push_ui_rect_field_offsets() {
-    let mut w = InstanceWriter::new();
-    let fill = [0.2, 0.3, 0.4, 0.9];
-    let border = [1.0, 1.0, 1.0, 1.0];
-    w.push_ui_rect(
-        ScreenRect {
-            x: 100.0,
-            y: 200.0,
-            w: 300.0,
-            h: 150.0,
-        },
-        fill,
-        border,
-        8.0,
-        2.0,
-    );
-
-    let rec = w.as_bytes();
-
-    // Position.
-    assert_eq!(read_f32(rec, 0), 100.0);
-    assert_eq!(read_f32(rec, 4), 200.0);
-    assert_eq!(read_f32(rec, 8), 300.0);
-    assert_eq!(read_f32(rec, 12), 150.0);
-
-    // UV (zeroed for UI rects).
-    assert_eq!(read_f32(rec, 16), 0.0);
-    assert_eq!(read_f32(rec, 20), 0.0);
-    assert_eq!(read_f32(rec, 24), 0.0);
-    assert_eq!(read_f32(rec, 28), 0.0);
-
-    // FG = border color.
-    assert_eq!(read_f32(rec, 32), 1.0);
-    assert_eq!(read_f32(rec, 36), 1.0);
-    assert_eq!(read_f32(rec, 40), 1.0);
-    assert_eq!(read_f32(rec, 44), 1.0);
-
-    // BG = fill color.
-    assert!((read_f32(rec, 48) - 0.2).abs() < 1e-6);
-    assert!((read_f32(rec, 52) - 0.3).abs() < 1e-6);
-    assert!((read_f32(rec, 56) - 0.4).abs() < 1e-6);
-    assert!((read_f32(rec, 60) - 0.9).abs() < 1e-6);
-
-    // Kind = UiRect (3).
-    assert_eq!(read_u32(rec, 64), 3);
-
-    // Atlas page = 0.
-    assert_eq!(read_u32(rec, 68), 0);
-
-    // Corner radius and border width.
-    assert_eq!(read_f32(rec, 72), 8.0);
-    assert_eq!(read_f32(rec, 76), 2.0);
-}
-
-#[test]
-fn push_ui_rect_no_border() {
-    let mut w = InstanceWriter::new();
-    w.push_ui_rect(
-        ScreenRect {
-            x: 0.0,
-            y: 0.0,
-            w: 50.0,
-            h: 50.0,
-        },
-        [1.0, 0.0, 0.0, 1.0],
-        [0.0; 4],
-        0.0,
-        0.0,
-    );
-
-    let rec = w.as_bytes();
-    assert_eq!(read_u32(rec, 64), 3);
-    assert_eq!(read_f32(rec, 72), 0.0);
-    assert_eq!(read_f32(rec, 76), 0.0);
-}
+// UI rect tests moved to ui_rect_writer/tests.rs.

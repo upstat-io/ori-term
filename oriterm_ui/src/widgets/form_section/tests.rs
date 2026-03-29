@@ -1,12 +1,12 @@
-use crate::draw::DrawList;
+use crate::draw::Scene;
 use crate::geometry::{Point, Rect};
-use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::input::{InputEvent, Modifiers, MouseButton};
 use crate::layout::{SizeSpec, compute_layout};
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::form_row::FormRow;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::FormSection;
 
@@ -79,28 +79,20 @@ fn click_on_header_toggles_expanded() {
     let mut section = test_section();
     assert!(section.is_expanded());
 
-    let measurer = MockMeasurer::STANDARD;
     let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
 
-    // Click on header (y < HEADER_HEIGHT=28).
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
+    // Click on header (y=10 < HEADER_HEIGHT=28) via on_input.
+    let event = InputEvent::MouseDown {
         pos: Point::new(50.0, 10.0),
+        button: MouseButton::Left,
         modifiers: Modifiers::NONE,
     };
-    let resp = section.handle_mouse(&event, &ctx);
+    let result = section.on_input(&event, bounds);
+    assert!(result.handled);
     assert!(!section.is_expanded());
-    assert_eq!(resp, WidgetResponse::layout());
 
     // Click again to re-expand.
-    let _ = section.handle_mouse(&event, &ctx);
+    section.on_input(&event, bounds);
     assert!(section.is_expanded());
 }
 
@@ -130,26 +122,22 @@ fn not_focusable() {
 fn draw_produces_header_text() {
     let section = test_section();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    section.draw(&mut ctx);
+    section.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
-        .count();
+    let text_cmds = scene.text_runs().len();
     // Indicator + title + 2 rows × (label + control) = 2 + 4 = 6.
     assert!(
         text_cmds >= 2,
@@ -161,26 +149,22 @@ fn draw_produces_header_text() {
 fn draw_skips_rows_outside_active_clip() {
     let section = test_section();
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    draw_list.push_clip(Rect::new(0.0, 0.0, 400.0, 60.0));
+    let mut scene = Scene::new();
+    scene.push_clip(Rect::new(0.0, 0.0, 400.0, 60.0));
     let bounds = Rect::new(0.0, 0.0, 400.0, 300.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    section.draw(&mut ctx);
+    section.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, crate::draw::DrawCommand::Text { .. }))
-        .count();
+    let text_cmds = scene.text_runs().len();
     assert_eq!(text_cmds, 4, "header and first visible row should draw");
 }

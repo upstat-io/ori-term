@@ -70,13 +70,36 @@ impl App {
         };
         let cell = renderer.cell_metrics();
         let scale = ctx.window.scale_factor().factor() as f32;
-        let wl = compute_window_layout(viewport_w, viewport_h, &cell, scale);
+        let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+        let tb_h = ctx.tab_bar.metrics().height;
+        let sb_h = if self.config.window.show_status_bar {
+            oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let border_inset = if ctx.window.is_maximized() || ctx.window.is_fullscreen() {
+            0.0
+        } else {
+            2.0
+        };
+        let wl = compute_window_layout(
+            viewport_w,
+            viewport_h,
+            &cell,
+            scale,
+            hidden,
+            tb_h,
+            sb_h,
+            border_inset,
+        );
 
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
         ctx.terminal_grid.set_cell_metrics(cell.width, cell.height);
         ctx.terminal_grid.set_grid_size(wl.cols, wl.rows);
         ctx.terminal_grid.set_bounds(wl.grid_rect);
+        ctx.tab_bar_phys_rect = wl.tab_bar_rect;
+        ctx.status_bar_phys_rect = wl.status_bar_rect;
         let (cols, rows) = (wl.cols, wl.rows);
 
         // Resize the active pane in this specific window (not the globally
@@ -100,6 +123,12 @@ impl App {
     /// `winit_id` identifies which window was resized. All operations
     /// (surface reconfigure, widget layout, grid recomputation) target
     /// only this window.
+    ///
+    /// Bails when the window is minimized. On Windows, the minimize
+    /// animation fires `Resized` with a small non-zero size (e.g. 199×34)
+    /// that produces a degenerate grid (15×1). Without this guard the PTY
+    /// receives that tiny resize, the shell reflows/clears, and content is
+    /// lost. On restore a fresh `Resized` fires with the real dimensions.
     pub(in crate::app) fn handle_resize(
         &mut self,
         winit_id: WindowId,
@@ -111,9 +140,6 @@ impl App {
         // is correct in the animation snapshot.
         #[cfg(target_os = "macos")]
         self.process_fullscreen_events();
-
-        // Window size changed — cached tab width is invalid.
-        self.release_tab_width_lock();
 
         // On Windows, detect DPI changes from WM_DPICHANGED. The snap
         // subclass proc consumes the message before winit sees it, so
@@ -132,7 +158,13 @@ impl App {
                 // Update chrome metrics for the new physical DPI.
                 if let Some(ctx) = self.windows.get(&winit_id) {
                     let s = new_scale as f32;
-                    let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+                    let tab_bar_h = if self.config.window.tab_bar_position
+                        == crate::config::TabBarPosition::Hidden
+                    {
+                        0.0
+                    } else {
+                        ctx.tab_bar.metrics().height
+                    };
                     super::refresh_chrome(
                         ctx.window.window(),
                         &ctx.tab_bar.interactive_rects(),
@@ -143,6 +175,23 @@ impl App {
                 }
             }
         }
+
+        // Skip resize while minimized. On Windows the minimize animation
+        // fires Resized with a small non-zero size (e.g. 199×34) that
+        // computes a degenerate grid (15×1). Sending that to the PTY makes
+        // the shell reflow/clear, destroying content. The restore event
+        // delivers the real dimensions.
+        let minimized = self
+            .windows
+            .get(&winit_id)
+            .and_then(|ctx| ctx.window.window().is_minimized())
+            .unwrap_or(false);
+        if minimized {
+            return;
+        }
+
+        // Window size changed — cached tab width is invalid.
+        self.release_tab_width_lock();
 
         // Resize GPU surface (scoped to release borrows before sync_grid_layout).
         {
@@ -158,6 +207,7 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             ctx.tab_bar.set_window_width(logical_w);
+            ctx.status_bar.set_window_width(logical_w);
 
             // macOS tab bar inset (traffic light space) is managed by
             // fullscreen transition notifications in macos.rs, not here.
@@ -171,9 +221,11 @@ impl App {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             let logical_h = size.height as f32 / scale;
-            ctx.overlays.set_viewport(oriterm_ui::geometry::Rect::new(
-                0.0, 0.0, logical_w, logical_h,
-            ));
+            ctx.root
+                .overlays_mut()
+                .set_viewport(oriterm_ui::geometry::Rect::new(
+                    0.0, 0.0, logical_w, logical_h,
+                ));
         }
 
         // Recompute grid dimensions, resize terminal + PTY + increments.
@@ -184,7 +236,9 @@ impl App {
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.url_cache.invalidate();
             ctx.hovered_url = None; // Segments contain stale absolute rows.
-            ctx.dirty = true;
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
+            ctx.root.mark_dirty();
         }
     }
 
@@ -198,7 +252,12 @@ impl App {
             return;
         };
         let scale = ctx.window.scale_factor().factor() as f32;
-        let tab_bar_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
+        let tab_bar_h =
+            if self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden {
+                0.0
+            } else {
+                ctx.tab_bar.metrics().height
+            };
         super::refresh_chrome(
             ctx.window.window(),
             &ctx.tab_bar.interactive_rects(),

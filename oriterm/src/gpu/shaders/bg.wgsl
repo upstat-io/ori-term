@@ -1,8 +1,9 @@
 // Background shader: solid-color quads via vertex pulling.
 //
-// Each instance is an 80-byte record from the instance buffer. The vertex
+// Each instance is a 96-byte record from the instance buffer. The vertex
 // shader maps @builtin(vertex_index) 0-3 to TriangleStrip corners and
-// converts pixel positions to NDC. The fragment shader returns bg_color.
+// converts pixel positions to NDC. The fragment shader returns bg_color
+// after per-instance clip rect testing.
 
 struct Uniform {
     screen_size: vec2<f32>,
@@ -19,11 +20,14 @@ struct InstanceInput {
     @location(3) fg_color: vec4<f32>,
     @location(4) bg_color: vec4<f32>,
     @location(5) kind: u32,
+    @location(7) clip: vec4<f32>,
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) bg_color: vec4<f32>,
+    @location(1) clip_min: vec2<f32>,
+    @location(2) clip_max: vec2<f32>,
 }
 
 @vertex
@@ -48,11 +52,20 @@ fn vs_main(
     var out: VertexOutput;
     out.position = vec4<f32>(ndc, 0.0, 1.0);
     out.bg_color = instance.bg_color;
+    out.clip_min = instance.clip.xy;
+    out.clip_max = instance.clip.xy + instance.clip.zw;
     return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // Per-instance clip rect test.
+    let frag_pos = input.position.xy;
+    if frag_pos.x < input.clip_min.x || frag_pos.x > input.clip_max.x
+        || frag_pos.y < input.clip_min.y || frag_pos.y > input.clip_max.y {
+        discard;
+    }
+
     // Premultiply: blend state is src×1 + dst×(1−srcα).
     let c = input.bg_color;
     return vec4<f32>(c.rgb * c.a, c.a);

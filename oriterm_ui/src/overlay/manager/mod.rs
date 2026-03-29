@@ -4,20 +4,24 @@
 //! into the manager at specific frame-loop points: events before the main tree,
 //! layout after the main tree, drawing after the main tree.
 
-mod event_routing;
+pub(in crate::overlay) mod event_routing;
 mod lifecycle;
 
 use std::time::Duration;
 
+use winit::window::CursorIcon;
+
+use crate::action::WidgetAction;
 use crate::color::Color;
 use crate::compositor::layer_tree::LayerTree;
 use crate::draw::RectStyle;
 use crate::geometry::LayerId;
 use crate::geometry::{Point, Rect, Size};
-use crate::layout::compute_layout;
+use crate::input::layout_hit_test_path;
+use crate::layout::{LayoutNode, compute_layout};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
-use crate::widgets::{DrawCtx, LayoutCtx, Widget, WidgetResponse};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 use super::overlay_id::OverlayId;
 use super::placement::{Placement, compute_overlay_rect};
@@ -51,12 +55,30 @@ pub(in crate::overlay) struct Overlay {
     pub(in crate::overlay) kind: OverlayKind,
     /// Computed screen-space rectangle (set by `layout_overlays`).
     pub(in crate::overlay) computed_rect: Rect,
+    /// Layout tree root for this overlay's widget (set by `layout_overlays`).
+    ///
+    /// Used by the propagation pipeline to hit-test into the widget tree.
+    /// `None` before the first layout pass.
+    pub(in crate::overlay) layout_node: Option<LayoutNode>,
 
     // Compositor integration.
     /// Compositor layer for this overlay's content.
     pub(in crate::overlay) layer_id: LayerId,
     /// Compositor layer for modal dimming (modals only).
     pub(in crate::overlay) dim_layer_id: Option<LayerId>,
+}
+
+/// Response from delivering an event to an overlay widget.
+///
+/// Carries the semantic action (if any) and whether the event was consumed.
+/// Capture state and layout invalidation are handled internally by the
+/// overlay manager — callers only see action + handled.
+#[derive(Debug)]
+pub struct OverlayResponse {
+    /// Semantic action emitted by the widget, if any.
+    pub action: Option<WidgetAction>,
+    /// Whether the event was consumed by the overlay.
+    pub handled: bool,
 }
 
 /// Result of routing an event through the overlay stack.
@@ -66,8 +88,8 @@ pub enum OverlayEventResult {
     Delivered {
         /// Which overlay received the event.
         overlay_id: OverlayId,
-        /// The widget's response.
-        response: WidgetResponse,
+        /// The overlay's response.
+        response: OverlayResponse,
     },
     /// A click outside dismissed the topmost overlay.
     Dismissed(OverlayId),
@@ -89,14 +111,15 @@ pub struct OverlayManager {
     /// Index of the overlay currently under the cursor.
     ///
     /// Tracked across `process_hover_event` calls so we can send
-    /// `HoverEvent::Leave` to the old overlay when hover transitions.
+    /// `LifecycleEvent::HotChanged` to the old overlay when hover transitions.
     pub(in crate::overlay) hovered_overlay: Option<usize>,
     /// Index of the overlay with active mouse capture (drag in progress).
     ///
     /// When set, all mouse events route to this overlay regardless of cursor
     /// position, and click-outside dismiss is suppressed. Cleared on `MouseUp`
-    /// or explicit `CaptureRequest::Release`. Benign if the cursor leaves the
-    /// window entirely — the next mouse event re-enters and routes correctly.
+    /// or explicit `CLEAR_ACTIVE` controller request. Benign if the cursor
+    /// leaves the window entirely — the next mouse event re-enters and routes
+    /// correctly.
     pub(in crate::overlay) captured_overlay: Option<usize>,
     /// Whether overlay placement needs recomputation.
     ///
@@ -153,6 +176,33 @@ impl OverlayManager {
         self.overlays.len()
     }
 
+    /// Returns the cursor icon for the topmost overlay at the given point.
+    ///
+    /// Hit-tests back-to-front through active overlays. Returns `Some(icon)`
+    /// if the point lands inside an overlay (leaf cursor from the layout
+    /// tree, or `Default` if no layout is available). Returns `None` if the
+    /// point is outside all overlays.
+    pub fn cursor_icon_at(&self, point: Point) -> Option<CursorIcon> {
+        for overlay in self.overlays.iter().rev() {
+            if overlay.computed_rect.contains(point) {
+                if let Some(ref node) = overlay.layout_node {
+                    let local = Point::new(
+                        point.x - overlay.computed_rect.x(),
+                        point.y - overlay.computed_rect.y(),
+                    );
+                    let hit = layout_hit_test_path(node, local);
+                    return Some(
+                        hit.path
+                            .last()
+                            .map_or(CursorIcon::Default, |e| e.cursor_icon),
+                    );
+                }
+                return Some(CursorIcon::Default);
+            }
+        }
+        None
+    }
+
     /// Returns `true` if the topmost overlay is modal.
     pub fn has_modal(&self) -> bool {
         self.overlays
@@ -190,6 +240,16 @@ impl OverlayManager {
         true
     }
 
+    /// Visits each active overlay's root widget mutably.
+    ///
+    /// Used by the framework pipeline to walk overlay widget trees for
+    /// lifecycle delivery, animation ticks, and visual state updates.
+    pub fn for_each_widget_mut(&mut self, mut visitor: impl FnMut(&mut dyn Widget)) {
+        for overlay in &mut self.overlays {
+            visitor(overlay.widget.as_mut());
+        }
+    }
+
     // Frame-loop API
 
     /// Computes layout for all overlays (active + dismissing).
@@ -219,6 +279,7 @@ impl OverlayManager {
 
             overlay.computed_rect =
                 compute_overlay_rect(overlay.anchor, content_size, viewport, overlay.placement);
+            overlay.layout_node = Some(node);
         }
 
         self.layout_dirty = false;
@@ -257,23 +318,24 @@ impl OverlayManager {
                 MODAL_DIM_COLOR.b,
                 MODAL_DIM_COLOR.a * dim_opacity,
             );
-            ctx.draw_list
-                .push_rect(self.viewport, RectStyle::filled(dim_color));
+            ctx.scene
+                .push_quad(self.viewport, RectStyle::filled(dim_color));
         }
 
         // Content widget draws at full alpha — the returned opacity is
         // applied by the GPU converter to all emitted instances.
         let mut overlay_ctx = DrawCtx {
             measurer: ctx.measurer,
-            draw_list: ctx.draw_list,
+            scene: ctx.scene,
             bounds: overlay.computed_rect,
-            focused_widget: ctx.focused_widget,
             now: ctx.now,
-            animations_running: ctx.animations_running,
             theme: ctx.theme,
             icons: ctx.icons,
+            interaction: None,
+            widget_id: None,
+            frame_requests: None,
         };
-        overlay.widget.draw(&mut overlay_ctx);
+        overlay.widget.paint(&mut overlay_ctx);
 
         opacity
     }
@@ -294,7 +356,7 @@ impl OverlayManager {
     ///
     /// Used to update child widget state after an external action (e.g.,
     /// updating a dropdown's selected index after its popup menu was dismissed).
-    pub fn accept_action_topmost(&mut self, action: &crate::widgets::WidgetAction) -> bool {
+    pub fn accept_action_topmost(&mut self, action: &WidgetAction) -> bool {
         self.overlays
             .last_mut()
             .is_some_and(|o| o.widget.accept_action(action))

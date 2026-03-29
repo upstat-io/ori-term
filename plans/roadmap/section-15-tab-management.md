@@ -2,6 +2,9 @@
 section: 15
 title: Tab Struct & Management
 status: superseded
+third_party_review:
+  status: none
+  updated: null
 tier: 4
 goal: Tab struct with clean lifecycle, mode cache, ConPTY-safe shutdown; tab CRUD operations
 superseded_by: [30, 32]
@@ -13,6 +16,9 @@ sections:
   - id: "15.2"
     title: Tab Management Operations
     status: superseded
+  - id: "15.R"
+    title: "Third Party Review Findings"
+    status: not-started
   - id: "15.3"
     title: Section Completion
     status: superseded
@@ -179,6 +185,14 @@ Create, close, duplicate, cycle, and move tabs between windows. Tabs live in a g
 
 ---
 
+## 15.R Third Party Review Findings
+
+<!-- Reserved for Codex or other external reviewers. -->
+
+- None.
+
+---
+
 ## 15.3 Section Completion
 
 - [ ] All 15.1–15.2 items complete
@@ -190,5 +204,7 @@ Create, close, duplicate, cycle, and move tabs between windows. Tabs live in a g
 - [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
 - [ ] **Tests**: tab lifecycle, ID allocation, close ordering, cycling wrap-around
 - [ ] **Stress test**: rapidly close many tabs — no freeze, no orphaned PTY processes
+
+- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Tab struct has clean ownership with lock-free hot-path accessors. Tab management handles all CRUD operations with correct ConPTY-safe shutdown ordering. CWD inheritance works. Background thread cleanup prevents event loop freezes.

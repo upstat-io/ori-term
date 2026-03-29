@@ -17,10 +17,16 @@
 //! ```
 
 mod decoration_tests;
+mod dialog_helpers;
 mod edge_case_tests;
+mod main_window;
 mod meta_tests;
 mod multi_size;
 mod reference_tests;
+mod settings_dialog;
+mod status_bar;
+mod tab_bar_brutal;
+mod tab_bar_icons;
 
 use std::path::PathBuf;
 
@@ -55,7 +61,7 @@ pub(super) fn reference_dir() -> PathBuf {
 ///
 /// Uses `FontSet::embedded()` for deterministic output regardless of system
 /// fonts. Returns `None` if no GPU adapter is available.
-pub(super) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+pub(crate) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_with_config(TEST_FONT_SIZE_PT, TEST_DPI)
 }
 

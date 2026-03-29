@@ -127,7 +127,7 @@ pub(super) fn shape_frame(
 /// Callers build [`RasterKey`] iterators from their specific context:
 /// - Grid caller: iterates `ShapedFrame::all_glyphs()`, builds keys with
 ///   [`FontRealm::Terminal`] and `subpx_bin(glyph.x_offset)`.
-/// - UI caller: iterates `DrawList` text commands, builds keys with
+/// - UI caller: iterates Scene text runs, builds keys with
 ///   [`FontRealm::Ui`] and `subpx_bin(cursor_x + glyph.x_offset)`.
 #[expect(
     clippy::too_many_arguments,
@@ -153,7 +153,12 @@ pub(super) fn ensure_glyphs_cached(
         if empty_keys.contains(&key) {
             continue;
         }
-        if let Some(rasterized) = fonts.rasterize(key) {
+        let rasterized = if key.font_realm == FontRealm::Ui {
+            fonts.rasterize_with_weight(key, key.weight)
+        } else {
+            fonts.rasterize(key)
+        };
+        if let Some(rasterized) = rasterized {
             match rasterized.format {
                 GlyphFormat::Color => {
                     color_atlas.insert(key, rasterized, device, queue);
@@ -184,6 +189,7 @@ pub(super) fn grid_raster_keys(
     shaped.all_glyphs().iter().map(move |glyph| RasterKey {
         glyph_id: glyph.glyph_id,
         face_idx: crate::font::FaceIdx(glyph.face_index),
+        weight: 0,
         size_q6,
         synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
         hinted,
@@ -192,26 +198,25 @@ pub(super) fn grid_raster_keys(
     })
 }
 
-/// Collect [`RasterKey`]s from UI draw list text commands into `keys`.
+/// Collect [`RasterKey`]s from Scene text runs into `keys`.
 ///
+/// Each text run carries its own `size_q6` (stamped by the shaper from the
+/// exact-size `FontCollection`), enabling mixed-size text in one scene.
 /// The caller owns the buffer and should `clear()` before calling.
-/// Reusing the same `Vec` across frames avoids per-frame allocation.
-pub(super) fn ui_text_raster_keys(
-    draw_list: &oriterm_ui::draw::DrawList,
-    size_q6: u32,
+pub(super) fn scene_raster_keys(
+    scene: &oriterm_ui::draw::Scene,
     hinted: bool,
     scale: f32,
     keys: &mut Vec<RasterKey>,
 ) {
-    for cmd in draw_list.commands() {
-        let oriterm_ui::draw::DrawCommand::Text {
-            position, shaped, ..
-        } = cmd
-        else {
-            continue;
+    for text_run in scene.text_runs() {
+        let run_size_q6 = text_run.shaped.size_q6;
+        let realm = match text_run.shaped.font_source {
+            oriterm_ui::text::FontSource::Terminal => FontRealm::Terminal,
+            oriterm_ui::text::FontSource::Ui => FontRealm::Ui,
         };
-        let mut cursor_x = position.x * scale;
-        for glyph in &shaped.glyphs {
+        let mut cursor_x = text_run.position.x * scale;
+        for glyph in &text_run.shaped.glyphs {
             let advance = glyph.x_advance;
             if glyph.glyph_id == 0 {
                 cursor_x += advance;
@@ -220,11 +225,12 @@ pub(super) fn ui_text_raster_keys(
             keys.push(RasterKey {
                 glyph_id: glyph.glyph_id,
                 face_idx: crate::font::FaceIdx(glyph.face_index),
-                size_q6,
+                weight: text_run.shaped.weight,
+                size_q6: run_size_q6,
                 synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
                 hinted,
                 subpx_x: crate::font::subpx_bin(cursor_x + glyph.x_offset),
-                font_realm: FontRealm::Ui,
+                font_realm: realm,
             });
             cursor_x += advance;
         }
@@ -298,76 +304,16 @@ pub(super) fn record_draw(
     pass.draw(0..4, 0..instance_count);
 }
 
-/// Record an instanced draw call with scissor rect splitting.
+/// Record an instanced draw call for a sub-range `[start..end)`.
 ///
-/// Like [`record_draw`] but splits the draw into sub-ranges at each
-/// [`ClipSegment`] boundary, calling `set_scissor_rect` between them.
-/// Resets the scissor to the full viewport after the last segment.
-///
-/// When `clips` is empty, behaves identically to a single full draw.
+/// Like [`record_draw`] but draws only instances in `[start..end)`.
+/// Used for overlay draw ranges where each overlay occupies a contiguous
+/// sub-range of the shared buffer.
 #[expect(
     clippy::too_many_arguments,
-    reason = "GPU render pass + clip segments: pipeline, bind groups, buffer, count, clips, viewport"
+    reason = "GPU render pass + range: pipeline, bind groups, buffer, range"
 )]
-pub(super) fn record_draw_clipped(
-    pass: &mut RenderPass<'_>,
-    pipeline: &RenderPipeline,
-    uniform_bg: &BindGroup,
-    atlas_bg: Option<&BindGroup>,
-    buffer: Option<&Buffer>,
-    instance_count: u32,
-    clips: &[super::super::draw_list_convert::ClipSegment],
-    viewport_w: u32,
-    viewport_h: u32,
-) {
-    if instance_count == 0 {
-        return;
-    }
-    let Some(buf) = buffer else { return };
-
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, uniform_bg, &[]);
-    if let Some(atlas) = atlas_bg {
-        pass.set_bind_group(1, atlas, &[]);
-    }
-    pass.set_vertex_buffer(0, buf.slice(..));
-
-    if clips.is_empty() {
-        pass.draw(0..4, 0..instance_count);
-        return;
-    }
-
-    let mut cursor = 0u32;
-    for seg in clips {
-        // Draw instances before this clip change.
-        if seg.instance_offset > cursor {
-            pass.draw(0..4, cursor..seg.instance_offset);
-        }
-        // Apply new scissor.
-        if let Some(r) = seg.rect {
-            pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
-        } else {
-            pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-        }
-        cursor = seg.instance_offset;
-    }
-    // Draw remaining instances after the last clip change.
-    if cursor < instance_count {
-        pass.draw(0..4, cursor..instance_count);
-    }
-    // Reset scissor to full viewport.
-    pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-}
-
-/// Record an instanced draw call for a sub-range `[start..end)` with clips.
-///
-/// Like [`record_draw_clipped`] but draws only instances in `[start..end)`.
-/// Clip segment offsets are absolute (matching the buffer's instance indices).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "GPU render pass + range: pipeline, bind groups, buffer, range, clips, viewport"
-)]
-pub(super) fn record_draw_range_clipped(
+pub(super) fn record_draw_range(
     pass: &mut RenderPass<'_>,
     pipeline: &RenderPipeline,
     uniform_bg: &BindGroup,
@@ -375,56 +321,18 @@ pub(super) fn record_draw_range_clipped(
     buffer: Option<&Buffer>,
     start: u32,
     end: u32,
-    clips: &[super::super::draw_list_convert::ClipSegment],
-    viewport_w: u32,
-    viewport_h: u32,
 ) {
     if start >= end {
         return;
     }
     let Some(buf) = buffer else { return };
-
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, uniform_bg, &[]);
     if let Some(atlas) = atlas_bg {
         pass.set_bind_group(1, atlas, &[]);
     }
     pass.set_vertex_buffer(0, buf.slice(..));
-
-    if clips.is_empty() {
-        pass.draw(0..4, start..end);
-        return;
-    }
-
-    let mut cursor = start;
-    for seg in clips {
-        // Skip clips outside our range.
-        if seg.instance_offset < start {
-            // Apply the scissor but don't draw — it affects later segments.
-            if let Some(r) = seg.rect {
-                pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
-            } else {
-                pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-            }
-            continue;
-        }
-        if seg.instance_offset >= end {
-            break;
-        }
-        if seg.instance_offset > cursor {
-            pass.draw(0..4, cursor..seg.instance_offset);
-        }
-        if let Some(r) = seg.rect {
-            pass.set_scissor_rect(r[0], r[1], r[2], r[3]);
-        } else {
-            pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
-        }
-        cursor = seg.instance_offset;
-    }
-    if cursor < end {
-        pass.draw(0..4, cursor..end);
-    }
-    pass.set_scissor_rect(0, 0, viewport_w, viewport_h);
+    pass.draw(0..4, start..end);
 }
 
 /// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
@@ -447,12 +355,24 @@ pub(super) fn create_atlases(
     let (atlas, subpixel_atlas) = if format.is_subpixel() {
         let atlas = GlyphAtlas::new_lazy(device, GlyphFormat::Alpha);
         let mut sp_atlas = GlyphAtlas::new(device, format);
-        pre_cache_atlas(&mut sp_atlas, font_collection, device, queue);
+        pre_cache_atlas(
+            &mut sp_atlas,
+            font_collection,
+            FontRealm::Terminal,
+            device,
+            queue,
+        );
         (atlas, sp_atlas)
     } else {
         let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
         let sp_atlas = GlyphAtlas::new_lazy(device, GlyphFormat::SubpixelRgb);
-        pre_cache_atlas(&mut atlas, font_collection, device, queue);
+        pre_cache_atlas(
+            &mut atlas,
+            font_collection,
+            FontRealm::Terminal,
+            device,
+            queue,
+        );
         (atlas, sp_atlas)
     };
     // Color atlas is lazy — no emoji at startup.
@@ -460,30 +380,86 @@ pub(super) fn create_atlases(
     (atlas, subpixel_atlas, color_atlas)
 }
 
+/// Pre-cache printable ASCII for all UI font sizes into the appropriate atlas.
+///
+/// Iterates every collection in the [`UiFontSizes`] registry and calls
+/// [`pre_cache_atlas`] for each. Routes into the subpixel atlas when the
+/// font format is subpixel, otherwise the mono atlas.
+pub(super) fn prewarm_ui_font_sizes(
+    sizes: &mut crate::font::UiFontSizes,
+    atlas: &mut GlyphAtlas,
+    subpixel_atlas: &mut GlyphAtlas,
+    device: &Device,
+    queue: &Queue,
+) {
+    let is_subpixel = sizes.format().is_subpixel();
+    let target = if is_subpixel { subpixel_atlas } else { atlas };
+    for fc in sizes.collections_mut() {
+        pre_cache_atlas(target, fc, FontRealm::Ui, device, queue);
+    }
+}
+
 /// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
 ///
 /// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
-/// a real Bold face. Used by both `WindowRenderer::new()` and `clear_and_recache()`.
+/// a real Bold face. `realm` sets the [`FontRealm`] on each raster key so
+/// cached entries match the lookup realm at render time.
+///
+/// For [`FontRealm::Ui`], keys carry the collection's configured weight (Regular)
+/// or 700 (Bold), and rasterization uses [`FontCollection::rasterize_with_weight`]
+/// so the prewarmed entries match the weight-aware keys produced by
+/// [`scene_raster_keys`] at render time.
 pub(super) fn pre_cache_atlas(
     atlas: &mut GlyphAtlas,
     fc: &mut FontCollection,
+    realm: FontRealm,
     device: &Device,
     queue: &Queue,
 ) {
     let size_q6 = size_key(fc.size_px());
     let hinted = fc.hinting_mode().hint_flag();
+    let is_ui = realm == FontRealm::Ui;
+    let regular_weight = if is_ui { fc.weight() } else { 0 };
+
     for ch in ' '..='~' {
         let resolved = fc.resolve(ch, GlyphStyle::Regular);
-        let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
-        if let Some(glyph) = fc.rasterize(key) {
+        let mut key = RasterKey::from_resolved(resolved, size_q6, hinted, 0).with_realm(realm);
+        key.weight = regular_weight;
+        let glyph = if is_ui {
+            fc.rasterize_with_weight(key, regular_weight)
+        } else {
+            fc.rasterize(key)
+        };
+        if let Some(glyph) = glyph {
             atlas.insert(key, glyph, device, queue);
         }
     }
     if fc.has_bold() {
+        let bold_weight = if is_ui { 700 } else { 0 };
         for ch in ' '..='~' {
             let resolved = fc.resolve(ch, GlyphStyle::Bold);
-            let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
-            if let Some(glyph) = fc.rasterize(key) {
+            let mut key = RasterKey::from_resolved(resolved, size_q6, hinted, 0).with_realm(realm);
+            key.weight = bold_weight;
+            let glyph = if is_ui {
+                fc.rasterize_with_weight(key, bold_weight)
+            } else {
+                fc.rasterize(key)
+            };
+            if let Some(glyph) = glyph {
+                atlas.insert(key, glyph, device, queue);
+            }
+        }
+    }
+    // Prewarm Regular-slot 700-weight keys for variable fonts that express
+    // weight via wght axis. resolve_ui_weight() always uses Regular slot when
+    // has_wght_axis() is true, regardless of whether a Bold face also exists,
+    // so these keys must be prewarmed for any wght-capable font.
+    if is_ui && fc.has_wght_axis() {
+        for ch in ' '..='~' {
+            let resolved = fc.resolve(ch, GlyphStyle::Regular);
+            let mut key = RasterKey::from_resolved(resolved, size_q6, hinted, 0).with_realm(realm);
+            key.weight = 700;
+            if let Some(glyph) = fc.rasterize_with_weight(key, 700) {
                 atlas.insert(key, glyph, device, queue);
             }
         }

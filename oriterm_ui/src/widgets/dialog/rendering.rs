@@ -37,7 +37,7 @@ impl DialogWidget {
     /// Build the title text style.
     pub(super) fn title_style(&self) -> TextStyle {
         TextStyle::new(self.style.title_font_size, self.style.title_fg)
-            .with_weight(crate::text::FontWeight::Bold)
+            .with_weight(crate::text::FontWeight::BOLD)
     }
 
     /// Build the message text style.
@@ -113,23 +113,19 @@ impl DialogWidget {
     /// Draw the buttons inside the footer layout node.
     pub(super) fn draw_buttons(&self, ctx: &mut DrawCtx<'_>, footer_node: &LayoutNode) {
         for (i, btn_node) in footer_node.children.iter().enumerate() {
-            let (button, btn_kind) = self.button_at_index_ref(i);
-            let focused_id = if self.focus_visible && self.focused_button == btn_kind {
-                Some(button.id())
-            } else {
-                None
-            };
+            let (button, _btn_kind) = self.button_at_index_ref(i);
             let mut btn_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
-                bounds: btn_node.content_rect,
-                focused_widget: focused_id,
+                scene: ctx.scene,
+                bounds: btn_node.rect,
                 now: ctx.now,
-                animations_running: ctx.animations_running,
                 theme: ctx.theme,
                 icons: ctx.icons,
+                interaction: ctx.interaction,
+                widget_id: Some(button.id()),
+                frame_requests: ctx.frame_requests,
             };
-            button.draw(&mut btn_ctx);
+            button.paint(&mut btn_ctx);
         }
     }
 
@@ -142,7 +138,7 @@ impl DialogWidget {
                 let shaped = ctx
                     .measurer
                     .shape(&self.title, &s, title_node.content_rect.width());
-                ctx.draw_list.push_text(
+                ctx.scene.push_text(
                     Point::new(title_node.content_rect.x(), title_node.content_rect.y()),
                     shaped,
                     self.style.title_fg,
@@ -157,7 +153,7 @@ impl DialogWidget {
                 let shaped = ctx
                     .measurer
                     .shape(&self.message, &s, msg_node.content_rect.width());
-                ctx.draw_list.push_text(
+                ctx.scene.push_text(
                     Point::new(msg_node.content_rect.x(), msg_node.content_rect.y()),
                     shaped,
                     self.style.message_fg,
@@ -180,11 +176,11 @@ impl DialogWidget {
         // Preview background (darker, rounded).
         let preview_rect_style =
             RectStyle::filled(self.style.preview_bg).with_radius(self.style.preview_radius);
-        ctx.draw_list.push_rect(rect, preview_rect_style);
+        ctx.scene.push_quad(rect, preview_rect_style);
 
         // Clip to prevent overflow, push layer for subpixel compositing.
-        ctx.draw_list.push_clip(rect);
-        ctx.draw_list.push_layer(self.style.preview_bg);
+        ctx.scene.push_clip(rect);
+        ctx.scene.push_layer_bg(self.style.preview_bg);
 
         let s = self.preview_text_style();
         let inner_w = rect.width() - self.style.preview_padding.width();
@@ -205,7 +201,7 @@ impl DialogWidget {
                 break;
             }
             let shaped = ctx.measurer.shape(line, &s, inner_w);
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x, y), shaped, self.style.message_fg);
             y += line_h;
         }
@@ -214,12 +210,12 @@ impl DialogWidget {
         if overflowed {
             let ellipsis_y = y_limit - line_h;
             let shaped = ctx.measurer.shape("\u{2026}", &s, inner_w);
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x, ellipsis_y), shaped, self.style.message_fg);
         }
 
-        ctx.draw_list.pop_layer();
-        ctx.draw_list.pop_clip();
+        ctx.scene.pop_layer_bg();
+        ctx.scene.pop_clip();
     }
 
     /// Draw the footer zone: separator, background, buttons.
@@ -232,7 +228,7 @@ impl DialogWidget {
         let sep_y = footer_node.rect.y();
 
         // 1px separator line at the top of the footer zone.
-        ctx.draw_list.push_line(
+        ctx.scene.push_line(
             Point::new(ctx.bounds.x(), sep_y),
             Point::new(ctx.bounds.right(), sep_y),
             1.0,
@@ -249,12 +245,12 @@ impl DialogWidget {
             ctx.bounds.width() - bw * 2.0,
             (ctx.bounds.bottom() - sep_y - r).max(0.0),
         );
-        ctx.draw_list.push_layer(self.style.footer_bg);
-        ctx.draw_list
-            .push_rect(footer_rect, RectStyle::filled(self.style.footer_bg));
+        ctx.scene.push_layer_bg(self.style.footer_bg);
+        ctx.scene
+            .push_quad(footer_rect, RectStyle::filled(self.style.footer_bg));
 
         self.draw_buttons(ctx, footer_node);
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
     }
 }

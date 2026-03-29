@@ -9,12 +9,17 @@
 
 mod widget_impl;
 
+use std::cell::RefCell;
+
 use crate::color::Color;
+use crate::controllers::{ClickController, EventController, FocusController, HoverController};
 use crate::geometry::Insets;
 use crate::text::TextStyle;
-use crate::widget_id::WidgetId;
-
+use crate::text::editing::TextEditingState;
 use crate::theme::UiTheme;
+use crate::visual_state::focus_states;
+use crate::visual_state::transition::VisualStateAnimator;
+use crate::widget_id::WidgetId;
 
 /// Visual style for a [`TextInputWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +30,8 @@ pub struct TextInputStyle {
     pub bg: Color,
     /// Border color.
     pub border_color: Color,
+    /// Border color on hover.
+    pub hover_border_color: Color,
     /// Border color when focused.
     pub focus_border_color: Color,
     /// Border width.
@@ -33,7 +40,7 @@ pub struct TextInputStyle {
     pub corner_radius: f32,
     /// Inner padding.
     pub padding: Insets,
-    /// Font size in points.
+    /// Font size in logical pixels.
     pub font_size: f32,
     /// Placeholder text color.
     pub placeholder_color: Color,
@@ -56,8 +63,9 @@ impl TextInputStyle {
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
             fg: theme.fg_primary,
-            bg: theme.bg_primary,
+            bg: theme.bg_input,
             border_color: theme.border,
+            hover_border_color: theme.fg_faint,
             focus_border_color: theme.accent,
             border_width: 1.0,
             corner_radius: theme.corner_radius,
@@ -72,6 +80,20 @@ impl TextInputStyle {
             disabled_bg: theme.bg_secondary,
         }
     }
+
+    /// Settings-panel text input style: 2px border, 12px font, 200px min-width.
+    ///
+    /// Matches mockup `input[type="text"]` in settings: `border: 2px`,
+    /// `font-size: 12px`, `padding: 6px 10px`, `width: 200px`.
+    pub fn settings(theme: &UiTheme) -> Self {
+        Self {
+            border_width: 2.0,
+            font_size: 12.0,
+            padding: Insets::vh(6.0, 10.0),
+            min_width: 200.0,
+            ..Self::from_theme(theme)
+        }
+    }
 }
 
 impl Default for TextInputStyle {
@@ -84,17 +106,23 @@ impl Default for TextInputStyle {
 ///
 /// Manages text content, cursor position, and selection. Keyboard
 /// editing is handled internally; `WidgetAction::TextChanged` is
-/// emitted when content changes.
-#[derive(Debug, Clone)]
+/// emitted when content changes. Border color transitions between
+/// unfocused and focused states are handled by [`VisualStateAnimator`]
+/// with `focus_states()`.
 pub struct TextInputWidget {
     pub(super) id: WidgetId,
-    pub(super) text: String,
+    pub(super) editing: TextEditingState,
     pub(super) placeholder: String,
-    pub(super) cursor: usize,
-    pub(super) selection_anchor: Option<usize>,
     pub(super) disabled: bool,
-    pub(super) hovered: bool,
     pub(super) style: TextInputStyle,
+    pub(super) controllers: Vec<Box<dyn EventController>>,
+    pub(super) animator: VisualStateAnimator,
+    /// Cached character boundary X-offsets from last layout.
+    ///
+    /// Each entry is `(byte_position, x_offset)`. Populated during `layout()`
+    /// (which has access to the text measurer) and read during `on_input()`
+    /// for click-to-cursor mapping.
+    pub(super) char_offsets: RefCell<Vec<(usize, f32)>>,
 }
 
 impl Default for TextInputWidget {
@@ -106,47 +134,49 @@ impl Default for TextInputWidget {
 impl TextInputWidget {
     /// Creates an empty text input.
     pub fn new() -> Self {
+        let style = TextInputStyle::default();
         Self {
             id: WidgetId::next(),
-            text: String::new(),
+            editing: TextEditingState::new(),
             placeholder: String::new(),
-            cursor: 0,
-            selection_anchor: None,
             disabled: false,
-            hovered: false,
-            style: TextInputStyle::default(),
+            controllers: vec![
+                Box::new(HoverController::new()),
+                Box::new(ClickController::new()),
+                Box::new(FocusController::new()),
+            ],
+            animator: VisualStateAnimator::new(vec![focus_states(
+                style.border_color,
+                style.focus_border_color,
+            )]),
+            style,
+            char_offsets: RefCell::new(Vec::new()),
         }
     }
 
     /// Returns the current text content.
     pub fn text(&self) -> &str {
-        &self.text
+        self.editing.text()
     }
 
     /// Sets the text content programmatically.
     pub fn set_text(&mut self, text: impl Into<String>) {
-        self.text = text.into();
-        self.cursor = self.text.len();
-        self.selection_anchor = None;
+        self.editing.set_text(text);
     }
 
     /// Returns the cursor byte position.
     pub fn cursor(&self) -> usize {
-        self.cursor
+        self.editing.cursor()
     }
 
     /// Returns the selection anchor (start of selection), if any.
     pub fn selection_anchor(&self) -> Option<usize> {
-        self.selection_anchor
+        self.editing.selection_anchor()
     }
 
     /// Returns the selected text range as `(start, end)`, if any.
     pub fn selection_range(&self) -> Option<(usize, usize)> {
-        self.selection_anchor.map(|anchor| {
-            let start = anchor.min(self.cursor);
-            let end = anchor.max(self.cursor);
-            (start, end)
-        })
+        self.editing.selection_range()
     }
 
     /// Returns whether the input is disabled.
@@ -154,17 +184,9 @@ impl TextInputWidget {
         self.disabled
     }
 
-    /// Returns whether the input is hovered.
-    pub fn is_hovered(&self) -> bool {
-        self.hovered
-    }
-
     /// Sets the disabled state.
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
-        if disabled {
-            self.hovered = false;
-        }
     }
 
     /// Sets placeholder text.
@@ -184,6 +206,10 @@ impl TextInputWidget {
     /// Sets the style.
     #[must_use]
     pub fn with_style(mut self, style: TextInputStyle) -> Self {
+        self.animator = VisualStateAnimator::new(vec![focus_states(
+            style.border_color,
+            style.focus_border_color,
+        )]);
         self.style = style;
         self
     }
@@ -198,87 +224,29 @@ impl TextInputWidget {
         TextStyle::new(self.style.font_size, color)
     }
 
-    /// Deletes the currently selected text, placing cursor at selection start.
-    /// Returns `true` if text was deleted.
-    pub(super) fn delete_selection(&mut self) -> bool {
-        if let Some((start, end)) = self.selection_range() {
-            if start != end {
-                self.text.drain(start..end);
-                self.cursor = start;
-                self.selection_anchor = None;
-                return true;
-            }
-        }
-        self.selection_anchor = None;
-        false
-    }
-
-    /// Returns the byte offset of the next char boundary after `pos`.
-    pub(super) fn next_char_boundary(&self, pos: usize) -> usize {
-        let mut idx = pos + 1;
-        while idx < self.text.len() && !self.text.is_char_boundary(idx) {
-            idx += 1;
-        }
-        idx.min(self.text.len())
-    }
-
-    /// Returns the byte offset of the previous char boundary before `pos`.
-    pub(super) fn prev_char_boundary(&self, pos: usize) -> usize {
-        if pos == 0 {
-            return 0;
-        }
-        let mut idx = pos - 1;
-        while idx > 0 && !self.text.is_char_boundary(idx) {
-            idx -= 1;
-        }
-        idx
-    }
-
-    /// Moves cursor left, handling shift for selection.
-    pub(super) fn move_left(&mut self, shift: bool) {
-        if shift {
-            if self.selection_anchor.is_none() {
-                self.selection_anchor = Some(self.cursor);
-            }
-            self.cursor = self.prev_char_boundary(self.cursor);
-        } else {
-            match self.selection_range() {
-                Some((start, end)) if start != end => self.cursor = start,
-                _ => self.cursor = self.prev_char_boundary(self.cursor),
-            }
-            self.selection_anchor = None;
-        }
-    }
-
-    /// Moves cursor right, handling shift for selection.
-    pub(super) fn move_right(&mut self, shift: bool) {
-        if shift {
-            if self.selection_anchor.is_none() {
-                self.selection_anchor = Some(self.cursor);
-            }
-            if self.cursor < self.text.len() {
-                self.cursor = self.next_char_boundary(self.cursor);
-            }
-        } else {
-            match self.selection_range() {
-                Some((start, end)) if start != end => self.cursor = end,
-                _ => {
-                    if self.cursor < self.text.len() {
-                        self.cursor = self.next_char_boundary(self.cursor);
-                    }
-                }
-            }
-            self.selection_anchor = None;
-        }
-    }
-
     /// Computes cursor X position in pixels using the measurer.
     #[expect(clippy::string_slice, reason = "cursor always on char boundary")]
     pub(super) fn cursor_x(&self, measurer: &dyn super::TextMeasurer) -> f32 {
-        let prefix = &self.text[..self.cursor];
+        let cursor = self.editing.cursor();
+        let prefix = &self.editing.text()[..cursor];
         let style = self.text_style();
         let metrics = measurer.measure(prefix, &style, f32::INFINITY);
         metrics.width
+    }
+}
+
+impl std::fmt::Debug for TextInputWidget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextInputWidget")
+            .field("id", &self.id)
+            .field("editing", &self.editing)
+            .field("placeholder", &self.placeholder)
+            .field("disabled", &self.disabled)
+            .field("style", &self.style)
+            .field("controller_count", &self.controllers.len())
+            .field("animator", &self.animator)
+            .field("char_offsets_len", &self.char_offsets.borrow().len())
+            .finish()
     }
 }
 

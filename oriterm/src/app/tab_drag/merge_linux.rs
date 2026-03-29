@@ -12,7 +12,7 @@
 use winit::window::WindowId;
 
 use crate::window_manager::WindowKind;
-use oriterm_ui::widgets::tab_bar::constants::{TAB_BAR_HEIGHT, TAB_LEFT_MARGIN};
+use oriterm_ui::widgets::tab_bar::constants::TAB_LEFT_MARGIN;
 
 use crate::app::App;
 
@@ -54,12 +54,14 @@ impl App {
         };
 
         // Compute grab offset in physical pixels.
-        let scale = self
-            .windows
-            .get(&winit_id)
-            .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
+        let (scale, tb_h) = self.windows.get(&winit_id).map_or((1.0, 46.0), |ctx| {
+            (
+                ctx.window.scale_factor().factor() as f32,
+                ctx.tab_bar.metrics().height,
+            )
+        });
         let grab_x = ((TAB_LEFT_MARGIN + mouse_offset) * scale).round() as i32;
-        let grab_y = ((TAB_BAR_HEIGHT / 2.0) * scale).round() as i32;
+        let grab_y = ((tb_h / 2.0) * scale).round() as i32;
 
         let pos_x = cx - grab_x;
         let pos_y = cy - grab_y;
@@ -159,7 +161,7 @@ impl App {
                 continue;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
-            let tab_bar_h = (TAB_BAR_HEIGHT * scale).round() as i32;
+            let tab_bar_h = (ctx.tab_bar.metrics().height * scale).round() as i32;
             let Ok(pos) = ctx.window.window().outer_position() else {
                 continue;
             };

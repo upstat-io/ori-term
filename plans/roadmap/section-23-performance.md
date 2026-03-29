@@ -3,12 +3,13 @@ section: 23
 title: Performance & Damage Tracking
 status: in-progress
 reviewed: true
+last_verified: "2026-03-29"
 tier: 5
 goal: Optimize rendering, parsing, and memory for heavy terminal workloads
 sections:
   - id: "23.1"
     title: Damage Tracking
-    status: in-progress
+    status: complete
   - id: "23.2"
     title: Parsing Performance
     status: complete
@@ -20,7 +21,7 @@ sections:
     status: in-progress
   - id: "23.5"
     title: Benchmarks
-    status: not-started
+    status: in-progress
   - id: "23.6"
     title: Section Completion
     status: not-started
@@ -28,7 +29,7 @@ sections:
 
 # Section 23: Performance & Damage Tracking
 
-**Status:** Not Started
+**Status:** ~70% Complete (verified 2026-03-29: 23.1 damage tracking, 23.2 parsing, 23.3 memory all complete. 23.4 rendering partially done. 23.5 benchmarks partial. 23.6 not started)
 **Goal:** Terminal handles heavy workloads (large file cats, rapid output, complex TUIs) without lag, dropped frames, or excessive memory usage. Every optimization must be measurable — no speculative "optimization" without profiling.
 
 **Crate:** `oriterm_core` (grid damage tracking, ring buffer), `oriterm_mux` (PTY event loop, VTE processing), `oriterm` (rendering)
@@ -53,7 +54,7 @@ Only redraw cells that changed since last frame. Currently the prepare phase (`p
 
 ### Per-Row Dirty Flag
 
-**Status: Already implemented.** `DirtyTracker` exists at `oriterm_core/src/grid/dirty/mod.rs` with `mark(line)`, `mark_range(Range)`, `mark_all()`, `drain()` → `DirtyIter`, `is_any_dirty()`, `is_dirty(line)`, `resize()`. Grid operations (`put_char`, `erase_line`, `erase_display`, `scroll_up`, `scroll_down`, `scroll_display`, `move_cursor_line`, `move_cursor_col`, `resize`) already mark dirty appropriately.
+**Status: Already implemented.** (verified 2026-03-29: 26 tests pass in dirty/tests.rs) `DirtyTracker` exists at `oriterm_core/src/grid/dirty/mod.rs` with `mark(line)`, `mark_range(Range)`, `mark_all()`, `drain()` → `DirtyIter`, `is_any_dirty()`, `is_dirty(line)`, `resize()`. Grid operations (`put_char`, `erase_line`, `erase_display`, `scroll_up`, `scroll_down`, `scroll_display`, `move_cursor_line`, `move_cursor_col`, `resize`) already mark dirty appropriately.
 
 - [x] Add dirty tracking to the grid
   - [x] Mark dirty on: `put_char`, cell write
@@ -124,7 +125,7 @@ These events mark everything dirty (conservative — can optimize individual cas
 
 ### Column-Level Damage Bounds
 
-**Status: Already implemented.** `DirtyTracker` uses `Vec<LineDamageBounds>` with per-cell `mark_cols()` calls. `collect_damage()` propagates column bounds into `DamageLine`. `TermDamage::next()` reads real column bounds. All grid operations use `mark_cols()` for column-level operations and `mark()` / `mark_range()` for full-line operations.
+**Status: Already implemented.** (verified 2026-03-29) `DirtyTracker` uses `Vec<LineDamageBounds>` with per-cell `mark_cols()` calls. `collect_damage()` propagates column bounds into `DamageLine`. `TermDamage::next()` reads real column bounds. All grid operations use `mark_cols()` for column-level operations and `mark()` / `mark_range()` for full-line operations.
 
 - [x] **Structural change to `DirtyTracker`**: `dirty: Vec<LineDamageBounds>` where `LineDamageBounds { dirty: bool, left: usize, right: usize }` — single struct per line
   - [x] **Sync points use column-level marking:**
@@ -213,7 +214,7 @@ Optimize VTE sequence parsing throughput for high-volume output.
 
 ### Batch Processing
 
-**Status: Already implemented.** `PtyEventLoop::parse_chunk()` calls `self.processor.advance(term, chunk)` on the full chunk (up to 64 KB). The PTY reader reads into a 1 MB buffer and parses in bounded chunks — no byte-by-byte processing.
+**Status: Already implemented.** (verified 2026-03-29) `PtyEventLoop::parse_chunk()` calls `self.processor.advance(term, chunk)` on the full chunk (up to 64 KB). The PTY reader reads into a 1 MB buffer and parses in bounded chunks — no byte-by-byte processing.
 
 - [x] Entire PTY read buffer processed in one `processor.advance()` call (not byte-by-byte)
 - [x] PTY reader uses shared `Arc<FairMutex<Term<T>>>` — no channel-based `Vec<u8>` transfer needed
@@ -278,7 +279,7 @@ Control memory usage, especially for scrollback. The ring buffer (`ScrollbackBuf
 
 ### Ring Buffer for Scrollback
 
-**Status: Already implemented.** `ScrollbackBuffer` in `oriterm_core/src/grid/ring/mod.rs`:
+**Status: Already implemented.** (verified 2026-03-29: 38 tests pass in ring/tests.rs) `ScrollbackBuffer` in `oriterm_core/src/grid/ring/mod.rs`:
 ```rust
 struct ScrollbackBuffer {
     inner: Vec<Row>,
@@ -305,7 +306,7 @@ struct ScrollbackBuffer {
 
 ### Alt Screen On-Demand Allocation
 
-**Status: Complete.** `alt_grid: Option<Grid>` and `alt_image_cache: Option<ImageCache>` lazily allocated on first alt screen entry via `ensure_alt_grid()`. Invariant enforced: `mode.contains(ALT_SCREEN)` implies `alt_grid.is_some()` — `ensure_alt_grid()` is called in all three swap variants BEFORE `toggle_alt_common()`.
+**Status: Complete.** (verified 2026-03-29: 5 tests pass in term/tests.rs) `alt_grid: Option<Grid>` and `alt_image_cache: Option<ImageCache>` lazily allocated on first alt screen entry via `ensure_alt_grid()`. Invariant enforced: `mode.contains(ALT_SCREEN)` implies `alt_grid.is_some()` — `ensure_alt_grid()` is called in all three swap variants BEFORE `toggle_alt_common()`.
 
 - [x] Allocate the alternate screen buffer lazily — only when an application first switches to it (`DECSET 47/1047/1049`)
   - [x] `Term::new()` sets `alt_grid: None`, `alt_image_cache: None`
@@ -597,30 +598,40 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 
 ## 23.6 Section Completion
 
-**Infrastructure already in place:**
-- [x] Scrollback uses ring buffer — no O(n) operations (already implemented)
-- [x] Line-level dirty tracking in grid (DirtyTracker with mark/drain)
-- [x] Per-pane PreparedFrame caching (PaneRenderCache)
-- [x] Frame budget throttling (FRAME_BUDGET = 16ms, ctx.dirty flag)
-- [x] PTY read-ahead with bounded parse (1 MB buffer, 64 KB max locked parse)
-- [x] Synchronized output (Mode 2026) suppresses partial-frame renders
-- [x] Grid benchmarks (15 criterion benchmarks across 3 terminal sizes)
+**Infrastructure already in place (all verified 2026-03-29):**
+- [x] Scrollback uses ring buffer -- no O(n) operations (verified 2026-03-29: 38 tests)
+- [x] Line-level dirty tracking in grid (DirtyTracker with mark/drain) (verified 2026-03-29: 26 tests)
+- [x] Column-level damage bounds in DirtyTracker (verified 2026-03-29: mark_cols, expand, col_bounds all working)
+- [x] Per-pane PreparedFrame caching (PaneRenderCache) (verified 2026-03-29: 16 tests)
+- [x] Row-level dirty skip in incremental prepare (verified 2026-03-29: fill_frame_incremental in dirty_skip/mod.rs, 12 tests)
+- [x] Selection damage tracking (verified 2026-03-29: symmetric diff + boundary, 7 tests)
+- [x] Frame budget throttling (FRAME_BUDGET = 16ms, ctx.dirty flag) (verified 2026-03-29: 8 event loop tests)
+- [x] PTY read-ahead with bounded parse (1 MB buffer, 64 KB max locked parse) (verified 2026-03-29: 12 PTY tests)
+- [x] Synchronized output (Mode 2026) suppresses partial-frame renders (verified 2026-03-29)
+- [x] Fast ASCII path in Term::input() (verified 2026-03-29: 6 handler tests + 4 charset tests)
+- [x] Alt screen on-demand allocation (verified 2026-03-29: 5 tests)
+- [x] Atlas grow-on-demand (1 page start) (verified 2026-03-29: 43 atlas tests)
+- [x] Font byte cache deduplication (verified 2026-03-29: 3 tests)
+- [x] Grid benchmarks (19 criterion benchmarks across 3 terminal sizes) (verified 2026-03-29)
+- [x] VTE throughput benchmarks (verified 2026-03-29: 3 benchmark groups, baselined)
 
 **Remaining verification and optimization:**
-- [ ] All 23.1-23.5 unchecked items complete
-- [ ] `cat 100MB_file.txt` completes with no frame >32ms (2x budget) — verify via debug frame-time logging
+- [ ] All 23.4-23.5 unchecked items complete
+- [ ] `cat 100MB_file.txt` completes with no frame >32ms (2x budget) -- verify via debug frame-time logging
 - [ ] `fill_frame_shaped()` with 120x50 colored grid completes in <2ms (criterion benchmark)
 - [ ] RSS bounded by scrollback limit: after filling 10K-line scrollback, RSS does not grow further over 10 minutes of continued output
-- [ ] Column-level damage bounds populated in `DamageLine` (not hardcoded to full-line)
-- [ ] Row-level dirty skip wired in `fill_frame_shaped()` via `prepare/dirty_skip.rs`
 - [ ] Idle terminal CPU <0.5% measured over 30 seconds with no PTY output (only cursor blink wakes)
 - [ ] Keypress-to-present latency: p95 <5ms (measured via internal instrumentation)
 - [ ] `yes | head -100000` renders final line with no visible frame drops
-- [x] `oriterm_core/benches/vte_throughput.rs` added and baselined (~71 MiB/s ASCII — below 100 MB/s target, fast ASCII path pending)
-- [ ] `oriterm/benches/rendering.rs` added and baselined (<2ms for 120x50 prepare)
-- [ ] `./build-all.sh` — all targets compile
-- [ ] `./test-all.sh` — all tests pass
-- [ ] `./clippy-all.sh` — no warnings
-- [ ] `cargo bench` — all benchmarks compile and run without error
+- [ ] `oriterm/benches/rendering.rs` added and baselined (<2ms for 120x50 prepare) -- BLOCKED: binary crate has no lib.rs
+- [ ] `./build-all.sh` -- all targets compile
+- [ ] `./test-all.sh` -- all tests pass
+- [ ] `./clippy-all.sh` -- no warnings
+- [ ] `cargo bench` -- all benchmarks compile and run without error
+
+**Hygiene issues found (verified 2026-03-29):**
+- [ ] `oriterm/src/gpu/atlas/mod.rs` exceeds 500-line limit (579 lines) -- extract grow_texture/materialize/evict_lru_page to submodule
+- [ ] `needs_full_repaint()` still `#[allow(dead_code)]` -- decision made via all_dirty directly, function unused
+- [ ] `PaneRenderCache::retain_only()` is dead code with reason annotation -- genuinely unwired
 
 **Exit Criteria:** Terminal handles heavy workloads (large file output, rapid scrolling, complex TUIs) smoothly at 60fps with bounded memory usage. Performance is measured, baselined, and regression-tested.

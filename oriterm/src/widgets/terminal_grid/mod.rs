@@ -2,20 +2,20 @@
 //!
 //! Implements the [`Widget`] trait with `Fill × Fill` sizing so the grid
 //! expands to fill remaining space after tab bar, status bar, etc. Rendering
-//! is handled by the existing GPU prepare pipeline (not `DrawList`); this
+//! is handled by the existing GPU prepare pipeline (not the Scene); this
 //! widget participates in layout and event routing only.
 
 use std::cell::Cell;
 
 use oriterm_ui::geometry::Rect;
-use oriterm_ui::input::{HoverEvent, KeyEvent, MouseEvent};
 use oriterm_ui::layout::{LayoutBox, SizeSpec};
+use oriterm_ui::sense::Sense;
 use oriterm_ui::widget_id::WidgetId;
-use oriterm_ui::widgets::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 
 /// The terminal grid as a UI widget.
 ///
-/// Does not render cells via `DrawList` — the existing prepare pipeline
+/// Does not render cells via Scene — the existing prepare pipeline
 /// handles cell rendering. This widget exists to participate in layout
 /// (reporting `Fill × Fill` sizing) and event routing (claiming keyboard
 /// and mouse events when focused).
@@ -102,8 +102,8 @@ impl Widget for TerminalGridWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        true
+    fn sense(&self) -> Sense {
+        Sense::click_and_drag().union(Sense::focusable())
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
@@ -116,24 +116,10 @@ impl Widget for TerminalGridWidget {
         .with_widget_id(self.id)
     }
 
-    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
-        // No DrawCommands — cell rendering is handled by the GPU prepare
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {
+        // No Scene primitives — cell rendering is handled by the GPU prepare
         // phase. Bounds are set explicitly via `set_bounds()` from
         // `compute_window_layout`, which includes grid padding.
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Claim all mouse events within the grid area.
-        WidgetResponse::handled()
-    }
-
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Claim all key events when focused — they go to the PTY.
-        WidgetResponse::handled()
     }
 }
 

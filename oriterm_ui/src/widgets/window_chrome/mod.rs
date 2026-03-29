@@ -8,20 +8,21 @@
 
 pub mod constants;
 pub mod controls;
+pub mod dispatch;
 pub mod layout;
 
 use crate::animation::Lerp;
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::LayoutBox;
+use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use self::controls::{ControlButtonColors, WindowControlButton};
 use self::layout::{ChromeLayout, ChromeMode, ControlKind};
-use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
+use super::{DrawCtx, LayoutCtx, Widget};
 
 /// Window chrome widget: caption bar with title and window controls.
 ///
@@ -47,14 +48,20 @@ pub struct WindowChromeWidget {
     chrome_layout: ChromeLayout,
     /// Control buttons. Length depends on mode: 3 for Full, 1 for Dialog.
     controls: Vec<WindowControlButton>,
-    /// Index of the currently hovered control button (None if no hover).
-    hovered_control: Option<usize>,
+    /// Index of the currently pressed control button (for routing mouse-up
+    /// in [`dispatch_input`](Self::dispatch_input)).
+    pressed_control: Option<usize>,
     /// Caption background color (active).
     caption_bg: Color,
     /// Caption background color (inactive / unfocused).
     caption_bg_inactive: Color,
     /// Caption foreground (title text) color.
     caption_fg: Color,
+    /// Left inset for the title area (reserves space for native controls).
+    ///
+    /// On macOS, this accounts for the traffic light buttons. On other
+    /// platforms, this is 0.
+    title_left_inset: f32,
 }
 
 impl WindowChromeWidget {
@@ -80,7 +87,7 @@ impl WindowChromeWidget {
         theme: &UiTheme,
         mode: ChromeMode,
     ) -> Self {
-        let chrome_layout = ChromeLayout::compute_with_mode(window_width, false, false, mode);
+        let chrome_layout = ChromeLayout::compute_with_inset(window_width, false, false, mode, 0.0);
 
         let caption_bg = theme.bg_secondary;
 
@@ -98,6 +105,10 @@ impl WindowChromeWidget {
                 WindowControlButton::new(ControlKind::MaximizeRestore, colors),
                 WindowControlButton::new(ControlKind::Close, colors),
             ],
+            // macOS dialogs use the native traffic light for close — no custom controls.
+            #[cfg(target_os = "macos")]
+            ChromeMode::Dialog => Vec::new(),
+            #[cfg(not(target_os = "macos"))]
             ChromeMode::Dialog => vec![WindowControlButton::new(ControlKind::Close, colors)],
         };
 
@@ -111,10 +122,11 @@ impl WindowChromeWidget {
             window_width,
             chrome_layout,
             controls,
-            hovered_control: None,
+            pressed_control: None,
             caption_bg,
             caption_bg_inactive: darken(caption_bg, 0.3),
             caption_fg: theme.fg_secondary,
+            title_left_inset: 0.0,
         }
     }
 
@@ -172,6 +184,13 @@ impl WindowChromeWidget {
         self.recompute_layout();
     }
 
+    /// Sets a left inset for the title area to reserve space for native
+    /// window controls (e.g. macOS traffic lights).
+    pub fn set_title_left_inset(&mut self, inset: f32) {
+        self.title_left_inset = inset;
+        self.recompute_layout();
+    }
+
     /// Updates all theme-derived colors from a new [`UiTheme`].
     pub fn apply_theme(&mut self, theme: &UiTheme) {
         self.caption_bg = theme.bg_secondary;
@@ -191,11 +210,12 @@ impl WindowChromeWidget {
 
     /// Recomputes the chrome layout from current state.
     fn recompute_layout(&mut self) {
-        self.chrome_layout = ChromeLayout::compute_with_mode(
+        self.chrome_layout = ChromeLayout::compute_with_inset(
             self.window_width,
             self.is_maximized,
             self.is_fullscreen,
             self.mode,
+            self.title_left_inset,
         );
     }
 
@@ -226,23 +246,27 @@ impl Widget for WindowChromeWidget {
         false
     }
 
+    fn sense(&self) -> Sense {
+        Sense::none()
+    }
+
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> LayoutBox {
         LayoutBox::leaf(self.window_width, self.chrome_layout.caption_height)
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         if !self.chrome_layout.visible {
             return;
         }
 
         // Layer captures the caption bg for subpixel title text compositing.
         let bg = self.current_caption_bg();
-        ctx.draw_list.push_layer(bg);
+        ctx.scene.push_layer_bg(bg);
 
         // Caption background bar.
         let caption_rect = Rect::new(0.0, 0.0, ctx.bounds.width(), self.caption_height());
-        ctx.draw_list.push_rect(caption_rect, RectStyle::filled(bg));
+        ctx.scene.push_quad(caption_rect, RectStyle::filled(bg));
 
         // Title text (centered vertically in the title area).
         if !self.title.is_empty() {
@@ -251,156 +275,33 @@ impl Widget for WindowChromeWidget {
             let shaped = ctx.measurer.shape(&self.title, &style, title_rect.width());
             let x = title_rect.x() + 8.0;
             let y = title_rect.y() + (title_rect.height() - shaped.height) / 2.0;
-            ctx.draw_list
+            ctx.scene
                 .push_text(Point::new(x, y), shaped, self.caption_fg);
         }
 
-        ctx.draw_list.pop_layer();
+        ctx.scene.pop_layer_bg();
 
         // Control buttons (outside the caption layer — each button has its own bg).
         for (i, ctrl) in self.controls.iter().enumerate() {
             let ctrl_rect = self.chrome_layout.controls[i].rect;
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: ctrl_rect,
-                focused_widget: ctx.focused_widget,
                 now: ctx.now,
-                animations_running: ctx.animations_running,
                 theme: ctx.theme,
                 icons: ctx.icons,
+                interaction: None,
+                widget_id: None,
+                frame_requests: ctx.frame_requests,
             };
-            ctrl.draw(&mut child_ctx);
+            ctrl.paint(&mut child_ctx);
         }
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !self.chrome_layout.visible {
-            return WidgetResponse::ignored();
-        }
-
-        match event.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(idx) = self.control_at_point(event.pos) {
-                    let ctrl_rect = self.chrome_layout.controls[idx].rect;
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: ctrl_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
-                    return self.controls[idx].handle_mouse(event, &child_ctx);
-                }
-                WidgetResponse::ignored()
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                // Route release to the control that was pressed.
-                for (i, ctrl) in self.controls.iter_mut().enumerate() {
-                    if ctrl.is_pressed() {
-                        let ctrl_rect = self.chrome_layout.controls[i].rect;
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: ctrl_rect,
-                            is_focused: false,
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                        };
-                        return ctrl.handle_mouse(event, &child_ctx);
-                    }
-                }
-                WidgetResponse::ignored()
-            }
-            _ => WidgetResponse::ignored(),
-        }
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !self.chrome_layout.visible {
-            return WidgetResponse::ignored();
-        }
-
-        match event {
-            HoverEvent::Enter => WidgetResponse::ignored(),
-            HoverEvent::Leave => {
-                // Clear hover on all controls when leaving the chrome area.
-                if let Some(idx) = self.hovered_control.take() {
-                    let ctrl_rect = self.chrome_layout.controls[idx].rect;
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: ctrl_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
-                    self.controls[idx].handle_hover(HoverEvent::Leave, &child_ctx)
-                } else {
-                    WidgetResponse::ignored()
-                }
-            }
-        }
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-}
-
-impl WindowChromeWidget {
-    /// Update hover state based on cursor position.
-    ///
-    /// Called by the app layer on cursor move. Routes hover enter/leave
-    /// events to the appropriate control button.
-    pub fn update_hover(&mut self, pos: Point, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !self.chrome_layout.visible {
-            return WidgetResponse::ignored();
-        }
-
-        let new_idx = self.control_at_point(pos);
-
-        // No change — nothing to do.
-        if new_idx == self.hovered_control {
-            return WidgetResponse::ignored();
-        }
-
-        // Leave old control.
-        let left = if let Some(old) = self.hovered_control {
-            let ctrl_rect = self.chrome_layout.controls[old].rect;
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: ctrl_rect,
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            self.controls[old].handle_hover(HoverEvent::Leave, &child_ctx);
-            true
-        } else {
-            false
-        };
-
-        // Enter new control.
-        let entered = if let Some(new) = new_idx {
-            let ctrl_rect = self.chrome_layout.controls[new].rect;
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: ctrl_rect,
-                is_focused: false,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            self.controls[new].handle_hover(HoverEvent::Enter, &child_ctx);
-            true
-        } else {
-            false
-        };
-
-        self.hovered_control = new_idx;
-
-        if left || entered {
-            WidgetResponse::layout()
-        } else {
-            WidgetResponse::ignored()
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        for ctrl in &mut self.controls {
+            visitor(ctrl);
         }
     }
 }
@@ -422,11 +323,6 @@ impl WindowChromeWidget {
     /// Test-only access to the caption foreground (title text).
     pub fn test_caption_fg(&self) -> Color {
         self.caption_fg
-    }
-
-    /// Test-only access to the hovered control index.
-    pub fn test_hovered_control(&self) -> Option<usize> {
-        self.hovered_control
     }
 
     /// Test-only access to the maximized flag.

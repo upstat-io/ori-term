@@ -1,0 +1,3328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ori_term — Settings [Brutal]</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  /* ── Reset & Base ─────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-base:       #0e0e12;
+    --bg-surface:    #16161c;
+    --bg-raised:     #1c1c24;
+    --bg-hover:      #24242e;
+    --bg-active:     #2a2a36;
+    --bg-input:      #12121a;
+    --border:        #2a2a36;
+    --border-subtle: #1e1e28;
+    --border-strong: #3a3a48;
+    --text:          #d4d4dc;
+    --text-muted:    #9494a8;
+    --text-faint:    #8c8ca0;
+    --text-bright:   #eeeeef;
+    --accent:        #6d9be0;
+    --accent-hover:  #85ade8;
+    --accent-bg:     rgba(109, 155, 224, 0.08);
+    --accent-bg-strong: rgba(109, 155, 224, 0.14);
+    --danger:        #c87878;
+    --danger-hover:  #d89090;
+    --danger-bg:     rgba(200, 120, 120, 0.08);
+    --success:       #6bffb8;
+    --warning:       #e0c454;
+    --warning-bg:    rgba(224, 196, 84, 0.08);
+    --radius:        0px;
+    --radius-sm:     0px;
+    --radius-lg:     0px;
+    --shadow:        none;
+    --transition:    0s;
+  }
+
+  body {
+    font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg-base);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ───────────────────────────────────────────── */
+  .settings-window {
+    display: flex;
+    width: 860px;
+    height: 620px;
+    margin: 40px auto;
+    background: var(--bg-surface);
+    border: 2px solid var(--border-strong);
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ──────────────────────────────────────────── */
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+    background: var(--bg-base);
+    border-right: 2px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 0;
+    overflow: hidden;
+  }
+
+  .sidebar-search {
+    padding: 0 10px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .sidebar-search input {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    background: var(--bg-surface);
+    border: 2px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px 6px 26px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236a6a80' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 8px center;
+  }
+
+  .sidebar-search input::placeholder { color: var(--text-faint); }
+  .sidebar-search input:focus { border-color: var(--accent); }
+
+  .sidebar-title {
+    font-size: 10px;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-faint);
+    padding: 0 16px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-title::before {
+    content: '// ';
+  }
+
+  .sidebar-title:not(:first-child) {
+    margin-top: 20px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    margin: 1px 0;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 13px;
+    user-select: none;
+    border-left: 3px solid transparent;
+  }
+
+  .nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .nav-item.active {
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+    border-left-color: var(--accent);
+  }
+
+  .nav-item svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .nav-item.active svg { opacity: 1; }
+
+  .nav-item .modified-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--warning);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .sidebar-spacer { flex: 1; }
+
+  .sidebar-footer {
+    padding: 8px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sidebar-version {
+    font-size: 11px;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sidebar-update {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .sidebar-update:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .sidebar-config-path {
+    font-size: 10px;
+    color: var(--text-faint);
+    font-family: 'IBM Plex Mono', monospace;
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .sidebar-config-path:hover {
+    color: var(--accent);
+    opacity: 1;
+  }
+
+  /* ── Main Content ─────────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  /* Each page fills available space so footer stays pinned */
+  .page {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .content-header {
+    padding: 24px 28px 0;
+    flex-shrink: 0;
+  }
+
+  .content-header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .content-header p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+
+  .content-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 28px 28px;
+    min-height: 0;
+  }
+
+  .content-body::-webkit-scrollbar { width: 6px; }
+  .content-body::-webkit-scrollbar-track { background: transparent; }
+  .content-body::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+  .content-body::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+  }
+
+  /* ── Section ──────────────────────────────────────────── */
+  .section {
+    margin-bottom: 28px;
+  }
+
+  .section:last-child {
+    margin-bottom: 0;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+
+  .section-title::before {
+    content: '//';
+    color: var(--text-faint);
+    letter-spacing: 0;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+  }
+
+  .section-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: -8px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  /* ── Form Controls ────────────────────────────────────── */
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    min-height: 44px;
+  }
+
+  .setting-row:hover {
+    background: var(--bg-raised);
+  }
+
+  .setting-row.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .setting-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .setting-label .name {
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .setting-label .name .tag {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 5px;
+    border: 1px solid currentColor;
+    line-height: 1.3;
+  }
+
+  .tag-new {
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+  }
+
+  .tag-restart {
+    background: var(--warning-bg);
+    color: var(--warning);
+  }
+
+  .tag-experimental {
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+
+  .setting-label .desc {
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+
+  .setting-control {
+    flex-shrink: 0;
+    margin-left: 24px;
+  }
+
+  /* Select/Dropdown */
+  select {
+    appearance: none;
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    color: var(--text);
+    padding: 6px 30px 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7a8c'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    min-width: 140px;
+  }
+
+  select:hover { border-color: var(--text-faint); }
+  select:focus { border-color: var(--accent); }
+
+  /* Toggle Switch — Brutalist */
+  .toggle {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 20px;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  .toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle .track {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-active);
+    border: 2px solid var(--border);
+    z-index: 0;
+  }
+
+  .toggle .thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 12px;
+    height: 12px;
+    background: var(--text-faint);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .toggle input:checked ~ .track {
+    background: var(--accent-bg-strong);
+    border-color: var(--accent);
+  }
+
+  .toggle input:checked ~ .thumb {
+    transform: translateX(18px);
+    background: var(--accent);
+  }
+
+  /* Number input */
+  input[type="number"] {
+    appearance: none;
+    -moz-appearance: textfield;
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    width: 80px;
+    text-align: center;
+    outline: none;
+    position: relative;
+  }
+
+  input[type="number"]:hover { border-color: var(--text-faint); }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input[type="number"]::-webkit-inner-spin-button { display: none; }
+
+  /* Custom stepper wrapper — single outer border */
+  .num-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    height: 30px;
+    border: 2px solid var(--border);
+  }
+
+  .num-stepper:hover { border-color: var(--text-faint); }
+  .num-stepper:focus-within { border-color: var(--accent); }
+
+  .num-stepper input[type="number"] {
+    border: none;
+    width: 56px;
+    height: 100%;
+    padding: 0 6px;
+  }
+
+  .num-stepper input[type="number"]:hover { border-color: transparent; }
+  .num-stepper input[type="number"]:focus { border-color: transparent; }
+
+  .num-stepper-btns {
+    display: flex;
+    flex-direction: column;
+    width: 22px;
+    flex-shrink: 0;
+    border-left: 2px solid var(--border);
+  }
+
+  .num-stepper-btns button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-active);
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0;
+    font-family: inherit;
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  .num-stepper-btns button + button {
+    border-top: 1px solid var(--border);
+  }
+
+  .num-stepper-btns button:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .num-stepper-btns button:active {
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+  }
+
+  .input-pair .num-stepper input[type="number"] {
+    width: 44px;
+  }
+
+  /* Text input */
+  input[type="text"] {
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    width: 200px;
+    outline: none;
+  }
+
+  input[type="text"]:hover { border-color: var(--text-faint); }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  /* Inline pair (two inputs side by side) */
+  .input-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .input-pair label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .input-pair input[type="number"] {
+    width: 64px;
+  }
+
+  /* ── Color Scheme Cards ───────────────────────────────── */
+  .scheme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .scheme-card {
+    background: var(--bg-raised);
+    border: 2px solid var(--border);
+    padding: 12px;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .scheme-card:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
+
+  .scheme-card.active {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+
+  .scheme-card .scheme-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .scheme-card .scheme-name .badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    background: var(--accent-bg-strong);
+    color: var(--accent);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--accent);
+  }
+
+  .scheme-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .scheme-terminal {
+    background: var(--preview-bg, #1a1b26);
+    padding: 8px 10px;
+    font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    height: 56px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .scheme-swatches {
+    display: flex;
+    gap: 3px;
+  }
+
+  .swatch {
+    width: 100%;
+    height: 14px;
+    flex: 1;
+  }
+
+  /* ── Color Editor ─────────────────────────────────────── */
+  .color-editor {
+    margin-top: 16px;
+    background: var(--bg-raised);
+    border: 2px solid var(--border);
+    padding: 14px;
+  }
+
+  .color-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .color-editor-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .color-editor-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .btn-sm {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border: 2px solid var(--border);
+    background: transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    transition: background var(--transition), color var(--transition);
+  }
+
+  .btn-sm:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+  }
+
+  .color-cell {
+    height: 26px;
+    cursor: pointer;
+    position: relative;
+    border: 2px solid transparent;
+  }
+
+  .color-cell:hover {
+    border-color: var(--text);
+    z-index: 1;
+  }
+
+  .color-cell-label {
+    text-align: center;
+    font-size: 9px;
+    color: var(--text-faint);
+    margin-top: 1px;
+  }
+
+  .color-row-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+
+  .color-row-label:first-child { margin-top: 0; }
+
+  .special-colors {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .special-color {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .special-color:hover { background: var(--bg-hover); }
+
+  .special-color .swatch-lg {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.1);
+  }
+
+  .special-color .sc-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .special-color .sc-label {
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  .special-color .sc-value {
+    font-size: 10px;
+    color: var(--text-faint);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* ── Font Preview ─────────────────────────────────────── */
+  .font-preview {
+    background: var(--bg-raised);
+    border: 2px solid var(--border);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
+  }
+
+  .font-preview-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-faint);
+    font-family: inherit;
+    margin-bottom: 8px;
+  }
+
+  .font-preview-label::before {
+    content: '// ';
+  }
+
+  .font-preview-text {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  .font-preview-text .kw { color: #c678dd; }
+  .font-preview-text .fn { color: #61afef; }
+  .font-preview-text .str { color: #98c379; }
+  .font-preview-text .cm { color: #5c6370; font-style: italic; }
+  .font-preview-text .num { color: #d19a66; }
+  .font-preview-text .lig { color: #56b6c2; }
+  .font-preview-text .ty { color: #e5c07b; }
+  .font-preview-text .mac { color: #61afef; }
+
+  .font-preview-meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 2px solid var(--border);
+    font-family: inherit;
+  }
+
+  .font-preview-meta span {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .font-preview-meta span strong {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  /* ── Cursor Preview ───────────────────────────────────── */
+  .cursor-preview {
+    display: flex;
+    gap: 24px;
+    margin-top: 8px;
+    margin-bottom: 16px;
+  }
+
+  .cursor-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 20px;
+    background: var(--bg-raised);
+    border: 2px solid var(--border);
+    cursor: pointer;
+    min-width: 80px;
+  }
+
+  .cursor-option:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
+
+  .cursor-option.active {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+
+  .cursor-demo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px;
+    color: var(--text);
+    position: relative;
+    height: 24px;
+    display: flex;
+    align-items: center;
+  }
+
+  .cursor-block {
+    background: var(--accent);
+    color: var(--bg-base);
+    padding: 0 1px;
+  }
+
+  .cursor-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    background: var(--accent);
+    animation: blink 1s step-end infinite;
+  }
+
+  .cursor-underline::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  .cursor-label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* ── Keybinding Row ───────────────────────────────────── */
+  .keybind-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .keybind-row:hover { background: var(--bg-raised); }
+
+  .keybind-action {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .keybind-keys {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  kbd {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    line-height: 1.4;
+  }
+
+  .keybind-plus {
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+
+  /* ── Keybinding Edit Dialog (inline overlay) ───────────── */
+  .keybind-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .keybind-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .keybind-dialog {
+    background: var(--bg-surface);
+    border: 2px solid var(--border-strong);
+    width: 380px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .keybind-overlay.open .keybind-dialog {
+  }
+
+  .keybind-dialog-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-bright);
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .keybind-dialog-action {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: -10px;
+  }
+
+  .keybind-recorder {
+    width: 100%;
+    padding: 14px;
+    background: var(--bg-input);
+    border: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    gap: 4px;
+    position: relative;
+  }
+
+  .keybind-recorder .placeholder {
+    font-size: 13px;
+    color: var(--text-faint);
+    animation: pulse-faint 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-faint {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  .keybind-recorder kbd {
+    font-size: 13px;
+    padding: 3px 10px;
+  }
+
+  .keybind-dialog-hint {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .keybind-dialog-hint kbd {
+    font-size: 10px;
+    padding: 1px 5px;
+    vertical-align: 1px;
+  }
+
+  .keybind-dialog-buttons {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 4px;
+    border-top: 2px solid var(--border);
+  }
+
+  /* ── Color Picker Dialog ───────────────────────────────── */
+  .color-picker-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .color-picker-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .color-picker {
+    background: var(--bg-surface);
+    border: 2px solid var(--border-strong);
+    width: 300px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .color-picker-overlay.open .color-picker {
+  }
+
+  .color-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .color-picker-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .color-picker-label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* Saturation-Lightness area */
+  .color-area-wrap {
+    position: relative;
+    width: 100%;
+    height: 160px;
+    overflow: hidden;
+    cursor: crosshair;
+    border: 1px solid var(--border);
+  }
+
+  .color-area {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to bottom, transparent, #000),
+                linear-gradient(to right, #fff, var(--picker-hue, #ff0000));
+  }
+
+  .color-area-thumb {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #fff;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    top: 20%;
+    left: 80%;
+  }
+
+  /* Hue strip */
+  .hue-strip-wrap {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--border);
+  }
+
+  .hue-strip {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right,
+      #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+  }
+
+  .hue-strip-thumb {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 8px;
+    height: 18px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.4);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* Alpha strip (for selection color) */
+  .alpha-strip-wrap {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    display: none;
+    border: 1px solid var(--border);
+    background-image:
+      linear-gradient(45deg, #333 25%, transparent 25%),
+      linear-gradient(-45deg, #333 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #333 75%),
+      linear-gradient(-45deg, transparent 75%, #333 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  }
+
+  .alpha-strip-wrap.visible { display: block; }
+
+  .alpha-strip {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, transparent, var(--picker-hue, #ff0000));
+  }
+
+  .alpha-strip-thumb {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    width: 8px;
+    height: 18px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.4);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* Input row */
+  .color-inputs {
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+  }
+
+  .color-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .color-input-group label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .color-input-group input[type="text"] {
+    width: 100%;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 5px 8px;
+    text-align: center;
+  }
+
+  .color-input-group input[type="number"] {
+    width: 100%;
+    font-size: 12px;
+    padding: 5px 4px;
+  }
+
+  .color-input-group.hex { flex: 1.4; }
+  .color-input-group.rgb { flex: 1; }
+
+  /* Preview bar (old → new) */
+  .color-preview-bar {
+    display: flex;
+    overflow: hidden;
+    height: 32px;
+    border: 2px solid var(--border);
+  }
+
+  .color-preview-half {
+    flex: 1;
+    position: relative;
+  }
+
+  .color-preview-half .preview-label {
+    position: absolute;
+    bottom: 2px;
+    font-size: 9px;
+    color: rgba(255,255,255,0.5);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+    pointer-events: none;
+  }
+
+  .color-preview-half:first-child .preview-label { left: 6px; }
+  .color-preview-half:last-child .preview-label { right: 6px; }
+
+  .color-picker-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: 4px;
+    border-top: 2px solid var(--border);
+  }
+
+  /* ── Footer — pinned to bottom of pane ─────────────────── */
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 28px;
+    border-top: 2px solid var(--border);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .footer-left {
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .unsaved-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--warning);
+    opacity: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .unsaved-indicator.visible { opacity: 1; }
+
+  .unsaved-indicator svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border: 2px solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-muted);
+  }
+
+  .btn-ghost:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+
+  .btn-danger-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-muted);
+  }
+
+  .btn-danger-ghost:hover {
+    background: var(--danger-bg);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0e0e12;
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── Utility ──────────────────────────────────────────── */
+  .hidden { display: none !important; }
+
+  .opacity-slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    background: var(--border);
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 14px;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg-surface);
+  }
+
+  .range-value {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'IBM Plex Mono', monospace;
+    min-width: 32px;
+    text-align: right;
+  }
+
+  /* ── Info callout ─────────────────────────────────────── */
+  .info-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--accent-bg);
+    border: 2px solid rgba(109, 155, 224, 0.3);
+    border-left: 3px solid var(--accent);
+    margin-bottom: 16px;
+  }
+
+  .info-callout svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--accent);
+    margin-top: 1px;
+  }
+
+  .info-callout p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* ── Warning callout ──────────────────────────────────── */
+  .warning-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--warning-bg);
+    border: 2px solid rgba(224, 196, 84, 0.3);
+    border-left: 3px solid var(--warning);
+    margin-bottom: 16px;
+  }
+
+  .warning-callout svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--warning);
+    margin-top: 1px;
+  }
+
+  .warning-callout p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* ── Separator ────────────────────────────────────────── */
+  .separator {
+    height: 2px;
+    background: var(--border);
+    margin: 4px 14px;
+  }
+
+  /* ── Shell preview box ────────────────────────────────── */
+  .shell-preview {
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    padding: 10px 14px;
+    margin: 0 14px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-faint);
+  }
+
+  .shell-preview .prompt { color: var(--accent); }
+  .shell-preview .path { color: var(--success); }
+
+  /* ── Bell preview ─────────────────────────────────────── */
+  .bell-preview {
+    background: var(--bg-raised);
+    border: 2px solid var(--border);
+    padding: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .bell-preview-terminal {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    min-height: 56px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bell-preview-terminal .flash-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .bell-preview-terminal .flash-overlay.animate {
+    animation: bell-flash 0.15s ease-out;
+  }
+
+  @keyframes bell-flash {
+    0% { background: rgba(255, 255, 255, 0.12); }
+    100% { background: rgba(255, 255, 255, 0.0); }
+  }
+
+  .btn-test {
+    padding: 6px 14px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border: 2px solid var(--border);
+    background: var(--bg-active);
+    color: var(--text-muted);
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .btn-test:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+
+  /* ── Rendering stats ──────────────────────────────────── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .stat-card {
+    background: var(--bg-raised);
+    border: 2px solid var(--border);
+    padding: 12px 14px;
+  }
+
+  .stat-card .stat-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-faint);
+    margin-bottom: 4px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .stat-card .stat-value .stat-unit {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="settings-window">
+  <!-- ── Sidebar ──────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-search">
+      <input type="text" placeholder="Search settings...">
+    </div>
+
+    <div class="sidebar-title">General</div>
+    <div class="nav-item active" onclick="showPage('appearance')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      Appearance
+      <span class="modified-dot" title="Modified"></span>
+    </div>
+    <div class="nav-item" onclick="showPage('colors')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c3.1 0 5.6-2.5 5.6-5.6C23 5.8 18.1 2 12 2z"/><circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/><circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/></svg>
+      Colors
+    </div>
+    <div class="nav-item" onclick="showPage('font')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+      Font
+    </div>
+    <div class="nav-item" onclick="showPage('terminal')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      Terminal
+    </div>
+    <div class="nav-item" onclick="showPage('keybindings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg>
+      Keybindings
+    </div>
+    <div class="nav-item" onclick="showPage('window')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>
+      Window
+    </div>
+
+    <div class="sidebar-title">Advanced</div>
+    <div class="nav-item" onclick="showPage('bell')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      Bell
+    </div>
+    <div class="nav-item" onclick="showPage('rendering')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Rendering
+    </div>
+
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-footer">
+      <div class="sidebar-version">v0.1.0 <a class="sidebar-update" title="v0.2.0 available">Update Available</a></div>
+      <div class="sidebar-config-path" title="Click to open in editor">~/.config/oriterm/config.toml</div>
+    </div>
+  </nav>
+
+  <!-- ── Main ─────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- ═══ APPEARANCE PAGE ═══════════════════════════ -->
+    <div id="page-appearance" class="page">
+      <div class="content-header">
+        <h1>Appearance</h1>
+        <p>Theme, opacity, and visual preferences.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Theme</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Color scheme</span>
+              <span class="desc">Applied to the terminal viewport and UI chrome</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>Tokyo Night</option>
+                <option>Dracula</option>
+                <option>One Dark</option>
+                <option>Catppuccin Mocha</option>
+                <option>Solarized Dark</option>
+                <option>Gruvbox Dark</option>
+                <option>Nord</option>
+                <option>Rosé Pine</option>
+                <option>Kanagawa</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Window</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Opacity</span>
+              <span class="desc">Window background transparency</span>
+            </div>
+            <div class="setting-control">
+              <div class="opacity-slider">
+                <input type="range" min="30" max="100" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'">
+                <span class="range-value">100%</span>
+              </div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Blur behind</span>
+              <span class="desc">Apply blur effect when opacity is below 100%</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Unfocused opacity</span>
+              <span class="desc">Dim the terminal when the window loses focus</span>
+            </div>
+            <div class="setting-control">
+              <div class="opacity-slider">
+                <input type="range" min="30" max="100" value="100" oninput="this.nextElementSibling.textContent=this.value+'%'">
+                <span class="range-value">100%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Decorations</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Window decorations</span>
+              <span class="desc">Title bar and window border style</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>None (frameless)</option>
+                <option>Full</option>
+                <option>Transparent</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Tab bar style</span>
+              <span class="desc">Appearance of the tab strip</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Default</option>
+                <option>Compact</option>
+                <option>Hidden</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ COLORS PAGE ══════════════════════════════ -->
+    <div id="page-colors" class="page hidden">
+      <div class="content-header">
+        <h1>Colors</h1>
+        <p>Color schemes and palette customization.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Schemes</div>
+          <div class="scheme-grid">
+            <!-- Tokyo Night -->
+            <div class="scheme-card active" onclick="selectScheme(this)">
+              <div class="scheme-name">
+                Tokyo Night
+                <span class="badge">Active</span>
+              </div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #1a1b26;">
+                  <span style="color:#7aa2f7">$</span> <span style="color:#9ece6a">cargo</span> <span style="color:#c0caf5">build --release</span><br>
+                  <span style="color:#565f89">   Compiling</span> <span style="color:#bb9af7">ori_term</span> <span style="color:#565f89">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#f7768e"></div>
+                  <div class="swatch" style="background:#9ece6a"></div>
+                  <div class="swatch" style="background:#e0af68"></div>
+                  <div class="swatch" style="background:#7aa2f7"></div>
+                  <div class="swatch" style="background:#bb9af7"></div>
+                  <div class="swatch" style="background:#7dcfff"></div>
+                  <div class="swatch" style="background:#c0caf5"></div>
+                  <div class="swatch" style="background:#a9b1d6"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dracula -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Dracula</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #282a36;">
+                  <span style="color:#50fa7b">$</span> <span style="color:#8be9fd">cargo</span> <span style="color:#f8f8f2">build --release</span><br>
+                  <span style="color:#6272a4">   Compiling</span> <span style="color:#bd93f9">ori_term</span> <span style="color:#6272a4">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#ff5555"></div>
+                  <div class="swatch" style="background:#50fa7b"></div>
+                  <div class="swatch" style="background:#f1fa8c"></div>
+                  <div class="swatch" style="background:#6272a4"></div>
+                  <div class="swatch" style="background:#bd93f9"></div>
+                  <div class="swatch" style="background:#8be9fd"></div>
+                  <div class="swatch" style="background:#f8f8f2"></div>
+                  <div class="swatch" style="background:#ffb86c"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Catppuccin Mocha -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Catppuccin Mocha</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #1e1e2e;">
+                  <span style="color:#89b4fa">$</span> <span style="color:#a6e3a1">cargo</span> <span style="color:#cdd6f4">build --release</span><br>
+                  <span style="color:#585b70">   Compiling</span> <span style="color:#cba6f7">ori_term</span> <span style="color:#585b70">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#f38ba8"></div>
+                  <div class="swatch" style="background:#a6e3a1"></div>
+                  <div class="swatch" style="background:#f9e2af"></div>
+                  <div class="swatch" style="background:#89b4fa"></div>
+                  <div class="swatch" style="background:#cba6f7"></div>
+                  <div class="swatch" style="background:#89dceb"></div>
+                  <div class="swatch" style="background:#cdd6f4"></div>
+                  <div class="swatch" style="background:#f5c2e7"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- One Dark -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">One Dark</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #282c34;">
+                  <span style="color:#61afef">$</span> <span style="color:#98c379">cargo</span> <span style="color:#abb2bf">build --release</span><br>
+                  <span style="color:#5c6370">   Compiling</span> <span style="color:#c678dd">ori_term</span> <span style="color:#5c6370">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#e06c75"></div>
+                  <div class="swatch" style="background:#98c379"></div>
+                  <div class="swatch" style="background:#e5c07b"></div>
+                  <div class="swatch" style="background:#61afef"></div>
+                  <div class="swatch" style="background:#c678dd"></div>
+                  <div class="swatch" style="background:#56b6c2"></div>
+                  <div class="swatch" style="background:#abb2bf"></div>
+                  <div class="swatch" style="background:#d19a66"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Solarized Dark -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Solarized Dark</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #002b36;">
+                  <span style="color:#268bd2">$</span> <span style="color:#859900">cargo</span> <span style="color:#839496">build --release</span><br>
+                  <span style="color:#586e75">   Compiling</span> <span style="color:#6c71c4">ori_term</span> <span style="color:#586e75">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#dc322f"></div>
+                  <div class="swatch" style="background:#859900"></div>
+                  <div class="swatch" style="background:#b58900"></div>
+                  <div class="swatch" style="background:#268bd2"></div>
+                  <div class="swatch" style="background:#6c71c4"></div>
+                  <div class="swatch" style="background:#2aa198"></div>
+                  <div class="swatch" style="background:#839496"></div>
+                  <div class="swatch" style="background:#cb4b16"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Nord -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Nord</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #2e3440;">
+                  <span style="color:#81a1c1">$</span> <span style="color:#a3be8c">cargo</span> <span style="color:#d8dee9">build --release</span><br>
+                  <span style="color:#4c566a">   Compiling</span> <span style="color:#b48ead">ori_term</span> <span style="color:#4c566a">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#bf616a"></div>
+                  <div class="swatch" style="background:#a3be8c"></div>
+                  <div class="swatch" style="background:#ebcb8b"></div>
+                  <div class="swatch" style="background:#81a1c1"></div>
+                  <div class="swatch" style="background:#b48ead"></div>
+                  <div class="swatch" style="background:#88c0d0"></div>
+                  <div class="swatch" style="background:#d8dee9"></div>
+                  <div class="swatch" style="background:#d08770"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Rosé Pine -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Rosé Pine</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #191724;">
+                  <span style="color:#31748f">$</span> <span style="color:#9ccfd8">cargo</span> <span style="color:#e0def4">build --release</span><br>
+                  <span style="color:#6e6a86">   Compiling</span> <span style="color:#c4a7e7">ori_term</span> <span style="color:#6e6a86">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#eb6f92"></div>
+                  <div class="swatch" style="background:#9ccfd8"></div>
+                  <div class="swatch" style="background:#f6c177"></div>
+                  <div class="swatch" style="background:#31748f"></div>
+                  <div class="swatch" style="background:#c4a7e7"></div>
+                  <div class="swatch" style="background:#ebbcba"></div>
+                  <div class="swatch" style="background:#e0def4"></div>
+                  <div class="swatch" style="background:#908caa"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Kanagawa -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Kanagawa</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #1f1f28;">
+                  <span style="color:#7e9cd8">$</span> <span style="color:#98bb6c">cargo</span> <span style="color:#dcd7ba">build --release</span><br>
+                  <span style="color:#727169">   Compiling</span> <span style="color:#957fb8">ori_term</span> <span style="color:#727169">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#c34043"></div>
+                  <div class="swatch" style="background:#98bb6c"></div>
+                  <div class="swatch" style="background:#c0a36e"></div>
+                  <div class="swatch" style="background:#7e9cd8"></div>
+                  <div class="swatch" style="background:#957fb8"></div>
+                  <div class="swatch" style="background:#7fb4ca"></div>
+                  <div class="swatch" style="background:#dcd7ba"></div>
+                  <div class="swatch" style="background:#ffa066"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gruvbox Dark -->
+            <div class="scheme-card" onclick="selectScheme(this)">
+              <div class="scheme-name">Gruvbox Dark</div>
+              <div class="scheme-preview">
+                <div class="scheme-terminal" style="--preview-bg: #282828;">
+                  <span style="color:#458588">$</span> <span style="color:#b8bb26">cargo</span> <span style="color:#ebdbb2">build --release</span><br>
+                  <span style="color:#665c54">   Compiling</span> <span style="color:#d3869b">ori_term</span> <span style="color:#665c54">v0.1.0</span>
+                </div>
+                <div class="scheme-swatches">
+                  <div class="swatch" style="background:#cc241d"></div>
+                  <div class="swatch" style="background:#98971a"></div>
+                  <div class="swatch" style="background:#d79921"></div>
+                  <div class="swatch" style="background:#458588"></div>
+                  <div class="swatch" style="background:#b16286"></div>
+                  <div class="swatch" style="background:#689d6a"></div>
+                  <div class="swatch" style="background:#ebdbb2"></div>
+                  <div class="swatch" style="background:#fe8019"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Palette editor for active scheme -->
+        <div class="color-editor">
+          <div class="color-editor-header">
+            <div class="color-editor-title">Palette — Tokyo Night</div>
+            <div class="color-editor-actions">
+              <button class="btn-sm">Import</button>
+              <button class="btn-sm">Export</button>
+              <button class="btn-sm">Reset</button>
+            </div>
+          </div>
+          <div class="special-colors">
+            <div class="special-color">
+              <div class="swatch-lg" style="background:#c0caf5"></div>
+              <div class="sc-info">
+                <span class="sc-label">Foreground</span>
+                <span class="sc-value">#c0caf5</span>
+              </div>
+            </div>
+            <div class="special-color">
+              <div class="swatch-lg" style="background:#1a1b26"></div>
+              <div class="sc-info">
+                <span class="sc-label">Background</span>
+                <span class="sc-value">#1a1b26</span>
+              </div>
+            </div>
+            <div class="special-color">
+              <div class="swatch-lg" style="background:#c0caf5; border: 2px solid var(--accent);"></div>
+              <div class="sc-info">
+                <span class="sc-label">Cursor</span>
+                <span class="sc-value">#c0caf5</span>
+              </div>
+            </div>
+            <div class="special-color">
+              <div class="swatch-lg" style="background:rgba(122,162,247,0.3)"></div>
+              <div class="sc-info">
+                <span class="sc-label">Selection</span>
+                <span class="sc-value">#7aa2f7 30%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="color-row-label">Normal</div>
+          <div class="color-grid">
+            <div><div class="color-cell" style="background:#15161e" title="Black"></div><div class="color-cell-label">0</div></div>
+            <div><div class="color-cell" style="background:#f7768e" title="Red"></div><div class="color-cell-label">1</div></div>
+            <div><div class="color-cell" style="background:#9ece6a" title="Green"></div><div class="color-cell-label">2</div></div>
+            <div><div class="color-cell" style="background:#e0af68" title="Yellow"></div><div class="color-cell-label">3</div></div>
+            <div><div class="color-cell" style="background:#7aa2f7" title="Blue"></div><div class="color-cell-label">4</div></div>
+            <div><div class="color-cell" style="background:#bb9af7" title="Magenta"></div><div class="color-cell-label">5</div></div>
+            <div><div class="color-cell" style="background:#7dcfff" title="Cyan"></div><div class="color-cell-label">6</div></div>
+            <div><div class="color-cell" style="background:#a9b1d6" title="White"></div><div class="color-cell-label">7</div></div>
+          </div>
+
+          <div class="color-row-label">Bright</div>
+          <div class="color-grid">
+            <div><div class="color-cell" style="background:#414868" title="Bright Black"></div><div class="color-cell-label">8</div></div>
+            <div><div class="color-cell" style="background:#f7768e" title="Bright Red"></div><div class="color-cell-label">9</div></div>
+            <div><div class="color-cell" style="background:#9ece6a" title="Bright Green"></div><div class="color-cell-label">10</div></div>
+            <div><div class="color-cell" style="background:#e0af68" title="Bright Yellow"></div><div class="color-cell-label">11</div></div>
+            <div><div class="color-cell" style="background:#7aa2f7" title="Bright Blue"></div><div class="color-cell-label">12</div></div>
+            <div><div class="color-cell" style="background:#bb9af7" title="Bright Magenta"></div><div class="color-cell-label">13</div></div>
+            <div><div class="color-cell" style="background:#7dcfff" title="Bright Cyan"></div><div class="color-cell-label">14</div></div>
+            <div><div class="color-cell" style="background:#c0caf5" title="Bright White"></div><div class="color-cell-label">15</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ FONT PAGE ════════════════════════════════ -->
+    <div id="page-font" class="page hidden">
+      <div class="content-header">
+        <h1>Font</h1>
+        <p>Typeface, size, and rendering options.</p>
+      </div>
+      <div class="content-body">
+        <div class="font-preview">
+          <div class="font-preview-label">Preview</div>
+          <div class="font-preview-text">
+            <span class="kw">fn</span> <span class="fn">main</span>() {<br>
+            &nbsp;&nbsp;<span class="kw">let</span> msg = <span class="str">"Hello, ori_term!"</span>;<br>
+            &nbsp;&nbsp;<span class="mac">println!</span>(<span class="str">"{msg}"</span>); <span class="cm">// ligatures: =&gt; != &lt;= &gt;=</span><br>
+            &nbsp;&nbsp;<span class="kw">for</span> i <span class="kw">in</span> <span class="num">0</span><span class="lig">..</span><span class="num">42</span> { <span class="ty">Thread</span>::sleep(<span class="num">100</span>); }<br>
+            }
+          </div>
+          <div class="font-preview-meta">
+            <span><strong>Cascadia Code</strong> &middot; 14px &middot; Regular 400</span>
+            <span>Cell: 8.4 &times; 18 px</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Typeface</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Font family</span>
+              <span class="desc">Primary monospace font for the terminal grid</span>
+            </div>
+            <div class="setting-control">
+              <select style="min-width: 180px;">
+                <option>Cascadia Code</option>
+                <option>JetBrains Mono</option>
+                <option>Fira Code</option>
+                <option>SF Mono</option>
+                <option>Iosevka</option>
+                <option>Berkeley Mono</option>
+                <option>Monaspace Neon</option>
+                <option>Monaspace Argon</option>
+                <option>Commit Mono</option>
+                <option>Geist Mono</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Size</span>
+              <span class="desc">Font size in pixels</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="14" min="8" max="32" step="0.5"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Weight</span>
+              <span class="desc">Regular weight for normal text</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>300 — Light</option>
+                <option selected>400 — Regular</option>
+                <option>500 — Medium</option>
+                <option>600 — Semibold</option>
+                <option>700 — Bold</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Bold weight</span>
+              <span class="desc">Weight used when bold attribute is set</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>600 — Semibold</option>
+                <option selected>700 — Bold</option>
+                <option>800 — Extrabold</option>
+                <option>900 — Black</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Features</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Ligatures</span>
+              <span class="desc">Programming ligatures like =&gt;, !=, &lt;=</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Line height</span>
+              <span class="desc">Multiplier applied to cell height</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="1.0" min="0.8" max="2.0" step="0.05"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Cell width adjustment</span>
+              <span class="desc">Fine-tune character spacing (px)</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="0" min="-2" max="4" step="0.5"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Fallback</div>
+          <div class="section-desc">Used when the primary font doesn't contain a glyph (emoji, CJK, symbols).</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Use built-in fallback chain</span>
+              <span class="desc">Automatically try system fonts for missing glyphs</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TERMINAL PAGE ════════════════════════════ -->
+    <div id="page-terminal" class="page hidden">
+      <div class="content-header">
+        <h1>Terminal</h1>
+        <p>Cursor, scrollback, and shell behavior.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Cursor</div>
+          <div class="cursor-preview">
+            <div class="cursor-option active" onclick="selectCursor(this)">
+              <div class="cursor-demo"><span class="cursor-block">A</span></div>
+              <span class="cursor-label">Block</span>
+            </div>
+            <div class="cursor-option" onclick="selectCursor(this)">
+              <div class="cursor-demo cursor-bar">A</div>
+              <span class="cursor-label">Bar</span>
+            </div>
+            <div class="cursor-option" onclick="selectCursor(this)">
+              <div class="cursor-demo cursor-underline">A</div>
+              <span class="cursor-label">Underline</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Cursor blink</span>
+              <span class="desc">Animate cursor visibility when idle</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Blink interval</span>
+              <span class="desc">Milliseconds between on/off transitions</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="530" min="200" max="2000" step="10"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Scrollback</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Maximum lines</span>
+              <span class="desc">Number of lines retained above the viewport</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="10000" min="0" max="100000" step="1000"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Scroll multiplier</span>
+              <span class="desc">Lines scrolled per mouse wheel notch</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="3" min="1" max="20" step="1"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Shell</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Default shell</span>
+              <span class="desc">Program launched in new panes</span>
+            </div>
+            <div class="setting-control">
+              <input type="text" value="/usr/bin/zsh" style="width: 200px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;">
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Working directory</span>
+              <span class="desc">Starting directory for new panes</span>
+            </div>
+            <div class="setting-control">
+              <select style="min-width: 160px;">
+                <option selected>Home directory</option>
+                <option>Previous pane's CWD</option>
+                <option>Custom...</option>
+              </select>
+            </div>
+          </div>
+          <div class="separator"></div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Paste warning</span>
+              <span class="desc">Warn before pasting multi-line or suspicious text</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Always</option>
+                <option>Multi-line only</option>
+                <option>Never</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Copy on select</span>
+              <span class="desc">Automatically copy text when selected with mouse</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Right-click behavior</span>
+              <span class="desc">What happens when you right-click the terminal</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Paste</option>
+                <option>Context menu</option>
+                <option>Select word</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Word delimiters</span>
+              <span class="desc">Characters that separate words for double-click selection</span>
+            </div>
+            <div class="setting-control">
+              <input type="text" value=" /\\()&quot;'-.,:;<>~!@#$%^&*|+=[]{}~?" style="width: 200px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Environment</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">TERM</span>
+              <span class="desc">Value of the TERM environment variable</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>xterm-256color</option>
+                <option>xterm</option>
+                <option>screen-256color</option>
+                <option>tmux-256color</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ KEYBINDINGS PAGE ═════════════════════════ -->
+    <div id="page-keybindings" class="page hidden">
+      <div class="content-header">
+        <h1>Keybindings</h1>
+        <p>Keyboard shortcuts for terminal actions.</p>
+      </div>
+      <div class="content-body">
+        <div class="info-callout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <p>Click any binding to record a new shortcut. Press <strong>Esc</strong> to cancel, or <strong>Backspace</strong> to unbind.</p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Clipboard</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Copy</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>C</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Paste</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>V</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Copy (alternate)</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Insert</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Paste (alternate)</span>
+            <div class="keybind-keys"><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>Insert</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Smart copy</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>C</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Smart paste</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>V</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Select all</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>A</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Tabs</div>
+          <div class="keybind-row">
+            <span class="keybind-action">New tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>T</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Close tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>W</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Next tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Tab</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Previous tab</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>Tab</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Panes</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Split right</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>O</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Split down</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>E</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Close pane</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>W</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Focus pane up</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>&#8593;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Focus pane down</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>&#8595;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Focus pane left</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>&#8592;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Focus pane right</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>&#8594;</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Pane Layout</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Toggle zoom</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>Z</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Toggle floating pane</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>P</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Toggle floating/tiled</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>G</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Equalize pane sizes</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>=</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Undo split</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>U</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Redo split</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>Y</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Pane Resize</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Resize up</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8593;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Resize down</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8595;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Resize left</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8592;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Resize right</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8594;</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Scrollback</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Page up</span>
+            <div class="keybind-keys"><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>PageUp</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Page down</span>
+            <div class="keybind-keys"><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>PageDown</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Scroll to top</span>
+            <div class="keybind-keys"><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>Home</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Scroll to bottom</span>
+            <div class="keybind-keys"><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>End</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Previous prompt</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8593;</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Next prompt</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>&#8595;</kbd></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">View</div>
+          <div class="keybind-row">
+            <span class="keybind-action">Zoom in</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>=</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Zoom out</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>-</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Reset zoom</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>0</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Toggle fullscreen</span>
+            <div class="keybind-keys"><kbd>Alt</kbd><span class="keybind-plus">+</span><kbd>Enter</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Search</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>F</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Mark mode</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>M</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Reload config</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>Shift</kbd><span class="keybind-plus">+</span><kbd>R</kbd></div>
+          </div>
+          <div class="keybind-row">
+            <span class="keybind-action">Settings</span>
+            <div class="keybind-keys"><kbd>Ctrl</kbd><span class="keybind-plus">+</span><kbd>,</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ WINDOW PAGE ══════════════════════════════ -->
+    <div id="page-window" class="page hidden">
+      <div class="content-header">
+        <h1>Window</h1>
+        <p>Window chrome, padding, and startup behavior.</p>
+      </div>
+      <div class="content-body">
+        <div class="section">
+          <div class="section-title">Chrome</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Tab bar position</span>
+              <span class="desc">Where to show the tab bar</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Top</option>
+                <option>Bottom</option>
+                <option>Hidden</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Show close button per tab</span>
+              <span class="desc">Display an X button on each tab</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Padding</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Grid padding</span>
+              <span class="desc">Space between the window edge and terminal content (px)</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="6" min="0" max="40" step="2"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Padding fills to nearest cell</span>
+              <span class="desc">Extend background color to fill partial cells at edges</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Startup</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Restore previous session</span>
+              <span class="desc">Reopen tabs and panes from the last session</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Start maximized</span>
+              <span class="desc">Open the window maximized on launch</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Initial size</span>
+              <span class="desc">Default grid dimensions for new windows</span>
+            </div>
+            <div class="setting-control">
+              <div class="input-pair">
+                <div class="num-stepper"><input type="number" value="120" min="40" max="400"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+                <label>&times;</label>
+                <div class="num-stepper"><input type="number" value="30" min="10" max="200"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+                <label>cells</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Behavior</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Confirm on close</span>
+              <span class="desc">Warn before closing a window with active processes</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Always</option>
+                <option>When processes are running</option>
+                <option>Never</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Close pane when shell exits</span>
+              <span class="desc">Automatically remove panes when the shell process ends</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ BELL PAGE ════════════════════════════════ -->
+    <div id="page-bell" class="page hidden">
+      <div class="content-header">
+        <h1>Bell</h1>
+        <p>Visual bell animation and behavior.</p>
+      </div>
+      <div class="content-body">
+        <div class="bell-preview">
+          <div class="bell-preview-terminal">
+            <span style="color: var(--accent)">$</span> echo -e "\a"<br>
+            <span style="color: var(--text-faint)">Bell!</span>
+            <div class="flash-overlay" id="bell-flash"></div>
+          </div>
+          <button class="btn-test" onclick="testBell()">Test Bell</button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Visual Bell</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Animation</span>
+              <span class="desc">Easing function for the flash overlay</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Ease Out</option>
+                <option>Linear</option>
+                <option>None</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Duration</span>
+              <span class="desc">How long the visual flash lasts</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>Off</option>
+                <option>50 ms</option>
+                <option selected>150 ms</option>
+                <option>300 ms</option>
+                <option>500 ms</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Flash color</span>
+              <span class="desc">Color of the visual bell overlay</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>White (default)</option>
+                <option>Accent color</option>
+                <option>Warning (yellow)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Audio</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Audio bell</span>
+              <span class="desc">Play system sound on bell character</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox">
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Throttle</div>
+          <div class="section-desc">Suppress repeated bells to avoid visual noise from programs that ring rapidly.</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Minimum interval</span>
+              <span class="desc">Ignore bells within this window after the last one (ms)</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="100" min="0" max="5000" step="50"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ RENDERING PAGE ═══════════════════════════ -->
+    <div id="page-rendering" class="page hidden">
+      <div class="content-header">
+        <h1>Rendering</h1>
+        <p>GPU backend and text rendering options.</p>
+      </div>
+      <div class="content-body">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">GPU Backend</div>
+            <div class="stat-value">Vulkan</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Adapter</div>
+            <div class="stat-value" style="font-size: 12px;">NVIDIA RTX 4090</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Texture Atlas</div>
+            <div class="stat-value">2048<span class="stat-unit">px</span></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">GPU</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Backend <span class="tag tag-restart">Restart</span></span>
+              <span class="desc">Graphics API used for rendering</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>Auto</option>
+                <option>Vulkan</option>
+                <option>DirectX 12</option>
+                <option>Metal</option>
+                <option>OpenGL (fallback)</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Power preference</span>
+              <span class="desc">Which GPU to prefer when multiple are available</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option selected>High performance</option>
+                <option>Low power</option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">VSync</span>
+              <span class="desc">Synchronize frame presentation with display refresh</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Text</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">LCD subpixel rendering</span>
+              <span class="desc">Sharper text on LCD displays — disable for OLED</span>
+            </div>
+            <div class="setting-control">
+              <label class="toggle">
+                <input type="checkbox" checked>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Font hinting</span>
+              <span class="desc">Grid-fit glyphs for sharper rendering at small sizes</span>
+            </div>
+            <div class="setting-control">
+              <select>
+                <option>None</option>
+                <option>Slight</option>
+                <option selected>Full</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Performance</div>
+          <div class="section-desc">Tuning options for high-throughput scenarios. Defaults are correct for most users.</div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="name">Max FPS <span class="tag tag-experimental">Advanced</span></span>
+              <span class="desc">Cap the render frame rate (0 = unlimited)</span>
+            </div>
+            <div class="setting-control">
+              <div class="num-stepper"><input type="number" value="0" min="0" max="240" step="10"><div class="num-stepper-btns"><button type="button" onclick="stepInput(this,1)">&#9650;</button><button type="button" onclick="stepInput(this,-1)">&#9660;</button></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="warning-callout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <p>Changing the GPU backend requires an application restart. Other rendering settings apply immediately.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Footer — always pinned to bottom ────────────── -->
+    <div class="footer">
+      <div class="footer-left">
+        <div class="unsaved-indicator visible" id="unsaved-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          Unsaved changes
+        </div>
+      </div>
+      <button class="btn btn-danger-ghost">Reset to Defaults</button>
+      <button class="btn btn-ghost" onclick="hideUnsaved()">Cancel</button>
+      <button class="btn btn-primary" onclick="hideUnsaved()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Keybinding Edit Dialog (floating overlay) ──────── -->
+<div class="keybind-overlay" id="keybind-overlay">
+  <div class="keybind-dialog">
+    <div class="keybind-dialog-title">Edit Keybinding</div>
+    <div class="keybind-dialog-action" id="keybind-dialog-action">New tab</div>
+    <div class="keybind-recorder" id="keybind-recorder">
+      <span class="placeholder">Press a key combination...</span>
+    </div>
+    <div class="keybind-dialog-hint">
+      Press <kbd>Esc</kbd> to cancel &middot; <kbd>Backspace</kbd> to unbind
+    </div>
+    <div class="keybind-dialog-buttons">
+      <button class="btn btn-ghost" onclick="closeKeybindDialog()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveKeybind()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Color Picker Dialog ────────────────────────────── -->
+<div class="color-picker-overlay" id="color-picker-overlay">
+  <div class="color-picker">
+    <div class="color-picker-header">
+      <div class="color-picker-title" id="color-picker-title">Edit Color</div>
+      <div class="color-picker-label" id="color-picker-label">Normal 4 — Blue</div>
+    </div>
+
+    <div class="color-area-wrap" id="color-area" onmousedown="startAreaDrag(event)">
+      <div class="color-area"></div>
+      <div class="color-area-thumb" id="color-area-thumb"></div>
+    </div>
+
+    <div class="hue-strip-wrap" id="hue-strip" onmousedown="startHueDrag(event)">
+      <div class="hue-strip"></div>
+      <div class="hue-strip-thumb" id="hue-strip-thumb"></div>
+    </div>
+
+    <div class="alpha-strip-wrap" id="alpha-strip-wrap">
+      <div class="alpha-strip"></div>
+      <div class="alpha-strip-thumb" id="alpha-strip-thumb"></div>
+    </div>
+
+    <div class="color-inputs">
+      <div class="color-input-group hex">
+        <label>Hex</label>
+        <input type="text" id="color-hex-input" value="#7aa2f7" maxlength="7" oninput="hexInputChanged()">
+      </div>
+      <div class="color-input-group rgb">
+        <label>R</label>
+        <input type="number" id="color-r-input" value="122" min="0" max="255" oninput="rgbInputChanged()">
+      </div>
+      <div class="color-input-group rgb">
+        <label>G</label>
+        <input type="number" id="color-g-input" value="162" min="0" max="255" oninput="rgbInputChanged()">
+      </div>
+      <div class="color-input-group rgb">
+        <label>B</label>
+        <input type="number" id="color-b-input" value="247" min="0" max="255" oninput="rgbInputChanged()">
+      </div>
+    </div>
+
+    <div class="color-preview-bar">
+      <div class="color-preview-half" id="color-preview-old" style="background: #7aa2f7">
+        <span class="preview-label">Current</span>
+      </div>
+      <div class="color-preview-half" id="color-preview-new" style="background: #7aa2f7">
+        <span class="preview-label">New</span>
+      </div>
+    </div>
+
+    <div class="color-picker-buttons">
+      <button class="btn btn-ghost" onclick="closeColorPicker()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveColor()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function stepInput(btn, dir) {
+    const input = btn.closest('.num-stepper').querySelector('input[type="number"]');
+    const step = parseFloat(input.step) || 1;
+    const min = parseFloat(input.min);
+    const max = parseFloat(input.max);
+    let val = parseFloat(input.value) + step * dir;
+    if (!isNaN(min)) val = Math.max(min, val);
+    if (!isNaN(max)) val = Math.min(max, val);
+    input.value = parseFloat(val.toFixed(4));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+    document.getElementById('page-' + name).classList.remove('hidden');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+  }
+
+  function selectCursor(el) {
+    el.parentElement.querySelectorAll('.cursor-option').forEach(o => o.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function selectScheme(el) {
+    el.parentElement.querySelectorAll('.scheme-card').forEach(c => {
+      c.classList.remove('active');
+      const badge = c.querySelector('.badge');
+      if (badge) badge.remove();
+    });
+    el.classList.add('active');
+    const nameEl = el.querySelector('.scheme-name');
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = 'Active';
+    nameEl.appendChild(badge);
+
+    const schemeName = nameEl.childNodes[0].textContent.trim();
+    document.querySelector('.color-editor-title').textContent = 'Palette — ' + schemeName;
+  }
+
+  function testBell() {
+    const flash = document.getElementById('bell-flash');
+    flash.classList.remove('animate');
+    void flash.offsetWidth;
+    flash.classList.add('animate');
+  }
+
+  function hideUnsaved() {
+    document.getElementById('unsaved-badge').classList.remove('visible');
+  }
+
+  document.addEventListener('input', () => {
+    document.getElementById('unsaved-badge').classList.add('visible');
+  });
+  document.addEventListener('change', () => {
+    document.getElementById('unsaved-badge').classList.add('visible');
+  });
+
+  // ── Keybinding edit dialog ──────────────────────────
+  let activeKeybindRow = null;
+  let recordedKeys = [];
+
+  function openKeybindDialog(row) {
+    activeKeybindRow = row;
+    const action = row.querySelector('.keybind-action').textContent;
+    document.getElementById('keybind-dialog-action').textContent = action;
+
+    // Show current binding in the recorder
+    const keysEl = row.querySelector('.keybind-keys');
+    const kbds = keysEl.querySelectorAll('kbd');
+    const recorder = document.getElementById('keybind-recorder');
+    recorder.innerHTML = '';
+    if (kbds.length > 0) {
+      kbds.forEach((k, i) => {
+        const clone = k.cloneNode(true);
+        recorder.appendChild(clone);
+        if (i < kbds.length - 1) {
+          const plus = document.createElement('span');
+          plus.className = 'keybind-plus';
+          plus.textContent = '+';
+          recorder.appendChild(plus);
+        }
+      });
+    } else {
+      recorder.innerHTML = '<span class="placeholder">Press a key combination...</span>';
+    }
+
+    recordedKeys = [];
+    const overlay = document.getElementById('keybind-overlay');
+    overlay.classList.add('open');
+    document.addEventListener('keydown', handleKeybindKeydown);
+  }
+
+  function closeKeybindDialog() {
+    const overlay = document.getElementById('keybind-overlay');
+    overlay.classList.remove('open');
+    activeKeybindRow = null;
+    recordedKeys = [];
+    document.removeEventListener('keydown', handleKeybindKeydown);
+  }
+
+  function saveKeybind() {
+    if (activeKeybindRow && recordedKeys.length > 0) {
+      const keysEl = activeKeybindRow.querySelector('.keybind-keys');
+      keysEl.innerHTML = '';
+      recordedKeys.forEach((key, i) => {
+        const kbd = document.createElement('kbd');
+        kbd.textContent = key;
+        keysEl.appendChild(kbd);
+        if (i < recordedKeys.length - 1) {
+          const plus = document.createElement('span');
+          plus.className = 'keybind-plus';
+          plus.textContent = '+';
+          keysEl.appendChild(plus);
+        }
+      });
+      document.getElementById('unsaved-badge').classList.add('visible');
+    }
+    closeKeybindDialog();
+  }
+
+  function handleKeybindKeydown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === 'Escape') {
+      closeKeybindDialog();
+      return;
+    }
+
+    if (e.key === 'Backspace') {
+      // Unbind — clear the keys
+      recordedKeys = [];
+      if (activeKeybindRow) {
+        const keysEl = activeKeybindRow.querySelector('.keybind-keys');
+        keysEl.innerHTML = '<span style="font-size: 12px; color: var(--text-faint); font-style: italic;">Unbound</span>';
+      }
+      document.getElementById('unsaved-badge').classList.add('visible');
+      closeKeybindDialog();
+      return;
+    }
+
+    // Build key combo
+    const parts = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Super');
+
+    const keyName = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      parts.push(keyName);
+    }
+
+    if (parts.length === 0) return;
+
+    recordedKeys = parts;
+    const recorder = document.getElementById('keybind-recorder');
+    recorder.innerHTML = '';
+    parts.forEach((key, i) => {
+      const kbd = document.createElement('kbd');
+      kbd.textContent = key;
+      recorder.appendChild(kbd);
+      if (i < parts.length - 1) {
+        const plus = document.createElement('span');
+        plus.className = 'keybind-plus';
+        plus.textContent = '+';
+        recorder.appendChild(plus);
+      }
+    });
+  }
+
+  // Click any keybind row to open the edit dialog
+  document.querySelectorAll('.keybind-row').forEach(row => {
+    row.addEventListener('click', () => openKeybindDialog(row));
+  });
+
+  // Close dialog when clicking the backdrop
+  document.getElementById('keybind-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeKeybindDialog();
+  });
+
+  // ── Color picker ────────────────────────────────────
+  let activeColorTarget = null; // the element whose color we're editing
+  let pickerHue = 0;       // 0-360
+  let pickerSat = 80;      // 0-100 (left-right in area)
+  let pickerLit = 50;      // derived from area Y
+  let pickerAreaX = 80;    // 0-100 percent
+  let pickerAreaY = 20;    // 0-100 percent
+  let originalColor = '';
+
+  function hexToRgb(hex) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    const n = parseInt(hex, 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+
+  function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join('');
+  }
+
+  function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+    if (max === min) { h = s = 0; }
+    else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+        case g: h = ((b - r) / d + 2) / 6; break;
+        case b: h = ((r - g) / d + 4) / 6; break;
+      }
+    }
+    return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+  }
+
+  function hslToRgb(h, s, l) {
+    h /= 360; s /= 100; l /= 100;
+    let r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+    return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+  }
+
+  function hueToColor(h) {
+    const {r, g, b} = hslToRgb(h, 100, 50);
+    return rgbToHex(r, g, b);
+  }
+
+  function areaToRgb() {
+    // x = saturation (0=white, 100=pure hue), y = brightness (0=bright, 100=black)
+    const x = pickerAreaX / 100;
+    const y = pickerAreaY / 100;
+    const hueRgb = hslToRgb(pickerHue, 100, 50);
+    const r = Math.round((1 - y) * ((1 - x) * 255 + x * hueRgb.r));
+    const g = Math.round((1 - y) * ((1 - x) * 255 + x * hueRgb.g));
+    const b = Math.round((1 - y) * ((1 - x) * 255 + x * hueRgb.b));
+    return { r: Math.min(255, Math.max(0, r)), g: Math.min(255, Math.max(0, g)), b: Math.min(255, Math.max(0, b)) };
+  }
+
+  function rgbToAreaPos(r, g, b) {
+    const hsl = rgbToHsl(r, g, b);
+    pickerHue = hsl.h;
+    // Approximate area position from HSL
+    const max = Math.max(r, g, b) / 255;
+    const min = Math.min(r, g, b) / 255;
+    const brightness = max;
+    const sat = max === 0 ? 0 : 1 - min / max;
+    pickerAreaX = sat * 100;
+    pickerAreaY = (1 - brightness) * 100;
+  }
+
+  function updatePickerUI() {
+    const {r, g, b} = areaToRgb();
+    const hex = rgbToHex(r, g, b);
+    document.getElementById('color-hex-input').value = hex;
+    document.getElementById('color-r-input').value = r;
+    document.getElementById('color-g-input').value = g;
+    document.getElementById('color-b-input').value = b;
+    document.getElementById('color-preview-new').style.background = hex;
+    document.getElementById('color-area-thumb').style.left = pickerAreaX + '%';
+    document.getElementById('color-area-thumb').style.top = pickerAreaY + '%';
+    document.getElementById('hue-strip-thumb').style.left = (pickerHue / 360 * 100) + '%';
+    const hueColor = hueToColor(pickerHue);
+    document.querySelector('.color-area').style.setProperty('--picker-hue', hueColor);
+    document.querySelector('#color-area .color-area').style.background =
+      `linear-gradient(to bottom, transparent, #000), linear-gradient(to right, #fff, ${hueColor})`;
+  }
+
+  function openColorPicker(el, label, currentColor) {
+    activeColorTarget = el;
+    originalColor = currentColor;
+    document.getElementById('color-picker-label').textContent = label;
+    document.getElementById('color-preview-old').style.background = currentColor;
+    document.getElementById('color-preview-new').style.background = currentColor;
+
+    const rgb = hexToRgb(currentColor);
+    rgbToAreaPos(rgb.r, rgb.g, rgb.b);
+    updatePickerUI();
+
+    document.getElementById('color-picker-overlay').classList.add('open');
+  }
+
+  function closeColorPicker() {
+    document.getElementById('color-picker-overlay').classList.remove('open');
+    activeColorTarget = null;
+  }
+
+  function saveColor() {
+    if (activeColorTarget) {
+      const hex = document.getElementById('color-hex-input').value;
+      // Update the source element
+      if (activeColorTarget.classList.contains('color-cell')) {
+        activeColorTarget.style.background = hex;
+      } else if (activeColorTarget.classList.contains('swatch-lg')) {
+        activeColorTarget.style.background = hex;
+        const valueEl = activeColorTarget.parentElement.querySelector('.sc-value');
+        if (valueEl) valueEl.textContent = hex;
+      }
+      document.getElementById('unsaved-badge').classList.add('visible');
+    }
+    closeColorPicker();
+  }
+
+  function hexInputChanged() {
+    let hex = document.getElementById('color-hex-input').value.trim();
+    if (!hex.startsWith('#')) hex = '#' + hex;
+    if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+      const rgb = hexToRgb(hex);
+      rgbToAreaPos(rgb.r, rgb.g, rgb.b);
+      updatePickerUI();
+    }
+  }
+
+  function rgbInputChanged() {
+    const r = Math.min(255, Math.max(0, parseInt(document.getElementById('color-r-input').value) || 0));
+    const g = Math.min(255, Math.max(0, parseInt(document.getElementById('color-g-input').value) || 0));
+    const b = Math.min(255, Math.max(0, parseInt(document.getElementById('color-b-input').value) || 0));
+    rgbToAreaPos(r, g, b);
+    updatePickerUI();
+  }
+
+  // Drag handlers for color area
+  let draggingArea = false, draggingHue = false;
+
+  function startAreaDrag(e) {
+    draggingArea = true;
+    moveArea(e);
+  }
+
+  function startHueDrag(e) {
+    draggingHue = true;
+    moveHue(e);
+  }
+
+  function moveArea(e) {
+    const rect = document.getElementById('color-area').getBoundingClientRect();
+    pickerAreaX = Math.min(100, Math.max(0, (e.clientX - rect.left) / rect.width * 100));
+    pickerAreaY = Math.min(100, Math.max(0, (e.clientY - rect.top) / rect.height * 100));
+    updatePickerUI();
+  }
+
+  function moveHue(e) {
+    const rect = document.getElementById('hue-strip').getBoundingClientRect();
+    pickerHue = Math.min(360, Math.max(0, (e.clientX - rect.left) / rect.width * 360));
+    updatePickerUI();
+  }
+
+  document.addEventListener('mousemove', (e) => {
+    if (draggingArea) moveArea(e);
+    if (draggingHue) moveHue(e);
+  });
+
+  document.addEventListener('mouseup', () => {
+    draggingArea = false;
+    draggingHue = false;
+  });
+
+  // Click color cells to open picker
+  document.querySelectorAll('.color-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const bg = cell.style.background || cell.style.backgroundColor;
+      const title = cell.getAttribute('title') || '';
+      const label = cell.parentElement.querySelector('.color-cell-label');
+      const idx = label ? label.textContent : '';
+      const name = title ? `${idx} — ${title}` : idx;
+      openColorPicker(cell, name, bg);
+    });
+  });
+
+  // Click special color swatches to open picker
+  document.querySelectorAll('.special-color').forEach(sc => {
+    sc.addEventListener('click', () => {
+      const swatch = sc.querySelector('.swatch-lg');
+      const label = sc.querySelector('.sc-label').textContent;
+      const value = sc.querySelector('.sc-value').textContent;
+      openColorPicker(swatch, label, swatch.style.background || value);
+    });
+  });
+
+  // Close color picker on backdrop click
+  document.getElementById('color-picker-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeColorPicker();
+  });
+
+  // Close color picker on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('color-picker-overlay').classList.contains('open')) {
+      closeColorPicker();
+    }
+  });
+</script>
+
+</body>
+</html>

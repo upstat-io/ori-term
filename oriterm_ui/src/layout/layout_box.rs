@@ -4,14 +4,31 @@
 //! Widgets will construct `LayoutBox` trees; the solver produces `LayoutNode`
 //! trees as output.
 
+use winit::window::CursorIcon;
+
 use crate::geometry::Insets;
+use crate::hit_test_behavior::HitTestBehavior;
+use crate::sense::Sense;
 use crate::widget_id::WidgetId;
 
 use super::flex::{Align, Direction, Justify};
 use super::size_spec::SizeSpec;
 
-/// Content of a layout box — either a leaf with intrinsic size or a
-/// flex container with children.
+/// Column specification for grid layout.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GridColumns {
+    /// Fixed number of columns.
+    Fixed(usize),
+    /// Fill as many columns as fit, each at least `min_width` wide.
+    /// Remaining space distributed equally (CSS `auto-fill` behavior).
+    AutoFill {
+        /// Minimum column width in logical pixels.
+        min_width: f32,
+    },
+}
+
+/// Content of a layout box — either a leaf with intrinsic size, a
+/// flex container, or a grid container.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BoxContent {
     /// A leaf node with intrinsic dimensions.
@@ -34,6 +51,17 @@ pub enum BoxContent {
         /// Child layout boxes.
         children: Vec<LayoutBox>,
     },
+    /// A grid container that arranges children in rows and columns.
+    Grid {
+        /// Column specification.
+        columns: GridColumns,
+        /// Vertical gap between rows.
+        row_gap: f32,
+        /// Horizontal gap between columns.
+        column_gap: f32,
+        /// Child layout boxes.
+        children: Vec<LayoutBox>,
+    },
 }
 
 /// A layout box describing desired size, spacing, and content.
@@ -41,6 +69,10 @@ pub enum BoxContent {
 /// This is a pure data descriptor — no rendering, no trait objects.
 /// The layout solver reads the tree and produces [`super::LayoutNode`] output.
 #[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "layout descriptor: each bool is a distinct layout/hit-test flag"
+)]
 pub struct LayoutBox {
     /// How width is determined.
     pub width: SizeSpec,
@@ -62,6 +94,39 @@ pub struct LayoutBox {
     pub content: BoxContent,
     /// Optional widget ID for hit testing and event routing.
     pub widget_id: Option<WidgetId>,
+    /// Sense flags for hit-test filtering.
+    pub sense: Sense,
+    /// Hit-test behavior relative to children.
+    pub hit_test_behavior: HitTestBehavior,
+    /// Whether children are clipped to this box's bounds.
+    pub clip: bool,
+    /// Whether the widget is disabled (treated as `Sense::none()`).
+    pub disabled: bool,
+    /// Hit area expansion for small targets (pixels).
+    pub interact_radius: f32,
+    /// Content offset applied to children (scroll offset).
+    ///
+    /// When non-zero, hit testing translates the test point by this offset
+    /// before checking children. Rendering applies the same offset via
+    /// `push_translate`. Used by `ScrollWidget` to keep layout stable
+    /// (children at natural positions) while offsetting interaction.
+    pub content_offset: (f32, f32),
+    /// When true, children are measured with infinite main-axis constraints
+    /// instead of the container's available space. Used by scroll containers
+    /// so content can grow beyond the viewport.
+    pub overflow: bool,
+    /// Whether this subtree participates in pointer hit testing.
+    ///
+    /// When `false`, the entire subtree is invisible to pointer events
+    /// (hover, click, drag) but still participates in layout, paint, and
+    /// keyboard navigation. Analogous to CSS `pointer-events: none`.
+    pub pointer_events: bool,
+    /// The OS cursor to show when the pointer hovers over this widget.
+    ///
+    /// `Default` means no cursor override. Widgets set `Pointer` for
+    /// clickable controls, `Text` for text inputs. The dialog handler
+    /// reads this from the hit-test path and calls `window.set_cursor()`.
+    pub cursor_icon: CursorIcon,
 }
 
 impl LayoutBox {
@@ -81,6 +146,45 @@ impl LayoutBox {
                 intrinsic_height,
             },
             widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
+            overflow: false,
+            pointer_events: true,
+            cursor_icon: CursorIcon::Default,
+        }
+    }
+
+    /// Creates a grid container with default gaps.
+    pub fn grid(columns: GridColumns, children: Vec<Self>) -> Self {
+        Self {
+            width: SizeSpec::Hug,
+            height: SizeSpec::Hug,
+            padding: Insets::default(),
+            margin: Insets::default(),
+            min_width: 0.0,
+            max_width: f32::INFINITY,
+            min_height: 0.0,
+            max_height: f32::INFINITY,
+            content: BoxContent::Grid {
+                columns,
+                row_gap: 0.0,
+                column_gap: 0.0,
+                children,
+            },
+            widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
+            overflow: false,
+            pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 
@@ -103,6 +207,15 @@ impl LayoutBox {
                 children,
             },
             widget_id: None,
+            sense: Sense::all(),
+            hit_test_behavior: HitTestBehavior::default(),
+            clip: false,
+            disabled: false,
+            interact_radius: 0.0,
+            content_offset: (0.0, 0.0),
+            overflow: false,
+            pointer_events: true,
+            cursor_icon: CursorIcon::Default,
         }
     }
 
@@ -195,10 +308,133 @@ impl LayoutBox {
         self
     }
 
+    /// Sets the vertical gap between rows (only meaningful for grid containers).
+    #[must_use]
+    pub fn with_row_gap(mut self, gap: f32) -> Self {
+        if let BoxContent::Grid {
+            row_gap: ref mut g, ..
+        } = self.content
+        {
+            *g = gap;
+        }
+        self
+    }
+
+    /// Sets the horizontal gap between columns (only meaningful for grid containers).
+    #[must_use]
+    pub fn with_column_gap(mut self, gap: f32) -> Self {
+        if let BoxContent::Grid {
+            column_gap: ref mut g,
+            ..
+        } = self.content
+        {
+            *g = gap;
+        }
+        self
+    }
+
     /// Attaches a widget ID for hit testing and event routing.
     #[must_use]
     pub fn with_widget_id(mut self, id: WidgetId) -> Self {
         self.widget_id = Some(id);
+        self
+    }
+
+    /// Sets sense flags for hit-test filtering.
+    #[must_use]
+    pub fn with_sense(mut self, sense: Sense) -> Self {
+        self.sense = sense;
+        self
+    }
+
+    /// Sets hit-test behavior relative to children.
+    #[must_use]
+    pub fn with_hit_test_behavior(mut self, behavior: HitTestBehavior) -> Self {
+        self.hit_test_behavior = behavior;
+        self
+    }
+
+    /// Sets the clip flag (children clipped to this box's bounds).
+    #[must_use]
+    pub fn with_clip(mut self, clip: bool) -> Self {
+        self.clip = clip;
+        self
+    }
+
+    /// Sets the disabled flag.
+    #[must_use]
+    pub fn with_disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Sets the interact radius for expanding hit areas.
+    #[must_use]
+    pub fn with_interact_radius(mut self, radius: f32) -> Self {
+        self.interact_radius = radius;
+        self
+    }
+
+    /// Sets the content offset for scroll containers.
+    ///
+    /// The offset translates children during hit testing, matching the
+    /// visual translate applied during rendering. Positive values scroll
+    /// content upward (revealing content below).
+    #[must_use]
+    pub fn with_content_offset(mut self, x: f32, y: f32) -> Self {
+        self.content_offset = (x, y);
+        self
+    }
+
+    /// Marks this container as overflow-scroll: children are measured with
+    /// infinite main-axis constraints so they can grow beyond the viewport.
+    #[must_use]
+    pub fn with_overflow(mut self) -> Self {
+        self.overflow = true;
+        self
+    }
+
+    /// Sets whether this subtree participates in pointer hit testing.
+    ///
+    /// When `false`, the subtree is invisible to hover, click, and drag
+    /// but still participates in layout, paint, and keyboard navigation.
+    #[must_use]
+    pub fn with_pointer_events(mut self, enabled: bool) -> Self {
+        self.pointer_events = enabled;
+        self
+    }
+
+    /// Sets the OS cursor icon to show when this widget is hovered.
+    #[must_use]
+    pub fn with_cursor_icon(mut self, icon: CursorIcon) -> Self {
+        self.cursor_icon = icon;
+        self
+    }
+
+    /// Returns a copy of this layout tree with all interaction metadata scrubbed.
+    ///
+    /// Recursively clears `widget_id` and sets `sense` to `Sense::none()` on
+    /// this node and all descendants. The resulting tree preserves sizing,
+    /// padding, flex/grid structure, and clipping — everything the layout solver
+    /// needs — but contributes no hit-testable widgets.
+    ///
+    /// Used by [`VisibilityWidget`](crate::widgets::modifiers::VisibilityWidget)
+    /// in `Hidden` mode: the child occupies space but is invisible to interaction.
+    #[must_use]
+    pub fn for_layout_only(mut self) -> Self {
+        self.widget_id = None;
+        self.sense = Sense::none();
+        self.cursor_icon = CursorIcon::Default;
+        match &mut self.content {
+            BoxContent::Leaf { .. } => {}
+            BoxContent::Flex { children, .. } | BoxContent::Grid { children, .. } => {
+                for child in children {
+                    // Take ownership, scrub, put back.
+                    let scrubbed = std::mem::replace(child, Self::leaf(0.0, 0.0)).for_layout_only();
+                    *child = scrubbed;
+                }
+            }
+        }
         self
     }
 }

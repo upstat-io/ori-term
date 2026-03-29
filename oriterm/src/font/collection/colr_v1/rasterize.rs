@@ -35,6 +35,27 @@ pub(crate) fn has_colr(font_bytes: &[u8], face_index: u32, glyph_id: u16) -> boo
 /// `size_px` is used to compute the clip box in pixel coordinates. The paint
 /// commands themselves operate in font units — the compositor applies a
 /// `size_px / upem` scaling transform during rendering.
+/// Get just the COLR clip box for a glyph without collecting paint commands.
+///
+/// Returns the padded clip box in pixel coordinates, or `None` if the glyph
+/// has no COLR data. Used to determine the correct canvas size for swash's
+/// color rendering (swash clips to outline bounds, not COLR bounds).
+pub(crate) fn colr_clip_box(fd: &FaceData, glyph_id: u16, size_px: f32) -> Option<ClipBox> {
+    let font = FontRef::from_index(&fd.bytes, fd.face_index).ok()?;
+    let gid = skrifa::GlyphId::new(u32::from(glyph_id));
+    let color_glyph = font.color_glyphs().get(gid)?;
+    let size = Size::new(size_px);
+    let bb = color_glyph.bounding_box(skrifa::instance::LocationRef::default(), size)?;
+    // Pad by 10% to capture any overflow beyond the declared bounds.
+    let pad = (bb.y_max - bb.y_min) * 0.1;
+    Some(ClipBox {
+        x_min: bb.x_min - pad,
+        y_min: bb.y_min - pad,
+        x_max: bb.x_max + pad,
+        y_max: bb.y_max + pad,
+    })
+}
+
 pub(crate) fn collect_colr_v1(
     font_bytes: &[u8],
     face_index: u32,
@@ -96,15 +117,33 @@ pub(crate) fn try_rasterize_colr_v1(
         colr.clip_box
     );
 
-    // Determine output dimensions from clip box.
-    let clip = colr.clip_box.unwrap_or_else(|| {
-        // Fallback: estimate from font metrics.
-        estimate_clip_box(fd, glyph_id, size_px)
-    });
+    // Determine output dimensions from clip box, with 1px padding on all
+    // sides to prevent COLR paint layer overflow from being clipped.
+    let raw_clip = colr
+        .clip_box
+        .unwrap_or_else(|| estimate_clip_box(fd, glyph_id, size_px));
+    // Pad clip box by 10% of the glyph height on each side to ensure
+    // COLR paint layers that overflow the declared bounds render fully.
+    let pad = raw_clip.height() * 0.1;
+    let clip = ClipBox {
+        x_min: raw_clip.x_min - pad,
+        y_min: raw_clip.y_min - pad,
+        x_max: raw_clip.x_max + pad,
+        y_max: raw_clip.y_max + pad,
+    };
 
     let width = clip.width().ceil() as u32;
     let height = clip.height().ceil() as u32;
     if width == 0 || height == 0 {
+        return None;
+    }
+    // Cap bitmap at 1024×1024 (4 MiB RGBA) to prevent pathological allocations
+    // from malformed fonts. Normal emoji at MAX_FONT_SIZE (200px) produce
+    // bitmaps well under 256×256.
+    if width > 1024 || height > 1024 {
+        log::warn!(
+            "COLR glyph {glyph_id}: bitmap too large ({width}x{height}), falling through to swash"
+        );
         return None;
     }
 
@@ -127,7 +166,9 @@ pub(crate) fn try_rasterize_colr_v1(
     // BaseGlyph records (backwards-compatible) or other color sources
     // (CBDT/sbix).
     if bitmap.iter().all(|&b| b == 0) {
-        log::debug!("COLR glyph {glyph_id}: blank bitmap, falling through to swash");
+        log::debug!(
+            "COLR glyph {glyph_id}: blank bitmap ({width}x{height}), falling through to swash"
+        );
         return None;
     }
 
@@ -135,7 +176,8 @@ pub(crate) fn try_rasterize_colr_v1(
     let bearing_x = clip.x_min.floor() as i32;
     let bearing_y = clip.y_max.ceil() as i32;
 
-    // Advance width from font metrics (matches the swash path in face.rs).
+    // Advance width from font metrics. COLR v1 is used for color emoji fonts
+    // which don't have weight variation axes, so empty variations is correct.
     let fr = font_ref(fd);
     let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
 
@@ -154,6 +196,7 @@ pub(crate) fn try_rasterize_colr_v1(
 ///
 /// Uses the glyph advance width and font ascent/descent as a rough bounding
 /// box. Most COLR v1 fonts define clip boxes, so this is a rare fallback.
+/// Empty variations: color emoji fonts don't have weight variation axes.
 fn estimate_clip_box(fd: &FaceData, glyph_id: u16, size_px: f32) -> ClipBox {
     let fr = font_ref(fd);
     let metrics = fr.metrics(&[]).scale(size_px);

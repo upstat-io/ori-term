@@ -13,7 +13,7 @@ use crate::geometry::Rect;
 use crate::widgets::{DrawCtx, Widget};
 
 #[cfg(not(target_os = "macos"))]
-use super::super::constants::{CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT};
+use super::super::constants::CONTROLS_ZONE_WIDTH;
 #[cfg(not(target_os = "macos"))]
 use super::TabBarWidget;
 
@@ -41,25 +41,26 @@ impl TabBarWidget {
                 controls_x + i as f32 * BUTTON_WIDTH,
                 y0,
                 BUTTON_WIDTH,
-                TAB_BAR_HEIGHT,
+                self.metrics.height,
             );
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
-                draw_list: ctx.draw_list,
+                scene: ctx.scene,
                 bounds: btn_rect,
-                focused_widget: ctx.focused_widget,
                 now: ctx.now,
-                animations_running: ctx.animations_running,
                 theme: ctx.theme,
                 icons: ctx.icons,
+                interaction: None,
+                widget_id: None,
+                frame_requests: ctx.frame_requests,
             };
-            ctrl.draw(&mut child_ctx);
+            ctrl.paint(&mut child_ctx);
         }
     }
 
     /// Returns the bounding rectangle for the control button at `index`.
     ///
-    /// Used by [`update_control_hover`](Self::update_control_hover) and
+    /// Used by [`dispatch_control_input`](Self::dispatch_control_input) and
     /// [`interactive_rects`](Self::interactive_rects) to determine control
     /// button positions without duplicating geometry logic.
     pub(super) fn control_rect(&self, index: usize) -> Rect {
@@ -68,7 +69,7 @@ impl TabBarWidget {
             controls_x + index as f32 * BUTTON_WIDTH,
             0.0,
             BUTTON_WIDTH,
-            TAB_BAR_HEIGHT,
+            self.metrics.height,
         )
     }
 }

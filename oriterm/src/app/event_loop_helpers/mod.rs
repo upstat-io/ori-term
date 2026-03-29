@@ -64,11 +64,37 @@ impl App {
     pub(super) fn modal_loop_render(&mut self) {
         self.pump_mux_events();
 
+        // Detect DPI/size changes that occurred inside the modal loop.
+        //
+        // WM_DPICHANGED triggers SetWindowPos (which generates WM_SIZE),
+        // but winit does not dispatch WindowEvent::Resized during modal
+        // loops — so handle_resize never runs. Query each window's actual
+        // inner_size and compare against the stored size to detect changes.
+        // This also picks up DPI changes because SetWindowPos resizes the
+        // window to maintain logical size at the new DPI.
+        {
+            self.scratch_dirty_windows.clear();
+            self.scratch_dirty_windows
+                .extend(self.windows.keys().copied());
+            for i in 0..self.scratch_dirty_windows.len() {
+                let wid = self.scratch_dirty_windows[i];
+                let needs_resize = self.windows.get(&wid).is_some_and(|ctx| {
+                    let inner = ctx.window.window().inner_size();
+                    let (sw, sh) = ctx.window.size_px();
+                    inner.width != sw || inner.height != sh
+                });
+                if needs_resize {
+                    let inner = self.windows[&wid].window.window().inner_size();
+                    self.handle_resize(wid, inner);
+                }
+            }
+        }
+
         self.scratch_dirty_windows.clear();
         self.scratch_dirty_windows.extend(
             self.windows
                 .iter()
-                .filter(|(_, ctx)| ctx.dirty)
+                .filter(|(_, ctx)| ctx.root.is_dirty())
                 .map(|(&id, _)| id),
         );
         if self.scratch_dirty_windows.is_empty() {
@@ -81,7 +107,7 @@ impl App {
         for i in 0..self.scratch_dirty_windows.len() {
             let wid = self.scratch_dirty_windows[i];
             if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.dirty = false;
+                ctx.root.clear_dirty();
             }
             let mux_wid = self
                 .windows
@@ -90,6 +116,11 @@ impl App {
             self.focused_window_id = Some(wid);
             self.active_window = mux_wid;
             self.handle_redraw();
+            // Clear invalidation AFTER render so selective walks can consume
+            // the dirty state. Matches the pattern in render_dispatch.rs.
+            if let Some(ctx) = self.windows.get_mut(&wid) {
+                ctx.root.invalidation_mut().clear();
+            }
         }
 
         self.focused_window_id = saved_focused;
@@ -155,7 +186,13 @@ impl App {
             if events.will_exit() {
                 if let Some(ctx) = self.focused_ctx() {
                     let scale = ctx.window.scale_factor().factor() as f32;
-                    let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT * scale;
+                    let hidden = self.config.window.tab_bar_position
+                        == crate::config::TabBarPosition::Hidden;
+                    let caption_h = if hidden {
+                        0.0
+                    } else {
+                        ctx.tab_bar.metrics().height * scale
+                    };
                     crate::window_manager::platform::macos::reapply_traffic_lights(
                         ctx.window.window(),
                         caption_h,
@@ -169,7 +206,7 @@ impl App {
                     oriterm_ui::widgets::tab_bar::constants::MACOS_TRAFFIC_LIGHT_WIDTH
                 };
                 ctx.tab_bar.set_left_inset(inset);
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
         if events.did_exit() {
@@ -177,14 +214,20 @@ impl App {
             // a no-op since we already centered during the resize above.
             if let Some(ctx) = self.focused_ctx() {
                 let scale = ctx.window.scale_factor().factor() as f32;
-                let caption_h = oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT * scale;
+                let hidden =
+                    self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
+                let caption_h = if hidden {
+                    0.0
+                } else {
+                    ctx.tab_bar.metrics().height * scale
+                };
                 crate::window_manager::platform::macos::reapply_traffic_lights(
                     ctx.window.window(),
                     caption_h,
                 );
             }
             if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+                ctx.root.mark_dirty();
             }
         }
     }
@@ -199,13 +242,8 @@ impl App {
         }
         let now = std::time::Instant::now();
         for ctx in self.dialogs.values_mut() {
-            if ctx.layer_animator.is_any_animating() {
-                let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
-                ctx.overlays
-                    .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
-                if animating {
-                    ctx.dirty = true;
-                }
+            if ctx.root.tick_overlay_animations(now) {
+                ctx.root.mark_dirty();
             }
         }
     }
@@ -235,6 +273,11 @@ pub(super) struct ControlFlowInput {
     pub budget_remaining: std::time::Duration,
     /// Current time.
     pub now: std::time::Instant,
+    /// Earliest deferred repaint from `RenderScheduler`.
+    ///
+    /// Feeds into `WaitUntil` when no animations or dirty state is active.
+    /// `None` when the scheduler has no deferred repaints.
+    pub scheduler_wake: Option<std::time::Instant>,
 }
 
 /// Result of the control flow decision.
@@ -256,7 +299,12 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
     } else if input.has_animations {
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
     } else if input.blinking_active {
-        ControlFlowDecision::WaitUntil(input.next_toggle)
+        match input.scheduler_wake {
+            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(input.next_toggle)),
+            None => ControlFlowDecision::WaitUntil(input.next_toggle),
+        }
+    } else if let Some(wake) = input.scheduler_wake {
+        ControlFlowDecision::WaitUntil(wake)
     } else {
         ControlFlowDecision::Wait
     }

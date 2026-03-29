@@ -1,5 +1,7 @@
 //! Unit tests for the animation system.
 
+#![allow(deprecated)] // Tests exercise legacy AnimatedValue alongside AnimProperty.
+
 use std::time::{Duration, Instant};
 
 use super::{AnimatedValue, Animation, Easing, Lerp};
@@ -901,4 +903,36 @@ fn animated_value_ease_in_out_symmetric() {
         (at_quarter + at_three_quarters - 1.0).abs() < 0.05,
         "EaseInOut should be symmetric: {at_quarter} + {at_three_quarters} ≈ 1.0"
     );
+}
+
+// Lerp Insets
+
+#[test]
+fn lerp_insets_at_boundaries() {
+    use crate::geometry::Insets;
+
+    let a = Insets::ZERO;
+    let b = Insets::tlbr(10.0, 40.0, 30.0, 20.0);
+
+    let at_zero = Insets::lerp(a, b, 0.0);
+    assert_eq!(at_zero, a, "Lerp at t=0.0 should return start");
+
+    let at_one = Insets::lerp(a, b, 1.0);
+    assert_eq!(at_one, b, "Lerp at t=1.0 should return end");
+}
+
+#[test]
+fn lerp_insets_at_midpoint() {
+    use crate::geometry::Insets;
+
+    let a = Insets::ZERO;
+    let b = Insets::tlbr(10.0, 40.0, 30.0, 20.0);
+
+    let mid = Insets::lerp(a, b, 0.5);
+    assert_eq!(mid.top, 5.0);
+    assert_eq!(mid.right, 10.0);
+    assert_eq!(mid.bottom, 15.0);
+    assert_eq!(mid.left, 20.0);
+    // b = tlbr(10, 40, 30, 20) → top=10, left=40, bottom=30, right=20
+    // So midpoints: top=5, right=10, bottom=15, left=20. ✓
 }

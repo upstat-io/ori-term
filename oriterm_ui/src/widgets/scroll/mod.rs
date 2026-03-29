@@ -7,16 +7,23 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::color::Color;
-use crate::geometry::Rect;
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseEvent, MouseEventKind, ScrollDelta};
+use crate::controllers::{EventController, ScrollbarCaptureController};
+use crate::geometry::{Point, Rect};
+use crate::input::{InputEvent, Modifiers, ScrollDelta};
+use crate::interaction::LifecycleEvent;
 use crate::layout::{LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::sense::Sense;
+use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
-use crate::theme::UiTheme;
+use super::scrollbar::{ScrollbarVisualState, SharedScrollbarHitZones};
+use super::{DrawCtx, LayoutCtx, LifecycleCtx, OnInputResult, Widget, WidgetAction};
 
-use super::{CaptureRequest, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+/// Re-export the shared scrollbar style.
+pub use super::scrollbar::ScrollbarStyle;
 
+mod input;
+mod rendering;
 mod scrollbar;
 
 /// Scroll direction.
@@ -28,33 +35,6 @@ pub enum ScrollDirection {
     Horizontal,
     /// Both axes scroll independently.
     Both,
-}
-
-/// Style for the overlay scrollbar.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ScrollbarStyle {
-    /// Scrollbar width (logical pixels).
-    pub width: f32,
-    /// Scrollbar thumb color.
-    pub thumb_color: Color,
-    /// Scrollbar track color (behind the thumb).
-    pub track_color: Color,
-    /// Corner radius of the thumb.
-    pub thumb_radius: f32,
-    /// Minimum thumb height (logical pixels).
-    pub min_thumb_height: f32,
-}
-
-impl Default for ScrollbarStyle {
-    fn default() -> Self {
-        Self {
-            width: 6.0,
-            thumb_color: Color::WHITE.with_alpha(0.25),
-            track_color: Color::TRANSPARENT,
-            thumb_radius: 3.0,
-            min_thumb_height: 20.0,
-        }
-    }
 }
 
 /// When to show the scrollbar.
@@ -69,17 +49,30 @@ pub enum ScrollbarPolicy {
     Hidden,
 }
 
-/// Tracks scrollbar drag and hover state.
+/// Per-axis scrollbar interaction state.
 #[derive(Debug, Default)]
-struct ScrollbarState {
-    /// Whether the scrollbar thumb is being dragged.
+struct AxisBarState {
     dragging: bool,
-    /// Y offset of drag start.
-    drag_start_y: f32,
+    /// Pointer position along the axis at drag start.
+    drag_start_pointer: f32,
     /// Scroll offset at drag start.
     drag_start_offset: f32,
-    /// Whether the cursor is over the scrollbar track area.
+    /// Cursor over the track/thumb area.
     track_hovered: bool,
+    /// Cursor specifically over the thumb.
+    thumb_hovered: bool,
+}
+
+impl AxisBarState {
+    fn visual_state(&self) -> ScrollbarVisualState {
+        if self.dragging {
+            ScrollbarVisualState::Dragging
+        } else if self.track_hovered || self.thumb_hovered {
+            ScrollbarVisualState::Hovered
+        } else {
+            ScrollbarVisualState::Rest
+        }
+    }
 }
 
 /// A scrollable container that clips its child to visible bounds.
@@ -91,45 +84,48 @@ pub struct ScrollWidget {
     id: WidgetId,
     child: Box<dyn Widget>,
     direction: ScrollDirection,
-    /// Current scroll offset (pixels scrolled from top/left).
+    /// Current vertical scroll offset (pixels scrolled from top).
     scroll_offset: f32,
-    /// Horizontal scroll offset (only used with `Both` direction).
+    /// Horizontal scroll offset (only used with Horizontal/Both direction).
     scroll_offset_x: f32,
     scrollbar_style: ScrollbarStyle,
     scrollbar_policy: ScrollbarPolicy,
-    scrollbar: ScrollbarState,
-    /// Whether the child widget has active mouse capture (drag in progress).
-    ///
-    /// Mutually exclusive with `scrollbar.dragging`. When active, scroll
-    /// events and scrollbar hit-testing are bypassed — all mouse events
-    /// route directly to the child.
-    child_captured: bool,
+    v_bar: AxisBarState,
+    h_bar: AxisBarState,
     /// Pixels per mouse wheel line.
     line_height: f32,
+    /// Optional height override for the layout box.
+    ///
+    /// When set to `Fill`, the scroll container expands to fill the
+    /// remaining space in a column — creating a sticky footer effect
+    /// where siblings below it stay pinned at the bottom.
+    ///
+    /// **Constraint:** `Fill` should only be used when the scroll is in a
+    /// column with known remaining height. Internally, scroll still caches
+    /// the child's natural height for content-space calculations.
+    height_override: Option<SizeSpec>,
     /// Cached child natural size, keyed by viewport bounds.
     cached_child_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
+    /// Shared scrollbar hit zones (updated during paint, read by controller).
+    hit_zones: SharedScrollbarHitZones,
+    /// Event controllers for scrollbar drag.
+    controllers: Vec<Box<dyn EventController>>,
+    /// Press position from `DragStart` (to determine thumb vs track click).
+    drag_press_pos: Option<Point>,
 }
 
 impl ScrollWidget {
     /// Creates a vertical scroll container wrapping the given child.
     pub fn vertical(child: Box<dyn Widget>) -> Self {
-        Self {
-            id: WidgetId::next(),
-            child,
-            direction: ScrollDirection::Vertical,
-            scroll_offset: 0.0,
-            scroll_offset_x: 0.0,
-            scrollbar_style: ScrollbarStyle::default(),
-            scrollbar_policy: ScrollbarPolicy::default(),
-            scrollbar: ScrollbarState::default(),
-            child_captured: false,
-            line_height: 20.0,
-            cached_child_layout: RefCell::new(None),
-        }
+        Self::new(child, ScrollDirection::Vertical)
     }
 
     /// Creates a scroll container with a specific direction.
     pub fn new(child: Box<dyn Widget>, direction: ScrollDirection) -> Self {
+        let hit_zones: SharedScrollbarHitZones = Rc::default();
+        let controllers: Vec<Box<dyn EventController>> = vec![Box::new(
+            ScrollbarCaptureController::new(Rc::clone(&hit_zones)),
+        )];
         Self {
             id: WidgetId::next(),
             child,
@@ -138,11 +134,20 @@ impl ScrollWidget {
             scroll_offset_x: 0.0,
             scrollbar_style: ScrollbarStyle::default(),
             scrollbar_policy: ScrollbarPolicy::default(),
-            scrollbar: ScrollbarState::default(),
-            child_captured: false,
+            v_bar: AxisBarState::default(),
+            h_bar: AxisBarState::default(),
             line_height: 20.0,
+            height_override: None,
             cached_child_layout: RefCell::new(None),
+            hit_zones,
+            controllers,
+            drag_press_pos: None,
         }
+    }
+
+    /// Overrides the height sizing spec for the scroll container's layout box.
+    pub fn set_height(&mut self, spec: SizeSpec) {
+        self.height_override = Some(spec);
     }
 
     /// Sets the scrollbar style.
@@ -169,6 +174,36 @@ impl ScrollWidget {
         let max = (content_height - view_height).max(0.0);
         self.scroll_offset = offset.clamp(0.0, max);
     }
+
+    // Axis helpers
+
+    /// Whether this direction has a vertical scrollbar.
+    fn has_vertical(&self) -> bool {
+        matches!(
+            self.direction,
+            ScrollDirection::Vertical | ScrollDirection::Both
+        )
+    }
+
+    /// Whether this direction has a horizontal scrollbar.
+    fn has_horizontal(&self) -> bool {
+        matches!(
+            self.direction,
+            ScrollDirection::Horizontal | ScrollDirection::Both
+        )
+    }
+
+    /// Space to reserve at the far end of each scrollbar track when both axes
+    /// are active (avoids corner overlap).
+    fn reserve_far_edge(&self, both_visible: bool) -> f32 {
+        if both_visible {
+            self.scrollbar_style.thickness + self.scrollbar_style.edge_inset
+        } else {
+            0.0
+        }
+    }
+
+    // Content size helpers
 
     /// Returns cached child natural size if viewport matches, otherwise recomputes.
     fn child_natural_size(
@@ -199,12 +234,36 @@ impl ScrollWidget {
         size
     }
 
-    /// Scrolls by a delta, clamping to valid range. Returns true if offset changed.
+    /// Scrolls vertical axis by a delta, clamping to valid range.
     fn scroll_by(&mut self, delta_y: f32, content_height: f32, view_height: f32) -> bool {
         let max = (content_height - view_height).max(0.0);
         let old = self.scroll_offset;
-        self.scroll_offset = (self.scroll_offset - delta_y).clamp(0.0, max);
+        self.scroll_offset = (self.scroll_offset + delta_y).clamp(0.0, max);
         (self.scroll_offset - old).abs() > f32::EPSILON
+    }
+
+    /// Scrolls horizontal axis by a delta, clamping to valid range.
+    fn scroll_by_x(&mut self, delta_x: f32, content_width: f32, view_width: f32) -> bool {
+        let max = (content_width - view_width).max(0.0);
+        let old = self.scroll_offset_x;
+        self.scroll_offset_x = (self.scroll_offset_x + delta_x).clamp(0.0, max);
+        (self.scroll_offset_x - old).abs() > f32::EPSILON
+    }
+
+    /// Returns the cached child content height, falling back to viewport height.
+    fn cached_content_height(&self, viewport: Rect) -> f32 {
+        self.cached_child_layout
+            .borrow()
+            .as_ref()
+            .map_or_else(|| viewport.height(), |(_, node)| node.rect.height())
+    }
+
+    /// Returns the cached child content width, falling back to viewport width.
+    fn cached_content_width(&self, viewport: Rect) -> f32 {
+        self.cached_child_layout
+            .borrow()
+            .as_ref()
+            .map_or_else(|| viewport.width(), |(_, node)| node.rect.width())
     }
 }
 
@@ -218,211 +277,127 @@ impl Widget for ScrollWidget {
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // Measure child's unconstrained size via the cache-aware helper.
-        // Uses an infinite viewport to get the natural size, which also
-        // populates cached_child_layout for later draw/event use.
-        let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
-        let (w, h) = self.child_natural_size(ctx.measurer, ctx.theme, unconstrained);
-        let mut lb = LayoutBox::leaf(w, h).with_widget_id(self.id);
+        let child_box = self.child.layout(ctx);
+        let mut lb = LayoutBox::flex(crate::layout::Direction::Column, vec![child_box])
+            .with_widget_id(self.id)
+            .with_clip(true)
+            .with_overflow()
+            .with_content_offset(-self.scroll_offset_x, -self.scroll_offset);
 
-        // For vertical scrolling, use Fill width so the scroll container
-        // expands to the parent's available width. The child's natural width
-        // in infinite space may be narrow when it contains Fill-width children
-        // (Fill resolves to 0 in unbounded contexts). Only height scrolls.
-        // Symmetrically, horizontal scroll uses Fill height.
         match self.direction {
             ScrollDirection::Vertical => lb = lb.with_width(SizeSpec::Fill),
             ScrollDirection::Horizontal => lb = lb.with_height(SizeSpec::Fill),
             ScrollDirection::Both => {}
         }
+
+        if let Some(h_spec) = self.height_override {
+            lb = lb.with_height(h_spec);
+        }
         lb
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
-        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
-
-        // Clip to visible area.
-        ctx.draw_list.push_clip(ctx.bounds);
-
-        // Offset the child by the scroll amount.
-        let child_bounds = Rect::new(
-            ctx.bounds.x() - self.scroll_offset_x,
-            ctx.bounds.y() - self.scroll_offset,
-            content_w,
-            content_h,
-        );
-        let mut child_ctx = DrawCtx {
-            measurer: ctx.measurer,
-            draw_list: ctx.draw_list,
-            bounds: child_bounds,
-            focused_widget: ctx.focused_widget,
-            now: ctx.now,
-            animations_running: ctx.animations_running,
-            theme: ctx.theme,
-            icons: ctx.icons,
-        };
-        self.child.draw(&mut child_ctx);
-
-        ctx.draw_list.pop_clip();
-
-        // Draw scrollbar on top of content.
-        self.draw_scrollbar(ctx, content_h, ctx.bounds.height());
+    fn sense(&self) -> Sense {
+        Sense::click_and_drag()
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
-        let view_h = ctx.bounds.height();
-
-        // During child capture, bypass scrollbar and scroll handling.
-        if self.child_captured {
-            let child_bounds = Rect::new(
-                ctx.bounds.x() - self.scroll_offset_x,
-                ctx.bounds.y() - self.scroll_offset,
-                content_w,
-                content_h,
-            );
-            let child_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: child_bounds,
-                is_focused: ctx.focused_widget == Some(self.child.id()),
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            let resp = self.child.handle_mouse(event, &child_ctx);
-            match resp.capture {
-                CaptureRequest::Release => self.child_captured = false,
-                CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
-                    self.child_captured = false;
-                }
-                _ => {}
-            }
-            if resp.response.needs_layout() {
-                *self.cached_child_layout.borrow_mut() = None;
-            }
-            return resp;
-        }
-
-        // Scrollbar drag takes priority.
-        if let Some(resp) = self.handle_scrollbar_mouse(event, ctx.bounds, content_h, view_h) {
-            return resp;
-        }
-
-        // Handle scroll events.
-        if let MouseEventKind::Scroll(delta) = event.kind {
-            let delta_y = match delta {
-                ScrollDelta::Pixels { y, .. } => y,
-                ScrollDelta::Lines { y, .. } => y * self.line_height,
-            };
-            if self.scroll_by(delta_y, content_h, view_h) {
-                return WidgetResponse::paint();
-            }
-            return WidgetResponse::handled();
-        }
-
-        // Use the same coordinate system as draw: child bounds start at
-        // ctx.bounds.origin() offset by scroll. Mouse position stays in
-        // screen space to match the layout nodes in the child's tree.
-        let child_bounds = Rect::new(
-            ctx.bounds.x() - self.scroll_offset_x,
-            ctx.bounds.y() - self.scroll_offset,
-            content_w,
-            content_h,
-        );
-        let child_ctx = EventCtx {
-            measurer: ctx.measurer,
-            bounds: child_bounds,
-            is_focused: ctx.focused_widget == Some(self.child.id()),
-            focused_widget: ctx.focused_widget,
-            theme: ctx.theme,
-        };
-        let resp = self.child.handle_mouse(event, &child_ctx);
-        if resp.capture == CaptureRequest::Acquire {
-            self.child_captured = true;
-        }
-        if resp.response.needs_layout() {
-            *self.cached_child_layout.borrow_mut() = None;
-        }
-        resp
+    fn controllers(&self) -> &[Box<dyn EventController>] {
+        &self.controllers
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
-        let child_bounds = Rect::new(
-            ctx.bounds.x() - self.scroll_offset_x,
-            ctx.bounds.y() - self.scroll_offset,
-            content_w,
-            content_h,
-        );
-        let child_ctx = EventCtx {
-            measurer: ctx.measurer,
-            bounds: child_bounds,
-            is_focused: ctx.focused_widget == Some(self.child.id()),
-            focused_widget: ctx.focused_widget,
-            theme: ctx.theme,
-        };
-        self.child.handle_hover(event, &child_ctx)
+    fn controllers_mut(&mut self) -> &mut [Box<dyn EventController>] {
+        &mut self.controllers
     }
 
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let (_, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
-        let view_h = ctx.bounds.height();
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
+        self.draw_impl(ctx);
+    }
 
-        // Handle scroll keys.
-        if event.modifiers == Modifiers::NONE {
-            match event.key {
-                Key::ArrowUp => {
-                    if self.scroll_by(self.line_height, content_h, view_h) {
-                        return WidgetResponse::paint();
-                    }
-                    return WidgetResponse::handled();
-                }
-                Key::ArrowDown => {
-                    if self.scroll_by(-self.line_height, content_h, view_h) {
-                        return WidgetResponse::paint();
-                    }
-                    return WidgetResponse::handled();
-                }
-                Key::PageUp => {
-                    if self.scroll_by(view_h, content_h, view_h) {
-                        return WidgetResponse::paint();
-                    }
-                    return WidgetResponse::handled();
-                }
-                Key::PageDown => {
-                    if self.scroll_by(-view_h, content_h, view_h) {
-                        return WidgetResponse::paint();
-                    }
-                    return WidgetResponse::handled();
-                }
-                Key::Home => {
-                    let changed = self.scroll_offset > f32::EPSILON;
-                    self.scroll_offset = 0.0;
-                    return if changed {
-                        WidgetResponse::paint()
-                    } else {
-                        WidgetResponse::handled()
-                    };
-                }
-                Key::End => {
-                    let max = (content_h - view_h).max(0.0);
-                    let changed = (self.scroll_offset - max).abs() > f32::EPSILON;
-                    self.scroll_offset = max;
-                    return if changed {
-                        WidgetResponse::paint()
-                    } else {
-                        WidgetResponse::handled()
-                    };
-                }
-                _ => {}
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        visitor(self.child.as_mut());
+    }
+
+    fn lifecycle(&mut self, event: &LifecycleEvent, _ctx: &mut LifecycleCtx<'_>) {
+        if let LifecycleEvent::HotChanged { is_hot: false, .. } = event {
+            // Clear hover state. Do NOT clear an active drag — the drag
+            // owns the pointer until MouseUp regardless of where the
+            // cursor wanders (standard scrollbar behavior on all platforms).
+            self.v_bar.track_hovered = false;
+            self.v_bar.thumb_hovered = false;
+            self.h_bar.track_hovered = false;
+            self.h_bar.thumb_hovered = false;
+        }
+    }
+
+    fn on_action(&mut self, action: WidgetAction, bounds: Rect) -> Option<WidgetAction> {
+        let content_h = self.cached_content_height(bounds);
+        let content_w = self.cached_content_width(bounds);
+
+        match action {
+            WidgetAction::DragStart { pos, .. } => {
+                self.drag_press_pos = Some(pos);
+                self.handle_drag_start(pos, bounds, content_w, content_h);
+                None
             }
+            WidgetAction::DragUpdate { total_delta, .. } => {
+                if self.drag_press_pos.is_some() {
+                    self.handle_drag_update(total_delta, bounds, content_w, content_h);
+                }
+                None
+            }
+            WidgetAction::DragEnd { .. } => {
+                // Clear drag state.
+                self.v_bar.dragging = false;
+                self.h_bar.dragging = false;
+                self.drag_press_pos = None;
+                None
+            }
+            _ => Some(action),
         }
+    }
 
-        // Delegate to child for non-scroll keys.
-        let resp = self.child.handle_key(event, ctx);
-        if resp.response.needs_layout() {
-            *self.cached_child_layout.borrow_mut() = None;
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> OnInputResult {
+        let view_h = bounds.height();
+        let view_w = bounds.width();
+        let content_h = self.cached_content_height(bounds);
+        let content_w = self.cached_content_width(bounds);
+
+        match event {
+            InputEvent::Scroll { delta, .. } => {
+                let (dx, dy) = match delta {
+                    ScrollDelta::Pixels { x, y } => (-*x, -*y),
+                    ScrollDelta::Lines { x, y } => (-*x * self.line_height, -*y * self.line_height),
+                };
+                let mut scrolled = false;
+                if self.has_vertical() {
+                    scrolled |= self.scroll_by(dy, content_h, view_h);
+                }
+                if self.has_horizontal() {
+                    scrolled |= self.scroll_by_x(dx, content_w, view_w);
+                }
+                if scrolled {
+                    OnInputResult::handled()
+                } else {
+                    OnInputResult::ignored()
+                }
+            }
+            InputEvent::KeyDown { key, modifiers } if *modifiers == Modifiers::NONE => {
+                if self.handle_scroll_key(*key, content_h, view_h) {
+                    OnInputResult::handled()
+                } else {
+                    OnInputResult::ignored()
+                }
+            }
+            // Hover detection for scrollbar track/thumb.
+            // Press/drag/release is handled by ScrollbarCaptureController → on_action().
+            InputEvent::MouseMove { pos, .. } => {
+                if self.handle_scrollbar_hover(*pos, bounds, content_w, content_h) {
+                    OnInputResult::handled()
+                } else {
+                    OnInputResult::ignored()
+                }
+            }
+            _ => OnInputResult::ignored(),
         }
-        resp
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
@@ -436,6 +411,12 @@ impl Widget for ScrollWidget {
         }
         ids.extend(self.child.focusable_children());
         ids
+    }
+
+    fn reset_scroll(&mut self) {
+        self.scroll_offset = 0.0;
+        self.scroll_offset_x = 0.0;
+        *self.cached_child_layout.borrow_mut() = None;
     }
 }
 

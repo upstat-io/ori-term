@@ -1,5 +1,5 @@
 use crate::color::Color;
-use crate::draw::{DrawCommand, DrawList};
+use crate::draw::Scene;
 use crate::geometry::{Insets, Point};
 use crate::widgets::tests::MockMeasurer;
 
@@ -42,10 +42,10 @@ fn measure_empty_text() {
 fn draw_produces_layer_rect_text_commands() {
     let m = MockMeasurer::STANDARD;
     let badge = StatusBadge::new("test").with_style(test_style());
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let pos = Point::new(100.0, 50.0);
 
-    let bounds = badge.draw(&mut dl, &m, pos, f32::INFINITY);
+    let bounds = badge.draw(&mut scene, &m, pos, f32::INFINITY);
 
     // Badge bounds: 4 chars * 8px + 16px padding = 48px wide.
     assert_eq!(bounds.x(), 100.0);
@@ -53,13 +53,9 @@ fn draw_produces_layer_rect_text_commands() {
     assert_eq!(bounds.width(), 48.0);
     assert_eq!(bounds.height(), 26.0);
 
-    // Commands: PushLayer, Rect, Text, PopLayer.
-    let cmds = dl.commands();
-    assert_eq!(cmds.len(), 4);
-    assert!(matches!(cmds[0], DrawCommand::PushLayer { .. }));
-    assert!(matches!(cmds[1], DrawCommand::Rect { .. }));
-    assert!(matches!(cmds[2], DrawCommand::Text { .. }));
-    assert!(matches!(cmds[3], DrawCommand::PopLayer));
+    // Scene produces: 1 quad (background) + 1 text run (label).
+    assert_eq!(scene.quads().len(), 1);
+    assert_eq!(scene.text_runs().len(), 1);
 }
 
 #[test]
@@ -70,20 +66,15 @@ fn draw_text_position_respects_padding() {
         ..test_style()
     };
     let badge = StatusBadge::new("x").with_style(style);
-    let mut dl = DrawList::new();
+    let mut scene = Scene::new();
     let pos = Point::new(0.0, 0.0);
 
-    let _ = badge.draw(&mut dl, &m, pos, f32::INFINITY);
+    let _ = badge.draw(&mut scene, &m, pos, f32::INFINITY);
 
-    // Text command should be at (padding_left, padding_top) = (20, 10).
-    let text_cmd = &dl.commands()[2];
-    match text_cmd {
-        DrawCommand::Text { position, .. } => {
-            assert_eq!(position.x, 20.0);
-            assert_eq!(position.y, 10.0);
-        }
-        _ => panic!("expected Text command at index 2"),
-    }
+    // Text run should be at (padding_left, padding_top) = (20, 10).
+    let text = &scene.text_runs()[0];
+    assert_eq!(text.position.x, 20.0);
+    assert_eq!(text.position.y, 10.0);
 }
 
 #[test]

@@ -9,17 +9,22 @@ use std::rc::Rc;
 
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::input::{HoverEvent, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crate::input::{InputEvent, MouseButton};
+
+/// Map a logical row index to the child node index.
+///
+/// The header occupies index 0 in the layout children, so row `i` is at `i + 1`.
+fn row_node_index(row_idx: usize) -> usize {
+    row_idx + 1
+}
 use crate::layout::{Align, Direction, LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::text::{FontWeight, TextStyle};
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
 use super::form_row::FormRow;
-use super::{
-    CaptureRequest, DrawCtx, EventCtx, LayoutCtx, TextMeasurer, Widget, WidgetAction,
-    WidgetResponse,
-};
+use super::{DrawCtx, LayoutCtx, OnInputResult, TextMeasurer, Widget, WidgetAction};
 
 /// Height of the section header in pixels.
 const HEADER_HEIGHT: f32 = 28.0;
@@ -36,10 +41,6 @@ pub struct FormSection {
     title: String,
     rows: Vec<FormRow>,
     expanded: bool,
-    /// Index of the row with active mouse capture (drag in progress).
-    captured_row: Option<usize>,
-    /// Index of the row currently under the cursor (for hover tracking).
-    hovered_row: Option<usize>,
 
     /// Cached layout result, keyed by bounds.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
@@ -53,8 +54,6 @@ impl FormSection {
             title: title.into(),
             rows: Vec::new(),
             expanded: true,
-            captured_row: None,
-            hovered_row: None,
             cached_layout: RefCell::new(None),
         }
     }
@@ -89,13 +88,16 @@ impl FormSection {
     }
 
     /// Mutable access to rows (for setting label widths).
+    ///
+    /// Must only be called during setup phase (before the first layout pass).
+    /// Mutating rows after layout may cause stale cached layout data.
     pub fn rows_mut(&mut self) -> &mut [FormRow] {
         &mut self.rows
     }
 
     /// Returns the header text style for the given theme.
     fn header_style(theme: &UiTheme) -> TextStyle {
-        TextStyle::new(theme.font_size, theme.fg_primary).with_weight(FontWeight::Bold)
+        TextStyle::new(theme.font_size, theme.fg_primary).with_weight(FontWeight::BOLD)
     }
 
     /// Returns the expand/collapse indicator.
@@ -146,11 +148,6 @@ impl FormSection {
             .with_width(SizeSpec::Fill)
             .with_widget_id(self.id)
     }
-
-    /// Returns the header rect from the layout.
-    fn header_rect(layout: &LayoutNode) -> Option<Rect> {
-        layout.children.first().map(|n| n.rect)
-    }
 }
 
 impl Widget for FormSection {
@@ -166,9 +163,40 @@ impl Widget for FormSection {
         self.build_layout_box(ctx)
     }
 
-    fn draw(&self, ctx: &mut DrawCtx<'_>) {
+    fn sense(&self) -> Sense {
+        // The header area is clickable for expand/collapse; sense must be
+        // non-none so the propagation pipeline includes this widget in the
+        // hit path and delivers `on_input` calls for header clicks.
+        Sense::click()
+    }
+
+    fn on_input(&mut self, event: &InputEvent, bounds: Rect) -> OnInputResult {
+        // Toggle expand/collapse on left-click in the header zone.
+        if let InputEvent::MouseDown {
+            pos,
+            button: MouseButton::Left,
+            ..
+        } = event
+        {
+            let header_bottom = bounds.y() + HEADER_HEIGHT;
+            if pos.y >= bounds.y() && pos.y < header_bottom {
+                self.expanded = !self.expanded;
+                *self.cached_layout.borrow_mut() = None;
+                return OnInputResult::handled();
+            }
+        }
+        OnInputResult::ignored()
+    }
+
+    fn paint(&self, ctx: &mut DrawCtx<'_>) {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        let visible_bounds = ctx.draw_list.current_clip_rect().unwrap_or(ctx.bounds);
+        // Use content-space clip rect so visibility culling works inside
+        // scroll transforms (where clip is in viewport space but child
+        // layout rects are in content space).
+        let visible_bounds = ctx
+            .scene
+            .current_clip_in_content_space()
+            .map_or(ctx.bounds, |clip| clip.intersection(ctx.bounds));
 
         // Draw header.
         if let Some(header_node) = layout.children.first() {
@@ -181,140 +209,31 @@ impl Widget for FormSection {
         if self.expanded {
             for (i, row) in self.rows.iter().enumerate() {
                 // Row nodes start at index 1 (index 0 is the header).
-                if let Some(row_node) = layout.children.get(i + 1) {
+                if let Some(row_node) = layout.children.get(row_node_index(i)) {
                     if !row_node.rect.intersects(visible_bounds) {
                         continue;
                     }
                     let mut child_ctx = DrawCtx {
                         measurer: ctx.measurer,
-                        draw_list: ctx.draw_list,
-                        bounds: row_node.content_rect,
-                        focused_widget: ctx.focused_widget,
+                        scene: ctx.scene,
+                        bounds: row_node.rect,
                         now: ctx.now,
-                        animations_running: ctx.animations_running,
                         theme: ctx.theme,
                         icons: ctx.icons,
+                        interaction: ctx.interaction,
+                        widget_id: Some(row.id()),
+                        frame_requests: ctx.frame_requests,
                     };
-                    row.draw(&mut child_ctx);
+                    row.paint(&mut child_ctx);
                 }
             }
         }
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-
-        // During capture, route all events to the captured row (skip header toggle).
-        if let Some(cap_idx) = self.captured_row {
-            if let (Some(row), Some(row_node)) =
-                (self.rows.get_mut(cap_idx), layout.children.get(cap_idx + 1))
-            {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
-                let resp = row.handle_mouse(event, &child_ctx);
-                match resp.capture {
-                    CaptureRequest::Release => self.captured_row = None,
-                    CaptureRequest::None if matches!(event.kind, MouseEventKind::Up(_)) => {
-                        self.captured_row = None;
-                    }
-                    _ => {}
-                }
-                return resp;
-            }
+    fn for_each_child_mut(&mut self, visitor: &mut dyn FnMut(&mut dyn Widget)) {
+        for row in &mut self.rows {
+            visitor(row);
         }
-
-        // Move events: position-based hover tracking (skip during capture).
-        if event.kind == MouseEventKind::Move && self.expanded {
-            return self.update_row_hover(&layout, event.pos, ctx);
-        }
-
-        // Click on header toggles expand/collapse.
-        if event.kind == MouseEventKind::Down(MouseButton::Left) {
-            if let Some(header_rect) = Self::header_rect(&layout) {
-                if header_rect.contains(event.pos) {
-                    self.expanded = !self.expanded;
-                    *self.cached_layout.borrow_mut() = None;
-                    return WidgetResponse::layout();
-                }
-            }
-        }
-
-        // Delegate to rows if expanded.
-        if self.expanded {
-            for (i, row) in self.rows.iter_mut().enumerate() {
-                if let Some(row_node) = layout.children.get(i + 1) {
-                    if row_node.rect.contains(event.pos) {
-                        let child_ctx = EventCtx {
-                            measurer: ctx.measurer,
-                            bounds: row_node.content_rect,
-                            is_focused: false,
-                            focused_widget: ctx.focused_widget,
-                            theme: ctx.theme,
-                        };
-                        let resp = row.handle_mouse(event, &child_ctx);
-                        if resp.capture == CaptureRequest::Acquire {
-                            self.captured_row = Some(i);
-                        }
-                        return resp;
-                    }
-                }
-            }
-        }
-
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if event == HoverEvent::Leave {
-            self.captured_row = None;
-            // Send Leave to the currently hovered row.
-            if let Some(old_idx) = self.hovered_row.take() {
-                let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-                if let (Some(row), Some(row_node)) =
-                    (self.rows.get_mut(old_idx), layout.children.get(old_idx + 1))
-                {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: row_node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
-                    row.handle_hover(HoverEvent::Leave, &child_ctx);
-                }
-                return WidgetResponse::paint();
-            }
-        }
-        // Enter is handled by Move-based hover tracking.
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        if !self.expanded {
-            return WidgetResponse::ignored();
-        }
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        for (i, row) in self.rows.iter_mut().enumerate() {
-            if let Some(row_node) = layout.children.get(i + 1) {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
-                let resp = row.handle_key(event, &child_ctx);
-                if resp.response.is_handled() {
-                    return resp;
-                }
-            }
-        }
-        WidgetResponse::ignored()
     }
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
@@ -332,90 +251,6 @@ impl Widget for FormSection {
     }
 }
 
-// Hover tracking.
-impl FormSection {
-    /// Updates row hover state based on cursor position.
-    fn update_row_hover(
-        &mut self,
-        layout: &LayoutNode,
-        pos: Point,
-        ctx: &EventCtx<'_>,
-    ) -> WidgetResponse {
-        // Find which row the cursor is over (children[1..] are rows).
-        let new_hover = self.rows.iter().enumerate().find_map(|(i, _)| {
-            layout
-                .children
-                .get(i + 1)
-                .filter(|n| n.rect.contains(pos))
-                .map(|_| i)
-        });
-
-        if new_hover == self.hovered_row {
-            // Same row — forward Move so the row can update its control hover.
-            if let Some(idx) = new_hover {
-                if let (Some(row), Some(row_node)) =
-                    (self.rows.get_mut(idx), layout.children.get(idx + 1))
-                {
-                    let child_ctx = EventCtx {
-                        measurer: ctx.measurer,
-                        bounds: row_node.content_rect,
-                        is_focused: false,
-                        focused_widget: ctx.focused_widget,
-                        theme: ctx.theme,
-                    };
-                    let move_event = MouseEvent {
-                        kind: MouseEventKind::Move,
-                        pos,
-                        modifiers: crate::input::Modifiers::NONE,
-                    };
-                    return row.handle_mouse(&move_event, &child_ctx);
-                }
-            }
-            return WidgetResponse::ignored();
-        }
-
-        // Leave old row.
-        if let Some(old_idx) = self.hovered_row {
-            if let (Some(row), Some(row_node)) =
-                (self.rows.get_mut(old_idx), layout.children.get(old_idx + 1))
-            {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
-                row.handle_hover(HoverEvent::Leave, &child_ctx);
-            }
-        }
-
-        // Enter new row (the row's Move handler will trigger control hover).
-        if let Some(new_idx) = new_hover {
-            if let (Some(row), Some(row_node)) =
-                (self.rows.get_mut(new_idx), layout.children.get(new_idx + 1))
-            {
-                let child_ctx = EventCtx {
-                    measurer: ctx.measurer,
-                    bounds: row_node.content_rect,
-                    is_focused: false,
-                    focused_widget: ctx.focused_widget,
-                    theme: ctx.theme,
-                };
-                let move_event = MouseEvent {
-                    kind: MouseEventKind::Move,
-                    pos,
-                    modifiers: crate::input::Modifiers::NONE,
-                };
-                row.handle_mouse(&move_event, &child_ctx);
-            }
-        }
-
-        self.hovered_row = new_hover;
-        WidgetResponse::paint()
-    }
-}
-
 impl FormSection {
     /// Draws the section header with indicator, title, and subtle separator.
     fn draw_header(&self, ctx: &mut DrawCtx<'_>, bounds: &Rect) {
@@ -428,7 +263,7 @@ impl FormSection {
 
         // Draw indicator.
         let ind_shaped = ctx.measurer.shape(indicator, &style, f32::INFINITY);
-        ctx.draw_list.push_text(
+        ctx.scene.push_text(
             Point::new(bounds.x(), text_y),
             ind_shaped,
             ctx.theme.fg_primary,
@@ -441,7 +276,7 @@ impl FormSection {
             &style,
             bounds.width() - ind_metrics.width - 6.0,
         );
-        ctx.draw_list.push_text(
+        ctx.scene.push_text(
             Point::new(title_x, text_y),
             title_shaped,
             ctx.theme.fg_primary,
@@ -451,8 +286,8 @@ impl FormSection {
         let line_y = bounds.bottom() - 1.0;
         let line_rect = Rect::new(bounds.x(), line_y, bounds.width(), 1.0);
         let line_color = ctx.theme.border.with_alpha(0.3);
-        ctx.draw_list
-            .push_rect(line_rect, RectStyle::filled(line_color));
+        ctx.scene
+            .push_quad(line_rect, RectStyle::filled(line_color));
     }
 }
 

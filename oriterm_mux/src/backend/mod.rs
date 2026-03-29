@@ -195,6 +195,26 @@ pub trait MuxBackend {
     /// a no-op — the client manages bell state locally.
     fn clear_bell(&mut self, _pane_id: PaneId) {}
 
+    /// Mark a pane as having unseen output.
+    ///
+    /// Called when a non-active pane receives output. The tab bar reads this
+    /// via the snapshot to show a "modified" indicator dot.
+    fn set_unseen_output(&mut self, _pane_id: PaneId) {}
+
+    /// Clear the unseen output flag for a pane.
+    ///
+    /// Called when a pane becomes the active/focused tab.
+    fn mark_output_seen(&mut self, _pane_id: PaneId) {}
+
+    /// Whether a pane has output the user hasn't seen.
+    ///
+    /// In embedded mode, reads directly from the [`Pane`] (avoids snapshot
+    /// staleness). In daemon mode, reads from the cached pushed snapshot.
+    fn has_unseen_output(&self, pane_id: PaneId) -> bool {
+        self.pane_snapshot(pane_id)
+            .is_some_and(|s| s.has_unseen_output)
+    }
+
     /// Clean up a closed pane's resources.
     ///
     /// In embedded mode, removes the pane from storage and drops it on a
@@ -278,6 +298,26 @@ pub trait MuxBackend {
 
     /// Clear the dirty flag for a pane's cached snapshot.
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId);
+
+    /// Whether the terminal's `selection_dirty` flag is set for a pane.
+    ///
+    /// The flag is set when terminal output modifies grid content that would
+    /// invalidate a text selection (character printing, scrolling, erasing,
+    /// etc.). It is NOT set by cursor movement, SGR changes, or other
+    /// non-content-modifying operations.
+    ///
+    /// In embedded mode, reads the flag from the terminal. In daemon mode,
+    /// returns `false` — the daemon propagates invalidation via snapshot
+    /// changes instead.
+    fn is_selection_dirty(&self, _pane_id: PaneId) -> bool {
+        false
+    }
+
+    /// Clear the terminal's `selection_dirty` flag for a pane.
+    ///
+    /// Must be called after checking `is_selection_dirty()` to prevent
+    /// the flag from being re-read on subsequent poll cycles.
+    fn clear_selection_dirty(&mut self, _pane_id: PaneId) {}
 
     /// Shrink renderable content caches if capacity vastly exceeds usage.
     ///

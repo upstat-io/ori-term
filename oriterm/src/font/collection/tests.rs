@@ -7,6 +7,7 @@ use std::sync::Arc;
 use super::face::{
     build_face, compute_metrics, embolden_strength, font_ref, has_glyph, validate_font,
 };
+use super::loading::FontBytes;
 use super::{FontCollection, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
 use crate::font::{
@@ -63,8 +64,8 @@ fn validate_font_rejects_empty() {
 
 #[test]
 fn font_ref_produces_working_charmap() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     let fr = font_ref(&fd);
     let gid = fr.charmap().map('A');
     assert_ne!(gid, 0, "'A' must have a non-zero glyph ID");
@@ -72,8 +73,8 @@ fn font_ref_produces_working_charmap() {
 
 #[test]
 fn has_glyph_true_for_ascii() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     assert!(has_glyph(&fd, 'A'), "embedded font must cover 'A'");
     assert!(has_glyph(&fd, 'z'), "embedded font must cover 'z'");
     assert!(has_glyph(&fd, '0'), "embedded font must cover '0'");
@@ -82,8 +83,8 @@ fn has_glyph_true_for_ascii() {
 
 #[test]
 fn has_glyph_notdef_graceful() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     // CJK character unlikely in JetBrains Mono — just checking it doesn't panic.
     let _ = has_glyph(&fd, '\u{4E00}');
 }
@@ -306,6 +307,7 @@ fn raster_key_equality() {
     let k1 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -315,6 +317,7 @@ fn raster_key_equality() {
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -324,6 +327,7 @@ fn raster_key_equality() {
     let k3 = RasterKey {
         glyph_id: 43,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -339,6 +343,7 @@ fn raster_key_hash_consistency() {
     let k1 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -348,6 +353,7 @@ fn raster_key_hash_consistency() {
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -379,23 +385,23 @@ fn size_key_fractional() {
     assert_eq!(super::size_key(12.5), 800, "12.5 * 64 = 800");
 }
 
-// ── cap_height ──
+// cap_height
 
 #[test]
 fn cap_height_positive() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(
         m.cap_height > 0.0,
         "cap height should be positive for embedded font"
     );
 }
 
-// ── compute_metrics ──
+// compute_metrics
 
 #[test]
 fn compute_metrics_stable() {
-    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
-    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
+    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(
         (m1.cell_width - m2.cell_width).abs() < f32::EPSILON
             && (m1.cell_height - m2.cell_height).abs() < f32::EPSILON
@@ -406,7 +412,7 @@ fn compute_metrics_stable() {
 
 #[test]
 fn compute_metrics_positive() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(m.cell_width > 0.0, "cell width must be positive");
     assert!(m.cell_height > 0.0, "cell height must be positive");
     assert!(m.baseline > 0.0, "baseline must be positive");
@@ -418,7 +424,7 @@ fn compute_metrics_positive() {
 
 #[test]
 fn compute_metrics_decoration_fields() {
-    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0).unwrap();
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0, &[]).unwrap();
     assert!(m.stroke_size > 0.0, "stroke_size must be positive");
     assert!(m.stroke_size.is_finite(), "stroke_size must be finite");
     assert!(
@@ -811,6 +817,7 @@ fn rasterize_with_synthesis(
     let key = RasterKey {
         glyph_id: resolved.glyph_id,
         face_idx: resolved.face_idx,
+        weight: 0,
         size_q6: super::size_key(fc.size_px()),
         synthetic,
         hinted: true,
@@ -1149,6 +1156,7 @@ fn raster_key_hinting_distinguishes_cache() {
     let k_hinted = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1158,6 +1166,7 @@ fn raster_key_hinting_distinguishes_cache() {
     let k_unhinted = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: false,
@@ -1405,6 +1414,7 @@ fn raster_key_subpx_x_distinguishes_cache() {
     let k_phase0 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1414,6 +1424,7 @@ fn raster_key_subpx_x_distinguishes_cache() {
     let k_phase2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
+        weight: 0,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
@@ -1443,8 +1454,8 @@ fn axis(tag: &[u8; 4], min: f32, default: f32, max: f32) -> AxisInfo {
 
 #[test]
 fn embedded_font_has_no_variable_axes() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     assert!(
         fd.axes.is_empty(),
         "JetBrains Mono Regular is not a variable font — should have zero axes",
@@ -1731,11 +1742,15 @@ fn codepoint_map_overrides_emoji_resolve() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     // Map an emoji codepoint to Regular.
     fc.add_codepoint_mapping(0x1F600, 0x1F64F, FaceIdx::REGULAR);
-    // Resolve via emoji path — should still check codepoint map first.
+    // Resolve via emoji path — checks codepoint map first, but the Regular
+    // face (JetBrains Mono) doesn't have emoji, so it falls through to
+    // the emoji fallback font (NotoEmoji-Regular).
     let resolved = fc.resolve_prefer_emoji('\u{1F600}', GlyphStyle::Regular);
-    // The embedded font doesn't have emoji, so it falls through to normal.
-    // But the map is checked first in resolve_prefer_emoji.
-    assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
+    assert_ne!(resolved.glyph_id, 0, "emoji should resolve via fallback");
+    assert!(
+        resolved.face_idx.is_fallback(),
+        "emoji resolves through NotoEmoji fallback, not Regular"
+    );
 }
 
 #[test]
@@ -1978,5 +1993,138 @@ fn font_byte_cache_dropped_after_loading() {
         Arc::strong_count(&cached_set.regular.data),
         1,
         "after cache drop, regular data Arc should have strong_count == 1"
+    );
+}
+
+// ── UI Weight Resolution ──
+
+use super::metadata::resolve_ui_weight;
+
+#[test]
+fn resolve_ui_weight_variable_font_uses_regular_slot() {
+    let res = resolve_ui_weight(400, true, true);
+    assert_eq!(res.face_slot, 0);
+    assert_eq!(res.wght_value, Some(400.0));
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_variable_font_bold_uses_regular_slot() {
+    // Variable font: even at 700, use Regular slot — axis handles it.
+    let res = resolve_ui_weight(700, true, true);
+    assert_eq!(res.face_slot, 0);
+    assert_eq!(res.wght_value, Some(700.0));
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_static_bold_above_700() {
+    let res = resolve_ui_weight(700, false, true);
+    assert_eq!(res.face_slot, 1);
+    assert!(res.wght_value.is_none());
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_static_no_bold_uses_synthetic() {
+    let res = resolve_ui_weight(700, false, false);
+    assert_eq!(res.face_slot, 0);
+    assert!(res.wght_value.is_none());
+    assert!(res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_medium_on_static_uses_regular() {
+    // 500 on static font: Regular is closest (undershoots less than Bold overshoots).
+    let res = resolve_ui_weight(500, false, true);
+    assert_eq!(res.face_slot, 0);
+    assert!(res.wght_value.is_none());
+    assert!(!res.needs_synthetic_bold);
+}
+
+#[test]
+fn resolve_ui_weight_light_weights() {
+    for w in [100, 200, 300] {
+        let res = resolve_ui_weight(w, false, true);
+        assert_eq!(res.face_slot, 0, "weight {w} should use Regular slot");
+        assert!(
+            !res.needs_synthetic_bold,
+            "weight {w} should not need synthetic bold"
+        );
+    }
+}
+
+// ── face_variations_for_ui_weight ──
+
+use super::metadata::face_variations_for_ui_weight;
+
+#[test]
+fn face_variations_for_ui_weight_sets_exact_wght() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 500, &axes);
+    assert_eq!(result.settings.len(), 1);
+    assert_eq!(result.settings[0].0, "wght");
+    assert!((result.settings[0].1 - 500.0).abs() < 0.01);
+}
+
+#[test]
+fn face_variations_for_ui_weight_no_axis_returns_empty() {
+    let axes = vec![];
+    let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 500, &axes);
+    assert!(result.settings.is_empty());
+}
+
+#[test]
+fn face_variations_for_ui_weight_applies_to_fallback_with_wght_axis() {
+    // Fallback faces with a wght axis should get the requested weight applied,
+    // ensuring consistent weight across primary and fallback glyphs (TPR-02-007).
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 700, &axes);
+    assert_eq!(result.settings.len(), 1);
+    assert_eq!(result.settings[0].0, "wght");
+    assert!((result.settings[0].1 - 700.0).abs() < 0.01);
+}
+
+#[test]
+fn face_variations_for_ui_weight_italic_still_set() {
+    let axes = vec![
+        axis(b"wght", 100.0, 400.0, 900.0),
+        axis(b"slnt", -12.0, 0.0, 0.0),
+    ];
+    let result = face_variations_for_ui_weight(SyntheticFlags::ITALIC, 500, &axes);
+    assert_eq!(result.settings.len(), 2);
+    assert_eq!(result.settings[0].0, "wght");
+    assert_eq!(result.settings[1].0, "slnt");
+    assert!(result.suppress_synthetic.contains(SyntheticFlags::ITALIC));
+}
+
+// ── Medium Face Wiring ──
+
+#[test]
+fn ui_embedded_has_medium_face() {
+    let fs = FontSet::ui_embedded();
+    assert!(
+        fs.medium.is_some(),
+        "UI embedded FontSet should include Medium face"
+    );
+}
+
+#[test]
+fn ui_embedded_collection_has_medium() {
+    let fs = FontSet::ui_embedded();
+    let fc = FontCollection::new(fs, 13.0, 96.0, GlyphFormat::Alpha, 400, HintingMode::None)
+        .expect("UI embedded collection should build");
+    assert!(
+        fc.medium.is_some(),
+        "UI embedded FontCollection should have Medium face"
+    );
+}
+
+#[test]
+fn terminal_embedded_has_no_medium() {
+    let fs = FontSet::embedded();
+    assert!(
+        fs.medium.is_none(),
+        "terminal embedded FontSet should not have a Medium face"
     );
 }

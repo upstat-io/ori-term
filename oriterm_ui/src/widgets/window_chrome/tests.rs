@@ -1,16 +1,15 @@
 //! Tests for window chrome layout and control buttons.
 //!
-//! `WindowChromeWidget` container tests have been removed — the unified
+//! `WindowChromeWidget` container tests have been removed -- the unified
 //! tab-in-titlebar chrome routes events through `TabBarWidget`, not
 //! `WindowChromeWidget`. `ChromeLayout` and `WindowControlButton` tests
 //! remain: these types are still used for layout computation and button
 //! rendering within the tab bar.
 
-use crate::geometry::{Point, Rect};
-use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+use crate::geometry::Rect;
+use crate::sense::Sense;
 use crate::theme::UiTheme;
-use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, Widget};
+use crate::widgets::Widget;
 
 use super::constants::{
     CAPTION_HEIGHT, CAPTION_HEIGHT_MAXIMIZED, CONTROL_BUTTON_WIDTH, RESIZE_BORDER_WIDTH,
@@ -18,7 +17,7 @@ use super::constants::{
 use super::controls::{ControlButtonColors, WindowControlButton};
 use super::layout::{ChromeLayout, ControlKind};
 
-// ── Test helpers ──
+// -- Test helpers --
 
 /// Standard button colors for tests.
 fn test_button_colors() -> ControlButtonColors {
@@ -32,16 +31,7 @@ fn test_button_colors() -> ControlButtonColors {
     }
 }
 
-/// Left mouse button press at the given position.
-fn left_down(x: f32, y: f32) -> MouseEvent {
-    MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(x, y),
-        modifiers: Modifiers::NONE,
-    }
-}
-
-// ── ChromeLayout tests ──
+// -- ChromeLayout tests --
 
 #[test]
 fn layout_restored_caption_height() {
@@ -142,7 +132,7 @@ fn layout_narrow_window_title_rect_zero() {
     assert!(layout.title_rect.width() >= 0.0);
 }
 
-// ── WindowControlButton tests ──
+// -- WindowControlButton tests --
 
 #[test]
 fn control_button_kind() {
@@ -157,21 +147,19 @@ fn control_button_not_focusable() {
 }
 
 #[test]
-fn control_button_hover_sets_pressed() {
-    let mut btn = WindowControlButton::new(ControlKind::MaximizeRestore, test_button_colors());
-    assert!(!btn.is_pressed());
+fn sense_returns_click() {
+    let btn = WindowControlButton::new(ControlKind::Close, test_button_colors());
+    assert_eq!(btn.sense(), Sense::click());
+}
 
-    let measurer = MockMeasurer::STANDARD;
-    let theme = UiTheme::dark();
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds: Rect::new(0.0, 0.0, 46.0, 36.0),
-        is_focused: false,
-        focused_widget: None,
-        theme: &theme,
-    };
+#[test]
+fn has_two_controllers() {
+    let btn = WindowControlButton::new(ControlKind::Minimize, test_button_colors());
+    assert_eq!(btn.controllers().len(), 2);
+}
 
-    let event = left_down(23.0, 18.0);
-    btn.handle_mouse(&event, &ctx);
-    assert!(btn.is_pressed());
+#[test]
+fn has_visual_state_animator() {
+    let btn = WindowControlButton::new(ControlKind::Close, test_button_colors());
+    assert!(btn.visual_states().is_some());
 }

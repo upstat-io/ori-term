@@ -4,15 +4,29 @@
 //! [`Animation`] (raw `f32` interpolation), and [`AnimatedValue`] (widget-embeddable
 //! wrapper that manages animation lifecycle).
 
+pub mod anim_frame;
+pub mod behavior;
 pub mod builder;
+pub mod cursor_blink;
 pub mod delegate;
 pub mod group;
+pub mod property;
+pub mod scheduler;
 pub mod sequence;
+pub mod spring;
+pub mod transaction;
 
+pub use anim_frame::{AnimFrameEvent, FrameRequestFlags};
+pub use behavior::{AnimBehavior, AnimCurve};
 pub use builder::AnimationBuilder;
+pub use cursor_blink::CursorBlink;
 pub use delegate::{AnimatableProperty, AnimationDelegate};
 pub use group::{AnimationGroup, PropertyAnimation, TransitionTarget};
+pub use property::AnimProperty;
+pub use scheduler::RenderScheduler;
 pub use sequence::{AnimationSequence, AnimationStep, SequenceState};
+pub use spring::Spring;
+pub use transaction::{Transaction, with_transaction};
 
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -73,6 +87,17 @@ impl Lerp for crate::geometry::Transform2D {
             idx += 1;
         }
         Self::from_matrix(result)
+    }
+}
+
+impl Lerp for crate::geometry::Insets {
+    fn lerp(a: Self, b: Self, t: f32) -> Self {
+        Self {
+            top: f32::lerp(a.top, b.top, t),
+            right: f32::lerp(a.right, b.right, t),
+            bottom: f32::lerp(a.bottom, b.bottom, t),
+            left: f32::lerp(a.left, b.left, t),
+        }
     }
 }
 
@@ -247,6 +272,7 @@ impl Animation {
 }
 
 /// An in-flight animation for [`AnimatedValue`].
+#[allow(deprecated)]
 #[derive(Debug, Clone, Copy)]
 struct ActiveAnimation<T: Lerp> {
     from: T,
@@ -259,6 +285,11 @@ struct ActiveAnimation<T: Lerp> {
 /// Embeddable in widget structs. Stores the resting value plus an optional
 /// in-flight animation. Query with [`get`](Self::get) using the current
 /// frame timestamp.
+///
+/// **Deprecated**: Use [`AnimProperty`] instead, which supports optional
+/// auto-animation via [`AnimBehavior`](behavior::AnimBehavior) and
+/// spring physics.
+#[deprecated(note = "use AnimProperty with AnimBehavior instead")]
 pub struct AnimatedValue<T: Lerp> {
     /// The target (resting) value.
     value: T,
@@ -270,6 +301,7 @@ pub struct AnimatedValue<T: Lerp> {
     easing: Easing,
 }
 
+#[allow(deprecated)]
 impl<T: Lerp> AnimatedValue<T> {
     /// Creates an animated value with no active animation.
     pub fn new(value: T, duration: Duration, easing: Easing) -> Self {
@@ -330,6 +362,7 @@ impl<T: Lerp> AnimatedValue<T> {
     }
 }
 
+#[allow(deprecated)]
 impl<T: Lerp + fmt::Debug> fmt::Debug for AnimatedValue<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AnimatedValue")
@@ -341,6 +374,7 @@ impl<T: Lerp + fmt::Debug> fmt::Debug for AnimatedValue<T> {
     }
 }
 
+#[allow(deprecated)]
 impl<T: Lerp + Clone> Clone for AnimatedValue<T> {
     fn clone(&self) -> Self {
         Self {

@@ -203,6 +203,7 @@ fn fill_snapshot_metadata(
     out.cwd = pane.cwd().map(str::to_owned);
 
     // Scalar fields.
+    out.has_unseen_output = pane.has_unseen_output();
     out.modes = render_buf.mode.bits();
     out.scrollback_len = u32::try_from(grid.scrollback().len()).unwrap_or(u32::MAX);
     out.display_offset = u32::try_from(render_buf.display_offset).unwrap_or(u32::MAX);

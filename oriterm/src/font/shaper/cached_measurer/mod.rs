@@ -11,10 +11,12 @@
 //! The measurer borrows `&TextShapeCache` per-frame; `RefCell` provides interior
 //! mutability for cache insertion from `&self` trait methods.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use oriterm_ui::text::{FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle};
+use oriterm_ui::text::{
+    FontWeight, ShapedText, TextMetrics, TextOverflow, TextStyle, TextTransform,
+};
 use oriterm_ui::widgets::TextMeasurer;
 
 use super::ui_measurer::UiFontMeasurer;
@@ -38,6 +40,12 @@ struct TextCacheKey {
     max_width_hundredths: u32,
     /// Display scale factor normalized to fixed-point.
     scale_hundredths: u32,
+    /// Letter spacing normalized to fixed-point.
+    letter_spacing_hundredths: u32,
+    /// Case transformation — affects shaped output.
+    text_transform: TextTransform,
+    /// Line-height multiplier (normalized: invalid values map to `None`).
+    line_height_hundredths: Option<u32>,
 }
 
 impl TextCacheKey {
@@ -51,6 +59,9 @@ impl TextCacheKey {
             overflow: style.overflow,
             max_width_hundredths: float_to_hundredths(max_width),
             scale_hundredths: float_to_hundredths(scale),
+            letter_spacing_hundredths: float_to_hundredths(style.letter_spacing),
+            text_transform: style.text_transform,
+            line_height_hundredths: style.normalized_line_height().map(float_to_hundredths),
         }
     }
 
@@ -67,6 +78,9 @@ impl TextCacheKey {
             overflow: style.overflow,
             max_width_hundredths: u32::MAX,
             scale_hundredths: float_to_hundredths(scale),
+            letter_spacing_hundredths: float_to_hundredths(style.letter_spacing),
+            text_transform: style.text_transform,
+            line_height_hundredths: style.normalized_line_height().map(float_to_hundredths),
         }
     }
 }
@@ -77,6 +91,53 @@ fn float_to_hundredths(v: f32) -> u32 {
         u32::MAX
     } else {
         (v * 100.0) as u32
+    }
+}
+
+/// Snapshot of cache hit/miss counters.
+///
+/// Counters accumulate across frames until [`TextShapeCache::reset_stats`] is
+/// called. Use [`CacheStats::hit_rate`] to compute the overall hit percentage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    dead_code,
+    reason = "instrumentation API for performance validation tests"
+)]
+pub struct CacheStats {
+    /// Number of `measure()` calls that returned a cached result.
+    pub measure_hits: usize,
+    /// Number of `measure()` calls that performed full computation.
+    pub measure_misses: usize,
+    /// Number of `shape()` calls that returned a cached result.
+    pub shape_hits: usize,
+    /// Number of `shape()` calls that performed full computation.
+    pub shape_misses: usize,
+}
+
+#[allow(
+    dead_code,
+    reason = "instrumentation API for performance validation tests"
+)]
+impl CacheStats {
+    /// Total hits across both measure and shape caches.
+    pub fn total_hits(&self) -> usize {
+        self.measure_hits + self.shape_hits
+    }
+
+    /// Total misses across both measure and shape caches.
+    pub fn total_misses(&self) -> usize {
+        self.measure_misses + self.shape_misses
+    }
+
+    /// Overall hit rate as a fraction in `[0.0, 1.0]`.
+    ///
+    /// Returns `1.0` if no calls have been made (vacuously true).
+    pub fn hit_rate(&self) -> f64 {
+        let total = self.total_hits() + self.total_misses();
+        if total == 0 {
+            return 1.0;
+        }
+        self.total_hits() as f64 / total as f64
     }
 }
 
@@ -96,6 +157,11 @@ pub struct TextShapeCache {
         reason = "used by tests; provisioned for font-reload invalidation"
     )]
     generation: u64,
+    // Hit/miss counters — `Cell` for interior mutability from `&self`.
+    measure_hits: Cell<usize>,
+    measure_misses: Cell<usize>,
+    shape_hits: Cell<usize>,
+    shape_misses: Cell<usize>,
 }
 
 impl TextShapeCache {
@@ -105,6 +171,10 @@ impl TextShapeCache {
             metrics: RefCell::new(HashMap::new()),
             shapes: RefCell::new(HashMap::new()),
             generation: 0,
+            measure_hits: Cell::new(0),
+            measure_misses: Cell::new(0),
+            shape_hits: Cell::new(0),
+            shape_misses: Cell::new(0),
         }
     }
 
@@ -131,6 +201,32 @@ impl TextShapeCache {
             self.generation = current_gen;
         }
     }
+
+    /// Snapshot of accumulated hit/miss counters.
+    #[allow(
+        dead_code,
+        reason = "instrumentation API for performance validation tests"
+    )]
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            measure_hits: self.measure_hits.get(),
+            measure_misses: self.measure_misses.get(),
+            shape_hits: self.shape_hits.get(),
+            shape_misses: self.shape_misses.get(),
+        }
+    }
+
+    /// Reset all hit/miss counters to zero.
+    #[allow(
+        dead_code,
+        reason = "instrumentation API for performance validation tests"
+    )]
+    pub fn reset_stats(&self) {
+        self.measure_hits.set(0);
+        self.measure_misses.set(0);
+        self.shape_hits.set(0);
+        self.shape_misses.set(0);
+    }
 }
 
 impl Default for TextShapeCache {
@@ -139,22 +235,25 @@ impl Default for TextShapeCache {
     }
 }
 
-/// Per-frame text measurer that wraps [`UiFontMeasurer`] and interposes a cache.
+/// Per-frame text measurer that wraps a [`TextMeasurer`] and interposes a cache.
 ///
 /// The cache maps live on the context struct ([`TextShapeCache`]) and are
 /// borrowed here. The measurer is constructed per-frame; the cache persists.
-pub struct CachedTextMeasurer<'a> {
-    inner: UiFontMeasurer<'a>,
+///
+/// Generic over the inner measurer `M` to support testing with mocks.
+/// Production code uses the default `M = UiFontMeasurer<'a>`.
+pub struct CachedTextMeasurer<'a, M: TextMeasurer = UiFontMeasurer<'a>> {
+    inner: M,
     cache: &'a TextShapeCache,
     scale: f32,
 }
 
-impl<'a> CachedTextMeasurer<'a> {
+impl<'a, M: TextMeasurer> CachedTextMeasurer<'a, M> {
     /// Wrap a font measurer with caching.
     ///
-    /// `scale` must match the scale passed to `UiFontMeasurer::new()` — it's
+    /// `scale` must match the scale passed to the inner measurer — it's
     /// included in cache keys so different DPI windows don't share entries.
-    pub fn new(inner: UiFontMeasurer<'a>, cache: &'a TextShapeCache, scale: f32) -> Self {
+    pub fn new(inner: M, cache: &'a TextShapeCache, scale: f32) -> Self {
         Self {
             inner,
             cache,
@@ -163,16 +262,22 @@ impl<'a> CachedTextMeasurer<'a> {
     }
 }
 
-impl TextMeasurer for CachedTextMeasurer<'_> {
+impl<M: TextMeasurer> TextMeasurer for CachedTextMeasurer<'_, M> {
     fn measure(&self, text: &str, style: &TextStyle, max_width: f32) -> TextMetrics {
         let key = TextCacheKey::for_measure(text, style, self.scale);
 
         // Check cache.
         if let Some(cached) = self.cache.metrics.borrow().get(&key) {
+            self.cache
+                .measure_hits
+                .set(self.cache.measure_hits.get() + 1);
             return *cached;
         }
 
         // Cache miss — delegate to inner measurer.
+        self.cache
+            .measure_misses
+            .set(self.cache.measure_misses.get() + 1);
         let result = self.inner.measure(text, style, max_width);
 
         // Store in cache (evict all if full).
@@ -190,10 +295,14 @@ impl TextMeasurer for CachedTextMeasurer<'_> {
 
         // Check cache.
         if let Some(cached) = self.cache.shapes.borrow().get(&key) {
+            self.cache.shape_hits.set(self.cache.shape_hits.get() + 1);
             return cached.clone();
         }
 
         // Cache miss — delegate to inner measurer.
+        self.cache
+            .shape_misses
+            .set(self.cache.shape_misses.get() + 1);
         let result = self.inner.shape(text, style, max_width);
 
         // Store in cache (evict all if full).

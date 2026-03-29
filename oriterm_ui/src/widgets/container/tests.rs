@@ -1,17 +1,13 @@
-use crate::draw::{DrawCommand, DrawList};
-use crate::geometry::{Insets, Point, Rect};
-use crate::input::{
-    EventResponse, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crate::draw::Scene;
+use crate::geometry::{Insets, Rect};
 use crate::layout::{Align, Justify, SizeSpec, compute_layout};
+use crate::sense::Sense;
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::panel::PanelWidget;
 use crate::widgets::spacer::SpacerWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{
-    CaptureRequest, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse,
-};
+use crate::widgets::{DrawCtx, LayoutCtx, Widget, WidgetAction};
 
 use super::ContainerWidget;
 
@@ -36,8 +32,8 @@ impl Widget for CountingWidget {
         self.id
     }
 
-    fn is_focusable(&self) -> bool {
-        false
+    fn sense(&self) -> Sense {
+        Sense::none()
     }
 
     fn layout(&self, _ctx: &LayoutCtx<'_>) -> crate::layout::LayoutBox {
@@ -45,24 +41,8 @@ impl Widget for CountingWidget {
             .with_widget_id(self.id)
     }
 
-    fn draw(&self, _ctx: &mut DrawCtx<'_>) {
+    fn paint(&self, _ctx: &mut DrawCtx<'_>) {
         self.draws.set(self.draws.get() + 1);
-    }
-
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_hover(
-        &mut self,
-        _event: crate::input::HoverEvent,
-        _ctx: &EventCtx<'_>,
-    ) -> WidgetResponse {
-        WidgetResponse::ignored()
-    }
-
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        WidgetResponse::ignored()
     }
 
     fn accept_action(&mut self, _action: &WidgetAction) -> bool {
@@ -76,10 +56,6 @@ impl Widget for CountingWidget {
 
 fn label(text: &str) -> Box<dyn Widget> {
     Box::new(LabelWidget::new(text))
-}
-
-fn button(text: &str) -> Box<ButtonWidget> {
-    Box::new(ButtonWidget::new(text))
 }
 
 // --- Layout tests ---
@@ -277,21 +253,21 @@ fn draw_skips_children_fully_outside_active_clip() {
         .with_child(Box::new(CountingWidget::new(100.0, 20.0, draws.clone())));
 
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    draw_list.push_clip(Rect::new(0.0, 0.0, 100.0, 20.0));
-    let anim_flag = std::cell::Cell::new(false);
+    let mut scene = Scene::new();
+    scene.push_clip(Rect::new(0.0, 0.0, 100.0, 20.0));
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds: Rect::new(0.0, 0.0, 100.0, 40.0),
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
 
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
     assert_eq!(draws.get(), 1, "only the visible child should draw");
 }
@@ -314,365 +290,22 @@ fn focusable_children_collects_recursively() {
 fn draw_delegates_to_children() {
     let row = ContainerWidget::row().with_children(vec![label("A"), label("B")]);
     let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
+    let mut scene = Scene::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
-        draw_list: &mut draw_list,
+        scene: &mut scene,
         bounds,
-        focused_widget: None,
         now: std::time::Instant::now(),
-        animations_running: &anim_flag,
         theme: &super::super::tests::TEST_THEME,
         icons: None,
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
     };
-    row.draw(&mut ctx);
+    row.paint(&mut ctx);
 
-    let text_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Text { .. }))
-        .count();
-    assert_eq!(text_cmds, 2);
-}
-
-#[test]
-fn focused_widget_propagates_through_draw() {
-    let btn = ButtonWidget::new("Focus Me");
-    let btn_id = btn.id();
-    let row = ContainerWidget::row().with_child(Box::new(btn));
-    let measurer = MockMeasurer::STANDARD;
-    let mut draw_list = DrawList::new();
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let anim_flag = std::cell::Cell::new(false);
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: Some(btn_id),
-        now: std::time::Instant::now(),
-        animations_running: &anim_flag,
-        theme: &super::super::tests::TEST_THEME,
-        icons: None,
-    };
-    row.draw(&mut ctx);
-
-    let rect_cmds = draw_list
-        .commands()
-        .iter()
-        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
-        .count();
-    // Focus ring rect + button bg rect = 2 rects.
-    assert!(
-        rect_cmds >= 2,
-        "expected focus ring + bg, got {rect_cmds} rects"
-    );
-}
-
-// --- Mouse event tests ---
-
-#[test]
-fn delegates_mouse_to_child() {
-    let btn = button("Click");
-    let btn_id = btn.id();
-    let mut row = ContainerWidget::row().with_children(vec![label("Label"), btn]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(50.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&down, &ctx);
-
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(50.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked({btn_id:?}), got {other:?}"),
-    }
-}
-
-#[test]
-fn mouse_outside_children_is_ignored() {
-    let mut row = ContainerWidget::row().with_child(label("X"));
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(150.0, 25.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&event, &ctx);
-    assert_eq!(resp, WidgetResponse::ignored());
-}
-
-#[test]
-fn mouse_on_gap_is_ignored() {
-    let mut row = ContainerWidget::row()
-        .with_children(vec![label("A"), label("B")])
-        .with_gap(20.0);
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(15.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&event, &ctx);
-    assert_eq!(resp, WidgetResponse::ignored());
-}
-
-#[test]
-fn empty_container_mouse_ignored() {
-    let mut row = ContainerWidget::row();
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let event = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(50.0, 50.0),
-        modifiers: Modifiers::NONE,
-    };
-    assert_eq!(row.handle_mouse(&event, &ctx), WidgetResponse::ignored());
-}
-
-// --- Capture semantics tests ---
-
-#[test]
-fn mouse_capture_delivers_up_to_pressed_child() {
-    let btn = button("Capture");
-    let mut row = ContainerWidget::row().with_children(vec![label("Left"), btn]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Mouse down on button (x=50 is inside button area).
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(50.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&down, &ctx);
-    assert!(row.input_state.captured_child.is_some());
-
-    // Mouse up FAR outside the button (x=5 is inside the label).
-    // With capture, the up event is still delivered to the button (not the label).
-    // The button correctly sees the cursor outside its bounds and returns
-    // redraw without Clicked (standard "drag off to cancel" behavior).
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(5.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&up, &ctx);
-
-    // Button got the event (paint, not ignored), but no Clicked since cursor outside.
-    assert_eq!(resp.response, EventResponse::RequestPaint);
-    assert!(resp.action.is_none());
-    // Capture released.
-    assert!(row.input_state.captured_child.is_none());
-}
-
-#[test]
-fn mouse_capture_fires_clicked_when_released_inside() {
-    let btn = button("Capture");
-    let btn_id = btn.id();
-    let mut row = ContainerWidget::row().with_children(vec![label("Left"), btn]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Mouse down on button.
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(50.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&down, &ctx);
-
-    // Mouse up still inside button → Clicked fires.
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(50.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked({btn_id:?}), got {other:?}"),
-    }
-}
-
-#[test]
-fn capture_released_on_mouse_up() {
-    let mut row = ContainerWidget::row().with_children(vec![label("A"), label("B")]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Mouse down on child 0.
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(4.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&down, &ctx);
-    assert!(row.input_state.captured_child.is_some());
-
-    // Mouse up releases capture.
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(4.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&up, &ctx);
-    assert!(row.input_state.captured_child.is_none());
-}
-
-// --- Keyboard event tests ---
-
-#[test]
-fn delegates_key_to_focused_child() {
-    let btn = button("OK");
-    let btn_id = btn.id();
-    let mut col = ContainerWidget::column().with_children(vec![label("Title"), btn]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: Some(btn_id),
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    let resp = col.handle_key(event, &ctx);
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked, got {other:?}"),
-    }
-}
-
-#[test]
-fn empty_container_key_ignored() {
-    let mut row = ContainerWidget::row();
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 100.0, 100.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-    let event = KeyEvent {
-        key: Key::Enter,
-        modifiers: Modifiers::NONE,
-    };
-    assert_eq!(row.handle_key(event, &ctx), WidgetResponse::ignored());
-}
-
-#[test]
-fn child_consumes_event_stops_propagation() {
-    let btn1 = button("First");
-    let btn1_id = btn1.id();
-    let btn2 = button("Second");
-    let btn2_id = btn2.id();
-    let mut row = ContainerWidget::row().with_children(vec![btn1, btn2]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 300.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(5.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&down, &ctx);
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(5.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => {
-            assert_eq!(id, btn1_id);
-            assert_ne!(id, btn2_id);
-        }
-        other => panic!("expected Clicked from first button, got {other:?}"),
-    }
+    assert_eq!(scene.text_runs().len(), 2);
 }
 
 // --- Nested container tests ---
@@ -704,42 +337,6 @@ fn deeply_nested_layout_correct() {
     assert_eq!(inner.children.len(), 2);
     assert_eq!(inner.children[0].rect.x(), 0.0);
     assert_eq!(inner.children[1].rect.x(), 12.0);
-}
-
-#[test]
-fn deeply_nested_mouse_routing() {
-    let btn = button("OK");
-    let btn_id = btn.id();
-    let inner = ContainerWidget::row().with_children(vec![label("Pre"), btn]);
-    let mut outer = ContainerWidget::column().with_children(vec![label("Header"), Box::new(inner)]);
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    let down = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        pos: Point::new(30.0, 20.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = outer.handle_mouse(&down, &ctx);
-    let up = MouseEvent {
-        kind: MouseEventKind::Up(MouseButton::Left),
-        pos: Point::new(30.0, 20.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = outer.handle_mouse(&up, &ctx);
-
-    match resp.action {
-        Some(WidgetAction::Clicked(id)) => assert_eq!(id, btn_id),
-        other => panic!("expected Clicked through nested containers, got {other:?}"),
-    }
 }
 
 #[test]
@@ -791,199 +388,11 @@ fn layout_cache_recomputes_for_different_bounds() {
     assert!(!std::rc::Rc::ptr_eq(&node1, &node2));
 }
 
-// --- Hover tests ---
-
-#[test]
-fn hover_leave_clears_child_state() {
-    let mut row = ContainerWidget::row().with_children(vec![label("A"), label("B")]);
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Move over child 0 to set hover.
-    let mv = MouseEvent {
-        kind: MouseEventKind::Move,
-        pos: Point::new(4.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&mv, &ctx);
-    assert!(row.input_state.hovered_child.is_some());
-
-    // Leave clears it.
-    use crate::input::HoverEvent;
-    let _ = row.handle_hover(HoverEvent::Leave, &ctx);
-    assert!(row.input_state.hovered_child.is_none());
-}
-
-#[test]
-fn hover_transition_between_children() {
-    let mut row = ContainerWidget::row()
-        .with_children(vec![label("AAAA"), label("BBBB")])
-        .with_gap(0.0);
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
-    let ctx = EventCtx {
-        measurer: &measurer,
-        bounds,
-        is_focused: false,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    };
-
-    // Move to child 0.
-    let mv1 = MouseEvent {
-        kind: MouseEventKind::Move,
-        pos: Point::new(4.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let _ = row.handle_mouse(&mv1, &ctx);
-    assert_eq!(row.input_state.hovered_child, Some(0));
-
-    // Move to child 1 ("AAAA" is 32px wide, "BBBB" starts at 32).
-    let mv2 = MouseEvent {
-        kind: MouseEventKind::Move,
-        pos: Point::new(36.0, 8.0),
-        modifiers: Modifiers::NONE,
-    };
-    let resp = row.handle_mouse(&mv2, &ctx);
-    assert_eq!(row.input_state.hovered_child, Some(1));
-    assert_eq!(resp.response, EventResponse::RequestPaint);
-}
-
-// ── Dirty Tracking ──────────────────────────────────────────────────
-
-#[test]
-fn update_dirty_paint_sets_needs_paint() {
-    let mut c = ContainerWidget::column();
-    c.clear_dirty();
-    assert!(!c.needs_paint());
-    assert!(!c.needs_layout());
-
-    let resp = WidgetResponse::paint();
-    c.update_dirty(&resp);
-    assert!(c.needs_paint());
-    assert!(!c.needs_layout());
-}
-
-#[test]
-fn update_dirty_layout_sets_both_flags() {
-    let mut c = ContainerWidget::column();
-    c.clear_dirty();
-
-    let resp = WidgetResponse::layout();
-    c.update_dirty(&resp);
-    assert!(c.needs_paint());
-    assert!(c.needs_layout());
-}
-
-#[test]
-fn update_dirty_handled_does_not_set_flags() {
-    let mut c = ContainerWidget::column();
-    c.clear_dirty();
-
-    let resp = WidgetResponse::handled();
-    c.update_dirty(&resp);
-    assert!(!c.needs_paint());
-    assert!(!c.needs_layout());
-}
-
-#[test]
-fn clear_dirty_resets_both_flags() {
-    let mut c = ContainerWidget::column();
-    let resp = WidgetResponse::layout();
-    c.update_dirty(&resp);
-    assert!(c.needs_paint());
-    assert!(c.needs_layout());
-
-    c.clear_dirty();
-    assert!(!c.needs_paint());
-    assert!(!c.needs_layout());
-}
+// --- Dirty tracking ---
 
 #[test]
 fn new_container_starts_dirty() {
     let c = ContainerWidget::column();
     assert!(c.needs_paint());
     assert!(c.needs_layout());
-}
-
-#[test]
-fn needs_layout_bypasses_cache() {
-    // A container with a label child.
-    let mut c = ContainerWidget::column().with_child(Box::new(LabelWidget::new("hello")));
-    c.clear_dirty();
-
-    let measurer = MockMeasurer::STANDARD;
-    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
-    let theme = &super::super::tests::TEST_THEME;
-
-    // First draw populates the cache.
-    let mut draw_list = DrawList::new();
-    let anim = std::cell::Cell::new(false);
-    let mut ctx = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: std::time::Instant::now(),
-        animations_running: &anim,
-        theme,
-        icons: None,
-    };
-    c.draw(&mut ctx);
-    let cmd_count_1 = draw_list.commands().len();
-
-    // Second draw with same bounds should use cache (same result).
-    draw_list.clear();
-    let mut ctx2 = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: std::time::Instant::now(),
-        animations_running: &anim,
-        theme,
-        icons: None,
-    };
-    c.draw(&mut ctx2);
-    assert_eq!(
-        draw_list.commands().len(),
-        cmd_count_1,
-        "cached layout should produce same draw commands"
-    );
-
-    // Simulate a child requesting layout (e.g. section collapse).
-    let layout_resp = WidgetResponse {
-        response: EventResponse::RequestLayout,
-        action: None,
-        capture: CaptureRequest::None,
-    };
-    c.update_dirty(&layout_resp);
-    assert!(c.needs_layout());
-
-    // Third draw with same bounds should bypass cache (recompute).
-    // This verifies the dirty flag properly invalidates the layout cache.
-    draw_list.clear();
-    let mut ctx3 = DrawCtx {
-        measurer: &measurer,
-        draw_list: &mut draw_list,
-        bounds,
-        focused_widget: None,
-        now: std::time::Instant::now(),
-        animations_running: &anim,
-        theme,
-        icons: None,
-    };
-    c.draw(&mut ctx3);
-    assert_eq!(
-        draw_list.commands().len(),
-        cmd_count_1,
-        "recomputed layout should produce same draw commands"
-    );
 }

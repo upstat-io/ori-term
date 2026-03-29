@@ -2,7 +2,7 @@
 
 use crate::color::Color;
 
-use super::border::Border;
+use super::border::{Border, BorderSides};
 use super::gradient::Gradient;
 use super::shadow::Shadow;
 
@@ -14,8 +14,8 @@ use super::shadow::Shadow;
 pub struct RectStyle {
     /// Solid fill color.
     pub fill: Option<Color>,
-    /// Border drawn inside the rect edges.
-    pub border: Option<Border>,
+    /// Per-side border specification.
+    pub border: BorderSides,
     /// Per-corner radii `[top_left, top_right, bottom_right, bottom_left]`.
     pub corner_radius: [f32; 4],
     /// Drop shadow behind the rect.
@@ -34,10 +34,45 @@ impl RectStyle {
         }
     }
 
-    /// Adds a border.
+    /// Adds a uniform border on all four sides.
     #[must_use]
     pub fn with_border(mut self, width: f32, color: Color) -> Self {
-        self.border = Some(Border { width, color });
+        self.border = BorderSides::uniform(width, color);
+        self
+    }
+
+    /// Sets all four border sides from a `BorderSides` value.
+    #[must_use]
+    pub fn with_border_sides(mut self, sides: BorderSides) -> Self {
+        self.border = sides;
+        self
+    }
+
+    /// Adds a border on the top side only, leaving other sides unchanged.
+    #[must_use]
+    pub fn with_border_top(mut self, width: f32, color: Color) -> Self {
+        self.border.top = Some(Border { width, color });
+        self
+    }
+
+    /// Adds a border on the right side only, leaving other sides unchanged.
+    #[must_use]
+    pub fn with_border_right(mut self, width: f32, color: Color) -> Self {
+        self.border.right = Some(Border { width, color });
+        self
+    }
+
+    /// Adds a border on the bottom side only, leaving other sides unchanged.
+    #[must_use]
+    pub fn with_border_bottom(mut self, width: f32, color: Color) -> Self {
+        self.border.bottom = Some(Border { width, color });
+        self
+    }
+
+    /// Adds a border on the left side only, leaving other sides unchanged.
+    #[must_use]
+    pub fn with_border_left(mut self, width: f32, color: Color) -> Self {
+        self.border.left = Some(Border { width, color });
         self
     }
 

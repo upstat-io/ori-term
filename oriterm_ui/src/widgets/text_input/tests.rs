@@ -1,47 +1,49 @@
+use winit::window::CursorIcon;
+
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, Key, KeyEvent, Modifiers};
+use crate::input::{InputEvent, Key, Modifiers};
 use crate::layout::BoxContent;
+use crate::sense::Sense;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
+use crate::widgets::{LayoutCtx, OnInputResult, Widget, WidgetAction};
 
 use super::{TextInputStyle, TextInputWidget};
 
-static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
-
-fn event_ctx() -> EventCtx<'static> {
-    EventCtx {
-        measurer: &MEASURER,
-        bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
-        is_focused: true,
-        focused_widget: None,
-        theme: &super::super::tests::TEST_THEME,
-    }
+fn bounds() -> Rect {
+    Rect::new(0.0, 0.0, 200.0, 28.0)
 }
 
-fn key(k: Key) -> KeyEvent {
-    KeyEvent {
+fn key_down(k: Key) -> InputEvent {
+    InputEvent::KeyDown {
         key: k,
         modifiers: Modifiers::NONE,
     }
 }
 
-fn shift_key(k: Key) -> KeyEvent {
-    KeyEvent {
+fn shift_key_down(k: Key) -> InputEvent {
+    InputEvent::KeyDown {
         key: k,
         modifiers: Modifiers::SHIFT_ONLY,
     }
 }
 
-fn ctrl_key(k: Key) -> KeyEvent {
-    KeyEvent {
+fn ctrl_key_down(k: Key) -> InputEvent {
+    InputEvent::KeyDown {
         key: k,
         modifiers: Modifiers::CTRL_ONLY,
     }
 }
 
-fn char_key(ch: char) -> KeyEvent {
-    key(Key::Character(ch))
+fn char_down(ch: char) -> InputEvent {
+    key_down(Key::Character(ch))
 }
+
+/// Helper: calls `on_input` with keyboard event and returns the result.
+fn input(ti: &mut TextInputWidget, event: &InputEvent) -> OnInputResult {
+    ti.on_input(event, bounds())
+}
+
+// -- Construction and state --
 
 #[test]
 fn default_state() {
@@ -53,13 +55,37 @@ fn default_state() {
     assert!(ti.is_focusable());
 }
 
+// -- Sense and controllers --
+
+#[test]
+fn sense_returns_click_drag_focusable() {
+    let ti = TextInputWidget::new();
+    assert_eq!(
+        ti.sense(),
+        Sense::click_and_drag().union(Sense::focusable())
+    );
+}
+
+#[test]
+fn has_three_controllers() {
+    let ti = TextInputWidget::new();
+    assert_eq!(ti.controllers().len(), 3);
+}
+
+#[test]
+fn has_visual_state_animator() {
+    let ti = TextInputWidget::new();
+    assert!(ti.visual_states().is_some());
+}
+
+// -- Text editing --
+
 #[test]
 fn type_characters() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
-    ti.handle_key(char_key('h'), &ctx);
-    ti.handle_key(char_key('i'), &ctx);
+    input(&mut ti, &char_down('h'));
+    input(&mut ti, &char_down('i'));
     assert_eq!(ti.text(), "hi");
     assert_eq!(ti.cursor(), 2);
 }
@@ -67,9 +93,9 @@ fn type_characters() {
 #[test]
 fn type_emits_text_changed() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
-    let r = ti.handle_key(char_key('a'), &ctx);
+    let r = input(&mut ti, &char_down('a'));
+    assert!(r.handled);
     assert_eq!(
         r.action,
         Some(WidgetAction::TextChanged {
@@ -82,13 +108,12 @@ fn type_emits_text_changed() {
 #[test]
 fn backspace_deletes() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
-    ti.handle_key(char_key('a'), &ctx);
-    ti.handle_key(char_key('b'), &ctx);
+    input(&mut ti, &char_down('a'));
+    input(&mut ti, &char_down('b'));
     assert_eq!(ti.text(), "ab");
 
-    let r = ti.handle_key(key(Key::Backspace), &ctx);
+    let r = input(&mut ti, &key_down(Key::Backspace));
     assert_eq!(ti.text(), "a");
     assert_eq!(ti.cursor(), 1);
     assert!(r.action.is_some());
@@ -97,9 +122,8 @@ fn backspace_deletes() {
 #[test]
 fn backspace_at_start_no_op() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
-    let r = ti.handle_key(key(Key::Backspace), &ctx);
+    let r = input(&mut ti, &key_down(Key::Backspace));
     assert_eq!(ti.text(), "");
     assert!(r.action.is_none());
 }
@@ -107,12 +131,11 @@ fn backspace_at_start_no_op() {
 #[test]
 fn delete_forward() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("abc");
-    ti.cursor = 1; // After 'a'.
+    ti.editing.set_cursor(1); // After 'a'.
 
-    let r = ti.handle_key(key(Key::Delete), &ctx);
+    let r = input(&mut ti, &key_down(Key::Delete));
     assert_eq!(ti.text(), "ac");
     assert_eq!(ti.cursor(), 1);
     assert!(r.action.is_some());
@@ -121,12 +144,11 @@ fn delete_forward() {
 #[test]
 fn delete_at_end_no_op() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("abc");
     // Cursor is at end after set_text.
 
-    let r = ti.handle_key(key(Key::Delete), &ctx);
+    let r = input(&mut ti, &key_down(Key::Delete));
     assert_eq!(ti.text(), "abc");
     assert!(r.action.is_none());
 }
@@ -134,62 +156,60 @@ fn delete_at_end_no_op() {
 #[test]
 fn arrow_keys_move_cursor() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("abc");
-    ti.cursor = 3;
+    // Cursor at end (3) after set_text.
 
-    ti.handle_key(key(Key::ArrowLeft), &ctx);
+    input(&mut ti, &key_down(Key::ArrowLeft));
     assert_eq!(ti.cursor(), 2);
 
-    ti.handle_key(key(Key::ArrowLeft), &ctx);
+    input(&mut ti, &key_down(Key::ArrowLeft));
     assert_eq!(ti.cursor(), 1);
 
-    ti.handle_key(key(Key::ArrowRight), &ctx);
+    input(&mut ti, &key_down(Key::ArrowRight));
     assert_eq!(ti.cursor(), 2);
 }
 
 #[test]
 fn home_end_keys() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    ti.cursor = 2;
+    ti.editing.set_cursor(2);
 
-    ti.handle_key(key(Key::Home), &ctx);
+    input(&mut ti, &key_down(Key::Home));
     assert_eq!(ti.cursor(), 0);
 
-    ti.handle_key(key(Key::End), &ctx);
+    input(&mut ti, &key_down(Key::End));
     assert_eq!(ti.cursor(), 5);
 }
+
+// -- Selection --
 
 #[test]
 fn shift_arrow_selects() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    ti.cursor = 2;
+    ti.editing.set_cursor(2);
 
-    ti.handle_key(shift_key(Key::ArrowRight), &ctx);
+    input(&mut ti, &shift_key_down(Key::ArrowRight));
     assert_eq!(ti.cursor(), 3);
     assert_eq!(ti.selection_anchor(), Some(2));
     assert_eq!(ti.selection_range(), Some((2, 3)));
 
-    ti.handle_key(shift_key(Key::ArrowRight), &ctx);
+    input(&mut ti, &shift_key_down(Key::ArrowRight));
     assert_eq!(ti.selection_range(), Some((2, 4)));
 }
 
 #[test]
 fn ctrl_a_selects_all() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    ti.cursor = 2;
+    ti.editing.set_cursor(2);
 
-    ti.handle_key(ctrl_key(Key::Character('a')), &ctx);
+    input(&mut ti, &ctrl_key_down(Key::Character('a')));
     assert_eq!(ti.selection_anchor(), Some(0));
     assert_eq!(ti.cursor(), 5);
     assert_eq!(ti.selection_range(), Some((0, 5)));
@@ -198,13 +218,11 @@ fn ctrl_a_selects_all() {
 #[test]
 fn type_replaces_selection() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4; // Select "ell".
+    ti.editing.set_selection(1, 4); // Select "ell".
 
-    ti.handle_key(char_key('X'), &ctx);
+    input(&mut ti, &char_down('X'));
     assert_eq!(ti.text(), "hXo");
     assert_eq!(ti.cursor(), 2);
     assert!(ti.selection_anchor().is_none());
@@ -213,30 +231,126 @@ fn type_replaces_selection() {
 #[test]
 fn backspace_deletes_selection() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
+    ti.editing.set_selection(1, 4);
 
-    ti.handle_key(key(Key::Backspace), &ctx);
+    input(&mut ti, &key_down(Key::Backspace));
     assert_eq!(ti.text(), "ho");
     assert_eq!(ti.cursor(), 1);
 }
 
 #[test]
-fn disabled_ignores() {
+fn arrow_left_collapses_selection_to_start() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    ti.editing.set_selection(1, 4);
+
+    // Left arrow without shift collapses selection to start.
+    input(&mut ti, &key_down(Key::ArrowLeft));
+    assert_eq!(ti.cursor(), 1);
+    assert!(ti.selection_anchor().is_none());
+}
+
+#[test]
+fn arrow_right_collapses_selection_to_end() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    ti.editing.set_selection(1, 4);
+
+    // Right arrow without shift collapses selection to end.
+    input(&mut ti, &key_down(Key::ArrowRight));
+    assert_eq!(ti.cursor(), 4);
+    assert!(ti.selection_anchor().is_none());
+}
+
+#[test]
+fn ctrl_a_then_type_replaces_all() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    input(&mut ti, &ctrl_key_down(Key::Character('a')));
+    assert_eq!(ti.selection_range(), Some((0, 5)));
+
+    input(&mut ti, &char_down('X'));
+    assert_eq!(ti.text(), "X");
+    assert_eq!(ti.cursor(), 1);
+    assert!(ti.selection_anchor().is_none());
+}
+
+#[test]
+fn shift_home_selects_to_start() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    ti.editing.set_cursor(3);
+
+    input(&mut ti, &shift_key_down(Key::Home));
+    assert_eq!(ti.cursor(), 0);
+    assert_eq!(ti.selection_anchor(), Some(3));
+    assert_eq!(ti.selection_range(), Some((0, 3)));
+}
+
+#[test]
+fn shift_end_selects_to_end() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    ti.editing.set_cursor(1);
+
+    input(&mut ti, &shift_key_down(Key::End));
+    assert_eq!(ti.cursor(), 5);
+    assert_eq!(ti.selection_anchor(), Some(1));
+    assert_eq!(ti.selection_range(), Some((1, 5)));
+}
+
+#[test]
+fn delete_with_selection_removes_selected() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    ti.editing.set_selection(1, 4);
+
+    input(&mut ti, &key_down(Key::Delete));
+    assert_eq!(ti.text(), "ho");
+    assert_eq!(ti.cursor(), 1);
+    assert!(ti.selection_anchor().is_none());
+}
+
+#[test]
+fn shift_left_then_right_cancels_selection() {
+    let mut ti = TextInputWidget::new();
+
+    ti.set_text("hello");
+    ti.editing.set_cursor(3);
+
+    // Select one char left.
+    input(&mut ti, &shift_key_down(Key::ArrowLeft));
+    assert_eq!(ti.selection_range(), Some((2, 3)));
+
+    // Select one char right — cursor back to anchor.
+    input(&mut ti, &shift_key_down(Key::ArrowRight));
+    // Anchor is still 3, cursor is 3 — selection is (3,3) which is empty.
+    assert_eq!(ti.cursor(), 3);
+    assert_eq!(ti.selection_anchor(), Some(3));
+}
+
+// -- Disabled --
+
+#[test]
+fn disabled_ignores_keyboard() {
     let mut ti = TextInputWidget::new().with_disabled(true);
-    let ctx = event_ctx();
 
     assert!(!ti.is_focusable());
 
-    let r = ti.handle_key(char_key('a'), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
-
-    let r = ti.handle_hover(HoverEvent::Enter, &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
+    let r = input(&mut ti, &char_down('a'));
+    assert!(!r.handled);
+    assert_eq!(ti.text(), "");
 }
+
+// -- Layout --
 
 #[test]
 fn layout_uses_min_width() {
@@ -253,7 +367,7 @@ fn layout_uses_min_width() {
         intrinsic_width, ..
     } = &layout.content
     {
-        // Empty text → placeholder empty → min_width applies.
+        // Empty text -> placeholder empty -> min_width applies.
         assert!(*intrinsic_width >= s.min_width);
     } else {
         panic!("expected leaf layout");
@@ -282,148 +396,60 @@ fn placeholder_layout_measures_placeholder() {
     }
 }
 
+// -- Unicode --
+
 #[test]
 fn unicode_editing() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     // Type multi-byte chars.
-    ti.handle_key(char_key('é'), &ctx);
-    ti.handle_key(char_key('à'), &ctx);
-    assert_eq!(ti.text(), "éà");
+    input(&mut ti, &char_down('\u{e9}'));
+    input(&mut ti, &char_down('\u{e0}'));
+    assert_eq!(ti.text(), "\u{e9}\u{e0}");
     assert_eq!(ti.cursor(), 4); // 2 bytes each.
 
-    ti.handle_key(key(Key::Backspace), &ctx);
-    assert_eq!(ti.text(), "é");
+    input(&mut ti, &key_down(Key::Backspace));
+    assert_eq!(ti.text(), "\u{e9}");
     assert_eq!(ti.cursor(), 2);
 }
 
 #[test]
-fn arrow_left_collapses_selection_to_start() {
+fn four_byte_unicode_editing() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
-    ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
+    // Emoji are 4 bytes each in UTF-8.
+    input(&mut ti, &char_down('\u{1F600}')); // Grinning face.
+    input(&mut ti, &char_down('\u{1F680}')); // Rocket.
+    assert_eq!(ti.text().len(), 8); // 4 bytes each.
+    assert_eq!(ti.cursor(), 8);
 
-    // Left arrow without shift collapses selection to start.
-    ti.handle_key(key(Key::ArrowLeft), &ctx);
-    assert_eq!(ti.cursor(), 1);
-    assert!(ti.selection_anchor().is_none());
-}
-
-#[test]
-fn arrow_right_collapses_selection_to_end() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
-
-    // Right arrow without shift collapses selection to end.
-    ti.handle_key(key(Key::ArrowRight), &ctx);
+    input(&mut ti, &key_down(Key::Backspace));
+    assert_eq!(ti.text(), "\u{1F600}");
     assert_eq!(ti.cursor(), 4);
-    assert!(ti.selection_anchor().is_none());
 }
 
-#[test]
-fn ctrl_a_then_type_replaces_all() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.handle_key(ctrl_key(Key::Character('a')), &ctx);
-    assert_eq!(ti.selection_range(), Some((0, 5)));
-
-    ti.handle_key(char_key('X'), &ctx);
-    assert_eq!(ti.text(), "X");
-    assert_eq!(ti.cursor(), 1);
-    assert!(ti.selection_anchor().is_none());
-}
-
-#[test]
-fn shift_home_selects_to_start() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.cursor = 3;
-
-    ti.handle_key(shift_key(Key::Home), &ctx);
-    assert_eq!(ti.cursor(), 0);
-    assert_eq!(ti.selection_anchor(), Some(3));
-    assert_eq!(ti.selection_range(), Some((0, 3)));
-}
-
-#[test]
-fn shift_end_selects_to_end() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.cursor = 1;
-
-    ti.handle_key(shift_key(Key::End), &ctx);
-    assert_eq!(ti.cursor(), 5);
-    assert_eq!(ti.selection_anchor(), Some(1));
-    assert_eq!(ti.selection_range(), Some((1, 5)));
-}
-
-#[test]
-fn delete_with_selection_removes_selected() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.selection_anchor = Some(1);
-    ti.cursor = 4;
-
-    ti.handle_key(key(Key::Delete), &ctx);
-    assert_eq!(ti.text(), "ho");
-    assert_eq!(ti.cursor(), 1);
-    assert!(ti.selection_anchor().is_none());
-}
+// -- Edge cases --
 
 #[test]
 fn left_arrow_at_start_stays() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    ti.cursor = 0;
+    ti.editing.set_cursor(0);
 
-    ti.handle_key(key(Key::ArrowLeft), &ctx);
+    input(&mut ti, &key_down(Key::ArrowLeft));
     assert_eq!(ti.cursor(), 0);
 }
 
 #[test]
 fn right_arrow_at_end_stays() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
     // cursor already at end from set_text.
 
-    ti.handle_key(key(Key::ArrowRight), &ctx);
+    input(&mut ti, &key_down(Key::ArrowRight));
     assert_eq!(ti.cursor(), 5);
-}
-
-#[test]
-fn four_byte_unicode_editing() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    // Emoji are 4 bytes each in UTF-8.
-    ti.handle_key(char_key('\u{1F600}'), &ctx); // Grinning face.
-    ti.handle_key(char_key('\u{1F680}'), &ctx); // Rocket.
-    assert_eq!(ti.text().len(), 8); // 4 bytes each.
-    assert_eq!(ti.cursor(), 8);
-
-    ti.handle_key(key(Key::Backspace), &ctx);
-    assert_eq!(ti.text(), "\u{1F600}");
-    assert_eq!(ti.cursor(), 4);
 }
 
 #[test]
@@ -437,41 +463,141 @@ fn set_text_moves_cursor_to_end() {
 #[test]
 fn escape_key_ignored() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
     ti.set_text("hello");
-    let r = ti.handle_key(key(Key::Escape), &ctx);
-    assert_eq!(r, WidgetResponse::ignored());
+    let r = input(&mut ti, &key_down(Key::Escape));
+    assert!(!r.handled);
     assert_eq!(ti.text(), "hello");
-}
-
-#[test]
-fn shift_left_then_right_cancels_selection() {
-    let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
-
-    ti.set_text("hello");
-    ti.cursor = 3;
-
-    // Select one char left.
-    ti.handle_key(shift_key(Key::ArrowLeft), &ctx);
-    assert_eq!(ti.selection_range(), Some((2, 3)));
-
-    // Select one char right — cursor back to anchor.
-    ti.handle_key(shift_key(Key::ArrowRight), &ctx);
-    // Anchor is still 3, cursor is 3 — selection is (3,3) which is empty.
-    assert_eq!(ti.cursor(), 3);
-    assert_eq!(ti.selection_anchor(), Some(3));
 }
 
 #[test]
 fn ctrl_a_on_empty_text() {
     let mut ti = TextInputWidget::new();
-    let ctx = event_ctx();
 
-    let r = ti.handle_key(ctrl_key(Key::Character('a')), &ctx);
-    // Should still set selection (0,0) — anchor=0, cursor=0.
-    assert_eq!(ti.selection_anchor(), Some(0));
+    let r = input(&mut ti, &ctrl_key_down(Key::Character('a')));
+    // select_all on empty text is a no-op.
+    assert!(ti.selection_anchor().is_none());
     assert_eq!(ti.cursor(), 0);
-    assert!(r.response.is_handled());
+    assert!(r.handled);
+}
+
+// -- Click-to-cursor (via cached char offsets) --
+
+#[test]
+fn click_positions_cursor() {
+    let mut ti = TextInputWidget::new();
+    ti.set_text("hello");
+
+    // Populate char offsets via layout.
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    ti.layout(&ctx);
+
+    // Click near the start — should position at 0.
+    let click = InputEvent::MouseDown {
+        pos: crate::geometry::Point::new(7.0, 14.0), // Just inside padding.
+        button: crate::input::MouseButton::Left,
+        modifiers: Modifiers::NONE,
+    };
+    let r = ti.on_input(&click, Rect::new(0.0, 0.0, 200.0, 28.0));
+    assert!(r.handled);
+    assert_eq!(ti.cursor(), 0);
+    assert!(ti.selection_anchor().is_none());
+}
+
+#[test]
+fn click_at_end_positions_cursor_at_end() {
+    let mut ti = TextInputWidget::new();
+    ti.set_text("hi");
+
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    ti.layout(&ctx);
+
+    // Click far right — should position at end (byte 2).
+    let click = InputEvent::MouseDown {
+        pos: crate::geometry::Point::new(190.0, 14.0),
+        button: crate::input::MouseButton::Left,
+        modifiers: Modifiers::NONE,
+    };
+    let r = ti.on_input(&click, Rect::new(0.0, 0.0, 200.0, 28.0));
+    assert!(r.handled);
+    assert_eq!(ti.cursor(), 2);
+}
+
+#[test]
+fn disabled_ignores_click() {
+    let mut ti = TextInputWidget::new().with_disabled(true);
+    ti.set_text("hello");
+
+    let click = InputEvent::MouseDown {
+        pos: crate::geometry::Point::new(50.0, 14.0),
+        button: crate::input::MouseButton::Left,
+        modifiers: Modifiers::NONE,
+    };
+    let r = ti.on_input(&click, bounds());
+    assert!(!r.handled);
+}
+
+// -- Style constants --
+
+fn settings_theme() -> &'static crate::theme::UiTheme {
+    &super::super::tests::TEST_THEME
+}
+
+#[test]
+fn text_input_settings_style_border_width() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_eq!(s.border_width, 2.0);
+}
+
+#[test]
+fn text_input_settings_style_font_size() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_eq!(s.font_size, 12.0);
+}
+
+#[test]
+fn text_input_settings_style_min_width() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_eq!(s.min_width, 200.0);
+}
+
+#[test]
+fn text_input_settings_style_has_hover_border() {
+    let s = TextInputStyle::settings(settings_theme());
+    assert_ne!(
+        s.hover_border_color, s.border_color,
+        "hover border must differ from default border"
+    );
+}
+
+#[test]
+fn text_input_default_style_unchanged() {
+    let s = TextInputStyle::from_theme(settings_theme());
+    assert_eq!(s.border_width, 1.0, "default style keeps 1px border");
+}
+
+// -- Cursor icon --
+
+#[test]
+fn layout_cursor_icon_text() {
+    let ti = TextInputWidget::new();
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx {
+        measurer: &m,
+        theme: &super::super::tests::TEST_THEME,
+    };
+    let layout = ti.layout(&ctx);
+    assert_eq!(
+        layout.cursor_icon,
+        CursorIcon::Text,
+        "text input should declare Text cursor"
+    );
 }

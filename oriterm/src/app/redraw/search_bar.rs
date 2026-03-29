@@ -2,12 +2,12 @@
 
 use std::fmt::Write as _;
 
-use oriterm_ui::draw::DrawList;
+use oriterm_ui::draw::Scene;
 use oriterm_ui::geometry::Point;
 use oriterm_ui::widgets::status_badge::StatusBadge;
 
 use super::App;
-use crate::font::{CachedTextMeasurer, TextShapeCache, UiFontMeasurer};
+use crate::font::{CachedTextMeasurer, TextShapeCache};
 use crate::gpu::FrameSearch;
 use crate::gpu::state::GpuState;
 
@@ -19,12 +19,12 @@ impl App {
     /// to physical pixels for the GPU pipeline.
     #[expect(
         clippy::too_many_arguments,
-        reason = "search bar drawing: search state, renderer, draw list, buffer, viewport, caption, scale, GPU, cache"
+        reason = "search bar drawing: search state, renderer, scene, buffer, viewport, caption, scale, GPU, cache"
     )]
     pub(in crate::app::redraw) fn draw_search_bar(
         search: &FrameSearch,
         renderer: &mut crate::gpu::WindowRenderer,
-        draw_list: &mut DrawList,
+        scene: &mut Scene,
         buf: &mut String,
         logical_width: f32,
         caption_h: f32,
@@ -52,20 +52,16 @@ impl App {
         // Shape text and measure badge (immutable borrow on renderer ends
         // after shape — NLL lets the mutable append follow).
         let max_text_w = logical_width * 0.4;
-        let measurer = CachedTextMeasurer::new(
-            UiFontMeasurer::new(renderer.active_ui_collection(), scale),
-            text_cache,
-            scale,
-        );
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
         let (w, _h) = badge.measure(&measurer, max_text_w);
 
         // Position: top-right of grid area, inset from edges.
         let margin = 8.0;
         let pos = Point::new(logical_width - w - margin, caption_h + margin);
 
-        draw_list.clear();
-        let _ = badge.draw(draw_list, &measurer, pos, max_text_w);
+        scene.clear();
+        let _ = badge.draw(scene, &measurer, pos, max_text_w);
 
-        renderer.append_ui_draw_list_with_text(draw_list, scale, 1.0, gpu);
+        renderer.append_ui_scene_with_text(scene, scale, 1.0, gpu);
     }
 }
