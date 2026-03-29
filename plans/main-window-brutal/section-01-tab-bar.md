@@ -10,8 +10,8 @@ inspired_by:
   - "plans/brutal-design-pass-2/ (settings dialog brutal pass pattern)"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-03-29
 sections:
   - id: "01.1"
     title: "Tab Bar Metrics — 36px Flat"
@@ -36,7 +36,7 @@ sections:
     status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
   - id: "01.N"
     title: "Completion Checklist"
     status: in-progress
@@ -44,7 +44,7 @@ sections:
 
 # Section 01: Tab Bar Brutal Styling
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** The tab bar renders with 36px height, flat tabs (zero radius), 2px accent bar on active tab top, 2px bottom border, 1px separators, modified dot indicator, and border-left on action buttons — all matching `mockups/main-window-brutal.html` exactly. Golden tests lock every visual property.
 
 **Context:** The current tab bar uses a Chrome-inspired design: 46px height with 8px top margin, rounded top corners (8px radius) on the active tab, thin line separators, and no bottom border. The brutal design mockup specifies a completely different aesthetic: flat, compact, accent-barred. This section transforms the tab bar rendering without changing the underlying widget architecture (layout, hit testing, drag/drop, animation all remain intact).
@@ -300,7 +300,7 @@ Write golden tests proving every visual change. These tests render the tab bar t
   - **Test: `colors_from_theme_separator_full_opacity`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).separator == UiTheme::dark().border` (no `.with_alpha(0.5)` after the fix in 01.4).
   - **Test: `colors_from_theme_has_accent_bar`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).accent_bar == UiTheme::dark().accent`.
   - **Test: `colors_from_theme_has_bar_border`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).bar_border == UiTheme::dark().border`.
-- [ ] `/tpr-review` checkpoint
+- [x] `/tpr-review` checkpoint — 3 findings: 1 high (production wiring gap, accepted), 1 medium (fixed), 1 low (fixed)
 
 **Validation:** All `tab_bar_brutal_*` golden tests pass. Reference PNGs visually match the mockup's tab bar section.
 
@@ -310,7 +310,13 @@ Write golden tests proving every visual change. These tests render the tab bar t
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [ ] `[TPR-01-001][high]` `oriterm/src/app/tab_management/mod.rs:447` — Modified indicator not wired in production. `TabEntry` construction never calls `.with_modified(true)` because `Pane` has no `is_modified()` API yet. The modified dot only renders in golden tests, never in the real app.
+  Evidence: Production path builds entries with only `.with_icon(icon)`. Plan line 212 documents the gap explicitly.
+  Impact: Modified indicator is test-only today; users will never see it until pane modification tracking is implemented.
+- [x] `[TPR-01-002][medium]` `.verify-results/` scratch files committed to repo — `.gitignore` missing pattern for `plans/roadmap/.verify-results/`.
+  Resolved: Fixed on 2026-03-29 — added gitignore pattern and removed tracked files.
+- [x] `[TPR-01-003][low]` `plans/main-window-brutal/section-01-tab-bar.md:47`, `index.md:23`, `00-overview.md:171` — Plan bookkeeping stale: body says "Not Started" but frontmatter says "in-progress"; index and overview not updated.
+  Resolved: Fixed on 2026-03-29 — updated all three locations to reflect "In Progress".
 
 ---
 
@@ -331,6 +337,6 @@ Write golden tests proving every visual change. These tests render the tab bar t
 - [x] Modified indicator unit tests pass (builder, suppression on hover)
 - [x] `cargo test -p oriterm_ui` green (no regressions in tab bar unit tests)
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `/tpr-review` passed — independent review found no critical or major issues
+- [ ] `/tpr-review` passed — TPR-01-001 (high: modified indicator production wiring) remains open pending `Pane::is_modified()` API
 
 **Exit Criteria:** The tab bar renders identically to the `.tab-bar` section of `mockups/main-window-brutal.html` at 96 DPI. All golden tests pass with committed reference PNGs. No visual regressions in existing tests.

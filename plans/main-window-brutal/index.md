@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Tab Bar Brutal Styling
-**File:** `section-01-tab-bar.md` | **Status:** Not Started
+**File:** `section-01-tab-bar.md` | **Status:** In Progress
 
 ```
 tab bar, tab strip, tab height, flat tabs, brutal tabs
