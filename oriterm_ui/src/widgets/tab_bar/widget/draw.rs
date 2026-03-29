@@ -1,55 +1,31 @@
 //! Tab bar drawing implementation.
 //!
-//! Contains all visual rendering logic: tab backgrounds, title text, close
-//! buttons, separators, new-tab/dropdown buttons, dragged tab overlay, and
-//! the bell animation phase. The [`Widget`] trait impl routes into these
-//! drawing helpers.
-
-use std::time::Instant;
+//! Contains tab backgrounds, title text, close buttons, dragged tab overlay,
+//! and the [`Widget`] trait impl. Separators, action buttons, and free
+//! functions live in [`draw_helpers`](super::draw_helpers).
 
 use crate::animation::{AnimProperty, Lerp};
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
+use crate::icons::IconId;
 use crate::layout::LayoutBox;
 use crate::sense::Sense;
 use crate::text::{TextOverflow, TextStyle};
 
 use super::super::constants::{
-    CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, DROPDOWN_BUTTON_WIDTH, ICON_TEXT_GAP,
-    NEW_TAB_BUTTON_WIDTH,
+    CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, ICON_TEXT_GAP, TAB_BAR_BORDER_BOTTOM,
 };
 use super::super::hit::TabBarHit;
+use super::draw_helpers::{bell_phase, draw_icon};
 use super::{TabBarWidget, TabEntry, TabIcon};
 
-use crate::icons::IconId;
 use crate::widgets::{DrawCtx, LayoutCtx, Widget};
 
 // Drawing constants (logical pixels).
 
-/// Corner radius for the active tab's top-left and top-right corners.
-pub(super) const ACTIVE_TAB_RADIUS: f32 = 8.0;
-
-/// Corner radius for hover backgrounds on buttons and close targets.
-const BUTTON_HOVER_RADIUS: f32 = 4.0;
-
 /// Inset from close button edges to the × icon area.
 pub(super) const CLOSE_ICON_INSET: f32 = 7.0;
-
-/// Half-arm length of the + icon in the new-tab button.
-const PLUS_ARM: f32 = 5.0;
-
-/// Half-extent of the ▾ chevron in the dropdown button.
-const CHEVRON_HALF: f32 = 5.0;
-
-/// Vertical inset for separators from tab top/bottom edges.
-const SEPARATOR_INSET: f32 = 8.0;
-
-/// Duration of the bell pulse animation in seconds.
-const BELL_DURATION_SECS: f32 = 3.0;
-
-/// Frequency of the bell pulse sine wave in Hz.
-const BELL_FREQUENCY_HZ: f32 = 2.0;
 
 /// Tab strip geometry and per-tab draw state passed to drawing helpers.
 pub(super) struct TabStrip {
@@ -78,17 +54,8 @@ impl TabBarWidget {
         let tab_rect = Rect::new(x, strip.y, self.layout.tab_width_at(index), strip.h);
         let bg = self.tab_background_color(index, strip);
 
-        // Active tab gets rounded top corners.
-        let style = if strip.active {
-            RectStyle::filled(bg).with_per_corner_radius(
-                ACTIVE_TAB_RADIUS,
-                ACTIVE_TAB_RADIUS,
-                0.0,
-                0.0,
-            )
-        } else {
-            RectStyle::filled(bg)
-        };
+        // Flat tab background (active distinction comes from accent bar in 01.3).
+        let style = RectStyle::filled(bg);
 
         // Width multiplier — content fades in faster than width expands.
         let width_t = self
@@ -105,14 +72,40 @@ impl TabBarWidget {
         ctx.scene.push_layer_bg(bg);
         ctx.scene.push_quad(tab_rect, style);
 
+        // Active tab decorations: accent bar (top) and bottom bleed.
+        if strip.active {
+            let y0 = ctx.bounds.y();
+            // 2px accent bar at the very top of the tab bar.
+            let accent = Rect::new(tab_rect.x(), y0, tab_rect.width(), TAB_BAR_BORDER_BOTTOM);
+            ctx.scene
+                .push_quad(accent, RectStyle::filled(self.colors.accent_bar));
+            // 2px bleed that erases the bottom border under the active tab.
+            let bleed_y = y0 + self.metrics.height - TAB_BAR_BORDER_BOTTOM;
+            let bleed = Rect::new(
+                tab_rect.x(),
+                bleed_y,
+                tab_rect.width(),
+                TAB_BAR_BORDER_BOTTOM,
+            );
+            ctx.scene
+                .push_quad(bleed, RectStyle::filled(self.colors.active_bg));
+        }
+
         // Only draw content when somewhat visible.
         if content_opacity > 0.01 {
             self.draw_tab_label(ctx, tab, x, strip, self.editing_index == Some(index));
 
-            // Close button: always visible on active, animated fade on inactive.
-            if strip.active {
-                self.draw_close_button(ctx, index, x, strip, content_opacity);
+            let hovered = self.is_tab_hovered(index);
+
+            // Modified dot: shown on non-active, non-hovered tabs.
+            if tab.modified && !strip.active && !hovered {
+                self.draw_modified_dot(ctx, index, x, strip);
+            } else if strip.active {
+                // Active tab: close at 0.6 opacity (1.0 when hovered).
+                let base = if hovered { 1.0 } else { 0.6 };
+                self.draw_close_button(ctx, index, x, strip, base * content_opacity);
             } else {
+                // Inactive tab: animated fade (modified dot replaced by close on hover).
                 let opacity = self
                     .close_btn_opacity
                     .get(index)
@@ -233,6 +226,21 @@ impl TabBarWidget {
             .push_text(Point::new(text_x, text_y), clamped, color);
     }
 
+    /// Draws a 6px accent-colored square dot indicating a modified tab.
+    ///
+    /// Positioned in the close button zone, vertically centered.
+    fn draw_modified_dot(&self, ctx: &mut DrawCtx<'_>, index: usize, tab_x: f32, strip: &TabStrip) {
+        let dot_size = 6.0_f32;
+        let cx = tab_x + self.layout.tab_width_at(index)
+            - CLOSE_BUTTON_RIGHT_PAD
+            - CLOSE_BUTTON_WIDTH / 2.0
+            - dot_size / 2.0;
+        let cy = strip.y + (strip.h - dot_size) / 2.0;
+        let dot = Rect::new(cx, cy, dot_size, dot_size);
+        ctx.scene
+            .push_quad(dot, RectStyle::filled(self.colors.accent_bar));
+    }
+
     /// Draws the close (×) button for a tab with the given opacity.
     #[expect(
         clippy::too_many_arguments,
@@ -251,10 +259,9 @@ impl TabBarWidget {
         let cy = strip.y + (strip.h - CLOSE_BUTTON_WIDTH) / 2.0;
         let btn = Rect::new(cx, cy, CLOSE_BUTTON_WIDTH, CLOSE_BUTTON_WIDTH);
 
-        // Hover highlight on the close button.
+        // Flat hover highlight on the close button.
         if self.hover_hit == TabBarHit::CloseTab(index) {
-            let style = RectStyle::filled(self.colors.button_hover_bg.with_alpha(opacity))
-                .with_radius(BUTTON_HOVER_RADIUS);
+            let style = RectStyle::filled(self.colors.button_hover_bg.with_alpha(opacity));
             ctx.scene.push_quad(btn, style);
         }
 
@@ -309,138 +316,6 @@ impl TabBarWidget {
         if hover_animating || close_animating || width_animating {
             ctx.request_anim_frame();
         }
-    }
-
-    /// Draws separators between tabs with suppression rules.
-    fn draw_separators(&self, ctx: &mut DrawCtx<'_>, strip: &TabStrip) {
-        for i in 1..self.tabs.len() {
-            // Suppress adjacent to active tab.
-            if i == self.active_index || i == self.active_index + 1 {
-                continue;
-            }
-            // Suppress adjacent to hovered tab.
-            if let TabBarHit::Tab(h) | TabBarHit::CloseTab(h) = self.hover_hit {
-                if i == h || i == h + 1 {
-                    continue;
-                }
-            }
-            // Suppress adjacent to dragged tab.
-            if let Some((d, _)) = self.drag_visual {
-                if i == d || i == d + 1 {
-                    continue;
-                }
-            }
-
-            let x = self.layout.tab_x(i);
-            let y1 = strip.y + SEPARATOR_INSET;
-            let y2 = strip.y + strip.h - SEPARATOR_INSET;
-            ctx.scene.push_line(
-                Point::new(x, y1),
-                Point::new(x, y2),
-                1.0,
-                self.colors.separator,
-            );
-        }
-    }
-
-    /// Draws the new-tab (+) button.
-    fn draw_new_tab_button(&self, ctx: &mut DrawCtx<'_>, strip: &TabStrip) {
-        let bx = new_tab_button_x(self);
-        let btn = Rect::new(bx, strip.y, NEW_TAB_BUTTON_WIDTH, strip.h);
-
-        if self.hover_hit == TabBarHit::NewTab {
-            let style =
-                RectStyle::filled(self.colors.button_hover_bg).with_radius(BUTTON_HOVER_RADIUS);
-            ctx.scene.push_quad(btn, style);
-        }
-
-        // + icon.
-        let cx = bx + NEW_TAB_BUTTON_WIDTH / 2.0;
-        let cy = strip.y + strip.h / 2.0;
-        let fg = self.colors.close_fg;
-        let icon_size = (PLUS_ARM * 2.0).round() as u32;
-        let icon_rect = Rect::new(cx - PLUS_ARM, cy - PLUS_ARM, PLUS_ARM * 2.0, PLUS_ARM * 2.0);
-        draw_icon(ctx, IconId::Plus, icon_rect, icon_size, fg);
-    }
-
-    /// Draws the dropdown (▾) button.
-    fn draw_dropdown_button(&self, ctx: &mut DrawCtx<'_>, strip: &TabStrip) {
-        let bx = dropdown_button_x(self);
-        let btn = Rect::new(bx, strip.y, DROPDOWN_BUTTON_WIDTH, strip.h);
-
-        if self.hover_hit == TabBarHit::Dropdown {
-            let style =
-                RectStyle::filled(self.colors.button_hover_bg).with_radius(BUTTON_HOVER_RADIUS);
-            ctx.scene.push_quad(btn, style);
-        }
-
-        // ▾ chevron.
-        let cx = bx + DROPDOWN_BUTTON_WIDTH / 2.0;
-        let cy = strip.y + strip.h / 2.0;
-        let fg = self.colors.close_fg;
-        let icon_size = (CHEVRON_HALF * 2.0).round() as u32;
-        let icon_rect = Rect::new(
-            cx - CHEVRON_HALF,
-            cy - CHEVRON_HALF,
-            CHEVRON_HALF * 2.0,
-            CHEVRON_HALF * 2.0,
-        );
-        draw_icon(ctx, IconId::ChevronDown, icon_rect, icon_size, fg);
-    }
-}
-
-/// Emit a vector icon from the pre-resolved icon atlas.
-///
-/// No-ops when `ctx.icons` is `None` (tests) or the icon wasn't resolved.
-fn draw_icon(ctx: &mut DrawCtx<'_>, id: IconId, rect: Rect, size_px: u32, color: Color) {
-    if let Some(resolved) = ctx.icons.and_then(|ic| ic.get(id, size_px)) {
-        ctx.scene
-            .push_icon(rect, resolved.atlas_page, resolved.uv, color);
-    }
-}
-
-// Free functions used by both drawing and tests
-
-/// Computes the bell animation phase for a tab.
-///
-/// Returns 0.0–1.0 for an active bell animation, 0.0 otherwise.
-/// The phase follows a decaying sine wave that pulses for
-/// [`BELL_DURATION_SECS`] seconds after the bell fires.
-pub(super) fn bell_phase(tab: &TabEntry, now: Instant) -> f32 {
-    let Some(start) = tab.bell_start else {
-        return 0.0;
-    };
-    let elapsed = now.duration_since(start).as_secs_f32();
-    if elapsed >= BELL_DURATION_SECS {
-        return 0.0;
-    }
-    let fade = 1.0 - (elapsed / BELL_DURATION_SECS);
-    let wave = (elapsed * BELL_FREQUENCY_HZ * std::f32::consts::TAU)
-        .sin()
-        .abs();
-    wave * fade
-}
-
-/// X position of the new-tab button, adjusted for drag.
-///
-/// When dragging a tab past the end of the strip, the button moves
-/// right to stay visible: `max(default_x, drag_x + tab_width)`.
-pub(super) fn new_tab_button_x(widget: &TabBarWidget) -> f32 {
-    let default_x = widget.layout.new_tab_x();
-    if let Some((idx, drag_x)) = widget.drag_visual {
-        default_x.max(drag_x + widget.layout.tab_width_at(idx))
-    } else {
-        default_x
-    }
-}
-
-/// X position of the dropdown button, adjusted for drag.
-pub(super) fn dropdown_button_x(widget: &TabBarWidget) -> f32 {
-    let default_x = widget.layout.dropdown_x();
-    if let Some((idx, drag_x)) = widget.drag_visual {
-        default_x.max(drag_x + widget.layout.tab_width_at(idx) + NEW_TAB_BUTTON_WIDTH)
-    } else {
-        default_x
     }
 }
 
@@ -501,6 +376,12 @@ impl Widget for TabBarWidget {
         let bar = Rect::new(0.0, y0, w, self.metrics.height);
         ctx.scene
             .push_quad(bar, RectStyle::filled(self.colors.bar_bg));
+
+        // 1.5. Bottom border (drawn behind tabs; active tab bleed erases it).
+        let border_y = y0 + self.metrics.height - TAB_BAR_BORDER_BOTTOM;
+        let border_rect = Rect::new(0.0, border_y, w, TAB_BAR_BORDER_BOTTOM);
+        ctx.scene
+            .push_quad(border_rect, RectStyle::filled(self.colors.bar_border));
 
         let mut strip = TabStrip {
             y: y0 + self.metrics.top_margin,

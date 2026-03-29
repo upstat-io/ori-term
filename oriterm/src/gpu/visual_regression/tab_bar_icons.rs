@@ -12,6 +12,7 @@ use oriterm_ui::geometry::Rect;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::tab_bar::TabBarWidget;
+use oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT;
 use oriterm_ui::widgets::tab_bar::widget::{TabEntry, TabIcon};
 
 use crate::font::shaper::CachedTextMeasurer;
@@ -86,7 +87,7 @@ fn render_tab_bar(
         theme: &theme,
         measurer: &cached,
         icons: Some(icons),
-        bounds: Rect::new(0.0, 0.0, WIDTH as f32, 46.0),
+        bounds: Rect::new(0.0, 0.0, WIDTH as f32, TAB_BAR_HEIGHT),
         now: Instant::now(),
         interaction: None,
         widget_id: None,
@@ -214,7 +215,10 @@ fn emoji_not_clipped_in_rendered_output() {
         );
 
         // Find the emoji's bounding box by looking for saturated (colorful) pixels.
-        let bbox = find_color_bbox(&pixels, WIDTH as usize, HEIGHT as usize);
+        // Skip the top accent bar (2px) and bottom border area (2px) since those
+        // are tab bar decorations that contain colored pixels unrelated to emoji.
+        let accent_h = TAB_BAR_HEIGHT.ceil() as usize;
+        let bbox = find_color_bbox_inset(&pixels, WIDTH as usize, HEIGHT as usize, 3, accent_h);
         let Some((min_x, min_y, max_x, max_y)) = bbox else {
             panic!("{label} ({emoji}): no color pixels found in rendered output");
         };
@@ -260,14 +264,23 @@ fn emoji_not_clipped_in_rendered_output() {
     }
 }
 
-/// Find bounding box of color (saturated) pixels. Returns `(min_x, min_y, max_x, max_y)`.
-fn find_color_bbox(pixels: &[u8], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+/// Find bounding box of color (saturated) pixels with y insets.
+///
+/// Skips the top `y_top` and bottom rows past `y_bottom` to exclude
+/// tab bar decorations (accent bar, bottom border) from emoji detection.
+fn find_color_bbox_inset(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    y_top: usize,
+    y_bottom: usize,
+) -> Option<(usize, usize, usize, usize)> {
     let mut min_x = w;
     let mut max_x = 0;
     let mut min_y = h;
     let mut max_y = 0;
     let mut found = false;
-    for y in 0..h {
+    for y in y_top..y_bottom.min(h) {
         for x in 0..w {
             let idx = (y * w + x) * 4;
             if idx + 3 >= pixels.len() {

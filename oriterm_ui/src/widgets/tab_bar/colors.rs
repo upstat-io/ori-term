@@ -15,7 +15,7 @@ use crate::theme::UiTheme;
 pub struct TabBarColors {
     /// Tab bar background (full-width strip behind all tabs).
     pub bar_bg: Color,
-    /// Active tab background (rendered with rounded top corners).
+    /// Active tab background.
     pub active_bg: Color,
     /// Inactive tab background.
     pub inactive_bg: Color,
@@ -31,21 +31,27 @@ pub struct TabBarColors {
     pub close_fg: Color,
     /// New-tab (+) and dropdown button hover background.
     pub button_hover_bg: Color,
+    /// 2px accent bar on active tab top edge.
+    pub accent_bar: Color,
+    /// 2px bottom border line beneath the tab bar.
+    pub bar_border: Color,
 }
 
 impl TabBarColors {
     /// Construct tab bar colors from a UI theme.
     pub fn from_theme(theme: &UiTheme) -> Self {
         Self {
-            bar_bg: theme.bg_secondary,
-            active_bg: theme.bg_primary,
-            inactive_bg: theme.bg_secondary,
+            bar_bg: theme.bg_primary,
+            active_bg: theme.bg_secondary,
+            inactive_bg: theme.bg_primary,
             tab_hover_bg: theme.bg_hover,
             text_fg: theme.fg_primary,
             inactive_text: theme.fg_secondary,
-            separator: theme.border.with_alpha(0.5),
+            separator: theme.border,
             close_fg: theme.fg_secondary,
             button_hover_bg: theme.bg_hover,
+            accent_bar: theme.accent,
+            bar_border: theme.border,
         }
     }
 
