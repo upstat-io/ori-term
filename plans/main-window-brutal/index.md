@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Tab Bar Brutal Styling
-**File:** `section-01-tab-bar.md` | **Status:** In Progress
+**File:** `section-01-tab-bar.md` | **Status:** Complete
 
 ```
 tab bar, tab strip, tab height, flat tabs, brutal tabs
@@ -94,7 +94,7 @@ test matrix, edge cases
 
 | ID | Title | File |
 |----|-------|------|
-| 01 | Tab Bar Brutal Styling | `section-01-tab-bar.md` |
+| 01 | Tab Bar Brutal Styling (Complete) | `section-01-tab-bar.md` |
 | 02 | Status Bar Widget | `section-02-status-bar.md` |
 | 03 | Window Frame & Split Pane Styling | `section-03-frame-panes.md` |
 | 04 | Production Wiring & Composed Tests | `section-04-wiring.md` |

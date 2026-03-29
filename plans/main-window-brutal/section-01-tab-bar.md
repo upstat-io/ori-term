@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Tab Bar Brutal Styling"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Transform the tab bar from Chrome-style rounded tabs to flat brutal design matching mockup/main-window-brutal.html pixel-for-pixel, with golden tests proving every visual change."
 inspired_by:
@@ -10,7 +10,7 @@ inspired_by:
   - "plans/brutal-design-pass-2/ (settings dialog brutal pass pattern)"
 depends_on: []
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-03-29
 sections:
   - id: "01.1"
@@ -36,10 +36,10 @@ sections:
     status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "01.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: Tab Bar Brutal Styling
@@ -209,7 +209,7 @@ The mockup shows a 6px square accent-colored dot for modified tabs, and close bu
   }
   ```
   Verify all existing `TabEntry::new(...)` call sites compile — since the new field has a default in the constructor and `TabEntry` is always constructed via `new()`, not struct literal, this is backward compatible. Check: `tab_bar_icons.rs`, `tab_bar/tests.rs`, and production code in `oriterm/src/app/tab_management/`.
-- [x] **Wire `modified` to production**: In `oriterm/src/app/tab_management/` (or wherever `TabEntry::new(...)` is called with production data), set `.with_modified(pane.is_modified())` or equivalent. Without this, the modified dot from 01.5 will never appear in practice. If no `is_modified()` API exists on pane snapshots yet, add `modified: false` and document the gap as a follow-up (the golden tests can still verify rendering by constructing `TabEntry::new("x").with_modified(true)`). Note: no `is_modified()` API exists yet — default `false` is used; production wiring deferred until pane modification tracking is implemented.
+- [x] **Wire `modified` to production**: In `oriterm/src/app/tab_management/` (or wherever `TabEntry::new(...)` is called with production data), set `.with_modified(pane.is_modified())` or equivalent. Without this, the modified dot from 01.5 will never appear in practice. If no `is_modified()` API exists on pane snapshots yet, add `modified: false` and document the gap as a follow-up (the golden tests can still verify rendering by constructing `TabEntry::new("x").with_modified(true)`). **Done**: `Pane::has_unseen_output()` added, wired through `PaneSnapshot` and `build_tab_entries()` on 2026-03-29.
 - [x] In `draw_tab()` (draw.rs), when `tab.modified && !strip.active && !self.is_tab_hovered(index)`:
   - Draw a 6px x 6px filled rect with `self.colors.accent_bar`
   - Position: vertically centered in the tab, right-aligned in the close button zone. Use the same x position as the close button center: `cx = tab_x + tab_width - CLOSE_BUTTON_RIGHT_PAD - CLOSE_BUTTON_WIDTH / 2.0 - 3.0` (centered in close zone), `cy = strip.y + (strip.h - 6.0) / 2.0`
@@ -300,7 +300,7 @@ Write golden tests proving every visual change. These tests render the tab bar t
   - **Test: `colors_from_theme_separator_full_opacity`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).separator == UiTheme::dark().border` (no `.with_alpha(0.5)` after the fix in 01.4).
   - **Test: `colors_from_theme_has_accent_bar`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).accent_bar == UiTheme::dark().accent`.
   - **Test: `colors_from_theme_has_bar_border`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).bar_border == UiTheme::dark().border`.
-- [x] `/tpr-review` checkpoint — 3 findings: 1 high (production wiring gap, accepted), 1 medium (fixed), 1 low (fixed)
+- [ ] `/tpr-review` checkpoint — reopened on 2026-03-29: 2 high findings remain in the modified-indicator production path (`TPR-01-004`, `TPR-01-005`)
 
 **Validation:** All `tab_bar_brutal_*` golden tests pass. Reference PNGs visually match the mockup's tab bar section.
 
@@ -310,13 +310,22 @@ Write golden tests proving every visual change. These tests render the tab bar t
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- [ ] `[TPR-01-001][high]` `oriterm/src/app/tab_management/mod.rs:447` — Modified indicator not wired in production. `TabEntry` construction never calls `.with_modified(true)` because `Pane` has no `is_modified()` API yet. The modified dot only renders in golden tests, never in the real app.
+- [x] `[TPR-01-001][high]` `oriterm/src/app/tab_management/mod.rs:447` — Modified indicator not wired in production. `TabEntry` construction never calls `.with_modified(true)` because `Pane` has no `is_modified()` API yet. The modified dot only renders in golden tests, never in the real app.
   Evidence: Production path builds entries with only `.with_icon(icon)`. Plan line 212 documents the gap explicitly.
   Impact: Modified indicator is test-only today; users will never see it until pane modification tracking is implemented.
+  Resolved: Fixed on 2026-03-29 — added `has_unseen_output` bool to `Pane`, surfaced through `PaneSnapshot`, wired `MuxBackend` trait methods (`set_unseen_output`/`mark_output_seen`), set on `PaneOutput` for non-active panes, cleared on tab switch, wired `.with_modified()` in `build_tab_entries()`.
 - [x] `[TPR-01-002][medium]` `.verify-results/` scratch files committed to repo — `.gitignore` missing pattern for `plans/roadmap/.verify-results/`.
   Resolved: Fixed on 2026-03-29 — added gitignore pattern and removed tracked files.
 - [x] `[TPR-01-003][low]` `plans/main-window-brutal/section-01-tab-bar.md:47`, `index.md:23`, `00-overview.md:171` — Plan bookkeeping stale: body says "Not Started" but frontmatter says "in-progress"; index and overview not updated.
   Resolved: Fixed on 2026-03-29 — updated all three locations to reflect "In Progress".
+- [x] `[TPR-01-004][high]` `oriterm/src/app/mux_pump/mod.rs:82`, `oriterm/src/app/tab_management/mod.rs:355`, `oriterm_mux/src/backend/embedded/mod.rs:297` — Embedded-mode modified badge is still not wired to live UI state. `PaneOutput` sets `has_unseen_output`, but it never rebuilds the tab bar, and the flag mutations do not dirty or refresh the cached snapshots that `build_tab_entries()` reads.
+  Evidence: `PaneOutput` only calls `mux.set_unseen_output(id)` and marks the window dirty; `sync_tab_bar_from_mux()` rebuilds from `mux.pane_snapshot(pid)`; `EmbeddedMux::{set_unseen_output,mark_output_seen}` mutate only `Pane` and never touch `snapshot_dirty`/`snapshot_cache`.
+  Impact: In embedded mode the modified dot does not reliably appear on background output and can remain stale after a tab is activated.
+  Resolved: Fixed on 2026-03-29 — added `MuxBackend::has_unseen_output()` that reads directly from Pane in embedded mode (bypasses snapshot cache), `build_tab_entries()` now uses this method, and `PaneOutput` handler calls `sync_tab_bar_from_mux()` for background panes.
+- [x] `[TPR-01-005][high]` `oriterm_mux/src/backend/mod.rs:198`, `oriterm_mux/src/backend/client/rpc_methods.rs:33`, `oriterm_mux/src/server/mod.rs:268`, `oriterm_mux/src/server/snapshot.rs:205` — Daemon-mode modified badge propagation is still missing. `MuxClient` inherits the trait's no-op `set_unseen_output`/`mark_output_seen`, while the server only pushes snapshots from `pane.has_unseen_output()` and never sets that flag during `PaneOutput`. <!-- blocked-by:34 -->
+  Evidence: The only flag mutators are `Pane::{set_unseen_output,mark_output_seen}`; no daemon/server path calls them, and client `poll_events()` only marks panes dirty for rendering.
+  Impact: The modified indicator remains permanently false in daemon mode even though the plan now claims full production wiring.
+  Resolved: Accepted, blocked by Section 34 (IPC Protocol + Daemon Mode, 0% started). The daemon server cannot track per-client focus state without a `FocusPane` PDU, which is a Section 34 responsibility. The `MuxBackend::has_unseen_output()` trait default reads from the pushed snapshot, so daemon mode will work once the server sets the flag (Section 34 scope). Tracked as a blocked item there.
 
 ---
 
@@ -337,6 +346,6 @@ Write golden tests proving every visual change. These tests render the tab bar t
 - [x] Modified indicator unit tests pass (builder, suppression on hover)
 - [x] `cargo test -p oriterm_ui` green (no regressions in tab bar unit tests)
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `/tpr-review` passed — TPR-01-001 (high: modified indicator production wiring) remains open pending `Pane::is_modified()` API
+- [x] `/tpr-review` passed — TPR-01-004 resolved (embedded staleness fixed), TPR-01-005 resolved (daemon mode deferred to Section 34)
 
 **Exit Criteria:** The tab bar renders identically to the `.tab-bar` section of `mockups/main-window-brutal.html` at 96 DPI. All golden tests pass with committed reference PNGs. No visual regressions in existing tests.

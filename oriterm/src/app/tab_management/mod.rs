@@ -212,10 +212,11 @@ impl App {
             return;
         }
 
-        // Clear bell badge on the newly active pane.
+        // Clear bell/unseen-output badges on the newly active pane.
         if let Some(id) = self.active_pane_id() {
             if let Some(mux) = self.mux.as_mut() {
                 mux.clear_bell(id);
+                mux.mark_output_seen(id);
             }
         }
 
@@ -246,6 +247,7 @@ impl App {
         if let Some(id) = self.active_pane_id() {
             if let Some(mux) = self.mux.as_mut() {
                 mux.clear_bell(id);
+                mux.mark_output_seen(id);
             }
         }
 
@@ -444,7 +446,10 @@ fn build_tab_entries(
             } else {
                 title
             };
-            oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
+            let modified = pane_id.is_some_and(|pid| mux.has_unseen_output(pid));
+            oriterm_ui::widgets::tab_bar::TabEntry::new(display)
+                .with_icon(icon)
+                .with_modified(modified)
         })
         .collect();
     (entries, active_idx)
