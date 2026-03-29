@@ -407,6 +407,13 @@ impl App {
             // only chrome animations keep the content cache stale.
             ctx.ui_stale = tab_bar_animating;
 
+            // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
+            if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
+                let border_color =
+                    crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);
+                renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
+            }
+
             // Apply deferred DXGI ResizeBuffers just before acquiring the
             // surface texture. This minimizes the gap between swap chain
             // invalidation and frame presentation, preventing the DWM from

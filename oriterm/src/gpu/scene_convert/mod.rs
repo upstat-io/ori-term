@@ -11,8 +11,7 @@
 
 mod text;
 
-#[cfg(test)]
-use text::color_to_rgb;
+pub(crate) use text::color_to_rgb;
 use text::{convert_icon, convert_text};
 
 use oriterm_ui::color::Color;
