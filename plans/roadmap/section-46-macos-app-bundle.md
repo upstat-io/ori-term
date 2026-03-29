@@ -1,11 +1,9 @@
 ---
 section: 46
 title: "macOS App Bundle & Platform Packaging"
-status: not-started
+status: partially-started
 reviewed: false
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 6
 goal: "Produce a proper macOS .app bundle so oriterm launches as a native GUI application with dock icon, Cmd+Tab switching, and correct system integration — plus add the macOS build job to CI release pipelines"
 inspired_by:
@@ -19,18 +17,15 @@ sections:
     status: not-started
   - id: "46.2"
     title: "App Icon"
-    status: not-started
+    status: partially-started
   - id: "46.3"
     title: "Bundle Assembly Script"
-    status: not-started
+    status: partially-started
   - id: "46.4"
     title: "DMG Packaging"
     status: not-started
   - id: "46.5"
     title: "CI Build Jobs (Nightly + Release)"
-    status: not-started
-  - id: "46.R"
-    title: "Third Party Review Findings"
     status: not-started
   - id: "46.6"
     title: "Section Completion"
@@ -39,13 +34,15 @@ sections:
 
 # Section 46: macOS App Bundle & Platform Packaging
 
-**Status:** Not Started
+**Status:** Partially Started
 **Goal:** oriterm launches as a first-class macOS application — proper dock icon, Cmd+Tab integration, dark mode support, Retina awareness. The nightly and release CI pipelines produce a universal (x86_64 + aarch64) `.app` bundle inside a `.dmg`. Without this, macOS users get a bare binary that launches from Terminal with no dock presence and broken focus behavior.
 
 **Context:** The nightly pipeline (`nightly.yml`) already builds a macOS binary (single-architecture aarch64 tarball), but does not produce a `.app` bundle or DMG. The release pipeline (`release.yml`) has no macOS build job at all. Running the bare `oriterm` binary on macOS inherits the launching terminal's dock icon and process identity, because macOS requires a `.app` bundle with `Info.plist` to recognize a process as a GUI application. Every reference terminal emulator (Alacritty, WezTerm, Ghostty) ships a proper `.app` bundle.
 
 **Crate:** None — this is build infrastructure and CI, not Rust code changes.
 **Dependencies:** Section 03 (Cross-Platform) — macOS compiles and runs.
+
+> **Verification Notes (2026-03-29):** Partially started -- `bundle-macos.sh` exists at repo root. The existing script builds oriterm and oriterm-mux binaries, creates `.app` directory structure, copies binaries into `Contents/MacOS/`, generates `.icns` from existing PNGs via `iconutil`, and writes a basic `Info.plist` (CFBundleName, CFBundleIdentifier, CFBundleExecutable, CFBundleIconFile, CFBundlePackageType, NSHighResolutionCapable, LSMinimumSystemVersion). Existing icon assets: `icon.svg`, `icon-{16,32,48,64,128,256}.png`, `icon.ico`. Missing from existing script: universal binary support (no lipo), codesign, DMG packaging, CI integration, usage description strings, NSRequiresAquaSystemAppearance, __VERSION__ placeholder. Missing icon assets: `icon-512.png` and `icon-1024.png` for Retina `.icns`. The existing script is at `bundle-macos.sh` (root) while the plan targets `scripts/build-macos-bundle.sh`. Nightly CI has a `build-macos` job producing single-arch aarch64 tarball (not .app/DMG). Release CI has no macOS job. The plan should acknowledge and subsume the existing script rather than treating as greenfield.
 
 **Reference implementations:**
 - **Alacritty** `extra/osx/Alacritty.app/Contents/Info.plist`: Template bundle checked into repo, Makefile assembles universal binary via `lipo`, DMG via `hdiutil`.
@@ -486,14 +483,6 @@ Upgrade the existing nightly macOS job to produce a universal `.app` bundle + DM
 
 ---
 
-## 46.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
 ## 46.6 Section Completion
 
 - [ ] `assets/macos/OriTerm.app/Contents/Info.plist` exists with correct keys
@@ -519,7 +508,5 @@ Upgrade the existing nightly macOS job to produce a universal `.app` bundle + DM
 - **Sparkle (auto-update framework)**: Some macOS apps use Sparkle for in-app updates. Not needed for now.
 - **`CFBundleVersion` auto-increment**: Currently hardcoded to `"1"`. Mac App Store submissions require a monotonically increasing build number (e.g., git commit count or CI run number). Not needed for ad-hoc distribution.
 - **`codesign --deep` deprecation**: Apple has deprecated `--deep` for new code signing submissions. When moving to Developer ID signing, sign each Mach-O binary individually rather than using `--deep` on the bundle.
-
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** The nightly and release CI pipelines produce a macOS `.dmg` containing a universal `OriTerm.app` that launches as a proper macOS GUI application with dock icon, Cmd+Tab switching, and system dark mode integration. Running the DMG build locally via `scripts/build-macos-bundle.sh --universal --release && scripts/build-macos-dmg.sh` produces the same result.

@@ -3,9 +3,7 @@ section: 42
 title: "Expose / Overview Mode"
 status: not-started
 reviewed: false
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 5
 goal: "macOS Mission Control-style Expose mode: a live GPU-rendered thumbnail grid of ALL panes across ALL windows, tabs, and panes. Full-frame modal state with keyboard/mouse navigation, type-to-filter, and instant pane switching."
 sections:
@@ -23,9 +21,6 @@ sections:
     status: not-started
   - id: "42.5"
     title: "Filter & Search"
-    status: not-started
-  - id: "42.R"
-    title: "Third Party Review Findings"
     status: not-started
   - id: "42.6"
     title: Section Completion
@@ -49,6 +44,8 @@ sections:
 - Ghostty: no equivalent
 
 **Why this matters:** With multi-window, multi-tab, multi-pane multiplexing, users lose track of where things are. Expose gives instant spatial awareness — see all terminals at once, find the one running `htop` or showing a compile error, and jump to it in one action. This is the feature that makes multiplexing feel natural rather than overwhelming.
+
+> **Verification Notes (2026-03-29):** Confirmed not started -- no expose-specific code exists (only forward-looking doc comments in compositor/animation delegates). However, significant GPU infrastructure is already in place: (1) **RenderTarget** (`oriterm/src/gpu/render_target/mod.rs`) -- complete offscreen rendering with `create_render_target(width, height)` and pixel readback. (2) **RenderTargetPool** (`oriterm/src/gpu/compositor/render_target_pool/mod.rs`) -- pooled allocation with power-of-two bucketing, acquire/release/view/texture API. This is more sophisticated than the plan's proposed `HashMap<PaneId, RenderTarget>` and should be used instead. (3) **ImagePipeline** (`oriterm/src/gpu/pipeline/image.rs`) -- textured quad WGSL pipeline already exists (vertex/fragment shaders, texture+sampler bind group layout, per-instance data). The plan proposes creating `image_pipeline.rs` as new, but it already exists. (4) **Compositor layer system** (`oriterm/src/gpu/compositor/`) -- complete with layer tree, animator, and pooled render targets. (5) `TerminalPreviewWidget` scaffold (`oriterm/src/widgets/terminal_preview/mod.rs`) -- 320x200 placeholder at 0.25 scale. Gaps: full-frame rendering replacement not specified (compositor overlay vs. short-circuit draw_frame), multi-window focus management is platform-specific, scrolling for 50+ panes unspecified, and no memory budget for thumbnail textures.
 
 **Design decisions:**
 - **Not an overlay widget** — full-frame modal state (`App.expose: Option<ExposeMode>`), like search mode. The entire viewport is replaced by the thumbnail grid.
@@ -299,14 +296,6 @@ Type-to-filter for narrowing the thumbnail grid by pane title or CWD.
 
 ---
 
-## 42.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
 ## 42.6 Section Completion
 
 - [ ] All 42.1–42.5 items complete
@@ -326,7 +315,5 @@ Type-to-filter for narrowing the thumbnail grid by pane title or CWD.
 - Entry latency: < 100ms (burst-render all thumbnails)
 - Per-frame render: < 4ms (draw N textured quads + labels)
 - Filter keystroke to layout update: < 2ms
-
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Users press `Ctrl+Shift+Space`, see a live thumbnail grid of every pane in every window and tab, navigate with arrows/mouse/hints, type to filter by title or CWD, and press Enter to jump directly to any pane. The feature provides instant spatial awareness across the entire multiplexed session — something no other terminal emulator offers.

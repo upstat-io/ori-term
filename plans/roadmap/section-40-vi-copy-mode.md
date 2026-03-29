@@ -3,9 +3,7 @@ section: 40
 title: Vi Mode + Copy Mode
 status: not-started
 reviewed: false
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 3
 goal: "Keyboard-driven terminal navigation and text selection via vi-style motions, modeled after Alacritty's vi mode and WezTerm's copy mode."
 sections:
@@ -20,9 +18,6 @@ sections:
     status: not-started
   - id: "40.4"
     title: Vi Search Integration
-    status: not-started
-  - id: "40.R"
-    title: "Third Party Review Findings"
     status: not-started
   - id: "40.5"
     title: Section Completion
@@ -45,6 +40,8 @@ sections:
 - Kitty hints mode
 
 **Why this matters:** Keyboard-only text selection is essential for SSH sessions, tiling WM users, and anyone who doesn't want to reach for the mouse. It's the #1 requested feature that separates a "serious" terminal from a toy.
+
+> **Verification Notes (2026-03-29):** Confirmed not started -- no vi mode code exists. However, there is **major overlap with the existing mark mode** (`oriterm/src/app/mark_mode/`). Mark mode already implements: `MarkCursor` struct, modal input interception, `Motion` enum with Left/Right/Up/Down/PageUp/PageDown/LineStart/LineEnd/BufferStart/BufferEnd/WordLeft/WordRight, pure motion functions in `motion.rs`, `GridBounds`/`AbsCursor` types, `WordContext` with word boundary extraction, `ensure_visible()` auto-scroll, selection integration via `extend_or_create_selection()`, and Enter-to-copy/Escape-to-exit. The plan does not mention mark mode at all -- it proposes `vi_mode.rs` as a new file without addressing whether vi mode replaces, extends, or coexists with mark mode. The motion infrastructure in `mark_mode/motion.rs` is directly reusable. Additional gaps: (1) Block/rectangular selection (`Ctrl+V`) missing from `SelectionMode` enum (only Char/Word/Line exist), (2) multi-key command parser (gg, f<char>, zz) not specified, (3) no count prefix support (5j, 3w), (4) dependencies listed as "Sections 08, 09, 11 complete" but actual code for keyboard dispatch, selection, and search already exists in production. The search infrastructure (`oriterm_core/src/search/`) and `SnapshotGrid` for grid querying are also directly reusable.
 
 ---
 
@@ -226,14 +223,6 @@ Search from within vi mode using `/` and `?` motions.
 
 ---
 
-## 40.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
 ## 40.5 Section Completion
 
 - [ ] All 40.1–40.4 items complete
@@ -249,7 +238,5 @@ Search from within vi mode using `/` and `?` motions.
 - [ ] Auto-scroll follows vi cursor through scrollback
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all vi mode tests pass
-
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Power users can navigate the entire scrollback, select arbitrary text, and yank to clipboard without touching the mouse. Vi mode feels natural to vim users — all standard motions work as expected.

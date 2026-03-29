@@ -7,6 +7,7 @@ third_party_review:
   status: none
   updated: null
 tier: 7A
+last_verified: "2026-03-29"
 goal: Network transport for the wire protocol, authentication, MuxDomain for remote daemon connections, `oriterm connect` CLI, bandwidth-aware rendering over high-latency links
 sections:
   - id: "36.1"
@@ -52,6 +53,14 @@ sections:
 **Two remote modes:**
 1. **SSH tunnel mode** (simple, secure) — tunnel the existing local IPC protocol over `ssh -L`. Zero new attack surface. Works anywhere SSH works.
 2. **Native TLS mode** (lower latency) — direct TCP + TLS connection. Eliminates SSH overhead for dedicated setups.
+
+> **Verification notes (2026-03-29):**
+> - Confirmed not-started. No network transport, TLS, Transport trait abstraction, authentication, RemoteMuxDomain, `oriterm connect` CLI, or bandwidth measurement code exists.
+> - **Dependency chain note**: Plan says "depends on Section 34" which depends on Section 44. The actual dependency should be Section 44 (already complete) plus the genuine hardening items from Section 34 (compression, version negotiation). The core wire protocol and daemon are fully operational.
+> - **Infrastructure available from Section 44**: `oriterm_ipc` crate (local IPC), `MuxBackend` trait, `Domain` trait, `MuxClient::ping_rpc()` (measures round-trip), push-based snapshot delivery with backpressure, all wire protocol PDU types.
+> - Existing `Ping`/`PingAck` mechanism is purely diagnostic but could be extended for network quality measurement.
+> - Scope is very large (network transport, TLS, authentication, new domain, CLI subcommand, adaptive rendering). Consider splitting into multiple implementation phases.
+> - SSH tunnel mode should be prioritized over native TLS -- simpler, more secure, works through firewalls.
 
 ---
 

@@ -22,14 +22,13 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 | ~~4~~ | ~~23.3 — Memory Optimization: Atlas Over-Allocation~~ | ~~Complete~~ |
 | ~~5~~ | ~~23.3 — Memory Optimization: Font Data Deduplication~~ | ~~Complete~~ |
 | ~~6~~ | ~~23.3 — Memory Optimization: Content Cache Texture~~ | ~~Complete — GPU-only texture (no RSS impact), 20x idle CPU savings justifies the cost~~ |
-| 7 | 24.8 — Window Backdrop Effects | Transparency reroute — expand backdrop enum, Mica support, platform material selection |
 
 ---
 
 ## Keyword Clusters by Section
 
 ### Section 01: Cell + Grid
-**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** In Progress (TPR findings)
+**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete
 ```
 cell, Cell, CellFlags, CellExtra, rich cell, 24 bytes
 grid, Grid, Row, rows, columns, viewport
@@ -257,7 +256,7 @@ DialogWidget, MenuWidget, FormLayout, SettingsPanelWidget, TabBarWidget, WindowC
 ---
 
 ### Section 08: Keyboard Input
-**File:** `section-08-keyboard-input.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-08-keyboard-input.md` | **Tier:** 3 | **Status:** Not Started
 
 ```
 keyboard, key encoding, legacy, xterm, key event
@@ -272,7 +271,7 @@ IME, input method, Ime::Commit, Ime::Preedit, composition
 ---
 
 ### Section 09: Selection & Clipboard
-**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** In Progress
+**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** Not Started
 
 ```
 selection, Selection, SelectionRange, SelectionPoint, SelectionMode
@@ -310,7 +309,7 @@ auto-scroll, drag above/below viewport
 ---
 
 ### Section 11: Search
-**File:** `section-11-search.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-11-search.md` | **Tier:** 3 | **Status:** Not Started
 
 ```
 search, SearchState, SearchMatch, regex, plain text
@@ -322,7 +321,7 @@ row_text, text extraction, byte offset mapping
 ---
 
 ### Section 12: Resize & Reflow
-**File:** `section-12-resize-reflow.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-12-resize-reflow.md` | **Tier:** 3 | **Status:** Not Started
 
 ```
 reflow, resize, Grid::resize, logical line, re-wrap
@@ -337,7 +336,7 @@ zero dimension guard, alternate screen resize
 ---
 
 ### Section 13: Configuration & Keybindings
-**File:** `section-13-config-keybindings.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-13-config-keybindings.md` | **Tier:** 3 | **Status:** Not Started
 
 ```
 config, Config, TOML, config.toml, hot reload
@@ -351,7 +350,7 @@ zoom, font size, Ctrl+=, Ctrl+-
 ---
 
 ### Section 14: URL Detection
-**File:** `section-14-url-detection.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-14-url-detection.md` | **Tier:** 3 | **Status:** Not Started
 
 ```
 URL, url_detect, hover, Ctrl+click, hyperlink
@@ -391,13 +390,12 @@ tab bar hit testing, TabBarHit, CloseTab, NewTab, DropdownButton, DragArea
 close button inset, platform-specific controls, Windows rectangular, macOS circular
 tab hover preview, terminal preview, thumbnail, TerminalPreviewWidget, offscreen render
 tab icon, emoji, TabIcon, process icon, OSC 1, icon name, color emoji in tab
-tab title editing, rename tab, double-click rename, inline edit, TextEditingState
 ```
 
 ---
 
 ### Section 17: Drag & Drop
-**File:** `section-17-drag-drop.md` | **Tier:** 4 | **Status:** Complete
+**File:** `section-17-drag-drop.md` | **Tier:** 4 | **Status:** In Progress (17.1 complete)
 
 ```
 drag, DragState, DragPhase, Pending, DraggingInBar
@@ -443,7 +441,7 @@ ControlFlow, WaitUntil, cursor blink scheduling, performance stats
 ---
 
 ### Section 20: Shell Integration
-**File:** `section-20-shell-integration.md` | **Tier:** 4 | **Status:** Complete
+**File:** `section-20-shell-integration.md` | **Tier:** 4 | **Status:** Not Started
 
 ```
 shell integration, Shell, detect_shell, inject, ZDOTDIR, XDG_DATA_DIRS
@@ -481,7 +479,7 @@ profile quick-launch, taskbar integration, start menu
 ---
 
 ### Section 22: Terminal Modes
-**File:** `section-22-terminal-modes.md` | **Tier:** 5 | **Status:** Complete
+**File:** `section-22-terminal-modes.md` | **Tier:** 5 | **Status:** Mostly Complete
 
 ```
 DECSET, DECRST, terminal modes, mode table
@@ -500,7 +498,7 @@ save/restore modes, XTSAVE, XTRESTORE
 ---
 
 ### Section 23: Performance & Damage Tracking
-**File:** `section-23-performance.md` | **Tier:** 5 | **Status:** In Progress
+**File:** `section-23-performance.md` | **Tier:** 5 | **Status:** Not Started
 
 ```
 damage tracking, DirtyTracker, per-row dirty, column-level damage, LineDamageBounds, DamageLine
@@ -542,7 +540,7 @@ capability reporting, progressive enhancement, feature discovery
 ---
 
 ### Section 39: Image Protocols
-**File:** `section-39-image-protocols.md` | **Tier:** 5 | **Status:** In Progress
+**File:** `section-39-image-protocols.md` | **Tier:** 5 | **Status:** Not Started
 
 ```
 image, inline image, image protocol, image cache, ImageData, ImagePlacement
@@ -617,7 +615,7 @@ live thumbnails, GPU thumbnails, pane switching, cross-window
 ---
 
 ### Section 43: Compositor Layer System + Animation Architecture
-**File:** `section-43-compositor-layers.md` | **Tier:** 5 | **Status:** Complete
+**File:** `section-43-compositor-layers.md` | **Tier:** 5 | **Status:** Not Started
 
 ```
 compositor, layer, LayerId, LayerType, LayerProperties, LayerTree
@@ -719,7 +717,7 @@ session serialization, workspace presets, broadcast input
 ---
 
 ### Section 44: Multi-Process Window Architecture
-**File:** `section-44-multi-process-windows.md` | **Tier:** 0 | **Status:** Complete
+**File:** `section-44-multi-process-windows.md` | **Tier:** 0 (BLOCKER) | **Status:** Not Started
 
 ```
 multi-process, process-per-window, window process, daemon, mux daemon
@@ -755,18 +753,17 @@ clipboard_max_size, primary_write, primary_read, ask policy, deny policy
 ---
 
 ### Section 29: Mux Crate + Layout Engine
-**File:** `section-29-mux-layout-engine.md` | **Tier:** 4M | **Status:** Complete
+**File:** `section-29-mux-layout-engine.md` | **Tier:** 4M | **Status:** Not Started
 
 ```
 oriterm_mux, mux crate, multiplexing foundation, workspace member
-PaneId, DomainId, ClientId, newtype IDs, IdAllocator
-TabId, WindowId (in oriterm/src/session/id/)
-SplitTree, immutable tree, structural sharing, Arc, COW (in oriterm/src/session/split_tree/)
+PaneId, TabId, WindowId, SessionId, DomainId, newtype IDs, IdAllocator
+SplitTree, immutable tree, structural sharing, Arc, COW
 SplitDirection, Horizontal, Vertical, ratio, split_at, remove, equalize
-FloatingLayer, FloatingPane, z_order, hit_test, floating overlay (in oriterm/src/session/floating/)
-LayoutDescriptor, PaneLayout, DividerLayout, compute_layout, compute_dividers (in oriterm/src/session/compute/)
+FloatingLayer, FloatingPane, z_order, hit_test, floating overlay
+LayoutDescriptor, PaneLayout, DividerLayout, compute_layout, compute_dividers
 pixel rect, cell grid snapping, divider_px, min_pane_cells
-spatial navigation, navigate, Direction, Up, Down, Left, Right, cycle (in oriterm/src/session/nav/)
+spatial navigation, navigate, Direction, Up, Down, Left, Right, cycle
 nearest_pane, ray cast, directional movement
 ```
 
@@ -792,7 +789,7 @@ PaneOutput, PaneExited, PaneTitleChanged, PaneBell
 ---
 
 ### Section 31: In-Process Mux + Multi-Pane Rendering
-**File:** `section-31-in-process-mux.md` | **Tier:** 4M | **Status:** Complete
+**File:** `section-31-in-process-mux.md` | **Tier:** 4M | **Status:** Not Started
 
 ```
 InProcessMux, in-process mux, synchronous fast path, no daemon
@@ -808,7 +805,7 @@ single-pane fast path, zero overhead, backward compatibility
 ---
 
 ### Section 32: Tab & Window Management (Mux-Aware)
-**File:** `section-32-tab-window-mux.md` | **Tier:** 4M | **Status:** Complete
+**File:** `section-32-tab-window-mux.md` | **Tier:** 4M | **Status:** Not Started
 
 ```
 mux-aware tab, tab CRUD, new_tab_in_window, close_tab, duplicate_tab
@@ -826,7 +823,7 @@ handle_resize, handle_scale_factor_changed, resize ALL panes
 ---
 
 ### Section 33: Split Navigation + Floating Panes
-**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** Complete
+**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** In Progress
 
 ```
 spatial navigation, Alt+Arrow, focus pane direction, cycle pane
@@ -999,7 +996,7 @@ zellij modes, tmux key table, wezterm key_tables
 ```
 
 ### Section 50: Runtime Efficiency — CPU & Memory Tuning
-**File:** `section-50-runtime-efficiency.md` | **Tier:** 2 | **Status:** Complete
+**File:** `section-50-runtime-efficiency.md` | **Tier:** 2 | **Status:** Not Started
 
 ```
 idle CPU, CPU usage, event loop spin, busy wait, ControlFlow::Wait, ControlFlow
@@ -1024,49 +1021,13 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | Auto-scroll on output config | Section 13 (complete) | Config: `scroll-to-bottom = output` — auto-scroll on any terminal output |
 | Working directory inheritance controls | Section 20 (complete) | Separate `tab-inherit-working-directory` and `split-inherit-working-directory` |
 | Mouse reporting disable toggle | Section 10 (complete) | Config: `mouse-reporting = false` disables all TUI mouse reporting |
-| Tab title inline editing (double-click) | Section 16 (in-progress) | Double-click tab label to edit title inline |
-| Readonly surfaces | Section 33 (complete) / new | Mark surfaces as readonly to prevent input |
+| Tab title inline editing (double-click) | Section 16 (not started) | Double-click tab label to edit title inline |
+| Readonly surfaces | Section 33 / new | Mark surfaces as readonly to prevent input |
 | Custom shader uniforms | Section 28 (not started) | Cursor shape, position, time since change, color scheme |
 | Unicode 17 grapheme clustering | Section 06 (complete) | Full UAX#29 conformance for multi-codepoint characters |
 | Brahmic/complex script rendering | Section 06 (complete) | Devanagari, Bengali, Tibetan, Javanese, Tai Tham, Chakma |
-| Split drag & drop with grab handles | Section 33 (complete) | Reorder, move to tabs, or extract splits |
+| Split drag & drop with grab handles | Section 33 (in-progress) | Reorder, move to tabs, or extract splits |
 | Selection word boundary chars | Section 9 (in-progress) | Config: `selection-word-chars` customizes double-click word selection |
-| Update checking + auto-update | New section needed | Thread real update metadata through `dialog_management.rs` and `content_actions.rs` rebuild path (UI plumbing complete in §10.5, passes `None` until update system exists) |
-
----
-
-### Known Gaps — Features Not Covered by Any Section
-
-These are features expected of a modern terminal emulator or mentioned in project goals that currently have no delivering section. They should be addressed with new sections or folded into existing ones.
-
-| Gap | Severity | Notes |
-|-----|----------|-------|
-| **Accessibility** (screen readers, high contrast, reduced motion) | High | No section covers screen reader integration (UIA on Windows, AT-SPI on Linux, NSAccessibility on macOS), high-contrast mode detection, or `prefers-reduced-motion` support. Modern terminals (Windows Terminal, Ghostty) increasingly support accessibility. Consider a new section (e.g., 51). |
-| **Windows/Linux release packaging** | High | Section 46 covers macOS only. No section for Windows installer (MSI/MSIX/WiX), Linux packaging (deb, rpm, AppImage, Flatpak, Snap), Windows Store, or cross-platform CI release pipeline. Section 46 title says "Platform Packaging" but content is macOS-only. |
-| **Update checking + auto-update** | Medium | Already flagged in Ghostty parity table above. Needs its own section — update metadata check, notification UI, download/install flow (platform-specific). |
-| **BiDi text / RTL rendering** | Medium | Arabic, Hebrew, and other RTL scripts require Unicode BiDi algorithm (UAX #9) for correct display. No section addresses this. Could extend section 06 or create a new section. Complex input methods beyond basic IME (Compose key on Linux, dead keys) also unplanned. |
-| **Structured logging / diagnostics** | Low | No section for structured logging levels, log file rotation, or crash dump collection. Section 27 mentions "terminal inspector" briefly but it is bundled with command palette. Debug overlay (FPS, atlas stats) mentioned in 23 but not formalized. |
-| **Configurable terminal padding** | Low | Grid padding (insets between window edge and terminal content) is a standard config option in Alacritty, Ghostty, WezTerm, Kitty. Currently hardcoded constants. Should be folded into section 13 (Config) or 24 (Visual Polish). |
-
-### Milestone Coverage Verification
-
-| Milestone | Status | Delivering Sections | Coverage Notes |
-|-----------|--------|--------------------|----|
-| M1: Lib compiles | Nearly complete | 01 (in-progress), 02 (complete) | Section 01 only has 1.12 "Section Completion" remaining — all functional code done. |
-| M2: Cross-platform | Complete | 03 (complete) | |
-| M3: Shell runs | Complete | 04 (complete) | |
-| M4: Terminal renders | Complete | 05 (complete) | |
-| M5: Full font pipeline | Complete | 06 (complete) | |
-| M6: UI framework | In progress | 07 (in-progress) | 07.8 (Overlay), 07.11 (Terminal Grid Widget), 07.12 (Section Completion) remain. |
-| M7: Interactive | **Blocked** | 08-14 (complete), **40 (not started)**, **41 (not started)** | Vi Mode (40) and Hints (41) are tier 3 but not yet started. M7 cannot be declared complete until these are done. |
-| M8: Multiplexing | Complete | 29-33 (all complete) | |
-| M8b: Chrome | In progress | 16 (in-progress), 17 (complete), 19 (in-progress), 20 (complete), 21 (in-progress) | Three sections still in progress. |
-| M9: Hardened | In progress | 22 (complete), 23 (in-progress), **38 (not started)**, 39 (in-progress) | Section 38 (Protocol Extensions) not started — blocks DA/DECRQM/XTGETTCAP which many TUI apps probe. Tier 5 sections 42, 43, 45, 47-49 share the tier but are not M9 deliverables (no milestone assigned). |
-| M10: Polished | In progress | 24 (in-progress), 25 (in-progress) | 24 has 5 subsections not started (24.3, 24.6, 24.7, 24.9, 24.10). 25 has 25.3-25.4 in progress. |
-| M11: Advanced | Not started | 27 (not started), 28 (not started) | |
-| M12: Server mode | Not started | 34 (not started), 35 (not started) | |
-| M13: Remote attach | Not started | 36 (not started) | |
-| M14: TUI client | Not started | 37 (not started) | |
 
 ---
 
@@ -1074,33 +1035,33 @@ These are features expected of a modern terminal emulator or mentioned in projec
 
 | ID | Title | File | Tier | Status |
 |----|-------|------|------|--------|
-| 01 | Cell + Grid | `section-01-cell-grid.md` | 0 | In Progress |
-| 02 | Terminal State Machine + VTE | `section-02-term-vte.md` | 0 | Complete |
-| 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Complete |
-| 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Complete |
-| 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | Complete |
-| 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Complete |
+| 01 | Cell + Grid | `section-01-cell-grid.md` | 0 | Not Started |
+| 02 | Terminal State Machine + VTE | `section-02-term-vte.md` | 0 | Not Started |
+| 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Not Started |
+| 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
+| 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
+| 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Not Started (blocks 06) |
 | 05C | Window Chrome | `section-05c-window-chrome.md` | 2 | Complete |
 | 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | Complete |
-| 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | In Progress |
-| 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Complete |
-| 09 | Selection & Clipboard | `section-09-selection-clipboard.md` | 3 | In Progress |
+| 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
+| 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |
+| 09 | Selection & Clipboard | `section-09-selection-clipboard.md` | 3 | Not Started |
 | 10 | Mouse Input & Reporting | `section-10-mouse-input.md` | 3 | Complete |
-| 11 | Search | `section-11-search.md` | 3 | Complete |
-| 12 | Resize & Reflow | `section-12-resize-reflow.md` | 3 | Complete |
-| 13 | Configuration & Keybindings | `section-13-config-keybindings.md` | 3 | Complete |
-| 14 | URL Detection | `section-14-url-detection.md` | 3 | Complete |
+| 11 | Search | `section-11-search.md` | 3 | Not Started |
+| 12 | Resize & Reflow | `section-12-resize-reflow.md` | 3 | Not Started |
+| 13 | Configuration & Keybindings | `section-13-config-keybindings.md` | 3 | Not Started |
+| 14 | URL Detection | `section-14-url-detection.md` | 3 | Not Started |
 | 15 | Tab Struct & Management | `section-15-tab-management.md` | 4 | Superseded → 30, 32 |
 | 16 | Tab Bar & Chrome | `section-16-tab-bar.md` | 4 | In Progress |
-| 17 | Drag & Drop | `section-17-drag-drop.md` | 4 | Complete |
+| 17 | Drag & Drop | `section-17-drag-drop.md` | 4 | Not Started |
 | 18 | Multi-Window & Window Lifecycle | `section-18-multi-window.md` | 4 | Superseded → 32 |
 | 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | In Progress |
-| 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Complete |
+| 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Not Started |
 | 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | In Progress |
-| 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Complete |
-| 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | In Progress |
+| 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Mostly Complete |
+| 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | Not Started |
 | 38 | Terminal Protocol Extensions | `section-38-protocol-extensions.md` | 5 | Not Started |
-| 39 | Image Protocols | `section-39-image-protocols.md` | 5 | In Progress |
+| 39 | Image Protocols | `section-39-image-protocols.md` | 5 | Not Started |
 | 40 | Vi Mode + Copy Mode | `section-40-vi-copy-mode.md` | 3 | Not Started |
 | 41 | Hints + Quick Select | `section-41-hints-quick-select.md` | 3 | Not Started |
 | 24 | Visual Polish | `section-24-visual-polish.md` | 6 | In Progress |
@@ -1108,32 +1069,32 @@ These are features expected of a modern terminal emulator or mentioned in projec
 | 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
 | 27 | Command Palette & Quick Terminal | `section-27-command-palette.md` | 7 | Not Started |
 | 28 | Extensibility | `section-28-extensibility.md` | 7 | Not Started |
-| 29 | Mux Crate + Layout Engine | `section-29-mux-layout-engine.md` | 4M | Complete |
+| 29 | Mux Crate + Layout Engine | `section-29-mux-layout-engine.md` | 4M | Not Started |
 | 30 | Pane Extraction + Domain System | `section-30-pane-domain.md` | 4M | Complete |
-| 31 | In-Process Mux + Multi-Pane Rendering | `section-31-in-process-mux.md` | 4M | Complete |
-| 32 | Tab & Window Management (Mux-Aware) | `section-32-tab-window-mux.md` | 4M | Complete |
-| 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | Complete |
+| 31 | In-Process Mux + Multi-Pane Rendering | `section-31-in-process-mux.md` | 4M | Not Started |
+| 32 | Tab & Window Management (Mux-Aware) | `section-32-tab-window-mux.md` | 4M | Not Started |
+| 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | In Progress |
 | 34 | IPC Protocol + Daemon Mode | `section-34-ipc-daemon.md` | 7A | Not Started |
 | 35 | Session Persistence + Remote Domains | `section-35-persistence-remote.md` | 7A | Not Started |
 | 36 | Remote Attach + Network Transport | `section-36-remote-attach.md` | 7A | Not Started |
 | 37 | TUI Client | `section-37-tui-client.md` | 7A | Not Started |
 | 42 | Expose / Overview Mode | `section-42-expose-overview.md` | 5 | Not Started |
-| 43 | Compositor Layer System + Animation Architecture | `section-43-compositor-layers.md` | 5 | Complete |
-| 44 | Multi-Process Window Architecture | `section-44-multi-process-windows.md` | 0 | Complete |
+| 43 | Compositor Layer System + Animation Architecture | `section-43-compositor-layers.md` | 5 | Not Started |
+| **44** | **Multi-Process Window Architecture** | **`section-44-multi-process-windows.md`** | **0 (BLOCKER)** | **Not Started** |
 | 45 | Security Hardening | `section-45-security-hardening.md` | 5 | Not Started |
 | 46 | macOS App Bundle & Platform Packaging | `section-46-macos-app-bundle.md` | 6 | Not Started |
 | 47 | Semantic Prompt State Management | `section-47-semantic-prompt-state.md` | 5 | Not Started |
 | 48 | Native OS Scrollbars | `section-48-native-scrollbars.md` | 5 | Not Started |
 | 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
-| 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Complete |
+| 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Not Started |
 
 ## Tier Summary
 
 | Tier | Sections | Theme |
 |------|----------|-------|
-| **0** | **01-03, 44** | **Core library + cross-platform architecture + multi-process window model** |
+| **0** | **01-03, 44** | **Core library + cross-platform architecture + multi-process window model (44 is BLOCKER)** |
 | 1 | 04 | Process layer (PTY, threads) |
-| 2 | 05, 05B, 05C, 06-07, 50 | Rendering foundation (window, GPU, chrome, fonts, UI framework) + runtime efficiency |
+| 2 | 05, 05B, 06-07, 50 | Rendering foundation (window, GPU, fonts, UI framework) + runtime efficiency |
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
@@ -1197,7 +1158,7 @@ These are features expected of a modern terminal emulator or mentioned in projec
                             |
   ┌─────────────────────────┤
   |                         |
-  44 Multi-Process Windows  |   *** COMPLETE ***
+  44 Multi-Process Windows  |   *** BLOCKER — do this FIRST ***
   |  (depends on 30, 32)    |
   |  (supersedes 32.4)      |
   |                         |
