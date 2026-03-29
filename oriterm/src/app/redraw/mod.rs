@@ -419,12 +419,7 @@ impl App {
                 let pane_count = 1;
                 ctx.status_bar
                     .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
-                        shell_name: self
-                            .mux
-                            .as_ref()
-                            .and_then(|m| m.pane_snapshot(pane_id))
-                            .map(|s| s.title.clone())
-                            .unwrap_or_default(),
+                        shell_name: "shell".into(),
                         pane_count: format!(
                             "{pane_count} pane{}",
                             if pane_count == 1 { "" } else { "s" }
