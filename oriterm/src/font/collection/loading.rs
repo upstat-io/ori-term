@@ -44,11 +44,11 @@ impl FontByteCache {
 ///
 /// Cheap to clone: font bytes are `Arc`-shared, index is `Copy`.
 #[derive(Clone)]
-pub(super) struct FontData {
+pub(crate) struct FontData {
     /// Font file bytes shared via `Arc` for rustybuzz face creation.
-    pub(super) data: Arc<Vec<u8>>,
+    pub(crate) data: Arc<Vec<u8>>,
     /// Face index within a `.ttc` collection (0 for standalone `.ttf`).
-    pub(super) index: u32,
+    pub(crate) index: u32,
 }
 
 /// Four style variants, optional medium weight, and ordered fallback chain.

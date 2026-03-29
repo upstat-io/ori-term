@@ -108,6 +108,16 @@ impl UiFontSizes {
         })
     }
 
+    /// Inject fallback fonts into all collections in the registry.
+    ///
+    /// Used to add the terminal font's emoji fallback so emoji render at
+    /// the correct UI text size through `FontSource::Ui`.
+    pub(crate) fn inject_fallbacks(&mut self, data: &[super::collection::loading::FontData]) {
+        for fc in self.collections.values_mut() {
+            fc.append_fallback_data(data);
+        }
+    }
+
     // Accessors
 
     /// The default body text collection (13px logical).
