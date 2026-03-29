@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Status Bar Widget"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Create a StatusBarWidget in oriterm_ui following all widget conventions, rendering a 22px bar with shell name, pane count, grid size, encoding, and term type — matching mockup exactly, with golden tests."
 inspired_by:
@@ -15,19 +15,19 @@ third_party_review:
 sections:
   - id: "02.1"
     title: "StatusBarWidget Struct & Data Model"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "Layout & Paint"
-    status: not-started
+    status: complete
   - id: "02.3"
     title: "Theme Integration"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "WidgetTestHarness Tests"
-    status: not-started
+    status: complete
   - id: "02.5"
     title: "Golden Tests"
-    status: not-started
+    status: in-progress
   - id: "02.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -70,10 +70,10 @@ Create the widget struct and data model. The status bar displays terminal metada
 </div>
 ```
 
-- [ ] Create directory `oriterm_ui/src/widgets/status_bar/`
-- [ ] Create `oriterm_ui/src/widgets/status_bar/mod.rs` with `//!` module doc
-- [ ] Add `pub mod status_bar;` to `oriterm_ui/src/widgets/mod.rs` (between `sidebar_nav` and `slider` alphabetically, around line 38). The existing pattern is `pub mod name;` with no re-exports — consumers use `oriterm_ui::widgets::status_bar::StatusBarWidget` directly.
-- [ ] Define `StatusBarData`:
+- [x] Create directory `oriterm_ui/src/widgets/status_bar/`
+- [x] Create `oriterm_ui/src/widgets/status_bar/mod.rs` with `//!` module doc
+- [x] Add `pub mod status_bar;` to `oriterm_ui/src/widgets/mod.rs` (between `sidebar_nav` and `slider` alphabetically, around line 38). The existing pattern is `pub mod name;` with no re-exports — consumers use `oriterm_ui::widgets::status_bar::StatusBarWidget` directly.
+- [x] Define `StatusBarData`:
   ```rust
   /// Terminal metadata displayed in the status bar.
   pub struct StatusBarData {
@@ -89,7 +89,7 @@ Create the widget struct and data model. The status bar displays terminal metada
       pub term_type: String,
   }
   ```
-- [ ] Define `StatusBarColors`:
+- [x] Define `StatusBarColors`:
   ```rust
   /// Colors for status bar rendering, derived from UiTheme.
   #[derive(Debug, Clone, Copy, PartialEq)]
@@ -111,7 +111,7 @@ Create the widget struct and data model. The status bar displays terminal metada
       }
   }
   ```
-- [ ] Define `StatusBarWidget`:
+- [x] Define `StatusBarWidget`:
   ```rust
   pub struct StatusBarWidget {
       id: WidgetId,
@@ -120,11 +120,11 @@ Create the widget struct and data model. The status bar displays terminal metada
       window_width: f32,
   }
   ```
-- [ ] Constructor: `StatusBarWidget::new(window_width: f32, theme: &UiTheme) -> Self`
-- [ ] Setters: `set_data(&mut self, data: StatusBarData)`, `set_window_width(&mut self, width: f32)`, `apply_theme(&mut self, theme: &UiTheme)`
-- [ ] Implement `Default` for `StatusBarData` (all empty strings) so the widget can be constructed before terminal data is available. The `set_data()` method updates it once real data arrives.
-- [ ] Export `STATUS_BAR_HEIGHT` as `pub const` (not just file-scoped `const`) so Section 04.2 can import it in `chrome/mod.rs` for layout calculations. Alternatively, expose it via `StatusBarWidget::height() -> f32` as a method. Prefer the const export for consistency with `TAB_BAR_HEIGHT`.
-- [ ] **File size guard**: `mod.rs` will contain `StatusBarWidget`, `StatusBarData`, `StatusBarColors`, constants, `Widget` impl, and setters. Estimate ~250 lines. Well under the 500-line limit. If it grows, split colors into `colors.rs` submodule (same pattern as tab_bar).
+- [x] Constructor: `StatusBarWidget::new(window_width: f32, theme: &UiTheme) -> Self`
+- [x] Setters: `set_data(&mut self, data: StatusBarData)`, `set_window_width(&mut self, width: f32)`, `apply_theme(&mut self, theme: &UiTheme)`
+- [x] Implement `Default` for `StatusBarData` (all empty strings) so the widget can be constructed before terminal data is available. The `set_data()` method updates it once real data arrives.
+- [x] Export `STATUS_BAR_HEIGHT` as `pub const` (not just file-scoped `const`) so Section 04.2 can import it in `chrome/mod.rs` for layout calculations. Alternatively, expose it via `StatusBarWidget::height() -> f32` as a method. Prefer the const export for consistency with `TAB_BAR_HEIGHT`.
+- [x] **File size guard**: `mod.rs` will contain `StatusBarWidget`, `StatusBarData`, `StatusBarColors`, constants, `Widget` impl, and setters. Estimate ~250 lines. Well under the 500-line limit. If it grows, split colors into `colors.rs` submodule (same pattern as tab_bar).
 
 **Validation:** Module compiles. `StatusBarWidget` can be constructed.
 
@@ -147,7 +147,7 @@ Implement the Widget trait with proper layout and paint.
 }
 ```
 
-- [ ] Add constants:
+- [x] Add constants:
   ```rust
   const STATUS_BAR_HEIGHT: f32 = 22.0;
   const STATUS_BAR_PADDING_X: f32 = 10.0;
@@ -155,7 +155,7 @@ Implement the Widget trait with proper layout and paint.
   const STATUS_BAR_GAP: f32 = 16.0;
   const STATUS_BAR_FONT_SIZE: f32 = 11.0;
   ```
-- [ ] Implement `Widget` trait (follow `LabelWidget` pattern from `label/mod.rs`):
+- [x] Implement `Widget` trait (follow `LabelWidget` pattern from `label/mod.rs`):
   - `id()`: return `self.id`
   - `is_focusable()`: `false` (override default which checks `sense().has_focus()` — Sense::none() already returns false, but explicit override is clearer)
   - `sense()`: `Sense::none()` (display-only, no interaction)
@@ -171,10 +171,10 @@ Implement the Widget trait with proper layout and paint.
        - Term type (rightmost): accent color, 11px font — position at `x - shaped.width`, then `x -= shaped.width + STATUS_BAR_GAP`
        - Encoding: text color, 11px font — position at `x - shaped.width`
     5. All text vertically centered: `y = ctx.bounds.y() + (STATUS_BAR_HEIGHT - shaped.height) / 2.0`
-- [ ] Handle empty data gracefully (empty strings skip rendering for that item, don't add gap)
-- [ ] The mockup shows a `<span class="status-separator"></span>` between the left group (shell, panes, grid) and right group (encoding, term). This is a visual spacer, not a drawn element — the gap between the two groups is implicit because the left group is left-aligned and the right group is right-aligned. No explicit separator drawing needed, but verify the gap is visually correct in the golden test.
-- [ ] Use `TextStyle::new(STATUS_BAR_FONT_SIZE, color)` for all text. Shape via `ctx.measurer.shape(text, &style, f32::INFINITY)` which returns a `ShapedText` with `.width` and `.height` fields. Draw via `ctx.scene.push_text(Point::new(x, y), shaped, color)`. This matches the `LabelWidget::paint()` pattern exactly (label/mod.rs lines 122-131).
-- [ ] The `\u{00d7}` (multiplication sign, times) character in grid size renders correctly via the font pipeline — IBM Plex Mono (the embedded UI font) includes this character. Verify by checking the `status_bar_full_data_96dpi` golden test.
+- [x] Handle empty data gracefully (empty strings skip rendering for that item, don't add gap)
+- [x] The mockup shows a `<span class="status-separator"></span>` between the left group (shell, panes, grid) and right group (encoding, term). This is a visual spacer, not a drawn element — the gap between the two groups is implicit because the left group is left-aligned and the right group is right-aligned. No explicit separator drawing needed, but verify the gap is visually correct in the golden test.
+- [x] Use `TextStyle::new(STATUS_BAR_FONT_SIZE, color)` for all text. Shape via `ctx.measurer.shape(text, &style, f32::INFINITY)` which returns a `ShapedText` with `.width` and `.height` fields. Draw via `ctx.scene.push_text(Point::new(x, y), shaped, color)`. This matches the `LabelWidget::paint()` pattern exactly (label/mod.rs lines 122-131).
+- [x] The `\u{00d7}` (multiplication sign, times) character in grid size renders correctly via the font pipeline — IBM Plex Mono (the embedded UI font) includes this character. Verify by checking the `status_bar_full_data_96dpi` golden test.
 
 **Validation:** StatusBarWidget paints all items at correct positions with correct colors.
 
@@ -186,9 +186,9 @@ Implement the Widget trait with proper layout and paint.
 
 Ensure the status bar properly integrates with the theme system.
 
-- [ ] `StatusBarColors::from_theme()` uses only `UiTheme` fields (no hardcoded colors)
-- [ ] All public types (`StatusBarWidget`, `StatusBarData`, `StatusBarColors`) are `pub` in `mod.rs` — the `pub mod status_bar;` in `widgets/mod.rs` (from 02.1) makes them accessible as `oriterm_ui::widgets::status_bar::StatusBarWidget`. No additional re-export needed (consistent with how `LabelWidget`, `TabBarWidget` etc. are exported).
-- [ ] The widget does NOT need controllers (no hover, click, focus) — it's pure display. Return empty from `controllers()` (the default impl returns empty, so no override needed).
+- [x] `StatusBarColors::from_theme()` uses only `UiTheme` fields (no hardcoded colors)
+- [x] All public types (`StatusBarWidget`, `StatusBarData`, `StatusBarColors`) are `pub` in `mod.rs` — the `pub mod status_bar;` in `widgets/mod.rs` (from 02.1) makes them accessible as `oriterm_ui::widgets::status_bar::StatusBarWidget`. No additional re-export needed (consistent with how `LabelWidget`, `TabBarWidget` etc. are exported).
+- [x] The widget does NOT need controllers (no hover, click, focus) — it's pure display. Return empty from `controllers()` (the default impl returns empty, so no override needed).
 
 **Validation:** `cargo test -p oriterm_ui` compiles. StatusBarWidget is accessible from `oriterm_ui::widgets::status_bar::StatusBarWidget`.
 
@@ -200,9 +200,9 @@ Ensure the status bar properly integrates with the theme system.
 
 Write headless widget tests using the WidgetTestHarness.
 
-- [ ] Create `oriterm_ui/src/widgets/status_bar/tests.rs`
-- [ ] Add `#[cfg(test)] mod tests;` at the bottom of `mod.rs`
-- [ ] **Test: `status_bar_layout_fixed_height`** — Verify layout returns 22px height. Note: `WidgetTestHarness::new()` accepts `impl Widget + 'static`. The harness does layout automatically. Use `render()` to get a `Scene`, and verify widget bounds via the scene or by querying the widget directly.
+- [x] Create `oriterm_ui/src/widgets/status_bar/tests.rs`
+- [x] Add `#[cfg(test)] mod tests;` at the bottom of `mod.rs`
+- [x] **Test: `status_bar_layout_fixed_height`** — Verify layout returns 22px height. Note: `WidgetTestHarness::new()` accepts `impl Widget + 'static`. The harness does layout automatically. Use `render()` to get a `Scene`, and verify widget bounds via the scene or by querying the widget directly.
   ```rust
   let widget = StatusBarWidget::new(800.0, &UiTheme::dark());
   let mut h = WidgetTestHarness::new(widget);
@@ -217,11 +217,11 @@ Write headless widget tests using the WidgetTestHarness.
   let layout = Widget::layout(&widget, &LayoutCtx { measurer: &MockMeasurer::new(), theme: &UiTheme::dark() });
   assert_eq!(layout.preferred_height(), STATUS_BAR_HEIGHT);
   ```
-- [ ] **Test: `status_bar_not_focusable`** — `assert!(!widget.is_focusable())`
-- [ ] **Test: `status_bar_sense_none`** — `assert_eq!(widget.sense(), Sense::none())`
-- [ ] **Test: `status_bar_data_update`** — Set data, verify widget accepts it (no panic, `widget.set_data(data)` succeeds)
-- [ ] **Test: `status_bar_theme_colors`** — Verify `StatusBarColors::from_theme(&UiTheme::dark())` produces expected colors: `bg == UiTheme::dark().bg_primary`, `border == UiTheme::dark().border`, `text == UiTheme::dark().fg_faint`, `accent == UiTheme::dark().accent`. Also test `from_theme(&UiTheme::light())` for coverage.
-- [ ] **Test: `status_bar_renders_scene`** — Call `render()`, verify scene is non-empty. Must set data first (otherwise all items are empty strings):
+- [x] **Test: `status_bar_not_focusable`** — `assert!(!widget.is_focusable())`
+- [x] **Test: `status_bar_sense_none`** — `assert_eq!(widget.sense(), Sense::none())`
+- [x] **Test: `status_bar_data_update`** — Set data, verify widget accepts it (no panic, `widget.set_data(data)` succeeds)
+- [x] **Test: `status_bar_theme_colors`** — Verify `StatusBarColors::from_theme(&UiTheme::dark())` produces expected colors: `bg == UiTheme::dark().bg_primary`, `border == UiTheme::dark().border`, `text == UiTheme::dark().fg_faint`, `accent == UiTheme::dark().accent`. Also test `from_theme(&UiTheme::light())` for coverage.
+- [x] **Test: `status_bar_renders_scene`** — Call `render()`, verify scene is non-empty. Must set data first (otherwise all items are empty strings):
   ```rust
   let mut widget = StatusBarWidget::new(800.0, &UiTheme::dark());
   widget.set_data(StatusBarData { shell_name: "zsh".into(), pane_count: "1 pane".into(), grid_size: "80\u{00d7}24".into(), encoding: "UTF-8".into(), term_type: "xterm-256color".into() });
@@ -230,9 +230,9 @@ Write headless widget tests using the WidgetTestHarness.
   assert!(!scene.is_empty(), "status bar should produce draw commands");
   ```
 
-- [ ] **Test: `status_bar_empty_data_no_crash`** — Construct with default (empty) `StatusBarData`, call `render()`. Must not panic, scene should have at least the background and border quads.
-- [ ] **Test: `status_bar_window_width_update`** — Call `set_window_width(1200.0)`, then `render()`. Verify the widget does not panic and accepts the new width.
-- [ ] **Test: `status_bar_default_data_is_all_empty`** — Verify `StatusBarData::default()` has all fields as empty strings.
+- [x] **Test: `status_bar_empty_data_no_crash`** — Construct with default (empty) `StatusBarData`, call `render()`. Must not panic, scene should have at least the background and border quads.
+- [x] **Test: `status_bar_window_width_update`** — Call `set_window_width(1200.0)`, then `render()`. Verify the widget does not panic and accepts the new width.
+- [x] **Test: `status_bar_default_data_is_all_empty`** — Verify `StatusBarData::default()` has all fields as empty strings.
 
 **Validation:** All 9+ tests pass with `cargo test -p oriterm_ui`.
 
@@ -244,17 +244,17 @@ Write headless widget tests using the WidgetTestHarness.
 
 Write golden tests rendering the status bar through the real GPU pipeline.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/status_bar.rs` module with `#![cfg(all(test, feature = "gpu-tests"))]` at the top (same gate as all other golden tests)
-- [ ] Add `mod status_bar;` to `visual_regression/mod.rs`
-- [ ] **Test: `status_bar_full_data_96dpi`** — Status bar with all items populated:
+- [x] Create `oriterm/src/gpu/visual_regression/status_bar.rs` module with `#![cfg(all(test, feature = "gpu-tests"))]` at the top (same gate as all other golden tests)
+- [x] Add `mod status_bar;` to `visual_regression/mod.rs`
+- [x] **Test: `status_bar_full_data_96dpi`** — Status bar with all items populated:
   - Shell: "zsh", Panes: "3 panes", Grid: "120\u{00d7}30", Encoding: "UTF-8", Term: "xterm-256color"
   - Render at 800x22px, 96 DPI
   - Verifies: background color, top border, accent items, text items, gap spacing
-- [ ] **Test: `status_bar_single_pane_96dpi`** — Status bar with "1 pane" (singular)
+- [x] **Test: `status_bar_single_pane_96dpi`** — Status bar with "1 pane" (singular)
   - Edge case: different text length, verify layout still works
-- [ ] **Test: `status_bar_empty_items_96dpi`** — Status bar with some empty fields
+- [x] **Test: `status_bar_empty_items_96dpi`** — Status bar with some empty fields
   - Verifies graceful handling of missing data (no spurious gaps or artifacts)
-- [ ] Reuse `headless_dialog_env()` and `render_dialog_to_pixels()` from `super::dialog_helpers`. These provide a UI-only renderer (IBM Plex Mono, no terminal font) at 96 DPI. Build the render helper:
+- [x] Reuse `headless_dialog_env()` and `render_dialog_to_pixels()` from `super::dialog_helpers`. These provide a UI-only renderer (IBM Plex Mono, no terminal font) at 96 DPI. Build the render helper:
   ```rust
   use super::dialog_helpers::{headless_dialog_env, render_dialog_to_pixels};
 
@@ -293,8 +293,8 @@ Write golden tests rendering the status bar through the real GPU pipeline.
   }
   ```
   This follows the same pattern as `tab_bar_icons.rs::render_tab_bar()` but uses the dialog pipeline (UI-only, no terminal font needed).
-- [ ] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- status_bar` to generate references
-- [ ] Visually inspect generated PNGs against mockup
+- [x] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- status_bar` to generate references
+- [x] Visually inspect generated PNGs against mockup
 - [ ] Commit reference PNGs
 - [ ] `/tpr-review` checkpoint
 
@@ -312,18 +312,18 @@ Write golden tests rendering the status bar through the real GPU pipeline.
 
 ## 02.N Completion Checklist
 
-- [ ] `oriterm_ui/src/widgets/status_bar/mod.rs` exists with `StatusBarWidget`, `StatusBarData`, `StatusBarColors`
-- [ ] Widget trait fully implemented: `id`, `is_focusable` (false), `sense` (none), `layout` (22px), `paint` (all items)
-- [ ] `StatusBarColors::from_theme()` uses only `UiTheme` fields
-- [ ] All items render at correct positions: left-aligned (shell, panes, grid), right-aligned (encoding, term)
-- [ ] Accent items (shell, term) use `theme.accent` color
-- [ ] Normal items (panes, grid, encoding) use `theme.fg_faint` color
-- [ ] Top border: 2px, `theme.border` color
-- [ ] Font size: 11px for all items
-- [ ] 9+ WidgetTestHarness tests pass
+- [x] `oriterm_ui/src/widgets/status_bar/mod.rs` exists with `StatusBarWidget`, `StatusBarData`, `StatusBarColors`
+- [x] Widget trait fully implemented: `id`, `is_focusable` (false), `sense` (none), `layout` (22px), `paint` (all items)
+- [x] `StatusBarColors::from_theme()` uses only `UiTheme` fields
+- [x] All items render at correct positions: left-aligned (shell, panes, grid), right-aligned (encoding, term)
+- [x] Accent items (shell, term) use `theme.accent` color
+- [x] Normal items (panes, grid, encoding) use `theme.fg_faint` color
+- [x] Top border: 2px, `theme.border` color
+- [x] Font size: 11px for all items
+- [x] 9+ WidgetTestHarness tests pass (11 tests)
 - [ ] 3 golden tests pass with committed reference PNGs
-- [ ] `cargo test -p oriterm_ui` green
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green
+- [x] `cargo test -p oriterm_ui` green
+- [x] `./build-all.sh` green, `./clippy-all.sh` green
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** `StatusBarWidget` renders identically to the `.status-bar` section of `mockups/main-window-brutal.html` at 96 DPI. Widget follows all `oriterm_ui` conventions. Golden tests pass.

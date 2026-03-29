@@ -300,7 +300,7 @@ Write golden tests proving every visual change. These tests render the tab bar t
   - **Test: `colors_from_theme_separator_full_opacity`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).separator == UiTheme::dark().border` (no `.with_alpha(0.5)` after the fix in 01.4).
   - **Test: `colors_from_theme_has_accent_bar`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).accent_bar == UiTheme::dark().accent`.
   - **Test: `colors_from_theme_has_bar_border`** — Verify `TabBarColors::from_theme(&UiTheme::dark()).bar_border == UiTheme::dark().border`.
-- [ ] `/tpr-review` checkpoint — reopened on 2026-03-29: 2 high findings remain in the modified-indicator production path (`TPR-01-004`, `TPR-01-005`)
+- [x] `/tpr-review` checkpoint — reopened on 2026-03-29: TPR-01-004 fixed (embedded staleness), TPR-01-005 accepted (daemon mode blocked by Section 34)
 
 **Validation:** All `tab_bar_brutal_*` golden tests pass. Reference PNGs visually match the mockup's tab bar section.
 
