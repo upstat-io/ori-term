@@ -170,7 +170,7 @@ Phase 3 - Verification
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Tab Bar Brutal Styling | `section-01-tab-bar.md` | Not Started |
+| 01 | Tab Bar Brutal Styling | `section-01-tab-bar.md` | In Progress |
 | 02 | Status Bar Widget | `section-02-status-bar.md` | Not Started |
 | 03 | Window Frame & Split Pane Styling | `section-03-frame-panes.md` | Not Started |
 | 04 | Production Wiring & Composed Tests | `section-04-wiring.md` | Not Started |
