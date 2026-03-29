@@ -6,7 +6,7 @@
 //! PTY reader thread.
 
 mod chrome;
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 pub(crate) use chrome::compute_window_layout;
 mod clipboard_ops;
 pub(crate) mod config_reload;
