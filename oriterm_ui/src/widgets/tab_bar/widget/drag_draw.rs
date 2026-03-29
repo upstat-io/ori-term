@@ -1,6 +1,6 @@
 //! Dragged tab overlay drawing.
 //!
-//! Renders the floating dragged tab with an opaque backing rect, rounded
+//! Renders the floating dragged tab with an opaque backing rect, flat
 //! active-style background, tab label, and close icon. Extracted from
 //! `draw.rs` to keep that file under the 500-line limit.
 
@@ -9,7 +9,7 @@ use crate::geometry::Rect;
 use crate::icons::IconId;
 
 use super::TabBarWidget;
-use super::draw::{ACTIVE_TAB_RADIUS, CLOSE_ICON_INSET, TabStrip};
+use super::draw::{CLOSE_ICON_INSET, TabStrip};
 
 use super::super::constants::{CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH};
 use crate::widgets::DrawCtx;
@@ -31,7 +31,7 @@ impl TabBarWidget {
         let tab = &self.tabs[index];
         let w = self.layout.tab_width_at(index);
 
-        // Rounded tab shape with active background and drop shadow.
+        // Flat tab shape with active background and drop shadow.
         let tab_rect = Rect::new(visual_x, strip.y, w, strip.h);
         let shadow = Shadow {
             offset_x: 0.0,
@@ -40,9 +40,7 @@ impl TabBarWidget {
             spread: 0.0,
             color: ctx.theme.shadow,
         };
-        let style = RectStyle::filled(self.colors.active_bg)
-            .with_per_corner_radius(ACTIVE_TAB_RADIUS, ACTIVE_TAB_RADIUS, 0.0, 0.0)
-            .with_shadow(shadow);
+        let style = RectStyle::filled(self.colors.active_bg).with_shadow(shadow);
         ctx.scene.push_layer_bg(self.colors.active_bg);
         ctx.scene.push_quad(tab_rect, style);
 

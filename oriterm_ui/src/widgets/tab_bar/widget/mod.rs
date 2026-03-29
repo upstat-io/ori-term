@@ -13,6 +13,7 @@ mod control_state;
 mod controls_draw;
 mod drag_draw;
 mod draw;
+mod draw_helpers;
 mod edit_draw;
 
 use std::time::{Duration, Instant};
@@ -60,6 +61,8 @@ pub struct TabEntry {
     pub icon: Option<TabIcon>,
     /// When the bell last fired (for pulse animation). `None` if no bell.
     pub bell_start: Option<Instant>,
+    /// Whether the tab content has been modified (shows accent dot).
+    pub modified: bool,
 }
 
 impl TabEntry {
@@ -69,6 +72,7 @@ impl TabEntry {
             title: title.into(),
             icon: None,
             bell_start: None,
+            modified: false,
         }
     }
 
@@ -76,6 +80,13 @@ impl TabEntry {
     #[must_use]
     pub fn with_icon(mut self, icon: Option<TabIcon>) -> Self {
         self.icon = icon;
+        self
+    }
+
+    /// Sets the modified state (shows accent dot indicator).
+    #[must_use]
+    pub fn with_modified(mut self, modified: bool) -> Self {
+        self.modified = modified;
         self
     }
 }
@@ -276,6 +287,15 @@ impl TabBarWidget {
         self.recompute_layout();
     }
 
+    // Hover queries
+
+    /// Returns `true` if the given tab index is currently hovered.
+    ///
+    /// Matches `TabBarHit::Tab(index)` or `TabBarHit::CloseTab(index)`.
+    pub fn is_tab_hovered(&self, index: usize) -> bool {
+        matches!(self.hover_hit, TabBarHit::Tab(h) | TabBarHit::CloseTab(h) if h == index)
+    }
+
     // Inline editing
 
     /// Returns `true` if a tab title is currently being edited.
@@ -408,8 +428,8 @@ fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
         fg: theme.fg_primary,
         bg: Color::TRANSPARENT,
         hover_bg: theme.bg_hover,
-        close_hover_bg: theme.close_hover_bg,
-        close_pressed_bg: theme.close_pressed_bg,
+        close_hover_bg: theme.danger,
+        close_pressed_bg: theme.danger_hover,
     }
 }
 
@@ -447,17 +467,17 @@ impl TabBarWidget {
 impl TabBarWidget {
     /// Test-only access to bell phase computation.
     pub fn bell_phase_for_test(tab: &TabEntry, now: Instant) -> f32 {
-        draw::bell_phase(tab, now)
+        draw_helpers::bell_phase(tab, now)
     }
 
     /// Test-only access to drag-adjusted new-tab button X.
     pub fn test_new_tab_button_x(&self) -> f32 {
-        draw::new_tab_button_x(self)
+        draw_helpers::new_tab_button_x(self)
     }
 
     /// Test-only access to drag-adjusted dropdown button X.
     pub fn test_dropdown_button_x(&self) -> f32 {
-        draw::dropdown_button_x(self)
+        draw_helpers::dropdown_button_x(self)
     }
 
     /// Test-only access to hover progress for a tab.

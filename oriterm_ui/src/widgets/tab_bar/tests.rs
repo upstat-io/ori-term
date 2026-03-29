@@ -137,18 +137,22 @@ fn max_text_width_not_negative() {
 fn colors_from_dark_theme() {
     let theme = UiTheme::dark();
     let colors = TabBarColors::from_theme(&theme);
-    assert_eq!(colors.bar_bg, theme.bg_secondary);
-    assert_eq!(colors.active_bg, theme.bg_primary);
+    assert_eq!(colors.bar_bg, theme.bg_primary);
+    assert_eq!(colors.active_bg, theme.bg_secondary);
+    assert_eq!(colors.inactive_bg, theme.bg_primary);
+    assert_eq!(colors.separator, theme.border);
     assert_eq!(colors.text_fg, theme.fg_primary);
     assert_eq!(colors.inactive_text, theme.fg_secondary);
+    assert_eq!(colors.accent_bar, theme.accent);
+    assert_eq!(colors.bar_border, theme.border);
 }
 
 #[test]
 fn colors_from_light_theme() {
     let theme = UiTheme::light();
     let colors = TabBarColors::from_theme(&theme);
-    assert_eq!(colors.bar_bg, theme.bg_secondary);
-    assert_eq!(colors.active_bg, theme.bg_primary);
+    assert_eq!(colors.bar_bg, theme.bg_primary);
+    assert_eq!(colors.active_bg, theme.bg_secondary);
 }
 
 #[test]
@@ -231,8 +235,10 @@ fn hit_test_boundary_between_tabs() {
 #[test]
 fn hit_test_before_tabs_returns_none() {
     let layout = TabBarLayout::compute(4, 1200.0, None, 0.0, M);
-    assert_eq!(layout.tab_index_at(0.0), None);
-    assert_eq!(layout.tab_index_at(TAB_LEFT_MARGIN - 1.0), None);
+    // Tabs start at TAB_LEFT_MARGIN (0.0). Origin hits tab 0.
+    assert_eq!(layout.tab_index_at(0.0), Some(0));
+    // Negative x is before tabs.
+    assert_eq!(layout.tab_index_at(-1.0), None);
 }
 
 #[test]
@@ -512,6 +518,7 @@ fn bell_phase_positive_right_after_bell() {
         title: "test".into(),
         icon: None,
         bell_start: Some(now - Duration::from_millis(100)),
+        modified: false,
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     // Phase should be > 0 shortly after bell fires.
@@ -525,6 +532,7 @@ fn bell_phase_zero_after_duration() {
         title: "test".into(),
         icon: None,
         bell_start: Some(now - Duration::from_secs(5)),
+        modified: false,
     };
     let phase = TabBarWidget::bell_phase_for_test(&entry, now);
     assert!((phase - 0.0).abs() < f32::EPSILON);
@@ -876,13 +884,13 @@ fn hit_empty_area_returns_drag_area() {
 }
 
 #[test]
-fn hit_left_margin_returns_drag_area() {
+fn hit_left_edge_returns_tab() {
     let layout = layout_4_tabs();
     let mid_y = TAB_BAR_HEIGHT / 2.0;
-    // In the left margin before tabs start.
+    // With zero left margin, x=0 hits the first tab.
     assert_eq!(
-        hit::hit_test_default(TAB_LEFT_MARGIN / 2.0, mid_y, &layout),
-        TabBarHit::DragArea
+        hit::hit_test_default(0.0, mid_y, &layout),
+        TabBarHit::Tab(0)
     );
 }
 
@@ -890,15 +898,16 @@ fn hit_left_margin_returns_drag_area() {
 fn hit_zero_tabs_all_buttons_and_drag() {
     let layout = TabBarLayout::compute(0, 1200.0, None, 0.0, M);
     let mid_y = TAB_BAR_HEIGHT / 2.0;
-    // No tabs, so tab area returns NewTab/Dropdown/DragArea.
+    // No tabs: new-tab button starts at the left edge.
     let new_tab_x = layout.new_tab_x() + 1.0;
     assert_eq!(
         hit::hit_test_default(new_tab_x, mid_y, &layout),
         TabBarHit::NewTab
     );
-    let drag_x = 5.0; // Before new-tab button.
+    // Past the new-tab + dropdown buttons is drag area.
+    let past_buttons = layout.new_tab_x() + NEW_TAB_BUTTON_WIDTH + DROPDOWN_BUTTON_WIDTH + 5.0;
     assert_eq!(
-        hit::hit_test_default(drag_x, mid_y, &layout),
+        hit::hit_test_default(past_buttons, mid_y, &layout),
         TabBarHit::DragArea
     );
 }
@@ -919,9 +928,9 @@ fn hit_narrow_window_does_not_panic() {
 #[test]
 fn hit_at_origin_within_tab_bar() {
     let layout = layout_4_tabs();
-    // (0, 0) is in the tab bar but in the left margin.
+    // (0, 0) is inside the first tab (zero left margin, zero top margin).
     let result = hit::hit_test_default(0.0, 0.0, &layout);
-    assert_eq!(result, TabBarHit::DragArea);
+    assert_eq!(result, TabBarHit::Tab(0));
 }
 
 #[test]
@@ -1218,13 +1227,16 @@ fn with_theme_light_produces_light_colors() {
     let colors = TabBarColors::from_theme(&light);
 
     // Verify all color fields correspond to the light theme.
-    assert_eq!(colors.bar_bg, light.bg_secondary);
-    assert_eq!(colors.active_bg, light.bg_primary);
+    assert_eq!(colors.bar_bg, light.bg_primary);
+    assert_eq!(colors.active_bg, light.bg_secondary);
+    assert_eq!(colors.inactive_bg, light.bg_primary);
     assert_eq!(colors.text_fg, light.fg_primary);
     assert_eq!(colors.inactive_text, light.fg_secondary);
-    assert_eq!(colors.separator, light.border.with_alpha(0.5));
+    assert_eq!(colors.separator, light.border);
     assert_eq!(colors.close_fg, light.fg_secondary);
     assert_eq!(colors.button_hover_bg, light.bg_hover);
+    assert_eq!(colors.accent_bar, light.accent);
+    assert_eq!(colors.bar_border, light.border);
 }
 
 #[test]
@@ -1796,10 +1808,10 @@ fn compact_tab_bar_metrics_differ_from_default() {
         TabBarMetrics::DEFAULT.height,
     );
 
-    // Compact tab bar must have smaller top margin.
+    // Compact tab bar must have equal or smaller top margin.
     assert!(
-        compact.top_margin < TabBarMetrics::DEFAULT.top_margin,
-        "compact top_margin {} should be less than default {}",
+        compact.top_margin <= TabBarMetrics::DEFAULT.top_margin,
+        "compact top_margin {} should be <= default {}",
         compact.top_margin,
         TabBarMetrics::DEFAULT.top_margin,
     );
@@ -1973,4 +1985,29 @@ fn editing_move_and_selection() {
     w.editing_move_right(true);
     w.editing_move_right(true);
     assert_eq!(w.editing_state().selection_range(), Some((0, 3)));
+}
+
+// Modified indicator
+
+#[test]
+fn tab_entry_with_modified_builder() {
+    let entry = TabEntry::new("test").with_modified(true);
+    assert!(entry.modified);
+    let entry_default = TabEntry::new("test");
+    assert!(!entry_default.modified);
+}
+
+#[test]
+fn modified_dot_not_shown_when_hovered() {
+    let mut w = TabBarWidget::new(1200.0);
+    w.set_tabs(vec![
+        TabEntry::new("A").with_modified(true),
+        TabEntry::new("B"),
+    ]);
+    w.set_active_index(1);
+    // Simulate hover on modified tab.
+    w.set_hover_hit(TabBarHit::Tab(0));
+    // The is_tab_hovered check should suppress the modified dot.
+    assert!(w.is_tab_hovered(0));
+    assert!(!w.is_tab_hovered(1));
 }
