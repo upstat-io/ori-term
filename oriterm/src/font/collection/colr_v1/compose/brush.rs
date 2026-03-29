@@ -7,7 +7,7 @@
 use skrifa::color::{CompositeMode, Extend, Transform as ColrTransform};
 
 use super::super::{ClipBox, ResolvedBrush, ResolvedColorStop, Rgba};
-use super::{ComposeCtx, to_bx, to_by};
+use super::{ComposeCtx, to_bx, to_by, transform_radius_scale};
 
 /// Convert a resolved brush to a tiny-skia `Paint`.
 pub(super) fn make_paint(
@@ -60,7 +60,7 @@ pub(super) fn make_paint(
             tiny_skia::RadialGradient::new(
                 focal,
                 center,
-                r1 * ctx.scale(),
+                r1 * transform_radius_scale(ctx.scale(), &t),
                 gs,
                 to_spread(*extend),
                 tiny_skia::Transform::identity(),
@@ -353,7 +353,7 @@ pub(super) fn fill_radial_direct(
 ///
 /// Returns the largest `t` where `r(t) = r0 + dr * t > 0`, or `None` if
 /// no valid solution exists.
-fn solve_radial_t(a: f32, b: f32, c: f32, r0: f32, dr: f32) -> Option<f32> {
+pub(super) fn solve_radial_t(a: f32, b: f32, c: f32, r0: f32, dr: f32) -> Option<f32> {
     if a.abs() < 1e-10 {
         // Linear case: Bt + C = 0.
         if b.abs() < 1e-10 {

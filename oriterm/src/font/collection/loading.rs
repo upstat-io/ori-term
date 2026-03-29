@@ -2,6 +2,8 @@
 //!
 //! Bridges platform font discovery with the `FontCollection` validation pipeline.
 //! [`FontByteCache`] deduplicates file reads across multiple `FontSet::load` calls.
+//! System font files are memory-mapped via [`memmap2`] to avoid reading entire
+//! files into the heap — the OS pages in only the regions actually accessed.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,14 +12,45 @@ use std::sync::Arc;
 use super::super::FontError;
 use super::super::discovery::{self, FontOrigin};
 
+/// Font file bytes: either memory-mapped (system fonts) or heap-owned (embedded).
+///
+/// Derefs to `&[u8]` so all consumers see a plain byte slice regardless of
+/// backing storage. Memory-mapped files keep RSS low by only paging in the
+/// font table regions that are actually read (headers, cmap, glyf, COLR).
+pub(crate) enum FontBytes {
+    /// Heap-allocated bytes (embedded fonts compiled into the binary).
+    Owned(Vec<u8>),
+    /// Memory-mapped file (system fonts loaded from disk).
+    Mapped(memmap2::Mmap),
+}
+
+impl std::ops::Deref for FontBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Owned(v) => v,
+            Self::Mapped(m) => m,
+        }
+    }
+}
+
+impl FontBytes {
+    /// Create from owned bytes (for embedded fonts).
+    pub(crate) fn owned(data: Vec<u8>) -> Arc<Self> {
+        Arc::new(Self::Owned(data))
+    }
+}
+
 /// Cache for font file bytes, keyed by file path.
 ///
-/// Deduplicates `std::fs::read` calls when the same font file appears in
-/// multiple discovery results (e.g., terminal and UI fallback chains both
-/// include `NotoColorEmoji`). Short-lived: constructed during startup, used
-/// for font loading, then dropped.
+/// Deduplicates file loads when the same font file appears in multiple
+/// discovery results (e.g., terminal and UI fallback chains both include
+/// `NotoColorEmoji`). System fonts are memory-mapped; embedded fonts are
+/// heap-allocated. Short-lived: constructed during startup, used for font
+/// loading, then dropped.
 pub struct FontByteCache {
-    entries: HashMap<PathBuf, Arc<Vec<u8>>>,
+    entries: HashMap<PathBuf, Arc<FontBytes>>,
 }
 
 impl FontByteCache {
@@ -29,12 +62,23 @@ impl FontByteCache {
     }
 
     /// Load font bytes from `path`, returning a cached `Arc` on repeat reads.
-    pub fn load(&mut self, path: &Path) -> std::io::Result<Arc<Vec<u8>>> {
+    ///
+    /// System font files are memory-mapped so only accessed pages are resident
+    /// in RAM, rather than reading the entire file into a `Vec<u8>`.
+    #[expect(
+        unsafe_code,
+        reason = "memmap2::Mmap::map requires unsafe — font files are read-only system resources"
+    )]
+    pub fn load(&mut self, path: &Path) -> std::io::Result<Arc<FontBytes>> {
         if let Some(data) = self.entries.get(path) {
             return Ok(Arc::clone(data));
         }
-        let bytes = std::fs::read(path)?;
-        let arc = Arc::new(bytes);
+        let file = std::fs::File::open(path)?;
+        // SAFETY: Font files are read-only system resources that are not
+        // modified or truncated while the terminal is running. The mapping
+        // is immutable (`Mmap`, not `MmapMut`).
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let arc = Arc::new(FontBytes::Mapped(mmap));
         self.entries.insert(path.to_owned(), Arc::clone(&arc));
         Ok(arc)
     }
@@ -46,7 +90,7 @@ impl FontByteCache {
 #[derive(Clone)]
 pub(crate) struct FontData {
     /// Font file bytes shared via `Arc` for rustybuzz face creation.
-    pub(crate) data: Arc<Vec<u8>>,
+    pub(crate) data: Arc<FontBytes>,
     /// Face index within a `.ttc` collection (0 for standalone `.ttf`).
     pub(crate) index: u32,
 }
@@ -94,7 +138,7 @@ impl FontSet {
         Self {
             family_name: "JetBrains Mono (embedded)".to_owned(),
             regular: FontData {
-                data: Arc::new(discovery::EMBEDDED_FONT_DATA.to_vec()),
+                data: FontBytes::owned(discovery::EMBEDDED_FONT_DATA.to_vec()),
                 index: 0,
             },
             bold: None,
@@ -103,7 +147,7 @@ impl FontSet {
             medium: None,
             has_variant: [true, false, false, false],
             fallbacks: vec![FontData {
-                data: Arc::new(discovery::TEST_EMOJI_DATA.to_vec()),
+                data: FontBytes::owned(discovery::TEST_EMOJI_DATA.to_vec()),
                 index: 0,
             }],
         }
@@ -117,7 +161,7 @@ impl FontSet {
     pub fn with_system_emoji_fallback(mut self, path: &str) -> Self {
         if let Ok(data) = std::fs::read(path) {
             self.fallbacks = vec![FontData {
-                data: Arc::new(data),
+                data: FontBytes::owned(data),
                 index: 0,
             }];
         }
@@ -133,17 +177,17 @@ impl FontSet {
         Self {
             family_name: "IBM Plex Mono (embedded)".to_owned(),
             regular: FontData {
-                data: Arc::new(discovery::UI_FONT_REGULAR.to_vec()),
+                data: FontBytes::owned(discovery::UI_FONT_REGULAR.to_vec()),
                 index: 0,
             },
             bold: Some(FontData {
-                data: Arc::new(discovery::UI_FONT_BOLD.to_vec()),
+                data: FontBytes::owned(discovery::UI_FONT_BOLD.to_vec()),
                 index: 0,
             }),
             italic: None,
             bold_italic: None,
             medium: Some(FontData {
-                data: Arc::new(discovery::UI_FONT_MEDIUM.to_vec()),
+                data: FontBytes::owned(discovery::UI_FONT_MEDIUM.to_vec()),
                 index: 0,
             }),
             has_variant: [true, true, false, false],
@@ -292,7 +336,7 @@ fn load_font_data(
     let data = if let Some(ref path) = primary.paths[slot] {
         cache.load(path)?
     } else if primary.origin == FontOrigin::Embedded && slot == 0 {
-        Arc::new(discovery::EMBEDDED_FONT_DATA.to_vec())
+        FontBytes::owned(discovery::EMBEDDED_FONT_DATA.to_vec())
     } else {
         return Err(FontError::InvalidFont(format!(
             "no font data for slot {slot}"

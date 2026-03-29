@@ -1871,6 +1871,7 @@ dependencies = [
  "dwrote",
  "image",
  "log",
+ "memmap2",
  "notify",
  "objc2 0.5.2",
  "open",

@@ -116,7 +116,7 @@ impl UiTheme {
             corner_radius: 0.0,                    // --radius: 0px (brutal)
             spacing: 8.0,
             font_size: 13.0,
-            font_size_small: 11.0,
+            font_size_small: 12.0,
             font_size_large: 16.0,
         }
     }
@@ -155,7 +155,7 @@ impl UiTheme {
             corner_radius: 4.0,
             spacing: 8.0,
             font_size: 13.0,
-            font_size_small: 11.0,
+            font_size_small: 12.0,
             font_size_large: 16.0,
         }
     }

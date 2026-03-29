@@ -7,6 +7,7 @@ use std::sync::Arc;
 use super::face::{
     build_face, compute_metrics, embolden_strength, font_ref, has_glyph, validate_font,
 };
+use super::loading::FontBytes;
 use super::{FontCollection, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
 use crate::font::{
@@ -63,8 +64,8 @@ fn validate_font_rejects_empty() {
 
 #[test]
 fn font_ref_produces_working_charmap() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     let fr = font_ref(&fd);
     let gid = fr.charmap().map('A');
     assert_ne!(gid, 0, "'A' must have a non-zero glyph ID");
@@ -72,8 +73,8 @@ fn font_ref_produces_working_charmap() {
 
 #[test]
 fn has_glyph_true_for_ascii() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     assert!(has_glyph(&fd, 'A'), "embedded font must cover 'A'");
     assert!(has_glyph(&fd, 'z'), "embedded font must cover 'z'");
     assert!(has_glyph(&fd, '0'), "embedded font must cover '0'");
@@ -82,8 +83,8 @@ fn has_glyph_true_for_ascii() {
 
 #[test]
 fn has_glyph_notdef_graceful() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     // CJK character unlikely in JetBrains Mono — just checking it doesn't panic.
     let _ = has_glyph(&fd, '\u{4E00}');
 }
@@ -1453,8 +1454,8 @@ fn axis(tag: &[u8; 4], min: f32, default: f32, max: f32) -> AxisInfo {
 
 #[test]
 fn embedded_font_has_no_variable_axes() {
-    let fd =
-        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    let fd = build_face(FontBytes::owned(EMBEDDED_FONT_DATA.to_vec()), 0)
+        .expect("embedded font must build");
     assert!(
         fd.axes.is_empty(),
         "JetBrains Mono Regular is not a variable font — should have zero axes",
