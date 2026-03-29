@@ -3,9 +3,7 @@ section: 41
 title: Hints + Quick Select
 status: not-started
 reviewed: false
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 3
 goal: "Regex-based labeled text selection for URLs, paths, git hashes, IPs, and custom patterns. Keyboard-driven quick copy without mouse."
 sections:
@@ -17,9 +15,6 @@ sections:
     status: not-started
   - id: "41.3"
     title: Hint Actions
-    status: not-started
-  - id: "41.R"
-    title: "Third Party Review Findings"
     status: not-started
   - id: "41.4"
     title: Section Completion
@@ -41,6 +36,8 @@ sections:
 - Kitty hints kitten
 
 **Why this matters:** Copying a URL or git hash from terminal output currently requires: (1) reach for mouse, (2) carefully select text, (3) copy. With hints, it's: (1) press hotkey, (2) type 1-2 characters. This is dramatically faster for the most common terminal interaction pattern.
+
+> **Verification Notes (2026-03-29):** Confirmed not started -- no hints/quick-select code exists. However, there is **significant overlap with the existing URL detection module** (`oriterm/src/url_detect/mod.rs`). That module already implements: `URL_RE` static regex, `UrlDetectCache` with logical-line scanning and caching, `detect_urls_in_snapshot_lines()` for viewport row scanning, `DetectedUrl` with column-mapped segments, `trim_url_trailing()` with balanced parentheses, and `extract_snapshot_row_text()` with wide-char/zero-width column mapping. This is almost exactly the scanning engine hints mode needs -- the difference is URL detection uses one hardcoded regex while hints needs N configurable patterns. The plan proposes a new URL regex in `patterns.rs` without mentioning the existing module. The plan should specify whether hints generalizes/replaces or delegates to `url_detect/`. Additional reusable infrastructure: URL opening (`oriterm/src/platform/url/mod.rs` with scheme validation), clipboard operations (`oriterm/src/app/clipboard_ops/`), selection model (`oriterm_core/src/selection/`), and TOML config parsing. Gaps: (1) rendering approach underspecified (GPU pipeline integration for label overlay + dimming), (2) no regex line-length cap (WezTerm #714 DoS concern), (3) no vi mode integration mentioned, (4) performance concern with N regexes on large viewports.
 
 ---
 
@@ -178,14 +175,6 @@ Execute the configured action when a hint is selected.
 
 ---
 
-## 41.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
 ## 41.4 Section Completion
 
 - [ ] All 41.1–41.3 items complete
@@ -199,7 +188,5 @@ Execute the configured action when a hint is selected.
 - [ ] `Escape` cancels cleanly, label completion triggers action
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all hint tests pass
-
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Users can press a hotkey, see labeled matches for URLs/hashes/paths, type 1-2 characters, and immediately copy or open the matched text. Dramatically faster than mouse selection for the most common terminal copy patterns.

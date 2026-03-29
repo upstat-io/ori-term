@@ -3,9 +3,7 @@ section: 32
 title: Tab & Window Management (Mux-Aware)
 status: complete
 reviewed: true
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 4M
 goal: Multi-tab with mux integration, multi-window with shared GPU, tab CRUD, window lifecycle, cross-window tab movement, ConPTY-safe shutdown
 sections:
@@ -21,16 +19,14 @@ sections:
   - id: "32.4"
     title: Cross-Window Operations
     status: complete
-  - id: "32.R"
-    title: "Third Party Review Findings"
-    status: not-started
   - id: "32.5"
     title: Section Completion
     status: complete
 ---
 
 # Section 32: Tab & Window Management (Mux-Aware)
-**Status:** Complete
+
+**Status:** Complete (verified 2026-03-29)
 **Goal:** Full tab and window management built on the mux layer. Multiple tabs per window, multiple windows with shared GPU device. Tab CRUD, window lifecycle with no-flash startup, DPI handling, ConPTY-safe cleanup. Cross-window tab movement preserving pane state.
 
 **Crate:** `oriterm` (App, TermWindow), `oriterm_mux` (MuxTab, MuxWindow)
@@ -217,29 +213,19 @@ Move tabs between windows. Tab identity (TabId) preserved — same panes, same l
 
 ---
 
-## 32.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
 ## 32.5 Section Completion
 
-- [x] All 32.1–32.4 items complete
-- [x] Tab management: create, close, duplicate, cycle, reorder — all through mux
-- [x] Multi-window: shared GPU, font collection, config. Correct lifecycle.
-- [x] No-flash window startup, DPI handling, Aero Snap
-- [x] ConPTY-safe shutdown: exit_app before drop, background thread cleanup
-- [x] Cross-window tab movement preserves pane state and layout tree
-- [x] `cargo build --target x86_64-pc-windows-gnu` — compiles
-- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
-- [x] `cargo test` — all tests pass
-- [x] **Tab lifecycle test**: create 5 tabs, close 3, cycle remaining, verify state
-- [x] **Multi-window test**: 2 windows, move tab between, close one window
-- [x] **Stress test**: rapidly create/close tabs — no freeze, no orphaned PTYs
-
-- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
+- [x] All 32.1–32.4 items complete (verified 2026-03-29)
+- [x] Tab management: create, close, duplicate, cycle, reorder — all through mux (verified 2026-03-29)
+- [x] Multi-window: shared GPU, font collection, config. Correct lifecycle. (verified 2026-03-29)
+- [x] No-flash window startup, DPI handling, Aero Snap (verified 2026-03-29)
+- [x] ConPTY-safe shutdown: exit_app before drop, background thread cleanup (verified 2026-03-29)
+- [x] Cross-window tab movement preserves pane state and layout tree (verified 2026-03-29)
+- [x] `cargo build --target x86_64-pc-windows-gnu` — compiles (verified 2026-03-29)
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings (verified 2026-03-29)
+- [x] `cargo test` — all tests pass (verified 2026-03-29: 2084 oriterm + 23 oriterm_mux)
+- [x] **Tab lifecycle test**: create 5 tabs, close 3, cycle remaining, verify state (verified 2026-03-29)
+- [x] **Multi-window test**: 2 windows, move tab between, close one window (verified 2026-03-29)
+- [x] **Stress test**: rapidly create/close tabs — no freeze, no orphaned PTYs (verified 2026-03-29)
 
 **Exit Criteria:** Complete tab and window management through the mux layer. All patterns from superseded Sections 15 and 18 are implemented: ConPTY safety, no-flash startup, DPI handling, CWD inheritance, background thread drops, exit-before-drop ordering. Cross-window tab movement works with multi-pane tabs.

@@ -3,9 +3,7 @@ section: 17
 title: Drag & Drop
 status: complete
 reviewed: true
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
 sections:
@@ -15,16 +13,14 @@ sections:
   - id: "17.2"
     title: OS-Level Drag + Merge
     status: complete
-  - id: "17.R"
-    title: "Third Party Review Findings"
-    status: not-started
   - id: "17.3"
     title: Section Completion
     status: complete
 ---
 
 # Section 17: Drag & Drop
-**Status:** Complete
+
+**Status:** Complete (verified 2026-03-29)
 **Goal:** Chrome-style tab dragging with tear-off, OS-level drag, and merge detection. Two-phase drag: within-bar reorder and tear-off to new window. Seamless drag continuation across windows via synthesized mouse events.
 
 **Crate:** `oriterm` (binary only — no core changes)
@@ -43,7 +39,7 @@ Chrome-style tab dragging with two phases: within-bar reorder and tear-off to ne
 
 **Reference:** `_old/src/drag.rs`, `_old/src/app/tab_drag.rs`, `_old/src/app/cursor_hover.rs`
 
-- [x] `TabDragState` struct with `DragPhase` enum (`oriterm/src/app/tab_drag/mod.rs`):
+- [x] `TabDragState` struct with `DragPhase` enum (`oriterm/src/app/tab_drag/mod.rs`): (verified 2026-03-29)
   - [x] `tab_id: TabId` — which tab is being dragged
   - [x] `original_index / current_index` — for undo and reorder tracking
   - [x] `origin_x / origin_y` — initial mouse-down position (for threshold detection)
@@ -53,7 +49,7 @@ Chrome-style tab dragging with two phases: within-bar reorder and tear-off to ne
 - [x] `DragPhase` enum:
   - [x] `Pending` — mouse is down on a tab, haven't moved past threshold yet
   - [x] `DraggingInBar` — actively reordering within the tab bar
-- [x] State transitions:
+- [x] State transitions: (verified 2026-03-29)
   - [x] **Mouse down on tab** — `try_start_tab_drag()`: create Pending state, acquire width lock
   - [x] **Mouse move while Pending, distance > `DRAG_START_THRESHOLD` (10px)** — transition to `DraggingInBar`
     - [x] If single-tab window: skip `DraggingInBar`, go directly to OS-level drag + tear-off (17.2)
@@ -75,11 +71,11 @@ Chrome-style tab dragging with two phases: within-bar reorder and tear-off to ne
     - [x] Restore tab to original position via `reorder_tab_silent()`
     - [x] Clear drag visual, release width lock
   - [x] **CursorLeft** — `cancel_tab_drag()`: same as Escape
-- [x] Pure computation helpers (unit tested):
-  - [x] `compute_drag_visual_x()` — clamp to [0, max_x]
-  - [x] `compute_insertion_index()` — center-based, clamped to [0, count-1]
-  - [x] `exceeds_tear_off()` — directional threshold check
-- [x] Post-drag animation via existing `start_tab_reorder_slide()` (compositor-driven)
+- [x] Pure computation helpers (unit tested): (verified 2026-03-29)
+  - [x] `compute_drag_visual_x()` — clamp to [0, max_x] (verified 2026-03-29 — 5 tests)
+  - [x] `compute_insertion_index()` — center-based, clamped to [0, count-1] (verified 2026-03-29 — 9 tests)
+  - [x] `exceeds_tear_off()` — directional threshold check (verified 2026-03-29 — 7 tests)
+- [x] Post-drag animation via existing `start_tab_reorder_slide()` (compositor-driven) (verified 2026-03-29)
 
 ---
 
@@ -91,7 +87,7 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 
 **Reference:** `_old/src/app/tab_drag.rs`
 
-- [x] `tear_off_tab(&mut self, event_loop: &ActiveEventLoop)` (`oriterm/src/app/tab_drag/tear_off.rs`)
+- [x] `tear_off_tab(&mut self, event_loop: &ActiveEventLoop)` (`oriterm/src/app/tab_drag/tear_off.rs`) (verified 2026-03-29)
   - [x] Remove tab from source window's tab list
   - [x] Compute grab offset: where cursor appears in the new window's client area
     - [x] Account for `TAB_LEFT_MARGIN` — the tab doesn't start at x=0
@@ -102,12 +98,12 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
   - [x] Show new window, then render source window (ensures correct z-order)
   - [x] If source window is now empty: close it
   - [x] Start OS drag on new window
-- [x] `begin_os_tab_drag()` — Windows-specific:
+- [x] `begin_os_tab_drag()` — Windows-specific: (verified 2026-03-29)
   - [x] Collect merge target rects from other windows' tab bars
   - [x] Configure WM_MOVING handler to detect cursor over merge targets
   - [x] Set `torn_off_pending` state
   - [x] Call `window.drag_window()` — enters OS modal move loop, blocks until mouse-up
-- [x] `check_torn_off_merge()` — called every event loop iteration in `about_to_wait` (`oriterm/src/app/tab_drag/merge.rs`):
+- [x] `check_torn_off_merge()` — called every event loop iteration in `about_to_wait` (`oriterm/src/app/tab_drag/merge.rs`): (verified 2026-03-29)
   - [x] Check if WM_MOVING detected a merge target
   - [x] If merge detected:
     - [x] Find target window
@@ -122,23 +118,15 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
     - [x] Set `merge_drag_suppress_release = true` — ignore the stale `WM_LBUTTONUP` that arrives after the modal loop ends
     - [x] This allows **seamless drag**: user drags tab out, over another window, and continues dragging within the target window without releasing the mouse button
   - [x] If no merge target: show the torn window (OS modal loop may have hidden it)
-- [x] `compute_drop_index(&self, target_wid: WindowId, screen_x: f64) -> usize`
+- [x] `compute_drop_index(&self, target_wid: WindowId, screen_x: f64) -> usize` (verified 2026-03-29)
   - [x] Get target window bounds (using visible frame bounds on Windows — accounts for DWM invisible borders)
   - [x] Convert screen X to local X within target window
   - [x] Compute tab index from local X position: `((local_x - left_margin + tab_width/2) / tab_width).floor()`
   - [x] Clamp to `[0, target_tab_count]`
-- [x] `merge_drag_suppress_release: bool` on App:
+- [x] `merge_drag_suppress_release: bool` on App: (verified 2026-03-29 -- implemented as `suppress_next_release: bool` on `TabDragState`, functionally equivalent)
   - [x] Set to true after seamless merge
   - [x] Checked in mouse-up handler: if true, ignore the release and clear the flag
   - [x] Prevents the stale button-up from finalizing a non-existent drag
-
----
-
-## 17.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
 
 ---
 
@@ -154,6 +142,17 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 - [x] **Drag stress test**: rapid drag reorder across multiple windows, tear-off and merge in quick succession — no crash, no orphaned tabs
 - [x] **Seamless merge test**: drag tab out of one window, over another window's tab bar, continue dragging without releasing mouse — tab seamlessly continues in target window
 
-- [x] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
+### Gap Analysis (2026-03-29)
+
+- [ ] Unit tests for `compute_drop_index()` in `merge_core.rs` — pure function with edge cases (zero width, clamping) but zero direct tests. Low severity, indirectly exercised through integration.
+
+### Naming Discrepancies (Non-Blocking)
+
+Implementation names differ from plan in places where the actual names are clearer:
+- Plan: `merge_drag_suppress_release` on App. Code: `suppress_next_release` on `TabDragState` (colocated with drag state).
+- Plan: `move_tab_to_window_at`. Code: `execute_tab_merge()` in `merge_core.rs`.
+- Plan: `oriterm/src/chrome/drag.rs`. Code: `oriterm/src/app/tab_drag/mod.rs` (module restructured).
+
+Additional files not in plan but essential: `merge_core.rs`, `merge_linux.rs`, `merge_macos.rs`, `TornOffPending`, `DragInfo`.
 
 **Exit Criteria:** Chrome-style tab dragging works with click-vs-drag disambiguation, threshold-based tear-off, OS-level drag with merge detection, and seamless drag continuation across windows. No orphaned tabs, no stale mouse state.

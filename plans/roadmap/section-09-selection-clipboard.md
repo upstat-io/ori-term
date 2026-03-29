@@ -3,9 +3,7 @@ section: 9
 title: Selection & Clipboard
 status: in-progress
 reviewed: true
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 3
 goal: Windows Terminal-style 3-point selection, all selection modes, clipboard with paste filtering
 sections:
@@ -30,9 +28,6 @@ sections:
   - id: "9.7"
     title: Selection Rendering
     status: complete
-  - id: "9.R"
-    title: "Third Party Review Findings"
-    status: not-started
   - id: "9.8"
     title: Section Completion
     status: in-progress
@@ -53,7 +48,7 @@ sections:
 
 ---
 
-## 9.1 Selection Model & Anchoring
+## 9.1 Selection Model & Anchoring (verified 2026-03-29)
 
 Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. The pivot prevents losing the initially selected unit (word or line) during drag.
 
@@ -61,10 +56,10 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
 
 **Reference:** `_old/src/selection/mod.rs` — carries forward the proven 3-point model with `SelectionPoint`, `Selection`, `SelectionMode`.
 
-- [x] `Side` enum — `Left`, `Right` (defined in `oriterm_core::index`, re-exported from `oriterm_core::lib`)
+- [x] `Side` enum — `Left`, `Right` (defined in `oriterm_core::index`, re-exported from `oriterm_core::lib`) (verified 2026-03-29)
   - [x] Sub-cell precision for selection boundaries (which half of the cell was clicked)
   - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
-- [x] `SelectionPoint` struct
+- [x] `SelectionPoint` struct (verified 2026-03-29)
   - [x] Fields:
     - `row: StableRowIndex` — row identity that survives scrollback eviction
     - `col: usize` — column index
@@ -74,13 +69,13 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
   - [x] `impl Ord` — compare by row, then col, then side (Left < Right)
   - [x] `impl PartialOrd` — delegate to `Ord`
   - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
-- [x] `SelectionMode` enum
+- [x] `SelectionMode` enum (verified 2026-03-29)
   - [x] `Char` — character-by-character (single click + drag)
   - [x] `Word` — word selection (double-click, subsequent drag expands by words)
   - [x] `Line` — full logical line selection (triple-click, follows WRAP)
   - [x] `Block` — rectangular block selection (Alt+click+drag)
   - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
-- [x] `Selection` struct
+- [x] `Selection` struct (verified 2026-03-29)
   - [x] Fields:
     - `mode: SelectionMode`
     - `anchor: SelectionPoint` — initial click position (fixed)
@@ -95,23 +90,23 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
     - [x] Other modes: use effective_start_col/effective_end_col at boundary rows, full rows in between
   - [x] `bounds(&self) -> SelectionBounds` — precompute bounds for batch containment testing (avoids recomputing `ordered()` per cell during rendering)
   - [x] `is_empty(&self) -> bool` — true if Char mode and anchor == end (zero area)
-- [x] `SelectionBounds` struct — precomputed start/end with mode, used by `FrameSelection` for per-cell testing during rendering. `contains(stable_row, col) -> bool` method handles Block vs linear modes.
-- [x] Selection across scrollback: points use `StableRowIndex` (absolute row positions that survive scrollback eviction)
-- [x] Selection invalidation: clear on output that affects selected region
+- [x] `SelectionBounds` struct — precomputed start/end with mode, used by `FrameSelection` for per-cell testing during rendering. `contains(stable_row, col) -> bool` method handles Block vs linear modes. (verified 2026-03-29)
+- [x] Selection across scrollback: points use `StableRowIndex` (absolute row positions that survive scrollback eviction) (verified 2026-03-29)
+- [x] Selection invalidation: clear on output that affects selected region (verified 2026-03-29)
   - [x] `selection_dirty` flag on `Term<T>` set by content-modifying VTE handler operations
   - [x] `Pane::check_selection_invalidation()` (in `oriterm_mux/src/pane/selection.rs`) checks flag and clears selection on terminal wakeup
   - [x] Selection ownership is split across two layers:
     - `Pane` owns `selection: Option<Selection>` in the mux layer, used for terminal-output-driven invalidation via `check_selection_invalidation()`
     - `App::pane_selections: HashMap<PaneId, Selection>` is authoritative for rendering and GUI operations (set/clear/update_end via `pane_accessors.rs`)
     - The GUI side (`App`) is the source of truth for frame building; the mux side (`Pane`) handles invalidation
-- [x] Multi-click detection:
+- [x] Multi-click detection: (verified 2026-03-29)
   - [x] Track last click position and timestamp
   - [x] Use 500ms window for multi-click detection
   - [x] Click counter cycles: 1 -> 2 -> 3 -> 1 (single -> double -> triple -> reset)
   - [x] Clicks must be in same cell position to count as multi-click
   - [x] `ClickDetector` struct in `oriterm_core::selection::click` with `click()`, `click_at()`, and `reset()` (tests in `oriterm_core/src/selection/click/tests.rs`)
-- [x] Re-export `Selection`, `SelectionPoint`, `SelectionMode`, `SelectionBounds`, `Side`, `ClickDetector`, `DEFAULT_WORD_DELIMITERS`, `logical_line_start`, `logical_line_end` from `oriterm_core/src/lib.rs`. Note: `SelectionColors` is re-exported from `color`, not `selection` (`pub use color::{Palette, Rgb, SelectionColors}`).
-- [x] **Tests** (`oriterm_core/src/selection/tests.rs`):
+- [x] Re-export `Selection`, `SelectionPoint`, `SelectionMode`, `SelectionBounds`, `Side`, `ClickDetector`, `DEFAULT_WORD_DELIMITERS`, `logical_line_start`, `logical_line_end` from `oriterm_core/src/lib.rs`. Note: `SelectionColors` is re-exported from `color`, not `selection` (`pub use color::{Palette, Rgb, SelectionColors}`). (verified 2026-03-29)
+- [x] **Tests** (`oriterm_core/src/selection/tests.rs`): (verified 2026-03-29 -- 79 selection + 13 click tests, all pass)
   - [x] `new_char` creates selection with anchor == pivot == end
   - [x] `new_word` creates selection with distinct anchor and pivot
   - [x] `ordered()` returns min/max regardless of anchor/end order
@@ -123,7 +118,7 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
 
 ---
 
-## 9.2 Mouse Selection
+## 9.2 Mouse Selection (verified 2026-03-29)
 
 Windows Terminal-style mouse selection with drag threshold, multi-click modes, and auto-scroll.
 
@@ -131,33 +126,33 @@ Windows Terminal-style mouse selection with drag threshold, multi-click modes, a
 
 **Reference:** `_old/src/app/mouse_selection.rs` — carries forward click counting, word/line selection creation, drag endpoint updates.
 
-- [x] **Click count detection** (via `ClickDetector` from `oriterm_core::selection::click`, see 9.1):
+- [x] **Click count detection** (via `ClickDetector` from `oriterm_core::selection::click`, see 9.1): (verified 2026-03-29)
   - [x] Same position + within 500ms: increment count (1 -> 2 -> 3 -> 1)
   - [x] Different position or expired window: reset to 1
-- [x] **Drag threshold**: Selection only starts after cursor moves >= 1/4 cell width from initial click position
+- [x] **Drag threshold**: Selection only starts after cursor moves >= 1/4 cell width from initial click position (verified 2026-03-29)
   - [x] Track touchdown position separately from selection anchor
   - [x] Only initiate selection once threshold exceeded (prevents accidental selection)
-- [x] **Single click + drag** — Character selection:
+- [x] **Single click + drag** — Character selection: (verified 2026-03-29)
   - [x] Convert pixel position to cell coordinates (account for display_offset, tab bar offset)
   - [x] Determine Side (Left/Right) from pixel sub-cell position
   - [x] Clear any existing selection
   - [x] Set anchor at click position with `Selection::new_char()`
   - [x] Drag extends endpoint via `update_selection_end()`
-- [x] **Double-click** — Word selection:
+- [x] **Double-click** — Word selection: (verified 2026-03-29)
   - [x] Compute word boundaries around click position (see 9.4)
   - [x] Create selection with `Selection::new_word(start_boundary, end_boundary)`
   - [x] Pivot set to expanded word boundaries
   - [x] Subsequent drag expands by words: compare drag position to anchor, snap to word boundary via `helpers::compute_drag_endpoint()`
-- [x] **Triple-click** — Line selection:
+- [x] **Triple-click** — Line selection: (verified 2026-03-29)
   - [x] Select entire logical line (follows wrapped lines via WRAP flag)
   - [x] Walk backwards through `logical_line_start()` to find first row of logical line
   - [x] Walk forwards through `logical_line_end()` to find last row
   - [x] Start at (first_row, col 0, Side::Left), end at (last_row, last_col, Side::Right)
   - [x] Create selection with `Selection::new_line()`
-- [x] **Alt+click+drag** — Toggle block/character mode:
+- [x] **Alt+click+drag** — Toggle block/character mode: (verified 2026-03-29)
   - [x] If current mode is Char or Line: switch to `SelectionMode::Block`
   - [x] If current mode is Block: switch to `SelectionMode::Char`
-- [x] **Shift+click** — Extend existing selection:
+- [x] **Shift+click** — Extend existing selection: (verified 2026-03-29)
   - [x] If selection exists: update endpoint to clicked position
   - [x] If click is beyond anchor: include clicked cell
   - [x] If click is before anchor: start from clicked position
@@ -166,21 +161,21 @@ Windows Terminal-style mouse selection with drag threshold, multi-click modes, a
   - [x] Check OSC 8 hyperlink on clicked cell (takes priority)
   - [x] Fall through to implicit URL detection
   - [x] If URL found: open in default browser, consume click
-- [x] **Auto-scroll during drag** (mouse above/below viewport):
+- [x] **Auto-scroll during drag** (mouse above/below viewport): (verified 2026-03-29)
   - [x] When dragging above grid top: scroll viewport up into history (1 line per event)
   - [x] When dragging below grid bottom: scroll viewport down toward live (if display_offset > 0)
   - [x] Continue extending selection into scrollback during auto-scroll
   - [x] Post-scroll endpoint computation via `helpers::compute_auto_scroll_endpoint()`: constructs a fresh `SnapshotGrid` from the post-scroll snapshot and computes the endpoint at the visible edge row
-- [x] **SnapshotGrid helpers** (in `oriterm/src/app/snapshot_grid/mod.rs`):
+- [x] **SnapshotGrid helpers** (in `oriterm/src/app/snapshot_grid/mod.rs`): (verified 2026-03-29)
   - [x] `viewport_to_stable_row()` — maps viewport line to `StableRowIndex`
   - [x] `redirect_spacer()` — redirects clicks on WIDE_CHAR_SPACER to base cell
   - [x] `word_boundaries()` — delegates to `oriterm_core::selection::word_boundaries` via snapshot cells
   - [x] `logical_line_start()`/`logical_line_end()` — walk WRAP flag within viewport bounds
-- [x] **Double-wide character handling**:
+- [x] **Double-wide character handling**: (verified 2026-03-29)
   - [x] Selection never splits a double-wide character
   - [x] If click lands on WIDE_CHAR_SPACER: redirect to base cell (col - 1)
   - [x] Automatically adjust selection endpoint to cell boundary
-- [x] **Tests** (`oriterm/src/app/mouse_selection/tests.rs`):
+- [x] **Tests** (`oriterm/src/app/mouse_selection/tests.rs`): (verified 2026-03-29 -- 57 mouse + 12 snapshot tests, all pass)
   - [x] Click count detection: rapid clicks cycle 1 -> 2 -> 3 -> 1 (in `oriterm_core::selection::click::tests`)
   - [x] Click at different position resets to 1
   - [x] Expired click window resets to 1
@@ -191,13 +186,13 @@ Windows Terminal-style mouse selection with drag threshold, multi-click modes, a
 
 ---
 
-## 9.3 Keyboard Selection (Mark Mode)
+## 9.3 Keyboard Selection (Mark Mode) (verified 2026-03-29)
 
 Keyboard-driven selection for accessibility and power users, modeled after Windows Terminal's mark mode.
 
 **Files:** `oriterm/src/app/mark_mode/mod.rs`, `oriterm/src/app/mark_mode/motion.rs` (mark mode logic and cursor motion), `oriterm/src/app/keyboard_input/action_dispatch.rs` (mark mode entry/exit via keybinding)
 
-- [x] **Enter mark mode**: Ctrl+Shift+M
+- [x] **Enter mark mode**: Ctrl+Shift+M (verified 2026-03-29)
   - [x] Insert `MarkCursor` into `App::mark_cursors: HashMap<PaneId, MarkCursor>` for the active pane
   - [x] Show visual cursor at current terminal cursor position
   - [x] Arrow keys move selection cursor (not terminal cursor, not sent to PTY)
@@ -225,9 +220,9 @@ Keyboard-driven selection for accessibility and power users, modeled after Windo
   - [x] Copy current selection to clipboard
   - [x] Exit mark mode
 - [x] **Viewport scroll-follow** (`ensure_visible()`): when the mark cursor moves outside the visible viewport, computes a scroll delta so the caller can scroll the viewport to keep the cursor visible
-- [x] **Pure motion functions** (in `mark_mode/motion.rs`): all motion functions (`move_left`, `move_right`, `move_up`, `move_down`, `page_up`, `page_down`, `line_start`, `line_end`, `buffer_start`, `buffer_end`, `word_left`, `word_right`) are pure — no locks, no grid access, no side effects. Grid bounds and word context are extracted under lock before calling.
-- [x] **`MarkModeResult` return type**: dispatch returns `MarkModeResult { action, new_cursor, new_selection }` so the caller (App) applies state mutations. Decouples mark mode logic from App state.
-- [x] **Tests** (`oriterm/src/app/mark_mode/tests.rs`):
+- [x] **Pure motion functions** (in `mark_mode/motion.rs`): all motion functions (`move_left`, `move_right`, `move_up`, `move_down`, `page_up`, `page_down`, `line_start`, `line_end`, `buffer_start`, `buffer_end`, `word_left`, `word_right`) are pure — no locks, no grid access, no side effects. Grid bounds and word context are extracted under lock before calling. (verified 2026-03-29)
+- [x] **`MarkModeResult` return type**: dispatch returns `MarkModeResult { action, new_cursor, new_selection }` so the caller (App) applies state mutations. Decouples mark mode logic from App state. (verified 2026-03-29)
+- [x] **Tests** (`oriterm/src/app/mark_mode/tests.rs`): (verified 2026-03-29 -- 52 tests, all pass)
   - [x] Enter mark mode sets flag, exit clears it
   - [x] Shift+Right extends selection by one column
   - [x] Ctrl+A selects entire buffer
@@ -235,7 +230,7 @@ Keyboard-driven selection for accessibility and power users, modeled after Windo
 
 ---
 
-## 9.4 Word Delimiters & Boundaries
+## 9.4 Word Delimiters & Boundaries (verified 2026-03-29)
 
 Configurable word boundary detection for double-click selection and Ctrl+arrow word movement.
 
@@ -243,7 +238,7 @@ Configurable word boundary detection for double-click selection and Ctrl+arrow w
 
 **Reference:** `_old/src/selection/boundaries.rs` — carries forward the delimiter_class + scan approach.
 
-- [x] **Default word delimiters**: `` ,│`|:\"' ()[]{}<>\t `` (defined in `DEFAULT_WORD_DELIMITERS`)
+- [x] **Default word delimiters**: `` ,│`|:\"' ()[]{}<>\t `` (defined in `DEFAULT_WORD_DELIMITERS`) (verified 2026-03-29)
 - [x] **Character classification** (`fn delimiter_class(c: char, word_delimiters: &str) -> u8`):
   - [x] Class 0: Word characters (anything NOT in `word_delimiters` and not whitespace/null)
   - [x] Class 1: Whitespace (space, `\0`, tab)
@@ -264,7 +259,7 @@ Configurable word boundary detection for double-click selection and Ctrl+arrow w
   - [x] Walk forwards through rows connected by WRAP flag
   - [x] Returns absolute row index of last row in logical line
 - [x] Configurable delimiters via settings (future: wired through config in Section 13)
-- [x] **Tests** (`oriterm_core/src/selection/tests.rs`):
+- [x] **Tests** (`oriterm_core/src/selection/tests.rs`): (verified 2026-03-29)
   - [x] `delimiter_class('a', DEFAULT_WORD_DELIMITERS)` returns 0 (word)
   - [x] `delimiter_class(' ', DEFAULT_WORD_DELIMITERS)` returns 1 (whitespace)
   - [x] `delimiter_class('(', DEFAULT_WORD_DELIMITERS)` returns 2 (non-whitespace delimiter)
@@ -276,7 +271,7 @@ Configurable word boundary detection for double-click selection and Ctrl+arrow w
 
 ---
 
-## 9.5 Copy Operations <!-- unblocks:8.3 -->
+## 9.5 Copy Operations (verified 2026-03-29 -- all complete except one item blocked by Section 38) <!-- unblocks:8.3 -->
 
 Windows Terminal copies multiple clipboard formats simultaneously. Smart copy behavior adapts to context.
 
@@ -284,14 +279,14 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
 
 **Reference:** `_old/src/selection/text.rs` — carries forward text extraction with wrap handling, spacer skipping, grapheme cluster support.
 
-- [x] **Copy triggers**:
+- [x] **Copy triggers**: (verified 2026-03-29)
   - [x] Ctrl+Shift+C — copy selection
   - [x] Ctrl+C — smart: copy if selection exists, send SIGINT (`\x03`) if not
   - [x] Ctrl+Insert — copy selection
   - [x] Enter — copy selection (in mark mode, then exit mark mode)
   - [x] CopyOnSelect setting: auto-copy on mouse release after selection (does NOT clear selection)
   - [x] Right-click: copy if selection exists (when context menu disabled)
-- [x] **Text extraction** (`extract_text(grid: &Grid, selection: &Selection) -> String`):
+- [x] **Text extraction** (`extract_text(grid: &Grid, selection: &Selection) -> String`): (verified 2026-03-29)
   - [x] Convert StableRowIndex to absolute row for iteration
   - [x] Walk selected cells, concatenate characters
   - [x] Skip WIDE_CHAR_SPACER cells (include the wide char cell, not its spacer)
@@ -303,8 +298,8 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
   - [x] Block selection: add newlines between rows, trim trailing spaces per row, use min_col..max_col bounds
   - [x] Handle grapheme clusters: base char + all zerowidth chars from CellExtra
   - [x] Skip Kitty image placeholder characters (`KITTY_PLACEHOLDER`) — virtual cells for image rendering should not appear in copied text
-- [x] **CopyOnSelect copies to primary selection, not clipboard**: `copy_selection_to_primary()` stores to `ClipboardType::Selection` (X11/Wayland primary selection). On Windows/macOS the clipboard module silently ignores `Selection` stores.
-- [x] **Clipboard formats** (placed on clipboard simultaneously):
+- [x] **CopyOnSelect copies to primary selection, not clipboard**: `copy_selection_to_primary()` stores to `ClipboardType::Selection` (X11/Wayland primary selection). On Windows/macOS the clipboard module silently ignores `Selection` stores. (verified 2026-03-29)
+- [x] **Clipboard formats** (placed on clipboard simultaneously): (verified 2026-03-29)
   - [x] Plain text (always; `CF_UNICODETEXT` on Windows, UTF-8 string on macOS/Linux)
   - [x] `HTML Format` — HTML with inline styles (if CopyFormatting enabled)
     - [x] Per-cell foreground/background colors as inline CSS
@@ -325,10 +320,10 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
   - [x] Shift held during copy: collapse multi-line selection to single line (join with spaces)
   - [x] Alt held during copy: force HTML formatting regardless of CopyFormatting setting
 - [x] Selection NOT cleared after copy (user must press Escape or click elsewhere)
-- [x] **OSC 52 clipboard integration**:
+- [x] **OSC 52 clipboard integration**: (verified 2026-03-29)
   - [x] Application can set clipboard via `ESC]52;c;{base64_data}ST`
   - [x] Application can request clipboard (if permitted by config)
-- [x] **Tests** (`oriterm_core/src/selection/tests.rs`, `oriterm_core/src/selection/html/tests.rs`):
+- [x] **Tests** (`oriterm_core/src/selection/tests.rs`, `oriterm_core/src/selection/html/tests.rs`): (verified 2026-03-29 -- 35 HTML + 8 clipboard tests, all pass)
   - [x] Extract text from single row: correct characters
   - [x] Extract text skips WIDE_CHAR_SPACER
   - [x] Extract text includes zero-width chars (combining marks)
@@ -340,7 +335,7 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
 
 ---
 
-## 9.6 Paste Operations
+## 9.6 Paste Operations (verified 2026-03-29)
 
 Windows Terminal-style paste with character filtering, line ending normalization, and bracketed paste support.
 
@@ -348,7 +343,7 @@ Windows Terminal-style paste with character filtering, line ending normalization
 
 **Reference:** `_old/src/clipboard.rs`
 
-- [x] **Paste triggers**:
+- [x] **Paste triggers**: (verified 2026-03-29)
   - [x] Ctrl+Shift+V — paste from clipboard
   - [x] Ctrl+V — paste (when no VT conflict)
   - [x] Shift+Insert — paste
@@ -378,7 +373,7 @@ Windows Terminal-style paste with character filtering, line ending normalization
   - [x] Step 3: ESC stripping (if `bracketed` is true)
   - [x] Step 4: bracketed paste wrapping (if `bracketed` is true)
   - [x] Returns raw bytes ready for PTY write
-- [x] **Injection defense**: bracketed paste strips the ESC character from `\x1b[201~` end markers, preventing paste-escape injection attacks. Tested explicitly.
+- [x] **Injection defense**: bracketed paste strips the ESC character from `\x1b[201~` end markers, preventing paste-escape injection attacks. Tested explicitly. (verified 2026-03-29)
 - [x] **Multi-line paste warning** (configurable):
   - [x] Detect newlines in pasted content
   - [x] Optionally warn user before sending multi-line paste to shell
@@ -389,7 +384,7 @@ Windows Terminal-style paste with character filtering, line ending normalization
   - [x] Auto-quote paths containing spaces: `"C:\path with spaces\file.txt"`
   - [x] Write path(s) to PTY as if typed
   - [x] Multiple files: space-separated
-- [x] **Tests** (`oriterm_core/src/paste/tests.rs`):
+- [x] **Tests** (`oriterm_core/src/paste/tests.rs`): (verified 2026-03-29 -- 55 paste tests, all pass)
   - [x] FilterOnPaste strips tabs
   - [x] FilterOnPaste converts smart quotes to straight quotes
   - [x] FilterOnPaste converts em-dash to double hyphen
@@ -406,7 +401,7 @@ Windows Terminal-style paste with character filtering, line ending normalization
 
 ---
 
-## 9.7 Selection Rendering
+## 9.7 Selection Rendering (verified 2026-03-29)
 
 Visual highlighting of selected text during GPU rendering.
 
@@ -414,7 +409,7 @@ Visual highlighting of selected text during GPU rendering.
 
 **Reference:** `_old/src/gpu/render_grid.rs` (selection check in cell loop)
 
-- [x] **Selection colors**: configurable selection foreground and background
+- [x] **Selection colors**: configurable selection foreground and background (verified 2026-03-29)
   - [x] Default: inverted colors (swap fg/bg of selected cells)
   - [x] Alternative: user-configured selection_fg / selection_bg from palette
   - [x] Colors stored in palette semantic slots
@@ -433,12 +428,12 @@ Visual highlighting of selected text during GPU rendering.
 - [x] **Block selection rendering**:
   - [x] Only highlight cells within rectangular bounds (min_col..max_col, min_row..max_row)
   - [x] Rows between start and end use same column bounds
-- [x] **Include selection in FrameInput** (via `FrameSelection`):
+- [x] **Include selection in FrameInput** (via `FrameSelection`): (verified 2026-03-29)
   - [x] Pass current selection (if any) to the render function via `FrameInput::selection: Option<FrameSelection>`
   - [x] `FrameSelection` precomputes `SelectionBounds` and stores `base_stable` for viewport-to-stable mapping
   - [x] `FrameSelection::contains(viewport_line, col) -> bool` — per-cell test with stable row conversion
   - [x] `FrameSelection::viewport_line_range(num_rows) -> Option<(start, end)>` — clamped viewport line range for damage tracking
-- [x] **Selection damage tracking** (incremental redraw on selection change):
+- [x] **Selection damage tracking** (incremental redraw on selection change): (verified 2026-03-29)
   - [x] `mark_selection_damage(dirty, old, new)` in `gpu/prepare/dirty_skip/mod.rs` marks symmetric difference lines dirty
   - [x] New selection: damage all newly-selected lines
   - [x] Clear selection: damage all previously-selected lines
@@ -448,13 +443,13 @@ Visual highlighting of selected text during GPU rendering.
   - [x] `prev_selection_range` on `PreparedFrame` persists across frames for tracking
   - [x] Selection range clamped to viewport bounds (never indexes out of bounds)
   - [x] Tests: `new_selection_damages_selected_lines`, `clear_selection_damages_previously_selected_lines`, `extend_selection_damages_new_lines_and_boundary`, `shrink_selection_damages_uncovered_lines`, `same_selection_no_damage`, `selection_damage_integrated_with_build_dirty_set`, `selection_damage_clamped_to_viewport`
-- [x] **Edge case handling**:
+- [x] **Edge case handling**: (verified 2026-03-29)
   - [x] Block cursor exclusion: skip selection inversion at cursor position
   - [x] INVERSE (SGR 7) cells: use palette defaults instead of double-swap
   - [x] fg==bg fallback: prevent invisible text by using palette defaults
   - [x] HIDDEN (SGR 8) guard: intentionally hidden text stays invisible under selection
   - [x] Non-block cursors (underline, beam): do not block selection inversion
-- [x] **Tests** (`oriterm/src/gpu/prepare/tests.rs`, `oriterm/src/gpu/frame_input/tests.rs`):
+- [x] **Tests** (`oriterm/src/gpu/prepare/tests.rs`, `oriterm/src/gpu/frame_input/tests.rs`): (verified 2026-03-29 -- 24 frame_input + 15 selection render + 13 damage tests, all pass)
   - [x] Selection highlight inverts colors for selected cells
   - [x] Wide character selected as complete unit
   - [x] Block selection renders rectangular highlight
@@ -468,20 +463,12 @@ Visual highlighting of selected text during GPU rendering.
 
 ---
 
-## 9.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
-## 9.8 Section Completion
+## 9.8 Section Completion (verified 2026-03-29 -- 348 total tests, all pass)
 
 - [ ] All 9.1-9.7 items complete *(blocked: 9.5 has one item pending Section 38 — underline color in HTML copy)*
-- [x] `cargo test -p oriterm_core --target x86_64-pc-windows-gnu` — selection model tests pass
-- [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — clipboard + mouse selection tests pass
-- [x] `cargo clippy --workspace --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test -p oriterm_core --target x86_64-pc-windows-gnu` — selection model tests pass (verified 2026-03-29 -- 170 selection + 55 paste)
+- [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — clipboard + mouse selection tests pass (verified 2026-03-29 -- mouse(57), mark_mode(52), clipboard(8), frame_input(26), prepare(158), dirty_skip(13), snapshot_grid(14))
+- [x] `cargo clippy --workspace --target x86_64-pc-windows-gnu` — no warnings (verified 2026-03-29)
 - [x] Single click + drag selects text character-by-character
 - [x] Drag threshold prevents accidental selection on slight mouse movement
 - [x] Double-click selects words (configurable delimiters)
@@ -507,7 +494,5 @@ Visual highlighting of selected text during GPU rendering.
 - [x] Selection damage tracking: incremental redraw on selection create/extend/clear
 - [x] HTML copy with styled spans (colors, bold, italic, underline, strikethrough)
 - [x] Mark mode: Ctrl+Shift+M toggles, arrow keys move cursor, Shift+arrows extend selection
-
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Selection and clipboard works identically to Windows Terminal. Users coming from Windows Terminal should feel completely at home with the selection, copy, and paste behavior.

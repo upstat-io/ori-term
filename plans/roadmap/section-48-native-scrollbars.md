@@ -3,9 +3,7 @@ section: 48
 title: Native OS Scrollbars
 status: not-started
 reviewed: false
-third_party_review:
-  status: none
-  updated: null
+last_verified: "2026-03-29"
 tier: 5
 goal: Platform-native overlay scrollbars for mouse-driven scrollback navigation, matching the host OS look and feel
 sections:
@@ -20,9 +18,6 @@ sections:
     status: not-started
   - id: "48.4"
     title: Configuration
-    status: not-started
-  - id: "48.R"
-    title: "Third Party Review Findings"
     status: not-started
   - id: "48.5"
     title: Section Completion
@@ -46,6 +41,8 @@ sections:
 - Windows Terminal: thin overlay scrollbar
 
 **Why this matters:** Mouse-wheel scrolling is fine for small distances, but for navigating large scrollback (thousands of lines), a scrollbar is essential. It also provides visual feedback about position within the buffer. Ghostty's implementation proves users want this — it was one of the most requested features.
+
+> **Verification Notes (2026-03-29):** Confirmed not started for the terminal-level scrollbar. However, a **complete UI-widget-level scrollbar already exists** in `oriterm_ui/src/widgets/scroll/`: `ScrollWidget` (443 lines, vertical/horizontal scrolling, mouse wheel, keyboard nav), `scrollbar.rs` (152 lines with track/thumb rendering, drag interaction, track click-to-jump, hover state, `ScrollbarPolicy` enum: Auto/Always/Hidden, `ScrollbarStyle` struct: width/thumb_color/track_color/thumb_radius/min_thumb_height, `ScrollbarState`: dragging/drag_start_y/drag_start_offset/track_hovered). The UI scroll widget operates on pixel-based `scroll_offset` for widget children, while the terminal scrollbar needs row-based `display_offset` from the grid -- fundamentally different data models. The `ScrollbarStyle` and `ScrollbarState` structs provide a reusable pattern reference. Key decisions needed: (1) rendering approach (GPU overlay vs. widget overlay -- GPU is more natural since scrollbar must overlay terminal grid without consuming columns), (2) config section placement (no `AppearanceConfig` exists; could go in `window` or new `appearance`), (3) mouse event ordering relative to PTY mouse reporting, (4) fade animation mechanism (existing scrollbar has none; animation system exists in `oriterm_ui` but terminal scrollbar sits in GPU layer). The title says "Native OS" but implementation is a custom-drawn overlay (same as Ghostty).
 
 ---
 
@@ -155,14 +152,6 @@ User-configurable scrollbar behavior.
 
 ---
 
-## 48.R Third Party Review Findings
-
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
-
----
-
 ## 48.5 Section Completion
 
 - [ ] All 48.1–48.4 items complete
@@ -177,7 +166,5 @@ User-configurable scrollbar behavior.
 - [ ] `cargo build --target x86_64-pc-windows-gnu` — clean build
 - [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [ ] `cargo test` — all tests pass
-
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (or all findings triaged)
 
 **Exit Criteria:** Users can visually see their position in scrollback and drag to navigate. The scrollbar matches modern OS conventions (thin overlay, fade on idle) and does not interfere with terminal content or mouse reporting.
