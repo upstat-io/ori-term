@@ -105,7 +105,6 @@ pub(crate) fn collect_colr_v1(
 ///
 /// Glyph outlines are extracted via skrifa and composited with tiny-skia,
 /// which provides proper path clipping, gradient fills, and layer compositing.
-#[cfg(any())] // Compositor disabled — only colr_clip_box is used.
 pub(crate) fn try_rasterize_colr_v1(
     fd: &FaceData,
     glyph_id: u16,
@@ -158,7 +157,9 @@ pub(crate) fn try_rasterize_colr_v1(
     // BaseGlyph records (backwards-compatible) or other color sources
     // (CBDT/sbix).
     if bitmap.iter().all(|&b| b == 0) {
-        log::debug!("COLR glyph {glyph_id}: blank bitmap, falling through to swash");
+        log::debug!(
+            "COLR glyph {glyph_id}: blank bitmap ({width}x{height}), falling through to swash"
+        );
         return None;
     }
 

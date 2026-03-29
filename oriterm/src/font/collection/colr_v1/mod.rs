@@ -8,10 +8,6 @@
 //! resolved at collection time so the compositing path receives ready-to-use
 //! RGBA values.
 
-// COLRv1 compositor kept but not compiled — only the clip box query
-// from rasterize.rs is used. The full compositor has color accuracy
-// issues (sweep gradients). Swash handles actual COLR rendering.
-#[cfg(any())]
 mod compose;
 pub(crate) mod rasterize;
 

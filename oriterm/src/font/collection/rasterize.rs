@@ -4,6 +4,7 @@
 //! 500-line limit. Both `rasterize()` (terminal grid) and
 //! `rasterize_with_weight()` (UI text) live here.
 
+use super::colr_v1::rasterize::try_rasterize_colr_v1;
 use super::face::rasterize_from_face;
 use super::metadata::{effective_size_for, face_variations, face_variations_for_ui_weight};
 use super::{FontCollection, RasterizedGlyph};
@@ -40,22 +41,23 @@ impl FontCollection {
         let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
-        // Let swash handle COLR rendering via Source::ColorOutline.
-        // Our custom COLRv1 compositor (colr_v1::try_rasterize_colr_v1) has
-        // color accuracy issues (sweep gradient, compositing). Swash's COLR
-        // renderer is more mature and produces correct colors.
-        let glyph = rasterize_from_face(
-            fd,
-            key.glyph_id,
-            size,
-            &face_vars.settings,
-            effective_synthetic,
-            self.metrics.height,
-            self.format,
-            self.hinting.hint_flag(),
-            subpx_x_offset,
-            &mut self.scale_context,
-        )?;
+        // COLRv1 compositor first — uses the correct COLR clip box for canvas
+        // sizing, preventing bottom/right edge clipping (BUG-04-001). Falls
+        // through to swash for non-COLR glyphs or if compositing fails.
+        let glyph = try_rasterize_colr_v1(fd, key.glyph_id, size).or_else(|| {
+            rasterize_from_face(
+                fd,
+                key.glyph_id,
+                size,
+                &face_vars.settings,
+                effective_synthetic,
+                self.metrics.height,
+                self.format,
+                self.hinting.hint_flag(),
+                subpx_x_offset,
+                &mut self.scale_context,
+            )
+        })?;
 
         self.glyph_cache.insert(key, glyph);
         self.glyph_cache.get(&key)
@@ -96,18 +98,20 @@ impl FontCollection {
         let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
-        let glyph = rasterize_from_face(
-            fd,
-            key.glyph_id,
-            size,
-            &face_vars.settings,
-            effective_synthetic,
-            self.metrics.height,
-            self.format,
-            self.hinting.hint_flag(),
-            subpx_x_offset,
-            &mut self.scale_context,
-        )?;
+        let glyph = try_rasterize_colr_v1(fd, key.glyph_id, size).or_else(|| {
+            rasterize_from_face(
+                fd,
+                key.glyph_id,
+                size,
+                &face_vars.settings,
+                effective_synthetic,
+                self.metrics.height,
+                self.format,
+                self.hinting.hint_flag(),
+                subpx_x_offset,
+                &mut self.scale_context,
+            )
+        })?;
 
         self.glyph_cache.insert(key, glyph);
         self.glyph_cache.get(&key)
