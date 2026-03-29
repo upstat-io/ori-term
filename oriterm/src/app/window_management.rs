@@ -38,7 +38,13 @@ impl App {
             let hidden =
                 self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
             let tb_h = ctx.tab_bar.metrics().height;
-            let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h);
+            let sb_h = if self.config.window.show_status_bar {
+                oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+            } else {
+                0.0
+            };
+            let wl =
+                super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
             (wl.cols, wl.rows)
         };
 
@@ -160,7 +166,12 @@ impl App {
         let scale = window.scale_factor().factor() as f32;
         let hidden = self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
         let tb_h = tab_bar_widget.metrics().height;
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h);
+        let sb_h = if self.config.window.show_status_bar {
+            oriterm_ui::widgets::status_bar::STATUS_BAR_HEIGHT
+        } else {
+            0.0
+        };
+        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
 
         // Terminal grid widget.
         let cols = wl.cols;
@@ -168,8 +179,18 @@ impl App {
         let grid_widget = TerminalGridWidget::new(cell.width, cell.height, cols, rows);
         grid_widget.set_bounds(wl.grid_rect);
 
+        // Status bar widget (bottom metadata bar).
+        let status_bar_widget =
+            oriterm_ui::widgets::status_bar::StatusBarWidget::new(w as f32 / scale, &self.ui_theme);
+
         let winit_id = window.window_id();
-        let ctx = WindowContext::new(window, tab_bar_widget, grid_widget, Some(renderer));
+        let ctx = WindowContext::new(
+            window,
+            tab_bar_widget,
+            status_bar_widget,
+            grid_widget,
+            Some(renderer),
+        );
         self.windows.insert(winit_id, ctx);
 
         log::info!(

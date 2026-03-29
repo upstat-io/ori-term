@@ -12,6 +12,7 @@ use crate::session::DividerLayout;
 
 use oriterm_ui::draw::Scene;
 use oriterm_ui::surface::{DamageSet, RenderStrategy};
+use oriterm_ui::widgets::status_bar::StatusBarWidget;
 use oriterm_ui::widgets::tab_bar::{TabBarWidget, TabSlideState};
 
 use super::context_menu::ContextMenuState;
@@ -37,6 +38,7 @@ pub(crate) struct WindowContext {
 
     // Widget layer.
     pub(super) tab_bar: TabBarWidget,
+    pub(super) status_bar: StatusBarWidget,
     pub(super) terminal_grid: TerminalGridWidget,
 
     // Render caches.
@@ -49,6 +51,8 @@ pub(crate) struct WindowContext {
     pub(super) last_rendered_pane: Option<PaneId>,
 
     // Layout caches.
+    pub(super) tab_bar_phys_rect: oriterm_ui::geometry::Rect,
+    pub(super) status_bar_phys_rect: oriterm_ui::geometry::Rect,
     pub(super) cached_dividers: Option<Vec<DividerLayout>>,
 
     // Tab slide animation.
@@ -103,6 +107,7 @@ impl WindowContext {
     pub fn new(
         window: TermWindow,
         tab_bar: TabBarWidget,
+        status_bar: StatusBarWidget,
         terminal_grid: TerminalGridWidget,
         renderer: Option<WindowRenderer>,
     ) -> Self {
@@ -110,12 +115,15 @@ impl WindowContext {
             window,
             renderer,
             tab_bar,
+            status_bar,
             terminal_grid,
             pane_cache: PaneRenderCache::new(),
             frame: None,
             chrome_scene: Scene::new(),
             last_rendered_pane: None,
             tab_slide: TabSlideState::new(),
+            tab_bar_phys_rect: oriterm_ui::geometry::Rect::new(0.0, 0.0, 0.0, 0.0),
+            status_bar_phys_rect: oriterm_ui::geometry::Rect::new(0.0, 0.0, 0.0, 0.0),
             cached_dividers: None,
             root: oriterm_ui::window_root::WindowRoot::new(
                 oriterm_ui::widgets::label::LabelWidget::new(""),

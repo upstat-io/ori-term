@@ -26,6 +26,7 @@ fn default_config_roundtrip() {
     // New fields added in Section 10.
     assert_eq!(parsed.window.tab_bar_position, TabBarPosition::Top);
     assert!((parsed.window.grid_padding - 0.0).abs() < f32::EPSILON);
+    assert!(parsed.window.show_status_bar);
     assert!(!parsed.window.restore_session);
     assert!((parsed.font.line_height - 1.0).abs() < f32::EPSILON);
     assert_eq!(parsed.rendering.gpu_backend, GpuBackend::Auto);
@@ -2415,4 +2416,25 @@ fn blur_disabled_when_config_blur_false() {
         !(cfg.window.blur && opacity < 1.0),
         "blur must be off when config blur=false"
     );
+}
+
+// -- Status bar config tests --
+
+#[test]
+fn status_bar_default_true() {
+    assert!(WindowConfig::default().show_status_bar);
+}
+
+#[test]
+fn status_bar_toml_false() {
+    let toml_str = "[window]\nshow_status_bar = false";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(!parsed.window.show_status_bar);
+}
+
+#[test]
+fn status_bar_toml_missing_defaults_true() {
+    let toml_str = "[window]";
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(parsed.window.show_status_bar);
 }

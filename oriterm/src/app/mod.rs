@@ -354,10 +354,11 @@ impl App {
             }
         }
 
-        // Update UI chrome theme (tab bar, window controls).
+        // Update UI chrome theme (tab bar, status bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
         for ctx in self.windows.values_mut() {
             ctx.tab_bar.apply_theme(&self.ui_theme);
+            ctx.status_bar.apply_theme(&self.ui_theme);
             ctx.pane_cache.invalidate_all();
             ctx.text_cache.clear();
             ctx.root.invalidation_mut().invalidate_all();

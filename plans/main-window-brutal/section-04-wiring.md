@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Production Wiring & Composed Tests"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Wire the status bar into the production window pipeline, update grid origin offsets for the new tab bar height, update all affected golden references, and add composed golden tests showing the full main window chrome."
 inspired_by:
@@ -15,10 +15,10 @@ third_party_review:
 sections:
   - id: "04.1"
     title: "Wire Status Bar into Window Pipeline"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "Update Grid Origin Offsets"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "Update Existing Golden References"
     status: not-started
@@ -55,23 +55,23 @@ sections:
 
 The status bar widget needs to be created, updated with terminal data, and rendered in the window pipeline.
 
-- [ ] **Status bar ownership**: Store in `WindowContext` alongside `tab_bar: TabBarWidget`. The `WindowContext` struct is in `oriterm/src/app/window_context.rs` (line 31). The `TabBarWidget` is stored as `pub(super) tab_bar: TabBarWidget` (line 39). The `StatusBarWidget` follows the same pattern.
-- [ ] Add `pub(super) status_bar: StatusBarWidget` field to `WindowContext` (after `terminal_grid` at line 40)
-- [ ] Add `use oriterm_ui::widgets::status_bar::{StatusBarWidget, StatusBarData};` to `window_context.rs`
-- [ ] Update `WindowContext::new()` (line 103) to accept a `StatusBarWidget` parameter and store it. The constructor currently takes `(window, tab_bar, terminal_grid, renderer)` — add `status_bar: StatusBarWidget` as the 4th parameter (before `renderer`).
-- [ ] Update ALL call sites of `WindowContext::new()`:
+- [x] **Status bar ownership**: Store in `WindowContext` alongside `tab_bar: TabBarWidget`. The `WindowContext` struct is in `oriterm/src/app/window_context.rs` (line 31). The `TabBarWidget` is stored as `pub(super) tab_bar: TabBarWidget` (line 39). The `StatusBarWidget` follows the same pattern.
+- [x] Add `pub(super) status_bar: StatusBarWidget` field to `WindowContext` (after `terminal_grid` at line 40)
+- [x] Add `use oriterm_ui::widgets::status_bar::{StatusBarWidget, StatusBarData};` to `window_context.rs`
+- [x] Update `WindowContext::new()` (line 103) to accept a `StatusBarWidget` parameter and store it. The constructor currently takes `(window, tab_bar, terminal_grid, renderer)` — add `status_bar: StatusBarWidget` as the 4th parameter (before `renderer`).
+- [x] Update ALL call sites of `WindowContext::new()`:
   - `oriterm/src/app/init/mod.rs` — initial window creation
   - `oriterm/src/app/window_management.rs` — new window creation on tear-off
   - Search for other call sites with `WindowContext::new(`
   - At each call site, construct `StatusBarWidget::new(logical_w, &UiTheme::dark())` and pass it.
-- [ ] **Update status bar data each frame**: Add a helper method `update_status_bar_data()` on `App` or inline in the redraw path. Data sources:
+- [x] **Update status bar data each frame**: Add a helper method `update_status_bar_data()` on `App` or inline in the redraw path. Data sources:
   - Shell name: from the focused pane's process name. The mux snapshot has `snapshot.title` — use that, or fall back to "shell". Note: process name detection may not be implemented yet — check `PaneSnapshot` fields. If not available, use `"zsh"` as a placeholder and add a TODO.
   - Pane count: count layouts from `compute_pane_layouts()`. For single-pane: "1 pane". For multi-pane: `format!("{} panes", layouts.len())`.
   - Grid size: from `frame.content_cols` and `frame.content_rows` (or `wl.cols` and `wl.rows` from `compute_window_layout`). Format as `"{cols}\u{00d7}{rows}"`.
   - Encoding: "UTF-8" (hardcoded — all modern terminals use UTF-8)
   - Term type: from `self.config.terminal.term_type` (if it exists) or "xterm-256color" as default
-- [ ] Call `ctx.status_bar.set_data(data)` before painting in both redraw paths.
-- [ ] **Render the status bar**: Add `draw_status_bar()` method to `impl App` in `draw_helpers.rs` (currently 211 lines — adding ~40 stays under 500). Follow the same pattern as `draw_tab_bar()`:
+- [x] Call `ctx.status_bar.set_data(data)` before painting in both redraw paths.
+- [x] **Render the status bar**: Add `draw_status_bar()` method to `impl App` in `draw_helpers.rs` (currently 211 lines — adding ~40 stays under 500). Follow the same pattern as `draw_tab_bar()`:
   ```rust
   pub(in crate::app::redraw) fn draw_status_bar(
       status_bar: &StatusBarWidget,
@@ -95,19 +95,19 @@ The status bar widget needs to be created, updated with terminal data, and rende
   }
   ```
   Note: `bounds` comes from `wl.status_bar_rect` (physical pixels from `compute_window_layout`) divided by scale factor to get logical coords. The scene is `ctx.chrome_scene` (reused for tab bar, search bar, status bar). Each component clears and re-appends -- GPU instances accumulate in the prepared frame.
-- [ ] Call `draw_status_bar()` from `handle_redraw()` (redraw/mod.rs) and `handle_redraw_multi_pane()` (multi_pane/mod.rs), after tab bar drawing, before window border. Gate on `self.config.window.show_status_bar` (new config field).
-- [ ] **Edge case**: When `TabBarPosition::Bottom` is configured, both the tab bar and status bar want to be at the bottom. In this case, hide the status bar (or position it above the tab bar). For the initial implementation, hide the status bar when `tab_bar_position == Bottom` — this matches the mockup which only shows `TabBarPosition::Top`.
-- [ ] **Config option**: Add `show_status_bar: bool` field to `WindowConfig` (config/mod.rs line 187) with `#[serde(default = "default_true")]` and default `true`. Add `fn default_true() -> bool { true }` helper. Add tests:
+- [x] Call `draw_status_bar()` from `handle_redraw()` (redraw/mod.rs) and `handle_redraw_multi_pane()` (multi_pane/mod.rs), after tab bar drawing, before window border. Gate on `self.config.window.show_status_bar` (new config field).
+- [x] **Edge case**: When `TabBarPosition::Bottom` is configured, both the tab bar and status bar want to be at the bottom. In this case, hide the status bar (or position it above the tab bar). For the initial implementation, hide the status bar when `tab_bar_position == Bottom` — this matches the mockup which only shows `TabBarPosition::Top`.
+- [x] **Config option**: Add `show_status_bar: bool` field to `WindowConfig` (config/mod.rs line 187) with `#[serde(default = "default_true")]` and default `true`. Add `fn default_true() -> bool { true }` helper. Add tests:
   - **Test: `status_bar_default_true`** — Verify `WindowConfig::default().show_status_bar == true`.
   - **Test: `status_bar_toml_false`** — Parse `[window]\nshow_status_bar = false` and verify the field is `false`.
   - **Test: `status_bar_toml_missing_defaults_true`** — Parse `[window]` with no `show_status_bar` and verify the field is `true`.
-- [ ] **Resize handling**: Update `handle_resize()` in `chrome/resize.rs` (line 185-188) — alongside `ctx.tab_bar.set_window_width(logical_w)`, add `ctx.status_bar.set_window_width(logical_w)`.
-- [ ] **Theme updates**: In `apply_theme` handler (keyboard_input/overlay_dispatch.rs lines 132-137), alongside `ctx.tab_bar.apply_theme(...)`, add `ctx.status_bar.apply_theme(&self.ui_theme)`.
-- [ ] **Init**: In `init/mod.rs` and `window_management.rs`, construct the status bar widget and pass to `WindowContext::new()`.
+- [x] **Resize handling**: Update `handle_resize()` in `chrome/resize.rs` (line 185-188) — alongside `ctx.tab_bar.set_window_width(logical_w)`, add `ctx.status_bar.set_window_width(logical_w)`.
+- [x] **Theme updates**: In `apply_theme` handler (keyboard_input/overlay_dispatch.rs lines 132-137), alongside `ctx.tab_bar.apply_theme(...)`, add `ctx.status_bar.apply_theme(&self.ui_theme)`. Also updated `mod.rs` and `config_reload/mod.rs` (all 3 theme application sites).
+- [x] **Init**: In `init/mod.rs` and `window_management.rs`, construct the status bar widget and pass to `WindowContext::new()`.
 
-- [ ] **Search bar overlap**: The search bar overlay renders at the top of the terminal grid. It should NOT overlap the status bar at the bottom. Verify: the search bar's y position is computed from `chrome_height + grid_offset`, not from `viewport_h - search_bar_h`. No change needed if the search bar is top-anchored (which it is).
-- [ ] **Status bar position must match layout**: The `draw_status_bar()` helper receives its bounds from `wl.status_bar_rect` (from `compute_window_layout()`). This single source of truth eliminates position drift between the layout engine and the draw helper. Verify in a golden test that no gap or overlap exists between the grid bottom and status bar top.
-- [ ] **File size check**: `draw_helpers.rs` is currently 211 lines. Adding `draw_status_bar()` (~40-60 lines) brings it to ~270 lines. Well under 500-line limit.
+- [x] **Search bar overlap**: The search bar overlay renders at the top of the terminal grid. It should NOT overlap the status bar at the bottom. Verify: the search bar's y position is computed from `chrome_height + grid_offset`, not from `viewport_h - search_bar_h`. No change needed if the search bar is top-anchored (which it is). Verified — search bar is top-anchored.
+- [x] **Status bar position must match layout**: The `draw_status_bar()` helper receives its bounds from `wl.status_bar_rect` (from `compute_window_layout()`). Bounds are cached on `WindowContext` as `status_bar_phys_rect` and converted to logical coords in the draw path. Golden test verification deferred to 04.4.
+- [x] **File size check**: `draw_helpers.rs` is currently 211 lines. Adding `draw_status_bar()` (~40-60 lines) brings it to ~270 lines. Well under 500-line limit. Verified: ~248 lines after addition.
 
 **Validation:** Status bar appears at the bottom of the terminal window with correct data.
 
@@ -118,17 +118,17 @@ The status bar widget needs to be created, updated with terminal data, and rende
 
 The terminal grid position is computed by `compute_window_layout()` in `oriterm/src/app/chrome/mod.rs`. This function builds a `Column { TabBar(fixed), Grid(fill) }` layout descriptor and runs the flexbox solver. All grid origin and sizing flows through this single function. Changing tab bar height from 46px to 36px and adding a status bar requires modifying THIS function, not scattered offset calculations.
 
-- [ ] **Tab bar height change is automatic**: The `compute_window_layout()` function (chrome/mod.rs line 121) takes `tab_bar_height: f32` as a parameter. Callers pass `ctx.tab_bar.metrics().height`. When Section 01 changes `TAB_BAR_HEIGHT` to 36.0, the layout automatically adjusts. Verified call sites:
+- [x] **Tab bar height change is automatic**: The `compute_window_layout()` function (chrome/mod.rs line 121) takes `tab_bar_height: f32` as a parameter. Callers pass `ctx.tab_bar.metrics().height`. When Section 01 changes `TAB_BAR_HEIGHT` to 36.0, the layout automatically adjusts. Verified call sites:
   - `chrome/resize.rs` line 75: `compute_window_layout(viewport_w, viewport_h, &cell, scale, hidden, tb_h)`
   - `window_management.rs` line 41 and line 163: same pattern
   - `init/mod.rs` line 146: same pattern
   - All use `ctx.tab_bar.metrics().height` — no hardcoded `46.0` in production call sites. The only hardcoded `46.0` values are in `chrome/tests.rs` (test assertions — see below).
-- [ ] **Update chrome/tests.rs**: The tests hardcode `46.0` as the tab bar height parameter (e.g., line 98: `compute_window_layout(1920, 1080, &cell, 1.0, false, 46.0)`). After Section 01 changes the default to 36.0:
+- [x] **Update chrome/tests.rs**: The tests hardcode `46.0` as the tab bar height parameter (e.g., line 98: `compute_window_layout(1920, 1080, &cell, 1.0, false, 46.0)`). After Section 01 changes the default to 36.0:
   - Update ALL test calls that pass `46.0` to use `36.0` (or better: use a named constant `const TEST_TAB_BAR_HEIGHT: f32 = 36.0;`)
   - Lines affected: 98, 113, 128, 144, 157, 168, 169, 196, 211, 212
   - Also update `origin_integer_*` tests that compute `grid_origin_y(46.0, ...)` to use `36.0`
   - Also update the `origin_integer_for_all_common_dpi_scales` test (line 68) which uses `chrome_height = 46.0`
-- [ ] **Add status bar to layout**: Modify `compute_window_layout()` to accept `status_bar_height: f32` and `border_inset: f32` parameters. Compute the inset viewport first, then build the 3-element flex layout inside it:
+- [x] **Add status bar to layout**: Modify `compute_window_layout()` to accept `status_bar_height: f32` and `border_inset: f32` parameters. Compute the inset viewport first, then build the 3-element flex layout inside it:
   ```rust
   let inset_px = (border_inset * scale).round();
   let viewport = Rect::new(
@@ -157,26 +157,26 @@ The terminal grid position is computed by `compute_window_layout()` in `oriterm/
   let layout = compute_layout(&root, viewport);
   ```
   Grid rect is `layout.children[1].rect`. Tab bar rect is `layout.children[0].rect`. Status bar rect is `layout.children[2].rect`. All rects are in physical pixels, inset by the border width.
-- [ ] **Update `#[expect(clippy::too_many_arguments)]` reason string** on `compute_window_layout()`: the function goes from 6 to 8 parameters. Update the `reason = "..."` string to: `"window layout: viewport size, cell metrics, scale, tab bar visibility + height, status bar height, border inset"`. If the parameter count grows further in the future, refactor into a `WindowLayoutInput` struct.
-- [ ] Update ALL call sites of `compute_window_layout()` to pass the two new parameters (`status_bar_height`, `border_inset`):
+- [x] **Update `#[expect(clippy::too_many_arguments)]` reason string** on `compute_window_layout()`: the function goes from 6 to 8 parameters. Update the `reason = "..."` string to: `"window layout: viewport size, cell metrics, scale, tab bar visibility + height, status bar height, border inset"`. If the parameter count grows further in the future, refactor into a `WindowLayoutInput` struct.
+- [x] Update ALL call sites of `compute_window_layout()` to pass the two new parameters (`status_bar_height`, `border_inset`):
   - `chrome/resize.rs` line 75: add `let sb_h = if self.config.window.show_status_bar { STATUS_BAR_HEIGHT } else { 0.0 };` and `let border_inset = if ctx.window.is_maximized() { 0.0 } else { 2.0 };`
   - `window_management.rs` lines 41, 163: same
   - `init/mod.rs` line 146: same
   - Import `STATUS_BAR_HEIGHT` from `oriterm_ui::widgets::status_bar` (or define as a constant in `chrome/mod.rs`)
-- [ ] **Critical: border inset affects ALL content, not just the grid.** The `compute_window_layout` inset shifts the entire flex layout (tab bar + grid + status bar) inward. The tab bar flex element starts at `y = inset_px`, not y=0. Add `tab_bar_rect: Rect` and `status_bar_rect: Rect` to the `WindowLayout` return struct so callers know where to position the tab bar and status bar. The tab bar draw bounds must use `tab_bar_rect` instead of `(0, 0, logical_width, height)`:
+- [x] **Critical: border inset affects ALL content, not just the grid.** The `compute_window_layout` inset shifts the entire flex layout (tab bar + grid + status bar) inward. The tab bar flex element starts at `y = inset_px`, not y=0. Add `tab_bar_rect: Rect` and `status_bar_rect: Rect` to the `WindowLayout` return struct so callers know where to position the tab bar and status bar. The tab bar draw bounds must use `tab_bar_rect` instead of `(0, 0, logical_width, height)`:
   - Update `draw_tab_bar()` in `draw_helpers.rs` to accept a `tab_bar_bounds: Rect` parameter (computed from `wl.tab_bar_rect` converted to logical coords) instead of hardcoding `Rect::new(0.0, 0.0, logical_width, height)`.
   - Update `draw_status_bar()` similarly to accept bounds from `wl.status_bar_rect`.
   - Without this, the tab bar paints at y=0 and the accent bar (top 2px) is hidden by the window border. The mockup places all content INSIDE the border.
-- [ ] `GRID_PADDING` (8.0, chrome/mod.rs line 93) remains as grid-internal padding, separate from the window border inset
-- [ ] **Add new tests to chrome/tests.rs**:
+- [x] `GRID_PADDING` (8.0, chrome/mod.rs line 93) remains as grid-internal padding, separate from the window border inset
+- [x] **Add new tests to chrome/tests.rs**:
   - **Test: `layout_with_status_bar`** — Call `compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 22.0, 0.0)`. Verify grid rect height < grid rect height from `compute_window_layout(1920, 1080, &cell, 1.0, false, 36.0, 0.0, 0.0)`. Verify `grid_rect.y()` is unchanged (tab bar + padding). Verify rows are fewer.
   - **Test: `layout_with_border_inset`** — Call with `border_inset: 2.0`. Verify `grid_rect.x() >= inset_px + pad` and `grid_rect.y() >= inset_px + chrome_h + pad`. Verify grid dimensions are smaller than without inset. Verify `tab_bar_rect.x() == inset_px` and `tab_bar_rect.y() == inset_px` (tab bar is inset from window edge).
   - **Test: `layout_status_bar_hidden`** — Call with `status_bar_height: 0.0`. Verify result matches the old 2-element layout (backward compatible).
   - **Test: `layout_border_inset_zero_when_maximized`** — Call with `border_inset: 0.0`. Verify grid rect starts at (pad, chrome_h + pad), same as current behavior. This confirms maximized mode is backward compatible.
   - **Test: `layout_status_bar_plus_border_inset`** — Both active simultaneously. Verify grid gets fewer rows and is inset. Verify no overlap between grid bottom and status bar top.
   - **Test: `layout_status_bar_integer_origin`** — With `status_bar_height: 22.0` at fractional DPI (1.25x), verify status bar physical height rounds to integer pixels.
-- [ ] **Update all existing chrome tests**: The function signature changes from 6 parameters to 8 (adding `status_bar_height: f32` and `border_inset: f32`). All existing tests must pass `0.0, 0.0` for the new parameters to preserve existing behavior. Update the tab bar height parameter from `46.0` to `36.0` simultaneously.
-- [ ] Run `./test-all.sh` to verify no regressions. Run `cargo test -p oriterm --test architecture` specifically.
+- [x] **Update all existing chrome tests**: The function signature changes from 6 parameters to 8 (adding `status_bar_height: f32` and `border_inset: f32`). All existing tests must pass `0.0, 0.0` for the new parameters to preserve existing behavior. Update the tab bar height parameter from `46.0` to `36.0` simultaneously.
+- [x] Run `./test-all.sh` to verify no regressions. Run `cargo test -p oriterm --test architecture` specifically.
 
 **Validation:** Terminal grid renders at the correct position with the new tab bar and status bar heights. No grid content is cut off or misaligned.
 

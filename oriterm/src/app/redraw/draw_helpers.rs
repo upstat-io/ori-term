@@ -30,13 +30,13 @@ impl App {
     /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
     #[expect(
         clippy::too_many_arguments,
-        reason = "tab bar drawing: widget, renderer, scene, viewport, scale, GPU, theme, cache, interaction, frame_requests, damage"
+        reason = "tab bar drawing: widget, renderer, scene, bounds, scale, GPU, theme, cache, interaction, frame_requests, damage"
     )]
     pub(in crate::app::redraw) fn draw_tab_bar(
         tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
         renderer: &mut crate::gpu::WindowRenderer,
         scene: &mut Scene,
-        logical_width: f32,
+        bounds: Rect,
         scale: f32,
         gpu: &GpuState,
         theme: &UiTheme,
@@ -51,8 +51,6 @@ impl App {
         if tab_bar.tab_count() == 0 {
             return false;
         }
-
-        let bounds = Rect::new(0.0, 0.0, logical_width, tab_bar.metrics().height);
 
         let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
         let icons = renderer.resolved_icons();
@@ -178,6 +176,42 @@ impl App {
 
         animating || frame_requests.anim_frame_requested()
     }
+
+    /// Draw the status bar at the bottom of the window.
+    ///
+    /// The status bar is non-interactive — no hover, focus, or animation
+    /// state. It renders terminal metadata (shell name, pane count, grid
+    /// dimensions, encoding, term type) into the chrome scene.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "status bar drawing: widget, renderer, scene, bounds, scale, GPU, theme, cache"
+    )]
+    pub(in crate::app::redraw) fn draw_status_bar(
+        status_bar: &oriterm_ui::widgets::status_bar::StatusBarWidget,
+        renderer: &mut crate::gpu::WindowRenderer,
+        scene: &mut Scene,
+        bounds: Rect,
+        scale: f32,
+        gpu: &GpuState,
+        theme: &UiTheme,
+        text_cache: &TextShapeCache,
+    ) {
+        let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
+        scene.clear();
+        let mut ctx = DrawCtx {
+            measurer: &measurer,
+            scene,
+            bounds,
+            now: Instant::now(),
+            theme,
+            icons: None,
+            interaction: None,
+            widget_id: None,
+            frame_requests: None,
+        };
+        status_bar.paint(&mut ctx);
+        renderer.append_ui_scene_with_text(scene, scale, 1.0, gpu);
+    }
 }
 
 /// Computes prepaint layout bounds for a tab bar widget.
@@ -196,9 +230,9 @@ pub(in crate::app::redraw) fn collect_tab_bar_prepaint_bounds(
     text_cache: &TextShapeCache,
     theme: &UiTheme,
     scale: f32,
-    logical_width: f32,
+    tab_bar_bounds: Rect,
 ) -> HashMap<WidgetId, Rect> {
-    let tab_bar_rect = Rect::new(0.0, 0.0, logical_width, tab_bar.metrics().height);
+    let tab_bar_rect = tab_bar_bounds;
     let measurer = CachedTextMeasurer::new(renderer.ui_measurer(scale), text_cache, scale);
     let layout_ctx = LayoutCtx {
         measurer: &measurer,

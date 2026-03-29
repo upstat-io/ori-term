@@ -94,8 +94,12 @@ const GRID_PADDING: f32 = 8.0;
 
 /// Computed top-level window layout: chrome and terminal grid positions.
 pub(super) struct WindowLayout {
+    /// Tab bar bounds in physical pixels.
+    pub tab_bar_rect: Rect,
     /// Grid bounds in physical pixels (origin + dimensions), inset by padding.
     pub grid_rect: Rect,
+    /// Status bar bounds in physical pixels.
+    pub status_bar_rect: Rect,
     /// Number of terminal columns that fit in the grid area.
     pub cols: usize,
     /// Number of terminal rows that fit in the grid area.
@@ -104,19 +108,21 @@ pub(super) struct WindowLayout {
 
 /// Compute the top-level window layout via the layout engine.
 ///
-/// Builds a `Column { TabBar(fixed), Grid(fill) }` descriptor and runs the
-/// two-pass flexbox solver to determine positions. The tab bar gets a fixed
-/// height (logical `tab_bar_height` scaled to physical pixels, rounded to
+/// Builds a `Column { TabBar(fixed), Grid(fill), StatusBar(fixed) }` descriptor
+/// and runs the two-pass flexbox solver to determine positions. The tab bar and
+/// status bar get fixed heights (logical, scaled to physical pixels, rounded to
 /// prevent subpixel seams). The terminal grid fills the remaining space.
 ///
-/// When `tab_bar_hidden` is true, the tab bar height is zero and the grid
-/// fills the full viewport.
+/// When `tab_bar_hidden` is true, the tab bar height is zero.
+/// When `status_bar_height` is 0.0, no status bar space is reserved.
+/// When `border_inset` is > 0.0, the entire layout is inset from the window
+/// edges by that many logical pixels (for the window border frame).
 ///
 /// All coordinates are in physical pixels — consistent with cell metrics,
 /// GPU renderer, and the winit viewport.
 #[expect(
     clippy::too_many_arguments,
-    reason = "window layout: viewport size, cell metrics, scale, tab bar visibility + height"
+    reason = "window layout: viewport size, cell metrics, scale, tab bar visibility + height, status bar height, border inset"
 )]
 pub(super) fn compute_window_layout(
     viewport_w: u32,
@@ -125,6 +131,8 @@ pub(super) fn compute_window_layout(
     scale: f32,
     tab_bar_hidden: bool,
     tab_bar_height: f32,
+    status_bar_height: f32,
+    border_inset: f32,
 ) -> WindowLayout {
     use oriterm_ui::layout::{Direction, LayoutBox, SizeSpec, compute_layout};
 
@@ -133,26 +141,40 @@ pub(super) fn compute_window_layout(
     } else {
         grid_origin_y(tab_bar_height, scale)
     };
+    let status_bar_h_px = (status_bar_height * scale).round();
+    let inset_px = (border_inset * scale).round();
+
+    let viewport = Rect::new(
+        inset_px,
+        inset_px,
+        (viewport_w as f32 - 2.0 * inset_px).max(0.0),
+        (viewport_h as f32 - 2.0 * inset_px).max(0.0),
+    );
 
     let root = LayoutBox::flex(
         Direction::Column,
         vec![
             // Tab bar: fixed height in physical pixels, fills width.
-            LayoutBox::leaf(viewport_w as f32, tab_bar_h_px)
+            LayoutBox::leaf(viewport.width(), tab_bar_h_px)
                 .with_width(SizeSpec::Fill)
                 .with_height(SizeSpec::Fixed(tab_bar_h_px)),
             // Terminal grid: fills remaining space.
             LayoutBox::leaf(0.0, 0.0)
                 .with_width(SizeSpec::Fill)
                 .with_height(SizeSpec::Fill),
+            // Status bar: fixed height at bottom.
+            LayoutBox::leaf(viewport.width(), status_bar_h_px)
+                .with_width(SizeSpec::Fill)
+                .with_height(SizeSpec::Fixed(status_bar_h_px)),
         ],
     )
     .with_width(SizeSpec::Fill)
     .with_height(SizeSpec::Fill);
 
-    let viewport = Rect::new(0.0, 0.0, viewport_w as f32, viewport_h as f32);
     let layout = compute_layout(&root, viewport);
+    let tab_bar_rect = layout.children[0].rect;
     let raw_grid = layout.children[1].rect;
+    let status_bar_rect = layout.children[2].rect;
 
     // Padding in physical pixels, rounded to integer to prevent subpixel
     // seams. Applied as a left/top origin shift on the grid rect.
@@ -175,7 +197,9 @@ pub(super) fn compute_window_layout(
     );
 
     WindowLayout {
+        tab_bar_rect,
         grid_rect,
+        status_bar_rect,
         cols,
         rows,
     }
