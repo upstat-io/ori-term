@@ -6,8 +6,10 @@
 
 mod codepoint_map;
 #[allow(
+    dead_code,
+    unused_imports,
     clippy::all,
-    reason = "COLRv1 compositor — sweep gradient and compose have known clippy issues"
+    reason = "COLRv1 module — only colr_clip_box is actively used"
 )]
 pub(crate) mod colr_v1;
 mod face;

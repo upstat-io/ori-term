@@ -35,6 +35,27 @@ pub(crate) fn has_colr(font_bytes: &[u8], face_index: u32, glyph_id: u16) -> boo
 /// `size_px` is used to compute the clip box in pixel coordinates. The paint
 /// commands themselves operate in font units — the compositor applies a
 /// `size_px / upem` scaling transform during rendering.
+/// Get just the COLR clip box for a glyph without collecting paint commands.
+///
+/// Returns the padded clip box in pixel coordinates, or `None` if the glyph
+/// has no COLR data. Used to determine the correct canvas size for swash's
+/// color rendering (swash clips to outline bounds, not COLR bounds).
+pub(crate) fn colr_clip_box(fd: &FaceData, glyph_id: u16, size_px: f32) -> Option<ClipBox> {
+    let font = FontRef::from_index(&fd.bytes, fd.face_index).ok()?;
+    let gid = skrifa::GlyphId::new(u32::from(glyph_id));
+    let color_glyph = font.color_glyphs().get(gid)?;
+    let size = Size::new(size_px);
+    let bb = color_glyph.bounding_box(skrifa::instance::LocationRef::default(), size)?;
+    // Pad by 10% to capture any overflow beyond the declared bounds.
+    let pad = (bb.y_max - bb.y_min) * 0.1;
+    Some(ClipBox {
+        x_min: bb.x_min - pad,
+        y_min: bb.y_min - pad,
+        x_max: bb.x_max + pad,
+        y_max: bb.y_max + pad,
+    })
+}
+
 pub(crate) fn collect_colr_v1(
     font_bytes: &[u8],
     face_index: u32,
@@ -84,6 +105,7 @@ pub(crate) fn collect_colr_v1(
 ///
 /// Glyph outlines are extracted via skrifa and composited with tiny-skia,
 /// which provides proper path clipping, gradient fills, and layer compositing.
+#[cfg(any())] // Compositor disabled — only colr_clip_box is used.
 pub(crate) fn try_rasterize_colr_v1(
     fd: &FaceData,
     glyph_id: u16,
