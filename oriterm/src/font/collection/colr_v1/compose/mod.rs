@@ -58,10 +58,6 @@ impl ComposeCtx<'_> {
     clippy::too_many_lines,
     reason = "linear command dispatch — splitting would obscure the sequential flow"
 )]
-#[expect(
-    clippy::else_if_without_else,
-    reason = "sweep gradient fallback path is clearer as separate else-if"
-)]
 pub(super) fn composite_commands(
     commands: &[PaintCommand],
     bitmap: &mut [u8],
@@ -138,16 +134,9 @@ pub(super) fn composite_commands(
                             tiny_skia::Transform::identity(),
                             current_mask.as_ref(),
                         );
-                    } else if let ResolvedBrush::SweepGradient {
-                        center,
-                        start_angle,
-                        end_angle,
-                        stops,
-                        extend,
-                    } = brush
-                    {
-                        // Sweep gradient on a glyph: create a glyph mask, then
-                        // fill through the combined mask.
+                    } else {
+                        // Direct pixel-by-pixel fill for gradients tiny-skia
+                        // can't handle: sweep and two-circle radial.
                         let glyph_mask =
                             make_glyph_mask(&outlines, *glyph_id, &ctx, current_mask.as_ref());
                         let t = if let Some(bt) = brush_transform.as_ref() {
@@ -155,18 +144,7 @@ pub(super) fn composite_commands(
                         } else {
                             *ctx.transform()
                         };
-                        let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), &t);
-                        let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), &t);
-                        brush::fill_sweep_direct(
-                            &mut pixmap,
-                            cx,
-                            cy,
-                            *start_angle,
-                            *end_angle,
-                            stops,
-                            *extend,
-                            glyph_mask.as_ref(),
-                        );
+                        fill_direct_on_glyph(&mut pixmap, brush, &ctx, &t, glyph_mask.as_ref());
                     }
                 }
             }
@@ -392,32 +370,40 @@ fn fill_brush(
     mask: Option<&tiny_skia::Mask>,
 ) {
     // Sweep gradients bypass the shader system — fill directly.
-    if let ResolvedBrush::SweepGradient {
-        center,
-        start_angle,
-        end_angle,
-        stops,
-        extend,
-    } = brush
-    {
-        let t = if let Some(bt) = brush_xf {
-            *ctx.transform() * *bt
-        } else {
-            *ctx.transform()
-        };
-        let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), &t);
-        let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), &t);
-        brush::fill_sweep_direct(
-            pixmap,
-            cx,
-            cy,
-            *start_angle,
-            *end_angle,
+    let t = if let Some(bt) = brush_xf {
+        *ctx.transform() * *bt
+    } else {
+        *ctx.transform()
+    };
+
+    // Direct pixel-by-pixel fills for gradients tiny-skia can't handle.
+    match brush {
+        ResolvedBrush::SweepGradient {
+            center,
+            start_angle,
+            end_angle,
             stops,
-            *extend,
-            mask,
-        );
-        return;
+            extend,
+        } => {
+            let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+            let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), &t);
+            brush::fill_sweep_direct(
+                pixmap,
+                cx,
+                cy,
+                *start_angle,
+                *end_angle,
+                stops,
+                *extend,
+                mask,
+            );
+            return;
+        }
+        ResolvedBrush::RadialGradient { r0, .. } if *r0 > 0.0 => {
+            fill_radial_brush(pixmap, brush, ctx, &t, mask);
+            return;
+        }
+        _ => {}
     }
 
     let Some(paint) = make_paint(brush, ctx, brush_xf) else {
@@ -429,6 +415,78 @@ fn fill_brush(
         return;
     };
     pixmap.fill_rect(rect, &paint, tiny_skia::Transform::identity(), mask);
+}
+
+/// Fill with a two-circle radial gradient via `fill_radial_direct`.
+fn fill_radial_brush(
+    pixmap: &mut tiny_skia::Pixmap,
+    brush: &ResolvedBrush,
+    ctx: &ComposeCtx<'_>,
+    t: &ColrTransform,
+    mask: Option<&tiny_skia::Mask>,
+) {
+    if let ResolvedBrush::RadialGradient {
+        c0,
+        r0,
+        c1,
+        r1,
+        stops,
+        extend,
+    } = brush
+    {
+        let bx0 = to_bx(c0[0], c0[1], ctx.scale(), ctx.clip(), t);
+        let by0 = to_by(c0[0], c0[1], ctx.scale(), ctx.clip(), t);
+        let bx1 = to_bx(c1[0], c1[1], ctx.scale(), ctx.clip(), t);
+        let by1 = to_by(c1[0], c1[1], ctx.scale(), ctx.clip(), t);
+        brush::fill_radial_direct(
+            pixmap,
+            bx0,
+            by0,
+            r0 * ctx.scale(),
+            bx1,
+            by1,
+            r1 * ctx.scale(),
+            stops,
+            *extend,
+            mask,
+        );
+    }
+}
+
+/// Direct pixel-by-pixel fill on a glyph (sweep or two-circle radial).
+fn fill_direct_on_glyph(
+    pixmap: &mut tiny_skia::Pixmap,
+    brush: &ResolvedBrush,
+    ctx: &ComposeCtx<'_>,
+    t: &ColrTransform,
+    mask: Option<&tiny_skia::Mask>,
+) {
+    match brush {
+        ResolvedBrush::SweepGradient {
+            center,
+            start_angle,
+            end_angle,
+            stops,
+            extend,
+        } => {
+            let cx = to_bx(center[0], center[1], ctx.scale(), ctx.clip(), t);
+            let cy = to_by(center[0], center[1], ctx.scale(), ctx.clip(), t);
+            brush::fill_sweep_direct(
+                pixmap,
+                cx,
+                cy,
+                *start_angle,
+                *end_angle,
+                stops,
+                *extend,
+                mask,
+            );
+        }
+        ResolvedBrush::RadialGradient { r0, .. } if *r0 > 0.0 => {
+            fill_radial_brush(pixmap, brush, ctx, t, mask);
+        }
+        _ => {}
+    }
 }
 
 // Mask helpers
