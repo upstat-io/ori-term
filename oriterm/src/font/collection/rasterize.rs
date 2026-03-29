@@ -59,7 +59,7 @@ impl FontCollection {
             )
         })?;
 
-        self.glyph_cache.insert(key, glyph);
+        self.cache_insert(key, glyph);
         self.glyph_cache.get(&key)
     }
 
@@ -113,7 +113,7 @@ impl FontCollection {
             )
         })?;
 
-        self.glyph_cache.insert(key, glyph);
+        self.cache_insert(key, glyph);
         self.glyph_cache.get(&key)
     }
 }

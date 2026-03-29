@@ -20,7 +20,7 @@ pub const TAB_LEFT_MARGIN: f32 = 16.0;
 pub const TAB_TOP_MARGIN: f32 = 8.0;
 
 /// Internal horizontal padding within each tab.
-pub const TAB_PADDING: f32 = 8.0;
+pub const TAB_PADDING: f32 = 10.0;
 
 /// Gap between icon and title text inside a tab.
 pub const ICON_TEXT_GAP: f32 = 4.0;

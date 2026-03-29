@@ -12,6 +12,7 @@ mod codepoint_map;
     reason = "COLRv1 module — only colr_clip_box is actively used"
 )]
 pub(crate) mod colr_v1;
+mod config;
 mod face;
 pub(crate) mod loading;
 mod metadata;
@@ -39,6 +40,14 @@ use metadata::{
     FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
     face_variations, resolve_ui_weight,
 };
+
+/// Maximum total bitmap bytes in the glyph cache before eviction.
+///
+/// Set to 16 MiB. A typical terminal session caches ASCII (~200 glyphs, ~100 KB)
+/// plus emoji (~50-200 color glyphs, ~1-4 MB). This cap prevents unbounded growth
+/// from pathological input (e.g., rendering thousands of unique CJK or emoji).
+/// When exceeded, the cache is fully cleared and re-populated on demand.
+const MAX_CACHE_BYTES: usize = 16 * 1024 * 1024;
 
 /// A rasterized glyph bitmap ready for atlas upload.
 #[derive(Debug, Clone)]
@@ -92,6 +101,8 @@ pub(crate) struct FontCollection {
     format: GlyphFormat,
     hinting: HintingMode,
     glyph_cache: HashMap<RasterKey, RasterizedGlyph>,
+    /// Total bitmap bytes across all cached glyphs.
+    cache_bytes: usize,
     scale_context: ScaleContext,
     // Config
     weight: u16,
@@ -205,6 +216,7 @@ impl FontCollection {
             format,
             hinting,
             glyph_cache: HashMap::new(),
+            cache_bytes: 0,
             scale_context: ScaleContext::new(),
             weight,
             family_name: font_set.family_name,
@@ -270,6 +282,37 @@ impl FontCollection {
     #[allow(dead_code, reason = "font fields consumed in later sections")]
     pub fn cache_len(&self) -> usize {
         self.glyph_cache.len()
+    }
+
+    /// Total bitmap bytes in the glyph cache.
+    #[allow(dead_code, reason = "font fields consumed in later sections")]
+    pub fn cache_bytes(&self) -> usize {
+        self.cache_bytes
+    }
+
+    /// Insert a rasterized glyph into the cache, evicting if over budget.
+    ///
+    /// When the new glyph would push total bytes past `MAX_CACHE_BYTES`,
+    /// the cache is cleared *before* insertion so the new glyph survives
+    /// and the subsequent `glyph_cache.get(&key)` in the caller succeeds.
+    fn cache_insert(&mut self, key: RasterKey, glyph: RasterizedGlyph) {
+        let glyph_bytes = glyph.bitmap.len();
+        if self.cache_bytes + glyph_bytes > MAX_CACHE_BYTES {
+            log::info!(
+                "glyph cache over budget ({:.1} MiB, {} entries) — clearing",
+                self.cache_bytes as f64 / (1024.0 * 1024.0),
+                self.glyph_cache.len(),
+            );
+            self.cache_clear();
+        }
+        self.cache_bytes += glyph_bytes;
+        self.glyph_cache.insert(key, glyph);
+    }
+
+    /// Clear the glyph cache and reset the byte counter.
+    fn cache_clear(&mut self) {
+        self.glyph_cache.clear();
+        self.cache_bytes = 0;
     }
 
     /// Effective pixel size for a face, accounting for cap-height normalization.
@@ -366,136 +409,6 @@ impl FontCollection {
         } else {
             self.primary.get(face_idx.as_usize())?.as_ref()
         }
-    }
-
-    // ── Configuration setters ──
-
-    /// Replace collection-wide OpenType features.
-    ///
-    /// Overrides the default `["liga", "calt"]` features. Primary faces (0–3)
-    /// use these features; fallback faces use their per-fallback override if
-    /// configured, otherwise these collection features.
-    pub fn set_features(&mut self, features: Vec<rustybuzz::Feature>) {
-        self.features = features;
-    }
-
-    /// Update a fallback font's metadata (`size_offset` and features).
-    ///
-    /// `fallback_index` is the 0-based position in the fallback array (not
-    /// the global `FaceIdx`). Out-of-range indices are ignored.
-    pub fn set_fallback_meta(
-        &mut self,
-        fallback_index: usize,
-        size_offset: f32,
-        features: Option<Vec<rustybuzz::Feature>>,
-    ) {
-        if let Some(meta) = self.fallback_meta.get_mut(fallback_index) {
-            meta.size_offset = size_offset;
-            meta.features = features;
-        }
-    }
-
-    // ── Codepoint map ──
-
-    /// Add a codepoint-to-face override.
-    ///
-    /// Codepoints in `start..=end` will resolve to `face_idx` before
-    /// consulting the normal primary + fallback chain. If the mapped face
-    /// doesn't contain the codepoint, normal resolution is used.
-    pub fn add_codepoint_mapping(&mut self, start: u32, end: u32, face_idx: FaceIdx) {
-        self.codepoint_map.add(start, end, face_idx);
-    }
-
-    /// Whether the codepoint map has any entries.
-    #[allow(dead_code, reason = "diagnostic predicate for logging and future UI")]
-    pub fn has_codepoint_mappings(&self) -> bool {
-        !self.codepoint_map.is_empty()
-    }
-
-    // ── Public operations ──
-
-    /// Change font size, recomputing all derived metrics and caches.
-    ///
-    /// Recomputes cell metrics from the Regular face at the new size,
-    /// recalculates cap-height normalization for fallback fonts, and clears
-    /// the glyph cache. The caller (`WindowRenderer::set_font_size`) is
-    /// responsible for re-populating the atlas afterward.
-    pub fn set_size(&mut self, size_pt: f32, dpi: f32) -> Result<(), FontError> {
-        let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-
-        // Recompute metrics from Regular face (with weight variations).
-        let regular = self.primary[0]
-            .as_ref()
-            .ok_or_else(|| FontError::InvalidFont("Regular face required".into()))?;
-        let regular_vars = face_variations(
-            FaceIdx::REGULAR,
-            SyntheticFlags::NONE,
-            self.weight,
-            &regular.axes,
-        );
-        let fm = compute_metrics(
-            &regular.bytes,
-            regular.face_index,
-            size_px,
-            &regular_vars.settings,
-        )
-        .ok_or_else(|| FontError::InvalidFont("Regular font metrics unavailable".into()))?;
-        let primary_cap = fm.cap_height;
-
-        // Recalculate cap-height normalization for fallbacks.
-        for (fb, meta) in self.fallbacks.iter().zip(self.fallback_meta.iter_mut()) {
-            let fb_m = compute_metrics(&fb.bytes, fb.face_index, size_px, &[]).unwrap_or(fm);
-            meta.scale_factor = if fb_m.cap_height > 0.0 && primary_cap > 0.0 {
-                primary_cap / fb_m.cap_height
-            } else {
-                1.0
-            };
-        }
-
-        self.size_px = size_px;
-        self.dpi = dpi;
-        self.metrics = CellMetrics::new(
-            fm.cell_width,
-            fm.cell_height,
-            fm.baseline,
-            fm.underline_offset,
-            fm.stroke_size,
-            fm.strikeout_offset,
-        );
-        self.cap_height_px = primary_cap;
-        self.glyph_cache.clear();
-        Ok(())
-    }
-
-    /// Change hinting mode and clear the glyph cache.
-    ///
-    /// No-ops if the mode is unchanged. The caller (`WindowRenderer::set_hinting_mode`)
-    /// is responsible for clearing GPU atlases and re-populating afterward.
-    ///
-    /// Returns `true` if the mode actually changed.
-    pub fn set_hinting(&mut self, mode: HintingMode) -> bool {
-        if self.hinting == mode {
-            return false;
-        }
-        self.hinting = mode;
-        self.glyph_cache.clear();
-        true
-    }
-
-    /// Change rasterization format and clear the glyph cache.
-    ///
-    /// No-ops if the format is unchanged. The caller
-    /// (`WindowRenderer::set_glyph_format`) is responsible for clearing GPU
-    /// atlases and re-populating afterward.
-    ///
-    /// Returns `true` if the format actually changed.
-    pub fn set_format(&mut self, format: GlyphFormat) -> bool {
-        if self.format == format {
-            return false;
-        }
-        self.format = format;
-        self.glyph_cache.clear();
-        true
     }
 }
 

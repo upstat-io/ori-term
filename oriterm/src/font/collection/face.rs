@@ -11,6 +11,7 @@ use swash::zeno::{Angle, Format, Transform, Vector};
 use swash::{CacheKey, FontRef, NormalizedCoord};
 
 use super::RasterizedGlyph;
+use super::loading::FontBytes;
 use crate::font::{GlyphFormat, SyntheticFlags};
 
 /// Convert variation settings to swash normalized coordinates.
@@ -45,12 +46,12 @@ pub(super) struct AxisInfo {
 
 /// Validated font data with swash metadata.
 ///
-/// Raw bytes are kept in [`Arc<Vec<u8>>`] for shared ownership with rustybuzz
+/// Raw bytes are kept in [`Arc<FontBytes>`] for shared ownership with rustybuzz
 /// faces (Section 6). The `offset` and `cache_key` enable fast transient
 /// [`FontRef`] construction without re-parsing.
 pub(crate) struct FaceData {
     /// Raw font file bytes.
-    pub(super) bytes: Arc<Vec<u8>>,
+    pub(super) bytes: Arc<FontBytes>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
     pub(super) face_index: u32,
     /// Byte offset to the font table directory.
@@ -69,11 +70,11 @@ pub(super) fn validate_font(data: &[u8], face_index: u32) -> Option<(u32, CacheK
     Some((fr.offset, fr.key))
 }
 
-/// Build a [`FaceData`] from an [`Arc<Vec<u8>>`] and face index.
+/// Build a [`FaceData`] from an [`Arc<FontBytes>`] and face index.
 ///
 /// Returns `None` if the font bytes are invalid. Discovers variable font
 /// axes from the `fvar` table (empty for non-variable fonts).
-pub(super) fn build_face(bytes: Arc<Vec<u8>>, face_index: u32) -> Option<FaceData> {
+pub(super) fn build_face(bytes: Arc<FontBytes>, face_index: u32) -> Option<FaceData> {
     let (offset, cache_key) = validate_font(&bytes, face_index)?;
     let axes = discover_axes(&bytes, face_index);
     Some(FaceData {

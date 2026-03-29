@@ -137,6 +137,15 @@ pub(crate) fn try_rasterize_colr_v1(
     if width == 0 || height == 0 {
         return None;
     }
+    // Cap bitmap at 1024×1024 (4 MiB RGBA) to prevent pathological allocations
+    // from malformed fonts. Normal emoji at MAX_FONT_SIZE (200px) produce
+    // bitmaps well under 256×256.
+    if width > 1024 || height > 1024 {
+        log::warn!(
+            "COLR glyph {glyph_id}: bitmap too large ({width}x{height}), falling through to swash"
+        );
+        return None;
+    }
 
     // RGBA buffer (premultiplied, initially transparent).
     let mut bitmap = vec![0u8; (width * height * 4) as usize];
