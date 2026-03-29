@@ -23,6 +23,7 @@ mod meta_tests;
 mod multi_size;
 mod reference_tests;
 mod settings_dialog;
+mod tab_bar_brutal;
 mod tab_bar_icons;
 
 use std::path::PathBuf;

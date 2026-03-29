@@ -2011,3 +2011,40 @@ fn modified_dot_not_shown_when_hovered() {
     assert!(w.is_tab_hovered(0));
     assert!(!w.is_tab_hovered(1));
 }
+
+// Color mapping (brutal design)
+
+#[test]
+fn colors_from_theme_bar_bg_is_bg_primary() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.bar_bg, theme.bg_primary);
+}
+
+#[test]
+fn colors_from_theme_active_bg_is_bg_secondary() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.active_bg, theme.bg_secondary);
+}
+
+#[test]
+fn colors_from_theme_separator_full_opacity() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.separator, theme.border);
+}
+
+#[test]
+fn colors_from_theme_has_accent_bar() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.accent_bar, theme.accent);
+}
+
+#[test]
+fn colors_from_theme_has_bar_border() {
+    let theme = UiTheme::dark();
+    let colors = TabBarColors::from_theme(&theme);
+    assert_eq!(colors.bar_border, theme.border);
+}
