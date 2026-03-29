@@ -93,7 +93,7 @@ pub(super) fn grid_origin_y(chrome_height_logical: f32, scale: f32) -> f32 {
 const GRID_PADDING: f32 = 8.0;
 
 /// Computed top-level window layout: chrome and terminal grid positions.
-pub(super) struct WindowLayout {
+pub(crate) struct WindowLayout {
     /// Tab bar bounds in physical pixels.
     pub tab_bar_rect: Rect,
     /// Grid bounds in physical pixels (origin + dimensions), inset by padding.
@@ -124,7 +124,7 @@ pub(super) struct WindowLayout {
     clippy::too_many_arguments,
     reason = "window layout: viewport size, cell metrics, scale, tab bar visibility + height, status bar height, border inset"
 )]
-pub(super) fn compute_window_layout(
+pub(crate) fn compute_window_layout(
     viewport_w: u32,
     viewport_h: u32,
     cell: &crate::font::CellMetrics,

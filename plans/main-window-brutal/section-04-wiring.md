@@ -21,10 +21,10 @@ sections:
     status: complete
   - id: "04.3"
     title: "Update Existing Golden References"
-    status: not-started
+    status: complete
   - id: "04.4"
     title: "Composed Golden Tests"
-    status: not-started
+    status: in-progress
   - id: "04.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -188,16 +188,18 @@ The terminal grid position is computed by `compute_window_layout()` in `oriterm/
 
 The tab bar height change (46px → 36px) will affect existing golden tests that include the tab bar. The status bar addition may affect composed tests.
 
-- [ ] Identify all existing golden tests affected by the tab bar height change (note: `tab_bar_emoji.png` is already handled in Section 01.7):
+- [x] Identify all existing golden tests affected by the tab bar height change (note: `tab_bar_emoji.png` is already handled in Section 01.7):
   - Any test that renders with a tab bar origin offset
   - Any test that includes the tab bar in its rendered output
-- [ ] For each affected test:
+  - Result: All 55 visual regression tests pass. Grid-only tests unaffected. Tab bar goldens already updated in Section 01.
+- [x] For each affected test:
   - Run the test to see if it fails (pixel mismatch)
   - If it fails: regenerate with `ORITERM_UPDATE_GOLDEN=1`
   - Visually inspect the new reference to verify correctness
   - Commit the updated reference PNG
-- [ ] **Do NOT regenerate references blindly** — inspect each one to verify the change is expected (height change, not a regression)
-- [ ] Tests that render ONLY the grid (no chrome) should NOT be affected — verify these still pass unchanged
+  - Result: No failures — all references current.
+- [x] **Do NOT regenerate references blindly** — inspect each one to verify the change is expected (height change, not a regression)
+- [x] Tests that render ONLY the grid (no chrome) should NOT be affected — verify these still pass unchanged. Verified: all 55 pass.
 
 **Validation:** All existing golden tests pass with correct references. Only tab-bar-related references changed.
 
@@ -209,9 +211,9 @@ The tab bar height change (46px → 36px) will affect existing golden tests that
 
 Write golden tests that render the full main window chrome: tab bar + terminal grid + status bar + borders.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/main_window.rs` module with `#![cfg(all(test, feature = "gpu-tests"))]` at the top
-- [ ] Add `mod main_window;` to `visual_regression/mod.rs`
-- [ ] **Build a composed rendering helper**. This is the most complex golden test — it renders tab bar (UI font), terminal grid (terminal font), and status bar (UI font) into a single frame. Approach:
+- [x] Create `oriterm/src/gpu/visual_regression/main_window.rs` module with `#![cfg(all(test, feature = "gpu-tests"))]` at the top
+- [x] Add `mod main_window;` to `visual_regression/mod.rs`
+- [x] **Build a composed rendering helper**. This is the most complex golden test — it renders tab bar (UI font), terminal grid (terminal font), and status bar (UI font) into a single frame. Approach:
   - Use `headless_tab_bar_env()` pattern (from `tab_bar_icons.rs`) which loads BOTH terminal font (`FontCollection`) AND UI font (`UiFontSizes`). This gives a `WindowRenderer` that can render both chrome and grid content.
   - Compute layout via `compute_window_layout()` to get correct grid positioning.
   - Paint tab bar at y=0 via `build_scene` + `append_ui_scene_with_text` (same as production).
@@ -232,25 +234,25 @@ Write golden tests that render the full main window chrome: tab bar + terminal g
       height: u32,
   ) -> Vec<u8>
   ```
-- [ ] **Test: `main_window_single_pane_96dpi`** — Full window with 1 tab, single pane, status bar
+- [x] **Test: `main_window_single_pane_96dpi`** — Full window with 1 tab, single pane, status bar
   - Size: 800x600 at 96 DPI
   - Tab bar: 1 active tab ("zsh")
   - Grid: simple text content (use `FrameInput::test_grid` pattern from existing tests)
   - Status bar: "zsh | 1 pane | 80x24 | UTF-8 | xterm-256color"
   - Window border: 2px border_strong
   - Verifies: all chrome elements render at correct positions with correct styling
-- [ ] **Test: `main_window_3tabs_96dpi`** — Full window with 3 tabs (1 active, 1 modified)
+- [x] **Test: `main_window_3tabs_96dpi`** — Full window with 3 tabs (1 active, 1 modified)
   - Tab bar: 3 tabs with mockup content
   - Status bar populated
   - Verifies: tab bar features (accent bar, separators, modified dot) in composed context
-- [ ] **Test: `main_window_192dpi`** — Same as single_pane at 192 DPI
+- [x] **Test: `main_window_192dpi`** — Same as single_pane at 192 DPI
   - Catches DPI scaling regressions in the composed layout
   - All dimensions double: 72px tab bar, 44px status bar, 4px borders
-- [ ] **Test: `main_window_no_status_bar_96dpi`** — Full window with `show_status_bar: false`. Verifies that the grid expands to fill the space where the status bar would be. Catches regressions where status bar space is reserved even when hidden.
-- [ ] **Test: `main_window_hidden_tab_bar_96dpi`** — Full window with `tab_bar_position: Hidden`. Verifies grid starts at the top (y=0 + padding) with no tab bar. Status bar still at bottom. Catches regressions in the hidden tab bar + status bar combination.
-- [ ] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- main_window` to generate references
+- [x] **Test: `main_window_no_status_bar_96dpi`** — Full window with `show_status_bar: false`. Verifies that the grid expands to fill the space where the status bar would be. Catches regressions where status bar space is reserved even when hidden.
+- [x] **Test: `main_window_hidden_tab_bar_96dpi`** — Full window with `tab_bar_position: Hidden`. Verifies grid starts at the top (y=0 + padding) with no tab bar. Status bar still at bottom. Catches regressions in the hidden tab bar + status bar combination.
+- [x] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- main_window` to generate references
 - [ ] Visually inspect against the HTML mockup (open both side by side)
-- [ ] Commit reference PNGs
+- [x] Commit reference PNGs
 - [ ] `/tpr-review` checkpoint
 
 **Validation:** All `main_window_*` golden tests pass. The composed output visually matches `mockups/main-window-brutal.html`.

@@ -19,6 +19,7 @@
 mod decoration_tests;
 mod dialog_helpers;
 mod edge_case_tests;
+mod main_window;
 mod meta_tests;
 mod multi_size;
 mod reference_tests;
