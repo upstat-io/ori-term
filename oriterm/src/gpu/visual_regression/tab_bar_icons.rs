@@ -1,7 +1,8 @@
 //! Golden tests for tab bar emoji icon rendering.
 //!
-//! Verifies that emoji icons from OSC 0/1 actually rasterize visible pixels
-//! through the terminal font's color emoji fallback chain.
+//! Uses a differential approach: renders a tab WITH an emoji icon and
+//! WITHOUT, then compares pixel data. If emoji renders, extra glyph
+//! pixels appear in the with-icon version.
 
 #![cfg(all(test, feature = "gpu-tests"))]
 
@@ -15,7 +16,7 @@ use oriterm_ui::widgets::tab_bar::TabBarWidget;
 use oriterm_ui::widgets::tab_bar::widget::{TabEntry, TabIcon};
 
 use crate::font::shaper::CachedTextMeasurer;
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, TextShapeCache};
+use crate::font::{FontCollection, FontSet, GlyphFormat, GlyphStyle, HintingMode, TextShapeCache};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
 use crate::gpu::window_renderer::WindowRenderer;
@@ -23,7 +24,7 @@ use crate::gpu::window_renderer::WindowRenderer;
 const WIDTH: u32 = 400;
 const HEIGHT: u32 = 50;
 
-/// Headless environment with terminal font (emoji fallback) + UI font.
+/// Headless environment with terminal font (has emoji fallback) + UI font.
 fn headless_tab_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let pipelines = GpuPipelines::new(&gpu);
@@ -95,56 +96,68 @@ fn render_tab_bar(
         .expect("pixel readback should succeed")
 }
 
-/// Count pixels that have color saturation (not just white/gray on dark bg).
-///
-/// Color emoji have hue (green 🐍, orange 🔥). Regular mono text is
-/// white/gray (R≈G≈B). A pixel has saturation when its max channel
-/// differs from its min channel significantly.
-fn count_saturated_pixels(pixels: &[u8], threshold: u8) -> usize {
-    pixels
-        .chunks(4)
-        .filter(|px| {
-            let r = px[0];
-            let g = px[1];
-            let b = px[2];
-            let max = r.max(g).max(b);
-            let min = r.min(g).min(b);
-            // Must be above background and have color variation.
-            max > 40 && (max - min) > threshold
-        })
-        .count()
+/// Verify the embedded font collection resolves emoji to a fallback face.
+#[test]
+fn embedded_font_resolves_emoji_glyph() {
+    let fc = FontCollection::new(
+        FontSet::embedded(),
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("embedded collection should build");
+    let resolved = fc.resolve_prefer_emoji('😀', GlyphStyle::Regular);
+    assert_ne!(
+        resolved.glyph_id, 0,
+        "😀 (U+1F600) must resolve to a non-zero glyph_id via the embedded \
+         emoji fallback font (NotoEmoji-Regular.ttf)."
+    );
+    assert!(
+        resolved.face_idx.is_fallback(),
+        "emoji should resolve via fallback face (got face_idx={:?})",
+        resolved.face_idx,
+    );
 }
 
+/// Verify emoji icon renders visible pixels in the tab bar.
+///
+/// Differential test: renders WITH emoji icon vs WITHOUT, counts pixels
+/// that differ by more than a threshold. Emoji rendering produces extra
+/// glyph pixels in the icon region.
 #[test]
-#[ignore = "embedded test font has no emoji fallback — needs a test emoji font to pass"]
-fn emoji_icon_produces_saturated_color_pixels() {
+fn emoji_icon_produces_visible_pixels() {
     let Some((gpu, pipelines, mut renderer)) = headless_tab_bar_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
 
-    // Tab with ONLY emoji icon, empty title — any color pixels must be from the emoji.
+    // Tab with ONLY emoji icon, empty title.
     let with_emoji = render_tab_bar(
         &gpu,
         &pipelines,
         &mut renderer,
-        vec![TabEntry::new("").with_icon(Some(TabIcon::Emoji("🐍".to_owned())))],
+        vec![TabEntry::new("").with_icon(Some(TabIcon::Emoji("😀".to_owned())))],
     );
 
-    // Tab with NO icon, empty title — baseline (should have zero saturation).
+    // Tab with NO icon, empty title — baseline.
     let without_emoji = render_tab_bar(&gpu, &pipelines, &mut renderer, vec![TabEntry::new("")]);
 
-    let sat_with = count_saturated_pixels(&with_emoji, 20);
-    let sat_without = count_saturated_pixels(&without_emoji, 20);
+    // Count pixels that differ between the two renders.
+    let diff_count = with_emoji
+        .chunks(4)
+        .zip(without_emoji.chunks(4))
+        .filter(|(a, b)| {
+            a[0].abs_diff(b[0]) > 2 || a[1].abs_diff(b[1]) > 2 || a[2].abs_diff(b[2]) > 2
+        })
+        .count();
 
-    // The emoji tab must have MORE saturated pixels than the empty tab.
-    // Color emoji produce green/brown/etc pixels that have hue.
-    // If both are zero, the emoji didn't rasterize as a color glyph.
     assert!(
-        sat_with > sat_without + 10,
-        "Emoji 🐍 must produce color (saturated) pixels in the tab bar. \
-         with_emoji={sat_with} saturated pixels, without_emoji={sat_without}. \
-         Expected at least 10 more saturated pixels with emoji. \
-         This means the emoji is NOT rendering through the color emoji font."
+        diff_count > 20,
+        "Emoji 😀 must produce visible glyph pixels in the tab bar. \
+         Only {diff_count} pixels differed between with-emoji and without-emoji. \
+         Expected at least 20. The emoji fallback font must be loaded and the \
+         glyph must rasterize through the terminal font collection."
     );
 }

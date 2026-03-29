@@ -37,6 +37,14 @@ pub(crate) const UI_FONT_REGULAR: &[u8] = include_bytes!("../../../fonts/IBMPlex
 pub(crate) const UI_FONT_MEDIUM: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Medium.ttf");
 pub(crate) const UI_FONT_BOLD: &[u8] = include_bytes!("../../../fonts/IBMPlexMono-Bold.ttf");
 
+/// Noto Emoji Regular — monochrome emoji outlines for test fallback (~849 KB).
+///
+/// Covers all standard emoji codepoints. Used as a fallback in
+/// `FontSet::embedded()` so golden tests can verify emoji glyph resolution
+/// and rendering through the fallback chain.
+#[cfg(test)]
+pub(crate) const TEST_EMOJI_DATA: &[u8] = include_bytes!("../../../fonts/test-emoji.ttf");
+
 /// Where the font was discovered (for logging and diagnostics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontOrigin {
