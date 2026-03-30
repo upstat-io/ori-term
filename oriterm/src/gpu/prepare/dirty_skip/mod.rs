@@ -372,7 +372,8 @@ pub(crate) fn fill_frame_incremental(
 
         let col = cell.column.0;
         let x = ox + col as f32 * cw;
-        let y = oy + row as f32 * ch;
+        // Round Y to integer pixels (see prepare/mod.rs for rationale).
+        let y = (oy + row as f32 * ch).round();
 
         let (fg, bg) = resolve_cell_colors(
             cell,

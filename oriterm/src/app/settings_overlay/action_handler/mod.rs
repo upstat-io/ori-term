@@ -244,12 +244,9 @@ fn handle_bell(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) ->
 fn handle_rendering(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
     match action {
         WidgetAction::Selected { id, index } if *id == ids.gpu_backend_dropdown => {
-            config.rendering.gpu_backend = match index {
-                0 => GpuBackend::Auto,
-                1 => GpuBackend::Vulkan,
-                2 => GpuBackend::DirectX12,
-                _ => GpuBackend::Metal,
-            };
+            config.rendering.gpu_backend = GpuBackend::available()
+                .get(*index)
+                .map_or(GpuBackend::Auto, |(b, _)| *b);
             true
         }
         WidgetAction::Toggled { id, value } if *id == ids.subpixel_toggle => {

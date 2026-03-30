@@ -135,7 +135,7 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
     let ch = input.cell_size.height;
     for &row in &input.prompt_marker_rows {
         let x = ox;
-        let y = oy + row as f32 * ch;
+        let y = (oy + row as f32 * ch).round();
         let rect = ScreenRect {
             x,
             y,
@@ -170,7 +170,7 @@ pub(super) fn build_cursor(
     color: Rgb,
 ) {
     let x = ox + col as f32 * cw;
-    let y = oy + row as f32 * ch;
+    let y = (oy + row as f32 * ch).round();
     let t = 2.0_f32;
 
     match shape {

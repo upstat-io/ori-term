@@ -35,18 +35,15 @@ pub(super) fn build_page(
 
 /// GPU section: backend dropdown + restart notice.
 fn build_gpu_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) -> Box<dyn Widget> {
-    let items = vec![
-        "Auto".to_owned(),
-        "Vulkan".to_owned(),
-        "DirectX 12".to_owned(),
-        "Metal".to_owned(),
-    ];
-    let idx = match config.rendering.gpu_backend {
-        GpuBackend::Auto => 0,
-        GpuBackend::Vulkan => 1,
-        GpuBackend::DirectX12 => 2,
-        GpuBackend::Metal => 3,
-    };
+    let available = GpuBackend::available();
+    let items: Vec<String> = available
+        .iter()
+        .map(|(_, label)| (*label).to_owned())
+        .collect();
+    let idx = available
+        .iter()
+        .position(|(b, _)| *b == config.rendering.gpu_backend)
+        .unwrap_or(0);
     let dropdown = DropdownWidget::new(items).with_selected(idx);
     ids.gpu_backend_dropdown = dropdown.id();
 

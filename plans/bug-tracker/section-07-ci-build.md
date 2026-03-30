@@ -34,10 +34,13 @@ sections:
 
 ## 07.R Third Party Review Findings
 
-- [ ] `[BUG-07-001][high]` `scripts/bump-build.sh:61`, `.github/workflows/auto-release.yml:75` — Auto-release flow can only produce one release per UTC day. `bump-build.sh` derives the version suffix from `YYYYMMDD` only, and `auto-release.yml` exits early when that tag already exists. A second merge on the same UTC date silently skips release creation with no error or notification.
+- [x] `[BUG-07-001][high]` Auto-release one per UTC day limit.
+  **Fixed 2026-03-30.** `bump-build.sh` now appends a sequence number (`.2`, `.3`, ...) when the current BUILD_NUMBER already has today's date. Format: `0.2.0-alpha.YYYYMMDD[.N]`.
 
-- [ ] `[BUG-07-002][high]` `.github/workflows/release.yml:27` — `release.yml` no longer validates that the pushed tag matches the workspace version. Current validation only checks "tag is on main" + `sync-version.sh --check`; it never compares `github.ref_name` to the version in `Cargo.toml`. A manually pushed tag like `v9.9.9` would pass validation and produce a release with a version that does not match the crate metadata.
+- [x] `[BUG-07-002][high]` `release.yml` no longer validates tag matches workspace version.
+  **Fixed 2026-03-30.** Added "Verify tag matches workspace version" step in `release.yml` that extracts the version from Cargo.toml and compares it to `github.ref_name`. Fails with a clear error if they don't match.
 
-- [ ] `[BUG-07-003][medium]` `.github/workflows/auto-release.yml:104`, `scripts/sync-version.sh:35` — Auto-release commit path stages `Cargo.lock` without regenerating it. `auto-release.yml` runs only `sync-version.sh` before `git add BUILD_NUMBER Cargo.toml Cargo.lock`, but `sync-version.sh` only edits the root `Cargo.toml`. The committed lockfile may be stale (still referencing the previous version string), causing a mismatch between the committed `Cargo.toml` version and the lockfile's recorded version.
+- [x] `[BUG-07-003][medium]` Auto-release `Cargo.lock` stale after version bump.
+  **Fixed 2026-03-30.** Added `cargo generate-lockfile` step in `auto-release.yml` after `sync-version.sh` and before `git add`. Also added Rust toolchain installation step since `cargo` is needed.
 
 ---
