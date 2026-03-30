@@ -234,9 +234,16 @@ impl App {
                 self.event_proxy.send(crate::event::TermEvent::OpenSettings);
                 true
             }
-            // Actions for future sections — consume the event but log a stub.
-            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
-                log::debug!("keybinding action not yet implemented: {action:?}");
+            Action::ZoomIn => {
+                self.zoom_font_size(1.0);
+                true
+            }
+            Action::ZoomOut => {
+                self.zoom_font_size(-1.0);
+                true
+            }
+            Action::ZoomReset => {
+                self.reset_font_size();
                 true
             }
             Action::None => true,

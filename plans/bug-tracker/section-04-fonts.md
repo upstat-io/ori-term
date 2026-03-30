@@ -29,6 +29,12 @@ Font discovery, collection, shaping, rasterization, COLRv1, emoji fallback.
 - [x] `[BUG-04-001][high]` **Color emoji (COLRv1) bitmaps clipped on bottom and right edges** — found by manual. **FIXED 2026-03-28.**
   Fix: Replaced swash's COLR renderer with our own COLRv1 compositor (`colr_v1/compose/`) that uses the correct COLR clip box for canvas sizing. Three compositor bugs were fixed: (1) two-circle radial gradients implemented pixel-by-pixel via quadratic solve (previously approximated as point-focal), (2) sweep gradient angle normalization to [0°, 360°) fixing atan2 discontinuity, (3) double premultiplication removed from pixel write path. Golden test updated.
 
+- [ ] `[BUG-04-003][high]` **Ligatures no longer rendering — regression** — found by manual.
+  Repro: Type `=>`, `->`, `!=`, `fi`, or any other ligature-supported sequence in the terminal with a ligature font (e.g. Fira Code, JetBrains Mono). Ligatures should combine into single glyphs but render as separate characters instead.
+  Subsystem: `oriterm/src/font/shaper/mod.rs` (run segmentation + rustybuzz shaping), `oriterm/src/font/collection/mod.rs` (feature application)
+  Found: 2026-03-29 | Source: manual — user reports ligatures stopped working (were working previously)
+  Analysis: The shaping pipeline appears correct in code — `liga` and `calt` features are in defaults, `features_for_face()` returns them, and `rustybuzz::shape()` receives them. Possible causes: (1) run segmentation breaking ligature sequences into separate runs (face_idx mismatch between chars), (2) feature list not reaching rustybuzz due to a config reload or collection rebuild regression, (3) `prepare_line` breaking runs at unexpected boundaries, (4) recent font collection refactors (`c9af333`, `fe11378`) may have changed feature propagation. Needs debugging with a ligature-capable font.
+
 ---
 
 ## 04.R Third Party Review Findings
