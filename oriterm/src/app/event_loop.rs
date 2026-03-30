@@ -11,6 +11,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use super::App;
 use super::event_loop_helpers::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 use crate::event::TermEvent;
+use crate::gpu::GpuState;
 
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -439,11 +440,12 @@ impl ApplicationHandler<TermEvent> for App {
                 .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw());
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
-        // Render immediately when dirty. PresentMode::Mailbox handles
-        // frame pacing — it drops stale frames and presents the latest
-        // at vsync. A client-side budget gate creates stutter by adding
-        // 0-16ms of variable delay to PTY-driven renders.
-        if any_dirty {
+        // Render when dirty. PresentMode::Mailbox/Fifo provide hardware
+        // pacing — render immediately to minimize input-to-display latency.
+        // On Immediate mode (no hardware pacing), apply a client-side budget
+        // gate to prevent uncapped redraws during sustained PTY output.
+        let needs_budget = self.gpu.as_ref().is_some_and(GpuState::needs_frame_budget);
+        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw) {
             self.render_dirty_windows();
         }
 
@@ -465,10 +467,9 @@ impl ApplicationHandler<TermEvent> for App {
         let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {
-            any_dirty,
-            budget_elapsed,
-            urgent_redraw,
             still_dirty,
+            needs_budget,
+            budget_elapsed,
             has_animations,
             blinking_active: self.blinking_active,
             next_toggle: self.cursor_blink.next_toggle(),
