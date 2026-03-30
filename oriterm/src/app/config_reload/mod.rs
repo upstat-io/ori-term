@@ -11,7 +11,8 @@ mod font_config;
 pub(crate) use color_config::apply_color_overrides;
 pub(crate) use color_config::build_palette_from_config;
 pub(crate) use font_config::{
-    apply_font_config, apply_font_config_to_ui_sizes, resolve_hinting, resolve_subpixel_mode,
+    apply_font_config, apply_font_config_to_ui_sizes, resolve_atlas_filtering, resolve_hinting,
+    resolve_subpixel_mode, resolve_subpixel_positioning,
 };
 
 use super::{App, DEFAULT_DPI};
@@ -160,7 +161,9 @@ impl App {
         self.font_set = Some(font_set.clone());
         self.user_fallback_map.clone_from(&fallback_map);
 
-        let Some(gpu) = &self.gpu else { return };
+        let (Some(gpu), Some(pipelines)) = (&self.gpu, self.pipelines.as_ref()) else {
+            return;
+        };
 
         // Iterate ALL windows — each may have a different DPI.
         for ctx in self.windows.values_mut() {
@@ -213,6 +216,9 @@ impl App {
                 &fallback_map,
             );
             renderer.replace_font_collection(fc, gpu);
+            renderer.set_subpixel_positioning(resolve_subpixel_positioning(&new.font, scale));
+            let af = resolve_atlas_filtering(&new.font, scale);
+            renderer.set_atlas_filtering(af, gpu, &pipelines.atlas_layout);
             ctx.text_cache.clear();
         }
 

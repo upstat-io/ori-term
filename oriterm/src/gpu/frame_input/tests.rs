@@ -111,6 +111,7 @@ fn frame_input_grid_dimensions() {
         mark_cursor: None,
         window_focused: true,
         fg_dim: 1.0,
+        subpixel_positioning: true,
         prompt_marker_rows: Vec::new(),
     };
 
@@ -137,6 +138,7 @@ fn frame_input_needs_full_repaint() {
         mark_cursor: None,
         window_focused: true,
         fg_dim: 1.0,
+        subpixel_positioning: true,
         prompt_marker_rows: Vec::new(),
     };
 
@@ -162,6 +164,7 @@ fn frame_input_incremental_repaint() {
         mark_cursor: None,
         window_focused: true,
         fg_dim: 1.0,
+        subpixel_positioning: true,
         prompt_marker_rows: Vec::new(),
     };
 

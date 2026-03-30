@@ -261,12 +261,16 @@ impl App {
             sizes
         });
 
-        Some(crate::gpu::WindowRenderer::new(
-            gpu,
-            pipelines,
-            font_collection,
-            ui_sizes,
-        ))
+        let mut renderer =
+            crate::gpu::WindowRenderer::new(gpu, pipelines, font_collection, ui_sizes);
+        let scale_f64 = f64::from(scale);
+        let subpx_pos =
+            super::config_reload::resolve_subpixel_positioning(&self.config.font, scale_f64);
+        renderer.set_subpixel_positioning(subpx_pos);
+        let atlas_filter =
+            super::config_reload::resolve_atlas_filtering(&self.config.font, scale_f64);
+        renderer.set_atlas_filtering(atlas_filter, gpu, &pipelines.atlas_layout);
+        Some(renderer)
     }
 
     /// Close a single window.

@@ -70,6 +70,7 @@ impl WindowRenderer {
             grid_raster_keys(
                 &self.shaping.frame,
                 self.font_collection.hinting_mode().hint_flag(),
+                self.subpixel_positioning,
             ),
             &mut self.atlas,
             &mut self.subpixel_atlas,

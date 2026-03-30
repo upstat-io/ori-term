@@ -5,6 +5,8 @@
 //! and semantic palette colors. The Prepare phase consumes a `FrameInput` and
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
+mod search_match;
+
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::index::Side;
 use oriterm_core::search::MatchType;
@@ -373,6 +375,11 @@ pub struct FrameInput {
     /// alpha proportionally for unfocused panes. Set by the multi-pane
     /// render path; single-pane rendering always uses 1.0.
     pub fg_dim: f32,
+    /// Whether subpixel glyph positioning is enabled.
+    ///
+    /// When `false`, all glyph X offsets snap to integer pixels (no fractional
+    /// subpixel phase). Propagated from `WindowRenderer::subpixel_positioning`.
+    pub subpixel_positioning: bool,
     /// Viewport-relative line indices that have a prompt marker (OSC 133;A).
     ///
     /// Populated during extraction when shell integration is active. The
@@ -482,27 +489,13 @@ impl FrameInput {
             mark_cursor: None,
             window_focused: true,
             fg_dim: 1.0,
+            subpixel_positioning: true,
             prompt_marker_rows: Vec::new(),
         }
     }
 }
 
-/// Check if `(stable_row, col)` falls within a search match span.
-fn cell_in_search_match(m: &SearchMatch, stable_row: StableRowIndex, col: usize) -> bool {
-    if stable_row < m.start_row || stable_row > m.end_row {
-        return false;
-    }
-    if m.start_row == m.end_row {
-        return col >= m.start_col && col <= m.end_col;
-    }
-    if stable_row == m.start_row {
-        col >= m.start_col
-    } else if stable_row == m.end_row {
-        col <= m.end_col
-    } else {
-        true
-    }
-}
+use search_match::cell_in_search_match;
 
 #[cfg(test)]
 mod tests;

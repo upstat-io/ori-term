@@ -33,6 +33,7 @@ pub(super) struct GlyphEmitter<'a> {
     pub size_q6: u32,
     pub hinted: bool,
     pub fg_dim: f32,
+    pub subpixel_positioning: bool,
     pub atlas: &'a dyn AtlasLookup,
     pub frame: &'a mut PreparedFrame,
 }
@@ -71,7 +72,11 @@ impl GlyphEmitter<'_> {
             }
             is_first = false;
 
-            let subpx = subpx_bin(sg.x_offset);
+            let subpx = if self.subpixel_positioning {
+                subpx_bin(sg.x_offset)
+            } else {
+                0
+            };
             let key = RasterKey {
                 glyph_id: sg.glyph_id,
                 face_idx: FaceIdx(sg.face_index),

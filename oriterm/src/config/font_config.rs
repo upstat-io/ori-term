@@ -73,12 +73,17 @@ pub(crate) struct FontConfig {
     /// non-HiDPI → RGB, `HiDPI` (2x+) → None.
     #[serde(default)]
     pub subpixel_mode: Option<String>,
-    /// Subpixel glyph positioning. Default: `true`.
+    /// Subpixel glyph positioning.
     ///
-    /// When `false`, snaps all glyph positions to integer pixel boundaries.
-    /// When `true`, uses fractional offsets for UI text and combining marks.
-    #[serde(default = "default_true")]
-    pub subpixel_positioning: bool,
+    /// `None` = auto (enabled). `Some(true)` = forced on.
+    /// `Some(false)` = forced off (snaps to integer pixel boundaries).
+    #[serde(default)]
+    pub subpixel_positioning: Option<bool>,
+    /// Atlas texture filtering mode: `"linear"`, `"nearest"`, or `None` (auto).
+    ///
+    /// Auto-detection: `HiDPI` (2x+) → Nearest, non-`HiDPI` → Linear.
+    #[serde(default)]
+    pub atlas_filtering: Option<String>,
     /// Variable font axis overrides.
     ///
     /// Keys are 4-character axis tags (e.g. `"wght"`, `"wdth"`), values are
@@ -103,16 +108,12 @@ impl Default for FontConfig {
             fallback: Vec::new(),
             hinting: None,
             subpixel_mode: None,
-            subpixel_positioning: true,
+            subpixel_positioning: None,
+            atlas_filtering: None,
             variations: HashMap::new(),
             codepoint_map: Vec::new(),
         }
     }
-}
-
-/// Serde default for `true` booleans.
-fn default_true() -> bool {
-    true
 }
 
 /// Serde default for line height (1.0).
