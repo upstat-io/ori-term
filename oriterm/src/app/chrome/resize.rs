@@ -77,7 +77,10 @@ impl App {
         } else {
             0.0
         };
-        let border_inset = if ctx.window.is_maximized() || ctx.window.is_fullscreen() {
+        let border_inset = if cfg!(target_os = "macos")
+            || ctx.window.is_maximized()
+            || ctx.window.is_fullscreen()
+        {
             0.0
         } else {
             2.0
