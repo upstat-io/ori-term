@@ -73,7 +73,7 @@ surface, invalidation, off-screen, uninitialized, baby-blue, expose, damage
 ```
 
 ### Section 07: CI & Build
-**File:** `section-07-ci-build.md` | **Status:** Not Started
+**File:** `section-07-ci-build.md` | **Status:** In Progress
 
 ```
 ci, build, release, workflow, github-actions, auto-release, tag, version,
