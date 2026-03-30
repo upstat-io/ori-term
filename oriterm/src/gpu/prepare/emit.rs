@@ -245,7 +245,7 @@ pub(super) fn draw_url_hover_underline(
 
     for &(line, start_col, end_col) in &input.hovered_url_segments {
         let x = ox + start_col as f32 * cw;
-        let y = oy + line as f32 * ch + underline_y_offset;
+        let y = (oy + line as f32 * ch).round() + underline_y_offset;
         let w = (end_col - start_col + 1) as f32 * cw;
         frame
             .cursors

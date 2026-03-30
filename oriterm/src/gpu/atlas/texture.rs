@@ -43,13 +43,19 @@ pub(super) fn create_texture_array(
     (texture, view)
 }
 
-/// Upload a glyph bitmap to a position on a texture array layer.
+/// Upload a glyph bitmap to a position on a texture array layer, zeroing
+/// the `GLYPH_PADDING` gutter on the right and bottom edges.
 ///
-/// Handles both `R8Unorm` (1 byte/pixel) and `Rgba8Unorm` (4 bytes/pixel)
-/// textures based on the glyph's format.
+/// The allocator reserves `w + padding` × `h + padding` for each glyph.
+/// This function writes the glyph body, then zeros the right strip
+/// `(x + w, y)` → `(x + w + padding, y + h)` and the bottom strip
+/// `(x, y + h)` → `(x + w + padding, y + h + padding)`.  This prevents
+/// the bilinear sampler from interpolating stale texels into glyph edges.
+///
+/// `padding_zeros` is a pre-allocated zero buffer sliced for each strip.
 #[expect(
     clippy::too_many_arguments,
-    reason = "GPU texture upload: resource refs, destination coords, glyph data"
+    reason = "GPU texture upload: resource refs, destination coords, glyph data, padding"
 )]
 pub(super) fn upload_glyph(
     queue: &Queue,
@@ -58,8 +64,12 @@ pub(super) fn upload_glyph(
     x: u32,
     y: u32,
     glyph: &RasterizedGlyph,
+    padding: u32,
+    padding_zeros: &[u8],
 ) {
     let bpp = glyph.format.bytes_per_pixel();
+
+    // Upload the glyph body.
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -79,4 +89,65 @@ pub(super) fn upload_glyph(
             depth_or_array_layers: 1,
         },
     );
+
+    if padding == 0 {
+        return;
+    }
+
+    // Zero the right padding strip: padding × height pixels.
+    let right_bytes = (padding * glyph.height * bpp) as usize;
+    if right_bytes > 0 && right_bytes <= padding_zeros.len() {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: x + glyph.width,
+                    y,
+                    z: page_idx,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &padding_zeros[..right_bytes],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padding * bpp),
+                rows_per_image: None,
+            },
+            Extent3d {
+                width: padding,
+                height: glyph.height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    // Zero the bottom padding strip: (width + padding) × padding pixels.
+    let bottom_w = glyph.width + padding;
+    let bottom_bytes = (bottom_w * padding * bpp) as usize;
+    if bottom_bytes > 0 && bottom_bytes <= padding_zeros.len() {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x,
+                    y: y + glyph.height,
+                    z: page_idx,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &padding_zeros[..bottom_bytes],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bottom_w * bpp),
+                rows_per_image: None,
+            },
+            Extent3d {
+                width: bottom_w,
+                height: padding,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
 }

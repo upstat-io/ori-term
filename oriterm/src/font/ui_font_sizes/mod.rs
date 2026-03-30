@@ -247,34 +247,6 @@ impl UiFontSizes {
         self.rebuild_all()
     }
 
-    /// Update hinting mode for all collections.
-    ///
-    /// Propagates the change to every collection's glyph cache. The caller
-    /// is responsible for clearing GPU atlases afterward.
-    pub(crate) fn set_hinting(&mut self, hinting: HintingMode) {
-        if self.hinting == hinting {
-            return;
-        }
-        self.hinting = hinting;
-        for fc in self.collections.values_mut() {
-            fc.set_hinting(hinting);
-        }
-    }
-
-    /// Update rasterization format for all collections.
-    ///
-    /// Propagates the change to every collection's glyph cache. The caller
-    /// is responsible for clearing GPU atlases afterward.
-    pub(crate) fn set_format(&mut self, format: GlyphFormat) {
-        if self.format == format {
-            return;
-        }
-        self.format = format;
-        for fc in self.collections.values_mut() {
-            fc.set_format(format);
-        }
-    }
-
     /// Create a standalone [`FontCollection`] at the default body text size.
     ///
     /// Used by [`WindowRenderer::new_ui_only`] which needs a `FontCollection`

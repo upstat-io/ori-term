@@ -274,6 +274,27 @@ impl WindowRenderer {
         &self.atlas
     }
 
+    /// UI font sizes registry (GPU-test accessor).
+    #[cfg(feature = "gpu-tests")]
+    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    pub(crate) fn ui_font_sizes(&self) -> Option<&UiFontSizes> {
+        self.ui_font_sizes.as_ref()
+    }
+
+    /// Terminal font collection (GPU-test accessor).
+    #[cfg(feature = "gpu-tests")]
+    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    pub(crate) fn font_collection(&self) -> &FontCollection {
+        &self.font_collection
+    }
+
+    /// Number of cached entries in the primary (grayscale) atlas.
+    #[cfg(feature = "gpu-tests")]
+    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    pub(crate) fn atlas_entry_count(&self) -> usize {
+        self.atlas.len()
+    }
+
     // Bind group staleness
 
     /// Rebuild atlas bind groups whose texture generation has advanced.
