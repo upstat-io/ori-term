@@ -1,20 +1,20 @@
 ---
 section: "07"
 title: "CI & Build Bugs"
-status: not-started
-reviewed: false
+status: in-progress
+reviewed: true
 goal: "Track and fix bugs in CI workflows, release automation, and build scripts"
 depends_on: []
 third_party_review:
-  status: findings
-  updated: 2026-03-29
+  status: resolved
+  updated: 2026-03-30
 sections:
   - id: "07.1"
     title: "Active Bugs"
     status: not-started
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
 ---
 
 # Section 07: CI & Build Bugs

@@ -52,6 +52,16 @@ const MODAL_TIMER_MS: u32 = 16;
 /// flag to pump mux events and render all windows.
 static IN_MODAL_LOOP: AtomicBool = AtomicBool::new(false);
 
+/// Set once when `WM_EXITSIZEMOVE` fires (modal loop ends).
+///
+/// During a pure move (no resize), the window is never marked dirty — the
+/// terminal content hasn't changed. After the modal loop ends, no
+/// `RedrawRequested` is generated because the 60 FPS timer was killed.
+/// The event loop's `about_to_wait` checks and clears this flag to force
+/// a full repaint, preventing stale/uninitialized surface content from
+/// remaining visible after the window is dragged off-screen and back.
+static MODAL_LOOP_ENDED: AtomicBool = AtomicBool::new(false);
+
 /// Configuration for an OS drag session, passed to [`begin_os_drag()`].
 pub struct OsDragConfig {
     /// Cursor-to-window-origin offset at the moment the drag started.
@@ -370,6 +380,16 @@ pub fn release_mouse_capture() {
 /// `about_to_wait` (which doesn't fire during the modal loop).
 pub fn in_modal_loop() -> bool {
     IN_MODAL_LOOP.load(Ordering::Relaxed)
+}
+
+/// Returns `true` once after a modal move/resize loop ends, then resets.
+///
+/// Used by `about_to_wait` to force a full repaint after window drag/move.
+/// During a pure move (no resize), the window is never marked dirty, so
+/// without this flag the surface would show stale content until the next
+/// cursor blink or mouse interaction.
+pub fn modal_loop_just_ended() -> bool {
+    MODAL_LOOP_ENDED.swap(false, Ordering::Relaxed)
 }
 
 /// Disable or enable DWM window transition animations.

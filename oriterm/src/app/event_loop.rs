@@ -372,6 +372,16 @@ impl ApplicationHandler<TermEvent> for App {
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();
 
+        // Windows: after a modal move/resize loop ends, force a full repaint.
+        // During a pure move (no resize), the window is never marked dirty, so
+        // the surface would show stale content until the next cursor blink.
+        #[cfg(target_os = "windows")]
+        if oriterm_ui::platform_windows::modal_loop_just_ended() {
+            for ctx in self.windows.values_mut() {
+                ctx.root.mark_dirty();
+            }
+        }
+
         // macOS/Linux: update torn-off window position every frame as a backup.
         // CursorMoved events may not always reach the source window.
         #[cfg(any(target_os = "macos", target_os = "linux"))]
