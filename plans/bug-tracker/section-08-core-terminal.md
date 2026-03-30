@@ -18,9 +18,7 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Found: 2026-03-29 | Source: manual
   Note: Active work in roadmap section 27 (command palette) plans bell notification modes.
 
-- [ ] `[BUG-08-2][high]` **Selection highlight cannot be dismissed — sticks after selecting text** — found by manual.
-  Repro: Select text in the terminal grid (click-drag or double-click). Try to dismiss the highlight by clicking elsewhere, pressing Escape, or any other action. The selection highlight persists until keyboard input is typed into the PTY.
-  Detail: `clear_pane_selection()` is only called from two paths: (1) keyboard input to PTY (`keyboard_input/mod.rs:195`) and (2) terminal output dirty flag (`mux_pump/mod.rs:66-67`). There is no dismissal on: single left-click without drag, Escape key, or any explicit "deselect" action. Every left-click in `handle_press()` creates a new `PressAction::New(Selection)` — even a single click creates a zero-width char selection rather than clearing to `None`. The fix should: (a) treat single-click-then-release-without-drag as "clear selection" (replace the zero-width selection with `None`), and (b) add Escape key binding to dismiss selection.
-  Subsystem: `oriterm/src/app/mouse_input.rs`, `oriterm/src/app/mouse_selection/mod.rs`, `oriterm/src/app/keyboard_input/mod.rs`
+- [x] `[BUG-08-2][high]` **Selection highlight cannot be dismissed — sticks after selecting text** — found by manual.
   Found: 2026-03-30 | Source: manual
-  Note: Active work in roadmap section 09 (Selection & Clipboard) touches this area.
+  Root cause: Every left-click created a `PressAction::New(Selection)` — even single clicks without drag. `handle_release()` only cleared button flags, never the selection. No Escape handling existed.
+  Fixed: 2026-03-30 — Two changes: (1) `clear_click_selection()` on mouse-up without drag clears `Char` mode selections (single click), preserving Word/Line selections from double/triple click. (2) Escape key dismisses active selection before falling through to PTY encoding.
