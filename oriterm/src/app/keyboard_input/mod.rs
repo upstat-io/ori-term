@@ -44,6 +44,11 @@ impl App {
     /// 2. Keybinding table lookup.
     /// 3. Normal key encoding to PTY.
     pub(super) fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
+        // Record timestamp for key-to-render latency tracking (profiling mode).
+        if event.state == ElementState::Pressed {
+            self.perf.last_key_time = Some(std::time::Instant::now());
+        }
+
         // Cancel active tab drag on Escape press.
         if event.state == ElementState::Pressed
             && event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
@@ -244,8 +249,18 @@ impl App {
 
         if !bytes.is_empty() {
             let redraw_after_input = self.redraw_after_pty_input(pane_id);
-            if let Some(mux) = self.mux.as_mut() {
-                mux.scroll_to_bottom(pane_id);
+            // Only send scroll-to-bottom when actually scrolled up.
+            // During key repeat at the live prompt, display_offset is 0
+            // and this is a no-op — skip the IPC round-trip.
+            let scrolled_up = self
+                .mux
+                .as_ref()
+                .and_then(|mux| mux.pane_snapshot(pane_id))
+                .is_some_and(|s| s.display_offset > 0);
+            if scrolled_up {
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.scroll_to_bottom(pane_id);
+                }
             }
             self.write_pane_input(pane_id, &bytes);
             self.cursor_blink.reset();

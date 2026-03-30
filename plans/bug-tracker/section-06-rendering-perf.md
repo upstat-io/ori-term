@@ -40,6 +40,13 @@ sections:
   - **Found**: 2026-03-29 — manual, user report
   - **Fix**: Requires profiling to identify the dominant bottleneck. Potential fixes include: input coalescing (batch multiple key events before render), damage-tracked partial redraws (only re-render changed rows), decoupling input dispatch from render (process all pending input before any render), and ensuring the PTY read → render pipeline is non-blocking.
 
+- [ ] **BUG-06.2**: Random extra text appears after resize following sustained key repeat
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/app/event_loop.rs` (resize handling), `oriterm_mux/` (PTY resize notification)
+  - **Root cause**: TBD. Likely a race between queued key repeat events and the PTY resize (SIGWINCH) notification — the shell processes both simultaneously, producing interleaved output. WezTerm exhibits the same behavior; Alacritty does not.
+  - **Repro**: Hold a key to fill the screen with text, release, then resize the window. Extra/garbled characters appear in the terminal.
+  - **Found**: 2026-03-30 — manual, user report. Pre-existing — not caused by frame budget changes.
+
 ---
 
 ## 06.R Third Party Review Findings

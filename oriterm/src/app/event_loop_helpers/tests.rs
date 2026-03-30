@@ -26,25 +26,25 @@ fn idle_returns_wait() {
 }
 
 #[test]
-fn dirty_before_budget_returns_wait_until_remaining() {
+fn dirty_before_budget_goes_idle() {
+    // With immediate rendering (no budget gate), dirty windows are rendered
+    // in the same about_to_wait. If not still_dirty, go idle.
     let mut input = idle_input();
     input.any_dirty = true;
     input.budget_elapsed = false;
     input.budget_remaining = Duration::from_millis(10);
 
     let result = compute_control_flow(&input);
-    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(10));
-    assert_eq!(result, expected);
+    assert_eq!(result, ControlFlowDecision::Wait);
 }
 
 #[test]
-fn still_dirty_after_render_returns_wait_until() {
+fn still_dirty_after_render_wakes_immediately() {
     let mut input = idle_input();
     input.still_dirty = true;
-    input.budget_remaining = Duration::from_millis(5);
 
     let result = compute_control_flow(&input);
-    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(5));
+    let expected = ControlFlowDecision::WaitUntil(input.now);
     assert_eq!(result, expected);
 }
 
@@ -70,16 +70,16 @@ fn blinking_returns_next_toggle() {
 }
 
 #[test]
-fn dirty_takes_priority_over_animations() {
+fn dirty_with_animations_uses_animation_cadence() {
+    // With immediate rendering, dirty is rendered in the same tick.
+    // If still_dirty is false but animations are active, use animation cadence.
     let mut input = idle_input();
     input.any_dirty = true;
     input.budget_elapsed = false;
     input.has_animations = true;
-    input.budget_remaining = Duration::from_millis(8);
 
     let result = compute_control_flow(&input);
-    // Dirty+budget-not-elapsed takes priority over animations.
-    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(8));
+    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(16));
     assert_eq!(result, expected);
 }
 

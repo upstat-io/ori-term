@@ -17,6 +17,39 @@ const LOG_INTERVAL: Duration = Duration::from_secs(5);
 /// Threshold for idle detection — no wakeups for this long means "truly idle".
 const IDLE_THRESHOLD: Duration = Duration::from_secs(1);
 
+/// Per-frame phase timing breakdown (profiling mode only).
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct FramePhases {
+    /// Mux pump (PTY event drain + notification handling).
+    pub mux_pump: Duration,
+    /// Snapshot extraction (refresh + renderable content swap/copy).
+    pub extract: Duration,
+    /// Font shaping + glyph caching + instance buffer fill.
+    pub prepare: Duration,
+    /// Widget pipeline (layout + prepaint + paint + tab bar + overlays).
+    pub widgets: Duration,
+    /// GPU render (upload + render passes + present).
+    pub gpu_render: Duration,
+}
+
+impl FramePhases {
+    pub(super) fn accumulate(&mut self, other: &Self) {
+        self.mux_pump += other.mux_pump;
+        self.extract += other.extract;
+        self.prepare += other.prepare;
+        self.widgets += other.widgets;
+        self.gpu_render += other.gpu_render;
+    }
+
+    fn max_merge(&mut self, other: &Self) {
+        self.mux_pump = self.mux_pump.max(other.mux_pump);
+        self.extract = self.extract.max(other.extract);
+        self.prepare = self.prepare.max(other.prepare);
+        self.widgets = self.widgets.max(other.widgets);
+        self.gpu_render = self.gpu_render.max(other.gpu_render);
+    }
+}
+
 /// Per-interval performance counters.
 pub(super) struct PerfStats {
     /// Start of the current measurement window.
@@ -45,6 +78,23 @@ pub(super) struct PerfStats {
     initial_rss: Option<usize>,
     /// Peak RSS observed across all intervals.
     peak_rss: usize,
+
+    // Phase timing accumulators (profiling mode only).
+    phase_sum: FramePhases,
+    phase_max: FramePhases,
+
+    /// Most recent mux pump duration (set in `about_to_wait`).
+    pub(super) last_pump_time: Duration,
+
+    // Key-to-render latency tracking.
+    /// Timestamp of the most recent key event (set in `handle_keyboard_input`).
+    pub(super) last_key_time: Option<Instant>,
+    /// Sum of key-to-render latencies for frames that had a pending key event.
+    key_to_render_sum: Duration,
+    /// Maximum key-to-render latency observed this interval.
+    key_to_render_max: Duration,
+    /// Number of frames that measured key-to-render latency.
+    key_to_render_count: u32,
 }
 
 impl PerfStats {
@@ -72,17 +122,48 @@ impl PerfStats {
             idle_logged: false,
             initial_rss,
             peak_rss: initial_rss.unwrap_or(0),
+            phase_sum: FramePhases::default(),
+            phase_max: FramePhases::default(),
+            last_pump_time: Duration::ZERO,
+            last_key_time: None,
+            key_to_render_sum: Duration::ZERO,
+            key_to_render_max: Duration::ZERO,
+            key_to_render_count: 0,
         }
     }
 
-    /// Record a render frame with its elapsed time.
-    pub(super) fn record_render(&mut self, frame_time: Duration) {
+    /// Record a render frame with its elapsed time and phase breakdown.
+    pub(super) fn record_render(&mut self, frame_time: Duration, phases: &FramePhases) {
         self.renders += 1;
         self.frame_time_min = self.frame_time_min.min(frame_time);
         self.frame_time_max = self.frame_time_max.max(frame_time);
         self.frame_time_sum += frame_time;
         self.last_activity = Instant::now();
         self.idle_logged = false;
+
+        // Copy mux pump time recorded in about_to_wait into phases.
+        let mut full_phases = *phases;
+        full_phases.mux_pump = self.last_pump_time;
+        self.phase_sum.accumulate(&full_phases);
+        self.phase_max.max_merge(&full_phases);
+
+        // Key-to-render latency: measure from last key event to render completion.
+        if let Some(key_time) = self.last_key_time.take() {
+            let latency = key_time.elapsed();
+            self.key_to_render_sum += latency;
+            self.key_to_render_max = self.key_to_render_max.max(latency);
+            self.key_to_render_count += 1;
+
+            // Log slow frames individually for stutter diagnosis.
+            if latency.as_millis() > 16 || frame_time.as_millis() > 8 {
+                log::info!(
+                    "perf: SLOW k2r={latency:.1?} frame={frame_time:.1?} \
+                     prep={:.1?} gpu={:.1?}",
+                    phases.prepare,
+                    phases.gpu_render,
+                );
+            }
+        }
     }
 
     /// Record a mux wakeup (PTY reader thread notification).
@@ -100,6 +181,37 @@ impl PerfStats {
     /// Record an `about_to_wait` tick.
     pub(super) fn record_tick(&mut self) {
         self.ticks += 1;
+    }
+
+    /// Log per-phase frame timing breakdown.
+    fn log_phase_breakdown(&self, log_fn: fn(&str)) {
+        let n = self.renders;
+        let avg = |d: Duration| d / n;
+        log_fn(&format!(
+            "perf: phases avg: mux={:.1?} extract={:.1?} prepare={:.1?} \
+             widgets={:.1?} gpu={:.1?}",
+            avg(self.phase_sum.mux_pump),
+            avg(self.phase_sum.extract),
+            avg(self.phase_sum.prepare),
+            avg(self.phase_sum.widgets),
+            avg(self.phase_sum.gpu_render),
+        ));
+        log_fn(&format!(
+            "perf: phases max: mux={:.1?} extract={:.1?} prepare={:.1?} \
+             widgets={:.1?} gpu={:.1?}",
+            self.phase_max.mux_pump,
+            self.phase_max.extract,
+            self.phase_max.prepare,
+            self.phase_max.widgets,
+            self.phase_max.gpu_render,
+        ));
+        if self.key_to_render_count > 0 {
+            let k2r_avg = self.key_to_render_sum / self.key_to_render_count;
+            log_fn(&format!(
+                "perf: key→render: avg={k2r_avg:.1?} max={:.1?} ({} samples)",
+                self.key_to_render_max, self.key_to_render_count,
+            ));
+        }
     }
 
     /// Check and log idle state transitions.
@@ -190,6 +302,11 @@ impl PerfStats {
             ));
         }
 
+        // Phase breakdown — always log at info level for input lag diagnosis.
+        if self.renders > 0 {
+            self.log_phase_breakdown(|msg| log::info!("{msg}"));
+        }
+
         // Memory watermark (profiling mode only).
         if self.profiling {
             if let Some(rss) = crate::platform::memory::rss_bytes() {
@@ -219,6 +336,11 @@ impl PerfStats {
         self.frame_time_min = Duration::MAX;
         self.frame_time_max = Duration::ZERO;
         self.frame_time_sum = Duration::ZERO;
+        self.phase_sum = FramePhases::default();
+        self.phase_max = FramePhases::default();
+        self.key_to_render_sum = Duration::ZERO;
+        self.key_to_render_max = Duration::ZERO;
+        self.key_to_render_count = 0;
         self.window_start = Instant::now();
         true
     }
