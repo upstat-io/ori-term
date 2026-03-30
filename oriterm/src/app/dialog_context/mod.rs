@@ -247,6 +247,56 @@ pub(super) fn needs_content_redraw(
 }
 
 /// Computes the parent map from a content widget's current layout (TPR-04-002).
+/// Rebuild dialog interaction/focus/layout state after a page switch.
+///
+/// Takes split borrows from `DialogWindowContext` to avoid conflicting
+/// with the caller's borrow on `panel` (which lives inside `ctx.content`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "borrow-split fields from DialogWindowContext"
+)]
+pub(super) fn rebuild_dialog_page_state(
+    root: &mut oriterm_ui::window_root::WindowRoot,
+    panel: &mut dyn Widget,
+    renderer: Option<&WindowRenderer>,
+    scale_factor: ScaleFactor,
+    text_cache: &TextShapeCache,
+    surface_config: &wgpu::SurfaceConfiguration,
+    last_cursor_pos: oriterm_ui::geometry::Point,
+    ui_theme: &oriterm_ui::theme::UiTheme,
+) {
+    crate::app::widget_pipeline::register_widget_tree(panel, root.interaction_mut());
+    let root_id = root.widget().id();
+    let mut valid = vec![root_id];
+    crate::app::widget_pipeline::collect_all_widget_ids(panel, &mut valid);
+    let stale = root.interaction_mut().gc_stale_widgets(&valid);
+    root.mark_widgets_prepaint_dirty(&stale);
+
+    root.key_contexts_mut().clear();
+    oriterm_ui::action::collect_key_contexts(panel, root.key_contexts_mut());
+
+    let mut focusable = Vec::new();
+    crate::app::widget_pipeline::collect_focusable_ids(panel, &mut focusable);
+    root.sync_focus_order(focusable);
+
+    if let Some(r) = renderer {
+        let s = scale_factor.factor() as f32;
+        let pm = content_parent_map(panel, r, s, text_cache, surface_config, ui_theme);
+        root.interaction_mut().set_parent_map(pm);
+    }
+
+    recompute_dialog_hot_path(
+        root,
+        panel,
+        last_cursor_pos,
+        renderer,
+        scale_factor.factor() as f32,
+        text_cache,
+        surface_config,
+        ui_theme,
+    );
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "borrow-split fields from DialogWindowContext"
