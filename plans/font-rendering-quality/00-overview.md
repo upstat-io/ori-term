@@ -97,10 +97,10 @@ Phase 3 - Verification
 |------|-------|------|
 | `config/font_config.rs` | 140 | Config struct + TOML parsing |
 | `config_reload/font_config.rs` | 183 | Config resolution + application |
-| `config_reload/mod.rs` | 447 | Config hot-reload dispatch (change detection) |
+| `config_reload/mod.rs` | 478 | Config hot-reload dispatch (change detection) |
 | `font/mod.rs` | 493 | HintingMode, SubpixelMode, GlyphFormat, subpx_bin enums |
 | `gpu/window_renderer/font_config.rs` | 164 | Font size/hinting/format setters |
-| `gpu/window_renderer/mod.rs` | 488 | WindowRenderer struct + bind group rebuild |
+| `gpu/window_renderer/mod.rs` | 509 | WindowRenderer struct + bind group rebuild (**over 500 limit — needs split before adding fields**) |
 | `gpu/atlas/mod.rs` | 579 | Atlas packing, clear, eviction |
 | `gpu/atlas/texture.rs` | 82 | Texture upload |
 | `gpu/bind_groups/mod.rs` | 191 | Atlas bind group + sampler |
@@ -113,9 +113,9 @@ Phase 3 - Verification
 | `gpu/window_renderer/helpers.rs` | 467 | Grid/UI raster key generation (subpx_bin) |
 | `gpu/window_renderer/scene_append.rs` | 195 | Scene append (TextContext construction) |
 | `settings_overlay/form_builder/font.rs` | 177 | Font page builder |
-| `settings_overlay/form_builder/rendering.rs` | 101 | Rendering page builder |
+| `settings_overlay/form_builder/rendering.rs` | 98 | Rendering page builder |
 | `settings_overlay/form_builder/mod.rs` | 235 | SettingsIds + page routing |
-| `settings_overlay/action_handler/mod.rs` | 264 | Settings action dispatch |
+| `settings_overlay/action_handler/mod.rs` | 261 | Settings action dispatch |
 
 ## Estimated Effort
 
@@ -130,12 +130,12 @@ Phase 3 - Verification
 
 | Bug | Root Cause | Fix Location | Status |
 |-----|-----------|-------------|--------|
-| TPR-04-006: UI font wrong after DPI change | `set_hinting_and_format()` overwrites UI font's Alpha/None with terminal settings | Section 01 | Not Started |
-| TPR-04-008: Stale atlas gutter texels | `clear()`/`evict_page()` reset packer but don't zero texture memory | Section 01 | Not Started |
-| TPR-04-010: Grid text Y not rounded | `oy + row * ch` is fractional on non-integer scale factors | Section 01 | Not Started |
+| TPR-04-006: UI font wrong after DPI change | `set_hinting_and_format()` overwrites UI font's Alpha/None with terminal settings | Section 01 | **Complete** |
+| TPR-04-008: Stale atlas gutter texels | `clear()`/`evict_page()` reset packer but don't zero texture memory | Section 01 | **Complete** |
+| TPR-04-010: Grid text Y not rounded | `oy + row * ch` is fractional on non-integer scale factors | Section 01 | **Complete** |
 | TPR-04-007: `subpixel_positioning` dead config | Parsed but never consumed by renderer | Section 02 | Not Started |
 | TPR-04-011: Atlas sampler hardcoded Linear | Users cannot choose Nearest for pixel-perfect rendering | Section 02 (atlas_filtering setting) | Not Started |
-| BUG-04-002: Tab bar blur after DPI change | Root cause is TPR-04-006 | Section 01 | Not Started |
+| BUG-04-002: Tab bar blur after DPI change | Root cause is TPR-04-006 | Section 01 | **Complete** |
 
 ## Quick Reference
 
