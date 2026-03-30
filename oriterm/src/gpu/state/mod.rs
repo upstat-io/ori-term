@@ -119,6 +119,16 @@ impl GpuState {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
     }
 
+    /// Whether the surface uses a present mode that requires client-side
+    /// frame budget gating (e.g. `Immediate`).
+    ///
+    /// `Mailbox` and `Fifo` provide hardware-level pacing.
+    /// `Immediate` has no pacing — without a client budget gate, the
+    /// renderer would run uncapped during sustained PTY output.
+    pub fn needs_frame_budget(&self) -> bool {
+        matches!(self.present_mode, wgpu::PresentMode::Immediate)
+    }
+
     /// Create and configure a new surface for a window.
     pub fn create_surface(
         &self,

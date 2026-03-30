@@ -6,15 +6,15 @@ reviewed: true
 goal: "Track and fix bugs in the settings dialog layout, chrome, and interactions"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-03-30
 sections:
   - id: "02.1"
     title: "Active Bugs"
     status: in-progress
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 02: Settings Dialog Bugs
@@ -76,11 +76,11 @@ sections:
   - **Found**: 2026-03-28 — manual sign-off (Section 14.4), user report
   - **Fixed**: 2026-03-28 — Set `DIALOG_DRAG_CAPTION_HEIGHT` to 48px and excluded the sidebar (200px) as an interactive rect so the search field stays clickable. The content area header (right of sidebar, top 48px) is now the drag zone. Added `try_dialog_header_drag()` for Linux/macOS `drag_window()` support.
 
-- [x] **BUG-02.9**: Rendering page backend dropdown shows all backends on every platform + doesn't show active backend
-  - **File(s)**: `oriterm/src/config/rendering.rs`, `oriterm/src/app/settings_overlay/form_builder/rendering.rs`, `action_handler/mod.rs`
-  - **Root cause**: `build_gpu_section()` hardcoded all 4 backends regardless of platform.
-  - **Found**: 2026-03-29 — manual, user report comparing live build to mockup
-  - **Fixed**: 2026-03-29 — Added `GpuBackend::available()` with `#[cfg(target_os)]` gates returning platform-specific backend lists. Form builder and action handler both use `available()` for dropdown items and index mapping. Windows: Auto/Vulkan/DX12. macOS: Auto/Metal. Linux: Auto/Vulkan. Active-backend display deferred (requires threading adapter info to UI builder).
+- [ ] **BUG-02.9**: Rendering page backend dropdown doesn't show active backend
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/app/settings_overlay/form_builder/rendering.rs`
+  - **Root cause**: The dropdown was partially fixed (platform filtering added 2026-03-29) but still shows plain "Auto" without indicating which backend it resolved to. The active-backend display was deferred.
+  - **Found**: 2026-03-29 — manual | **Reopened**: 2026-03-30 per TPR-02-001
 
 - [ ] **BUG-02.10**: Config file path link in sidebar footer missing tooltip with full path on hover
   - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/paint.rs` (footer painting), `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (`config_path` field)
@@ -100,6 +100,7 @@ sections:
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-02-001][medium]` `oriterm/src/app/settings_overlay/form_builder/rendering.rs:38` — `BUG-02.9` was marked fixed even though the second half of the bug is still present.
+  Resolved: Reopened BUG-02.9 with updated scope (active-backend display). Fixed 2026-03-30.
 
 ---

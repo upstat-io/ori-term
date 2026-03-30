@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Bug Fixes"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Fix three font rendering bugs: DPI change overwrites UI font settings, stale atlas gutter texels, and unrounded grid text Y positions."
 inspired_by:
@@ -26,7 +26,7 @@ sections:
     status: not-started
   - id: "01.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: Bug Fixes
@@ -183,6 +183,6 @@ Tests go in `prepare/tests.rs` (already exists). These are pure CPU tests (no GP
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed — 3 findings, none in Section 01 scope (all in perf/settings bug tracker). Fixed inline.
 
 **Exit Criteria:** DPI change preserves UI font crispness (Alpha/None not overwritten), atlas edges show no stale-texel artifacts under atlas churn, and grid glyph Y positions are integer-valued in prepared frame instances.

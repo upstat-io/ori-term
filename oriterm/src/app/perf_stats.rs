@@ -302,9 +302,9 @@ impl PerfStats {
             ));
         }
 
-        // Phase breakdown — always log at info level for input lag diagnosis.
-        if self.renders > 0 {
-            self.log_phase_breakdown(|msg| log::info!("{msg}"));
+        // Phase breakdown (profiling mode only).
+        if self.profiling && self.renders > 0 {
+            self.log_phase_breakdown(log_fn);
         }
 
         // Memory watermark (profiling mode only).

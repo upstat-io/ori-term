@@ -6,15 +6,15 @@ reviewed: true
 goal: "Track and fix rendering performance bugs — frame time, input latency, GPU bottlenecks"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-03-30
 sections:
   - id: "06.1"
     title: "Active Bugs"
     status: in-progress
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 06: Rendering & Performance Bugs
@@ -53,6 +53,10 @@ sections:
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-06-001][high]` `oriterm/src/app/event_loop.rs:442`, `oriterm/src/gpu/state/helpers.rs:111` — the frame-budget gate was removed under the assumption that `PresentMode::Mailbox` always paces rendering, but the renderer explicitly falls back to `Immediate` when Mailbox is unavailable.
+  Resolved: Added `GpuState::needs_frame_budget()` that returns true for `PresentMode::Immediate`. The rendering gate in `about_to_wait()` now applies the budget check only when the surface requires it (Immediate mode), while Mailbox/Fifo paths render immediately. Fixed 2026-03-30.
+
+- [x] `[TPR-06-002][medium]` `oriterm/src/app/perf_stats.rs:305` — the new phase-breakdown instrumentation logs at `info` level even when profiling is disabled.
+  Resolved: Phase breakdown logging now routes through the same `log_fn`/`self.profiling` gate as the rest of the perf output. Fixed 2026-03-30.
 
 ---

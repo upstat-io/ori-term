@@ -21,7 +21,7 @@ order: 2
 ## Keyword Clusters by Section
 
 ### Section 01: Bug Fixes
-**File:** `section-01-bug-fixes.md` | **Status:** Not Started
+**File:** `section-01-bug-fixes.md` | **Status:** Complete
 
 ```
 TPR-04-006, TPR-04-008, TPR-04-010, BUG-04-002
