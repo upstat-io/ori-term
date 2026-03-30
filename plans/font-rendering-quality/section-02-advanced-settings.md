@@ -2,7 +2,7 @@
 section: "02"
 title: "Advanced Font Rendering Settings"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Expose hinting, subpixel AA, subpixel positioning, and atlas filtering as user-configurable settings in the Font page's Advanced section, with auto-detection defaults."
 inspired_by:
   - "WezTerm freetype_load_target/freetype_load_flags DPI-based auto-detection (config/src/config.rs, wezterm-font/src/ftwrap.rs)"
@@ -48,8 +48,8 @@ sections:
 **Depends on:** Nothing (independent of Section 01, though both may touch nearby code).
 
 **File-size hygiene warnings:**
-- `window_renderer/mod.rs` is at 488 lines. Adding 2 new fields and initializers will push it close to 500. Setter methods MUST go in `font_config.rs` per the plan. Monitor closely.
-- `config_reload/mod.rs` is at 447 lines. Adding ~20 lines of change detection + resolution calls approaches 470. Safe but watch for drift.
+- `window_renderer/mod.rs` is at **509 lines** — already over the 500-line limit. Adding 2 new fields (`subpixel_positioning`, `atlas_filtering`) plus initializers in both `new()` and `new_ui_only()` is NOT possible without first splitting. Before adding fields, extract the `CombinedAtlasLookup` struct and its `AtlasLookup` impl (lines 53-66, 14 lines) into a private submodule (e.g. `atlas_lookup.rs`) or move the struct definition and impl into `helpers.rs` (which is at 467 lines, has room). This creates headroom for the 2 new fields + 2 initializer lines in each constructor (~8 lines total). Setter methods MUST go in `font_config.rs` per the plan.
+- `config_reload/mod.rs` is at **478 lines**. Adding ~20 lines of change detection + resolution calls approaches ~498. Safe but tight — no other additions in this section.
 - `font/mod.rs` is at 493 lines. Do NOT add `AtlasFiltering` here (would exceed 500). Place it in `gpu/bind_groups/mod.rs` per the plan.
 
 ---
@@ -157,7 +157,7 @@ Wire the existing dead `subpixel_positioning` field and add a new `atlas_filteri
 Resolution function tests belong in `config/tests.rs` (which already tests `resolve_hinting` and `resolve_subpixel_mode` at line 1414+). Config deserialization tests are already there too.
 
 **Update existing tests** for the `subpixel_positioning` type change from `bool` to `Option<bool>`:
-- [ ] `subpixel_positioning_defaults_to_true` (line 1311): change `assert!(parsed.font.subpixel_positioning)` to `assert_eq!(parsed.font.subpixel_positioning, None)` (None = auto = enabled)
+- [ ] `subpixel_positioning_defaults_to_true` (line 1311): rename to `subpixel_positioning_defaults_to_none_auto` and change `assert!(parsed.font.subpixel_positioning)` to `assert_eq!(parsed.font.subpixel_positioning, None)` (None = auto = enabled)
 - [ ] `subpixel_positioning_false_from_toml` (line 1317): change `assert!(!parsed.font.subpixel_positioning)` to `assert_eq!(parsed.font.subpixel_positioning, Some(false))`
 - [ ] `font_config_new_fields_roundtrip` (line 1394): change `cfg.font.subpixel_positioning = false` to `cfg.font.subpixel_positioning = Some(false)` and `assert!(!parsed.font.subpixel_positioning)` to `assert_eq!(parsed.font.subpixel_positioning, Some(false))`
 
@@ -204,7 +204,7 @@ Wire the resolved settings into the renderer so they actually take effect.
   }
   ```
 
-- [ ] Update `rebuild()` to recreate the sampler with the stored filter mode (instead of reusing `self.sampler`), since after a `set_filter()` call the stored filter may differ from the sampler's original filter. Alternatively, always recreate the sampler in `rebuild()` from `self.filter` — this is a few extra GPU API calls but keeps the code simple.
+- [ ] Update `rebuild()` to recreate the sampler from `self.filter` instead of reusing `self.sampler`. This is necessary because `rebuild_stale_atlas_bind_groups()` (in `window_renderer/mod.rs:305`) calls `rebuild()` when atlas generations change. If `set_atlas_filtering()` replaced the bind group with a new sampler but then the atlas grew, `rebuild()` must produce a sampler matching the current `self.filter`, not the stale `self.sampler` from before the filter change. Always recreating from `self.filter` keeps the sampler and filter in sync unconditionally.
 
 - [ ] Update all `AtlasBindGroup::new()` call sites to pass the resolved `FilterMode`. There are 10 total:
   - 3 in `WindowRenderer::new()` at `window_renderer/mod.rs:184-188`
@@ -213,19 +213,31 @@ Wire the resolved settings into the renderer so they actually take effect.
 
   For WindowRenderer, store `AtlasFiltering` on the struct (initialized from resolved config in `new()`, defaulting to `AtlasFiltering::Linear` in `new_ui_only()`). Convert via `filtering.to_filter_mode()` when creating bind groups.
 
-- [ ] Add a `set_atlas_filtering()` method to `WindowRenderer` that updates the stored filtering mode and recreates all three atlas bind groups with the new sampler:
+- [ ] Add a `set_atlas_filtering()` method to `WindowRenderer` in `font_config.rs` that updates the stored filtering mode and recreates all three atlas bind groups with the new sampler. Also snapshot atlas generations to prevent `rebuild_stale_atlas_bind_groups()` from immediately re-rebuilding the bind groups we just created:
   ```rust
   pub fn set_atlas_filtering(&mut self, filtering: AtlasFiltering, device: &Device, layout: &BindGroupLayout) {
       let filter = filtering.to_filter_mode();
       self.atlas_bind_group = AtlasBindGroup::new(device, layout, self.atlas.view(), filter);
       self.subpixel_atlas_bind_group = AtlasBindGroup::new(device, layout, self.subpixel_atlas.view(), filter);
       self.color_atlas_bind_group = AtlasBindGroup::new(device, layout, self.color_atlas.view(), filter);
+      // Snapshot generations so rebuild_stale_atlas_bind_groups() doesn't
+      // immediately re-rebuild the bind groups we just created.
+      self.atlas_generation = self.atlas.generation();
+      self.subpixel_atlas_generation = self.subpixel_atlas.generation();
+      self.color_atlas_generation = self.color_atlas.generation();
       self.atlas_filtering = filtering;
   }
   ```
-  
+
 
 ### 02.2.2 Subpixel positioning → glyph emission
+
+- [ ] **Pre-requisite: `frame_input/mod.rs` is at 508 lines (over the 500-line limit).** Before adding a field, extract the `cell_in_search_match()` free function (lines 490-505, 16 lines) into a private submodule (e.g. `frame_input/search_match.rs`). Re-export via `use search_match::cell_in_search_match;` in `mod.rs`. This reclaims ~16 lines, bringing `mod.rs` to ~492 — safe for the new field.
+- [ ] Add a `subpixel_positioning: bool` field to `FrameInput` in `gpu/frame_input/mod.rs` (after the existing `fg_dim` field at line 375). Default to `true`. Update all 6 construction sites:
+  - `gpu/extract/from_snapshot/mod.rs:37` — struct literal (add `subpixel_positioning: true`)
+  - `gpu/extract/from_snapshot/mod.rs:157` — `_into()` field reset (add `out.subpixel_positioning = true;`)
+  - `gpu/frame_input/mod.rs:460` — `test_grid()` helper (add `subpixel_positioning: true`)
+  - `gpu/frame_input/tests.rs:100, 126, 151` — 3 test struct literals (add `subpixel_positioning: true`)
 
 - [ ] Add a `subpixel_positioning: bool` field to the `GlyphEmitter` struct in `gpu/prepare/emit.rs`. When `false`, force `subpx` to 0 at line 74:
   ```rust
@@ -233,31 +245,75 @@ Wire the resolved settings into the renderer so they actually take effect.
   ```
   This ensures the `RasterKey` has `subpx_x: 0` (no subpixel phase) and the glyph is rasterized without fractional X offset.
 
-- [ ] Add `subpixel_positioning: bool` and `atlas_filtering: AtlasFiltering` fields to `WindowRenderer` (in `window_renderer/mod.rs`). Initialize `subpixel_positioning: true` and `atlas_filtering: AtlasFiltering::Linear` in `WindowRenderer::new()` and `new_ui_only()`. The setter methods (`set_subpixel_positioning`, `set_atlas_filtering`) should be added in `window_renderer/font_config.rs` (which already hosts `set_hinting_and_format` and similar methods) to keep `mod.rs` under 500 lines.
-- [ ] In `app/init/mod.rs`, immediately after `WindowRenderer::new()` (line 134), resolve and apply the initial values:
+- [ ] **Pre-requisite: `window_renderer/mod.rs` is at 509 lines (over the 500-line limit).** Before adding fields, extract the `CombinedAtlasLookup` struct and its `AtlasLookup for CombinedAtlasLookup` impl (lines 53-66) into `window_renderer/helpers.rs` (at 467 lines, has room). Re-export via `use helpers::CombinedAtlasLookup;` in `mod.rs`. This reclaims ~14 lines, bringing `mod.rs` to ~495.
+- [ ] Add `subpixel_positioning: bool` and `atlas_filtering: AtlasFiltering` fields to `WindowRenderer` (in `window_renderer/mod.rs`). Initialize `subpixel_positioning: true` and `atlas_filtering: AtlasFiltering::Linear` in `WindowRenderer::new()` and `new_ui_only()`. This adds ~8 lines, bringing `mod.rs` to ~503 — setter methods MUST go in `font_config.rs` to keep `mod.rs` as close to 500 as possible.
+- [ ] Add a `set_subpixel_positioning()` method to `WindowRenderer` in `font_config.rs`. This is a trivial setter (no GPU resources need recreation — the flag only affects glyph emission at prepare time):
   ```rust
-  let subpx_pos = config_reload::resolve_subpixel_positioning(&self.config.font, scale_factor);
+  pub fn set_subpixel_positioning(&mut self, enabled: bool) {
+      self.subpixel_positioning = enabled;
+  }
+  ```
+  Also add a getter `pub fn subpixel_positioning(&self) -> bool` so the prepare path and raster key functions can read the value.
+- [ ] In `app/init/mod.rs`, change `let renderer` (line 134) to `let mut renderer` and add the initial resolution immediately after:
+  ```rust
+  let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_sizes);
+  let subpx_pos = config_reload::resolve_subpixel_positioning(&self.config.font, scale);
   renderer.set_subpixel_positioning(subpx_pos);
-  let atlas_filter = config_reload::resolve_atlas_filtering(&self.config.font, scale_factor);
+  let atlas_filter = config_reload::resolve_atlas_filtering(&self.config.font, scale);
   renderer.set_atlas_filtering(atlas_filter, &gpu.device, &pipelines.atlas_layout);
   ```
-  This ensures the renderer has correct values from the first frame, matching the existing pattern where `set_hinting_and_format` is called during DPI handling.
-- [ ] In `app/window_management.rs`, after `WindowRenderer::new()` at line 263-268, apply the same resolved values. The function already resolves `hinting` and `format` at lines 214-221, so add `subpixel_positioning` and `atlas_filtering` resolution in the same block and apply after construction. Access `pipelines.atlas_layout` from the `pipelines` parameter already in scope.
+  This ensures the renderer has correct values from the first frame, matching the existing pattern where `set_hinting_and_format` is called during DPI handling. The variable `scale` (line 82, `f64`) is already in scope.
+- [ ] In `app/window_management.rs`, in `create_window_renderer()`, restructure the return at line 264-269 to capture the renderer in a `let mut renderer = ...;` binding, apply resolved values, then return `Some(renderer)`. The function already resolves `hinting` and `format` at lines 214-221, so add `subpixel_positioning` and `atlas_filtering` resolution in the same block and apply after construction. Access `pipelines.atlas_layout` from the `pipelines` parameter already in scope. Note: `scale` is `f32` here (line 213), so use `f64::from(scale)` for resolution functions, matching the existing pattern at line 215/219.
 
-- [ ] Thread the `subpixel_positioning` flag from `WindowRenderer` through `fill_frame_shaped()` → `GlyphEmitter`. Pass it as a parameter to `fill_frame_shaped()` and through to `GlyphEmitter::new()` (or via `FrameInput` if the field is added there). Also pass it through `fill_frame_incremental()` in `dirty_skip/mod.rs` which has its own `GlyphEmitter` construction.
+- [ ] Thread the `subpixel_positioning` flag from `WindowRenderer` through `fill_frame_shaped()` → `GlyphEmitter`.
+  **Chosen approach: Option B (FrameInput).** Add `subpixel_positioning: bool` to `FrameInput` (already has `fg_dim`, a rendering param). This avoids adding parameters to `fill_frame_shaped`, `fill_frame_incremental`, `prepare_frame_shaped_into`, and `prepare_frame_shaped` — no clippy `too_many_arguments` issues.
+  - **Option A rejected:** Adding a parameter to `fill_frame_shaped` cascades to `fill_frame_incremental`, `prepare_frame_shaped_into`, `prepare_frame_shaped` (4 functions), and ALL their call sites — including ~19 `prepare_frame_shaped()` calls in tests, ~7 `fill_frame_shaped()` calls in tests, ~6 `prepare_frame_shaped_into()` calls in tests. That is a 32+ site update for a single bool. FrameInput is the right vehicle.
+
+  FrameInput struct literal sites to update (6 total — all default to `subpixel_positioning: true`). These are the SAME sites as the 02.2.2 bullet above — listed here for the FrameInput approach context:
+  - `gpu/extract/from_snapshot/mod.rs:37` — `extract_frame_from_snapshot()` struct literal (default `true`)
+  - `gpu/extract/from_snapshot/mod.rs:157` — `extract_frame_from_snapshot_into()` field reset (add `out.subpixel_positioning = true;`)
+  - `gpu/frame_input/mod.rs:460` — `test_grid()` helper (hardcode `true`; covers all test callers including `visual_regression/edge_case_tests.rs` which uses `test_grid()`)
+  - `gpu/frame_input/tests.rs:100, 126, 151` — 3 test struct literals (hardcode `true`)
+
+- [ ] Wire `subpixel_positioning` from `WindowRenderer` to `FrameInput` at extraction sites. After extraction, set `input.subpixel_positioning = renderer.subpixel_positioning()`. This avoids adding a parameter to `extract_frame_from_snapshot` (which has 12+ call sites):
+  - `app/redraw/mod.rs:145-148` — single-pane extraction (set on the FrameInput after `extract_frame_from_snapshot` / `extract_frame_from_snapshot_into`)
+  - `app/redraw/multi_pane/mod.rs:171-179` — multi-pane extraction (same pattern)
+
+  **Note:** `redraw/mod.rs` (534 lines) and `redraw/multi_pane/mod.rs` (555 lines) are pre-existing violations of the 500-line limit. This plan adds only 1-2 lines to each (a single field assignment after extraction), which is not the right time to split them. Their file-size debt should be tracked separately.
+
+- [ ] In `fill_frame_shaped()` (prepare/mod.rs), the `GlyphEmitter` is constructed at line 437 inside the per-cell loop. Add `subpixel_positioning: input.subpixel_positioning` to the construction (the `input: &FrameInput` parameter is in scope):
+  ```rust
+  GlyphEmitter {
+      baseline,
+      size_q6: shaped.size_q6(),
+      hinted: shaped.hinted(),
+      fg_dim,
+      subpixel_positioning: input.subpixel_positioning, // NEW
+      atlas,
+      frame,
+  }
+  ```
+  No parameter changes to `fill_frame_shaped`, `fill_frame_incremental`, `prepare_frame_shaped_into`, or `prepare_frame_shaped` — the flag comes from `FrameInput`.
+
+- [ ] In `fill_frame_incremental()` (dirty_skip/mod.rs:258), read `input.subpixel_positioning` the same way and pass to `GlyphEmitter`.
+
+- [ ] In `multi_pane.rs:99` (`fill_frame_shaped` call), no changes needed — `FrameInput` already carries the flag.
 
 - [ ] Add `subpixel_positioning: bool` parameter to `grid_raster_keys()` in `helpers.rs:184`. When `false`, force `subpx_x: 0` in the produced `RasterKey` (line 196):
   ```rust
   subpx_x: if subpixel_positioning { crate::font::subpx_bin(glyph.x_offset) } else { 0 },
   ```
-  Update all callers of `grid_raster_keys()` to pass `renderer.subpixel_positioning`.
+  Update all 2 callers of `grid_raster_keys()`:
+  - `window_renderer/mod.rs:405` — `WindowRenderer::prepare()` Phase B, pass `self.subpixel_positioning`
+  - `window_renderer/multi_pane.rs:70` — `prepare_pane()` Phase B, pass `self.subpixel_positioning`
 
 - [ ] Add `subpixel_positioning: bool` parameter to `scene_raster_keys()` in `helpers.rs:206`. When `false`, force `subpx_x: 0` (line 232) and round `cursor_x` to integer pixels:
   ```rust
   let cursor_x = if subpixel_positioning { cursor_x } else { cursor_x.round() };
   subpx_x: if subpixel_positioning { crate::font::subpx_bin(cursor_x + glyph.x_offset) } else { 0 },
   ```
-  Update all callers of `scene_raster_keys()` to pass `renderer.subpixel_positioning`.
+  Update the 1 caller of `scene_raster_keys()`:
+  - `window_renderer/scene_append.rs:112` — `append_ui_scene_with_text()`, pass `self.subpixel_positioning`
 
 - [ ] Add `subpixel_positioning: bool` field to `TextContext` in `gpu/scene_convert/mod.rs:32`. This threads the flag from the renderer to the UI text conversion path. Update `convert_text()` in `scene_convert/text.rs:62`:
   ```rust
@@ -265,22 +321,24 @@ Wire the resolved settings into the renderer so they actually take effect.
   ```
   When `false`, also round `cursor_x` to integer pixels before the glyph loop to prevent fractional drift.
 
-- [ ] Update `TextContext` construction in `scene_append.rs` (2 production sites at lines 32 and 75) to include `subpixel_positioning: self.subpixel_positioning`. Update all test sites in `scene_convert/tests.rs` (~20 construction sites) to include `subpixel_positioning: true` (preserving current test behavior).
+- [ ] Update `TextContext` construction in `scene_append.rs` (2 production sites at lines 32 and 75) to include `subpixel_positioning: self.subpixel_positioning`. Update all 19 test construction sites in `scene_convert/tests.rs` to include `subpixel_positioning: true` (preserving current test behavior).
 
 - [ ] The rasterizer in `font/collection/rasterize.rs` uses `subpx_offset(key.subpx_x)` to position the fractional X offset during rasterization. When `subpx_x` is 0, `subpx_offset(0)` returns 0.0 — no rasterizer changes needed. Verify this.
 
 ### 02.2.3 Config reload wiring
 
-- [ ] In `app/config_reload/mod.rs`, update the `font_changed` detection in `apply_font_changes()` (line 91-101) to also check the new fields:
+- [ ] In `app/config_reload/mod.rs`, update the doc comment on `apply_font_changes()` (line 111) to include "subpixel positioning, atlas filtering" in the field list.
+
+- [ ] In the same function, update the `font_changed` detection (lines 123-133) to also check the new fields:
   ```rust
   || new.font.subpixel_positioning != old.subpixel_positioning
   || new.font.atlas_filtering != old.atlas_filtering
   ```
   Without this, changing these settings via the dialog or TOML file will NOT trigger application. This piggybacks on the full font reload path, which is heavier than strictly necessary for these settings, but is acceptable for a cold path.
 
-- [ ] At the top of `apply_font_changes()`, after `let Some(gpu) = &self.gpu else { return };` (line 131), add `let Some(pipelines) = self.pipelines.as_ref() else { return };`. Both are immutable borrows on separate `App` fields — no borrow conflict with the mutable `self.windows` iteration below.
+- [ ] In `apply_font_changes()`, after `let Some(gpu) = &self.gpu else { return };` (line 163), add `let Some(pipelines) = self.pipelines.as_ref() else { return };`. Both are immutable borrows on separate `App` fields — no borrow conflict with the mutable `self.windows` iteration below.
 
-- [ ] In the `apply_font_changes()` per-window loop (line 134-185), after `renderer.replace_font_collection(fc, gpu);` (line 183), resolve and apply the new settings:
+- [ ] In the `apply_font_changes()` per-window loop (lines 166-217), after `renderer.replace_font_collection(fc, gpu);` (line 215), resolve and apply the new settings:
   ```rust
   let subpx_pos = resolve_subpixel_positioning(&new.font, scale);
   renderer.set_subpixel_positioning(subpx_pos);
@@ -289,18 +347,25 @@ Wire the resolved settings into the renderer so they actually take effect.
   ```
   Note: `renderer.replace_font_collection()` already clears atlases and re-caches. The `set_subpixel_positioning()` call just stores the flag; the `set_atlas_filtering()` call recreates bind groups with the new sampler. Both are cheap operations that piggyback on the existing reload.
 
-- [ ] In the DPI change handler `app/mod.rs:handle_dpi_change` (line 301): after `renderer.set_hinting_and_format(hinting, format, gpu)` at line 321, add atlas filtering re-resolution:
+- [ ] In the DPI change handler `app/mod.rs:handle_dpi_change` (line 301): after `renderer.set_hinting_and_format(hinting, format, gpu)` at line 321, add atlas filtering re-resolution. Note: `self.pipelines` is borrowed immutably while `renderer` (from `self.windows`) is borrowed mutably — these are separate `App` fields, no borrow conflict:
   ```rust
   let atlas_filter = config_reload::resolve_atlas_filtering(&self.config.font, scale_factor);
   if let Some(pipelines) = &self.pipelines {
       renderer.set_atlas_filtering(atlas_filter, &gpu.device, &pipelines.atlas_layout);
   }
   ```
-  Note: `self.pipelines` is borrowed immutably while `renderer` (from `self.windows`) is borrowed mutably — these are separate fields, no borrow conflict.
 
-- [ ] In the dialog DPI handler `app/dialog_context/event_handling/mod.rs:handle_dialog_dpi_change` (line 381): same pattern after `renderer.set_hinting_and_format(...)` at line 404. The dialog handler accesses `self.gpu` and `self.dialogs` — add `self.pipelines.as_ref()` access for the atlas layout.
+- [ ] In the dialog DPI handler `app/dialog_context/event_handling/mod.rs:handle_dialog_dpi_change` (line 381): same pattern after `renderer.set_hinting_and_format(...)` at line 404. The dialog handler is `impl App`, so `self.gpu`, `self.dialogs`, and `self.pipelines` are all accessible. Add `self.pipelines.as_ref()` for the atlas layout. The borrow pattern is: `self.gpu` (immutable), `self.dialogs[window_id].renderer` (mutable), `self.pipelines` (immutable) — all separate fields, no conflict.
 
 ### Tests (02.2)
+
+**AtlasFiltering enum tests** go in `gpu/bind_groups/tests.rs` (pure unit tests, no GPU needed):
+
+- [ ] `test_atlas_filtering_from_scale_factor_low_dpi` — `AtlasFiltering::from_scale_factor(1.0)` returns `Linear`.
+- [ ] `test_atlas_filtering_from_scale_factor_high_dpi` — `AtlasFiltering::from_scale_factor(2.0)` returns `Nearest`.
+- [ ] `test_atlas_filtering_from_scale_factor_boundary` — `AtlasFiltering::from_scale_factor(1.99)` returns `Linear` (below 2.0 threshold).
+- [ ] `test_atlas_filtering_to_filter_mode_linear` — `AtlasFiltering::Linear.to_filter_mode()` returns `FilterMode::Linear`.
+- [ ] `test_atlas_filtering_to_filter_mode_nearest` — `AtlasFiltering::Nearest.to_filter_mode()` returns `FilterMode::Nearest`.
 
 **AtlasBindGroup tests** go in `gpu/bind_groups/tests.rs` (already exists, has 4 `AtlasBindGroup::new()` call sites that must be updated per 02.2.1). All require `GpuState::new_headless()`.
 
@@ -403,13 +468,13 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
 ### 02.3.3 Wire action handler
 
-- [ ] In `action_handler/mod.rs`, extend `handle_font()` (or add a new `handle_font_advanced()` called from `handle_settings_action()`) to match the 4 new dropdown IDs:
+- [ ] In `action_handler/mod.rs`, add a new `handle_font_advanced()` function called from `handle_settings_action()` (do NOT add to `handle_font()` — it is already 41 lines, and adding 4 match arms would push it past the 50-line function limit). Match the 4 new dropdown IDs:
 
   ```rust
-  // Hinting: 0=Auto(None), 1=Full, 2=None
+  // Hinting: 0=Auto (config=None), 1=Full, 2=None
   WidgetAction::Selected { id, index } if *id == ids.hinting_dropdown => {
       config.font.hinting = match index {
-          0 => None,           // Auto
+          0 => None,           // Auto (scale-factor-based detection)
           1 => Some("full".to_owned()),
           _ => Some("none".to_owned()),
       };
@@ -419,7 +484,7 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
   For subpixel_aa (maps to `config.font.subpixel_mode`):
   ```rust
-  // 0=Auto(None), 1=RGB, 2=BGR, 3=None(Grayscale)
+  // 0=Auto (config=None), 1=RGB, 2=BGR, 3=None(Grayscale)
   WidgetAction::Selected { id, index } if *id == ids.subpixel_aa_dropdown => {
       config.font.subpixel_mode = match index {
           0 => None,
@@ -433,7 +498,7 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
   For atlas_filtering (maps to `config.font.atlas_filtering`):
   ```rust
-  // 0=Auto(None), 1=Linear, 2=Nearest
+  // 0=Auto (config=None), 1=Linear, 2=Nearest
   WidgetAction::Selected { id, index } if *id == ids.atlas_filtering_dropdown => {
       config.font.atlas_filtering = match index {
           0 => None,
@@ -456,6 +521,8 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
       true
   }
   ```
+
+- [ ] Wire `handle_font_advanced` into the `handle_settings_action()` dispatch chain at line 29: add `|| handle_font_advanced(action, ids, config)` after `handle_font(action, ids, config)`.
 
 ### Tests (02.3)
 
@@ -493,11 +560,13 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
 The Rendering page's subpixel toggle is superseded by the richer "Subpixel AA" dropdown in the Font page's Advanced section.
 
-- [ ] Remove `build_text_section()` from `rendering.rs` and its call from `build_page()`. The "Text" section header and subpixel toggle are both removed.
+- [ ] Remove `build_text_section()` from `rendering.rs` and its call from `build_page()`. The "Text" section header and subpixel toggle are both removed. Also remove the now-unused `use oriterm_ui::widgets::toggle::ToggleWidget;` import and update the module doc comment from "GPU backend and text rendering settings" to "GPU backend settings" (the `dead_code = "deny"` lint would catch the unused import).
 
 - [ ] Remove `subpixel_toggle` from `SettingsIds` in `form_builder/mod.rs`. Also remove from `SettingsIds::placeholder()`.
 
-- [ ] Remove the `WidgetAction::Toggled` match arm for `subpixel_toggle` from `handle_rendering()` in `action_handler/mod.rs`.
+- [ ] Remove the `WidgetAction::Toggled` match arm for `subpixel_toggle` from `handle_rendering()` in `action_handler/mod.rs`. Update the doc comment from "GPU backend, subpixel toggle" to "GPU backend".
+
+- [ ] Remove the existing `subpixel_toggled_updates_config` test from `action_handler/tests.rs` (line 394) — it references the now-removed `ids.subpixel_toggle` field and will fail to compile.
 
 - [ ] In `per_page_dirty()` in `settings_overlay/mod.rs`, remove `|| pending.font.subpixel_mode != original.font.subpixel_mode` from the Rendering page entry (index 7, line 56). Change the comment at line 54 from "GPU backend, subpixel mode" to "GPU backend". The Font page's `pending.font != original.font` comparison at line 40 already catches all font field changes including `subpixel_mode`.
 
@@ -510,7 +579,7 @@ Tests go in `settings_overlay/tests.rs`:
 
 Tests in `action_handler/tests.rs`:
 
-- [ ] `test_subpixel_toggle_removed` — verify that `handle_settings_action` returns `false` for a `Toggled` action with the old `subpixel_toggle` ID (since it no longer exists, no handler should match). This is a regression guard.
+- [ ] `test_subpixel_toggle_removed` — verify that `handle_settings_action` returns `false` for a `Toggled` action with a random `WidgetId::unique()` (since `subpixel_toggle` no longer exists, no `Toggled` handler in `handle_rendering()` should match). This is a compile-time regression guard: if anyone tries to re-add a `subpixel_toggle` field, the test name reminds them it was intentionally removed.
 
 Tests in `form_builder/tests.rs`:
 
@@ -526,23 +595,28 @@ Tests in `form_builder/tests.rs`:
 
 ## 02.N Completion Checklist
 
+- [ ] `window_renderer/mod.rs` reduced below 500 lines (CombinedAtlasLookup extracted) before adding fields
+- [ ] `frame_input/mod.rs` reduced below 500 lines (`cell_in_search_match` extracted) before adding `subpixel_positioning` field
 - [ ] `font.atlas_filtering` config field parses from TOML with `None`/`"linear"`/`"nearest"` values
 - [ ] `font.subpixel_positioning` changed from `bool` to `Option<bool>` (None=auto, Some(true)=on, Some(false)=off)
 - [ ] `subpixel_positioning` config is consumed by the renderer (no longer dead — TPR-04-007 resolved)
 - [ ] Atlas sampler responds to `atlas_filtering` setting (verified: switch to Nearest, glyphs render crisper)
-- [ ] `AtlasBindGroup` stores `FilterMode` and `rebuild()` preserves it
+- [ ] `AtlasBindGroup` stores `FilterMode` and `rebuild()` recreates sampler from stored filter
+- [ ] `set_atlas_filtering()` snapshots atlas generations to prevent redundant rebuild
 - [ ] `apply_font_changes()` change detection includes `subpixel_positioning` and `atlas_filtering`
 - [ ] Font page shows "Advanced" section with 4 dropdowns
 - [ ] Each dropdown defaults to "Auto (detected-value)" at index 0
 - [ ] `build_settings_dialog()` accepts and threads `scale_factor` + `opacity` for Auto labels
+- [ ] `handle_font_advanced()` extracted as separate function (not added to `handle_font()`) and wired into dispatch chain
 - [ ] Changing any dropdown persists to TOML config on Save
 - [ ] Changing hinting/subpixel AA triggers font re-rasterization (atlas clear + re-cache)
 - [ ] Changing atlas filtering triggers bind group rebuild (no atlas clear needed)
 - [ ] Changing subpixel positioning affects both grid and UI text glyph emission
+- [ ] `FrameInput.subpixel_positioning` field added and wired from renderer at extraction sites
 - [ ] DPI change handlers re-resolve atlas filtering (scale factor dependency)
 - [ ] Rendering page no longer shows subpixel toggle
 - [ ] 02.1 tests: 13 new tests + 3 updated tests in `config/tests.rs`
-- [ ] 02.2 tests: 3 bind group tests in `bind_groups/tests.rs`, 2 subpixel tests in `prepare/tests.rs`, 2 raster key tests in `window_renderer/tests.rs`, 1 UI text test in `scene_convert/tests.rs`, 2 change detection tests in `settings_overlay/tests.rs`
+- [ ] 02.2 tests: 5 AtlasFiltering enum unit tests + 3 AtlasBindGroup GPU tests in `bind_groups/tests.rs`, 2 subpixel tests in `prepare/tests.rs`, 2 raster key tests in `window_renderer/tests.rs`, 1 UI text test in `scene_convert/tests.rs`, 2 change detection tests in `settings_overlay/tests.rs`
 - [ ] 02.3 tests: 1 form builder test + 13 action handler tests
 - [ ] 02.4 tests: 2 in `settings_overlay/tests.rs`, 1 in `action_handler/tests.rs`, 1 count update in `form_builder/tests.rs`
 - [ ] `timeout 150 cargo test -p oriterm` green

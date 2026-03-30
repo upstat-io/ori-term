@@ -46,8 +46,9 @@ sections:
   - 3 updated existing tests in `config/tests.rs` for `Option<bool>` type change
   - 13 new tests: deserialization (5), resolution functions (8)
 
-- [ ] **Renderer wiring (Section 02.2 — 10 tests total):**
-  - 3 in `bind_groups/tests.rs` — filter mode storage and rebuild
+- [ ] **Renderer wiring (Section 02.2 — 15 tests total):**
+  - 5 in `bind_groups/tests.rs` — AtlasFiltering enum unit tests (from_scale_factor, to_filter_mode)
+  - 3 in `bind_groups/tests.rs` — AtlasBindGroup filter mode storage and rebuild (GPU-gated)
   - 2 in `prepare/tests.rs` — subpixel positioning flag effect (grid path)
   - 2 in `window_renderer/tests.rs` — raster key subpixel positioning (grid + scene)
   - 1 in `scene_convert/tests.rs` — UI text subpixel positioning
@@ -98,7 +99,7 @@ sections:
 
 ## 03.N Completion Checklist
 
-- [ ] All test matrix items verified (~57 total tests across sections)
+- [ ] All test matrix items verified (~62 total tests across sections)
 - [ ] No dead code introduced: `dead_code = "deny"` lint passes (verify `default_true()` removed from `font_config.rs`, `subpixel_toggle` removed from all paths)
 - [ ] No new clippy warnings: `deny(clippy::all)` + nursery passes
 - [ ] `./build-all.sh` green
