@@ -1,5 +1,7 @@
 //! Tests for the glyph atlas.
 
+use wgpu::{BufferDescriptor, BufferUsages, Extent3d, MapMode, PollType};
+
 use crate::font::{FaceIdx, FontRealm, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags};
 use crate::gpu::state::GpuState;
 
@@ -1130,4 +1132,221 @@ fn lazy_color_atlas_materializes_correctly() {
     assert_eq!(e.kind, AtlasKind::Color);
     assert_eq!(e.width, 16);
     assert_eq!(e.height, 16);
+}
+
+// ── Padding / gutter zeroing tests ──
+
+/// Read back a rectangle from a texture array layer into CPU memory.
+///
+/// Returns `None` if the readback fails (e.g. headless adapter limitation).
+fn readback_region(
+    gpu: &GpuState,
+    texture: &wgpu::Texture,
+    page: u32,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    bpp: u32,
+) -> Option<Vec<u8>> {
+    let row_bytes = w * bpp;
+    // wgpu requires rows aligned to 256 bytes.
+    let padded_row = (row_bytes + 255) & !255;
+    let buf_size = (padded_row * h) as u64;
+
+    let staging = gpu.device.create_buffer(&BufferDescriptor {
+        label: Some("readback_staging"),
+        size: buf_size,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x, y, z: page },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &staging,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_row),
+                rows_per_image: None,
+            },
+        },
+        Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+    );
+    gpu.queue.submit(Some(encoder.finish()));
+
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    let _ = gpu.device.poll(PollType::wait_indefinitely());
+    rx.recv().ok()?.ok()?;
+
+    let data = slice.get_mapped_range();
+    // Strip row padding.
+    let mut result = Vec::with_capacity((row_bytes * h) as usize);
+    for row in 0..h {
+        let start = (row * padded_row) as usize;
+        let end = start + row_bytes as usize;
+        result.extend_from_slice(&data[start..end]);
+    }
+    drop(data);
+    staging.unmap();
+    Some(result)
+}
+
+#[test]
+fn upload_glyph_zeros_right_padding() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let glyph = test_glyph(8, 14);
+    let key = test_key(65);
+
+    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let x = (entry.uv_x * PAGE_SIZE as f32).round() as u32;
+    let y = (entry.uv_y * PAGE_SIZE as f32).round() as u32;
+
+    // Read the right padding strip: GLYPH_PADDING wide × glyph height.
+    let Some(data) = readback_region(
+        &gpu,
+        atlas.texture(),
+        entry.page,
+        x + glyph.width,
+        y,
+        GLYPH_PADDING,
+        glyph.height,
+        1,
+    ) else {
+        eprintln!("skipped: texture readback not supported");
+        return;
+    };
+
+    assert!(
+        data.iter().all(|&b| b == 0),
+        "right padding strip should be all zeros, found non-zero bytes"
+    );
+}
+
+#[test]
+fn upload_glyph_zeros_bottom_padding() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let glyph = test_glyph(8, 14);
+    let key = test_key(65);
+
+    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let x = (entry.uv_x * PAGE_SIZE as f32).round() as u32;
+    let y = (entry.uv_y * PAGE_SIZE as f32).round() as u32;
+
+    // Read the bottom padding strip: (width + GLYPH_PADDING) × GLYPH_PADDING.
+    let bottom_w = glyph.width + GLYPH_PADDING;
+    let Some(data) = readback_region(
+        &gpu,
+        atlas.texture(),
+        entry.page,
+        x,
+        y + glyph.height,
+        bottom_w,
+        GLYPH_PADDING,
+        1,
+    ) else {
+        eprintln!("skipped: texture readback not supported");
+        return;
+    };
+
+    assert!(
+        data.iter().all(|&b| b == 0),
+        "bottom padding strip should be all zeros, found non-zero bytes"
+    );
+}
+
+#[test]
+fn stale_texels_cleared_after_atlas_reset() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+
+    // Insert a large glyph at (0, 0) that fills a region with 0xFF bytes.
+    let big = test_glyph(32, 32);
+    let key1 = test_key(65);
+    atlas.insert(key1, &big, &gpu.device, &gpu.queue);
+
+    // Clear the atlas — resets packer but not texture memory.
+    atlas.clear();
+
+    // Insert a smaller glyph — should land at the same (0, 0) position.
+    let small = test_glyph(8, 8);
+    let key2 = test_key(66);
+    let entry = atlas.insert(key2, &small, &gpu.device, &gpu.queue).unwrap();
+    let x = (entry.uv_x * PAGE_SIZE as f32).round() as u32;
+    let y = (entry.uv_y * PAGE_SIZE as f32).round() as u32;
+
+    // The right padding of the small glyph overlaps where the big glyph's
+    // body used to be (which had 0xFF). After the fix, the padding strip
+    // should be zero.
+    let Some(data) = readback_region(
+        &gpu,
+        atlas.texture(),
+        entry.page,
+        x + small.width,
+        y,
+        GLYPH_PADDING,
+        small.height,
+        1,
+    ) else {
+        eprintln!("skipped: texture readback not supported");
+        return;
+    };
+
+    assert!(
+        data.iter().all(|&b| b == 0),
+        "padding strip after atlas reset should be zeroed, not stale"
+    );
+}
+
+#[test]
+fn padding_zero_buffer_reused() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+
+    // Insert multiple glyphs of varying sizes.
+    for id in 0..10u16 {
+        let w = 6 + id as u32 * 2;
+        let h = 10 + id as u32;
+        let glyph = test_glyph(w, h);
+        atlas.insert(test_key(id), &glyph, &gpu.device, &gpu.queue);
+    }
+
+    // The padding_zeros buffer should be allocated once at construction
+    // with size (PAGE_SIZE + GLYPH_PADDING) * 4. No per-glyph allocation.
+    let expected_size = (PAGE_SIZE as usize + GLYPH_PADDING as usize) * 4;
+    assert_eq!(atlas.padding_zeros_len(), expected_size);
 }

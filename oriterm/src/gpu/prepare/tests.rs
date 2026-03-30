@@ -8,7 +8,7 @@ use super::{
     AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
     prepare_frame_shaped_into,
 };
-use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
+use crate::font::{CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
 use crate::gpu::frame_input::{FrameInput, FrameSelection, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
@@ -3806,5 +3806,124 @@ fn incremental_no_dirty_rows_matches_cached() {
         full_fg,
         frame.glyphs.as_bytes(),
         "clean rows should copy cached glyphs"
+    );
+}
+
+// ── Grid text Y rounding tests ──
+
+/// Verify all glyph instance Y positions are integer-aligned at fractional
+/// DPI (simulating 1.25x scale factor with cell height 18.75).
+#[test]
+fn grid_y_positions_integer_at_fractional_scale() {
+    let mut input = FrameInput::test_grid(5, 4, "ABCDEFGHIJKLMNOPQRST");
+    // Simulate 1.25x: fractional cell height and origin.
+    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.viewport = ViewportSize::new(200, 200);
+    let atlas = atlas_with(&[
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+        'S', 'T',
+    ]);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 56.3));
+
+    for i in 0..frame.glyphs.len() {
+        let inst = nth_instance(frame.glyphs.as_bytes(), i);
+        let y = inst.pos.1;
+        assert!(
+            (y - y.round()).abs() < 0.001,
+            "glyph {i} Y = {y} is not integer-aligned"
+        );
+    }
+}
+
+/// Verify Y positions are already integer at 1x scale (regression guard).
+#[test]
+fn grid_y_positions_integer_at_integer_scale() {
+    let input = FrameInput::test_grid(3, 3, "ABCDEFGHI");
+    let atlas = atlas_with(&['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 56.0));
+
+    for i in 0..frame.glyphs.len() {
+        let inst = nth_instance(frame.glyphs.as_bytes(), i);
+        let y = inst.pos.1;
+        assert!(
+            (y - y.round()).abs() < 0.001,
+            "glyph {i} Y = {y} is not integer-aligned at 1x scale"
+        );
+    }
+}
+
+/// Verify cursor Y position is integer-aligned at fractional DPI.
+#[test]
+fn cursor_y_position_integer_at_fractional_scale() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.viewport = ViewportSize::new(200, 200);
+    input.content.cursor.column = Column(2);
+    input.content.cursor.line = 3;
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 56.3));
+
+    let c = nth_instance(frame.cursors.as_bytes(), 0);
+    let y = c.pos.1;
+    assert!(
+        (y - y.round()).abs() < 0.001,
+        "cursor Y = {y} is not integer-aligned"
+    );
+}
+
+/// Verify prompt marker Y positions are integer-aligned at fractional DPI.
+#[test]
+fn prompt_marker_y_integer_at_fractional_scale() {
+    let mut input = FrameInput::test_grid(10, 5, "");
+    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.viewport = ViewportSize::new(200, 200);
+    input.prompt_marker_rows = vec![0, 2, 4];
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 56.3));
+
+    // Prompt markers are on the cursor layer.
+    for i in 0..frame.cursors.len() {
+        let inst = nth_instance(frame.cursors.as_bytes(), i);
+        let y = inst.pos.1;
+        assert!(
+            (y - y.round()).abs() < 0.001,
+            "prompt marker {i} Y = {y} is not integer-aligned"
+        );
+    }
+}
+
+/// Verify URL underline Y base is integer-aligned (underline offset
+/// fractional component is allowed on top of the integer row base).
+#[test]
+fn url_underline_y_base_integer_at_fractional_scale() {
+    let mut input = FrameInput::test_grid(10, 3, "");
+    input.cell_size = CellMetrics::new(10.0, 18.75, 14.0, 2.0, 1.0, 4.0);
+    input.viewport = ViewportSize::new(200, 200);
+    input.hovered_url_segments = vec![(1, 2, 5)]; // row 1, cols 2..5
+    let atlas = empty_atlas();
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 56.3));
+
+    // The URL underline uses the cursor instance buffer.
+    // Find the underline by looking for an instance at row 1's Y.
+    let row1_base = (56.3_f32 + 1.0 * 18.75).round();
+    let underline_offset = input.cell_size.baseline + input.cell_size.underline_offset;
+    let expected_y = row1_base + underline_offset;
+    // There should be a cursor instance + the underline. The underline
+    // is the one not at row 0 cursor position.
+    let mut found_underline = false;
+    for i in 0..frame.cursors.len() {
+        let inst = nth_instance(frame.cursors.as_bytes(), i);
+        if (inst.pos.1 - expected_y).abs() < 0.01 {
+            found_underline = true;
+        }
+    }
+    assert!(
+        found_underline,
+        "expected URL underline at Y={expected_y} (base={row1_base} + offset={underline_offset})"
     );
 }

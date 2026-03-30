@@ -139,6 +139,11 @@ pub struct GlyphAtlas {
     /// on first [`insert`](Self::insert). Saves ~4–16 MB GPU memory per atlas
     /// that is never used (e.g., color atlas when no emoji are rendered).
     lazy: bool,
+    /// Reusable zero buffer for clearing gutter padding around uploaded glyphs.
+    ///
+    /// Allocated once, sliced into for each upload. Prevents bilinear sampler
+    /// from interpolating stale texels in the `GLYPH_PADDING` gutter.
+    padding_zeros: Vec<u8>,
 }
 
 impl GlyphAtlas {
@@ -178,6 +183,7 @@ impl GlyphAtlas {
             format,
             tex_format,
             lazy: false,
+            padding_zeros: vec![0u8; (PAGE_SIZE as usize + GLYPH_PADDING as usize) * 4],
         }
     }
 
@@ -211,6 +217,7 @@ impl GlyphAtlas {
             format,
             tex_format,
             lazy: true,
+            padding_zeros: vec![0u8; (PAGE_SIZE as usize + GLYPH_PADDING as usize) * 4],
         }
     }
 
@@ -299,7 +306,16 @@ impl GlyphAtlas {
             self.grow_texture(device, queue);
         }
 
-        upload_glyph(queue, &self.texture, page_idx, x, y, glyph);
+        upload_glyph(
+            queue,
+            &self.texture,
+            page_idx,
+            x,
+            y,
+            glyph,
+            GLYPH_PADDING,
+            &self.padding_zeros,
+        );
 
         let page = &mut self.pages[page_idx as usize];
         page.last_used_frame = self.frame_counter;
@@ -371,6 +387,18 @@ impl GlyphAtlas {
     /// `Texture2DArray` view for atlas bind group creation.
     pub fn view(&self) -> &TextureView {
         &self.view
+    }
+
+    /// Underlying GPU texture (test-only, for readback verification).
+    #[cfg(test)]
+    pub(crate) fn texture(&self) -> &Texture {
+        &self.texture
+    }
+
+    /// Length of the reusable padding zero buffer (test-only).
+    #[cfg(test)]
+    pub(crate) fn padding_zeros_len(&self) -> usize {
+        self.padding_zeros.len()
     }
 
     /// Number of cached glyph entries.

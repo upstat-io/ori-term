@@ -92,11 +92,16 @@ impl WindowRenderer {
         self.clear_and_recache(gpu);
     }
 
-    /// Change both hinting mode and glyph format, clearing atlases once.
+    /// Change both hinting mode and glyph format for the **terminal** font,
+    /// clearing atlases once.
     ///
     /// Used during scale factor changes where both settings typically change
     /// together. Avoids the double clear-and-recache that would happen from
     /// calling [`set_hinting_mode`] and [`set_glyph_format`] separately.
+    ///
+    /// UI fonts are intentionally unaffected — they always use
+    /// `GlyphFormat::Alpha` / `HintingMode::None` (set at construction and
+    /// in `rebuild_ui_font_sizes`).
     pub fn set_hinting_and_format(
         &mut self,
         mode: HintingMode,
@@ -105,11 +110,6 @@ impl WindowRenderer {
     ) {
         let hinting_changed = self.font_collection.set_hinting(mode);
         let format_changed = self.font_collection.set_format(format);
-        // Keep UI font registry in sync with the terminal font's rendering settings.
-        if let Some(sizes) = &mut self.ui_font_sizes {
-            sizes.set_hinting(mode);
-            sizes.set_format(format);
-        }
         if hinting_changed || format_changed {
             self.clear_and_recache(gpu);
         }

@@ -343,7 +343,8 @@ pub(crate) fn fill_frame_shaped(
             current_row = row;
 
             // Skip rows entirely outside the render target.
-            let row_y = oy + row as f32 * ch;
+            // Round to match the integer-snapped Y used for rendering.
+            let row_y = (oy + row as f32 * ch).round();
             row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
