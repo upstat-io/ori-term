@@ -83,7 +83,8 @@ bump-build, sync-version, cargo-lock, lockfile, nightly, deploy, publish
 **File:** `section-08-core-terminal.md` | **Status:** In Progress
 
 ```
-bell, audible, beep, sound, BEL, VTE, escape, terminal, mode, notification
+bell, audible, beep, sound, BEL, VTE, escape, terminal, mode, notification,
+selection, highlight, dismiss, deselect, clear, click, sticky, stuck
 ```
 
 ---
