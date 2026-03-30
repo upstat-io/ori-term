@@ -60,7 +60,7 @@ rasterize, fallback, Segoe UI Emoji, NotoEmoji, atlas, bearing
 
 ```
 config, settings, shell, default-shell, spawn, wiring, terminal, behavior,
-toml, reload, hot-reload, apply, runtime
+toml, reload, hot-reload, apply, runtime, restore-session, session, persist
 ```
 
 ### Section 06: Rendering & Performance
@@ -69,6 +69,21 @@ toml, reload, hot-reload, apply, runtime
 ```
 render, frame, latency, lag, slow, key-repeat, input-lag, GPU, draw_frame,
 performance, frame-time, frame-budget, redraw, cell-loop, wrapping
+```
+
+### Section 07: CI & Build
+**File:** `section-07-ci-build.md` | **Status:** Not Started
+
+```
+ci, build, release, workflow, github-actions, auto-release, tag, version,
+bump-build, sync-version, cargo-lock, lockfile, nightly, deploy, publish
+```
+
+### Section 08: Core Terminal
+**File:** `section-08-core-terminal.md` | **Status:** In Progress
+
+```
+bell, audible, beep, sound, BEL, VTE, escape, terminal, mode, notification
 ```
 
 ---
@@ -83,3 +98,5 @@ performance, frame-time, frame-budget, redraw, cell-loop, wrapping
 | 04 | Fonts | `section-04-fonts.md` |
 | 05 | Config | `section-05-config.md` |
 | 06 | Rendering & Perf | `section-06-rendering-perf.md` |
+| 07 | CI & Build | `section-07-ci-build.md` |
+| 08 | Core Terminal | `section-08-core-terminal.md` |

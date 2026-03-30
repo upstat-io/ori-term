@@ -35,5 +35,7 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 | 02 | Settings Dialog | `section-02-settings-dialog.md` | 11 |
 | 03 | UI Framework | `section-03-ui-framework.md` | 2 |
 | 04 | Fonts | `section-04-fonts.md` | 2 |
-| 05 | Config | `section-05-config.md` | 2 |
+| 05 | Config | `section-05-config.md` | 4 |
 | 06 | Rendering & Perf | `section-06-rendering-perf.md` | 1 |
+| 07 | CI & Build | `section-07-ci-build.md` | 3 |
+| 08 | Core Terminal | `section-08-core-terminal.md` | 1 |

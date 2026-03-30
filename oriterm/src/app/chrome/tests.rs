@@ -458,3 +458,29 @@ fn layout_status_bar_integer_origin() {
         "status bar height must be integer-pixel at 1.25x DPI"
     );
 }
+
+#[test]
+fn chrome_layout_fractional_dpi_with_status_bar() {
+    // 1.25x DPI with both status bar and border inset active.
+    // All physical pixel values must have zero fractional part.
+    let cell = test_cell(10.0, 20.0);
+    let wl = compute_window_layout(1920, 1080, &cell, 1.25, false, 36.0, 22.0, 2.0);
+
+    let check = |label: &str, val: f32| {
+        assert_eq!(
+            val.fract(),
+            0.0,
+            "{label} must be integer-pixel at 1.25x DPI, got {val}"
+        );
+    };
+
+    check("tab_bar_rect.x", wl.tab_bar_rect.x());
+    check("tab_bar_rect.y", wl.tab_bar_rect.y());
+    check("tab_bar_rect.width", wl.tab_bar_rect.width());
+    check("tab_bar_rect.height", wl.tab_bar_rect.height());
+    check("grid_rect.x", wl.grid_rect.x());
+    check("grid_rect.y", wl.grid_rect.y());
+    check("status_bar_rect.x", wl.status_bar_rect.x());
+    check("status_bar_rect.y", wl.status_bar_rect.y());
+    check("status_bar_rect.height", wl.status_bar_rect.height());
+}
