@@ -47,6 +47,16 @@ sections:
   - **Repro**: Hold a key to fill the screen with text, release, then resize the window. Extra/garbled characters appear in the terminal.
   - **Found**: 2026-03-30 — manual, user report. Pre-existing — not caused by frame budget changes.
 
+- [ ] **BUG-06.3**: Window surface not redrawn after dragging partially off-screen and back
+  - **Severity**: high
+  - **File(s)**: `oriterm/src/app/event_loop.rs` (redraw dispatch), `oriterm/src/app/redraw/mod.rs` (dirty tracking), `oriterm/src/gpu/window_renderer/render.rs` (surface present)
+  - **Root cause**: TBD. The renderer relies on dirty flags to decide when to repaint. When the window is moved partially off-screen and dragged back, the OS exposes surface area that wgpu has never rendered to, but the app doesn't trigger a full redraw because no terminal state changed. The exposed regions show the default wgpu clear color (baby blue) until something forces a repaint (e.g., mouse hover triggering a cursor change or interaction state update). Same issue visible on window open — the initial surface is briefly visible before the first frame lands.
+  - **Symptoms**:
+    1. Push part of window off-screen, drag back → off-screen region shows uninitialized baby blue surface until moused over
+    2. Opening new windows → baby blue uninitialized surface flash before first render
+  - **Repro**: Drag the oriterm window halfway off the right edge of the screen. Drag it back. Observe the right portion is baby blue / not redrawn. Move the mouse over the affected area — it repaints.
+  - **Found**: 2026-03-30 — manual, user report
+
 ---
 
 ## 06.R Third Party Review Findings

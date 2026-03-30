@@ -49,7 +49,8 @@ pub(crate) fn build_dialog_scene(
 ) -> Scene {
     let theme = UiTheme::dark();
     let config = Config::default();
-    let (content_widget, _ids, footer_ids) = build_settings_dialog(&config, &theme, page, None);
+    let (content_widget, _ids, footer_ids) =
+        build_settings_dialog(&config, &theme, page, 1.0, 1.0, None);
 
     // Wrap content in SettingsPanel (the real dialog does this).
     let mut panel =

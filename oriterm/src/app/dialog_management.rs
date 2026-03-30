@@ -398,8 +398,17 @@ impl App {
 
     /// Build dialog content for the settings panel.
     fn build_settings_content(&self) -> DialogContent {
-        let (content, ids, footer_ids) =
-            form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0, None);
+        let (content, ids, footer_ids) = form_builder::build_settings_dialog(
+            &self.config,
+            &self.ui_theme,
+            0,
+            self.windows
+                .values()
+                .next()
+                .map_or(1.0, |ctx| ctx.window.scale_factor().factor()),
+            f64::from(self.config.window.effective_opacity()),
+            None,
+        );
 
         DialogContent::Settings {
             panel: Box::new(SettingsPanel::embedded(content, footer_ids)),

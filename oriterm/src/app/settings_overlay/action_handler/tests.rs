@@ -10,7 +10,7 @@ use crate::config::Config;
 fn default_ids() -> (Config, SettingsIds) {
     let config = Config::default();
     let theme = oriterm_ui::theme::UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     (config, ids)
 }
 
@@ -391,17 +391,6 @@ fn gpu_backend_selected_updates_config() {
 }
 
 #[test]
-fn subpixel_toggled_updates_config() {
-    let (mut config, ids) = default_ids();
-    let action = WidgetAction::Toggled {
-        id: ids.subpixel_toggle,
-        value: true,
-    };
-    assert!(handle_settings_action(&action, &ids, &mut config));
-    assert_eq!(config.font.subpixel_mode.as_deref(), Some("rgb"));
-}
-
-#[test]
 fn paste_warning_selected_updates_config() {
     let (mut config, ids) = default_ids();
     let action = WidgetAction::Selected {
@@ -413,4 +402,165 @@ fn paste_warning_selected_updates_config() {
         config.behavior.warn_on_paste,
         crate::config::PasteWarning::Never
     );
+}
+
+// Font Advanced page tests.
+
+#[test]
+fn hinting_dropdown_auto_sets_none() {
+    let (mut config, ids) = default_ids();
+    config.font.hinting = Some("full".to_owned());
+    let action = WidgetAction::Selected {
+        id: ids.hinting_dropdown,
+        index: 0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.hinting, None);
+}
+
+#[test]
+fn hinting_dropdown_full() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.hinting_dropdown,
+        index: 1,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.hinting.as_deref(), Some("full"));
+}
+
+#[test]
+fn hinting_dropdown_none() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.hinting_dropdown,
+        index: 2,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.hinting.as_deref(), Some("none"));
+}
+
+#[test]
+fn subpixel_aa_dropdown_auto_sets_none() {
+    let (mut config, ids) = default_ids();
+    config.font.subpixel_mode = Some("rgb".to_owned());
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_aa_dropdown,
+        index: 0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_mode, None);
+}
+
+#[test]
+fn subpixel_aa_dropdown_rgb() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_aa_dropdown,
+        index: 1,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_mode.as_deref(), Some("rgb"));
+}
+
+#[test]
+fn subpixel_aa_dropdown_bgr() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_aa_dropdown,
+        index: 2,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_mode.as_deref(), Some("bgr"));
+}
+
+#[test]
+fn subpixel_aa_dropdown_none_grayscale() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_aa_dropdown,
+        index: 3,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_mode.as_deref(), Some("none"));
+}
+
+#[test]
+fn subpixel_positioning_dropdown_auto() {
+    let (mut config, ids) = default_ids();
+    config.font.subpixel_positioning = Some(true);
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_positioning_dropdown,
+        index: 0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_positioning, None);
+}
+
+#[test]
+fn subpixel_positioning_dropdown_quarter_pixel() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_positioning_dropdown,
+        index: 1,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_positioning, Some(true));
+}
+
+#[test]
+fn subpixel_positioning_dropdown_off() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.subpixel_positioning_dropdown,
+        index: 2,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.subpixel_positioning, Some(false));
+}
+
+#[test]
+fn atlas_filtering_dropdown_auto() {
+    let (mut config, ids) = default_ids();
+    config.font.atlas_filtering = Some("linear".to_owned());
+    let action = WidgetAction::Selected {
+        id: ids.atlas_filtering_dropdown,
+        index: 0,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.atlas_filtering, None);
+}
+
+#[test]
+fn atlas_filtering_dropdown_linear() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.atlas_filtering_dropdown,
+        index: 1,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.atlas_filtering.as_deref(), Some("linear"));
+}
+
+#[test]
+fn atlas_filtering_dropdown_nearest() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Selected {
+        id: ids.atlas_filtering_dropdown,
+        index: 2,
+    };
+    assert!(handle_settings_action(&action, &ids, &mut config));
+    assert_eq!(config.font.atlas_filtering.as_deref(), Some("nearest"));
+}
+
+#[test]
+fn subpixel_toggle_removed() {
+    // Regression guard: subpixel_toggle was removed from SettingsIds.
+    // A random Toggled action should not match any rendering handler.
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Toggled {
+        id: WidgetId::next(),
+        value: true,
+    };
+    assert!(!handle_settings_action(&action, &ids, &mut config));
 }

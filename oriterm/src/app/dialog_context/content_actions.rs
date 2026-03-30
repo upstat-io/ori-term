@@ -131,6 +131,8 @@ impl App {
             pending_config,
             &ui_theme,
             *active_page,
+            ctx.scale_factor.factor(),
+            f64::from(pending_config.window.effective_opacity()),
             None,
         );
         // Deregister old panel to avoid leaking InteractionManager state (TPR-11-009).
