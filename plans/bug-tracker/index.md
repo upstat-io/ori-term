@@ -55,6 +55,22 @@ font, emoji, COLRv1, COLR, swash, skrifa, color glyph, bitmap, clip,
 rasterize, fallback, Segoe UI Emoji, NotoEmoji, atlas, bearing
 ```
 
+### Section 05: Config
+**File:** `section-05-config.md` | **Status:** In Progress
+
+```
+config, settings, shell, default-shell, spawn, wiring, terminal, behavior,
+toml, reload, hot-reload, apply, runtime
+```
+
+### Section 06: Rendering & Performance
+**File:** `section-06-rendering-perf.md` | **Status:** In Progress
+
+```
+render, frame, latency, lag, slow, key-repeat, input-lag, GPU, draw_frame,
+performance, frame-time, frame-budget, redraw, cell-loop, wrapping
+```
+
 ---
 
 ## Quick Reference
@@ -65,3 +81,5 @@ rasterize, fallback, Segoe UI Emoji, NotoEmoji, atlas, bearing
 | 02 | Settings Dialog | `section-02-settings-dialog.md` |
 | 03 | UI Framework | `section-03-ui-framework.md` |
 | 04 | Fonts | `section-04-fonts.md` |
+| 05 | Config | `section-05-config.md` |
+| 06 | Rendering & Perf | `section-06-rendering-perf.md` |

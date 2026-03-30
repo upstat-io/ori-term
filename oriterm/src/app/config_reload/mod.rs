@@ -15,7 +15,7 @@ pub(crate) use font_config::{
 };
 
 use super::{App, DEFAULT_DPI};
-use crate::config::Config;
+use crate::config::{Config, FontConfig};
 use crate::font::{FontByteCache, FontCollection, FontSet};
 use crate::keybindings;
 
@@ -405,5 +405,43 @@ impl App {
     /// Rebuild keybinding table from new config.
     fn apply_keybinding_changes(&mut self, new: &Config) {
         self.bindings = keybindings::merge_bindings(&new.keybind);
+    }
+
+    /// Adjust font size by `delta` points (positive = larger, negative = smaller).
+    ///
+    /// Clamps to [4.0, 72.0] pt and triggers the full font reload pipeline.
+    pub(in crate::app) fn zoom_font_size(&mut self, delta: f32) {
+        let new_size = (self.config.font.size + delta).clamp(4.0, 72.0);
+        if (new_size - self.config.font.size).abs() < f32::EPSILON {
+            return;
+        }
+        let mut new_config = self.config.clone();
+        new_config.font.size = new_size;
+        self.apply_font_changes(&new_config);
+        self.config.font.size = new_size;
+        for ctx in self.windows.values_mut() {
+            ctx.root.mark_dirty();
+        }
+        log::info!("zoom: font size {new_size:.1}pt");
+    }
+
+    /// Reset font size to the user's configured value (from config file).
+    ///
+    /// Falls back to the built-in default (11.0 pt) if the config file
+    /// cannot be loaded.
+    pub(in crate::app) fn reset_font_size(&mut self) {
+        let configured_size =
+            Config::try_load().map_or_else(|_| FontConfig::default().size, |c| c.font.size);
+        if (self.config.font.size - configured_size).abs() < f32::EPSILON {
+            return;
+        }
+        let mut new_config = self.config.clone();
+        new_config.font.size = configured_size;
+        self.apply_font_changes(&new_config);
+        self.config.font.size = configured_size;
+        for ctx in self.windows.values_mut() {
+            ctx.root.mark_dirty();
+        }
+        log::info!("zoom: reset to {configured_size:.1}pt");
     }
 }

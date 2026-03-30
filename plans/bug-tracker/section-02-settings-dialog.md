@@ -76,6 +76,24 @@ sections:
   - **Found**: 2026-03-28 — manual sign-off (Section 14.4), user report
   - **Fixed**: 2026-03-28 — Set `DIALOG_DRAG_CAPTION_HEIGHT` to 48px and excluded the sidebar (200px) as an interactive rect so the search field stays clickable. The content area header (right of sidebar, top 48px) is now the drag zone. Added `try_dialog_header_drag()` for Linux/macOS `drag_window()` support.
 
+- [ ] **BUG-02.9**: Rendering page backend dropdown shows all backends on every platform + doesn't show active backend
+  - **File(s)**: `oriterm/src/app/settings_overlay/form_builder/rendering.rs`
+  - **Root cause**: `build_gpu_section()` hardcodes all 4 backends (Auto, Vulkan, DirectX 12, Metal) regardless of platform. Should show only valid backends per OS: Windows → Auto/Vulkan/DirectX 12, macOS → Auto/Metal, Linux → Auto/Vulkan. Additionally, the dropdown doesn't indicate which backend is currently in use (e.g. "Auto (Vulkan)" showing the resolved backend), unlike the mockup which displays the active backend.
+  - **Found**: 2026-03-29 — manual, user report comparing live build to mockup
+  - **Fix**: Platform-gate the dropdown items with `#[cfg()]` or runtime OS detection. Add resolved-backend display (query `wgpu::Adapter::get_info().backend` or equivalent at settings build time).
+
+- [ ] **BUG-02.10**: Config file path link in sidebar footer missing tooltip with full path on hover
+  - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/paint.rs` (footer painting), `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (`config_path` field)
+  - **Root cause**: The config path text is truncated via `truncate_with_ellipsis()` but no tooltip is shown on hover. Users can't see the full path to know where the config file lives. The hover highlight works (changes text color) but doesn't surface the full path.
+  - **Found**: 2026-03-29 — manual, user feature request
+  - **Fix**: Add tooltip rendering when `hovered_footer == Some(HoveredFooterTarget::ConfigPath)` showing `self.config_path` in full. May require tooltip infrastructure (overlay or simple painted rect near cursor).
+
+- [ ] **BUG-02.11**: Sidebar cursor icon is pointer over entire area — should only be pointer over interactive items
+  - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/mod.rs:331`
+  - **Root cause**: `layout()` sets `.with_cursor_icon(CursorIcon::Pointer)` on the top-level `LayoutBox` for the whole sidebar widget. This makes the cursor a pointer everywhere — over the background, spacing, search field, version label — not just over the clickable nav items and footer links.
+  - **Found**: 2026-03-29 — manual, user report
+  - **Fix**: Remove the widget-level `CursorIcon::Pointer`. Instead, apply pointer cursor only to interactive sub-regions (nav items, config path link, update link) via per-region cursor handling or sub-layout boxes with their own cursor icons.
+
 ---
 
 ## 02.R Third Party Review Findings
