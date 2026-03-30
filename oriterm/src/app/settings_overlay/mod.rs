@@ -51,9 +51,8 @@ pub(in crate::app) fn per_page_dirty(pending: &Config, original: &Config) -> [bo
             || pending.window.rows != original.window.rows,
         // 6: Bell — all bell config.
         pending.bell != original.bell,
-        // 7: Rendering — GPU backend, subpixel mode.
-        pending.rendering.gpu_backend != original.rendering.gpu_backend
-            || pending.font.subpixel_mode != original.font.subpixel_mode,
+        // 7: Rendering — GPU backend.
+        pending.rendering.gpu_backend != original.rendering.gpu_backend,
     ]
 }
 

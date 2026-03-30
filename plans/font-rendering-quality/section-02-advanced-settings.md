@@ -21,16 +21,16 @@ sections:
     status: complete
   - id: "02.3"
     title: "Settings UI: Font Page Advanced Section"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "Remove Rendering Page Subpixel Toggle"
-    status: not-started
+    status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
     status: not-started
   - id: "02.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 02: Advanced Font Rendering Settings
@@ -404,7 +404,7 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
 ### 02.3.1 Add SettingsIds for new controls
 
-- [ ] In `form_builder/mod.rs`, add 4 new fields to `SettingsIds`:
+- [x] In `form_builder/mod.rs`, add 4 new fields to `SettingsIds`:
   ```rust
   // Font page — Advanced section.
   pub hinting_dropdown: WidgetId,
@@ -413,14 +413,14 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
   pub atlas_filtering_dropdown: WidgetId,
   ```
 
-- [ ] Add corresponding `WidgetId::placeholder()` entries in `SettingsIds::placeholder()`.
+- [x] Add corresponding `WidgetId::placeholder()` entries in `SettingsIds::placeholder()`.
 
-- [ ] Update the `settings_ids_all_distinct` test in `form_builder/tests.rs` (line 23): change the expected count from `26` to `29` (26 original - 1 removed `subpixel_toggle` + 4 new = 29). NOTE: `subpixel_toggle` removal happens in 02.4 — if implementing 02.3 first, use `30` temporarily then drop to `29` in 02.4.
-- [ ] Update the `collect_ids()` helper in `form_builder/tests.rs` (line 196): add `set.insert(ids.hinting_dropdown.raw())`, `set.insert(ids.subpixel_aa_dropdown.raw())`, `set.insert(ids.subpixel_positioning_dropdown.raw())`, and `set.insert(ids.atlas_filtering_dropdown.raw())` in the Font section. In 02.4, remove `set.insert(ids.subpixel_toggle.raw())` from the Rendering section.
+- [x] Update the `settings_ids_all_distinct` test in `form_builder/tests.rs` (line 23): change the expected count from `26` to `29` (26 original - 1 removed `subpixel_toggle` + 4 new = 29). NOTE: `subpixel_toggle` removal happens in 02.4 — if implementing 02.3 first, use `30` temporarily then drop to `29` in 02.4.
+- [x] Update the `collect_ids()` helper in `form_builder/tests.rs` (line 196): add `set.insert(ids.hinting_dropdown.raw())`, `set.insert(ids.subpixel_aa_dropdown.raw())`, `set.insert(ids.subpixel_positioning_dropdown.raw())`, and `set.insert(ids.atlas_filtering_dropdown.raw())` in the Font section. In 02.4, remove `set.insert(ids.subpixel_toggle.raw())` from the Rendering section.
 
 ### 02.3.2 Build the Advanced section
 
-- [ ] In `form_builder/font.rs`, add a `build_advanced_section(config, ids, theme, scale_factor, opacity)` function and call it from `build_page()` (added after `build_fallback_section()`). Each dropdown must be initialized with the correct selected index matching the current config value:
+- [x] In `form_builder/font.rs`, add a `build_advanced_section(config, ids, theme, scale_factor, opacity)` function and call it from `build_page()` (added after `build_fallback_section()`). Each dropdown must be initialized with the correct selected index matching the current config value:
   - Hinting: `config.font.hinting.as_deref()` — `None` → 0 (Auto), `Some("full")` → 1, `Some("none")` → 2
   - Subpixel AA: `config.font.subpixel_mode.as_deref()` — `None` → 0 (Auto), `Some("rgb")` → 1, `Some("bgr")` → 2, `Some("none")` → 3
   - Subpixel pos: `config.font.subpixel_positioning` — `None` → 0 (Auto), `Some(true)` → 1, `Some(false)` → 2
@@ -452,7 +452,7 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
   ```
   "Auto" label shows `AtlasFiltering::from_scale_factor(scale)` result.
 
-- [ ] The `build_page()` function needs access to the current scale factor and opacity to compute Auto labels. This requires a signature change cascade:
+- [x] The `build_page()` function needs access to the current scale factor and opacity to compute Auto labels. This requires a signature change cascade:
 
   1. Add `scale_factor: f64` and `opacity: f64` parameters to `build_settings_dialog()` in `form_builder/mod.rs`
   2. Pass them through to `font::build_page()` (and only font — other pages don't need them)
@@ -468,7 +468,7 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
 ### 02.3.3 Wire action handler
 
-- [ ] In `action_handler/mod.rs`, add a new `handle_font_advanced()` function called from `handle_settings_action()` (do NOT add to `handle_font()` — it is already 41 lines, and adding 4 match arms would push it past the 50-line function limit). Match the 4 new dropdown IDs:
+- [x] In `action_handler/mod.rs`, add a new `handle_font_advanced()` function called from `handle_settings_action()` (do NOT add to `handle_font()` — it is already 41 lines, and adding 4 match arms would push it past the 50-line function limit). Match the 4 new dropdown IDs:
 
   ```rust
   // Hinting: 0=Auto (config=None), 1=Full, 2=None
@@ -522,31 +522,31 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
   }
   ```
 
-- [ ] Wire `handle_font_advanced` into the `handle_settings_action()` dispatch chain at line 29: add `|| handle_font_advanced(action, ids, config)` after `handle_font(action, ids, config)`.
+- [x] Wire `handle_font_advanced` into the `handle_settings_action()` dispatch chain at line 29: add `|| handle_font_advanced(action, ids, config)` after `handle_font(action, ids, config)`.
 
 ### Tests (02.3)
 
 **Form builder tests** go in `form_builder/tests.rs`:
 
-- [ ] Update `settings_ids_all_distinct` — update expected count (see 02.3.1).
-- [ ] Update `collect_ids()` helper — add the 4 new dropdown IDs to the `HashSet` insertion list.
-- [ ] `test_advanced_dropdowns_default_to_auto` — build dialog, verify all 4 Advanced dropdown IDs are non-placeholder and their initial selected index is 0 (Auto).
+- [x] Update `settings_ids_all_distinct` — update expected count (see 02.3.1).
+- [x] Update `collect_ids()` helper — add the 4 new dropdown IDs to the `HashSet` insertion list.
+- [x] `test_advanced_dropdowns_default_to_auto` — build dialog, verify all 4 Advanced dropdown IDs are non-placeholder and their initial selected index is 0 (Auto).
 
 **Action handler tests** go in `action_handler/tests.rs`:
 
-- [ ] `test_hinting_dropdown_auto_sets_none` — select index 0, assert `config.font.hinting == None`.
-- [ ] `test_hinting_dropdown_full_sets_full` — select index 1, assert `config.font.hinting == Some("full")`.
-- [ ] `test_hinting_dropdown_none_sets_none_str` — select index 2, assert `config.font.hinting == Some("none")`.
-- [ ] `test_subpixel_aa_dropdown_auto_sets_none` — select index 0, assert `config.font.subpixel_mode == None`.
-- [ ] `test_subpixel_aa_dropdown_rgb` — select index 1, assert `config.font.subpixel_mode == Some("rgb")`.
-- [ ] `test_subpixel_aa_dropdown_bgr` — select index 2, assert `config.font.subpixel_mode == Some("bgr")`.
-- [ ] `test_subpixel_aa_dropdown_none_grayscale` — select index 3, assert `config.font.subpixel_mode == Some("none")`.
-- [ ] `test_subpixel_positioning_dropdown_auto` — select index 0, assert `config.font.subpixel_positioning == None`.
-- [ ] `test_subpixel_positioning_dropdown_quarter_pixel` — select index 1, assert `config.font.subpixel_positioning == Some(true)`.
-- [ ] `test_subpixel_positioning_dropdown_off` — select index 2, assert `config.font.subpixel_positioning == Some(false)`.
-- [ ] `test_atlas_filtering_dropdown_auto` — select index 0, assert `config.font.atlas_filtering == None`.
-- [ ] `test_atlas_filtering_dropdown_linear` — select index 1, assert `config.font.atlas_filtering == Some("linear")`.
-- [ ] `test_atlas_filtering_dropdown_nearest` — select index 2, assert `config.font.atlas_filtering == Some("nearest")`.
+- [x] `test_hinting_dropdown_auto_sets_none` — select index 0, assert `config.font.hinting == None`.
+- [x] `test_hinting_dropdown_full_sets_full` — select index 1, assert `config.font.hinting == Some("full")`.
+- [x] `test_hinting_dropdown_none_sets_none_str` — select index 2, assert `config.font.hinting == Some("none")`.
+- [x] `test_subpixel_aa_dropdown_auto_sets_none` — select index 0, assert `config.font.subpixel_mode == None`.
+- [x] `test_subpixel_aa_dropdown_rgb` — select index 1, assert `config.font.subpixel_mode == Some("rgb")`.
+- [x] `test_subpixel_aa_dropdown_bgr` — select index 2, assert `config.font.subpixel_mode == Some("bgr")`.
+- [x] `test_subpixel_aa_dropdown_none_grayscale` — select index 3, assert `config.font.subpixel_mode == Some("none")`.
+- [x] `test_subpixel_positioning_dropdown_auto` — select index 0, assert `config.font.subpixel_positioning == None`.
+- [x] `test_subpixel_positioning_dropdown_quarter_pixel` — select index 1, assert `config.font.subpixel_positioning == Some(true)`.
+- [x] `test_subpixel_positioning_dropdown_off` — select index 2, assert `config.font.subpixel_positioning == Some(false)`.
+- [x] `test_atlas_filtering_dropdown_auto` — select index 0, assert `config.font.atlas_filtering == None`.
+- [x] `test_atlas_filtering_dropdown_linear` — select index 1, assert `config.font.atlas_filtering == Some("linear")`.
+- [x] `test_atlas_filtering_dropdown_nearest` — select index 2, assert `config.font.atlas_filtering == Some("nearest")`.
 
 **Note on test harness updates:** All tests in `action_handler/tests.rs` use `default_ids()` which calls `build_settings_dialog`. After the signature change in 02.3.2, `default_ids()` must pass `1.0, 1.0` for scale_factor and opacity.
 
@@ -560,30 +560,30 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
 The Rendering page's subpixel toggle is superseded by the richer "Subpixel AA" dropdown in the Font page's Advanced section.
 
-- [ ] Remove `build_text_section()` from `rendering.rs` and its call from `build_page()`. The "Text" section header and subpixel toggle are both removed. Also remove the now-unused `use oriterm_ui::widgets::toggle::ToggleWidget;` import and update the module doc comment from "GPU backend and text rendering settings" to "GPU backend settings" (the `dead_code = "deny"` lint would catch the unused import).
+- [x] Remove `build_text_section()` from `rendering.rs` and its call from `build_page()`. The "Text" section header and subpixel toggle are both removed. Also remove the now-unused `use oriterm_ui::widgets::toggle::ToggleWidget;` import and update the module doc comment from "GPU backend and text rendering settings" to "GPU backend settings" (the `dead_code = "deny"` lint would catch the unused import).
 
-- [ ] Remove `subpixel_toggle` from `SettingsIds` in `form_builder/mod.rs`. Also remove from `SettingsIds::placeholder()`.
+- [x] Remove `subpixel_toggle` from `SettingsIds` in `form_builder/mod.rs`. Also remove from `SettingsIds::placeholder()`.
 
-- [ ] Remove the `WidgetAction::Toggled` match arm for `subpixel_toggle` from `handle_rendering()` in `action_handler/mod.rs`. Update the doc comment from "GPU backend, subpixel toggle" to "GPU backend".
+- [x] Remove the `WidgetAction::Toggled` match arm for `subpixel_toggle` from `handle_rendering()` in `action_handler/mod.rs`. Update the doc comment from "GPU backend, subpixel toggle" to "GPU backend".
 
-- [ ] Remove the existing `subpixel_toggled_updates_config` test from `action_handler/tests.rs` (line 394) — it references the now-removed `ids.subpixel_toggle` field and will fail to compile.
+- [x] Remove the existing `subpixel_toggled_updates_config` test from `action_handler/tests.rs` (line 394) — it references the now-removed `ids.subpixel_toggle` field and will fail to compile.
 
-- [ ] In `per_page_dirty()` in `settings_overlay/mod.rs`, remove `|| pending.font.subpixel_mode != original.font.subpixel_mode` from the Rendering page entry (index 7, line 56). Change the comment at line 54 from "GPU backend, subpixel mode" to "GPU backend". The Font page's `pending.font != original.font` comparison at line 40 already catches all font field changes including `subpixel_mode`.
+- [x] In `per_page_dirty()` in `settings_overlay/mod.rs`, remove `|| pending.font.subpixel_mode != original.font.subpixel_mode` from the Rendering page entry (index 7, line 56). Change the comment at line 54 from "GPU backend, subpixel mode" to "GPU backend". The Font page's `pending.font != original.font` comparison at line 40 already catches all font field changes including `subpixel_mode`.
 
 ### Tests (02.4)
 
 Tests go in `settings_overlay/tests.rs`:
 
-- [ ] `test_subpixel_mode_change_dirties_font_not_rendering` — change `config.font.subpixel_mode` from `None` to `Some("rgb")`, verify `per_page_dirty[2]` (Font) is `true` and `per_page_dirty[7]` (Rendering) is `false`.
-- [ ] `test_gpu_backend_change_still_dirties_rendering` — change `config.rendering.gpu_backend`, verify `per_page_dirty[7]` (Rendering) is still `true` (only the `subpixel_mode` check was removed, not the GPU backend check).
+- [x] `test_subpixel_mode_change_dirties_font_not_rendering` — change `config.font.subpixel_mode` from `None` to `Some("rgb")`, verify `per_page_dirty[2]` (Font) is `true` and `per_page_dirty[7]` (Rendering) is `false`.
+- [x] `test_gpu_backend_change_still_dirties_rendering` — change `config.rendering.gpu_backend`, verify `per_page_dirty[7]` (Rendering) is still `true` (only the `subpixel_mode` check was removed, not the GPU backend check).
 
 Tests in `action_handler/tests.rs`:
 
-- [ ] `test_subpixel_toggle_removed` — verify that `handle_settings_action` returns `false` for a `Toggled` action with a random `WidgetId::unique()` (since `subpixel_toggle` no longer exists, no `Toggled` handler in `handle_rendering()` should match). This is a compile-time regression guard: if anyone tries to re-add a `subpixel_toggle` field, the test name reminds them it was intentionally removed.
+- [x] `test_subpixel_toggle_removed` — verify that `handle_settings_action` returns `false` for a `Toggled` action with a random `WidgetId::unique()` (since `subpixel_toggle` no longer exists, no `Toggled` handler in `handle_rendering()` should match). This is a compile-time regression guard: if anyone tries to re-add a `subpixel_toggle` field, the test name reminds them it was intentionally removed.
 
 Tests in `form_builder/tests.rs`:
 
-- [ ] Verify `settings_ids_all_distinct` count is updated to final value (26 - 1 removed + 4 new = 29 fixed controls).
+- [x] Verify `settings_ids_all_distinct` count is updated to final value (26 - 1 removed + 4 new = 29 fixed controls).
 
 ---
 
@@ -595,34 +595,34 @@ Tests in `form_builder/tests.rs`:
 
 ## 02.N Completion Checklist
 
-- [ ] `window_renderer/mod.rs` reduced below 500 lines (CombinedAtlasLookup extracted) before adding fields
-- [ ] `frame_input/mod.rs` reduced below 500 lines (`cell_in_search_match` extracted) before adding `subpixel_positioning` field
-- [ ] `font.atlas_filtering` config field parses from TOML with `None`/`"linear"`/`"nearest"` values
-- [ ] `font.subpixel_positioning` changed from `bool` to `Option<bool>` (None=auto, Some(true)=on, Some(false)=off)
-- [ ] `subpixel_positioning` config is consumed by the renderer (no longer dead — TPR-04-007 resolved)
-- [ ] Atlas sampler responds to `atlas_filtering` setting (verified: switch to Nearest, glyphs render crisper)
-- [ ] `AtlasBindGroup` stores `FilterMode` and `rebuild()` recreates sampler from stored filter
-- [ ] `set_atlas_filtering()` snapshots atlas generations to prevent redundant rebuild
-- [ ] `apply_font_changes()` change detection includes `subpixel_positioning` and `atlas_filtering`
-- [ ] Font page shows "Advanced" section with 4 dropdowns
-- [ ] Each dropdown defaults to "Auto (detected-value)" at index 0
-- [ ] `build_settings_dialog()` accepts and threads `scale_factor` + `opacity` for Auto labels
-- [ ] `handle_font_advanced()` extracted as separate function (not added to `handle_font()`) and wired into dispatch chain
-- [ ] Changing any dropdown persists to TOML config on Save
-- [ ] Changing hinting/subpixel AA triggers font re-rasterization (atlas clear + re-cache)
-- [ ] Changing atlas filtering triggers bind group rebuild (no atlas clear needed)
-- [ ] Changing subpixel positioning affects both grid and UI text glyph emission
-- [ ] `FrameInput.subpixel_positioning` field added and wired from renderer at extraction sites
-- [ ] DPI change handlers re-resolve atlas filtering (scale factor dependency)
-- [ ] Rendering page no longer shows subpixel toggle
-- [ ] 02.1 tests: 13 new tests + 3 updated tests in `config/tests.rs`
-- [ ] 02.2 tests: 5 AtlasFiltering enum unit tests + 3 AtlasBindGroup GPU tests in `bind_groups/tests.rs`, 2 subpixel tests in `prepare/tests.rs`, 2 raster key tests in `window_renderer/tests.rs`, 1 UI text test in `scene_convert/tests.rs`, 2 change detection tests in `settings_overlay/tests.rs`
-- [ ] 02.3 tests: 1 form builder test + 13 action handler tests
-- [ ] 02.4 tests: 2 in `settings_overlay/tests.rs`, 1 in `action_handler/tests.rs`, 1 count update in `form_builder/tests.rs`
-- [ ] `timeout 150 cargo test -p oriterm` green
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `window_renderer/mod.rs` reduced below 500 lines (CombinedAtlasLookup extracted) before adding fields
+- [x] `frame_input/mod.rs` reduced below 500 lines (`cell_in_search_match` extracted) before adding `subpixel_positioning` field
+- [x] `font.atlas_filtering` config field parses from TOML with `None`/`"linear"`/`"nearest"` values
+- [x] `font.subpixel_positioning` changed from `bool` to `Option<bool>` (None=auto, Some(true)=on, Some(false)=off)
+- [x] `subpixel_positioning` config is consumed by the renderer (no longer dead — TPR-04-007 resolved)
+- [x] Atlas sampler responds to `atlas_filtering` setting (verified: switch to Nearest, glyphs render crisper)
+- [x] `AtlasBindGroup` stores `FilterMode` and `rebuild()` recreates sampler from stored filter
+- [x] `set_atlas_filtering()` snapshots atlas generations to prevent redundant rebuild
+- [x] `apply_font_changes()` change detection includes `subpixel_positioning` and `atlas_filtering`
+- [x] Font page shows "Advanced" section with 4 dropdowns
+- [x] Each dropdown defaults to "Auto (detected-value)" at index 0
+- [x] `build_settings_dialog()` accepts and threads `scale_factor` + `opacity` for Auto labels
+- [x] `handle_font_advanced()` extracted as separate function (not added to `handle_font()`) and wired into dispatch chain
+- [x] Changing any dropdown persists to TOML config on Save
+- [x] Changing hinting/subpixel AA triggers font re-rasterization (atlas clear + re-cache)
+- [x] Changing atlas filtering triggers bind group rebuild (no atlas clear needed)
+- [x] Changing subpixel positioning affects both grid and UI text glyph emission
+- [x] `FrameInput.subpixel_positioning` field added and wired from renderer at extraction sites
+- [x] DPI change handlers re-resolve atlas filtering (scale factor dependency)
+- [x] Rendering page no longer shows subpixel toggle
+- [x] 02.1 tests: 13 new tests + 3 updated tests in `config/tests.rs`
+- [x] 02.2 tests: 5 AtlasFiltering enum unit tests + 3 AtlasBindGroup GPU tests in `bind_groups/tests.rs`, 2 subpixel tests in `prepare/tests.rs`, 2 raster key tests in `window_renderer/tests.rs`, 1 UI text test in `scene_convert/tests.rs`, 2 change detection tests in `settings_overlay/tests.rs`
+- [x] 02.3 tests: 1 form builder test + 13 action handler tests
+- [x] 02.4 tests: 2 in `settings_overlay/tests.rs`, 1 in `action_handler/tests.rs`, 1 count update in `form_builder/tests.rs`
+- [x] `timeout 150 cargo test -p oriterm` green
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** All 4 Advanced font settings are functional in the dialog, persist to config, and produce visible rendering changes. The dead `subpixel_positioning` config is wired. The redundant Rendering page subpixel toggle is removed.

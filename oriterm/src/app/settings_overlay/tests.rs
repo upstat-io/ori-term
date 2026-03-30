@@ -159,6 +159,31 @@ fn per_page_dirty_detects_subpixel_positioning_change() {
 }
 
 #[test]
+fn per_page_dirty_subpixel_mode_dirties_font_not_rendering() {
+    let original = Config::default();
+    let mut pending = original.clone();
+    pending.font.subpixel_mode = Some("rgb".to_owned());
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(dirty[2], "font page should be dirty");
+    assert!(
+        !dirty[7],
+        "rendering page should NOT be dirty for subpixel_mode"
+    );
+}
+
+#[test]
+fn per_page_dirty_gpu_backend_still_dirties_rendering() {
+    let original = Config::default();
+    let mut pending = original.clone();
+    pending.rendering.gpu_backend = crate::config::GpuBackend::Vulkan;
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(
+        dirty[7],
+        "rendering page should be dirty for gpu_backend change"
+    );
+}
+
+#[test]
 fn per_page_dirty_detects_atlas_filtering_change() {
     let original = Config::default();
     let mut pending = original.clone();
