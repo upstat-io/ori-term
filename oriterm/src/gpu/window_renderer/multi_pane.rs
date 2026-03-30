@@ -243,7 +243,8 @@ impl WindowRenderer {
     ///
     /// Draws four thin rectangles at the viewport edges, on top of all content.
     /// Used for the brutal design's 2px `border-strong` frame. Should be
-    /// skipped when the window is maximized.
+    /// skipped when the window is maximized. Not used on macOS (native shadow).
+    #[cfg(not(target_os = "macos"))]
     pub(crate) fn append_window_border(
         &mut self,
         viewport_w: u32,
