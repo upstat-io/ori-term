@@ -58,6 +58,23 @@ impl App {
             return;
         }
 
+        // Escape dismisses active selection. Only consumed when a selection
+        // exists — otherwise falls through to PTY encoding so the shell
+        // receives the escape sequence.
+        if event.state == ElementState::Pressed
+            && event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+        {
+            if let Some(pane_id) = self.active_pane_id() {
+                if self.pane_selection(pane_id).is_some() {
+                    self.clear_pane_selection(pane_id);
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.root.mark_dirty();
+                    }
+                    return;
+                }
+            }
+        }
+
         // Suppress raw key events during active IME composition.
         // The IME subsystem sends Ime::Commit when done; raw KeyboardInput
         // events during composition are intermediate and must not reach the PTY.
