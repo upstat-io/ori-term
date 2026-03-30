@@ -51,6 +51,82 @@ fn headless_status_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)>
     Some((gpu, pipelines, renderer))
 }
 
+/// Headless environment with UI font at 192 DPI.
+fn headless_status_bar_env_192dpi() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    let gpu = GpuState::new_headless().ok()?;
+    let pipelines = GpuPipelines::new(&gpu);
+    let font_collection = FontCollection::new(
+        FontSet::embedded(),
+        14.0,
+        192.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .ok()?;
+    let ui_font_sizes = UiFontSizes::new(
+        FontSet::ui_embedded(),
+        192.0,
+        GlyphFormat::Alpha,
+        HintingMode::Full,
+        400,
+        &PRELOAD_SIZES,
+    )
+    .ok()?;
+    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, Some(ui_font_sizes));
+    renderer.resolve_icons(&gpu, 2.0);
+    Some((gpu, pipelines, renderer))
+}
+
+/// Paint a status bar with given data at a specific scale, render to pixels.
+fn render_status_bar_scaled(
+    gpu: &GpuState,
+    pipelines: &GpuPipelines,
+    renderer: &mut WindowRenderer,
+    data: StatusBarData,
+    phys_width: u32,
+    scale: f32,
+) -> Vec<u8> {
+    let logical_w = phys_width as f32 / scale;
+    let theme = UiTheme::dark();
+    let mut widget = StatusBarWidget::new(logical_w, &theme);
+    widget.set_data(data);
+
+    let phys_height = (STATUS_BAR_HEIGHT * scale).ceil() as u32;
+
+    let measurer = renderer.ui_measurer(scale);
+    let text_cache = TextShapeCache::new();
+    let cached = CachedTextMeasurer::new(measurer, &text_cache, scale);
+    let icons = renderer.resolved_icons();
+
+    let mut scene = Scene::new();
+    let mut ctx = oriterm_ui::widgets::DrawCtx {
+        scene: &mut scene,
+        theme: &theme,
+        measurer: &cached,
+        icons: Some(icons),
+        bounds: Rect::new(0.0, 0.0, logical_w, STATUS_BAR_HEIGHT),
+        now: Instant::now(),
+        interaction: None,
+        widget_id: None,
+        frame_requests: None,
+    };
+    widget.paint(&mut ctx);
+
+    let bg = oriterm_core::Rgb {
+        r: 14,
+        g: 14,
+        b: 18,
+    };
+    renderer.prepare_ui_frame(phys_width, phys_height, bg, 1.0);
+    renderer.resolve_icons(gpu, scale);
+    renderer.append_ui_scene_with_text(&scene, scale, 1.0, gpu);
+    let target = gpu.create_render_target(phys_width, phys_height);
+    renderer.render_frame(gpu, pipelines, target.view());
+    gpu.read_render_target(&target)
+        .expect("pixel readback should succeed")
+}
+
 /// Paint a status bar with given data, render to pixels.
 fn render_status_bar(
     gpu: &GpuState,
@@ -151,6 +227,45 @@ fn status_bar_single_pane_96dpi() {
 
     if let Err(msg) = compare_with_reference("status_bar_single_pane_96dpi", &pixels, WIDTH, height)
     {
+        panic!("{msg}");
+    }
+}
+
+/// Full data at 192 DPI (scale=2.0).
+///
+/// Verifies: 44px physical height (22.0 * 2.0), 4px top border (2.0 * 2.0),
+/// text renders at correct physical size, no sub-pixel artifacts.
+#[test]
+fn status_bar_full_data_192dpi() {
+    let Some((gpu, pipelines, mut renderer)) = headless_status_bar_env_192dpi() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let scale = 2.0_f32;
+    let phys_height = (STATUS_BAR_HEIGHT * scale).ceil() as u32;
+    let phys_width = WIDTH * 2;
+    let pixels = render_status_bar_scaled(
+        &gpu,
+        &pipelines,
+        &mut renderer,
+        StatusBarData {
+            shell_name: "zsh".into(),
+            pane_count: "3 panes".into(),
+            grid_size: "120\u{00d7}30".into(),
+            encoding: "UTF-8".into(),
+            term_type: "xterm-256color".into(),
+        },
+        phys_width,
+        scale,
+    );
+
+    if let Err(msg) = compare_with_reference(
+        "status_bar_full_data_192dpi",
+        &pixels,
+        phys_width,
+        phys_height,
+    ) {
         panic!("{msg}");
     }
 }

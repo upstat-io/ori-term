@@ -2,7 +2,7 @@
 reroute: true
 name: "Font Quality"
 full_name: "Font Rendering Quality"
-status: queued
+status: active
 order: 2
 ---
 

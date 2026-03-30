@@ -1,7 +1,7 @@
 ---
 plan: "main-window-brutal"
 title: "Main Window Brutal Design: Exhaustive Implementation Plan"
-status: not-started
+status: complete
 supersedes: []
 references:
   - "mockups/main-window-brutal.html"
@@ -173,5 +173,5 @@ Phase 3 - Verification
 | 01 | Tab Bar Brutal Styling | `section-01-tab-bar.md` | Complete |
 | 02 | Status Bar Widget | `section-02-status-bar.md` | Complete |
 | 03 | Window Frame & Split Pane Styling | `section-03-frame-panes.md` | Complete |
-| 04 | Production Wiring & Composed Tests | `section-04-wiring.md` | Not Started |
-| 05 | Verification | `section-05-verification.md` | Not Started |
+| 04 | Production Wiring & Composed Tests | `section-04-wiring.md` | Complete |
+| 05 | Verification | `section-05-verification.md` | Complete |

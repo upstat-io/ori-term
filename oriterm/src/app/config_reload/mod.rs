@@ -19,6 +19,38 @@ use crate::config::{Config, FontConfig};
 use crate::font::{FontByteCache, FontCollection, FontSet};
 use crate::keybindings;
 
+/// Minimum font size in points.
+const MIN_FONT_SIZE: f32 = 4.0;
+
+/// Maximum font size in points.
+const MAX_FONT_SIZE: f32 = 72.0;
+
+/// Compute the new font size after applying `delta`, clamped to valid range.
+///
+/// Returns `None` if the result is the same as `current` (no-op).
+fn compute_zoomed_size(current: f32, delta: f32) -> Option<f32> {
+    let new_size = (current + delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+    if (new_size - current).abs() < f32::EPSILON {
+        None
+    } else {
+        Some(new_size)
+    }
+}
+
+/// Determine whether `current` font size should be reset to `configured`.
+///
+/// Returns `Some(configured)` if different from `current`, `None` if already matching.
+fn compute_reset_size(current: f32, configured: f32) -> Option<f32> {
+    if (current - configured).abs() < f32::EPSILON {
+        None
+    } else {
+        Some(configured)
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
 use font_config::rebuild_ui_font_sizes;
 
 impl App {
@@ -411,10 +443,9 @@ impl App {
     ///
     /// Clamps to [4.0, 72.0] pt and triggers the full font reload pipeline.
     pub(in crate::app) fn zoom_font_size(&mut self, delta: f32) {
-        let new_size = (self.config.font.size + delta).clamp(4.0, 72.0);
-        if (new_size - self.config.font.size).abs() < f32::EPSILON {
+        let Some(new_size) = compute_zoomed_size(self.config.font.size, delta) else {
             return;
-        }
+        };
         let mut new_config = self.config.clone();
         new_config.font.size = new_size;
         self.apply_font_changes(&new_config);
@@ -432,13 +463,13 @@ impl App {
     pub(in crate::app) fn reset_font_size(&mut self) {
         let configured_size =
             Config::try_load().map_or_else(|_| FontConfig::default().size, |c| c.font.size);
-        if (self.config.font.size - configured_size).abs() < f32::EPSILON {
+        let Some(target) = compute_reset_size(self.config.font.size, configured_size) else {
             return;
-        }
+        };
         let mut new_config = self.config.clone();
-        new_config.font.size = configured_size;
+        new_config.font.size = target;
         self.apply_font_changes(&new_config);
-        self.config.font.size = configured_size;
+        self.config.font.size = target;
         for ctx in self.windows.values_mut() {
             ctx.root.mark_dirty();
         }
