@@ -131,7 +131,11 @@ impl App {
         });
 
         // 7d. Create per-window renderer.
-        let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_sizes);
+        let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, ui_sizes);
+        let subpx_pos = config_reload::resolve_subpixel_positioning(&self.config.font, scale);
+        renderer.set_subpixel_positioning(subpx_pos);
+        let atlas_filter = config_reload::resolve_atlas_filtering(&self.config.font, scale);
+        renderer.set_atlas_filtering(atlas_filter, &gpu, &pipelines.atlas_layout);
         let t_renderer = t_renderer_start.elapsed();
 
         // 8. Create tab bar widget and apply platform effects.

@@ -198,6 +198,7 @@ impl App {
                         self.config.window.effective_unfocused_opacity()
                     };
                     frame.window_focused = pane_focused;
+                    frame.subpixel_positioning = renderer.subpixel_positioning();
 
                     if layout.is_focused && !self.ime.preedit.is_empty() {
                         let cols = frame.columns();

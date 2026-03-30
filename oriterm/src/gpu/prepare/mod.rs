@@ -439,6 +439,7 @@ pub(crate) fn fill_frame_shaped(
                 size_q6: shaped.size_q6(),
                 hinted: shaped.hinted(),
                 fg_dim,
+                subpixel_positioning: input.subpixel_positioning,
                 atlas,
                 frame,
             }

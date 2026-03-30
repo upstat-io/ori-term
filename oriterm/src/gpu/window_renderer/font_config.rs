@@ -115,6 +115,55 @@ impl WindowRenderer {
         }
     }
 
+    /// Set whether subpixel glyph positioning is enabled.
+    ///
+    /// When disabled, all glyphs snap to integer pixel X boundaries (no
+    /// fractional subpixel phase). Takes effect at the next prepare pass.
+    pub fn set_subpixel_positioning(&mut self, enabled: bool) {
+        self.subpixel_positioning = enabled;
+    }
+
+    /// Returns whether subpixel positioning is enabled.
+    pub fn subpixel_positioning(&self) -> bool {
+        self.subpixel_positioning
+    }
+
+    /// Change the atlas texture filtering mode, recreating all bind groups.
+    ///
+    /// Snapshots atlas generations so `rebuild_stale_atlas_bind_groups()` does
+    /// not immediately re-rebuild the bind groups we just created.
+    pub fn set_atlas_filtering(
+        &mut self,
+        filtering: crate::gpu::bind_groups::AtlasFiltering,
+        gpu: &GpuState,
+        layout: &wgpu::BindGroupLayout,
+    ) {
+        let filter = filtering.to_filter_mode();
+        self.atlas_bind_group = crate::gpu::bind_groups::AtlasBindGroup::new(
+            &gpu.device,
+            layout,
+            self.atlas.view(),
+            filter,
+        );
+        self.subpixel_atlas_bind_group = crate::gpu::bind_groups::AtlasBindGroup::new(
+            &gpu.device,
+            layout,
+            self.subpixel_atlas.view(),
+            filter,
+        );
+        self.color_atlas_bind_group = crate::gpu::bind_groups::AtlasBindGroup::new(
+            &gpu.device,
+            layout,
+            self.color_atlas.view(),
+            filter,
+        );
+        // Snapshot so rebuild_stale doesn't immediately re-rebuild.
+        self.atlas_generation = self.atlas.generation();
+        self.subpixel_atlas_generation = self.subpixel_atlas.generation();
+        self.color_atlas_generation = self.color_atlas.generation();
+        self.atlas_filtering = filtering;
+    }
+
     /// Clear all atlases and empty-key set, then re-cache ASCII.
     ///
     /// `clear()` resets the packer and cache but the underlying texture

@@ -4,6 +4,49 @@ use super::{AtlasBindGroup, UniformBuffer, create_placeholder_atlas_texture};
 use crate::gpu::pipeline;
 use crate::gpu::state::GpuState;
 
+// --- AtlasFiltering ---
+
+#[test]
+fn atlas_filtering_from_scale_factor_low_dpi() {
+    assert_eq!(
+        super::AtlasFiltering::from_scale_factor(1.0),
+        super::AtlasFiltering::Linear,
+    );
+}
+
+#[test]
+fn atlas_filtering_from_scale_factor_high_dpi() {
+    assert_eq!(
+        super::AtlasFiltering::from_scale_factor(2.0),
+        super::AtlasFiltering::Nearest,
+    );
+}
+
+#[test]
+fn atlas_filtering_from_scale_factor_boundary() {
+    // 1.99 is below the 2.0 threshold → Linear.
+    assert_eq!(
+        super::AtlasFiltering::from_scale_factor(1.99),
+        super::AtlasFiltering::Linear,
+    );
+}
+
+#[test]
+fn atlas_filtering_to_filter_mode_linear() {
+    assert_eq!(
+        super::AtlasFiltering::Linear.to_filter_mode(),
+        wgpu::FilterMode::Linear,
+    );
+}
+
+#[test]
+fn atlas_filtering_to_filter_mode_nearest() {
+    assert_eq!(
+        super::AtlasFiltering::Nearest.to_filter_mode(),
+        wgpu::FilterMode::Nearest,
+    );
+}
+
 // --- Uniform buffer ---
 
 #[test]
@@ -98,7 +141,7 @@ fn atlas_bind_group_creation_with_placeholder() {
     let layout = pipeline::create_atlas_bind_group_layout(&gpu.device);
     let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
 
-    let _atlas_bg = AtlasBindGroup::new(&gpu.device, &layout, &view);
+    let _atlas_bg = AtlasBindGroup::new(&gpu.device, &layout, &view, wgpu::FilterMode::Linear);
 }
 
 #[test]
@@ -111,7 +154,7 @@ fn atlas_bind_group_rebuild_creates_new_bind_group() {
     let layout = pipeline::create_atlas_bind_group_layout(&gpu.device);
     let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
 
-    let mut atlas_bg = AtlasBindGroup::new(&gpu.device, &layout, &view);
+    let mut atlas_bg = AtlasBindGroup::new(&gpu.device, &layout, &view, wgpu::FilterMode::Linear);
 
     // Simulate atlas growth: create a second placeholder and rebuild.
     let (_texture2, view2) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
@@ -130,7 +173,7 @@ fn atlas_bind_group_accessor_returns_valid_ref() {
 
     let layout = pipeline::create_atlas_bind_group_layout(&gpu.device);
     let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
-    let atlas_bg = AtlasBindGroup::new(&gpu.device, &layout, &view);
+    let atlas_bg = AtlasBindGroup::new(&gpu.device, &layout, &view, wgpu::FilterMode::Linear);
 
     let _bg = atlas_bg.bind_group();
 }
@@ -150,10 +193,61 @@ fn bind_groups_compatible_with_pipelines() {
     // Create bind groups using the same layouts as the pipelines.
     let _uniform = UniformBuffer::new(&gpu.device, &uniform_layout);
     let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
-    let _atlas_bg = AtlasBindGroup::new(&gpu.device, &atlas_layout, &view);
+    let _atlas_bg =
+        AtlasBindGroup::new(&gpu.device, &atlas_layout, &view, wgpu::FilterMode::Linear);
 
     // Create pipelines with the same layouts. If the layouts don't match
     // the bind groups, wgpu validation will catch it at draw time.
     let _bg_pipeline = pipeline::create_bg_pipeline(&gpu, &uniform_layout);
     let _fg_pipeline = pipeline::create_fg_pipeline(&gpu, &uniform_layout, &atlas_layout);
+}
+
+// --- AtlasBindGroup: filter mode ---
+
+#[test]
+fn atlas_bind_group_new_with_linear_filter() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let layout = pipeline::create_atlas_bind_group_layout(&gpu.device);
+    let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
+
+    let bg = AtlasBindGroup::new(&gpu.device, &layout, &view, wgpu::FilterMode::Linear);
+    assert_eq!(bg.filter(), wgpu::FilterMode::Linear);
+}
+
+#[test]
+fn atlas_bind_group_new_with_nearest_filter() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let layout = pipeline::create_atlas_bind_group_layout(&gpu.device);
+    let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
+
+    let bg = AtlasBindGroup::new(&gpu.device, &layout, &view, wgpu::FilterMode::Nearest);
+    assert_eq!(bg.filter(), wgpu::FilterMode::Nearest);
+}
+
+#[test]
+fn atlas_bind_group_rebuild_preserves_filter() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let layout = pipeline::create_atlas_bind_group_layout(&gpu.device);
+    let (_texture, view) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
+
+    let mut bg = AtlasBindGroup::new(&gpu.device, &layout, &view, wgpu::FilterMode::Nearest);
+
+    // Simulate atlas growth: rebuild with a new texture view.
+    let (_texture2, view2) = create_placeholder_atlas_texture(&gpu.device, &gpu.queue);
+    bg.rebuild(&gpu.device, &layout, &view2);
+
+    // Filter mode must survive rebuild.
+    assert_eq!(bg.filter(), wgpu::FilterMode::Nearest);
 }

@@ -145,3 +145,27 @@ fn reset_to_defaults_clean_when_original_is_default() {
         "reset to defaults should be clean when original was already default"
     );
 }
+
+#[test]
+fn per_page_dirty_detects_subpixel_positioning_change() {
+    let original = Config::default();
+    let mut pending = original.clone();
+    pending.font.subpixel_positioning = Some(false);
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(
+        dirty[2],
+        "font page should be dirty when subpixel_positioning changes"
+    );
+}
+
+#[test]
+fn per_page_dirty_detects_atlas_filtering_change() {
+    let original = Config::default();
+    let mut pending = original.clone();
+    pending.font.atlas_filtering = Some("nearest".to_owned());
+    let dirty = per_page_dirty(&pending, &original);
+    assert!(
+        dirty[2],
+        "font page should be dirty when atlas_filtering changes"
+    );
+}

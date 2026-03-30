@@ -320,6 +320,12 @@ impl App {
             .glyph_format();
         renderer.set_hinting_and_format(hinting, format, gpu);
 
+        // Re-resolve atlas filtering (may change with scale factor).
+        let atlas_filter = config_reload::resolve_atlas_filtering(&self.config.font, scale_factor);
+        if let Some(pipelines) = &self.pipelines {
+            renderer.set_atlas_filtering(atlas_filter, gpu, &pipelines.atlas_layout);
+        }
+
         ctx.pane_cache.invalidate_all();
         ctx.text_cache.clear();
         ctx.root.invalidation_mut().invalidate_all();

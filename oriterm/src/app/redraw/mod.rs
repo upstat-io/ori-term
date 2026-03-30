@@ -165,6 +165,7 @@ impl App {
                 self.config.window.effective_unfocused_opacity()
             };
             frame.window_focused = focused;
+            frame.subpixel_positioning = renderer.subpixel_positioning();
 
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.

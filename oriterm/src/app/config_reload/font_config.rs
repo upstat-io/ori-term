@@ -127,6 +127,30 @@ pub(crate) fn resolve_subpixel_mode(
     }
 }
 
+/// Resolve subpixel positioning from config, falling back to auto-detection.
+///
+/// `None` = auto (enabled). `Some(true)` = forced on. `Some(false)` = forced off.
+pub(crate) fn resolve_subpixel_positioning(config: &FontConfig, _scale_factor: f64) -> bool {
+    config.subpixel_positioning.unwrap_or(true)
+}
+
+/// Resolve atlas filtering from config, falling back to auto-detection.
+pub(crate) fn resolve_atlas_filtering(
+    config: &FontConfig,
+    scale_factor: f64,
+) -> crate::gpu::bind_groups::AtlasFiltering {
+    use crate::gpu::bind_groups::AtlasFiltering;
+    match config.atlas_filtering.as_deref() {
+        Some("linear") => AtlasFiltering::Linear,
+        Some("nearest") => AtlasFiltering::Nearest,
+        Some(other) => {
+            log::warn!("config: unknown atlas_filtering {other:?}, using auto-detection");
+            AtlasFiltering::from_scale_factor(scale_factor)
+        }
+        None => AtlasFiltering::from_scale_factor(scale_factor),
+    }
+}
+
 /// Apply font config to all collections in a [`UiFontSizes`] registry and
 /// install a post-rebuild hook so DPI changes reapply the same config.
 pub(crate) fn apply_font_config_to_ui_sizes(
