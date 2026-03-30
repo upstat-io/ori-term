@@ -254,6 +254,10 @@ impl App {
     clippy::struct_excessive_bools,
     reason = "mirrors event loop state flags"
 )]
+#[allow(
+    dead_code,
+    reason = "fields used by tests and will be re-enabled when budget gate returns"
+)]
 pub(super) struct ControlFlowInput {
     /// Whether any window is dirty.
     pub any_dirty: bool,
@@ -294,8 +298,9 @@ pub(super) enum ControlFlowDecision {
 /// No winit types — testable without a display server. Mirrors the
 /// decision tree in `about_to_wait`.
 pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
-    if (input.any_dirty && !(input.budget_elapsed || input.urgent_redraw)) || input.still_dirty {
-        ControlFlowDecision::WaitUntil(input.now + input.budget_remaining)
+    // Still dirty after render attempt — wake immediately to retry.
+    if input.still_dirty {
+        ControlFlowDecision::WaitUntil(input.now)
     } else if input.has_animations {
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
     } else if input.blinking_active {

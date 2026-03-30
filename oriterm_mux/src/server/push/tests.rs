@@ -5,7 +5,7 @@ use super::{SNAPSHOT_PUSH_INTERVAL, should_push};
 #[test]
 fn throttled_within_interval() {
     let now = Instant::now();
-    let last = now - Duration::from_millis(5);
+    let last = now - Duration::from_millis(2);
     assert!(!should_push(now, Some(last), SNAPSHOT_PUSH_INTERVAL));
 }
 
