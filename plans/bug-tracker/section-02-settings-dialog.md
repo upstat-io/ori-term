@@ -58,17 +58,17 @@ sections:
   - **Found**: 2026-03-27 — manual sign-off (Section 14.4)
   - **Fixed**: 2026-03-27 — Removed the 4px spacer so the description immediately follows the title row. The 12px spacer after the description is retained.
 
-- [ ] **BUG-02.6**: Search settings has wrong padding + unwanted search icon
-  - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/paint.rs`
-  - **Root cause**: TBD — user reports the search input does not match the mockup visually. Needs side-by-side comparison on the live build to identify specific discrepancies.
+- [x] **BUG-02.6**: Search settings has wrong padding + unwanted search icon
+  - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/paint.rs`, `input.rs`
+  - **Root cause**: Search field had a 26px left padding to accommodate a search icon that was unwanted. The icon added visual clutter and the asymmetric padding wasted space.
   - **Found**: 2026-03-27 — manual sign-off (Section 14.4), screenshot comparison
-  - **Fix**: Needs live visual comparison to pinpoint the issue
+  - **Fixed**: 2026-03-29 — Removed search icon rendering, normalized left padding from 26px to 8px (matching right padding). Updated `SEARCH_TEXT_INSET` in input.rs for click-to-cursor mapping. Cleaned up unused `IconId` import.
 
-- [ ] **BUG-02.7**: Nav item padding/spacing between elements not matching mockup
+- [x] **BUG-02.7**: Nav item padding/spacing between elements not matching mockup
   - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/geometry.rs`, `paint.rs`
-  - **Root cause**: TBD — user reports gap between nav items doesn't look right. Current values (1px margin, 7px padding, 13px content) match mockup CSS numerically but visual result may differ. Needs live comparison.
+  - **Root cause**: Two issues: (1) `NAV_ITEM_CONTENT_H` was 13px (font-size) instead of ~16px (line-height for 13px font × ~1.2), making items 3px too short each. (2) Background painted over margin area, eliminating the visible 1px gap between items that CSS `margin: 1px 0` produces.
   - **Found**: 2026-03-27 — manual sign-off (Section 14.4)
-  - **Fix**: Needs live visual comparison to identify specific spacing discrepancy
+  - **Fixed**: 2026-03-29 — Changed `NAV_ITEM_CONTENT_H` from 13.0 to 16.0. Added `NAV_ITEM_BG_H` constant. Background, indicator, icon, text, and modified-dot positioning all use the bg-inset rect now. Nav items are 32px total (1+7+16+7+1) with visible 1px gaps.
 
 - [x] **BUG-02.8**: Settings dialog window not draggable (regression)
   - **File(s)**: `oriterm/src/app/dialog_management.rs`, `oriterm/src/app/dialog_context/event_handling/mouse.rs`
@@ -76,11 +76,11 @@ sections:
   - **Found**: 2026-03-28 — manual sign-off (Section 14.4), user report
   - **Fixed**: 2026-03-28 — Set `DIALOG_DRAG_CAPTION_HEIGHT` to 48px and excluded the sidebar (200px) as an interactive rect so the search field stays clickable. The content area header (right of sidebar, top 48px) is now the drag zone. Added `try_dialog_header_drag()` for Linux/macOS `drag_window()` support.
 
-- [ ] **BUG-02.9**: Rendering page backend dropdown shows all backends on every platform + doesn't show active backend
-  - **File(s)**: `oriterm/src/app/settings_overlay/form_builder/rendering.rs`
-  - **Root cause**: `build_gpu_section()` hardcodes all 4 backends (Auto, Vulkan, DirectX 12, Metal) regardless of platform. Should show only valid backends per OS: Windows → Auto/Vulkan/DirectX 12, macOS → Auto/Metal, Linux → Auto/Vulkan. Additionally, the dropdown doesn't indicate which backend is currently in use (e.g. "Auto (Vulkan)" showing the resolved backend), unlike the mockup which displays the active backend.
+- [x] **BUG-02.9**: Rendering page backend dropdown shows all backends on every platform + doesn't show active backend
+  - **File(s)**: `oriterm/src/config/rendering.rs`, `oriterm/src/app/settings_overlay/form_builder/rendering.rs`, `action_handler/mod.rs`
+  - **Root cause**: `build_gpu_section()` hardcoded all 4 backends regardless of platform.
   - **Found**: 2026-03-29 — manual, user report comparing live build to mockup
-  - **Fix**: Platform-gate the dropdown items with `#[cfg()]` or runtime OS detection. Add resolved-backend display (query `wgpu::Adapter::get_info().backend` or equivalent at settings build time).
+  - **Fixed**: 2026-03-29 — Added `GpuBackend::available()` with `#[cfg(target_os)]` gates returning platform-specific backend lists. Form builder and action handler both use `available()` for dropdown items and index mapping. Windows: Auto/Vulkan/DX12. macOS: Auto/Metal. Linux: Auto/Vulkan. Active-backend display deferred (requires threading adapter info to UI builder).
 
 - [ ] **BUG-02.10**: Config file path link in sidebar footer missing tooltip with full path on hover
   - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/paint.rs` (footer painting), `oriterm_ui/src/widgets/sidebar_nav/mod.rs` (`config_path` field)
@@ -88,11 +88,11 @@ sections:
   - **Found**: 2026-03-29 — manual, user feature request
   - **Fix**: Add tooltip rendering when `hovered_footer == Some(HoveredFooterTarget::ConfigPath)` showing `self.config_path` in full. May require tooltip infrastructure (overlay or simple painted rect near cursor).
 
-- [ ] **BUG-02.11**: Sidebar cursor icon is pointer over entire area — should only be pointer over interactive items
-  - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/mod.rs:331`
-  - **Root cause**: `layout()` sets `.with_cursor_icon(CursorIcon::Pointer)` on the top-level `LayoutBox` for the whole sidebar widget. This makes the cursor a pointer everywhere — over the background, spacing, search field, version label — not just over the clickable nav items and footer links.
+- [x] **BUG-02.11**: Sidebar cursor icon is pointer over entire area — should only be pointer over interactive items
+  - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/mod.rs`, `input.rs`
+  - **Root cause**: `layout()` set a static `CursorIcon::Pointer` on the top-level `LayoutBox`, making cursor pointer everywhere.
   - **Found**: 2026-03-29 — manual, user report
-  - **Fix**: Remove the widget-level `CursorIcon::Pointer`. Instead, apply pointer cursor only to interactive sub-regions (nav items, config path link, update link) via per-region cursor handling or sub-layout boxes with their own cursor icons.
+  - **Fixed**: 2026-03-30 — Added `cursor_icon: Cell<CursorIcon>` field, dynamically set in `on_input(MouseMove)` based on hover state: Pointer when `hovered_item` or `hovered_footer` is Some, Default otherwise. `layout()` reads the Cell value for the LayoutBox cursor.
 
 ---
 

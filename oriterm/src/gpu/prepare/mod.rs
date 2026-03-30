@@ -352,7 +352,10 @@ pub(crate) fn fill_frame_shaped(
         }
 
         let x = ox + col as f32 * cw;
-        let y = oy + row as f32 * ch;
+        // Round Y to integer pixels to prevent bilinear interpolation from
+        // softening glyph edges on fractional-DPI displays (1.25x, 1.5x).
+        // UI text already does this (scene_convert/text.rs:51).
+        let y = (oy + row as f32 * ch).round();
 
         let (fg, bg) = resolve_cell_colors(
             cell,

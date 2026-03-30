@@ -387,7 +387,7 @@ impl App {
     /// Behavior flags are read from `self.config` at usage sites, so
     /// storing the new config is sufficient. If `bold_is_bright` changed,
     /// marks all panes dirty since existing cells may render differently.
-    fn apply_behavior_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_behavior_changes(&mut self, new: &Config) {
         if new.behavior.bold_is_bright != self.config.behavior.bold_is_bright {
             if let Some(mux) = self.mux.as_mut() {
                 for pane_id in mux.pane_ids() {
@@ -402,7 +402,7 @@ impl App {
     ///
     /// Updates CPU-side limits on the mux backend and GPU texture cache
     /// limits on each window renderer.
-    fn apply_image_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_image_changes(&mut self, new: &Config) {
         let changed = new.terminal.image_config() != self.config.terminal.image_config()
             || new.terminal.image_gpu_memory_limit != self.config.terminal.image_gpu_memory_limit;
 
@@ -435,7 +435,7 @@ impl App {
     }
 
     /// Rebuild keybinding table from new config.
-    fn apply_keybinding_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_keybinding_changes(&mut self, new: &Config) {
         self.bindings = keybindings::merge_bindings(&new.keybind);
     }
 

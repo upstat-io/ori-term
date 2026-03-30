@@ -18,6 +18,28 @@ pub(crate) enum GpuBackend {
     Metal,
 }
 
+impl GpuBackend {
+    /// Returns the backends available on the current platform.
+    pub(crate) fn available() -> &'static [(Self, &'static str)] {
+        #[cfg(target_os = "windows")]
+        {
+            &[
+                (Self::Auto, "Auto"),
+                (Self::Vulkan, "Vulkan"),
+                (Self::DirectX12, "DirectX 12"),
+            ]
+        }
+        #[cfg(target_os = "macos")]
+        {
+            &[(Self::Auto, "Auto"), (Self::Metal, "Metal")]
+        }
+        #[cfg(target_os = "linux")]
+        {
+            &[(Self::Auto, "Auto"), (Self::Vulkan, "Vulkan")]
+        }
+    }
+}
+
 /// GPU rendering configuration.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

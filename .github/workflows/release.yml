@@ -38,6 +38,19 @@ jobs:
       - name: Check version synchronization
         run: ./scripts/sync-version.sh --check
 
+      - name: Verify tag matches workspace version
+        run: |
+          TAG="${{ github.ref_name }}"
+          CARGO_VERSION=$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p }' Cargo.toml)
+          EXPECTED_TAG="v${CARGO_VERSION}"
+          if [[ "$TAG" != "$EXPECTED_TAG" ]]; then
+            echo "ERROR: Tag '$TAG' does not match workspace version '$CARGO_VERSION'."
+            echo "Expected tag: $EXPECTED_TAG"
+            echo "A manually pushed tag with a mismatched version would produce an incorrect release."
+            exit 1
+          fi
+          echo "Tag '$TAG' matches workspace version '$CARGO_VERSION' - OK"
+
   build-linux:
     name: Build Linux (x86_64)
     needs: validate

@@ -101,10 +101,17 @@ jobs:
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "Release tag: $TAG"
 
+      - name: Install Rust (for lockfile regen)
+        if: steps.tag.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Sync versions and commit
         if: steps.tag.outputs.skip != 'true'
         run: |
           ./scripts/sync-version.sh
+
+          # Regenerate Cargo.lock so it reflects the updated version string.
+          cargo generate-lockfile
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

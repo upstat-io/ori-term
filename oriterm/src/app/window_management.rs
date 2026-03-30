@@ -58,6 +58,7 @@ impl App {
             rows: rows as u16,
             scrollback: self.config.terminal.scrollback,
             shell_integration: self.config.behavior.shell_integration,
+            shell: self.config.terminal.shell.clone(),
             ..oriterm_mux::domain::SpawnConfig::default()
         };
         let palette =
