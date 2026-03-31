@@ -48,6 +48,7 @@ fn cursor_shape_all_variants_distinct() {
         CursorShape::Underline,
         CursorShape::Bar,
         CursorShape::HollowBlock,
+        CursorShape::Hidden,
     ];
     for (i, a) in shapes.iter().enumerate() {
         for (j, b) in shapes.iter().enumerate() {

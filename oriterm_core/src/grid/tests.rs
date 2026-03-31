@@ -79,3 +79,36 @@ fn all_rows_initialized_empty() {
         }
     }
 }
+
+#[test]
+fn reset_clears_cells_and_cursor() {
+    let mut grid = Grid::new(5, 10);
+    // Write content and move cursor.
+    grid.put_char('A');
+    grid.put_char('B');
+    grid.cursor_mut().set_line(3);
+    grid.cursor_mut().set_col(Column(7));
+
+    // Scroll up to push rows into scrollback.
+    grid.scroll_up(1);
+
+    grid.reset();
+
+    // All cells should be empty.
+    for line in 0..5 {
+        let row = &grid[Line(line as i32)];
+        for col in 0..10 {
+            assert!(row[Column(col)].is_empty());
+        }
+    }
+    // Cursor back at origin.
+    assert_eq!(grid.cursor().line(), 0);
+    assert_eq!(grid.cursor().col(), Column(0));
+    // Scrollback cleared.
+    assert_eq!(grid.scrollback().len(), 0);
+    // Display offset reset.
+    assert_eq!(grid.display_offset(), 0);
+    // Tab stops re-initialized.
+    assert!(grid.tab_stops()[0]);
+    assert!(grid.tab_stops()[8]);
+}

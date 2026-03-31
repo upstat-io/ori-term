@@ -1092,3 +1092,123 @@ fn insert_blank_at_col_zero_damages_full_line() {
     assert_eq!(items[0].left, 0);
     assert_eq!(items[0].right, 9);
 }
+
+// ── put_char_ascii fast path ──
+
+#[test]
+fn put_char_ascii_writes_and_advances() {
+    let mut grid = Grid::new(24, 80);
+    assert!(grid.put_char_ascii('A'));
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid.cursor().col(), Column(1));
+}
+
+#[test]
+fn put_char_ascii_applies_cursor_template() {
+    use vte::ansi::Color;
+    let mut grid = Grid::new(24, 80);
+    grid.cursor_mut().template.fg = Color::Indexed(1);
+    grid.cursor_mut().template.bg = Color::Indexed(4);
+    assert!(grid.put_char_ascii('X'));
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.fg, Color::Indexed(1));
+    assert_eq!(cell.bg, Color::Indexed(4));
+}
+
+#[test]
+fn put_char_ascii_returns_false_at_end_of_line() {
+    let mut grid = Grid::new(24, 10);
+    grid.cursor_mut().set_col(Column(10));
+    assert!(!grid.put_char_ascii('A'));
+}
+
+#[test]
+fn put_char_ascii_returns_false_on_wide_char_spacer() {
+    let mut grid = Grid::new(24, 80);
+    // Write a wide character to create base + spacer.
+    grid.put_char('\u{597d}');
+    // Position cursor on the spacer (col 1).
+    grid.cursor_mut().set_col(Column(1));
+    assert!(!grid.put_char_ascii('A'));
+}
+
+#[test]
+fn put_char_ascii_marks_dirty() {
+    let mut grid = Grid::new(3, 10);
+    grid.dirty_mut().drain().for_each(drop);
+    grid.put_char_ascii('Z');
+    assert!(grid.dirty().is_any_dirty());
+}
+
+// ── push_zerowidth ──
+
+#[test]
+fn push_zerowidth_appends_combining_mark() {
+    let mut grid = Grid::new(24, 80);
+    grid.put_char('e');
+    // Combining acute accent (U+0301).
+    grid.push_zerowidth('\u{0301}');
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'e');
+    let extra = cell.extra.as_ref().expect("should have CellExtra");
+    assert_eq!(extra.zerowidth, vec!['\u{0301}']);
+}
+
+#[test]
+fn push_zerowidth_at_col_zero_is_discarded() {
+    let mut grid = Grid::new(24, 80);
+    // Cursor at (0,0) — no previous cell exists.
+    grid.push_zerowidth('\u{0301}');
+    // Should not panic and cell should remain empty.
+    assert!(grid[crate::index::Line(0)][Column(0)].is_empty());
+}
+
+#[test]
+fn push_zerowidth_on_wide_char_spacer_targets_base() {
+    let mut grid = Grid::new(24, 80);
+    grid.put_char('\u{597d}');
+    // Cursor is at col 2 after wide char. Push zerowidth — should attach
+    // to the wide char base at col 0, not the spacer at col 1.
+    grid.push_zerowidth('\u{0301}');
+    let base = &grid[crate::index::Line(0)][Column(0)];
+    let extra = base.extra.as_ref().expect("should have CellExtra on base");
+    assert_eq!(extra.zerowidth, vec!['\u{0301}']);
+}
+
+#[test]
+fn push_zerowidth_marks_dirty() {
+    let mut grid = Grid::new(3, 10);
+    grid.put_char('A');
+    grid.dirty_mut().drain().for_each(drop);
+    grid.push_zerowidth('\u{0301}');
+    assert!(grid.dirty().is_any_dirty());
+}
+
+// ── Zero-count operations produce no dirty marks ──
+
+#[test]
+fn insert_blank_zero_no_dirty() {
+    let mut grid = grid_with_text(3, 10, "ABCDE");
+    grid.dirty_mut().drain().for_each(drop);
+    grid.cursor_mut().set_col(Column(0));
+    grid.insert_blank(0);
+    assert!(!grid.dirty().is_any_dirty());
+}
+
+#[test]
+fn delete_chars_zero_no_dirty() {
+    let mut grid = grid_with_text(3, 10, "ABCDE");
+    grid.dirty_mut().drain().for_each(drop);
+    grid.cursor_mut().set_col(Column(0));
+    grid.delete_chars(0);
+    assert!(!grid.dirty().is_any_dirty());
+}
+
+#[test]
+fn erase_chars_zero_no_dirty() {
+    let mut grid = grid_with_text(3, 10, "ABCDE");
+    grid.dirty_mut().drain().for_each(drop);
+    grid.cursor_mut().set_col(Column(0));
+    grid.erase_chars(0);
+    assert!(!grid.dirty().is_any_dirty());
+}
