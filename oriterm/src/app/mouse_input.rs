@@ -366,7 +366,11 @@ impl App {
                     match state {
                         ElementState::Pressed => self.handle_mouse_press(),
                         ElementState::Released => {
-                            let had_drag = self.mouse.is_dragging();
+                            // Check drag_was_active before handle_release clears it.
+                            // Note: is_dragging() would always return false here
+                            // because the event loop clears the button state before
+                            // dispatch.
+                            let had_drag = self.mouse.drag_was_active();
                             mouse_selection::handle_release(&mut self.mouse);
                             if had_drag {
                                 // CopyOnSelect: auto-copy to primary selection after drag.

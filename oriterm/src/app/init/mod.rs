@@ -189,7 +189,13 @@ impl App {
             .resolve_theme(crate::platform::theme::system_theme);
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
         gpu.clear_surface(window.surface(), palette.background(), opacity);
+        // Suppress DWM fade-in animation — shows the pre-cleared surface
+        // instantly instead of fading from the DWM default background.
+        #[cfg(target_os = "windows")]
+        oriterm_ui::platform_windows::set_transitions_enabled(window.window(), false);
         window.set_visible(true);
+        #[cfg(target_os = "windows")]
+        oriterm_ui::platform_windows::set_transitions_enabled(window.window(), true);
         // On Linux (X11/Wayland), a newly created window is not guaranteed to
         // receive input focus. Explicitly request it so the terminal is
         // immediately interactive.
