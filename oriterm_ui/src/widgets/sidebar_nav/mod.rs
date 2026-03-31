@@ -117,6 +117,9 @@ pub struct SidebarNavWidget {
     /// and read during `position_cursor_at_x()`. Uses `RefCell` for interior mutability
     /// since paint takes `&self`.
     pub(super) search_char_offsets: RefCell<Vec<(usize, f32)>>,
+    /// Dynamic cursor icon based on hover state. Updated in `on_input(MouseMove)`,
+    /// read in `layout()`. Pointer over nav items and footer links, default elsewhere.
+    pub(super) cursor_icon: Cell<CursorIcon>,
 }
 
 /// Visual style for the sidebar nav.
@@ -180,6 +183,7 @@ impl SidebarNavWidget {
             update_url: None,
             footer_rects: Cell::new(FooterRects::default()),
             search_char_offsets: RefCell::new(Vec::new()),
+            cursor_icon: Cell::new(CursorIcon::Default),
         }
     }
 
@@ -328,7 +332,7 @@ impl Widget for SidebarNavWidget {
             .with_width(crate::layout::SizeSpec::Fixed(SIDEBAR_WIDTH))
             .with_height(crate::layout::SizeSpec::Fill)
             .with_widget_id(self.id)
-            .with_cursor_icon(CursorIcon::Pointer)
+            .with_cursor_icon(self.cursor_icon.get())
     }
 
     fn paint(&self, ctx: &mut DrawCtx<'_>) {

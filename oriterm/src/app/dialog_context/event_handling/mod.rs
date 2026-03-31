@@ -402,6 +402,11 @@ impl App {
             )
             .glyph_format();
             renderer.set_hinting_and_format(hinting, format, gpu);
+            let atlas_filter =
+                super::super::config_reload::resolve_atlas_filtering(&self.config.font, new_scale);
+            if let Some(pipelines) = self.pipelines.as_ref() {
+                renderer.set_atlas_filtering(atlas_filter, gpu, &pipelines.atlas_layout);
+            }
         }
         ctx.content.invalidate_cache();
         ctx.text_cache.clear();

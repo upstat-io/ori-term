@@ -11,17 +11,17 @@ use crate::config::Config;
 fn dialog_builds_without_panic() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
 }
 
 #[test]
 fn settings_ids_all_distinct() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     let all = collect_ids(&ids);
-    // 26 fixed control IDs (25 controls + sidebar) + N scheme card IDs.
-    let expected = 26 + ids.scheme_card_ids.len();
+    // 29 fixed control IDs (28 controls + sidebar) + N scheme card IDs.
+    let expected = 29 + ids.scheme_card_ids.len();
     assert_eq!(all.len(), expected, "all widget IDs must be distinct");
 }
 
@@ -29,7 +29,7 @@ fn settings_ids_all_distinct() {
 fn content_widget_has_valid_id() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (content, _ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     assert_ne!(content.id().raw(), 0);
 }
 
@@ -37,7 +37,7 @@ fn content_widget_has_valid_id() {
 fn all_page_ids_are_set() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     let all = collect_ids(&ids);
     // Every ID must be non-placeholder.
     assert!(
@@ -50,7 +50,7 @@ fn all_page_ids_are_set() {
 fn scheme_card_ids_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     // Scheme cards are captured during colors page building.
     assert!(
         !ids.scheme_card_ids.is_empty(),
@@ -64,7 +64,7 @@ fn scheme_card_ids_captured() {
 fn sidebar_id_captured() {
     let config = Config::default();
     let theme = UiTheme::default();
-    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (_content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     assert_ne!(
         ids.sidebar_id,
         oriterm_ui::widget_id::WidgetId::placeholder(),
@@ -87,7 +87,7 @@ fn dialog_builds_with_update_info() {
         "v2.0.0 ready",
         "https://example.com/update",
     ));
-    let (content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, info);
+    let (content, ids, _footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, info);
     // Sidebar must still be captured.
     assert_ne!(
         ids.sidebar_id,
@@ -106,7 +106,7 @@ fn footer_buttons_reachable_through_widget_tree() {
 
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     let panel = SettingsPanel::embedded(content, footer_ids);
     let focusable = panel.focusable_children();
 
@@ -130,7 +130,7 @@ fn accept_unsaved_reaches_footer() {
 
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     let mut panel = SettingsPanel::embedded(content, footer_ids);
 
     let handled = panel.accept_action(&WidgetAction::SettingsUnsaved(true));
@@ -149,7 +149,7 @@ fn footer_buttons_have_correct_height() {
 
     let config = Config::default();
     let theme = UiTheme::default();
-    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, None);
+    let (content, _ids, footer_ids) = build_settings_dialog(&config, &theme, 0, 1.0, 1.0, None);
     let panel = SettingsPanel::embedded(content, footer_ids);
 
     // Simulate dialog dimensions (860×620 at logical pixels).
@@ -214,6 +214,11 @@ fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     set.insert(ids.font_weight_dropdown.raw());
     set.insert(ids.ligatures_toggle.raw());
     set.insert(ids.line_height_input.raw());
+    // Font — Advanced.
+    set.insert(ids.hinting_dropdown.raw());
+    set.insert(ids.subpixel_aa_dropdown.raw());
+    set.insert(ids.subpixel_positioning_dropdown.raw());
+    set.insert(ids.atlas_filtering_dropdown.raw());
     // Terminal.
     set.insert(ids.cursor_picker.raw());
     set.insert(ids.cursor_blink_toggle.raw());
@@ -231,6 +236,5 @@ fn collect_ids(ids: &SettingsIds) -> HashSet<u64> {
     set.insert(ids.bell_duration_dropdown.raw());
     // Rendering.
     set.insert(ids.gpu_backend_dropdown.raw());
-    set.insert(ids.subpixel_toggle.raw());
     set
 }

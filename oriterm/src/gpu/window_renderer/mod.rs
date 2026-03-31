@@ -18,7 +18,7 @@ pub use error::SurfaceError;
 pub use ui_only::RendererMode;
 
 use std::collections::HashSet;
-use wgpu::{Buffer, Device};
+use wgpu::{Buffer, Device, FilterMode};
 
 use oriterm_core::Rgb;
 
@@ -30,40 +30,19 @@ use super::frame_input::FrameInput;
 use super::icon_rasterizer::IconCache;
 use super::image_render::ImageTextureCache;
 use super::pipelines::GpuPipelines;
-use super::prepare::{self, AtlasLookup};
+use super::prepare;
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
 use crate::font::{CellMetrics, FontCollection, RasterKey, UiFontSizes};
+use crate::gpu::bind_groups::AtlasFiltering;
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
-    ShapingScratch, create_atlases, ensure_glyphs_cached, grid_raster_keys, shape_frame,
+    CombinedAtlasLookup, ShapingScratch, create_atlases, ensure_glyphs_cached, grid_raster_keys,
+    shape_frame,
 };
 
 /// Maximum entries in `empty_keys` before clearing to prevent unbounded growth.
 const EMPTY_KEYS_CAP: usize = 10_000;
-
-// Atlas lookup bridge
-
-/// Bridges all atlases (mono, subpixel, color) into the [`AtlasLookup`] trait.
-///
-/// During the Prepare phase, glyph lookups probe the monochrome atlas first
-/// (most glyphs are mono text), then the subpixel atlas, then the color atlas.
-/// Each entry carries an [`AtlasKind`](super::atlas::AtlasKind) that the
-/// prepare phase uses to route glyphs to the correct instance buffer.
-struct CombinedAtlasLookup<'a> {
-    mono: &'a GlyphAtlas,
-    subpixel: &'a GlyphAtlas,
-    color: &'a GlyphAtlas,
-}
-
-impl AtlasLookup for CombinedAtlasLookup<'_> {
-    fn lookup_key(&self, key: RasterKey) -> Option<&super::atlas::AtlasEntry> {
-        self.mono
-            .lookup(key)
-            .or_else(|| self.subpixel.lookup(key))
-            .or_else(|| self.color.lookup(key))
-    }
-}
 
 /// Per-window GPU renderer: owns fonts, atlases, and instance buffers.
 ///
@@ -99,6 +78,10 @@ pub struct WindowRenderer {
     ///
     /// `None` if no UI font was found — falls back to terminal font.
     ui_font_sizes: Option<UiFontSizes>,
+
+    // Rendering configuration (resolved from user config + auto-detection).
+    subpixel_positioning: bool,
+    atlas_filtering: AtlasFiltering,
 
     // Per-frame reusable scratch buffers.
     ui_raster_keys: Vec<RasterKey>,
@@ -180,12 +163,18 @@ impl WindowRenderer {
             log::info!("UI font prewarm: {:?}", t_ui.elapsed());
         }
 
-        // Bind groups.
-        let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
-        let subpixel_atlas_bind_group =
-            AtlasBindGroup::new(device, &pipelines.atlas_layout, subpixel_atlas.view());
+        // Bind groups (default to Linear; set_atlas_filtering() overrides after init).
+        let filter = FilterMode::Linear;
+        let atlas_bind_group =
+            AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view(), filter);
+        let subpixel_atlas_bind_group = AtlasBindGroup::new(
+            device,
+            &pipelines.atlas_layout,
+            subpixel_atlas.view(),
+            filter,
+        );
         let color_atlas_bind_group =
-            AtlasBindGroup::new(device, &pipelines.atlas_layout, color_atlas.view());
+            AtlasBindGroup::new(device, &pipelines.atlas_layout, color_atlas.view(), filter);
 
         log::info!("window renderer init: total={:?}", t0.elapsed(),);
 
@@ -204,6 +193,8 @@ impl WindowRenderer {
             empty_keys: HashSet::new(),
             font_collection,
             ui_font_sizes,
+            subpixel_positioning: true,
+            atlas_filtering: AtlasFiltering::default(),
             ui_raster_keys: Vec::new(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
@@ -272,6 +263,27 @@ impl WindowRenderer {
     #[allow(dead_code, reason = "atlas access for diagnostics and Section 6")]
     pub fn atlas(&self) -> &GlyphAtlas {
         &self.atlas
+    }
+
+    /// UI font sizes registry (GPU-test accessor).
+    #[cfg(feature = "gpu-tests")]
+    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    pub(crate) fn ui_font_sizes(&self) -> Option<&UiFontSizes> {
+        self.ui_font_sizes.as_ref()
+    }
+
+    /// Terminal font collection (GPU-test accessor).
+    #[cfg(feature = "gpu-tests")]
+    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    pub(crate) fn font_collection(&self) -> &FontCollection {
+        &self.font_collection
+    }
+
+    /// Number of cached entries in the primary (grayscale) atlas.
+    #[cfg(feature = "gpu-tests")]
+    #[allow(dead_code, reason = "used by gpu-tests feature gate")]
+    pub(crate) fn atlas_entry_count(&self) -> usize {
+        self.atlas.len()
     }
 
     // Bind group staleness
@@ -384,6 +396,7 @@ impl WindowRenderer {
             grid_raster_keys(
                 &self.shaping.frame,
                 self.font_collection.hinting_mode().hint_flag(),
+                self.subpixel_positioning,
             ),
             &mut self.atlas,
             &mut self.subpixel_atlas,

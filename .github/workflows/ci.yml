@@ -1,22 +1,33 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+# Cancel previous runs on the same branch/PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
-
 jobs:
-  fmt:
+  # Fast checks — run first, fail fast
+  version-check:
+    name: Version Sync
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check version synchronization
+        run: ./scripts/sync-version.sh --check
+
+  format:
     name: Format
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -26,8 +37,9 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
-  clippy-linux:
+  clippy:
     name: Clippy (Linux)
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -46,10 +58,13 @@ jobs:
             libegl-dev \
             libvulkan-dev
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy
       - run: cargo clippy --workspace -- -D warnings
 
   clippy-windows-cross:
     name: Clippy (Windows cross)
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -67,8 +82,10 @@ jobs:
           key: windows-cross
       - run: cargo clippy --workspace --target x86_64-pc-windows-gnu -- -D warnings
 
+  # Main test suite
   test-linux:
     name: Test (Linux)
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -86,35 +103,69 @@ jobs:
             libvulkan-dev \
             fonts-dejavu-core
       - uses: Swatinem/rust-cache@v2
-      - name: Unit tests
-        env:
-          NO_GPU_TESTS: "1"
-        run: cargo test --workspace --lib --bins
-      - name: Integration tests (limited parallelism)
-        run: cargo test --workspace --test '*' -- --test-threads=2
+        with:
+          key: test-linux
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee test-output.txt
+          PASSED=$(grep -oE '[0-9]+ passed' test-output.txt | grep -oE '^[0-9]+' | awk '{sum+=$1} END {print sum+0}')
+          FAILED=$(grep -oE '[0-9]+ failed' test-output.txt | grep -oE '^[0-9]+' | awk '{sum+=$1} END {print sum+0}')
+          IGNORED=$(grep -oE '[0-9]+ ignored' test-output.txt | grep -oE '^[0-9]+' | awk '{sum+=$1} END {print sum+0}')
+          echo "PASSED=$PASSED" >> $GITHUB_ENV
+          echo "FAILED=$FAILED" >> $GITHUB_ENV
+          echo "IGNORED=$IGNORED" >> $GITHUB_ENV
+      - name: Save test results
+        if: always()
+        run: |
+          cat > test-results.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platform": "linux",
+            "passed": ${PASSED:-0},
+            "failed": ${FAILED:-0},
+            "ignored": ${IGNORED:-0}
+          }
+          EOF
+          cat test-results.json
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-linux
+          path: test-results.json
+          retention-days: 90
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
 
-  test-windows:
-    name: Test (Windows)
-    runs-on: windows-latest
+  # Cross-platform tests
+  cross-platform:
+    name: Test (${{ matrix.name }})
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
-
-  test-macos:
-    name: Test (macOS)
-    runs-on: macos-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
       - run: cargo test --workspace
 
   build-windows-cross:
     name: Build (Windows cross)
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -130,3 +181,24 @@ jobs:
         with:
           key: windows-cross
       - run: cargo build --workspace --target x86_64-pc-windows-gnu
+
+  # Single status check for branch protection
+  ci-success:
+    name: CI Success
+    needs: [version-check, format, clippy, clippy-windows-cross, test-linux, cross-platform, build-windows-cross]
+    runs-on: ubuntu-latest
+    if: "always() && !startsWith(github.event.head_commit.message, 'chore: release v')"
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.version-check.result }}" != "success" ]] || \
+             [[ "${{ needs.format.result }}" != "success" ]] || \
+             [[ "${{ needs.clippy.result }}" != "success" ]] || \
+             [[ "${{ needs.clippy-windows-cross.result }}" != "success" ]] || \
+             [[ "${{ needs.test-linux.result }}" != "success" ]] || \
+             [[ "${{ needs.cross-platform.result }}" != "success" ]] || \
+             [[ "${{ needs.build-windows-cross.result }}" != "success" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required checks passed!"

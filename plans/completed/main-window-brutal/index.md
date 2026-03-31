@@ -2,7 +2,7 @@
 reroute: true
 name: "Main Window Brutal"
 full_name: "Main Window Brutal Design"
-status: active
+status: resolved
 order: 1
 ---
 
@@ -65,7 +65,7 @@ platform chrome, DWM, decorations, WS_EX_TOOLWINDOW
 ---
 
 ### Section 04: Production Wiring & Composed Tests
-**File:** `section-04-wiring.md` | **Status:** Not Started
+**File:** `section-04-wiring.md` | **Status:** Complete
 
 ```
 production wiring, grid offset, TAB_BAR_HEIGHT, status bar height
@@ -78,7 +78,7 @@ existing golden updates, tab_bar_emoji reference
 ---
 
 ### Section 05: Verification
-**File:** `section-05-verification.md` | **Status:** Not Started
+**File:** `section-05-verification.md` | **Status:** Complete
 
 ```
 verification, DPI scaling, 96dpi, 192dpi, cross-platform

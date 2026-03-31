@@ -59,7 +59,16 @@ pub(super) fn convert_text(
             continue;
         }
 
-        let subpx = subpx_bin(cursor_x + glyph.x_offset);
+        let cx = if ctx.subpixel_positioning {
+            cursor_x
+        } else {
+            cursor_x.round()
+        };
+        let subpx = if ctx.subpixel_positioning {
+            subpx_bin(cx + glyph.x_offset)
+        } else {
+            0
+        };
         let realm = match shaped.font_source {
             oriterm_ui::text::FontSource::Terminal => FontRealm::Terminal,
             oriterm_ui::text::FontSource::Ui => FontRealm::Ui,

@@ -198,6 +198,13 @@ impl App {
         self.install_dialog_chrome(winit_id);
         self.render_dialog(winit_id);
 
+        // Flush GPU so the first frame is fully committed to the surface
+        // before the window becomes visible. Without this, the compositor
+        // may briefly show uninitialized VRAM (baby blue flash).
+        if let Some(gpu) = self.gpu.as_ref() {
+            gpu.poll_device();
+        }
+
         // Transition to Primed — the event loop's about_to_wait handler
         // will show the window on the next tick (after the first frame is
         // committed). This prevents any flash of uninitialized content.
@@ -398,8 +405,17 @@ impl App {
 
     /// Build dialog content for the settings panel.
     fn build_settings_content(&self) -> DialogContent {
-        let (content, ids, footer_ids) =
-            form_builder::build_settings_dialog(&self.config, &self.ui_theme, 0, None);
+        let (content, ids, footer_ids) = form_builder::build_settings_dialog(
+            &self.config,
+            &self.ui_theme,
+            0,
+            self.windows
+                .values()
+                .next()
+                .map_or(1.0, |ctx| ctx.window.scale_factor().factor()),
+            f64::from(self.config.window.effective_opacity()),
+            None,
+        );
 
         DialogContent::Settings {
             panel: Box::new(SettingsPanel::embedded(content, footer_ids)),

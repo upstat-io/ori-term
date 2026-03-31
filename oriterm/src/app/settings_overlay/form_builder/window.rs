@@ -92,12 +92,14 @@ fn build_startup_section(
     ids: &mut SettingsIds,
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
-    let restore = ToggleWidget::new().with_on(config.window.restore_session);
+    let restore = ToggleWidget::new()
+        .with_on(config.window.restore_session)
+        .with_disabled(true);
     ids.restore_session_toggle = restore.id();
 
     let restore_row = SettingRowWidget::new(
         "Restore previous session",
-        "Reopen tabs and splits from last session on launch",
+        "Not yet implemented — coming in a future release",
         Box::new(restore),
         theme,
     );

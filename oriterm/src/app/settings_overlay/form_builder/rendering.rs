@@ -1,4 +1,4 @@
-//! Rendering page builder — GPU backend and text rendering settings.
+//! Rendering page builder — GPU backend settings.
 
 use oriterm_ui::layout::SizeSpec;
 use oriterm_ui::theme::UiTheme;
@@ -6,7 +6,6 @@ use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::container::ContainerWidget;
 use oriterm_ui::widgets::dropdown::DropdownWidget;
 use oriterm_ui::widgets::setting_row::SettingRowWidget;
-use oriterm_ui::widgets::toggle::ToggleWidget;
 
 use crate::config::{Config, GpuBackend};
 
@@ -23,10 +22,9 @@ pub(super) fn build_page(
 ) -> Box<dyn Widget> {
     build_settings_page(
         "Rendering",
-        "GPU backend and text rendering options",
+        "GPU backend settings",
         vec![
             build_gpu_section(config, ids, theme),
-            build_text_section(config, ids, theme),
             build_performance_section(theme),
         ],
         theme,
@@ -35,18 +33,15 @@ pub(super) fn build_page(
 
 /// GPU section: backend dropdown + restart notice.
 fn build_gpu_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) -> Box<dyn Widget> {
-    let items = vec![
-        "Auto".to_owned(),
-        "Vulkan".to_owned(),
-        "DirectX 12".to_owned(),
-        "Metal".to_owned(),
-    ];
-    let idx = match config.rendering.gpu_backend {
-        GpuBackend::Auto => 0,
-        GpuBackend::Vulkan => 1,
-        GpuBackend::DirectX12 => 2,
-        GpuBackend::Metal => 3,
-    };
+    let available = GpuBackend::available();
+    let items: Vec<String> = available
+        .iter()
+        .map(|(_, label)| (*label).to_owned())
+        .collect();
+    let idx = available
+        .iter()
+        .position(|(b, _)| *b == config.rendering.gpu_backend)
+        .unwrap_or(0);
     let dropdown = DropdownWidget::new(items).with_selected(idx);
     ids.gpu_backend_dropdown = dropdown.id();
 
@@ -61,32 +56,6 @@ fn build_gpu_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) ->
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
             .with_child(build_section_header("GPU", theme))
-            .with_child(Box::new(row)),
-    )
-}
-
-/// Text section: subpixel rendering toggle.
-fn build_text_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) -> Box<dyn Widget> {
-    // Subpixel mode: "rgb"/"bgr" = enabled, "none"/absent = disabled.
-    let subpixel_on = config
-        .font
-        .subpixel_mode
-        .as_ref()
-        .is_some_and(|m| m != "none");
-    let toggle = ToggleWidget::new().with_on(subpixel_on);
-    ids.subpixel_toggle = toggle.id();
-
-    let row = SettingRowWidget::new(
-        "LCD subpixel rendering",
-        "Sharper text on LCD displays (uses font subpixel mode)",
-        Box::new(toggle),
-        theme,
-    );
-
-    Box::new(
-        ContainerWidget::column()
-            .with_width(SizeSpec::Fill)
-            .with_child(build_section_header("Text", theme))
             .with_child(Box::new(row)),
     )
 }

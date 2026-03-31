@@ -35,32 +35,21 @@ jobs:
           fi
           echo "Tag is on main branch - OK"
 
-      - name: Extract expected version from tag
-        id: tag_version
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
-          echo "Tag version: $TAG_VERSION"
+      - name: Check version synchronization
+        run: ./scripts/sync-version.sh --check
 
-      - name: Extract Cargo.toml version
-        id: cargo_version
+      - name: Verify tag matches workspace version
         run: |
+          TAG="${{ github.ref_name }}"
           CARGO_VERSION=$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p }' Cargo.toml)
-          echo "cargo_version=$CARGO_VERSION" >> $GITHUB_OUTPUT
-          echo "Cargo.toml version: $CARGO_VERSION"
-
-      - name: Validate tag matches Cargo.toml
-        run: |
-          if [[ "${{ steps.tag_version.outputs.tag_version }}" != "${{ steps.cargo_version.outputs.cargo_version }}" ]]; then
-            echo "ERROR: Tag version (${{ steps.tag_version.outputs.tag_version }}) does not match Cargo.toml version (${{ steps.cargo_version.outputs.cargo_version }})"
-            echo ""
-            echo "To fix:"
-            echo "  1. Delete the tag: git tag -d ${{ github.ref_name }} && git push origin :refs/tags/${{ github.ref_name }}"
-            echo "  2. Update Cargo.toml version to match"
-            echo "  3. Commit, tag, and push again"
+          EXPECTED_TAG="v${CARGO_VERSION}"
+          if [[ "$TAG" != "$EXPECTED_TAG" ]]; then
+            echo "ERROR: Tag '$TAG' does not match workspace version '$CARGO_VERSION'."
+            echo "Expected tag: $EXPECTED_TAG"
+            echo "A manually pushed tag with a mismatched version would produce an incorrect release."
             exit 1
           fi
-          echo "Version validation passed!"
+          echo "Tag '$TAG' matches workspace version '$CARGO_VERSION' - OK"
 
   build-linux:
     name: Build Linux (x86_64)
@@ -103,6 +92,49 @@ jobs:
           name: oriterm-linux-x86_64
           path: oriterm-${{ github.ref_name }}-linux-x86_64.tar.gz
 
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            runner: macos-14
+            target: aarch64-apple-darwin
+            name: macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip binaries
+        run: |
+          strip target/${{ matrix.target }}/release/oriterm
+          strip target/${{ matrix.target }}/release/oriterm-mux
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf ../../../oriterm-${{ github.ref_name }}-${{ matrix.name }}.tar.gz oriterm oriterm-mux
+          cd ../../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oriterm-${{ matrix.name }}
+          path: oriterm-${{ github.ref_name }}-${{ matrix.name }}.tar.gz
+
   build-windows:
     name: Build Windows (x86_64)
     needs: validate
@@ -133,28 +165,20 @@ jobs:
           name: oriterm-windows-x86_64
           path: oriterm-${{ github.ref_name }}-windows-x86_64.zip
 
-  release:
-    name: Create Release
-    needs: [build-linux, build-windows]
+  attach-artifacts:
+    name: Attach Artifacts to Release
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Download Linux artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: oriterm-linux-x86_64
           path: artifacts
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: oriterm-windows-x86_64
-          path: artifacts
+          merge-multiple: true
 
       - name: Generate checksums
         run: |
@@ -162,82 +186,9 @@ jobs:
           sha256sum oriterm-* > checksums-sha256.txt
           cat checksums-sha256.txt
 
-      - name: Determine release type
-        id: release_type
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == *"alpha"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION (Alpha)" >> $GITHUB_OUTPUT
-          elif [[ "$VERSION" == *"beta"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION (Beta)" >> $GITHUB_OUTPUT
-          elif [[ "$VERSION" == *"rc"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION (Release Candidate)" >> $GITHUB_OUTPUT
-          else
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Gather commit log
-        id: commits
-        run: |
-          TAG="${{ github.ref_name }}"
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" \
-            | grep -E '^v[0-9]' | head -1)
-
-          if [[ -n "$PREV_TAG" ]]; then
-            LOG=$(git log "${PREV_TAG}..HEAD" \
-              --pretty=format:"- %s (%h)" --no-merges)
-          else
-            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -50)
-          fi
-
-          echo "$LOG" > /tmp/commit-log.txt
-
-      - name: Generate release notes
-        run: |
-          LOG=$(cat /tmp/commit-log.txt)
-          BODY=""
-          FEATURES=""
-          FIXES=""
-          PERF=""
-          HOUSEKEEPING=""
-          OTHER=""
-          while IFS= read -r line; do
-            line=$(echo "$line" | xargs)
-            [[ -z "$line" || "$line" != -\ * ]] && continue
-            subject="${line:2}"
-            if [[ "$subject" == feat* ]]; then
-              FEATURES="${FEATURES}${line}\n"
-            elif [[ "$subject" == fix* ]]; then
-              FIXES="${FIXES}${line}\n"
-            elif [[ "$subject" == perf* ]]; then
-              PERF="${PERF}${line}\n"
-            elif [[ "$subject" == refactor* || "$subject" == chore* || "$subject" == build* || "$subject" == ci* || "$subject" == test* || "$subject" == style* || "$subject" == docs* ]]; then
-              HOUSEKEEPING="${HOUSEKEEPING}${line}\n"
-            else
-              OTHER="${OTHER}${line}\n"
-            fi
-          done <<< "$LOG"
-          [[ -n "$FEATURES" ]] && BODY="${BODY}### Features\n\n${FEATURES}\n"
-          [[ -n "$FIXES" ]] && BODY="${BODY}### Bug Fixes\n\n${FIXES}\n"
-          [[ -n "$PERF" ]] && BODY="${BODY}### Performance\n\n${PERF}\n"
-          [[ -n "$HOUSEKEEPING" ]] && BODY="${BODY}### Housekeeping\n\n${HOUSEKEEPING}\n"
-          [[ -n "$OTHER" ]] && BODY="${BODY}### Other\n\n${OTHER}\n"
-          [[ -z "$BODY" ]] && BODY="See commit history for changes."
-          printf '%b' "$BODY" > /tmp/release-notes.txt
-          echo "Release notes generated from commit log"
-
-      - name: Create Release
+      - name: Upload artifacts to release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.release_type.outputs.name }}
-          body_path: /tmp/release-notes.txt
-          files: |
-            artifacts/*
-          prerelease: ${{ steps.release_type.outputs.prerelease }}
-          make_latest: ${{ steps.release_type.outputs.prerelease != 'true' }}
+          files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

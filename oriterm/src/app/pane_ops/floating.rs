@@ -52,6 +52,7 @@ impl App {
             rows: 24,
             scrollback: self.config.terminal.scrollback,
             shell_integration: self.config.behavior.shell_integration,
+            shell: self.config.terminal.shell.clone(),
             ..SpawnConfig::default()
         };
 

@@ -139,26 +139,6 @@ fn set_dpi_noop_when_unchanged() {
     assert_eq!(reg.default_q6, q6_before);
 }
 
-// Hinting and format propagation
-
-#[test]
-fn set_hinting_propagates_to_all_collections() {
-    let mut reg = test_registry();
-    reg.set_hinting(HintingMode::None);
-    assert_eq!(reg.hinting_mode(), HintingMode::None);
-    let fc = reg.default_collection().unwrap();
-    assert_eq!(fc.hinting_mode(), HintingMode::None);
-}
-
-#[test]
-fn set_format_propagates_to_all_collections() {
-    let mut reg = test_registry();
-    reg.set_format(GlyphFormat::SubpixelRgb);
-    assert_eq!(reg.format(), GlyphFormat::SubpixelRgb);
-    let fc = reg.default_collection().unwrap();
-    assert_eq!(fc.format(), GlyphFormat::SubpixelRgb);
-}
-
 // Standalone default creation
 
 #[test]

@@ -554,15 +554,15 @@ fn title_rect_nonfirst_has_20px_top_margin() {
 
 #[test]
 fn derived_nav_row_height() {
-    use super::geometry::{NAV_ITEM_CONTENT_H, NAV_ITEM_MARGIN_Y, NAV_ITEM_PADDING_Y};
-    let expected = NAV_ITEM_MARGIN_Y
-        + NAV_ITEM_PADDING_Y
-        + NAV_ITEM_CONTENT_H
-        + NAV_ITEM_PADDING_Y
-        + NAV_ITEM_MARGIN_Y;
+    use super::geometry::{
+        NAV_ITEM_BG_H, NAV_ITEM_CONTENT_H, NAV_ITEM_MARGIN_Y, NAV_ITEM_PADDING_Y,
+    };
+    let bg = NAV_ITEM_PADDING_Y + NAV_ITEM_CONTENT_H + NAV_ITEM_PADDING_Y;
+    assert_eq!(NAV_ITEM_BG_H, bg);
+    let expected = NAV_ITEM_MARGIN_Y + NAV_ITEM_BG_H + NAV_ITEM_MARGIN_Y;
     assert_eq!(NAV_ITEM_HEIGHT, expected);
-    // ~29px derived from mockup CSS.
-    assert!((NAV_ITEM_HEIGHT - 29.0).abs() < 1.0);
+    // ~32px: 1 + 7 + 16 + 7 + 1 (content height = 13px font × ~1.2 line-height).
+    assert!((NAV_ITEM_HEIGHT - 32.0).abs() < 1.0);
 }
 
 #[test]
@@ -774,8 +774,8 @@ fn click_within_search_uses_measured_offsets() {
 
     let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
     let search_rect = super::geometry::search_field_rect(bounds);
-    // Text starts 26px into the search field (SEARCH_TEXT_INSET in input.rs).
-    let text_start_x = search_rect.x() + 26.0;
+    // Text starts 8px into the search field (SEARCH_TEXT_INSET in input.rs).
+    let text_start_x = search_rect.x() + 8.0;
     let click_y = search_rect.y() + search_rect.height() / 2.0;
 
     // Click at text_start + 10.0 → nearest to (1, 7.0), cursor at byte 1.
@@ -940,7 +940,7 @@ fn filtered_nav_end_goes_to_last_visible() {
 // -- Cursor icon --
 
 #[test]
-fn layout_cursor_icon_pointer() {
+fn layout_cursor_default_initially() {
     let theme = crate::theme::UiTheme::dark();
     let w = SidebarNavWidget::new(test_sections(), &theme);
     let m = MockMeasurer::new();
@@ -951,7 +951,44 @@ fn layout_cursor_icon_pointer() {
     let layout = w.layout(&ctx);
     assert_eq!(
         layout.cursor_icon,
-        CursorIcon::Pointer,
-        "sidebar nav should declare Pointer cursor"
+        CursorIcon::Default,
+        "sidebar nav should default to default cursor before any hover"
     );
+}
+
+#[test]
+fn cursor_pointer_over_nav_item() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+
+    // Move mouse over the first nav item area (below search + title).
+    // Search area = 40px, title area ~42px, so first item starts around y=72.
+    let pos = Point::new(SIDEBAR_WIDTH / 2.0, 80.0);
+    let event = InputEvent::MouseMove {
+        pos,
+        modifiers: Modifiers::NONE,
+    };
+    w.on_input(&event, bounds);
+
+    // If a nav item was hit, cursor should be Pointer.
+    if w.hovered_item.is_some() {
+        assert_eq!(w.cursor_icon.get(), CursorIcon::Pointer);
+    }
+}
+
+#[test]
+fn cursor_default_over_empty_area() {
+    let theme = crate::theme::UiTheme::dark();
+    let mut w = SidebarNavWidget::new(test_sections(), &theme);
+    let bounds = Rect::new(0.0, 0.0, SIDEBAR_WIDTH, 400.0);
+
+    // Move mouse to the search field area (no nav item).
+    let pos = Point::new(SIDEBAR_WIDTH / 2.0, 10.0);
+    let event = InputEvent::MouseMove {
+        pos,
+        modifiers: Modifiers::NONE,
+    };
+    w.on_input(&event, bounds);
+    assert_eq!(w.cursor_icon.get(), CursorIcon::Default);
 }

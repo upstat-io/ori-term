@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Production Wiring & Composed Tests"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Wire the status bar into the production window pipeline, update grid origin offsets for the new tab bar height, update all affected golden references, and add composed golden tests showing the full main window chrome."
 inspired_by:
@@ -10,8 +10,8 @@ inspired_by:
   - "oriterm/src/app/window_context.rs (WindowContext owns WindowRoot + renderer)"
 depends_on: ["01", "02", "03"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-03-29
 sections:
   - id: "04.1"
     title: "Wire Status Bar into Window Pipeline"
@@ -24,18 +24,18 @@ sections:
     status: complete
   - id: "04.4"
     title: "Composed Golden Tests"
-    status: in-progress
+    status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 04: Production Wiring & Composed Tests
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** The status bar renders in the production window below the terminal content. The grid origin accounts for the new 36px tab bar height. All existing golden references are updated. Composed golden tests prove the full chrome renders correctly.
 
 **Context:** Sections 01-03 implement individual components (tab bar, status bar, frame/panes). This section wires them together: the status bar must appear in the actual terminal window, the grid layout must account for the new tab bar height (36px down from 46px), and composed golden tests must capture the full window chrome (tab bar + terminal + status bar + borders).
@@ -251,9 +251,9 @@ Write golden tests that render the full main window chrome: tab bar + terminal g
 - [x] **Test: `main_window_no_status_bar_96dpi`** — Full window with `show_status_bar: false`. Verifies that the grid expands to fill the space where the status bar would be. Catches regressions where status bar space is reserved even when hidden.
 - [x] **Test: `main_window_hidden_tab_bar_96dpi`** — Full window with `tab_bar_position: Hidden`. Verifies grid starts at the top (y=0 + padding) with no tab bar. Status bar still at bottom. Catches regressions in the hidden tab bar + status bar combination.
 - [x] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests -- main_window` to generate references
-- [ ] Visually inspect against the HTML mockup (open both side by side)
+- [x] Visually inspect against the HTML mockup (open both side by side)
 - [x] Commit reference PNGs
-- [ ] `/tpr-review` checkpoint
+- [x] `/tpr-review` checkpoint
 
 **Validation:** All `main_window_*` golden tests pass. The composed output visually matches `mockups/main-window-brutal.html`.
 
@@ -261,23 +261,22 @@ Write golden tests that render the full main window chrome: tab bar + terminal g
 
 ## 04.R Third Party Review Findings
 
-<!-- Reserved for Codex or other external reviewers. -->
-
-- None.
+- [x] `[TPR-04-001][high]` `oriterm/src/gpu/visual_regression/status_bar.rs:239` — Section 04 claims the new 192 DPI golden reference was committed, but the only new reference file is still untracked in the current tree.
+  Resolved: The 192 DPI status bar golden reference was generated during Section 05 verification (not part of Section 04's original work). Committed alongside Section 05 verification changes on 2026-03-29.
 
 ---
 
 ## 04.N Completion Checklist
 
-- [ ] Status bar renders in production window at correct position
-- [ ] Status bar data populated from terminal state (shell, panes, grid size, encoding, term type)
-- [ ] Grid origin updated for 36px tab bar height
-- [ ] Grid available height accounts for status bar presence/absence
-- [ ] Config option `window.show_status_bar` controls visibility
-- [ ] All existing golden tests pass (updated references where needed)
-- [ ] 5+ composed golden tests pass with committed reference PNGs (single pane, 3 tabs, 192dpi, no status bar, hidden tab bar)
-- [ ] No regressions in grid rendering, terminal behavior, or input handling
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green, `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] Status bar renders in production window at correct position
+- [x] Status bar data populated from terminal state (shell, panes, grid size, encoding, term type)
+- [x] Grid origin updated for 36px tab bar height
+- [x] Grid available height accounts for status bar presence/absence
+- [x] Config option `window.show_status_bar` controls visibility
+- [x] All existing golden tests pass (updated references where needed)
+- [x] 5+ composed golden tests pass with committed reference PNGs (single pane, 3 tabs, 192dpi, no status bar, hidden tab bar)
+- [x] No regressions in grid rendering, terminal behavior, or input handling
+- [x] `./build-all.sh` green, `./clippy-all.sh` green, `./test-all.sh` green
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** The full main window (tab bar + terminal + status bar) renders correctly in production. Composed golden tests match the mockup. All existing tests pass.

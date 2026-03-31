@@ -90,7 +90,7 @@ fn fill_frame(
 
         let col = cell.column.0;
         let x = ox + col as f32 * cw;
-        let y = oy + cell.line as f32 * ch;
+        let y = (oy + cell.line as f32 * ch).round();
 
         let (fg, bg) = resolve_cell_colors(
             cell,

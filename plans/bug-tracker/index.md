@@ -55,6 +55,39 @@ font, emoji, COLRv1, COLR, swash, skrifa, color glyph, bitmap, clip,
 rasterize, fallback, Segoe UI Emoji, NotoEmoji, atlas, bearing
 ```
 
+### Section 05: Config
+**File:** `section-05-config.md` | **Status:** In Progress
+
+```
+config, settings, shell, default-shell, spawn, wiring, terminal, behavior,
+toml, reload, hot-reload, apply, runtime, restore-session, session, persist
+```
+
+### Section 06: Rendering & Performance
+**File:** `section-06-rendering-perf.md` | **Status:** In Progress
+
+```
+render, frame, latency, lag, slow, key-repeat, input-lag, GPU, draw_frame,
+performance, frame-time, frame-budget, redraw, cell-loop, wrapping,
+surface, invalidation, off-screen, uninitialized, baby-blue, expose, damage
+```
+
+### Section 07: CI & Build
+**File:** `section-07-ci-build.md` | **Status:** In Progress
+
+```
+ci, build, release, workflow, github-actions, auto-release, tag, version,
+bump-build, sync-version, cargo-lock, lockfile, nightly, deploy, publish
+```
+
+### Section 08: Core Terminal
+**File:** `section-08-core-terminal.md` | **Status:** In Progress
+
+```
+bell, audible, beep, sound, BEL, VTE, escape, terminal, mode, notification,
+selection, highlight, dismiss, deselect, clear, click, sticky, stuck
+```
+
 ---
 
 ## Quick Reference
@@ -65,3 +98,7 @@ rasterize, fallback, Segoe UI Emoji, NotoEmoji, atlas, bearing
 | 02 | Settings Dialog | `section-02-settings-dialog.md` |
 | 03 | UI Framework | `section-03-ui-framework.md` |
 | 04 | Fonts | `section-04-fonts.md` |
+| 05 | Config | `section-05-config.md` |
+| 06 | Rendering & Perf | `section-06-rendering-perf.md` |
+| 07 | CI & Build | `section-07-ci-build.md` |
+| 08 | Core Terminal | `section-08-core-terminal.md` |

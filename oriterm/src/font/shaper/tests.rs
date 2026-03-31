@@ -2138,6 +2138,137 @@ fn line_height_with_letter_spacing() {
     assert!(mws.width > mwo.width, "width should increase with spacing");
 }
 
+// ── Ligature shaping (BUG-04-003 diagnostic) ──
+
+/// Build a FontCollection from embedded JetBrains Mono (deterministic, no system deps).
+fn embedded_collection() -> FontCollection {
+    let font_set = FontSet::embedded();
+    FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build")
+}
+
+/// Helper: shape a cell row and return (glyphs, col_starts).
+fn shape_cells(
+    fc: &FontCollection,
+    cells: &[Cell],
+) -> (Vec<oriterm_ui::text::ShapedGlyph>, Vec<usize>) {
+    let mut runs = Vec::new();
+    prepare_line(cells, cells.len(), fc, &mut runs);
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    let mut col_starts = Vec::new();
+    shape_prepared_runs(&runs, &faces, fc, &mut output, &mut col_starts, &mut None);
+    (output, col_starts)
+}
+
+#[test]
+fn ligature_arrow_calt_applies() {
+    // JetBrains Mono implements ligatures via `calt` — shaping `=>` should
+    // produce different glyph IDs compared to shaping `=` and `>` individually.
+    let fc = embedded_collection();
+
+    // Shape `=` alone.
+    let (eq_glyphs, _) = shape_cells(&fc, &make_cells("="));
+    assert_eq!(eq_glyphs.len(), 1);
+    let eq_gid = eq_glyphs[0].glyph_id;
+
+    // Shape `>` alone.
+    let (gt_glyphs, _) = shape_cells(&fc, &make_cells(">"));
+    assert_eq!(gt_glyphs.len(), 1);
+    let gt_gid = gt_glyphs[0].glyph_id;
+
+    // Shape `=>` together — calt should substitute at least one glyph.
+    let (arrow_glyphs, arrow_cols) = shape_cells(&fc, &make_cells("=>"));
+
+    // calt-based ligatures produce 2 glyphs (one per cell), but with
+    // alternate glyph IDs. liga-based would produce 1 glyph.
+    // Either way, at least one glyph ID must differ from the solo versions.
+    let arrow_gids: Vec<u16> = arrow_glyphs.iter().map(|g| g.glyph_id).collect();
+    let same_as_solo = arrow_gids == [eq_gid, gt_gid];
+    assert!(
+        !same_as_solo,
+        "calt ligature should produce different glyph IDs for '=>'\n\
+         solo: = (gid {eq_gid}) > (gid {gt_gid})\n\
+         together: {arrow_gids:?}\n\
+         features: {:?}",
+        fc.features_for_face(FaceIdx::REGULAR),
+    );
+
+    // Column mapping must be correct regardless of ligature type.
+    assert_eq!(arrow_cols[0], 0, "first glyph at col 0");
+    if arrow_glyphs.len() == 2 {
+        assert_eq!(arrow_cols[1], 1, "second glyph at col 1 (calt-style)");
+    }
+}
+
+#[test]
+fn ligature_not_equal_calt_applies() {
+    // `!=` is another common ligature in JetBrains Mono.
+    let fc = embedded_collection();
+
+    let (bang_glyphs, _) = shape_cells(&fc, &make_cells("!"));
+    let (eq_glyphs, _) = shape_cells(&fc, &make_cells("="));
+    let bang_gid = bang_glyphs[0].glyph_id;
+    let eq_gid = eq_glyphs[0].glyph_id;
+
+    let (ne_glyphs, ne_cols) = shape_cells(&fc, &make_cells("!="));
+    let ne_gids: Vec<u16> = ne_glyphs.iter().map(|g| g.glyph_id).collect();
+
+    let same_as_solo = ne_gids == [bang_gid, eq_gid];
+    assert!(
+        !same_as_solo,
+        "calt ligature should produce different glyph IDs for '!='\n\
+         solo: ! (gid {bang_gid}) = (gid {eq_gid})\n\
+         together: {ne_gids:?}",
+    );
+    assert_eq!(ne_cols[0], 0);
+}
+
+#[test]
+fn ligature_arrow_space_between_no_ligature() {
+    // `= >` (space between) must NOT ligate — the characters are not adjacent.
+    // However, our shaper skips spaces (merging adjacent runs), so the run text
+    // is `=>` even though there's a space in the grid. This means rustybuzz will
+    // apply calt as if they're adjacent. This is a known trade-off of the
+    // space-skipping run segmentation.
+    let fc = embedded_collection();
+
+    let cells = make_cells("= >");
+    let (_glyphs, col_starts) = shape_cells(&fc, &cells);
+
+    // Regardless of whether calt fires, column mapping must be correct.
+    assert_eq!(col_starts[0], 0, "'=' at col 0");
+    // '>' is at col 2 (col 1 is the space, skipped).
+    let gt_col = col_starts.last().copied().unwrap();
+    assert_eq!(gt_col, 2, "'>' at col 2 (space at col 1 skipped)");
+
+    // Verify col_map: space column should have no glyph.
+    let mut map = Vec::new();
+    build_col_glyph_map(&col_starts, cells.len(), &mut map);
+    assert_eq!(map[1], None, "space column should have no glyph");
+}
+
+#[test]
+fn ligature_run_segmentation_groups_correctly() {
+    // `=>` characters must be in the same run for ligatures to work.
+    let fc = embedded_collection();
+
+    let cells = make_cells("=>");
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    assert_eq!(runs.len(), 1, "'=' and '>' must be in the same run");
+    assert_eq!(runs[0].text, "=>");
+    assert_eq!(runs[0].face_idx, FaceIdx::REGULAR);
+}
+
 #[test]
 fn line_height_with_text_transform() {
     use oriterm_ui::text::{TextStyle, TextTransform};

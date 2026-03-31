@@ -352,7 +352,8 @@ pub(crate) fn fill_frame_incremental(
             row_is_clean = false;
 
             // Skip rows entirely outside the render target.
-            let row_y = oy + row as f32 * ch;
+            // Round to match the integer-snapped Y used for rendering.
+            let row_y = (oy + row as f32 * ch).round();
             row_off_screen = row_y + ch < 0.0 || row_y > viewport_h;
         }
 
@@ -372,7 +373,8 @@ pub(crate) fn fill_frame_incremental(
 
         let col = cell.column.0;
         let x = ox + col as f32 * cw;
-        let y = oy + row as f32 * ch;
+        // Round Y to integer pixels (see prepare/mod.rs for rationale).
+        let y = (oy + row as f32 * ch).round();
 
         let (fg, bg) = resolve_cell_colors(
             cell,
@@ -450,6 +452,7 @@ pub(crate) fn fill_frame_incremental(
                 size_q6: shaped.size_q6(),
                 hinted: shaped.hinted(),
                 fg_dim,
+                subpixel_positioning: input.subpixel_positioning,
                 atlas,
                 frame,
             }

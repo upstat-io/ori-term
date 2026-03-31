@@ -315,6 +315,7 @@ fn text_single_glyph_produces_one_instance() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui_writer, Some(&mut ctx), 1.0, 1.0);
 
@@ -387,6 +388,7 @@ fn text_spaces_are_advance_only() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -437,6 +439,7 @@ fn text_mixed_with_rects() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -473,6 +476,7 @@ fn text_empty_shaped_produces_nothing() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -516,6 +520,7 @@ fn text_atlas_miss_skips_glyph() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -577,6 +582,7 @@ fn text_color_glyph_routes_to_color_writer() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -901,6 +907,7 @@ fn text_subpixel_glyph_routes_to_subpixel_writer() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -943,6 +950,7 @@ fn text_many_glyphs_cursor_accumulates() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -992,6 +1000,7 @@ fn text_two_commands_independent_cursors() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -1056,6 +1065,7 @@ fn text_negative_bearing_extends_left() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -1113,6 +1123,7 @@ fn text_all_spaces_produces_no_glyph_instances() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -1162,6 +1173,7 @@ fn text_fractional_position_applies_subpixel_phase() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -1306,6 +1318,7 @@ fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
@@ -1481,6 +1494,7 @@ fn opacity_applies_to_text_glyph_alpha() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 0.5);
 
@@ -1589,6 +1603,7 @@ fn opacity_applies_to_text_with_bg_hint() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 0.5);
 
@@ -1636,6 +1651,7 @@ fn clip_with_text_still_emits_content() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(&scene, &mut ui_writer, Some(&mut ctx), 1.0, 1.0);
 
@@ -1860,6 +1876,7 @@ fn mixed_size_text_runs_produce_different_raster_key_size_q6() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(
         &scene,
@@ -1933,6 +1950,7 @@ fn different_weights_produce_different_raster_keys() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     convert_scene(
         &scene,
@@ -2164,6 +2182,7 @@ fn subtree_opacity_multiplies_with_compositor_opacity_text() {
         subpixel_writer: &mut subpx,
         color_writer: &mut color_w,
         hinted: true,
+        subpixel_positioning: true,
     };
     // Compositor opacity = 0.8, subtree opacity = 0.5 → effective = 0.4.
     convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 0.8);
@@ -2192,5 +2211,60 @@ fn convert_line_diagonal_still_produces_stepping_rects() {
     assert!(
         writer.len() > 1,
         "diagonal line should produce stepping rects"
+    );
+}
+
+/// With `subpixel_positioning: false`, all glyph RasterKeys should have `subpx_x == 0`.
+#[test]
+fn convert_text_disabled_subpx_forces_zero() {
+    let atlas = text_atlas_with(&[65, 66]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color = InstanceWriter::new();
+    let mut scene = Scene::new();
+
+    // Two glyphs with fractional x_offset.
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 65, // 'A'
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 7.0,
+            x_offset: 0.3, // fractional
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 66, // 'B'
+            face_index: 0,
+            synthetic: 0,
+            x_advance: 7.0,
+            x_offset: 0.7, // fractional
+            y_offset: 0.0,
+        },
+    ];
+    let st = shaped_text(glyphs);
+    scene.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+
+    let mut ui = UiRectWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color,
+        hinted: true,
+        subpixel_positioning: false,
+    };
+    convert_scene(&scene, &mut ui, Some(&mut ctx), 1.0, 1.0);
+
+    // Both glyphs should have been emitted (atlas has glyph_ids 65, 66).
+    // The key assertion: no fractional subpixel offset in the output.
+    // Since subpixel_positioning=false, convert_text rounds cursor_x
+    // and forces subpx_x=0 in the RasterKey, producing integer-aligned
+    // glyph positions. We verify by checking that instances were emitted
+    // (the atlas lookup succeeded with subpx_x=0).
+    assert!(
+        mono.len() >= 2,
+        "expected at least 2 mono glyphs, got {}",
+        mono.len()
     );
 }

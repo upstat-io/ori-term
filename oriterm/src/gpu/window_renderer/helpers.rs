@@ -20,6 +20,31 @@ use crate::font::{
     prepare_line, shape_prepared_runs, size_key,
 };
 
+use super::super::prepare::AtlasLookup;
+
+// Atlas lookup bridge
+
+/// Bridges all atlases (mono, subpixel, color) into the [`AtlasLookup`] trait.
+///
+/// During the Prepare phase, glyph lookups probe the monochrome atlas first
+/// (most glyphs are mono text), then the subpixel atlas, then the color atlas.
+/// Each entry carries an [`AtlasKind`](super::super::atlas::AtlasKind) that the
+/// prepare phase uses to route glyphs to the correct instance buffer.
+pub(super) struct CombinedAtlasLookup<'a> {
+    pub(super) mono: &'a GlyphAtlas,
+    pub(super) subpixel: &'a GlyphAtlas,
+    pub(super) color: &'a GlyphAtlas,
+}
+
+impl AtlasLookup for CombinedAtlasLookup<'_> {
+    fn lookup_key(&self, key: RasterKey) -> Option<&super::super::atlas::AtlasEntry> {
+        self.mono
+            .lookup(key)
+            .or_else(|| self.subpixel.lookup(key))
+            .or_else(|| self.color.lookup(key))
+    }
+}
+
 /// Reusable per-frame scratch buffers for the shaping pipeline.
 ///
 /// Stored on [`WindowRenderer`](super::WindowRenderer) and cleared each frame to
@@ -184,6 +209,7 @@ pub(super) fn ensure_glyphs_cached(
 pub(super) fn grid_raster_keys(
     shaped: &ShapedFrame,
     hinted: bool,
+    subpixel_positioning: bool,
 ) -> impl Iterator<Item = RasterKey> + '_ {
     let size_q6 = shaped.size_q6();
     shaped.all_glyphs().iter().map(move |glyph| RasterKey {
@@ -193,7 +219,11 @@ pub(super) fn grid_raster_keys(
         size_q6,
         synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
         hinted,
-        subpx_x: crate::font::subpx_bin(glyph.x_offset),
+        subpx_x: if subpixel_positioning {
+            crate::font::subpx_bin(glyph.x_offset)
+        } else {
+            0
+        },
         font_realm: FontRealm::Terminal,
     })
 }
@@ -208,6 +238,7 @@ pub(super) fn scene_raster_keys(
     hinted: bool,
     scale: f32,
     keys: &mut Vec<RasterKey>,
+    subpixel_positioning: bool,
 ) {
     for text_run in scene.text_runs() {
         let run_size_q6 = text_run.shaped.size_q6;
@@ -216,12 +247,18 @@ pub(super) fn scene_raster_keys(
             oriterm_ui::text::FontSource::Ui => FontRealm::Ui,
         };
         let mut cursor_x = text_run.position.x * scale;
+        let cursor_x_ref = &mut cursor_x;
         for glyph in &text_run.shaped.glyphs {
             let advance = glyph.x_advance;
             if glyph.glyph_id == 0 {
-                cursor_x += advance;
+                *cursor_x_ref += advance;
                 continue;
             }
+            let cx = if subpixel_positioning {
+                *cursor_x_ref
+            } else {
+                cursor_x_ref.round()
+            };
             keys.push(RasterKey {
                 glyph_id: glyph.glyph_id,
                 face_idx: crate::font::FaceIdx(glyph.face_index),
@@ -229,10 +266,14 @@ pub(super) fn scene_raster_keys(
                 size_q6: run_size_q6,
                 synthetic: crate::font::SyntheticFlags::from_bits_truncate(glyph.synthetic),
                 hinted,
-                subpx_x: crate::font::subpx_bin(cursor_x + glyph.x_offset),
+                subpx_x: if subpixel_positioning {
+                    crate::font::subpx_bin(cx + glyph.x_offset)
+                } else {
+                    0
+                },
                 font_realm: realm,
             });
-            cursor_x += advance;
+            *cursor_x_ref += advance;
         }
     }
 }

@@ -48,6 +48,7 @@ pub(crate) fn extract_frame_from_snapshot(
         mark_cursor: None,
         window_focused: true,
         fg_dim: 1.0,
+        subpixel_positioning: true,
         prompt_marker_rows: Vec::new(),
     }
 }
@@ -155,6 +156,7 @@ pub(crate) fn extract_frame_from_snapshot_into(
     out.mark_cursor = None;
     out.window_focused = true;
     out.fg_dim = 1.0;
+    out.subpixel_positioning = true;
     out.prompt_marker_rows.clear();
 }
 

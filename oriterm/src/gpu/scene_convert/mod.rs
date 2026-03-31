@@ -40,6 +40,8 @@ pub struct TextContext<'a> {
     pub color_writer: &'a mut InstanceWriter,
     /// Whether hinting is enabled for [`RasterKey`] construction.
     pub hinted: bool,
+    /// Whether subpixel glyph positioning is enabled.
+    pub subpixel_positioning: bool,
 }
 
 /// Convert all primitives in a [`Scene`] to GPU instance buffer records.

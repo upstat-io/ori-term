@@ -1308,9 +1308,9 @@ subpixel_mode = "none"
 // ---------------------------------------------------------------------------
 
 #[test]
-fn subpixel_positioning_defaults_to_true() {
+fn subpixel_positioning_defaults_to_none_auto() {
     let parsed: Config = toml::from_str("").expect("deserialize");
-    assert!(parsed.font.subpixel_positioning);
+    assert_eq!(parsed.font.subpixel_positioning, None);
 }
 
 #[test]
@@ -1320,7 +1320,56 @@ fn subpixel_positioning_false_from_toml() {
 subpixel_positioning = false
 "#;
     let parsed: Config = toml::from_str(toml_str).expect("deserialize");
-    assert!(!parsed.font.subpixel_positioning);
+    assert_eq!(parsed.font.subpixel_positioning, Some(false));
+}
+
+#[test]
+fn subpixel_positioning_true_from_toml() {
+    let toml_str = r#"
+[font]
+subpixel_positioning = true
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.subpixel_positioning, Some(true));
+}
+
+// ---------------------------------------------------------------------------
+// Font config: atlas_filtering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn atlas_filtering_defaults_to_none() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert_eq!(parsed.font.atlas_filtering, None);
+}
+
+#[test]
+fn atlas_filtering_linear_from_toml() {
+    let toml_str = r#"
+[font]
+atlas_filtering = "linear"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.atlas_filtering.as_deref(), Some("linear"));
+}
+
+#[test]
+fn atlas_filtering_nearest_from_toml() {
+    let toml_str = r#"
+[font]
+atlas_filtering = "nearest"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.atlas_filtering.as_deref(), Some("nearest"));
+}
+
+#[test]
+fn atlas_filtering_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.font.atlas_filtering = Some("nearest".to_owned());
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.font.atlas_filtering.as_deref(), Some("nearest"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1395,7 +1444,7 @@ fn font_config_new_fields_roundtrip() {
     let mut cfg = Config::default();
     cfg.font.hinting = Some("full".to_owned());
     cfg.font.subpixel_mode = Some("rgb".to_owned());
-    cfg.font.subpixel_positioning = false;
+    cfg.font.subpixel_positioning = Some(false);
     cfg.font.variations.insert("wght".to_owned(), 450.0);
 
     let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
@@ -1403,7 +1452,7 @@ fn font_config_new_fields_roundtrip() {
 
     assert_eq!(parsed.font.hinting.as_deref(), Some("full"));
     assert_eq!(parsed.font.subpixel_mode.as_deref(), Some("rgb"));
-    assert!(!parsed.font.subpixel_positioning);
+    assert_eq!(parsed.font.subpixel_positioning, Some(false));
     assert!((parsed.font.variations["wght"] - 450.0).abs() < f32::EPSILON);
 }
 
@@ -1550,6 +1599,93 @@ fn resolve_subpixel_mode_explicit_override_ignores_opacity() {
         crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0, 0.5),
         SubpixelMode::Rgb,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Resolve helpers: subpixel positioning
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_subpixel_positioning_none_means_auto() {
+    let cfg = FontConfig::default();
+    assert!(crate::app::config_reload::resolve_subpixel_positioning(
+        &cfg, 1.0
+    ));
+}
+
+#[test]
+fn resolve_subpixel_positioning_explicit_false() {
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_positioning = Some(false);
+    assert!(!crate::app::config_reload::resolve_subpixel_positioning(
+        &cfg, 1.0
+    ));
+}
+
+#[test]
+fn resolve_subpixel_positioning_explicit_true() {
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_positioning = Some(true);
+    assert!(crate::app::config_reload::resolve_subpixel_positioning(
+        &cfg, 2.0
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// Resolve helpers: atlas filtering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_atlas_filtering_none_low_dpi() {
+    use crate::gpu::bind_groups::AtlasFiltering;
+
+    let cfg = FontConfig::default();
+    let result = crate::app::config_reload::resolve_atlas_filtering(&cfg, 1.0);
+    assert_eq!(result, AtlasFiltering::Linear);
+}
+
+#[test]
+fn resolve_atlas_filtering_none_high_dpi() {
+    use crate::gpu::bind_groups::AtlasFiltering;
+
+    let cfg = FontConfig::default();
+    let result = crate::app::config_reload::resolve_atlas_filtering(&cfg, 2.0);
+    assert_eq!(result, AtlasFiltering::Nearest);
+}
+
+#[test]
+fn resolve_atlas_filtering_explicit_linear() {
+    use crate::gpu::bind_groups::AtlasFiltering;
+
+    let mut cfg = FontConfig::default();
+    cfg.atlas_filtering = Some("linear".to_owned());
+    // Explicit linear wins even on HiDPI.
+    let result = crate::app::config_reload::resolve_atlas_filtering(&cfg, 2.0);
+    assert_eq!(result, AtlasFiltering::Linear);
+}
+
+#[test]
+fn resolve_atlas_filtering_explicit_nearest() {
+    use crate::gpu::bind_groups::AtlasFiltering;
+
+    let mut cfg = FontConfig::default();
+    cfg.atlas_filtering = Some("nearest".to_owned());
+    // Explicit nearest wins even on low DPI.
+    let result = crate::app::config_reload::resolve_atlas_filtering(&cfg, 1.0);
+    assert_eq!(result, AtlasFiltering::Nearest);
+}
+
+#[test]
+fn resolve_atlas_filtering_invalid_falls_back() {
+    use crate::gpu::bind_groups::AtlasFiltering;
+
+    let mut cfg = FontConfig::default();
+    cfg.atlas_filtering = Some("garbage".to_owned());
+    // Invalid → auto-detection.
+    let result = crate::app::config_reload::resolve_atlas_filtering(&cfg, 1.0);
+    assert_eq!(result, AtlasFiltering::Linear);
+    let result = crate::app::config_reload::resolve_atlas_filtering(&cfg, 2.0);
+    assert_eq!(result, AtlasFiltering::Nearest);
 }
 
 // apply_font_config integration tests

@@ -92,11 +92,16 @@ impl WindowRenderer {
         self.clear_and_recache(gpu);
     }
 
-    /// Change both hinting mode and glyph format, clearing atlases once.
+    /// Change both hinting mode and glyph format for the **terminal** font,
+    /// clearing atlases once.
     ///
     /// Used during scale factor changes where both settings typically change
     /// together. Avoids the double clear-and-recache that would happen from
     /// calling [`set_hinting_mode`] and [`set_glyph_format`] separately.
+    ///
+    /// UI fonts are intentionally unaffected — they always use
+    /// `GlyphFormat::Alpha` / `HintingMode::None` (set at construction and
+    /// in `rebuild_ui_font_sizes`).
     pub fn set_hinting_and_format(
         &mut self,
         mode: HintingMode,
@@ -105,14 +110,58 @@ impl WindowRenderer {
     ) {
         let hinting_changed = self.font_collection.set_hinting(mode);
         let format_changed = self.font_collection.set_format(format);
-        // Keep UI font registry in sync with the terminal font's rendering settings.
-        if let Some(sizes) = &mut self.ui_font_sizes {
-            sizes.set_hinting(mode);
-            sizes.set_format(format);
-        }
         if hinting_changed || format_changed {
             self.clear_and_recache(gpu);
         }
+    }
+
+    /// Set whether subpixel glyph positioning is enabled.
+    ///
+    /// When disabled, all glyphs snap to integer pixel X boundaries (no
+    /// fractional subpixel phase). Takes effect at the next prepare pass.
+    pub fn set_subpixel_positioning(&mut self, enabled: bool) {
+        self.subpixel_positioning = enabled;
+    }
+
+    /// Returns whether subpixel positioning is enabled.
+    pub fn subpixel_positioning(&self) -> bool {
+        self.subpixel_positioning
+    }
+
+    /// Change the atlas texture filtering mode, recreating all bind groups.
+    ///
+    /// Snapshots atlas generations so `rebuild_stale_atlas_bind_groups()` does
+    /// not immediately re-rebuild the bind groups we just created.
+    pub fn set_atlas_filtering(
+        &mut self,
+        filtering: crate::gpu::bind_groups::AtlasFiltering,
+        gpu: &GpuState,
+        layout: &wgpu::BindGroupLayout,
+    ) {
+        let filter = filtering.to_filter_mode();
+        self.atlas_bind_group = crate::gpu::bind_groups::AtlasBindGroup::new(
+            &gpu.device,
+            layout,
+            self.atlas.view(),
+            filter,
+        );
+        self.subpixel_atlas_bind_group = crate::gpu::bind_groups::AtlasBindGroup::new(
+            &gpu.device,
+            layout,
+            self.subpixel_atlas.view(),
+            filter,
+        );
+        self.color_atlas_bind_group = crate::gpu::bind_groups::AtlasBindGroup::new(
+            &gpu.device,
+            layout,
+            self.color_atlas.view(),
+            filter,
+        );
+        // Snapshot so rebuild_stale doesn't immediately re-rebuild.
+        self.atlas_generation = self.atlas.generation();
+        self.subpixel_atlas_generation = self.subpixel_atlas.generation();
+        self.color_atlas_generation = self.color_atlas.generation();
+        self.atlas_filtering = filtering;
     }
 
     /// Clear all atlases and empty-key set, then re-cache ASCII.

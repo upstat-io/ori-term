@@ -66,52 +66,107 @@ impl UniformBuffer {
     }
 }
 
-/// Atlas bind group (group 1): glyph texture view + linear sampler.
+/// Atlas texture sampling filter mode.
 ///
-/// Recreated when the atlas texture grows (new pages allocated). The sampler
-/// is created once and reused across rebuilds.
+/// Controls how the GPU samples glyph textures. `Linear` (bilinear
+/// interpolation) is forgiving of sub-texel positioning but slightly
+/// softens glyphs. `Nearest` (point sampling) gives pixel-perfect
+/// crispness but requires exact texel alignment.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum AtlasFiltering {
+    /// Bilinear interpolation — slight softening, tolerant of positioning.
+    #[default]
+    Linear,
+    /// Nearest-neighbor — pixel-perfect, requires exact alignment.
+    Nearest,
+}
+
+impl AtlasFiltering {
+    /// Auto-detect filtering mode from display scale factor.
+    ///
+    /// `HiDPI` (2x+) uses Nearest (enough pixels for perfect alignment).
+    /// Non-`HiDPI` uses Linear (sub-texel tolerance helps at low resolution).
+    pub fn from_scale_factor(scale_factor: f64) -> Self {
+        if scale_factor >= 2.0 {
+            Self::Nearest
+        } else {
+            Self::Linear
+        }
+    }
+
+    /// Convert to the wgpu `FilterMode` for sampler creation.
+    pub fn to_filter_mode(self) -> FilterMode {
+        match self {
+            Self::Linear => FilterMode::Linear,
+            Self::Nearest => FilterMode::Nearest,
+        }
+    }
+}
+
+/// Atlas bind group (group 1): glyph texture view + sampler.
+///
+/// Recreated when the atlas texture grows (new pages allocated) or when the
+/// filtering mode changes. The `filter` field is stored so `rebuild()` can
+/// recreate the sampler with the correct mode.
 pub struct AtlasBindGroup {
     bind_group: BindGroup,
-    #[allow(dead_code, reason = "retained for rebuild on font/atlas change")]
     sampler: wgpu::Sampler,
+    filter: FilterMode,
 }
 
 impl AtlasBindGroup {
-    /// Create a new atlas bind group with the given texture view.
+    /// Create a new atlas bind group with the given texture view and filter.
     ///
-    /// The sampler uses `ClampToEdge` addressing and `Linear` filtering,
-    /// matching the standard glyph atlas sampling pattern.
-    pub fn new(device: &Device, layout: &BindGroupLayout, view: &TextureView) -> Self {
-        let sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("atlas_sampler"),
-            address_mode_u: AddressMode::ClampToEdge,
-            address_mode_v: AddressMode::ClampToEdge,
-            address_mode_w: AddressMode::ClampToEdge,
-            mag_filter: FilterMode::Linear,
-            min_filter: FilterMode::Linear,
-            ..Default::default()
-        });
-
+    /// The sampler uses `ClampToEdge` addressing with the specified filtering.
+    pub fn new(
+        device: &Device,
+        layout: &BindGroupLayout,
+        view: &TextureView,
+        filter: FilterMode,
+    ) -> Self {
+        let sampler = create_atlas_sampler(device, filter);
         let bind_group = create_atlas_bind_group(device, layout, view, &sampler);
 
         Self {
             bind_group,
             sampler,
+            filter,
         }
     }
 
     /// Recreate the bind group with a new texture view.
     ///
-    /// Called when the atlas texture changes: grow-on-demand (new layer
-    /// allocated) or font size change + clear. Reuses the existing sampler.
+    /// Called when the atlas texture changes (grow-on-demand, font size change)
+    /// or filtering mode changes. Always recreates the sampler from `self.filter`
+    /// so it stays in sync even after `set_atlas_filtering()` updates the filter.
     pub fn rebuild(&mut self, device: &Device, layout: &BindGroupLayout, view: &TextureView) {
+        self.sampler = create_atlas_sampler(device, self.filter);
         self.bind_group = create_atlas_bind_group(device, layout, view, &self.sampler);
+    }
+
+    /// Returns the stored filter mode.
+    #[allow(dead_code, reason = "used in tests and future API")]
+    pub fn filter(&self) -> FilterMode {
+        self.filter
     }
 
     /// Returns the bind group for use in render passes (group 1).
     pub fn bind_group(&self) -> &BindGroup {
         &self.bind_group
     }
+}
+
+/// Create an atlas sampler with the given filter mode.
+fn create_atlas_sampler(device: &Device, filter: FilterMode) -> wgpu::Sampler {
+    device.create_sampler(&SamplerDescriptor {
+        label: Some("atlas_sampler"),
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        address_mode_w: AddressMode::ClampToEdge,
+        mag_filter: filter,
+        min_filter: filter,
+        ..Default::default()
+    })
 }
 
 /// Create a 1×1 `R8Unorm` placeholder `D2Array` texture (white pixel).
