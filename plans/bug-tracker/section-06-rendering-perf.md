@@ -61,14 +61,6 @@ sections:
   - **Found**: 2026-03-31 — manual, user testing.
   - **Fixed**: 2026-03-31 — Replaced infinity with large finite values (`-100_000.0, -100_000.0, 200_000.0, 200_000.0`) in both `CLIP_UNCLIPPED` and `ContentMask::unclipped()`. No NaN, all comparisons well-defined.
 
-- [x] **BUG-06.6**: Vulkan + transparency (blur/opacity) renders glass window with no visible UI or terminal content
-  - **Severity**: medium
-  - **File(s)**: `oriterm/src/gpu/transparency.rs`, `oriterm/src/window/mod.rs`
-  - **Root cause**: DWM acrylic/blur was applied regardless of GPU surface alpha support. On Vulkan, the surface alpha mode is `Opaque` (Vulkan on Windows doesn't support per-pixel alpha for HWND swapchains). DWM reads the alpha channel from the surface — with `Opaque` mode, the alpha channel is undefined/zero, making all content invisible. DX12+DComp supports `PreMultiplied` alpha, so it works correctly.
-  - **Repro**: Set `gpu_backend = "vulkan"` and enable `opacity < 1.0` + blur in config. NVIDIA RTX 3080, Windows.
-  - **Found**: 2026-03-31 — manual, user report.
-  - **Fixed**: 2026-03-31 — Added `surface_supports_alpha` parameter to `apply_transparency()`. Blur is only enabled when the surface supports non-Opaque alpha compositing. On Vulkan (Opaque-only), the window stays opaque — transparency requires DX12 (now the default on Windows).
-
 ---
 
 ## 06.R Third Party Review Findings
