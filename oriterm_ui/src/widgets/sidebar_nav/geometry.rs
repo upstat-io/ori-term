@@ -56,15 +56,14 @@ pub(super) const NAV_ITEM_PADDING_X: f32 = 16.0;
 /// Nav item vertical margin (`.nav-item { margin: 1px 0 }`).
 pub(super) const NAV_ITEM_MARGIN_Y: f32 = 1.0;
 
-/// Nav item text/content height (13px font).
-pub(super) const NAV_ITEM_CONTENT_H: f32 = 13.0;
+/// Nav item text/content height (13px font × ~1.2 line-height ≈ 16px).
+pub(super) const NAV_ITEM_CONTENT_H: f32 = 16.0;
 
-/// Derived nav item outer height: margin + padding + content + padding + margin.
-pub(super) const NAV_ITEM_HEIGHT: f32 = NAV_ITEM_MARGIN_Y
-    + NAV_ITEM_PADDING_Y
-    + NAV_ITEM_CONTENT_H
-    + NAV_ITEM_PADDING_Y
-    + NAV_ITEM_MARGIN_Y;
+/// Nav item background height (padding + content + padding).
+pub(super) const NAV_ITEM_BG_H: f32 = NAV_ITEM_PADDING_Y + NAV_ITEM_CONTENT_H + NAV_ITEM_PADDING_Y;
+
+/// Derived nav item outer height: margin + bg + margin.
+pub(super) const NAV_ITEM_HEIGHT: f32 = NAV_ITEM_MARGIN_Y + NAV_ITEM_BG_H + NAV_ITEM_MARGIN_Y;
 
 /// Gap between nav item icon and label text.
 pub(super) const ICON_TEXT_GAP: f32 = 10.0;

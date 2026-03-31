@@ -35,6 +35,7 @@ impl WindowRenderer {
             subpixel_writer: &mut self.prepared.ui_subpixel_glyphs,
             color_writer: &mut self.prepared.ui_color_glyphs,
             hinted,
+            subpixel_positioning: true, // UI text always uses subpixel positioning.
         };
         super::super::scene_convert::convert_scene(
             scene,
@@ -78,6 +79,7 @@ impl WindowRenderer {
             subpixel_writer: &mut self.prepared.overlay_subpixel_glyphs,
             color_writer: &mut self.prepared.overlay_color_glyphs,
             hinted,
+            subpixel_positioning: true, // UI text always uses subpixel positioning.
         };
         super::super::scene_convert::convert_scene(
             scene,
@@ -109,7 +111,13 @@ impl WindowRenderer {
         let hinted = self.ui_hinted();
 
         self.ui_raster_keys.clear();
-        scene_raster_keys(scene, hinted, scale, &mut self.ui_raster_keys);
+        scene_raster_keys(
+            scene,
+            hinted,
+            scale,
+            &mut self.ui_raster_keys,
+            true, // UI text always uses subpixel positioning.
+        );
 
         if self.ui_raster_keys.is_empty() {
             return;

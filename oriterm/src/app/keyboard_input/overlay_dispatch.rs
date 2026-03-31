@@ -124,6 +124,9 @@ impl App {
         self.apply_color_changes(&new_config);
         self.apply_cursor_changes(&new_config);
         self.apply_window_changes(&new_config);
+        self.apply_behavior_changes(&new_config);
+        self.apply_image_changes(&new_config);
+        self.apply_keybinding_changes(&new_config);
 
         // Restore the new config.
         self.config = new_config;

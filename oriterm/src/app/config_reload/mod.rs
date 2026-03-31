@@ -11,13 +11,46 @@ mod font_config;
 pub(crate) use color_config::apply_color_overrides;
 pub(crate) use color_config::build_palette_from_config;
 pub(crate) use font_config::{
-    apply_font_config, apply_font_config_to_ui_sizes, resolve_hinting, resolve_subpixel_mode,
+    apply_font_config, apply_font_config_to_ui_sizes, resolve_atlas_filtering, resolve_hinting,
+    resolve_subpixel_mode, resolve_subpixel_positioning,
 };
 
 use super::{App, DEFAULT_DPI};
-use crate::config::Config;
+use crate::config::{Config, FontConfig};
 use crate::font::{FontByteCache, FontCollection, FontSet};
 use crate::keybindings;
+
+/// Minimum font size in points.
+const MIN_FONT_SIZE: f32 = 4.0;
+
+/// Maximum font size in points.
+const MAX_FONT_SIZE: f32 = 72.0;
+
+/// Compute the new font size after applying `delta`, clamped to valid range.
+///
+/// Returns `None` if the result is the same as `current` (no-op).
+fn compute_zoomed_size(current: f32, delta: f32) -> Option<f32> {
+    let new_size = (current + delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+    if (new_size - current).abs() < f32::EPSILON {
+        None
+    } else {
+        Some(new_size)
+    }
+}
+
+/// Determine whether `current` font size should be reset to `configured`.
+///
+/// Returns `Some(configured)` if different from `current`, `None` if already matching.
+fn compute_reset_size(current: f32, configured: f32) -> Option<f32> {
+    if (current - configured).abs() < f32::EPSILON {
+        None
+    } else {
+        Some(configured)
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 use font_config::rebuild_ui_font_sizes;
 
@@ -128,7 +161,9 @@ impl App {
         self.font_set = Some(font_set.clone());
         self.user_fallback_map.clone_from(&fallback_map);
 
-        let Some(gpu) = &self.gpu else { return };
+        let (Some(gpu), Some(pipelines)) = (&self.gpu, self.pipelines.as_ref()) else {
+            return;
+        };
 
         // Iterate ALL windows — each may have a different DPI.
         for ctx in self.windows.values_mut() {
@@ -181,6 +216,9 @@ impl App {
                 &fallback_map,
             );
             renderer.replace_font_collection(fc, gpu);
+            renderer.set_subpixel_positioning(resolve_subpixel_positioning(&new.font, scale));
+            let af = resolve_atlas_filtering(&new.font, scale);
+            renderer.set_atlas_filtering(af, gpu, &pipelines.atlas_layout);
             ctx.text_cache.clear();
         }
 
@@ -355,7 +393,7 @@ impl App {
     /// Behavior flags are read from `self.config` at usage sites, so
     /// storing the new config is sufficient. If `bold_is_bright` changed,
     /// marks all panes dirty since existing cells may render differently.
-    fn apply_behavior_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_behavior_changes(&mut self, new: &Config) {
         if new.behavior.bold_is_bright != self.config.behavior.bold_is_bright {
             if let Some(mux) = self.mux.as_mut() {
                 for pane_id in mux.pane_ids() {
@@ -370,7 +408,7 @@ impl App {
     ///
     /// Updates CPU-side limits on the mux backend and GPU texture cache
     /// limits on each window renderer.
-    fn apply_image_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_image_changes(&mut self, new: &Config) {
         let changed = new.terminal.image_config() != self.config.terminal.image_config()
             || new.terminal.image_gpu_memory_limit != self.config.terminal.image_gpu_memory_limit;
 
@@ -403,7 +441,44 @@ impl App {
     }
 
     /// Rebuild keybinding table from new config.
-    fn apply_keybinding_changes(&mut self, new: &Config) {
+    pub(in crate::app) fn apply_keybinding_changes(&mut self, new: &Config) {
         self.bindings = keybindings::merge_bindings(&new.keybind);
+    }
+
+    /// Adjust font size by `delta` points (positive = larger, negative = smaller).
+    ///
+    /// Clamps to [4.0, 72.0] pt and triggers the full font reload pipeline.
+    pub(in crate::app) fn zoom_font_size(&mut self, delta: f32) {
+        let Some(new_size) = compute_zoomed_size(self.config.font.size, delta) else {
+            return;
+        };
+        let mut new_config = self.config.clone();
+        new_config.font.size = new_size;
+        self.apply_font_changes(&new_config);
+        self.config.font.size = new_size;
+        for ctx in self.windows.values_mut() {
+            ctx.root.mark_dirty();
+        }
+        log::info!("zoom: font size {new_size:.1}pt");
+    }
+
+    /// Reset font size to the user's configured value (from config file).
+    ///
+    /// Falls back to the built-in default (11.0 pt) if the config file
+    /// cannot be loaded.
+    pub(in crate::app) fn reset_font_size(&mut self) {
+        let configured_size =
+            Config::try_load().map_or_else(|_| FontConfig::default().size, |c| c.font.size);
+        let Some(target) = compute_reset_size(self.config.font.size, configured_size) else {
+            return;
+        };
+        let mut new_config = self.config.clone();
+        new_config.font.size = target;
+        self.apply_font_changes(&new_config);
+        self.config.font.size = target;
+        for ctx in self.windows.values_mut() {
+            ctx.root.mark_dirty();
+        }
+        log::info!("zoom: reset to {configured_size:.1}pt");
     }
 }

@@ -27,6 +27,7 @@ pub(in crate::app) fn handle_settings_action(
     handle_appearance(action, ids, config)
         || handle_colors(action, ids, config)
         || handle_font(action, ids, config)
+        || handle_font_advanced(action, ids, config)
         || handle_terminal(action, ids, config)
         || handle_window(action, ids, config)
         || handle_bell(action, ids, config)
@@ -150,6 +151,46 @@ fn handle_font(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) ->
     }
 }
 
+/// Font page — Advanced section: hinting, subpixel AA, subpixel positioning, atlas filtering.
+fn handle_font_advanced(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
+    match action {
+        WidgetAction::Selected { id, index } if *id == ids.hinting_dropdown => {
+            config.font.hinting = match index {
+                0 => None,
+                1 => Some("full".to_owned()),
+                _ => Some("none".to_owned()),
+            };
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.subpixel_aa_dropdown => {
+            config.font.subpixel_mode = match index {
+                0 => None,
+                1 => Some("rgb".to_owned()),
+                2 => Some("bgr".to_owned()),
+                _ => Some("none".to_owned()),
+            };
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.subpixel_positioning_dropdown => {
+            config.font.subpixel_positioning = match index {
+                0 => None,
+                1 => Some(true),
+                _ => Some(false),
+            };
+            true
+        }
+        WidgetAction::Selected { id, index } if *id == ids.atlas_filtering_dropdown => {
+            config.font.atlas_filtering = match index {
+                0 => None,
+                1 => Some("linear".to_owned()),
+                _ => Some("nearest".to_owned()),
+            };
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Terminal page: cursor, scrollback, shell, paste warning.
 fn handle_terminal(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
     match action {
@@ -240,20 +281,13 @@ fn handle_bell(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) ->
     }
 }
 
-/// Rendering page: GPU backend, subpixel toggle.
+/// Rendering page: GPU backend.
 fn handle_rendering(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {
     match action {
         WidgetAction::Selected { id, index } if *id == ids.gpu_backend_dropdown => {
-            config.rendering.gpu_backend = match index {
-                0 => GpuBackend::Auto,
-                1 => GpuBackend::Vulkan,
-                2 => GpuBackend::DirectX12,
-                _ => GpuBackend::Metal,
-            };
-            true
-        }
-        WidgetAction::Toggled { id, value } if *id == ids.subpixel_toggle => {
-            config.font.subpixel_mode = Some(if *value { "rgb" } else { "none" }.to_owned());
+            config.rendering.gpu_backend = GpuBackend::available()
+                .get(*index)
+                .map_or(GpuBackend::Auto, |(b, _)| *b);
             true
         }
         _ => false,

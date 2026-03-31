@@ -6,6 +6,7 @@
 
 use oriterm_ui::layout::SizeSpec;
 use oriterm_ui::theme::UiTheme;
+use oriterm_ui::widget_id::WidgetId;
 use oriterm_ui::widgets::Widget;
 use oriterm_ui::widgets::code_preview::CodePreviewWidget;
 use oriterm_ui::widgets::container::ContainerWidget;
@@ -46,10 +47,14 @@ const WEIGHT_VALUES: &[u16] = &[100, 200, 300, 400, 500, 600, 700, 800, 900];
 /// Builds the Font page content widget.
 ///
 /// Writes font-related IDs into the provided `SettingsIds`.
+/// `scale_factor` and `opacity` drive the "Auto (detected)" labels in the
+/// Advanced section dropdowns.
 pub(super) fn build_page(
     config: &Config,
     ids: &mut SettingsIds,
     theme: &UiTheme,
+    scale_factor: f64,
+    opacity: f64,
 ) -> Box<dyn Widget> {
     build_settings_page(
         "Font",
@@ -59,6 +64,7 @@ pub(super) fn build_page(
             build_typeface_section(config, ids, theme),
             build_features_section(config, ids, theme),
             build_fallback_section(theme),
+            build_advanced_section(config, ids, theme, scale_factor, opacity),
         ],
         theme,
     )
@@ -173,5 +179,124 @@ fn build_fallback_section(theme: &UiTheme) -> Box<dyn Widget> {
         "Fallback",
         "Used when the primary font doesn't contain a glyph (emoji, CJK, symbols).",
         theme,
+    )
+}
+
+/// Create a dropdown setting row, returning the widget ID and boxed row.
+fn dropdown_row(
+    label: &str,
+    description: &str,
+    items: Vec<String>,
+    selected: usize,
+    theme: &UiTheme,
+) -> (WidgetId, Box<dyn Widget>) {
+    let dd = DropdownWidget::new(items).with_selected(selected);
+    let id = dd.id();
+    let row = SettingRowWidget::new(label, description, Box::new(dd), theme);
+    (id, Box::new(row))
+}
+
+/// Advanced section: hinting, subpixel AA, subpixel positioning, atlas filtering.
+fn build_advanced_section(
+    config: &Config,
+    ids: &mut SettingsIds,
+    theme: &UiTheme,
+    scale_factor: f64,
+    opacity: f64,
+) -> Box<dyn Widget> {
+    use crate::font::{HintingMode, SubpixelMode};
+    use crate::gpu::bind_groups::AtlasFiltering;
+
+    let auto_h = HintingMode::from_scale_factor(scale_factor);
+    let auto_s = SubpixelMode::for_display(scale_factor, opacity);
+    let auto_f = AtlasFiltering::from_scale_factor(scale_factor);
+
+    let h_auto = match auto_h {
+        HintingMode::Full => "Auto (Full)",
+        HintingMode::None => "Auto (None)",
+    };
+    let h_idx = match config.font.hinting.as_deref() {
+        Some("full") => 1,
+        Some("none") => 2,
+        _ => 0,
+    };
+    let (h_id, h_row) = dropdown_row(
+        "Hinting",
+        "Font hinting for sharper text at low DPI",
+        vec![h_auto.into(), "Full".into(), "None".into()],
+        h_idx,
+        theme,
+    );
+    ids.hinting_dropdown = h_id;
+
+    let s_auto = match auto_s {
+        SubpixelMode::Rgb => "Auto (RGB)",
+        SubpixelMode::Bgr => "Auto (BGR)",
+        SubpixelMode::None => "Auto (None)",
+    };
+    let s_idx = match config.font.subpixel_mode.as_deref() {
+        Some("rgb") => 1,
+        Some("bgr") => 2,
+        Some("none") => 3,
+        _ => 0,
+    };
+    let (s_id, s_row) = dropdown_row(
+        "Subpixel AA",
+        "LCD subpixel antialiasing for color fringe sharpening",
+        vec![
+            s_auto.into(),
+            "RGB".into(),
+            "BGR".into(),
+            "None (Grayscale)".into(),
+        ],
+        s_idx,
+        theme,
+    );
+    ids.subpixel_aa_dropdown = s_id;
+
+    let sp_idx = match config.font.subpixel_positioning {
+        None => 0,
+        Some(true) => 1,
+        Some(false) => 2,
+    };
+    let (sp_id, sp_row) = dropdown_row(
+        "Subpixel positioning",
+        "Quarter-pixel glyph placement for smoother text",
+        vec![
+            "Auto (Quarter-pixel)".into(),
+            "Quarter-pixel".into(),
+            "None".into(),
+        ],
+        sp_idx,
+        theme,
+    );
+    ids.subpixel_positioning_dropdown = sp_id;
+
+    let f_auto = match auto_f {
+        AtlasFiltering::Linear => "Auto (Linear)",
+        AtlasFiltering::Nearest => "Auto (Nearest)",
+    };
+    let f_idx = match config.font.atlas_filtering.as_deref() {
+        Some("linear") => 1,
+        Some("nearest") => 2,
+        _ => 0,
+    };
+    let (f_id, f_row) = dropdown_row(
+        "Atlas filtering",
+        "GPU texture sampling: Linear (smooth) or Nearest (crisp)",
+        vec![f_auto.into(), "Linear".into(), "Nearest".into()],
+        f_idx,
+        theme,
+    );
+    ids.atlas_filtering_dropdown = f_id;
+
+    Box::new(
+        ContainerWidget::column()
+            .with_width(SizeSpec::Fill)
+            .with_child(build_section_header("Advanced", theme))
+            .with_child(h_row)
+            .with_child(s_row)
+            .with_child(sp_row)
+            .with_child(f_row),
     )
 }

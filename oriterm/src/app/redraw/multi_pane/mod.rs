@@ -198,6 +198,7 @@ impl App {
                         self.config.window.effective_unfocused_opacity()
                     };
                     frame.window_focused = pane_focused;
+                    frame.subpixel_positioning = renderer.subpixel_positioning();
 
                     if layout.is_focused && !self.ime.preedit.is_empty() {
                         let cols = frame.columns();
@@ -524,6 +525,8 @@ impl App {
             ctx.ui_stale = tab_bar_animating;
 
             // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
+            // macOS: the compositor provides a native window shadow — no border needed.
+            #[cfg(not(target_os = "macos"))]
             if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
                 let border_color =
                     crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);

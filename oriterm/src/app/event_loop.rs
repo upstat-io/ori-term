@@ -11,6 +11,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use super::App;
 use super::event_loop_helpers::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 use crate::event::TermEvent;
+use crate::gpu::GpuState;
 
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -371,6 +372,16 @@ impl ApplicationHandler<TermEvent> for App {
         #[cfg(target_os = "windows")]
         self.check_torn_off_merge();
 
+        // Windows: after a modal move/resize loop ends, force a full repaint.
+        // During a pure move (no resize), the window is never marked dirty, so
+        // the surface would show stale content until the next cursor blink.
+        #[cfg(target_os = "windows")]
+        if oriterm_ui::platform_windows::modal_loop_just_ended() {
+            for ctx in self.windows.values_mut() {
+                ctx.root.mark_dirty();
+            }
+        }
+
         // macOS/Linux: update torn-off window position every frame as a backup.
         // CursorMoved events may not always reach the source window.
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -378,7 +389,9 @@ impl ApplicationHandler<TermEvent> for App {
 
         // Pump mux events: drain PTY reader thread messages and process
         // resulting notifications before rendering.
+        let pump_start = std::time::Instant::now();
         self.pump_mux_events();
+        self.perf.last_pump_time = pump_start.elapsed();
 
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {
@@ -437,7 +450,12 @@ impl ApplicationHandler<TermEvent> for App {
                 .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw());
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
-        if any_dirty && (budget_elapsed || urgent_redraw) {
+        // Render when dirty. PresentMode::Mailbox/Fifo provide hardware
+        // pacing — render immediately to minimize input-to-display latency.
+        // On Immediate mode (no hardware pacing), apply a client-side budget
+        // gate to prevent uncapped redraws during sustained PTY output.
+        let needs_budget = self.gpu.as_ref().is_some_and(GpuState::needs_frame_budget);
+        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw) {
             self.render_dirty_windows();
         }
 
@@ -459,16 +477,15 @@ impl ApplicationHandler<TermEvent> for App {
         let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {
-            any_dirty,
-            budget_elapsed,
-            urgent_redraw,
             still_dirty,
+            needs_budget,
+            budget_elapsed,
             has_animations,
             blinking_active: self.blinking_active,
             next_toggle: self.cursor_blink.next_toggle(),
             budget_remaining: remaining,
             now,
-            scheduler_wake: None, // TODO(§05.5): Wire RenderScheduler::next_wake_time()
+            scheduler_wake: None,
         };
         match compute_control_flow(&input) {
             ControlFlowDecision::Wait => event_loop.set_control_flow(ControlFlow::Wait),

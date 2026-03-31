@@ -25,7 +25,8 @@ use crate::geometry::{Point, Size};
 use crate::hit_test::{self, HitTestResult, ResizeDirection};
 
 use super::{
-    IN_MODAL_LOOP, MODAL_TIMER_ID, MODAL_TIMER_MS, OsDragResult, SUBCLASS_ID, SnapData, snap_ptrs,
+    IN_MODAL_LOOP, MODAL_LOOP_ENDED, MODAL_TIMER_ID, MODAL_TIMER_MS, OsDragResult, SUBCLASS_ID,
+    SnapData, snap_ptrs,
 };
 
 fn get_x_lparam(lp: isize) -> i32 {
@@ -345,6 +346,7 @@ pub(super) unsafe extern "system" fn subclass_proc(
             WM_EXITSIZEMOVE => {
                 KillTimer(hwnd, MODAL_TIMER_ID);
                 IN_MODAL_LOOP.store(false, Ordering::Relaxed);
+                MODAL_LOOP_ENDED.store(true, Ordering::Relaxed);
                 if let Ok(mut lock) = data.os_drag.lock() {
                     if let Some(state) = lock.as_mut() {
                         if state.result.is_none() {

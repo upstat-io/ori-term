@@ -76,11 +76,17 @@ impl WindowRenderer {
         );
         log::info!("UI font prewarm (ui-only): {:?}", t_ui.elapsed());
 
-        let atlas_bind_group = AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view());
-        let subpixel_atlas_bind_group =
-            AtlasBindGroup::new(device, &pipelines.atlas_layout, subpixel_atlas.view());
+        let filter = wgpu::FilterMode::Linear;
+        let atlas_bind_group =
+            AtlasBindGroup::new(device, &pipelines.atlas_layout, atlas.view(), filter);
+        let subpixel_atlas_bind_group = AtlasBindGroup::new(
+            device,
+            &pipelines.atlas_layout,
+            subpixel_atlas.view(),
+            filter,
+        );
         let color_atlas_bind_group =
-            AtlasBindGroup::new(device, &pipelines.atlas_layout, color_atlas.view());
+            AtlasBindGroup::new(device, &pipelines.atlas_layout, color_atlas.view(), filter);
 
         // Create a standalone FontCollection for the terminal font slot.
         // UiOnly doesn't render terminal text, but the slot must be populated.
@@ -105,6 +111,8 @@ impl WindowRenderer {
             empty_keys: HashSet::new(),
             font_collection,
             ui_font_sizes: Some(ui_font_sizes),
+            subpixel_positioning: true,
+            atlas_filtering: super::super::bind_groups::AtlasFiltering::Linear,
             ui_raster_keys: Vec::new(),
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),

@@ -121,9 +121,24 @@ impl MouseState {
         self.buttons.any()
     }
 
-    /// Whether a drag is currently active (threshold exceeded).
+    /// Whether a drag is currently active (button held + threshold exceeded).
+    ///
+    /// Use for motion events (`CursorMoved`) where the button must still be
+    /// held. For release events, use [`drag_was_active`] instead — the event
+    /// loop clears the button before dispatch, so `is_dragging()` is always
+    /// false inside release handlers.
+    #[cfg(test)]
     pub(crate) fn is_dragging(&self) -> bool {
         self.buttons.left() && self.drag_active
+    }
+
+    /// Whether a drag was in progress when the button was released.
+    ///
+    /// Unlike [`is_dragging`], this only checks `drag_active` — it does not
+    /// require the button to still be held. Use in `MouseUp` handlers where
+    /// the event loop has already cleared the button state.
+    pub(crate) fn drag_was_active(&self) -> bool {
+        self.drag_active
     }
 
     /// Update the cursor position (called on every `CursorMoved`).

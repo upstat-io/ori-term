@@ -493,6 +493,64 @@ fn rasterized_glyph_carries_format_tag() {
     );
 }
 
+// ── Ligature glyph rasterization (BUG-04-003 diagnostic) ──
+
+#[test]
+fn rasterize_ligature_glyph_id_produces_bitmap() {
+    // Verify that calt-substituted glyph IDs from the shaping pipeline can
+    // be rasterized through swash. This catches bugs where the shaper
+    // produces valid glyph IDs but the rasterizer can't render them.
+    use oriterm_core::Cell;
+
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+
+    // Shape `=>` to get the calt-substituted glyph IDs.
+    let cells: Vec<Cell> = "=>"
+        .chars()
+        .map(|ch| Cell {
+            ch,
+            ..Cell::default()
+        })
+        .collect();
+    let mut runs = Vec::new();
+    crate::font::shaper::prepare_line(&cells, cells.len(), &fc, &mut runs);
+    let faces = fc.create_shaping_faces();
+    let mut glyphs = Vec::new();
+    let mut col_starts = Vec::new();
+    crate::font::shaper::shape_prepared_runs(
+        &runs,
+        &faces,
+        &fc,
+        &mut glyphs,
+        &mut col_starts,
+        &mut None,
+    );
+
+    // Every shaped glyph must rasterize (non-zero glyph_id → bitmap).
+    let size_q6 = super::size_key(fc.size_px());
+    for (i, sg) in glyphs.iter().enumerate() {
+        if sg.glyph_id == 0 {
+            continue;
+        }
+        let key = RasterKey {
+            glyph_id: sg.glyph_id,
+            face_idx: FaceIdx(sg.face_index),
+            weight: 0,
+            size_q6,
+            synthetic: SyntheticFlags::from_bits_truncate(sg.synthetic),
+            hinted: true,
+            subpx_x: 0,
+            font_realm: FontRealm::Terminal,
+        };
+        let glyph = fc.rasterize(key);
+        assert!(
+            glyph.is_some(),
+            "ligature glyph {i} (gid {}) must rasterize",
+            sg.glyph_id
+        );
+    }
+}
+
 // ── Family name ──
 
 #[test]

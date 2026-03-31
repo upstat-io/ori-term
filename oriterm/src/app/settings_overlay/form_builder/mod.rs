@@ -65,9 +65,13 @@ pub(crate) struct SettingsIds {
     // Bell page.
     pub bell_animation_dropdown: WidgetId,
     pub bell_duration_dropdown: WidgetId,
+    // Font page — Advanced section.
+    pub hinting_dropdown: WidgetId,
+    pub subpixel_aa_dropdown: WidgetId,
+    pub subpixel_positioning_dropdown: WidgetId,
+    pub atlas_filtering_dropdown: WidgetId,
     // Rendering page.
     pub gpu_backend_dropdown: WidgetId,
-    pub subpixel_toggle: WidgetId,
 }
 
 /// Builds the settings dialog with sidebar navigation and 8 pages.
@@ -75,10 +79,16 @@ pub(crate) struct SettingsIds {
 /// Returns the content widget (sidebar + pages in a horizontal row) and the
 /// ID map for action dispatch. `active_page` sets the initial page (use 0
 /// for first open, or preserve the current page across rebuilds like reset).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "scale_factor + opacity needed for font Advanced section Auto labels"
+)]
 pub(in crate::app) fn build_settings_dialog(
     config: &Config,
     theme: &UiTheme,
     active_page: usize,
+    scale_factor: f64,
+    opacity: f64,
     update_info: Option<(&str, &str, &str)>,
 ) -> (Box<dyn Widget>, SettingsIds, (WidgetId, WidgetId, WidgetId)) {
     // Initialize IDs with placeholders; page builders overwrite their fields.
@@ -86,7 +96,7 @@ pub(in crate::app) fn build_settings_dialog(
 
     let page_appearance = appearance::build_page(config, &mut ids, theme);
     let page_colors = colors::build_page(config, &mut ids, theme);
-    let page_font = font::build_page(config, &mut ids, theme);
+    let page_font = font::build_page(config, &mut ids, theme, scale_factor, opacity);
     let page_terminal = terminal::build_page(config, &mut ids, theme);
     let page_keybindings = keybindings::build_page(theme);
     let page_window = window::build_page(config, &mut ids, theme);
@@ -166,8 +176,11 @@ impl SettingsIds {
             initial_rows_input: WidgetId::placeholder(),
             bell_animation_dropdown: WidgetId::placeholder(),
             bell_duration_dropdown: WidgetId::placeholder(),
+            hinting_dropdown: WidgetId::placeholder(),
+            subpixel_aa_dropdown: WidgetId::placeholder(),
+            subpixel_positioning_dropdown: WidgetId::placeholder(),
+            atlas_filtering_dropdown: WidgetId::placeholder(),
             gpu_backend_dropdown: WidgetId::placeholder(),
-            subpixel_toggle: WidgetId::placeholder(),
         }
     }
 }

@@ -119,6 +119,16 @@ impl GpuState {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
     }
 
+    /// Whether the surface uses a present mode that requires client-side
+    /// frame budget gating (e.g. `Immediate`).
+    ///
+    /// `Mailbox` and `Fifo` provide hardware-level pacing.
+    /// `Immediate` has no pacing — without a client budget gate, the
+    /// renderer would run uncapped during sustained PTY output.
+    pub fn needs_frame_budget(&self) -> bool {
+        matches!(self.present_mode, wgpu::PresentMode::Immediate)
+    }
+
     /// Create and configure a new surface for a window.
     pub fn create_surface(
         &self,
@@ -206,6 +216,17 @@ impl GpuState {
     ///
     /// Extracts the cache data synchronously (fast), then spawns a
     /// detached thread for the disk write so the caller doesn't block.
+    /// Flush all pending GPU work synchronously.
+    ///
+    /// Blocks until the device has completed all submitted command buffers.
+    /// Used after rendering a first frame to ensure it is visible before
+    /// showing a window.
+    pub fn poll_device(&self) {
+        if let Err(e) = self.device.poll(wgpu::PollType::wait_indefinitely()) {
+            log::warn!("poll_device: GPU poll failed: {e}");
+        }
+    }
+
     pub fn save_pipeline_cache_async(&self) {
         let (Some(cache), Some(path)) = (&self.pipeline_cache, &self.pipeline_cache_path) else {
             return;

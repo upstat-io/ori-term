@@ -17,7 +17,12 @@ use super::connection::ClientConnection;
 use super::snapshot::SnapshotCache;
 
 /// Minimum interval between snapshot pushes for the same pane.
-pub const SNAPSHOT_PUSH_INTERVAL: Duration = Duration::from_millis(16);
+///
+/// Set low (4ms / 250fps) so the daemon's push throttle never gates
+/// interactive typing. The client's own frame budget (16ms) is the
+/// authoritative render cadence — a second unsynchronized 16ms gate
+/// here creates visible stutter from 0-32ms beat-frequency jitter.
+pub const SNAPSHOT_PUSH_INTERVAL: Duration = Duration::from_millis(4);
 
 /// Write buffer threshold — skip push entirely above this.
 const WRITE_HIGH_WATER: usize = 512 * 1024;

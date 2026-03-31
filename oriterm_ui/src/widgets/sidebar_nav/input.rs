@@ -1,5 +1,7 @@
 //! Sidebar input handling — pointer tracking, click routing, keyboard nav, search.
 
+use winit::window::CursorIcon;
+
 use crate::action::WidgetAction;
 use crate::geometry::{Point, Rect};
 use crate::input::{InputEvent, Key};
@@ -9,8 +11,8 @@ use crate::widgets::{LifecycleCtx, OnInputResult};
 use super::geometry::{self, SIDEBAR_PADDING_Y};
 use super::{FooterTarget, HoveredFooterTarget, SidebarNavWidget};
 
-/// Left padding inside the search field (after icon space).
-const SEARCH_TEXT_INSET: f32 = 26.0;
+/// Left padding inside the search field.
+const SEARCH_TEXT_INSET: f32 = 8.0;
 
 impl SidebarNavWidget {
     /// Handles all input events for the sidebar.
@@ -21,6 +23,15 @@ impl SidebarNavWidget {
                 let local_y = pos.y - bounds.y() - SIDEBAR_PADDING_Y;
                 self.hovered_item = self.hit_test_item(local_y);
                 self.hovered_footer = self.hit_test_footer(*pos);
+
+                // Pointer cursor on interactive items, default elsewhere.
+                let cursor = if self.hovered_item.is_some() || self.hovered_footer.is_some() {
+                    CursorIcon::Pointer
+                } else {
+                    CursorIcon::Default
+                };
+                self.cursor_icon.set(cursor);
+
                 OnInputResult::handled()
             }
             InputEvent::MouseDown { pos, .. } => self.handle_mouse_down(*pos, bounds),

@@ -33,6 +33,7 @@ pub(super) struct GlyphEmitter<'a> {
     pub size_q6: u32,
     pub hinted: bool,
     pub fg_dim: f32,
+    pub subpixel_positioning: bool,
     pub atlas: &'a dyn AtlasLookup,
     pub frame: &'a mut PreparedFrame,
 }
@@ -71,7 +72,11 @@ impl GlyphEmitter<'_> {
             }
             is_first = false;
 
-            let subpx = subpx_bin(sg.x_offset);
+            let subpx = if self.subpixel_positioning {
+                subpx_bin(sg.x_offset)
+            } else {
+                0
+            };
             let key = RasterKey {
                 glyph_id: sg.glyph_id,
                 face_idx: FaceIdx(sg.face_index),
@@ -135,7 +140,7 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
     let ch = input.cell_size.height;
     for &row in &input.prompt_marker_rows {
         let x = ox;
-        let y = oy + row as f32 * ch;
+        let y = (oy + row as f32 * ch).round();
         let rect = ScreenRect {
             x,
             y,
@@ -170,7 +175,7 @@ pub(super) fn build_cursor(
     color: Rgb,
 ) {
     let x = ox + col as f32 * cw;
-    let y = oy + row as f32 * ch;
+    let y = (oy + row as f32 * ch).round();
     let t = 2.0_f32;
 
     match shape {
@@ -245,7 +250,7 @@ pub(super) fn draw_url_hover_underline(
 
     for &(line, start_col, end_col) in &input.hovered_url_segments {
         let x = ox + start_col as f32 * cw;
-        let y = oy + line as f32 * ch + underline_y_offset;
+        let y = (oy + line as f32 * ch).round() + underline_y_offset;
         let w = (end_col - start_col + 1) as f32 * cw;
         frame
             .cursors

@@ -5,6 +5,7 @@
 //! and the frame budget has elapsed.
 
 use super::App;
+use super::perf_stats::FramePhases;
 
 impl App {
     /// Render all dirty terminal and dialog windows.
@@ -13,6 +14,8 @@ impl App {
     /// dirty window, then restores the original focus.
     pub(super) fn render_dirty_windows(&mut self) {
         let frame_start = std::time::Instant::now();
+        let mut phases = FramePhases::default();
+
         self.scratch_dirty_windows.clear();
         self.scratch_dirty_windows.extend(
             self.windows
@@ -35,7 +38,8 @@ impl App {
                 .map(|ctx| ctx.window.session_window_id());
             self.focused_window_id = Some(wid);
             self.active_window = mux_wid;
-            self.handle_redraw();
+            let win_phases = self.handle_redraw();
+            phases.accumulate(&win_phases);
             // Clear invalidation after render so build_scene sees dirty widgets.
             if let Some(ctx) = self.windows.get_mut(&wid) {
                 ctx.root.invalidation_mut().clear();
@@ -66,7 +70,7 @@ impl App {
         }
 
         self.last_render = std::time::Instant::now();
-        self.perf.record_render(frame_start.elapsed());
+        self.perf.record_render(frame_start.elapsed(), &phases);
 
         // Post-render: shrink grow-only buffers if capacity vastly exceeds usage.
         for ctx in self.windows.values_mut() {

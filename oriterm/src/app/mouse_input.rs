@@ -366,11 +366,22 @@ impl App {
                     match state {
                         ElementState::Pressed => self.handle_mouse_press(),
                         ElementState::Released => {
-                            let had_drag = self.mouse.is_dragging();
+                            // Check drag_was_active before handle_release clears it.
+                            // Note: is_dragging() would always return false here
+                            // because the event loop clears the button state before
+                            // dispatch.
+                            let had_drag = self.mouse.drag_was_active();
                             mouse_selection::handle_release(&mut self.mouse);
-                            // CopyOnSelect: auto-copy to primary selection after drag.
-                            if had_drag && self.config.behavior.copy_on_select {
-                                self.copy_selection_to_primary();
+                            if had_drag {
+                                // CopyOnSelect: auto-copy to primary selection after drag.
+                                if self.config.behavior.copy_on_select {
+                                    self.copy_selection_to_primary();
+                                }
+                            } else {
+                                // Click-without-drag: clear the zero-width char
+                                // selection created by the press. Word and line
+                                // selections (double/triple click) are deliberate.
+                                self.clear_click_selection();
                             }
                         }
                     }
@@ -406,6 +417,27 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Clear a zero-width char selection after a click without drag.
+    ///
+    /// Single clicks create a `Char` selection at the click point. If the user
+    /// releases without dragging, this selection is meaningless (zero-width)
+    /// and should be cleared. Word and line selections from double/triple click
+    /// are deliberate and kept.
+    fn clear_click_selection(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let is_zero_width_char = self
+            .pane_selection(pane_id)
+            .is_some_and(|s| s.mode == oriterm_core::SelectionMode::Char);
+        if is_zero_width_char {
+            self.clear_pane_selection(pane_id);
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.root.mark_dirty();
+            }
         }
     }
 }

@@ -3,14 +3,14 @@
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::icons::{IconId, SIDEBAR_NAV_ICON_SIZE};
+use crate::icons::SIDEBAR_NAV_ICON_SIZE;
 use crate::text::{FontWeight, TextStyle, TextTransform};
 use crate::widgets::DrawCtx;
 
 use super::geometry::{
     self, FOOTER_INLINE_GAP, FOOTER_PADDING_X, FOOTER_PADDING_Y, FOOTER_ROW_GAP, INDICATOR_WIDTH,
-    NAV_ITEM_HEIGHT, NAV_ITEM_PADDING_Y, SEARCH_AREA_H, SEARCH_PADDING_X, SIDEBAR_PADDING_Y,
-    TITLE_TOP_MARGIN,
+    NAV_ITEM_BG_H, NAV_ITEM_HEIGHT, NAV_ITEM_MARGIN_Y, NAV_ITEM_PADDING_Y, SEARCH_AREA_H,
+    SEARCH_PADDING_X, SIDEBAR_PADDING_Y, TITLE_TOP_MARGIN,
 };
 use super::{FooterRects, HoveredFooterTarget, NavItem, SidebarNavWidget};
 
@@ -132,6 +132,9 @@ impl SidebarNavWidget {
     }
 
     /// Paints a single nav item row at the given bounds.
+    ///
+    /// Background is inset by `NAV_ITEM_MARGIN_Y` so adjacent items have a
+    /// visible gap (matching CSS `margin: 1px 0` with margin collapsing).
     fn paint_nav_item(
         &self,
         ctx: &mut DrawCtx<'_>,
@@ -141,10 +144,12 @@ impl SidebarNavWidget {
     ) {
         let is_active = item.page_index == self.active_page;
         let x = item_rect.x();
-        let y = item_rect.y();
         let item_w = item_rect.width();
 
-        // Background — full row width (matching CSS box model).
+        // Background rect inset by margins (CSS `margin: 1px 0` is outside bg).
+        let bg_y = item_rect.y() + NAV_ITEM_MARGIN_Y;
+        let bg_rect = Rect::new(x, bg_y, item_w, NAV_ITEM_BG_H);
+
         let bg = if is_active {
             self.style.active_bg
         } else if self.hovered_item == Some(flat_idx) {
@@ -153,12 +158,12 @@ impl SidebarNavWidget {
             Color::TRANSPARENT
         };
         if bg.a > 0.001 {
-            ctx.scene.push_quad(item_rect, RectStyle::filled(bg));
+            ctx.scene.push_quad(bg_rect, RectStyle::filled(bg));
         }
 
-        // 3px left border: transparent for inactive, accent for active.
+        // 3px left border: accent for active.
         if is_active {
-            let indicator = Rect::new(x, y, INDICATOR_WIDTH, NAV_ITEM_HEIGHT);
+            let indicator = Rect::new(x, bg_y, INDICATOR_WIDTH, NAV_ITEM_BG_H);
             ctx.scene
                 .push_quad(indicator, RectStyle::filled(self.style.active_fg));
         }
@@ -167,7 +172,7 @@ impl SidebarNavWidget {
         let text_x = if let Some(icon_id) = item.icon {
             let icon_size = SIDEBAR_NAV_ICON_SIZE;
             let icon_x = geometry::nav_icon_x(&item_rect);
-            let icon_y = y + (NAV_ITEM_HEIGHT - icon_size as f32) / 2.0;
+            let icon_y = bg_y + (NAV_ITEM_BG_H - icon_size as f32) / 2.0;
             if let Some(icons) = ctx.icons {
                 if let Some(resolved) = icons.get(icon_id, icon_size) {
                     let c = if is_active {
@@ -190,7 +195,7 @@ impl SidebarNavWidget {
             geometry::nav_text_x(&item_rect, false)
         };
 
-        // Label.
+        // Label — positioned inside the bg area (margin + padding).
         let fg = if is_active {
             self.style.active_fg
         } else if self.hovered_item == Some(flat_idx) {
@@ -208,7 +213,7 @@ impl SidebarNavWidget {
             weight,
             ..TextStyle::default()
         };
-        let label_y = y + NAV_ITEM_PADDING_Y;
+        let label_y = bg_y + NAV_ITEM_PADDING_Y;
         let shaped = ctx.measurer.shape(&item.label, &style, item_w);
         ctx.scene.push_text(Point::new(text_x, label_y), shaped, fg);
 
@@ -216,7 +221,7 @@ impl SidebarNavWidget {
         if self.is_page_modified(item.page_index) {
             let dot_size = 6.0;
             let dot_x = item_rect.right() - 16.0;
-            let dot_y = y + (NAV_ITEM_HEIGHT - dot_size) / 2.0;
+            let dot_y = bg_y + (NAV_ITEM_BG_H - dot_size) / 2.0;
             let dot_rect = Rect::new(dot_x, dot_y, dot_size, dot_size);
             ctx.scene
                 .push_quad(dot_rect, RectStyle::filled(ctx.theme.warning));
@@ -307,9 +312,8 @@ impl SidebarNavWidget {
 
     /// Paints the search field at the top of the sidebar.
     ///
-    /// Mockup CSS: height 28px, bg `--bg-surface`, border 2px, padding
-    /// `6px 8px 6px 26px` (26px left includes the search icon). When
-    /// focused, uses accent border and draws a text cursor.
+    /// Height 28px, bg `--bg-surface`, border 2px, padding `6px 8px`.
+    /// When focused, uses accent border and draws a text cursor.
     #[expect(
         clippy::string_slice,
         reason = "selection bounds always on char boundaries"
@@ -330,9 +334,9 @@ impl SidebarNavWidget {
         ctx.scene.push_layer_bg(bg);
         ctx.scene.push_quad(field_rect, bg_style);
 
-        // Inner area for text (left 26px includes icon space, right 8px).
-        let text_x = x + 26.0;
-        let text_w = w - 26.0 - 8.0;
+        // Inner area for text (8px padding on each side).
+        let text_x = x + 8.0;
+        let text_w = w - 8.0 - 8.0;
         let inner = Rect::new(text_x, y + 2.0, text_w, field_h - 4.0);
         ctx.scene.push_clip(inner);
 
@@ -404,27 +408,6 @@ impl SidebarNavWidget {
         }
 
         ctx.scene.pop_clip();
-
-        // Search icon (12px, centered at x+8, vertically centered).
-        let icon_size = 12u32;
-        let icon_x = x + 8.0;
-        let icon_y = y + (field_h - icon_size as f32) / 2.0;
-        if let Some(icons) = ctx.icons {
-            if let Some(resolved) = icons.get(IconId::Search, icon_size) {
-                let icon_color = if self.search_focused {
-                    ctx.theme.fg_secondary
-                } else {
-                    ctx.theme.fg_faint
-                };
-                ctx.scene.push_icon(
-                    Rect::new(icon_x, icon_y, icon_size as f32, icon_size as f32),
-                    resolved.atlas_page,
-                    resolved.uv,
-                    icon_color,
-                );
-            }
-        }
-
         ctx.scene.pop_layer_bg();
     }
 }

@@ -12,6 +12,7 @@ use oriterm_ui::invalidation::DirtyKind;
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
+use super::perf_stats::FramePhases;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize,
     extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette,
@@ -23,8 +24,9 @@ impl App {
         clippy::too_many_lines,
         reason = "linear three-phase pipeline: Extract → Prepare → Render"
     )]
-    pub(super) fn handle_redraw(&mut self) {
+    pub(super) fn handle_redraw(&mut self) -> FramePhases {
         log::trace!("RedrawRequested");
+        let mut phases = FramePhases::default();
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.root.set_urgent_redraw(false);
@@ -43,7 +45,7 @@ impl App {
         // multi-pane renderer which iterates all panes in one GPU frame.
         if let Some((layouts, dividers)) = self.compute_pane_layouts() {
             self.handle_redraw_multi_pane(&layouts, &dividers, url_segments);
-            return;
+            return phases;
         }
 
         // Resolve pane ID before the render block: `active_pane_id()` borrows
@@ -51,7 +53,7 @@ impl App {
         // block. `PaneId` is `Copy`, so the borrow ends here.
         let Some(pane_id) = self.active_pane_id() else {
             log::warn!("redraw: no active pane");
-            return;
+            return phases;
         };
 
         // Copy selection before the render block (where ctx.renderer is
@@ -62,39 +64,40 @@ impl App {
         let (render_result, blinking_now, cursor_pos) = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
-                return;
+                return phases;
             };
             let Some(pipelines) = self.pipelines.as_ref() else {
                 log::warn!("redraw: no pipelines");
-                return;
+                return phases;
             };
             let Some(ctx) = self
                 .focused_window_id
                 .and_then(|id| self.windows.get_mut(&id))
             else {
                 log::warn!("redraw: no window");
-                return;
+                return phases;
             };
             let Some(renderer) = ctx.renderer.as_mut() else {
                 log::warn!("redraw: no renderer");
-                return;
+                return phases;
             };
             if !ctx.window.has_surface_area() {
                 log::warn!("redraw: no surface area");
-                return;
+                return phases;
             }
 
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
             let Some(mux) = self.mux.as_mut() else {
-                return;
+                return phases;
             };
 
             // Extract phase: refresh snapshot if needed.
             // Detect tab switch / tear-off: when the rendered pane changes,
             // force a refresh to flush stale `renderable_cache` entries left
             // by the previous `swap_renderable_content` cycle.
+            let extract_start = Instant::now();
             let pane_changed = ctx.last_rendered_pane != Some(pane_id);
             ctx.last_rendered_pane = Some(pane_id);
             let snap_is_none = mux.pane_snapshot(pane_id).is_none();
@@ -117,7 +120,7 @@ impl App {
             let Some(snapshot) = mux.pane_snapshot(pane_id) else {
                 log::warn!("redraw: no snapshot for pane {pane_id:?}");
                 ctx.root.mark_dirty();
-                return;
+                return phases;
             };
             if swapped {
                 let frame = ctx.frame.as_mut().expect("frame exists when swapped");
@@ -149,6 +152,7 @@ impl App {
                 // Cursor-blink-only: reuse existing frame as-is.
             }
             mux.clear_pane_snapshot_dirty(pane_id);
+            phases.extract = extract_start.elapsed();
 
             let frame = ctx.frame.as_mut().expect("frame just assigned");
 
@@ -161,6 +165,7 @@ impl App {
                 self.config.window.effective_unfocused_opacity()
             };
             frame.window_focused = focused;
+            frame.subpixel_positioning = renderer.subpixel_positioning();
 
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.
@@ -246,6 +251,7 @@ impl App {
                 .bounds()
                 .map_or((0.0, 0.0), |b| (b.x(), b.y()));
 
+            let prepare_start = Instant::now();
             renderer.prepare(
                 frame,
                 gpu,
@@ -260,12 +266,14 @@ impl App {
 
             // Resolve icon atlas entries at physical pixel sizes.
             renderer.resolve_icons(gpu, scale);
+            phases.prepare = prepare_start.elapsed();
 
             // Phase gating: compute widget dirty level from lifecycle
             // events, animation state, and per-widget invalidation.
             // On cursor-blink-only frames (no UI changes), skip the
             // entire prepare + prepaint pipeline.
-            let now = Instant::now();
+            let widgets_start = Instant::now();
+            let now = widgets_start;
             let lifecycle_events = ctx.root.interaction_mut().drain_events();
             let widget_dirty = {
                 let mut d = ctx.root.invalidation().max_dirty_kind();
@@ -457,11 +465,15 @@ impl App {
             ctx.ui_stale = tab_bar_animating;
 
             // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
+            // macOS: the compositor provides a native window shadow — no border needed.
+            #[cfg(not(target_os = "macos"))]
             if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
                 let border_color =
                     crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);
                 renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
             }
+
+            phases.widgets = widgets_start.elapsed();
 
             // Apply deferred DXGI ResizeBuffers just before acquiring the
             // surface texture. This minimizes the gap between swap chain
@@ -469,8 +481,10 @@ impl App {
             // stretching stale content during interactive resize.
             ctx.window.apply_pending_surface_resize(gpu);
 
+            let gpu_start = Instant::now();
             let result =
                 renderer.render_to_surface(gpu, pipelines, ctx.window.surface(), needs_full_render);
+            phases.gpu_render = gpu_start.elapsed();
             (result, blinking_now, cursor_pos)
         };
 
@@ -493,6 +507,8 @@ impl App {
         // cursor area before composition starts — otherwise the candidate
         // popup defaults to the bottom-right corner (Alacritty pattern).
         self.update_ime_cursor_area();
+
+        phases
     }
 
     /// Handle the result of a render pass, recovering from surface loss.
