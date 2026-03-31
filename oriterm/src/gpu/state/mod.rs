@@ -148,8 +148,7 @@ impl GpuState {
     /// Returns `true` when `surface_format == render_format` (no sRGB view
     /// reinterpretation needed). When formats differ, `copy_texture_to_texture`
     /// copies raw bytes without format conversion, which may silently produce
-    /// blank output on some backends (observed on DX12 swapchain textures).
-    /// In that case, the renderer falls back to direct single-pass rendering.
+    /// blank output on some backends. The renderer falls back to single-pass.
     pub fn can_cache_blit(&self) -> bool {
         self.surface_format == self.render_format
     }

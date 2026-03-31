@@ -119,9 +119,6 @@ impl WindowRenderer {
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
 
         if self.is_ui_only() || !gpu.can_cache_blit() {
-            // Single-pass: render everything directly to the surface.
-            // Used for UI-only dialogs and when copy_texture_to_texture to the
-            // swapchain is unreliable (DX12 with sRGB format reinterpretation).
             self.render_single_pass(gpu, pipelines, &output);
         } else {
             self.render_cached(gpu, pipelines, &output, content_changed);
