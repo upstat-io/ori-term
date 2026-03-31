@@ -381,13 +381,11 @@ fn gpu_backend_selected_updates_config() {
     let (mut config, ids) = default_ids();
     let action = WidgetAction::Selected {
         id: ids.gpu_backend_dropdown,
-        index: 1, // Vulkan
+        index: 1, // Second entry: platform-dependent (Vulkan on Linux, Metal on macOS, etc.)
     };
     assert!(handle_settings_action(&action, &ids, &mut config));
-    assert_eq!(
-        config.rendering.gpu_backend,
-        crate::config::GpuBackend::Vulkan
-    );
+    let expected = crate::config::GpuBackend::available()[1].0;
+    assert_eq!(config.rendering.gpu_backend, expected);
 }
 
 #[test]
