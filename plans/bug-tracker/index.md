@@ -69,7 +69,8 @@ toml, reload, hot-reload, apply, runtime, restore-session, session, persist
 ```
 render, frame, latency, lag, slow, key-repeat, input-lag, GPU, draw_frame,
 performance, frame-time, frame-budget, redraw, cell-loop, wrapping,
-surface, invalidation, off-screen, uninitialized, baby-blue, expose, damage
+surface, invalidation, off-screen, uninitialized, baby-blue, expose, damage,
+floating-pane, transparent, opacity, background, blur
 ```
 
 ### Section 07: CI & Build
