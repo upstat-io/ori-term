@@ -3,9 +3,12 @@ section: 11
 title: Search
 status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-03-31"
 tier: 3
 goal: Plain text and regex search across terminal grid with search UI overlay and match navigation
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "11.1"
     title: Search State
@@ -194,7 +197,7 @@ Search bar overlay rendered on top of the terminal grid, with text input, match 
 - [x] Search UI opens/closes cleanly, keyboard input captured during search
 - [x] Viewport scrolls to center focused match when outside view
 - [x] Wide characters and combining marks handled correctly in text extraction (verified 2026-03-29)
-- [ ] **Hygiene: decorative banners in tests.rs** — `oriterm_core/src/search/tests.rs` uses 9 `// ── ... ──` decorative banner comments (lines 13, 42, 91, 118, 153, 181, 227, 269, 299). Code-hygiene.md bans these; should be plain `// Section name` labels. (found 2026-03-29)
+- [x] **Hygiene: decorative banners in tests.rs** — removed all 9 `// ── ... ──` decorative banners from `oriterm_core/src/search/tests.rs`, replaced with plain `// Section name` labels. Done 2026-03-31.
 
 **Exit Criteria:** Ctrl+Shift+F opens search, typing highlights matches in the grid, Enter/Shift+Enter navigates between matches, Escape closes. Plain text and regex modes both functional.
 

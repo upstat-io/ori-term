@@ -10,7 +10,7 @@ use super::find::find_matches;
 use super::text::{byte_span_to_cols, extract_row_text};
 use super::{MatchType, SearchState};
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// Helpers
 
 /// Build a row from an ASCII string (one char per cell).
 fn row_from_str(s: &str) -> Row {
@@ -39,7 +39,7 @@ fn sri(n: u64) -> StableRowIndex {
     StableRowIndex(n)
 }
 
-// ── Text Extraction ──────────────────────────────────────────────────
+// Text Extraction
 
 #[test]
 fn extract_ascii_row() {
@@ -88,7 +88,7 @@ fn extract_combining_marks_share_column() {
     assert_eq!(col_map, vec![0, 0, 1]);
 }
 
-// ── Byte Span to Cols ────────────────────────────────────────────────
+// Byte Span to Cols
 
 #[test]
 fn byte_span_ascii_identity() {
@@ -115,7 +115,7 @@ fn byte_span_empty_returns_none() {
     assert_eq!(byte_span_to_cols(text, &col_map, 2, 2), None);
 }
 
-// ── Find Matches (Plain Text) ────────────────────────────────────────
+// Find Matches (Plain Text)
 
 #[test]
 fn plain_text_finds_in_two_rows() {
@@ -150,7 +150,7 @@ fn plain_text_empty_query() {
     assert!(matches.is_empty());
 }
 
-// ── Find Matches (Regex) ─────────────────────────────────────────────
+// Find Matches (Regex)
 
 #[test]
 fn regex_digits() {
@@ -178,7 +178,7 @@ fn regex_case_insensitive() {
     assert_eq!(matches[0].start_col, 0);
 }
 
-// ── SearchState Navigation ───────────────────────────────────────────
+// SearchState Navigation
 
 #[test]
 fn next_match_wraps_around() {
@@ -224,7 +224,7 @@ fn focused_match_returns_correct_match() {
     assert_eq!(m.start_col, 3);
 }
 
-// ── Cell Match Type (Binary Search) ──────────────────────────────────
+// Cell Match Type (Binary Search)
 
 #[test]
 fn cell_match_type_binary_search() {
@@ -266,7 +266,7 @@ fn cell_match_type_empty_matches() {
     assert_eq!(state.cell_match_type(sri(0), 0), MatchType::None);
 }
 
-// ── Update Query ─────────────────────────────────────────────────────
+// Update Query
 
 #[test]
 fn update_query_clears_on_empty() {
@@ -296,7 +296,7 @@ fn update_query_clamps_focused() {
     assert_eq!(state.focused_index(), 0); // Clamped.
 }
 
-// ── Toggle Modes ─────────────────────────────────────────────────────
+// Toggle Modes
 
 #[test]
 fn toggle_case_sensitive_reruns_search() {

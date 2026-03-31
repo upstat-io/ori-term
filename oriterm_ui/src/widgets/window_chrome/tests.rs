@@ -6,7 +6,6 @@
 //! remain: these types are still used for layout computation and button
 //! rendering within the tab bar.
 
-use crate::geometry::Rect;
 use crate::sense::Sense;
 use crate::theme::UiTheme;
 use crate::widgets::Widget;
@@ -53,10 +52,8 @@ fn layout_fullscreen_hidden() {
     assert_eq!(layout.caption_height, 0.0);
     assert!(!layout.visible);
     assert!(
-        layout
-            .interactive_rects
-            .iter()
-            .all(|r| *r == Rect::default())
+        layout.interactive_rects.is_empty(),
+        "fullscreen hidden chrome should have no interactive rects"
     );
 }
 
