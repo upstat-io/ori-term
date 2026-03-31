@@ -142,5 +142,5 @@ Phase 3 - Verification
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Bug Fixes | `section-01-bug-fixes.md` | Complete |
-| 02 | Advanced Font Rendering Settings | `section-02-advanced-settings.md` | Not Started |
+| 02 | Advanced Font Rendering Settings | `section-02-advanced-settings.md` | Complete |
 | 03 | Verification | `section-03-verification.md` | Not Started |

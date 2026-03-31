@@ -36,7 +36,7 @@ draw_prompt_markers, build_cursor, draw_url_hover_underline
 ---
 
 ### Section 02: Advanced Font Rendering Settings
-**File:** `section-02-advanced-settings.md` | **Status:** Not Started
+**File:** `section-02-advanced-settings.md` | **Status:** Complete
 
 ```
 hinting, HintingMode, Full, None, auto-detect, from_scale_factor

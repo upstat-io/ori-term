@@ -130,17 +130,17 @@ impl App {
         let font_set = self.font_set.as_ref()?.clone();
 
         let opacity = self.config.window.effective_opacity();
-        let dcomp_available = matches!(
-            self.config.rendering.gpu_backend,
-            crate::config::GpuBackend::Auto | crate::config::GpuBackend::DirectX12
-        );
+        // Use the actual GPU backend's DComp status, not the config's requested
+        // backend. If the GPU fell back from DX12+DComp to Vulkan during init,
+        // new windows must not set WS_EX_NOREDIRECTIONBITMAP either.
+        let dcomp_active = gpu.uses_dcomp();
         let window_config = WindowConfig {
             title: "ori".into(),
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
             decoration: super::init::decoration_to_mode(self.config.window.decorations),
-            use_compositor_surface: dcomp_available && opacity < 1.0,
+            use_compositor_surface: dcomp_active && opacity < 1.0,
             ..WindowConfig::default()
         };
 

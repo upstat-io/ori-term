@@ -63,6 +63,18 @@ impl App {
         )?;
         let t_gpu = t_gpu_start.elapsed();
 
+        // If the window was created for DComp but the GPU fell back to a
+        // non-DComp backend, remove WS_EX_NOREDIRECTIONBITMAP so the window
+        // is visible. Without this, Vulkan or plain DX12 inherit a compositor-
+        // surface window they cannot present to.
+        if window_config.use_compositor_surface && !gpu.uses_dcomp() {
+            log::warn!(
+                "GPU did not use DirectComposition — clearing compositor surface flag \
+                 to prevent invisible window"
+            );
+            oriterm_ui::window::clear_compositor_surface_flag(&window_arc);
+        }
+
         // 4. Allocate a GUI-local window ID (mux is a flat pane server).
         //    In daemon mode, the window may already be claimed via `--window`.
         let session_wid = if let Some(claimed) = self.active_window {
