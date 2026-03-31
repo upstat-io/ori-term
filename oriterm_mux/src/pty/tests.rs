@@ -1,11 +1,16 @@
-//! Tests for PTY config, command building, and shell detection.
+//! Tests for PTY config, command building, shell detection, and writer thread.
 //!
 //! No real PTY processes are spawned — Alacritty and WezTerm don't test
 //! live PTY either. The event loop is tested with mock pipes in
 //! `event_loop/tests.rs`.
 
-use super::PtyConfig;
+use std::io::Read;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+
 use super::spawn::{build_command, compute_wslenv, default_shell};
+use super::{Msg, PtyConfig, spawn_pty_writer};
 
 // Shell detection
 
@@ -377,4 +382,86 @@ fn wslenv_flag_collision_mixed_case_with_flags() {
             "original mixed-case entry preserved: {r}"
         );
     }
+}
+
+// Writer thread
+
+#[test]
+fn writer_thread_delivers_input() {
+    let (mut reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle =
+        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+
+    tx.send(Msg::Input(b"hello".to_vec())).unwrap();
+    tx.send(Msg::Shutdown).unwrap();
+    handle.join().expect("writer thread panicked");
+
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf).unwrap();
+    assert_eq!(buf, b"hello");
+    assert!(
+        shutdown.load(Ordering::Acquire),
+        "shutdown flag must be set"
+    );
+}
+
+#[test]
+fn writer_thread_batches_queued_messages() {
+    let (mut reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    // Queue multiple messages before the thread can process them.
+    tx.send(Msg::Input(b"aaa".to_vec())).unwrap();
+    tx.send(Msg::Input(b"bbb".to_vec())).unwrap();
+    tx.send(Msg::Input(b"ccc".to_vec())).unwrap();
+    tx.send(Msg::Shutdown).unwrap();
+
+    let handle =
+        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    handle.join().expect("writer thread panicked");
+
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf).unwrap();
+    assert_eq!(buf, b"aaabbbccc", "all messages must be delivered in order");
+}
+
+#[test]
+fn writer_thread_shutdown_sets_flag() {
+    let (_reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle =
+        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+
+    tx.send(Msg::Shutdown).unwrap();
+    handle.join().expect("writer thread panicked");
+
+    assert!(
+        shutdown.load(Ordering::Acquire),
+        "shutdown flag must be set after Msg::Shutdown",
+    );
+}
+
+#[test]
+fn writer_thread_channel_close_sets_flag() {
+    let (_reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle =
+        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+
+    // Drop the sender — channel closes, thread exits.
+    drop(tx);
+    handle.join().expect("writer thread panicked");
+
+    assert!(
+        shutdown.load(Ordering::Acquire),
+        "shutdown flag must be set on channel close",
+    );
 }

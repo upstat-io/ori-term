@@ -5,9 +5,6 @@
 //! - **Linux**: `$XDG_CONFIG_HOME/oriterm/` (fallback: `~/.config/oriterm/`)
 //! - **macOS**: `~/Library/Application Support/oriterm/`
 
-// Config path infrastructure is wired into the config loader in Section 13.
-#![expect(dead_code, reason = "platform config paths used in Section 13")]
-
 use std::io;
 use std::path::PathBuf;
 
