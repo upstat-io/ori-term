@@ -1,13 +1,12 @@
 name: Auto Release
 
 # Single workflow: version-bump → tag → build (all platforms) → release notes → publish.
-# CI is guaranteed to have passed via branch protection (required status check).
+# CI must pass before merge (enforced by branch ruleset requiring "CI Success").
 #
-# REQUIRES: The oriterm-release-bot GitHub App must be a bypass actor in the
-# main branch ruleset, so this workflow can push version-bump commits directly.
-# Secrets: RELEASE_APP_ID, RELEASE_APP_PRIVATE_KEY (from the GitHub App)
-#
-# If the GitHub App is not set up, set ORITERM_RELEASE_TOKEN (PAT) instead.
+# To push version-bump commits past branch protection, configure ONE of:
+#   1. GitHub App: RELEASE_APP_ID + RELEASE_APP_PRIVATE_KEY (add as bypass actor in ruleset)
+#   2. PAT: ORITERM_RELEASE_TOKEN (from a user with bypass permission)
+#   3. Falls back to GITHUB_TOKEN (works if the workflow itself has bypass permission)
 
 on:
   push:
