@@ -2,7 +2,7 @@
 reroute: true
 name: "Font Quality"
 full_name: "Font Rendering Quality"
-status: active
+status: resolved
 order: 2
 ---
 
@@ -56,7 +56,7 @@ TextContext, scene_convert/mod.rs, scene_append.rs, scene_raster_keys
 ---
 
 ### Section 03: Verification
-**File:** `section-03-verification.md` | **Status:** Not Started
+**File:** `section-03-verification.md` | **Status:** Complete
 
 ```
 test matrix, build, clippy, test-all, build-all, clippy-all

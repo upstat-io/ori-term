@@ -211,7 +211,15 @@ impl App {
             .colors
             .resolve_theme(crate::platform::theme::system_theme);
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-        gpu.clear_surface(window.surface(), palette.background(), opacity);
+        // Clamp opacity to 1.0 when the surface doesn't support alpha.
+        // On Vulkan/opaque fallback, sub-1.0 opacity would produce a
+        // broken first frame before the steady-state render path clamps it.
+        let clear_opacity = if gpu.supports_transparency() {
+            opacity
+        } else {
+            1.0
+        };
+        gpu.clear_surface(window.surface(), palette.background(), clear_opacity);
         window.set_visible(true);
         // On Linux (X11/Wayland), a newly created window is not guaranteed to
         // receive input focus. Explicitly request it so the terminal is

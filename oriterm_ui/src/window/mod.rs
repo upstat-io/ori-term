@@ -352,6 +352,8 @@ pub fn clear_compositor_surface_flag(window: &Window) {
 
     // SAFETY: `hwnd` is a valid window handle from winit. Reading and writing
     // the extended style via Get/SetWindowLongPtrW is standard Win32 FFI.
+    // SetWindowPos with SWP_FRAMECHANGED is required per Win32 docs to flush
+    // the cached window data after SetWindowLongPtrW modifies the style.
     unsafe {
         let ex_style =
             windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -360,6 +362,20 @@ pub fn clear_compositor_surface_flag(window: &Window) {
                 hwnd,
                 GWL_EXSTYLE,
                 ex_style & !WS_EX_NOREDIRECTIONBITMAP,
+            );
+            // Flush the style change — SetWindowLongPtrW alone may leave
+            // cached data stale until SetWindowPos is called.
+            windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOZORDER
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED,
             );
         }
     }

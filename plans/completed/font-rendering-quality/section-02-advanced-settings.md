@@ -35,7 +35,7 @@ sections:
 
 # Section 02: Advanced Font Rendering Settings
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** After this section, the Font page has an Advanced section with 4 dropdowns (hinting, subpixel AA, subpixel positioning, atlas filtering). Each defaults to "Auto" with the detected value shown in parentheses. Changes persist to TOML config and take effect immediately.
 
 **Context:** The TPR review found that `subpixel_positioning` is a dead config (TPR-04-007) — parsed from TOML but never consumed by the renderer. The atlas sampler's `FilterMode` is hardcoded to `Linear`. Users have no way to control rendering quality beyond the basic subpixel toggle on the Rendering page. Reference terminal emulators (WezTerm, Ghostty) expose these controls for power users.

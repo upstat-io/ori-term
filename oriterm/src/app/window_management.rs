@@ -87,12 +87,18 @@ impl App {
             win.add_tab(tab_id);
         }
 
-        // Clear frame and show.
+        // Clear frame and show. Clamp opacity when the surface lacks alpha
+        // support so the first frame matches the steady-state render path.
         let palette = clear_palette;
         let opacity = self.config.window.effective_opacity();
         if let Some(gpu) = self.gpu.as_ref() {
+            let clear_opacity = if gpu.supports_transparency() {
+                opacity
+            } else {
+                1.0
+            };
             if let Some(ctx) = self.windows.get(&winit_id) {
-                gpu.clear_surface(ctx.window.surface(), palette.background(), opacity);
+                gpu.clear_surface(ctx.window.surface(), palette.background(), clear_opacity);
             }
         }
         if let Some(ctx) = self.windows.get(&winit_id) {
