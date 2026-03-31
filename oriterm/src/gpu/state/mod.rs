@@ -95,15 +95,34 @@ impl GpuState {
             GpuBackend::Auto => {} // Fall through to auto-detection below.
         }
 
-        // Auto-detection: DX12+DComp for transparency, then Vulkan, then PRIMARY, then SECONDARY.
+        // Auto-detection: platform-native backend first, then fallbacks.
+        // Windows: DX12 → Vulkan → others.
+        // macOS: Metal → others.
+        // Linux: Vulkan → others.
         #[cfg(target_os = "windows")]
-        if transparent {
-            if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true, transparent) {
+        {
+            if transparent {
+                if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true, transparent)
+                {
+                    return Ok(state);
+                }
+                log::warn!("DX12 DirectComposition init failed, trying plain DX12");
+            }
+            if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, false, transparent) {
                 return Ok(state);
             }
-            log::warn!("DX12 DirectComposition init failed, falling back to Vulkan");
+            log::warn!("DX12 init failed, falling back to Vulkan");
         }
 
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(state) = Self::try_init(window, wgpu::Backends::METAL, false, transparent) {
+                return Ok(state);
+            }
+            log::warn!("Metal init failed, falling back to other backends");
+        }
+
+        #[cfg(target_os = "linux")]
         if let Some(state) = Self::try_init(window, wgpu::Backends::VULKAN, false, transparent) {
             return Ok(state);
         }
