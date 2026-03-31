@@ -96,13 +96,7 @@ impl App {
             }
         }
         if let Some(ctx) = self.windows.get(&winit_id) {
-            // Suppress DWM fade-in animation — shows the pre-cleared surface
-            // instantly instead of fading from the DWM default background.
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::set_transitions_enabled(ctx.window.window(), false);
             ctx.window.set_visible(true);
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::set_transitions_enabled(ctx.window.window(), true);
         }
 
         // Register with window manager.
