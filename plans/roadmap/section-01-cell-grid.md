@@ -18,16 +18,16 @@ sections:
     status: complete
   - id: "1.4"
     title: Row
-    status: complete
+    status: in-progress
   - id: "1.5"
     title: Grid Foundation
-    status: complete
+    status: in-progress
   - id: "1.6"
     title: Cursor
-    status: complete
+    status: in-progress
   - id: "1.7"
     title: Grid Editing
-    status: complete
+    status: in-progress
   - id: "1.8"
     title: Grid Navigation
     status: complete
@@ -46,6 +46,9 @@ sections:
   - id: "1.12"
     title: Section Completion
     status: in-progress
+third_party_review:
+  status: findings
+  updated: "2026-03-29"
 ---
 
 # Section 01: Cell + Grid
@@ -466,8 +469,11 @@ Track which rows have changed since last read. Enables damage-based rendering.
 TPR findings triaged from independent review. All confirmed open as of 2026-03-29 verification.
 
 - [ ] **TPR-01-001 (zero-count damage):** `insert_blank(0)`, `delete_chars(0)`, and `erase_chars(0)` produce false-positive dirty marks despite performing no visible mutation. Fix: add early returns for count==0 and corresponding tests.
+  Accepted: Validated against codebase on 2026-03-31. All three functions confirmed to lack explicit early returns for count==0.
 - [ ] **TPR-01-002 (rustdoc warning):** `cargo doc -p oriterm_core --no-deps` produces `warning: unresolved link to 'Term::renderable_content_into'` from `term/renderable/mod.rs:188`. Not Section 01 code directly, but blocks the crate-wide doc-clean checklist item.
+  Accepted: Validated on 2026-03-31. Warning confirmed present.
 - [ ] **TPR-01-003 (500-line limit):** `editing/mod.rs` is 504 lines — 4 lines over the 500-line hard limit. A further extraction (e.g., moving erase operations to `editing/erase.rs`) would resolve this.
+  Accepted: Validated on 2026-03-31. File is exactly 504 lines.
 
 ---
 
