@@ -3,9 +3,12 @@ section: 4
 title: PTY + Event Loop
 status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-03-31"
 tier: 1
 goal: Spawn a shell via ConPTY, wire the reader thread, and verify end-to-end I/O through Term<EventProxy>
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "4.1"
     title: Binary Crate Setup
@@ -313,8 +316,8 @@ At this point there's no window, but we can verify the full PTY -> VTE -> Term p
 ### Gap Analysis (2026-03-29)
 
 No missing functionality for the stated goal. Minor test gaps (low severity, covered by integration tests):
-- [ ] No dedicated writer thread unit tests — `spawn_pty_writer()` write-batching logic not individually tested (covered by contract/e2e tests)
-- [ ] No PtyHandle take-pattern unit test — `take_reader()`/`take_writer()`/`take_control()` None-on-second-call not tested (trivial Option::take semantics)
-- [ ] No PtyControl::resize() error path test — error mapping not tested (simple conversion)
+- [x] Writer thread unit tests — 4 tests added in `pty/tests.rs` (deliver input, batch queued messages, shutdown flag, channel close) on 2026-03-31
+- [x] PtyHandle take-pattern — verified correct by inspection: `Option::take()` on std types. Covered by contract/e2e tests via `LocalDomain::spawn_pane()`.
+- [x] PtyControl::resize() error path — verified correct by inspection: one-liner `io::Error::other(e.to_string())`. Covered by e2e resize tests.
 
 **Known flaky test:** `test_scroll_to_bottom` in e2e suite occasionally times out (timing-dependent scroll state polling over IPC, not Section 04 specific).
