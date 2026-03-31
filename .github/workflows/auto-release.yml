@@ -31,7 +31,7 @@ jobs:
     # Skip our own version-bump commits to avoid infinite loop.
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Generate token
@@ -105,6 +105,22 @@ jobs:
         if: steps.tag.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@stable
 
+      - uses: actions/setup-node@v4
+        if: steps.tag.outputs.skip != 'true'
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        if: steps.tag.outputs.skip != 'true'
+        with:
+          python-version: '3.13'
+
+      - name: Install Copilot CLI + SDK
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          npm i -g @github/copilot
+          pip install 'github-copilot-sdk==0.2.0'
+
       - name: Sync versions and commit
         if: steps.tag.outputs.skip != 'true'
         run: |
@@ -159,45 +175,13 @@ jobs:
 
       - name: Generate release notes
         if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.resolve.outputs.token }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | grep '^v' | head -1)
-
-          if [[ -n "$PREV_TAG" ]]; then
-            LOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
-          else
-            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -50)
-          fi
-
-          BODY=""
-          FEATURES=""
-          FIXES=""
-          PERF=""
-          HOUSEKEEPING=""
-          OTHER=""
-          while IFS= read -r line; do
-            line=$(echo "$line" | xargs)
-            [[ -z "$line" || "$line" != -\ * ]] && continue
-            subject="${line:2}"
-            if [[ "$subject" == feat* ]]; then
-              FEATURES="${FEATURES}${line}\n"
-            elif [[ "$subject" == fix* ]]; then
-              FIXES="${FIXES}${line}\n"
-            elif [[ "$subject" == perf* ]]; then
-              PERF="${PERF}${line}\n"
-            elif [[ "$subject" == refactor* || "$subject" == chore* || "$subject" == build* || "$subject" == ci* || "$subject" == test* || "$subject" == style* || "$subject" == docs* ]]; then
-              HOUSEKEEPING="${HOUSEKEEPING}${line}\n"
-            else
-              OTHER="${OTHER}${line}\n"
-            fi
-          done <<< "$LOG"
-          [[ -n "$FEATURES" ]] && BODY="${BODY}### Features\n\n${FEATURES}\n"
-          [[ -n "$FIXES" ]] && BODY="${BODY}### Bug Fixes\n\n${FIXES}\n"
-          [[ -n "$PERF" ]] && BODY="${BODY}### Performance\n\n${PERF}\n"
-          [[ -n "$HOUSEKEEPING" ]] && BODY="${BODY}### Housekeeping\n\n${HOUSEKEEPING}\n"
-          [[ -n "$OTHER" ]] && BODY="${BODY}### Other\n\n${OTHER}\n"
-          [[ -z "$BODY" ]] && BODY="See commit history for changes."
-          printf '%b' "$BODY" > /tmp/release-notes.txt
+          python3 scripts/generate-release-notes.py \
+            --tag "${{ steps.tag.outputs.tag }}" \
+            -o /tmp/release-notes.txt
 
       - name: Create release
         if: steps.tag.outputs.skip != 'true'
