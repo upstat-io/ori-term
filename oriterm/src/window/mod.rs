@@ -56,10 +56,6 @@ pub(crate) struct TermWindow {
     /// Whether the window is currently maximized.
     #[allow(dead_code, reason = "maximized state for Section 7")]
     is_maximized: bool,
-    /// Whether the GPU surface supports non-opaque alpha compositing.
-    /// When false, blur/acrylic effects are suppressed because the
-    /// compositor would read undefined alpha values.
-    surface_supports_alpha: bool,
     /// True when `surface_config` dimensions were updated but
     /// `surface.configure()` was deferred. The next render pass must call
     /// [`apply_pending_surface_resize`] before acquiring a texture.
@@ -90,16 +86,9 @@ impl TermWindow {
         let size_px = (phys_size.width, phys_size.height);
         let scale_factor = ScaleFactor::new(window.scale_factor());
 
-        // Apply vibrancy/blur when transparent background is requested
-        // and the GPU surface supports non-opaque alpha compositing.
+        // Apply vibrancy/blur when transparent background is requested.
         if config.transparent && config.blur {
-            apply_transparency(
-                &window,
-                config.opacity,
-                true,
-                DEFAULT_BLUR_TINT,
-                gpu.supports_transparency(),
-            );
+            apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
         // Enable IME input for CJK and other complex input methods.
@@ -114,7 +103,6 @@ impl TermWindow {
             size_px,
             scale_factor,
             is_maximized: false,
-            surface_supports_alpha: gpu.supports_transparency(),
             surface_stale: false,
         })
     }
@@ -137,13 +125,7 @@ impl TermWindow {
         let scale_factor = ScaleFactor::new(window.scale_factor());
 
         if config.transparent && config.blur {
-            apply_transparency(
-                &window,
-                config.opacity,
-                true,
-                DEFAULT_BLUR_TINT,
-                gpu.supports_transparency(),
-            );
+            apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
         window.set_ime_allowed(true);
@@ -157,7 +139,6 @@ impl TermWindow {
             size_px,
             scale_factor,
             is_maximized: false,
-            surface_supports_alpha: gpu.supports_transparency(),
             surface_stale: false,
         })
     }
@@ -288,13 +269,7 @@ impl TermWindow {
     ///
     /// Called on config reload when opacity or blur settings change.
     pub(crate) fn set_transparency(&self, opacity: f32, blur: bool) {
-        apply_transparency(
-            &self.window,
-            opacity,
-            blur,
-            DEFAULT_BLUR_TINT,
-            self.surface_supports_alpha,
-        );
+        apply_transparency(&self.window, opacity, blur, DEFAULT_BLUR_TINT);
     }
 
     /// Show or hide the window.
