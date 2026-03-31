@@ -44,7 +44,14 @@ sections:
   - **Severity**: high
   - **Found**: 2026-03-30 — manual, user report
   - **Root cause**: During a Win32 modal move loop, windows are never marked dirty (no terminal content changes). The 60 FPS timer generates `RedrawRequested` via `InvalidateRect`, but `modal_loop_render()` skips because no window is dirty. After the loop ends (`WM_EXITSIZEMOVE`), the timer is killed and no subsequent event marks the window dirty. The stale surface persists until cursor blink or mouse interaction.
-  - **Fixed**: 2026-03-30 — Added `MODAL_LOOP_ENDED` atomic flag set in `WM_EXITSIZEMOVE`. `about_to_wait()` checks and clears it, marking all terminal windows dirty to force a full repaint after any modal move/resize loop.
+  - **Fixed**: 2026-03-30 — Added `MODAL_LOOP_ENDED` atomic flag set in `WM_EXITSIZEMOVE`. `about_to_wait()` checks and clears it, marking all terminal windows dirty. Also hide terminal windows before close to prevent stale surface flash during teardown.
+
+- [ ] **BUG-06.4**: Settings dialog shows baby blue flash on open/close
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/app/dialog_management.rs` (dialog lifecycle), `oriterm/src/app/dialog_rendering.rs` (first frame)
+  - **Root cause**: TBD. The dialog uses the Primed lifecycle (render first frame → show on next tick with DWM transition suppression), but a brief baby blue flash is still visible. May be a timing issue between `render_to_surface()` and DWM composition, or the GPU not flushing the first frame before showing (unlike `clear_surface()` which calls `device.poll()`).
+  - **Found**: 2026-03-30 — user report. Only affects settings dialog, not terminal windows.
+  - **Note**: Terminal windows use `clear_surface()` + `device.poll()` before showing. Dialogs use `render_dialog()` (no GPU flush) + Primed lifecycle. Adding `device.poll()` after the first dialog render might fix it.
 
 ---
 

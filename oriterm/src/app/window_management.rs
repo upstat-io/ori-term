@@ -286,10 +286,6 @@ impl App {
         };
         let session_wid = ctx.window.session_window_id();
 
-        // Hide the window immediately to prevent a flash of stale/uninitialized
-        // surface content during teardown.
-        ctx.window.set_visible(false);
-
         // If this is the last window, exit the process immediately.
         // ConPTY safety: process::exit() must run before pane destructors.
         if self.windows.len() <= 1 {
@@ -365,11 +361,6 @@ impl App {
             return;
         };
 
-        // Hide before teardown to prevent stale surface flash.
-        if let Some(ctx) = self.windows.get(&winit_id) {
-            ctx.window.set_visible(false);
-        }
-
         // Window is already empty (no tabs/panes) — just remove session state.
         self.session.remove_window(session_wid);
 
@@ -398,7 +389,6 @@ impl App {
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(super) fn remove_empty_window(&mut self, winit_id: WindowId) {
         if let Some(ctx) = self.windows.get(&winit_id) {
-            ctx.window.set_visible(false);
             let session_wid = ctx.window.session_window_id();
             self.session.remove_window(session_wid);
         }
