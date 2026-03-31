@@ -89,3 +89,25 @@ fn config_dir_is_absolute_or_relative() {
     // On CI without env vars, it may be relative (fallback). Both are valid.
     let _ = Path::new(&dir);
 }
+
+#[test]
+fn ensure_config_dir_creates_directory_on_disk() {
+    let dir = super::ensure_config_dir().expect("ensure_config_dir should succeed");
+    assert!(
+        dir.is_dir(),
+        "ensure_config_dir must create the directory: {dir:?}"
+    );
+    assert!(
+        dir.ends_with("oriterm"),
+        "returned path should end with 'oriterm': {dir:?}",
+    );
+}
+
+#[test]
+fn ensure_config_dir_is_idempotent() {
+    // Calling twice should succeed both times without error.
+    let dir1 = super::ensure_config_dir().expect("first call");
+    let dir2 = super::ensure_config_dir().expect("second call");
+    assert_eq!(dir1, dir2, "idempotent: same path both times");
+    assert!(dir1.is_dir());
+}

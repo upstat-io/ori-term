@@ -3,9 +3,12 @@ section: 3
 title: Cross-Platform
 status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-03-31"
 tier: 0
 goal: Day-one first-class support for Windows, Linux, and macOS — all three platforms are equal targets from the start, with native PTY, fonts, clipboard, and GPU on each
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "03.1"
     title: PTY Abstraction
@@ -86,8 +89,8 @@ Cross-platform PTY via `portable-pty`. Each platform uses its native PTY impleme
   - [x] Shell detection returns a valid shell path
   - [x] Environment variables are set correctly in child process
   - [x] PTY resize does not error
-  - [ ] Writer thread — no dedicated unit test (WEAK TESTS — only structural verification; consistent with Alacritty/WezTerm pattern)
-  - [ ] `signal::check()` marked `#[allow(dead_code)]` — infrastructure for future SIGCHLD robustness, not yet wired into event loop
+  - [x] Writer thread — 4 dedicated unit tests added (delivers input, batches queued messages, shutdown sets flag, channel close sets flag)
+  - [x] `signal::check()` dead code removed — PTY EOF detection is per-pane and sufficient; signal module deleted, `signal::init()` call removed from main.rs
 
 ---
 
@@ -421,7 +424,7 @@ Audit and implement all platform-conditional code paths. Every `#[cfg(target_os 
   - [x] `config_dir()` returns a valid path on the current platform
   - [x] `open_url()` does not panic with a valid URL (integration test)
   - [x] Config file is created in the correct platform-specific directory
-  - [ ] `ensure_config_dir()` — no dedicated test verifying directory creation on disk (WEAK TESTS — function exists but not tested with tempdir)
+  - [x] `ensure_config_dir()` — 2 tests added (creates directory on disk, idempotent); wired into main.rs startup; removed stale `#[expect(dead_code)]`
 
 ---
 
@@ -458,8 +461,8 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] User-configured palette always takes priority over system theme
 - [x] **Tests** — 33 passed (verified 2026-03-29):
   - [x] `system_theme()` returns a valid `Theme` variant on the current platform
-  - [ ] Config override `"dark"` / `"light"` ignores system detection (WEAK TESTS — no test exercises config override in theme module; `system_theme()` is pure platform detection without config parameter. Config override likely tested in config module Section 13)
-  - [ ] `"auto"` uses system detection result (WEAK TESTS — same as above, config-level logic not tested here)
+  - [x] Config override `"dark"` / `"light"` ignores system detection — tested in `config/tests.rs::theme_override_dark_ignores_system_detection` and `theme_override_light_ignores_system_detection` (override logic lives in `config/color_config.rs`, not theme module)
+  - [x] `"auto"` uses system detection result — tested in `config/tests.rs::theme_override_auto_uses_system_detection`
 ---
 
 ## 03.8 Section Completion
