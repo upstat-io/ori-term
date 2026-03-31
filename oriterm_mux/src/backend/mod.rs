@@ -107,6 +107,9 @@ pub trait MuxBackend {
     /// Change the cursor shape for a pane.
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape);
 
+    /// Set whether bold text promotes ANSI colors 0–7 to bright 8–15.
+    fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool);
+
     /// Mark all lines in a pane as dirty (forces full re-render).
     fn mark_all_dirty(&mut self, pane_id: PaneId);
 

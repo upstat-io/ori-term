@@ -53,6 +53,13 @@ sections:
   - **Found**: 2026-03-30 — user report. Only affects settings dialog, not terminal windows.
   - **Fixed**: 2026-03-30 — Added `GpuState::poll_device()` method and called it in `finalize_dialog()` after `render_dialog()`, matching the terminal window pattern. GPU work is now flushed synchronously before the Primed → Visible transition.
 
+- [ ] **BUG-06.5**: DX12 backend: terminal grid blank, only tab bar chrome renders
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/gpu/window_renderer/render.rs` (render_cached, ensure_content_cache, copy_texture_to_texture)
+  - **Root cause**: TBD. Content cache `copy_texture_to_texture` to swapchain surface silently fails on DX12. Both terminal grid and chrome render into the content cache pass, yet the tab bar is visible — unclear whether the copy partially succeeds or the tab bar renders via a different path. No wgpu validation errors in log.
+  - **Repro**: Set `gpu_backend = "dx12"` in `[rendering]`. NVIDIA RTX 3080, Windows, `Bgra8UnormSrgb` format.
+  - **Found**: 2026-03-31 — manual, user testing. DX12 is fallback only (Vulkan is default via auto-detection).
+
 ---
 
 ## 06.R Third Party Review Findings

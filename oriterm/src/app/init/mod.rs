@@ -49,7 +49,11 @@ impl App {
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
         let t_gpu_start = std::time::Instant::now();
-        let gpu = GpuState::new(&window_arc, window_config.transparent)?;
+        let gpu = GpuState::new(
+            &window_arc,
+            window_config.transparent,
+            self.config.rendering.gpu_backend,
+        )?;
         let t_gpu = t_gpu_start.elapsed();
 
         // 4. Allocate a GUI-local window ID (mux is a flat pane server).
@@ -413,6 +417,9 @@ impl App {
 
         // Apply image protocol config.
         mux.set_image_config(pane_id, self.config.terminal.image_config());
+
+        // Apply bold-is-bright config.
+        mux.set_bold_is_bright(pane_id, self.config.behavior.bold_is_bright);
 
         // Local tab creation.
         let tab_id = self.session.alloc_tab_id();

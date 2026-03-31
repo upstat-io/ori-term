@@ -151,6 +151,13 @@ impl MuxBackend for EmbeddedMux {
         self.snapshot_dirty.insert(pane_id);
     }
 
+    fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().set_bold_is_bright(enabled);
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.terminal().lock().grid_mut().dirty_mut().mark_all();
