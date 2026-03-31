@@ -52,6 +52,11 @@ pub struct GpuState {
     /// modes (`Mailbox`) over vsync-blocking (`Fifo`) to keep the event
     /// loop responsive during rendering.
     present_mode: wgpu::PresentMode,
+    /// Whether the backend uses DX12 `DirectComposition` for presentation.
+    ///
+    /// True only when the successful init used `dcomp=true`. Callers use this
+    /// to decide whether `WS_EX_NOREDIRECTIONBITMAP` is safe on the window.
+    uses_dcomp: bool,
     /// Vulkan pipeline cache (compiled shaders cached to disk across sessions).
     pub(super) pipeline_cache: Option<wgpu::PipelineCache>,
     pipeline_cache_path: Option<PathBuf>,
@@ -159,6 +164,14 @@ impl GpuState {
     /// Returns true if the surface alpha mode supports transparency.
     pub fn supports_transparency(&self) -> bool {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
+    }
+
+    /// Returns true if the backend uses DX12 `DirectComposition`.
+    ///
+    /// When false, windows must NOT have `WS_EX_NOREDIRECTIONBITMAP` set —
+    /// only `DComp` can present to a window without a redirection bitmap.
+    pub fn uses_dcomp(&self) -> bool {
+        self.uses_dcomp
     }
 
     /// Whether the content cache blit (copy to swapchain) is reliable.
@@ -380,6 +393,7 @@ impl GpuState {
             surface_alpha_mode,
             supports_view_formats,
             present_mode,
+            uses_dcomp: dcomp,
             pipeline_cache,
             pipeline_cache_path,
         })
@@ -420,6 +434,7 @@ impl GpuState {
             surface_alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             supports_view_formats: false,
             present_mode: wgpu::PresentMode::Fifo,
+            uses_dcomp: false,
             pipeline_cache,
             pipeline_cache_path,
         })

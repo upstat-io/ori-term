@@ -326,5 +326,48 @@ fn apply_post_creation_style(window: &Window) {
 #[cfg(not(target_os = "windows"))]
 fn apply_post_creation_style(_window: &Window) {}
 
+/// Remove `WS_EX_NOREDIRECTIONBITMAP` from a window that was created for
+/// `DirectComposition` but ended up on a non-DComp backend (fallback).
+///
+/// Without this, the window is invisible when Vulkan or plain DX12 inherited
+/// a compositor-surface window they cannot present to.
+#[cfg(target_os = "windows")]
+#[allow(
+    unsafe_code,
+    reason = "Win32 FFI: GetWindowLongPtrW/SetWindowLongPtrW to clear extended style bit"
+)]
+pub fn clear_compositor_surface_flag(window: &Window) {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    const WS_EX_NOREDIRECTIONBITMAP: isize = 0x0020_0000;
+    const GWL_EXSTYLE: i32 = -20;
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = win32.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+
+    // SAFETY: `hwnd` is a valid window handle from winit. Reading and writing
+    // the extended style via Get/SetWindowLongPtrW is standard Win32 FFI.
+    unsafe {
+        let ex_style =
+            windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if ex_style & WS_EX_NOREDIRECTIONBITMAP != 0 {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
+                hwnd,
+                GWL_EXSTYLE,
+                ex_style & !WS_EX_NOREDIRECTIONBITMAP,
+            );
+        }
+    }
+}
+
+/// Clearing the compositor surface flag is a no-op on non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+pub fn clear_compositor_surface_flag(_window: &Window) {}
+
 #[cfg(test)]
 mod tests;
