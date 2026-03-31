@@ -61,6 +61,10 @@ impl DecorationMode {
 /// Scale factor is not included — it is a runtime property of the display,
 /// not a configuration input. Query `window.scale_factor()` after creation.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config struct with independent flags"
+)]
 pub struct WindowConfig {
     /// Window title.
     pub title: String,
@@ -78,6 +82,13 @@ pub struct WindowConfig {
     pub resizable: bool,
     /// Window decoration mode (frameless CSD, native, or platform variant).
     pub decoration: DecorationMode,
+    /// Use a compositor surface (`DirectComposition` on Windows).
+    ///
+    /// When true on Windows, sets `WS_EX_NOREDIRECTIONBITMAP` so the window
+    /// bypasses the redirection bitmap and composites via `DirectComposition`.
+    /// Required for `DX12`+`DComp` transparency. Must be false for `Vulkan`
+    /// (which has no `DComp` path) — otherwise the window is invisible.
+    pub use_compositor_surface: bool,
 }
 
 impl Default for WindowConfig {
@@ -91,6 +102,7 @@ impl Default for WindowConfig {
             position: None,
             resizable: true,
             decoration: DecorationMode::default(),
+            use_compositor_surface: false,
         }
     }
 }
@@ -226,8 +238,10 @@ fn apply_platform_attributes(attrs: WindowAttributes, config: &WindowConfig) -> 
     use winit::platform::windows::WindowAttributesExtWindows;
 
     let mut attrs = attrs;
-    if config.transparent {
+    if config.use_compositor_surface {
         // DirectComposition requires no redirection bitmap for alpha blending.
+        // Only set this on DX12+DComp — Vulkan has no DComp path and the
+        // window would be invisible without the redirection bitmap.
         attrs = attrs.with_no_redirection_bitmap(true);
     }
     attrs
