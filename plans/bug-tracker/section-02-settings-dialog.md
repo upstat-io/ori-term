@@ -14,7 +14,7 @@ sections:
     status: in-progress
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
 ---
 
 # Section 02: Settings Dialog Bugs
