@@ -1,3 +1,11 @@
+---
+reroute: true
+name: "Threaded IO"
+full_name: "Threaded Terminal IO"
+status: active
+order: 1
+---
+
 # Threaded Terminal IO — Index
 
 > **Maintenance Notice:** Update this index when adding/modifying sections.
