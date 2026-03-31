@@ -128,7 +128,6 @@ impl GpuState {
     }
 
     /// Returns the native surface format used for surface configuration.
-    #[allow(dead_code, reason = "surface format query for later sections")]
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.surface_format
     }
@@ -142,6 +141,17 @@ impl GpuState {
     #[allow(dead_code, reason = "transparency query for later sections")]
     pub fn supports_transparency(&self) -> bool {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
+    }
+
+    /// Whether the content cache blit (copy to swapchain) is reliable.
+    ///
+    /// Returns `true` when `surface_format == render_format` (no sRGB view
+    /// reinterpretation needed). When formats differ, `copy_texture_to_texture`
+    /// copies raw bytes without format conversion, which may silently produce
+    /// blank output on some backends (observed on DX12 swapchain textures).
+    /// In that case, the renderer falls back to direct single-pass rendering.
+    pub fn can_cache_blit(&self) -> bool {
+        self.surface_format == self.render_format
     }
 
     /// Whether the surface uses a present mode that requires client-side
