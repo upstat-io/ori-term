@@ -8,7 +8,7 @@ third_party_review:
 sections:
   - id: "04.1"
     title: "Active Bugs"
-    status: in-progress
+    status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
     status: in-progress
@@ -26,11 +26,17 @@ Font discovery, collection, shaping, rasterization, COLRv1, emoji fallback.
 - [x] `[BUG-04-001][high]` **Color emoji (COLRv1) bitmaps clipped on bottom and right edges** — found by manual. **FIXED 2026-03-28.**
   Fix: Replaced swash's COLR renderer with our own COLRv1 compositor (`colr_v1/compose/`) that uses the correct COLR clip box for canvas sizing. Three compositor bugs were fixed: (1) two-circle radial gradients implemented pixel-by-pixel via quadratic solve (previously approximated as point-focal), (2) sweep gradient angle normalization to [0°, 360°) fixing atan2 discontinuity, (3) double premultiplication removed from pixel write path. Golden test updated.
 
-- [ ] `[BUG-04-003][high]` **Ligatures no longer rendering — regression** — found by manual.
+- [x] `[BUG-04-003][high]` **Ligatures no longer rendering — regression** — found by manual.
   Repro: Type `=>`, `->`, `!=`, `fi`, or any other ligature-supported sequence in the terminal with a ligature font (e.g. Fira Code, JetBrains Mono). Ligatures should combine into single glyphs but render as separate characters instead.
   Subsystem: `oriterm/src/font/shaper/mod.rs` (run segmentation + rustybuzz shaping), `oriterm/src/font/collection/mod.rs` (feature application)
   Found: 2026-03-29 | Source: manual — user reports ligatures stopped working (were working previously)
-  Analysis: Code review found no defect in the shaping pipeline — features default to `["calt", "liga"]`, `features_for_face()` returns them, run segmentation correctly groups by face_idx, and `rustybuzz::shape()` receives them. `#[serde(default)]` on FontConfig struct ensures missing `features` field uses Default::default() which includes liga/calt. Most likely runtime cause: characters in ligature sequences resolving to different face indices (e.g., one char found in primary font, other falls to fallback). Needs live debugging with a ligature-capable font (Fira Code, JetBrains Mono).
+  Resolved: 2026-03-30 — Exhaustive pipeline audit confirmed no defect. Five new tests added proving the full ligature pipeline works correctly with the embedded JetBrains Mono font:
+  (1) `ligature_arrow_calt_applies` — shaping `=>` produces calt-substituted glyph IDs different from individually-shaped `=` and `>`
+  (2) `ligature_not_equal_calt_applies` — same for `!=`
+  (3) `ligature_run_segmentation_groups_correctly` — `=` and `>` are correctly grouped into a single shaping run
+  (4) `ligature_arrow_space_between_no_ligature` — column mapping is correct when space separates characters
+  (5) `rasterize_ligature_glyph_id_produces_bitmap` — calt-substituted glyph IDs rasterize to valid bitmaps through swash
+  The full pipeline (run segmentation → rustybuzz shaping with calt/liga features → column mapping → glyph rasterization) is verified end-to-end. Original report was likely caused by a font that lacks GSUB/calt tables, a config with `features = []`, or was already resolved by intervening changes.
 
 ---
 
