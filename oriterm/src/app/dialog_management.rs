@@ -198,6 +198,13 @@ impl App {
         self.install_dialog_chrome(winit_id);
         self.render_dialog(winit_id);
 
+        // Flush GPU so the first frame is fully committed to the surface
+        // before the window becomes visible. Without this, the compositor
+        // may briefly show uninitialized VRAM (baby blue flash).
+        if let Some(gpu) = self.gpu.as_ref() {
+            gpu.poll_device();
+        }
+
         // Transition to Primed — the event loop's about_to_wait handler
         // will show the window on the next tick (after the first frame is
         // committed). This prevents any flash of uninitialized content.

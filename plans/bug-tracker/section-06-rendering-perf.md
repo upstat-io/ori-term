@@ -14,7 +14,7 @@ sections:
     status: in-progress
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
 ---
 
 # Section 06: Rendering & Performance Bugs
@@ -46,12 +46,12 @@ sections:
   - **Root cause**: During a Win32 modal move loop, windows are never marked dirty (no terminal content changes). The 60 FPS timer generates `RedrawRequested` via `InvalidateRect`, but `modal_loop_render()` skips because no window is dirty. After the loop ends (`WM_EXITSIZEMOVE`), the timer is killed and no subsequent event marks the window dirty. The stale surface persists until cursor blink or mouse interaction.
   - **Fixed**: 2026-03-30 — Added `MODAL_LOOP_ENDED` atomic flag set in `WM_EXITSIZEMOVE`. `about_to_wait()` checks and clears it, marking all terminal windows dirty. Also hide terminal windows before close to prevent stale surface flash during teardown.
 
-- [ ] **BUG-06.4**: Settings dialog shows baby blue flash on open/close
+- [x] **BUG-06.4**: Settings dialog shows baby blue flash on open/close
   - **Severity**: medium
-  - **File(s)**: `oriterm/src/app/dialog_management.rs` (dialog lifecycle), `oriterm/src/app/dialog_rendering.rs` (first frame)
-  - **Root cause**: TBD. The dialog uses the Primed lifecycle (render first frame → show on next tick with DWM transition suppression), but a brief baby blue flash is still visible. May be a timing issue between `render_to_surface()` and DWM composition, or the GPU not flushing the first frame before showing (unlike `clear_surface()` which calls `device.poll()`).
+  - **File(s)**: `oriterm/src/app/dialog_management.rs` (dialog lifecycle), `oriterm/src/gpu/state/mod.rs` (poll_device)
+  - **Root cause**: `render_dialog()` called `render_to_surface()` which submits GPU commands and presents, but did not call `device.poll()` to flush the work. The window became visible on the next tick via `show_primed_dialogs()` before the GPU had finished rendering the first frame, briefly showing uninitialized VRAM (baby blue). Terminal windows avoided this because `clear_surface()` already called `device.poll(wait_indefinitely())`.
   - **Found**: 2026-03-30 — user report. Only affects settings dialog, not terminal windows.
-  - **Note**: Terminal windows use `clear_surface()` + `device.poll()` before showing. Dialogs use `render_dialog()` (no GPU flush) + Primed lifecycle. Adding `device.poll()` after the first dialog render might fix it.
+  - **Fixed**: 2026-03-30 — Added `GpuState::poll_device()` method and called it in `finalize_dialog()` after `render_dialog()`, matching the terminal window pattern. GPU work is now flushed synchronously before the Primed → Visible transition.
 
 ---
 
