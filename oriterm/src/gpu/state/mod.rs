@@ -64,9 +64,38 @@ impl GpuState {
     /// (the only path that gives `PreMultiplied` alpha on Windows HWND
     /// swapchains). Otherwise prefers Vulkan (supports pipeline caching for
     /// faster subsequent launches).
-    pub fn new(window: &Arc<Window>, transparent: bool) -> Result<Self, GpuInitError> {
-        // On Windows with transparency, DX12+DComp is the only path for
-        // PreMultiplied alpha.
+    pub fn new(
+        window: &Arc<Window>,
+        transparent: bool,
+        backend: crate::config::GpuBackend,
+    ) -> Result<Self, GpuInitError> {
+        use crate::config::GpuBackend;
+
+        // Explicit backend selection — try only the requested backend.
+        match backend {
+            GpuBackend::Vulkan => {
+                return Self::try_init(window, wgpu::Backends::VULKAN, false, transparent)
+                    .ok_or(GpuInitError);
+            }
+            GpuBackend::DirectX12 => {
+                // Try DComp first for transparency, then plain DX12.
+                if transparent {
+                    if let Some(s) = Self::try_init(window, wgpu::Backends::DX12, true, transparent)
+                    {
+                        return Ok(s);
+                    }
+                }
+                return Self::try_init(window, wgpu::Backends::DX12, false, transparent)
+                    .ok_or(GpuInitError);
+            }
+            GpuBackend::Metal => {
+                return Self::try_init(window, wgpu::Backends::METAL, false, transparent)
+                    .ok_or(GpuInitError);
+            }
+            GpuBackend::Auto => {} // Fall through to auto-detection below.
+        }
+
+        // Auto-detection: DX12+DComp for transparency, then Vulkan, then PRIMARY, then SECONDARY.
         #[cfg(target_os = "windows")]
         if transparent {
             if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true, transparent) {
@@ -75,18 +104,14 @@ impl GpuState {
             log::warn!("DX12 DirectComposition init failed, falling back to Vulkan");
         }
 
-        // Prefer Vulkan — it supports pipeline caching (compiled shaders
-        // persisted to disk).
         if let Some(state) = Self::try_init(window, wgpu::Backends::VULKAN, false, transparent) {
             return Ok(state);
         }
 
-        // Fall back to other primary backends (DX12, Metal).
         if let Some(state) = Self::try_init(window, wgpu::Backends::PRIMARY, false, transparent) {
             return Ok(state);
         }
 
-        // Last resort: secondary backends (GL, etc.).
         Self::try_init(window, wgpu::Backends::SECONDARY, false, transparent).ok_or(GpuInitError)
     }
 

@@ -142,6 +142,14 @@ impl MuxBackend for MuxClient {
         self.dirty_panes.insert(pane_id);
     }
 
+    fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetBoldIsBright { pane_id, enabled });
+            transport.invalidate_pushed_snapshot(pane_id);
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::MarkAllDirty { pane_id });

@@ -120,6 +120,14 @@ pub enum MuxPdu {
         shape: u8,
     },
 
+    /// Set bold-as-bright behavior for a pane. Fire-and-forget.
+    SetBoldIsBright {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Whether bold promotes ANSI colors to bright.
+        enabled: bool,
+    },
+
     /// Mark all grid lines dirty in a pane (forces full re-render).
     /// Fire-and-forget.
     MarkAllDirty {
@@ -371,6 +379,7 @@ impl MuxPdu {
             Self::ScrollToPrompt { .. } => MsgType::ScrollToPrompt,
             Self::SetTheme { .. } => MsgType::SetTheme,
             Self::SetCursorShape { .. } => MsgType::SetCursorShape,
+            Self::SetBoldIsBright { .. } => MsgType::SetBoldIsBright,
             Self::MarkAllDirty { .. } => MsgType::MarkAllDirty,
             Self::OpenSearch { .. } => MsgType::OpenSearch,
             Self::CloseSearch { .. } => MsgType::CloseSearch,
@@ -417,6 +426,7 @@ impl MuxPdu {
                 | Self::ScrollToBottom { .. }
                 | Self::SetTheme { .. }
                 | Self::SetCursorShape { .. }
+                | Self::SetBoldIsBright { .. }
                 | Self::MarkAllDirty { .. }
                 | Self::OpenSearch { .. }
                 | Self::CloseSearch { .. }

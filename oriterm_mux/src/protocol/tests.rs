@@ -65,6 +65,7 @@ fn msg_type_roundtrip_all() {
         MsgType::ScrollToPrompt,
         MsgType::SetTheme,
         MsgType::SetCursorShape,
+        MsgType::SetBoldIsBright,
         MsgType::MarkAllDirty,
         MsgType::OpenSearch,
         MsgType::CloseSearch,

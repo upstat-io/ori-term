@@ -33,6 +33,7 @@ pub(crate) enum MsgType {
     SpawnPane = 0x0124,
     ListPanes = 0x0125,
     SetImageConfig = 0x0126,
+    SetBoldIsBright = 0x0127,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -90,6 +91,7 @@ impl MsgType {
             0x0124 => Some(Self::SpawnPane),
             0x0125 => Some(Self::ListPanes),
             0x0126 => Some(Self::SetImageConfig),
+            0x0127 => Some(Self::SetBoldIsBright),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),
