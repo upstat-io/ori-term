@@ -157,7 +157,6 @@ impl GpuState {
     }
 
     /// Returns true if the surface alpha mode supports transparency.
-    #[allow(dead_code, reason = "transparency query for later sections")]
     pub fn supports_transparency(&self) -> bool {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
     }

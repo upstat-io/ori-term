@@ -16,12 +16,21 @@ use winit::window::Window;
 
 /// Apply or remove platform-specific transparency effects on a window.
 ///
-/// When `opacity < 1.0` and `blur` is true, enables frosted glass / vibrancy.
-/// When `opacity >= 1.0` or `blur` is false, disables any previously applied
-/// effects. The `bg` color tints the acrylic/blur layer on Windows (ignored
-/// on other platforms).
-pub fn apply_transparency(window: &Window, opacity: f32, blur: bool, bg: Rgb) {
-    let want_blur = blur && opacity < 1.0;
+/// When `opacity < 1.0`, `blur` is true, and the GPU surface supports
+/// non-opaque alpha compositing, enables frosted glass / vibrancy.
+/// Otherwise disables any previously applied effects.
+///
+/// `surface_supports_alpha` should be `GpuState::supports_transparency()`.
+/// Without it, DWM/compositor blur reads an undefined alpha channel from
+/// the surface (Vulkan `Opaque` mode zeroes alpha), making content invisible.
+pub fn apply_transparency(
+    window: &Window,
+    opacity: f32,
+    blur: bool,
+    bg: Rgb,
+    surface_supports_alpha: bool,
+) {
+    let want_blur = blur && opacity < 1.0 && surface_supports_alpha;
 
     if want_blur {
         apply_blur(window, opacity, bg);
