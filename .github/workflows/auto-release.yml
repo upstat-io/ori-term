@@ -1,10 +1,7 @@
 name: Auto Release
 
-# Automatically version-bump, tag, and release on every merge to main.
+# Single workflow: version-bump → tag → build (all platforms) → release notes → publish.
 # CI is guaranteed to have passed via branch protection (required status check).
-# Uses CalVer prerelease: v0.2.0-alpha.YYYYMMDD
-#
-# Flow: bump-build.sh → sync-version.sh → commit → tag → release.yml builds binaries
 #
 # REQUIRES: The oriterm-release-bot GitHub App must be a bypass actor in the
 # main branch ruleset, so this workflow can push version-bump commits directly.
@@ -17,7 +14,6 @@ on:
     branches: [main]
 
 # Queue releases — don't cancel in-progress ones.
-# Each merge gets its own tag, processed sequentially.
 concurrency:
   group: auto-release
   cancel-in-progress: false
@@ -25,19 +21,25 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  auto-release:
-    name: Tag & Release
-    # Skip our own version-bump commits to avoid infinite loop.
+  # ── Job 1: Version bump, tag, push, release notes ──────────────────────
+  prepare:
+    name: Prepare Release
     if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      skip: ${{ steps.tag.outputs.skip }}
+      source_changes: ${{ steps.changes.outputs.source_changes }}
 
     steps:
       - name: Generate token
         id: token
         run: |
-          # Prefer GitHub App token; fall back to PAT; fall back to GITHUB_TOKEN
           if [[ -n "${{ secrets.RELEASE_APP_ID }}" && -n "${{ secrets.RELEASE_APP_PRIVATE_KEY }}" ]]; then
             echo "method=app" >> $GITHUB_OUTPUT
           elif [[ -n "${{ secrets.ORITERM_RELEASE_TOKEN }}" ]]; then
@@ -77,22 +79,16 @@ jobs:
         run: |
           ./scripts/bump-build.sh
 
-          if [[ ! -f BUILD_NUMBER ]]; then
-            echo "::error::BUILD_NUMBER file not found"
-            exit 1
-          fi
-
           BUILD_CONTENT=$(tr -d '[:space:]' < BUILD_NUMBER)
           if [[ -z "$BUILD_CONTENT" ]]; then
-            echo "::error::BUILD_NUMBER file is empty"
+            echo "::error::BUILD_NUMBER is empty"
             exit 1
           fi
 
           TAG="v${BUILD_CONTENT}"
 
-          # Safety: skip if this exact tag already exists
           if git rev-parse "refs/tags/${TAG}" &>/dev/null; then
-            echo "::warning::Tag ${TAG} already exists — skipping release"
+            echo "::warning::Tag ${TAG} already exists — skipping"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -125,8 +121,6 @@ jobs:
         if: steps.tag.outputs.skip != 'true'
         run: |
           ./scripts/sync-version.sh
-
-          # Regenerate Cargo.lock so it reflects the updated version string.
           cargo generate-lockfile
 
           git config user.name "github-actions[bot]"
@@ -145,18 +139,16 @@ jobs:
           PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | head -1)
 
           if [[ -z "$PREV_TAG" ]]; then
-            echo "No previous tag — first release"
             echo "source_changes=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Check if any source files changed since last release.
           if git diff --name-only "$PREV_TAG"..HEAD \
               | grep -qE '^(oriterm.*\.(rs|wgsl)|crates/.*\.rs|Cargo\.lock$)'; then
-            echo "Source changes detected — full release with binaries"
+            echo "Source changes detected"
             echo "source_changes=true" >> $GITHUB_OUTPUT
           else
-            echo "Housekeeping only — release without binaries"
+            echo "Housekeeping only — no binaries"
             echo "source_changes=false" >> $GITHUB_OUTPUT
           fi
 
@@ -164,14 +156,8 @@ jobs:
         if: steps.tag.outputs.skip != 'true'
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
-          if [[ "${{ steps.changes.outputs.source_changes }}" == "true" ]]; then
-            # Push commit + tag — tag push triggers the binary Release workflow
-            git tag "$TAG"
-            git push origin main "$TAG"
-          else
-            # Push commit only — tag via API (no binary build triggered)
-            git push origin main
-          fi
+          git tag "$TAG"
+          git push origin main "$TAG"
 
       - name: Generate release notes
         if: steps.tag.outputs.skip != 'true'
@@ -183,24 +169,158 @@ jobs:
             --tag "${{ steps.tag.outputs.tag }}" \
             -o /tmp/release-notes.txt
 
-      - name: Create release
+      - name: Create release (placeholder — binaries attached later)
         if: steps.tag.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ steps.resolve.outputs.token }}
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
+          gh release create "$TAG" \
+            --title "oriterm ${TAG#v}" \
+            --notes-file /tmp/release-notes.txt \
+            --prerelease
 
-          if [[ "${{ steps.changes.outputs.source_changes }}" == "true" ]]; then
-            # Full release — binaries will be attached by the Release workflow
-            gh release create "$TAG" \
-              --title "oriterm ${TAG#v}" \
-              --notes-file /tmp/release-notes.txt \
-              --prerelease
-          else
-            # Housekeeping release — no binaries
-            gh release create "$TAG" \
-              --target "$(git rev-parse HEAD)" \
-              --title "oriterm ${TAG#v} (No Source Changes)" \
-              --notes-file /tmp/release-notes.txt \
-              --prerelease
-          fi
+  # ── Job 2: Build Linux ─────────────────────────────────────────────────
+  build-linux:
+    name: Build Linux (x86_64)
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true' && needs.prepare.outputs.source_changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config libx11-dev libxi-dev libxcursor-dev \
+            libxrandr-dev libxinerama-dev libwayland-dev \
+            libxkbcommon-dev libegl-dev libvulkan-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Strip and package
+        run: |
+          strip target/release/oriterm target/release/oriterm-mux
+          tar -czvf oriterm-${RELEASE_TAG}-linux-x86_64.tar.gz \
+            -C target/release oriterm oriterm-mux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oriterm-linux-x86_64
+          path: oriterm-${{ env.RELEASE_TAG }}-linux-x86_64.tar.gz
+
+  # ── Job 3: Build macOS ─────────────────────────────────────────────────
+  build-macos:
+    name: Build macOS (aarch64)
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true' && needs.prepare.outputs.source_changes == 'true'
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos
+
+      - name: Build
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Strip and package
+        run: |
+          strip target/aarch64-apple-darwin/release/oriterm \
+                target/aarch64-apple-darwin/release/oriterm-mux
+          tar -czvf oriterm-${RELEASE_TAG}-macos-aarch64.tar.gz \
+            -C target/aarch64-apple-darwin/release oriterm oriterm-mux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oriterm-macos-aarch64
+          path: oriterm-${{ env.RELEASE_TAG }}-macos-aarch64.tar.gz
+
+  # ── Job 4: Build Windows ───────────────────────────────────────────────
+  build-windows:
+    name: Build Windows (x86_64)
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true' && needs.prepare.outputs.source_changes == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows
+
+      - name: Build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Package
+        shell: bash
+        run: |
+          7z a oriterm-${RELEASE_TAG}-windows-x86_64.zip \
+            ./target/x86_64-pc-windows-msvc/release/oriterm.exe \
+            ./target/x86_64-pc-windows-msvc/release/oriterm-mux.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oriterm-windows-x86_64
+          path: oriterm-${{ env.RELEASE_TAG }}-windows-x86_64.zip
+
+  # ── Job 5: Attach binaries + checksums to release ──────────────────────
+  publish:
+    name: Publish Binaries
+    needs: [prepare, build-linux, build-macos, build-windows]
+    if: needs.prepare.outputs.skip != 'true' && needs.prepare.outputs.source_changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum oriterm-* > checksums-sha256.txt
+          cat checksums-sha256.txt
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE_TAG" artifacts/* \
+            --repo "${{ github.repository }}"
