@@ -31,12 +31,19 @@ impl App {
 
         // Build UI window config from the user's config.
         let opacity = self.config.window.effective_opacity();
+        // DComp transparency (WS_EX_NOREDIRECTIONBITMAP) only works on DX12.
+        // Vulkan has no DComp path — setting it makes the window invisible.
+        let dcomp_available = matches!(
+            self.config.rendering.gpu_backend,
+            crate::config::GpuBackend::Auto | crate::config::GpuBackend::DirectX12
+        );
         let window_config = WindowConfig {
             title: "ori".into(),
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
             decoration: decoration_to_mode(self.config.window.decorations),
+            use_compositor_surface: dcomp_available && opacity < 1.0,
             ..WindowConfig::default()
         };
 

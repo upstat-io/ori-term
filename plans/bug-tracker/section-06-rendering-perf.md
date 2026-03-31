@@ -61,6 +61,13 @@ sections:
   - **Found**: 2026-03-31 — manual, user testing.
   - **Fixed**: 2026-03-31 — Replaced infinity with large finite values (`-100_000.0, -100_000.0, 200_000.0, 200_000.0`) in both `CLIP_UNCLIPPED` and `ContentMask::unclipped()`. No NaN, all comparisons well-defined.
 
+- [ ] **BUG-06.7**: Vulkan backend: baby blue flash when opening settings dialog
+  - **Severity**: low
+  - **File(s)**: `oriterm/src/app/dialog_management.rs` (dialog lifecycle)
+  - **Root cause**: Same symptom as BUG-06.4 (uninitialized VRAM visible before first frame). BUG-06.4 was fixed with `poll_device()` after `render_dialog()`, which works on DX12 but apparently Vulkan's poll timing differs — the GPU work may not be fully flushed before the window becomes visible.
+  - **Repro**: Set `gpu_backend = "vulkan"`, open settings dialog. Brief baby blue flash before content renders.
+  - **Found**: 2026-03-31 — manual, user report. DX12 (default) is not affected.
+
 ---
 
 ## 06.R Third Party Review Findings

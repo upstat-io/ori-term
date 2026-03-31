@@ -77,11 +77,15 @@ impl App {
                     f.palette.background
                 });
             let win_focused = ctx.window.window().has_focus();
-            let opacity = f64::from(if win_focused {
-                self.config.window.effective_opacity()
+            let opacity = if ctx.window.surface_has_alpha() {
+                f64::from(if win_focused {
+                    self.config.window.effective_opacity()
+                } else {
+                    self.config.window.effective_unfocused_opacity()
+                })
             } else {
-                self.config.window.effective_unfocused_opacity()
-            });
+                1.0
+            };
 
             renderer.begin_multi_pane_frame(viewport, bg, opacity);
 
@@ -192,7 +196,9 @@ impl App {
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
                     let pane_focused = ctx.window.window().has_focus();
-                    frame.palette.opacity = if pane_focused {
+                    frame.palette.opacity = if !ctx.window.surface_has_alpha() {
+                        1.0
+                    } else if pane_focused {
                         self.config.window.effective_opacity()
                     } else {
                         self.config.window.effective_unfocused_opacity()
