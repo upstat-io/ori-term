@@ -53,12 +53,13 @@ sections:
   - **Found**: 2026-03-30 — user report. Only affects settings dialog, not terminal windows.
   - **Fixed**: 2026-03-30 — Added `GpuState::poll_device()` method and called it in `finalize_dialog()` after `render_dialog()`, matching the terminal window pattern. GPU work is now flushed synchronously before the Primed → Visible transition.
 
-- [ ] **BUG-06.5**: DX12 backend: terminal grid blank, only tab bar chrome renders
+- [x] **BUG-06.5**: DX12 backend: terminal grid blank, only tab bar chrome renders
   - **Severity**: medium
   - **File(s)**: `oriterm/src/gpu/window_renderer/render.rs` (render_cached, ensure_content_cache, copy_texture_to_texture)
-  - **Root cause**: TBD. Content cache `copy_texture_to_texture` to swapchain surface silently fails on DX12. Both terminal grid and chrome render into the content cache pass, yet the tab bar is visible — unclear whether the copy partially succeeds or the tab bar renders via a different path. No wgpu validation errors in log.
+  - **Root cause**: `copy_texture_to_texture` from the offscreen content cache to DX12 swapchain textures silently fails. On DX12, the surface format is typically `Bgra8Unorm` while the render format is `Bgra8UnormSrgb` — the content cache renders through an sRGB view, then the raw copy to the non-sRGB swapchain produces blank output. The overlay/cursor pass (which renders directly to the surface view) still worked, making tab bar hover states visible.
   - **Repro**: Set `gpu_backend = "dx12"` in `[rendering]`. NVIDIA RTX 3080, Windows, `Bgra8UnormSrgb` format.
   - **Found**: 2026-03-31 — manual, user testing. DX12 is fallback only (Vulkan is default via auto-detection).
+  - **Fixed**: 2026-03-31 — Added `GpuState::can_cache_blit()` (true when `surface_format == render_format`). When formats differ (DX12), the renderer bypasses the content cache and uses `render_single_pass()` — rendering everything directly to the surface view in a single render pass. No `copy_texture_to_texture` to swapchain needed.
 
 ---
 
