@@ -185,7 +185,7 @@ impl RenderableContent {
     ///
     /// After calling this, the snapshot is empty but the underlying `Vec`
     /// buffers retain their allocations. Used by
-    /// [`Term::renderable_content_into`] to avoid per-frame allocation.
+    /// [`Term::renderable_content_into`](crate::term::Term::renderable_content_into) to avoid per-frame allocation.
     pub fn clear(&mut self) {
         self.cells.clear();
         self.damage.clear();
