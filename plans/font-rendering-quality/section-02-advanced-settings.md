@@ -18,10 +18,10 @@ sections:
     status: complete
   - id: "02.2"
     title: "Renderer Wiring"
-    status: complete
+    status: in-progress
   - id: "02.3"
     title: "Settings UI: Font Page Advanced Section"
-    status: complete
+    status: in-progress
   - id: "02.4"
     title: "Remove Rendering Page Subpixel Toggle"
     status: complete
