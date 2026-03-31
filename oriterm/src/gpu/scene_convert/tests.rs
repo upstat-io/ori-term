@@ -451,7 +451,7 @@ fn text_mixed_with_rects() {
 #[test]
 fn text_color_conversion() {
     // Verify color_to_rgb converts f32 RGBA to u8 RGB correctly.
-    let rgb = super::color_to_rgb(Color::rgba(1.0, 0.5, 0.0, 0.8));
+    let rgb = super::text::color_to_rgb(Color::rgba(1.0, 0.5, 0.0, 0.8));
     assert_eq!(rgb.r, 255);
     assert_eq!(rgb.g, 128);
     assert_eq!(rgb.b, 0);
