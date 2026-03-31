@@ -11,6 +11,7 @@
 
 mod text;
 
+#[cfg(not(target_os = "macos"))]
 pub(crate) use text::color_to_rgb;
 use text::{convert_icon, convert_text};
 
