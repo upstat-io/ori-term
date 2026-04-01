@@ -155,8 +155,9 @@ impl<T: EventListener> PaneIoThread<T> {
     /// Parse a byte buffer with bounded chunking.
     ///
     /// Slices `bytes` into [`MAX_PARSE_CHUNK`]-sized pieces. Between chunks,
-    /// commands are drained so resize/scroll stay responsive. Used by both
-    /// the `select!` receive path and `process_pending_bytes()`.
+    /// commands are drained and snapshots are published so that resize/scroll
+    /// stay responsive and the main thread sees render progress even within a
+    /// single large PTY read (up to 1 MB).
     fn handle_bytes_chunked(&mut self, bytes: &[u8]) {
         let mut offset = 0;
         while offset < bytes.len() {
@@ -167,6 +168,9 @@ impl<T: EventListener> PaneIoThread<T> {
             if self.shutdown.load(Ordering::Acquire) {
                 return;
             }
+            // Publish intermediate snapshots between chunks so the main thread
+            // sees progress even within a single large forwarded read.
+            self.maybe_produce_snapshot();
         }
     }
 
