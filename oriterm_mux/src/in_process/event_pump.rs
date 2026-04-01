@@ -109,6 +109,12 @@ impl InProcessMux {
         self.notifications.clear();
     }
 
+    /// Push a notification directly (used by `EmbeddedMux` for IO-thread
+    /// snapshot-driven `PaneOutput` notifications).
+    pub fn push_notification(&mut self, notif: MuxNotification) {
+        self.notifications.push(notif);
+    }
+
     // Accessors
 
     /// Clone of the event sender for spawning new panes.

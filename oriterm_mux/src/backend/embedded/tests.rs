@@ -159,3 +159,76 @@ fn search_active_missing_pane() {
     let mux = EmbeddedMux::new(test_wakeup());
     assert!(!mux.is_search_active(PaneId::from_raw(999)));
 }
+
+// -- IO-thread snapshot integration --
+
+/// Spawn a real pane, wait for the IO thread to produce a snapshot,
+/// and verify `poll_events` marks it dirty and emits `PaneOutput`.
+#[cfg(unix)]
+#[test]
+fn poll_events_uses_has_new_snapshot() {
+    use oriterm_core::Theme;
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+
+    // Send a command to generate output.
+    mux.send_input(pane_id, b"echo SNAPSHOT_TEST\n");
+
+    // Poll until the IO thread produces a snapshot (max 5 seconds).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut saw_dirty = false;
+    let mut saw_pane_output = false;
+    while std::time::Instant::now() < deadline {
+        mux.poll_events();
+        if mux.is_pane_snapshot_dirty(pane_id) {
+            saw_dirty = true;
+        }
+        let mut notifs = Vec::new();
+        mux.drain_notifications(&mut notifs);
+        if notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneOutput(id) if *id == pane_id))
+        {
+            saw_pane_output = true;
+        }
+        if saw_dirty && saw_pane_output {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    assert!(saw_dirty, "IO-thread snapshot should mark pane dirty");
+    assert!(
+        saw_pane_output,
+        "poll_events should emit PaneOutput when IO thread produces a snapshot"
+    );
+
+    // Cleanup: close and drop the pane.
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
+}
+
+/// Spawn a pane, close it via `cleanup_closed_pane`, verify no panic.
+#[cfg(unix)]
+#[test]
+fn cleanup_closed_pane_with_io_thread() {
+    use oriterm_core::Theme;
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+
+    // Close and cleanup — should shut down IO thread, reader, writer.
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
+
+    // Pane should be fully gone.
+    assert!(mux.pane_snapshot(pane_id).is_none());
+    assert!(!mux.pane_ids().contains(&pane_id));
+}

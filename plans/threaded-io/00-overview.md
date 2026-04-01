@@ -227,5 +227,5 @@ Phase 5 - Verification
 | 04 | Render Pipeline Migration | `section-04-render-migration.md` | Complete |
 | 05 | Resize Pipeline Migration | `section-05-resize-migration.md` | Complete |
 | 06 | Remaining State Operations | `section-06-remaining-ops.md` | Complete |
-| 07 | Pane Lifecycle & FairMutex Removal | `section-07-lifecycle-cleanup.md` | Not Started |
+| 07 | Pane Lifecycle & FairMutex Removal | `section-07-lifecycle-cleanup.md` | Complete |
 | 08 | Verification | `section-08-verification.md` | Not Started |
