@@ -142,6 +142,7 @@ impl LocalDomain {
         let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
 
         // 8. Spawn the Terminal IO thread (owns Term #2, VTE processors, PtyControl).
+        let io_selection_dirty = Arc::new(AtomicBool::new(false));
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
             terminal: io_term,
             mode_cache: Arc::clone(&io_mode_cache),
@@ -151,6 +152,7 @@ impl LocalDomain {
             pty_control: Some(control),
             initial_rows: config.rows,
             initial_cols: config.cols,
+            selection_dirty: Arc::clone(&io_selection_dirty),
         });
         let byte_tx = io_handle.byte_sender();
         let io_join = io_thread.spawn()?;
@@ -180,6 +182,7 @@ impl LocalDomain {
             mode_cache,
             initial_rows: config.rows,
             initial_cols: config.cols,
+            io_selection_dirty,
         }))
     }
 }

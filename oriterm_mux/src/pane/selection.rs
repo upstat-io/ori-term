@@ -36,20 +36,18 @@ impl Pane {
     }
 
     /// Check whether terminal output has invalidated the selection.
+    ///
+    /// Reads the lock-free `io_selection_dirty` atomic (set by the IO thread
+    /// after VTE parsing) instead of locking the terminal.
     pub fn check_selection_invalidation(&mut self) {
-        if self.selection.is_none() {
-            let mut term = self.terminal.lock();
-            if term.is_selection_dirty() {
-                term.clear_selection_dirty();
-            }
+        if !self
+            .io_selection_dirty
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
             return;
         }
-        let mut term = self.terminal.lock();
-        if term.is_selection_dirty() {
-            term.clear_selection_dirty();
-            drop(term);
-            self.selection = None;
-        }
+        // Terminal output changed — invalidate any active selection.
+        self.selection = None;
     }
 
     // -- Search --
@@ -69,16 +67,25 @@ impl Pane {
         if self.search.is_none() {
             self.search = Some(SearchState::new());
         }
+        self.search_active
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Close search.
     pub fn close_search(&mut self) {
         self.search = None;
+        self.search_active
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 
     /// Whether search is currently active.
+    ///
+    /// Reads the lock-free `search_active` atomic, which is kept in sync
+    /// by `open_search()` / `close_search()`. Does not require terminal
+    /// access or a reply channel to the IO thread.
     pub fn is_search_active(&self) -> bool {
-        self.search.is_some()
+        self.search_active
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     // -- Command zone selection --
