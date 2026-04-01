@@ -272,3 +272,59 @@ fn truncate_beyond_row_is_noop() {
     row.truncate(Column(20), &Cell::default());
     assert_eq!(row[Column(0)].ch, 'A');
 }
+
+#[test]
+fn is_blank_true_for_default_row() {
+    let row = Row::new(10);
+    assert!(row.is_blank());
+}
+
+#[test]
+fn is_blank_false_after_write() {
+    let mut row = Row::new(10);
+    let mut cell = Cell::default();
+    cell.ch = 'A';
+    row.append(Column(0), &cell);
+    assert!(!row.is_blank());
+}
+
+#[test]
+fn is_blank_true_after_reset() {
+    let mut row = Row::new(10);
+    let mut cell = Cell::default();
+    cell.ch = 'B';
+    row.append(Column(3), &cell);
+    row.reset(10, &Cell::default());
+    assert!(row.is_blank());
+}
+
+#[test]
+fn content_len_zero_for_empty_row() {
+    let row = Row::new(10);
+    assert_eq!(row.content_len(), 0);
+}
+
+#[test]
+fn content_len_tracks_rightmost_nonempty_cell() {
+    let mut row = Row::new(10);
+    let mut cell = Cell::default();
+    cell.ch = 'A';
+    row.append(Column(0), &cell);
+    assert_eq!(row.content_len(), 1);
+
+    cell.ch = 'Z';
+    row.append(Column(7), &cell);
+    assert_eq!(row.content_len(), 8);
+}
+
+#[test]
+fn content_len_shrinks_after_clear() {
+    let mut row = Row::new(10);
+    let mut cell = Cell::default();
+    cell.ch = 'X';
+    row.append(Column(5), &cell);
+    assert_eq!(row.content_len(), 6);
+
+    row.clear_range(Column(5)..Column(6), &Cell::default());
+    assert_eq!(row.content_len(), 0);
+}

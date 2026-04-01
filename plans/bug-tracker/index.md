@@ -69,7 +69,8 @@ toml, reload, hot-reload, apply, runtime, restore-session, session, persist
 ```
 render, frame, latency, lag, slow, key-repeat, input-lag, GPU, draw_frame,
 performance, frame-time, frame-budget, redraw, cell-loop, wrapping,
-surface, invalidation, off-screen, uninitialized, baby-blue, expose, damage
+surface, invalidation, off-screen, uninitialized, baby-blue, expose, damage,
+floating-pane, transparent, opacity, background, blur
 ```
 
 ### Section 07: CI & Build
@@ -88,6 +89,22 @@ bell, audible, beep, sound, BEL, VTE, escape, terminal, mode, notification,
 selection, highlight, dismiss, deselect, clear, click, sticky, stuck
 ```
 
+### Section 09: Session & Tab/Window Management
+**File:** `section-09-session.md` | **Status:** In Progress
+
+```
+tab, window, session, move-tab, tear-off, detach, split-tree, floating,
+navigation, context-menu, new-window, tab-management, pane, active-tab
+```
+
+### Section 10: Platform Windows
+**File:** `section-10-platform-windows.md` | **Status:** In Progress
+
+```
+windows, DWM, ConPTY, title-bar, named-pipes, WS_THICKFRAME, snap,
+accent-color, border-color, DwmSetWindowAttribute, WM_NCHITTEST
+```
+
 ---
 
 ## Quick Reference
@@ -102,3 +119,5 @@ selection, highlight, dismiss, deselect, clear, click, sticky, stuck
 | 06 | Rendering & Perf | `section-06-rendering-perf.md` |
 | 07 | CI & Build | `section-07-ci-build.md` |
 | 08 | Core Terminal | `section-08-core-terminal.md` |
+| 09 | Session & Tab/Window | `section-09-session.md` |
+| 10 | Platform Windows | `section-10-platform-windows.md` |

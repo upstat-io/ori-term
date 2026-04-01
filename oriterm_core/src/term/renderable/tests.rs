@@ -298,7 +298,7 @@ fn resolve_fg_spec_passthrough() {
         b: 126,
     };
     assert_eq!(
-        resolve_fg(Color::Spec(rgb), CellFlags::empty(), &palette),
+        resolve_fg(Color::Spec(rgb), CellFlags::empty(), &palette, true),
         rgb
     );
 }
@@ -307,7 +307,7 @@ fn resolve_fg_spec_passthrough() {
 fn resolve_fg_bold_indexed_promotion() {
     let palette = Palette::default();
     // Indexed 1 = Red, bold → indexed 9 = BrightRed.
-    let result = resolve_fg(Color::Indexed(1), CellFlags::BOLD, &palette);
+    let result = resolve_fg(Color::Indexed(1), CellFlags::BOLD, &palette, true);
     assert_eq!(result, palette.resolve(Color::Indexed(9)));
 }
 
@@ -315,7 +315,7 @@ fn resolve_fg_bold_indexed_promotion() {
 fn resolve_fg_bold_indexed_no_promotion_above_7() {
     let palette = Palette::default();
     // Indexed 100 is not in 0–7 range, bold should not promote.
-    let result = resolve_fg(Color::Indexed(100), CellFlags::BOLD, &palette);
+    let result = resolve_fg(Color::Indexed(100), CellFlags::BOLD, &palette, true);
     assert_eq!(result, palette.resolve(Color::Indexed(100)));
 }
 
@@ -327,7 +327,7 @@ fn resolve_fg_dim_spec_reduces() {
         g: 150,
         b: 210,
     };
-    let result = resolve_fg(Color::Spec(rgb), CellFlags::DIM, &palette);
+    let result = resolve_fg(Color::Spec(rgb), CellFlags::DIM, &palette, true);
     assert_eq!(
         result,
         Rgb {
@@ -624,6 +624,7 @@ fn bold_plus_dim_indexed_0_to_7() {
         Color::Indexed(2),
         CellFlags::BOLD | CellFlags::DIM,
         &palette,
+        true,
     );
     // DIM wins: dim_rgb of base color (idx 2 = Green), no promotion to idx 10.
     let base_green = palette.resolve(Color::Indexed(2));
@@ -647,6 +648,7 @@ fn bold_plus_dim_truecolor() {
         }),
         CellFlags::BOLD | CellFlags::DIM,
         &palette,
+        true,
     );
     assert_eq!(
         result,
@@ -667,6 +669,7 @@ fn bold_plus_dim_indexed_8_to_15() {
         Color::Indexed(9),
         CellFlags::BOLD | CellFlags::DIM,
         &palette,
+        true,
     );
     let base = palette.resolve(Color::Indexed(9));
     let expected = Rgb {
@@ -682,8 +685,8 @@ fn bold_plus_dim_consistent_across_named_and_indexed() {
     let palette = Palette::default();
     // Named Red and Indexed 1 should produce the same result with BOLD+DIM.
     let flags = CellFlags::BOLD | CellFlags::DIM;
-    let named = resolve_fg(Color::Named(NamedColor::Red), flags, &palette);
-    let indexed = resolve_fg(Color::Indexed(1), flags, &palette);
+    let named = resolve_fg(Color::Named(NamedColor::Red), flags, &palette, true);
+    let indexed = resolve_fg(Color::Indexed(1), flags, &palette, true);
     // Both should dim the base Red color without bright promotion.
     assert_eq!(
         named, indexed,
@@ -699,6 +702,7 @@ fn bold_plus_dim_default_foreground() {
         Color::Named(NamedColor::Foreground),
         CellFlags::BOLD | CellFlags::DIM,
         &palette,
+        true,
     );
     let expected = palette.resolve(Color::Named(NamedColor::DimForeground));
     assert_eq!(result, expected);
@@ -950,7 +954,7 @@ fn dim_does_not_affect_background() {
 fn bold_does_not_promote_indexed_8_to_15() {
     let palette = Palette::default();
     // Indexed 9 = BrightRed. Bold should NOT promote further.
-    let result = resolve_fg(Color::Indexed(9), CellFlags::BOLD, &palette);
+    let result = resolve_fg(Color::Indexed(9), CellFlags::BOLD, &palette, true);
     assert_eq!(result, palette.resolve(Color::Indexed(9)));
 }
 
@@ -958,7 +962,7 @@ fn bold_does_not_promote_indexed_8_to_15() {
 fn bold_does_not_promote_indexed_16_plus() {
     let palette = Palette::default();
     // Indexed 200 — well above the 0–7 range.
-    let result = resolve_fg(Color::Indexed(200), CellFlags::BOLD, &palette);
+    let result = resolve_fg(Color::Indexed(200), CellFlags::BOLD, &palette, true);
     assert_eq!(result, palette.resolve(Color::Indexed(200)));
 }
 
@@ -966,7 +970,7 @@ fn bold_does_not_promote_indexed_16_plus() {
 fn bold_promotes_all_ansi_0_through_7() {
     let palette = Palette::default();
     for idx in 0..8u8 {
-        let result = resolve_fg(Color::Indexed(idx), CellFlags::BOLD, &palette);
+        let result = resolve_fg(Color::Indexed(idx), CellFlags::BOLD, &palette, true);
         let expected = palette.resolve(Color::Indexed(idx + 8));
         assert_eq!(
             result,
@@ -975,6 +979,29 @@ fn bold_promotes_all_ansi_0_through_7() {
             idx + 8
         );
     }
+}
+
+// --- bold_is_bright = false ---
+
+#[test]
+fn bold_is_bright_false_skips_indexed_promotion() {
+    let palette = Palette::default();
+    // With bold_is_bright=false, bold indexed 1 stays indexed 1.
+    let result = resolve_fg(Color::Indexed(1), CellFlags::BOLD, &palette, false);
+    assert_eq!(result, palette.resolve(Color::Indexed(1)));
+}
+
+#[test]
+fn bold_is_bright_false_skips_named_promotion() {
+    let palette = Palette::default();
+    // With bold_is_bright=false, bold NamedColor::Red stays Red (not BrightRed).
+    let result = resolve_fg(
+        Color::Named(NamedColor::Red),
+        CellFlags::BOLD,
+        &palette,
+        false,
+    );
+    assert_eq!(result, palette.resolve(Color::Named(NamedColor::Red)));
 }
 
 // --- Hidden cells ---

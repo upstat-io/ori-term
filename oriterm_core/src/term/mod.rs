@@ -174,6 +174,11 @@ pub struct Term<T: EventListener> {
     has_explicit_title: bool,
     /// Title dirty flag — set when CWD or explicit title changes.
     title_dirty: bool,
+    /// Whether bold text should use bright ANSI colors (SGR 1 → colors 8–15).
+    ///
+    /// When `true` (default), BOLD + ANSI color 0–7 promotes to 8–15.
+    /// When `false`, bold only affects font weight, not color.
+    bold_is_bright: bool,
     /// XTSAVE/XTRESTORE: saved private mode values (single save per mode).
     saved_private_modes: HashMap<u16, bool>,
     /// Image cache for the primary screen.
@@ -219,6 +224,7 @@ impl<T: EventListener> Term<T> {
             last_command_duration: None,
             has_explicit_title: false,
             title_dirty: false,
+            bold_is_bright: true,
             saved_private_modes: HashMap::new(),
             image_cache: ImageCache::new(),
             alt_image_cache: None,
@@ -233,6 +239,16 @@ impl<T: EventListener> Term<T> {
     /// Event listener for terminal events.
     pub fn event_listener(&self) -> &T {
         &self.event_listener
+    }
+
+    /// Whether bold text promotes ANSI colors 0–7 to bright 8–15.
+    pub fn bold_is_bright(&self) -> bool {
+        self.bold_is_bright
+    }
+
+    /// Set the bold-as-bright behavior.
+    pub fn set_bold_is_bright(&mut self, enabled: bool) {
+        self.bold_is_bright = enabled;
     }
 
     /// Whether grid content was modified since the last check.

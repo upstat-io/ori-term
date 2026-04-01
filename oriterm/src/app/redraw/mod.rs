@@ -158,8 +158,12 @@ impl App {
 
             // Set window opacity from config, accounting for focus state.
             // Unfocused windows use the dimmer unfocused_opacity value.
+            // Force 1.0 when the surface doesn't support alpha (Vulkan Opaque
+            // on Windows) — sub-1.0 opacity produces an invisible window.
             let focused = ctx.window.window().has_focus();
-            frame.palette.opacity = if focused {
+            frame.palette.opacity = if !ctx.window.surface_has_alpha() {
+                1.0
+            } else if focused {
                 self.config.window.effective_opacity()
             } else {
                 self.config.window.effective_unfocused_opacity()

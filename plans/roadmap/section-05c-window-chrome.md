@@ -1,11 +1,14 @@
 ---
 section: 5C
 title: Window Chrome (Title Bar + Controls)
-status: complete
+status: in-progress
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-03-31"
 tier: 2
 goal: Render a visible title bar with minimize/maximize/close controls, wire platform integration (Aero Snap, drag), offset the terminal grid below the caption bar
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "5C.1"
     title: ChromeLayout (Pure Geometry)
@@ -146,7 +149,7 @@ sections:
 ### Test Coverage Gaps
 - [ ] No tests for `ChromeMode::Dialog` layout. All 11 ChromeLayout tests use Full mode. The `compute_with_mode(_, _, _, ChromeMode::Dialog)` path (1 control instead of 3) has zero direct test coverage.
 - [ ] No test for control button click cycle (mouse-up action emission). `control_button_hover_sets_pressed` tests mouse-down only. The full click contract (down + up = action emitted) is untested at the unit level.
-- [ ] Fullscreen hidden test (`layout_fullscreen_hidden`) is vacuously true. Asserts `.all(|r| *r == Rect::default())` on an empty Vec, which returns true trivially. A stronger assertion would be `assert!(layout.interactive_rects.is_empty())`.
+- [x] Fullscreen hidden test (`layout_fullscreen_hidden`) — fixed: replaced vacuous `.all()` on empty Vec with `assert!(interactive_rects.is_empty())`. Done 2026-03-31.
 - [ ] No test for `WindowChromeWidget` draw output. Drawing is partially mitigated by tab bar golden tests (section 05A).
 
 ### Plan/Reality Divergences (Non-Defects)

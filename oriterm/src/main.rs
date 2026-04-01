@@ -50,16 +50,16 @@ fn main() {
     log::info!("oriterm {}", env!("ORITERM_VERSION"));
     install_panic_hook();
 
+    // Ensure the config directory exists before any config I/O.
+    if let Err(e) = platform::config_paths::ensure_config_dir() {
+        log::warn!("failed to create config directory: {e}");
+    }
+
     if args.new_window {
         log::info!("--new-window requested");
     }
     #[cfg(windows)]
     set_app_user_model_id();
-
-    #[cfg(unix)]
-    if let Err(e) = oriterm_mux::pty::signal::init() {
-        log::warn!("failed to register SIGCHLD handler: {e}");
-    }
 
     let event_loop = build_event_loop();
 

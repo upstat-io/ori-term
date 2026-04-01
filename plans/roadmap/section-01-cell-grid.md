@@ -1,9 +1,9 @@
 ---
 section: 1
 title: Cell + Grid
-status: in-progress
+status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-03-31"
 tier: 0
 goal: Build the core data structures — Cell, Row, Grid — in oriterm_core with full test coverage
 sections:
@@ -42,15 +42,18 @@ sections:
     status: complete
   - id: "1.R"
     title: TPR Findings
-    status: not-started
+    status: complete
   - id: "1.12"
     title: Section Completion
-    status: in-progress
+    status: complete
+third_party_review:
+  status: resolved
+  updated: "2026-03-31"
 ---
 
 # Section 01: Cell + Grid
 
-**Status:** 📋 Planned
+**Status:** Complete
 **Goal:** Build the foundational data structures for terminal emulation in `oriterm_core`. Every terminal operation ultimately reads or writes cells in a grid. This layer must be rock-solid before anything else is built on top.
 
 **Crate:** `oriterm_core`
@@ -185,8 +188,8 @@ A Row is a contiguous array of Cells representing one terminal line.
   - [x] Index/IndexMut return correct cells
   - [x] clear_range resets specified columns
   - [x] truncate clears from column to end
-  - [ ] `Row::is_blank()` — no direct unit test (WEAK TESTS — only tested indirectly)
-  - [ ] `Row::content_len()` — no direct unit test (WEAK TESTS — only tested indirectly)
+  - [x] `Row::is_blank()` — direct unit tests added (3 tests: default, after write, after reset)
+  - [x] `Row::content_len()` — direct unit tests added (3 tests: empty, rightmost cell, after clear)
 
 ---
 
@@ -221,7 +224,7 @@ The Grid is the 2D cell storage. At this stage: a simple Vec of Rows with dimens
   - [x] Tab stops initialized at every 8 columns
   - [x] Index by Line returns correct row
   - [x] Cursor starts at (0, 0)
-  - [ ] `Grid::reset()` — no direct unit test (WEAK TESTS — only tested indirectly via term tests)
+  - [x] `Grid::reset()` — direct unit test added (verifies cells, cursor, scrollback, display_offset, tab stops)
 
 ---
 
@@ -246,7 +249,7 @@ The cursor tracks the current write position and the "template cell" used for ne
 - [x] **Tests** — 6 tests, all pass (verified 2026-03-29):
   - [x] Default cursor at (0, 0) with block shape
   - [x] Setting line/col updates point
-  - [ ] `CursorShape::Hidden` not tested for distinctness from other variants (WEAK TESTS — `cursor_shape_all_variants_distinct` explicitly excludes Hidden)
+  - [x] `CursorShape::Hidden` now included in `cursor_shape_all_variants_distinct` test
 
 ---
 
@@ -303,9 +306,9 @@ Methods on `Grid`:
   - [x] `erase_line(Below)` clears from cursor to end of line
   - [x] `erase_line(All)` clears entire line
   - [x] `erase_chars(5)` erases 5 cells without shifting
-  - [ ] `put_char_ascii()` fast path — no dedicated unit test (WEAK TESTS — only tested indirectly via TermHandler)
-  - [ ] `push_zerowidth()` (Grid method) — no dedicated unit test (WEAK TESTS — Cell::push_zerowidth tested, but Grid method not directly)
-  - [ ] Zero-count `insert_blank(0)`, `delete_chars(0)`, `erase_chars(0)` — no tests, produces false-positive dirty marks (TPR-01-001)
+  - [x] `put_char_ascii()` fast path — 5 direct unit tests added (write+advance, template, end-of-line, wide-char-spacer, dirty)
+  - [x] `push_zerowidth()` (Grid method) — 4 direct unit tests added (combining mark, col-zero discard, wide-char-spacer target, dirty)
+  - [x] Zero-count `insert_blank(0)`, `delete_chars(0)`, `erase_chars(0)` — early returns added, 3 tests verify no false-positive dirty marks
 
 ---
 
@@ -463,11 +466,17 @@ Track which rows have changed since last read. Enables damage-based rendering.
 
 ## 1.R Third Party Review Findings
 
-TPR findings triaged from independent review. All confirmed open as of 2026-03-29 verification.
+TPR findings triaged from independent review. Resolved items are preserved for history; open
+findings remain unchecked.
 
-- [ ] **TPR-01-001 (zero-count damage):** `insert_blank(0)`, `delete_chars(0)`, and `erase_chars(0)` produce false-positive dirty marks despite performing no visible mutation. Fix: add early returns for count==0 and corresponding tests.
-- [ ] **TPR-01-002 (rustdoc warning):** `cargo doc -p oriterm_core --no-deps` produces `warning: unresolved link to 'Term::renderable_content_into'` from `term/renderable/mod.rs:188`. Not Section 01 code directly, but blocks the crate-wide doc-clean checklist item.
-- [ ] **TPR-01-003 (500-line limit):** `editing/mod.rs` is 504 lines — 4 lines over the 500-line hard limit. A further extraction (e.g., moving erase operations to `editing/erase.rs`) would resolve this.
+- [x] **TPR-01-001 (zero-count damage):** `insert_blank(0)`, `delete_chars(0)`, and `erase_chars(0)` produce false-positive dirty marks despite performing no visible mutation. Fix: add early returns for count==0 and corresponding tests.
+  Resolved: Fixed on 2026-03-31. Added `if count == 0 { return; }` early returns to all three functions. 3 tests verify no false-positive dirty marks.
+- [x] **TPR-01-002 (rustdoc warning):** `cargo doc -p oriterm_core --no-deps` produces `warning: unresolved link to 'Term::renderable_content_into'` from `term/renderable/mod.rs:188`. Not Section 01 code directly, but blocks the crate-wide doc-clean checklist item.
+  Resolved: Fixed on 2026-03-31. Used explicit path `crate::term::Term::renderable_content_into` in doc link. `cargo doc` now clean.
+- [x] **TPR-01-003 (500-line limit):** `editing/mod.rs` is 504 lines — 4 lines over the 500-line hard limit. A further extraction (e.g., moving erase operations to `editing/erase.rs`) would resolve this.
+  Resolved: Fixed on 2026-03-31. Extracted erase operations to `editing/erase.rs`. `editing/mod.rs` now 350 lines.
+- [x] `[TPR-01-004][low]` `plans/roadmap/section-01-cell-grid.md:56` — the human-readable section status still says `📋 Planned`.
+  Resolved: Fixed on 2026-03-31. Changed body status line to `**Status:** Complete`.
 
 ---
 
@@ -476,7 +485,7 @@ TPR findings triaged from independent review. All confirmed open as of 2026-03-2
 - [x] All 1.1–1.11 items complete (verified 2026-03-29)
 - [x] `cargo test -p oriterm_core` — all tests pass (verified 2026-03-29 — 1429 passed, 0 failed, 2 ignored)
 - [x] `cargo clippy -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo doc -p oriterm_core --no-deps` — generates clean docs (INCOMPLETE — TPR-01-002 rustdoc warning present)
+- [x] `cargo doc -p oriterm_core --no-deps` — generates clean docs (verified 2026-03-31, TPR-01-002 fixed)
 - [x] Grid can: create, write chars (including wide), move cursor, scroll, erase, tab stops, scrollback, dirty tracking (verified 2026-03-29)
 - [x] No VTE, no events, no palette, no selection, no rendering — just data structures + operations (verified 2026-03-29)
 

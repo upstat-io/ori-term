@@ -7,7 +7,7 @@ goal: "Track and fix rendering performance bugs — frame time, input latency, G
 depends_on: []
 third_party_review:
   status: resolved
-  updated: 2026-03-30
+  updated: 2026-03-31
 sections:
   - id: "06.1"
     title: "Active Bugs"
@@ -53,6 +53,36 @@ sections:
   - **Found**: 2026-03-30 — user report. Only affects settings dialog, not terminal windows.
   - **Fixed**: 2026-03-30 — Added `GpuState::poll_device()` method and called it in `finalize_dialog()` after `render_dialog()`, matching the terminal window pattern. GPU work is now flushed synchronously before the Primed → Visible transition.
 
+- [x] **BUG-06.5**: DX12 backend: terminal grid blank, only tab bar chrome renders
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/gpu/instance_writer/mod.rs` (`CLIP_UNCLIPPED`), `oriterm_ui/src/draw/scene/content_mask.rs` (`ContentMask::unclipped()`)
+  - **Root cause**: `CLIP_UNCLIPPED` used `f32::NEG_INFINITY` / `f32::INFINITY` as clip rect values. In the shader, `clip_max = clip.xy + clip.zw` computed `-INF + INF = NaN`. DX12/HLSL treats NaN comparisons (`frag_pos > NaN`) as `true`, causing the clip test to discard EVERY fragment. Tab bar chrome was unaffected because UI framework widgets use finite clip rects from the layout system, not `CLIP_UNCLIPPED`. Same issue in `ContentMask::unclipped()` which used infinity for the default scene clip mask.
+  - **Repro**: Set `gpu_backend = "dx12"` in `[rendering]`. NVIDIA RTX 3080, Windows, `Bgra8UnormSrgb` format.
+  - **Found**: 2026-03-31 — manual, user testing.
+  - **Fixed**: 2026-03-31 — Replaced infinity with large finite values (`-100_000.0, -100_000.0, 200_000.0, 200_000.0`) in both `CLIP_UNCLIPPED` and `ContentMask::unclipped()`. No NaN, all comparisons well-defined.
+
+- [ ] **BUG-06.7**: Vulkan backend: baby blue flash when opening settings dialog
+  - **Severity**: low
+  - **File(s)**: `oriterm/src/app/dialog_management.rs` (dialog lifecycle)
+  - **Root cause**: Same symptom as BUG-06.4 (uninitialized VRAM visible before first frame). BUG-06.4 was fixed with `poll_device()` after `render_dialog()`, which works on DX12 but apparently Vulkan's poll timing differs — the GPU work may not be fully flushed before the window becomes visible.
+  - **Repro**: Set `gpu_backend = "vulkan"`, open settings dialog. Brief baby blue flash before content renders.
+  - **Found**: 2026-03-31 — manual, user report. DX12 (default) is not affected.
+
+- [ ] **BUG-06.9**: Focus border around panes has asymmetric padding — left padded, right clips out of bounds
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/session/compute/mod.rs` (`snap_to_grid`, pane `pixel_rect` computation), `oriterm/src/app/redraw/multi_pane/mod.rs` (focus border call site)
+  - **Root cause**: The pane `pixel_rect` (used by `append_focus_border`) has inconsistent insets — the left edge has proper padding (from window border or divider offset) but the right edge either extends to the window edge without border inset or the `snap_to_grid` trimming creates an asymmetric result. The focus border renders exactly at the `pixel_rect` bounds, so if the rect itself is wrong, the border clips on the right side.
+  - **Repro**: Split a pane (Ctrl+Shift+D or equivalent). Observe the accent focus border on the active pane — left side has visible padding from the window edge, right side clips or has no padding.
+  - **Found**: 2026-03-31 — manual, user report.
+  - **Note**: Roadmap section 33 (split-nav-floating) touches this area.
+
+- [ ] **BUG-06.8**: Floating pane (Ctrl+Shift+P) is completely transparent — no background fill
+  - **Severity**: high
+  - **File(s)**: `oriterm/src/gpu/window_renderer/multi_pane.rs` (`append_floating_decoration`), `oriterm/src/app/redraw/multi_pane/mod.rs`
+  - **Root cause**: `append_floating_decoration()` only renders a drop shadow and accent border around floating panes. There is no opaque background fill — the floating pane's cell backgrounds are composited directly over the main window content beneath, making it appear fully transparent. The floating pane should use the same background settings as the main window (opacity, blur, bg color).
+  - **Repro**: Press Ctrl+Shift+P to toggle a floating pane. The pane content is transparent — you can see the main terminal grid behind it.
+  - **Found**: 2026-03-31 — manual, user report.
+
 ---
 
 ## 06.R Third Party Review Findings
@@ -64,5 +94,14 @@ sections:
 
 - [x] `[TPR-06-002][medium]` `oriterm/src/app/perf_stats.rs:305` — the new phase-breakdown instrumentation logs at `info` level even when profiling is disabled.
   Resolved: Phase breakdown logging now routes through the same `log_fn`/`self.profiling` gate as the rest of the perf output. Fixed 2026-03-30.
+
+- [x] `[TPR-06-003][high]` `oriterm/src/app/init/mod.rs:36`, `oriterm/src/app/window_management.rs:133`, `oriterm/src/gpu/state/mod.rs:80`, `oriterm/src/gpu/state/mod.rs:104`, `oriterm_ui/src/window/mod.rs:241` — `use_compositor_surface` is decided from the requested config backend before GPU initialization, but `GpuState::new()` can still fall back from the DX12 `DirectComposition` path to plain DX12 or Vulkan when that init attempt fails. Because the window is already created with `WS_EX_NOREDIRECTIONBITMAP`, the fallback backend inherits a compositor-surface window it cannot present to correctly, which reintroduces the invisible-window failure on the exact fallback path this patch is trying to harden.
+  Resolved: Fixed on 2026-03-31. Added `uses_dcomp` field to `GpuState` (set during `try_init`). `init/mod.rs` now calls `clear_compositor_surface_flag()` after GPU init if DComp wasn't actually used. `window_management.rs` uses `gpu.uses_dcomp()` instead of config-based backend check for new windows. `clear_compositor_surface_flag()` added to `oriterm_ui/src/window/mod.rs` (Win32 FFI to remove `WS_EX_NOREDIRECTIONBITMAP`).
+
+- [x] `[TPR-06-004][high]` `oriterm_ui/src/window/mod.rs:339` — `clear_compositor_surface_flag()` clears `WS_EX_NOREDIRECTIONBITMAP` with `SetWindowLongPtrW`, but never follows up with `SetWindowPos(..., SWP_FRAMECHANGED)`. Microsoft’s `SetWindowLongPtrW` docs state that cached window data does not take effect until `SetWindowPos` is called, so the fallback path in `oriterm/src/app/init/mod.rs:70` can still leave the startup window in the compositor-surface state it was created with.
+  Resolved: Fixed on 2026-03-31. Added `SetWindowPos(SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)` after `SetWindowLongPtrW` in `clear_compositor_surface_flag()`.
+
+- [x] `[TPR-06-005][high]` `oriterm/src/app/init/mod.rs:214`, `oriterm/src/app/window_management.rs:95` — the steady-state render path now correctly forces opacity to `1.0` on surfaces without alpha support (`handle_redraw` and `handle_redraw_multi_pane` both do this), but the pre-show `gpu.clear_surface()` path still uses the configured window opacity unconditionally. On the same Vulkan/opaque fallback path this patch is hardening, the first presented frame can therefore still be rendered with the invalid sub-1.0 opacity before the later redraw clamps it.
+  Resolved: Fixed on 2026-03-31. Both `init/mod.rs` and `window_management.rs` now check `gpu.supports_transparency()` and clamp opacity to 1.0 when the surface lacks alpha support.
 
 ---

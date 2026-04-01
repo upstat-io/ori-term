@@ -395,12 +395,14 @@ impl App {
     /// marks all panes dirty since existing cells may render differently.
     pub(in crate::app) fn apply_behavior_changes(&mut self, new: &Config) {
         if new.behavior.bold_is_bright != self.config.behavior.bold_is_bright {
+            let enabled = new.behavior.bold_is_bright;
             if let Some(mux) = self.mux.as_mut() {
                 for pane_id in mux.pane_ids() {
+                    mux.set_bold_is_bright(pane_id, enabled);
                     mux.mark_all_dirty(pane_id);
                 }
             }
-            log::info!("config reload: bold_is_bright changed");
+            log::info!("config reload: bold_is_bright={enabled}");
         }
     }
 

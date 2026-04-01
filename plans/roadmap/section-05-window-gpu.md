@@ -3,9 +3,12 @@ section: 5
 title: Window + GPU Rendering
 status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-03-31"
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "5.1"
     title: Render Pipeline Architecture
@@ -701,7 +704,7 @@ The "it works" milestone. Everything comes together.
 
 ### Hygiene Notes (2026-03-29)
 
-- [ ] `gpu/atlas/mod.rs` at 579 lines exceeds the 500-line limit by 79 lines. Should be split by extracting `GlyphAtlas` impl methods into a submodule (e.g., `atlas/glyph_atlas.rs`). Non-blocking.
+- [x] `gpu/atlas/mod.rs` split: extracted growth/eviction methods into `atlas/growth.rs` (mod.rs now 457 lines, well under 500-line limit). Done 2026-03-31.
 
 ### Positive Deviations (2026-03-29)
 

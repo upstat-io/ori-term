@@ -566,12 +566,14 @@ fn quad_ordering_preserved() {
 // --- ContentMask sentinel ---
 
 #[test]
-fn unclipped_content_mask_has_infinite_bounds() {
+fn unclipped_content_mask_covers_any_viewport() {
     let mask = ContentMask::unclipped();
-    assert!(mask.clip.width().is_infinite());
-    assert!(mask.clip.height().is_infinite());
-    assert!(mask.clip.x().is_infinite() && mask.clip.x() < 0.0);
-    assert!(mask.clip.y().is_infinite() && mask.clip.y() < 0.0);
+    // Large finite values instead of infinity to avoid NaN in GPU shaders
+    // (DX12/HLSL treats NaN comparisons as true, discarding all fragments).
+    assert!(mask.clip.width() >= 100_000.0);
+    assert!(mask.clip.height() >= 100_000.0);
+    assert!(mask.clip.x() <= -10_000.0);
+    assert!(mask.clip.y() <= -10_000.0);
 }
 
 #[test]

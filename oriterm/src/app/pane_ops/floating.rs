@@ -64,6 +64,7 @@ impl App {
             Ok(pid) => {
                 mux.set_pane_theme(pid, theme, palette);
                 mux.set_image_config(pid, self.config.terminal.image_config());
+                mux.set_bold_is_bright(pid, self.config.behavior.bold_is_bright);
                 log::info!("spawn floating pane: {pid:?}");
                 pid
             }

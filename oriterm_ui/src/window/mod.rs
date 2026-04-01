@@ -61,6 +61,10 @@ impl DecorationMode {
 /// Scale factor is not included — it is a runtime property of the display,
 /// not a configuration input. Query `window.scale_factor()` after creation.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config struct with independent flags"
+)]
 pub struct WindowConfig {
     /// Window title.
     pub title: String,
@@ -78,6 +82,13 @@ pub struct WindowConfig {
     pub resizable: bool,
     /// Window decoration mode (frameless CSD, native, or platform variant).
     pub decoration: DecorationMode,
+    /// Use a compositor surface (`DirectComposition` on Windows).
+    ///
+    /// When true on Windows, sets `WS_EX_NOREDIRECTIONBITMAP` so the window
+    /// bypasses the redirection bitmap and composites via `DirectComposition`.
+    /// Required for `DX12`+`DComp` transparency. Must be false for `Vulkan`
+    /// (which has no `DComp` path) — otherwise the window is invisible.
+    pub use_compositor_surface: bool,
 }
 
 impl Default for WindowConfig {
@@ -91,6 +102,7 @@ impl Default for WindowConfig {
             position: None,
             resizable: true,
             decoration: DecorationMode::default(),
+            use_compositor_surface: false,
         }
     }
 }
@@ -226,8 +238,10 @@ fn apply_platform_attributes(attrs: WindowAttributes, config: &WindowConfig) -> 
     use winit::platform::windows::WindowAttributesExtWindows;
 
     let mut attrs = attrs;
-    if config.transparent {
+    if config.use_compositor_surface {
         // DirectComposition requires no redirection bitmap for alpha blending.
+        // Only set this on DX12+DComp — Vulkan has no DComp path and the
+        // window would be invisible without the redirection bitmap.
         attrs = attrs.with_no_redirection_bitmap(true);
     }
     attrs
@@ -311,6 +325,65 @@ fn apply_post_creation_style(window: &Window) {
 /// Post-creation style is a no-op on non-Windows platforms.
 #[cfg(not(target_os = "windows"))]
 fn apply_post_creation_style(_window: &Window) {}
+
+/// Remove `WS_EX_NOREDIRECTIONBITMAP` from a window that was created for
+/// `DirectComposition` but ended up on a non-DComp backend (fallback).
+///
+/// Without this, the window is invisible when Vulkan or plain DX12 inherited
+/// a compositor-surface window they cannot present to.
+#[cfg(target_os = "windows")]
+#[allow(
+    unsafe_code,
+    reason = "Win32 FFI: GetWindowLongPtrW/SetWindowLongPtrW to clear extended style bit"
+)]
+pub fn clear_compositor_surface_flag(window: &Window) {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    const WS_EX_NOREDIRECTIONBITMAP: isize = 0x0020_0000;
+    const GWL_EXSTYLE: i32 = -20;
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = win32.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+
+    // SAFETY: `hwnd` is a valid window handle from winit. Reading and writing
+    // the extended style via Get/SetWindowLongPtrW is standard Win32 FFI.
+    // SetWindowPos with SWP_FRAMECHANGED is required per Win32 docs to flush
+    // the cached window data after SetWindowLongPtrW modifies the style.
+    unsafe {
+        let ex_style =
+            windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if ex_style & WS_EX_NOREDIRECTIONBITMAP != 0 {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
+                hwnd,
+                GWL_EXSTYLE,
+                ex_style & !WS_EX_NOREDIRECTIONBITMAP,
+            );
+            // Flush the style change — SetWindowLongPtrW alone may leave
+            // cached data stale until SetWindowPos is called.
+            windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOZORDER
+                    | windows_sys::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED,
+            );
+        }
+    }
+}
+
+/// Clearing the compositor surface flag is a no-op on non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+pub fn clear_compositor_surface_flag(_window: &Window) {}
 
 #[cfg(test)]
 mod tests;

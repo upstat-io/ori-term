@@ -98,7 +98,7 @@ impl<T: EventListener> Term<T> {
                 let col = Column(col_idx);
                 let cell = &row[col];
 
-                let fg = renderable::resolve_fg(cell.fg, cell.flags, palette);
+                let fg = renderable::resolve_fg(cell.fg, cell.flags, palette, self.bold_is_bright);
                 let bg = renderable::resolve_bg(cell.bg, palette);
                 let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
 

@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Advanced Font Rendering Settings"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Expose hinting, subpixel AA, subpixel positioning, and atlas filtering as user-configurable settings in the Font page's Advanced section, with auto-detection defaults."
 inspired_by:
@@ -30,12 +30,12 @@ sections:
     status: not-started
   - id: "02.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 02: Advanced Font Rendering Settings
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** After this section, the Font page has an Advanced section with 4 dropdowns (hinting, subpixel AA, subpixel positioning, atlas filtering). Each defaults to "Auto" with the detected value shown in parentheses. Changes persist to TOML config and take effect immediately.
 
 **Context:** The TPR review found that `subpixel_positioning` is a dead config (TPR-04-007) — parsed from TOML but never consumed by the renderer. The atlas sampler's `FilterMode` is hardcoded to `Linear`. Users have no way to control rendering quality beyond the basic subpixel toggle on the Rendering page. Reference terminal emulators (WezTerm, Ghostty) expose these controls for power users.
@@ -392,7 +392,7 @@ Wire the resolved settings into the renderer so they actually take effect.
 - [x] `test_apply_font_changes_detects_subpixel_positioning_change` — modify `config.font.subpixel_positioning` from `None` to `Some(false)`, verify `font_changed` is true in the change detection logic. (Tested via `per_page_dirty_detects_subpixel_positioning_change` in settings_overlay/tests.rs.)
 - [x] `test_apply_font_changes_detects_atlas_filtering_change` — same for `atlas_filtering`. (Tested via `per_page_dirty_detects_atlas_filtering_change` in settings_overlay/tests.rs.)
 
-- [ ] `/tpr-review` checkpoint — substantial new rendering code wired across multiple files.
+- [x] `/tpr-review` checkpoint — substantial new rendering code wired across multiple files. Passed clean 2026-03-31 (1 finding in unrelated GPU init code filed as TPR-06-003, fixed same session).
 
 ---
 
@@ -550,7 +550,7 @@ Add 4 dropdowns to a new "Advanced" section on the Font page.
 
 **Note on test harness updates:** All tests in `action_handler/tests.rs` use `default_ids()` which calls `build_settings_dialog`. After the signature change in 02.3.2, `default_ids()` must pass `1.0, 1.0` for scale_factor and opacity.
 
-- [ ] `/tpr-review` checkpoint — new UI controls and action wiring.
+- [x] `/tpr-review` checkpoint — new UI controls and action wiring. Passed clean 2026-03-31.
 
 ---
 
@@ -623,6 +623,6 @@ Tests in `form_builder/tests.rs`:
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed — clean 2026-03-31
 
 **Exit Criteria:** All 4 Advanced font settings are functional in the dialog, persist to config, and produce visible rendering changes. The dead `subpixel_positioning` config is wired. The redundant Rendering page subpixel toggle is removed.

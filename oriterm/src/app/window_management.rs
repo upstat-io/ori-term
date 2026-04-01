@@ -87,12 +87,18 @@ impl App {
             win.add_tab(tab_id);
         }
 
-        // Clear frame and show.
+        // Clear frame and show. Clamp opacity when the surface lacks alpha
+        // support so the first frame matches the steady-state render path.
         let palette = clear_palette;
         let opacity = self.config.window.effective_opacity();
         if let Some(gpu) = self.gpu.as_ref() {
+            let clear_opacity = if gpu.supports_transparency() {
+                opacity
+            } else {
+                1.0
+            };
             if let Some(ctx) = self.windows.get(&winit_id) {
-                gpu.clear_surface(ctx.window.surface(), palette.background(), opacity);
+                gpu.clear_surface(ctx.window.surface(), palette.background(), clear_opacity);
             }
         }
         if let Some(ctx) = self.windows.get(&winit_id) {
@@ -130,12 +136,17 @@ impl App {
         let font_set = self.font_set.as_ref()?.clone();
 
         let opacity = self.config.window.effective_opacity();
+        // Use the actual GPU backend's DComp status, not the config's requested
+        // backend. If the GPU fell back from DX12+DComp to Vulkan during init,
+        // new windows must not set WS_EX_NOREDIRECTIONBITMAP either.
+        let dcomp_active = gpu.uses_dcomp();
         let window_config = WindowConfig {
             title: "ori".into(),
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
             decoration: super::init::decoration_to_mode(self.config.window.decorations),
+            use_compositor_surface: dcomp_active && opacity < 1.0,
             ..WindowConfig::default()
         };
 

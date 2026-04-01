@@ -1,7 +1,7 @@
 ---
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
-status: complete
+status: in-progress
 reviewed: true
 last_verified: "2026-03-29"
 tier: 2
@@ -993,7 +993,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 ## Verification Notes (2026-03-29)
 
 ### Hygiene Issue
-- [ ] `oriterm/src/gpu/atlas/mod.rs` at 579 lines exceeds the 500-line hard limit. Should be split — LRU eviction logic or `get_or_insert` path could be extracted into a submodule. Only hygiene violation found in the font pipeline code.
+- [x] `oriterm/src/gpu/atlas/mod.rs` split: extracted growth/eviction methods into `atlas/growth.rs` (mod.rs now 457 lines). Done 2026-03-31.
 
 ### Built-in Glyph Coverage Gaps vs Reference Repos
 - [ ] **Symbols for Legacy Computing (U+1FB00-1FB9F):** Ghostty implements sextants, wedges, smooth mosaics, and legacy computing supplement glyphs. ori_term only covers box drawing, blocks, braille, and powerline. Coverage gap for TUI frameworks using these characters.

@@ -32,10 +32,12 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 | ID | Title | File | Total | Open |
 |----|-------|------|-------|------|
 | 01 | UI Widgets | `section-01-ui-widgets.md` | 13 | 0 |
-| 02 | Settings Dialog | `section-02-settings-dialog.md` | 11 | 1 |
+| 02 | Settings Dialog | `section-02-settings-dialog.md` | 12 | 2 |
 | 03 | UI Framework | `section-03-ui-framework.md` | 2 | 1 |
-| 04 | Fonts | `section-04-fonts.md` | 14 | 3 |
+| 04 | Fonts | `section-04-fonts.md` | 15 | 4 |
 | 05 | Config | `section-05-config.md` | 5 | 1 |
-| 06 | Rendering & Perf | `section-06-rendering-perf.md` | 4 | 1 |
+| 06 | Rendering & Perf | `section-06-rendering-perf.md` | 10 | 5 |
 | 07 | CI & Build | `section-07-ci-build.md` | 3 | 0 (TPR resolved) |
 | 08 | Core Terminal | `section-08-core-terminal.md` | 2 | 1 |
+| 09 | Session & Tab/Window | `section-09-session.md` | 1 | 1 |
+| 10 | Platform Windows | `section-10-platform-windows.md` | 1 | 1 |
