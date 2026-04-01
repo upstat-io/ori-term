@@ -5,7 +5,6 @@
 //! communication. Uses `portable-pty` for platform abstraction: `ConPTY`
 //! on Windows, `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
-mod event_loop;
 pub(crate) mod reader;
 mod spawn;
 
@@ -15,7 +14,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 
-pub use event_loop::PtyEventLoop;
 pub(crate) use reader::PtyReader;
 #[allow(
     unused_imports,
@@ -45,7 +43,7 @@ pub enum Msg {
 ///
 /// Blocks on `rx.recv()` and writes immediately on [`Msg::Input`]. On
 /// [`Msg::Shutdown`] (or channel close), sets the `shutdown` flag so the
-/// reader thread ([`PtyEventLoop`]) can exit its blocking `read()` loop.
+/// reader thread ([`PtyReader`]) can exit its blocking `read()` loop.
 ///
 /// Separating reads and writes onto different threads prevents a deadlock
 /// during shell startup: the shell sends DA1 (device attributes query),
