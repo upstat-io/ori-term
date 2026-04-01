@@ -1,11 +1,14 @@
 ---
 section: 8
 title: Keyboard Input
-status: in-progress
+status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 3
 goal: Legacy + Kitty keyboard encoding, keyboard dispatch, IME support
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "8.1"
     title: Legacy Key Encoding
@@ -150,7 +153,7 @@ Progressive enhancement keyboard protocol for modern terminal applications. Enco
   - [x] `report_keyboard_mode()` — respond `ESC[?{bits}u`
   - [x] Stack save/restore on alt screen switch
   - [x] Stack clear on terminal reset
-- [ ] **Protocol divergence: universal `u` terminator** *(added 2026-03-29)*: Our Kitty encoding uses the `u` terminator for ALL keys (e.g., `ESC[57352u` for ArrowUp, `ESC[57364u` for F1). The Kitty spec (`key_encoding.py:370-375`) and Alacritty (`keyboard.rs:545-576`) use legacy terminators where available (e.g., `ESC[A` for ArrowUp, `ESC[P` for F1, `ESC[2~` for Insert). Both encodings are valid per spec, but our output diverges from what Kitty and Alacritty actually emit. Low risk -- conforming apps must accept both forms -- but may cause issues with apps that only parse the legacy-terminator form.
+- [x] **Protocol divergence: universal `u` terminator** *(added 2026-03-29, fixed 2026-04-01)*: Keys with legacy CSI sequences now use their traditional terminators in Kitty mode (e.g., ArrowUp → `ESC[1A`, F1 → `ESC[1P`, Insert → `ESC[2~`), matching Kitty and Alacritty output. Added `legacy_csi_info()` lookup and refactored `build_csi_sequence()` to select the correct terminator. 6 existing tests updated, 3 new tilde-terminator tests added.
 
 - [x] **Tests** (`oriterm/src/key_encoding/tests.rs`): (verified 2026-03-29 -- 151 tests pass)
   - [x] `'a'` with mode 1 (disambiguate): plain `a` (no encoding needed, not ambiguous)
@@ -211,7 +214,7 @@ Route keyboard events through keybindings, then through key encoding, then to th
 
 ## 8.4 Section Completion (verified 2026-03-29 -- 196 total tests pass)
 
-- [ ] All 8.1-8.3 items complete *(reopened 2026-03-29: two Kitty protocol items remain open in 8.2)*
+- [x] All 8.1-8.3 items complete *(reopened 2026-03-29, completed 2026-04-01)*
 - [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — key encoding tests pass (verified 2026-03-29 -- 151 key_encoding + 33 keyboard_input + 12 keyboard_mode = 196 tests)
 - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings (verified 2026-03-29)
 - [x] All printable characters encoded correctly (verified 2026-03-29)
@@ -221,7 +224,7 @@ Route keyboard events through keybindings, then through key encoding, then to th
 - [x] Alt+key sends ESC prefix correctly (verified 2026-03-29)
 - [x] Modifier combinations on special keys produce correct parameter encoding (verified 2026-03-29)
 - [x] Numpad keys work in both normal and application keypad modes (verified 2026-03-29)
-- [ ] Kitty keyboard protocol level 1+ supported (all 5 mode flags) *(reopened 2026-03-29: 4/5 flags implemented -- REPORT_ALTERNATE_KEYS encoding not wired)*
+- [x] Kitty keyboard protocol level 1+ supported (all 5 mode flags) *(reopened 2026-03-29, completed 2026-04-01: REPORT_ALTERNATE_KEYS now wired — `physical_key_to_us_codepoint()` maps physical keys to US layout, included as `base::alternate` in CSI u sequences)*
 - [x] Key release/repeat events reported when REPORT_EVENT_TYPES active (verified 2026-03-29)
 - [x] Keybinding dispatch has priority over PTY encoding (verified 2026-03-29)
 - [x] IME commit text reaches PTY (verified 2026-03-29)
