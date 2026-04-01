@@ -1,10 +1,10 @@
 //! Pane — the atomic per-shell unit in the mux model.
 //!
-//! Each `Pane` owns the full PTY ↔ terminal pipeline: a `Term<MuxEventProxy>`
-//! wrapped in `Arc<FairMutex>`, the reader thread, and a `PaneNotifier` that
-//! delivers keyboard input to the PTY. Lock-free atomics (`grid_dirty`,
-//! `wakeup_pending`, `mode_cache`) allow the renderer and input handler to
-//! query pane state without contending on the terminal lock.
+//! Each `Pane` owns a `PaneIoHandle` that communicates with the Terminal IO
+//! thread via channels. The IO thread exclusively owns `Term<T>` — the main
+//! thread never locks terminal state. Lock-free atomics (`mode_cache`,
+//! `io_selection_dirty`) allow the renderer and input handler to query pane
+//! state without contending on any lock.
 //!
 //! `Pane` is the atomic per-shell unit in the mux model — the mux layer
 //! owns panes directly with no higher-level grouping.
@@ -22,11 +22,10 @@ use std::thread::JoinHandle;
 
 use crate::{DomainId, PaneId};
 use oriterm_core::term::cwd_short_path;
-use oriterm_core::{FairMutex, RenderableContent, SearchState, Selection, StableRowIndex, Term};
+use oriterm_core::{RenderableContent, SearchState, Selection};
 
 pub use mark_cursor::MarkCursor;
 
-use crate::mux_event::MuxEventProxy;
 use crate::pane::io_thread::{PaneIoCommand, PaneIoHandle};
 use crate::pty::{Msg, PtyHandle};
 
@@ -74,8 +73,6 @@ pub struct PaneParts {
     pub id: PaneId,
     /// Which domain spawned this pane.
     pub domain_id: DomainId,
-    /// Shared terminal state.
-    pub terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
     /// Input/shutdown sender.
     pub notifier: PaneNotifier,
     /// Reader thread join handle.
@@ -84,23 +81,15 @@ pub struct PaneParts {
     pub writer_thread: JoinHandle<()>,
     /// PTY handle (child lifecycle).
     pub pty: PtyHandle,
-    /// Grid dirty flag (lock-free).
-    pub grid_dirty: Arc<AtomicBool>,
-    /// Wakeup coalescing flag (lock-free).
-    pub wakeup_pending: Arc<AtomicBool>,
-    /// Mode bits cache (lock-free).
+    /// Lock-free mode bits cache (shared with IO thread).
     pub mode_cache: Arc<AtomicU32>,
     /// Terminal IO thread handle (owns command + byte channels).
     pub io_handle: PaneIoHandle,
-    /// Initial PTY dimensions (rows, cols) from spawn.
-    pub initial_rows: u16,
-    /// Initial PTY columns from spawn.
-    pub initial_cols: u16,
     /// Shared selection-dirty flag (passed to IO thread).
     pub io_selection_dirty: Arc<AtomicBool>,
 }
 
-/// Owns all per-shell-session state: terminal, PTY handles, reader thread.
+/// Owns all per-shell-session state: IO thread handle, PTY handles, threads.
 ///
 /// The atomic `Pane` unit in the mux model — one shell process, one grid,
 /// one PTY connection. Created by `LocalDomain::spawn_pane`.
@@ -110,8 +99,6 @@ pub struct Pane {
     /// Which domain spawned this pane.
     #[allow(dead_code, reason = "read when multi-domain routing is wired to App")]
     domain_id: DomainId,
-    /// Shared terminal state (accessed by both render and PTY threads).
-    terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
     /// Sends input/shutdown to the PTY.
     notifier: PaneNotifier,
     /// PTY reader thread join handle (detached on drop).
@@ -126,21 +113,19 @@ pub struct Pane {
         reason = "holds JoinHandle for thread lifetime — detached on drop"
     )]
     writer_thread: Option<JoinHandle<()>>,
-    /// Terminal IO thread handle (command channel, byte channel, join handle).
+    /// Terminal IO thread handle — all terminal access goes through commands.
     ///
     /// Drops cleanly on pane close via `PaneIoHandle::Drop`, which sends
     /// `Shutdown` and joins the thread.
-    #[allow(dead_code, reason = "owned for Drop lifetime — read in section 02+")]
     io_handle: PaneIoHandle,
     /// Lock-free selection-dirty flag (set by IO thread, read/cleared by main thread).
     io_selection_dirty: Arc<AtomicBool>,
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,
-    /// Set by reader thread when new content is available.
-    grid_dirty: Arc<AtomicBool>,
-    /// Coalesces wakeup events from the reader thread.
-    wakeup_pending: Arc<AtomicBool>,
     /// Lock-free cache of `TermMode::bits()` for hot-path queries.
+    ///
+    /// Shared with the IO thread — the IO thread writes after each VTE parse,
+    /// the main thread reads for mouse reporting and cursor style.
     mode_cache: Arc<AtomicU32>,
     /// Last known window title (from OSC 0/2).
     title: String,
@@ -185,15 +170,12 @@ impl Pane {
         Self {
             id: parts.id,
             domain_id: parts.domain_id,
-            terminal: parts.terminal,
             notifier: parts.notifier,
             reader_thread: Some(parts.reader_thread),
             writer_thread: Some(parts.writer_thread),
             io_handle: parts.io_handle,
             io_selection_dirty: parts.io_selection_dirty,
             pty: parts.pty,
-            grid_dirty: parts.grid_dirty,
-            wakeup_pending: parts.wakeup_pending,
             mode_cache: parts.mode_cache,
             title: String::new(),
             icon_name: None,
@@ -225,25 +207,10 @@ impl Pane {
 
     // -- Lock-free accessors --
 
-    /// Whether the pane's grid has new content to render.
-    pub fn grid_dirty(&self) -> bool {
-        self.grid_dirty.load(Ordering::Acquire)
-    }
-
-    /// Clear the grid dirty flag after rendering.
-    pub fn clear_grid_dirty(&self) {
-        self.grid_dirty.store(false, Ordering::Release);
-    }
-
-    /// Clear the wakeup pending flag after processing.
-    pub fn clear_wakeup(&self) {
-        self.wakeup_pending.store(false, Ordering::Release);
-    }
-
     /// Current terminal mode bits (lock-free).
     ///
-    /// Updated by the reader thread after each VTE chunk; read by the main
-    /// thread for mouse reporting and cursor style without locking the terminal.
+    /// Updated by the IO thread after each VTE chunk; read by the main
+    /// thread for mouse reporting and cursor style without locking.
     pub fn mode(&self) -> u32 {
         self.mode_cache.load(Ordering::Acquire)
     }
@@ -258,16 +225,7 @@ impl Pane {
         self.io_selection_dirty.store(false, Ordering::Release);
     }
 
-    // -- Terminal access --
-
-    /// Shared terminal state for rendering.
-    ///
-    /// Returns a reference to the `Arc<FairMutex<Term<MuxEventProxy>>>`
-    /// for direct grid access. Prefer `PaneSnapshot` for IPC/render paths
-    /// where a lock-free copy is acceptable.
-    pub fn terminal(&self) -> &Arc<FairMutex<Term<MuxEventProxy>>> {
-        &self.terminal
-    }
+    // -- IO thread access --
 
     /// Swap the latest IO-thread-produced snapshot into `buf`.
     ///
@@ -285,8 +243,8 @@ impl Pane {
 
     /// Send a command to the IO thread.
     ///
-    /// Used to keep the IO thread's `Term` in sync with operations that
-    /// affect rendering (scroll, theme, cursor shape, etc.).
+    /// Used for all terminal state mutations: scroll, theme, cursor shape,
+    /// resize, search, text extraction, etc.
     pub fn send_io_command(&self, cmd: PaneIoCommand) {
         self.io_handle.send_command(cmd);
     }
@@ -400,26 +358,6 @@ impl Pane {
         self.mark_cursor
     }
 
-    /// Enter mark mode at the terminal cursor position.
-    pub fn enter_mark_mode(&mut self) {
-        if self.mark_cursor.is_some() {
-            return;
-        }
-        self.scroll_to_bottom();
-        let mc = {
-            let term = self.terminal.lock();
-            let g = term.grid();
-            let cursor = g.cursor();
-            let abs_row = g.scrollback().len() + cursor.line();
-            let stable = StableRowIndex::from_absolute(g, abs_row);
-            MarkCursor {
-                row: stable,
-                col: cursor.col().0,
-            }
-        };
-        self.mark_cursor = Some(mc);
-    }
-
     /// Exit mark mode.
     pub fn exit_mark_mode(&mut self) {
         self.mark_cursor = None;
@@ -435,14 +373,6 @@ impl Pane {
     /// Send raw bytes to the PTY.
     pub fn write_input(&self, bytes: &[u8]) {
         self.notifier.notify(bytes);
-    }
-
-    /// Scroll to the live terminal position.
-    pub fn scroll_to_bottom(&self) {
-        let mut term = self.terminal.lock();
-        if term.grid().display_offset() > 0 {
-            term.grid_mut().scroll_display(isize::MIN);
-        }
     }
 }
 

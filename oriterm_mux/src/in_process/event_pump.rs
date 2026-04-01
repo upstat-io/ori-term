@@ -24,9 +24,6 @@ impl InProcessMux {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 MuxEvent::PaneOutput(id) => {
-                    if let Some(pane) = panes.get(&id) {
-                        pane.clear_wakeup();
-                    }
                     self.notifications.push(MuxNotification::PaneOutput(id));
                 }
                 MuxEvent::PaneExited { pane_id, exit_code } => {
