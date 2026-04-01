@@ -101,20 +101,13 @@ impl GpuState {
         }
 
         // Auto-detection: platform-native backend first, then fallbacks.
-        // Windows: Vulkan → DX12 (DComp) → DX12 → others.
-        //   Vulkan first: DX12 uses DXGI_SCALING_STRETCH (hardcoded in wgpu),
-        //   causing the DWM compositor to stretch the old frame to the new
-        //   window size during drag resize — visible as text jitter/stretch.
-        //   Vulkan doesn't go through DXGI, so resize is smooth.
+        // Windows: DX12 (DComp) → DX12 → Vulkan → others.
+        //   DX12 with vendored wgpu-hal patch: DXGI_SCALING_NONE instead of
+        //   STRETCH prevents DWM from stretching the old frame during resize.
         // macOS: Metal → others.
         // Linux: Vulkan → others.
         #[cfg(target_os = "windows")]
         {
-            if let Some(state) = Self::try_init(window, wgpu::Backends::VULKAN, false, transparent)
-            {
-                return Ok(state);
-            }
-            log::warn!("Vulkan init failed, falling back to DX12");
             if transparent {
                 if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true, transparent)
                 {
