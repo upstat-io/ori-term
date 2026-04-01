@@ -41,15 +41,19 @@ impl SnapshotCache {
 
     /// Build a snapshot for a pane, reusing cached allocations.
     ///
-    /// Returns a reference to the cached snapshot. The underlying `Vec`
-    /// buffers keep their capacity across calls.
+    /// Tries the IO thread's double buffer first (zero-lock path). Falls back
+    /// to locking the terminal if no IO-thread snapshot is available.
     pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> &PaneSnapshot {
         let cached = self.cache.entry(pane_id).or_default();
-        let mut term = pane.terminal().lock();
-        build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
-        // Drain dirty flags under the same lock (see build_snapshot_into).
-        term.reset_damage();
-        // Invariant: `entry().or_default()` above guarantees the key exists.
+        if pane.swap_io_snapshot(&mut self.render_buf) {
+            // IO-thread snapshot available — build from it (no terminal lock).
+            fill_snapshot_from_renderable(pane, &self.render_buf, cached);
+        } else {
+            // Fallback: lock the terminal (until section 07 removes this path).
+            let mut term = pane.terminal().lock();
+            build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
+            term.reset_damage();
+        }
         &self.cache[&pane_id]
     }
 
@@ -88,21 +92,18 @@ pub(crate) fn build_snapshot(pane: &Pane) -> PaneSnapshot {
     build_snapshot_inner(&term, pane)
 }
 
-/// Build a snapshot into an existing [`PaneSnapshot`], reusing allocations.
+/// Build a snapshot by locking the terminal.
 ///
-/// The caller owns the `out` and `render_buf` buffers. Row `Vec`s, the
-/// palette `Vec`, and the `RenderableContent::cells` buffer keep their
-/// allocated capacity across frames, avoiding the per-frame allocation
-/// that makes [`build_snapshot`] expensive under sustained flood output.
-pub(crate) fn build_snapshot_into(
+/// Fallback path used when no IO-thread snapshot is available. Locks the
+/// terminal, extracts `RenderableContent`, converts to wire format, and
+/// resets damage — all under the same lock.
+pub(crate) fn build_snapshot_locked(
     pane: &Pane,
     out: &mut PaneSnapshot,
     render_buf: &mut RenderableContent,
 ) {
     let mut term = pane.terminal().lock();
     build_snapshot_inner_into(&term, pane, out, render_buf);
-    // Drain dirty flags now that the snapshot has captured the damage info.
-    // Must happen under the same lock to avoid racing with the PTY reader.
     term.reset_damage();
 }
 
@@ -250,6 +251,139 @@ fn build_snapshot_inner(term: &Term<MuxEventProxy>, pane: &Pane) -> PaneSnapshot
     let mut render_buf = RenderableContent::default();
     build_snapshot_inner_into(term, pane, &mut out, &mut render_buf);
     out
+}
+
+/// Fill snapshot metadata and wire cells from a pre-built [`RenderableContent`].
+///
+/// Used when the IO thread has already produced a snapshot — no terminal lock
+/// needed. Palette and grid dimensions come from `RenderableContent`'s metadata
+/// fields (`cols`, `lines`, `scrollback_len`, `palette_snapshot`).
+pub(crate) fn fill_snapshot_from_renderable(
+    pane: &Pane,
+    render_buf: &RenderableContent,
+    out: &mut PaneSnapshot,
+) {
+    fill_wire_cells_from_renderable(render_buf, out);
+    fill_metadata_from_renderable(pane, render_buf, out);
+}
+
+/// Convert [`RenderableContent`] cells to wire format without `&Term`.
+///
+/// Hyperlink URIs come from `RenderableCell::hyperlink_uri`, populated
+/// during `renderable_content_into()`.
+fn fill_wire_cells_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
+    let cols = render_buf.cols;
+    if cols == 0 {
+        out.cells.clear();
+        return;
+    }
+
+    let mut row_idx = 0;
+    let mut col_count = 0;
+    for cell in &render_buf.cells {
+        let wire = WireCell {
+            ch: cell.ch,
+            fg: rgb_to_wire(cell.fg),
+            bg: rgb_to_wire(cell.bg),
+            flags: cell.flags.bits(),
+            underline_color: cell.underline_color.map(rgb_to_wire),
+            hyperlink_uri: cell.hyperlink_uri.clone(),
+            zerowidth: cell.zerowidth.clone(),
+        };
+
+        if col_count == 0 {
+            if row_idx < out.cells.len() {
+                out.cells[row_idx].clear();
+            } else {
+                out.cells.push(Vec::with_capacity(cols));
+            }
+        }
+
+        if row_idx < out.cells.len() {
+            out.cells[row_idx].push(wire);
+        }
+
+        col_count += 1;
+        if col_count == cols {
+            col_count = 0;
+            row_idx += 1;
+        }
+    }
+    if col_count > 0 {
+        row_idx += 1;
+    }
+    out.cells.truncate(row_idx);
+}
+
+/// Fill all snapshot fields except `cells` from a pre-built [`RenderableContent`].
+///
+/// Reads palette, grid dimensions, and scrollback length from the snapshot's
+/// metadata fields. Pane-local data (title, CWD, search) comes from `&Pane`.
+fn fill_metadata_from_renderable(
+    pane: &Pane,
+    render_buf: &RenderableContent,
+    out: &mut PaneSnapshot,
+) {
+    // Cursor.
+    out.cursor = WireCursor {
+        col: u16::try_from(render_buf.cursor.column.0).unwrap_or(u16::MAX),
+        row: u16::try_from(render_buf.cursor.line).unwrap_or(u16::MAX),
+        shape: cursor_shape_to_wire(render_buf.cursor.shape),
+        visible: render_buf.cursor.visible,
+    };
+
+    // Palette from snapshot metadata (no Term lock needed).
+    out.palette.clear();
+    out.palette
+        .reserve(270usize.saturating_sub(out.palette.capacity()));
+    out.palette.extend_from_slice(&render_buf.palette_snapshot);
+
+    // Title.
+    out.title.clear();
+    out.title.push_str(pane.effective_title());
+
+    // Icon name.
+    out.icon_name = pane.icon_name().map(str::to_owned);
+
+    // CWD.
+    out.cwd = pane.cwd().map(str::to_owned);
+
+    // Scalar fields.
+    out.has_unseen_output = pane.has_unseen_output();
+    out.modes = render_buf.mode.bits();
+    out.scrollback_len = u32::try_from(render_buf.scrollback_len).unwrap_or(u32::MAX);
+    out.display_offset = u32::try_from(render_buf.display_offset).unwrap_or(u32::MAX);
+    out.stable_row_base = render_buf.stable_row_base;
+    out.cols = render_buf.cols as u16;
+
+    // Search state.
+    if let Some(search) = pane.search() {
+        out.search_active = true;
+        out.search_query.clear();
+        out.search_query.push_str(search.query());
+        out.search_matches.clear();
+        for m in search.matches() {
+            out.search_matches.push(WireSearchMatch {
+                start_row: m.start_row.0,
+                start_col: u16::try_from(m.start_col).unwrap_or(u16::MAX),
+                end_row: m.end_row.0,
+                end_col: u16::try_from(m.end_col).unwrap_or(u16::MAX),
+            });
+        }
+        let total = out.search_matches.len() as u32;
+        out.search_total_matches = total;
+        out.search_focused = if out.search_matches.is_empty() {
+            None
+        } else {
+            Some(search.focused_index() as u32)
+        };
+    } else {
+        out.search_active = false;
+        out.search_query.clear();
+        out.search_matches.clear();
+        out.search_focused = None;
+        out.search_total_matches = 0;
+    }
 }
 
 /// Convert a pre-resolved [`RenderableCell`] to a [`WireCell`].

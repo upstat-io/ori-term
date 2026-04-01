@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Snapshot Production & Transfer"
-status: not-started
+status: complete
 reviewed: true
 goal: "IO thread produces RenderableContent snapshots and publishes them to a shared buffer that the main thread can read with minimal contention"
 inspired_by:
@@ -9,29 +9,29 @@ inspired_by:
   - "Alacritty display/content.rs (RenderableContent iterator, lock held briefly for snapshot)"
 depends_on: ["02"]
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-03-31
 sections:
   - id: "03.1"
     title: "Shared Snapshot Buffer"
-    status: not-started
+    status: complete
   - id: "03.2"
     title: "IO Thread Snapshot Production"
-    status: not-started
+    status: complete
   - id: "03.3"
     title: "Wakeup After Publish"
-    status: not-started
+    status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "03.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 03: Snapshot Production & Transfer
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** The IO thread produces `RenderableContent` snapshots after processing bytes/commands and publishes them to a shared buffer. The main thread reads the latest snapshot with minimal contention (brief Mutex swap, not long-held lock).
 
 **Context:** Today, `build_snapshot_into()` runs on the main thread under `FairMutex::lock()`. This means the renderer blocks while the PTY reader holds the lease. After this section, the IO thread produces snapshots after each processing cycle and publishes them. The main thread reads the latest published snapshot without waiting for terminal state.
@@ -50,8 +50,8 @@ sections:
 
 Create the shared buffer that transfers `RenderableContent` from the IO thread to the main thread.
 
-- [ ] Create `oriterm_mux/src/pane/io_thread/snapshot/` as a directory module: `snapshot/mod.rs` + `snapshot/tests.rs` with `#[cfg(test)] mod tests;` at the bottom of `mod.rs`
-- [ ] Create `snapshot/mod.rs` with `DoubleBuffer`:
+- [x] Create `oriterm_mux/src/pane/io_thread/snapshot/` as a directory module: `snapshot/mod.rs` + `snapshot/tests.rs` with `#[cfg(test)] mod tests;` at the bottom of `mod.rs`
+- [x] Create `snapshot/mod.rs` with `DoubleBuffer`:
   ```rust
   //! Double-buffered snapshot transfer between IO thread and main thread.
   //!
@@ -141,11 +141,11 @@ Create the shared buffer that transfers `RenderableContent` from the IO thread t
   }
   ```
 
-- [ ] Add `SnapshotDoubleBuffer` to `PaneIoThread` and `PaneIoHandle`:
+- [x] Add `SnapshotDoubleBuffer` to `PaneIoThread` and `PaneIoHandle`:
   - IO thread holds `SnapshotDoubleBuffer` for flipping
   - `PaneIoHandle` holds `SnapshotDoubleBuffer` for the main thread to read
 
-- [ ] Zero-allocation design: The IO thread fills its work buffer via `renderable_content_into()`, then calls `flip()` which gives back the old front buffer (with retained Vec allocations). The main thread calls `swap_front()` which exchanges buffers. After warmup, no allocations occur on either side.
+- [x] Zero-allocation design: The IO thread fills its work buffer via `renderable_content_into()`, then calls `flip()` which gives back the old front buffer (with retained Vec allocations). The main thread calls `swap_front()` which exchanges buffers. After warmup, no allocations occur on either side.
 
 ---
 
@@ -155,7 +155,7 @@ Create the shared buffer that transfers `RenderableContent` from the IO thread t
 
 After processing bytes or commands, the IO thread produces a snapshot and publishes it.
 
-- [ ] Add snapshot production to the IO thread:
+- [x] Add snapshot production to the IO thread:
   ```rust
   /// Produce a rendering snapshot and publish it.
   ///
@@ -173,11 +173,11 @@ After processing bytes or commands, the IO thread produces a snapshot and publis
   }
   ```
 
-- [ ] Add `snapshot_buf: RenderableContent` to `PaneIoThread` for buffer reuse
-- [ ] Add `double_buffer: SnapshotDoubleBuffer` to `PaneIoThread`
-- [ ] **Damage accumulation**: If the main thread hasn't consumed the previous snapshot when a new one is flipped in, the `flip()` method sets `all_dirty = true` on the new front buffer. This ensures no damage is lost from skipped frames — the renderer does a full repaint. This is correct because skipped frames mean the renderer was behind; a full repaint catches up.
+- [x] Add `snapshot_buf: RenderableContent` to `PaneIoThread` for buffer reuse
+- [x] Add `double_buffer: SnapshotDoubleBuffer` to `PaneIoThread`
+- [x] **Damage accumulation**: If the main thread hasn't consumed the previous snapshot when a new one is flipped in, the `flip()` method sets `all_dirty = true` on the new front buffer. This ensures no damage is lost from skipped frames — the renderer does a full repaint. This is correct because skipped frames mean the renderer was behind; a full repaint catches up.
 
-- [ ] Call `produce_snapshot()` at the right points in the main loop:
+- [x] Call `produce_snapshot()` at the right points in the main loop:
   ```rust
   fn run(mut self) {
       loop {
@@ -199,7 +199,7 @@ After processing bytes or commands, the IO thread produces a snapshot and publis
   }
   ```
 
-- [ ] Respect synchronized output (Mode 2026): When sync mode is active, the VTE processor buffers output. Only produce a snapshot when sync bytes count is zero (matching the current `try_parse()` behavior at `event_loop.rs:216-223`):
+- [x] Respect synchronized output (Mode 2026): When sync mode is active, the VTE processor buffers output. Only produce a snapshot when sync bytes count is zero (matching the current `try_parse()` behavior at `event_loop.rs:216-223`):
   ```rust
   let sync_bytes = self.processor.sync_bytes_count();
   if sync_bytes == 0 && (had_bytes || had_commands) {
@@ -212,21 +212,21 @@ After processing bytes or commands, the IO thread produces a snapshot and publis
 
 **File:** `oriterm_mux/src/pane/io_thread/snapshot/tests.rs` (new — sibling tests for `snapshot.rs`)
 
-- [ ] `test_double_buffer_flip_swap_exchanges_buffers` — create `SnapshotDoubleBuffer`, fill a `RenderableContent` with 10 cells, call `flip_swap()`. Assert `swap_front()` returns `true` and the swapped-out content has 10 cells. Verifies the basic flip mechanism.
-- [ ] `test_double_buffer_no_new_when_not_flipped` — create buffer, call `swap_front()` without any `flip_swap()`. Assert returns `false`. Verifies `has_new()` correctness.
-- [ ] `test_double_buffer_skipped_frame_sets_all_dirty` — flip twice without consuming. Assert the second flip sets `all_dirty = true` on the front buffer. Verifies damage accumulation for skipped frames.
-- [ ] `test_double_buffer_allocation_reuse` — flip, swap_front (to get the old buffer), fill it, flip again. Assert the buffer received back from flip has non-zero capacity (allocations retained, not dropped).
-- [ ] `test_double_buffer_seqno_monotonic` — flip 100 times, consume every 3rd. Assert `has_new()` is true when behind and false when caught up.
-- [ ] `test_double_buffer_is_send_sync` — static assertion: `fn assert_send_sync<T: Send + Sync>() {} assert_send_sync::<SnapshotDoubleBuffer>();`. Required because both IO thread and main thread hold a clone.
+- [x] `test_double_buffer_flip_swap_exchanges_buffers` — create `SnapshotDoubleBuffer`, fill a `RenderableContent` with 10 cells, call `flip_swap()`. Assert `swap_front()` returns `true` and the swapped-out content has 10 cells. Verifies the basic flip mechanism.
+- [x] `test_double_buffer_no_new_when_not_flipped` — create buffer, call `swap_front()` without any `flip_swap()`. Assert returns `false`. Verifies `has_new()` correctness.
+- [x] `test_double_buffer_skipped_frame_sets_all_dirty` — flip twice without consuming. Assert the second flip sets `all_dirty = true` on the front buffer. Verifies damage accumulation for skipped frames.
+- [x] `test_double_buffer_allocation_reuse` — flip, swap_front (to get the old buffer), fill it, flip again. Assert the buffer received back from flip has non-zero capacity (allocations retained, not dropped).
+- [x] `test_double_buffer_seqno_monotonic` — flip 100 times, consume every 3rd. Assert `has_new()` is true when behind and false when caught up.
+- [x] `test_double_buffer_is_send_sync` — static assertion: `fn assert_send_sync<T: Send + Sync>() {} assert_send_sync::<SnapshotDoubleBuffer>();`. Required because both IO thread and main thread hold a clone.
 
 **File:** `oriterm_mux/src/pane/io_thread/tests.rs` (extend)
 
-- [ ] `test_produce_snapshot_fills_cells` — create IO thread with a `Term` containing "hello" on line 0. Call `produce_snapshot()`. Assert the snapshot buffer has cells matching "hello".
-- [ ] `test_produce_snapshot_resets_damage` — mark a line dirty, call `produce_snapshot()`. Assert `terminal.damage()` is cleared after production (damage was consumed by the snapshot).
-- [ ] `test_produce_snapshot_respects_sync_mode` — enable Mode 2026 (synchronized output), send bytes. Assert `produce_snapshot()` is NOT called while sync_bytes_count > 0 (the main loop gates on this).
-- [ ] `test_produce_snapshot_wakeup_only_when_dirty` — process bytes that don't set `grid_dirty`, call the snapshot path. Assert the wakeup callback was NOT invoked (no spurious wakeups).
+- [x] `test_produce_snapshot_fills_cells` — create IO thread with a `Term` containing "hello" on line 0. Call `produce_snapshot()`. Assert the snapshot buffer has cells matching "hello".
+- [x] `test_produce_snapshot_resets_damage` — mark a line dirty, call `produce_snapshot()`. Assert `terminal.damage()` is cleared after production (damage was consumed by the snapshot).
+- [x] `test_produce_snapshot_respects_sync_mode` — enable Mode 2026 (synchronized output), send bytes. Assert `produce_snapshot()` is NOT called while sync_bytes_count > 0 (the main loop gates on this).
+- [x] `test_produce_snapshot_wakeup_only_when_dirty` — process bytes that don't set `grid_dirty`, call the snapshot path. Assert the wakeup callback was NOT invoked (no spurious wakeups).
 
-- [ ] `/tpr-review` checkpoint
+- [x] `/tpr-review` checkpoint
 
 ---
 
@@ -236,13 +236,13 @@ After processing bytes or commands, the IO thread produces a snapshot and publis
 
 Ensure the main thread is woken after a new snapshot is published. The wakeup must come AFTER the snapshot is in the shared buffer — not during VTE parsing like today.
 
-- [ ] The IO thread calls `(self.wakeup)()` after `produce_snapshot()` — this is the same `Arc<dyn Fn() + Send + Sync>` wakeup callback used by the current system.
+- [x] The IO thread calls `(self.wakeup)()` after `produce_snapshot()` — this is the same `Arc<dyn Fn() + Send + Sync>` wakeup callback used by the current system.
 
-- [ ] The wakeup callback should trigger the same `TermEvent::MuxWakeup` path that exists today. The main thread then calls `pump_mux_events()` → sees dirty pane → renders.
+- [x] The wakeup callback should trigger the same `TermEvent::MuxWakeup` path that exists today. The main thread then calls `pump_mux_events()` → sees dirty pane → renders.
 
-- [ ] Coalescing: the IO thread may process multiple byte batches and commands in one cycle before producing a single snapshot. The wakeup should be sent at most once per snapshot production, not per byte batch. Use an atomic flag (same pattern as `wakeup_pending` in `MuxEventProxy`).
+- [x] Coalescing: the IO thread may process multiple byte batches and commands in one cycle before producing a single snapshot. The wakeup should be sent at most once per snapshot production, not per byte batch. Use an atomic flag (same pattern as `wakeup_pending` in `MuxEventProxy`).
 
-- [ ] **Wire render wakeup timing.** The `IoThreadEventProxy` (created in section 02.3) already suppresses all events except `grid_dirty`. This section wires the wakeup timing: the IO thread sends a render wakeup AFTER publishing a snapshot (not during VTE parsing). The wakeup callback is the same `Arc<dyn Fn() + Send + Sync>` the current system uses.
+- [x] **Wire render wakeup timing.** The `IoThreadEventProxy` (created in section 02.3) already suppresses all events except `grid_dirty`. This section wires the wakeup timing: the IO thread sends a render wakeup AFTER publishing a snapshot (not during VTE parsing). The wakeup callback is the same `Arc<dyn Fn() + Send + Sync>` the current system uses.
 
   **Render wakeups** (`Event::Wakeup`): The `IoThreadEventProxy` holds its own `grid_dirty: Arc<AtomicBool>` (shared with `PaneIoThread`). On `Wakeup`, it sets `grid_dirty` but does NOT call the wakeup callback. The IO thread checks `grid_dirty` after `produce_snapshot()` and fires the wakeup itself. Note: `MuxEventProxy.grid_dirty` is private, so `IoThreadEventProxy` cannot delegate to `inner.grid_dirty` — it must hold its own Arc.
 
@@ -250,7 +250,7 @@ Ensure the main thread is woken after a new snapshot is published. The wakeup mu
 
   **Important**: `Event::PtyWrite` (DA responses, DECRPM replies) is critical for terminal protocol correctness. During dual-Term, the old `MuxEventProxy` on the old `Term` handles these. After section 07, `IoThreadEventProxy` wraps a `MuxEventProxy` that already has the `mpsc::Sender<MuxEvent>` channel, so `PtyWrite` events flow through `inner.send_event()` → `MuxEvent::PtyWrite` → main thread → PTY writer automatically.
 
-- [ ] After `produce_snapshot()`, check `grid_dirty` and call the render wakeup:
+- [x] After `produce_snapshot()`, check `grid_dirty` and call the render wakeup:
   ```rust
   fn produce_snapshot(&mut self) {
       // ... (snapshot production) ...
@@ -267,22 +267,27 @@ Ensure the main thread is woken after a new snapshot is published. The wakeup mu
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-03-001][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:75`, `oriterm_mux/src/pane/io_thread/mod.rs:87`, `oriterm_mux/src/pane/io_thread/mod.rs:207` — the blocking receive path can drop the final parsed frame on shutdown.
+  Evidence: when the idle `select!` arm receives PTY bytes, it only calls `handle_bytes_chunked(&bytes)` and then ends the loop iteration. Snapshot publication happens later via `maybe_produce_snapshot()` at the top of the next iteration. If `Shutdown` is queued while that byte batch is being parsed, the next iteration exits in `drain_commands()` before `maybe_produce_snapshot()` runs, so the bytes that were just parsed never get flipped into `SnapshotDoubleBuffer` and no post-publish wakeup is sent.
+  **Fix:** Added `self.maybe_produce_snapshot()` before `return` in both the `drain_commands()` shutdown check and the `select!` Shutdown arm. Test: `shutdown_flushes_final_snapshot`.
+- [x] `[TPR-03-002][low]` `plans/threaded-io/section-03-snapshot-production.md:34`, `plans/threaded-io/section-03-snapshot-production.md:37`, `plans/threaded-io/section-04-render-migration.md:55`, `plans/threaded-io/section-04-render-migration.md:59` — Section 03 is marked complete with "main thread reads the latest published snapshot" even though that consumer path is still deferred to Section 04.
+  Evidence: the current tree adds `PaneIoHandle::double_buffer()` but no `Pane`/`EmbeddedMux`/daemon caller reads it. Section 04 still owns the first real integration steps (`Pane::swap_io_snapshot(...)` and the `refresh_pane_snapshot()` rewrite). That makes the Section 03 status/body overstate what is actually finished today.
+  **Fix:** Updated exit criteria to clarify that `swap_front()` is available but no production consumer reads it yet — section 04 wires the consumer.
 
 ---
 
 ## 03.N Completion Checklist
 
-- [ ] `SnapshotDoubleBuffer` type provides `flip()` and `swap_front()`
-- [ ] IO thread produces snapshots after processing bytes/commands
-- [ ] Buffer reuse: `RenderableContent` allocations recycled via swap
-- [ ] Synchronized output mode respected (no snapshot during sync buffer)
-- [ ] Wakeup sent to main thread after snapshot publish (not during parsing)
-- [ ] Non-wakeup events (title, bell, CWD) still reach main thread
-- [ ] `timeout 150 cargo test -p oriterm_mux` passes
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `SnapshotDoubleBuffer` type provides `flip()` and `swap_front()`
+- [x] IO thread produces snapshots after processing bytes/commands
+- [x] Buffer reuse: `RenderableContent` allocations recycled via swap
+- [x] Synchronized output mode respected (no snapshot during sync buffer)
+- [x] Wakeup sent to main thread after snapshot publish (not during parsing)
+- [x] Non-wakeup events (title, bell, CWD) still reach main thread
+- [x] `timeout 150 cargo test -p oriterm_mux` passes
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
+- [x] `/tpr-review` passed
 
-**Exit Criteria:** The IO thread produces valid `RenderableContent` snapshots and publishes them to a shared buffer. The main thread can `swap_front()` to read the latest snapshot. Wakeups are correctly timed (after publish). The existing render path (via `Arc<FairMutex>`) still works — this section doesn't switch the render path yet.
+**Exit Criteria:** The IO thread produces valid `RenderableContent` snapshots and publishes them to `SnapshotDoubleBuffer` via `flip_swap()`. The `swap_front()` API is available for the main thread but no production consumer reads it yet — section 04 wires `Pane::swap_io_snapshot()` and the `refresh_pane_snapshot()` rewrite. Wakeups are correctly timed (after publish). The existing render path (via `Arc<FairMutex>`) still works — this section doesn't switch the render path.

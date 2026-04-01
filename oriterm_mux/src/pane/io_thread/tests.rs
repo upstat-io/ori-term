@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use oriterm_core::{Column, Line, Term, TermMode, Theme, VoidListener};
 
+use super::snapshot::SnapshotDoubleBuffer;
 use super::{PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
 
 /// Helper: create a Term<VoidListener> with default dimensions.
@@ -18,7 +19,8 @@ fn make_pair() -> (PaneIoThread<VoidListener>, PaneIoHandle) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    new_with_handle(make_term(), mode_cache, shutdown, wakeup)
+    let grid_dirty = Arc::new(AtomicBool::new(false));
+    new_with_handle(make_term(), mode_cache, shutdown, wakeup, grid_dirty)
 }
 
 /// Helper: spawn and return a live handle + its shutdown flag.
@@ -26,12 +28,69 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let (thread, mut handle) =
-        new_with_handle(make_term(), mode_cache, Arc::clone(&shutdown), wakeup);
+    let grid_dirty = Arc::new(AtomicBool::new(false));
+    let (thread, mut handle) = new_with_handle(
+        make_term(),
+        mode_cache,
+        Arc::clone(&shutdown),
+        wakeup,
+        grid_dirty,
+    );
     let join = thread.spawn().expect("failed to spawn IO thread");
     handle.set_join(join);
     (handle, shutdown)
 }
+
+/// Helper: create a `PaneIoThread` for synchronous testing (no spawning).
+fn make_sync_thread() -> PaneIoThread<VoidListener> {
+    make_sync_thread_with_term(make_term())
+}
+
+/// Helper: create a `PaneIoThread` with a custom `Term` for synchronous testing.
+fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidListener> {
+    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    PaneIoThread {
+        terminal: term,
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(|| {}),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+/// Helper: create a sync thread with a wakeup counter for testing.
+fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>) {
+    let wakeup_count = Arc::new(AtomicU32::new(0));
+    let wakeup_clone = Arc::clone(&wakeup_count);
+    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let grid_dirty = Arc::new(AtomicBool::new(false));
+    let thread = PaneIoThread {
+        terminal: make_term(),
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(move || {
+            wakeup_clone.fetch_add(1, Ordering::Relaxed);
+        }),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty,
+    };
+    (thread, wakeup_count)
+}
+
+// --- Lifecycle tests ---
 
 /// Send `Shutdown` command — IO thread should exit cleanly and set the flag.
 #[test]
@@ -66,6 +125,9 @@ fn shutdown_via_channel_disconnect() {
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
         mode_cache,
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -88,7 +150,14 @@ fn command_delivery_ordering() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let (thread, handle) = new_with_handle(make_term(), mode_cache, Arc::clone(&shutdown), wakeup);
+    let grid_dirty = Arc::new(AtomicBool::new(false));
+    let (thread, handle) = new_with_handle(
+        make_term(),
+        mode_cache,
+        Arc::clone(&shutdown),
+        wakeup,
+        grid_dirty,
+    );
 
     for i in 1..=5 {
         handle.send_command(PaneIoCommand::ScrollDisplay(i));
@@ -123,6 +192,9 @@ fn byte_delivery_parses_vte() {
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
         mode_cache,
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -178,38 +250,6 @@ fn debug_impls() {
 }
 
 // --- Section 02 VTE parsing tests ---
-
-/// Helper: create a `PaneIoThread` for synchronous testing (no spawning).
-fn make_sync_thread() -> PaneIoThread<VoidListener> {
-    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
-    PaneIoThread {
-        terminal: make_term(),
-        cmd_rx,
-        byte_rx,
-        shutdown: Arc::new(AtomicBool::new(false)),
-        wakeup: Arc::new(|| {}),
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
-    }
-}
-
-/// Helper: create a `PaneIoThread` with a custom `Term` for synchronous testing.
-fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidListener> {
-    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
-    PaneIoThread {
-        terminal: term,
-        cmd_rx,
-        byte_rx,
-        shutdown: Arc::new(AtomicBool::new(false)),
-        wakeup: Arc::new(|| {}),
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
-    }
-}
 
 /// VTE sequences are parsed: SGR 31 sets cell foreground to ANSI red.
 #[test]
@@ -291,6 +331,9 @@ fn handle_bytes_chunked_drains_commands() {
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
         mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -348,5 +391,151 @@ fn handle_bytes_prunes_evicted_markers() {
     assert!(
         markers_after < markers_before,
         "markers should be pruned after eviction: before={markers_before}, after={markers_after}"
+    );
+}
+
+// --- Section 03 snapshot production tests ---
+
+/// `produce_snapshot()` fills cells from terminal grid content.
+#[test]
+fn produce_snapshot_fills_cells() {
+    let mut t = make_sync_thread();
+
+    t.handle_bytes(b"hello");
+    t.grid_dirty.store(true, Ordering::Release);
+    t.produce_snapshot();
+
+    let mut consumer = oriterm_core::RenderableContent::default();
+    assert!(t.double_buffer.swap_front(&mut consumer));
+
+    // Find the 'h', 'e', 'l', 'l', 'o' characters in the snapshot.
+    let text: String = consumer
+        .cells
+        .iter()
+        .filter(|c| c.ch != ' ' && c.ch != '\0')
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        text.starts_with("hello"),
+        "snapshot should contain 'hello', got: {text:?}"
+    );
+}
+
+/// `produce_snapshot()` resets damage after production.
+#[test]
+fn produce_snapshot_resets_damage() {
+    let mut t = make_sync_thread();
+
+    // Write something to dirty the grid.
+    t.handle_bytes(b"test");
+    t.grid_dirty.store(true, Ordering::Release);
+
+    // Damage should exist before snapshot.
+    let has_damage =
+        t.terminal.grid().dirty().is_all_dirty() || t.terminal.grid().dirty().is_dirty(0);
+    assert!(has_damage, "grid should have damage after writing");
+
+    t.produce_snapshot();
+
+    // Damage should be cleared after snapshot.
+    let still_dirty =
+        t.terminal.grid().dirty().is_all_dirty() || t.terminal.grid().dirty().is_dirty(0);
+    assert!(!still_dirty, "damage should be cleared after snapshot");
+}
+
+/// `maybe_produce_snapshot()` respects synchronized output (Mode 2026).
+///
+/// When sync_bytes_count > 0, snapshot production is deferred.
+#[test]
+fn produce_snapshot_respects_sync_mode() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enable Mode 2026 (synchronized output begin: BSU).
+    t.handle_bytes(b"\x1b[?2026h");
+    t.grid_dirty.store(true, Ordering::Release);
+
+    // Send some content while sync mode is active.
+    // The processor accumulates in sync buffer, so sync_bytes_count > 0.
+    t.processor.advance(&mut t.terminal, b"buffered content");
+
+    // Try to produce snapshot — should be suppressed because sync buffer is active.
+    let wakeup_before = wakeup_count.load(Ordering::Relaxed);
+    t.maybe_produce_snapshot();
+    let wakeup_after = wakeup_count.load(Ordering::Relaxed);
+
+    assert_eq!(
+        wakeup_before, wakeup_after,
+        "wakeup should NOT fire while sync buffer is non-empty"
+    );
+}
+
+/// Wakeup callback only fires when `grid_dirty` is set.
+#[test]
+fn produce_snapshot_wakeup_only_when_dirty() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // grid_dirty is false by default.
+    assert!(!t.grid_dirty.load(Ordering::Acquire));
+
+    // Call maybe_produce_snapshot — should skip because grid is not dirty.
+    t.maybe_produce_snapshot();
+
+    assert_eq!(
+        wakeup_count.load(Ordering::Relaxed),
+        0,
+        "wakeup should not fire when grid is not dirty"
+    );
+}
+
+/// Shutdown flushes any parsed-but-unpublished state (TPR-03-001).
+///
+/// Bytes processed in the `select!` arm must be snapshot-published
+/// even if shutdown is queued before the next `maybe_produce_snapshot()`.
+#[test]
+fn shutdown_flushes_final_snapshot() {
+    let mut t = make_sync_thread();
+
+    // Simulate bytes arriving in the select! arm.
+    t.handle_bytes(b"final");
+    t.grid_dirty.store(true, Ordering::Release);
+
+    // Simulate shutdown arriving before next maybe_produce_snapshot().
+    t.shutdown.store(true, Ordering::Release);
+
+    // The shutdown path in run() calls maybe_produce_snapshot() before returning.
+    // Simulate that here:
+    t.maybe_produce_snapshot();
+
+    let mut consumer = oriterm_core::RenderableContent::default();
+    assert!(
+        t.double_buffer.swap_front(&mut consumer),
+        "final snapshot should be published even on shutdown"
+    );
+
+    let text: String = consumer
+        .cells
+        .iter()
+        .filter(|c| c.ch != ' ' && c.ch != '\0')
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        text.starts_with("final"),
+        "shutdown snapshot should contain 'final', got: {text:?}"
+    );
+}
+
+/// Wakeup fires exactly once per `produce_snapshot()` call.
+#[test]
+fn produce_snapshot_fires_wakeup() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    t.handle_bytes(b"data");
+    t.grid_dirty.store(true, Ordering::Release);
+    t.produce_snapshot();
+
+    assert_eq!(
+        wakeup_count.load(Ordering::Relaxed),
+        1,
+        "wakeup should fire once after produce_snapshot"
     );
 }

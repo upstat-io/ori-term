@@ -71,6 +71,7 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
                 flags: CellFlags::from_bits_truncate(wire.flags),
                 underline_color: wire.underline_color.map(wire_rgb_to_rgb),
                 has_hyperlink: wire.hyperlink_uri.is_some(),
+                hyperlink_uri: None,
                 zerowidth: if wire.zerowidth.is_empty() {
                     Vec::new()
                 } else {
@@ -112,6 +113,7 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
                 flags: CellFlags::from_bits_truncate(wire.flags),
                 underline_color: wire.underline_color.map(wire_rgb_to_rgb),
                 has_hyperlink: wire.hyperlink_uri.is_some(),
+                hyperlink_uri: None,
                 zerowidth: if wire.zerowidth.is_empty() {
                     Vec::new()
                 } else {

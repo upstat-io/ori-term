@@ -19,8 +19,9 @@ use crate::domain::SpawnConfig;
 use crate::in_process::{ClosePaneResult, InProcessMux};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
+use crate::pane::io_thread::PaneIoCommand;
 use crate::registry::PaneEntry;
-use crate::server::snapshot::build_snapshot_into;
+use crate::server::snapshot::{build_snapshot_locked, fill_snapshot_from_renderable};
 use crate::{DomainId, PaneId, PaneSnapshot};
 
 /// In-process mux backend for single-process mode.
@@ -126,6 +127,7 @@ impl MuxBackend for EmbeddedMux {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.resize_grid(rows, cols);
             pane.resize_pty(rows, cols);
+            pane.send_io_command(PaneIoCommand::Resize { rows, cols });
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -138,8 +140,10 @@ impl MuxBackend for EmbeddedMux {
         if let Some(pane) = self.panes.get(&pane_id) {
             let mut term = pane.terminal().lock();
             term.set_theme(theme);
-            *term.palette_mut() = palette;
+            *term.palette_mut() = palette.clone();
             term.grid_mut().dirty_mut().mark_all();
+            drop(term);
+            pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -147,6 +151,7 @@ impl MuxBackend for EmbeddedMux {
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.terminal().lock().set_cursor_shape(shape);
+            pane.send_io_command(PaneIoCommand::SetCursorShape(shape));
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -154,6 +159,8 @@ impl MuxBackend for EmbeddedMux {
     fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.terminal().lock().set_bold_is_bright(enabled);
+            // Note: no IO thread command yet — bold_is_bright is resolved in
+            // renderable_content_into, so it needs a dedicated command in section 06.
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -161,6 +168,7 @@ impl MuxBackend for EmbeddedMux {
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.terminal().lock().grid_mut().dirty_mut().mark_all();
+            pane.send_io_command(PaneIoCommand::MarkAllDirty);
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -171,6 +179,8 @@ impl MuxBackend for EmbeddedMux {
             term.set_image_protocol_enabled(config.enabled);
             term.set_image_limits(config.memory_limit, config.max_single);
             term.set_image_animation_enabled(config.animation_enabled);
+            drop(term);
+            pane.send_io_command(PaneIoCommand::SetImageConfig(config));
         }
     }
 
@@ -250,6 +260,7 @@ impl MuxBackend for EmbeddedMux {
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.scroll_display(delta);
+            pane.send_io_command(PaneIoCommand::ScrollDisplay(delta));
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -257,6 +268,7 @@ impl MuxBackend for EmbeddedMux {
     fn scroll_to_bottom(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.scroll_to_bottom();
+            pane.send_io_command(PaneIoCommand::ScrollToBottom);
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -267,6 +279,9 @@ impl MuxBackend for EmbeddedMux {
             .get(&pane_id)
             .is_some_and(Pane::scroll_to_previous_prompt);
         if scrolled {
+            if let Some(pane) = self.panes.get(&pane_id) {
+                pane.send_io_command(PaneIoCommand::ScrollToPreviousPrompt);
+            }
             self.snapshot_dirty.insert(pane_id);
         }
         scrolled
@@ -278,6 +293,9 @@ impl MuxBackend for EmbeddedMux {
             .get(&pane_id)
             .is_some_and(Pane::scroll_to_next_prompt);
         if scrolled {
+            if let Some(pane) = self.panes.get(&pane_id) {
+                pane.send_io_command(PaneIoCommand::ScrollToNextPrompt);
+            }
             self.snapshot_dirty.insert(pane_id);
         }
         scrolled
@@ -358,15 +376,9 @@ impl MuxBackend for EmbeddedMux {
         let Some(cached) = self.renderable_cache.get_mut(&pane_id) else {
             return false;
         };
-        // Swap Vec allocations for zero-allocation steady state: target
-        // gets fresh data, cached receives the old allocation for next frame.
-        std::mem::swap(&mut target.cells, &mut cached.cells);
-        std::mem::swap(&mut target.damage, &mut cached.damage);
-        target.cursor = cached.cursor;
-        target.display_offset = cached.display_offset;
-        target.stable_row_base = cached.stable_row_base;
-        target.mode = cached.mode;
-        target.all_dirty = cached.all_dirty;
+        // Whole-struct swap: both sides retain their Vec allocations.
+        // Simpler than field-by-field and future-proof against new fields.
+        std::mem::swap(target, cached);
         true
     }
 
@@ -382,11 +394,17 @@ impl MuxBackend for EmbeddedMux {
         let pane = self.panes.get(&pane_id)?;
         let snapshot = self.snapshot_cache.entry(pane_id).or_default();
         let render_buf = self.renderable_cache.entry(pane_id).or_default();
-        // Full snapshot build: fills cells (for tests, text extraction) AND
-        // caches the RenderableContent in render_buf for swap_renderable_content().
-        // The render path uses swap to bypass the WireCell → RenderableCell
-        // conversion; other code reads snapshot.cells directly.
-        build_snapshot_into(pane, snapshot, render_buf);
+
+        // Prefer IO-thread snapshot (zero-lock swap). Falls back to the old
+        // lock-based path when the IO thread hasn't produced a snapshot yet
+        // (race window: old PtyEventLoop sets grid_dirty before IO thread
+        // finishes parsing the same bytes).
+        if pane.swap_io_snapshot(render_buf) {
+            fill_snapshot_from_renderable(pane, render_buf, snapshot);
+        } else {
+            build_snapshot_locked(pane, snapshot, render_buf);
+        }
+
         self.snapshot_dirty.remove(&pane_id);
         self.snapshot_cache.get(&pane_id)
     }
