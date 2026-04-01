@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Remaining State Operations"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Migrate all remaining terminal state operations (scroll, search, theme, text extraction, etc.) to IO thread commands — eliminating all direct FairMutex access from the main thread"
 inspired_by:
@@ -13,22 +13,22 @@ third_party_review:
 sections:
   - id: "06.1"
     title: "Scroll Operations"
-    status: not-started
+    status: complete
   - id: "06.2"
     title: "Theme & Visual Config"
-    status: not-started
+    status: complete
   - id: "06.3"
     title: "Text Extraction (Clipboard)"
-    status: not-started
+    status: complete
   - id: "06.4"
     title: "Search Operations"
-    status: not-started
+    status: in-progress
   - id: "06.5"
     title: "Mark Mode & Prompt Navigation"
-    status: not-started
+    status: in-progress
   - id: "06.6"
     title: "Daemon Server Dispatch Migration"
-    status: not-started
+    status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -57,7 +57,7 @@ sections:
 
 Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_bottom()` which lock the terminal.
 
-- [ ] Route `EmbeddedMux::scroll_display()` through IO command:
+- [x] Route `EmbeddedMux::scroll_display()` through IO command:
   ```rust
   fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
       if let Some(pane) = self.panes.get(&pane_id) {
@@ -67,7 +67,7 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
   }
   ```
 
-- [ ] Route `scroll_to_bottom()`:
+- [x] Route `scroll_to_bottom()`:
   ```rust
   fn scroll_to_bottom(&mut self, pane_id: PaneId) {
       if let Some(pane) = self.panes.get(&pane_id) {
@@ -77,12 +77,12 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
   }
   ```
 
-- [ ] Route `scroll_to_previous_prompt()` and `scroll_to_next_prompt()`:
+- [x] Route `scroll_to_previous_prompt()` and `scroll_to_next_prompt()`:
   These currently return `bool` (whether scrolling happened). With async commands, we can't return synchronously. The UI already ignores the return value (verified: `action_dispatch.rs:164,175` discards it).
 
-- [ ] **Trait signature change**: Update `MuxBackend::scroll_to_previous_prompt()` and `scroll_to_next_prompt()` return type from `bool` to `()`. Update ALL three implementors simultaneously: `EmbeddedMux` (`backend/embedded/mod.rs`), `DaemonMux` (`backend/client/rpc_methods.rs`), and `InProcessMux` if applicable. Update any callers in `oriterm/src/app/` that check the return value.
+- [x] **Trait signature change**: Update `MuxBackend::scroll_to_previous_prompt()` and `scroll_to_next_prompt()` return type from `bool` to `()`. Update ALL three implementors simultaneously: `EmbeddedMux` (`backend/embedded/mod.rs`), `DaemonMux` (`backend/client/rpc_methods.rs`), and `InProcessMux` if applicable. Update any callers in `oriterm/src/app/` that check the return value.
 
-- [ ] IO thread handlers:
+- [x] IO thread handlers:
   ```rust
   PaneIoCommand::ScrollDisplay(delta) => {
       self.terminal.grid_mut().scroll_display(delta);
@@ -106,7 +106,7 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
 
 **File(s):** `oriterm_mux/src/backend/embedded/mod.rs`
 
-- [ ] Route `set_pane_theme()`:
+- [x] Route `set_pane_theme()`:
   ```rust
   fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: Palette) {
       if let Some(pane) = self.panes.get(&pane_id) {
@@ -116,7 +116,7 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
   }
   ```
 
-- [ ] Route `set_cursor_shape()`:
+- [x] Route `set_cursor_shape()`:
   ```rust
   fn set_cursor_shape(&mut self, pane_id: PaneId, shape: CursorShape) {
       if let Some(pane) = self.panes.get(&pane_id) {
@@ -126,7 +126,7 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
   }
   ```
 
-- [ ] Route `mark_all_dirty()`:
+- [x] Route `mark_all_dirty()`:
   ```rust
   fn mark_all_dirty(&mut self, pane_id: PaneId) {
       if let Some(pane) = self.panes.get(&pane_id) {
@@ -136,7 +136,7 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
   }
   ```
 
-- [ ] Route `set_image_config()`:
+- [x] Route `set_image_config()`:
   ```rust
   fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
       if let Some(pane) = self.panes.get(&pane_id) {
@@ -145,9 +145,9 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
   }
   ```
 
-- [ ] IO thread handlers for each (straightforward — call the same methods on `self.terminal` that were previously called under lock).
+- [x] IO thread handlers for each (straightforward — call the same methods on `self.terminal` that were previously called under lock).
 
-- [ ] Route `Reset` command (if/when a terminal reset API is added to `MuxBackend`):
+- [x] Route `Reset` command (if/when a terminal reset API is added to `MuxBackend`):
   ```rust
   PaneIoCommand::Reset => {
       self.terminal.reset();
@@ -163,7 +163,7 @@ Scroll operations currently call `pane.scroll_display()` / `pane.scroll_to_botto
 
 Text extraction needs a response — it reads grid cells and returns a String. This uses a request-response pattern via a reply channel.
 
-- [ ] Route `extract_text()`:
+- [x] Route `extract_text()`:
   ```rust
   fn extract_text(&mut self, pane_id: PaneId, sel: &Selection) -> Option<String> {
       let pane = self.panes.get(&pane_id)?;
@@ -180,9 +180,9 @@ Text extraction needs a response — it reads grid cells and returns a String. T
   }
   ```
 
-- [ ] Route `extract_html()` similarly with its own reply channel.
+- [x] Route `extract_html()` similarly with its own reply channel.
 
-- [ ] IO thread handlers:
+- [x] IO thread handlers:
   ```rust
   PaneIoCommand::ExtractText { selection, reply } => {
       let text = oriterm_core::selection::extract_text(
@@ -193,7 +193,7 @@ Text extraction needs a response — it reads grid cells and returns a String. T
   }
   ```
 
-- [ ] **Use `recv_timeout()` as a safety net.** While the IO thread should respond within one 64KB parse chunk (~microseconds), a hard block on the main winit thread risks freezing the entire UI if the IO thread is stuck. Use `crossbeam_channel::Receiver::recv_timeout(Duration::from_millis(100))`. If timeout fires, return `None` — the user can retry the copy. If the pane is closed, the `Sender` is dropped and `recv()` returns `Err(RecvTimeoutError::Disconnected)`, which is the correct cancellation path.
+- [x] **Use `recv_timeout()` as a safety net.** While the IO thread should respond within one 64KB parse chunk (~microseconds), a hard block on the main winit thread risks freezing the entire UI if the IO thread is stuck. Use `crossbeam_channel::Receiver::recv_timeout(Duration::from_millis(100))`. If timeout fires, return `None` — the user can retry the copy. If the pane is closed, the `Sender` is dropped and `recv()` returns `Err(RecvTimeoutError::Disconnected)`, which is the correct cancellation path.
   ```rust
   use std::time::Duration;
   rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
@@ -224,16 +224,16 @@ Text extraction needs a response — it reads grid cells and returns a String. T
 
 Search state currently lives on `Pane` (not `Term`), but `search_set_query()` locks the terminal to read the grid. This needs to move to the IO thread.
 
-- [ ] Move `SearchState` from `Pane` to `PaneIoThread`. Rationale: `search_set_query()` currently calls `pane.terminal().lock()` to read the grid (see `EmbeddedMux::search_set_query()` in `embedded/mod.rs:184-193`). The grid will be on the IO thread, so search execution must happen there.
+- [x] Move `SearchState` from `Pane` to `PaneIoThread`. Rationale: `search_set_query()` currently calls `pane.terminal().lock()` to read the grid (see `EmbeddedMux::search_set_query()` in `embedded/mod.rs:184-193`). The grid will be on the IO thread, so search execution must happen there.
 
-- [ ] The search commands are already defined in `PaneIoCommand` (section 01). Route all search operations through them:
+- [x] The search commands are already defined in `PaneIoCommand` (section 01). Route all search operations through them:
   - `EmbeddedMux::open_search()` → `PaneIoCommand::OpenSearch`
   - `EmbeddedMux::close_search()` → `PaneIoCommand::CloseSearch`
   - `EmbeddedMux::search_set_query()` → `PaneIoCommand::SearchSetQuery(query)`
   - `EmbeddedMux::search_next_match()` → `PaneIoCommand::SearchNextMatch`
   - `EmbeddedMux::search_prev_match()` → `PaneIoCommand::SearchPrevMatch`
 
-- [ ] IO thread handlers: the IO thread owns `SearchState` as a field on `PaneIoThread`. `SearchSetQuery` calls `search.set_query(query, self.terminal.grid())` directly — no lock needed since the IO thread owns both.
+- [x] IO thread handlers: the IO thread owns `SearchState` as a field on `PaneIoThread`. `SearchSetQuery` calls `search.set_query(query, self.terminal.grid())` directly — no lock needed since the IO thread owns both.
 
 - [ ] **Search results in snapshots**: Search matches, focused index, and query must be included in `RenderableContent` so both the renderer AND daemon snapshot metadata can display them without needing `pane.search()`. Add these fields to `RenderableContent` (in `oriterm_core/src/term/renderable/mod.rs`):
   ```rust
@@ -256,7 +256,7 @@ Search state currently lives on `Pane` (not `Term`), but `search_set_query()` lo
 
 Mark mode and prompt navigation currently lock the terminal for cursor position reads.
 
-- [ ] `enter_mark_mode()` currently calls `self.scroll_to_bottom()` (locks terminal) then locks again to read cursor position (see `pane/mod.rs:363-379`). Both operations must happen atomically on the IO thread:
+- [x] `enter_mark_mode()` currently calls `self.scroll_to_bottom()` (locks terminal) then locks again to read cursor position (see `pane/mod.rs:363-379`). Both operations must happen atomically on the IO thread:
   ```rust
   PaneIoCommand::EnterMarkMode { reply } => {
       // Scroll to bottom first (same as current enter_mark_mode).
@@ -274,15 +274,15 @@ Mark mode and prompt navigation currently lock the terminal for cursor position 
   ```
   The main thread sends the command, blocks on the reply (with `recv_timeout(100ms)`), and stores the result on `Pane.mark_cursor`.
 
-- [ ] `exit_mark_mode()` and `set_mark_cursor()` are Pane-local (no terminal access needed) — no change.
+- [x] `exit_mark_mode()` and `set_mark_cursor()` are Pane-local (no terminal access needed) — no change.
 
-- [ ] Selection operations: `Pane.selection` is Pane-local. No migration needed — selection already works from snapshot data.
+- [x] Selection operations: `Pane.selection` is Pane-local. No migration needed — selection already works from snapshot data.
 
 - [ ] `is_selection_dirty()` / `clear_selection_dirty()` currently lock the terminal (see `embedded/mod.rs:392-400`). Add a `selection_dirty: AtomicBool` to `Pane` that the IO thread sets when `Term::selection_dirty` becomes true. The IO thread checks this after each VTE parse cycle and updates the atomic. The main thread reads/clears the atomic without locking.
 
 - [ ] `check_selection_invalidation()` (in `pane/selection.rs:39-53`) locks the terminal to read `is_selection_dirty()`. After migration, this reads the `selection_dirty` atomic instead.
 
-- [ ] `command_output_selection()` and `command_input_selection()` (in `pane/selection.rs:92-131`) lock the terminal to read grid state and prompt markers. These need to become IO thread commands with reply channels:
+- [x] `command_output_selection()` and `command_input_selection()` (in `pane/selection.rs:92-131`) lock the terminal to read grid state and prompt markers. These need to become IO thread commands with reply channels:
   ```rust
   PaneIoCommand::SelectCommandOutput {
       reply: crossbeam_channel::Sender<Option<Selection>>,
@@ -302,10 +302,10 @@ Mark mode and prompt navigation currently lock the terminal for cursor position 
 
 The daemon server dispatch has the same pattern as `EmbeddedMux` — it locks the terminal for theme, cursor, dirty, resize, search, and text extraction. All must route through `Pane::send_io_command()` instead.
 
-- [ ] Audit all `pane.terminal().lock()` calls in `server/dispatch/mod.rs` (currently 7 call sites: lines 140, 164, 172, 196+199, 234, 286, 303)
-- [ ] Route each through the same `Pane::send_io_command()` helper that EmbeddedMux uses
-- [ ] Request-response calls (text extraction, search query) use the same `recv_timeout()` pattern as EmbeddedMux
-- [ ] Verify `SnapshotCache::build()` no longer locks terminal (migrated in section 04.2)
+- [x] Audit all `pane.terminal().lock()` calls in `server/dispatch/mod.rs` (currently 7 call sites: lines 140, 164, 172, 196+199, 234, 286, 303)
+- [x] Route each through the same `Pane::send_io_command()` helper that EmbeddedMux uses
+- [x] Request-response calls (text extraction, search query) use the same `recv_timeout()` pattern as EmbeddedMux
+- [x] Verify `SnapshotCache::build()` no longer locks terminal (migrated in section 04.2)
 
 ### Tests (06.4-06.6)
 
@@ -339,22 +339,22 @@ The daemon server dispatch has the same pattern as `EmbeddedMux` — it locks th
 
 ## 06.N Completion Checklist
 
-- [ ] `scroll_display()`, `scroll_to_bottom()` route through IO commands
-- [ ] `scroll_to_previous_prompt()`, `scroll_to_next_prompt()` route through IO commands
-- [ ] `set_pane_theme()`, `set_cursor_shape()`, `mark_all_dirty()` route through IO commands
-- [ ] `set_image_config()` routes through IO command
-- [ ] `extract_text()`, `extract_html()` use request-response via reply channel
-- [ ] Search operations (open, close, query, next, prev) route through IO commands
+- [x] `scroll_display()`, `scroll_to_bottom()` route through IO commands
+- [x] `scroll_to_previous_prompt()`, `scroll_to_next_prompt()` route through IO commands
+- [x] `set_pane_theme()`, `set_cursor_shape()`, `mark_all_dirty()` route through IO commands
+- [x] `set_image_config()` routes through IO command
+- [x] `extract_text()`, `extract_html()` use request-response via reply channel
+- [x] Search operations (open, close, query, next, prev) route through IO commands
 - [ ] Search state included in snapshots for rendering
-- [ ] Mark mode cursor read uses IO command with reply
+- [x] Mark mode cursor read uses IO command with reply
 - [ ] Selection dirty state accessible without terminal lock
-- [ ] `command_output_selection()`, `command_input_selection()` use IO commands with reply
+- [x] `command_output_selection()`, `command_input_selection()` use IO commands with reply
 - [ ] No remaining `pane.terminal().lock()` calls in `EmbeddedMux` methods
 - [ ] No remaining `pane.terminal().lock()` calls in `server/dispatch` handlers
-- [ ] `timeout 150 cargo test -p oriterm_mux` passes
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `timeout 150 cargo test -p oriterm_mux` passes
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** Every `MuxBackend` method, every `server/dispatch` handler, and every `Pane` method that previously locked the terminal now routes through `PaneIoCommand`. `grep -rn "terminal().lock()\|self.terminal.lock()" oriterm_mux/src/` returns zero results outside tests. Actual call sites to migrate (verified): 8 in `backend/embedded/mod.rs`, 7 in `server/dispatch/mod.rs` (6 `.lock()` + 1 `.clone().lock()` pattern), 3 in `server/snapshot.rs`, 5 in `pane/mod.rs`, 3 in `pane/selection.rs` — **26 total**. The pane-internal locks (scroll_to_bottom, scroll_display, resize_grid, enter_mark_mode, prompt nav, selection checks, command zone selection) are handled by sections 05-06 making those Pane methods delegate to `send_io_command()`, then removed entirely in section 07.
