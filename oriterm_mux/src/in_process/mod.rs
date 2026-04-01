@@ -97,13 +97,9 @@ impl InProcessMux {
     ) -> io::Result<(PaneId, Pane)> {
         let pane_id = self.pane_alloc.alloc();
         let domain_id = self.local_domain.id();
-        let pane = self.local_domain.spawn_pane(
-            pane_id,
-            config,
-            theme,
-            &self.event_tx,
-            Arc::clone(wakeup),
-        )?;
+        let pane = self
+            .local_domain
+            .spawn_pane(pane_id, config, theme, &self.event_tx, wakeup)?;
 
         self.pane_registry.register(PaneEntry {
             pane: pane_id,

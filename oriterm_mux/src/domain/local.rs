@@ -12,6 +12,7 @@ use crate::{DomainId, PaneId};
 use super::{Domain, DomainState, SpawnConfig};
 
 use crate::mux_event::{MuxEvent, MuxEventProxy};
+use crate::pane::io_thread;
 use crate::pane::{Pane, PaneNotifier, PaneParts};
 use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty, spawn_pty_writer};
 
@@ -72,7 +73,7 @@ impl LocalDomain {
         config: &SpawnConfig,
         theme: Theme,
         mux_tx: &mpsc::Sender<MuxEvent>,
-        wakeup: Arc<dyn Fn() + Send + Sync>,
+        wakeup: &Arc<dyn Fn() + Send + Sync>,
     ) -> io::Result<Pane> {
         // 1. Spawn PTY with the configured shell.
         let pty_config = PtyConfig {
@@ -107,7 +108,7 @@ impl LocalDomain {
             mux_tx.clone(),
             Arc::clone(&wakeup_pending),
             Arc::clone(&grid_dirty),
-            wakeup,
+            Arc::clone(wakeup),
         );
         let term = Term::new(
             usize::from(config.rows),
@@ -130,10 +131,16 @@ impl LocalDomain {
         let event_loop = PtyEventLoop::new(
             Arc::clone(&terminal),
             reader,
-            shutdown,
+            Arc::clone(&shutdown),
             Arc::clone(&mode_cache),
         );
         let reader_thread = event_loop.spawn()?;
+
+        // 8. Spawn the Terminal IO thread (scaffold — drains channels only).
+        let (io_thread, mut io_handle) =
+            io_thread::new_with_handle(Arc::clone(&shutdown), Arc::clone(wakeup));
+        let io_join = io_thread.spawn()?;
+        io_handle.set_join(io_join);
 
         Ok(Pane::from_parts(PaneParts {
             id: pane_id,
@@ -143,6 +150,7 @@ impl LocalDomain {
             pty_control: control,
             reader_thread,
             writer_thread,
+            io_handle,
             pty,
             grid_dirty,
             wakeup_pending,

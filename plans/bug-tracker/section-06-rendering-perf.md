@@ -68,6 +68,14 @@ sections:
   - **Repro**: Set `gpu_backend = "vulkan"`, open settings dialog. Brief baby blue flash before content renders.
   - **Found**: 2026-03-31 — manual, user report. DX12 (default) is not affected.
 
+- [ ] **BUG-06.9**: Focus border around panes has asymmetric padding — left padded, right clips out of bounds
+  - **Severity**: medium
+  - **File(s)**: `oriterm/src/session/compute/mod.rs` (`snap_to_grid`, pane `pixel_rect` computation), `oriterm/src/app/redraw/multi_pane/mod.rs` (focus border call site)
+  - **Root cause**: The pane `pixel_rect` (used by `append_focus_border`) has inconsistent insets — the left edge has proper padding (from window border or divider offset) but the right edge either extends to the window edge without border inset or the `snap_to_grid` trimming creates an asymmetric result. The focus border renders exactly at the `pixel_rect` bounds, so if the rect itself is wrong, the border clips on the right side.
+  - **Repro**: Split a pane (Ctrl+Shift+D or equivalent). Observe the accent focus border on the active pane — left side has visible padding from the window edge, right side clips or has no padding.
+  - **Found**: 2026-03-31 — manual, user report.
+  - **Note**: Roadmap section 33 (split-nav-floating) touches this area.
+
 - [ ] **BUG-06.8**: Floating pane (Ctrl+Shift+P) is completely transparent — no background fill
   - **Severity**: high
   - **File(s)**: `oriterm/src/gpu/window_renderer/multi_pane.rs` (`append_floating_decoration`), `oriterm/src/app/redraw/multi_pane/mod.rs`
