@@ -12,60 +12,62 @@ pub(super) fn draw_geometric(canvas: &mut Canvas, ch: char) -> bool {
     let w = canvas.width() as f32;
     let h = canvas.height() as f32;
 
+    // Sizing: match font glyph proportions. "Normal" shapes ~55% of cell,
+    // "small" shapes ~30%, "large circle" ~70%. Corner triangles fill the cell.
     match ch {
         // Filled squares.
-        '\u{25A0}' => centered_rect(canvas, w, h, 0.75, 255),
-        '\u{25AA}' => centered_rect(canvas, w, h, 0.5, 255),
-        '\u{25FC}' => centered_rect(canvas, w, h, 0.65, 255),
-        '\u{25FE}' => centered_rect(canvas, w, h, 0.55, 255),
+        '\u{25A0}' => centered_rect(canvas, w, h, 0.55, 255),
+        '\u{25AA}' => centered_rect(canvas, w, h, 0.3, 255),
+        '\u{25FC}' => centered_rect(canvas, w, h, 0.45, 255),
+        '\u{25FE}' => centered_rect(canvas, w, h, 0.35, 255),
         // Outlined squares (25A2 = rounded, approximated as square).
-        '\u{25A1}' | '\u{25A2}' => outlined_rect(canvas, w, h, 0.75),
-        '\u{25AB}' => outlined_rect(canvas, w, h, 0.5),
-        '\u{25FB}' => outlined_rect(canvas, w, h, 0.65),
-        '\u{25FD}' => outlined_rect(canvas, w, h, 0.55),
+        '\u{25A1}' | '\u{25A2}' => outlined_rect(canvas, w, h, 0.55),
+        '\u{25AB}' => outlined_rect(canvas, w, h, 0.3),
+        '\u{25FB}' => outlined_rect(canvas, w, h, 0.45),
+        '\u{25FD}' => outlined_rect(canvas, w, h, 0.35),
         '\u{25A3}' => {
             // White square containing black small square.
-            outlined_rect(canvas, w, h, 0.75);
-            centered_rect(canvas, w, h, 0.4, 255);
+            outlined_rect(canvas, w, h, 0.55);
+            centered_rect(canvas, w, h, 0.25, 255);
         }
         // Triangles (pointing up, down, left, right — filled and outlined).
-        '\u{25B2}' => fill_triangle_up(canvas, w, h, 0.85, 255),
-        '\u{25B3}' => outline_triangle_up(canvas, w, h, 0.85),
-        '\u{25B4}' => fill_triangle_up(canvas, w, h, 0.55, 255),
-        '\u{25B5}' => outline_triangle_up(canvas, w, h, 0.55),
-        '\u{25B6}' | '\u{25BA}' => fill_triangle_right(canvas, w, h, 0.85, 255),
-        '\u{25B7}' | '\u{25BB}' => outline_triangle_right(canvas, w, h, 0.85),
-        '\u{25B8}' => fill_triangle_right(canvas, w, h, 0.55, 255),
-        '\u{25B9}' => outline_triangle_right(canvas, w, h, 0.55),
-        '\u{25BC}' => fill_triangle_down(canvas, w, h, 0.85, 255),
-        '\u{25BD}' => outline_triangle_down(canvas, w, h, 0.85),
-        '\u{25BE}' => fill_triangle_down(canvas, w, h, 0.55, 255),
-        '\u{25BF}' => outline_triangle_down(canvas, w, h, 0.55),
-        '\u{25C0}' | '\u{25C4}' => fill_triangle_left(canvas, w, h, 0.85, 255),
-        '\u{25C1}' | '\u{25C5}' => outline_triangle_left(canvas, w, h, 0.85),
-        '\u{25C2}' => fill_triangle_left(canvas, w, h, 0.55, 255),
-        '\u{25C3}' => outline_triangle_left(canvas, w, h, 0.55),
+        '\u{25B2}' => fill_triangle_up(canvas, w, h, 0.6, 255),
+        '\u{25B3}' => outline_triangle_up(canvas, w, h, 0.6),
+        '\u{25B4}' => fill_triangle_up(canvas, w, h, 0.35, 255),
+        '\u{25B5}' => outline_triangle_up(canvas, w, h, 0.35),
+        '\u{25B6}' | '\u{25BA}' => fill_triangle_right(canvas, w, h, 0.6, 255),
+        '\u{25B7}' | '\u{25BB}' => outline_triangle_right(canvas, w, h, 0.6),
+        '\u{25B8}' => fill_triangle_right(canvas, w, h, 0.35, 255),
+        '\u{25B9}' => outline_triangle_right(canvas, w, h, 0.35),
+        '\u{25BC}' => fill_triangle_down(canvas, w, h, 0.6, 255),
+        '\u{25BD}' => outline_triangle_down(canvas, w, h, 0.6),
+        '\u{25BE}' => fill_triangle_down(canvas, w, h, 0.35, 255),
+        '\u{25BF}' => outline_triangle_down(canvas, w, h, 0.35),
+        '\u{25C0}' | '\u{25C4}' => fill_triangle_left(canvas, w, h, 0.6, 255),
+        '\u{25C1}' | '\u{25C5}' => outline_triangle_left(canvas, w, h, 0.6),
+        '\u{25C2}' => fill_triangle_left(canvas, w, h, 0.35, 255),
+        '\u{25C3}' => outline_triangle_left(canvas, w, h, 0.35),
         // Diamonds.
-        '\u{25C6}' => fill_diamond(canvas, w, h, 0.75, 255),
-        '\u{25C7}' | '\u{25CA}' => outline_diamond(canvas, w, h, 0.75),
+        '\u{25C6}' => fill_diamond(canvas, w, h, 0.55, 255),
+        '\u{25C7}' | '\u{25CA}' => outline_diamond(canvas, w, h, 0.55),
         '\u{25C8}' => {
-            outline_diamond(canvas, w, h, 0.75);
-            fill_diamond(canvas, w, h, 0.4, 255);
+            outline_diamond(canvas, w, h, 0.55);
+            fill_diamond(canvas, w, h, 0.25, 255);
         }
         // Circles.
-        '\u{25CB}' => stroke_circle(canvas, w, h, 0.7),
-        '\u{25CF}' => fill_circle(canvas, w, h, 0.7, 255),
+        '\u{25CB}' => stroke_circle(canvas, w, h, 0.5),
+        '\u{25CF}' => fill_circle(canvas, w, h, 0.5, 255),
         '\u{25CE}' => {
             // Bullseye: outer ring + inner filled.
-            stroke_circle(canvas, w, h, 0.7);
-            fill_circle(canvas, w, h, 0.4, 255);
+            stroke_circle(canvas, w, h, 0.5);
+            fill_circle(canvas, w, h, 0.25, 255);
         }
         '\u{25C9}' => {
             // Fisheye: outer filled + inner white.
-            fill_circle(canvas, w, h, 0.7, 255);
-            fill_circle(canvas, w, h, 0.35, 0);
+            fill_circle(canvas, w, h, 0.5, 255);
+            fill_circle(canvas, w, h, 0.2, 0);
         }
-        '\u{25EF}' => stroke_circle(canvas, w, h, 0.85), // Large circle
+        '\u{25EF}' => stroke_circle(canvas, w, h, 0.7), // Large circle
         // Half circles (filled).
         '\u{25D0}' => half_circle_left(canvas, w, h),
         '\u{25D1}' => half_circle_right(canvas, w, h),
@@ -328,8 +330,8 @@ fn stroke_circle(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
 fn half_circle_left(canvas: &mut Canvas, w: f32, h: f32) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * 0.7 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.7);
+    let radius = (w.min(h) * 0.5 / 2.0).round();
+    stroke_circle(canvas, w, h, 0.5);
     // Fill left half.
     for py in 0..canvas.height() {
         for px in 0..canvas.width() {
@@ -346,8 +348,8 @@ fn half_circle_left(canvas: &mut Canvas, w: f32, h: f32) {
 fn half_circle_right(canvas: &mut Canvas, w: f32, h: f32) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * 0.7 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.7);
+    let radius = (w.min(h) * 0.5 / 2.0).round();
+    stroke_circle(canvas, w, h, 0.5);
     for py in 0..canvas.height() {
         for px in 0..canvas.width() {
             let dx = px as f32 + 0.5 - cx;
@@ -363,8 +365,8 @@ fn half_circle_right(canvas: &mut Canvas, w: f32, h: f32) {
 fn half_circle_bottom(canvas: &mut Canvas, w: f32, h: f32) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * 0.7 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.7);
+    let radius = (w.min(h) * 0.5 / 2.0).round();
+    stroke_circle(canvas, w, h, 0.5);
     for py in 0..canvas.height() {
         for px in 0..canvas.width() {
             let dx = px as f32 + 0.5 - cx;
@@ -380,8 +382,8 @@ fn half_circle_bottom(canvas: &mut Canvas, w: f32, h: f32) {
 fn half_circle_top(canvas: &mut Canvas, w: f32, h: f32) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * 0.7 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.7);
+    let radius = (w.min(h) * 0.5 / 2.0).round();
+    stroke_circle(canvas, w, h, 0.5);
     for py in 0..canvas.height() {
         for px in 0..canvas.width() {
             let dx = px as f32 + 0.5 - cx;
