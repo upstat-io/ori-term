@@ -51,7 +51,7 @@ event_proxy.rs, event_proxy/mod.rs, event_proxy/tests.rs
 ---
 
 ### Section 03: Snapshot Production & Transfer
-**File:** `section-03-snapshot-production.md` | **Status:** Not Started
+**File:** `section-03-snapshot-production.md` | **Status:** Complete
 
 ```
 RenderableContent, renderable_content_into, snapshot
@@ -66,7 +66,7 @@ pane/io_thread/snapshot.rs
 ---
 
 ### Section 04: Render Pipeline Migration
-**File:** `section-04-render-migration.md` | **Status:** Not Started
+**File:** `section-04-render-migration.md` | **Status:** Complete
 
 ```
 refresh_pane_snapshot, build_snapshot_into, render path

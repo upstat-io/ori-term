@@ -22,12 +22,12 @@ use std::thread::JoinHandle;
 
 use crate::{DomainId, PaneId};
 use oriterm_core::term::cwd_short_path;
-use oriterm_core::{FairMutex, SearchState, Selection, StableRowIndex, Term};
+use oriterm_core::{FairMutex, RenderableContent, SearchState, Selection, StableRowIndex, Term};
 
 pub use mark_cursor::MarkCursor;
 
 use crate::mux_event::MuxEventProxy;
-use crate::pane::io_thread::PaneIoHandle;
+use crate::pane::io_thread::{PaneIoCommand, PaneIoHandle};
 use crate::pty::{Msg, PtyControl, PtyHandle};
 
 /// Sends input to the PTY and commands to the reader thread.
@@ -259,6 +259,23 @@ impl Pane {
     /// where a lock-free copy is acceptable.
     pub fn terminal(&self) -> &Arc<FairMutex<Term<MuxEventProxy>>> {
         &self.terminal
+    }
+
+    /// Swap the latest IO-thread-produced snapshot into `buf`.
+    ///
+    /// Returns `true` if a new snapshot was available. When `false`, `buf`
+    /// is unchanged — the caller should use the previously cached content.
+    /// Delegates to [`SnapshotDoubleBuffer::swap_front()`].
+    pub fn swap_io_snapshot(&self, buf: &mut RenderableContent) -> bool {
+        self.io_handle.double_buffer().swap_front(buf)
+    }
+
+    /// Send a command to the IO thread.
+    ///
+    /// Used to keep the IO thread's `Term` in sync with operations that
+    /// affect rendering (scroll, theme, cursor shape, etc.).
+    pub fn send_io_command(&self, cmd: PaneIoCommand) {
+        self.io_handle.send_command(cmd);
     }
 
     // -- Title / CWD / Bell --

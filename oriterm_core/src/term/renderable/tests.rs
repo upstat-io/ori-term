@@ -1600,3 +1600,72 @@ fn cell_without_hyperlink_has_hyperlink_false() {
         );
     }
 }
+
+// --- Metadata fields (cols, lines, scrollback_len, palette_snapshot) ---
+
+#[test]
+fn renderable_content_has_grid_dimensions() {
+    let t = term(); // 4 lines × 10 cols
+    let content = t.renderable_content();
+    assert_eq!(content.cols, 10);
+    assert_eq!(content.lines, 4);
+}
+
+#[test]
+fn renderable_content_scrollback_len_starts_zero() {
+    let t = term();
+    let content = t.renderable_content();
+    assert_eq!(content.scrollback_len, 0);
+}
+
+#[test]
+fn renderable_content_scrollback_len_grows() {
+    let mut t = term(); // 4 lines
+    // Write enough lines to push into scrollback.
+    feed(&mut t, b"line1\r\nline2\r\nline3\r\nline4\r\nline5\r\n");
+    let content = t.renderable_content();
+    assert!(
+        content.scrollback_len > 0,
+        "scrollback should grow after overflow"
+    );
+}
+
+#[test]
+fn renderable_content_palette_snapshot_has_270_entries() {
+    let t = term();
+    let content = t.renderable_content();
+    assert_eq!(content.palette_snapshot.len(), 270);
+}
+
+#[test]
+fn renderable_content_palette_snapshot_matches_palette() {
+    let t = term();
+    let content = t.renderable_content();
+    // Spot-check: palette index 0 should match the default foreground.
+    let palette = Palette::default();
+    let expected = palette.color(0);
+    assert_eq!(
+        content.palette_snapshot[0],
+        [expected.r, expected.g, expected.b]
+    );
+}
+
+#[test]
+fn renderable_content_into_populates_new_fields() {
+    let mut t = term();
+    feed(&mut t, b"hello");
+    let mut out = super::RenderableContent::default();
+    t.renderable_content_into(&mut out);
+    assert_eq!(out.cols, 10);
+    assert_eq!(out.lines, 4);
+    assert_eq!(out.palette_snapshot.len(), 270);
+}
+
+#[test]
+fn renderable_content_default_new_fields() {
+    let d = super::RenderableContent::default();
+    assert_eq!(d.cols, 0);
+    assert_eq!(d.lines, 0);
+    assert_eq!(d.scrollback_len, 0);
+    assert!(d.palette_snapshot.is_empty());
+}

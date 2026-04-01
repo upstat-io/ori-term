@@ -37,6 +37,7 @@ fn content_with_cursor(
                 flags: CellFlags::empty(),
                 underline_color: None,
                 has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: Vec::new(),
             });
         }

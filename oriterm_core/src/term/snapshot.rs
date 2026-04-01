@@ -47,6 +47,10 @@ impl<T: EventListener> Term<T> {
             images: Vec::new(),
             image_data: Vec::new(),
             images_dirty: false,
+            cols: 0,
+            lines: 0,
+            scrollback_len: 0,
+            palette_snapshot: Vec::new(),
             seen_image_ids: HashSet::new(),
         };
         self.renderable_content_into(&mut out);
@@ -102,14 +106,16 @@ impl<T: EventListener> Term<T> {
                 let bg = renderable::resolve_bg(cell.bg, palette);
                 let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
 
-                let (underline_color, has_hyperlink, zerowidth) = match cell.extra.as_ref() {
-                    Some(e) => (
-                        e.underline_color.map(|c| palette.resolve(c)),
-                        e.hyperlink.is_some(),
-                        e.zerowidth.clone(),
-                    ),
-                    None => (None, false, Vec::new()),
-                };
+                let (underline_color, has_hyperlink, hyperlink_uri, zerowidth) =
+                    match cell.extra.as_ref() {
+                        Some(e) => (
+                            e.underline_color.map(|c| palette.resolve(c)),
+                            e.hyperlink.is_some(),
+                            e.hyperlink.as_ref().map(|h| h.uri.clone()),
+                            e.zerowidth.clone(),
+                        ),
+                        None => (None, false, None, Vec::new()),
+                    };
 
                 out.cells.push(RenderableCell {
                     line: vis_line,
@@ -120,6 +126,7 @@ impl<T: EventListener> Term<T> {
                     flags: cell.flags,
                     underline_color,
                     has_hyperlink,
+                    hyperlink_uri,
                     zerowidth,
                 });
             }
@@ -142,6 +149,18 @@ impl<T: EventListener> Term<T> {
         let base_abs = grid.scrollback().len().saturating_sub(offset);
         out.stable_row_base = grid.total_evicted() as u64 + base_abs as u64;
         out.mode = self.mode;
+        out.cols = cols;
+        out.lines = lines;
+        out.scrollback_len = grid.scrollback().len();
+
+        // Palette: reuse Vec capacity, fill 270 pre-resolved RGB entries.
+        out.palette_snapshot.clear();
+        out.palette_snapshot
+            .reserve(270usize.saturating_sub(out.palette_snapshot.capacity()));
+        for i in 0..270 {
+            let rgb = palette.color(i);
+            out.palette_snapshot.push([rgb.r, rgb.g, rgb.b]);
+        }
 
         // Image placements visible in the viewport.
         Self::extract_images(

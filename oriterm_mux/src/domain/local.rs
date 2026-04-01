@@ -147,6 +147,7 @@ impl LocalDomain {
             Arc::clone(&io_mode_cache),
             Arc::clone(&shutdown),
             Arc::clone(wakeup),
+            io_grid_dirty,
         );
         let byte_tx = io_handle.byte_sender();
         let io_join = io_thread.spawn()?;

@@ -9,6 +9,7 @@
 
 mod commands;
 pub(crate) mod event_proxy;
+pub(crate) mod snapshot;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -17,9 +18,10 @@ use std::{fmt, io};
 
 use crossbeam_channel::{Receiver, Sender};
 
-use oriterm_core::{EventListener, Term};
+use oriterm_core::{EventListener, RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
+pub(crate) use snapshot::SnapshotDoubleBuffer;
 
 use crate::shell_integration::interceptor::RawInterceptor;
 
@@ -45,7 +47,6 @@ pub struct PaneIoThread<T: EventListener> {
     /// Shutdown flag shared with reader/writer threads.
     shutdown: Arc<AtomicBool>,
     /// Wakeup callback — signals the main thread that new state is available.
-    #[allow(dead_code, reason = "called in section 03 after snapshot production")]
     wakeup: Arc<dyn Fn() + Send + Sync>,
     /// High-level VTE parser (routes to `Handler` trait methods).
     processor: vte::ansi::Processor,
@@ -53,6 +54,13 @@ pub struct PaneIoThread<T: EventListener> {
     raw_parser: vte::Parser,
     /// Lock-free mode cache (updated after parsing, read by main thread).
     mode_cache: Arc<AtomicU32>,
+    /// Double buffer for transferring snapshots to the main thread.
+    double_buffer: SnapshotDoubleBuffer,
+    /// Work buffer for snapshot production — reused across frames.
+    snapshot_buf: RenderableContent,
+    /// Set by `IoThreadEventProxy` when VTE parsing sets grid dirty.
+    /// Checked after snapshot production to decide whether to fire wakeup.
+    grid_dirty: Arc<AtomicBool>,
 }
 
 impl<T: EventListener> PaneIoThread<T> {
@@ -66,19 +74,23 @@ impl<T: EventListener> PaneIoThread<T> {
             // 1. Drain all pending commands (priority over bytes).
             self.drain_commands();
             if self.shutdown.load(Ordering::Acquire) {
+                // Flush any parsed-but-unpublished state before exiting.
+                self.maybe_produce_snapshot();
                 return;
             }
 
             // 2. Process available bytes (non-blocking drain with chunking).
             self.process_pending_bytes();
 
-            // TODO (section 03): produce snapshot + send wakeup here.
+            // 3. Produce snapshot if state changed and sync output allows it.
+            self.maybe_produce_snapshot();
 
-            // 3. Block on either channel when idle.
+            // 4. Block on either channel when idle.
             crossbeam_channel::select! {
                 recv(self.cmd_rx) -> msg => match msg {
                     Ok(PaneIoCommand::Shutdown) => {
                         self.shutdown.store(true, Ordering::Release);
+                        self.maybe_produce_snapshot();
                         return;
                     }
                     Ok(cmd) => self.handle_command(cmd),
@@ -180,14 +192,95 @@ impl<T: EventListener> PaneIoThread<T> {
             .store(self.terminal.mode().bits(), Ordering::Release);
     }
 
-    #[allow(
-        clippy::needless_pass_by_ref_mut,
-        clippy::needless_pass_by_value,
-        clippy::unused_self,
-        reason = "placeholder — &mut self and owned cmd used in sections 05-06"
-    )]
+    /// Handle a command from the main thread.
+    ///
+    /// Display-affecting commands (scroll, theme, cursor, dirty) are handled
+    /// here so the IO thread's `Term` stays in sync with user operations.
+    /// Remaining operations (search, text extraction, mark mode) are deferred
+    /// to sections 05-06.
     fn handle_command(&mut self, cmd: PaneIoCommand) {
         log::trace!("IO thread: command {cmd:?}");
+        match cmd {
+            PaneIoCommand::Resize { rows, cols } => {
+                self.terminal
+                    .grid_mut()
+                    .resize(rows as usize, cols as usize, true);
+            }
+            PaneIoCommand::ScrollDisplay(delta) => {
+                self.terminal.grid_mut().scroll_display(delta);
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::ScrollToBottom => {
+                self.terminal.grid_mut().scroll_display(isize::MIN);
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::SetTheme(theme, palette) => {
+                self.terminal.set_theme(theme);
+                *self.terminal.palette_mut() = *palette;
+                self.terminal.grid_mut().dirty_mut().mark_all();
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::SetCursorShape(shape) => {
+                self.terminal.set_cursor_shape(shape);
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::MarkAllDirty => {
+                self.terminal.grid_mut().dirty_mut().mark_all();
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::SetImageConfig(config) => {
+                self.terminal.set_image_protocol_enabled(config.enabled);
+                self.terminal
+                    .set_image_limits(config.memory_limit, config.max_single);
+                self.terminal
+                    .set_image_animation_enabled(config.animation_enabled);
+            }
+            PaneIoCommand::ScrollToPreviousPrompt => {
+                self.terminal.scroll_to_previous_prompt();
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::ScrollToNextPrompt => {
+                self.terminal.scroll_to_next_prompt();
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::Shutdown => {
+                self.shutdown.store(true, Ordering::Release);
+            }
+            // Deferred to sections 05-06: search, text extraction, mark mode.
+            _ => {}
+        }
+    }
+
+    /// Produce a snapshot if state changed and synchronized output allows it.
+    ///
+    /// Respects Mode 2026 (synchronized output): when the sync buffer is
+    /// non-empty, the application is building a frame — skip snapshot
+    /// production to avoid exposing intermediate state.
+    fn maybe_produce_snapshot(&mut self) {
+        if self.processor.sync_bytes_count() > 0 {
+            return;
+        }
+        if !self.grid_dirty.load(Ordering::Acquire) {
+            return;
+        }
+        self.produce_snapshot();
+    }
+
+    /// Produce a rendering snapshot and publish it to the double buffer.
+    ///
+    /// Called after processing bytes or commands that change terminal state.
+    /// Reuses buffer allocations via the double-buffer flip — after warmup,
+    /// this is zero-allocation.
+    fn produce_snapshot(&mut self) {
+        self.terminal
+            .renderable_content_into(&mut self.snapshot_buf);
+        self.terminal.reset_damage();
+        self.double_buffer.flip_swap(&mut self.snapshot_buf);
+
+        // Clear grid_dirty and fire wakeup so the main thread renders.
+        if self.grid_dirty.swap(false, Ordering::AcqRel) {
+            (self.wakeup)();
+        }
     }
 }
 
@@ -202,7 +295,8 @@ impl<T: EventListener> fmt::Debug for PaneIoThread<T> {
 /// Main-thread handle to a Terminal IO thread.
 ///
 /// Provides non-blocking command sending and byte forwarding. The IO thread
-/// processes commands in order and (in later sections) produces snapshots.
+/// processes commands in order and produces snapshots. The main thread reads
+/// the latest snapshot via the shared [`SnapshotDoubleBuffer`].
 /// Created by [`new_with_handle()`].
 pub struct PaneIoHandle {
     /// Send commands to the IO thread.
@@ -211,6 +305,8 @@ pub struct PaneIoHandle {
     byte_tx: Sender<Vec<u8>>,
     /// IO thread join handle (taken on shutdown).
     join: Option<JoinHandle<()>>,
+    /// Shared double buffer — main thread reads snapshots from here.
+    double_buffer: SnapshotDoubleBuffer,
 }
 
 impl PaneIoHandle {
@@ -224,6 +320,14 @@ impl PaneIoHandle {
     /// Clone the byte sender for the PTY reader thread.
     pub fn byte_sender(&self) -> Sender<Vec<u8>> {
         self.byte_tx.clone()
+    }
+
+    /// Access the shared snapshot double buffer.
+    ///
+    /// The main thread uses this to swap its old buffer for the latest
+    /// snapshot produced by the IO thread.
+    pub fn double_buffer(&self) -> &SnapshotDoubleBuffer {
+        &self.double_buffer
     }
 
     /// Shut down the IO thread and wait for it to exit.
@@ -256,7 +360,12 @@ impl fmt::Debug for PaneIoHandle {
 
 /// Create the IO thread and its main-thread handle.
 ///
-/// Channels are created here and split between the two sides.
+/// Channels and the shared double buffer are created here and split
+/// between the two sides. The `grid_dirty` atomic is shared with
+/// the IO thread's `IoThreadEventProxy` — the proxy sets it during
+/// VTE parsing, the IO thread reads + clears it after snapshot
+/// production.
+///
 /// The caller spawns the thread via [`PaneIoThread::spawn()`], then
 /// sets the join handle on the returned `PaneIoHandle`.
 pub fn new_with_handle<T: EventListener>(
@@ -264,9 +373,11 @@ pub fn new_with_handle<T: EventListener>(
     mode_cache: Arc<AtomicU32>,
     shutdown: Arc<AtomicBool>,
     wakeup: Arc<dyn Fn() + Send + Sync>,
+    grid_dirty: Arc<AtomicBool>,
 ) -> (PaneIoThread<T>, PaneIoHandle) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+    let double_buffer = SnapshotDoubleBuffer::new();
     let thread = PaneIoThread {
         terminal,
         cmd_rx,
@@ -276,11 +387,15 @@ pub fn new_with_handle<T: EventListener>(
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
         mode_cache,
+        double_buffer: double_buffer.clone(),
+        snapshot_buf: RenderableContent::default(),
+        grid_dirty,
     };
     let handle = PaneIoHandle {
         cmd_tx,
         byte_tx,
         join: None,
+        double_buffer,
     };
     (thread, handle)
 }

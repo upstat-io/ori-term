@@ -38,6 +38,11 @@ pub struct RenderableCell {
     pub underline_color: Option<Rgb>,
     /// Whether this cell has an OSC 8 hyperlink attached.
     pub has_hyperlink: bool,
+    /// OSC 8 hyperlink URI, if present.
+    ///
+    /// Populated during `renderable_content_into()` so IO-thread snapshots
+    /// carry the URI without needing Grid access later.
+    pub hyperlink_uri: Option<String>,
     /// Zero-width combining characters appended to this cell.
     pub zerowidth: Vec<char>,
 }
@@ -151,6 +156,20 @@ pub struct RenderableContent {
     /// Set from `ImageCache::take_dirty()`. The GPU layer uses this to
     /// know when to re-upload textures.
     pub images_dirty: bool,
+    /// Grid column count at snapshot time.
+    ///
+    /// Makes the snapshot self-contained — consumers can determine grid
+    /// dimensions without holding the terminal lock.
+    pub cols: usize,
+    /// Visible viewport height (lines) at snapshot time.
+    pub lines: usize,
+    /// Number of scrollback rows above the viewport.
+    pub scrollback_len: usize,
+    /// Color palette as 270 pre-resolved RGB triplets.
+    ///
+    /// Fixed-size (270 entries), allocated once and reused via buffer swap.
+    /// Consumers read palette colors without needing `&Palette`.
+    pub palette_snapshot: Vec<[u8; 3]>,
     /// Scratch buffer for image extraction — reused across frames to
     /// avoid per-frame `HashSet` allocation. Not part of the semantic
     /// snapshot; only used internally by `extract_images`.
@@ -175,6 +194,10 @@ impl Default for RenderableContent {
             images: Vec::new(),
             image_data: Vec::new(),
             images_dirty: false,
+            cols: 0,
+            lines: 0,
+            scrollback_len: 0,
+            palette_snapshot: Vec::new(),
             seen_image_ids: HashSet::new(),
         }
     }
@@ -196,6 +219,10 @@ impl RenderableContent {
         self.mode = TermMode::empty();
         self.all_dirty = false;
         self.images_dirty = false;
+        self.cols = 0;
+        self.lines = 0;
+        self.scrollback_len = 0;
+        self.palette_snapshot.clear();
         self.cursor = RenderableCursor {
             line: 0,
             column: Column(0),

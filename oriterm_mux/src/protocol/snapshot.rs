@@ -155,8 +155,7 @@ pub struct WireSearchMatch {
 /// Transferred when a client subscribes to a pane or explicitly requests
 /// a snapshot. Contains everything needed to render the pane from scratch.
 ///
-/// `Default` produces an empty snapshot suitable as an initial cache entry
-/// for [`build_snapshot_into`](crate::server::snapshot::build_snapshot_into).
+/// `Default` produces an empty snapshot suitable as an initial cache entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaneSnapshot {
     /// Visible grid contents (rows × cols).
