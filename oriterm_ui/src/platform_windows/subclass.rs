@@ -14,8 +14,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed, KillTimer, NCCALCSIZE_PARAMS,
     SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
     SetWindowPos, ShowWindow, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
-    WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZING, WM_TIMER, WMSZ_BOTTOM,
-    WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
+    WM_MOVING, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZE, WM_SIZING, WM_TIMER,
+    WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
     WMSZ_TOPRIGHT,
 };
 
@@ -341,6 +341,20 @@ pub(super) unsafe extern "system" fn subclass_proc(
                 } else {
                     DefSubclassProc(hwnd, msg, wparam, lparam)
                 }
+            }
+
+            WM_SIZE => {
+                // Force an immediate paint after each size change so the
+                // compositor (DWM) gets a correctly-sized frame before it
+                // composites. Without this, DWM stretches the previous
+                // frame to the new window size, causing visible text jitter
+                // during drag resize. InvalidateRect queues WM_PAINT which
+                // the modal message pump processes before the next vsync.
+                let result = DefSubclassProc(hwnd, msg, wparam, lparam);
+                if IN_MODAL_LOOP.load(Ordering::Relaxed) {
+                    InvalidateRect(hwnd, std::ptr::null(), 0);
+                }
+                result
             }
 
             WM_EXITSIZEMOVE => {
