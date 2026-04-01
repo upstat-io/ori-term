@@ -12,7 +12,7 @@ pub(super) use types::{DispatchContext, DispatchResult};
 
 use std::path::PathBuf;
 
-use oriterm_core::{CursorShape, Rgb};
+use oriterm_core::{CursorShape, Palette, Rgb};
 
 use crate::MuxPdu;
 use crate::domain::SpawnConfig;
@@ -96,8 +96,6 @@ pub fn dispatch_request(
             rows,
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                // Resize old Term for dual-Term consistency.
-                pane.resize_grid(rows, cols);
                 // IO thread does reflow + PTY resize (SIGWINCH).
                 // Do NOT push an immediate snapshot — the IO thread will
                 // produce one after reflow completes. This prevents
@@ -109,7 +107,6 @@ pub fn dispatch_request(
 
         MuxPdu::ScrollDisplay { pane_id, delta } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.scroll_display(delta as isize);
                 pane.send_io_command(PaneIoCommand::ScrollDisplay(delta as isize));
             }
             None
@@ -117,7 +114,6 @@ pub fn dispatch_request(
 
         MuxPdu::ScrollToBottom { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.scroll_to_bottom();
                 pane.send_io_command(PaneIoCommand::ScrollToBottom);
             }
             None
@@ -125,11 +121,6 @@ pub fn dispatch_request(
 
         MuxPdu::ScrollToPrompt { pane_id, direction } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                if direction < 0 {
-                    pane.scroll_to_previous_prompt();
-                } else {
-                    pane.scroll_to_next_prompt();
-                }
                 let cmd = if direction < 0 {
                     PaneIoCommand::ScrollToPreviousPrompt
                 } else {
@@ -147,10 +138,7 @@ pub fn dispatch_request(
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 let theme = parse_theme(Some(&theme));
-                // Update old Term for dual-Term fallback path.
-                let mut term = pane.terminal().lock();
-                term.set_theme(theme);
-                let palette = term.palette_mut();
+                let mut palette = Palette::for_theme(theme);
                 for (i, rgb) in palette_rgb.iter().enumerate().take(270) {
                     palette.set_indexed(
                         i,
@@ -161,10 +149,7 @@ pub fn dispatch_request(
                         },
                     );
                 }
-                let pal_clone = term.palette().clone();
-                term.grid_mut().dirty_mut().mark_all();
-                drop(term);
-                pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(pal_clone)));
+                pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
             }
             None
         }
@@ -173,7 +158,6 @@ pub fn dispatch_request(
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 let wire = crate::WireCursorShape::from_u8(shape);
                 let core_shape = CursorShape::from(wire);
-                pane.terminal().lock().set_cursor_shape(core_shape);
                 pane.send_io_command(PaneIoCommand::SetCursorShape(core_shape));
             }
             None
@@ -181,7 +165,6 @@ pub fn dispatch_request(
 
         MuxPdu::SetBoldIsBright { pane_id, enabled } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.terminal().lock().set_bold_is_bright(enabled);
                 pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
             }
             None
@@ -189,7 +172,6 @@ pub fn dispatch_request(
 
         MuxPdu::MarkAllDirty { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.terminal().lock().grid_mut().dirty_mut().mark_all();
                 pane.send_io_command(PaneIoCommand::MarkAllDirty);
             }
             None
@@ -212,12 +194,7 @@ pub fn dispatch_request(
         }
 
         MuxPdu::SearchSetQuery { pane_id, query } => {
-            if let Some(pane) = ctx.panes.get_mut(&pane_id) {
-                let grid_ref = pane.terminal().clone();
-                if let Some(search) = pane.search_mut() {
-                    let term = grid_ref.lock();
-                    search.set_query(query.clone(), term.grid());
-                }
+            if let Some(pane) = ctx.panes.get(&pane_id) {
                 pane.send_io_command(PaneIoCommand::SearchSetQuery(query));
             }
             None
@@ -251,11 +228,6 @@ pub fn dispatch_request(
             animation_enabled,
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                let mut term = pane.terminal().lock();
-                term.set_image_protocol_enabled(enabled);
-                term.set_image_limits(memory_limit as usize, max_single as usize);
-                term.set_image_animation_enabled(animation_enabled);
-                drop(term);
                 pane.send_io_command(PaneIoCommand::SetImageConfig(crate::backend::ImageConfig {
                     enabled,
                     memory_limit: memory_limit as usize,

@@ -95,7 +95,7 @@ chrome/resize.rs, resize_all_panes
 ---
 
 ### Section 06: Remaining State Operations
-**File:** `section-06-remaining-ops.md` | **Status:** Not Started
+**File:** `section-06-remaining-ops.md` | **Status:** Complete
 
 ```
 scroll_display, scroll_to_bottom, display_offset
