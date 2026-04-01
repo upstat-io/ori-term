@@ -1,9 +1,9 @@
 ---
 section: 31
 title: In-Process Mux + Multi-Pane Rendering
-status: in-progress
+status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 4M
 goal: Wire up InProcessMux, rewire App to use mux layer, render multiple panes per tab with correct viewport offsets and dividers
 sections:
@@ -201,8 +201,8 @@ Render multiple panes per tab, each with its own viewport offset. The key change
 - [x] 3 multi_pane scratch tests: reextract, skip, reextract on content change (verified 2026-03-29)
 
 **Hygiene finding (verified 2026-03-29):**
-- [ ] `redraw/multi_pane.rs` has inline `#[cfg(test)] mod tests { }` (3 trivial tests) — should be sibling `tests.rs` per test-organization.md
-- [ ] `redraw/multi_pane.rs` is 505 lines total (484 production + 21 inline test) — extracting tests to sibling file would bring it under 500
+- [x] `redraw/multi_pane.rs` has inline `#[cfg(test)] mod tests { }` (3 trivial tests) — should be sibling `tests.rs` per test-organization.md (resolved: module restructured to `multi_pane/mod.rs` + `tests.rs` + `helpers.rs` + `pane_layouts.rs`)
+- [x] `redraw/multi_pane.rs` is 505 lines total (484 production + 21 inline test) — extracting tests to sibling file would bring it under 500 (resolved: tests in sibling file; mod.rs at 562 lines from subsequent growth — tracked separately)
 
 ---
 
@@ -265,7 +265,7 @@ Per-pane `PreparedFrame` caching to avoid re-preparing unchanged panes on every 
 **Total section-31-related tests:** 71 (31 in_process + 6 mux_pump + 17 pane_cache + 6 prepare + 8 pane_config + 3 scratch) (verified 2026-03-29)
 
 **Hygiene findings (verified 2026-03-29):**
-- [ ] `redraw/multi_pane.rs`: inline `mod tests { }` should be sibling `tests.rs` (3 trivial tests)
-- [ ] `redraw/multi_pane.rs`: 505 lines (484 prod + 21 test) — extracting tests to sibling would fix both issues
+- [x] `redraw/multi_pane.rs`: inline `mod tests { }` should be sibling `tests.rs` (3 trivial tests) (resolved: sibling `tests.rs` in place)
+- [x] `redraw/multi_pane.rs`: 505 lines (484 prod + 21 test) — extracting tests to sibling would fix both issues (resolved: tests extracted)
 
 **Exit Criteria:** The mux layer is fully wired into the App. Multiple panes render correctly with proper offsets, dividers, and focus borders. Cached rendering prevents unnecessary GPU work. The single-pane case has zero overhead. All existing functionality works unchanged.

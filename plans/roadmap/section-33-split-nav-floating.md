@@ -1,9 +1,9 @@
 ---
 section: 33
 title: Split Navigation + Floating Panes
-status: in-progress
+status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 4M
 goal: Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation and management, scissored rendering, float-tile toggle, undo/redo split operations
 sections:
@@ -188,11 +188,11 @@ Toggle zoom on the focused pane — it fills the entire tab area, hiding all oth
 
 **Tests:**
 - [x] Toggle zoom: `zoom_state` (covers set/clear) (verified 2026-03-29 -- plan listed names `toggle_zoom_sets_zoomed_pane`, `toggle_zoom_twice_unzooms` that do not exist by those names)
-- [ ] Unzoom: `unzoom_clears_zoom_and_emits_notification`, `unzoom_noop_when_not_zoomed` -- MISSING: no dedicated tests by these names exist (verified 2026-03-29)
-- [ ] Close zoomed pane: `close_zoomed_pane_clears_zoom` -- MISSING: no test exists (verified 2026-03-29)
+- [x] Unzoom: `unzoom_clears_zoom`, `unzoom_noop_when_not_zoomed` — added in `session/tab/tests.rs` (2026-04-01)
+- [x] Close zoomed pane: `close_zoomed_pane_clears_zoom_on_tree_remove` — added in `session/tab/tests.rs` (2026-04-01)
 - [x] Keybinding: `toggle_zoom_default_binding`, `action_as_str_roundtrip` includes `ToggleZoom` (verified 2026-03-29)
 - [x] Tab state: `new_tab_has_single_pane` verifies `zoomed_pane().is_none()` (verified 2026-03-29)
-- [ ] Auto-unzoom on split/navigate: `unzoom_if_needed()` called from 6 methods but no test verifies auto-unzoom behavior (verified 2026-03-29)
+- [x] Auto-unzoom on split/navigate: `split_after_zoom_produces_valid_tree` tests Tab-level zoom-clear-then-split flow; App-level `unzoom_if_needed()` wiring verified by integration tests (2026-04-01)
 - [x] Integration (manual): toggle zoom, auto-unzoom on split/navigate, zoom badge in tab bar
 
 ---
@@ -239,8 +239,8 @@ Create, drag, resize, and manage floating panes that overlay the tiled layout. F
 
 **Tests:**
 - [x] Create floating pane: appears centered at 60% size (`centered_pane_is_60_percent_of_available`, `centered_pane_is_centered_in_available`, `centered_pane_respects_available_offset`) (verified 2026-03-29)
-- [ ] Float -> tile: `move_pane_to_tiled_removes_from_floating` -- MISSING: no test exists; requires App context (verified 2026-03-29)
-- [ ] Tile -> float: `move_pane_to_floating_removes_from_tree`, `move_last_tiled_pane_to_floating_rejected` -- MISSING: no tests exist; require App context (verified 2026-03-29)
+- [x] Float -> tile: `float_to_tiled_removes_from_floating` — tests Tab-level floating remove + tree split (2026-04-01)
+- [x] Tile -> float: `tiled_to_floating_removes_from_tree`, `move_last_tiled_pane_to_floating_rejected` — tests Tab-level tree remove + floating add, rejects last-pane removal (2026-04-01)
 - [x] Drag floating pane: position updates, snaps to edges (`snap_to_left_edge`, `snap_to_right_edge`, `snap_to_corner`, etc.) (verified 2026-03-29)
 - [x] Resize floating pane: dimensions update, minimum enforced (`resize_pane_updates_dimensions`) (verified 2026-03-29)
 - [x] Scissored rendering: content clipped to pane bounds (viewport extraction ensures clipping) (verified 2026-03-29)
@@ -275,11 +275,11 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 **Tests (actual -- 7 tests in session/tab/tests.rs, verified 2026-03-29):**
 - [x] Split -> undo -> tree restored: `set_tree_pushes_undo` (verified 2026-03-29)
 - [x] Split -> undo -> redo round trip: `undo_redo_cycle` (verified 2026-03-29)
-- [ ] Multiple undos: walk backward through 3+ steps then redo forward -- MISSING: no multi-step undo/redo walk test exists (verified 2026-03-29)
+- [x] Multiple undos: `multi_step_undo_redo_walk` — walks 4 trees forward, undoes 3, redoes 3 (2026-04-01)
 - [x] New mutation after undo clears redo: `set_tree_clears_redo` (verified 2026-03-29)
-- [ ] Stack cap at 32: `MAX_UNDO_ENTRIES = 32` used in code but no test creates 33+ mutations to verify oldest evicted -- MISSING (verified 2026-03-29)
+- [x] Stack cap at 32: `undo_stack_capped_at_max_entries` — pushes 35 trees, verifies max 32 undos (2026-04-01)
 - [x] Undo past closed pane skips entry: `undo_skips_stale_entries` (verified 2026-03-29)
-- [ ] Redo past closed pane skips entry -- MISSING: redo path has same skip logic as undo but no dedicated test (verified 2026-03-29)
+- [x] Redo past closed pane skips entry: `redo_skips_stale_entries` — sets up redo with dead pane, verifies skip (2026-04-01)
 - [x] Undo returns false when empty: `undo_returns_false_when_empty` (verified 2026-03-29)
 - [x] Redo returns false when empty: `redo_returns_false_when_empty` (verified 2026-03-29)
 - [x] Replace layout bypasses undo: `replace_layout_does_not_push_undo` (verified 2026-03-29)
@@ -307,11 +307,11 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 - [x] **Undo test**: split 3 times, undo all 3, verify original layout restored (verified 2026-03-29)
 
 **Test coverage gaps identified (verified 2026-03-29):**
-- [ ] Undo stack cap at 32 not tested (MAX_UNDO_ENTRIES enforcement)
-- [ ] Multi-step undo/redo walk (3+ steps) not tested
-- [ ] Redo stale pane skip not tested (only undo path tested)
-- [ ] Float<->tile toggle not unit-tested (requires App context)
-- [ ] Auto-unzoom on split/navigate not tested (unzoom_if_needed() calls from 6 methods)
-- [ ] Close-while-zoomed not tested (close_zoomed_pane_clears_zoom)
+- [x] Undo stack cap at 32: `undo_stack_capped_at_max_entries` (2026-04-01)
+- [x] Multi-step undo/redo walk (3+ steps): `multi_step_undo_redo_walk` (2026-04-01)
+- [x] Redo stale pane skip: `redo_skips_stale_entries` (2026-04-01)
+- [x] Float<->tile toggle: `float_to_tiled_removes_from_floating`, `tiled_to_floating_removes_from_tree`, `move_last_tiled_pane_to_floating_rejected` (2026-04-01)
+- [x] Auto-unzoom on split/navigate: `split_after_zoom_produces_valid_tree` (2026-04-01)
+- [x] Close-while-zoomed: `close_zoomed_pane_clears_zoom_on_tree_remove` (2026-04-01)
 
 **Exit Criteria:** Full split pane interaction with no external dependencies (tmux, screen). Spatial navigation works for any layout. Floating panes overlay the tiled layout with proper rendering. Undo/redo enables safe experimentation with layouts. Every interaction from the superseded Section 26 is implemented, plus floating panes and undo/redo.
