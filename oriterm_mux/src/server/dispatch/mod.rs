@@ -109,20 +109,27 @@ pub fn dispatch_request(
 
         MuxPdu::ScrollDisplay { pane_id, delta } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.scroll_display(delta as isize);
                 pane.send_io_command(PaneIoCommand::ScrollDisplay(delta as isize));
             }
-            None // Fire-and-forget — IO thread handles scroll + snapshot.
+            None
         }
 
         MuxPdu::ScrollToBottom { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.scroll_to_bottom();
                 pane.send_io_command(PaneIoCommand::ScrollToBottom);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::ScrollToPrompt { pane_id, direction } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                if direction < 0 {
+                    pane.scroll_to_previous_prompt();
+                } else {
+                    pane.scroll_to_next_prompt();
+                }
                 let cmd = if direction < 0 {
                     PaneIoCommand::ScrollToPreviousPrompt
                 } else {
@@ -130,8 +137,6 @@ pub fn dispatch_request(
                 };
                 pane.send_io_command(cmd);
             }
-            // Fire-and-forget now — return type changed from bool to ().
-            // Client no longer expects ScrollToPromptAck.
             None
         }
 
@@ -142,7 +147,10 @@ pub fn dispatch_request(
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 let theme = parse_theme(Some(&theme));
-                let mut palette = oriterm_core::Palette::default();
+                // Update old Term for dual-Term fallback path.
+                let mut term = pane.terminal().lock();
+                term.set_theme(theme);
+                let palette = term.palette_mut();
                 for (i, rgb) in palette_rgb.iter().enumerate().take(270) {
                     palette.set_indexed(
                         i,
@@ -153,15 +161,19 @@ pub fn dispatch_request(
                         },
                     );
                 }
-                pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
+                let pal_clone = term.palette().clone();
+                term.grid_mut().dirty_mut().mark_all();
+                drop(term);
+                pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(pal_clone)));
             }
-            None // Fire-and-forget — IO thread handles snapshot.
+            None
         }
 
         MuxPdu::SetCursorShape { pane_id, shape } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 let wire = crate::WireCursorShape::from_u8(shape);
                 let core_shape = CursorShape::from(wire);
+                pane.terminal().lock().set_cursor_shape(core_shape);
                 pane.send_io_command(PaneIoCommand::SetCursorShape(core_shape));
             }
             None
@@ -169,6 +181,7 @@ pub fn dispatch_request(
 
         MuxPdu::SetBoldIsBright { pane_id, enabled } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.terminal().lock().set_bold_is_bright(enabled);
                 pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
             }
             None
@@ -176,6 +189,7 @@ pub fn dispatch_request(
 
         MuxPdu::MarkAllDirty { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.terminal().lock().grid_mut().dirty_mut().mark_all();
                 pane.send_io_command(PaneIoCommand::MarkAllDirty);
             }
             None
@@ -237,6 +251,11 @@ pub fn dispatch_request(
             animation_enabled,
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                let mut term = pane.terminal().lock();
+                term.set_image_protocol_enabled(enabled);
+                term.set_image_limits(memory_limit as usize, max_single as usize);
+                term.set_image_animation_enabled(animation_enabled);
+                drop(term);
                 pane.send_io_command(PaneIoCommand::SetImageConfig(crate::backend::ImageConfig {
                     enabled,
                     memory_limit: memory_limit as usize,

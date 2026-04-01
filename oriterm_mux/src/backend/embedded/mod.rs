@@ -144,6 +144,12 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            // Update old Term for dual-Term consistency (fallback snapshot path).
+            let mut term = pane.terminal().lock();
+            term.set_theme(theme);
+            *term.palette_mut() = palette.clone();
+            term.grid_mut().dirty_mut().mark_all();
+            drop(term);
             pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -151,6 +157,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().set_cursor_shape(shape);
             pane.send_io_command(PaneIoCommand::SetCursorShape(shape));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -158,6 +165,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().set_bold_is_bright(enabled);
             pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -165,6 +173,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().grid_mut().dirty_mut().mark_all();
             pane.send_io_command(PaneIoCommand::MarkAllDirty);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -172,6 +181,11 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            let mut term = pane.terminal().lock();
+            term.set_image_protocol_enabled(config.enabled);
+            term.set_image_limits(config.memory_limit, config.max_single);
+            term.set_image_animation_enabled(config.animation_enabled);
+            drop(term);
             pane.send_io_command(PaneIoCommand::SetImageConfig(config));
         }
     }
@@ -261,6 +275,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.scroll_display(delta);
             pane.send_io_command(PaneIoCommand::ScrollDisplay(delta));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -268,6 +283,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_bottom(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.scroll_to_bottom();
             pane.send_io_command(PaneIoCommand::ScrollToBottom);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -275,6 +291,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.scroll_to_previous_prompt();
             pane.send_io_command(PaneIoCommand::ScrollToPreviousPrompt);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -282,6 +299,7 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_next_prompt(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            pane.scroll_to_next_prompt();
             pane.send_io_command(PaneIoCommand::ScrollToNextPrompt);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -382,9 +400,7 @@ impl MuxBackend for EmbeddedMux {
         let render_buf = self.renderable_cache.entry(pane_id).or_default();
 
         // Prefer IO-thread snapshot (zero-lock swap). Falls back to the old
-        // lock-based path when the IO thread hasn't produced a snapshot yet
-        // (race window: old PtyEventLoop sets grid_dirty before IO thread
-        // finishes parsing the same bytes).
+        // lock-based path when the IO thread hasn't produced a snapshot yet.
         if pane.swap_io_snapshot(render_buf) {
             fill_snapshot_from_renderable(pane, render_buf, snapshot);
         } else {

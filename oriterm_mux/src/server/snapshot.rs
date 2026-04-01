@@ -46,10 +46,8 @@ impl SnapshotCache {
     pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> &PaneSnapshot {
         let cached = self.cache.entry(pane_id).or_default();
         if pane.swap_io_snapshot(&mut self.render_buf) {
-            // IO-thread snapshot available — build from it (no terminal lock).
             fill_snapshot_from_renderable(pane, &self.render_buf, cached);
         } else {
-            // Fallback: lock the terminal (until section 07 removes this path).
             let mut term = pane.terminal().lock();
             build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
             term.reset_damage();
