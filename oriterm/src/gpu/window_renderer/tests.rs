@@ -10,6 +10,7 @@ use oriterm_ui::icons::IconId;
 use oriterm_ui::text::ShapedGlyph;
 
 use super::super::prepare::ShapedFrame;
+use super::helpers::grid_raster_keys;
 use super::*;
 use crate::font::build_col_glyph_map;
 
