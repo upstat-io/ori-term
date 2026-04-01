@@ -87,8 +87,9 @@ pub trait MuxBackend {
 
     /// Resize a pane's terminal grid and PTY.
     ///
-    /// In embedded mode, calls `Pane::resize_grid` + `Pane::resize_pty`.
-    /// In daemon mode, sends a fire-and-forget `Resize` PDU.
+    /// In embedded mode, resizes the old Term for dual-Term consistency and
+    /// sends a `Resize` command to the IO thread (which does reflow + PTY
+    /// resize). In daemon mode, sends a fire-and-forget `Resize` PDU.
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16);
 
     // -- Mode query --

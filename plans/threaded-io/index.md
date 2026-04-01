@@ -80,7 +80,7 @@ SnapshotCache, render_buf, renderable_cache
 ---
 
 ### Section 05: Resize Pipeline Migration
-**File:** `section-05-resize-migration.md` | **Status:** Not Started
+**File:** `section-05-resize-migration.md` | **Status:** Complete
 
 ```
 resize, handle_resize, sync_grid_layout, WindowEvent::Resized

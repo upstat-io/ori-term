@@ -125,11 +125,17 @@ impl MuxBackend for EmbeddedMux {
 
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {
         if let Some(pane) = self.panes.get(&pane_id) {
+            // Resize old Term for dual-Term consistency (scroll/search still
+            // use old Term until section 06 migrates them).
             pane.resize_grid(rows, cols);
-            pane.resize_pty(rows, cols);
+            // IO thread does reflow + PTY resize (SIGWINCH) asynchronously.
+            // Do NOT mark snapshot_dirty here — the renderer should keep
+            // drawing the previous cached snapshot until the IO thread
+            // publishes the resized one. This prevents the fallback path
+            // (build_snapshot_locked) from exposing intermediate reflow
+            // frames from the old Term during drag resize (TPR-05-001).
             pane.send_io_command(PaneIoCommand::Resize { rows, cols });
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn pane_mode(&self, pane_id: PaneId) -> Option<u32> {

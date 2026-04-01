@@ -5,7 +5,8 @@
 //! Commands from the main thread (resize, scroll, theme, etc.) are processed
 //! between parse chunks to stay responsive under sustained output.
 //!
-//! Section 03 adds snapshot production; section 05+ adds command handling.
+//! Section 03 adds snapshot production. Section 05 moves PTY resize to the IO
+//! thread with command coalescing — the main thread never does grid reflow.
 
 mod commands;
 pub(crate) mod event_proxy;
@@ -23,6 +24,7 @@ use oriterm_core::{EventListener, RenderableContent, Term};
 pub use commands::PaneIoCommand;
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
+use crate::pty::PtyControl;
 use crate::shell_integration::interceptor::RawInterceptor;
 
 /// Maximum bytes parsed before re-checking for commands.
@@ -61,6 +63,12 @@ pub struct PaneIoThread<T: EventListener> {
     /// Set by `IoThreadEventProxy` when VTE parsing sets grid dirty.
     /// Checked after snapshot production to decide whether to fire wakeup.
     grid_dirty: Arc<AtomicBool>,
+    /// PTY control handle for resize (SIGWINCH). Owned by the IO thread so
+    /// reflow and PTY resize happen atomically on the same thread.
+    pty_control: Option<PtyControl>,
+    /// Last PTY size sent, packed as `(rows << 16) | cols`. Guards against
+    /// redundant syscalls (`ConPTY` `WINDOW_BUFFER_SIZE_EVENT` interference).
+    last_pty_size: u32,
 }
 
 impl<T: EventListener> PaneIoThread<T> {
@@ -112,13 +120,27 @@ impl<T: EventListener> PaneIoThread<T> {
     }
 
     /// Drain all pending commands from the command channel.
+    ///
+    /// Resize commands are coalesced — only the last one in the batch is
+    /// processed. During drag resize, dozens of `Resize` commands queue up;
+    /// only the final dimensions matter. The coalesced resize is processed
+    /// after all other commands so reflow sees the latest terminal state.
     fn drain_commands(&mut self) {
+        let mut last_resize = None;
         while let Ok(cmd) = self.cmd_rx.try_recv() {
-            if matches!(cmd, PaneIoCommand::Shutdown) {
-                self.shutdown.store(true, Ordering::Release);
-                return;
+            match cmd {
+                PaneIoCommand::Resize { rows, cols } => {
+                    last_resize = Some((rows, cols));
+                }
+                PaneIoCommand::Shutdown => {
+                    self.shutdown.store(true, Ordering::Release);
+                    return;
+                }
+                other => self.handle_command(other),
             }
-            self.handle_command(cmd);
+        }
+        if let Some((rows, cols)) = last_resize {
+            self.process_resize(rows, cols);
         }
     }
 
@@ -192,19 +214,42 @@ impl<T: EventListener> PaneIoThread<T> {
             .store(self.terminal.mode().bits(), Ordering::Release);
     }
 
+    /// Process a resize command on the IO thread.
+    ///
+    /// Performs grid reflow, then sends SIGWINCH to the PTY. The ordering
+    /// is critical: reflow first so the shell sees the correct dimensions
+    /// when it handles SIGWINCH. Uses `Term::resize()` (not
+    /// `Grid::resize()`) to also resize the alt grid and prune image caches.
+    fn process_resize(&mut self, rows: u16, cols: u16) {
+        self.terminal.resize(rows as usize, cols as usize, true);
+        self.grid_dirty.store(true, Ordering::Release);
+
+        // PTY resize with dedup — skip syscall if dimensions unchanged.
+        let packed = (rows as u32) << 16 | cols as u32;
+        if self.last_pty_size != packed {
+            self.last_pty_size = packed;
+            if let Some(ref ctl) = self.pty_control {
+                if let Err(e) = ctl.resize(rows, cols) {
+                    log::warn!("PTY resize failed: {e}");
+                }
+            }
+        }
+    }
+
     /// Handle a command from the main thread.
     ///
     /// Display-affecting commands (scroll, theme, cursor, dirty) are handled
     /// here so the IO thread's `Term` stays in sync with user operations.
+    /// Resize is handled separately via `process_resize()` with coalescing.
     /// Remaining operations (search, text extraction, mark mode) are deferred
-    /// to sections 05-06.
+    /// to section 06.
     fn handle_command(&mut self, cmd: PaneIoCommand) {
         log::trace!("IO thread: command {cmd:?}");
         match cmd {
             PaneIoCommand::Resize { rows, cols } => {
-                self.terminal
-                    .grid_mut()
-                    .resize(rows as usize, cols as usize, true);
+                // Single resize via select! — no coalescing needed for one command.
+                // Batch coalescing happens in drain_commands().
+                self.process_resize(rows, cols);
             }
             PaneIoCommand::ScrollDisplay(delta) => {
                 self.terminal.grid_mut().scroll_display(delta);
@@ -358,6 +403,27 @@ impl fmt::Debug for PaneIoHandle {
     }
 }
 
+/// Configuration for creating a Terminal IO thread.
+pub struct IoThreadConfig<T: EventListener> {
+    /// The terminal state machine — transferred to the IO thread.
+    pub terminal: Term<T>,
+    /// Lock-free mode cache (shared with main thread).
+    pub mode_cache: Arc<AtomicU32>,
+    /// Shutdown flag (shared with reader/writer threads).
+    pub shutdown: Arc<AtomicBool>,
+    /// Wakeup callback — signals the main thread on new state.
+    pub wakeup: Arc<dyn Fn() + Send + Sync>,
+    /// Grid dirty flag (shared with `IoThreadEventProxy`).
+    pub grid_dirty: Arc<AtomicBool>,
+    /// PTY control handle for resize (SIGWINCH). `None` in tests.
+    pub pty_control: Option<PtyControl>,
+    /// Initial PTY dimensions (rows, cols) — seeds the dedup guard so the
+    /// first resize at spawn size skips the redundant syscall.
+    pub initial_rows: u16,
+    /// Initial PTY columns from spawn.
+    pub initial_cols: u16,
+}
+
 /// Create the IO thread and its main-thread handle.
 ///
 /// Channels and the shared double buffer are created here and split
@@ -369,27 +435,25 @@ impl fmt::Debug for PaneIoHandle {
 /// The caller spawns the thread via [`PaneIoThread::spawn()`], then
 /// sets the join handle on the returned `PaneIoHandle`.
 pub fn new_with_handle<T: EventListener>(
-    terminal: Term<T>,
-    mode_cache: Arc<AtomicU32>,
-    shutdown: Arc<AtomicBool>,
-    wakeup: Arc<dyn Fn() + Send + Sync>,
-    grid_dirty: Arc<AtomicBool>,
+    config: IoThreadConfig<T>,
 ) -> (PaneIoThread<T>, PaneIoHandle) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
     let double_buffer = SnapshotDoubleBuffer::new();
     let thread = PaneIoThread {
-        terminal,
+        terminal: config.terminal,
         cmd_rx,
         byte_rx,
-        shutdown,
-        wakeup,
+        shutdown: config.shutdown,
+        wakeup: config.wakeup,
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache,
+        mode_cache: config.mode_cache,
         double_buffer: double_buffer.clone(),
         snapshot_buf: RenderableContent::default(),
-        grid_dirty,
+        grid_dirty: config.grid_dirty,
+        pty_control: config.pty_control,
+        last_pty_size: (config.initial_rows as u32) << 16 | config.initial_cols as u32,
     };
     let handle = PaneIoHandle {
         cmd_tx,

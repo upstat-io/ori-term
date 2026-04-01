@@ -141,14 +141,17 @@ impl LocalDomain {
         // 7. Spawn the writer thread (owns rx + writer, sets shutdown flag).
         let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
 
-        // 8. Spawn the Terminal IO thread (owns Term #2, VTE processors).
-        let (io_thread, mut io_handle) = io_thread::new_with_handle(
-            io_term,
-            Arc::clone(&io_mode_cache),
-            Arc::clone(&shutdown),
-            Arc::clone(wakeup),
-            io_grid_dirty,
-        );
+        // 8. Spawn the Terminal IO thread (owns Term #2, VTE processors, PtyControl).
+        let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
+            terminal: io_term,
+            mode_cache: Arc::clone(&io_mode_cache),
+            shutdown: Arc::clone(&shutdown),
+            wakeup: Arc::clone(wakeup),
+            grid_dirty: io_grid_dirty,
+            pty_control: Some(control),
+            initial_rows: config.rows,
+            initial_cols: config.cols,
+        });
         let byte_tx = io_handle.byte_sender();
         let io_join = io_thread.spawn()?;
         io_handle.set_join(io_join);
@@ -168,7 +171,6 @@ impl LocalDomain {
             domain_id: self.id,
             terminal,
             notifier,
-            pty_control: control,
             reader_thread,
             writer_thread,
             io_handle,
