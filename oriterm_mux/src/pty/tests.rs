@@ -1,8 +1,8 @@
 //! Tests for PTY config, command building, shell detection, and writer thread.
 //!
 //! No real PTY processes are spawned — Alacritty and WezTerm don't test
-//! live PTY either. The event loop is tested with mock pipes in
-//! `event_loop/tests.rs`.
+//! live PTY either. The PTY reader (byte forwarder) is tested in
+//! `reader/tests.rs`.
 
 use std::io::Read;
 use std::sync::Arc;

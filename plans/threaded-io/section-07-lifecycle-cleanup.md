@@ -16,7 +16,7 @@ sections:
     status: complete
   - id: "07.2"
     title: "Old PtyEventLoop Removal"
-    status: not-started
+    status: complete
   - id: "07.3"
     title: "FairMutex Assessment"
     status: not-started
@@ -145,7 +145,7 @@ Remove the FairMutex-wrapped terminal from `Pane` and replace with the IO handle
 
 The old `PtyEventLoop` still has full VTE parsing (unchanged through sections 02-06, only byte forwarding was added in section 02). Now that all operations route through the IO thread, the old parsing path is dead weight. Convert `PtyEventLoop` to a simple byte forwarder.
 
-- [ ] Remove all VTE parsing infrastructure from `PtyEventLoop`:
+- [x] Remove all VTE parsing infrastructure from `PtyEventLoop`:
   - Remove `terminal: Arc<FairMutex<Term<T>>>` field
   - Remove `processor`, `raw_parser` fields
   - Remove `mode_cache: Arc<AtomicU32>` field
@@ -153,7 +153,7 @@ The old `PtyEventLoop` still has full VTE parsing (unchanged through sections 02
   - Remove `MAX_LOCKED_PARSE` constant
   - Remove `FairMutex` imports and usage
 
-- [ ] The remaining `PtyEventLoop` is a simple byte forwarder:
+- [x] The remaining `PtyEventLoop` is a simple byte forwarder:
   ```rust
   /// PTY byte forwarder — reads shell output and sends to the IO thread.
   ///
@@ -166,23 +166,23 @@ The old `PtyEventLoop` still has full VTE parsing (unchanged through sections 02
   }
   ```
 
-- [ ] Rename `oriterm_mux/src/pty/event_loop/` directory to `oriterm_mux/src/pty/reader/` (or keep as `event_loop/` with the `PtyReader` type inside — either works, directory rename is optional)
-- [ ] Update `pub use` in `oriterm_mux/src/pty/mod.rs`: `pub use event_loop::PtyEventLoop;` → `pub use reader::PtyReader;` (or `pub use event_loop::PtyReader;` if not renaming directory)
-- [ ] Update `crate::pty::PtyEventLoop` import in `oriterm_mux/src/domain/local.rs` → `crate::pty::PtyReader`
-- [ ] Update `PtyReader::new()` constructor: takes `(reader, byte_tx, shutdown)` instead of `(terminal, reader, shutdown, mode_cache)`
-- [ ] Remove the old `PtyEventLoop` tests that tested VTE parsing path. Add new tests for `PtyReader` byte forwarding (simple: write bytes to pipe, verify they arrive on the channel).
+- [x] Rename `oriterm_mux/src/pty/event_loop/` directory to `oriterm_mux/src/pty/reader/` (or keep as `event_loop/` with the `PtyReader` type inside — either works, directory rename is optional)
+- [x] Update `pub use` in `oriterm_mux/src/pty/mod.rs`: `pub use event_loop::PtyEventLoop;` → `pub use reader::PtyReader;` (or `pub use event_loop::PtyReader;` if not renaming directory)
+- [x] Update `crate::pty::PtyEventLoop` import in `oriterm_mux/src/domain/local.rs` → `crate::pty::PtyReader`
+- [x] Update `PtyReader::new()` constructor: takes `(reader, byte_tx, shutdown)` instead of `(terminal, reader, shutdown, mode_cache)`
+- [x] Remove the old `PtyEventLoop` tests that tested VTE parsing path. Add new tests for `PtyReader` byte forwarding (simple: write bytes to pipe, verify they arrive on the channel).
 
 ### Tests (07.2)
 
 **File:** `oriterm_mux/src/pty/reader/tests.rs` (new — replaces old `event_loop/tests.rs`)
 
-- [ ] `test_pty_reader_forwards_bytes` — write known bytes to a pipe, create `PtyReader` reading from it. Assert the bytes arrive on `byte_rx` channel.
-- [ ] `test_pty_reader_shutdown_flag_stops_loop` — set `shutdown` `AtomicBool` to `true`. Assert the reader thread exits without reading further.
-- [ ] `test_pty_reader_eof_exits_cleanly` — close the write end of the pipe. Assert the reader thread exits via `JoinHandle::join() == Ok(())`.
-- [ ] `test_pty_reader_interrupted_read_retries` — platform-specific: on Unix, send EINTR during read. Assert the reader retries (not a fatal error).
-- [ ] `test_pty_reader_large_buffer_forwarding` — write 500KB of data. Assert all data arrives on the channel (may be split across multiple messages).
+- [x] `test_pty_reader_forwards_bytes` — write known bytes to a pipe, create `PtyReader` reading from it. Assert the bytes arrive on `byte_rx` channel.
+- [x] `test_pty_reader_shutdown_flag_stops_loop` — set `shutdown` `AtomicBool` to `true`. Assert the reader thread exits without reading further.
+- [x] `test_pty_reader_eof_exits_cleanly` — close the write end of the pipe. Assert the reader thread exits via `JoinHandle::join() == Ok(())`.
+- [x] `test_pty_reader_interrupted_read_retries` — platform-specific: on Unix, send EINTR during read. Assert the reader retries (not a fatal error).
+- [x] `test_pty_reader_large_buffer_forwarding` — write 500KB of data. Assert all data arrives on the channel (may be split across multiple messages).
 
-- [ ] **Audit all test files in `oriterm_mux/src/` that call `pane.terminal()` or `terminal().lock()`**. These tests will fail after 07.1 removes the accessor. Each must be updated to either: (a) use the IO thread's command/reply pattern, or (b) construct a standalone `Term` for unit testing (not via `Pane`). Run `grep -rn "terminal()" oriterm_mux/src/**/tests.rs` to find all call sites.
+- [x] **Audit all test files in `oriterm_mux/src/` that call `pane.terminal()` or `terminal().lock()`**. These tests will fail after 07.1 removes the accessor. Each must be updated to either: (a) use the IO thread's command/reply pattern, or (b) construct a standalone `Term` for unit testing (not via `Pane`). Run `grep -rn "terminal()" oriterm_mux/src/**/tests.rs` to find all call sites.
 
 ---
 
@@ -229,7 +229,7 @@ Verify the daemon mode still works with the IO thread architecture.
 - [x] `Pane` no longer holds `Arc<FairMutex<Term<MuxEventProxy>>>`
 - [x] `Pane::terminal()` accessor removed
 - [x] All direct terminal lock call sites removed from `oriterm_mux`
-- [ ] `PtyEventLoop` renamed to `PtyReader`, VTE parsing code removed
+- [x] `PtyEventLoop` renamed to `PtyReader`, VTE parsing code removed
 - [ ] `FairMutex` usage assessed and removed if unused
 - [ ] Daemon mode builds and works with IO thread architecture
 - [x] Pane spawn creates IO thread + PTY reader + PTY writer (3 threads per pane)

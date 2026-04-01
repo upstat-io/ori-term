@@ -30,7 +30,7 @@ use crate::shell_integration::interceptor::RawInterceptor;
 
 /// Maximum bytes parsed before re-checking for commands.
 ///
-/// Matches `PtyEventLoop::MAX_LOCKED_PARSE` (64 KB). A single 1 MB forwarded
+/// Matches the old `PtyEventLoop::MAX_LOCKED_PARSE` (64 KB). A single 1 MB forwarded
 /// read is sliced into chunks at this boundary so resize/copy commands stay
 /// responsive under sustained output.
 const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
@@ -191,7 +191,7 @@ impl<T: EventListener> PaneIoThread<T> {
 
     /// Parse a chunk of PTY output through both VTE parsers.
     ///
-    /// Adapted from `PtyEventLoop::parse_chunk()` — runs the raw interceptor
+    /// Runs the raw interceptor
     /// for shell integration, then the high-level processor, then deferred
     /// prompt marking and marker pruning.
     fn handle_bytes(&mut self, bytes: &[u8]) {
@@ -207,7 +207,7 @@ impl<T: EventListener> PaneIoThread<T> {
         self.processor.advance(&mut self.terminal, bytes);
 
         // 3b. Set grid_dirty after parsing — the VTE handler does not fire
-        //     Event::Wakeup itself. The old PtyEventLoop did this explicitly
+        //     Event::Wakeup itself. The old reader thread did this explicitly
         //     after each parse chunk. Respects Mode 2026 (synchronized output):
         //     when the sync buffer is non-empty, skip the dirty flag so
         //     `maybe_produce_snapshot()` defers snapshot production.
