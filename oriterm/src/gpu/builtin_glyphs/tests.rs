@@ -77,7 +77,7 @@ fn is_builtin_excludes_gap_between_ranges() {
 fn raster_key_uses_builtin_face() {
     let key = raster_key('─', 1024);
     assert_eq!(key.face_idx, FaceIdx::BUILTIN);
-    assert_eq!(key.glyph_id, '─' as u16);
+    assert_eq!(key.glyph_id, '─' as u32);
     assert_eq!(key.size_q6, 1024);
 }
 
@@ -599,7 +599,7 @@ fn test_metrics() -> CellMetrics {
 fn decoration_key_uses_builtin_face() {
     let key = decorations::decoration_key(decorations::CURLY_GLYPH_ID, 1024);
     assert_eq!(key.face_idx, FaceIdx::BUILTIN);
-    assert_eq!(key.glyph_id, decorations::CURLY_GLYPH_ID);
+    assert_eq!(key.glyph_id, u32::from(decorations::CURLY_GLYPH_ID));
 }
 
 #[test]
@@ -696,4 +696,128 @@ fn rasterize_thick_stroke_produces_taller_curly() {
         g_thick.height > g_thin.height,
         "thicker stroke should produce taller curly bitmap"
     );
+}
+
+// -- Legacy Computing (U+1FB00–U+1FB9F) tests --
+
+#[test]
+fn is_builtin_legacy_computing_range() {
+    for c in '\u{1FB00}'..='\u{1FB9F}' {
+        assert!(is_builtin(c), "U+{:04X} should be builtin", c as u32);
+    }
+}
+
+#[test]
+fn rasterize_sextant_first() {
+    let g = rasterize('\u{1FB00}', 8, 16).expect("first sextant should rasterize");
+    assert_eq!(g.width, 8);
+    assert_eq!(g.height, 16);
+    assert_eq!(g.format, GlyphFormat::Alpha);
+    // U+1FB00: idx=0, bits = (0 + 0/0x14 + 1) = 1 = 0b000001 = top-left only.
+    // Top-left quadrant should have nonzero pixels.
+    let has_top_left = (0..5).any(|y| (0..4).any(|x| g.bitmap[y * 8 + x] > 0));
+    assert!(has_top_left, "sextant 1FB00 should fill top-left region");
+}
+
+#[test]
+fn rasterize_sextant_last() {
+    let g = rasterize('\u{1FB3B}', 8, 16).expect("last sextant should rasterize");
+    assert_eq!(g.width, 8);
+    assert_eq!(g.format, GlyphFormat::Alpha);
+    // U+1FB3B: idx=0x3B=59, bits = (59 + 59/20 + 1) = (59+2+1) = 62 = 0b111110 = all except TL.
+    let has_top_right = (0..5).any(|y| (4..8).any(|x| g.bitmap[y * 8 + x] > 0));
+    assert!(has_top_right, "sextant 1FB3B should fill top-right region");
+}
+
+#[test]
+fn rasterize_every_legacy_computing_char() {
+    // Every character in the range should either rasterize or be the unallocated U+1FB93.
+    for cp in 0x1FB00..=0x1FB9Fu32 {
+        let ch = char::from_u32(cp).unwrap();
+        let result = rasterize(ch, 8, 16);
+        if cp == 0x1FB93 {
+            // U+1FB93 is unallocated — rasterize succeeds but produces an empty glyph.
+            assert!(
+                result.is_some(),
+                "U+{cp:04X} should still rasterize (empty)"
+            );
+        } else {
+            assert!(result.is_some(), "U+{cp:04X} should rasterize");
+        }
+    }
+}
+
+#[test]
+fn rasterize_smooth_mosaic_has_content() {
+    // U+1FB3C: partial lower-left fill.
+    let g = rasterize('\u{1FB3C}', 12, 16).expect("smooth mosaic should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(
+        nonzero > 0,
+        "smooth mosaic 1FB3C should have nonzero pixels"
+    );
+}
+
+#[test]
+fn rasterize_edge_triangle_has_content() {
+    let g = rasterize('\u{1FB6C}', 8, 16).expect("edge triangle should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 0, "left edge triangle should have nonzero pixels");
+}
+
+#[test]
+fn rasterize_vertical_eighth_narrow_stripe() {
+    // U+1FB70: 2nd vertical eighth (stripe near left).
+    let g = rasterize('\u{1FB70}', 8, 16).expect("vertical eighth should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 0, "vertical eighth should have nonzero pixels");
+    // Should be a narrow vertical stripe, not full width.
+    assert!(
+        nonzero < (8 * 16 / 2),
+        "vertical eighth should be less than half the cell"
+    );
+}
+
+#[test]
+fn rasterize_upper_quarter_block() {
+    // U+1FB82: upper 1/4 block.
+    let g = rasterize('\u{1FB82}', 8, 16).expect("upper quarter should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    // Upper 1/4 of 8x16 = 8*4 = 32 pixels.
+    assert!(
+        (28..=36).contains(&nonzero),
+        "upper quarter should fill ~32 pixels, got {nonzero}"
+    );
+}
+
+#[test]
+fn rasterize_checkerboard_half_filled() {
+    // U+1FB95: checkerboard should fill roughly half the cell.
+    let g = rasterize('\u{1FB95}', 8, 16).expect("checkerboard should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    let total = 8 * 16;
+    let ratio = nonzero as f32 / total as f32;
+    assert!(
+        (0.3..=0.7).contains(&ratio),
+        "checkerboard should fill ~50%, got {:.0}%",
+        ratio * 100.0
+    );
+}
+
+#[test]
+fn rasterize_shade_block_medium_alpha() {
+    // U+1FB90: full medium shade (alpha 128).
+    let g = rasterize('\u{1FB90}', 8, 16).expect("shade block should rasterize");
+    // Every pixel should be 128.
+    assert!(
+        g.bitmap.iter().all(|&b| b == 128),
+        "full medium shade should have all pixels at alpha 128"
+    );
+}
+
+#[test]
+fn raster_key_legacy_computing_uses_u32() {
+    let key = raster_key('\u{1FB00}', 1024);
+    assert_eq!(key.glyph_id, 0x1FB00);
+    assert_eq!(key.face_idx, FaceIdx::BUILTIN);
 }

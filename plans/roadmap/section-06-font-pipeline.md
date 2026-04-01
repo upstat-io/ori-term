@@ -996,7 +996,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 - [x] `oriterm/src/gpu/atlas/mod.rs` split: extracted growth/eviction methods into `atlas/growth.rs` (mod.rs now 457 lines). Done 2026-03-31.
 
 ### Built-in Glyph Coverage Gaps vs Reference Repos
-- [ ] **Symbols for Legacy Computing (U+1FB00-1FB9F):** Ghostty implements sextants, wedges, smooth mosaics, and legacy computing supplement glyphs. ori_term only covers box drawing, blocks, braille, and powerline. Coverage gap for TUI frameworks using these characters.
+- [x] **Symbols for Legacy Computing (U+1FB00-1FB9F):** Implemented sextants, smooth mosaics, edge triangles, fractional blocks, shade patterns, checkerboard fills, diagonal fills, and combined triangles. 160 codepoints covered in `legacy_computing/` (mod.rs + smooth_mosaics.rs + triangles.rs). Also widened `RasterKey.glyph_id` from u16 to u32 for SMP support. Done 2026-04-01.
 - [ ] **Branch drawing glyphs:** Ghostty has dedicated `branch.zig` for branch/line continuation characters. ori_term handles these through font fallback chain rather than pixel-perfect builtins.
 - [ ] **Geometric shapes (U+25A0-U+25FF):** Ghostty has `geometric_shapes.zig`. ori_term relies on fonts for these.
 

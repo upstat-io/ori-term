@@ -213,7 +213,7 @@ pub(super) fn grid_raster_keys(
 ) -> impl Iterator<Item = RasterKey> + '_ {
     let size_q6 = shaped.size_q6();
     shaped.all_glyphs().iter().map(move |glyph| RasterKey {
-        glyph_id: glyph.glyph_id,
+        glyph_id: glyph.glyph_id.into(),
         face_idx: crate::font::FaceIdx(glyph.face_index),
         weight: 0,
         size_q6,
@@ -260,7 +260,7 @@ pub(super) fn scene_raster_keys(
                 cursor_x_ref.round()
             };
             keys.push(RasterKey {
-                glyph_id: glyph.glyph_id,
+                glyph_id: glyph.glyph_id.into(),
                 face_idx: crate::font::FaceIdx(glyph.face_index),
                 weight: text_run.shaped.weight,
                 size_q6: run_size_q6,
