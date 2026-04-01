@@ -490,6 +490,7 @@ pub(crate) fn is_builtin(ch: char) -> bool {
         | '\u{2800}'..='\u{28FF}'   // Braille Patterns
         | '\u{E0B0}'..='\u{E0B4}'   // Powerline separators (solid + outline triangles)
         | '\u{E0B6}'                // Powerline left rounded separator
+        | '\u{F5D0}'..='\u{F60D}'   // Branch drawing (Kitty/Ghostty PUA)
         | '\u{1FB00}'..='\u{1FB9F}' // Symbols for Legacy Computing
     )
 }

@@ -9,6 +9,7 @@
 mod blocks;
 mod box_drawing;
 mod braille;
+mod branch;
 pub(crate) mod decorations;
 mod legacy_computing;
 mod powerline;
@@ -61,6 +62,7 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
         '\u{2800}'..='\u{28FF}' => braille::draw_braille(&mut canvas, ch),
         '\u{E0B0}'..='\u{E0B4}' | '\u{E0B6}' => powerline::draw_powerline(&mut canvas, ch),
         '\u{1FB00}'..='\u{1FB9F}' => legacy_computing::draw(&mut canvas, ch),
+        '\u{F5D0}'..='\u{F60D}' => branch::draw_branch(&mut canvas, ch),
         _ => false,
     };
 

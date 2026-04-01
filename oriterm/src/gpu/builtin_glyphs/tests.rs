@@ -821,3 +821,57 @@ fn raster_key_legacy_computing_uses_u32() {
     assert_eq!(key.glyph_id, 0x1FB00);
     assert_eq!(key.face_idx, FaceIdx::BUILTIN);
 }
+
+// -- Branch Drawing (U+F5D0–U+F60D) tests --
+
+#[test]
+fn is_builtin_branch_drawing_range() {
+    for c in '\u{F5D0}'..='\u{F60D}' {
+        assert!(is_builtin(c), "U+{:04X} should be builtin", c as u32);
+    }
+}
+
+#[test]
+fn rasterize_every_branch_drawing_char() {
+    for cp in 0xF5D0..=0xF60Du32 {
+        let ch = char::from_u32(cp).unwrap();
+        let result = rasterize(ch, 8, 16);
+        assert!(result.is_some(), "U+{cp:04X} should rasterize");
+    }
+}
+
+#[test]
+fn rasterize_branch_hline_fills_center_row() {
+    let g = rasterize('\u{F5D0}', 8, 16).expect("hline should rasterize");
+    // Center row (row 7 or 8 of 16) should have nonzero pixels.
+    let center_row = 7;
+    let has_center = (0..8).any(|x| g.bitmap[center_row * 8 + x] > 0);
+    assert!(has_center, "hline should fill center row");
+}
+
+#[test]
+fn rasterize_branch_node_filled_has_circle() {
+    // U+F5EE: filled node, no connectors.
+    let g = rasterize('\u{F5EE}', 8, 16).expect("filled node should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 4, "filled node should have circular fill");
+}
+
+#[test]
+fn rasterize_branch_node_outline_has_ring() {
+    // U+F5EF: outline node, no connectors. At larger sizes the distinction
+    // between filled and outline is clearer; at 8x16 the circle is tiny.
+    let g = rasterize('\u{F5EF}', 16, 32).expect("outline node should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 8, "outline node should have ring pixels");
+    // Center pixel of a stroked ring should be empty (inside the ring).
+    let center = g.bitmap[(16 * 16 + 8) as usize];
+    assert_eq!(center, 0, "center of outline circle should be empty");
+}
+
+#[test]
+fn rasterize_branch_arc_has_content() {
+    let g = rasterize('\u{F5D6}', 8, 16).expect("arc should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 0, "arc should have nonzero pixels");
+}
