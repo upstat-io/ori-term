@@ -284,54 +284,26 @@ impl MuxBackend for MuxClient {
         self.dirty_panes.insert(pane_id);
     }
 
-    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) -> bool {
-        match self.rpc(MuxPdu::ScrollToPrompt {
-            pane_id,
-            direction: -1,
-        }) {
-            Ok(MuxPdu::ScrollToPromptAck { scrolled }) => {
-                if scrolled {
-                    self.dirty_panes.insert(pane_id);
-                    if let Some(transport) = &self.transport {
-                        transport.invalidate_pushed_snapshot(pane_id);
-                    }
-                }
-                scrolled
-            }
-            Ok(other) => {
-                log::error!("scroll_to_previous_prompt: unexpected response: {other:?}");
-                false
-            }
-            Err(e) => {
-                log::error!("scroll_to_previous_prompt: RPC failed: {e}");
-                false
-            }
+    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::ScrollToPrompt {
+                pane_id,
+                direction: -1,
+            });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
+        self.dirty_panes.insert(pane_id);
     }
 
-    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) -> bool {
-        match self.rpc(MuxPdu::ScrollToPrompt {
-            pane_id,
-            direction: 1,
-        }) {
-            Ok(MuxPdu::ScrollToPromptAck { scrolled }) => {
-                if scrolled {
-                    self.dirty_panes.insert(pane_id);
-                    if let Some(transport) = &self.transport {
-                        transport.invalidate_pushed_snapshot(pane_id);
-                    }
-                }
-                scrolled
-            }
-            Ok(other) => {
-                log::error!("scroll_to_next_prompt: unexpected response: {other:?}");
-                false
-            }
-            Err(e) => {
-                log::error!("scroll_to_next_prompt: RPC failed: {e}");
-                false
-            }
+    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::ScrollToPrompt {
+                pane_id,
+                direction: 1,
+            });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
+        self.dirty_panes.insert(pane_id);
     }
 
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {

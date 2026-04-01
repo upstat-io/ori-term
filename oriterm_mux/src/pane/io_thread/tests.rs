@@ -71,6 +71,7 @@ fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidList
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
         last_pty_size: (rows as u32) << 16 | cols as u32,
+        search: None,
     }
 }
 
@@ -97,6 +98,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>
         grid_dirty,
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
     };
     (thread, wakeup_count)
 }
@@ -141,6 +143,7 @@ fn shutdown_via_channel_disconnect() {
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -210,6 +213,7 @@ fn byte_delivery_parses_vte() {
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -351,6 +355,7 @@ fn handle_bytes_chunked_drains_commands() {
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -577,6 +582,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoC
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
     };
     (thread, cmd_tx)
 }

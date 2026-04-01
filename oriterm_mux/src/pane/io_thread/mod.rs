@@ -19,7 +19,9 @@ use std::{fmt, io};
 
 use crossbeam_channel::{Receiver, Sender};
 
-use oriterm_core::{EventListener, RenderableContent, Term};
+use oriterm_core::{
+    EventListener, RenderableContent, Selection, SelectionMode, SelectionPoint, Term,
+};
 
 pub use commands::PaneIoCommand;
 pub(crate) use snapshot::SnapshotDoubleBuffer;
@@ -69,6 +71,9 @@ pub struct PaneIoThread<T: EventListener> {
     /// Last PTY size sent, packed as `(rows << 16) | cols`. Guards against
     /// redundant syscalls (`ConPTY` `WINDOW_BUFFER_SIZE_EVENT` interference).
     last_pty_size: u32,
+    /// Search state — owned by the IO thread so `set_query()` can read the
+    /// grid directly without cross-thread locking.
+    search: Option<oriterm_core::SearchState>,
 }
 
 impl<T: EventListener> PaneIoThread<T> {
@@ -236,6 +241,37 @@ impl<T: EventListener> PaneIoThread<T> {
         }
     }
 
+    /// Build a line selection from a range-finding function on the terminal.
+    ///
+    /// Used by `SelectCommandOutput` and `SelectCommandInput` commands.
+    fn build_zone_selection(
+        &self,
+        range_fn: impl FnOnce(&Term<T>, usize) -> Option<(usize, usize)>,
+    ) -> Option<Selection> {
+        let grid = self.terminal.grid();
+        let sb_len = grid.scrollback().len();
+        let viewport_center = sb_len.saturating_sub(grid.display_offset()) + grid.lines() / 2;
+        let (start_row, end_row) = range_fn(&self.terminal, viewport_center)?;
+        let start_stable = oriterm_core::grid::StableRowIndex::from_absolute(grid, start_row);
+        let end_stable = oriterm_core::grid::StableRowIndex::from_absolute(grid, end_row);
+        let anchor = SelectionPoint {
+            row: start_stable,
+            col: 0,
+            side: oriterm_core::index::Side::Left,
+        };
+        let pivot = SelectionPoint {
+            row: end_stable,
+            col: usize::MAX,
+            side: oriterm_core::index::Side::Right,
+        };
+        Some(Selection {
+            mode: SelectionMode::Line,
+            anchor,
+            pivot,
+            end: anchor,
+        })
+    }
+
     /// Handle a command from the main thread.
     ///
     /// Display-affecting commands (scroll, theme, cursor, dirty) are handled
@@ -246,11 +282,7 @@ impl<T: EventListener> PaneIoThread<T> {
     fn handle_command(&mut self, cmd: PaneIoCommand) {
         log::trace!("IO thread: command {cmd:?}");
         match cmd {
-            PaneIoCommand::Resize { rows, cols } => {
-                // Single resize via select! — no coalescing needed for one command.
-                // Batch coalescing happens in drain_commands().
-                self.process_resize(rows, cols);
-            }
+            PaneIoCommand::Resize { rows, cols } => self.process_resize(rows, cols),
             PaneIoCommand::ScrollDisplay(delta) => {
                 self.terminal.grid_mut().scroll_display(delta);
                 self.grid_dirty.store(true, Ordering::Release);
@@ -267,6 +299,10 @@ impl<T: EventListener> PaneIoThread<T> {
             }
             PaneIoCommand::SetCursorShape(shape) => {
                 self.terminal.set_cursor_shape(shape);
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::SetBoldIsBright(enabled) => {
+                self.terminal.set_bold_is_bright(enabled);
                 self.grid_dirty.store(true, Ordering::Release);
             }
             PaneIoCommand::MarkAllDirty => {
@@ -288,11 +324,93 @@ impl<T: EventListener> PaneIoThread<T> {
                 self.terminal.scroll_to_next_prompt();
                 self.grid_dirty.store(true, Ordering::Release);
             }
+            PaneIoCommand::OpenSearch => {
+                self.search = Some(oriterm_core::SearchState::new());
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::CloseSearch => {
+                self.search = None;
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::SearchSetQuery(query) => {
+                if let Some(ref mut s) = self.search {
+                    s.set_query(query, self.terminal.grid());
+                    self.grid_dirty.store(true, Ordering::Release);
+                }
+            }
+            PaneIoCommand::SearchNextMatch => {
+                if let Some(ref mut s) = self.search {
+                    s.next_match();
+                    self.grid_dirty.store(true, Ordering::Release);
+                }
+            }
+            PaneIoCommand::SearchPrevMatch => {
+                if let Some(ref mut s) = self.search {
+                    s.prev_match();
+                    self.grid_dirty.store(true, Ordering::Release);
+                }
+            }
+            PaneIoCommand::Reset => {} // No Term::reset() exists yet.
             PaneIoCommand::Shutdown => {
                 self.shutdown.store(true, Ordering::Release);
             }
-            // Deferred to sections 05-06: search, text extraction, mark mode.
-            _ => {}
+            // Request-response commands with reply channels.
+            other => self.handle_reply_command(other),
+        }
+    }
+
+    /// Handle request-response commands that use a reply channel.
+    fn handle_reply_command(&mut self, cmd: PaneIoCommand) {
+        match cmd {
+            PaneIoCommand::ExtractText { selection, reply } => {
+                let text = oriterm_core::selection::extract_text(self.terminal.grid(), &selection);
+                let result = if text.is_empty() { None } else { Some(text) };
+                let _ = reply.send(result);
+            }
+            PaneIoCommand::ExtractHtml {
+                selection,
+                font_family,
+                font_size,
+                reply,
+            } => {
+                let (html, text) = oriterm_core::selection::extract_html_with_text(
+                    self.terminal.grid(),
+                    &selection,
+                    self.terminal.palette(),
+                    &font_family,
+                    font_size,
+                );
+                let result = if text.is_empty() {
+                    None
+                } else {
+                    Some((html, text))
+                };
+                let _ = reply.send(result);
+            }
+            PaneIoCommand::EnterMarkMode { reply } => {
+                if self.terminal.grid().display_offset() > 0 {
+                    self.terminal.grid_mut().scroll_display(isize::MIN);
+                }
+                let g = self.terminal.grid();
+                let cursor = g.cursor();
+                let abs_row = g.scrollback().len() + cursor.line();
+                let stable = oriterm_core::grid::StableRowIndex::from_absolute(g, abs_row);
+                let mc = crate::pane::MarkCursor {
+                    row: stable,
+                    col: cursor.col().0,
+                };
+                let _ = reply.send(mc);
+                self.grid_dirty.store(true, Ordering::Release);
+            }
+            PaneIoCommand::SelectCommandOutput { reply } => {
+                let sel = self.build_zone_selection(Term::command_output_range);
+                let _ = reply.send(sel);
+            }
+            PaneIoCommand::SelectCommandInput { reply } => {
+                let sel = self.build_zone_selection(Term::command_input_range);
+                let _ = reply.send(sel);
+            }
+            _ => {} // All other variants handled in handle_command.
         }
     }
 
@@ -454,6 +572,7 @@ pub fn new_with_handle<T: EventListener>(
         grid_dirty: config.grid_dirty,
         pty_control: config.pty_control,
         last_pty_size: (config.initial_rows as u32) << 16 | config.initial_cols as u32,
+        search: None,
     };
     let handle = PaneIoHandle {
         cmd_tx,

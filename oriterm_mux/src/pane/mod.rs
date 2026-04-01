@@ -256,6 +256,11 @@ impl Pane {
         self.io_handle.double_buffer().swap_front(buf)
     }
 
+    /// Whether the IO thread has produced a new snapshot not yet consumed.
+    pub fn has_io_snapshot(&self) -> bool {
+        self.io_handle.double_buffer().has_new()
+    }
+
     /// Send a command to the IO thread.
     ///
     /// Used to keep the IO thread's `Term` in sync with operations that
