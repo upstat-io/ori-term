@@ -173,13 +173,19 @@ impl<T: EventListener> PaneIoThread<T> {
     /// Process all pending byte messages with bounded chunking.
     ///
     /// Drains the byte channel and passes each message through
-    /// [`handle_bytes_chunked()`](Self::handle_bytes_chunked).
+    /// [`handle_bytes_chunked()`](Self::handle_bytes_chunked). Snapshots
+    /// are produced between messages so the main thread sees progress
+    /// even during sustained flood output.
     fn process_pending_bytes(&mut self) {
         while let Ok(bytes) = self.byte_rx.try_recv() {
             self.handle_bytes_chunked(&bytes);
             if self.shutdown.load(Ordering::Acquire) {
                 return;
             }
+            // Produce snapshot between messages to keep the main thread fed.
+            // Without this, flood output fills the queue faster than parsing
+            // drains it, and `maybe_produce_snapshot()` never runs.
+            self.maybe_produce_snapshot();
         }
     }
 
@@ -199,6 +205,15 @@ impl<T: EventListener> PaneIoThread<T> {
 
         // 2. High-level VTE processor.
         self.processor.advance(&mut self.terminal, bytes);
+
+        // 3b. Set grid_dirty after parsing — the VTE handler does not fire
+        //     Event::Wakeup itself. The old PtyEventLoop did this explicitly
+        //     after each parse chunk. Respects Mode 2026 (synchronized output):
+        //     when the sync buffer is non-empty, skip the dirty flag so
+        //     `maybe_produce_snapshot()` defers snapshot production.
+        if self.processor.sync_bytes_count() == 0 {
+            self.grid_dirty.store(true, Ordering::Release);
+        }
 
         // 3. Deferred prompt marking.
         if self.terminal.prompt_mark_pending() {

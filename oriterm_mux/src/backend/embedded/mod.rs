@@ -21,7 +21,7 @@ use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
 use crate::pane::io_thread::PaneIoCommand;
 use crate::registry::PaneEntry;
-use crate::server::snapshot::{build_snapshot_locked, fill_snapshot_from_renderable};
+use crate::server::snapshot::fill_snapshot_from_renderable;
 use crate::{DomainId, PaneId, PaneSnapshot};
 
 /// In-process mux backend for single-process mode.
@@ -85,11 +85,10 @@ impl MuxBackend for EmbeddedMux {
         self.wakeup_pending.store(false, Ordering::Release);
         self.mux.poll_events(&mut self.panes);
 
-        // Mark panes dirty when PTY output or IO thread commands produced new state.
+        // Mark panes dirty when the IO thread has produced a new snapshot.
         for (&pane_id, pane) in &self.panes {
-            if pane.grid_dirty() || pane.has_io_snapshot() {
+            if pane.has_io_snapshot() {
                 self.snapshot_dirty.insert(pane_id);
-                pane.clear_grid_dirty();
             }
         }
     }
@@ -379,17 +378,10 @@ impl MuxBackend for EmbeddedMux {
         let snapshot = self.snapshot_cache.entry(pane_id).or_default();
         let render_buf = self.renderable_cache.entry(pane_id).or_default();
 
-        // Prefer IO-thread snapshot (zero-lock swap). Falls back to the old
-        // lock-based path when the IO thread hasn't produced a snapshot yet.
+        // Swap the IO thread's latest snapshot into our render buffer.
+        // The IO thread is the sole producer — no lock-based fallback needed.
         if pane.swap_io_snapshot(render_buf) {
             fill_snapshot_from_renderable(pane, render_buf, snapshot);
-        } else {
-            // Fallback: lock the old Term for content. VTE text and cursor
-            // position are correct (old PtyEventLoop still parses). Non-VTE
-            // state (theme, cursor shape) may be stale since dual-Term mirror
-            // updates were removed — acceptable until section 07 removes the
-            // old Term entirely.
-            build_snapshot_locked(pane, snapshot, render_buf);
         }
 
         self.snapshot_dirty.remove(&pane_id);

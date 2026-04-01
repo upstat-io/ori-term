@@ -6,6 +6,7 @@
 //! on Windows, `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
 mod event_loop;
+pub(crate) mod reader;
 mod spawn;
 
 use std::io::{self, Write};
@@ -15,6 +16,7 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 
 pub use event_loop::PtyEventLoop;
+pub(crate) use reader::PtyReader;
 #[allow(
     unused_imports,
     reason = "returned by PtyHandle::wait/try_wait; callers need access"
