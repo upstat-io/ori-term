@@ -56,17 +56,18 @@ impl App {
     ///
     /// `winit_id` identifies which window to recompute. Widget updates and
     /// cache invalidation target only this window.
+    /// Returns `true` if the grid col/row count actually changed.
     pub(in crate::app) fn sync_grid_layout(
         &mut self,
         winit_id: WindowId,
         viewport_w: u32,
         viewport_h: u32,
-    ) {
+    ) -> bool {
         let Some(ctx) = self.windows.get(&winit_id) else {
-            return;
+            return false;
         };
         let Some(renderer) = ctx.renderer.as_ref() else {
-            return;
+            return false;
         };
         let cell = renderer.cell_metrics();
         let scale = ctx.window.scale_factor().factor() as f32;
@@ -97,26 +98,31 @@ impl App {
 
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
+        let old_cols = ctx.terminal_grid.cols();
+        let old_rows = ctx.terminal_grid.rows();
         ctx.terminal_grid.set_cell_metrics(cell.width, cell.height);
         ctx.terminal_grid.set_grid_size(wl.cols, wl.rows);
         ctx.terminal_grid.set_bounds(wl.grid_rect);
         ctx.tab_bar_phys_rect = wl.tab_bar_rect;
         ctx.status_bar_phys_rect = wl.status_bar_rect;
         let (cols, rows) = (wl.cols, wl.rows);
+        let grid_changed = cols != old_cols || rows != old_rows;
 
-        // Resize the active pane in this specific window (not the globally
-        // focused one). Multi-pane layouts are recomputed by resize_all_panes.
-        if let Some(pane_id) = self.active_pane_id_for_window(winit_id) {
-            if let Some(mux) = self.mux.as_mut() {
-                mux.resize_pane_grid(pane_id, rows as u16, cols as u16);
+        // Only resize panes if the grid dimensions actually changed.
+        if grid_changed {
+            if let Some(pane_id) = self.active_pane_id_for_window(winit_id) {
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.resize_pane_grid(pane_id, rows as u16, cols as u16);
+                }
             }
-        }
-        self.resize_all_panes();
-        if let Some(ctx) = self.windows.get_mut(&winit_id) {
-            ctx.cached_dividers = None;
+            self.resize_all_panes();
+            if let Some(ctx) = self.windows.get_mut(&winit_id) {
+                ctx.cached_dividers = None;
+            }
+            self.update_resize_increments(winit_id);
         }
 
-        self.update_resize_increments(winit_id);
+        grid_changed
     }
 
     /// Handle window resize: reconfigure surface, update chrome layout,
@@ -231,15 +237,19 @@ impl App {
         }
 
         // Recompute grid dimensions, resize terminal + PTY + increments.
-        self.sync_grid_layout(winit_id, size.width, size.height);
+        let grid_changed = self.sync_grid_layout(winit_id, size.width, size.height);
 
         self.refresh_platform_rects(winit_id);
 
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
-            ctx.url_cache.invalidate();
-            ctx.hovered_url = None; // Segments contain stale absolute rows.
-            ctx.root.invalidation_mut().invalidate_all();
-            ctx.root.damage_mut().reset();
+            if grid_changed {
+                // Grid col/row count changed — full invalidation needed.
+                ctx.url_cache.invalidate();
+                ctx.hovered_url = None;
+                ctx.root.invalidation_mut().invalidate_all();
+                ctx.root.damage_mut().reset();
+            }
+            // Always mark dirty — the surface/chrome changed even if grid didn't.
             ctx.root.mark_dirty();
         }
     }
