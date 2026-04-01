@@ -181,11 +181,19 @@ impl DirtyTracker {
         }
     }
 
-    /// Resize the tracker to new dimensions, marking all dirty.
+    /// Resize the tracker to new dimensions.
+    ///
+    /// Only marks all dirty when the line count or column count actually
+    /// changed. When only pixel dimensions changed (same cols/rows), the
+    /// existing per-line damage is preserved — avoiding a full GPU rebuild
+    /// on sub-cell-width resize events.
     pub fn resize(&mut self, num_lines: usize, cols: usize) {
+        let changed = self.cols != cols || self.lines.len() != num_lines;
         self.cols = cols;
         self.lines.resize(num_lines, LineDamageBounds::clean());
-        self.mark_all();
+        if changed {
+            self.mark_all();
+        }
     }
 }
 
