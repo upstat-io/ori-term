@@ -16,7 +16,6 @@ pub mod index;
 pub mod paste;
 pub mod search;
 pub mod selection;
-pub mod sync;
 pub mod term;
 pub mod theme;
 pub mod unicode;
@@ -35,7 +34,6 @@ pub use selection::{
     ClickDetector, DEFAULT_WORD_DELIMITERS, Selection, SelectionBounds, SelectionMode,
     SelectionPoint, logical_line_end, logical_line_start,
 };
-pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
 pub use term::{
     DamageLine, Notification, PromptMarker, PromptState, RenderableCell, RenderableContent,
     RenderableCursor, RenderableImageData, RenderablePlacement, Term, TermDamage, TermMode,
