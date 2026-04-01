@@ -2,7 +2,7 @@
 reroute: true
 name: "Threaded IO"
 full_name: "Threaded Terminal IO"
-status: active
+status: resolved
 order: 1
 ---
 
@@ -129,7 +129,7 @@ daemon mode, DaemonMux, snapshot path
 ---
 
 ### Section 08: Verification
-**File:** `section-08-verification.md` | **Status:** Not Started
+**File:** `section-08-verification.md` | **Status:** Complete
 
 ```
 alloc_regression.rs, zero allocation, renderable_content_into
