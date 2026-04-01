@@ -90,7 +90,7 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 **oriterm_ui (UI framework):** `oriterm_ui/src/widgets/` — Widget trait + all widget implementations | `oriterm_ui/src/window_root/` — WindowRoot (per-window UI composition unit) | `oriterm_ui/src/interaction/` — Pure interaction utilities (resize geometry, cursor hiding, mark mode motion) | `oriterm_ui/src/pipeline/` — Pipeline orchestration (layout → prepaint → paint → dispatch) | `oriterm_ui/src/testing/` — WidgetTestHarness (headless testing)
 
-**oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (terminal state, PTY I/O) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
+**oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (IO thread handle, lock-free atomics) | `oriterm_mux/src/pane/io_thread/` — PaneIoThread (owns Term exclusively, VTE parsing, snapshot production, command processing) | `oriterm_mux/src/pane/io_thread/snapshot/` — SnapshotDoubleBuffer (lock-free snapshot transfer IO→main) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
 
 **oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex)
 
@@ -100,7 +100,7 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 **`oriterm_core`** — Terminal emulation library (grid, VTE, selection, search). Standalone, no workspace deps.
 **`oriterm_ui`** — UI framework (widgets, WindowRoot, interaction, pipeline, animation, testing). Depends on `oriterm_core` only.
-**`oriterm_mux`** — Pane server (PTY I/O, pane lifecycle, mux backend). Depends on `oriterm_core` + `oriterm_ipc`.
+**`oriterm_mux`** — Pane server (PTY I/O, pane lifecycle, mux backend). Each pane has a dedicated Terminal IO thread that owns `Term` exclusively — VTE parsing, reflow, and snapshot production happen on the IO thread. The main thread reads lock-free snapshots via `SnapshotDoubleBuffer`. Depends on `oriterm_core` + `oriterm_ipc`.
 **`oriterm_ipc`** — Platform IPC transport (Unix sockets, Windows named pipes). Standalone, no workspace deps.
 **`oriterm`** — Application shell (winit event loop, GPU, font pipeline, session model). Consumes all other crates.
 
@@ -133,7 +133,7 @@ oriterm      → oriterm_core, oriterm_ui, oriterm_mux
 These invariants are enforced by regression tests in `oriterm_core/tests/alloc_regression.rs` and `oriterm/src/app/event_loop_helpers/tests.rs`. Do not introduce code that violates them.
 
 - **Zero idle CPU beyond cursor blink.** When idle, the event loop sleeps via `ControlFlow::Wait`. The only wakeup source is the cursor blink timer (~1.89 Hz). No polling, no spurious `WaitUntil` lingering from prior activity. Verified by `compute_control_flow()` pure function tests.
-- **Zero allocations in hot render path.** `renderable_content_into()` must perform zero heap allocations after the first warmup call (same grid size, no images, no combining marks). All `Vec` buffers are reused via `.clear()` + capacity retention. `HashSet` scratch buffers live on `RenderableContent`. No `Vec::new()` or `Box::new()` per cell or per frame.
+- **Zero allocations in hot render path.** The IO thread calls `renderable_content_into()` into a reusable buffer, then `SnapshotDoubleBuffer::flip_swap()` exchanges it with the front buffer via `std::mem::swap()`. The main thread calls `swap_front()` + `swap_renderable_content()` — all pointer swaps, zero allocation. All `Vec` buffers are reused via `.clear()` + capacity retention. `HashSet` scratch buffers live on `RenderableContent`. No `Vec::new()` or `Box::new()` per cell or per frame.
 - **Stable RSS under sustained output.** Scrollback is bounded by `max_scrollback` with row recycling via `Row::reset()`. Image caches evict via frame-based aging. GPU textures drop via `wgpu::Texture::Drop`. No unbounded growth vector exists for normal terminal operation.
 - **Buffer shrink discipline.** Grow-only `Vec` buffers (instance writers, shaping scratch, notification buffer, `RenderableContent` fields) apply `maybe_shrink()` post-render: `if capacity > 4 * len && capacity > 4096 → shrink_to(len * 2)`. No shrinking during `draw_frame()` (pure computation, no side effects).
 

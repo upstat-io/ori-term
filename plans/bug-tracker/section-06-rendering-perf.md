@@ -33,12 +33,12 @@ sections:
   - **Found**: 2026-03-29 — manual, user report
   - **Resolved**: 2026-03-30 — User confirmed fixed. Likely resolved by frame budget and render pipeline improvements in recent commits.
 
-- [ ] **BUG-06.2**: Random extra text appears after resize following sustained key repeat
+- [x] **BUG-06.2**: Random extra text appears after resize following sustained key repeat
   - **Severity**: medium
-  - **File(s)**: `oriterm/src/app/event_loop.rs` (resize handling), `oriterm_mux/` (PTY resize notification)
-  - **Root cause**: TBD. Likely a race between queued key repeat events and the PTY resize (SIGWINCH) notification — the shell processes both simultaneously, producing interleaved output. WezTerm exhibits the same behavior; Alacritty does not.
-  - **Repro**: Hold a key to fill the screen with text, release, then resize the window. Extra/garbled characters appear in the terminal.
-  - **Found**: 2026-03-30 — manual, user report. Pre-existing — not caused by frame budget changes.
+  - **File(s)**: `oriterm_mux/src/pane/io_thread/handler.rs` (resize via IO thread)
+  - **Root cause**: Race between queued key repeat events and synchronous main-thread reflow + PTY resize (SIGWINCH). Shell processes both simultaneously, producing interleaved output.
+  - **Fix**: Threaded IO plan (plans/threaded-io). Resize now flows through `PaneIoCommand::Resize` to the IO thread, which serializes bytes and resize in its priority loop. Grid reflow and PTY resize happen atomically on the IO thread — no concurrent main-thread access. Coalescing ensures only the final size is applied during rapid resize.
+  - **Resolved**: 2026-04-01 — threaded IO architecture eliminates the race condition.
 
 - [x] **BUG-06.3**: Window surface not redrawn after dragging partially off-screen and back
   - **Severity**: high
