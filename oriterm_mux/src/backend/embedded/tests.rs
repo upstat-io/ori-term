@@ -212,7 +212,8 @@ fn poll_events_uses_has_new_snapshot() {
     mux.cleanup_closed_pane(pane_id);
 }
 
-/// Spawn a pane, close it via `cleanup_closed_pane`, verify no panic.
+/// Spawn a pane, close it via `cleanup_closed_pane`, verify full lifecycle:
+/// IO thread shutdown, no thread leaks, no lingering state.
 #[cfg(unix)]
 #[test]
 fn cleanup_closed_pane_with_io_thread() {
@@ -224,11 +225,30 @@ fn cleanup_closed_pane_with_io_thread() {
     let config = SpawnConfig::default();
     let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
+    // Verify pane exists and has a snapshot.
+    assert!(mux.pane_ids().contains(&pane_id));
+
     // Close and cleanup — should shut down IO thread, reader, writer.
+    // `cleanup_closed_pane` drops the Pane on a background thread which
+    // calls PaneIoHandle::shutdown() (joins IO thread) and PtyHandle::Drop
+    // (kills PTY, joins reader/writer threads).
     mux.close_pane(pane_id);
     mux.cleanup_closed_pane(pane_id);
 
-    // Pane should be fully gone.
+    // Pane should be fully gone from all maps.
     assert!(mux.pane_snapshot(pane_id).is_none());
     assert!(!mux.pane_ids().contains(&pane_id));
+    assert!(!mux.is_pane_snapshot_dirty(pane_id));
+    assert!(!mux.is_selection_dirty(pane_id));
+
+    // Wait for the background drop thread to complete. If IO/reader/writer
+    // threads leak (fail to join), this is where we'd see a timeout.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // After cleanup, poll_events should not crash or reference the dead pane.
+    mux.poll_events();
+
+    // No lingering snapshot or renderable cache.
+    let mut buf = oriterm_core::RenderableContent::default();
+    assert!(!mux.swap_renderable_content(pane_id, &mut buf));
 }

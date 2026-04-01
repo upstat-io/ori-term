@@ -18,8 +18,8 @@ use super::{ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::{ClosePaneResult, InProcessMux};
 use crate::mux_event::{MuxEvent, MuxNotification};
-use crate::pane::Pane;
 use crate::pane::io_thread::PaneIoCommand;
+use crate::pane::{MarkCursor, Pane};
 use crate::registry::PaneEntry;
 use crate::server::snapshot::fill_snapshot_from_renderable;
 use crate::{DomainId, PaneId, PaneSnapshot};
@@ -341,6 +341,14 @@ impl MuxBackend for EmbeddedMux {
         let (tx, rx) = crossbeam_channel::bounded(1);
         pane.send_io_command(PaneIoCommand::SelectCommandInput { reply: tx });
         rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
+    }
+
+    fn enter_mark_mode(&mut self, pane_id: PaneId) -> Option<MarkCursor> {
+        use std::time::Duration;
+        let pane = self.panes.get(&pane_id)?;
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::EnterMarkMode { reply: tx });
+        rx.recv_timeout(Duration::from_millis(100)).ok()
     }
 
     fn pane_ids(&self) -> Vec<PaneId> {
