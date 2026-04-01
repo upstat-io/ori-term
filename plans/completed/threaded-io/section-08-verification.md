@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "Verification"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Verify performance invariants, cross-platform correctness, and regression-free operation of the threaded IO architecture"
 inspired_by:
@@ -35,7 +35,7 @@ sections:
     status: complete
   - id: "08.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 08: Verification
@@ -181,6 +181,6 @@ Manual and automated verification that resize flashing is eliminated.
 - [x] `./test-all.sh` green
 - [x] CLAUDE.md updated with IO thread documentation
 - [x] Bug tracker updated (BUG-06.2 resolved)
-- [ ] `/tpr-review` passed clean
+- [x] `/tpr-review` passed — 6 findings across 2 rounds, all resolved
 
 **Exit Criteria:** All performance invariants hold. Resize is visually smooth. No regression in any existing test. Cross-platform builds clean. BUG-06.2 is resolved. The threaded IO architecture is documented.

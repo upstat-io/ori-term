@@ -1,7 +1,7 @@
 ---
 plan: "threaded-io"
 title: "Threaded Terminal IO: Exhaustive Implementation Plan"
-status: in-progress
+status: complete
 supersedes: []
 references:
   - "plans/bug-tracker/section-06-rendering-perf.md"
@@ -214,8 +214,8 @@ Phase 5 - Verification
 
 | Bug | Root Cause | Fix Location | Status |
 |-----|-----------|-------------|--------|
-| BUG-06.2: Garbled text after resize during key repeat | Race between queued key repeat events and PTY resize (SIGWINCH) — shell processes both simultaneously | Section 05 (resize via IO thread eliminates race) | Not Started |
-| Resize flashing / text jumping during drag resize | Synchronous reflow + immediate render exposes every intermediate grid state | Section 05 (renderer only sees completed snapshots) | Not Started |
+| BUG-06.2: Garbled text after resize during key repeat | Race between queued key repeat events and PTY resize (SIGWINCH) — shell processes both simultaneously | Section 05 (resize via IO thread eliminates race) | Resolved |
+| Resize flashing / text jumping during drag resize | Synchronous reflow + immediate render exposes every intermediate grid state | Section 05 (renderer only sees completed snapshots) | Resolved |
 
 ## Quick Reference
 
@@ -228,4 +228,4 @@ Phase 5 - Verification
 | 05 | Resize Pipeline Migration | `section-05-resize-migration.md` | Complete |
 | 06 | Remaining State Operations | `section-06-remaining-ops.md` | Complete |
 | 07 | Pane Lifecycle & FairMutex Removal | `section-07-lifecycle-cleanup.md` | Complete |
-| 08 | Verification | `section-08-verification.md` | Not Started |
+| 08 | Verification | `section-08-verification.md` | Complete |
