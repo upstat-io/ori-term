@@ -8,6 +8,45 @@ use winit::keyboard::{Key, NamedKey};
 
 use super::App;
 
+/// Action determined by the search key dispatch logic.
+///
+/// Pure decision — separated from side effects so it can be unit tested.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SearchAction {
+    /// Close the search bar.
+    Close,
+    /// Navigate to the next match.
+    NextMatch,
+    /// Navigate to the previous match.
+    PrevMatch,
+    /// Delete the last character from the query.
+    Backspace,
+    /// Append text to the query.
+    AppendText(String),
+    /// Key consumed but no action needed (unhandled named keys).
+    Consumed,
+}
+
+/// Determine the search action for a key event.
+///
+/// Pure function: no side effects, no mux access. Only called for
+/// pressed events (releases are consumed without action).
+fn search_key_action(key: &Key, shift: bool) -> SearchAction {
+    match key {
+        Key::Named(NamedKey::Escape) => SearchAction::Close,
+        Key::Named(NamedKey::Enter) => {
+            if shift {
+                SearchAction::PrevMatch
+            } else {
+                SearchAction::NextMatch
+            }
+        }
+        Key::Named(NamedKey::Backspace) => SearchAction::Backspace,
+        Key::Character(c) => SearchAction::AppendText(c.to_string()),
+        _ => SearchAction::Consumed,
+    }
+}
+
 impl App {
     /// Open the search bar for the active pane.
     pub(super) fn open_search(&mut self) {
@@ -55,26 +94,30 @@ impl App {
             return true;
         };
 
-        match &event.logical_key {
-            Key::Named(NamedKey::Escape) => {
+        let shift = self.modifiers.shift_key();
+        match search_key_action(&event.logical_key, shift) {
+            SearchAction::Close => {
                 self.close_search();
             }
-            Key::Named(NamedKey::Enter) => {
-                let shift = self.modifiers.shift_key();
+            SearchAction::NextMatch => {
                 if let Some(mux) = self.mux.as_mut() {
-                    if shift {
-                        mux.search_prev_match(pane_id);
-                    } else {
-                        mux.search_next_match(pane_id);
-                    }
+                    mux.search_next_match(pane_id);
                 }
                 self.scroll_to_search_match();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.root.mark_dirty();
                 }
             }
-            Key::Named(NamedKey::Backspace) => {
-                // Read current query from the cached snapshot.
+            SearchAction::PrevMatch => {
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.search_prev_match(pane_id);
+                }
+                self.scroll_to_search_match();
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.root.mark_dirty();
+                }
+            }
+            SearchAction::Backspace => {
                 let query = self
                     .mux
                     .as_ref()
@@ -94,15 +137,14 @@ impl App {
                     ctx.root.mark_dirty();
                 }
             }
-            Key::Character(c) => {
-                // Read current query from the cached snapshot.
+            SearchAction::AppendText(c) => {
                 let query = self
                     .mux
                     .as_ref()
                     .and_then(|m| m.pane_snapshot(pane_id))
                     .map(|s| {
                         let mut q = s.search_query.clone();
-                        q.push_str(c);
+                        q.push_str(&c);
                         q
                     });
                 if let Some(q) = query {
@@ -115,7 +157,7 @@ impl App {
                     ctx.root.mark_dirty();
                 }
             }
-            _ => {}
+            SearchAction::Consumed => {}
         }
 
         true
@@ -181,3 +223,6 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

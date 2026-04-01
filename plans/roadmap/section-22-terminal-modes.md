@@ -1,9 +1,9 @@
 ---
 section: 22
 title: Terminal Modes
-status: in-progress
+status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 5
 goal: Comprehensive DECSET/DECRST mode support, mode interactions, image protocol
 sections:
@@ -35,7 +35,7 @@ sections:
 
 # Section 22: Terminal Modes
 
-**Status:** Substantially Complete (verified 2026-03-29 -- DECALN not implemented (low severity), missing sync output test (trivial). 22.7 deferred to Section 39)
+**Status:** Complete (DECALN implemented 2026-04-01, BSU/ESU test added 2026-04-01. 22.7 image protocol deferred to Section 39)
 **Goal:** Complete, correct DECSET/DECRST mode support with proper mode interactions, mouse reporting, cursor styles, hyperlinks, and image protocol. This section is the authoritative reference for every terminal mode ori_term must handle.
 
 **Crate:** `oriterm` (binary) and `oriterm_core` (mode flags, state)
@@ -143,7 +143,7 @@ Prevent partial frame rendering during rapid output.
   - [x] vte buffers handler calls between BSU and ESU, dispatching as one batch
 - [x] Explicit documentation in mode handler noting Mode 2026 is handled by vte
 - [x] **Tests:**
-  - [ ] Verify that vte processes BSU/ESU sequences without error -- MISSING: no explicit BSU/ESU test exists; SyncUpdate flag only tested via `decset_decrst_flag_sync` comprehensive test (verified 2026-03-29, trivial severity -- vte handles internally)
+  - [x] Verify that vte processes BSU/ESU sequences without error — explicit `bsu_esu_sync_update_via_vte` test added 2026-04-01, feeds raw `\x1b[?2026h`/`\x1b[?2026l` through VTE parser and verifies SYNC_UPDATE flag
 
 ---
 
@@ -214,7 +214,7 @@ Complete reference of every DECSET/DECRST private mode.
 
 ### DECALN -- Screen Alignment Test (`ESC # 8`)
 
-- [ ] `ESC # 8` (DECALN): fill entire screen with 'E' characters -- NOT IMPLEMENTED (verified 2026-03-29: VTE handler trait provides `fn decaln()` with default no-op, ori_term does not override it. Alacritty implements at term/mod.rs:1141-1153. Low severity -- diagnostic tool only, no normal TUI apps use it)
+- [x] `ESC # 8` (DECALN): fill entire screen with 'E' characters — implemented `decaln_impl()` in `esc.rs`: fills visible cells with 'E', resets scroll region, homes cursor, marks all dirty. 4 tests (fill, scroll region reset, cursor home, attribute clear). Added 2026-04-01.
 
 ### Mode Interactions
 
@@ -288,7 +288,7 @@ Complete reference of every DECSET/DECRST private mode.
 - [x] Synchronized output prevents flicker (vte handles internally) (verified 2026-03-29)
 - [x] OSC 8 hyperlinks render and are clickable (Ctrl+click) (verified 2026-03-29: 6 OSC 8 tests)
 - [x] Implicit URL detection works on plain-text URLs (verified 2026-03-29: 23 URL detection tests)
-- [ ] All modes in the comprehensive mode table are implemented -- DECALN (`ESC # 8`) is NOT implemented (verified 2026-03-29, low severity)
+- [x] All modes in the comprehensive mode table are implemented — DECALN (`ESC # 8`) implemented 2026-04-01
 - [x] Mode interactions (mutual exclusion, alt screen save/restore) are correct (verified 2026-03-29)
 - [x] XTSAVE/XTRESTORE work for applicable modes (verified 2026-03-29 -- exceeds Alacritty and WezTerm)
 - [x] Legacy alt screen modes (47, 1047, 1048) implemented (verified 2026-03-29)
@@ -297,7 +297,7 @@ Complete reference of every DECSET/DECRST private mode.
 - [x] `cargo clippy --target x86_64-pc-windows-gnu` -- no warnings (verified 2026-03-29)
 
 **Gaps identified (verified 2026-03-29):**
-- [ ] DECALN (`ESC # 8`): implement `fn decaln()` on Term to fill visible rows with 'E', add test feeding `\x1b#8`
-- [ ] Explicit BSU/ESU test: add test feeding `\x1b[?2026h` / `\x1b[?2026l` through VTE and verifying behavior
+- [x] DECALN (`ESC # 8`): implemented `decaln_impl()` on Term — fills visible rows with 'E', resets scroll region, homes cursor. 4 tests. Added 2026-04-01.
+- [x] Explicit BSU/ESU test: `bsu_esu_sync_update_via_vte` feeds `\x1b[?2026h` / `\x1b[?2026l` through VTE, verifies SYNC_UPDATE flag toggle. Added 2026-04-01.
 
 **Exit Criteria:** Every mode in the comprehensive mode table is implemented and tested. tmux, vim, htop, and other TUI applications have fully working mode support including mouse, cursor styles, and focus events.

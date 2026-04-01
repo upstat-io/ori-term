@@ -1,8 +1,9 @@
-//! Tab bar mouse click dispatch.
+//! Tab bar mouse click dispatch and inline editing key routing.
 //!
 //! Routes mouse clicks in the tab bar zone to the appropriate action
 //! based on the [`TabBarHit`](oriterm_ui::widgets::tab_bar::TabBarHit) at
-//! the cursor position.
+//! the cursor position. Also routes keyboard events during inline title
+//! editing.
 
 use std::time::{Duration, Instant};
 
@@ -26,6 +27,69 @@ use super::{App, context_menu};
 
 /// Time window for two clicks to count as a double-click.
 const DOUBLE_CLICK_THRESHOLD: Duration = Duration::from_millis(500);
+
+/// Action determined by the tab editing key dispatch logic.
+///
+/// Pure decision — separated from side effects for unit testing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TabEditAction {
+    /// Commit the edit (Enter, Tab).
+    Commit,
+    /// Cancel the edit (Escape).
+    Cancel,
+    /// Delete the character before the cursor.
+    Backspace,
+    /// Delete the character after the cursor.
+    Delete,
+    /// Move cursor left, optionally extending selection.
+    MoveLeft { extend_selection: bool },
+    /// Move cursor right, optionally extending selection.
+    MoveRight { extend_selection: bool },
+    /// Move cursor to start, optionally extending selection.
+    Home { extend_selection: bool },
+    /// Move cursor to end, optionally extending selection.
+    End { extend_selection: bool },
+    /// Select all text (Ctrl+A).
+    SelectAll,
+    /// Insert printable characters.
+    InsertChars(String),
+    /// Key consumed but no editing action needed.
+    Consumed,
+}
+
+/// Determine the editing action for a key event.
+///
+/// Pure function: no side effects, no App access.
+fn tab_edit_key_action(key: &Key, shift: bool, ctrl: bool) -> TabEditAction {
+    match key {
+        Key::Named(NamedKey::Enter | NamedKey::Tab) => TabEditAction::Commit,
+        Key::Named(NamedKey::Escape) => TabEditAction::Cancel,
+        Key::Named(NamedKey::Backspace) => TabEditAction::Backspace,
+        Key::Named(NamedKey::Delete) => TabEditAction::Delete,
+        Key::Named(NamedKey::ArrowLeft) => TabEditAction::MoveLeft {
+            extend_selection: shift,
+        },
+        Key::Named(NamedKey::ArrowRight) => TabEditAction::MoveRight {
+            extend_selection: shift,
+        },
+        Key::Named(NamedKey::Home) => TabEditAction::Home {
+            extend_selection: shift,
+        },
+        Key::Named(NamedKey::End) => TabEditAction::End {
+            extend_selection: shift,
+        },
+        Key::Character(ch) if ctrl && ch.as_str() == "a" => TabEditAction::SelectAll,
+        Key::Character(ch) => {
+            let printable: String = ch.chars().filter(|c| !c.is_control()).collect();
+            if printable.is_empty() {
+                TabEditAction::Consumed
+            } else {
+                TabEditAction::InsertChars(printable)
+            }
+        }
+        _ => TabEditAction::Consumed,
+    }
+}
 
 impl App {
     /// Dispatch a mouse click in the tab bar zone.
@@ -339,85 +403,70 @@ impl App {
         let shift = self.modifiers.shift_key();
         let ctrl = self.modifiers.control_key();
 
-        match &event.logical_key {
-            Key::Named(NamedKey::Enter | NamedKey::Tab) => {
-                self.commit_tab_edit();
-                true
-            }
-            Key::Named(NamedKey::Escape) => {
-                self.cancel_tab_edit();
-                true
-            }
-            Key::Named(NamedKey::Backspace) => {
+        match tab_edit_key_action(&event.logical_key, shift, ctrl) {
+            TabEditAction::Commit => self.commit_tab_edit(),
+            TabEditAction::Cancel => self.cancel_tab_edit(),
+            TabEditAction::Backspace => {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.editing_backspace();
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Named(NamedKey::Delete) => {
+            TabEditAction::Delete => {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.editing_delete();
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Named(NamedKey::ArrowLeft) => {
+            TabEditAction::MoveLeft { extend_selection } => {
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.editing_move_left(shift);
+                    ctx.tab_bar.editing_move_left(extend_selection);
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Named(NamedKey::ArrowRight) => {
+            TabEditAction::MoveRight { extend_selection } => {
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.editing_move_right(shift);
+                    ctx.tab_bar.editing_move_right(extend_selection);
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Named(NamedKey::Home) => {
+            TabEditAction::Home { extend_selection } => {
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.editing_home(shift);
+                    ctx.tab_bar.editing_home(extend_selection);
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Named(NamedKey::End) => {
+            TabEditAction::End { extend_selection } => {
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.editing_end(shift);
+                    ctx.tab_bar.editing_end(extend_selection);
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Character(ch) if ctrl && ch.as_str() == "a" => {
+            TabEditAction::SelectAll => {
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.editing_select_all();
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
-                true
             }
-            Key::Character(ch) => {
-                for c in ch.chars() {
-                    if !c.is_control() {
-                        if let Some(ctx) = self.focused_ctx_mut() {
-                            ctx.tab_bar.editing_insert_char(c);
-                            ctx.root.mark_dirty();
-                            ctx.ui_stale = true;
-                        }
+            TabEditAction::InsertChars(chars) => {
+                for c in chars.chars() {
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.tab_bar.editing_insert_char(c);
+                        ctx.root.mark_dirty();
+                        ctx.ui_stale = true;
                     }
                 }
-                true
             }
-            _ => true, // Consume all other keys during editing.
+            TabEditAction::Consumed => {}
         }
+        true
     }
 
     /// Handle a click in the tab bar drag area.
@@ -448,3 +497,6 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
