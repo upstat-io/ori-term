@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
-use oriterm_core::selection::{self, Selection};
+use oriterm_core::Selection;
 use oriterm_core::{RenderableContent, Theme};
 
 use super::{ImageConfig, MuxBackend};
@@ -85,9 +85,9 @@ impl MuxBackend for EmbeddedMux {
         self.wakeup_pending.store(false, Ordering::Release);
         self.mux.poll_events(&mut self.panes);
 
-        // Mark panes dirty when the PTY reader thread has set grid_dirty.
+        // Mark panes dirty when PTY output or IO thread commands produced new state.
         for (&pane_id, pane) in &self.panes {
-            if pane.grid_dirty() {
+            if pane.grid_dirty() || pane.has_io_snapshot() {
                 self.snapshot_dirty.insert(pane_id);
                 pane.clear_grid_dirty();
             }
@@ -144,11 +144,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            let mut term = pane.terminal().lock();
-            term.set_theme(theme);
-            *term.palette_mut() = palette.clone();
-            term.grid_mut().dirty_mut().mark_all();
-            drop(term);
             pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -156,7 +151,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().set_cursor_shape(shape);
             pane.send_io_command(PaneIoCommand::SetCursorShape(shape));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -164,16 +158,13 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().set_bold_is_bright(enabled);
-            // Note: no IO thread command yet — bold_is_bright is resolved in
-            // renderable_content_into, so it needs a dedicated command in section 06.
+            pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
         }
         self.snapshot_dirty.insert(pane_id);
     }
 
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().grid_mut().dirty_mut().mark_all();
             pane.send_io_command(PaneIoCommand::MarkAllDirty);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -181,11 +172,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            let mut term = pane.terminal().lock();
-            term.set_image_protocol_enabled(config.enabled);
-            term.set_image_limits(config.memory_limit, config.max_single);
-            term.set_image_animation_enabled(config.animation_enabled);
-            drop(term);
             pane.send_io_command(PaneIoCommand::SetImageConfig(config));
         }
     }
@@ -193,6 +179,7 @@ impl MuxBackend for EmbeddedMux {
     fn open_search(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.open_search();
+            pane.send_io_command(PaneIoCommand::OpenSearch);
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -200,17 +187,20 @@ impl MuxBackend for EmbeddedMux {
     fn close_search(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.close_search();
+            pane.send_io_command(PaneIoCommand::CloseSearch);
         }
         self.snapshot_dirty.insert(pane_id);
     }
 
     fn search_set_query(&mut self, pane_id: PaneId, query: String) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
+            // Clone Arc before mutable borrow of search.
             let grid_ref = pane.terminal().clone();
             if let Some(search) = pane.search_mut() {
                 let term = grid_ref.lock();
-                search.set_query(query, term.grid());
+                search.set_query(query.clone(), term.grid());
             }
+            pane.send_io_command(PaneIoCommand::SearchSetQuery(query));
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -220,6 +210,7 @@ impl MuxBackend for EmbeddedMux {
             if let Some(search) = pane.search_mut() {
                 search.next_match();
             }
+            pane.send_io_command(PaneIoCommand::SearchNextMatch);
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -229,6 +220,7 @@ impl MuxBackend for EmbeddedMux {
             if let Some(search) = pane.search_mut() {
                 search.prev_match();
             }
+            pane.send_io_command(PaneIoCommand::SearchPrevMatch);
         }
         self.snapshot_dirty.insert(pane_id);
     }
@@ -238,10 +230,14 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn extract_text(&mut self, pane_id: PaneId, sel: &Selection) -> Option<String> {
+        use std::time::Duration;
         let pane = self.panes.get(&pane_id)?;
-        let term = pane.terminal().lock();
-        let text = selection::extract_text(term.grid(), sel);
-        (!text.is_empty()).then_some(text)
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::ExtractText {
+            selection: *sel,
+            reply: tx,
+        });
+        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
     }
 
     fn extract_html(
@@ -251,21 +247,20 @@ impl MuxBackend for EmbeddedMux {
         font_family: &str,
         font_size: f32,
     ) -> Option<(String, String)> {
+        use std::time::Duration;
         let pane = self.panes.get(&pane_id)?;
-        let term = pane.terminal().lock();
-        let (html, text) = selection::extract_html_with_text(
-            term.grid(),
-            sel,
-            term.palette(),
-            font_family,
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::ExtractHtml {
+            selection: *sel,
+            font_family: font_family.to_string(),
             font_size,
-        );
-        (!text.is_empty()).then_some((html, text))
+            reply: tx,
+        });
+        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
     }
 
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.scroll_display(delta);
             pane.send_io_command(PaneIoCommand::ScrollDisplay(delta));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -273,38 +268,23 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_bottom(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.scroll_to_bottom();
             pane.send_io_command(PaneIoCommand::ScrollToBottom);
         }
         self.snapshot_dirty.insert(pane_id);
     }
 
-    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) -> bool {
-        let scrolled = self
-            .panes
-            .get(&pane_id)
-            .is_some_and(Pane::scroll_to_previous_prompt);
-        if scrolled {
-            if let Some(pane) = self.panes.get(&pane_id) {
-                pane.send_io_command(PaneIoCommand::ScrollToPreviousPrompt);
-            }
-            self.snapshot_dirty.insert(pane_id);
+    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::ScrollToPreviousPrompt);
         }
-        scrolled
+        self.snapshot_dirty.insert(pane_id);
     }
 
-    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) -> bool {
-        let scrolled = self
-            .panes
-            .get(&pane_id)
-            .is_some_and(Pane::scroll_to_next_prompt);
-        if scrolled {
-            if let Some(pane) = self.panes.get(&pane_id) {
-                pane.send_io_command(PaneIoCommand::ScrollToNextPrompt);
-            }
-            self.snapshot_dirty.insert(pane_id);
+    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.send_io_command(PaneIoCommand::ScrollToNextPrompt);
         }
-        scrolled
+        self.snapshot_dirty.insert(pane_id);
     }
 
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {

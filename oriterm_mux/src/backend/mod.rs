@@ -126,10 +126,10 @@ pub trait MuxBackend {
     fn scroll_to_bottom(&mut self, pane_id: PaneId);
 
     /// Scroll to the nearest prompt above the current viewport.
-    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) -> bool;
+    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId);
 
     /// Scroll to the nearest prompt below the current viewport.
-    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) -> bool;
+    fn scroll_to_next_prompt(&mut self, pane_id: PaneId);
 
     // -- Search operations --
 

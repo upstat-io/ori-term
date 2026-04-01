@@ -299,6 +299,32 @@ impl MuxServer {
             }
         }
 
+        // Phase 2b: Push IO thread snapshots for panes that produced new state
+        // from commands (scroll, theme, search, etc.) without PTY output.
+        {
+            self.scratch_panes.clear();
+            for (&pid, pane) in &self.panes {
+                if pane.has_io_snapshot() && self.subscriptions.contains_key(&pid) {
+                    self.scratch_panes.push(pid);
+                }
+            }
+            if !self.scratch_panes.is_empty() {
+                let mut push_ctx = push::PushContext {
+                    last_snapshot_push: &mut self.last_snapshot_push,
+                    subscriptions: &self.subscriptions,
+                    connections: &mut self.connections,
+                    panes: &self.panes,
+                    snapshot_cache: &mut self.snapshot_cache,
+                    pending_push: &mut self.pending_push,
+                    scratch: &mut self.scratch_clients,
+                    scratch_panes: &mut Vec::new(),
+                };
+                for &pid in &self.scratch_panes {
+                    push::push_or_defer_pane(&mut push_ctx, now, pid);
+                }
+            }
+        }
+
         // Post-pass: Clean up per-pane state for closed panes.
         // Collect IDs into scratch_panes to avoid borrowing `self` immutably
         // (notification_buf) and mutably (cleanup_pane_state) at the same time.
