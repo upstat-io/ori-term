@@ -341,8 +341,11 @@ pub enum FontRealm {
 /// separately from their unsynthesized counterparts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RasterKey {
-    /// Glyph ID within the font face.
-    pub glyph_id: u16,
+    /// Glyph ID within the font face (or codepoint for built-in glyphs).
+    ///
+    /// `u32` to support Supplementary Multilingual Plane codepoints used as
+    /// built-in glyph IDs (e.g. Symbols for Legacy Computing, U+1FB00+).
+    pub glyph_id: u32,
     /// Which font face this glyph belongs to.
     pub face_idx: FaceIdx,
     /// Requested font weight for UI text (CSS 100–900).
@@ -370,7 +373,7 @@ impl RasterKey {
     /// for UI text glyphs.
     pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32, hinted: bool, subpx_x: u8) -> Self {
         Self {
-            glyph_id: resolved.glyph_id,
+            glyph_id: u32::from(resolved.glyph_id),
             face_idx: resolved.face_idx,
             weight: 0,
             size_q6,
@@ -475,17 +478,19 @@ impl From<std::io::Error> for FontError {
 /// Whether a character should be rendered as a built-in geometric glyph.
 ///
 /// O(1) range match covering box drawing, block elements, braille patterns,
-/// and powerline symbols. Lives here (not in `gpu::builtin_glyphs`) because
-/// the font shaper needs it to skip built-in chars during run segmentation,
-/// and the font module must not depend on the GPU module.
+/// powerline symbols, and Symbols for Legacy Computing. Lives here (not in
+/// `gpu::builtin_glyphs`) because the font shaper needs it to skip built-in
+/// chars during run segmentation, and the font module must not depend on the
+/// GPU module.
 pub(crate) fn is_builtin(ch: char) -> bool {
     matches!(
         ch,
-        '\u{2500}'..='\u{257F}'   // Box Drawing
-        | '\u{2580}'..='\u{259F}' // Block Elements
-        | '\u{2800}'..='\u{28FF}' // Braille Patterns
-        | '\u{E0B0}'..='\u{E0B4}' // Powerline separators (solid + outline triangles)
-        | '\u{E0B6}'              // Powerline left rounded separator
+        '\u{2500}'..='\u{257F}'     // Box Drawing
+        | '\u{2580}'..='\u{259F}'   // Block Elements
+        | '\u{2800}'..='\u{28FF}'   // Braille Patterns
+        | '\u{E0B0}'..='\u{E0B4}'   // Powerline separators (solid + outline triangles)
+        | '\u{E0B6}'                // Powerline left rounded separator
+        | '\u{1FB00}'..='\u{1FB9F}' // Symbols for Legacy Computing
     )
 }
 

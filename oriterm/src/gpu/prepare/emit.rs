@@ -78,7 +78,7 @@ impl GlyphEmitter<'_> {
                 0
             };
             let key = RasterKey {
-                glyph_id: sg.glyph_id,
+                glyph_id: sg.glyph_id.into(),
                 face_idx: FaceIdx(sg.face_index),
                 weight: 0,
                 size_q6: self.size_q6,

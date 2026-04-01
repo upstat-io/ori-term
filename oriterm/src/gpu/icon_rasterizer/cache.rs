@@ -90,7 +90,7 @@ impl IconCache {
 
         // Synthetic RasterKey using reserved face index + icon variant as glyph_id.
         let raster_key = RasterKey {
-            glyph_id: id as u16,
+            glyph_id: id as u32,
             face_idx: ICON_FACE_IDX,
             weight: 0,
             size_q6: (size_px as f32 * 64.0).round() as u32,

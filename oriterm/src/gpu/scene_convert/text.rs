@@ -74,7 +74,7 @@ pub(super) fn convert_text(
             oriterm_ui::text::FontSource::Ui => FontRealm::Ui,
         };
         let key = RasterKey {
-            glyph_id: glyph.glyph_id,
+            glyph_id: glyph.glyph_id.into(),
             face_idx: FaceIdx(glyph.face_index),
             weight: shaped.weight,
             size_q6: shaped.size_q6,

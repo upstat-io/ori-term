@@ -249,7 +249,7 @@ fn text_atlas_with(glyph_ids: &[u16]) -> KeyTestAtlas {
     let mut map = HashMap::new();
     for &gid in glyph_ids {
         let key = RasterKey {
-            glyph_id: gid,
+            glyph_id: gid.into(),
             face_idx: FaceIdx::REGULAR,
             weight: 400,
             size_q6: TEST_SIZE_Q6,
