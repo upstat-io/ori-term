@@ -125,15 +125,11 @@ impl MuxBackend for EmbeddedMux {
 
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            // Resize old Term for dual-Term consistency (scroll/search still
-            // use old Term until section 06 migrates them).
-            pane.resize_grid(rows, cols);
             // IO thread does reflow + PTY resize (SIGWINCH) asynchronously.
             // Do NOT mark snapshot_dirty here — the renderer should keep
             // drawing the previous cached snapshot until the IO thread
-            // publishes the resized one. This prevents the fallback path
-            // (build_snapshot_locked) from exposing intermediate reflow
-            // frames from the old Term during drag resize (TPR-05-001).
+            // publishes the resized one. This prevents exposing
+            // intermediate reflow frames during drag resize (TPR-05-001).
             pane.send_io_command(PaneIoCommand::Resize { rows, cols });
         }
     }
@@ -144,12 +140,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            // Update old Term for dual-Term consistency (fallback snapshot path).
-            let mut term = pane.terminal().lock();
-            term.set_theme(theme);
-            *term.palette_mut() = palette.clone();
-            term.grid_mut().dirty_mut().mark_all();
-            drop(term);
             pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -157,7 +147,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().set_cursor_shape(shape);
             pane.send_io_command(PaneIoCommand::SetCursorShape(shape));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -165,7 +154,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().set_bold_is_bright(enabled);
             pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -173,7 +161,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().grid_mut().dirty_mut().mark_all();
             pane.send_io_command(PaneIoCommand::MarkAllDirty);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -181,11 +168,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            let mut term = pane.terminal().lock();
-            term.set_image_protocol_enabled(config.enabled);
-            term.set_image_limits(config.memory_limit, config.max_single);
-            term.set_image_animation_enabled(config.animation_enabled);
-            drop(term);
             pane.send_io_command(PaneIoCommand::SetImageConfig(config));
         }
     }
@@ -208,12 +190,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn search_set_query(&mut self, pane_id: PaneId, query: String) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
-            // Clone Arc before mutable borrow of search.
-            let grid_ref = pane.terminal().clone();
-            if let Some(search) = pane.search_mut() {
-                let term = grid_ref.lock();
-                search.set_query(query.clone(), term.grid());
-            }
             pane.send_io_command(PaneIoCommand::SearchSetQuery(query));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -275,7 +251,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.scroll_display(delta);
             pane.send_io_command(PaneIoCommand::ScrollDisplay(delta));
         }
         self.snapshot_dirty.insert(pane_id);
@@ -283,7 +258,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_bottom(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.scroll_to_bottom();
             pane.send_io_command(PaneIoCommand::ScrollToBottom);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -291,7 +265,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.scroll_to_previous_prompt();
             pane.send_io_command(PaneIoCommand::ScrollToPreviousPrompt);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -299,7 +272,6 @@ impl MuxBackend for EmbeddedMux {
 
     fn scroll_to_next_prompt(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.scroll_to_next_prompt();
             pane.send_io_command(PaneIoCommand::ScrollToNextPrompt);
         }
         self.snapshot_dirty.insert(pane_id);
@@ -353,11 +325,19 @@ impl MuxBackend for EmbeddedMux {
     }
 
     fn select_command_output(&self, pane_id: PaneId) -> Option<Selection> {
-        self.panes.get(&pane_id)?.command_output_selection()
+        use std::time::Duration;
+        let pane = self.panes.get(&pane_id)?;
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::SelectCommandOutput { reply: tx });
+        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
     }
 
     fn select_command_input(&self, pane_id: PaneId) -> Option<Selection> {
-        self.panes.get(&pane_id)?.command_input_selection()
+        use std::time::Duration;
+        let pane = self.panes.get(&pane_id)?;
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::SelectCommandInput { reply: tx });
+        rx.recv_timeout(Duration::from_millis(100)).ok().flatten()
     }
 
     fn pane_ids(&self) -> Vec<PaneId> {
@@ -404,6 +384,11 @@ impl MuxBackend for EmbeddedMux {
         if pane.swap_io_snapshot(render_buf) {
             fill_snapshot_from_renderable(pane, render_buf, snapshot);
         } else {
+            // Fallback: lock the old Term for content. VTE text and cursor
+            // position are correct (old PtyEventLoop still parses). Non-VTE
+            // state (theme, cursor shape) may be stale since dual-Term mirror
+            // updates were removed — acceptable until section 07 removes the
+            // old Term entirely.
             build_snapshot_locked(pane, snapshot, render_buf);
         }
 

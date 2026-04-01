@@ -444,34 +444,6 @@ impl Pane {
             term.grid_mut().scroll_display(isize::MIN);
         }
     }
-
-    /// Scroll the viewport by `delta` lines.
-    pub fn scroll_display(&self, delta: isize) {
-        self.terminal.lock().grid_mut().scroll_display(delta);
-    }
-
-    /// Resize the terminal grids (with reflow). Does NOT resize the PTY.
-    pub fn resize_grid(&self, rows: u16, cols: u16) {
-        self.terminal
-            .lock()
-            .resize(rows as usize, cols as usize, true);
-    }
-
-    // -- Prompt navigation --
-
-    /// Scroll to the nearest prompt above the current viewport.
-    ///
-    /// Returns `true` if the viewport was scrolled.
-    pub fn scroll_to_previous_prompt(&self) -> bool {
-        self.terminal.lock().scroll_to_previous_prompt()
-    }
-
-    /// Scroll to the nearest prompt below the current viewport.
-    ///
-    /// Returns `true` if the viewport was scrolled.
-    pub fn scroll_to_next_prompt(&self) -> bool {
-        self.terminal.lock().scroll_to_next_prompt()
-    }
 }
 
 #[cfg(test)]

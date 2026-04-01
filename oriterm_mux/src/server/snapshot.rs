@@ -41,16 +41,16 @@ impl SnapshotCache {
 
     /// Build a snapshot for a pane, reusing cached allocations.
     ///
-    /// Tries the IO thread's double buffer first (zero-lock path). Falls back
-    /// to locking the terminal if no IO-thread snapshot is available.
+    /// Reads the IO thread's latest snapshot via zero-lock swap. Falls back
+    /// to locking the old Term for VTE content when no IO-thread snapshot
+    /// is available yet. Non-VTE state (theme, cursor shape) may be stale
+    /// on the fallback path since dual-Term mirror updates were removed.
     pub fn build(&mut self, pane_id: PaneId, pane: &Pane) -> &PaneSnapshot {
         let cached = self.cache.entry(pane_id).or_default();
         if pane.swap_io_snapshot(&mut self.render_buf) {
             fill_snapshot_from_renderable(pane, &self.render_buf, cached);
         } else {
-            let mut term = pane.terminal().lock();
-            build_snapshot_inner_into(&term, pane, cached, &mut self.render_buf);
-            term.reset_damage();
+            build_snapshot_locked(pane, cached, &mut self.render_buf);
         }
         &self.cache[&pane_id]
     }
@@ -90,11 +90,11 @@ pub(crate) fn build_snapshot(pane: &Pane) -> PaneSnapshot {
     build_snapshot_inner(&term, pane)
 }
 
-/// Build a snapshot by locking the terminal.
+/// Build a snapshot by locking the terminal (fallback path).
 ///
-/// Fallback path used when no IO-thread snapshot is available. Locks the
-/// terminal, extracts `RenderableContent`, converts to wire format, and
-/// resets damage — all under the same lock.
+/// Used when no IO-thread snapshot is available yet. VTE text content is
+/// correct (old `PtyEventLoop` still parses). Non-VTE state (theme, cursor
+/// shape) may be stale since dual-Term mirror updates were removed.
 pub(crate) fn build_snapshot_locked(
     pane: &Pane,
     out: &mut PaneSnapshot,
@@ -209,34 +209,21 @@ fn fill_snapshot_metadata(
     out.stable_row_base = render_buf.stable_row_base;
     out.cols = grid.cols() as u16;
 
-    // Search state.
-    if let Some(search) = pane.search() {
-        out.search_active = true;
-        out.search_query.clear();
-        out.search_query.push_str(search.query());
-        out.search_matches.clear();
-        for m in search.matches() {
-            out.search_matches.push(WireSearchMatch {
-                start_row: m.start_row.0,
-                start_col: u16::try_from(m.start_col).unwrap_or(u16::MAX),
-                end_row: m.end_row.0,
-                end_col: u16::try_from(m.end_col).unwrap_or(u16::MAX),
-            });
-        }
-        let total = out.search_matches.len() as u32;
-        out.search_total_matches = total;
-        out.search_focused = if out.search_matches.is_empty() {
-            None
-        } else {
-            Some(search.focused_index() as u32)
-        };
-    } else {
-        out.search_active = false;
-        out.search_query.clear();
-        out.search_matches.clear();
-        out.search_focused = None;
-        out.search_total_matches = 0;
+    // Search state — read from RenderableContent (populated by IO thread).
+    out.search_active = render_buf.search_active;
+    out.search_query.clear();
+    out.search_query.push_str(&render_buf.search_query);
+    out.search_matches.clear();
+    for m in &render_buf.search_matches {
+        out.search_matches.push(WireSearchMatch {
+            start_row: m.start_row.0,
+            start_col: u16::try_from(m.start_col).unwrap_or(u16::MAX),
+            end_row: m.end_row.0,
+            end_col: u16::try_from(m.end_col).unwrap_or(u16::MAX),
+        });
     }
+    out.search_total_matches = render_buf.search_total_matches;
+    out.search_focused = render_buf.search_focused;
 }
 
 /// Shared snapshot logic — converts terminal state to wire format.
