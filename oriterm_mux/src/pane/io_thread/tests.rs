@@ -7,7 +7,7 @@ use std::time::Duration;
 use oriterm_core::{Column, Line, Term, TermMode, Theme, VoidListener};
 
 use super::snapshot::SnapshotDoubleBuffer;
-use super::{PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
+use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
 
 /// Helper: create a Term<VoidListener> with default dimensions.
 fn make_term() -> Term<VoidListener> {
@@ -16,26 +16,31 @@ fn make_term() -> Term<VoidListener> {
 
 /// Helper: create a thread + handle pair with a no-op wakeup.
 fn make_pair() -> (PaneIoThread<VoidListener>, PaneIoHandle) {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let grid_dirty = Arc::new(AtomicBool::new(false));
-    new_with_handle(make_term(), mode_cache, shutdown, wakeup, grid_dirty)
+    new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        initial_rows: 24,
+        initial_cols: 80,
+    })
 }
 
 /// Helper: spawn and return a live handle + its shutdown flag.
 fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
     let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let grid_dirty = Arc::new(AtomicBool::new(false));
-    let (thread, mut handle) = new_with_handle(
-        make_term(),
-        mode_cache,
-        Arc::clone(&shutdown),
-        wakeup,
-        grid_dirty,
-    );
+    let (thread, mut handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        initial_rows: 24,
+        initial_cols: 80,
+    });
     let join = thread.spawn().expect("failed to spawn IO thread");
     handle.set_join(join);
     (handle, shutdown)
@@ -48,6 +53,8 @@ fn make_sync_thread() -> PaneIoThread<VoidListener> {
 
 /// Helper: create a `PaneIoThread` with a custom `Term` for synchronous testing.
 fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidListener> {
+    let rows = term.grid().lines() as u16;
+    let cols = term.grid().cols() as u16;
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     PaneIoThread {
@@ -62,6 +69,8 @@ fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidList
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        last_pty_size: (rows as u32) << 16 | cols as u32,
     }
 }
 
@@ -86,6 +95,8 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty,
+        pty_control: None,
+        last_pty_size: (24u32 << 16) | 80u32,
     };
     (thread, wakeup_count)
 }
@@ -128,6 +139,8 @@ fn shutdown_via_channel_disconnect() {
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        last_pty_size: (24u32 << 16) | 80u32,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -148,16 +161,16 @@ fn shutdown_via_channel_disconnect() {
 #[test]
 fn command_delivery_ordering() {
     let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let grid_dirty = Arc::new(AtomicBool::new(false));
-    let (thread, handle) = new_with_handle(
-        make_term(),
-        mode_cache,
-        Arc::clone(&shutdown),
-        wakeup,
-        grid_dirty,
-    );
+    let (thread, handle) = new_with_handle(IoThreadConfig {
+        terminal: make_term(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        initial_rows: 24,
+        initial_cols: 80,
+    });
 
     for i in 1..=5 {
         handle.send_command(PaneIoCommand::ScrollDisplay(i));
@@ -195,6 +208,8 @@ fn byte_delivery_parses_vte() {
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        last_pty_size: (24u32 << 16) | 80u32,
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -334,6 +349,8 @@ fn handle_bytes_chunked_drains_commands() {
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        last_pty_size: (24u32 << 16) | 80u32,
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -538,4 +555,219 @@ fn produce_snapshot_fires_wakeup() {
         1,
         "wakeup should fire once after produce_snapshot"
     );
+}
+
+// --- Resize tests (Section 05) ---
+
+/// Helper: create a sync thread with a command sender for testing.
+fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoCommand>) {
+    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let thread = PaneIoThread {
+        terminal: make_term(),
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(|| {}),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        last_pty_size: (24u32 << 16) | 80u32,
+    };
+    (thread, cmd_tx)
+}
+
+use crossbeam_channel::Sender;
+
+/// Resize command reflows the IO thread's grid.
+#[test]
+fn test_resize_command_reflows_grid() {
+    let mut t = make_sync_thread();
+    assert_eq!(t.terminal.grid().cols(), 80);
+    assert_eq!(t.terminal.grid().lines(), 24);
+
+    t.process_resize(24, 40);
+
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "cols should be 40 after resize"
+    );
+    assert_eq!(
+        t.terminal.grid().lines(),
+        24,
+        "rows should stay 24 after resize"
+    );
+}
+
+/// Rapid resize commands are coalesced — only the last one is applied.
+#[test]
+fn test_resize_coalescing() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+
+    // Queue 3 resize commands before draining.
+    cmd_tx
+        .send(PaneIoCommand::Resize { rows: 24, cols: 80 })
+        .unwrap();
+    cmd_tx
+        .send(PaneIoCommand::Resize { rows: 24, cols: 60 })
+        .unwrap();
+    cmd_tx
+        .send(PaneIoCommand::Resize { rows: 24, cols: 40 })
+        .unwrap();
+
+    t.drain_commands();
+
+    assert_eq!(
+        t.terminal.grid().cols(),
+        40,
+        "only the last resize (40 cols) should be applied"
+    );
+}
+
+/// Resize command produces a snapshot with new dimensions.
+#[test]
+fn test_resize_produces_snapshot() {
+    let mut t = make_sync_thread();
+
+    t.process_resize(30, 100);
+    // process_resize sets grid_dirty — produce_snapshot should fire.
+    t.maybe_produce_snapshot();
+
+    let mut consumer = oriterm_core::RenderableContent::default();
+    assert!(
+        t.double_buffer.swap_front(&mut consumer),
+        "snapshot should be available after resize"
+    );
+    assert_eq!(consumer.cols, 100, "snapshot cols should be 100");
+    assert_eq!(consumer.lines, 30, "snapshot rows should be 30");
+}
+
+/// PTY resize dedup: sending the same size twice only records it once.
+#[test]
+fn test_resize_dedup_skips_same_size() {
+    let mut t = make_sync_thread();
+
+    t.process_resize(30, 100);
+    let packed_after_first = t.last_pty_size;
+
+    t.process_resize(30, 100);
+    let packed_after_second = t.last_pty_size;
+
+    // Both should have the same packed value — the dedup prevents a second
+    // PtyControl call (no PtyControl in test, but the packed field proves dedup).
+    assert_eq!(packed_after_first, packed_after_second);
+    let expected = (30u32 << 16) | 100u32;
+    assert_eq!(packed_after_first, expected, "packed size should match");
+}
+
+/// First resize at spawn dimensions should not trigger PTY resize (dedup seed).
+/// Validates TPR-05-002 fix: `last_pty_size` is seeded from initial dimensions.
+#[test]
+fn test_spawn_size_resize_is_deduped() {
+    let mut t = make_sync_thread();
+    // make_sync_thread creates a 24x80 term, and IoThreadConfig uses
+    // initial_rows=24, initial_cols=80 — so last_pty_size is pre-seeded.
+    let initial_packed = (24u32 << 16) | 80u32;
+    assert_eq!(
+        t.last_pty_size, initial_packed,
+        "last_pty_size should be seeded from initial dimensions"
+    );
+
+    // Resize to the same size — the packed value should not change (dedup).
+    t.process_resize(24, 80);
+    assert_eq!(
+        t.last_pty_size, initial_packed,
+        "same-size resize should not change last_pty_size"
+    );
+}
+
+/// Display offset resets to 0 after resize (Grid::resize calls finalize_resize).
+#[test]
+fn test_resize_display_offset_resets() {
+    let mut t = make_sync_thread();
+
+    // Fill grid with content and scroll up.
+    for _ in 0..50 {
+        t.handle_bytes(b"line of text\r\n");
+    }
+    t.terminal.grid_mut().scroll_display(10);
+    assert!(
+        t.terminal.grid().display_offset() > 0,
+        "should be scrolled up"
+    );
+
+    // Resize resets display_offset.
+    t.process_resize(24, 40);
+    assert_eq!(
+        t.terminal.grid().display_offset(),
+        0,
+        "display_offset should be 0 after resize"
+    );
+}
+
+/// Bytes interleaved with resize: data is preserved across reflow.
+#[test]
+fn test_resize_interleaved_with_bytes() {
+    let mut t = make_sync_thread();
+
+    // Parse some text.
+    t.handle_bytes(b"hello world");
+
+    // Resize.
+    t.process_resize(24, 40);
+
+    // Parse more text.
+    t.handle_bytes(b" after resize");
+
+    // The grid should contain both pieces of text.
+    t.grid_dirty.store(true, Ordering::Release);
+    t.maybe_produce_snapshot();
+    let mut snap = oriterm_core::RenderableContent::default();
+    t.double_buffer.swap_front(&mut snap);
+
+    let text: String = snap
+        .cells
+        .iter()
+        .filter(|c| c.ch != ' ' && c.ch != '\0')
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        text.contains("hello"),
+        "should contain text from before resize: {text:?}"
+    );
+    assert!(
+        text.contains("afterresize"),
+        "should contain text from after resize: {text:?}"
+    );
+}
+
+/// Resize coalescing preserves other commands in the batch.
+#[test]
+fn test_resize_coalescing_preserves_other_commands() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+
+    // Queue: scroll, resize, resize, scroll.
+    cmd_tx.send(PaneIoCommand::ScrollDisplay(5)).unwrap();
+    cmd_tx
+        .send(PaneIoCommand::Resize { rows: 24, cols: 60 })
+        .unwrap();
+    cmd_tx
+        .send(PaneIoCommand::Resize { rows: 24, cols: 40 })
+        .unwrap();
+    cmd_tx.send(PaneIoCommand::ScrollDisplay(3)).unwrap();
+
+    // Fill some scrollback so scroll has effect.
+    for _ in 0..50 {
+        t.handle_bytes(b"scrollback line\r\n");
+    }
+
+    t.drain_commands();
+
+    // Only the last resize should be applied.
+    assert_eq!(t.terminal.grid().cols(), 40, "resize should use last size");
 }

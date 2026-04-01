@@ -28,7 +28,7 @@ pub use mark_cursor::MarkCursor;
 
 use crate::mux_event::MuxEventProxy;
 use crate::pane::io_thread::{PaneIoCommand, PaneIoHandle};
-use crate::pty::{Msg, PtyControl, PtyHandle};
+use crate::pty::{Msg, PtyHandle};
 
 /// Sends input to the PTY and commands to the reader thread.
 ///
@@ -78,8 +78,6 @@ pub struct PaneParts {
     pub terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
     /// Input/shutdown sender.
     pub notifier: PaneNotifier,
-    /// PTY control handle for resize.
-    pub pty_control: PtyControl,
     /// Reader thread join handle.
     pub reader_thread: JoinHandle<()>,
     /// Writer thread join handle.
@@ -114,8 +112,6 @@ pub struct Pane {
     terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
     /// Sends input/shutdown to the PTY.
     notifier: PaneNotifier,
-    /// PTY control handle for resize operations.
-    pty_control: PtyControl,
     /// PTY reader thread join handle (detached on drop).
     #[allow(
         dead_code,
@@ -169,12 +165,6 @@ pub struct Pane {
     mark_cursor: Option<MarkCursor>,
     /// Active search state (query, matches, navigation).
     search: Option<SearchState>,
-    /// Last PTY size sent to the OS, packed as `(rows << 16) | cols`.
-    ///
-    /// Guards against redundant `ResizePseudoConsole` calls that would
-    /// generate spurious `WINDOW_BUFFER_SIZE_EVENT` notifications and
-    /// interrupt shell startup (e.g. `PowerShell` prompt lost on first load).
-    last_pty_size: AtomicU32,
 }
 
 impl Pane {
@@ -187,7 +177,6 @@ impl Pane {
             domain_id: parts.domain_id,
             terminal: parts.terminal,
             notifier: parts.notifier,
-            pty_control: parts.pty_control,
             reader_thread: Some(parts.reader_thread),
             writer_thread: Some(parts.writer_thread),
             io_handle: parts.io_handle,
@@ -205,9 +194,6 @@ impl Pane {
             selection: None,
             mark_cursor: None,
             search: None,
-            last_pty_size: AtomicU32::new(
-                (parts.initial_rows as u32) << 16 | parts.initial_cols as u32,
-            ),
         }
     }
 
@@ -442,21 +428,6 @@ impl Pane {
         self.terminal
             .lock()
             .resize(rows as usize, cols as usize, true);
-    }
-
-    /// Resize the OS PTY handle, sending SIGWINCH to the shell.
-    ///
-    /// Skips the syscall when the dimensions haven't changed since the last
-    /// resize. This prevents spurious `ConPTY` resize events that interfere
-    /// with shell startup (e.g. `PowerShell` prompt lost on first load).
-    pub fn resize_pty(&self, rows: u16, cols: u16) {
-        let packed = (rows as u32) << 16 | cols as u32;
-        if self.last_pty_size.swap(packed, Ordering::Relaxed) == packed {
-            return;
-        }
-        if let Err(e) = self.pty_control.resize(rows, cols) {
-            log::warn!("PTY resize failed: {e}");
-        }
     }
 
     // -- Prompt navigation --

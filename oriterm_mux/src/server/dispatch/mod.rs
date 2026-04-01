@@ -96,9 +96,13 @@ pub fn dispatch_request(
             rows,
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
+                // Resize old Term for dual-Term consistency.
                 pane.resize_grid(rows, cols);
-                pane.resize_pty(rows, cols);
-                ctx.immediate_push.push(pane_id);
+                // IO thread does reflow + PTY resize (SIGWINCH).
+                // Do NOT push an immediate snapshot — the IO thread will
+                // produce one after reflow completes. This prevents
+                // exposing intermediate reflow frames (TPR-05-001).
+                pane.send_io_command(crate::pane::io_thread::PaneIoCommand::Resize { rows, cols });
             }
             None // Fire-and-forget.
         }
