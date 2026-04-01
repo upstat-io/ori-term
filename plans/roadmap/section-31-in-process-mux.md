@@ -1,7 +1,7 @@
 ---
 section: 31
 title: In-Process Mux + Multi-Pane Rendering
-status: complete
+status: in-progress
 reviewed: true
 last_verified: "2026-03-29"
 tier: 4M

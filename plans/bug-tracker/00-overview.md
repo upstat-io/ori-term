@@ -41,3 +41,4 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 | 08 | Core Terminal | `section-08-core-terminal.md` | 2 | 1 |
 | 09 | Session & Tab/Window | `section-09-session.md` | 1 | 1 |
 | 10 | Platform Windows | `section-10-platform-windows.md` | 1 | 1 |
+| 11 | Mux & Pane I/O | `section-11-mux.md` | 2 | 2 |

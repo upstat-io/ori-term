@@ -1,7 +1,7 @@
 ---
 section: 33
 title: Split Navigation + Floating Panes
-status: complete
+status: in-progress
 reviewed: true
 last_verified: "2026-03-29"
 tier: 4M

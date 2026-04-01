@@ -1,7 +1,7 @@
 ---
 section: 17
 title: Drag & Drop
-status: complete
+status: in-progress
 reviewed: true
 last_verified: "2026-03-29"
 tier: 4

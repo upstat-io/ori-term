@@ -105,6 +105,14 @@ windows, DWM, ConPTY, title-bar, named-pipes, WS_THICKFRAME, snap,
 accent-color, border-color, DwmSetWindowAttribute, WM_NCHITTEST
 ```
 
+### Section 11: Mux & Pane I/O
+**File:** `section-11-mux.md` | **Status:** In Progress
+
+```
+mux, pane, pty, io-thread, flood, backpressure, ctrl+c, interrupt, memory,
+rss, leak, scrollback, snapshot, writer-thread, reader-thread, kill, close
+```
+
 ---
 
 ## Quick Reference
@@ -121,3 +129,4 @@ accent-color, border-color, DwmSetWindowAttribute, WM_NCHITTEST
 | 08 | Core Terminal | `section-08-core-terminal.md` |
 | 09 | Session & Tab/Window | `section-09-session.md` |
 | 10 | Platform Windows | `section-10-platform-windows.md` |
+| 11 | Mux & Pane I/O | `section-11-mux.md` |
