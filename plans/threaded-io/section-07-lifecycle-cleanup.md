@@ -1,15 +1,15 @@
 ---
 section: "07"
 title: "Pane Lifecycle & FairMutex Removal"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Remove Arc<FairMutex<Term>> from Pane, clean up the old parsing path, and verify all terminal access goes through the IO thread"
 inspired_by:
   - "Ghostty (no shared mutex on terminal state — IO thread owns exclusively)"
 depends_on: ["05", "06"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-01
 sections:
   - id: "07.1"
     title: "Pane Struct Refactor"
@@ -25,15 +25,15 @@ sections:
     status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "07.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 07: Pane Lifecycle & FairMutex Removal
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Remove `Arc<FairMutex<Term<MuxEventProxy>>>` from `Pane`. Remove the old `PtyEventLoop` parsing code. Clean up `Pane` to hold only `PaneIoHandle` for terminal access. Verify all terminal state flows through the IO thread exclusively.
 
 **Context:** After sections 04-06, no code outside the IO thread accesses `Term` directly. The `Arc<FairMutex>` field in `Pane` is dead weight. Removing it completes the architectural migration and eliminates the contention that caused resize flashing.
@@ -123,7 +123,7 @@ Remove the FairMutex-wrapped terminal from `Pane` and replace with the IO handle
 - [x] `test_poll_events_uses_has_new_snapshot` — after section 07, `poll_events()` should check `pane.has_new_snapshot()` instead of `pane.grid_dirty()`. Verify a snapshot flip triggers `snapshot_dirty` insertion.
 - [x] `test_cleanup_closed_pane_with_io_thread` — spawn a pane, close it via `cleanup_closed_pane()`. Assert the IO thread is shut down, the JoinHandle is joined, and no threads leak.
 
-- [ ] `/tpr-review` checkpoint
+- [x] `/tpr-review` checkpoint
 
 ### Implementation Notes (07.1)
 
@@ -220,7 +220,15 @@ Verify the daemon mode still works with the IO thread architecture.
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-07-001][high]` `oriterm_mux/src/backend/embedded/mod.rs:84` / `oriterm_mux/src/pane/io_thread/event_proxy/mod.rs:77` / `oriterm/src/app/mux_pump/mod.rs:56` — Embedded panes no longer emit `PaneOutput`, so PTY output no longer drives the app-side output path.
+  Evidence: `IoThreadEventProxy::send_event(Event::Wakeup)` now only sets `grid_dirty`; `EmbeddedMux::poll_events()` converts `pane.has_io_snapshot()` into `snapshot_dirty` only and emits no `MuxNotification`; the app still performs selection invalidation, unseen-output tracking, URL-hover invalidation, and `mark_pane_window_dirty()` exclusively inside `MuxNotification::PaneOutput`.
+  Impact: In embedded mode, shell output can stop scheduling redraw work until some unrelated UI invalidation occurs, background panes no longer get unseen-output dots, and stale selections can survive output that should clear them.
+  Resolved: Fixed on 2026-04-01. `EmbeddedMux::poll_events()` now pushes `MuxNotification::PaneOutput(pane_id)` whenever `has_io_snapshot()` is true, restoring the app-side notification path. Added `poll_events_uses_has_new_snapshot` test that verifies both dirty flag and PaneOutput notification.
+
+- [x] `[TPR-07-002][medium]` `oriterm_mux/src/backend/embedded/tests.rs` — Section 07 marks the embedded regression coverage complete, but the checked tests are absent.
+  Evidence: `oriterm_mux/src/backend/embedded/tests.rs` contains only object-safety/basic no-op coverage and no `test_poll_events_uses_has_new_snapshot` or `test_cleanup_closed_pane_with_io_thread`, even though both checklist items are checked in this section.
+  Impact: The section claims verification that does not exist, which hid the embedded notification regression above and leaves the section overstating completion.
+  Resolved: Fixed on 2026-04-01. Added both tests to `embedded/tests.rs` — they spawn real panes with IO threads and verify the snapshot/notification and cleanup paths.
 
 ---
 
@@ -239,6 +247,6 @@ Verify the daemon mode still works with the IO thread architecture.
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** `grep -rn "FairMutex" oriterm_mux/src/` returns zero results (or only daemon-specific uses). `grep -rn "terminal().lock()" oriterm_mux/src/` returns zero results. The `Pane` struct holds `PaneIoHandle` as its only terminal access path.

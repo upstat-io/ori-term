@@ -112,7 +112,7 @@ server/dispatch, daemon dispatch, selection_dirty, command_output_selection
 ---
 
 ### Section 07: Pane Lifecycle & FairMutex Removal
-**File:** `section-07-lifecycle-cleanup.md` | **Status:** Not Started
+**File:** `section-07-lifecycle-cleanup.md` | **Status:** Complete
 
 ```
 Pane, PaneParts, from_parts, Pane::new

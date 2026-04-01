@@ -86,9 +86,13 @@ impl MuxBackend for EmbeddedMux {
         self.mux.poll_events(&mut self.panes);
 
         // Mark panes dirty when the IO thread has produced a new snapshot.
+        // Also emit PaneOutput notifications so the app can schedule redraws,
+        // invalidate selections, and track unseen output on background tabs.
         for (&pane_id, pane) in &self.panes {
             if pane.has_io_snapshot() {
                 self.snapshot_dirty.insert(pane_id);
+                self.mux
+                    .push_notification(MuxNotification::PaneOutput(pane_id));
             }
         }
     }
