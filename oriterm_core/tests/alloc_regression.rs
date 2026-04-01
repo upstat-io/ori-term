@@ -211,6 +211,41 @@ fn vte_1mb_ascii_zero_alloc_after_warmup() {
     );
 }
 
+/// The threaded IO render path swaps `RenderableContent` buffers between the
+/// IO thread and main thread via `std::mem::swap`. This must be zero-allocation
+/// after warmup — the swap exchanges pre-allocated buffers, not copying data.
+/// Simulates the `SnapshotDoubleBuffer::flip_swap()` + `swap_front()` cycle.
+#[test]
+fn snapshot_swap_path_zero_alloc_after_warmup() {
+    let term = make_term();
+
+    // Simulate IO thread's snapshot buffer and main thread's render cache.
+    let mut io_buf = term.renderable_content();
+    let mut main_buf = term.renderable_content();
+
+    // Warmup: fill both buffers to establish Vec capacities.
+    term.renderable_content_into(&mut io_buf);
+    term.renderable_content_into(&mut main_buf);
+
+    // Simulate 100 swap cycles (IO thread flips, main thread consumes).
+    let allocs = measure_allocs(|| {
+        for _ in 0..100 {
+            // IO thread produces snapshot then swaps with "front" buffer.
+            term.renderable_content_into(&mut io_buf);
+            std::mem::swap(&mut io_buf, &mut main_buf);
+        }
+    });
+
+    // The swap itself is zero-alloc. The `renderable_content_into` reuses
+    // pre-allocated Vecs. 100 cycles should stay well under threshold.
+    let threshold = ZERO_ALLOC_THRESHOLD * 100;
+    assert!(
+        allocs < threshold,
+        "100 snapshot swap cycles produced {allocs} allocations \
+         (expected < {threshold})"
+    );
+}
+
 // --- Profiling tests (Section 23.3) ---
 
 /// Profile memory consumed by blank rows in scrollback.

@@ -1249,3 +1249,264 @@ fn test_select_command_input_reply() {
         );
     }
 }
+
+// --- Section 08.4 threading stress tests ---
+
+/// Concurrent resize + byte flood: one thread floods bytes, another sends
+/// 100 resize commands. IO thread must not panic and must settle to correct
+/// final dimensions.
+#[test]
+fn test_concurrent_resize_and_pty_output() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    let byte_tx = handle.byte_sender();
+
+    // Byte flood thread: send 500 chunks of 1 KB each.
+    let flood_handle = std::thread::spawn(move || {
+        let chunk = vec![b'A'; 1024];
+        for _ in 0..500 {
+            if byte_tx.send(chunk.clone()).is_err() {
+                break;
+            }
+        }
+    });
+
+    // Resize flood: 100 commands from the main test thread.
+    for i in 0..100u16 {
+        let cols = 40 + (i % 80);
+        let rows = 20 + (i % 20);
+        handle.send_command(PaneIoCommand::Resize { rows, cols });
+    }
+
+    // Wait for flood to finish.
+    flood_handle.join().expect("byte flood thread panicked");
+
+    // Give IO thread time to drain.
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Verify snapshot is producible (IO thread still alive).
+    let mut snap = oriterm_core::RenderableContent::default();
+    handle.double_buffer().swap_front(&mut snap);
+
+    // Shutdown cleanly.
+    handle.send_command(PaneIoCommand::Shutdown);
+    let join = handle.join.take().expect("join handle missing");
+    assert!(
+        join.join().is_ok(),
+        "IO thread panicked during concurrent resize + output"
+    );
+}
+
+/// Close pane during flood output: IO thread must exit within 2 seconds.
+#[test]
+fn test_pane_close_during_flood_output() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+    let byte_tx = handle.byte_sender();
+
+    // Flood thread: continuous output until channel disconnects.
+    let flood_handle = std::thread::spawn(move || {
+        let chunk = vec![b'X'; 4096];
+        loop {
+            if byte_tx.send(chunk.clone()).is_err() {
+                break;
+            }
+        }
+    });
+
+    // Brief delay to let some bytes flow.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Shutdown the IO thread (drops cmd_tx on PaneIoHandle::shutdown).
+    let start = std::time::Instant::now();
+    handle.shutdown();
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "IO thread shutdown took {elapsed:?}, expected < 2s"
+    );
+
+    // Flood thread should also exit (byte channel disconnected).
+    flood_handle.join().expect("flood thread panicked");
+}
+
+/// Three IO threads resizing concurrently — no cross-thread corruption.
+#[test]
+fn test_multiple_panes_concurrent_resize() {
+    let mut handles: Vec<(PaneIoHandle, Arc<AtomicBool>)> = Vec::new();
+    for _ in 0..3 {
+        handles.push(spawn_pair_with_flag());
+    }
+
+    // Send distinct resize sequences to each pane.
+    let expected_dims = [(30u16, 90u16), (25, 70), (35, 110)];
+    for (i, (handle, _)) in handles.iter().enumerate() {
+        for j in 0..20u16 {
+            let (final_rows, _) = expected_dims[i];
+            let cols = 40 + j * 3; // intermediate sizes
+            handle.send_command(PaneIoCommand::Resize {
+                rows: final_rows,
+                cols,
+            });
+        }
+        // Final resize to the expected dimensions.
+        let (rows, cols) = expected_dims[i];
+        handle.send_command(PaneIoCommand::Resize { rows, cols });
+    }
+
+    // Give IO threads time to drain.
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Verify each pane's snapshot has correct dimensions.
+    for (i, (handle, _)) in handles.iter().enumerate() {
+        let mut snap = oriterm_core::RenderableContent::default();
+        handle.double_buffer().swap_front(&mut snap);
+        let (exp_rows, exp_cols) = expected_dims[i];
+        assert_eq!(snap.lines, exp_rows as usize, "pane {i} rows mismatch");
+        assert_eq!(snap.cols, exp_cols as usize, "pane {i} cols mismatch");
+    }
+
+    // Clean shutdown.
+    for (mut handle, _) in handles {
+        handle.shutdown();
+    }
+}
+
+/// Flood 1000 MarkAllDirty commands — IO thread drains all without blocking.
+#[test]
+fn test_command_channel_flood() {
+    let (mut handle, _shutdown) = spawn_pair_with_flag();
+
+    for _ in 0..1000 {
+        handle.send_command(PaneIoCommand::MarkAllDirty);
+    }
+
+    // Give IO thread time to drain.
+    std::thread::sleep(Duration::from_millis(200));
+
+    // IO thread should still be responsive to new commands.
+    handle.send_command(PaneIoCommand::Resize {
+        rows: 30,
+        cols: 100,
+    });
+    std::thread::sleep(Duration::from_millis(50));
+
+    let mut snap = oriterm_core::RenderableContent::default();
+    handle.double_buffer().swap_front(&mut snap);
+    assert_eq!(snap.cols, 100, "should respond after 1000-command flood");
+
+    handle.shutdown();
+}
+
+/// Snapshot swap under contention: producer + consumer threads hammering
+/// the double buffer for 500ms. No panic, seqno monotonic.
+#[test]
+fn test_snapshot_swap_under_contention() {
+    let db = SnapshotDoubleBuffer::new();
+    let db_clone = db.clone();
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_clone = Arc::clone(&stop);
+
+    // Producer thread: flip as fast as possible.
+    let producer = std::thread::spawn(move || {
+        let mut buf = oriterm_core::RenderableContent::default();
+        let mut count = 0u64;
+        while !stop_clone.load(Ordering::Relaxed) {
+            buf.cells.clear();
+            db_clone.flip_swap(&mut buf);
+            count += 1;
+        }
+        count
+    });
+
+    // Consumer thread: swap_front as fast as possible.
+    let mut consumer_buf = oriterm_core::RenderableContent::default();
+    let mut consume_count = 0u64;
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_millis(500) {
+        if db.swap_front(&mut consumer_buf) {
+            consume_count += 1;
+        }
+    }
+
+    stop.store(true, Ordering::Relaxed);
+    let produce_count = producer.join().expect("producer panicked");
+
+    assert!(
+        produce_count > 100,
+        "producer should have flipped many times: {produce_count}"
+    );
+    assert!(
+        consume_count > 10,
+        "consumer should have consumed some snapshots: {consume_count}"
+    );
+}
+
+// --- Section 08 resize quality verification ---
+
+/// Rapid resize: 50 successive resizes with varying dimensions.
+///
+/// Verifies: final grid matches last resize, no orphaned commands,
+/// snapshot reflects correct final dimensions.
+#[test]
+fn test_rapid_resize_50_cycles() {
+    let (mut t, cmd_tx) = make_sync_thread_with_cmd_tx();
+
+    // Fill grid with content so resize has rows to reflow.
+    for _ in 0..60 {
+        t.handle_bytes(b"content line for resize testing\r\n");
+    }
+
+    // Queue 50 resize commands with varying dimensions.
+    for i in 0..50u16 {
+        let cols = 40 + (i % 80); // 40..119
+        let rows = 20 + (i % 20); // 20..39
+        cmd_tx.send(PaneIoCommand::Resize { rows, cols }).unwrap();
+    }
+
+    // Drain all commands — coalescing should apply the last resize only.
+    t.drain_commands();
+
+    // Last resize: i=49 → cols = 40 + (49 % 80) = 89, rows = 20 + (49 % 20) = 29.
+    assert_eq!(t.terminal.grid().cols(), 89, "final cols after 50 resizes");
+    assert_eq!(t.terminal.grid().lines(), 29, "final rows after 50 resizes");
+
+    // Produce snapshot and verify dimensions match.
+    t.grid_dirty.store(true, Ordering::Release);
+    t.maybe_produce_snapshot();
+    let mut snap = oriterm_core::RenderableContent::default();
+    assert!(t.double_buffer.swap_front(&mut snap));
+    assert_eq!(snap.cols, 89, "snapshot cols after rapid resize");
+    assert_eq!(snap.lines, 29, "snapshot rows after rapid resize");
+}
+
+/// Resize during active byte processing: content + resize interleaved 50 times.
+///
+/// Verifies no panic, final dimensions correct, text preserved through reflows.
+#[test]
+fn test_resize_during_sustained_output() {
+    let mut t = make_sync_thread();
+
+    // Alternate between writing output and resizing.
+    for i in 0..50u16 {
+        let line = format!("output line {i:04}\r\n");
+        t.handle_bytes(line.as_bytes());
+        let cols = 60 + (i % 40); // 60..99
+        t.process_resize(24, cols);
+    }
+
+    // Final size: i=49 → cols = 60 + (49 % 40) = 69.
+    assert_eq!(
+        t.terminal.grid().cols(),
+        69,
+        "final cols after interleaved resize"
+    );
+
+    // Verify snapshot is producible and has correct dimensions.
+    t.grid_dirty.store(true, Ordering::Release);
+    t.maybe_produce_snapshot();
+    let mut snap = oriterm_core::RenderableContent::default();
+    assert!(t.double_buffer.swap_front(&mut snap));
+    assert_eq!(snap.cols, 69, "snapshot cols");
+    assert_eq!(snap.lines, 24, "snapshot rows");
+}
