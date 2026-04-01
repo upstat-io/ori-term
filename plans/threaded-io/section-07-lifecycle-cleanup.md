@@ -19,10 +19,10 @@ sections:
     status: complete
   - id: "07.3"
     title: "FairMutex Assessment"
-    status: not-started
+    status: complete
   - id: "07.4"
     title: "Daemon Mode Compatibility"
-    status: not-started
+    status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -192,11 +192,11 @@ The old `PtyEventLoop` still has full VTE parsing (unchanged through sections 02
 
 Assess whether `FairMutex` is still needed anywhere.
 
-- [ ] `grep -r "FairMutex" oriterm_*/src/` — check all remaining usages
-- [ ] If `FairMutex` is only used by the now-removed `Arc<FairMutex<Term>>` pattern, remove the `pub use` from `oriterm_core/src/lib.rs` and mark the module as `pub(crate)` or remove it entirely.
-- [ ] If the daemon server (`oriterm_mux/src/server/`) still needs FairMutex for its own synchronization, keep it. Otherwise, remove.
-- [ ] Keep `oriterm_core/src/sync/mod.rs` and `tests.rs` if the type is still used. Otherwise, remove both files.
-- [ ] Update `oriterm_core/src/lib.rs` exports accordingly.
+- [x] `grep -r "FairMutex" oriterm_*/src/` — check all remaining usages
+- [x] If `FairMutex` is only used by the now-removed `Arc<FairMutex<Term>>` pattern, remove the `pub use` from `oriterm_core/src/lib.rs` and mark the module as `pub(crate)` or remove it entirely.
+- [x] If the daemon server (`oriterm_mux/src/server/`) still needs FairMutex for its own synchronization, keep it. Otherwise, remove.
+- [x] Keep `oriterm_core/src/sync/mod.rs` and `tests.rs` if the type is still used. Otherwise, remove both files.
+- [x] Update `oriterm_core/src/lib.rs` exports accordingly.
 
 ---
 
@@ -206,13 +206,13 @@ Assess whether `FairMutex` is still needed anywhere.
 
 Verify the daemon mode still works with the IO thread architecture.
 
-- [ ] The daemon server spawns panes via `InProcessMux::spawn_standalone_pane()`. With the IO thread, this creates the same `PaneIoThread` as embedded mode.
+- [x] The daemon server spawns panes via `InProcessMux::spawn_standalone_pane()`. With the IO thread, this creates the same `PaneIoThread` as embedded mode.
 
-- [ ] The daemon server builds snapshots via `SnapshotCache::build()`. Section 04 updated this to read from `SnapshotDoubleBuffer` — verify it works in the daemon context.
+- [x] The daemon server builds snapshots via `SnapshotCache::build()`. Section 04 updated this to read from `SnapshotDoubleBuffer` — verify it works in the daemon context.
 
-- [ ] The daemon client (`DaemonMux`) communicates via IPC. It doesn't access terminal state directly — it receives `PaneSnapshot` via the wire protocol. No changes needed for the client side.
+- [x] The daemon client (`DaemonMux`) communicates via IPC. It doesn't access terminal state directly — it receives `PaneSnapshot` via the wire protocol. No changes needed for the client side.
 
-- [ ] The daemon server receives resize commands via IPC (`ServerCommand::Resize`). These should route through `InProcessMux::resize_pane_grid()` → IO thread command, same as embedded mode.
+- [x] The daemon server receives resize commands via IPC (`ServerCommand::Resize`). These should route through `InProcessMux::resize_pane_grid()` → IO thread command, same as embedded mode.
 
 ---
 
@@ -230,15 +230,15 @@ Verify the daemon mode still works with the IO thread architecture.
 - [x] `Pane::terminal()` accessor removed
 - [x] All direct terminal lock call sites removed from `oriterm_mux`
 - [x] `PtyEventLoop` renamed to `PtyReader`, VTE parsing code removed
-- [ ] `FairMutex` usage assessed and removed if unused
-- [ ] Daemon mode builds and works with IO thread architecture
+- [x] `FairMutex` usage assessed and removed if unused
+- [x] Daemon mode builds and works with IO thread architecture
 - [x] Pane spawn creates IO thread + PTY reader + PTY writer (3 threads per pane)
 - [x] Pane shutdown gracefully stops all 3 threads
-- [ ] `timeout 150 cargo test -p oriterm_mux` passes
-- [ ] `timeout 150 cargo test -p oriterm_core` passes
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `timeout 150 cargo test -p oriterm_mux` passes
+- [x] `timeout 150 cargo test -p oriterm_core` passes
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** `grep -rn "FairMutex" oriterm_mux/src/` returns zero results (or only daemon-specific uses). `grep -rn "terminal().lock()" oriterm_mux/src/` returns zero results. The `Pane` struct holds `PaneIoHandle` as its only terminal access path.
