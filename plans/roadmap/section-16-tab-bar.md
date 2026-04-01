@@ -258,8 +258,8 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings (verified 2026-03-29)
 - [x] **Close stress test**: rapidly close many tabs while hovering tab bar — close buttons don't shift unexpectedly (tab width lock works) (verified 2026-03-29)
 - [x] **Visual test**: tab bar renders correctly at 100%, 125%, 150%, 200% DPI scales (verified 2026-03-29)
-- [ ] Golden tests or scene capture tests for `Widget::draw()` output (gap: rendering output has no automated verification, only manual visual testing)
-- [ ] Unit tests for `tab_bar_input.rs` dispatch logic (gap: lives in `oriterm` app crate, delegates to well-tested sub-components but dispatch logic itself untested)
+- [ ] Golden tests or scene capture tests for `Widget::draw()` output (gap: rendering output has no automated verification, only manual visual testing) <!-- deferred: requires scene serialization/comparison infrastructure -->
+- [x] Unit tests for `tab_bar_input.rs` dispatch logic — extracted `tab_edit_key_action()` pure function, 19 tests covering all editing key paths. Added 2026-04-01.
 
 **Exit Criteria:** Tab bar layout computes deterministically for any tab count and window width. GPU-rendered tab bar includes bell animation, drag overlay, and separator suppression. Hit testing dispatches clicks with correct priority ordering.
 

@@ -270,6 +270,11 @@ impl<T: EventListener> Handler for Term<T> {
         self.goto_origin_aware(0, 0);
     }
 
+    fn decaln(&mut self) {
+        self.selection_dirty = true;
+        self.decaln_impl();
+    }
+
     fn save_cursor_position(&mut self) {
         self.grid_mut().save_cursor();
     }

@@ -1,11 +1,13 @@
 //! ESC sequence handler implementations.
 //!
-//! Handles RIS (full reset). Methods are called by the
-//! `vte::ansi::Handler` trait impl on `Term<T>`.
+//! Handles RIS (full reset) and DECALN (screen alignment test).
+//! Methods are called by the `vte::ansi::Handler` trait impl on `Term<T>`.
 
 use log::debug;
 
+use crate::cell::Cell;
 use crate::event::{Event, EventListener};
+use crate::index::{Column, Line};
 
 use super::super::{CharsetState, PromptState, Term, TermMode};
 
@@ -57,5 +59,34 @@ impl<T: EventListener> Term<T> {
         }
 
         self.event_listener.send_event(Event::ResetTitle);
+    }
+
+    /// DECALN (ESC # 8): DEC Screen Alignment Test.
+    ///
+    /// Fills all visible cells with 'E' (default attributes), resets
+    /// the scroll region to the full screen, and homes the cursor.
+    pub(super) fn decaln_impl(&mut self) {
+        let grid = self.grid_mut();
+        let lines = grid.lines();
+        let cols = grid.cols();
+
+        // Reset scroll region to full screen.
+        grid.set_scroll_region(1, None);
+
+        // Fill every visible cell with 'E' and default attributes.
+        let template = Cell::default();
+        for line in 0..lines {
+            for col in 0..cols {
+                let cell = &mut grid[Line(line as i32)][Column(col)];
+                cell.reset(&template);
+                cell.ch = 'E';
+            }
+        }
+
+        // Mark all lines dirty.
+        grid.dirty_mut().mark_all();
+
+        // Home the cursor.
+        self.goto_origin_aware(0, 0);
     }
 }

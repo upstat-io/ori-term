@@ -153,8 +153,9 @@ This pass reads the code *comparatively* — it's looking for structural similar
 **Checklist:**
 - [ ] **"Diff the bodies" test**: Read pairs of functions that handle similar cases (e.g., two widget paint methods, two event dispatch functions). Do their bodies differ only in type names, field names, or closure bodies while sharing the same control-flow skeleton?
 - [ ] **"Count the steps" test**: Are there 3+ call sites that perform the same sequence of 2+ operations (even with different arguments)? Example: validate input -> extract state -> perform operation -> request redraw.
+- [ ] **"Cross-crate mirror" test**: Do different crates maintain parallel dispatch tables, match arms, or routing logic with the same structure? Trace a concept (e.g., widget type, event kind) through multiple crates — does each maintain its own routing independently?
 - [ ] **"Match arm count" test**: Is the same enum/tag matched in N files with similar arm structure? If N > 2, N-1 of those are candidates for consolidation.
-- [ ] **Threshold check**: 2 instances with >5 shared skeleton lines = extract. 3+ instances any size = extract. Cross-crate = always extract.
+- [ ] **Threshold check**: 2 instances with >5 shared skeleton lines = extract. 3+ instances any size = extract. Cross-crate = always extract to shared crate or shared metadata source.
 - [ ] **Remediation check**: For each algorithmic duplication found, identify the correct extraction: generic fn, higher-order fn, trait + blanket impl, data-driven dispatch, or (last resort) macro?
 
 **How to execute this pass:**

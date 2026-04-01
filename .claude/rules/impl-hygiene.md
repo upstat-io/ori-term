@@ -212,6 +212,14 @@ When algorithmic duplication is found, select the **first** approach that fits:
 - **Not "every helper is good"** — a helper called once that just relocates code is noise, not DRY. The test: does the extraction eliminate a *second copy*, or does it just move a single copy?
 - **Not a license to over-abstract** — the extraction should be simpler than the duplication it replaces. If the abstraction is harder to understand than the copies, the copies are better.
 
+### Interaction with SSOT
+
+Algorithmic DRY is the complement of SSOT:
+- **SSOT** asks: "where is this *fact* defined?" — answer must be one place
+- **Algorithmic DRY** asks: "where is this *operation* defined?" — answer must be one place
+
+When both apply (e.g., a dispatch table that encodes both facts and routing), fix the SSOT violation first (centralize the data), then the algorithmic violation (consolidate the routing logic that queries it). The data-driven dispatch pattern often fixes both at once.
+
 ## Gap Detection
 
 - **Cross-module capability mismatch = GAP**: one module supports a feature, another blocks it
@@ -248,3 +256,274 @@ When algorithmic duplication is found, select the **first** approach that fits:
 - `lib.rs` is an **index**: `//!` doc, `mod` declarations, `pub use` re-exports — no function bodies. Strict, no exceptions.
 - `mod.rs` **dispatches**: routes to submodules, holds shared private items
 - Leaf files **implement**: actual logic lives here
+
+### Crate Organization
+
+- Each crate has a single documented purpose
+- Module nesting max 4 levels (e.g., `oriterm_ui::widgets::button::style`). Deeper = missing abstraction.
+- If a crate has >50 source files, consider splitting
+- Shared utilities live in dedicated crates (`oriterm_core`, `oriterm_ipc`). No `utils` modules in application crates. If 3+ crates need the same utility, extract to a shared crate.
+
+## Type Discipline
+
+- **Newtypes for all IDs**: `TabId`, `PaneId`, `WidgetId` — not raw `u64`. Inner field private, construct via `new()`/`From`, `.0` access only inside defining module.
+- **Metadata in sidecars**: metadata (debug info, diagnostic context) travels in sidecars or indexed maps, not inline in core data structures. Core types stay lean.
+- **Pre-compute derivable metadata**: at construction time (e.g., flags, cached measurements). O(1) queries, never re-walk composite structures.
+- **Option vs Result**: `Option` for absent/not found (lookup miss). `Result` for failure with diagnostic info. Never `Result<T, ()>` — use `Option`. Never `Option` when None should carry an error.
+- **Type aliases**: for long generic types (e.g., `Result<T, E>` with fixed E). Never for simple types. Alias names add semantic meaning. Don't shadow std types without purpose.
+
+### Dispatch Choice
+
+- Static dispatch (generics) by default
+- `dyn Trait` only for user-extensible plugin points or heterogeneous collections
+- Cost: `&dyn` < `Box<dyn>` < `Arc<dyn>`. Never `Arc<dyn>` in hot paths.
+
+## Clean Code Patterns
+
+Micro-level code shape rules. These govern what happens *inside* a function body — complementing the macro-level architecture rules (SSOT, side logic, module boundaries) that govern cross-module structure.
+
+### Parameter Hygiene
+
+- **>4 parameters → config/options struct.** No exceptions for "they're all different types." A 5-param function signature is a design smell — the parameters are either related (group them) or the function does too much (split it).
+- **>2 boolean parameters → flags enum or config struct.** Two bools in a signature means 4 implicit modes — name them. `draw_cell(cell, true, false, true)` is unreadable; `draw_cell(cell, &CellOptions { bold: true, ... })` is self-documenting.
+- **Single bool parameter**: acceptable only when the call site reads naturally without checking the signature. Prefer a two-variant enum (`Mode::Skip` / `Mode::Include`) — it costs nothing and makes call sites unambiguous.
+- **Audit trigger**: any function signature that wraps to 3+ lines in `rustfmt` output.
+- **Dead parameters**: parameters that are unused or always passed the same constant value → remove. `#[allow(unused)]` on a parameter is a hygiene violation unless the parameter is required by a trait signature.
+
+### Nesting Depth & Guard Clauses
+
+Max 4 levels of nesting. These patterns keep the happy path at the left margin:
+
+- **Invert and return early**: replace `if condition { ...long body... }` with `if !condition { return; }` followed by the body at top level.
+- **`if let` chains 3+ deep → helper returning `Option`**: extract the chain into a function that uses `?` to short-circuit, then call it with a single `let Some(result) = helper() else { return; }`.
+- **Nested `match` inside `match` → extract inner match**: if a match arm contains another multi-arm match, the inner match is a named function. Name it after what it decides.
+- **`else` after diverging branch is noise**: `if condition { return x; } else { y }` → `if condition { return x; } y`. The `else` adds a nesting level for no reason.
+- **Detection**: any `}` column indented past 16 spaces (4 levels × 4 spaces) in non-test code.
+
+### Complex Conditionals → Named Predicates
+
+Boolean expressions with 3+ clauses or any `&&`/`||` mix should be extracted to a named predicate method on the type being tested.
+
+```rust
+// BAD — reader must reverse-engineer the intent
+if !cell.flags.contains(CellFlags::WIDE_CHAR) && !cell.flags.contains(CellFlags::WIDE_SPACER) && cell.c != ' ' {
+
+// GOOD — intent is the name
+if cell.is_normal_visible() {
+```
+
+- **Rule**: 3+ boolean clauses → named method or local `let` binding with a descriptive name.
+- **Rule**: negated compound conditions (`!(a && b)`) → named predicate with positive name.
+- **Detection**: grep for `&&` and `||` in the same `if`/`while` condition.
+
+### Mixed Abstraction Levels
+
+Each function should operate at **one level of abstraction**. A function that mixes orchestration calls with low-level implementation details is doing two jobs.
+
+```rust
+// BAD — high-level orchestration mixed with low-level GPU ops
+fn draw_frame(state: &AppState) -> ... {
+    let layout = compute_layout(state);      // high-level
+    encoder.begin_render_pass(&desc);        // low-level GPU
+    update_cursor_blink(state);              // high-level again
+}
+
+// GOOD — orchestration only; low-level details in callees
+fn draw_frame(state: &AppState) -> ... {
+    let layout = compute_layout(state);
+    render_grid(&layout, &mut encoder);
+    update_cursor_blink(state);
+}
+```
+
+- **Detection**: if a function body mixes "calls to domain functions" with "raw encoder/builder/pointer operations", the raw operations should be in their own named function.
+- **Exemption**: leaf functions that ARE the low-level implementation don't need further splitting.
+
+### Magic Numbers and Strings
+
+- **No literal numbers** in non-test code except `0`, `1`, `-1`, and well-known mathematical/algorithmic constants (`2` in binary operations, powers of two for alignment). Everything else gets a named `const`.
+- **Thresholds** — buffer sizes, capacity hints, animation durations, margin pixels — **must** be named constants, not literals scattered across call sites. Example: `const CURSOR_BLINK_INTERVAL_MS: u64 = 530;`, not bare `530` in a timer.
+- **Detection**: any numeric literal > 1 in a comparison, capacity, or threshold context. Any string literal in a `match` arm or `==` comparison outside of parsing/config handling.
+
+### Temporal Coupling & RAII Guards
+
+When correctness depends on calling methods in a specific order, the ordering **must** be enforced structurally, not by convention.
+
+```rust
+// BAD — early return or ? skips the cleanup
+encoder.begin_render_pass(&desc);
+let result = draw_cells(&grid)?;
+encoder.end_render_pass();
+
+// GOOD — Drop ensures cleanup on all exit paths
+let pass = encoder.begin_render_pass(&desc); // pass ends on Drop
+let result = draw_cells(&grid, &mut pass)?;
+```
+
+- **Rule**: paired `begin_*/end_*`, `push_*/pop_*`, `enter_*/exit_*` operations → RAII guard whose `Drop` performs the cleanup half. The guard ensures cleanup on all exit paths including `?`, `return`, and panic.
+- **Rule**: if two functions must be called in sequence with no valid interleaving, combine them into one function or use a typestate/builder pattern where the compiler enforces ordering.
+- **Detection**: grep for paired method names (`begin_`/`end_`, `push_`/`pop_`, `enter_`/`exit_`) that aren't wrapped in a guard pattern.
+
+### Return Type Complexity
+
+- **Tuples of 3+ elements → named struct.** Even `(PaneId, bool)` deserves a struct if the `bool` isn't obvious from context at every call site. Named fields are free documentation.
+- **`Option<Option<T>>` → rethink the API.** Two layers of optionality usually means two separate concerns that should be modeled explicitly (e.g., a `LookupResult` enum with `Found(T)` / `NotApplicable` / `NotFound`).
+- **`Result<Option<T>, E>` is fine** — "might fail, might not exist" is a legitimate two-axis concern. But `Option<Result<T, E>>` is almost always wrong — prefer `Result<Option<T>, E>`.
+- **Detection**: return types with `(A, B, C, ...)` or nested `Option`/`Result` wrappers.
+
+### Stringly-Typed Internals
+
+Using `&str` or `String` where an enum or newtype would catch errors at compile time.
+
+- **Finite valid values → enum.** If a string parameter is matched against known alternatives, those alternatives should be enum variants. The compiler catches typos and missing arms; string matching doesn't.
+- **Domain concepts → newtype.** Mode names, action names, config keys — anything that represents an internal concept should be a distinct type, not a bare `String`.
+- **Detection**: `match string_value { "foo" => ..., "bar" => ... }` outside of parsing or config handling. Any `HashMap<String, ...>` where the key space is known at compile time.
+
+### Defensive Code for Impossible States
+
+Trust internal invariants. If the surrounding code guarantees a condition, don't add runtime error handling for its negation.
+
+```rust
+// BAD — map was populated 3 lines above, key is guaranteed present
+let Some(value) = map.get(&key) else {
+    return Err(Error::new("unexpected missing key")); // dead code that hides real bugs
+};
+
+// GOOD — assert the invariant, don't handle the "failure"
+let value = map[&key]; // panics if invariant violated — which IS the correct behavior
+// or: debug_assert!(map.contains_key(&key));
+```
+
+- **Rule**: no error handling for conditions that the surrounding code path guarantees. Use `debug_assert!` — it documents the assumption AND catches violations in debug builds. A runtime fallback (`unwrap_or_default`, `else { return }`) hides the bug instead of surfacing it.
+- **Rule**: `"this should never happen"` / `"just in case"` in a comment is a code smell. If it can't happen, `unreachable!()` with context. If it *can* happen, handle it properly.
+- **Detection**: `else` branches or `match` arms with comments containing "should never", "just in case", "unexpected", "shouldn't happen".
+
+### No Premature Abstraction
+
+Abstractions earn their existence by having multiple consumers. A trait with one implementor, a factory that builds one type, or a wrapper that adds nothing is indirection without value.
+
+- **Single-implementor traits → delete the trait.** Use a concrete type. Add the trait later when a second implementor actually appears. Exception: traits required by external interfaces or documented extension points with a stated design reason.
+- **Builder for <3 fields → direct construction.** `Foo { a, b }` is clearer than `Foo::builder().a(a).b(b).build()`. Builders earn their keep at 4+ fields, or when some fields have defaults/validation.
+- **Factory that constructs one product → `new()`.** A `FooFactory` that only ever produces `Foo` is a naming ceremony, not a pattern.
+- **Observer/listener with one subscriber → direct call.** Event systems earn their keep with 2+ subscribers or runtime registration.
+- **Detection**: `trait T` with exactly one `impl T for X` and no documented extension intent. Any `*Factory`, `*Builder`, `*Manager`, `*Handler` type that wraps a single operation.
+
+### No Gratuitous Intermediates
+
+- **`let result = expr; result` → just `expr`.** If a binding's only purpose is to be immediately returned, inline it.
+- **`let x = foo(); bar(x)` where `x` is used once → `bar(foo())`**, unless the intermediate name adds genuine clarity or the expression is complex enough that a name aids debugging.
+- **Exception**: intermediates that aid debugger breakpoints or that name a non-obvious value are fine.
+- **Detection**: any `let` binding that is used exactly once, on the immediately following line, with no meaningful name (e.g., `result`, `value`, `output`, `ret`, `tmp`).
+
+### No Symmetry for Its Own Sake
+
+Methods exist because callers need them. An API is not a checklist to "complete."
+
+- **No unused getters/setters.** A `set_name()` that nothing calls is dead code. Add it when a caller needs it, not when `get_name()` exists.
+- **No speculative conversion methods.** `to_foo()` / `from_foo()` pairs are not mandatory. Implement the direction that's actually used.
+- **Detection**: any `pub` method with zero call sites outside its own module and tests. `#[allow(dead_code)]` on a method is a hygiene violation — either the method is needed or it isn't.
+
+### No Cargo-Culted Design Patterns
+
+Design patterns are solutions to *specific problems*. Name the problem before applying the pattern. If you can't articulate the problem, you don't need the pattern.
+
+- **Builder**: justified at 4+ fields, optional fields with defaults, or construction validation. Unjustified for simple structs.
+- **Observer**: justified at 2+ runtime-registered subscribers. Unjustified for a single static call.
+- **Strategy**: justified when the algorithm varies at runtime or is user-extensible. Unjustified when a simple `match` on an enum covers all cases.
+- **Wrapper/Decorator**: justified when adding cross-cutting behavior (logging, caching, retry). Unjustified when the wrapper delegates every method with no added logic.
+- **Detection**: any pattern where removing the abstraction layer and inlining the logic makes the code shorter AND clearer.
+
+### No Narrating Comments
+
+Comments that describe control flow as it happens are noise. They restate the code in English without adding information.
+
+```rust
+// BAD — every comment restates the next line
+// Check if the grid is empty
+if grid.is_empty() {
+    // Return early since there's nothing to render
+    return;
+}
+// Iterate over each row
+for row in grid.visible_rows() {
+    // Process the current row
+    render_row(row);
+}
+
+// GOOD — no comments needed; the code is the documentation
+if grid.is_empty() {
+    return;
+}
+for row in grid.visible_rows() {
+    render_row(row);
+}
+```
+
+- **Rule**: delete any comment that can be derived by reading the next 1-3 lines of code. Comments earn their existence by explaining *why*, not *what*.
+- **Narration keywords that signal noise**: "now we", "next we", "first we", "then we", "handle the case where", "check if", "iterate over", "return the result".
+- **"Obvious decision" comments are noise**: `// We use HashMap for O(1) lookups` — nobody was going to use a Vec. Comment the *surprising* choice, not the obvious one.
+
+## Clone Discipline
+
+- Clone acceptable on cold/error paths and test setup
+- Prefer `&str`/`Cow` over `String` at boundaries
+- `Arc` only for shared ownership across threads/tasks (IO thread ↔ main thread)
+- No `.clone()` in hot paths without a comment justifying it
+
+## Performance Annotations
+
+- `#[cold]` on error factory functions and unlikely branches
+- `#[inline]`: 1-5 lines freely. 6-20 lines only if profiling shows benefit or cross-crate hot path. >20 lines never.
+- **Size assertions** on types in per-cell arrays or passed by value in hot loops. Add when size exceeds 2 machine words (16 bytes on 64-bit): `const _: () = assert!(size_of::<T>() == N);`
+- `#[must_use]` on all pub functions returning `Result`/`Option`, builder methods returning `Self`, and pure functions where ignoring the return is always a bug.
+
+## Unsafe & FFI
+
+- Every `unsafe` block requires a `// SAFETY:` comment explaining the invariant
+- Minimize unsafe scope — extract safe logic outside the unsafe block
+- `unsafe` justified only for: platform FFI (winit, wgpu interop), raw pointer operations (GPU buffer mapping), performance-critical hot paths where safe alternatives measurably regress
+- **Platform-specific code**: isolate behind `#[cfg(target_os)]` blocks with implementations for all three platforms (macOS, Windows, Linux). Abstract platform differences behind shared interfaces.
+
+## Panic & Assertion
+
+- **Never panic on user input**: bad escape sequences, invalid PTY output, unexpected config values — all must be handled gracefully
+- **`.unwrap()`**: only with comment proving infallibility, or in tests. Production code: `.expect("reason")` or propagate with `?`.
+- **`assert!()`**: for invariants whose violation would cause unsound behavior or safety issues. Always include a message.
+- **`debug_assert!()`**: for expensive invariant checks (O(n) or worse)
+- **`unreachable!()`**: for impossible code paths. Include context message. Never `panic!()` for impossible states.
+
+## Narrow the Front
+
+- **Complete one fix fully before starting another.** Rendering + input + state interactions multiply failure surfaces. Concurrent changes across these domains compound risk.
+- **"Fully" means**: fix + tests + plan update. A fix without tests is incomplete. A fix with tests but without plan update (when cross-section) is incomplete.
+- **Prefer depth over breadth.** Fix one widget type across all interaction states before fixing a second widget type. Fix one pipeline pass completely before the other. This reduces the number of concurrent moving parts and makes failures narrow and explainable.
+
+## Lifetime Annotations
+
+- Prefer elision when possible
+- Descriptive names for long-lived borrows: `'grid`, `'frame`, `'ctx`
+- Single-letter (`'a`) only for local/obvious cases
+- Avoid >2 lifetime parameters per function
+
+## API Stability
+
+- Pub items in `lib.rs` are the stable API surface
+- Breaking changes to pub crate APIs must update all downstream consumers in the same commit
+- When replacing a code path, remove the old code in the same commit. No deprecation for internal code.
+
+## Dependencies
+
+- Prefer `std` over external crates
+- New external deps require justification
+- Features are additive only (never remove functionality). Each feature documented in `Cargo.toml`.
+
+## Commit Hygiene
+
+- One logical change per commit; conventional commit format (`feat`/`fix`/`refactor`)
+- Cross-crate changes that must be in sync go in a single commit
+- Large refactors broken into phases: (1) add new API alongside old, (2) migrate consumers, (3) remove old API. Never break the build between phases.
+
+## Technical Debt
+
+- Fix when you find it. If it can't be fixed in the current change, add an entry to the active plan or create a roadmap item. No untracked debt.
+- Experimental/prototype code lives in feature branches, never in dev/master.

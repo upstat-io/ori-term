@@ -5292,3 +5292,100 @@ fn ascii_fast_path_overwriting_wide_char_falls_to_slow_path() {
     // Col 1 should be cleared (spacer removed by slow path).
     assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, ' ');
 }
+
+// --- BSU/ESU (Synchronized Update, mode 2026) ---
+
+#[test]
+fn bsu_esu_sync_update_via_vte() {
+    use crate::term::TermMode;
+
+    let mut t = term();
+
+    // Mode 2026 should start off.
+    assert!(
+        !t.mode().contains(TermMode::SYNC_UPDATE),
+        "SYNC_UPDATE should be off by default"
+    );
+
+    // BSU: Begin Synchronized Update (DECSET ?2026).
+    feed(&mut t, b"\x1b[?2026h");
+    assert!(
+        t.mode().contains(TermMode::SYNC_UPDATE),
+        "SYNC_UPDATE should be on after \\x1b[?2026h"
+    );
+
+    // ESU: End Synchronized Update (DECRST ?2026).
+    feed(&mut t, b"\x1b[?2026l");
+    assert!(
+        !t.mode().contains(TermMode::SYNC_UPDATE),
+        "SYNC_UPDATE should be off after \\x1b[?2026l"
+    );
+}
+
+// --- DECALN (ESC # 8) ---
+
+#[test]
+fn decaln_fills_screen_with_e() {
+    let mut t = term();
+    feed(&mut t, b"Hello World");
+    // Send DECALN.
+    feed(&mut t, b"\x1b#8");
+
+    let grid = t.grid();
+    for line in 0..grid.lines() {
+        for col in 0..grid.cols() {
+            assert_eq!(
+                grid[crate::index::Line(line as i32)][Column(col)].ch,
+                'E',
+                "cell at ({line}, {col}) should be 'E'"
+            );
+        }
+    }
+}
+
+#[test]
+fn decaln_resets_scroll_region() {
+    let mut t = term();
+    // Set a non-default scroll region (lines 5-10).
+    feed(&mut t, b"\x1b[5;10r");
+    assert_ne!(t.grid().scroll_region(), &(0..24));
+
+    // DECALN should reset scroll region to full screen.
+    feed(&mut t, b"\x1b#8");
+    assert_eq!(t.grid().scroll_region(), &(0..24));
+}
+
+#[test]
+fn decaln_homes_cursor() {
+    let mut t = term();
+    // Move cursor to line 10, col 40.
+    feed(&mut t, b"\x1b[11;41H");
+    assert_eq!(t.grid().cursor().line(), 10);
+    assert_eq!(t.grid().cursor().col(), Column(40));
+
+    // DECALN should home the cursor.
+    feed(&mut t, b"\x1b#8");
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+#[test]
+fn decaln_clears_cell_attributes() {
+    let mut t = term();
+    // Set bold and write some text.
+    feed(&mut t, b"\x1b[1mBold\x1b[0m");
+    // Verify bold flag is set.
+    assert!(
+        t.grid()[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
+
+    // DECALN should reset all attributes.
+    feed(&mut t, b"\x1b#8");
+    assert!(
+        !t.grid()[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
+}

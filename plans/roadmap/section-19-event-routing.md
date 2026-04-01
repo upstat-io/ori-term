@@ -1,9 +1,9 @@
 ---
 section: 19
 title: Event Routing & Render Scheduling
-status: in-progress
+status: complete
 reviewed: false
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 4
 goal: Coordinate systems, 7-layer input dispatch, frame budgeting, cursor blink scheduling
 sections:
@@ -18,7 +18,7 @@ sections:
     status: complete
   - id: "19.4"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 19: Event Routing & Render Scheduling
@@ -218,8 +218,8 @@ Rendering is driven by `about_to_wait()`, not `RedrawRequested`. This avoids WM_
 - [x] Render scheduling: about_to_wait coalescing, 16ms frame budget, cursor blink scheduling (verified 2026-03-29)
 - [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — clean build (verified 2026-03-29)
 - [x] `cargo clippy -p oriterm -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings (verified 2026-03-29)
-- [ ] Unit tests for `search_ui.rs` search key dispatch (gap: simple dispatch logic but no isolated unit tests)
-- [ ] Unit tests for `parse_wheel_delta()` pixel/line delta conversion (gap: edge cases untested)
+- [x] Unit tests for `search_ui.rs` search key dispatch — extracted `search_key_action()` pure function, 11 tests covering all key paths. Added 2026-04-01.
+- [x] Unit tests for `parse_wheel_delta()` pixel/line delta conversion — 12 tests covering LineDelta/PixelDelta, thresholds, rounding, scale. Added 2026-04-01.
 
 **Exit Criteria:** Input events are routed through a strict priority chain with no ambiguity. Render scheduling coalesces dirty state and respects frame budget. Cursor blink is driven by ControlFlow timing, not polling. All coordinate system conversions are correct and DPI-aware.
 

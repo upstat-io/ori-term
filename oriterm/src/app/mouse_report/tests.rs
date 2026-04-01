@@ -1255,3 +1255,101 @@ fn dispatch_utf8_boundary_one_past_max_drops() {
 //   buttons held, the app should synthesize release events for all held
 //   buttons. This prevents apps (vim, tmux) from thinking buttons are still
 //   held after focus returns.
+
+// -- parse_wheel_delta tests --
+
+use winit::dpi::PhysicalPosition;
+use winit::event::MouseScrollDelta;
+
+use super::parse_wheel_delta;
+
+#[test]
+fn wheel_line_delta_scroll_up() {
+    // Positive y = scroll up. On Linux, os_lines = 3, so 1 notch = ceil(3) = 3 lines.
+    let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, 1.0), 16.0);
+    assert_eq!(result, Some((3, true)));
+}
+
+#[test]
+fn wheel_line_delta_scroll_down() {
+    // Negative y = scroll down.
+    let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, -1.0), 16.0);
+    assert_eq!(result, Some((3, false)));
+}
+
+#[test]
+fn wheel_line_delta_zero_returns_none() {
+    let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, 0.0), 16.0);
+    assert_eq!(result, None);
+}
+
+#[test]
+fn wheel_line_delta_fractional_rounds_up() {
+    // 0.5 notch * 3 os_lines = 1.5 → ceil = 2.
+    let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, 0.5), 16.0);
+    assert_eq!(result, Some((2, true)));
+}
+
+#[test]
+fn wheel_line_delta_tiny_produces_at_least_one() {
+    // Very small delta * os_lines = small → ceil.max(1) = at least 1.
+    let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, 0.01), 16.0);
+    assert!(result.is_some());
+    assert!(result.unwrap().0 >= 1);
+}
+
+#[test]
+fn wheel_pixel_delta_scroll_up() {
+    // 32px up with 16px cell height → ceil(32/16) = 2 lines.
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 32.0));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, Some((2, true)));
+}
+
+#[test]
+fn wheel_pixel_delta_scroll_down() {
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -48.0));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, Some((3, false)));
+}
+
+#[test]
+fn wheel_pixel_delta_below_half_cell_returns_none() {
+    // 7px with 16px cell height → 7 < 8 (half cell) → None.
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 7.0));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, None);
+}
+
+#[test]
+fn wheel_pixel_delta_exactly_half_cell_passes() {
+    // Exactly at threshold: |y| < cell_height/2 uses strict less-than,
+    // so 8.0 == 8.0 is NOT filtered. ceil(8/16) = 1.
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 8.0));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, Some((1, true)));
+}
+
+#[test]
+fn wheel_pixel_delta_just_above_half_cell() {
+    // 8.01px with 16px cell → above threshold → ceil(8.01/16) = 1.
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 8.01));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, Some((1, true)));
+}
+
+#[test]
+fn wheel_pixel_delta_fractional_cell_rounds_up() {
+    // 25px with 16px cell → ceil(25/16) = ceil(1.5625) = 2.
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 25.0));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, Some((2, true)));
+}
+
+#[test]
+fn wheel_pixel_delta_large_scroll() {
+    // 200px with 16px cell → ceil(200/16) = ceil(12.5) = 13.
+    let delta = MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 200.0));
+    let result = parse_wheel_delta(delta, 16.0);
+    assert_eq!(result, Some((13, true)));
+}
