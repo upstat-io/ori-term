@@ -69,12 +69,11 @@ const OFF_CLIP_H: usize = 92; //  f32  — clip rect height
 const _: () = assert!(OFF_CLIP_H + 4 == INSTANCE_SIZE);
 
 /// Clip rect that never discards any fragment (used by terminal-tier instances).
-pub const CLIP_UNCLIPPED: [f32; 4] = [
-    f32::NEG_INFINITY,
-    f32::NEG_INFINITY,
-    f32::INFINITY,
-    f32::INFINITY,
-];
+///
+/// Uses large finite values instead of infinity to avoid NaN from
+/// `clip.xy + clip.zw` in the shader (`-INF + INF = NaN`). DX12/HLSL
+/// treats NaN comparisons as `true`, which would discard every fragment.
+pub const CLIP_UNCLIPPED: [f32; 4] = [-100_000.0, -100_000.0, 200_000.0, 200_000.0];
 
 /// Instance kind tag written into the record at offset 64.
 ///

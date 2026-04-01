@@ -2,7 +2,7 @@
 reroute: true
 name: "Font Quality"
 full_name: "Font Rendering Quality"
-status: active
+status: resolved
 order: 2
 ---
 
@@ -36,7 +36,7 @@ draw_prompt_markers, build_cursor, draw_url_hover_underline
 ---
 
 ### Section 02: Advanced Font Rendering Settings
-**File:** `section-02-advanced-settings.md` | **Status:** Not Started
+**File:** `section-02-advanced-settings.md` | **Status:** Complete
 
 ```
 hinting, HintingMode, Full, None, auto-detect, from_scale_factor
@@ -56,7 +56,7 @@ TextContext, scene_convert/mod.rs, scene_append.rs, scene_raster_keys
 ---
 
 ### Section 03: Verification
-**File:** `section-03-verification.md` | **Status:** Not Started
+**File:** `section-03-verification.md` | **Status:** Complete
 
 ```
 test matrix, build, clippy, test-all, build-all, clippy-all

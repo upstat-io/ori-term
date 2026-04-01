@@ -1,14 +1,16 @@
 //! GPU render phase: upload instance buffers, record draw passes, submit.
 //!
-//! Two render paths:
+//! Three render paths:
 //! - **Full render** ([`render_frame`]): all draw calls to a single target.
 //!   Used for offscreen rendering (tab previews, visual regression tests).
-//! - **Cached render** ([`render_to_surface`]): splits content from cursor.
+//! - **Single-pass** ([`render_single_pass`]): everything in one surface pass.
+//!   Used for UI-only dialogs and as a DX12 fallback when the surface format
+//!   differs from the sRGB render format (copy-to-swapchain is unreliable).
+//! - **Cached render** ([`render_cached`]): splits content from cursor.
 //!   On content-change frames, everything except the cursor is rendered to an
 //!   offscreen cache texture. On every frame (including cursor-blink-only),
 //!   the cache is copied to the surface and only the cursor is drawn on top.
-//!   This avoids the full GPU submission on idle blink frames. UI-only dialog
-//!   windows bypass the cache and render straight to the surface.
+//!   This avoids the full GPU submission on idle blink frames.
 
 #[cfg(all(test, feature = "gpu-tests"))]
 use wgpu::TextureView;
@@ -116,8 +118,8 @@ impl WindowRenderer {
         self.uniform_buffer
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
 
-        if self.is_ui_only() {
-            self.render_ui_only(gpu, pipelines, &output);
+        if self.is_ui_only() || !gpu.can_cache_blit() {
+            self.render_single_pass(gpu, pipelines, &output);
         } else {
             self.render_cached(gpu, pipelines, &output, content_changed);
         }
@@ -127,8 +129,11 @@ impl WindowRenderer {
         Ok(())
     }
 
-    /// UI-only path: render everything directly to the surface in a single pass.
-    fn render_ui_only(
+    /// Single-pass path: render everything directly to the surface.
+    ///
+    /// Used for UI-only dialogs and as a fallback when the content-cache blit
+    /// path is unreliable (DX12 with sRGB format reinterpretation).
+    fn render_single_pass(
         &mut self,
         gpu: &GpuState,
         pipelines: &GpuPipelines,
@@ -140,7 +145,7 @@ impl WindowRenderer {
         self.upload_image_instances(device, queue);
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("ui_only_frame_encoder"),
+            label: Some("single_pass_encoder"),
         });
         let surface_view = output.texture.create_view(&TextureViewDescriptor {
             format: Some(gpu.render_format()),
@@ -149,7 +154,7 @@ impl WindowRenderer {
         let clear = self.clear_color();
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("ui_only_surface_pass"),
+                label: Some("single_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &surface_view,
                     resolve_target: None,

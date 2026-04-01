@@ -481,3 +481,33 @@ fn headless_init_succeeds_when_adapter_available() {
         }
     }
 }
+
+#[test]
+fn headless_can_cache_blit_true_when_formats_match() {
+    use super::GpuState;
+
+    match GpuState::new_headless() {
+        Ok(gpu) => {
+            // Headless: surface_format == render_format (both Rgba8UnormSrgb).
+            assert!(gpu.can_cache_blit());
+        }
+        Err(_) => {
+            eprintln!("skipped: no GPU adapter available");
+        }
+    }
+}
+
+#[test]
+fn headless_does_not_use_dcomp() {
+    use super::GpuState;
+
+    match GpuState::new_headless() {
+        Ok(gpu) => {
+            // Headless never uses DirectComposition.
+            assert!(!gpu.uses_dcomp());
+        }
+        Err(_) => {
+            eprintln!("skipped: no GPU adapter available");
+        }
+    }
+}

@@ -167,6 +167,14 @@ pub fn dispatch_request(
             None // Fire-and-forget.
         }
 
+        MuxPdu::SetBoldIsBright { pane_id, enabled } => {
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.terminal().lock().set_bold_is_bright(enabled);
+                ctx.immediate_push.push(pane_id);
+            }
+            None // Fire-and-forget.
+        }
+
         MuxPdu::MarkAllDirty { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 pane.terminal().lock().grid_mut().dirty_mut().mark_all();

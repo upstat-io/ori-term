@@ -52,6 +52,11 @@ pub struct GpuState {
     /// modes (`Mailbox`) over vsync-blocking (`Fifo`) to keep the event
     /// loop responsive during rendering.
     present_mode: wgpu::PresentMode,
+    /// Whether the backend uses DX12 `DirectComposition` for presentation.
+    ///
+    /// True only when the successful init used `dcomp=true`. Callers use this
+    /// to decide whether `WS_EX_NOREDIRECTIONBITMAP` is safe on the window.
+    uses_dcomp: bool,
     /// Vulkan pipeline cache (compiled shaders cached to disk across sessions).
     pub(super) pipeline_cache: Option<wgpu::PipelineCache>,
     pipeline_cache_path: Option<PathBuf>,
@@ -64,29 +69,73 @@ impl GpuState {
     /// (the only path that gives `PreMultiplied` alpha on Windows HWND
     /// swapchains). Otherwise prefers Vulkan (supports pipeline caching for
     /// faster subsequent launches).
-    pub fn new(window: &Arc<Window>, transparent: bool) -> Result<Self, GpuInitError> {
-        // On Windows with transparency, DX12+DComp is the only path for
-        // PreMultiplied alpha.
-        #[cfg(target_os = "windows")]
-        if transparent {
-            if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true, transparent) {
-                return Ok(state);
+    pub fn new(
+        window: &Arc<Window>,
+        transparent: bool,
+        backend: crate::config::GpuBackend,
+    ) -> Result<Self, GpuInitError> {
+        use crate::config::GpuBackend;
+
+        // Explicit backend selection — try only the requested backend.
+        match backend {
+            GpuBackend::Vulkan => {
+                return Self::try_init(window, wgpu::Backends::VULKAN, false, transparent)
+                    .ok_or(GpuInitError);
             }
-            log::warn!("DX12 DirectComposition init failed, falling back to Vulkan");
+            GpuBackend::DirectX12 => {
+                // Try DComp first for transparency, then plain DX12.
+                if transparent {
+                    if let Some(s) = Self::try_init(window, wgpu::Backends::DX12, true, transparent)
+                    {
+                        return Ok(s);
+                    }
+                }
+                return Self::try_init(window, wgpu::Backends::DX12, false, transparent)
+                    .ok_or(GpuInitError);
+            }
+            GpuBackend::Metal => {
+                return Self::try_init(window, wgpu::Backends::METAL, false, transparent)
+                    .ok_or(GpuInitError);
+            }
+            GpuBackend::Auto => {} // Fall through to auto-detection below.
         }
 
-        // Prefer Vulkan — it supports pipeline caching (compiled shaders
-        // persisted to disk).
+        // Auto-detection: platform-native backend first, then fallbacks.
+        // Windows: DX12 → Vulkan → others.
+        // macOS: Metal → others.
+        // Linux: Vulkan → others.
+        #[cfg(target_os = "windows")]
+        {
+            if transparent {
+                if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, true, transparent)
+                {
+                    return Ok(state);
+                }
+                log::warn!("DX12 DirectComposition init failed, trying plain DX12");
+            }
+            if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, false, transparent) {
+                return Ok(state);
+            }
+            log::warn!("DX12 init failed, falling back to Vulkan");
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(state) = Self::try_init(window, wgpu::Backends::METAL, false, transparent) {
+                return Ok(state);
+            }
+            log::warn!("Metal init failed, falling back to other backends");
+        }
+
+        #[cfg(target_os = "linux")]
         if let Some(state) = Self::try_init(window, wgpu::Backends::VULKAN, false, transparent) {
             return Ok(state);
         }
 
-        // Fall back to other primary backends (DX12, Metal).
         if let Some(state) = Self::try_init(window, wgpu::Backends::PRIMARY, false, transparent) {
             return Ok(state);
         }
 
-        // Last resort: secondary backends (GL, etc.).
         Self::try_init(window, wgpu::Backends::SECONDARY, false, transparent).ok_or(GpuInitError)
     }
 
@@ -103,7 +152,6 @@ impl GpuState {
     }
 
     /// Returns the native surface format used for surface configuration.
-    #[allow(dead_code, reason = "surface format query for later sections")]
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.surface_format
     }
@@ -114,9 +162,26 @@ impl GpuState {
     }
 
     /// Returns true if the surface alpha mode supports transparency.
-    #[allow(dead_code, reason = "transparency query for later sections")]
     pub fn supports_transparency(&self) -> bool {
         !matches!(self.surface_alpha_mode, wgpu::CompositeAlphaMode::Opaque)
+    }
+
+    /// Returns true if the backend uses DX12 `DirectComposition`.
+    ///
+    /// When false, windows must NOT have `WS_EX_NOREDIRECTIONBITMAP` set —
+    /// only `DComp` can present to a window without a redirection bitmap.
+    pub fn uses_dcomp(&self) -> bool {
+        self.uses_dcomp
+    }
+
+    /// Whether the content cache blit (copy to swapchain) is reliable.
+    ///
+    /// Returns `true` when `surface_format == render_format` (no sRGB view
+    /// reinterpretation needed). When formats differ, `copy_texture_to_texture`
+    /// copies raw bytes without format conversion, which may silently produce
+    /// blank output on some backends. The renderer falls back to single-pass.
+    pub fn can_cache_blit(&self) -> bool {
+        self.surface_format == self.render_format
     }
 
     /// Whether the surface uses a present mode that requires client-side
@@ -328,6 +393,7 @@ impl GpuState {
             surface_alpha_mode,
             supports_view_formats,
             present_mode,
+            uses_dcomp: dcomp,
             pipeline_cache,
             pipeline_cache_path,
         })
@@ -368,6 +434,7 @@ impl GpuState {
             surface_alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             supports_view_formats: false,
             present_mode: wgpu::PresentMode::Fifo,
+            uses_dcomp: false,
             pipeline_cache,
             pipeline_cache_path,
         })

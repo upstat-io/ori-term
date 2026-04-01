@@ -185,7 +185,7 @@ impl RenderableContent {
     ///
     /// After calling this, the snapshot is empty but the underlying `Vec`
     /// buffers retain their allocations. Used by
-    /// [`Term::renderable_content_into`] to avoid per-frame allocation.
+    /// [`Term::renderable_content_into`](crate::term::Term::renderable_content_into) to avoid per-frame allocation.
     pub fn clear(&mut self) {
         self.cells.clear();
         self.damage.clear();
@@ -265,11 +265,19 @@ impl Iterator for TermDamage<'_> {
 
 /// Resolve a cell's foreground color, applying bold-as-bright and dim.
 ///
+/// When `bold_is_bright` is true, BOLD + ANSI color 0–7 promotes to the
+/// bright variant (8–15). When false, bold only affects font weight.
+///
 /// When both BOLD and DIM are set, DIM takes priority — the base color is
 /// dimmed without bright promotion. This matches Alacritty's behavior and
 /// avoids the inconsistency where BOLD and DIM would cancel each other on
 /// Named colors but stack on Indexed colors.
-pub(super) fn resolve_fg(color: Color, flags: CellFlags, palette: &Palette) -> Rgb {
+pub(super) fn resolve_fg(
+    color: Color,
+    flags: CellFlags,
+    palette: &Palette,
+    bold_is_bright: bool,
+) -> Rgb {
     let is_bold = flags.contains(CellFlags::BOLD);
     let is_dim = flags.contains(CellFlags::DIM);
 
@@ -285,7 +293,7 @@ pub(super) fn resolve_fg(color: Color, flags: CellFlags, palette: &Palette) -> R
             if is_dim {
                 // DIM takes priority — dim the base color, no bright promotion.
                 dim_rgb(palette.resolve(color))
-            } else if is_bold && idx < 8 {
+            } else if bold_is_bright && is_bold && idx < 8 {
                 // Bold-as-bright: promote ANSI 0–7 to 8–15.
                 palette.resolve(Color::Indexed(idx + 8))
             } else {
@@ -296,7 +304,7 @@ pub(super) fn resolve_fg(color: Color, flags: CellFlags, palette: &Palette) -> R
             if is_dim {
                 // DIM takes priority over BOLD-as-bright.
                 palette.resolve(Color::Named(name.to_dim()))
-            } else if is_bold {
+            } else if bold_is_bright && is_bold {
                 palette.resolve(Color::Named(name.to_bright()))
             } else {
                 palette.resolve(Color::Named(name))

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
 
+use crossbeam_channel::Sender;
 use oriterm_core::{EventListener, FairMutex, Term};
 
 /// Maximum bytes parsed under one lease acquisition.
@@ -62,15 +63,23 @@ pub struct PtyEventLoop<T: EventListener> {
     /// Raw VTE parser for shell integration sequences (OSC 7, 133, etc.)
     /// that the high-level processor drops.
     raw_parser: vte::Parser,
+    /// Forwards raw PTY bytes to the Terminal IO thread for independent parsing.
+    /// `None` when no IO thread is attached (backward compatibility).
+    byte_tx: Option<Sender<Vec<u8>>>,
 }
 
 impl<T: EventListener> PtyEventLoop<T> {
     /// Create a new event loop with PTY reader and terminal state.
+    /// Create a new event loop with PTY reader and terminal state.
+    ///
+    /// `byte_tx` optionally forwards raw PTY bytes to the Terminal IO thread.
+    /// Pass `None` when no IO thread is attached (tests, backward compat).
     pub fn new(
         terminal: Arc<FairMutex<Term<T>>>,
         reader: Box<dyn Read + Send>,
         shutdown: Arc<AtomicBool>,
         mode_cache: Arc<AtomicU32>,
+        byte_tx: Option<Sender<Vec<u8>>>,
     ) -> Self {
         Self {
             terminal,
@@ -79,6 +88,7 @@ impl<T: EventListener> PtyEventLoop<T> {
             mode_cache,
             processor: vte::ansi::Processor::new(),
             raw_parser: vte::Parser::new(),
+            byte_tx,
         }
     }
 
@@ -140,6 +150,11 @@ impl<T: EventListener> PtyEventLoop<T> {
                 }
             };
             unprocessed += n;
+
+            // Forward raw bytes to the IO thread before local parsing.
+            if let Some(ref tx) = self.byte_tx {
+                let _ = tx.send(buf[unprocessed - n..unprocessed].to_vec());
+            }
 
             {
                 let preview_start = unprocessed.saturating_sub(n);

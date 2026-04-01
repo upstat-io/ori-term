@@ -9,6 +9,7 @@
 //! `Pane` is the atomic per-shell unit in the mux model — the mux layer
 //! owns panes directly with no higher-level grouping.
 
+pub(crate) mod io_thread;
 mod mark_cursor;
 mod selection;
 mod shutdown;
@@ -26,6 +27,7 @@ use oriterm_core::{FairMutex, SearchState, Selection, StableRowIndex, Term};
 pub use mark_cursor::MarkCursor;
 
 use crate::mux_event::MuxEventProxy;
+use crate::pane::io_thread::PaneIoHandle;
 use crate::pty::{Msg, PtyControl, PtyHandle};
 
 /// Sends input to the PTY and commands to the reader thread.
@@ -90,6 +92,8 @@ pub struct PaneParts {
     pub wakeup_pending: Arc<AtomicBool>,
     /// Mode bits cache (lock-free).
     pub mode_cache: Arc<AtomicU32>,
+    /// Terminal IO thread handle (owns command + byte channels).
+    pub io_handle: PaneIoHandle,
     /// Initial PTY dimensions (rows, cols) from spawn.
     pub initial_rows: u16,
     /// Initial PTY columns from spawn.
@@ -124,6 +128,12 @@ pub struct Pane {
         reason = "holds JoinHandle for thread lifetime — detached on drop"
     )]
     writer_thread: Option<JoinHandle<()>>,
+    /// Terminal IO thread handle (command channel, byte channel, join handle).
+    ///
+    /// Drops cleanly on pane close via `PaneIoHandle::Drop`, which sends
+    /// `Shutdown` and joins the thread.
+    #[allow(dead_code, reason = "owned for Drop lifetime — read in section 02+")]
+    io_handle: PaneIoHandle,
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,
     /// Set by reader thread when new content is available.
@@ -180,6 +190,7 @@ impl Pane {
             pty_control: parts.pty_control,
             reader_thread: Some(parts.reader_thread),
             writer_thread: Some(parts.writer_thread),
+            io_handle: parts.io_handle,
             pty: parts.pty,
             grid_dirty: parts.grid_dirty,
             wakeup_pending: parts.wakeup_pending,

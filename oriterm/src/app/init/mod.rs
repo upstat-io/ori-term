@@ -31,12 +31,19 @@ impl App {
 
         // Build UI window config from the user's config.
         let opacity = self.config.window.effective_opacity();
+        // DComp transparency (WS_EX_NOREDIRECTIONBITMAP) only works on DX12.
+        // Vulkan has no DComp path — setting it makes the window invisible.
+        let dcomp_available = matches!(
+            self.config.rendering.gpu_backend,
+            crate::config::GpuBackend::Auto | crate::config::GpuBackend::DirectX12
+        );
         let window_config = WindowConfig {
             title: "ori".into(),
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
             decoration: decoration_to_mode(self.config.window.decorations),
+            use_compositor_surface: dcomp_available && opacity < 1.0,
             ..WindowConfig::default()
         };
 
@@ -49,8 +56,24 @@ impl App {
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
         let t_gpu_start = std::time::Instant::now();
-        let gpu = GpuState::new(&window_arc, window_config.transparent)?;
+        let gpu = GpuState::new(
+            &window_arc,
+            window_config.transparent,
+            self.config.rendering.gpu_backend,
+        )?;
         let t_gpu = t_gpu_start.elapsed();
+
+        // If the window was created for DComp but the GPU fell back to a
+        // non-DComp backend, remove WS_EX_NOREDIRECTIONBITMAP so the window
+        // is visible. Without this, Vulkan or plain DX12 inherit a compositor-
+        // surface window they cannot present to.
+        if window_config.use_compositor_surface && !gpu.uses_dcomp() {
+            log::warn!(
+                "GPU did not use DirectComposition — clearing compositor surface flag \
+                 to prevent invisible window"
+            );
+            oriterm_ui::window::clear_compositor_surface_flag(&window_arc);
+        }
 
         // 4. Allocate a GUI-local window ID (mux is a flat pane server).
         //    In daemon mode, the window may already be claimed via `--window`.
@@ -188,7 +211,15 @@ impl App {
             .colors
             .resolve_theme(crate::platform::theme::system_theme);
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-        gpu.clear_surface(window.surface(), palette.background(), opacity);
+        // Clamp opacity to 1.0 when the surface doesn't support alpha.
+        // On Vulkan/opaque fallback, sub-1.0 opacity would produce a
+        // broken first frame before the steady-state render path clamps it.
+        let clear_opacity = if gpu.supports_transparency() {
+            opacity
+        } else {
+            1.0
+        };
+        gpu.clear_surface(window.surface(), palette.background(), clear_opacity);
         window.set_visible(true);
         // On Linux (X11/Wayland), a newly created window is not guaranteed to
         // receive input focus. Explicitly request it so the terminal is
@@ -413,6 +444,9 @@ impl App {
 
         // Apply image protocol config.
         mux.set_image_config(pane_id, self.config.terminal.image_config());
+
+        // Apply bold-is-bright config.
+        mux.set_bold_is_bright(pane_id, self.config.behavior.bold_is_bright);
 
         // Local tab creation.
         let tab_id = self.session.alloc_tab_id();

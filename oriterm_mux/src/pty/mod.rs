@@ -8,9 +8,6 @@
 mod event_loop;
 mod spawn;
 
-#[cfg(unix)]
-pub mod signal;
-
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

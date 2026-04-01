@@ -56,6 +56,9 @@ pub(crate) struct TermWindow {
     /// Whether the window is currently maximized.
     #[allow(dead_code, reason = "maximized state for Section 7")]
     is_maximized: bool,
+    /// Whether the GPU surface supports per-pixel alpha for compositor
+    /// blending. False on Vulkan Windows (Opaque-only HWND swapchains).
+    surface_has_alpha: bool,
     /// True when `surface_config` dimensions were updated but
     /// `surface.configure()` was deferred. The next render pass must call
     /// [`apply_pending_surface_resize`] before acquiring a texture.
@@ -86,9 +89,19 @@ impl TermWindow {
         let size_px = (phys_size.width, phys_size.height);
         let scale_factor = ScaleFactor::new(window.scale_factor());
 
-        // Apply vibrancy/blur when transparent background is requested.
+        // Apply vibrancy/blur only when the surface supports per-pixel alpha.
+        // Vulkan HWND swapchains on Windows only support Opaque alpha — DWM
+        // acrylic reads the zeroed alpha channel and makes all content invisible.
+        let surface_has_alpha = gpu.supports_transparency();
         if config.transparent && config.blur {
-            apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
+            if surface_has_alpha {
+                apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
+            } else {
+                log::warn!(
+                    "transparency: blur requires per-pixel alpha (DX12 on Windows). \
+                     Current backend does not support it — rendering opaque."
+                );
+            }
         }
 
         // Enable IME input for CJK and other complex input methods.
@@ -103,6 +116,7 @@ impl TermWindow {
             size_px,
             scale_factor,
             is_maximized: false,
+            surface_has_alpha,
             surface_stale: false,
         })
     }
@@ -124,7 +138,8 @@ impl TermWindow {
         let size_px = (phys_size.width, phys_size.height);
         let scale_factor = ScaleFactor::new(window.scale_factor());
 
-        if config.transparent && config.blur {
+        let surface_has_alpha = gpu.supports_transparency();
+        if config.transparent && config.blur && surface_has_alpha {
             apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
@@ -139,6 +154,7 @@ impl TermWindow {
             size_px,
             scale_factor,
             is_maximized: false,
+            surface_has_alpha,
             surface_stale: false,
         })
     }
@@ -158,6 +174,13 @@ impl TermWindow {
     /// Returns a reference to the underlying winit [`Window`].
     pub(crate) fn window(&self) -> &Window {
         &self.window
+    }
+
+    /// Whether the surface supports per-pixel alpha compositing.
+    ///
+    /// When false, blur/opacity is suppressed and the window renders opaque.
+    pub(crate) fn surface_has_alpha(&self) -> bool {
+        self.surface_has_alpha
     }
 
     /// Returns the wgpu rendering surface.
@@ -269,7 +292,9 @@ impl TermWindow {
     ///
     /// Called on config reload when opacity or blur settings change.
     pub(crate) fn set_transparency(&self, opacity: f32, blur: bool) {
-        apply_transparency(&self.window, opacity, blur, DEFAULT_BLUR_TINT);
+        if self.surface_has_alpha {
+            apply_transparency(&self.window, opacity, blur, DEFAULT_BLUR_TINT);
+        }
     }
 
     /// Show or hide the window.

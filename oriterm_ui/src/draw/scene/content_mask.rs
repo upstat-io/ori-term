@@ -19,14 +19,14 @@ pub struct ContentMask {
 
 impl ContentMask {
     /// No clipping, full opacity — the entire viewport is visible.
+    ///
+    /// Uses large finite values instead of infinity. Infinity would cause
+    /// NaN in the GPU shader's `clip.xy + clip.zw` computation (`-INF + INF
+    /// = NaN`), and DX12/HLSL treats NaN comparisons as `true`, discarding
+    /// every fragment.
     pub fn unclipped() -> Self {
         Self {
-            clip: Rect::from_ltrb(
-                f32::NEG_INFINITY,
-                f32::NEG_INFINITY,
-                f32::INFINITY,
-                f32::INFINITY,
-            ),
+            clip: Rect::new(-100_000.0, -100_000.0, 200_000.0, 200_000.0),
             opacity: 1.0,
         }
     }
