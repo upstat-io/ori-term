@@ -37,6 +37,7 @@ fn build_event_loop(
         reader,
         Arc::clone(&shutdown),
         Arc::clone(&mode_cache),
+        None,
     );
 
     (event_loop, terminal, shutdown, mode_cache)
@@ -573,5 +574,72 @@ fn sync_mode_delivers_content_atomically() {
         "not all sync lines found in grid after ESU replay. \
          found: {found:?}, expected: {expected:?}. \
          Mode 2026 sync buffer may not have been replayed correctly",
+    );
+}
+
+/// Verifies that byte forwarding sends raw bytes to the IO thread channel.
+#[test]
+fn byte_forwarding_to_io_thread() {
+    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
+
+    let terminal = Arc::new(FairMutex::new(Term::new(
+        24,
+        80,
+        1000,
+        Theme::default(),
+        VoidListener,
+    )));
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
+    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+
+    let event_loop = PtyEventLoop::new(
+        Arc::clone(&terminal),
+        Box::new(pipe_reader),
+        Arc::clone(&shutdown),
+        Arc::clone(&mode_cache),
+        Some(byte_tx),
+    );
+    let join = event_loop.spawn().expect("spawn event loop");
+
+    // Write data to the PTY pipe.
+    pipe_writer.write_all(b"hello io thread").expect("write");
+    drop(pipe_writer); // EOF.
+
+    join.join().expect("event loop should exit on EOF");
+
+    // Collect all forwarded bytes.
+    let mut forwarded = Vec::new();
+    while let Ok(chunk) = byte_rx.try_recv() {
+        forwarded.extend_from_slice(&chunk);
+    }
+
+    assert_eq!(
+        &forwarded, b"hello io thread",
+        "forwarded bytes should match what was written to the PTY pipe"
+    );
+}
+
+/// Verifies that `byte_tx: None` works without panics (backward compat).
+#[test]
+fn byte_forwarding_none_when_no_channel() {
+    let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
+
+    let (event_loop, terminal, _shutdown, _mode) = build_event_loop(Box::new(pipe_reader));
+
+    let join = event_loop.spawn().expect("spawn event loop");
+
+    pipe_writer.write_all(b"no forwarding").expect("write");
+    drop(pipe_writer);
+
+    join.join().expect("event loop should exit on EOF");
+
+    // Verify the old path still worked (text in grid).
+    let term = terminal.lock();
+    let grid = term.grid();
+    let text: String = (0..80).map(|col| grid[Line(0)][Column(col)].ch).collect();
+    assert!(
+        text.contains("no forwarding"),
+        "old parsing path should still work with byte_tx=None"
     );
 }

@@ -1,26 +1,43 @@
-//! Terminal IO thread — owns `Term<T>` and processes commands + PTY bytes.
+//! Terminal IO thread — owns `Term<T>` exclusively and processes VTE bytes.
 //!
-//! In this initial scaffold, the thread drains channels without processing.
-//! Section 02 adds `Term` ownership and VTE parsing.
-//! Section 03 adds snapshot production.
+//! The IO thread receives raw PTY bytes from the reader thread via a channel,
+//! parses them through both VTE processors, and maintains terminal state.
+//! Commands from the main thread (resize, scroll, theme, etc.) are processed
+//! between parse chunks to stay responsive under sustained output.
+//!
+//! Section 03 adds snapshot production; section 05+ adds command handling.
 
 mod commands;
+pub(crate) mod event_proxy;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
 use std::{fmt, io};
 
 use crossbeam_channel::{Receiver, Sender};
 
+use oriterm_core::{EventListener, Term};
+
 pub use commands::PaneIoCommand;
 
-/// Terminal IO thread — processes commands and PTY bytes.
+use crate::shell_integration::interceptor::RawInterceptor;
+
+/// Maximum bytes parsed before re-checking for commands.
 ///
-/// In this scaffold phase, the thread drains both channels without acting
-/// on the data. Section 02 adds `Term` ownership and VTE parsing;
-/// section 03 adds snapshot production.
-pub struct PaneIoThread {
+/// Matches `PtyEventLoop::MAX_LOCKED_PARSE` (64 KB). A single 1 MB forwarded
+/// read is sliced into chunks at this boundary so resize/copy commands stay
+/// responsive under sustained output.
+const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
+
+/// Terminal IO thread — owns `Term<T>` and processes commands + PTY bytes.
+///
+/// Generic over `T: EventListener` so the IO thread's `Term` can use
+/// `IoThreadEventProxy` (suppresses metadata during dual-Term migration)
+/// while the old path uses `MuxEventProxy`.
+pub struct PaneIoThread<T: EventListener> {
+    /// The terminal state machine — exclusively owned by this thread.
+    terminal: Term<T>,
     /// Receives commands from the main thread.
     cmd_rx: Receiver<PaneIoCommand>,
     /// Receives raw PTY bytes from the reader thread.
@@ -30,26 +47,34 @@ pub struct PaneIoThread {
     /// Wakeup callback — signals the main thread that new state is available.
     #[allow(dead_code, reason = "called in section 03 after snapshot production")]
     wakeup: Arc<dyn Fn() + Send + Sync>,
+    /// High-level VTE parser (routes to `Handler` trait methods).
+    processor: vte::ansi::Processor,
+    /// Raw VTE parser for shell integration sequences (OSC 7, 133, etc.).
+    raw_parser: vte::Parser,
+    /// Lock-free mode cache (updated after parsing, read by main thread).
+    mode_cache: Arc<AtomicU32>,
 }
 
-impl PaneIoThread {
+impl<T: EventListener> PaneIoThread<T> {
     /// Run the IO thread message loop.
     ///
-    /// Drains commands first (priority), then processes one batch of PTY
-    /// bytes. Blocks via `crossbeam_channel::select!` when both channels
-    /// are empty. Exits on `Shutdown` command or channel disconnect.
+    /// Priority: drain commands first, then process pending bytes with
+    /// bounded chunking. Blocks via `crossbeam_channel::select!` when both
+    /// channels are empty. Exits on `Shutdown` command or channel disconnect.
     pub fn run(mut self) {
         loop {
             // 1. Drain all pending commands (priority over bytes).
-            while let Ok(cmd) = self.cmd_rx.try_recv() {
-                if matches!(cmd, PaneIoCommand::Shutdown) {
-                    self.shutdown.store(true, Ordering::Release);
-                    return;
-                }
-                self.handle_command(cmd);
+            self.drain_commands();
+            if self.shutdown.load(Ordering::Acquire) {
+                return;
             }
 
-            // 2. Block on either channel when idle.
+            // 2. Process available bytes (non-blocking drain with chunking).
+            self.process_pending_bytes();
+
+            // TODO (section 03): produce snapshot + send wakeup here.
+
+            // 3. Block on either channel when idle.
             crossbeam_channel::select! {
                 recv(self.cmd_rx) -> msg => match msg {
                     Ok(PaneIoCommand::Shutdown) => {
@@ -57,11 +82,11 @@ impl PaneIoThread {
                         return;
                     }
                     Ok(cmd) => self.handle_command(cmd),
-                    Err(_) => return, // channel disconnected
+                    Err(_) => return,
                 },
                 recv(self.byte_rx) -> msg => match msg {
                     Ok(bytes) => self.handle_bytes(&bytes),
-                    Err(_) => return, // channel disconnected
+                    Err(_) => return,
                 },
             }
         }
@@ -74,27 +99,89 @@ impl PaneIoThread {
             .spawn(move || self.run())
     }
 
+    /// Drain all pending commands from the command channel.
+    fn drain_commands(&mut self) {
+        while let Ok(cmd) = self.cmd_rx.try_recv() {
+            if matches!(cmd, PaneIoCommand::Shutdown) {
+                self.shutdown.store(true, Ordering::Release);
+                return;
+            }
+            self.handle_command(cmd);
+        }
+    }
+
+    /// Process all pending byte messages with bounded chunking.
+    ///
+    /// Each byte message is sliced into [`MAX_PARSE_CHUNK`]-sized pieces.
+    /// Between chunks, commands are drained so resize/scroll stay responsive
+    /// during sustained output.
+    fn process_pending_bytes(&mut self) {
+        while let Ok(bytes) = self.byte_rx.try_recv() {
+            let mut offset = 0;
+            while offset < bytes.len() {
+                let end = (offset + MAX_PARSE_CHUNK).min(bytes.len());
+                self.handle_bytes(&bytes[offset..end]);
+                offset = end;
+                // Re-check for priority commands between chunks.
+                self.drain_commands();
+                if self.shutdown.load(Ordering::Acquire) {
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Parse a chunk of PTY output through both VTE parsers.
+    ///
+    /// Adapted from `PtyEventLoop::parse_chunk()` — runs the raw interceptor
+    /// for shell integration, then the high-level processor, then deferred
+    /// prompt marking and marker pruning.
+    fn handle_bytes(&mut self, bytes: &[u8]) {
+        let evicted_before = self.terminal.grid().total_evicted();
+
+        // 1. Raw interceptor for shell integration (OSC 7, 133, etc.).
+        {
+            let mut interceptor = RawInterceptor::new(&mut self.terminal);
+            self.raw_parser.advance(&mut interceptor, bytes);
+        }
+
+        // 2. High-level VTE processor.
+        self.processor.advance(&mut self.terminal, bytes);
+
+        // 3. Deferred prompt marking.
+        if self.terminal.prompt_mark_pending() {
+            self.terminal.mark_prompt_row();
+        }
+        if self.terminal.command_start_mark_pending() {
+            self.terminal.mark_command_start_row();
+        }
+        if self.terminal.output_start_mark_pending() {
+            self.terminal.mark_output_start_row();
+        }
+
+        // 4. Prune prompt markers invalidated by scrollback eviction.
+        let newly_evicted = self.terminal.grid().total_evicted() - evicted_before;
+        if newly_evicted > 0 {
+            self.terminal.prune_prompt_markers(newly_evicted);
+        }
+
+        // 5. Update mode cache for lock-free queries from main thread.
+        self.mode_cache
+            .store(self.terminal.mode().bits(), Ordering::Release);
+    }
+
     #[allow(
         clippy::needless_pass_by_ref_mut,
         clippy::needless_pass_by_value,
         clippy::unused_self,
-        reason = "placeholder — &mut self and owned cmd used in sections 02-06"
+        reason = "placeholder — &mut self and owned cmd used in sections 05-06"
     )]
     fn handle_command(&mut self, cmd: PaneIoCommand) {
         log::trace!("IO thread: command {cmd:?}");
     }
-
-    #[allow(
-        clippy::needless_pass_by_ref_mut,
-        clippy::unused_self,
-        reason = "placeholder — &mut self used in section 02"
-    )]
-    fn handle_bytes(&mut self, _bytes: &[u8]) {
-        // Filled in section 02.
-    }
 }
 
-impl fmt::Debug for PaneIoThread {
+impl<T: EventListener> fmt::Debug for PaneIoThread<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PaneIoThread")
             .field("shutdown", &self.shutdown.load(Ordering::Relaxed))
@@ -106,7 +193,7 @@ impl fmt::Debug for PaneIoThread {
 ///
 /// Provides non-blocking command sending and byte forwarding. The IO thread
 /// processes commands in order and (in later sections) produces snapshots.
-/// Created by [`PaneIoThread::new_with_handle()`].
+/// Created by [`new_with_handle()`].
 pub struct PaneIoHandle {
     /// Send commands to the IO thread.
     cmd_tx: Sender<PaneIoCommand>,
@@ -116,9 +203,6 @@ pub struct PaneIoHandle {
     join: Option<JoinHandle<()>>,
 }
 
-/// Send a command to the IO thread (non-blocking).
-///
-/// Logs a warning if the IO thread has already exited.
 impl PaneIoHandle {
     /// Send a command to the IO thread.
     pub fn send_command(&self, cmd: PaneIoCommand) {
@@ -165,17 +249,23 @@ impl fmt::Debug for PaneIoHandle {
 /// Channels are created here and split between the two sides.
 /// The caller spawns the thread via [`PaneIoThread::spawn()`], then
 /// sets the join handle on the returned `PaneIoHandle`.
-pub fn new_with_handle(
+pub fn new_with_handle<T: EventListener>(
+    terminal: Term<T>,
+    mode_cache: Arc<AtomicU32>,
     shutdown: Arc<AtomicBool>,
     wakeup: Arc<dyn Fn() + Send + Sync>,
-) -> (PaneIoThread, PaneIoHandle) {
+) -> (PaneIoThread<T>, PaneIoHandle) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
     let thread = PaneIoThread {
+        terminal,
         cmd_rx,
         byte_rx,
         shutdown,
         wakeup,
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache,
     };
     let handle = PaneIoHandle {
         cmd_tx,
