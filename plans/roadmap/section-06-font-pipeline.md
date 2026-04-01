@@ -998,7 +998,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 ### Built-in Glyph Coverage Gaps vs Reference Repos
 - [x] **Symbols for Legacy Computing (U+1FB00-1FB9F):** Implemented sextants, smooth mosaics, edge triangles, fractional blocks, shade patterns, checkerboard fills, diagonal fills, and combined triangles. 160 codepoints covered in `legacy_computing/` (mod.rs + smooth_mosaics.rs + triangles.rs). Also widened `RasterKey.glyph_id` from u16 to u32 for SMP support. Done 2026-04-01.
 - [x] **Branch drawing glyphs:** Implemented 62 Kitty/Ghostty PUA characters (U+F5D0–U+F60D) in `branch.rs`. Horizontal/vertical lines, fading lines, quarter-circle arcs, line+arc combos, and branch node circles (filled/outline) with 4-directional connectors. Done 2026-04-01.
-- [ ] **Geometric shapes (U+25A0-U+25FF):** Ghostty has `geometric_shapes.zig`. ori_term relies on fonts for these.
+- [x] **Geometric shapes (U+25A0-U+25FF):** Implemented ~50 commonly used shapes in `geometric_shapes.rs` — squares, triangles (4 directions, filled/outlined), diamonds, circles, half circles, corner triangles, and corner triangle outlines. Selective `is_builtin_geometric()` predicate ensures unhandled shapes fall through to font rendering. Done 2026-04-01.
 
 ### Rendering Architecture Note
 - [ ] **No dual-source blending for LCD subpixel.** Current mix() approach passes bg_color as instance data. True dual-source blending (WezTerm approach) is more optically correct but requires wgpu `DUAL_SOURCE_BLENDING` feature. Noted as potential future upgrade if quality demands it.
