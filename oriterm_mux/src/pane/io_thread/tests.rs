@@ -179,169 +179,145 @@ fn debug_impls() {
 
 // --- Section 02 VTE parsing tests ---
 
-/// VTE sequences are parsed by the IO thread: SGR red sets cell foreground.
+/// Helper: create a `PaneIoThread` for synchronous testing (no spawning).
+fn make_sync_thread() -> PaneIoThread<VoidListener> {
+    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    PaneIoThread {
+        terminal: make_term(),
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(|| {}),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+    }
+}
+
+/// Helper: create a `PaneIoThread` with a custom `Term` for synchronous testing.
+fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidListener> {
+    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    PaneIoThread {
+        terminal: term,
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(|| {}),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+    }
+}
+
+/// VTE sequences are parsed: SGR 31 sets cell foreground to ANSI red.
 #[test]
 fn handle_bytes_advances_vte() {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
-    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+    let mut t = make_sync_thread();
 
-    let thread = PaneIoThread {
-        terminal: make_term(),
-        cmd_rx,
-        byte_rx,
-        shutdown: Arc::clone(&shutdown),
-        wakeup,
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache,
-    };
-    let join = thread.spawn().expect("failed to spawn IO thread");
+    // SGR 31 (red foreground) + character.
+    t.handle_bytes(b"\x1b[31mR");
 
-    // SGR 31 (red foreground) + text.
-    byte_tx.send(b"\x1b[31mR".to_vec()).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
-    let _ = join.join();
-
-    // If parsing worked, the shutdown flag is set and no panics occurred.
-    assert!(shutdown.load(Ordering::Acquire));
+    let grid = t.terminal.grid();
+    let cell = &grid[Line(0)][Column(0)];
+    assert_eq!(cell.ch, 'R');
+    assert_eq!(
+        cell.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red),
+        "SGR 31 should set foreground to ANSI red"
+    );
 }
 
-/// Shell integration sequences (OSC 133) are processed on the IO thread.
+/// Shell integration sequences (OSC 133;A) create prompt markers.
 #[test]
 fn handle_bytes_shell_integration() {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
-    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+    let mut t = make_sync_thread();
 
-    let thread = PaneIoThread {
-        terminal: make_term(),
-        cmd_rx,
-        byte_rx,
-        shutdown: Arc::clone(&shutdown),
-        wakeup,
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache,
-    };
-    let join = thread.spawn().expect("failed to spawn IO thread");
+    let markers_before = t.terminal.prompt_markers().len();
 
-    // OSC 133;A (prompt start) — triggers shell integration processing.
-    byte_tx.send(b"\x1b]133;A\x07".to_vec()).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
-    let _ = join.join();
+    // OSC 133;A (prompt start) triggers deferred prompt marking.
+    t.handle_bytes(b"\x1b]133;A\x07");
 
-    assert!(shutdown.load(Ordering::Acquire));
+    let markers_after = t.terminal.prompt_markers().len();
+    assert!(
+        markers_after > markers_before,
+        "prompt markers should increase after OSC 133;A: before={markers_before}, after={markers_after}"
+    );
 }
 
-/// Mode cache is updated after VTE parsing (e.g., alt screen enable).
+/// Mode cache is updated after VTE parsing (alt screen enable).
 #[test]
 fn mode_cache_updated_after_parse() {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let mode_cache_clone = Arc::clone(&mode_cache);
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
-    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
-
-    let initial_mode = mode_cache.load(Ordering::Acquire);
-
-    let thread = PaneIoThread {
-        terminal: make_term(),
-        cmd_rx,
-        byte_rx,
-        shutdown: Arc::clone(&shutdown),
-        wakeup,
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache: mode_cache_clone,
-    };
-    let join = thread.spawn().expect("failed to spawn IO thread");
+    let mut t = make_sync_thread();
+    let initial_mode = t.mode_cache.load(Ordering::Acquire);
 
     // Enable alt screen (Mode 1049).
-    byte_tx.send(b"\x1b[?1049h".to_vec()).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
-    let _ = join.join();
+    t.handle_bytes(b"\x1b[?1049h");
 
-    let updated_mode = mode_cache.load(Ordering::Acquire);
+    let updated_mode = t.mode_cache.load(Ordering::Acquire);
     assert_ne!(
         initial_mode, updated_mode,
         "mode cache should change after enabling alt screen"
     );
 }
 
-/// Large byte batches are chunked at 64KB boundaries with command checks.
+/// `handle_bytes_chunked` drains commands between 64KB chunks.
+///
+/// Pre-queues Shutdown, then passes a 200KB buffer. Proves early exit by
+/// comparing scrollback eviction against a full-parse baseline: if
+/// `drain_commands()` fires between chunks, fewer lines are evicted.
 #[test]
-fn process_pending_bytes_chunks_with_commands() {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
-    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+fn handle_bytes_chunked_drains_commands() {
+    // Baseline: parse all 200KB without Shutdown to measure full eviction.
+    let full_eviction = {
+        let mut t = make_sync_thread();
+        let big = vec![b'A'; 200_000];
+        t.handle_bytes_chunked(&big);
+        t.terminal.grid().total_evicted()
+    };
 
-    let thread = PaneIoThread {
+    // Test: pre-queue Shutdown before parsing.
+    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let shutdown = Arc::new(AtomicBool::new(false));
+
+    let mut t = PaneIoThread {
         terminal: make_term(),
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
-        wakeup,
+        wakeup: Arc::new(|| {}),
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache,
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
     };
-    let join = thread.spawn().expect("failed to spawn IO thread");
 
-    // Send a 200KB byte buffer (will be chunked into ~3 pieces at 64KB).
-    let big = vec![b'X'; 200_000];
-    byte_tx.send(big).unwrap();
-
-    // Inject a Resize command while the big buffer is being processed.
-    // The chunking mechanism should pick it up between 64KB chunks.
-    cmd_tx
-        .send(PaneIoCommand::Resize {
-            rows: 30,
-            cols: 100,
-        })
-        .unwrap();
-
-    std::thread::sleep(Duration::from_millis(50));
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
-    let _ = join.join();
+    let big = vec![b'A'; 200_000];
+    t.handle_bytes_chunked(&big);
 
-    assert!(shutdown.load(Ordering::Acquire));
+    assert!(
+        shutdown.load(Ordering::Acquire),
+        "shutdown should be set by drain_commands() between chunks"
+    );
+
+    let partial_eviction = t.terminal.grid().total_evicted();
+    assert!(
+        partial_eviction < full_eviction,
+        "early exit should parse fewer lines than full buffer: \
+         partial={partial_eviction}, full={full_eviction}"
+    );
 }
 
 /// IO thread processes text visible in the grid (end-to-end byte → grid).
 #[test]
 fn bytes_appear_in_terminal_grid() {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
+    let mut t = make_sync_thread();
 
-    // Synchronous test: create a PaneIoThread, call handle_bytes directly.
-    let (_, unused_cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
-    let (_, unused_byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
-    let mut thread = PaneIoThread {
-        terminal: make_term(),
-        cmd_rx: unused_cmd_rx,
-        byte_rx: unused_byte_rx,
-        shutdown,
-        wakeup,
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache,
-    };
+    t.handle_bytes(b"hello world");
 
-    thread.handle_bytes(b"hello world");
-
-    let grid = thread.terminal.grid();
+    let grid = t.terminal.grid();
     let first_row = &grid[Line(0)];
     let text: String = (0..11).map(|col| first_row[Column(col)].ch).collect();
     assert_eq!(text, "hello world");
@@ -350,38 +326,27 @@ fn bytes_appear_in_terminal_grid() {
 /// Prompt markers evicted from scrollback are pruned.
 #[test]
 fn handle_bytes_prunes_evicted_markers() {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
-
     // Small grid: 5 lines, 10 scrollback — markers will be evicted quickly.
     let term = Term::new(5, 80, 10, Theme::default(), VoidListener);
-
-    let mut thread = PaneIoThread {
-        terminal: term,
-        cmd_rx: crossbeam_channel::unbounded().1,
-        byte_rx: crossbeam_channel::unbounded().1,
-        shutdown,
-        wakeup,
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache,
-    };
+    let mut t = make_sync_thread_with_term(term);
 
     // Insert a prompt marker.
-    thread.handle_bytes(b"\x1b]133;A\x07");
-    let markers_before = thread.terminal.prompt_markers().len();
+    t.handle_bytes(b"\x1b]133;A\x07");
+    let markers_before = t.terminal.prompt_markers().len();
+    assert!(
+        markers_before > 0,
+        "prompt marker should exist after OSC 133;A"
+    );
 
     // Flood enough output to evict the marker from scrollback.
     // 5 visible + 10 scrollback = 15 lines capacity. Write 30 lines.
     for _ in 0..30 {
-        thread.handle_bytes(b"AAAAAAAAAA\r\n");
+        t.handle_bytes(b"AAAAAAAAAA\r\n");
     }
 
-    let markers_after = thread.terminal.prompt_markers().len();
-    // The marker should have been pruned (or at least not grown).
+    let markers_after = t.terminal.prompt_markers().len();
     assert!(
-        markers_after <= markers_before,
+        markers_after < markers_before,
         "markers should be pruned after eviction: before={markers_before}, after={markers_after}"
     );
 }

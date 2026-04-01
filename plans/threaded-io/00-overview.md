@@ -222,7 +222,7 @@ Phase 5 - Verification
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Terminal IO Thread Scaffold | `section-01-io-thread-scaffold.md` | Complete |
-| 02 | VTE Parsing Migration | `section-02-vte-migration.md` | Not Started |
+| 02 | VTE Parsing Migration | `section-02-vte-migration.md` | Complete |
 | 03 | Snapshot Production & Transfer | `section-03-snapshot-production.md` | Not Started |
 | 04 | Render Pipeline Migration | `section-04-render-migration.md` | Not Started |
 | 05 | Resize Pipeline Migration | `section-05-resize-migration.md` | Not Started |
