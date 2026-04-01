@@ -85,7 +85,7 @@ impl<T: EventListener> PaneIoThread<T> {
                     Err(_) => return,
                 },
                 recv(self.byte_rx) -> msg => match msg {
-                    Ok(bytes) => self.handle_bytes(&bytes),
+                    Ok(bytes) => self.handle_bytes_chunked(&bytes),
                     Err(_) => return,
                 },
             }
@@ -110,23 +110,33 @@ impl<T: EventListener> PaneIoThread<T> {
         }
     }
 
+    /// Parse a byte buffer with bounded chunking.
+    ///
+    /// Slices `bytes` into [`MAX_PARSE_CHUNK`]-sized pieces. Between chunks,
+    /// commands are drained so resize/scroll stay responsive. Used by both
+    /// the `select!` receive path and `process_pending_bytes()`.
+    fn handle_bytes_chunked(&mut self, bytes: &[u8]) {
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let end = (offset + MAX_PARSE_CHUNK).min(bytes.len());
+            self.handle_bytes(&bytes[offset..end]);
+            offset = end;
+            self.drain_commands();
+            if self.shutdown.load(Ordering::Acquire) {
+                return;
+            }
+        }
+    }
+
     /// Process all pending byte messages with bounded chunking.
     ///
-    /// Each byte message is sliced into [`MAX_PARSE_CHUNK`]-sized pieces.
-    /// Between chunks, commands are drained so resize/scroll stay responsive
-    /// during sustained output.
+    /// Drains the byte channel and passes each message through
+    /// [`handle_bytes_chunked()`](Self::handle_bytes_chunked).
     fn process_pending_bytes(&mut self) {
         while let Ok(bytes) = self.byte_rx.try_recv() {
-            let mut offset = 0;
-            while offset < bytes.len() {
-                let end = (offset + MAX_PARSE_CHUNK).min(bytes.len());
-                self.handle_bytes(&bytes[offset..end]);
-                offset = end;
-                // Re-check for priority commands between chunks.
-                self.drain_commands();
-                if self.shutdown.load(Ordering::Acquire) {
-                    return;
-                }
+            self.handle_bytes_chunked(&bytes);
+            if self.shutdown.load(Ordering::Acquire) {
+                return;
             }
         }
     }

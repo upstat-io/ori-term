@@ -35,7 +35,7 @@ oriterm_mux, pane lifecycle, thread ownership
 ---
 
 ### Section 02: VTE Parsing Migration
-**File:** `section-02-vte-migration.md` | **Status:** Not Started
+**File:** `section-02-vte-migration.md` | **Status:** Complete
 
 ```
 VTE, vte::ansi::Processor, vte::Parser, parse_chunk

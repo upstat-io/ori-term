@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "VTE Parsing Migration"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Move VTE parsing from the PTY reader thread to the Terminal IO thread — the IO thread becomes the sole writer to terminal state"
 inspired_by:
@@ -9,8 +9,8 @@ inspired_by:
   - "Alacritty event_loop.rs (read-ahead buffer pattern preserved for ConPTY back-pressure)"
 depends_on: ["01"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-03-31
 sections:
   - id: "02.1"
     title: "PTY Reader Simplification"
@@ -23,15 +23,15 @@ sections:
     status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 02: VTE Parsing Migration
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Add VTE parsing on the IO thread alongside the existing reader thread. The old `PtyEventLoop` continues parsing (unchanged) AND forwards bytes to the IO thread. The IO thread owns a second `Term<T>` and parses independently. This dual-Term architecture enables incremental migration in sections 03-06.
 
 **Context:** Today, `PtyEventLoop::try_parse()` acquires the FairMutex lease, locks the terminal, and runs both VTE processors (`vte::ansi::Processor` and `vte::Parser` for shell integration). This is the most contention-heavy code path. After this section, the reader thread continues its existing VTE parsing (unchanged) AND additionally forwards raw bytes to the IO thread. The IO thread owns a second `Term` and parses independently. This dual-Term architecture doubles parsing CPU temporarily but enables incremental migration without breaking the existing path.
@@ -206,7 +206,7 @@ Move the VTE processors and parsing logic into the IO thread.
 - [x] `test_byte_forwarding_to_io_thread` — create a `PtyEventLoop` with a `byte_tx` channel. Write bytes to the PTY pipe. Assert the same bytes arrive on the `byte_rx` receiver. Verifies the forwarding added in 02.1.
 - [x] `test_byte_forwarding_none_when_no_channel` — create a `PtyEventLoop` with `byte_tx: None`. Write bytes. Assert no panic and existing parsing still works (backward compatibility).
 
-- [ ] `/tpr-review` checkpoint (run after all subsections complete)
+- [x] `/tpr-review` checkpoint (2 rounds, 5 findings all resolved)
 
 ---
 
@@ -254,7 +254,21 @@ Transfer `Term<MuxEventProxy>` ownership from `Arc<FairMutex>` to the IO thread.
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-02-001][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:87` — the blocking receive path bypasses the section's 64 KB chunking guarantee.
+  Evidence: `process_pending_bytes()` slices queued byte messages at `MAX_PARSE_CHUNK` and drains commands between slices, but the idle-path `select!` arm still calls `self.handle_bytes(&bytes)` directly. The first post-idle PTY read can therefore arrive as one forwarded 1 MB buffer from `PtyEventLoop` and monopolize the IO thread until the whole buffer is parsed, delaying queued resize/copy/search commands instead of checking them every 64 KB as the section claims.
+  Resolved: Extracted `handle_bytes_chunked()` method and updated `select!` arm to call it on 2026-03-31.
+- [x] `[TPR-02-002][medium]` `oriterm_mux/src/pane/io_thread/tests.rs:182`, `oriterm_mux/src/pane/io_thread/tests.rs:213`, `oriterm_mux/src/pane/io_thread/tests.rs:280` — the new Section 02 tests do not verify the behaviors they claim to pin.
+  Evidence: `handle_bytes_advances_vte()` and `handle_bytes_shell_integration()` only assert that the shutdown flag was set after the thread exited; they never inspect cell attributes or prompt markers. `process_pending_bytes_chunks_with_commands()` likewise never observes inter-chunk command servicing, so it passes even though `run()` currently bypasses chunking on the blocking receive path (see TPR-02-001).
+  Resolved: Rewrote all VTE tests to use synchronous `handle_bytes()` and verify actual state (cell attrs, prompt markers, mode cache, shutdown-via-drain) on 2026-03-31.
+- [x] `[TPR-02-003][low]` `plans/threaded-io/index.md:38`, `plans/threaded-io/00-overview.md:225`, `plans/threaded-io/section-02-vte-migration.md:34` — Section 02 bookkeeping is still stale.
+  Evidence: the section frontmatter marks Section 02 `in-progress` and 02.1-02.3 `complete`, but the human-readable status line in the section body and both plan summary files still say `Not Started`.
+  Resolved: Updated all three files to reflect In Progress status on 2026-03-31.
+- [x] `[TPR-02-004][medium]` `oriterm_mux/src/pane/io_thread/tests.rs:271` — `handle_bytes_chunked_drains_commands()` still does not prove inter-chunk command servicing.
+  Validation: the test pre-queues `Shutdown`, feeds a 200 KB buffer, then only asserts that the shutdown flag is set afterwards. That same assertion still passes if `drain_commands()` runs only after the final chunk, or if the parser consumes the whole buffer before noticing shutdown, so the blocking-path regression fixed in `oriterm_mux/src/pane/io_thread/mod.rs:87` can reappear without tripping this test.
+  Resolved: Added baseline full-parse eviction comparison — proves early exit parses fewer lines on 2026-03-31.
+- [x] `[TPR-02-005][low]` `oriterm_mux/src/pane/io_thread/tests.rs:216` — `handle_bytes_advances_vte()` claims to pin SGR 31 red but only checks for any non-default foreground.
+  Validation: after sending `\x1b[31mR`, the test asserts `cell.fg != Color::Named(NamedColor::Foreground)` instead of checking the actual red value. A wrong non-default color would still pass, so the documented "SGR red sets cell foreground color" contract is not fully covered.
+  Resolved: Changed assertion to `assert_eq!(cell.fg, Color::Named(NamedColor::Red))` on 2026-03-31.
 
 ---
 
@@ -272,6 +286,6 @@ Transfer `Term<MuxEventProxy>` ownership from `Arc<FairMutex>` to the IO thread.
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed (2 rounds, 5 findings all resolved)
 
 **Exit Criteria:** The IO thread parses VTE sequences from PTY output and maintains its own `Term` state. The old `PtyEventLoop` + `Arc<FairMutex<Term>>` path continues to work in parallel. The IO thread's `Term` state is equivalent to the old path's `Term` state (verified by dimension comparison).
