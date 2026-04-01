@@ -4,10 +4,10 @@
 //! triangles, diamonds, circles, and corner triangles.
 //!
 //! **Sizing rule**: font glyphs are designed on a square em-square. Terminal
-//! cells are taller than wide (~2:1). Centered shapes use the cell *width*
-//! as the base for a square bounding box, centered vertically in the cell.
-//! Corner triangles (U+25E2–25E5) are an exception — they fill the entire
-//! cell (both width and height).
+//! cells are taller than wide (~2:1). ALL shapes use the cell *width* as
+//! the base for a square bounding box, centered vertically in the cell.
+//! Empirical measurement of monospace fonts shows normal shapes at ~0.92
+//! of cell width; small variants at ~0.50.
 
 use super::Canvas;
 
@@ -46,71 +46,73 @@ pub(super) fn draw_geometric(canvas: &mut Canvas, ch: char) -> bool {
     let h = canvas.height() as f32;
     let b = SqBox::new(w, h);
 
+    // Sizing: ~0.92 of cell width for normal shapes, ~0.50 for small variants.
+    // Empirical from DejaVu Sans Mono, Fira Code, JetBrains Mono measurements.
     match ch {
         // Filled squares.
-        '\u{25A0}' => sq_fill(canvas, &b, 0.65, 255),
-        '\u{25AA}' => sq_fill(canvas, &b, 0.35, 255),
-        '\u{25FC}' => sq_fill(canvas, &b, 0.55, 255),
-        '\u{25FE}' => sq_fill(canvas, &b, 0.4, 255),
+        '\u{25A0}' => sq_fill(canvas, &b, 0.92, 255),
+        '\u{25AA}' => sq_fill(canvas, &b, 0.50, 255),
+        '\u{25FC}' => sq_fill(canvas, &b, 0.75, 255),
+        '\u{25FE}' => sq_fill(canvas, &b, 0.60, 255),
         // Outlined squares (25A2 = rounded, approximated as square).
-        '\u{25A1}' | '\u{25A2}' => sq_outline(canvas, &b, 0.65),
-        '\u{25AB}' => sq_outline(canvas, &b, 0.35),
-        '\u{25FB}' => sq_outline(canvas, &b, 0.55),
-        '\u{25FD}' => sq_outline(canvas, &b, 0.4),
+        '\u{25A1}' | '\u{25A2}' => sq_outline(canvas, &b, 0.92),
+        '\u{25AB}' => sq_outline(canvas, &b, 0.50),
+        '\u{25FB}' => sq_outline(canvas, &b, 0.75),
+        '\u{25FD}' => sq_outline(canvas, &b, 0.60),
         '\u{25A3}' => {
-            sq_outline(canvas, &b, 0.65);
-            sq_fill(canvas, &b, 0.3, 255);
+            sq_outline(canvas, &b, 0.92);
+            sq_fill(canvas, &b, 0.50, 255);
         }
         // Triangles.
-        '\u{25B2}' => tri_fill(canvas, &b, 0.7, Dir4::Up, 255),
-        '\u{25B3}' => tri_outline(canvas, &b, 0.7, Dir4::Up),
-        '\u{25B4}' => tri_fill(canvas, &b, 0.4, Dir4::Up, 255),
-        '\u{25B5}' => tri_outline(canvas, &b, 0.4, Dir4::Up),
-        '\u{25B6}' | '\u{25BA}' => tri_fill(canvas, &b, 0.7, Dir4::Right, 255),
-        '\u{25B7}' | '\u{25BB}' => tri_outline(canvas, &b, 0.7, Dir4::Right),
-        '\u{25B8}' => tri_fill(canvas, &b, 0.4, Dir4::Right, 255),
-        '\u{25B9}' => tri_outline(canvas, &b, 0.4, Dir4::Right),
-        '\u{25BC}' => tri_fill(canvas, &b, 0.7, Dir4::Down, 255),
-        '\u{25BD}' => tri_outline(canvas, &b, 0.7, Dir4::Down),
-        '\u{25BE}' => tri_fill(canvas, &b, 0.4, Dir4::Down, 255),
-        '\u{25BF}' => tri_outline(canvas, &b, 0.4, Dir4::Down),
-        '\u{25C0}' | '\u{25C4}' => tri_fill(canvas, &b, 0.7, Dir4::Left, 255),
-        '\u{25C1}' | '\u{25C5}' => tri_outline(canvas, &b, 0.7, Dir4::Left),
-        '\u{25C2}' => tri_fill(canvas, &b, 0.4, Dir4::Left, 255),
-        '\u{25C3}' => tri_outline(canvas, &b, 0.4, Dir4::Left),
+        '\u{25B2}' => tri_fill(canvas, &b, 0.92, Dir4::Up, 255),
+        '\u{25B3}' => tri_outline(canvas, &b, 0.92, Dir4::Up),
+        '\u{25B4}' => tri_fill(canvas, &b, 0.55, Dir4::Up, 255),
+        '\u{25B5}' => tri_outline(canvas, &b, 0.55, Dir4::Up),
+        '\u{25B6}' | '\u{25BA}' => tri_fill(canvas, &b, 0.92, Dir4::Right, 255),
+        '\u{25B7}' | '\u{25BB}' => tri_outline(canvas, &b, 0.92, Dir4::Right),
+        '\u{25B8}' => tri_fill(canvas, &b, 0.55, Dir4::Right, 255),
+        '\u{25B9}' => tri_outline(canvas, &b, 0.55, Dir4::Right),
+        '\u{25BC}' => tri_fill(canvas, &b, 0.92, Dir4::Down, 255),
+        '\u{25BD}' => tri_outline(canvas, &b, 0.92, Dir4::Down),
+        '\u{25BE}' => tri_fill(canvas, &b, 0.55, Dir4::Down, 255),
+        '\u{25BF}' => tri_outline(canvas, &b, 0.55, Dir4::Down),
+        '\u{25C0}' | '\u{25C4}' => tri_fill(canvas, &b, 0.92, Dir4::Left, 255),
+        '\u{25C1}' | '\u{25C5}' => tri_outline(canvas, &b, 0.92, Dir4::Left),
+        '\u{25C2}' => tri_fill(canvas, &b, 0.55, Dir4::Left, 255),
+        '\u{25C3}' => tri_outline(canvas, &b, 0.55, Dir4::Left),
         // Diamonds.
-        '\u{25C6}' => diamond_fill(canvas, &b, 0.65, 255),
-        '\u{25C7}' | '\u{25CA}' => diamond_outline(canvas, &b, 0.65),
+        '\u{25C6}' => diamond_fill(canvas, &b, 0.92, 255),
+        '\u{25C7}' | '\u{25CA}' => diamond_outline(canvas, &b, 0.92),
         '\u{25C8}' => {
-            diamond_outline(canvas, &b, 0.65);
-            diamond_fill(canvas, &b, 0.3, 255);
+            diamond_outline(canvas, &b, 0.92);
+            diamond_fill(canvas, &b, 0.45, 255);
         }
         // Circles (radius from cell width for square proportions).
-        '\u{25CB}' => circle_stroke(canvas, w, h, 0.6),
-        '\u{25CF}' => circle_fill(canvas, w, h, 0.6, 255),
+        '\u{25CB}' => circle_stroke(canvas, w, h, 0.85),
+        '\u{25CF}' => circle_fill(canvas, w, h, 0.85, 255),
         '\u{25CE}' => {
-            circle_stroke(canvas, w, h, 0.6);
-            circle_fill(canvas, w, h, 0.3, 255);
+            circle_stroke(canvas, w, h, 0.85);
+            circle_fill(canvas, w, h, 0.45, 255);
         }
         '\u{25C9}' => {
-            circle_fill(canvas, w, h, 0.6, 255);
-            circle_fill(canvas, w, h, 0.25, 0);
+            circle_fill(canvas, w, h, 0.85, 255);
+            circle_fill(canvas, w, h, 0.40, 0);
         }
-        '\u{25EF}' => circle_stroke(canvas, w, h, 0.85),
+        '\u{25EF}' => circle_stroke(canvas, w, h, 0.95),
         // Half circles.
         '\u{25D0}' => half_circle(canvas, w, h, Dir4::Left),
         '\u{25D1}' => half_circle(canvas, w, h, Dir4::Right),
         '\u{25D2}' => half_circle(canvas, w, h, Dir4::Down),
         '\u{25D3}' => half_circle(canvas, w, h, Dir4::Up),
-        // Corner triangles — fill the ENTIRE cell.
-        '\u{25E2}' => corner_tri(canvas, w, h, Corner::BR, 255),
-        '\u{25E3}' => corner_tri(canvas, w, h, Corner::BL, 255),
-        '\u{25E4}' => corner_tri(canvas, w, h, Corner::TL, 255),
-        '\u{25E5}' => corner_tri(canvas, w, h, Corner::TR, 255),
-        '\u{25F8}' => corner_tri_outline(canvas, w, h, Corner::TL),
-        '\u{25F9}' => corner_tri_outline(canvas, w, h, Corner::TR),
-        '\u{25FA}' => corner_tri_outline(canvas, w, h, Corner::BL),
-        '\u{25FF}' => corner_tri_outline(canvas, w, h, Corner::BR),
+        // Corner triangles — inside square bounding box (not full cell).
+        '\u{25E2}' => corner_tri(canvas, &b, Corner::BR, 255),
+        '\u{25E3}' => corner_tri(canvas, &b, Corner::BL, 255),
+        '\u{25E4}' => corner_tri(canvas, &b, Corner::TL, 255),
+        '\u{25E5}' => corner_tri(canvas, &b, Corner::TR, 255),
+        '\u{25F8}' => corner_tri_outline(canvas, &b, Corner::TL),
+        '\u{25F9}' => corner_tri_outline(canvas, &b, Corner::TR),
+        '\u{25FA}' => corner_tri_outline(canvas, &b, Corner::BL),
+        '\u{25FF}' => corner_tri_outline(canvas, &b, Corner::BR),
         _ => return false,
     }
     true
@@ -295,8 +297,8 @@ fn circle_stroke(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
 fn half_circle(canvas: &mut Canvas, w: f32, h: f32, side: Dir4) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w * 0.6 / 2.0).round();
-    circle_stroke(canvas, w, h, 0.6);
+    let radius = (w * 0.85 / 2.0).round();
+    circle_stroke(canvas, w, h, 0.85);
     for py in 0..canvas.height() {
         for px in 0..canvas.width() {
             let dx = px as f32 + 0.5 - cx;
@@ -324,42 +326,48 @@ enum Corner {
     BR,
 }
 
-fn corner_tri(canvas: &mut Canvas, w: f32, h: f32, c: Corner, alpha: u8) {
-    let rows = h.ceil() as u32;
+fn corner_tri(canvas: &mut Canvas, b: &SqBox, c: Corner, alpha: u8) {
+    let (ox, oy, sz) = b.inset(1.0);
+    let rows = sz.ceil() as u32;
     for r in 0..rows {
-        let f = (r as f32 + 0.5) / h;
-        let rw = (w * f).round();
+        let f = (r as f32 + 0.5) / sz;
+        let rw = (sz * f).round();
         match c {
-            Corner::BL => canvas.fill_rect(0.0, r as f32, rw, 1.0, alpha),
-            Corner::BR => canvas.fill_rect(w - rw, r as f32, rw, 1.0, alpha),
-            Corner::TL => canvas.fill_rect(0.0, h - r as f32 - 1.0, rw, 1.0, alpha),
-            Corner::TR => canvas.fill_rect(w - rw, h - r as f32 - 1.0, rw, 1.0, alpha),
+            Corner::BL => canvas.fill_rect(ox, oy + r as f32, rw, 1.0, alpha),
+            Corner::BR => canvas.fill_rect(ox + sz - rw, oy + r as f32, rw, 1.0, alpha),
+            Corner::TL => canvas.fill_rect(ox, oy + sz - r as f32 - 1.0, rw, 1.0, alpha),
+            Corner::TR => {
+                canvas.fill_rect(ox + sz - rw, oy + sz - r as f32 - 1.0, rw, 1.0, alpha);
+            }
         }
     }
 }
 
-fn corner_tri_outline(canvas: &mut Canvas, w: f32, h: f32, c: Corner) {
-    let t = thick(w);
+fn corner_tri_outline(canvas: &mut Canvas, b: &SqBox, c: Corner) {
+    let t = thick(b.w);
+    let (ox, oy, sz) = b.inset(1.0);
+    let x1 = ox + sz;
+    let y1 = oy + sz;
     match c {
         Corner::TL => {
-            canvas.fill_line(0.0, 0.0, 0.0, h, t);
-            canvas.fill_line(0.0, 0.0, w, 0.0, t);
-            canvas.fill_line(0.0, h, w, 0.0, t);
+            canvas.fill_line(ox, oy, ox, y1, t);
+            canvas.fill_line(ox, oy, x1, oy, t);
+            canvas.fill_line(ox, y1, x1, oy, t);
         }
         Corner::TR => {
-            canvas.fill_line(0.0, 0.0, w, 0.0, t);
-            canvas.fill_line(w, 0.0, w, h, t);
-            canvas.fill_line(0.0, 0.0, w, h, t);
+            canvas.fill_line(ox, oy, x1, oy, t);
+            canvas.fill_line(x1, oy, x1, y1, t);
+            canvas.fill_line(ox, oy, x1, y1, t);
         }
         Corner::BL => {
-            canvas.fill_line(0.0, 0.0, 0.0, h, t);
-            canvas.fill_line(0.0, h, w, h, t);
-            canvas.fill_line(0.0, 0.0, w, h, t);
+            canvas.fill_line(ox, oy, ox, y1, t);
+            canvas.fill_line(ox, y1, x1, y1, t);
+            canvas.fill_line(ox, oy, x1, y1, t);
         }
         Corner::BR => {
-            canvas.fill_line(0.0, h, w, h, t);
-            canvas.fill_line(w, 0.0, w, h, t);
-            canvas.fill_line(0.0, h, w, 0.0, t);
+            canvas.fill_line(ox, y1, x1, y1, t);
+            canvas.fill_line(x1, oy, x1, y1, t);
+            canvas.fill_line(ox, y1, x1, oy, t);
         }
     }
 }
