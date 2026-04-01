@@ -36,10 +36,26 @@ pub(super) fn solve(
     let inner = constraints.shrink(layout_box.margin);
 
     // Merge box-level min/max with incoming constraints.
+    // min_width/min_height use content-box semantics: the constraint applies to
+    // the content area, and padding is added on top. Inflate by padding so the
+    // outer-space constraint enforced by `constrain_width`/`constrain_height`
+    // accounts for both the content minimum and the padding.
+    let pad_w = layout_box.padding.width();
+    let pad_h = layout_box.padding.height();
+    let box_min_w = if layout_box.min_width > 0.0 {
+        layout_box.min_width + pad_w
+    } else {
+        0.0
+    };
+    let box_min_h = if layout_box.min_height > 0.0 {
+        layout_box.min_height + pad_h
+    } else {
+        0.0
+    };
     let constrained = LayoutConstraints {
-        min_width: inner.min_width.max(layout_box.min_width),
+        min_width: inner.min_width.max(box_min_w),
         max_width: inner.max_width.min(layout_box.max_width),
-        min_height: inner.min_height.max(layout_box.min_height),
+        min_height: inner.min_height.max(box_min_h),
         max_height: inner.max_height.min(layout_box.max_height),
     };
 

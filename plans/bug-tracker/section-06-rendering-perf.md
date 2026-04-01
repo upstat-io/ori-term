@@ -61,6 +61,14 @@ sections:
   - **Found**: 2026-03-31 — manual, user testing.
   - **Fixed**: 2026-03-31 — Replaced infinity with large finite values (`-100_000.0, -100_000.0, 200_000.0, 200_000.0`) in both `CLIP_UNCLIPPED` and `ContentMask::unclipped()`. No NaN, all comparisons well-defined.
 
+- [x] **BUG-06.6**: Font config changes not applied in realtime (weight, hinting, subpixel AA)
+  - **Severity**: high
+  - **File(s)**: `oriterm/src/gpu/window_renderer/font_config.rs` (`clear_and_recache`), `oriterm/src/app/config_reload/mod.rs` (`apply_font_changes`)
+  - **Root cause**: Two stale caches: (1) `clear_and_recache()` cleared GPU atlases but not the `ShapedFrame` cache — the prepare fast path served old glyph IDs from the previous font. (2) `apply_font_changes()` rebuilt the `FontCollection` but didn't reset `last_rendered_pane` or `frame`, so the redraw path saw `content_changed=false` and skipped re-extraction.
+  - **Found**: 2026-04-01 — manual, user report during settings UI testing.
+  - **Fixed**: 2026-04-01 — (1) `clear_and_recache()` now resets `ShapingScratch.frame` to empty. (2) `apply_font_changes()` calls `ctx.invalidate_font_caches()` which clears `last_rendered_pane` and `frame`. Commits bfe736f and 793f52d.
+  - **Needs**: Regression test that font config change invalidates shaping + frame caches.
+
 - [ ] **BUG-06.7**: Vulkan backend: baby blue flash when opening settings dialog
   - **Severity**: low
   - **File(s)**: `oriterm/src/app/dialog_management.rs` (dialog lifecycle)

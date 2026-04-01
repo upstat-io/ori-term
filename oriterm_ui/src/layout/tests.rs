@@ -396,6 +396,81 @@ fn min_width_enforced() {
     assert_approx(node.rect.width(), 200.0, "min-enforced width");
 }
 
+// ── Content-box min constraints ──
+
+#[test]
+fn min_height_content_box_adds_padding() {
+    // min_height applies to content area; padding is added on top.
+    let b = LayoutBox::leaf(10.0, 10.0)
+        .with_min_height(44.0)
+        .with_padding(Insets::vh(10.0, 14.0));
+
+    let node = compute_layout(&b, viewport(800.0, 600.0));
+    // Outer rect should be min_height (44) + vertical padding (10+10) = 64.
+    assert_approx(
+        node.rect.height(),
+        64.0,
+        "outer height = content min + padding",
+    );
+    // Content rect should be exactly the min_height.
+    assert_approx(
+        node.content_rect.height(),
+        44.0,
+        "content height = min_height",
+    );
+}
+
+#[test]
+fn min_width_content_box_adds_padding() {
+    // min_width applies to content area; padding is added on top.
+    let b = LayoutBox::leaf(10.0, 10.0)
+        .with_min_width(100.0)
+        .with_padding(Insets::vh(5.0, 20.0));
+
+    let node = compute_layout(&b, viewport(800.0, 600.0));
+    // Outer rect should be min_width (100) + horizontal padding (20+20) = 140.
+    assert_approx(
+        node.rect.width(),
+        140.0,
+        "outer width = content min + padding",
+    );
+    assert_approx(
+        node.content_rect.width(),
+        100.0,
+        "content width = min_width",
+    );
+}
+
+#[test]
+fn min_height_without_padding_unchanged() {
+    // When no padding, min_height applies directly to outer rect (no inflation).
+    let b = LayoutBox::leaf(10.0, 10.0).with_min_height(50.0);
+
+    let node = compute_layout(&b, viewport(800.0, 600.0));
+    assert_approx(node.rect.height(), 50.0, "min_height with no padding");
+}
+
+#[test]
+fn min_height_flex_content_box() {
+    // Content-box semantics work for flex containers too.
+    let row = LayoutBox::flex(Direction::Column, vec![LayoutBox::leaf(50.0, 10.0)])
+        .with_min_height(60.0)
+        .with_padding(Insets::vh(8.0, 0.0));
+
+    let node = compute_layout(&row, viewport(800.0, 600.0));
+    // Outer: 60 + 8+8 = 76.
+    assert_approx(
+        node.rect.height(),
+        76.0,
+        "flex outer height = content min + padding",
+    );
+    assert_approx(
+        node.content_rect.height(),
+        60.0,
+        "flex content height = min_height",
+    );
+}
+
 // ── Invariant: content_rect == rect.inset(padding) ──
 
 #[test]
