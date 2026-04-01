@@ -9,8 +9,8 @@ inspired_by:
   - "ori_term event_loop_helpers/tests.rs (idle CPU verification)"
 depends_on: ["07"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-01
 sections:
   - id: "08.1"
     title: "Performance Invariants"
@@ -32,7 +32,7 @@ sections:
     status: complete
   - id: "08.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "08.N"
     title: "Completion Checklist"
     status: not-started
@@ -71,9 +71,9 @@ sections:
 
 Manual and automated verification that resize flashing is eliminated.
 
-- [x] **Visual test — drag resize**: Architecture verified — IO thread owns all reflow, main thread only reads completed snapshots via `SnapshotDoubleBuffer::swap_front()`. No intermediate reflow states are ever visible. Resize coalescing ensures only the final size is applied. Visual confirmation deferred to runtime testing.
+- [~] **Visual test — drag resize**: Architecture verified only (not runtime-tested). IO thread owns all reflow, main thread reads completed snapshots via `SnapshotDoubleBuffer::swap_front()`. No intermediate reflow states are visible by design. Resize coalescing ensures only the final size is applied. Runtime visual confirmation requires running the terminal on a display — cannot be automated.
 
-- [x] **BUG-06.2 verification**: Root cause addressed — resize now flows through `PaneIoCommand::Resize` to the IO thread, eliminating the race between queued key repeat events and synchronous main-thread reflow. The IO thread serializes bytes and resize in its priority loop. Runtime visual confirmation deferred.
+- [~] **BUG-06.2 verification**: Architecture verified only (not runtime-tested). Root cause addressed — resize now flows through `PaneIoCommand::Resize` to the IO thread, eliminating the race. The IO thread serializes bytes and resize in its priority loop. Runtime visual confirmation requires manual testing.
 
 - [x] **Rapid resize test**: Added `test_rapid_resize_50_cycles` — queues 50 resize commands with varying dimensions (40-119 cols, 20-39 rows). Coalescing applies only the last. Verified: final grid matches last command, snapshot dimensions correct.
 
@@ -89,7 +89,7 @@ Manual and automated verification that resize flashing is eliminated.
 
 - [x] **Linux (PTY/ioctl)**: `cargo build` succeeds. Same `PtyControl::resize()` path delegates to `portable_pty` which calls `ioctl(TIOCSWINSZ)`. IO thread calls `process_resize()` (handler.rs:20) which does grid reflow + PTY resize atomically on the same thread. SIGWINCH delivery is implicit via portable-pty's `ioctl` call.
 
-- [x] **macOS (PTY)**: Same `portable_pty` abstraction handles macOS PTY. Cross-compilation verified via Windows target (macOS requires macOS host). `pty_control.resize()` follows identical path.
+- [~] **macOS (PTY)**: Code review verified — same `portable_pty` abstraction handles macOS PTY. `pty_control.resize()` follows identical path. Actual macOS compilation and runtime testing requires a macOS host (not available in WSL).
 
 - [x] **All platforms**: `crossbeam-channel` v0.5 uses lock-free MPMC queues internally with no platform-specific behavior. Works identically on Windows, Linux, macOS. IO thread uses `crossbeam_channel::select!` (mod.rs:105) for blocking — standard OS-level futex/condvar underneath.
 
@@ -109,7 +109,7 @@ Manual and automated verification that resize flashing is eliminated.
 
 - [x] `test_snapshot_swap_under_contention` — producer + consumer threads hammer `SnapshotDoubleBuffer` for 500ms. Verified: no panic, producer flipped >100 times, consumer consumed >10 snapshots, no data corruption. Added in `pane/io_thread/tests.rs`.
 
-- [x] `test_io_thread_panic_does_not_crash_app` — Verified by architecture: `PaneIoHandle::shutdown()` (mod.rs:353) sends `Shutdown` then calls `handle.join()` which returns `Err` on panic without propagating. `Drop` impl calls `shutdown()`, so panicked threads are silently collected. The `std::thread::JoinHandle::join()` Rust API catches panics — no injection mechanism needed.
+- [x] `test_io_thread_panic_does_not_crash_app` — Added actual panic-path test: spawns a thread that panics after receiving a command, verifies `PaneIoHandle::shutdown()` completes < 2s without hanging or propagating. Added in `pane/io_thread/tests.rs`.
 
 ---
 
@@ -141,7 +141,14 @@ Manual and automated verification that resize flashing is eliminated.
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-08-001][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:160` — the IO thread only published snapshots between messages, not between 64 KB parse chunks inside one message.
+  Resolved: Added `maybe_produce_snapshot()` call between chunks in `handle_bytes_chunked()` (mod.rs:170). Added `handle_bytes_chunked_publishes_intermediate_snapshots` test verifying >=2 wakeups for a 200 KB message. Fixed 2026-04-01.
+
+- [x] `[TPR-08-002][medium]` `plans/threaded-io/section-08-verification.md` — visual/macOS items marked as fully complete despite being architecture-only verification.
+  Resolved: Changed visual test, BUG-06.2 verification, and macOS items from `[x]` to `[~]` with explicit notes that runtime/platform verification is deferred. Completion checklist updated to match. Fixed 2026-04-01.
+
+- [x] `[TPR-08-003][medium]` `oriterm_mux/src/pane/io_thread/tests.rs` — no actual test for IO thread panic path.
+  Resolved: Added `test_io_thread_panic_does_not_crash_app` test that spawns a thread which panics after receiving a command, wraps it in `PaneIoHandle`, triggers the panic, and verifies `shutdown()` completes < 2s without hanging. Fixed 2026-04-01.
 
 ---
 
@@ -151,15 +158,15 @@ Manual and automated verification that resize flashing is eliminated.
 - [x] Zero allocation in render path verified (alloc regression test passes)
 - [x] Stable RSS verified under sustained output
 - [x] Buffer shrink discipline verified on both IO and main threads
-- [x] Resize flashing eliminated (architecture verified — IO thread serializes reflow)
-- [x] BUG-06.2 resolved (IO thread eliminates resize/key repeat race)
+- [~] Resize flashing eliminated (architecture verified — runtime visual confirmation deferred)
+- [~] BUG-06.2 resolved (architecture verified — runtime visual confirmation deferred)
 - [x] Rapid resize stress test passes
 - [x] Flood output + resize stress test passes
 - [x] Pane close during processing — no leaked threads
 - [x] Multi-pane concurrent — no cross-pane corruption
 - [x] Windows ConPTY works correctly
 - [x] Linux PTY works correctly
-- [x] macOS PTY compiles and works
+- [~] macOS PTY — code review verified (macOS host required for compile/runtime)
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green

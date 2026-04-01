@@ -1250,7 +1250,75 @@ fn test_select_command_input_reply() {
     }
 }
 
+// --- TPR-08-001: snapshot publication between parse chunks ---
+
+/// A large byte message (> MAX_PARSE_CHUNK) should produce intermediate
+/// snapshots between 64 KB chunks, not just after the entire message.
+#[test]
+fn handle_bytes_chunked_publishes_intermediate_snapshots() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // 200 KB message = ~3 chunks of 64 KB each.
+    let big = vec![b'A'; 200_000];
+    t.grid_dirty.store(true, Ordering::Release);
+
+    wakeup_count.store(0, Ordering::SeqCst);
+    t.handle_bytes_chunked(&big);
+
+    // Should have produced multiple snapshots (one per chunk boundary).
+    let wakeups = wakeup_count.load(Ordering::SeqCst);
+    assert!(
+        wakeups >= 2,
+        "expected >=2 intermediate wakeups for 200KB message, got {wakeups}"
+    );
+
+    // Verify the final snapshot is consumable.
+    let mut snap = oriterm_core::RenderableContent::default();
+    assert!(
+        t.double_buffer.swap_front(&mut snap),
+        "snapshot should be available after chunked parsing"
+    );
+}
+
 // --- Section 08.4 threading stress tests ---
+
+/// IO thread panic does not crash the main thread or hang shutdown.
+///
+/// Spawns a thread that panics after receiving a command, wraps it in a
+/// `PaneIoHandle`, and verifies that `shutdown()` completes without hanging
+/// or propagating the panic. Tests the `let _ = handle.join()` error-swallowing
+/// path in `PaneIoHandle::shutdown()`.
+#[test]
+fn test_io_thread_panic_does_not_crash_app() {
+    let (tx, rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (byte_tx, _byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+
+    let join = std::thread::spawn(move || {
+        let _ = rx.recv();
+        panic!("intentional IO thread panic for testing");
+    });
+
+    let mut handle = PaneIoHandle {
+        cmd_tx: tx,
+        byte_tx,
+        join: Some(join),
+        double_buffer: SnapshotDoubleBuffer::new(),
+    };
+
+    // Trigger the panic.
+    handle.send_command(PaneIoCommand::MarkAllDirty);
+    std::thread::sleep(Duration::from_millis(50));
+
+    // shutdown() must complete without hanging (join catches the panic).
+    let start = std::time::Instant::now();
+    handle.shutdown();
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "shutdown after panic took {elapsed:?}, expected < 2s"
+    );
+}
 
 /// Concurrent resize + byte flood: one thread floods bytes, another sends
 /// 100 resize commands. IO thread must not panic and must settle to correct
