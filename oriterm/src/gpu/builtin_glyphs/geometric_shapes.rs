@@ -1,287 +1,258 @@
 //! Geometric Shapes (U+25A0–U+25FF) — subset.
 //!
 //! Pixel-perfect rendering for commonly used geometric shapes: squares,
-//! triangles, diamonds, circles, and corner triangles. Follows Ghostty's
-//! `geometric_shapes.zig` for the corner triangle subset, extends with
-//! additional shapes used by TUI frameworks.
+//! triangles, diamonds, circles, and corner triangles.
+//!
+//! **Sizing rule**: font glyphs are designed on a square em-square. Terminal
+//! cells are taller than wide (~2:1). Centered shapes use the cell *width*
+//! as the base for a square bounding box, centered vertically in the cell.
+//! Corner triangles (U+25E2–25E5) are an exception — they fill the entire
+//! cell (both width and height).
 
 use super::Canvas;
+
+/// Square bounding box for centered shapes, derived from cell dimensions.
+///
+/// The box side length equals `cell_width`; it is vertically centered in
+/// the taller cell. All centered shapes (squares, triangles, diamonds)
+/// draw within this box so they maintain 1:1 aspect ratio.
+struct SqBox {
+    w: f32,
+    oy: f32,
+    s: f32,
+}
+
+impl SqBox {
+    fn new(w: f32, h: f32) -> Self {
+        Self {
+            w,
+            oy: ((h - w) / 2.0).round(),
+            s: w,
+        }
+    }
+
+    /// Compute offset + size for a shape at `frac` of the bounding box.
+    fn inset(&self, frac: f32) -> (f32, f32, f32) {
+        let sz = (self.s * frac).round();
+        let x = ((self.w - sz) / 2.0).round();
+        let y = self.oy + ((self.s - sz) / 2.0).round();
+        (x, y, sz)
+    }
+}
 
 /// Draw a geometric shape. Returns `true` if handled.
 pub(super) fn draw_geometric(canvas: &mut Canvas, ch: char) -> bool {
     let w = canvas.width() as f32;
     let h = canvas.height() as f32;
+    let b = SqBox::new(w, h);
 
-    // Sizing: match font glyph proportions. "Normal" shapes ~55% of cell,
-    // "small" shapes ~30%, "large circle" ~70%. Corner triangles fill the cell.
     match ch {
         // Filled squares.
-        '\u{25A0}' => centered_rect(canvas, w, h, 0.55, 255),
-        '\u{25AA}' => centered_rect(canvas, w, h, 0.3, 255),
-        '\u{25FC}' => centered_rect(canvas, w, h, 0.45, 255),
-        '\u{25FE}' => centered_rect(canvas, w, h, 0.35, 255),
+        '\u{25A0}' => sq_fill(canvas, &b, 0.65, 255),
+        '\u{25AA}' => sq_fill(canvas, &b, 0.35, 255),
+        '\u{25FC}' => sq_fill(canvas, &b, 0.55, 255),
+        '\u{25FE}' => sq_fill(canvas, &b, 0.4, 255),
         // Outlined squares (25A2 = rounded, approximated as square).
-        '\u{25A1}' | '\u{25A2}' => outlined_rect(canvas, w, h, 0.55),
-        '\u{25AB}' => outlined_rect(canvas, w, h, 0.3),
-        '\u{25FB}' => outlined_rect(canvas, w, h, 0.45),
-        '\u{25FD}' => outlined_rect(canvas, w, h, 0.35),
+        '\u{25A1}' | '\u{25A2}' => sq_outline(canvas, &b, 0.65),
+        '\u{25AB}' => sq_outline(canvas, &b, 0.35),
+        '\u{25FB}' => sq_outline(canvas, &b, 0.55),
+        '\u{25FD}' => sq_outline(canvas, &b, 0.4),
         '\u{25A3}' => {
-            // White square containing black small square.
-            outlined_rect(canvas, w, h, 0.55);
-            centered_rect(canvas, w, h, 0.25, 255);
+            sq_outline(canvas, &b, 0.65);
+            sq_fill(canvas, &b, 0.3, 255);
         }
-        // Triangles (pointing up, down, left, right — filled and outlined).
-        '\u{25B2}' => fill_triangle_up(canvas, w, h, 0.6, 255),
-        '\u{25B3}' => outline_triangle_up(canvas, w, h, 0.6),
-        '\u{25B4}' => fill_triangle_up(canvas, w, h, 0.35, 255),
-        '\u{25B5}' => outline_triangle_up(canvas, w, h, 0.35),
-        '\u{25B6}' | '\u{25BA}' => fill_triangle_right(canvas, w, h, 0.6, 255),
-        '\u{25B7}' | '\u{25BB}' => outline_triangle_right(canvas, w, h, 0.6),
-        '\u{25B8}' => fill_triangle_right(canvas, w, h, 0.35, 255),
-        '\u{25B9}' => outline_triangle_right(canvas, w, h, 0.35),
-        '\u{25BC}' => fill_triangle_down(canvas, w, h, 0.6, 255),
-        '\u{25BD}' => outline_triangle_down(canvas, w, h, 0.6),
-        '\u{25BE}' => fill_triangle_down(canvas, w, h, 0.35, 255),
-        '\u{25BF}' => outline_triangle_down(canvas, w, h, 0.35),
-        '\u{25C0}' | '\u{25C4}' => fill_triangle_left(canvas, w, h, 0.6, 255),
-        '\u{25C1}' | '\u{25C5}' => outline_triangle_left(canvas, w, h, 0.6),
-        '\u{25C2}' => fill_triangle_left(canvas, w, h, 0.35, 255),
-        '\u{25C3}' => outline_triangle_left(canvas, w, h, 0.35),
+        // Triangles.
+        '\u{25B2}' => tri_fill(canvas, &b, 0.7, Dir4::Up, 255),
+        '\u{25B3}' => tri_outline(canvas, &b, 0.7, Dir4::Up),
+        '\u{25B4}' => tri_fill(canvas, &b, 0.4, Dir4::Up, 255),
+        '\u{25B5}' => tri_outline(canvas, &b, 0.4, Dir4::Up),
+        '\u{25B6}' | '\u{25BA}' => tri_fill(canvas, &b, 0.7, Dir4::Right, 255),
+        '\u{25B7}' | '\u{25BB}' => tri_outline(canvas, &b, 0.7, Dir4::Right),
+        '\u{25B8}' => tri_fill(canvas, &b, 0.4, Dir4::Right, 255),
+        '\u{25B9}' => tri_outline(canvas, &b, 0.4, Dir4::Right),
+        '\u{25BC}' => tri_fill(canvas, &b, 0.7, Dir4::Down, 255),
+        '\u{25BD}' => tri_outline(canvas, &b, 0.7, Dir4::Down),
+        '\u{25BE}' => tri_fill(canvas, &b, 0.4, Dir4::Down, 255),
+        '\u{25BF}' => tri_outline(canvas, &b, 0.4, Dir4::Down),
+        '\u{25C0}' | '\u{25C4}' => tri_fill(canvas, &b, 0.7, Dir4::Left, 255),
+        '\u{25C1}' | '\u{25C5}' => tri_outline(canvas, &b, 0.7, Dir4::Left),
+        '\u{25C2}' => tri_fill(canvas, &b, 0.4, Dir4::Left, 255),
+        '\u{25C3}' => tri_outline(canvas, &b, 0.4, Dir4::Left),
         // Diamonds.
-        '\u{25C6}' => fill_diamond(canvas, w, h, 0.55, 255),
-        '\u{25C7}' | '\u{25CA}' => outline_diamond(canvas, w, h, 0.55),
+        '\u{25C6}' => diamond_fill(canvas, &b, 0.65, 255),
+        '\u{25C7}' | '\u{25CA}' => diamond_outline(canvas, &b, 0.65),
         '\u{25C8}' => {
-            outline_diamond(canvas, w, h, 0.55);
-            fill_diamond(canvas, w, h, 0.25, 255);
+            diamond_outline(canvas, &b, 0.65);
+            diamond_fill(canvas, &b, 0.3, 255);
         }
-        // Circles.
-        '\u{25CB}' => stroke_circle(canvas, w, h, 0.5),
-        '\u{25CF}' => fill_circle(canvas, w, h, 0.5, 255),
+        // Circles (radius from cell width for square proportions).
+        '\u{25CB}' => circle_stroke(canvas, w, h, 0.6),
+        '\u{25CF}' => circle_fill(canvas, w, h, 0.6, 255),
         '\u{25CE}' => {
-            // Bullseye: outer ring + inner filled.
-            stroke_circle(canvas, w, h, 0.5);
-            fill_circle(canvas, w, h, 0.25, 255);
+            circle_stroke(canvas, w, h, 0.6);
+            circle_fill(canvas, w, h, 0.3, 255);
         }
         '\u{25C9}' => {
-            // Fisheye: outer filled + inner white.
-            fill_circle(canvas, w, h, 0.5, 255);
-            fill_circle(canvas, w, h, 0.2, 0);
+            circle_fill(canvas, w, h, 0.6, 255);
+            circle_fill(canvas, w, h, 0.25, 0);
         }
-        '\u{25EF}' => stroke_circle(canvas, w, h, 0.7), // Large circle
-        // Half circles (filled).
-        '\u{25D0}' => half_circle_left(canvas, w, h),
-        '\u{25D1}' => half_circle_right(canvas, w, h),
-        '\u{25D2}' => half_circle_bottom(canvas, w, h),
-        '\u{25D3}' => half_circle_top(canvas, w, h),
-        // Corner triangles (Ghostty subset).
-        '\u{25E2}' => corner_triangle(canvas, w, h, CornerTri::BR, 255),
-        '\u{25E3}' => corner_triangle(canvas, w, h, CornerTri::BL, 255),
-        '\u{25E4}' => corner_triangle(canvas, w, h, CornerTri::TL, 255),
-        '\u{25E5}' => corner_triangle(canvas, w, h, CornerTri::TR, 255),
-        // Corner triangle outlines.
-        '\u{25F8}' => corner_triangle_outline(canvas, w, h, CornerTri::TL),
-        '\u{25F9}' => corner_triangle_outline(canvas, w, h, CornerTri::TR),
-        '\u{25FA}' => corner_triangle_outline(canvas, w, h, CornerTri::BL),
-        '\u{25FF}' => corner_triangle_outline(canvas, w, h, CornerTri::BR),
+        '\u{25EF}' => circle_stroke(canvas, w, h, 0.85),
+        // Half circles.
+        '\u{25D0}' => half_circle(canvas, w, h, Dir4::Left),
+        '\u{25D1}' => half_circle(canvas, w, h, Dir4::Right),
+        '\u{25D2}' => half_circle(canvas, w, h, Dir4::Down),
+        '\u{25D3}' => half_circle(canvas, w, h, Dir4::Up),
+        // Corner triangles — fill the ENTIRE cell.
+        '\u{25E2}' => corner_tri(canvas, w, h, Corner::BR, 255),
+        '\u{25E3}' => corner_tri(canvas, w, h, Corner::BL, 255),
+        '\u{25E4}' => corner_tri(canvas, w, h, Corner::TL, 255),
+        '\u{25E5}' => corner_tri(canvas, w, h, Corner::TR, 255),
+        '\u{25F8}' => corner_tri_outline(canvas, w, h, Corner::TL),
+        '\u{25F9}' => corner_tri_outline(canvas, w, h, Corner::TR),
+        '\u{25FA}' => corner_tri_outline(canvas, w, h, Corner::BL),
+        '\u{25FF}' => corner_tri_outline(canvas, w, h, Corner::BR),
         _ => return false,
     }
     true
 }
 
-// -- Centered rectangles --
-
-/// Draw a filled centered rectangle scaled by `frac` of cell size.
-fn centered_rect(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
-    let rw = (w * frac).round();
-    let rh = (h * frac).round();
-    let x = ((w - rw) / 2.0).round();
-    let y = ((h - rh) / 2.0).round();
-    canvas.fill_rect(x, y, rw, rh, alpha);
+/// Line thickness for outlines.
+fn thick(w: f32) -> f32 {
+    1.0f32.max((w / 12.0).round())
 }
 
-/// Draw an outlined centered rectangle.
-fn outlined_rect(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    let rw = (w * frac).round();
-    let rh = (h * frac).round();
-    let x = ((w - rw) / 2.0).round();
-    let y = ((h - rh) / 2.0).round();
-    canvas.fill_rect(x, y, rw, thick, 255);
-    canvas.fill_rect(x, y + rh - thick, rw, thick, 255);
-    canvas.fill_rect(x, y, thick, rh, 255);
-    canvas.fill_rect(x + rw - thick, y, thick, rh, 255);
+// -- Squares --
+
+fn sq_fill(canvas: &mut Canvas, b: &SqBox, frac: f32, alpha: u8) {
+    let (x, y, sz) = b.inset(frac);
+    canvas.fill_rect(x, y, sz, sz, alpha);
+}
+
+fn sq_outline(canvas: &mut Canvas, b: &SqBox, frac: f32) {
+    let t = thick(b.w);
+    let (x, y, sz) = b.inset(frac);
+    canvas.fill_rect(x, y, sz, t, 255);
+    canvas.fill_rect(x, y + sz - t, sz, t, 255);
+    canvas.fill_rect(x, y, t, sz, 255);
+    canvas.fill_rect(x + sz - t, y, t, sz, 255);
 }
 
 // -- Triangles --
 
-/// Fill upward-pointing triangle.
-fn fill_triangle_up(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let ox = (w - tw) / 2.0;
-    let oy = (h - th) / 2.0;
-    let rows = th.ceil() as u32;
-    for r in 0..rows {
-        let progress = (r as f32 + 0.5) / th;
-        let row_w = (tw * progress).round();
-        let rx = ox + (tw - row_w) / 2.0;
-        canvas.fill_rect(rx, oy + th - r as f32 - 1.0, row_w, 1.0, alpha);
+#[derive(Clone, Copy)]
+enum Dir4 {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+fn tri_fill(canvas: &mut Canvas, b: &SqBox, frac: f32, dir: Dir4, alpha: u8) {
+    let (ox, oy, sz) = b.inset(frac);
+    let n = sz.ceil() as u32;
+    for i in 0..n {
+        let progress = (i as f32 + 0.5) / sz;
+        let span = (sz * progress).round();
+        match dir {
+            Dir4::Up => {
+                canvas.fill_rect(
+                    ox + (sz - span) / 2.0,
+                    oy + sz - i as f32 - 1.0,
+                    span,
+                    1.0,
+                    alpha,
+                );
+            }
+            Dir4::Down => {
+                canvas.fill_rect(ox + (sz - span) / 2.0, oy + i as f32, span, 1.0, alpha);
+            }
+            Dir4::Right => {
+                canvas.fill_rect(ox + i as f32, oy + (sz - span) / 2.0, 1.0, span, alpha);
+            }
+            Dir4::Left => {
+                canvas.fill_rect(
+                    ox + sz - i as f32 - 1.0,
+                    oy + (sz - span) / 2.0,
+                    1.0,
+                    span,
+                    alpha,
+                );
+            }
+        }
     }
 }
 
-/// Outline upward-pointing triangle.
-fn outline_triangle_up(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let cx = w / 2.0;
-    let oy = (h - th) / 2.0;
-    let ox = (w - tw) / 2.0;
-    // Left edge, right edge, bottom edge.
-    canvas.fill_line(cx, oy, ox, oy + th, thick);
-    canvas.fill_line(cx, oy, ox + tw, oy + th, thick);
-    canvas.fill_rect(ox, oy + th - thick, tw, thick, 255);
-}
-
-/// Fill downward-pointing triangle.
-fn fill_triangle_down(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let ox = (w - tw) / 2.0;
-    let oy = (h - th) / 2.0;
-    let rows = th.ceil() as u32;
-    for r in 0..rows {
-        let progress = (r as f32 + 0.5) / th;
-        let row_w = (tw * progress).round();
-        let rx = ox + (tw - row_w) / 2.0;
-        canvas.fill_rect(rx, oy + r as f32, row_w, 1.0, alpha);
+fn tri_outline(canvas: &mut Canvas, b: &SqBox, frac: f32, dir: Dir4) {
+    let t = thick(b.w);
+    let (ox, oy, sz) = b.inset(frac);
+    let cx = ox + sz / 2.0;
+    let cy = oy + sz / 2.0;
+    match dir {
+        Dir4::Up => {
+            canvas.fill_line(cx, oy, ox, oy + sz, t);
+            canvas.fill_line(cx, oy, ox + sz, oy + sz, t);
+            canvas.fill_rect(ox, oy + sz - t, sz, t, 255);
+        }
+        Dir4::Down => {
+            canvas.fill_rect(ox, oy, sz, t, 255);
+            canvas.fill_line(ox, oy, cx, oy + sz, t);
+            canvas.fill_line(ox + sz, oy, cx, oy + sz, t);
+        }
+        Dir4::Right => {
+            canvas.fill_rect(ox, oy, t, sz, 255);
+            canvas.fill_line(ox, oy, ox + sz, cy, t);
+            canvas.fill_line(ox, oy + sz, ox + sz, cy, t);
+        }
+        Dir4::Left => {
+            canvas.fill_rect(ox + sz - t, oy, t, sz, 255);
+            canvas.fill_line(ox + sz, oy, ox, cy, t);
+            canvas.fill_line(ox + sz, oy + sz, ox, cy, t);
+        }
     }
-}
-
-/// Outline downward-pointing triangle.
-fn outline_triangle_down(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let cx = w / 2.0;
-    let oy = (h - th) / 2.0;
-    let ox = (w - tw) / 2.0;
-    canvas.fill_rect(ox, oy, tw, thick, 255);
-    canvas.fill_line(ox, oy, cx, oy + th, thick);
-    canvas.fill_line(ox + tw, oy, cx, oy + th, thick);
-}
-
-/// Fill right-pointing triangle.
-fn fill_triangle_right(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let ox = (w - tw) / 2.0;
-    let oy = (h - th) / 2.0;
-    let cols = tw.ceil() as u32;
-    for c in 0..cols {
-        let progress = (c as f32 + 0.5) / tw;
-        let col_h = (th * progress).round();
-        let ry = oy + (th - col_h) / 2.0;
-        canvas.fill_rect(ox + c as f32, ry, 1.0, col_h, alpha);
-    }
-}
-
-/// Outline right-pointing triangle.
-fn outline_triangle_right(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let ox = (w - tw) / 2.0;
-    let oy = (h - th) / 2.0;
-    let cy = h / 2.0;
-    canvas.fill_rect(ox, oy, thick, th, 255);
-    canvas.fill_line(ox, oy, ox + tw, cy, thick);
-    canvas.fill_line(ox, oy + th, ox + tw, cy, thick);
-}
-
-/// Fill left-pointing triangle.
-fn fill_triangle_left(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let ox = (w - tw) / 2.0;
-    let oy = (h - th) / 2.0;
-    let cols = tw.ceil() as u32;
-    for c in 0..cols {
-        let progress = (c as f32 + 0.5) / tw;
-        let col_h = (th * progress).round();
-        let ry = oy + (th - col_h) / 2.0;
-        canvas.fill_rect(ox + tw - c as f32 - 1.0, ry, 1.0, col_h, alpha);
-    }
-}
-
-/// Outline left-pointing triangle.
-fn outline_triangle_left(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    let th = (h * frac).round();
-    let tw = (w * frac).round();
-    let ox = (w - tw) / 2.0;
-    let oy = (h - th) / 2.0;
-    let cy = h / 2.0;
-    canvas.fill_rect(ox + tw - thick, oy, thick, th, 255);
-    canvas.fill_line(ox + tw, oy, ox, cy, thick);
-    canvas.fill_line(ox + tw, oy + th, ox, cy, thick);
 }
 
 // -- Diamonds --
 
-/// Fill a centered diamond.
-fn fill_diamond(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
-    let dw = (w * frac).round();
-    let dh = (h * frac).round();
-    let ox = (w - dw) / 2.0;
-    let oy = (h - dh) / 2.0;
-    let rows = dh.ceil() as u32;
-    for r in 0..rows {
-        let progress = (r as f32 + 0.5) / dh;
-        let row_w = if progress < 0.5 {
-            (dw * progress * 2.0).round()
+fn diamond_fill(canvas: &mut Canvas, b: &SqBox, frac: f32, alpha: u8) {
+    let (ox, oy, sz) = b.inset(frac);
+    let n = sz.ceil() as u32;
+    for r in 0..n {
+        let progress = (r as f32 + 0.5) / sz;
+        let rw = if progress < 0.5 {
+            (sz * progress * 2.0).round()
         } else {
-            (dw * (1.0 - progress) * 2.0).round()
+            (sz * (1.0 - progress) * 2.0).round()
         };
-        let rx = ox + (dw - row_w) / 2.0;
-        canvas.fill_rect(rx, oy + r as f32, row_w, 1.0, alpha);
+        canvas.fill_rect(ox + (sz - rw) / 2.0, oy + r as f32, rw, 1.0, alpha);
     }
 }
 
-/// Outline a centered diamond.
-fn outline_diamond(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    let dw = (w * frac).round();
-    let dh = (h * frac).round();
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let hdw = dw / 2.0;
-    let hdh = dh / 2.0;
-    canvas.fill_line(cx, cy - hdh, cx + hdw, cy, thick);
-    canvas.fill_line(cx + hdw, cy, cx, cy + hdh, thick);
-    canvas.fill_line(cx, cy + hdh, cx - hdw, cy, thick);
-    canvas.fill_line(cx - hdw, cy, cx, cy - hdh, thick);
+fn diamond_outline(canvas: &mut Canvas, b: &SqBox, frac: f32) {
+    let t = thick(b.w);
+    let cx = b.w / 2.0;
+    let cy = b.oy + b.s / 2.0;
+    let hs = (b.s * frac / 2.0).round();
+    canvas.fill_line(cx, cy - hs, cx + hs, cy, t);
+    canvas.fill_line(cx + hs, cy, cx, cy + hs, t);
+    canvas.fill_line(cx, cy + hs, cx - hs, cy, t);
+    canvas.fill_line(cx - hs, cy, cx, cy - hs, t);
 }
 
 // -- Circles --
 
-/// Fill a centered circle.
-fn fill_circle(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
+fn circle_fill(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * frac / 2.0).round();
-
-    let y_min = (cy - radius - 1.0).floor().max(0.0) as u32;
-    let y_max = ((cy + radius + 1.0).ceil() as u32).min(canvas.height());
-    let x_min = (cx - radius - 1.0).floor().max(0.0) as u32;
-    let x_max = ((cx + radius + 1.0).ceil() as u32).min(canvas.width());
-
-    for py in y_min..y_max {
-        for px in x_min..x_max {
+    let radius = (w * frac / 2.0).round();
+    let y0 = (cy - radius - 1.0).floor().max(0.0) as u32;
+    let y1 = ((cy + radius + 1.0).ceil() as u32).min(canvas.height());
+    let x0 = (cx - radius - 1.0).floor().max(0.0) as u32;
+    let x1 = ((cx + radius + 1.0).ceil() as u32).min(canvas.width());
+    for py in y0..y1 {
+        for px in x0..x1 {
             let dx = px as f32 + 0.5 - cx;
             let dy = py as f32 + 0.5 - cy;
-            let dist = dx.hypot(dy) - radius;
-            let a = sdf_alpha(dist, alpha);
+            let a = sdf_alpha(dx.hypot(dy) - radius, alpha);
             if a > 0 {
                 canvas.blend_pixel(px as i32, py as i32, a);
             }
@@ -289,34 +260,31 @@ fn fill_circle(canvas: &mut Canvas, w: f32, h: f32, frac: f32, alpha: u8) {
     }
 }
 
-/// Stroke a centered circle outline.
-fn stroke_circle(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
+fn circle_stroke(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * frac / 2.0).round();
-    let thick = 1.0f32.max((w / 10.0).round());
-    let ht = thick / 2.0;
+    let radius = (w * frac / 2.0).round();
+    let t = thick(w);
+    let ht = t / 2.0;
     let inner = radius - ht;
     let outer = radius + ht;
-
-    let y_min = (cy - outer - 1.0).floor().max(0.0) as u32;
-    let y_max = ((cy + outer + 1.0).ceil() as u32).min(canvas.height());
-    let x_min = (cx - outer - 1.0).floor().max(0.0) as u32;
-    let x_max = ((cx + outer + 1.0).ceil() as u32).min(canvas.width());
-
-    for py in y_min..y_max {
-        for px in x_min..x_max {
+    let y0 = (cy - outer - 1.0).floor().max(0.0) as u32;
+    let y1 = ((cy + outer + 1.0).ceil() as u32).min(canvas.height());
+    let x0 = (cx - outer - 1.0).floor().max(0.0) as u32;
+    let x1 = ((cx + outer + 1.0).ceil() as u32).min(canvas.width());
+    for py in y0..y1 {
+        for px in x0..x1 {
             let dx = px as f32 + 0.5 - cx;
             let dy = py as f32 + 0.5 - cy;
             let dist = dx.hypot(dy);
-            let ring_dist = if dist < inner {
+            let ring = if dist < inner {
                 inner - dist
             } else if dist > outer {
                 dist - outer
             } else {
                 -1.0
             };
-            let a = sdf_alpha(ring_dist, 255);
+            let a = sdf_alpha(ring, 255);
             if a > 0 {
                 canvas.blend_pixel(px as i32, py as i32, a);
             }
@@ -324,134 +292,78 @@ fn stroke_circle(canvas: &mut Canvas, w: f32, h: f32, frac: f32) {
     }
 }
 
-// -- Half circles --
-
-/// Left-half filled circle.
-fn half_circle_left(canvas: &mut Canvas, w: f32, h: f32) {
+fn half_circle(canvas: &mut Canvas, w: f32, h: f32, side: Dir4) {
     let cx = w / 2.0;
     let cy = h / 2.0;
-    let radius = (w.min(h) * 0.5 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.5);
-    // Fill left half.
+    let radius = (w * 0.6 / 2.0).round();
+    circle_stroke(canvas, w, h, 0.6);
     for py in 0..canvas.height() {
         for px in 0..canvas.width() {
             let dx = px as f32 + 0.5 - cx;
             let dy = py as f32 + 0.5 - cy;
-            if dx < 0.0 && dx.hypot(dy) < radius - 0.5 {
+            let inside = match side {
+                Dir4::Left => dx < 0.0,
+                Dir4::Right => dx > 0.0,
+                Dir4::Up => dy < 0.0,
+                Dir4::Down => dy > 0.0,
+            };
+            if inside && dx.hypot(dy) < radius - 0.5 {
                 canvas.blend_pixel(px as i32, py as i32, 255);
             }
         }
     }
 }
 
-/// Right-half filled circle.
-fn half_circle_right(canvas: &mut Canvas, w: f32, h: f32) {
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let radius = (w.min(h) * 0.5 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.5);
-    for py in 0..canvas.height() {
-        for px in 0..canvas.width() {
-            let dx = px as f32 + 0.5 - cx;
-            let dy = py as f32 + 0.5 - cy;
-            if dx > 0.0 && dx.hypot(dy) < radius - 0.5 {
-                canvas.blend_pixel(px as i32, py as i32, 255);
-            }
-        }
-    }
-}
-
-/// Bottom-half filled circle.
-fn half_circle_bottom(canvas: &mut Canvas, w: f32, h: f32) {
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let radius = (w.min(h) * 0.5 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.5);
-    for py in 0..canvas.height() {
-        for px in 0..canvas.width() {
-            let dx = px as f32 + 0.5 - cx;
-            let dy = py as f32 + 0.5 - cy;
-            if dy > 0.0 && dx.hypot(dy) < radius - 0.5 {
-                canvas.blend_pixel(px as i32, py as i32, 255);
-            }
-        }
-    }
-}
-
-/// Top-half filled circle.
-fn half_circle_top(canvas: &mut Canvas, w: f32, h: f32) {
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let radius = (w.min(h) * 0.5 / 2.0).round();
-    stroke_circle(canvas, w, h, 0.5);
-    for py in 0..canvas.height() {
-        for px in 0..canvas.width() {
-            let dx = px as f32 + 0.5 - cx;
-            let dy = py as f32 + 0.5 - cy;
-            if dy < 0.0 && dx.hypot(dy) < radius - 0.5 {
-                canvas.blend_pixel(px as i32, py as i32, 255);
-            }
-        }
-    }
-}
-
-// -- Corner triangles --
+// -- Corner triangles (fill entire cell) --
 
 #[derive(Clone, Copy)]
-enum CornerTri {
+enum Corner {
     TL,
     TR,
     BL,
     BR,
 }
 
-/// Fill a full-cell corner triangle.
-fn corner_triangle(canvas: &mut Canvas, w: f32, h: f32, corner: CornerTri, alpha: u8) {
+fn corner_tri(canvas: &mut Canvas, w: f32, h: f32, c: Corner, alpha: u8) {
     let rows = h.ceil() as u32;
     for r in 0..rows {
-        let frac = (r as f32 + 0.5) / h;
-        let row_w = (w * frac).round();
-        match corner {
-            CornerTri::BL => canvas.fill_rect(0.0, r as f32, row_w, 1.0, alpha),
-            CornerTri::BR => canvas.fill_rect(w - row_w, r as f32, row_w, 1.0, alpha),
-            CornerTri::TL => {
-                canvas.fill_rect(0.0, h - r as f32 - 1.0, row_w, 1.0, alpha);
-            }
-            CornerTri::TR => {
-                canvas.fill_rect(w - row_w, h - r as f32 - 1.0, row_w, 1.0, alpha);
-            }
+        let f = (r as f32 + 0.5) / h;
+        let rw = (w * f).round();
+        match c {
+            Corner::BL => canvas.fill_rect(0.0, r as f32, rw, 1.0, alpha),
+            Corner::BR => canvas.fill_rect(w - rw, r as f32, rw, 1.0, alpha),
+            Corner::TL => canvas.fill_rect(0.0, h - r as f32 - 1.0, rw, 1.0, alpha),
+            Corner::TR => canvas.fill_rect(w - rw, h - r as f32 - 1.0, rw, 1.0, alpha),
         }
     }
 }
 
-/// Outline a full-cell corner triangle.
-fn corner_triangle_outline(canvas: &mut Canvas, w: f32, h: f32, corner: CornerTri) {
-    let thick = 1.0f32.max((w / 10.0).round());
-    match corner {
-        CornerTri::TL => {
-            canvas.fill_line(0.0, 0.0, 0.0, h, thick);
-            canvas.fill_line(0.0, 0.0, w, 0.0, thick);
-            canvas.fill_line(0.0, h, w, 0.0, thick);
+fn corner_tri_outline(canvas: &mut Canvas, w: f32, h: f32, c: Corner) {
+    let t = thick(w);
+    match c {
+        Corner::TL => {
+            canvas.fill_line(0.0, 0.0, 0.0, h, t);
+            canvas.fill_line(0.0, 0.0, w, 0.0, t);
+            canvas.fill_line(0.0, h, w, 0.0, t);
         }
-        CornerTri::TR => {
-            canvas.fill_line(0.0, 0.0, w, 0.0, thick);
-            canvas.fill_line(w, 0.0, w, h, thick);
-            canvas.fill_line(0.0, 0.0, w, h, thick);
+        Corner::TR => {
+            canvas.fill_line(0.0, 0.0, w, 0.0, t);
+            canvas.fill_line(w, 0.0, w, h, t);
+            canvas.fill_line(0.0, 0.0, w, h, t);
         }
-        CornerTri::BL => {
-            canvas.fill_line(0.0, 0.0, 0.0, h, thick);
-            canvas.fill_line(0.0, h, w, h, thick);
-            canvas.fill_line(0.0, 0.0, w, h, thick);
+        Corner::BL => {
+            canvas.fill_line(0.0, 0.0, 0.0, h, t);
+            canvas.fill_line(0.0, h, w, h, t);
+            canvas.fill_line(0.0, 0.0, w, h, t);
         }
-        CornerTri::BR => {
-            canvas.fill_line(0.0, h, w, h, thick);
-            canvas.fill_line(w, 0.0, w, h, thick);
-            canvas.fill_line(0.0, h, w, 0.0, thick);
+        Corner::BR => {
+            canvas.fill_line(0.0, h, w, h, t);
+            canvas.fill_line(w, 0.0, w, h, t);
+            canvas.fill_line(0.0, h, w, 0.0, t);
         }
     }
 }
 
-/// Convert signed distance to pixel alpha (1px anti-alias zone).
 fn sdf_alpha(dist: f32, max_alpha: u8) -> u8 {
     if dist <= -0.5 {
         max_alpha
