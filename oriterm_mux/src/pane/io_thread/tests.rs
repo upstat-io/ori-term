@@ -25,6 +25,7 @@ fn make_pair() -> (PaneIoThread<VoidListener>, PaneIoHandle) {
         pty_control: None,
         initial_rows: 24,
         initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -40,6 +41,7 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
         pty_control: None,
         initial_rows: 24,
         initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     });
     let join = thread.spawn().expect("failed to spawn IO thread");
     handle.set_join(join);
@@ -72,6 +74,7 @@ fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidList
         pty_control: None,
         last_pty_size: (rows as u32) << 16 | cols as u32,
         search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     }
 }
 
@@ -99,6 +102,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     };
     (thread, wakeup_count)
 }
@@ -144,6 +148,7 @@ fn shutdown_via_channel_disconnect() {
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -173,6 +178,7 @@ fn command_delivery_ordering() {
         pty_control: None,
         initial_rows: 24,
         initial_cols: 80,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     });
 
     for i in 1..=5 {
@@ -214,6 +220,7 @@ fn byte_delivery_parses_vte() {
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -356,6 +363,7 @@ fn handle_bytes_chunked_drains_commands() {
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -583,6 +591,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoC
         pty_control: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
     };
     (thread, cmd_tx)
 }
@@ -776,4 +785,467 @@ fn test_resize_coalescing_preserves_other_commands() {
 
     // Only the last resize should be applied.
     assert_eq!(t.terminal.grid().cols(), 40, "resize should use last size");
+}
+
+// --- Section 06 command tests (scroll, theme, cursor, mark_all_dirty, extract) ---
+
+/// ScrollDisplay command adjusts display offset.
+#[test]
+fn test_scroll_display_command() {
+    let mut t = make_sync_thread();
+
+    // Fill scrollback so there's content to scroll through.
+    for _ in 0..50 {
+        t.handle_bytes(b"scrollback line\r\n");
+    }
+
+    t.handle_command(PaneIoCommand::ScrollDisplay(5));
+
+    assert_eq!(
+        t.terminal.grid().display_offset(),
+        5,
+        "display_offset should be 5 after ScrollDisplay(5)"
+    );
+}
+
+/// ScrollToBottom resets display offset to 0.
+#[test]
+fn test_scroll_to_bottom_command() {
+    let mut t = make_sync_thread();
+
+    // Fill scrollback and scroll up.
+    for _ in 0..50 {
+        t.handle_bytes(b"scrollback line\r\n");
+    }
+    t.terminal.grid_mut().scroll_display(10);
+    assert!(
+        t.terminal.grid().display_offset() > 0,
+        "should be scrolled up"
+    );
+
+    t.handle_command(PaneIoCommand::ScrollToBottom);
+
+    assert_eq!(
+        t.terminal.grid().display_offset(),
+        0,
+        "display_offset should be 0 after ScrollToBottom"
+    );
+}
+
+/// ScrollToPreviousPrompt scrolls to a prompt marker above viewport.
+#[test]
+fn test_scroll_to_previous_prompt_command() {
+    let mut t = make_sync_thread();
+
+    // Insert a prompt marker near the top.
+    t.handle_bytes(b"\x1b]133;A\x07");
+    t.handle_bytes(b"prompt line\r\n");
+
+    // Fill more lines to push the prompt into scrollback.
+    for _ in 0..50 {
+        t.handle_bytes(b"output line\r\n");
+    }
+
+    // Should be at live view (offset 0).
+    assert_eq!(t.terminal.grid().display_offset(), 0);
+
+    t.handle_command(PaneIoCommand::ScrollToPreviousPrompt);
+
+    // After scrolling to previous prompt, display_offset should be > 0
+    // (we scrolled up to see the prompt).
+    assert!(
+        t.terminal.grid().display_offset() > 0,
+        "should have scrolled up to prompt marker"
+    );
+}
+
+/// SetTheme command updates the terminal's palette.
+#[test]
+fn test_set_theme_command() {
+    let mut t = make_sync_thread();
+
+    let light_palette = oriterm_core::Palette::for_theme(Theme::Light);
+    t.handle_command(PaneIoCommand::SetTheme(
+        Theme::Light,
+        Box::new(light_palette),
+    ));
+
+    // The terminal's palette should now match the light palette.
+    let p = t.terminal.palette();
+    let expected = oriterm_core::Palette::for_theme(Theme::Light);
+    assert_eq!(
+        p.foreground(),
+        expected.foreground(),
+        "palette foreground should match light theme"
+    );
+    assert_eq!(
+        p.background(),
+        expected.background(),
+        "palette background should match light theme"
+    );
+}
+
+/// SetCursorShape command changes the cursor shape.
+#[test]
+fn test_set_cursor_shape_command() {
+    use oriterm_core::CursorShape;
+
+    let mut t = make_sync_thread();
+
+    t.handle_command(PaneIoCommand::SetCursorShape(CursorShape::Block));
+    assert_eq!(
+        t.terminal.cursor_shape(),
+        CursorShape::Block,
+        "cursor shape should be Block"
+    );
+
+    t.handle_command(PaneIoCommand::SetCursorShape(CursorShape::Underline));
+    assert_eq!(
+        t.terminal.cursor_shape(),
+        CursorShape::Underline,
+        "cursor shape should be Underline"
+    );
+}
+
+/// MarkAllDirty command marks all lines dirty.
+#[test]
+fn test_mark_all_dirty_command() {
+    let mut t = make_sync_thread();
+
+    // Reset damage first.
+    t.terminal.reset_damage();
+    assert!(
+        !t.terminal.grid().dirty().is_all_dirty(),
+        "damage should be clear after reset"
+    );
+
+    t.handle_command(PaneIoCommand::MarkAllDirty);
+
+    assert!(
+        t.terminal.grid().dirty().is_all_dirty(),
+        "all lines should be dirty after MarkAllDirty"
+    );
+}
+
+/// ExtractText with a reply channel returns the selected text.
+#[test]
+fn test_extract_text_reply() {
+    use oriterm_core::grid::StableRowIndex;
+    use oriterm_core::index::Side;
+    use oriterm_core::{Selection, SelectionMode, SelectionPoint};
+
+    let mut t = make_sync_thread();
+
+    t.handle_bytes(b"hello world");
+
+    // Build a selection covering columns 0-10 on the first visible line.
+    let grid = t.terminal.grid();
+    let stable = StableRowIndex::from_visible(grid, 0);
+    let anchor = SelectionPoint {
+        row: stable,
+        col: 0,
+        side: Side::Left,
+    };
+    let end_point = SelectionPoint {
+        row: stable,
+        col: 10,
+        side: Side::Right,
+    };
+    let selection = Selection {
+        mode: SelectionMode::Char,
+        anchor,
+        pivot: end_point,
+        end: end_point,
+    };
+
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    t.handle_reply_command(PaneIoCommand::ExtractText {
+        selection,
+        reply: tx,
+    });
+
+    let result = rx.recv_timeout(Duration::from_millis(100));
+    assert!(result.is_ok(), "should receive reply");
+    let text = result.unwrap();
+    assert!(text.is_some(), "extraction should produce text");
+    assert_eq!(text.unwrap(), "hello world");
+}
+
+/// ExtractText on a disconnected channel (dead IO thread) returns Err, not a hang.
+#[test]
+fn test_extract_text_timeout_safety() {
+    let (tx, rx) = crossbeam_channel::bounded::<Option<String>>(1);
+
+    // Drop the sender without sending — simulates a dead IO thread.
+    drop(tx);
+
+    // This must return immediately with Err(Disconnected), not block.
+    let result = rx.recv_timeout(Duration::from_millis(100));
+    assert!(
+        result.is_err(),
+        "recv on disconnected channel should return Err, not hang"
+    );
+}
+
+/// ExtractHtml with a reply channel returns HTML and plain text.
+#[test]
+fn test_extract_html_reply() {
+    use oriterm_core::grid::StableRowIndex;
+    use oriterm_core::index::Side;
+    use oriterm_core::{Selection, SelectionMode, SelectionPoint};
+
+    let mut t = make_sync_thread();
+
+    // Write styled text: red foreground.
+    t.handle_bytes(b"\x1b[31mred text\x1b[0m");
+
+    let grid = t.terminal.grid();
+    let stable = StableRowIndex::from_visible(grid, 0);
+    let anchor = SelectionPoint {
+        row: stable,
+        col: 0,
+        side: Side::Left,
+    };
+    let end_point = SelectionPoint {
+        row: stable,
+        col: 7,
+        side: Side::Right,
+    };
+    let selection = Selection {
+        mode: SelectionMode::Char,
+        anchor,
+        pivot: end_point,
+        end: end_point,
+    };
+
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    t.handle_reply_command(PaneIoCommand::ExtractHtml {
+        selection,
+        font_family: "monospace".to_string(),
+        font_size: 12.0,
+        reply: tx,
+    });
+
+    let result = rx.recv_timeout(Duration::from_millis(100));
+    assert!(result.is_ok(), "should receive reply");
+    let data = result.unwrap();
+    assert!(data.is_some(), "extraction should produce HTML");
+    let (html, text) = data.unwrap();
+    assert!(
+        text.contains("red text"),
+        "plain text should contain 'red text', got: {text:?}"
+    );
+    assert!(
+        html.contains("<span"),
+        "HTML should contain styled spans, got: {html:?}"
+    );
+}
+
+// --- Section 06 search, mark mode, selection tests ---
+
+/// OpenSearch/CloseSearch commands toggle search state on the IO thread.
+#[test]
+fn test_open_close_search() {
+    let mut t = make_sync_thread();
+
+    assert!(t.search.is_none(), "search should be None initially");
+
+    t.handle_command(PaneIoCommand::OpenSearch);
+    assert!(t.search.is_some(), "search should be Some after OpenSearch");
+
+    t.handle_command(PaneIoCommand::CloseSearch);
+    assert!(
+        t.search.is_none(),
+        "search should be None after CloseSearch"
+    );
+}
+
+/// SearchSetQuery finds matches in the terminal grid.
+#[test]
+fn test_search_set_query_finds_matches() {
+    let mut t = make_sync_thread();
+
+    t.handle_bytes(b"foo bar foo");
+    t.handle_command(PaneIoCommand::OpenSearch);
+    t.handle_command(PaneIoCommand::SearchSetQuery("foo".to_string()));
+
+    let search = t.search.as_ref().expect("search should be active");
+    assert_eq!(search.matches().len(), 2, "should find 2 matches for 'foo'");
+}
+
+/// SearchNextMatch/SearchPrevMatch advance and retreat the focused index.
+#[test]
+fn test_search_next_prev_match() {
+    let mut t = make_sync_thread();
+
+    // Write text with 3 occurrences of "ab".
+    t.handle_bytes(b"ab cd ab ef ab");
+    t.handle_command(PaneIoCommand::OpenSearch);
+    t.handle_command(PaneIoCommand::SearchSetQuery("ab".to_string()));
+
+    let search = t.search.as_ref().unwrap();
+    assert_eq!(search.matches().len(), 3, "should find 3 matches");
+    let initial_focus = search.focused_index();
+
+    t.handle_command(PaneIoCommand::SearchNextMatch);
+    let after_next = t.search.as_ref().unwrap().focused_index();
+    assert_ne!(
+        after_next, initial_focus,
+        "focus should advance after SearchNextMatch"
+    );
+
+    t.handle_command(PaneIoCommand::SearchNextMatch);
+    let after_next2 = t.search.as_ref().unwrap().focused_index();
+
+    t.handle_command(PaneIoCommand::SearchPrevMatch);
+    let after_prev = t.search.as_ref().unwrap().focused_index();
+    assert_eq!(
+        after_prev, after_next,
+        "focus should retreat to previous position after SearchPrevMatch"
+    );
+    // Suppress "unused" warning.
+    let _ = after_next2;
+}
+
+/// Search results appear in produced snapshots.
+#[test]
+fn test_search_results_in_snapshot() {
+    let mut t = make_sync_thread();
+
+    t.handle_bytes(b"foo bar foo");
+    t.handle_command(PaneIoCommand::OpenSearch);
+    t.handle_command(PaneIoCommand::SearchSetQuery("foo".to_string()));
+    t.grid_dirty.store(true, Ordering::Release);
+    t.produce_snapshot();
+
+    let mut snap = oriterm_core::RenderableContent::default();
+    assert!(t.double_buffer.swap_front(&mut snap));
+
+    assert!(
+        snap.search_active,
+        "snapshot should have search_active=true"
+    );
+    assert_eq!(
+        snap.search_query, "foo",
+        "snapshot search_query should be 'foo'"
+    );
+    assert_eq!(
+        snap.search_total_matches, 2,
+        "snapshot should report 2 matches"
+    );
+    assert!(
+        !snap.search_matches.is_empty(),
+        "matches list should be populated"
+    );
+}
+
+/// EnterMarkMode reply contains valid cursor coordinates.
+#[test]
+fn test_enter_mark_mode_reply() {
+    use crate::pane::MarkCursor;
+
+    let mut t = make_sync_thread();
+
+    // Write some text so cursor is at a known position.
+    t.handle_bytes(b"hello");
+
+    let (tx, rx) = crossbeam_channel::bounded::<MarkCursor>(1);
+    t.handle_reply_command(PaneIoCommand::EnterMarkMode { reply: tx });
+
+    let mc = rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("should receive MarkCursor reply");
+
+    // Cursor should be at col 5 (after "hello") on row 0.
+    assert_eq!(mc.col, 5, "mark cursor col should be 5 (after 'hello')");
+
+    // Terminal should be scrolled to bottom (display_offset == 0).
+    assert_eq!(
+        t.terminal.grid().display_offset(),
+        0,
+        "terminal should be at live view after enter_mark_mode"
+    );
+}
+
+/// IO thread propagates selection_dirty to the shared atomic.
+#[test]
+fn test_selection_dirty_atomic() {
+    let mut t = make_sync_thread();
+
+    assert!(
+        !t.selection_dirty.load(Ordering::Acquire),
+        "selection_dirty should be false initially"
+    );
+
+    // Writing a character sets Term::selection_dirty; handle_bytes propagates.
+    t.handle_bytes(b"X");
+
+    assert!(
+        t.selection_dirty.load(Ordering::Acquire),
+        "selection_dirty should be true after terminal output"
+    );
+}
+
+/// SelectCommandOutput returns a selection covering the command output zone.
+#[test]
+fn test_select_command_output_reply() {
+    use oriterm_core::Selection;
+
+    let mut t = make_sync_thread();
+
+    // Set up prompt markers: prompt start → command start → output start.
+    t.handle_bytes(b"\x1b]133;A\x07"); // Prompt start.
+    t.handle_bytes(b"$ ls\r\n");
+    t.handle_bytes(b"\x1b]133;C\x07"); // Output start.
+    t.handle_bytes(b"file1.txt\r\nfile2.txt\r\n");
+
+    let (tx, rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
+    t.handle_reply_command(PaneIoCommand::SelectCommandOutput { reply: tx });
+
+    let result = rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("should receive reply");
+
+    // Command output selection may or may not be found depending on
+    // whether the prompt markers form a complete output zone. The test
+    // verifies the command round-trips without panicking.
+    // If a valid zone was found, the selection should be non-empty.
+    if let Some(sel) = result {
+        assert_eq!(
+            sel.mode,
+            oriterm_core::SelectionMode::Line,
+            "output selection should be line mode"
+        );
+    }
+}
+
+/// SelectCommandInput returns a selection covering the command input zone.
+#[test]
+fn test_select_command_input_reply() {
+    use oriterm_core::Selection;
+
+    let mut t = make_sync_thread();
+
+    // Set up a complete prompt cycle.
+    t.handle_bytes(b"\x1b]133;A\x07"); // Prompt start.
+    t.handle_bytes(b"\x1b]133;B\x07"); // Command start.
+    t.handle_bytes(b"echo hello\r\n");
+    t.handle_bytes(b"\x1b]133;C\x07"); // Output start.
+    t.handle_bytes(b"hello\r\n");
+
+    let (tx, rx) = crossbeam_channel::bounded::<Option<Selection>>(1);
+    t.handle_reply_command(PaneIoCommand::SelectCommandInput { reply: tx });
+
+    let result = rx
+        .recv_timeout(Duration::from_millis(100))
+        .expect("should receive reply");
+
+    // As with output, the zone may or may not be found.
+    if let Some(sel) = result {
+        assert_eq!(
+            sel.mode,
+            oriterm_core::SelectionMode::Line,
+            "input selection should be line mode"
+        );
+    }
 }

@@ -51,6 +51,11 @@ impl<T: EventListener> Term<T> {
             lines: 0,
             scrollback_len: 0,
             palette_snapshot: Vec::new(),
+            search_active: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_focused: None,
+            search_total_matches: 0,
             seen_image_ids: HashSet::new(),
         };
         self.renderable_content_into(&mut out);

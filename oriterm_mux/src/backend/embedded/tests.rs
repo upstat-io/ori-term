@@ -127,3 +127,35 @@ fn is_not_daemon_mode() {
     let mux = EmbeddedMux::new(test_wakeup());
     assert!(!mux.is_daemon_mode());
 }
+
+// -- IO command routing --
+
+/// `scroll_display` on a non-existent pane is a no-op (no panic).
+///
+/// The actual command routing is verified by `test_scroll_display_command`
+/// in `pane::io_thread::tests`. This test confirms the EmbeddedMux method
+/// handles missing panes gracefully.
+#[test]
+fn scroll_display_missing_pane_is_noop() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(999);
+    mux.scroll_display(bogus, 5);
+}
+
+/// `search_set_query` on a non-existent pane is a no-op (no panic).
+///
+/// The actual search command handling is verified by
+/// `test_search_set_query_finds_matches` in `pane::io_thread::tests`.
+#[test]
+fn search_set_query_missing_pane_is_noop() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(999);
+    mux.search_set_query(bogus, "foo".to_string());
+}
+
+/// `is_search_active` returns false for non-existent panes.
+#[test]
+fn search_active_missing_pane() {
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(!mux.is_search_active(PaneId::from_raw(999)));
+}

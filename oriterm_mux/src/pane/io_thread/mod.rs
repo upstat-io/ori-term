@@ -74,6 +74,10 @@ pub struct PaneIoThread<T: EventListener> {
     /// Search state — owned by the IO thread so `set_query()` can read the
     /// grid directly without cross-thread locking.
     search: Option<oriterm_core::SearchState>,
+    /// Shared selection-dirty flag. Set by the IO thread after VTE parsing
+    /// when `Term::selection_dirty` becomes true. Read/cleared by the main
+    /// thread in `check_selection_invalidation()`.
+    selection_dirty: Arc<AtomicBool>,
 }
 
 impl<T: EventListener> PaneIoThread<T> {
@@ -217,6 +221,12 @@ impl<T: EventListener> PaneIoThread<T> {
         // 5. Update mode cache for lock-free queries from main thread.
         self.mode_cache
             .store(self.terminal.mode().bits(), Ordering::Release);
+
+        // 6. Propagate selection-dirty flag for lock-free main-thread reads.
+        if self.terminal.is_selection_dirty() {
+            self.terminal.clear_selection_dirty();
+            self.selection_dirty.store(true, Ordering::Release);
+        }
     }
 
     /// Process a resize command on the IO thread.
@@ -429,6 +439,32 @@ impl<T: EventListener> PaneIoThread<T> {
         self.produce_snapshot();
     }
 
+    /// Fill search state into the snapshot buffer from IO thread's `SearchState`.
+    fn fill_search_snapshot(&mut self) {
+        if let Some(ref search) = self.search {
+            self.snapshot_buf.search_active = true;
+            self.snapshot_buf.search_query.clear();
+            self.snapshot_buf.search_query.push_str(search.query());
+            self.snapshot_buf.search_matches.clear();
+            self.snapshot_buf
+                .search_matches
+                .extend_from_slice(search.matches());
+            let total = search.matches().len() as u32;
+            self.snapshot_buf.search_total_matches = total;
+            self.snapshot_buf.search_focused = if search.matches().is_empty() {
+                None
+            } else {
+                Some(search.focused_index() as u32)
+            };
+        } else {
+            self.snapshot_buf.search_active = false;
+            self.snapshot_buf.search_query.clear();
+            self.snapshot_buf.search_matches.clear();
+            self.snapshot_buf.search_focused = None;
+            self.snapshot_buf.search_total_matches = 0;
+        }
+    }
+
     /// Produce a rendering snapshot and publish it to the double buffer.
     ///
     /// Called after processing bytes or commands that change terminal state.
@@ -437,6 +473,7 @@ impl<T: EventListener> PaneIoThread<T> {
     fn produce_snapshot(&mut self) {
         self.terminal
             .renderable_content_into(&mut self.snapshot_buf);
+        self.fill_search_snapshot();
         self.terminal.reset_damage();
         self.double_buffer.flip_swap(&mut self.snapshot_buf);
 
@@ -540,6 +577,8 @@ pub struct IoThreadConfig<T: EventListener> {
     pub initial_rows: u16,
     /// Initial PTY columns from spawn.
     pub initial_cols: u16,
+    /// Shared selection-dirty flag (set by IO thread, read/cleared by main thread).
+    pub selection_dirty: Arc<AtomicBool>,
 }
 
 /// Create the IO thread and its main-thread handle.
@@ -573,6 +612,7 @@ pub fn new_with_handle<T: EventListener>(
         pty_control: config.pty_control,
         last_pty_size: (config.initial_rows as u32) << 16 | config.initial_cols as u32,
         search: None,
+        selection_dirty: config.selection_dirty,
     };
     let handle = PaneIoHandle {
         cmd_tx,

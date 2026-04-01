@@ -354,13 +354,20 @@ fn fill_metadata_from_renderable(
     out.stable_row_base = render_buf.stable_row_base;
     out.cols = render_buf.cols as u16;
 
-    // Search state.
-    if let Some(search) = pane.search() {
+    // Search state from RenderableContent (filled by IO thread).
+    fill_search_from_renderable(render_buf, out);
+}
+
+/// Fill search state in a [`PaneSnapshot`] from [`RenderableContent`] fields.
+///
+/// Reads search data that the IO thread populated during snapshot production.
+fn fill_search_from_renderable(render_buf: &RenderableContent, out: &mut PaneSnapshot) {
+    if render_buf.search_active {
         out.search_active = true;
         out.search_query.clear();
-        out.search_query.push_str(search.query());
+        out.search_query.push_str(&render_buf.search_query);
         out.search_matches.clear();
-        for m in search.matches() {
+        for m in &render_buf.search_matches {
             out.search_matches.push(WireSearchMatch {
                 start_row: m.start_row.0,
                 start_col: u16::try_from(m.start_col).unwrap_or(u16::MAX),
@@ -368,13 +375,8 @@ fn fill_metadata_from_renderable(
                 end_col: u16::try_from(m.end_col).unwrap_or(u16::MAX),
             });
         }
-        let total = out.search_matches.len() as u32;
-        out.search_total_matches = total;
-        out.search_focused = if out.search_matches.is_empty() {
-            None
-        } else {
-            Some(search.focused_index() as u32)
-        };
+        out.search_total_matches = render_buf.search_total_matches;
+        out.search_focused = render_buf.search_focused;
     } else {
         out.search_active = false;
         out.search_query.clear();

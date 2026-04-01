@@ -418,12 +418,12 @@ impl MuxBackend for EmbeddedMux {
     fn is_selection_dirty(&self, pane_id: PaneId) -> bool {
         self.panes
             .get(&pane_id)
-            .is_some_and(|pane| pane.terminal().lock().is_selection_dirty())
+            .is_some_and(Pane::is_io_selection_dirty)
     }
 
     fn clear_selection_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
-            pane.terminal().lock().clear_selection_dirty();
+            pane.clear_io_selection_dirty();
         }
     }
 

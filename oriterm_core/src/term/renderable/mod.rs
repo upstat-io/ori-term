@@ -14,6 +14,7 @@ use crate::color::{Palette, Rgb, dim_rgb};
 use crate::grid::{CursorShape, DirtyIter};
 use crate::image::ImageId;
 use crate::index::Column;
+use crate::search::SearchMatch;
 use crate::term::mode::TermMode;
 
 /// A single cell ready for rendering.
@@ -170,6 +171,16 @@ pub struct RenderableContent {
     /// Fixed-size (270 entries), allocated once and reused via buffer swap.
     /// Consumers read palette colors without needing `&Palette`.
     pub palette_snapshot: Vec<[u8; 3]>,
+    /// Whether search mode is active on this pane.
+    pub search_active: bool,
+    /// Current search query text.
+    pub search_query: String,
+    /// Search match positions for rendering highlights.
+    pub search_matches: Vec<SearchMatch>,
+    /// Index of the focused match, if any.
+    pub search_focused: Option<u32>,
+    /// Total number of search matches.
+    pub search_total_matches: u32,
     /// Scratch buffer for image extraction — reused across frames to
     /// avoid per-frame `HashSet` allocation. Not part of the semantic
     /// snapshot; only used internally by `extract_images`.
@@ -198,6 +209,11 @@ impl Default for RenderableContent {
             lines: 0,
             scrollback_len: 0,
             palette_snapshot: Vec::new(),
+            search_active: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_focused: None,
+            search_total_matches: 0,
             seen_image_ids: HashSet::new(),
         }
     }
@@ -223,6 +239,11 @@ impl RenderableContent {
         self.lines = 0;
         self.scrollback_len = 0;
         self.palette_snapshot.clear();
+        self.search_active = false;
+        self.search_query.clear();
+        self.search_matches.clear();
+        self.search_focused = None;
+        self.search_total_matches = 0;
         self.cursor = RenderableCursor {
             line: 0,
             column: Column(0),
@@ -240,6 +261,7 @@ impl RenderableContent {
         maybe_shrink_vec(&mut self.damage);
         maybe_shrink_vec(&mut self.images);
         maybe_shrink_vec(&mut self.image_data);
+        maybe_shrink_vec(&mut self.search_matches);
     }
 }
 

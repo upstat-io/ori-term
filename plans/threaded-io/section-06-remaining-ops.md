@@ -19,13 +19,13 @@ sections:
     status: complete
   - id: "06.3"
     title: "Text Extraction (Clipboard)"
-    status: complete
+    status: in-progress
   - id: "06.4"
     title: "Search Operations"
-    status: in-progress
+    status: complete
   - id: "06.5"
     title: "Mark Mode & Prompt Navigation"
-    status: in-progress
+    status: complete
   - id: "06.6"
     title: "Daemon Server Dispatch Migration"
     status: complete
@@ -34,7 +34,7 @@ sections:
     status: not-started
   - id: "06.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 06: Remaining State Operations
@@ -206,15 +206,15 @@ Text extraction needs a response — it reads grid cells and returns a String. T
 
 **File:** `oriterm_mux/src/pane/io_thread/tests.rs` (extend)
 
-- [ ] `test_scroll_display_command` — send `ScrollDisplay(5)`, assert `terminal.grid().display_offset()` is 5 (after producing enough scrollback).
-- [ ] `test_scroll_to_bottom_command` — scroll up, send `ScrollToBottom`, assert `display_offset == 0`.
-- [ ] `test_scroll_to_previous_prompt_command` — set up prompt markers, send `ScrollToPreviousPrompt`. Assert viewport scrolled to the prompt line.
-- [ ] `test_set_theme_command` — send `SetTheme(dark_theme, dark_palette)`. Assert `terminal.palette()` matches the new palette.
-- [ ] `test_set_cursor_shape_command` — send `SetCursorShape(Block)`. Assert `terminal.cursor_shape()` is `Block`.
-- [ ] `test_mark_all_dirty_command` — send `MarkAllDirty`. Assert all lines are dirty in the terminal's damage tracker.
-- [ ] `test_extract_text_reply` — write "hello world" to the terminal, send `ExtractText` with a selection covering the text and a reply channel. Assert `rx.recv()` returns `Some("hello world")`.
-- [ ] `test_extract_text_timeout_safety` — shut down the IO thread (send `Shutdown`, join it), then send `ExtractText` on the now-disconnected channel. Assert `rx.recv_timeout(100ms)` returns `Err` (not a hang). Verifies the main thread doesn't block forever on a dead IO thread.
-- [ ] `test_extract_html_reply` — write styled text, send `ExtractHtml`. Assert reply contains both HTML and plain text strings.
+- [x] `test_scroll_display_command` — send `ScrollDisplay(5)`, assert `terminal.grid().display_offset()` is 5 (after producing enough scrollback).
+- [x] `test_scroll_to_bottom_command` — scroll up, send `ScrollToBottom`, assert `display_offset == 0`.
+- [x] `test_scroll_to_previous_prompt_command` — set up prompt markers, send `ScrollToPreviousPrompt`. Assert viewport scrolled to the prompt line.
+- [x] `test_set_theme_command` — send `SetTheme(dark_theme, dark_palette)`. Assert `terminal.palette()` matches the new palette.
+- [x] `test_set_cursor_shape_command` — send `SetCursorShape(Block)`. Assert `terminal.cursor_shape()` is `Block`.
+- [x] `test_mark_all_dirty_command` — send `MarkAllDirty`. Assert all lines are dirty in the terminal's damage tracker.
+- [x] `test_extract_text_reply` — write "hello world" to the terminal, send `ExtractText` with a selection covering the text and a reply channel. Assert `rx.recv()` returns `Some("hello world")`.
+- [x] `test_extract_text_timeout_safety` — shut down the IO thread (send `Shutdown`, join it), then send `ExtractText` on the now-disconnected channel. Assert `rx.recv_timeout(100ms)` returns `Err` (not a hang). Verifies the main thread doesn't block forever on a dead IO thread.
+- [x] `test_extract_html_reply` — write styled text, send `ExtractHtml`. Assert reply contains both HTML and plain text strings.
 
 ---
 
@@ -235,7 +235,7 @@ Search state currently lives on `Pane` (not `Term`), but `search_set_query()` lo
 
 - [x] IO thread handlers: the IO thread owns `SearchState` as a field on `PaneIoThread`. `SearchSetQuery` calls `search.set_query(query, self.terminal.grid())` directly — no lock needed since the IO thread owns both.
 
-- [ ] **Search results in snapshots**: Search matches, focused index, and query must be included in `RenderableContent` so both the renderer AND daemon snapshot metadata can display them without needing `pane.search()`. Add these fields to `RenderableContent` (in `oriterm_core/src/term/renderable/mod.rs`):
+- [x] **Search results in snapshots**: Search matches, focused index, and query must be included in `RenderableContent` so both the renderer AND daemon snapshot metadata can display them without needing `pane.search()`. Add these fields to `RenderableContent` (in `oriterm_core/src/term/renderable/mod.rs`):
   ```rust
   pub search_active: bool,
   pub search_query: String,
@@ -244,9 +244,9 @@ Search state currently lives on `Pane` (not `Term`), but `search_set_query()` lo
   pub search_total_matches: u32,
   ```
   The IO thread fills these during `produce_snapshot()` by reading its `SearchState`.
-- [ ] Update `fill_snapshot_metadata()` in `oriterm_mux/src/server/snapshot.rs` to read search state from `RenderableContent` instead of `pane.search()`. The search block (lines 214-240) switches from `pane.search().matches()` etc. to `render_buf.search_matches`, `render_buf.search_query`, etc.
+- [x] Update `fill_snapshot_metadata()` in `oriterm_mux/src/server/snapshot.rs` to read search state from `RenderableContent` instead of `pane.search()`. The search block (lines 214-240) switches from `pane.search().matches()` etc. to `render_buf.search_matches`, `render_buf.search_query`, etc.
 
-- [ ] `is_search_active()` — keep a `search_active: AtomicBool` on `Pane` that the IO thread updates via `OpenSearch`/`CloseSearch` commands. This allows the main thread to query search state without a reply channel. Alternatively, read from the latest snapshot.
+- [x] `is_search_active()` — keep a `search_active: AtomicBool` on `Pane` that the IO thread updates via `OpenSearch`/`CloseSearch` commands. This allows the main thread to query search state without a reply channel. Alternatively, read from the latest snapshot.
 
 ---
 
@@ -278,9 +278,9 @@ Mark mode and prompt navigation currently lock the terminal for cursor position 
 
 - [x] Selection operations: `Pane.selection` is Pane-local. No migration needed — selection already works from snapshot data.
 
-- [ ] `is_selection_dirty()` / `clear_selection_dirty()` currently lock the terminal (see `embedded/mod.rs:392-400`). Add a `selection_dirty: AtomicBool` to `Pane` that the IO thread sets when `Term::selection_dirty` becomes true. The IO thread checks this after each VTE parse cycle and updates the atomic. The main thread reads/clears the atomic without locking.
+- [x] `is_selection_dirty()` / `clear_selection_dirty()` currently lock the terminal (see `embedded/mod.rs:392-400`). Add a `selection_dirty: AtomicBool` to `Pane` that the IO thread sets when `Term::selection_dirty` becomes true. The IO thread checks this after each VTE parse cycle and updates the atomic. The main thread reads/clears the atomic without locking.
 
-- [ ] `check_selection_invalidation()` (in `pane/selection.rs:39-53`) locks the terminal to read `is_selection_dirty()`. After migration, this reads the `selection_dirty` atomic instead.
+- [x] `check_selection_invalidation()` (in `pane/selection.rs:39-53`) locks the terminal to read `is_selection_dirty()`. After migration, this reads the `selection_dirty` atomic instead.
 
 - [x] `command_output_selection()` and `command_input_selection()` (in `pane/selection.rs:92-131`) lock the terminal to read grid state and prompt markers. These need to become IO thread commands with reply channels:
   ```rust
@@ -311,21 +311,21 @@ The daemon server dispatch has the same pattern as `EmbeddedMux` — it locks th
 
 **File:** `oriterm_mux/src/pane/io_thread/tests.rs` (extend)
 
-- [ ] `test_open_close_search` — send `OpenSearch`, assert IO thread's `SearchState` is `Some`. Send `CloseSearch`, assert `None`.
-- [ ] `test_search_set_query_finds_matches` — write "foo bar foo" to terminal, send `OpenSearch` then `SearchSetQuery("foo")`. Assert the search state has 2 matches.
-- [ ] `test_search_next_prev_match` — set up 3 matches. Send `SearchNextMatch` twice. Assert focused index advances. Send `SearchPrevMatch`, assert it goes back.
-- [ ] `test_search_results_in_snapshot` — set query, produce snapshot. Assert `RenderableContent.search_active == true`, `search_total_matches > 0`, `search_query == "foo"`.
-- [ ] `test_enter_mark_mode_reply` — send `EnterMarkMode` with reply channel. Assert reply contains a `MarkCursor` with valid row/col. Assert the terminal was scrolled to bottom first.
-- [ ] `test_selection_dirty_atomic` — write output that invalidates selection. Assert the `selection_dirty` `AtomicBool` on `Pane` is set to `true` by the IO thread.
-- [ ] `test_select_command_output_reply` — set up prompt markers and command output zone. Send `SelectCommandOutput` with reply. Assert reply contains a valid `Selection` covering the output zone.
-- [ ] `test_select_command_input_reply` — same as above but for `SelectCommandInput`.
+- [x] `test_open_close_search` — send `OpenSearch`, assert IO thread's `SearchState` is `Some`. Send `CloseSearch`, assert `None`.
+- [x] `test_search_set_query_finds_matches` — write "foo bar foo" to terminal, send `OpenSearch` then `SearchSetQuery("foo")`. Assert the search state has 2 matches.
+- [x] `test_search_next_prev_match` — set up 3 matches. Send `SearchNextMatch` twice. Assert focused index advances. Send `SearchPrevMatch`, assert it goes back.
+- [x] `test_search_results_in_snapshot` — set query, produce snapshot. Assert `RenderableContent.search_active == true`, `search_total_matches > 0`, `search_query == "foo"`.
+- [x] `test_enter_mark_mode_reply` — send `EnterMarkMode` with reply channel. Assert reply contains a `MarkCursor` with valid row/col. Assert the terminal was scrolled to bottom first.
+- [x] `test_selection_dirty_atomic` — write output that invalidates selection. Assert the `selection_dirty` `AtomicBool` on `Pane` is set to `true` by the IO thread.
+- [x] `test_select_command_output_reply` — set up prompt markers and command output zone. Send `SelectCommandOutput` with reply. Assert reply contains a valid `Selection` covering the output zone.
+- [x] `test_select_command_input_reply` — same as above but for `SelectCommandInput`.
 
 **File:** `oriterm_mux/src/backend/embedded/tests.rs` (extend)
 
-- [ ] `test_embedded_search_routes_through_io` — call `EmbeddedMux::search_set_query()`. Assert no `terminal().lock()` call occurs (the old lock path is removed). Verify search results appear in the next snapshot.
-- [ ] `test_embedded_scroll_routes_through_io` — call `EmbeddedMux::scroll_display()`. Assert the command was sent to the IO thread (not a direct lock).
+- [x] `test_embedded_search_routes_through_io` — call `EmbeddedMux::search_set_query()`. Assert no `terminal().lock()` call occurs (the old lock path is removed). Verify search results appear in the next snapshot.
+- [x] `test_embedded_scroll_routes_through_io` — call `EmbeddedMux::scroll_display()`. Assert the command was sent to the IO thread (not a direct lock).
 
-- [ ] **Define `SearchMatch` type in `oriterm_core`**: The `search_matches: Vec<SearchMatch>` field added to `RenderableContent` needs a `SearchMatch` struct. Define it in `oriterm_core/src/search.rs` or alongside `RenderableContent`. It should contain at minimum: `start_row: usize`, `start_col: usize`, `end_row: usize`, `end_col: usize` (compacted match positions for rendering highlights).
+- [x] **Define `SearchMatch` type in `oriterm_core`**: The `search_matches: Vec<SearchMatch>` field added to `RenderableContent` needs a `SearchMatch` struct. Already exists at `oriterm_core/src/search/mod.rs:25` with `start_row: StableRowIndex`, `start_col: usize`, `end_row: StableRowIndex`, `end_col: usize`.
 
 ---
 
@@ -345,9 +345,9 @@ The daemon server dispatch has the same pattern as `EmbeddedMux` — it locks th
 - [x] `set_image_config()` routes through IO command
 - [x] `extract_text()`, `extract_html()` use request-response via reply channel
 - [x] Search operations (open, close, query, next, prev) route through IO commands
-- [ ] Search state included in snapshots for rendering
+- [x] Search state included in snapshots for rendering
 - [x] Mark mode cursor read uses IO command with reply
-- [ ] Selection dirty state accessible without terminal lock
+- [x] Selection dirty state accessible without terminal lock
 - [x] `command_output_selection()`, `command_input_selection()` use IO commands with reply
 - [ ] No remaining `pane.terminal().lock()` calls in `EmbeddedMux` methods
 - [ ] No remaining `pane.terminal().lock()` calls in `server/dispatch` handlers

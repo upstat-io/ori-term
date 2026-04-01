@@ -96,6 +96,8 @@ pub struct PaneParts {
     pub initial_rows: u16,
     /// Initial PTY columns from spawn.
     pub initial_cols: u16,
+    /// Shared selection-dirty flag (passed to IO thread).
+    pub io_selection_dirty: Arc<AtomicBool>,
 }
 
 /// Owns all per-shell-session state: terminal, PTY handles, reader thread.
@@ -130,6 +132,8 @@ pub struct Pane {
     /// `Shutdown` and joins the thread.
     #[allow(dead_code, reason = "owned for Drop lifetime — read in section 02+")]
     io_handle: PaneIoHandle,
+    /// Lock-free selection-dirty flag (set by IO thread, read/cleared by main thread).
+    io_selection_dirty: Arc<AtomicBool>,
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,
     /// Set by reader thread when new content is available.
@@ -165,6 +169,12 @@ pub struct Pane {
     mark_cursor: Option<MarkCursor>,
     /// Active search state (query, matches, navigation).
     search: Option<SearchState>,
+    /// Lock-free search active flag (mirrors IO thread's search state).
+    ///
+    /// Set by `EmbeddedMux::open_search()`, cleared by `close_search()`.
+    /// Allows `is_search_active()` to work without locking the terminal
+    /// or requiring a reply channel to the IO thread.
+    search_active: Arc<AtomicBool>,
 }
 
 impl Pane {
@@ -180,6 +190,7 @@ impl Pane {
             reader_thread: Some(parts.reader_thread),
             writer_thread: Some(parts.writer_thread),
             io_handle: parts.io_handle,
+            io_selection_dirty: parts.io_selection_dirty,
             pty: parts.pty,
             grid_dirty: parts.grid_dirty,
             wakeup_pending: parts.wakeup_pending,
@@ -194,6 +205,7 @@ impl Pane {
             selection: None,
             mark_cursor: None,
             search: None,
+            search_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -234,6 +246,16 @@ impl Pane {
     /// thread for mouse reporting and cursor style without locking the terminal.
     pub fn mode(&self) -> u32 {
         self.mode_cache.load(Ordering::Acquire)
+    }
+
+    /// Whether the IO thread's terminal has flagged selection-dirty.
+    pub fn is_io_selection_dirty(&self) -> bool {
+        self.io_selection_dirty.load(Ordering::Acquire)
+    }
+
+    /// Clear the IO-thread selection-dirty flag.
+    pub fn clear_io_selection_dirty(&self) {
+        self.io_selection_dirty.store(false, Ordering::Release);
     }
 
     // -- Terminal access --
