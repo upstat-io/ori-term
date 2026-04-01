@@ -21,6 +21,7 @@ use crate::PaneSnapshot;
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
 use crate::mux_event::{MuxEvent, MuxNotification};
+use crate::pane::MarkCursor;
 use crate::registry::PaneEntry;
 use crate::{DomainId, PaneId};
 
@@ -241,6 +242,14 @@ pub trait MuxBackend {
     /// the viewport center. Returns `None` if no zone is found or shell
     /// integration is not active.
     fn select_command_input(&self, _pane_id: PaneId) -> Option<Selection> {
+        None
+    }
+
+    /// Enter mark mode: scrolls to bottom on the IO thread, returns the
+    /// cursor position as a `MarkCursor`. The IO thread owns the authoritative
+    /// terminal state, so cursor reads must go through this reply path.
+    fn enter_mark_mode(&mut self, pane_id: PaneId) -> Option<MarkCursor> {
+        let _ = pane_id;
         None
     }
 

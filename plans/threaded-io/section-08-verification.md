@@ -150,6 +150,15 @@ Manual and automated verification that resize flashing is eliminated.
 - [x] `[TPR-08-003][medium]` `oriterm_mux/src/pane/io_thread/tests.rs` — no actual test for IO thread panic path.
   Resolved: Added `test_io_thread_panic_does_not_crash_app` test that spawns a thread which panics after receiving a command, wraps it in `PaneIoHandle`, triggers the panic, and verifies `shutdown()` completes < 2s without hanging. Fixed 2026-04-01.
 
+- [x] `[TPR-08-004][high]` `oriterm_mux/src/pane/io_thread/mod.rs`, `oriterm_mux/src/backend/embedded/mod.rs` — new panes expose empty default snapshot until first shell output.
+  Resolved: IO thread now calls `produce_snapshot()` at the start of `run()` before entering the main loop, providing an initial snapshot with valid grid state. Fixed 2026-04-01.
+
+- [x] `[TPR-08-005][medium]` `oriterm/src/app/pane_accessors.rs` — mark mode reads cursor from stale cached snapshot instead of using IO thread reply path.
+  Resolved: Added `enter_mark_mode()` to `MuxBackend` trait using the `PaneIoCommand::EnterMarkMode` reply command. Updated `pane_accessors.rs` to use the authoritative IO thread path instead of fire-and-forget scroll + snapshot read. Fixed 2026-04-01.
+
+- [x] `[TPR-08-006][medium]` `oriterm_mux/src/backend/embedded/tests.rs` — cleanup test only checks map removal, not thread lifecycle.
+  Resolved: Enhanced `cleanup_closed_pane_with_io_thread` test to verify: all maps cleared (snapshot, dirty, selection, renderable), background drop thread settles (500ms wait), `poll_events` doesn't crash post-cleanup, `swap_renderable_content` returns false. Fixed 2026-04-01.
+
 ---
 
 ## 08.N Completion Checklist

@@ -86,6 +86,13 @@ impl<T: EventListener> PaneIoThread<T> {
     /// bounded chunking. Blocks via `crossbeam_channel::select!` when both
     /// channels are empty. Exits on `Shutdown` command or channel disconnect.
     pub fn run(mut self) {
+        // Produce an initial snapshot so the main thread has valid content
+        // immediately — before any PTY output or commands arrive. Without
+        // this, freshly spawned panes expose PaneSnapshot::default() until
+        // the shell writes its first output.
+        self.grid_dirty.store(true, Ordering::Release);
+        self.produce_snapshot();
+
         loop {
             // 1. Drain all pending commands (priority over bytes).
             self.drain_commands();
