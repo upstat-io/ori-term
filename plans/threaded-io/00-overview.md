@@ -1,7 +1,7 @@
 ---
 plan: "threaded-io"
 title: "Threaded Terminal IO: Exhaustive Implementation Plan"
-status: not-started
+status: in-progress
 supersedes: []
 references:
   - "plans/bug-tracker/section-06-rendering-perf.md"
@@ -221,7 +221,7 @@ Phase 5 - Verification
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Terminal IO Thread Scaffold | `section-01-io-thread-scaffold.md` | Not Started |
+| 01 | Terminal IO Thread Scaffold | `section-01-io-thread-scaffold.md` | Complete |
 | 02 | VTE Parsing Migration | `section-02-vte-migration.md` | Not Started |
 | 03 | Snapshot Production & Transfer | `section-03-snapshot-production.md` | Not Started |
 | 04 | Render Pipeline Migration | `section-04-render-migration.md` | Not Started |

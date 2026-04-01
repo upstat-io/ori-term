@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Terminal IO Thread Scaffold
-**File:** `section-01-io-thread-scaffold.md` | **Status:** Not Started
+**File:** `section-01-io-thread-scaffold.md` | **Status:** Complete
 
 ```
 PaneIoThread, PaneIoCommand, io_thread, terminal_io
