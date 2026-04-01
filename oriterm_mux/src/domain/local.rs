@@ -13,6 +13,7 @@ use super::{Domain, DomainState, SpawnConfig};
 
 use crate::mux_event::{MuxEvent, MuxEventProxy};
 use crate::pane::io_thread;
+use crate::pane::io_thread::event_proxy::IoThreadEventProxy;
 use crate::pane::{Pane, PaneNotifier, PaneParts};
 use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty, spawn_pty_writer};
 
@@ -102,7 +103,7 @@ impl LocalDomain {
         let grid_dirty = Arc::new(AtomicBool::new(false));
         let mode_cache = Arc::new(AtomicU32::new(oriterm_core::TermMode::default().bits()));
 
-        // 4. Create the terminal state machine with a mux event proxy.
+        // 4. Create Term #1 (old path) with MuxEventProxy → Arc<FairMutex>.
         let event_proxy = MuxEventProxy::new(
             pane_id,
             mux_tx.clone(),
@@ -119,28 +120,47 @@ impl LocalDomain {
         );
         let terminal = Arc::new(FairMutex::new(term));
 
-        // 5. Wire the message channel and shutdown flag.
+        // 5. Create Term #2 (IO thread) with IoThreadEventProxy.
+        // Suppresses metadata events to prevent duplicates during dual-Term.
+        let io_grid_dirty = Arc::new(AtomicBool::new(false));
+        let io_event_proxy = IoThreadEventProxy::new(Arc::clone(&io_grid_dirty), true);
+        let io_mode_cache = Arc::new(AtomicU32::new(oriterm_core::TermMode::default().bits()));
+        let io_term = Term::new(
+            usize::from(config.rows),
+            usize::from(config.cols),
+            config.scrollback,
+            theme,
+            io_event_proxy,
+        );
+
+        // 6. Wire the message channel and shutdown flag.
         let (tx, rx) = mpsc::channel();
         let notifier = PaneNotifier::new(tx);
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        // 6. Spawn the writer thread (owns rx + writer, sets shutdown flag).
+        // 7. Spawn the writer thread (owns rx + writer, sets shutdown flag).
         let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
 
-        // 7. Spawn the reader thread (reads PTY, parses VTE, checks shutdown).
+        // 8. Spawn the Terminal IO thread (owns Term #2, VTE processors).
+        let (io_thread, mut io_handle) = io_thread::new_with_handle(
+            io_term,
+            Arc::clone(&io_mode_cache),
+            Arc::clone(&shutdown),
+            Arc::clone(wakeup),
+        );
+        let byte_tx = io_handle.byte_sender();
+        let io_join = io_thread.spawn()?;
+        io_handle.set_join(io_join);
+
+        // 8. Spawn the reader thread (reads PTY, parses VTE, forwards bytes to IO thread).
         let event_loop = PtyEventLoop::new(
             Arc::clone(&terminal),
             reader,
             Arc::clone(&shutdown),
             Arc::clone(&mode_cache),
+            Some(byte_tx),
         );
         let reader_thread = event_loop.spawn()?;
-
-        // 8. Spawn the Terminal IO thread (scaffold — drains channels only).
-        let (io_thread, mut io_handle) =
-            io_thread::new_with_handle(Arc::clone(&shutdown), Arc::clone(wakeup));
-        let io_join = io_thread.spawn()?;
-        io_handle.set_join(io_join);
 
         Ok(Pane::from_parts(PaneParts {
             id: pane_id,
