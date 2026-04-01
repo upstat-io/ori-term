@@ -82,11 +82,17 @@ pub struct LayoutBox {
     pub padding: Insets,
     /// Outer margin (offsets position, consumes parent space).
     pub margin: Insets,
-    /// Minimum width constraint (`0.0` = no minimum).
+    /// Minimum width constraint, content-box (`0.0` = no minimum).
+    ///
+    /// Applies to the content area. Padding is added on top, so a box with
+    /// `min_width: 100` and horizontal padding of 20 will be at least 120px wide.
     pub min_width: f32,
     /// Maximum width constraint (`f32::INFINITY` = no maximum).
     pub max_width: f32,
-    /// Minimum height constraint (`0.0` = no minimum).
+    /// Minimum height constraint, content-box (`0.0` = no minimum).
+    ///
+    /// Applies to the content area. Padding is added on top, so a box with
+    /// `min_height: 44` and vertical padding of 20 will be at least 64px tall.
     pub min_height: f32,
     /// Maximum height constraint (`f32::INFINITY` = no maximum).
     pub max_height: f32,
