@@ -72,3 +72,4 @@ unused_self = "deny"
 
 [patch.crates-io]
 vte = { path = "crates/vte" }
+wgpu-hal = { path = "crates/wgpu-hal" }
