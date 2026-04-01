@@ -63,9 +63,9 @@ fn is_builtin_excludes_normal_chars() {
 
 #[test]
 fn is_builtin_excludes_gap_between_ranges() {
-    // Gap between block elements and braille.
-    assert!(!is_builtin('\u{25A0}'));
-    assert!(!is_builtin('\u{27FF}'));
+    // Gap between block elements and geometric shapes.
+    assert!(!is_builtin('\u{25A4}')); // Hatched square — not in our subset
+    assert!(!is_builtin('\u{27FF}')); // Outside all built-in ranges
     // Gap between braille and powerline.
     assert!(!is_builtin('\u{2900}'));
     assert!(!is_builtin('\u{E0AF}'));
@@ -874,4 +874,65 @@ fn rasterize_branch_arc_has_content() {
     let g = rasterize('\u{F5D6}', 8, 16).expect("arc should rasterize");
     let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
     assert!(nonzero > 0, "arc should have nonzero pixels");
+}
+
+// -- Geometric Shapes (U+25A0–U+25FF subset) tests --
+
+#[test]
+fn is_builtin_geometric_shapes_key_chars() {
+    // Verify key geometric shapes are registered as built-in.
+    let key_chars = [
+        '\u{25A0}', '\u{25A1}', '\u{25B2}', '\u{25BC}', '\u{25C0}', '\u{25C6}', '\u{25CB}',
+        '\u{25CF}', '\u{25E2}', '\u{25E5}', '\u{25F8}', '\u{25FF}',
+    ];
+    for &c in &key_chars {
+        assert!(is_builtin(c), "U+{:04X} should be builtin", c as u32);
+    }
+}
+
+#[test]
+fn rasterize_black_square() {
+    let g = rasterize('\u{25A0}', 8, 16).expect("black square should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 10, "black square should have substantial fill");
+}
+
+#[test]
+fn rasterize_black_circle() {
+    let g = rasterize('\u{25CF}', 12, 16).expect("black circle should rasterize");
+    let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+    assert!(nonzero > 20, "black circle should have substantial fill");
+}
+
+#[test]
+fn rasterize_corner_triangles() {
+    for &ch in &['\u{25E2}', '\u{25E3}', '\u{25E4}', '\u{25E5}'] {
+        let g = rasterize(ch, 8, 16).expect("corner triangle should rasterize");
+        let nonzero = g.bitmap.iter().filter(|&&b| b > 0).count();
+        assert!(
+            nonzero > 20,
+            "U+{:04X} should fill roughly half the cell",
+            ch as u32
+        );
+    }
+}
+
+#[test]
+fn rasterize_all_handled_geometric_shapes() {
+    let handled: Vec<char> = ('\u{25A0}'..='\u{25FF}')
+        .filter(|&c| is_builtin(c))
+        .collect();
+    assert!(
+        handled.len() >= 40,
+        "should handle at least 40 geometric shapes, got {}",
+        handled.len()
+    );
+    for ch in handled {
+        let result = rasterize(ch, 8, 16);
+        assert!(
+            result.is_some(),
+            "U+{:04X} is builtin but failed to rasterize",
+            ch as u32
+        );
+    }
 }

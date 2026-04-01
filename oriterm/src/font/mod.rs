@@ -492,6 +492,26 @@ pub(crate) fn is_builtin(ch: char) -> bool {
         | '\u{E0B6}'                // Powerline left rounded separator
         | '\u{F5D0}'..='\u{F60D}'   // Branch drawing (Kitty/Ghostty PUA)
         | '\u{1FB00}'..='\u{1FB9F}' // Symbols for Legacy Computing
+    ) || is_builtin_geometric(ch)
+}
+
+/// Subset of Geometric Shapes (U+25A0–U+25FF) rendered as built-in glyphs.
+///
+/// Only codepoints with actual built-in rendering are listed here; the rest
+/// fall through to font-based rendering.
+fn is_builtin_geometric(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{25A0}'..='\u{25A3}' // Squares (filled, outlined, nested)
+        | '\u{25AA}'..='\u{25AB}' // Small squares
+        | '\u{25B2}'..='\u{25C5}' // Triangles (up, right, down, left — filled + outlined)
+        | '\u{25C6}'..='\u{25CB}' // Diamonds, fisheye, lozenge, white circle
+        | '\u{25CE}'..='\u{25CF}' // Bullseye, black circle
+        | '\u{25D0}'..='\u{25D3}' // Half circles
+        | '\u{25E2}'..='\u{25E5}' // Corner triangles (filled)
+        | '\u{25EF}'             // Large circle
+        | '\u{25F8}'..='\u{25FB}' // Corner triangle outlines + medium white square
+        | '\u{25FC}'..='\u{25FF}' // Medium/small squares + corner outline
     )
 }
 
