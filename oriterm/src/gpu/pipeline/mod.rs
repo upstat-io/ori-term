@@ -31,8 +31,11 @@ const BG_SHADER_SRC: &str = include_str!("../shaders/bg.wgsl");
 /// Embedded WGSL source for the foreground shader.
 const FG_SHADER_SRC: &str = include_str!("../shaders/fg.wgsl");
 
-/// Embedded WGSL source for the subpixel foreground shader.
+/// Embedded WGSL source for the subpixel foreground shader (mix approach).
 const SUBPIXEL_FG_SHADER_SRC: &str = include_str!("../shaders/subpixel_fg.wgsl");
+
+/// Embedded WGSL source for the dual-source subpixel shader.
+const SUBPIXEL_FG_DUAL_SHADER_SRC: &str = include_str!("../shaders/subpixel_fg_dual.wgsl");
 
 /// Embedded WGSL source for the color foreground shader.
 const COLOR_FG_SHADER_SRC: &str = include_str!("../shaders/color_fg.wgsl");
@@ -116,6 +119,24 @@ pub(super) const PREMUL_ALPHA_BLEND: BlendState = BlendState {
     alpha: BlendComponent {
         src_factor: BlendFactor::One,
         dst_factor: BlendFactor::OneMinusSrcAlpha,
+        operation: BlendOperation::Add,
+    },
+};
+
+/// Dual-source blend state: `src0 * src1 + dst * (1 - src1)`.
+///
+/// Used by the dual-source subpixel pipeline for true per-channel LCD
+/// compositing. The fragment shader outputs two colors at the same location
+/// (`@blend_src(0)` and `@blend_src(1)`). Requires `DUAL_SOURCE_BLENDING`.
+pub(super) const DUAL_SOURCE_BLEND: BlendState = BlendState {
+    color: BlendComponent {
+        src_factor: BlendFactor::Src1,
+        dst_factor: BlendFactor::OneMinusSrc1,
+        operation: BlendOperation::Add,
+    },
+    alpha: BlendComponent {
+        src_factor: BlendFactor::Src1Alpha,
+        dst_factor: BlendFactor::OneMinusSrc1Alpha,
         operation: BlendOperation::Add,
     },
 };
@@ -288,29 +309,42 @@ pub fn create_fg_pipeline(
 /// Create the subpixel foreground render pipeline.
 ///
 /// Uses bind groups 0 (uniforms) and 1 (subpixel atlas texture + sampler).
-/// Samples per-channel coverage from the RGBA atlas and composites with
-/// `mix(bg, fg, mask)` for LCD subpixel rendering. Premultiplied alpha.
+///
+/// When `dual_source` is true, uses the dual-source blending shader that
+/// outputs both color and per-channel mask (requires `DUAL_SOURCE_BLENDING`).
+/// Otherwise uses the `mix()` shader with `bg_color` as instance data.
 pub fn create_subpixel_fg_pipeline(
     gpu: &GpuState,
     uniform_layout: &BindGroupLayout,
     atlas_layout: &BindGroupLayout,
+    dual_source: bool,
 ) -> RenderPipeline {
+    let (shader_src, label, blend) = if dual_source {
+        (
+            SUBPIXEL_FG_DUAL_SHADER_SRC,
+            "subpixel_fg_dual",
+            DUAL_SOURCE_BLEND,
+        )
+    } else {
+        (SUBPIXEL_FG_SHADER_SRC, "subpixel_fg", PREMUL_ALPHA_BLEND)
+    };
+
     let shader = gpu.device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("subpixel_fg_shader"),
-        source: wgpu::ShaderSource::Wgsl(SUBPIXEL_FG_SHADER_SRC.into()),
+        label: Some(&format!("{label}_shader")),
+        source: wgpu::ShaderSource::Wgsl(shader_src.into()),
     });
 
     let pipeline_layout = gpu
         .device
         .create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("subpixel_fg_pipeline_layout"),
+            label: Some(&format!("{label}_pipeline_layout")),
             bind_group_layouts: &[uniform_layout, atlas_layout],
             ..Default::default()
         });
 
     gpu.device
         .create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("subpixel_fg_pipeline"),
+            label: Some(&format!("{label}_pipeline")),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,
@@ -327,7 +361,7 @@ pub fn create_subpixel_fg_pipeline(
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
                     format: gpu.render_format(),
-                    blend: Some(PREMUL_ALPHA_BLEND),
+                    blend: Some(blend),
                     write_mask: ColorWrites::ALL,
                 })],
             }),
