@@ -448,16 +448,7 @@ impl App {
                     .as_ref()
                     .map_or((0, 0), |f| (f.content_cols, f.content_rows));
                 ctx.status_bar
-                    .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
-                        shell_name: "shell".into(),
-                        pane_count: format!(
-                            "{pane_count} pane{}",
-                            if pane_count == 1 { "" } else { "s" }
-                        ),
-                        grid_size: format!("{cols}\u{00d7}{rows}"),
-                        encoding: "UTF-8".into(),
-                        term_type: "xterm-256color".into(),
-                    });
+                    .set_data(super::draw_helpers::status_bar_data(pane_count, cols, rows));
                 let phys = ctx.status_bar_phys_rect;
                 let sb_bounds = oriterm_ui::geometry::Rect::new(
                     phys.x() / scale,

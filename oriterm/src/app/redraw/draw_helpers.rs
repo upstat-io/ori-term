@@ -15,6 +15,7 @@ use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::pipeline::collect_layout_bounds;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widget_id::WidgetId;
+use oriterm_ui::widgets::status_bar::StatusBarData;
 use oriterm_ui::widgets::tab_bar::TabBarWidget;
 use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
 use oriterm_ui::window_root::WindowRoot;
@@ -325,5 +326,19 @@ pub(super) fn phase_gate_widgets(
             Some(invalidation),
         );
         root.prepaint_overlay_widgets(&prepaint_bounds, ui_theme, now);
+    }
+}
+
+/// Build status bar data from pane count and grid dimensions.
+pub(super) fn status_bar_data(pane_count: usize, cols: usize, rows: usize) -> StatusBarData {
+    StatusBarData {
+        shell_name: "shell".into(),
+        pane_count: format!(
+            "{pane_count} pane{}",
+            if pane_count == 1 { "" } else { "s" }
+        ),
+        grid_size: format!("{cols}\u{00d7}{rows}"),
+        encoding: "UTF-8".into(),
+        term_type: "xterm-256color".into(),
     }
 }

@@ -379,18 +379,11 @@ impl App {
             if self.config.window.show_status_bar
                 && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
             {
-                let pane_count = 1;
-                ctx.status_bar
-                    .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
-                        shell_name: "shell".into(),
-                        pane_count: format!(
-                            "{pane_count} pane{}",
-                            if pane_count == 1 { "" } else { "s" }
-                        ),
-                        grid_size: format!("{}\u{00d7}{}", frame.content_cols, frame.content_rows,),
-                        encoding: "UTF-8".into(),
-                        term_type: "xterm-256color".into(),
-                    });
+                ctx.status_bar.set_data(draw_helpers::status_bar_data(
+                    1,
+                    frame.content_cols,
+                    frame.content_rows,
+                ));
                 let phys = ctx.status_bar_phys_rect;
                 let sb_bounds = oriterm_ui::geometry::Rect::new(
                     phys.x() / scale,
