@@ -168,7 +168,7 @@ Phase 5 - Verification
 | 02 | Origin Mode & Scroll Regions | `section-02-origin-mode.md` | Complete |
 | 03 | Screen Features & DECCOLM | `section-03-screen-features.md` | Complete |
 | 04 | Character Sets & VT102 | `section-04-charsets-vt102.md` | Complete |
-| 05 | Fade Blink | `section-05-fade-blink.md` | In Progress |
+| 05 | Fade Blink | `section-05-fade-blink.md` | Complete |
 | 05B | Text Blink (SGR 5/6) | `section-05b-text-blink.md` | Not Started |
 | 06 | Test Automation Expansion | `section-06-test-expansion.md` | Not Started |
 | 07 | Verification & Metrics | `section-07-verification.md` | Not Started |
