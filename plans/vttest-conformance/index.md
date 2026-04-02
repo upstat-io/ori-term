@@ -62,7 +62,7 @@ SGR, graphic rendition, bold, underline, blink, inverse
 ---
 
 ### Section 04: Character Sets & VT102
-**File:** `section-04-charsets-vt102.md` | **Status:** Not Started
+**File:** `section-04-charsets-vt102.md` | **Status:** Complete
 
 ```
 character sets, G0, G1, SCS, designate character set
