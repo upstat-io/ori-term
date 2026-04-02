@@ -210,6 +210,10 @@ fn handle_terminal(action: &WidgetAction, ids: &SettingsIds, config: &mut Config
             config.terminal.cursor_blink_fade = *value;
             true
         }
+        WidgetAction::Toggled { id, value } if *id == ids.text_blink_fade_toggle => {
+            config.terminal.text_blink_fade = *value;
+            true
+        }
         WidgetAction::ValueChanged { id, value } if *id == ids.scrollback_input => {
             config.terminal.scrollback = (*value as usize).min(100_000);
             true

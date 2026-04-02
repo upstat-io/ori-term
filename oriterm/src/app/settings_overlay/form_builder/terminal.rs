@@ -82,13 +82,24 @@ fn build_cursor_section(
         theme,
     );
 
+    let text_blink_fade_toggle = ToggleWidget::new().with_on(config.terminal.text_blink_fade);
+    ids.text_blink_fade_toggle = text_blink_fade_toggle.id();
+
+    let text_blink_fade_row = SettingRowWidget::new(
+        "Text blink fade",
+        "Smooth fade for SGR 5/6 blinking text",
+        Box::new(text_blink_fade_toggle),
+        theme,
+    );
+
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
             .with_child(build_section_header("Cursor", theme))
             .with_child(Box::new(picker_row))
             .with_child(Box::new(blink_row))
-            .with_child(Box::new(fade_row)),
+            .with_child(Box::new(fade_row))
+            .with_child(Box::new(text_blink_fade_row)),
     )
 }
 

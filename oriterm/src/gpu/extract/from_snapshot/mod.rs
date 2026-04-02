@@ -48,6 +48,7 @@ pub(crate) fn extract_frame_from_snapshot(
         mark_cursor: None,
         window_focused: true,
         fg_dim: 1.0,
+        text_blink_opacity: 1.0,
         subpixel_positioning: true,
         prompt_marker_rows: Vec::new(),
     }

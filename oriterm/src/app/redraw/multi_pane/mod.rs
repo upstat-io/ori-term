@@ -279,6 +279,18 @@ impl App {
                         inactive_opacity
                     };
 
+                    // Text blink: same opacity for all panes (not per-focus).
+                    frame.text_blink_opacity = {
+                        let raw = self.text_blink.intensity();
+                        if self.config.terminal.text_blink_fade {
+                            raw
+                        } else if raw > 0.5 {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    };
+
                     let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
                     // Compute cursor opacity per-pane using current frame's
                     // blinking_now (not stale self.blinking_active alone).

@@ -306,6 +306,15 @@ impl App {
                 new.terminal.cursor_blink_interval_ms
             );
         }
+
+        if new.terminal.text_blink_rate_ms != self.config.terminal.text_blink_rate_ms {
+            let interval = std::time::Duration::from_millis(new.terminal.text_blink_rate_ms);
+            self.text_blink.set_interval(interval);
+            log::info!(
+                "config reload: text blink interval={}ms",
+                new.terminal.text_blink_rate_ms
+            );
+        }
     }
 
     /// Detect and apply window transparency/blur changes.

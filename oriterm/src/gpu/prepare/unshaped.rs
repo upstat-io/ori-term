@@ -74,6 +74,7 @@ fn fill_frame(
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
     let fg_dim = input.fg_dim;
+    let text_blink_opacity = input.text_blink_opacity;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
     let search = input.search.as_ref();
@@ -115,6 +116,15 @@ fn fill_frame(
             );
         }
 
+        // Per-cell alpha: BLINK cells fade with text_blink_opacity.
+        let is_blink = cell.flags.contains(CellFlags::BLINK);
+        let cell_dim = if is_blink {
+            fg_dim * text_blink_opacity
+        } else {
+            fg_dim
+        };
+        let deco_alpha = if is_blink { text_blink_opacity } else { 1.0 };
+
         let is_hovered = input.hovered_cell == Some((cell.line, col));
         decorations::DecorationContext {
             backgrounds: &mut frame.backgrounds,
@@ -122,6 +132,7 @@ fn fill_frame(
             atlas,
             size_q6: 0,
             metrics: &input.cell_size,
+            alpha: deco_alpha,
         }
         .draw(
             cell.flags,
@@ -151,7 +162,7 @@ fn fill_frame(
                 };
                 frame
                     .glyphs
-                    .push_glyph(rect, uv, fg, fg_dim, entry.page, CLIP_UNCLIPPED);
+                    .push_glyph(rect, uv, fg, cell_dim, entry.page, CLIP_UNCLIPPED);
             }
         }
     }

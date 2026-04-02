@@ -254,6 +254,19 @@ impl App {
                 1.0_f32
             };
 
+            // Text blink opacity: always active (any cell could have BLINK).
+            let text_blink_opacity = {
+                let raw = self.text_blink.intensity();
+                if self.config.terminal.text_blink_fade {
+                    raw
+                } else if raw > 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            };
+            frame.text_blink_opacity = text_blink_opacity;
+
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
             // cell rendering. Both bounds and cell metrics are in physical

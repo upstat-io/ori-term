@@ -401,6 +401,14 @@ impl ApplicationHandler<TermEvent> for App {
             }
         }
 
+        // Drive text blink timer unconditionally (any cell in any pane could
+        // have CellFlags::BLINK; the timer cost is negligible).
+        if self.text_blink.update() {
+            for ctx in self.windows.values_mut() {
+                ctx.root.mark_dirty();
+            }
+        }
+
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
         // (e.g., a fade started just before a focus switch) continue to
@@ -484,6 +492,8 @@ impl ApplicationHandler<TermEvent> for App {
             has_animations,
             blinking_active: self.blinking_active,
             next_blink_change: self.cursor_blink.next_change(),
+            text_blink_active: true,
+            next_text_blink_change: self.text_blink.next_change(),
             budget_remaining: remaining,
             now,
             scheduler_wake: None,
