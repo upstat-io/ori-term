@@ -5444,3 +5444,80 @@ fn csi_18t_at_97x33() {
         "CSI 18t should report actual grid dimensions (33x97), got: {events:?}"
     );
 }
+
+// --- DECRQSS tests (DCS $ q ... ST) ---
+
+#[test]
+fn decrqss_decscl_reports_vt400() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q " p ST — request conformance level.
+    feed(&mut t, b"\x1bP$q\"p\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1bP1$r64;1\"p\x1b\\)"),
+        "DECRQSS DECSCL should report VT400 level: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_decstbm_reports_scroll_region() {
+    let (mut t, listener) = term_with_recorder();
+    // Set scroll region to lines 5-15 (1-based).
+    feed(&mut t, b"\x1b[5;15r");
+    // DCS $ q r ST — request scroll region.
+    feed(&mut t, b"\x1bP$qr\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r5;15r\x1b\\)"),
+        "DECRQSS DECSTBM should report 5;15: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_sgr_reports_default_rendition() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q m ST — request SGR status.
+    feed(&mut t, b"\x1bP$qm\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r0m\x1b\\)"),
+        "DECRQSS SGR should report reset (0m) at default: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_sgr_reports_bold() {
+    let (mut t, listener) = term_with_recorder();
+    // Enable bold via SGR 1.
+    feed(&mut t, b"\x1b[1m");
+    // DCS $ q m ST — request SGR status.
+    feed(&mut t, b"\x1bP$qm\x1b\\");
+
+    let events = listener.events();
+    let sgr_resp = events
+        .iter()
+        .find(|e| e.starts_with("PtyWrite(\x1bP1$r") && e.ends_with("m\x1b\\)"))
+        .expect("DECRQSS SGR response should be emitted");
+    assert!(
+        sgr_resp.contains(";1") || sgr_resp.contains("r1"),
+        "DECRQSS SGR should include bold (1): {sgr_resp}"
+    );
+}
+
+#[test]
+fn decrqss_unknown_reports_invalid() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q Z ST — unknown query.
+    feed(&mut t, b"\x1bP$qZ\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP0$r\x1b\\)"),
+        "DECRQSS unknown query should report invalid (0$r): {events:?}"
+    );
+}

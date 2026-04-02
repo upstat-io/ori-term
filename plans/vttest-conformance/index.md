@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Terminal Size Reporting
-**File:** `section-01-terminal-size.md` | **Status:** Not Started
+**File:** `section-01-terminal-size.md` | **Status:** Complete
 
 ```
 terminal size, CSI 18t, text_area_size_chars, DA, DA1, DA2

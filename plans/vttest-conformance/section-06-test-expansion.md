@@ -104,7 +104,7 @@ Add programmatic assertions for each menu's key test screens. Not every screen n
 Generate golden PNGs for all new menus at all 3 sizes.
 
 - [ ] Add `run_menu3_golden` through `run_menu8_golden` functions
-- [ ] Generate golden PNGs: `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm -- visual_regression::vttest`
+- [ ] Generate golden PNGs: `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests vttest_golden`
 - [ ] Verify golden images look correct (spot-check SGR colors, line drawing, cursor positioning)
 - [ ] Verify golden images look correct -- compare against xterm reference output where possible
 - [ ] Commit golden PNGs to `oriterm/tests/references/` (existing vttest PNGs for menus 1-2 are already here). Estimated ~50-80 new PNGs (menus 3-8 have roughly 5-15 screens each).
@@ -124,7 +124,7 @@ vttest must be available in CI for the structural tests to run. The golden image
 - [ ] Verify GPU golden tests gracefully skip in CI if no GPU adapter (they already do via `headless_env()` returning `None`)
 - [ ] Note: no macOS CI job exists currently — vttest CI is Linux-only for now
 - [ ] Ensure vttest tests respect the timeout policy: `timeout 150 cargo test -p oriterm_core --test vttest` (vttest tests involve PTY I/O with sleep-based synchronization -- verify they complete within 150s)
-- [ ] Document: `cargo test -p oriterm_core --test vttest` for text tests, `cargo test -p oriterm -- visual_regression::vttest` for GPU tests (note: GPU tests are NOT behind a feature gate, they use `headless_env()` graceful skip)
+- [ ] Document: `cargo test -p oriterm_core --test vttest` for text tests, `cargo test -p oriterm --features gpu-tests vttest_golden` for GPU tests (note: GPU tests require `feature = "gpu-tests"` gate and use `headless_env()` graceful skip)
 
 ---
 
