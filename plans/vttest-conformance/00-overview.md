@@ -62,6 +62,8 @@ Section 01 (Terminal Size Reporting)
   │
   Section 05 (Fade Blink) ◄── independent, no VTE dependency
   │
+  └──► Section 05B (Text Blink SGR 5/6) ◄── depends on 05
+  │
   Section 06 (Test Automation Expansion) ◄── depends on 01, 02, 03, 04
   │
   └──► Section 07 (Verification & Metrics)
@@ -69,7 +71,8 @@ Section 01 (Terminal Size Reporting)
 
 - Section 01 is the foundation — terminal size reporting blocks everything at non-80-column sizes.
 - Sections 02-04 are the VTE fix sections — each targets specific vttest menus.
-- Section 05 (blink) is fully independent of VTE fixes — it uses the existing headless GPU pipeline for multi-frame capture, not vttest infrastructure.
+- Section 05 (cursor fade blink) is fully independent of VTE fixes — it uses the existing headless GPU pipeline for multi-frame capture, not vttest infrastructure.
+- Section 05B (text blink) depends on Section 05 for the CursorBlink type. Adds rendering for SGR 5/6 blinking text via `fg_dim` modulation.
 - Section 06 expands test coverage to all menus; depends on Sections 01-04 so tests capture correct behavior.
 - Section 07 is the final verification pass.
 
@@ -165,6 +168,7 @@ Phase 5 - Verification
 | 02 | Origin Mode & Scroll Regions | `section-02-origin-mode.md` | Complete |
 | 03 | Screen Features & DECCOLM | `section-03-screen-features.md` | Complete |
 | 04 | Character Sets & VT102 | `section-04-charsets-vt102.md` | Complete |
-| 05 | Fade Blink | `section-05-fade-blink.md` | Not Started |
+| 05 | Fade Blink | `section-05-fade-blink.md` | In Progress |
+| 05B | Text Blink (SGR 5/6) | `section-05b-text-blink.md` | Not Started |
 | 06 | Test Automation Expansion | `section-06-test-expansion.md` | Not Started |
 | 07 | Verification & Metrics | `section-07-verification.md` | Not Started |

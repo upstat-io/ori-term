@@ -88,6 +88,19 @@ multi-frame capture, frame sequence, opacity ramp
 
 ---
 
+### Section 05B: Text Blink Rendering (SGR 5/6)
+**File:** `section-05b-text-blink.md` | **Status:** Not Started
+
+```
+text blink, SGR 5, SGR 6, slow blink, rapid blink
+CellFlags::BLINK, blinking text, text_blink_opacity
+fg_dim, push_glyph, glyph alpha, cell opacity
+text_blink_rate_ms, text_blink_fade, FrameInput
+fill_frame_shaped, GlyphEmitter, vttest menu 2 screen 13-14
+```
+
+---
+
 ### Section 06: Test Automation Expansion
 **File:** `section-06-test-expansion.md` | **Status:** Not Started
 
@@ -123,5 +136,6 @@ vttest pass rate, menu-by-menu scoring
 | 03 | Screen Features & DECCOLM | `section-03-screen-features.md` |
 | 04 | Character Sets & VT102 | `section-04-charsets-vt102.md` |
 | 05 | Fade Blink | `section-05-fade-blink.md` |
+| 05B | Text Blink Rendering (SGR 5/6) | `section-05b-text-blink.md` |
 | 06 | Test Automation Expansion | `section-06-test-expansion.md` |
 | 07 | Verification & Metrics | `section-07-verification.md` |
