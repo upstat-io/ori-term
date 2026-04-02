@@ -91,10 +91,12 @@ fn snapshot_extraction_zero_alloc_steady_state() {
     let term = make_term();
     let mut out = term.renderable_content();
 
-    // Warmup: first `_into` call establishes Vec capacities.
+    // Warmup: two calls to fully establish Vec capacities (some internal
+    // collections stabilize after the first call).
+    term.renderable_content_into(&mut out);
     term.renderable_content_into(&mut out);
 
-    // Measure: second call should allocate nothing (threshold for thread noise).
+    // Measure: third call should allocate nothing (threshold for thread noise).
     let allocs = measure_allocs(|| {
         term.renderable_content_into(&mut out);
     });

@@ -1265,16 +1265,18 @@ use super::parse_wheel_delta;
 
 #[test]
 fn wheel_line_delta_scroll_up() {
-    // Positive y = scroll up. On Linux, os_lines = 3, so 1 notch = ceil(3) = 3 lines.
+    // Positive y = scroll up. 1 notch × os_lines = expected lines.
+    let os_lines = crate::platform::scroll::wheel_scroll_lines() as usize;
     let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, 1.0), 16.0);
-    assert_eq!(result, Some((3, true)));
+    assert_eq!(result, Some((os_lines, true)));
 }
 
 #[test]
 fn wheel_line_delta_scroll_down() {
     // Negative y = scroll down.
+    let os_lines = crate::platform::scroll::wheel_scroll_lines() as usize;
     let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, -1.0), 16.0);
-    assert_eq!(result, Some((3, false)));
+    assert_eq!(result, Some((os_lines, false)));
 }
 
 #[test]
@@ -1285,9 +1287,11 @@ fn wheel_line_delta_zero_returns_none() {
 
 #[test]
 fn wheel_line_delta_fractional_rounds_up() {
-    // 0.5 notch * 3 os_lines = 1.5 → ceil = 2.
+    // 0.5 notch * os_lines → ceil.
+    let os_lines = crate::platform::scroll::wheel_scroll_lines() as f32;
+    let expected = (0.5 * os_lines).ceil() as usize;
     let result = parse_wheel_delta(MouseScrollDelta::LineDelta(0.0, 0.5), 16.0);
-    assert_eq!(result, Some((2, true)));
+    assert_eq!(result, Some((expected, true)));
 }
 
 #[test]
