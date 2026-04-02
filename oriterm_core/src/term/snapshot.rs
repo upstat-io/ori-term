@@ -5,6 +5,7 @@
 
 use std::collections::HashSet;
 
+use crate::color::palette::Palette;
 use crate::event::EventListener;
 use crate::grid::CursorShape;
 use crate::image::ImageId;
@@ -88,7 +89,21 @@ impl<T: EventListener> Term<T> {
         let offset = raw_offset.min(grid.scrollback().len());
         let lines = grid.lines();
         let cols = grid.cols();
-        let palette = &self.palette;
+        let reverse_video = self.mode.contains(TermMode::REVERSE_VIDEO);
+
+        // DECSCNM (mode 5): swap default fg/bg for cell resolution and palette
+        // snapshot. Clone the palette only when reverse video is active (rare).
+        let swapped;
+        let palette = if reverse_video {
+            swapped = {
+                let mut p = self.palette.clone();
+                p.swap_fg_bg();
+                p
+            };
+            &swapped
+        } else {
+            &self.palette
+        };
 
         for vis_line in 0..lines {
             // Top `offset` lines come from scrollback; the rest from the grid.
@@ -158,7 +173,12 @@ impl<T: EventListener> Term<T> {
         out.lines = lines;
         out.scrollback_len = grid.scrollback().len();
 
-        // Palette: reuse Vec capacity, fill 270 pre-resolved RGB entries.
+        Self::fill_palette_snapshot(palette, out);
+        self.fill_image_snapshot(out);
+    }
+
+    /// Write 270 pre-resolved RGB entries from the palette into the snapshot.
+    fn fill_palette_snapshot(palette: &Palette, out: &mut RenderableContent) {
         out.palette_snapshot.clear();
         out.palette_snapshot
             .reserve(270usize.saturating_sub(out.palette_snapshot.capacity()));
@@ -166,12 +186,14 @@ impl<T: EventListener> Term<T> {
             let rgb = palette.color(i);
             out.palette_snapshot.push([rgb.r, rgb.g, rgb.b]);
         }
+    }
 
-        // Image placements visible in the viewport.
+    /// Extract image placements visible in the viewport and propagate dirty.
+    fn fill_image_snapshot(&self, out: &mut RenderableContent) {
         Self::extract_images(
             self.image_cache(),
             out.stable_row_base,
-            lines,
+            out.lines,
             self.cell_pixel_width,
             self.cell_pixel_height,
             &mut out.images,

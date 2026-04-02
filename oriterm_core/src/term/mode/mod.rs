@@ -72,6 +72,8 @@ bitflags! {
         const SIXEL_SCROLLING        = 1 << 27;
         /// Mode 8452 — sixel cursor right (xterm extension). Default: off.
         const SIXEL_CURSOR_RIGHT     = 1 << 28;
+        /// DECSCNM (mode 5) — reverse video. Swaps default fg/bg screen-wide.
+        const REVERSE_VIDEO          = 1 << 29;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()

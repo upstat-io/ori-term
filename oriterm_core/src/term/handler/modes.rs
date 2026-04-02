@@ -90,6 +90,7 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::SixelCursorRight => {
                 self.mode.insert(TermMode::SIXEL_CURSOR_RIGHT);
             }
+            NamedPrivateMode::ReverseVideo => self.mode.insert(TermMode::REVERSE_VIDEO),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm();
             }
@@ -156,6 +157,7 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::SixelCursorRight => {
                 self.mode.remove(TermMode::SIXEL_CURSOR_RIGHT);
             }
+            NamedPrivateMode::ReverseVideo => self.mode.remove(TermMode::REVERSE_VIDEO),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm();
             }

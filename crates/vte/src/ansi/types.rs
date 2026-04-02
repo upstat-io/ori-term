@@ -176,8 +176,9 @@ impl PrivateMode {
         match mode {
             1 => Self::Named(NamedPrivateMode::CursorKeys),
             3 => Self::Named(NamedPrivateMode::ColumnMode),
-            9 => Self::Named(NamedPrivateMode::X10Mouse),
+            5 => Self::Named(NamedPrivateMode::ReverseVideo),
             6 => Self::Named(NamedPrivateMode::Origin),
+            9 => Self::Named(NamedPrivateMode::X10Mouse),
             7 => Self::Named(NamedPrivateMode::LineWrap),
             12 => Self::Named(NamedPrivateMode::BlinkingCursor),
             25 => Self::Named(NamedPrivateMode::ShowCursor),
@@ -222,8 +223,6 @@ impl From<NamedPrivateMode> for PrivateMode {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum NamedPrivateMode {
     CursorKeys = 1,
-    /// X10 mouse reporting -- press only, no release, no modifiers.
-    X10Mouse = 9,
     /// Select 80 or 132 columns per page (DECCOLM).
     ///
     /// CSI ? 3 h -> set 132 column font.
@@ -236,7 +235,14 @@ pub enum NamedPrivateMode {
     /// * resets DECLRMM to unavailable
     /// * clears data from the status line (if set to host-writable)
     ColumnMode = 3,
+    /// DECSCNM — reverse video (light background).
+    ///
+    /// CSI ? 5 h -> white background, dark text (swap default fg/bg).
+    /// CSI ? 5 l -> normal video (dark background, light text).
+    ReverseVideo = 5,
     Origin = 6,
+    /// X10 mouse reporting -- press only, no release, no modifiers.
+    X10Mouse = 9,
     LineWrap = 7,
     BlinkingCursor = 12,
     ShowCursor = 25,

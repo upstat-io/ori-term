@@ -14,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 use oriterm_core::event::{Event, EventListener};
-use oriterm_core::{Rgb, Term, Theme};
+use oriterm_core::{Rgb, Term, TermMode, Theme};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use super::{compare_with_reference, headless_env, render_to_pixels};
@@ -219,30 +219,44 @@ impl VtTestSession {
         // then draws cell bg quads on top, then glyphs.
         let palette_bg = Rgb { r: 1, g: 1, b: 1 };
 
+        let reverse_video = content.mode.contains(TermMode::REVERSE_VIDEO);
+
+        // When DECSCNM is active, cell colors are already resolved against the
+        // swapped palette in `renderable_content_into()`. The FramePalette
+        // fg/bg must also be swapped so the clear color (screen background)
+        // matches the swapped default background.
+        let (frame_fg, frame_bg) = if reverse_video {
+            (palette_bg, fg)
+        } else {
+            (fg, palette_bg)
+        };
+        let palette = FramePalette {
+            background: frame_bg,
+            foreground: frame_fg,
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+            opacity: 1.0,
+            selection_fg: None,
+            selection_bg: None,
+        };
+
         FrameInput {
             content,
             viewport: ViewportSize::new(w, h),
             cell_size: cell,
             content_cols: cols,
             content_rows: rows,
-            palette: FramePalette {
-                background: palette_bg,
-                foreground: fg,
-                cursor_color: Rgb {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                },
-                opacity: 1.0,
-                selection_fg: None,
-                selection_bg: None,
-            },
+            palette,
             selection: None,
             search: None,
             hovered_cell: None,
             hovered_url_segments: Vec::new(),
             mark_cursor: None,
             window_focused: true,
+            reverse_video,
             fg_dim: 1.0,
             text_blink_opacity: 1.0,
             subpixel_positioning: true,

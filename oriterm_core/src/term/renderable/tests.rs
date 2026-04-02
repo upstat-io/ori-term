@@ -1669,3 +1669,68 @@ fn renderable_content_default_new_fields() {
     assert_eq!(d.scrollback_len, 0);
     assert!(d.palette_snapshot.is_empty());
 }
+
+// --- DECSCNM (reverse video, mode 5) ---
+
+#[test]
+fn decscnm_swaps_default_cell_colors() {
+    let mut t = term();
+    let normal_fg = t.renderable_content().cells[0].fg;
+    let normal_bg = t.renderable_content().cells[0].bg;
+
+    // Enable DECSCNM.
+    feed(&mut t, b"\x1b[?5h");
+    let content = t.renderable_content();
+
+    // Default cells should now have swapped fg/bg.
+    let cell = &content.cells[0];
+    assert_eq!(cell.fg, normal_bg, "DECSCNM fg should be original bg");
+    assert_eq!(cell.bg, normal_fg, "DECSCNM bg should be original fg");
+}
+
+#[test]
+fn decscnm_plus_sgr7_is_normal() {
+    let mut t = term();
+    let normal_fg = t.renderable_content().cells[0].fg;
+    let normal_bg = t.renderable_content().cells[0].bg;
+
+    // Enable DECSCNM, then print a cell with SGR 7 (inverse).
+    feed(&mut t, b"\x1b[?5h\x1b[7mA");
+    let content = t.renderable_content();
+
+    // DECSCNM + SGR 7 = double swap = normal appearance.
+    let a_cell = content.cells.iter().find(|c| c.ch == 'A').unwrap();
+    assert_eq!(
+        a_cell.fg, normal_fg,
+        "DECSCNM + SGR 7 fg should be original fg"
+    );
+    assert_eq!(
+        a_cell.bg, normal_bg,
+        "DECSCNM + SGR 7 bg should be original bg"
+    );
+}
+
+#[test]
+fn decscnm_palette_snapshot_has_swapped_entries() {
+    let mut t = term();
+
+    // Capture normal palette fg/bg indices.
+    let normal = t.renderable_content();
+    let fg_idx = NamedColor::Foreground as usize;
+    let bg_idx = NamedColor::Background as usize;
+    let normal_fg = normal.palette_snapshot[fg_idx];
+    let normal_bg = normal.palette_snapshot[bg_idx];
+
+    // Enable DECSCNM.
+    feed(&mut t, b"\x1b[?5h");
+    let reversed = t.renderable_content();
+
+    assert_eq!(
+        reversed.palette_snapshot[fg_idx], normal_bg,
+        "palette fg entry should be original bg"
+    );
+    assert_eq!(
+        reversed.palette_snapshot[bg_idx], normal_fg,
+        "palette bg entry should be original fg"
+    );
+}

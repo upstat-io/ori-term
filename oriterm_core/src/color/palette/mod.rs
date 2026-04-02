@@ -259,6 +259,17 @@ impl Palette {
         self.colors[NamedColor::Background as usize]
     }
 
+    /// Swap the default foreground and background entries in place.
+    ///
+    /// Used for DECSCNM (reverse video, mode 5). Call on a **clone** of the
+    /// palette to produce a rendering-time copy with swapped defaults — the
+    /// live palette stored on `Term` must never be mutated for rendering.
+    pub fn swap_fg_bg(&mut self) {
+        let fg_idx = NamedColor::Foreground as usize;
+        let bg_idx = NamedColor::Background as usize;
+        self.colors.swap(fg_idx, bg_idx);
+    }
+
     /// Cursor color.
     pub fn cursor_color(&self) -> Rgb {
         self.colors[NamedColor::Cursor as usize]
