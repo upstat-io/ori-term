@@ -54,6 +54,25 @@ mod tests;
 
 use font_config::rebuild_ui_font_sizes;
 
+/// True if any font-related config field changed between `old` and `new`.
+///
+/// Includes opacity threshold crossings (transparent ↔ opaque) because
+/// auto-detected subpixel mode depends on opacity.
+fn font_config_changed(old: &FontConfig, new: &FontConfig, opacity_changed: bool) -> bool {
+    (new.size - old.size).abs() > f32::EPSILON
+        || (new.line_height - old.line_height).abs() > f32::EPSILON
+        || new.family != old.family
+        || new.weight != old.weight
+        || new.features != old.features
+        || new.fallback != old.fallback
+        || new.hinting != old.hinting
+        || new.subpixel_mode != old.subpixel_mode
+        || new.bold_weight != old.bold_weight
+        || new.variations != old.variations
+        || new.codepoint_map != old.codepoint_map
+        || opacity_changed
+}
+
 impl App {
     /// Apply a reloaded configuration to the running application.
     ///
@@ -114,52 +133,20 @@ impl App {
     /// Iterates ALL windows — each may have a different DPI scale factor,
     /// so each gets its own `FontCollection` at the correct physical DPI.
     pub(in crate::app) fn apply_font_changes(&mut self, new: &Config) {
-        let old = &self.config.font;
-        // Opacity crossing the 1.0 threshold changes auto-detected subpixel
-        // mode (subpixel disabled for transparent backgrounds). Treat this as
-        // a font change so the glyph atlas is rebuilt with the correct format.
-        let opacity_affects_subpixel = (new.window.effective_opacity() < 1.0)
+        let opacity_crossed = (new.window.effective_opacity() < 1.0)
             != (self.config.window.effective_opacity() < 1.0);
 
-        let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
-            || (new.font.line_height - old.line_height).abs() > f32::EPSILON
-            || new.font.family != old.family
-            || new.font.weight != old.weight
-            || new.font.features != old.features
-            || new.font.fallback != old.fallback
-            || new.font.hinting != old.hinting
-            || new.font.subpixel_mode != old.subpixel_mode
-            || new.font.variations != old.variations
-            || new.font.codepoint_map != old.codepoint_map
-            || opacity_affects_subpixel;
-
-        if !font_changed {
+        if !font_config_changed(&self.config.font, &new.font, opacity_crossed) {
             return;
         }
 
-        let weight = new.font.effective_weight();
-        let mut cache = FontByteCache::new();
-        let mut font_set =
-            match FontSet::load_cached(new.font.family.as_deref(), weight, &mut cache) {
-                Ok(fs) => fs,
-                Err(e) => {
-                    log::warn!("config reload: font load failed: {e}");
-                    return;
-                }
-            };
-
-        // Prepend user-configured fallback fonts before system fallbacks.
-        let user_fb_families: Vec<&str> = new
-            .font
-            .fallback
-            .iter()
-            .map(|f| f.family.as_str())
-            .collect();
-        let fallback_map = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
-
-        // Update cached font set on App for future window creation.
-        self.font_set = Some(font_set.clone());
-        self.user_fallback_map.clone_from(&fallback_map);
+        let (weight, bold_weight) = (
+            new.font.effective_weight(),
+            new.font.effective_bold_weight(),
+        );
+        let Some((font_set, fallback_map)) = self.load_font_set(new, weight, bold_weight) else {
+            return;
+        };
 
         let (Some(gpu), Some(pipelines)) = (&self.gpu, self.pipelines.as_ref()) else {
             return;
@@ -182,6 +169,7 @@ impl App {
                 physical_dpi,
                 format,
                 weight,
+                bold_weight,
                 hinting,
             ) {
                 Ok(mut fc) => {
@@ -238,6 +226,40 @@ impl App {
         for (winit_id, w, h) in window_sizes {
             self.sync_grid_layout(winit_id, w, h);
         }
+    }
+
+    /// Load and prepare the font set for a config reload.
+    ///
+    /// Returns `(FontSet, fallback_map)` on success, or `None` if loading fails.
+    /// Also updates `self.font_set` and `self.user_fallback_map`.
+    fn load_font_set(
+        &mut self,
+        new: &Config,
+        weight: u16,
+        bold_weight: u16,
+    ) -> Option<(FontSet, Vec<usize>)> {
+        let mut cache = FontByteCache::new();
+        let mut font_set =
+            match FontSet::load_cached(new.font.family.as_deref(), weight, bold_weight, &mut cache)
+            {
+                Ok(fs) => fs,
+                Err(e) => {
+                    log::warn!("config reload: font load failed: {e}");
+                    return None;
+                }
+            };
+
+        let user_fb_families: Vec<&str> = new
+            .font
+            .fallback
+            .iter()
+            .map(|f| f.family.as_str())
+            .collect();
+        let fallback_map = font_set.prepend_user_fallbacks(&user_fb_families, &mut cache);
+
+        self.font_set = Some(font_set.clone());
+        self.user_fallback_map.clone_from(&fallback_map);
+        Some((font_set, fallback_map))
     }
 
     /// Detect and apply color config changes.

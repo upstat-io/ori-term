@@ -42,6 +42,7 @@ fn headless_env_with_format(
         TEST_DPI,
         format,
         TEST_FONT_WEIGHT,
+        550,
         HintingMode::Full,
     )
     .ok()?;

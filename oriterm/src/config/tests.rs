@@ -381,7 +381,7 @@ fn weight_defaults_to_400() {
     let parsed: Config = toml::from_str("").expect("deserialize");
     assert_eq!(parsed.font.weight, 400);
     assert_eq!(parsed.font.effective_weight(), 400);
-    assert_eq!(parsed.font.effective_bold_weight(), 700);
+    assert_eq!(parsed.font.effective_bold_weight(), 550);
 }
 
 #[test]
@@ -393,7 +393,7 @@ weight = 300
     let parsed: Config = toml::from_str(toml_str).expect("deserialize");
     assert_eq!(parsed.font.weight, 300);
     assert_eq!(parsed.font.effective_weight(), 300);
-    assert_eq!(parsed.font.effective_bold_weight(), 600);
+    assert_eq!(parsed.font.effective_bold_weight(), 450);
 }
 
 #[test]
@@ -401,14 +401,14 @@ fn weight_effective_clamped() {
     let mut cfg = FontConfig::default();
     cfg.weight = 50;
     assert_eq!(cfg.effective_weight(), 100);
-    assert_eq!(cfg.effective_bold_weight(), 400);
+    assert_eq!(cfg.effective_bold_weight(), 250);
 
     cfg.weight = 1000;
     assert_eq!(cfg.effective_weight(), 900);
     assert_eq!(cfg.effective_bold_weight(), 900);
 
     cfg.weight = 700;
-    assert_eq!(cfg.effective_bold_weight(), 900);
+    assert_eq!(cfg.effective_bold_weight(), 850);
 }
 
 #[test]
@@ -1705,6 +1705,7 @@ fn apply_font_config_sets_custom_features() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1742,6 +1743,7 @@ fn apply_font_config_empty_features_clears_defaults() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1778,6 +1780,7 @@ fn apply_font_config_codepoint_map_invalid_range_skipped() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1808,6 +1811,7 @@ fn apply_font_config_codepoint_map_missing_family_skipped() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1833,6 +1837,7 @@ fn apply_font_config_with_no_user_fallbacks() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1875,6 +1880,7 @@ fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1936,6 +1942,7 @@ fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_inde
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1983,6 +1990,7 @@ fn apply_font_config_codepoint_map_unloaded_family_skipped() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");

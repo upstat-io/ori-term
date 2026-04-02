@@ -149,7 +149,8 @@ pub(crate) fn dispatch(cmd: SubCommand) -> ! {
 fn run_ls_fonts(args: &LsFontsArgs) -> ! {
     let config = Config::load();
     let weight = config.font.effective_weight();
-    let result = discovery::discover_fonts(config.font.family.as_deref(), weight);
+    let bold_weight = config.font.effective_bold_weight();
+    let result = discovery::discover_fonts(config.font.family.as_deref(), weight, bold_weight);
 
     let mut out = String::new();
     let _ = writeln!(out, "Primary font family: {}", result.primary.family_name);

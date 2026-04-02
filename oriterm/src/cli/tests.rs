@@ -89,7 +89,7 @@ fn show_config_roundtrip() {
 
 #[test]
 fn ls_fonts_finds_primary() {
-    let result = crate::font::discovery::discover_fonts(None, 400);
+    let result = crate::font::discovery::discover_fonts(None, 400, 550);
     // Discovery always succeeds (embedded fallback guarantees a result).
     assert!(
         !result.primary.family_name.is_empty(),

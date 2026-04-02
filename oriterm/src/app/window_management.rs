@@ -232,6 +232,7 @@ impl App {
         )
         .glyph_format();
         let weight = self.config.font.effective_weight();
+        let bold_weight = self.config.font.effective_bold_weight();
 
         let mut font_collection = match crate::font::FontCollection::new(
             font_set,
@@ -239,6 +240,7 @@ impl App {
             physical_dpi,
             format,
             weight,
+            bold_weight,
             hinting,
         ) {
             Ok(fc) => fc,
@@ -260,6 +262,7 @@ impl App {
             crate::font::GlyphFormat::Alpha,
             crate::font::HintingMode::None,
             400,
+            600,
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()

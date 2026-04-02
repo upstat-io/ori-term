@@ -28,6 +28,7 @@ mod status_bar;
 mod tab_bar_brutal;
 mod tab_bar_icons;
 mod vttest;
+mod weight_tests;
 
 use std::path::PathBuf;
 
@@ -99,6 +100,7 @@ pub(super) fn headless_env_with_hinting(
         dpi,
         format,
         TEST_FONT_WEIGHT,
+        550,
         hinting,
     )
     .ok()?;

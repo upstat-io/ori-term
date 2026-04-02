@@ -263,6 +263,10 @@ pub(super) fn face_variations_for_ui_weight(
 /// (Regular=0, Bold=1, Italic=2, `BoldItalic`=3) and any synthetic flags from
 /// resolution. Fallback faces return empty settings (no variation).
 ///
+/// `bold_weight` is the absolute weight for bold text (e.g. 550 for the
+/// default `+150` delta). This replaces the old `weight + 300` formula, allowing
+/// configurable bold weight independent of the regular weight.
+///
 /// When the font has a real axis that covers the requested style, the
 /// corresponding synthetic flag is added to `suppress_synthetic` so callers
 /// can subtract it from the rasterization key's synthetic flags.
@@ -270,6 +274,7 @@ pub(super) fn face_variations(
     face_idx: FaceIdx,
     synthetic: SyntheticFlags,
     weight: u16,
+    bold_weight: u16,
     axes: &[AxisInfo],
 ) -> FaceVariationResult {
     if face_idx.is_fallback() || axes.is_empty() {
@@ -287,7 +292,7 @@ pub(super) fn face_variations(
     let wants_bold = i == 1 || i == 3 || synthetic.contains(SyntheticFlags::BOLD);
     if has_axis(axes, *WGHT) {
         let target = if wants_bold {
-            (weight as f32 + 300.0).min(900.0)
+            bold_weight as f32
         } else {
             weight as f32
         };

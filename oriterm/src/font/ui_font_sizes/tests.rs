@@ -11,6 +11,7 @@ fn test_registry() -> UiFontSizes {
         GlyphFormat::Alpha,
         HintingMode::Full,
         400,
+        550,
         PRELOAD_SIZES,
     )
     .expect("registry must build")
