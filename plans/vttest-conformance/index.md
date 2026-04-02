@@ -75,7 +75,7 @@ menu 3, menu 8, character set test, VT102 test
 ---
 
 ### Section 05: Fade Blink
-**File:** `section-05-fade-blink.md` | **Status:** Not Started
+**File:** `section-05-fade-blink.md` | **Status:** Complete
 
 ```
 cursor blink, fade blink, smooth blink, ColorEase

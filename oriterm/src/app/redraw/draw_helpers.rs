@@ -1,4 +1,4 @@
-//! Draw helper methods for tab bar and overlays.
+//! Draw helper methods for tab bar, overlays, and widget pipeline phases.
 //!
 //! Extracted from `mod.rs` to keep the module under the 500-line limit.
 
@@ -9,16 +9,21 @@ use oriterm_ui::animation::FrameRequestFlags;
 use oriterm_ui::draw::{DamageTracker, Scene, build_scene};
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::interaction::InteractionManager;
+use oriterm_ui::invalidation::DirtyKind;
 use oriterm_ui::layout::compute_layout;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::pipeline::collect_layout_bounds;
 use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widget_id::WidgetId;
+use oriterm_ui::widgets::tab_bar::TabBarWidget;
 use oriterm_ui::widgets::{DrawCtx, LayoutCtx, Widget};
+use oriterm_ui::window_root::WindowRoot;
 
 use crate::app::App;
+use crate::app::widget_pipeline;
 use crate::font::{CachedTextMeasurer, TextShapeCache};
 use crate::gpu::state::GpuState;
+use crate::gpu::window_renderer::WindowRenderer;
 
 impl App {
     /// Draw the tab bar (unified chrome bar).
@@ -33,8 +38,8 @@ impl App {
         reason = "tab bar drawing: widget, renderer, scene, bounds, scale, GPU, theme, cache, interaction, frame_requests, damage"
     )]
     pub(in crate::app::redraw) fn draw_tab_bar(
-        tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
-        renderer: &mut crate::gpu::WindowRenderer,
+        tab_bar: Option<&TabBarWidget>,
+        renderer: &mut WindowRenderer,
         scene: &mut Scene,
         bounds: Rect,
         scale: f32,
@@ -117,7 +122,7 @@ impl App {
     )]
     pub(in crate::app::redraw) fn draw_overlays(
         overlays: &mut OverlayManager,
-        renderer: &mut crate::gpu::WindowRenderer,
+        renderer: &mut WindowRenderer,
         scene: &mut Scene,
         logical_size: (f32, f32),
         scale: f32,
@@ -188,7 +193,7 @@ impl App {
     )]
     pub(in crate::app::redraw) fn draw_status_bar(
         status_bar: &oriterm_ui::widgets::status_bar::StatusBarWidget,
-        renderer: &mut crate::gpu::WindowRenderer,
+        renderer: &mut WindowRenderer,
         scene: &mut Scene,
         bounds: Rect,
         scale: f32,
@@ -225,8 +230,8 @@ impl App {
     reason = "prepaint bounds: tab bar, renderer, cache, theme, scale, width"
 )]
 pub(in crate::app::redraw) fn collect_tab_bar_prepaint_bounds(
-    tab_bar: &oriterm_ui::widgets::tab_bar::TabBarWidget,
-    renderer: &crate::gpu::WindowRenderer,
+    tab_bar: &TabBarWidget,
+    renderer: &WindowRenderer,
     text_cache: &TextShapeCache,
     theme: &UiTheme,
     scale: f32,
@@ -242,4 +247,83 @@ pub(in crate::app::redraw) fn collect_tab_bar_prepaint_bounds(
     let tab_layout = compute_layout(&Widget::layout(tab_bar, &layout_ctx), tab_bar_rect);
     collect_layout_bounds(&tab_layout, &mut bounds);
     bounds
+}
+
+/// Run widget prepare and prepaint if the tree has pending dirty state.
+///
+/// Shared by both single-pane and multi-pane redraw paths. Drains
+/// lifecycle events, checks dirty level, and if `>= Prepaint`, runs
+/// the full prepare → prepaint pipeline on the tab bar and overlay
+/// widget trees.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "phase gating: root, tab_bar, bounds, renderer, text_cache, theme, scale, stale"
+)]
+pub(super) fn phase_gate_widgets(
+    root: &mut WindowRoot,
+    tab_bar: &mut TabBarWidget,
+    tab_bar_phys_rect: Rect,
+    renderer: &WindowRenderer,
+    text_cache: &TextShapeCache,
+    ui_theme: &UiTheme,
+    scale: f32,
+    ui_stale: bool,
+) {
+    let now = Instant::now();
+    let lifecycle_events = root.interaction_mut().drain_events();
+    let widget_dirty = {
+        let mut d = root.invalidation().max_dirty_kind();
+        if !lifecycle_events.is_empty() {
+            d = d.merge(DirtyKind::Prepaint);
+        }
+        if ui_stale {
+            d = d.merge(DirtyKind::Prepaint);
+        }
+        d
+    };
+    root.frame_requests_mut().reset();
+
+    log::debug!("phase gating: widget_dirty={widget_dirty:?}");
+
+    if widget_dirty >= DirtyKind::Prepaint {
+        let (interaction, invalidation, flags) =
+            root.interaction_invalidation_and_frame_requests_mut();
+        widget_pipeline::prepare_widget_tree(
+            tab_bar,
+            interaction,
+            Some(invalidation),
+            &lifecycle_events,
+            None,
+            Some(flags),
+            now,
+        );
+        root.prepare_overlay_widgets(&lifecycle_events, now);
+
+        let prepaint_tab_bounds = Rect::new(
+            tab_bar_phys_rect.x() / scale,
+            tab_bar_phys_rect.y() / scale,
+            tab_bar_phys_rect.width() / scale,
+            tab_bar_phys_rect.height() / scale,
+        );
+        let prepaint_bounds = collect_tab_bar_prepaint_bounds(
+            tab_bar,
+            renderer,
+            text_cache,
+            ui_theme,
+            scale,
+            prepaint_tab_bounds,
+        );
+        let (interaction, flags) = root.interaction_and_frame_requests();
+        let invalidation = root.invalidation();
+        widget_pipeline::prepaint_widget_tree(
+            tab_bar,
+            &prepaint_bounds,
+            Some(interaction),
+            ui_theme,
+            now,
+            Some(flags),
+            Some(invalidation),
+        );
+        root.prepaint_overlay_widgets(&prepaint_bounds, ui_theme, now);
+    }
 }
