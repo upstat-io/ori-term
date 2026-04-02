@@ -179,6 +179,10 @@ impl WindowRenderer {
         self.color_atlas.clear();
         self.empty_keys.clear();
         self.icon_cache.clear();
+        // Invalidate the shaped frame cache so the next prepare() re-shapes
+        // all text with the new font. Without this, stale glyph IDs from the
+        // old font are served until something forces content_changed=true.
+        self.shaping.frame = super::super::prepare::ShapedFrame::new(0, 0);
 
         let format = self.font_collection.format();
         if format.is_subpixel() {

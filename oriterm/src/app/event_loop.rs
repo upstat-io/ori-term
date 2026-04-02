@@ -77,7 +77,8 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::Resized(size) => {
                 self.handle_resize(window_id, size);
-                self.handle_redraw();
+                // Defer render to about_to_wait() batching pipeline.
+                // Synchronous redraw here causes per-event jitter.
             }
 
             WindowEvent::RedrawRequested => {

@@ -406,3 +406,93 @@ fn drag_visual_x_large_offset_clamps_to_zero() {
     assert!(visual >= 0.0);
     assert!(visual.abs() < f32::EPSILON);
 }
+
+// -- compute_drop_index (merge_core) --
+
+use super::merge_core::compute_drop_index;
+
+#[test]
+fn drop_index_at_left_margin_is_zero() {
+    // Cursor at the left margin → first slot.
+    assert_eq!(
+        compute_drop_index(TAB_LEFT_MARGIN as f64, 120.0, 5, TAB_LEFT_MARGIN as f64),
+        0
+    );
+}
+
+#[test]
+fn drop_index_past_last_tab_clamps() {
+    // Cursor far to the right → clamped to tab_count.
+    assert_eq!(
+        compute_drop_index(2000.0, 120.0, 3, TAB_LEFT_MARGIN as f64),
+        3
+    );
+}
+
+#[test]
+fn drop_index_zero_tabs() {
+    // Zero tabs → always 0.
+    assert_eq!(compute_drop_index(100.0, 120.0, 0, 0.0), 0);
+}
+
+#[test]
+fn drop_index_zero_tab_width() {
+    // Zero tab width → `.max(1.0)` prevents div-by-zero.
+    // All positive local_x values clamp to tab_count (past all zero-width tabs).
+    assert_eq!(compute_drop_index(100.0, 0.0, 5, 0.0), 5);
+    // Negative local_x clamps to 0.
+    assert_eq!(compute_drop_index(-10.0, 0.0, 5, 0.0), 0);
+}
+
+#[test]
+fn drop_index_negative_local_x_clamps_to_zero() {
+    // Cursor to the left of the window → clamped to 0.
+    assert_eq!(compute_drop_index(-50.0, 120.0, 5, 0.0), 0);
+}
+
+#[test]
+fn drop_index_center_of_second_tab() {
+    // Cursor at the center of the second tab (index 1).
+    let margin = TAB_LEFT_MARGIN as f64;
+    let tw = 120.0;
+    // local_x at center of tab 1 = margin + 1.5 * tw.
+    let local_x = margin + 1.5 * tw;
+    assert_eq!(compute_drop_index(local_x, tw, 5, margin), 2);
+}
+
+#[test]
+fn drop_index_just_left_of_tab_center() {
+    // Cursor just before the center of the first tab → stays at index 0.
+    let margin = TAB_LEFT_MARGIN as f64;
+    let tw = 120.0;
+    let local_x = margin + tw / 2.0 - 1.0;
+    assert_eq!(compute_drop_index(local_x, tw, 5, margin), 0);
+}
+
+#[test]
+fn drop_index_just_right_of_tab_center() {
+    // Cursor just past the center of the first tab → moves to index 1.
+    let margin = TAB_LEFT_MARGIN as f64;
+    let tw = 120.0;
+    let local_x = margin + tw / 2.0 + 1.0;
+    assert_eq!(compute_drop_index(local_x, tw, 5, margin), 1);
+}
+
+#[test]
+fn drop_index_single_tab() {
+    // Single tab: cursor before center → 0, after center → 1 (append).
+    let margin = 0.0;
+    let tw = 120.0;
+    assert_eq!(compute_drop_index(0.0, tw, 1, margin), 0);
+    assert_eq!(compute_drop_index(tw, tw, 1, margin), 1);
+}
+
+#[test]
+fn drop_index_with_scale() {
+    // Simulate scaled coordinates (e.g., 2x DPI).
+    let margin = TAB_LEFT_MARGIN as f64 * 2.0;
+    let tw = 120.0 * 2.0;
+    // Center of tab 2 at scale 2x.
+    let local_x = margin + 2.5 * tw;
+    assert_eq!(compute_drop_index(local_x, tw, 5, margin), 3);
+}

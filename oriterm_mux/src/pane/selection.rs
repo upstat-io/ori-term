@@ -2,11 +2,7 @@
 //!
 //! Extracted from `mod.rs` to keep file sizes under the 500-line limit.
 
-use oriterm_core::{
-    SearchState, Selection, SelectionMode, SelectionPoint, Side, StableRowIndex, Term,
-};
-
-use crate::mux_event::MuxEventProxy;
+use oriterm_core::{SearchState, Selection, SelectionPoint};
 
 use super::Pane;
 
@@ -36,20 +32,18 @@ impl Pane {
     }
 
     /// Check whether terminal output has invalidated the selection.
+    ///
+    /// Reads the lock-free `io_selection_dirty` atomic (set by the IO thread
+    /// after VTE parsing) instead of locking the terminal.
     pub fn check_selection_invalidation(&mut self) {
-        if self.selection.is_none() {
-            let mut term = self.terminal.lock();
-            if term.is_selection_dirty() {
-                term.clear_selection_dirty();
-            }
+        if !self
+            .io_selection_dirty
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
             return;
         }
-        let mut term = self.terminal.lock();
-        if term.is_selection_dirty() {
-            term.clear_selection_dirty();
-            drop(term);
-            self.selection = None;
-        }
+        // Terminal output changed — invalidate any active selection.
+        self.selection = None;
     }
 
     // -- Search --
@@ -69,63 +63,27 @@ impl Pane {
         if self.search.is_none() {
             self.search = Some(SearchState::new());
         }
+        self.search_active
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Close search.
     pub fn close_search(&mut self) {
         self.search = None;
+        self.search_active
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 
     /// Whether search is currently active.
+    ///
+    /// Reads the lock-free `search_active` atomic, which is kept in sync
+    /// by `open_search()` / `close_search()`. Does not require terminal
+    /// access or a reply channel to the IO thread.
     pub fn is_search_active(&self) -> bool {
-        self.search.is_some()
+        self.search_active
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    // -- Command zone selection --
-
-    /// Build a selection for the nearest command output zone (non-mutating).
-    ///
-    /// Returns the selection without storing it on the pane. Used by
-    /// `MuxBackend::select_command_output` to return a selection to the caller.
-    pub fn command_output_selection(&self) -> Option<Selection> {
-        self.build_zone_selection(Term::command_output_range)
-    }
-
-    /// Build a selection for the nearest command input zone (non-mutating).
-    ///
-    /// Returns the selection without storing it on the pane. Used by
-    /// `MuxBackend::select_command_input` to return a selection to the caller.
-    pub fn command_input_selection(&self) -> Option<Selection> {
-        self.build_zone_selection(Term::command_input_range)
-    }
-
-    /// Build a line selection from a range-finding function on the terminal.
-    fn build_zone_selection(
-        &self,
-        range_fn: impl FnOnce(&Term<MuxEventProxy>, usize) -> Option<(usize, usize)>,
-    ) -> Option<Selection> {
-        let term = self.terminal.lock();
-        let grid = term.grid();
-        let sb_len = grid.scrollback().len();
-        let viewport_center = sb_len.saturating_sub(grid.display_offset()) + grid.lines() / 2;
-        let (start_row, end_row) = range_fn(&term, viewport_center)?;
-        let start_stable = StableRowIndex::from_absolute(grid, start_row);
-        let end_stable = StableRowIndex::from_absolute(grid, end_row);
-        let anchor = SelectionPoint {
-            row: start_stable,
-            col: 0,
-            side: Side::Left,
-        };
-        let pivot = SelectionPoint {
-            row: end_stable,
-            col: usize::MAX,
-            side: Side::Right,
-        };
-        Some(Selection {
-            mode: SelectionMode::Line,
-            anchor,
-            pivot,
-            end: anchor,
-        })
-    }
+    // Command zone selection is handled by the IO thread via
+    // `PaneIoCommand::SelectCommandOutput` / `SelectCommandInput`.
 }

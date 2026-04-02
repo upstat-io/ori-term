@@ -38,6 +38,8 @@ pub enum PaneIoCommand {
     SetTheme(Theme, Box<Palette>),
     /// Change cursor shape (from config or DECSCUSR).
     SetCursorShape(CursorShape),
+    /// Toggle bold-is-bright rendering.
+    SetBoldIsBright(bool),
     /// Force all lines dirty (after config change, etc.).
     MarkAllDirty,
     /// Update image protocol configuration.
@@ -90,6 +92,7 @@ impl fmt::Debug for PaneIoCommand {
             Self::ScrollToNextPrompt => write!(f, "ScrollToNextPrompt"),
             Self::SetTheme(..) => write!(f, "SetTheme(..)"),
             Self::SetCursorShape(shape) => write!(f, "SetCursorShape({shape:?})"),
+            Self::SetBoldIsBright(b) => write!(f, "SetBoldIsBright({b})"),
             Self::MarkAllDirty => write!(f, "MarkAllDirty"),
             Self::SetImageConfig(..) => write!(f, "SetImageConfig(..)"),
             Self::ExtractText { .. } => write!(f, "ExtractText {{ .. }}"),

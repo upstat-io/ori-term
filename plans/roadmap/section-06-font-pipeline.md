@@ -1,7 +1,7 @@
 ---
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
-status: in-progress
+status: complete
 reviewed: true
 last_verified: "2026-03-29"
 tier: 2
@@ -996,12 +996,12 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 - [x] `oriterm/src/gpu/atlas/mod.rs` split: extracted growth/eviction methods into `atlas/growth.rs` (mod.rs now 457 lines). Done 2026-03-31.
 
 ### Built-in Glyph Coverage Gaps vs Reference Repos
-- [ ] **Symbols for Legacy Computing (U+1FB00-1FB9F):** Ghostty implements sextants, wedges, smooth mosaics, and legacy computing supplement glyphs. ori_term only covers box drawing, blocks, braille, and powerline. Coverage gap for TUI frameworks using these characters.
-- [ ] **Branch drawing glyphs:** Ghostty has dedicated `branch.zig` for branch/line continuation characters. ori_term handles these through font fallback chain rather than pixel-perfect builtins.
-- [ ] **Geometric shapes (U+25A0-U+25FF):** Ghostty has `geometric_shapes.zig`. ori_term relies on fonts for these.
+- [x] **Symbols for Legacy Computing (U+1FB00-1FB9F):** Implemented sextants, smooth mosaics, edge triangles, fractional blocks, shade patterns, checkerboard fills, diagonal fills, and combined triangles. 160 codepoints covered in `legacy_computing/` (mod.rs + smooth_mosaics.rs + triangles.rs). Also widened `RasterKey.glyph_id` from u16 to u32 for SMP support. Done 2026-04-01.
+- [x] **Branch drawing glyphs:** Implemented 62 Kitty/Ghostty PUA characters (U+F5D0–U+F60D) in `branch.rs`. Horizontal/vertical lines, fading lines, quarter-circle arcs, line+arc combos, and branch node circles (filled/outline) with 4-directional connectors. Done 2026-04-01.
+- [x] **Geometric shapes (U+25A0-U+25FF):** Implemented ~50 commonly used shapes in `geometric_shapes.rs` — squares, triangles (4 directions, filled/outlined), diamonds, circles, half circles, corner triangles, and corner triangle outlines. Selective `is_builtin_geometric()` predicate ensures unhandled shapes fall through to font rendering. Done 2026-04-01.
 
 ### Rendering Architecture Note
-- [ ] **No dual-source blending for LCD subpixel.** Current mix() approach passes bg_color as instance data. True dual-source blending (WezTerm approach) is more optically correct but requires wgpu `DUAL_SOURCE_BLENDING` feature. Noted as potential future upgrade if quality demands it.
+- [x] **Dual-source blending for LCD subpixel.** Implemented true per-channel GPU compositing via `DUAL_SOURCE_BLENDING` feature. New `subpixel_fg_dual.wgsl` shader outputs color + per-channel mask via `@blend_src(0/1)`. Feature detected at device creation; falls back to existing mix() approach when unavailable. Done 2026-04-01.
 
 ### Test Stats (verified 2026-03-29)
 - Font tests: 315 (collection, shaper, discovery, types)

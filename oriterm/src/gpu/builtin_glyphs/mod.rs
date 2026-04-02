@@ -9,7 +9,10 @@
 mod blocks;
 mod box_drawing;
 mod braille;
+mod branch;
 pub(crate) mod decorations;
+mod geometric_shapes;
+mod legacy_computing;
 mod powerline;
 
 use std::collections::HashSet;
@@ -29,10 +32,10 @@ use super::frame_input::FrameInput;
 /// Construct a [`RasterKey`] for a built-in glyph.
 ///
 /// Uses [`FaceIdx::BUILTIN`] as the face index and the character's codepoint
-/// as the glyph ID. All built-in codepoints fit in `u16`.
+/// as the glyph ID (`u32` to support SMP codepoints like U+1FB00+).
 pub(crate) fn raster_key(ch: char, size_q6: u32) -> RasterKey {
     RasterKey {
-        glyph_id: ch as u16,
+        glyph_id: ch as u32,
         face_idx: FaceIdx::BUILTIN,
         weight: 0,
         size_q6,
@@ -59,6 +62,9 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
         '\u{2580}'..='\u{259F}' => blocks::draw_block(&mut canvas, ch),
         '\u{2800}'..='\u{28FF}' => braille::draw_braille(&mut canvas, ch),
         '\u{E0B0}'..='\u{E0B4}' | '\u{E0B6}' => powerline::draw_powerline(&mut canvas, ch),
+        '\u{1FB00}'..='\u{1FB9F}' => legacy_computing::draw(&mut canvas, ch),
+        '\u{F5D0}'..='\u{F60D}' => branch::draw_branch(&mut canvas, ch),
+        '\u{25A0}'..='\u{25FF}' => geometric_shapes::draw_geometric(&mut canvas, ch),
         _ => false,
     };
 

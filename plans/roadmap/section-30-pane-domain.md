@@ -3,7 +3,7 @@ section: 30
 title: Pane Extraction + Domain System
 status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 4M
 goal: Extract Pane from Tab, define the Domain trait for shell spawning, implement LocalDomain, create PaneRegistry and SessionRegistry
 sections:
@@ -139,9 +139,9 @@ Extract all per-shell-session state from what would have been Tab into a dedicat
 
 **Tests:** 8 registry + 16 session_registry + 11 tab + 16 window = 51 total, ALL PASS (verified 2026-03-29)
 - [x] PaneRegistry: register/unregister/get lifecycle (verified 2026-03-29)
-- [ ] PaneRegistry: panes_in_tab returns correct subset — NOT APPLICABLE: `panes_in_tab` does not exist (flat pane server)
+- [x] PaneRegistry: panes_in_tab returns correct subset — NOT APPLICABLE: `panes_in_tab` does not exist (flat pane server, no tab association in mux)
 - [x] Tab: new tab has single pane, set_tree pushes undo, undo restores (verified 2026-03-29)
-- [ ] Tab: undo stack capped at 32 — logic present (`set_tree()` checks `MAX_UNDO_ENTRIES` and `pop_front()`), but NO explicit test adds 33+ entries and checks truncation
+- [x] Tab: undo stack capped at 32 — verified by `undo_stack_capped_at_max_entries` test (pushes 35 trees, verifies max 32 undos)
 - [x] Window: add/remove tabs, active tab adjustment, clamping (verified 2026-03-29)
 - [x] SessionRegistry: add/get/remove tabs and windows, window_for_tab (verified 2026-03-29)
 - [x] PaneRegistry: overwrite, multi-domain, stress (1000 entries) (verified 2026-03-29)
@@ -203,4 +203,4 @@ Extract all per-shell-session state from what would have been Tab into a dedicat
 - [x] Crate boundary compliance: no dependency from `oriterm_mux` on `oriterm_ui` or `oriterm` (verified 2026-03-29)
 
 **Gaps identified (verified 2026-03-29):**
-- [ ] Missing test: undo stack capped at 32 — logic present in `Tab::set_tree()` but no test explicitly adds 33+ entries and checks truncation
+- [x] Missing test: undo stack capped at 32 — resolved by `undo_stack_capped_at_max_entries` test in `session/tab/tests.rs`

@@ -45,7 +45,12 @@ impl GpuPipelines {
         Self {
             bg_pipeline: create_bg_pipeline(gpu, &uniform_layout),
             fg_pipeline: create_fg_pipeline(gpu, &uniform_layout, &atlas_layout),
-            subpixel_fg_pipeline: create_subpixel_fg_pipeline(gpu, &uniform_layout, &atlas_layout),
+            subpixel_fg_pipeline: create_subpixel_fg_pipeline(
+                gpu,
+                &uniform_layout,
+                &atlas_layout,
+                gpu.dual_source_blending,
+            ),
             color_fg_pipeline: create_color_fg_pipeline(gpu, &uniform_layout, &atlas_layout),
             ui_rect_pipeline: create_ui_rect_pipeline(gpu, &uniform_layout),
             image_pipeline: create_image_pipeline(gpu, &uniform_layout, &image_texture_layout),

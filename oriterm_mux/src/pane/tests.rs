@@ -1,44 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-/// Lock-free dirty flag: set and clear round-trip.
-#[test]
-fn grid_dirty_set_and_clear() {
-    let dirty = Arc::new(AtomicBool::new(false));
-
-    // Simulate reader thread setting dirty.
-    dirty.store(true, Ordering::Release);
-    assert!(dirty.load(Ordering::Acquire));
-
-    // Simulate main thread clearing dirty.
-    dirty.store(false, Ordering::Release);
-    assert!(!dirty.load(Ordering::Acquire));
-}
-
-/// Wakeup coalescing: swap returns previous value.
-#[test]
-fn wakeup_coalescing() {
-    let wakeup = Arc::new(AtomicBool::new(false));
-
-    // First wakeup: swap false → true, returns false (was not pending).
-    let was_pending = wakeup.swap(true, Ordering::Release);
-    assert!(!was_pending);
-
-    // Second wakeup: swap true → true, returns true (was already pending).
-    let was_pending = wakeup.swap(true, Ordering::Release);
-    assert!(was_pending);
-
-    // Clear: swap true → false.
-    wakeup.store(false, Ordering::Release);
-    assert!(!wakeup.load(Ordering::Acquire));
-}
-
-/// Mode cache: store and load round-trip.
+/// Lock-free mode cache: store and load round-trip.
 #[test]
 fn mode_cache_round_trip() {
     let cache = Arc::new(AtomicU32::new(0));
 
-    // Simulate reader thread updating mode bits.
+    // Simulate IO thread updating mode bits.
     cache.store(0x1234, Ordering::Release);
     assert_eq!(cache.load(Ordering::Acquire), 0x1234);
 
@@ -53,7 +21,7 @@ fn dirty_flag_cross_thread_pattern() {
     let dirty = Arc::new(AtomicBool::new(false));
     let dirty2 = Arc::clone(&dirty);
 
-    // "Reader thread" sets dirty.
+    // "IO thread" sets dirty.
     std::thread::spawn(move || {
         dirty2.store(true, Ordering::Release);
     })
@@ -83,5 +51,20 @@ fn unseen_output_set_and_clear() {
 
     // Pane gains focus → clear.
     flag.store(false, Ordering::Release);
+    assert!(!flag.load(Ordering::Acquire));
+}
+
+/// Selection-dirty flag: swap-based clear returns previous value.
+#[test]
+fn selection_dirty_swap_clear() {
+    let flag = Arc::new(AtomicBool::new(false));
+
+    // IO thread sets dirty.
+    flag.store(true, Ordering::Release);
+    assert!(flag.load(Ordering::Acquire));
+
+    // Main thread clears via swap — gets true back.
+    let was_dirty = flag.swap(false, Ordering::AcqRel);
+    assert!(was_dirty);
     assert!(!flag.load(Ordering::Acquire));
 }

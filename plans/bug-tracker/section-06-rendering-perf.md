@@ -33,12 +33,12 @@ sections:
   - **Found**: 2026-03-29 — manual, user report
   - **Resolved**: 2026-03-30 — User confirmed fixed. Likely resolved by frame budget and render pipeline improvements in recent commits.
 
-- [ ] **BUG-06.2**: Random extra text appears after resize following sustained key repeat
+- [x] **BUG-06.2**: Random extra text appears after resize following sustained key repeat
   - **Severity**: medium
-  - **File(s)**: `oriterm/src/app/event_loop.rs` (resize handling), `oriterm_mux/` (PTY resize notification)
-  - **Root cause**: TBD. Likely a race between queued key repeat events and the PTY resize (SIGWINCH) notification — the shell processes both simultaneously, producing interleaved output. WezTerm exhibits the same behavior; Alacritty does not.
-  - **Repro**: Hold a key to fill the screen with text, release, then resize the window. Extra/garbled characters appear in the terminal.
-  - **Found**: 2026-03-30 — manual, user report. Pre-existing — not caused by frame budget changes.
+  - **File(s)**: `oriterm_mux/src/pane/io_thread/handler.rs` (resize via IO thread)
+  - **Root cause**: Race between queued key repeat events and synchronous main-thread reflow + PTY resize (SIGWINCH). Shell processes both simultaneously, producing interleaved output.
+  - **Fix**: Threaded IO plan (plans/threaded-io). Resize now flows through `PaneIoCommand::Resize` to the IO thread, which serializes bytes and resize in its priority loop. Grid reflow and PTY resize happen atomically on the IO thread — no concurrent main-thread access. Coalescing ensures only the final size is applied during rapid resize.
+  - **Resolved**: 2026-04-01 — threaded IO architecture eliminates the race condition.
 
 - [x] **BUG-06.3**: Window surface not redrawn after dragging partially off-screen and back
   - **Severity**: high
@@ -60,6 +60,14 @@ sections:
   - **Repro**: Set `gpu_backend = "dx12"` in `[rendering]`. NVIDIA RTX 3080, Windows, `Bgra8UnormSrgb` format.
   - **Found**: 2026-03-31 — manual, user testing.
   - **Fixed**: 2026-03-31 — Replaced infinity with large finite values (`-100_000.0, -100_000.0, 200_000.0, 200_000.0`) in both `CLIP_UNCLIPPED` and `ContentMask::unclipped()`. No NaN, all comparisons well-defined.
+
+- [x] **BUG-06.6**: Font config changes not applied in realtime (weight, hinting, subpixel AA)
+  - **Severity**: high
+  - **File(s)**: `oriterm/src/gpu/window_renderer/font_config.rs` (`clear_and_recache`), `oriterm/src/app/config_reload/mod.rs` (`apply_font_changes`)
+  - **Root cause**: Two stale caches: (1) `clear_and_recache()` cleared GPU atlases but not the `ShapedFrame` cache — the prepare fast path served old glyph IDs from the previous font. (2) `apply_font_changes()` rebuilt the `FontCollection` but didn't reset `last_rendered_pane` or `frame`, so the redraw path saw `content_changed=false` and skipped re-extraction.
+  - **Found**: 2026-04-01 — manual, user report during settings UI testing.
+  - **Fixed**: 2026-04-01 — (1) `clear_and_recache()` now resets `ShapingScratch.frame` to empty. (2) `apply_font_changes()` calls `ctx.invalidate_font_caches()` which clears `last_rendered_pane` and `frame`. Commits bfe736f and 793f52d.
+  - **Needs**: Regression test that font config change invalidates shaping + frame caches.
 
 - [ ] **BUG-06.7**: Vulkan backend: baby blue flash when opening settings dialog
   - **Severity**: low

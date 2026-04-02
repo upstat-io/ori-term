@@ -255,6 +255,8 @@ impl App {
             (ElementState::Pressed, false) => KeyEventType::Press,
         };
 
+        let alternate_key =
+            key_encoding::physical_key_to_us_codepoint(event.physical_key, &event.logical_key);
         let bytes = key_encoding::encode_key(&KeyInput {
             key: &event.logical_key,
             mods: self.modifiers.into(),
@@ -262,6 +264,7 @@ impl App {
             text: event.text.as_ref().map(SmolStr::as_str),
             location: event.location,
             event_type,
+            alternate_key,
         });
 
         if !bytes.is_empty() {

@@ -12,11 +12,11 @@ pub(super) use types::{DispatchContext, DispatchResult};
 
 use std::path::PathBuf;
 
-use oriterm_core::selection::{extract_html_with_text, extract_text};
-use oriterm_core::{CursorShape, Rgb};
+use oriterm_core::{CursorShape, Palette, Rgb};
 
 use crate::MuxPdu;
 use crate::domain::SpawnConfig;
+use crate::pane::io_thread::PaneIoCommand;
 
 use super::connection::ClientConnection;
 
@@ -96,38 +96,39 @@ pub fn dispatch_request(
             rows,
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.resize_grid(rows, cols);
-                pane.resize_pty(rows, cols);
-                ctx.immediate_push.push(pane_id);
+                // IO thread does reflow + PTY resize (SIGWINCH).
+                // Do NOT push an immediate snapshot — the IO thread will
+                // produce one after reflow completes. This prevents
+                // exposing intermediate reflow frames (TPR-05-001).
+                pane.send_io_command(PaneIoCommand::Resize { rows, cols });
             }
             None // Fire-and-forget.
         }
 
         MuxPdu::ScrollDisplay { pane_id, delta } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.scroll_display(delta as isize);
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::ScrollDisplay(delta as isize));
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::ScrollToBottom { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.scroll_to_bottom();
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::ScrollToBottom);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::ScrollToPrompt { pane_id, direction } => {
-            let scrolled = ctx.panes.get(&pane_id).is_some_and(|pane| {
-                if direction < 0 {
-                    pane.scroll_to_previous_prompt()
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                let cmd = if direction < 0 {
+                    PaneIoCommand::ScrollToPreviousPrompt
                 } else {
-                    pane.scroll_to_next_prompt()
-                }
-            });
-            Some(MuxPdu::ScrollToPromptAck { scrolled })
+                    PaneIoCommand::ScrollToNextPrompt
+                };
+                pane.send_io_command(cmd);
+            }
+            None
         }
 
         MuxPdu::SetTheme {
@@ -137,9 +138,7 @@ pub fn dispatch_request(
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 let theme = parse_theme(Some(&theme));
-                let mut term = pane.terminal().lock();
-                term.set_theme(theme);
-                let palette = term.palette_mut();
+                let mut palette = Palette::for_theme(theme);
                 for (i, rgb) in palette_rgb.iter().enumerate().take(270) {
                     palette.set_indexed(
                         i,
@@ -150,65 +149,55 @@ pub fn dispatch_request(
                         },
                     );
                 }
-                term.grid_mut().dirty_mut().mark_all();
-                drop(term);
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SetCursorShape { pane_id, shape } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 let wire = crate::WireCursorShape::from_u8(shape);
                 let core_shape = CursorShape::from(wire);
-                pane.terminal().lock().set_cursor_shape(core_shape);
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::SetCursorShape(core_shape));
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SetBoldIsBright { pane_id, enabled } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.terminal().lock().set_bold_is_bright(enabled);
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::MarkAllDirty { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                pane.terminal().lock().grid_mut().dirty_mut().mark_all();
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::MarkAllDirty);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::OpenSearch { pane_id } => {
             if let Some(pane) = ctx.panes.get_mut(&pane_id) {
                 pane.open_search();
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::OpenSearch);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::CloseSearch { pane_id } => {
             if let Some(pane) = ctx.panes.get_mut(&pane_id) {
                 pane.close_search();
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::CloseSearch);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SearchSetQuery { pane_id, query } => {
-            if let Some(pane) = ctx.panes.get_mut(&pane_id) {
-                let grid_ref = pane.terminal().clone();
-                if let Some(search) = pane.search_mut() {
-                    let term = grid_ref.lock();
-                    search.set_query(query, term.grid());
-                }
-                ctx.immediate_push.push(pane_id);
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.send_io_command(PaneIoCommand::SearchSetQuery(query));
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SearchNextMatch { pane_id } => {
@@ -216,9 +205,9 @@ pub fn dispatch_request(
                 if let Some(search) = pane.search_mut() {
                     search.next_match();
                 }
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::SearchNextMatch);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SearchPrevMatch { pane_id } => {
@@ -226,9 +215,9 @@ pub fn dispatch_request(
                 if let Some(search) = pane.search_mut() {
                     search.prev_match();
                 }
-                ctx.immediate_push.push(pane_id);
+                pane.send_io_command(PaneIoCommand::SearchPrevMatch);
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SetImageConfig {
@@ -239,12 +228,14 @@ pub fn dispatch_request(
             animation_enabled,
         } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                let mut term = pane.terminal().lock();
-                term.set_image_protocol_enabled(enabled);
-                term.set_image_limits(memory_limit as usize, max_single as usize);
-                term.set_image_animation_enabled(animation_enabled);
+                pane.send_io_command(PaneIoCommand::SetImageConfig(crate::backend::ImageConfig {
+                    enabled,
+                    memory_limit: memory_limit as usize,
+                    max_single: max_single as usize,
+                    animation_enabled,
+                }));
             }
-            None // Fire-and-forget.
+            None
         }
 
         MuxPdu::SetCapabilities { flags } => {
@@ -289,11 +280,21 @@ pub fn dispatch_request(
         },
 
         MuxPdu::ExtractText { pane_id, selection } => {
+            use std::time::Duration;
             let sel = selection.to_selection();
-            let text = ctx.panes.get(&pane_id).map_or_else(String::new, |pane| {
-                let term = pane.terminal().lock();
-                extract_text(term.grid(), &sel)
-            });
+            let text = if let Some(pane) = ctx.panes.get(&pane_id) {
+                let (tx, rx) = crossbeam_channel::bounded(1);
+                pane.send_io_command(PaneIoCommand::ExtractText {
+                    selection: sel,
+                    reply: tx,
+                });
+                rx.recv_timeout(Duration::from_millis(100))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
             Some(MuxPdu::ExtractTextResp { text })
         }
 
@@ -303,21 +304,24 @@ pub fn dispatch_request(
             font_family,
             font_size_x100,
         } => {
+            use std::time::Duration;
             let sel = selection.to_selection();
             let font_size = f32::from(font_size_x100) / 100.0;
-            let (html, text) = ctx.panes.get(&pane_id).map_or_else(
-                || (String::new(), String::new()),
-                |pane| {
-                    let term = pane.terminal().lock();
-                    extract_html_with_text(
-                        term.grid(),
-                        &sel,
-                        term.palette(),
-                        &font_family,
-                        font_size,
-                    )
-                },
-            );
+            let (html, text) = if let Some(pane) = ctx.panes.get(&pane_id) {
+                let (tx, rx) = crossbeam_channel::bounded(1);
+                pane.send_io_command(PaneIoCommand::ExtractHtml {
+                    selection: sel,
+                    font_family,
+                    font_size,
+                    reply: tx,
+                });
+                rx.recv_timeout(Duration::from_millis(100))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| (String::new(), String::new()))
+            } else {
+                (String::new(), String::new())
+            };
             Some(MuxPdu::ExtractHtmlResp { html, text })
         }
 

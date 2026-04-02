@@ -199,7 +199,7 @@ impl App {
                 "config reload: font size={:.1}, cell={}x{}",
                 new.font.size,
                 cell.width,
-                cell.height,
+                cell.height
             );
 
             // UI registry always uses base weight 400 (Regular) — individual
@@ -220,6 +220,7 @@ impl App {
             let af = resolve_atlas_filtering(&new.font, scale);
             renderer.set_atlas_filtering(af, gpu, &pipelines.atlas_layout);
             ctx.text_cache.clear();
+            ctx.invalidate_font_caches();
         }
 
         // Grid dimensions, terminal widget, PTY, and resize increments all
