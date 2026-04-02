@@ -47,7 +47,7 @@ scroll_region, region_start, region_end, set_scrolling_region
 ---
 
 ### Section 03: Screen Features & DECCOLM
-**File:** `section-03-screen-features.md` | **Status:** Not Started
+**File:** `section-03-screen-features.md` | **Status:** Complete
 
 ```
 DECCOLM, 132 column mode, column mode, ColumnMode

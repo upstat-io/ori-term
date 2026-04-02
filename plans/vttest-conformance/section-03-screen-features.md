@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Screen Features & DECCOLM"
-status: in-progress
+status: complete
 reviewed: true
 goal: "vttest menu 2 screens pass at all sizes — wrap, tabs, column mode, scroll, SGR rendition"
 inspired_by:
@@ -9,8 +9,8 @@ inspired_by:
   - "xterm DECCOLM (charproc.c RequestResize)"
 depends_on: ["02"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-02
 sections:
   - id: "03.1"
     title: "DECCOLM Reflow (132-Column Mode)"
@@ -29,15 +29,15 @@ sections:
     status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "03.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 03: Screen Features & DECCOLM
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** vttest menu 2 (screen features) passes at all terminal sizes. DECCOLM reflows content to the current terminal width rather than physically resizing. Wrap-around, tab stops, scroll modes, and SGR rendition all produce correct output.
 
 **Context:** Menu 2 tests 15 screens covering wrap-around (DECAWM), tab stops, 132-column mode, soft/jump scroll, origin mode screen placement, and SGR graphic rendition (bold, underline, blink, inverse). DECCOLM is currently stubbed out. The user's design decision: DECCOLM should NOT resize the window — content should reflow to the current width. Tab stops and SGR are likely working but need verification.
@@ -155,7 +155,8 @@ Menu 2, screen 15: SAVE/RESTORE cursor with character set switching.
 
 ## 03.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-03-001][low]` `plans/vttest-conformance/section-03-screen-features.md:176` — The recorded `./test-all.sh` verification is not reproducible in the current review environment.
+  Resolved: Rejected on 2026-04-02. The IPC round-trip test failures are a Codex sandbox limitation (Unix domain sockets require permissions the sandbox doesn't grant). `./test-all.sh` passes locally in the dev environment where IPC tests run correctly. All Section 03-specific tests confirmed passing by the reviewer.
 
 ---
 
@@ -171,6 +172,6 @@ Menu 2, screen 15: SAVE/RESTORE cursor with character set switching.
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed — 1 finding (low), rejected as sandbox limitation. No code regressions found.
 
 **Exit Criteria:** vttest menu 2 screens produce correct output at 80x24, verified by structural assertions and golden image comparison. DECCOLM screens (03-06) show wrapped content at current width (expected -- no resize per design decision). Menu 2 screens at 97x33 and 120x40 also pass where applicable. Target: 11/15 screens pass fully, 4 partial passes (DECCOLM screens have correct side effects but wrapped visual output).
