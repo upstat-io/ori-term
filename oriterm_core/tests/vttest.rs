@@ -72,6 +72,8 @@ impl VtTestSession {
             .expect("failed to open PTY");
 
         let mut cmd = CommandBuilder::new("vttest");
+        // vttest hardcodes 80x24 — pass actual size as LINESxMIN_COLS.MAX_COLS.
+        cmd.arg(format!("{rows}x{cols}.{cols}"));
         cmd.env("TERM", "xterm-256color");
 
         let child = pair
@@ -128,12 +130,53 @@ impl VtTestSession {
         total
     }
 
+    /// Block until data arrives or timeout expires, then drain everything.
+    fn drain_blocking(&mut self, timeout_ms: u64) -> usize {
+        let mut total = 0;
+        // Block until the first chunk arrives (or timeout).
+        if let Ok(data) = self.rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+            self.proc.advance(&mut self.term, &data);
+            total += data.len();
+            for resp in self.term.event_listener().take_responses() {
+                let _ = self.writer.write_all(resp.as_bytes());
+            }
+            let _ = self.writer.flush();
+        }
+        // Drain any remaining buffered data.
+        total += self.drain();
+        total
+    }
+
     /// Wait until no new PTY output arrives for `quiet_ms`.
+    ///
+    /// Uses blocking recv to avoid missing data that arrives between
+    /// drain and sleep. Important for multi-step handshakes (DA1 →
+    /// CSI 18t) where vttest sends queries after receiving responses.
     fn wait(&mut self, quiet_ms: u64) {
         loop {
-            thread::sleep(Duration::from_millis(quiet_ms));
-            if self.drain() == 0 {
+            if self.drain_blocking(quiet_ms) == 0 {
                 break;
+            }
+        }
+    }
+
+    /// Wait until the grid contains `needle`, with a hard timeout.
+    fn wait_for(&mut self, needle: &str, timeout_ms: u64) {
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+        loop {
+            self.drain_blocking(100);
+            let text = self.grid_text();
+            if text.contains(needle) {
+                // Drain any trailing output.
+                self.wait(200);
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!(
+                    "timed out waiting for {:?} after {timeout_ms}ms.\nGrid:\n{}",
+                    needle,
+                    self.grid_text()
+                );
             }
         }
     }
@@ -142,7 +185,6 @@ impl VtTestSession {
     fn send(&mut self, key: &[u8]) {
         self.writer.write_all(key).expect("write key");
         self.writer.flush().expect("flush");
-        thread::sleep(Duration::from_millis(100));
         self.wait(300);
     }
 
@@ -175,6 +217,34 @@ impl VtTestSession {
     }
 }
 
+#[test]
+fn pty_size_is_propagated() {
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 33,
+            cols: 97,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("open PTY");
+
+    let mut cmd = CommandBuilder::new("stty");
+    cmd.arg("size");
+    let mut child = pair.slave.spawn_command(cmd).expect("spawn stty");
+    drop(pair.slave);
+
+    let mut reader = pair.master.try_clone_reader().expect("reader");
+    let _ = child.wait();
+    let mut output = String::new();
+    reader.read_to_string(&mut output).expect("read");
+    let trimmed = output.trim();
+    assert_eq!(
+        trimmed, "33 97",
+        "PTY size should be 33 rows × 97 cols, got: {trimmed}"
+    );
+}
+
 /// Check if vttest is installed.
 fn vttest_available() -> bool {
     std::process::Command::new("vttest")
@@ -190,8 +260,8 @@ fn run_menu1_cursor_movement(cols: u16, rows: u16) {
     let mut s = VtTestSession::new(cols, rows);
     let label = s.size_label();
 
-    // Wait for main menu.
-    s.wait(300);
+    // Wait for main menu to fully render.
+    s.wait_for("Enter choice number", 5000);
     insta::assert_snapshot!(format!("{label}_00_main_menu"), s.grid_text());
 
     // Select menu item 1.
@@ -254,8 +324,8 @@ fn run_menu2_screen_features(cols: u16, rows: u16) {
     let mut s = VtTestSession::new(cols, rows);
     let label = s.size_label();
 
-    // Wait for main menu.
-    s.wait(300);
+    // Wait for main menu to fully render.
+    s.wait_for("Enter choice number", 5000);
 
     // Select menu item 2.
     s.send(b"2\r");
@@ -295,7 +365,6 @@ fn vttest_menu2_80x24() {
 }
 
 #[test]
-#[ignore = "DA1 response lacks VT220+ class — vttest falls back to 80 cols (Section 01)"]
 fn vttest_menu2_97x33() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
@@ -305,7 +374,6 @@ fn vttest_menu2_97x33() {
 }
 
 #[test]
-#[ignore = "DA1 response lacks VT220+ class — vttest falls back to 80 cols (Section 01)"]
 fn vttest_menu2_120x40() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
@@ -428,8 +496,8 @@ fn assert_border_fills_terminal(grid: &[Vec<char>], cols: usize, rows: usize) {
 fn capture_border_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
     let mut s = VtTestSession::new(cols, rows);
 
-    // Wait for main menu.
-    s.wait(300);
+    // Wait for main menu to fully render.
+    s.wait_for("Enter choice number", 5000);
 
     // Select menu 1, wait for first sub-screen.
     s.send(b"1\r");
@@ -448,7 +516,6 @@ fn vttest_border_fills_80x24() {
 }
 
 #[test]
-#[ignore = "DA1 response lacks VT220+ class — vttest falls back to 80 cols (Section 01)"]
 fn vttest_border_fills_97x33() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
@@ -459,7 +526,6 @@ fn vttest_border_fills_97x33() {
 }
 
 #[test]
-#[ignore = "DA1 response lacks VT220+ class — vttest falls back to 80 cols (Section 01)"]
 fn vttest_border_fills_120x40() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
@@ -477,7 +543,7 @@ fn vttest_border_fills_120x40() {
 /// Capture screens 01 and 02 from menu 1 and return both grids.
 fn capture_border_screens_01_and_02(cols: u16, rows: u16) -> (Vec<Vec<char>>, Vec<Vec<char>>) {
     let mut s = VtTestSession::new(cols, rows);
-    s.wait(300);
+    s.wait_for("Enter choice number", 5000);
     s.send(b"1\r");
 
     let screen_01 = grid_chars(&s.term);
@@ -491,7 +557,6 @@ fn capture_border_screens_01_and_02(cols: u16, rows: u16) -> (Vec<Vec<char>>, Ve
 }
 
 #[test]
-#[ignore = "Origin mode (DECOM) cursor offset incorrect with scroll regions (Section 02)"]
 fn vttest_origin_mode_matches_normal_80x24() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
@@ -512,7 +577,6 @@ fn vttest_origin_mode_matches_normal_80x24() {
 }
 
 #[test]
-#[ignore = "Origin mode (DECOM) cursor offset incorrect with scroll regions (Section 02)"]
 fn vttest_origin_mode_matches_normal_97x33() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
@@ -533,7 +597,6 @@ fn vttest_origin_mode_matches_normal_97x33() {
 }
 
 #[test]
-#[ignore = "Origin mode (DECOM) cursor offset incorrect with scroll regions (Section 02)"]
 fn vttest_origin_mode_matches_normal_120x40() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");

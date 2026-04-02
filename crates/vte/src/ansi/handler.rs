@@ -281,6 +281,12 @@ pub trait Handler {
     /// Called when the DCS sixel sequence ends (ST terminator).
     fn sixel_end(&mut self) {}
 
+    /// DECRQSS: Request Status String (DCS $ q ... ST).
+    ///
+    /// `query` contains the status type bytes, e.g. `"p` for DECSCL
+    /// (conformance level), `r` for DECSTBM, `m` for SGR.
+    fn decrqss(&mut self, _query: &[u8]) {}
+
     /// Dispatch an APC (Application Program Command) sequence.
     ///
     /// The `payload` contains the raw bytes between `ESC _` and `ST`.

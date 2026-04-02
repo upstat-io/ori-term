@@ -71,6 +71,8 @@ impl VtTestSession {
             .expect("failed to open PTY");
 
         let mut cmd = CommandBuilder::new("vttest");
+        // vttest hardcodes 80x24 — pass actual size as LINESxMIN_COLS.MAX_COLS.
+        cmd.arg(format!("{rows}x{cols}.{cols}"));
         cmd.env("TERM", "xterm-256color");
 
         let child = pair
@@ -127,12 +129,41 @@ impl VtTestSession {
         total
     }
 
+    /// Block until data arrives or timeout expires, then drain everything.
+    fn drain_blocking(&mut self, timeout_ms: u64) -> usize {
+        let mut total = 0;
+        if let Ok(data) = self.rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+            self.proc.advance(&mut self.term, &data);
+            total += data.len();
+            for resp in self.term.event_listener().take_responses() {
+                let _ = self.writer.write_all(resp.as_bytes());
+            }
+            let _ = self.writer.flush();
+        }
+        total += self.drain();
+        total
+    }
+
     /// Wait until no new PTY output for `quiet_ms`.
     fn wait(&mut self, quiet_ms: u64) {
         loop {
-            thread::sleep(Duration::from_millis(quiet_ms));
-            if self.drain() == 0 {
+            if self.drain_blocking(quiet_ms) == 0 {
                 break;
+            }
+        }
+    }
+
+    /// Wait until the grid contains `needle`.
+    fn wait_for(&mut self, needle: &str, timeout_ms: u64) {
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+        loop {
+            self.drain_blocking(100);
+            if self.grid_text().contains(needle) {
+                self.wait(200);
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!("timed out waiting for {:?} after {timeout_ms}ms", needle);
             }
         }
     }
@@ -141,8 +172,28 @@ impl VtTestSession {
     fn send(&mut self, key: &[u8]) {
         self.writer.write_all(key).expect("write key");
         self.writer.flush().expect("flush");
-        thread::sleep(Duration::from_millis(100));
         self.wait(300);
+    }
+
+    /// Serialize the visible grid to text for content-based waiting.
+    fn grid_text(&self) -> String {
+        let content = self.term.renderable_content();
+        let lines = content.lines;
+        let cols = content.cols;
+        let mut grid = vec![vec![' '; cols]; lines];
+        for cell in &content.cells {
+            if cell.line < lines && cell.column.0 < cols {
+                let ch = if cell.ch == '\0' { ' ' } else { cell.ch };
+                grid[cell.line][cell.column.0] = ch;
+            }
+        }
+        let mut out = String::new();
+        for row in &grid {
+            let line: String = row.iter().collect();
+            out.push_str(&line);
+            out.push('\n');
+        }
+        out
     }
 
     /// Build a `FrameInput` from the current `Term` state.
@@ -234,8 +285,8 @@ fn run_menu1_golden(cols: u16, rows: u16) {
     let mut s = VtTestSession::new(cols, rows);
     let label = format!("{}x{}", cols, rows);
 
-    // Wait for main menu.
-    s.wait(300);
+    // Wait for main menu to fully render.
+    s.wait_for("Enter choice number", 5000);
     s.assert_golden(
         &format!("vttest_{label}_menu"),
         &gpu,
@@ -287,7 +338,7 @@ fn run_menu2_golden(cols: u16, rows: u16) {
     let mut s = VtTestSession::new(cols, rows);
     let label = format!("{}x{}", cols, rows);
 
-    s.wait(300);
+    s.wait_for("Enter choice number", 5000);
     s.send(b"2\r");
 
     let mut screen = 1;

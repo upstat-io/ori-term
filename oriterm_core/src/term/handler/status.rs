@@ -58,11 +58,14 @@ impl<T: EventListener> Term<T> {
     pub(super) fn status_identify_terminal(&mut self, intermediate: Option<char>) {
         match intermediate {
             None => {
-                // DA1: report VT220 with ANSI color + sixel graphics.
-                // Attributes: 6 = ANSI color, 4 = sixel graphics.
-                // Kitty graphics has no DA attribute — programs detect
-                // it via the `a=q` query mechanism instead.
-                let response = "\x1b[?6;4c".to_string();
+                // DA1: report VT420-class terminal with ANSI color + sixel.
+                // Format: CSI ? Pc ; Pp1 ; Pp2 c
+                //   64 = VT420 conformance level (same as xterm)
+                //   6  = selective erase / ANSI color
+                //   4  = sixel graphics
+                // vttest checks for 62+ (VT220+) to enable CSI 18t
+                // size queries and other VT200+ features.
+                let response = "\x1b[?64;6;4c".to_string();
                 self.event_listener.send_event(Event::PtyWrite(response));
             }
             Some('>') => {
@@ -97,6 +100,36 @@ impl<T: EventListener> Term<T> {
         let lines = self.grid().lines();
         let cols = self.grid().cols();
         let response = format!("\x1b[8;{lines};{cols}t");
+        self.event_listener.send_event(Event::PtyWrite(response));
+    }
+
+    /// DECRQSS: Request Status String.
+    ///
+    /// Responds to DCS $ q ... ST queries. Each query type requests the
+    /// current setting of a specific terminal feature. Valid responses
+    /// use `DCS 1 $ r <value> ST`; invalid queries get `DCS 0 $ r ST`.
+    pub(super) fn status_decrqss(&mut self, query: &[u8]) {
+        let response = match query {
+            // DECSCL: conformance level. Report VT400 level, 7-bit controls.
+            b"\"p" => "\x1bP1$r64;1\"p\x1b\\".to_string(),
+            // DECSTBM: scrolling region (top;bottom margins).
+            b"r" => {
+                let region = self.grid().scroll_region();
+                let top = region.start + 1;
+                let bottom = region.end;
+                format!("\x1bP1$r{top};{bottom}r\x1b\\")
+            }
+            // SGR: current graphic rendition.
+            b"m" => "\x1bP1$r0m\x1b\\".to_string(),
+            // Unrecognized query: report invalid.
+            _ => {
+                debug!(
+                    "Unrecognized DECRQSS query: {:?}",
+                    String::from_utf8_lossy(query)
+                );
+                "\x1bP0$r\x1b\\".to_string()
+            }
+        };
         self.event_listener.send_event(Event::PtyWrite(response));
     }
 }
