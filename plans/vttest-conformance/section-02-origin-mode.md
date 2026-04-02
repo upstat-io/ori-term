@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Origin Mode & Scroll Regions"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Origin mode (DECOM) cursor positioning produces identical output to normal mode in vttest screen 01_02"
 inspired_by:
@@ -9,8 +9,8 @@ inspired_by:
   - "xterm CUP handler (charproc.c CursorSet)"
 depends_on: ["01"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-02
 sections:
   - id: "02.1"
     title: "Diagnose Origin Mode Bug"
@@ -26,15 +26,15 @@ sections:
     status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 02: Origin Mode & Scroll Regions
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** vttest screen 01_02 (origin mode border test) produces output identical to screen 01_01 (normal mode border test) at all terminal sizes.
 
 **Context:** vttest menu 1, screen 02 draws the same `*`/`+`/`E` border as screen 01 but with DECOM (origin mode) enabled and scroll margins set. The output should be identical. Currently, the E frame is garbled, borders are missing on interior rows, and text wraps incorrectly. The `goto_origin_aware` function at `handler/helpers.rs:124-146` is the prime suspect.
@@ -133,7 +133,10 @@ vttest tests several scroll region edge cases that may expose additional bugs. N
 
 ## 02.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-02-001][medium]` Plan metadata out of sync.
+  Resolved: Updated index.md and 00-overview.md to show Section 02 as "In Progress". 2026-04-02.
+- [x] `[TPR-02-002][low]` `platform_windows/mod.rs` over 500-line limit.
+  Resolved: Extracted DWM helpers (set_transitions_enabled, cloak_window, visible_frame_bounds_hwnd, try_dwm_frame_bounds) into `dwm.rs` submodule. mod.rs now 421 lines. 2026-04-02.
 
 ---
 
@@ -148,6 +151,6 @@ vttest tests several scroll region edge cases that may expose additional bugs. N
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed — 2 findings, both resolved (plan sync, DWM file split)
 
 **Exit Criteria:** vttest screen 01_02 (origin mode) produces output identical to screen 01_01 (normal mode) at all terminal sizes, verified by `vttest_origin_mode_matches_normal_*` structural assertions.
