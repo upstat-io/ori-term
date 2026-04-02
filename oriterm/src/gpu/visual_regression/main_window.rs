@@ -135,7 +135,7 @@ fn render_main_window(
 
     // Prepare grid (fills instance buffers, clears, begins atlas frame).
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, gpu, pipelines, origin, true, true);
+    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
 
     let text_cache = TextShapeCache::new();
 

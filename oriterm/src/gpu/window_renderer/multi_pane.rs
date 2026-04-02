@@ -47,14 +47,14 @@ impl WindowRenderer {
     /// layout-computed pixel rect.
     #[expect(
         clippy::too_many_arguments,
-        reason = "pane prepare: input, GPU state, origin offset, cursor flag, target frame"
+        reason = "pane prepare: input, GPU state, origin offset, cursor opacity, target frame"
     )]
     pub(crate) fn prepare_pane_into(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
         origin: (f32, f32),
-        cursor_blink_visible: bool,
+        cursor_opacity: f32,
         target: &mut PreparedFrame,
     ) {
         // Off-screen culling in the prepare phase uses the target frame's
@@ -103,7 +103,7 @@ impl WindowRenderer {
             &self.shaping.frame,
             target,
             origin,
-            cursor_blink_visible,
+            cursor_opacity,
         );
     }
 

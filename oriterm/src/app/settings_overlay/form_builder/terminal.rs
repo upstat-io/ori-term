@@ -70,12 +70,25 @@ fn build_cursor_section(
         theme,
     );
 
+    let fade_toggle = ToggleWidget::new()
+        .with_on(config.terminal.cursor_blink_fade)
+        .with_disabled(!config.terminal.cursor_blink);
+    ids.cursor_blink_fade_toggle = fade_toggle.id();
+
+    let fade_row = SettingRowWidget::new(
+        "Fade blink",
+        "Smooth fade transition instead of hard on/off",
+        Box::new(fade_toggle),
+        theme,
+    );
+
     Box::new(
         ContainerWidget::column()
             .with_width(SizeSpec::Fill)
             .with_child(build_section_header("Cursor", theme))
             .with_child(Box::new(picker_row))
-            .with_child(Box::new(blink_row)),
+            .with_child(Box::new(blink_row))
+            .with_child(Box::new(fade_row)),
     )
 }
 

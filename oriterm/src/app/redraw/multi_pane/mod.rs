@@ -91,7 +91,18 @@ impl App {
 
             let dim_inactive = self.config.pane.dim_inactive;
             let inactive_opacity = self.config.pane.effective_inactive_opacity();
-            let cursor_blink_visible = !self.blinking_active || self.cursor_blink.is_visible();
+            let cursor_opacity = if self.blinking_active {
+                let raw = self.cursor_blink.intensity();
+                if self.config.terminal.cursor_blink_fade {
+                    raw
+                } else if raw > 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                1.0_f32
+            };
 
             let mut focused_rect = None;
             let mut blinking_now = self.blinking_active;
@@ -281,7 +292,11 @@ impl App {
                     };
 
                     let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
-                    let pane_cursor_visible = cursor_blink_visible && layout.is_focused;
+                    let pane_cursor_opacity = if layout.is_focused {
+                        cursor_opacity
+                    } else {
+                        0.0
+                    };
 
                     let cached = ctx
                         .pane_cache
@@ -290,7 +305,7 @@ impl App {
                                 frame,
                                 gpu,
                                 origin,
-                                pane_cursor_visible,
+                                pane_cursor_opacity,
                                 target,
                             );
                         });

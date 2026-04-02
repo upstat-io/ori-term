@@ -242,8 +242,18 @@ impl App {
 
             // On false→true transition, force cursor visible this frame (the
             // timer reset hasn't happened yet, so is_visible() may be stale).
-            let cursor_blink_visible =
-                !blinking_now || !self.blinking_active || self.cursor_blink.is_visible();
+            let cursor_opacity = if blinking_now && self.blinking_active {
+                let raw = self.cursor_blink.intensity();
+                if self.config.terminal.cursor_blink_fade {
+                    raw
+                } else if raw > 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                1.0_f32
+            };
 
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
@@ -261,7 +271,7 @@ impl App {
                 gpu,
                 pipelines,
                 origin,
-                cursor_blink_visible,
+                cursor_opacity,
                 content_changed,
             );
 

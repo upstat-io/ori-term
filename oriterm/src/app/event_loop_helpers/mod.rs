@@ -266,8 +266,11 @@ pub(super) struct ControlFlowInput {
     pub has_animations: bool,
     /// Whether cursor blink is active.
     pub blinking_active: bool,
-    /// Next cursor blink toggle time (only meaningful if `blinking_active`).
-    pub next_toggle: std::time::Instant,
+    /// Next cursor blink change time (only meaningful if `blinking_active`).
+    ///
+    /// During fade transitions this is ~16ms (animation frame rate); during
+    /// plateaus it is ~530ms (phase boundary).
+    pub next_blink_change: std::time::Instant,
     /// Time remaining until frame budget allows next render.
     pub budget_remaining: std::time::Duration,
     /// Current time.
@@ -306,8 +309,8 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
     } else if input.blinking_active {
         match input.scheduler_wake {
-            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(input.next_toggle)),
-            None => ControlFlowDecision::WaitUntil(input.next_toggle),
+            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(input.next_blink_change)),
+            None => ControlFlowDecision::WaitUntil(input.next_blink_change),
         }
     } else if let Some(wake) = input.scheduler_wake {
         ControlFlowDecision::WaitUntil(wake)

@@ -90,6 +90,10 @@ impl CursorStyle {
 /// Terminal behavior configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent config toggles: cursor_blink, cursor_blink_fade, image_protocol, image_animation"
+)]
 pub(crate) struct TerminalConfig {
     /// Override shell (default: system shell).
     pub shell: Option<String>,
@@ -99,6 +103,11 @@ pub(crate) struct TerminalConfig {
     pub cursor_style: CursorStyle,
     /// Enable cursor blinking (default: true).
     pub cursor_blink: bool,
+    /// Smooth fade for cursor blink transitions (default: true).
+    ///
+    /// When enabled, the cursor fades in/out using eased opacity. When
+    /// disabled, the cursor blinks with a hard on/off toggle.
+    pub cursor_blink_fade: bool,
     /// Blink interval in milliseconds (default: 530).
     pub cursor_blink_interval_ms: u64,
     /// Enable/disable all image protocols (Kitty, Sixel, iTerm2).
@@ -120,6 +129,7 @@ impl Default for TerminalConfig {
             scrollback: 10_000,
             cursor_style: CursorStyle::default(),
             cursor_blink: true,
+            cursor_blink_fade: true,
             cursor_blink_interval_ms: 530,
             image_protocol: true,
             image_memory_limit: 320 * 1_000_000, // 320 MB (SI, not MiB)

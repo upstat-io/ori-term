@@ -161,7 +161,7 @@ pub(super) fn draw_prompt_markers(input: &FrameInput, frame: &mut PreparedFrame,
 /// - `Hidden` — no instances.
 #[expect(
     clippy::too_many_arguments,
-    reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color"
+    reason = "cursor geometry: frame, shape, grid position, cell size, origin offset, color, opacity"
 )]
 pub(super) fn build_cursor(
     frame: &mut PreparedFrame,
@@ -173,6 +173,7 @@ pub(super) fn build_cursor(
     ox: f32,
     oy: f32,
     color: Rgb,
+    opacity: f32,
 ) {
     let x = ox + col as f32 * cw;
     let y = (oy + row as f32 * ch).round();
@@ -182,12 +183,12 @@ pub(super) fn build_cursor(
         CursorShape::Block => {
             frame
                 .cursors
-                .push_cursor(ScreenRect { x, y, w: cw, h: ch }, color, 1.0);
+                .push_cursor(ScreenRect { x, y, w: cw, h: ch }, color, opacity);
         }
         CursorShape::Bar => {
             frame
                 .cursors
-                .push_cursor(ScreenRect { x, y, w: t, h: ch }, color, 1.0);
+                .push_cursor(ScreenRect { x, y, w: t, h: ch }, color, opacity);
         }
         CursorShape::Underline => {
             let rect = ScreenRect {
@@ -196,13 +197,13 @@ pub(super) fn build_cursor(
                 w: cw,
                 h: t,
             };
-            frame.cursors.push_cursor(rect, color, 1.0);
+            frame.cursors.push_cursor(rect, color, opacity);
         }
         CursorShape::HollowBlock => {
             // Top edge.
             frame
                 .cursors
-                .push_cursor(ScreenRect { x, y, w: cw, h: t }, color, 1.0);
+                .push_cursor(ScreenRect { x, y, w: cw, h: t }, color, opacity);
             // Bottom edge.
             let rect = ScreenRect {
                 x,
@@ -210,11 +211,11 @@ pub(super) fn build_cursor(
                 w: cw,
                 h: t,
             };
-            frame.cursors.push_cursor(rect, color, 1.0);
+            frame.cursors.push_cursor(rect, color, opacity);
             // Left edge.
             frame
                 .cursors
-                .push_cursor(ScreenRect { x, y, w: t, h: ch }, color, 1.0);
+                .push_cursor(ScreenRect { x, y, w: t, h: ch }, color, opacity);
             // Right edge.
             let rect = ScreenRect {
                 x: x + cw - t,
@@ -222,7 +223,7 @@ pub(super) fn build_cursor(
                 w: t,
                 h: ch,
             };
-            frame.cursors.push_cursor(rect, color, 1.0);
+            frame.cursors.push_cursor(rect, color, opacity);
         }
         CursorShape::Hidden => {}
     }

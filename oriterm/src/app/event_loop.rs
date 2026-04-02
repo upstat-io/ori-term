@@ -483,7 +483,7 @@ impl ApplicationHandler<TermEvent> for App {
             budget_elapsed,
             has_animations,
             blinking_active: self.blinking_active,
-            next_toggle: self.cursor_blink.next_toggle(),
+            next_blink_change: self.cursor_blink.next_change(),
             budget_remaining: remaining,
             now,
             scheduler_wake: None,

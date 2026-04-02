@@ -20,6 +20,7 @@ fn default_config_roundtrip() {
     assert!(parsed.behavior.copy_on_select);
     assert!(parsed.behavior.bold_is_bright);
     assert!(parsed.terminal.cursor_blink);
+    assert!(parsed.terminal.cursor_blink_fade);
     assert_eq!(parsed.terminal.cursor_blink_interval_ms, 530);
     assert_eq!(parsed.window.decorations, Decorations::None);
     assert!(parsed.window.resize_increments);
@@ -83,6 +84,7 @@ cursor_style = "bar"
 fn cursor_blink_defaults() {
     let parsed: Config = toml::from_str("").expect("deserialize");
     assert!(parsed.terminal.cursor_blink);
+    assert!(parsed.terminal.cursor_blink_fade);
     assert_eq!(parsed.terminal.cursor_blink_interval_ms, 530);
 }
 
@@ -91,10 +93,12 @@ fn cursor_blink_from_toml() {
     let toml_str = r#"
 [terminal]
 cursor_blink = false
+cursor_blink_fade = false
 cursor_blink_interval_ms = 250
 "#;
     let parsed: Config = toml::from_str(toml_str).expect("deserialize");
     assert!(!parsed.terminal.cursor_blink);
+    assert!(!parsed.terminal.cursor_blink_fade);
     assert_eq!(parsed.terminal.cursor_blink_interval_ms, 250);
 }
 

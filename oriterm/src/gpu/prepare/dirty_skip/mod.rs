@@ -261,7 +261,7 @@ pub(crate) fn fill_frame_incremental(
     shaped: &ShapedFrame,
     frame: &mut PreparedFrame,
     origin: (f32, f32),
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
@@ -376,14 +376,8 @@ pub(crate) fn fill_frame_incremental(
         // Round Y to integer pixels (see prepare/mod.rs for rationale).
         let y = (oy + row as f32 * ch).round();
 
-        let (fg, bg) = resolve_cell_colors(
-            cell,
-            sel,
-            search,
-            &cursor,
-            cursor_blink_visible,
-            &input.palette,
-        );
+        let (fg, bg) =
+            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
 
         // Skip default palette background so the window clear color (with
         // theme opacity for glass/acrylic) shows through.
@@ -474,7 +468,7 @@ pub(crate) fn fill_frame_incremental(
     draw_url_hover_underline(input, frame, ox, oy);
     draw_prompt_markers(input, frame, ox, oy);
 
-    if cursor.visible && cursor_blink_visible {
+    if cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
             cursor.shape
         } else {
@@ -490,6 +484,7 @@ pub(crate) fn fill_frame_incremental(
             ox,
             oy,
             input.palette.cursor_color,
+            cursor_opacity,
         );
     }
 

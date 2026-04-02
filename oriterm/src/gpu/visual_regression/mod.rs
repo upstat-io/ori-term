@@ -16,6 +16,7 @@
 //! cargo test -p oriterm -- visual_regression
 //! ```
 
+mod cursor_opacity_tests;
 mod decoration_tests;
 mod dialog_helpers;
 mod edge_case_tests;
@@ -131,7 +132,28 @@ pub(super) fn render_to_pixels_with_origin(
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(input, gpu, pipelines, origin, true, true);
+    renderer.prepare(input, gpu, pipelines, origin, 1.0, true);
+    renderer.render_frame(gpu, pipelines, target.view());
+    gpu.read_render_target(&target)
+        .expect("pixel readback should succeed")
+}
+
+/// Render with a specific cursor opacity (for fade-blink testing).
+///
+/// Unlike [`render_to_pixels`] which always uses opacity 1.0, this function
+/// passes the given `cursor_opacity` to the prepare pipeline, testing the
+/// GPU alpha blending path in isolation from `ColorEase`.
+pub(super) fn render_to_pixels_with_opacity(
+    gpu: &GpuState,
+    pipelines: &GpuPipelines,
+    renderer: &mut WindowRenderer,
+    input: &FrameInput,
+    cursor_opacity: f32,
+) -> Vec<u8> {
+    let w = input.viewport.width;
+    let h = input.viewport.height;
+    let target = gpu.create_render_target(w, h);
+    renderer.prepare(input, gpu, pipelines, (0.0, 0.0), cursor_opacity, true);
     renderer.render_frame(gpu, pipelines, target.view());
     gpu.read_render_target(&target)
         .expect("pixel readback should succeed")
