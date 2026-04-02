@@ -55,6 +55,11 @@ where
                 self.handler.sixel_start(&flat);
                 self.state.dcs_state = DcsState::Sixel;
             },
+            'q' if intermediates == [b'$'] => {
+                // DCS $ q ... ST = DECRQSS (Request Status String).
+                self.state.decrqss_buf.clear();
+                self.state.dcs_state = DcsState::Decrqss;
+            },
             _ => {
                 debug!(
                     "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
@@ -69,6 +74,12 @@ where
     fn put(&mut self, byte: u8) {
         match self.state.dcs_state {
             DcsState::Sixel => self.handler.sixel_put(byte),
+            DcsState::Decrqss => {
+                // Collect the status type bytes (e.g., `"p` for DECSCL).
+                if self.state.decrqss_buf.len() < 8 {
+                    self.state.decrqss_buf.push(byte);
+                }
+            },
             DcsState::None => debug!("[unhandled put] byte={:?}", byte),
         }
     }
@@ -77,6 +88,10 @@ where
     fn unhook(&mut self) {
         match self.state.dcs_state {
             DcsState::Sixel => self.handler.sixel_end(),
+            DcsState::Decrqss => {
+                let query: Vec<u8> = self.state.decrqss_buf.drain(..).collect();
+                self.handler.decrqss(&query);
+            },
             DcsState::None => debug!("[unhandled unhook]"),
         }
         self.state.dcs_state = DcsState::None;

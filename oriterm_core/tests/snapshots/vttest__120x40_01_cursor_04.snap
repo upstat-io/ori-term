@@ -4,6 +4,22 @@ expression: text
 ---
 ************************************************************************************************************************
 *++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*
+z                                                                                                                       
+A                                                                                                                      a
+B                                                                                                                       
+b                                                                                                                       
+C                                                                                                                      c
+D                                                                                                                      d
+E                                                                                                                      e
+F                                                                                                                       
+f                                                                                                                       
+G                                                                                                                      g
+H                                                                                                                      h
+I                                                                                                                      i
+J                                                                                                                       
+j                                                                                                                       
+K                                                                                                                      k
+L                                                                                                                      l
 M                                                                                                                      m
 N                                                                                                                       
 n                                                                                                                       
@@ -23,6 +39,6 @@ Y                                                                               
 Z                                                                                                                       
 z                                                                                                                       
                                                                                                                         
-Push <RETURN>Test of autowrap, mixing control and print characters.                                                    *
-The left/right margins should have letters in order:++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ *
+Push <RETURN>Test of autowrap, mixing control and print characters.                                                   +*
+The left/right margins should have letters in order:+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*
 ************************************************************************************************************************

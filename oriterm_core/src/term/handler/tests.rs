@@ -41,8 +41,16 @@ impl EventListener for RecordingListener {
 
 /// Create a Term with 24 lines, 80 columns, and a recording listener.
 fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
+    term_with_recorder_sized(24, 80)
+}
+
+/// Create a Term with the given dimensions and a recording listener.
+fn term_with_recorder_sized(
+    lines: usize,
+    cols: usize,
+) -> (Term<RecordingListener>, RecordingListener) {
     let listener = RecordingListener::new();
-    let term = Term::new(24, 80, 0, Theme::default(), listener.clone());
+    let term = Term::new(lines, cols, 0, Theme::default(), listener.clone());
     (term, listener)
 }
 
@@ -437,7 +445,8 @@ fn da1_produces_device_attributes() {
     feed(&mut t, b"\x1b[c");
 
     let events = listener.events();
-    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[?6;4c)"));
+    // VT420-class (64) with ANSI color (6) and sixel (4).
+    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[?64;6;4c)"));
 }
 
 // --- ORIGIN mode tests ---
@@ -5387,5 +5396,51 @@ fn decaln_clears_cell_attributes() {
         !t.grid()[crate::index::Line(0)][Column(0)]
             .flags
             .contains(crate::cell::CellFlags::BOLD)
+    );
+}
+
+// --- DA1 response format (vttest conformance) ---
+
+#[test]
+fn da1_response_indicates_vt220_class() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[c");
+
+    let events = listener.events();
+    let da1 = events
+        .iter()
+        .find(|e| e.starts_with("PtyWrite(\x1b[?"))
+        .expect("DA1 response should be emitted");
+
+    // vttest requires the DA1 response to indicate VT200+ class.
+    // The response must start with CSI ? 62 (VT220), 63 (VT320),
+    // or 64 (VT420) for vttest to send CSI 18t size queries.
+    assert!(
+        da1.contains("?62;") || da1.contains("?63;") || da1.contains("?64;"),
+        "DA1 response must indicate VT220+ class (62/63/64), got: {da1}"
+    );
+}
+
+#[test]
+fn csi_18t_at_non_80_cols() {
+    let (mut t, listener) = term_with_recorder_sized(40, 120);
+    feed(&mut t, b"\x1b[18t");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[8;40;120t)"),
+        "CSI 18t should report actual grid dimensions (40x120), got: {events:?}"
+    );
+}
+
+#[test]
+fn csi_18t_at_97x33() {
+    let (mut t, listener) = term_with_recorder_sized(33, 97);
+    feed(&mut t, b"\x1b[18t");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[8;33;97t)"),
+        "CSI 18t should report actual grid dimensions (33x97), got: {events:?}"
     );
 }

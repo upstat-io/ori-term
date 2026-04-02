@@ -1,0 +1,28 @@
+---
+source: oriterm_core/tests/vttest.rs
+expression: text
+---
+AAAAA                                                                                            
+AAAAA                                                                                            
+AAAAA                                                                                            
+AAAAA                                                                                            
+                                                                                                 
+                                                                                                 
+                                                                                                 
+           normal      bold        underscored blinking    reversed                              
+                                                                                                 
+stars:     **********  **********  **********  **********  **********                            
+                                                                                                 
+line:      ─────qqqqq  ─────qqqqq  ─────qqqqq  ─────qqqqq  ─────qqqqq                            
+                                                                                                 
+x'es:      xxxxxxxxxx  xxxxxxxxxx  xxxxxxxxxx  xxxxxxxxxx  xxxxxxxxxx                            
+                                                                                                 
+diamonds:  ◆◆◆◆◆`````  ◆◆◆◆◆`````  ◆◆◆◆◆`````  ◆◆◆◆◆`````  ◆◆◆◆◆`````                            
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+Test of the SAVE/RESTORE CURSOR feature. There should                                            
+be ten characters of each flavour, and a rectangle                                               
+of 5 x 4 A's filling the top left of the screen.                                                 
+Push <RETURN>

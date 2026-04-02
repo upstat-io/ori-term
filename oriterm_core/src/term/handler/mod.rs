@@ -437,6 +437,9 @@ impl<T: EventListener> Handler for Term<T> {
     fn iterm2_file(&mut self, params: &[&[u8]]) {
         self.handle_iterm2_file(params);
     }
+    fn decrqss(&mut self, query: &[u8]) {
+        self.status_decrqss(query);
+    }
 }
 
 #[cfg(test)]

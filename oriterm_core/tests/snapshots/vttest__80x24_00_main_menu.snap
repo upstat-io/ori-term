@@ -5,7 +5,7 @@ expression: s.grid_text()
                                                                                 
                                                                                 
          VT100 test program, version 2.7 (20230201)                             
-         Line speed 38400bd                                                     
+         Screen size 24x80 (80 max) Line speed 38400bd                          
          Choose test type:                                                      
                                                                                 
           0. Exit                                                               

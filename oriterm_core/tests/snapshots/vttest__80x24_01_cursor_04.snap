@@ -23,6 +23,6 @@ Y                                                                              y
 Z                                                                               
 z                                                                               
                                                                                 
-Push <RETURN>Test of autowrap, mixing control and print characters.            *
-The left/right margins should have letters in order:++++++++++++++++++++++++++ *
+Push <RETURN>Test of autowrap, mixing control and print characters.           +*
+The left/right margins should have letters in order:+++++++++++++++++++++++++++*
 ********************************************************************************

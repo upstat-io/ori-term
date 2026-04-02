@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Terminal Size Reporting"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "vttest sees the correct terminal size at all dimensions, not hardcoded 80x24"
 inspired_by:
@@ -14,19 +14,19 @@ third_party_review:
 sections:
   - id: "01.1"
     title: "Diagnose the 80-Column Bug"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "Fix Terminal Size Reporting"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Update Golden References"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
     status: not-started
   - id: "01.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 01: Terminal Size Reporting
@@ -56,13 +56,13 @@ Possible root causes (ordered by likelihood):
 3. vttest uses ioctl TIOCGWINSZ on the slave PTY fd as a fallback when CSI 18t doesn't respond. The PTY size is set at spawn time via `PtySize` -- verify this is correct.
 4. The VTE parser doesn't route the specific CSI sequence vttest sends (unlikely -- CSI 18t is already handled).
 
-- [ ] Compare DA1 response (`\x1b[?6;4c` at `status.rs:65`) against what vttest expects -- vttest `main.c` checks for VT200+ class by looking at DA1 prefix `CSI ? 62;...c`. The current response `CSI ? 6 ; 4 c` has attribute 6, not class 62 -- vttest will not recognize it as VT200+ and therefore will not send CSI 18t
-- [ ] Add `log::info!` to `status_text_area_size_chars` and `status_identify_terminal` to confirm whether they fire during vttest startup -- if `status_text_area_size_chars` never fires, the DA1 response is the root cause
-- [ ] Verify `portable-pty` sets the correct PTY size at spawn time: open a 97x33 PTY, run `stty size` inside it, confirm it reports `33 97`
-- [ ] Run vttest under `strace -e trace=ioctl,write,read` filtering for TIOCGWINSZ and CSI sequences to capture the exact size query path vttest takes
-- [ ] Write a minimal reproduction: spawn a 97-column PTY, run `tput cols` inside it, verify it reports 97
-- [ ] Check if the VtTestSession test harness's `drain()` loop is reliably flushing all DA/DSR responses back to the PTY before vttest proceeds -- the `try_recv()` loop may miss responses that arrive after the initial drain. Consider adding a blocking `recv_timeout()` fallback
-- [ ] Add unit test: `da1_response_format` -- create a `Term`, trigger DA1 (CSI c), capture the PtyWrite event, and assert the response string matches the expected format. This test pins the pre-fix behavior so the 01.2 change is visible as a diff.
+- [x] Compare DA1 response (`\x1b[?6;4c` at `status.rs:65`) against what vttest expects -- confirmed: response lacked VT220+ class prefix (`62`/`63`/`64`), causing vttest to treat oriterm as VT100
+- [x] Add `log::info!` to `status_text_area_size_chars` and `status_identify_terminal` to confirm whether they fire during vttest startup -- confirmed via hex tracing: vttest sends DA1 but NOT CSI 18t; vttest uses hardcoded 80x24 unless size passed as CLI arg
+- [x] Verify `portable-pty` sets the correct PTY size at spawn time: open a 97x33 PTY, run `stty size` inside it, confirm it reports `33 97` -- `pty_size_is_propagated` test confirms PTY size is correct
+- [x] Run vttest under `strace -e trace=ioctl,write,read` filtering for TIOCGWINSZ and CSI sequences to capture the exact size query path vttest takes -- traced via VTTEST_HEX: vttest sends DA1 + DECRQSS, no CSI 18t
+- [x] Write a minimal reproduction: spawn a 97-column PTY, run `tput cols` inside it, verify it reports 97 -- verified via `pty_size_is_propagated` test
+- [x] Check if the VtTestSession test harness's `drain()` loop is reliably flushing all DA/DSR responses back to the PTY before vttest proceeds -- fixed: replaced `try_recv()` with blocking `recv_timeout()` and added `wait_for()` for content-based waiting. Also discovered vttest sends DECRQSS (DCS $q "p ST) for DECSCL query that must be answered
+- [x] Add unit test: `da1_response_format` -- `da1_response_indicates_vt220_class` test asserts DA1 contains VT220+ class prefix
 
 ---
 
@@ -78,13 +78,13 @@ Based on the diagnosis, apply the fix. The most likely scenarios:
 
 **(c) PTY size correct but response timing issue** -- the `drain()` loop uses `try_recv()` which is non-blocking. If the DA1 response event is enqueued after `drain()` completes but before vttest reads, the handshake succeeds. But if vttest reads before the response is written back, vttest may not receive the reply. This is a race condition in the test infrastructure.
 
-- [ ] Implement the fix identified in 01.1 (most likely: update DA1 response to include VT220+ class)
-- [ ] Add unit test: create a `Term` at 97x33, trigger CSI 18t, verify response is `\x1b[8;33;97t`
-- [ ] Add unit test: verify DA1 response starts with `\x1b[?62;` or `\x1b[?64;` to indicate VT200+ class
-- [ ] Add unit test: verify DA2 response format (`\x1b[>0;{version};1c`) matches vttest expectations
-- [ ] Add unit test: `csi_18t_at_non_80_cols` -- create a 120x40 `Term`, trigger CSI 18t, verify response is `\x1b[8;40;120t` (not `\x1b[8;24;80t`)
-- [ ] **Post-DA1 fix smoke test**: after changing the DA1 response, run ALL existing vttest menu 1 tests to check for new failures. Changing from VT100-style to VT220-style DA1 may cause vttest to enable VT200+ features that surface new bugs. Document any new failures as work items for Sections 02-04.
-- [ ] Verify the fix does NOT break any existing tests: `timeout 150 cargo test -p oriterm_core` before and after the change
+- [x] Implement the fix identified in 01.1 -- updated DA1 response from `\x1b[?6;4c` to `\x1b[?64;6;4c` (VT420 class). Also implemented DECRQSS handler (DCS $q ST) for DECSCL conformance level query, responding with `DCS 1$r64;1"p ST` (VT400 level, 7-bit controls). Added DECRQSS dispatch to vendored vte crate. Also pass terminal size as CLI arg to vttest (`LINESxCOLS.COLS`) since vttest hardcodes 80x24 defaults.
+- [x] Add unit test: create a `Term` at 97x33, trigger CSI 18t, verify response is `\x1b[8;33;97t` -- `csi_18t_at_97x33` test
+- [x] Add unit test: verify DA1 response starts with `\x1b[?62;` or `\x1b[?64;` to indicate VT200+ class -- `da1_response_indicates_vt220_class` test
+- [x] Add unit test: verify DA2 response format (`\x1b[>0;{version};1c`) matches vttest expectations -- `da2_produces_secondary_device_attributes` test (pre-existing)
+- [x] Add unit test: `csi_18t_at_non_80_cols` -- `csi_18t_at_non_80_cols` test creates 120x40 Term, verifies `\x1b[8;40;120t`
+- [x] **Post-DA1 fix smoke test**: ran all vttest tests after DA1 change. Discovered two issues: (1) vttest sends DECRQSS for DECSCL when terminal reports VT420 — implemented DECRQSS handler, (2) vttest hardcodes 80x24 unless size passed as CLI arg — updated VtTestSession to pass `{rows}x{cols}.{cols}`. All 13 tests pass including origin mode at all sizes.
+- [x] Verify the fix does NOT break any existing tests: all `oriterm_core` tests pass, clippy clean, build green
 
 ---
 
@@ -94,10 +94,10 @@ Based on the diagnosis, apply the fix. The most likely scenarios:
 
 After the fix, the border test output changes at non-80-column sizes. Update all golden references.
 
-- [ ] Run `INSTA_UPDATE=always cargo test -p oriterm_core --test vttest` to regenerate text snapshots
-- [ ] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm -- visual_regression::vttest` to regenerate PNGs
-- [ ] Verify structural assertions pass: `cargo test -p oriterm_core --test vttest vttest_border_fills`
-- [ ] Verify all 3 sizes: 80x24 (PASS), 97x33 (now PASS), 120x40 (now PASS)
+- [x] Run `INSTA_UPDATE=always cargo test -p oriterm_core --test vttest` to regenerate text snapshots -- all snapshots updated for VT420 menu output (includes proper-sized screens at 97x33 and 120x40)
+- [x] Run `ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm --features gpu-tests vttest_golden` to regenerate PNGs -- all 6 golden tests pass
+- [x] Verify structural assertions pass: `cargo test -p oriterm_core --test vttest vttest_border_fills` -- all 3 sizes pass
+- [x] Verify all 3 sizes: 80x24 (PASS), 97x33 (PASS), 120x40 (PASS)
 
 ---
 
@@ -109,16 +109,16 @@ After the fix, the border test output changes at non-80-column sizes. Update all
 
 ## 01.N Completion Checklist
 
-- [ ] `vttest_border_fills_80x24` passes
-- [ ] `vttest_border_fills_97x33` passes
-- [ ] `vttest_border_fills_120x40` passes
-- [ ] DA1 response verified against vttest expectations
-- [ ] CSI 18t response verified at non-80-column sizes
-- [ ] All text snapshots regenerated and committed
-- [ ] All golden PNGs regenerated and committed
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `./test-all.sh` green
+- [x] `vttest_border_fills_80x24` passes
+- [x] `vttest_border_fills_97x33` passes
+- [x] `vttest_border_fills_120x40` passes
+- [x] DA1 response verified against vttest expectations
+- [x] CSI 18t response verified at non-80-column sizes
+- [x] All text snapshots regenerated and committed
+- [x] All golden PNGs regenerated and committed
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `./test-all.sh` green
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** `vttest_border_fills_*` passes at all 3 terminal sizes. The vttest border screen renders identically to xterm's output — `*`/`+` border filling the entire terminal area with no gaps.
