@@ -91,7 +91,7 @@ impl<T: EventListener> Term<T> {
                 self.mode.insert(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ColumnMode => {
-                self.apply_deccolm(132);
+                self.apply_deccolm();
             }
         }
     }
@@ -157,32 +157,30 @@ impl<T: EventListener> Term<T> {
                 self.mode.remove(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ColumnMode => {
-                self.apply_deccolm(self.default_cols);
+                self.apply_deccolm();
             }
         }
     }
 
     /// DECCOLM: switch column mode (80 ↔ 132).
     ///
-    /// Per DEC spec, changing DECCOLM:
-    /// 1. Resizes the grid to the target column count
+    /// Per DEC spec, changing DECCOLM has these side effects:
+    /// 1. Resets scroll margins to full screen
     /// 2. Clears the screen (ED 2)
-    /// 3. Resets scroll margins to full screen
-    /// 4. Homes the cursor
-    fn apply_deccolm(&mut self, cols: usize) {
-        let lines = self.grid().lines();
-        // Resize grid (no reflow — DECCOLM is a mode switch, not a window resize).
-        self.resize(lines, cols, false);
-        // Home cursor first (erase_display asserts cursor is in bounds).
-        self.grid_mut().cursor_mut().set_line(0);
-        self.grid_mut()
-            .cursor_mut()
-            .set_col(crate::index::Column(0));
-        // Clear screen.
+    /// 3. Homes the cursor
+    ///
+    /// We do NOT resize the grid — content reflows at the current width.
+    /// This matches `WezTerm` and Alacritty (both skip the resize).
+    fn apply_deccolm(&mut self) {
+        // Reset scroll region first so goto_origin_aware uses the full screen.
+        self.grid_mut().set_scroll_region(1, None);
+        // Clear screen and images (matching clear_screen handler).
+        self.selection_dirty = true;
         self.grid_mut()
             .erase_display(crate::grid::editing::DisplayEraseMode::All);
-        // Reset scroll region.
-        self.grid_mut().set_scroll_region(1, None);
+        self.clear_images_after_ed(&vte::ansi::ClearMode::All);
+        // Home cursor (respects DECOM if active).
+        self.goto_origin_aware(0, 0);
     }
 
     /// XTSAVE: save current state of listed private modes.

@@ -340,6 +340,37 @@ fn run_menu2_screen_features(cols: u16, rows: u16) {
             break;
         }
 
+        // Structural assertions for specific screens.
+        match screen {
+            11 => {
+                assert!(
+                    text.contains("bottom of the screen"),
+                    "{label} screen 11: should contain 'bottom of the screen'"
+                );
+            }
+            12 => {
+                let first_line = text.lines().next().unwrap_or("");
+                assert!(
+                    first_line.contains("top of the screen"),
+                    "{label} screen 12: first line should contain 'top of the screen', \
+                     got: {first_line:?}"
+                );
+            }
+            15 => {
+                // SAVE/RESTORE cursor test: "5 x 4 A's filling the top left."
+                let lines: Vec<&str> = text.lines().collect();
+                for row in 0..4 {
+                    assert!(
+                        lines[row].starts_with("AAAAA"),
+                        "{label} screen 15: row {row} should start with 'AAAAA', \
+                         got: {:?}",
+                        &lines[row][..10.min(lines[row].len())]
+                    );
+                }
+            }
+            _ => {}
+        }
+
         insta::assert_snapshot!(format!("{label}_02_screen_{screen:02}"), text);
 
         s.send(b"\r");
@@ -539,11 +570,12 @@ fn vttest_border_fills_120x40() {
 // -- DECCOLM: screen 02 is the 132-column version of the border --
 //
 // vttest menu 1 draws the border twice: pass 0 at min_cols (screen 01)
-// and pass 1 at max_cols with DECCOLM set (screen 02). Screen 02 should
-// fill the 132-column grid correctly.
+// and pass 1 at max_cols with DECCOLM set (screen 02). DECCOLM does NOT
+// resize the grid (design decision: reflow at current width). Screen 02
+// content designed for 132 cols wraps at the current width.
 
-/// Capture screen 02 (132-col pass) from menu 1 and verify the border.
-fn capture_deccolm_border(cols: u16, rows: u16) -> Vec<Vec<char>> {
+/// Capture screen 02 (132-col pass) from menu 1 and verify side effects.
+fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
     let mut s = VtTestSession::new(cols, rows);
     s.wait_for("Enter choice number", 5000);
     s.send(b"1\r");
@@ -556,14 +588,16 @@ fn capture_deccolm_border(cols: u16, rows: u16) -> Vec<Vec<char>> {
 }
 
 #[test]
-fn vttest_deccolm_border_fills_132_cols() {
+fn vttest_deccolm_preserves_grid_width() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
         return;
     }
-    let grid = capture_deccolm_border(80, 24);
-    // After DECCOLM set, grid should be 132 columns wide.
-    assert_eq!(grid[0].len(), 132, "DECCOLM should resize grid to 132 cols");
-    // Border should fill the 132-column grid.
-    assert_border_fills_terminal(&grid, 132, 24);
+    let grid = capture_deccolm_screen(80, 24);
+    // DECCOLM does NOT resize — grid stays at 80 columns.
+    assert_eq!(
+        grid[0].len(),
+        80,
+        "DECCOLM should NOT resize grid (no-resize design)"
+    );
 }

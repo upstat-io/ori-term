@@ -2,23 +2,23 @@
 source: oriterm_core/tests/vttest.rs
 expression: text
 ---
-12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901 
-                                                                                                                                    
-  This is 132 column mode, dark background.                                                                                         
-   This is 132 column mode, dark background.                                                                                        
-    This is 132 column mode, dark background.                                                                                       
-     This is 132 column mode, dark background.                                                                                      
-      This is 132 column mode, dark background.                                                                                     
-       This is 132 column mode, dark background.                                                                                    
-        This is 132 column mode, dark background.                                                                                   
-         This is 132 column mode, dark background.                                                                                  
-          This is 132 column mode, dark background.                                                                                 
-           This is 132 column mode, dark background.                                                                                
-            This is 132 column mode, dark background.                                                                               
-             This is 132 column mode, dark background.                                                                              
-              This is 132 column mode, dark background.                                                                             
-               This is 132 column mode, dark background.                                                                            
-                This is 132 column mode, dark background.                                                                           
-                 This is 132 column mode, dark background.                                                                          
-                  This is 132 column mode, dark background.                                                                         
+123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
+12345678901                                                                                                             
+  This is 132 column mode, dark background.                                                                             
+   This is 132 column mode, dark background.                                                                            
+    This is 132 column mode, dark background.                                                                           
+     This is 132 column mode, dark background.                                                                          
+      This is 132 column mode, dark background.                                                                         
+       This is 132 column mode, dark background.                                                                        
+        This is 132 column mode, dark background.                                                                       
+         This is 132 column mode, dark background.                                                                      
+          This is 132 column mode, dark background.                                                                     
+           This is 132 column mode, dark background.                                                                    
+            This is 132 column mode, dark background.                                                                   
+             This is 132 column mode, dark background.                                                                  
+              This is 132 column mode, dark background.                                                                 
+               This is 132 column mode, dark background.                                                                
+                This is 132 column mode, dark background.                                                               
+                 This is 132 column mode, dark background.                                                              
+                  This is 132 column mode, dark background.                                                             
                    This is 132 column mode, dark background.Push <RETURN>
