@@ -37,7 +37,7 @@ pub(crate) fn prepare_frame(
         input.palette.background,
         opacity,
     );
-    fill_frame(input, atlas, &mut frame, origin, true);
+    fill_frame(input, atlas, &mut frame, origin, 1.0);
     frame
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn prepare_frame_into(
     out.clear();
     out.viewport = input.viewport;
     out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-    fill_frame(input, atlas, out, origin, true);
+    fill_frame(input, atlas, out, origin, 1.0);
 }
 
 /// Unshaped per-cell rendering: emit instances into `frame`.
@@ -68,7 +68,7 @@ fn fill_frame(
     atlas: &dyn AtlasLookup,
     frame: &mut PreparedFrame,
     origin: (f32, f32),
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
@@ -92,14 +92,8 @@ fn fill_frame(
         let x = ox + col as f32 * cw;
         let y = (oy + cell.line as f32 * ch).round();
 
-        let (fg, bg) = resolve_cell_colors(
-            cell,
-            sel,
-            search,
-            &cursor,
-            cursor_blink_visible,
-            &input.palette,
-        );
+        let (fg, bg) =
+            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
 
         // Background: skip default palette background so the window clear
         // color (with theme opacity for glass/acrylic) shows through.
@@ -170,7 +164,7 @@ fn fill_frame(
 
     // Cursor instances (gated by terminal visibility AND application blink state).
     // Unfocused windows always render a steady hollow block cursor.
-    if cursor.visible && cursor_blink_visible {
+    if cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
             cursor.shape
         } else {
@@ -186,6 +180,7 @@ fn fill_frame(
             ox,
             oy,
             input.palette.cursor_color,
+            cursor_opacity,
         );
     }
 

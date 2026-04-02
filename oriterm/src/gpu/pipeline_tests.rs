@@ -93,7 +93,7 @@ fn frame_renders_without_errors() {
     let target = gpu.create_render_target(640, 384);
     let input = FrameInput::test_grid(80, 24, "Hello, World!");
 
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     // No panic or GPU validation error = success.
@@ -113,7 +113,7 @@ fn wgpu_validation_layer_enabled_in_tests() {
     let target = gpu.create_render_target(64, 64);
     let input = FrameInput::test_grid(8, 4, "test");
 
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     // wgpu validation errors cause panics in debug mode, so reaching
@@ -144,7 +144,7 @@ fn render_colored_cell_correct_bg_color() {
     input.cell_size = cell_metrics;
 
     let target = gpu.create_render_target(cw, ch);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
@@ -197,7 +197,7 @@ fn render_text_produces_nonzero_alpha_in_glyph_region() {
     input.palette.background = Rgb { r: 0, g: 0, b: 0 };
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
@@ -256,7 +256,7 @@ fn render_cursor_pixels_at_expected_position() {
     }
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu
@@ -315,7 +315,7 @@ fn full_pipeline_extract_prepare_render_readback() {
     let target = gpu.create_render_target(w, h);
 
     // Run the full pipeline via WindowRenderer (ensure_glyphs_cached + prepare + render).
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     // Readback and verify basic sanity.
@@ -383,7 +383,7 @@ fn subpixel_zero_coverage_pixel_equals_background() {
     }
 
     let target = gpu.create_render_target(w, h);
-    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), true, true);
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
     renderer.render_frame(&gpu, &pipelines, target.view());
 
     let pixels = gpu

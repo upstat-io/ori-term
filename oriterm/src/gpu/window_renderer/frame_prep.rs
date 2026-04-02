@@ -28,7 +28,7 @@ impl WindowRenderer {
     /// the first frame).
     ///
     /// The `origin` offset positions the grid on screen (from layout). The
-    /// `cursor_blink_visible` flag gates cursor emission (from application
+    /// `cursor_opacity` controls cursor emission opacity (from application
     /// blink state) — when `false`, no cursor instances are emitted even
     /// if the terminal reports the cursor as visible.
     ///
@@ -43,7 +43,7 @@ impl WindowRenderer {
     /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
     #[expect(
         clippy::too_many_arguments,
-        reason = "origin + cursor blink + content_changed are pipeline context"
+        reason = "origin + cursor opacity + content_changed are pipeline context"
     )]
     pub fn prepare(
         &mut self,
@@ -51,7 +51,7 @@ impl WindowRenderer {
         gpu: &GpuState,
         pipelines: &GpuPipelines,
         origin: (f32, f32),
-        cursor_blink_visible: bool,
+        cursor_opacity: f32,
         content_changed: bool,
     ) {
         // Cursor-blink-only fast path: when content hasn't changed and no
@@ -67,7 +67,7 @@ impl WindowRenderer {
             self.subpixel_atlas.begin_frame();
             self.color_atlas.begin_frame();
             self.prepared.clear_ephemeral_tiers();
-            prepare::update_cursor_only(input, &mut self.prepared, origin, cursor_blink_visible);
+            prepare::update_cursor_only(input, &mut self.prepared, origin, cursor_opacity);
             return;
         }
 
@@ -121,7 +121,7 @@ impl WindowRenderer {
             &self.shaping.frame,
             &mut self.prepared,
             origin,
-            cursor_blink_visible,
+            cursor_opacity,
         );
 
         // Phase D: Ensure image textures uploaded.

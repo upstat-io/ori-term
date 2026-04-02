@@ -112,15 +112,17 @@ fn resolve_cell_colors(
     sel: Option<&FrameSelection>,
     search: Option<&FrameSearch>,
     cursor: &RenderableCursor,
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
     palette: &FramePalette,
 ) -> (Rgb, Rgb) {
     let col = cell.column.0;
     let row = cell.line;
     let is_wide = cell.flags.contains(CellFlags::WIDE_CHAR);
 
-    // Block cursor cell: skip selection/search inversion so cursor overlay dominates.
-    let is_block_cursor_cell = cursor_blink_visible
+    // Block cursor cell: at opacity > 0.5 the cursor dominates visually, so
+    // skip selection/search inversion. At lower opacity the cursor is fading
+    // out and text should revert to normal colors for readability.
+    let is_block_cursor_cell = cursor_opacity > 0.5
         && cursor.visible
         && cursor.shape == CursorShape::Block
         && cursor.line == row
@@ -186,7 +188,7 @@ pub fn prepare_frame_shaped(
         input.palette.background,
         opacity,
     );
-    fill_frame_shaped(input, atlas, shaped, &mut frame, origin, true);
+    fill_frame_shaped(input, atlas, shaped, &mut frame, origin, 1.0);
     frame
 }
 
@@ -195,7 +197,7 @@ pub fn prepare_frame_shaped(
 ///
 /// Like [`prepare_frame_shaped`] but clears and refills `out` instead of
 /// allocating a new frame. The `origin` offset shifts all cell positions
-/// (from layout), and `cursor_blink_visible` gates cursor emission (from
+/// (from layout), and `cursor_opacity` gates cursor emission (from
 /// application-level blink state).
 ///
 /// When the previous frame's row ranges are available and not all rows are
@@ -203,7 +205,7 @@ pub fn prepare_frame_shaped(
 /// copies clean rows from the cache, and only regenerates dirty rows.
 #[expect(
     clippy::too_many_arguments,
-    reason = "origin + cursor blink are pipeline context, not FrameInput concerns"
+    reason = "origin + cursor opacity are pipeline context, not FrameInput concerns"
 )]
 pub fn prepare_frame_shaped_into(
     input: &FrameInput,
@@ -211,7 +213,7 @@ pub fn prepare_frame_shaped_into(
     shaped: &ShapedFrame,
     out: &mut PreparedFrame,
     origin: (f32, f32),
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
 ) {
     let can_incremental = !input.content.all_dirty && out.saved_tier.has_cached_rows();
 
@@ -224,13 +226,13 @@ pub fn prepare_frame_shaped_into(
         out.image_quads_above.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-        fill_frame_incremental(input, atlas, shaped, out, origin, cursor_blink_visible);
+        fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
         // Full rebuild path.
         out.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-        fill_frame_shaped(input, atlas, shaped, out, origin, cursor_blink_visible);
+        fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
     // Update selection snapshot for next frame's damage tracking.
@@ -250,12 +252,12 @@ pub fn update_cursor_only(
     input: &FrameInput,
     out: &mut PreparedFrame,
     origin: (f32, f32),
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
 ) {
     out.cursors.clear();
 
     let cursor = resolve_cursor(&input.content.cursor, input.mark_cursor.as_ref());
-    if cursor.visible && cursor_blink_visible {
+    if cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
             cursor.shape
         } else {
@@ -274,6 +276,7 @@ pub fn update_cursor_only(
             ox,
             oy,
             input.palette.cursor_color,
+            cursor_opacity,
         );
     }
 }
@@ -285,7 +288,7 @@ pub fn update_cursor_only(
 /// per-cell character lookups, enabling ligatures and combining marks.
 #[expect(
     clippy::too_many_arguments,
-    reason = "origin + cursor blink are pipeline context passed from renderer"
+    reason = "origin + cursor opacity are pipeline context passed from renderer"
 )]
 #[expect(
     clippy::too_many_lines,
@@ -297,7 +300,7 @@ pub(crate) fn fill_frame_shaped(
     shaped: &ShapedFrame,
     frame: &mut PreparedFrame,
     origin: (f32, f32),
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
@@ -358,14 +361,8 @@ pub(crate) fn fill_frame_shaped(
         // UI text already does this (scene_convert/text.rs:51).
         let y = (oy + row as f32 * ch).round();
 
-        let (fg, bg) = resolve_cell_colors(
-            cell,
-            sel,
-            search,
-            &cursor,
-            cursor_blink_visible,
-            &input.palette,
-        );
+        let (fg, bg) =
+            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
 
         // Background: skip cells with the default palette background so the
         // window clear color (which carries the theme opacity for glass/acrylic)
@@ -465,7 +462,7 @@ pub(crate) fn fill_frame_shaped(
 
     // Cursor (gated by terminal visibility AND application blink state).
     // Unfocused windows always render a steady hollow block cursor.
-    if cursor.visible && cursor_blink_visible {
+    if cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
             cursor.shape
         } else {
@@ -481,6 +478,7 @@ pub(crate) fn fill_frame_shaped(
             ox,
             oy,
             input.palette.cursor_color,
+            cursor_opacity,
         );
     }
 
