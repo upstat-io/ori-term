@@ -2,8 +2,8 @@
 reroute: true
 name: "VTTest"
 full_name: "VTTest Conformance"
-status: active
-order: 1
+status: queued
+order: 2
 ---
 
 # VTTest Conformance Index
