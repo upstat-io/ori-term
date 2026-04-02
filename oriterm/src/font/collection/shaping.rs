@@ -115,6 +115,7 @@ impl FontCollection {
                     FaceIdx(i as u16),
                     SyntheticFlags::NONE,
                     self.weight,
+                    self.bold_weight,
                     &fd.axes,
                 );
                 apply_variations(&mut face, &vars);

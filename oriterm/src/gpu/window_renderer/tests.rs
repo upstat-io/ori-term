@@ -349,6 +349,7 @@ mod font_config {
             TEST_DPI,
             GlyphFormat::Alpha,
             TEST_FONT_WEIGHT,
+            550,
             HintingMode::Full,
         )
         .ok()?;
@@ -358,6 +359,7 @@ mod font_config {
             GlyphFormat::Alpha,
             HintingMode::None,
             TEST_FONT_WEIGHT,
+            550,
             ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()?;

@@ -204,7 +204,8 @@ impl FontSet {
     /// share a [`FontByteCache`] across multiple loads.
     #[cfg(test)]
     pub fn load(family: Option<&str>, weight: u16) -> Result<Self, FontError> {
-        Self::load_cached(family, weight, &mut FontByteCache::new())
+        let bold_weight = (weight + 150).min(900);
+        Self::load_cached(family, weight, bold_weight, &mut FontByteCache::new())
     }
 
     /// Load font data with a shared byte cache for cross-call deduplication.
@@ -216,9 +217,10 @@ impl FontSet {
     pub fn load_cached(
         family: Option<&str>,
         weight: u16,
+        bold_weight: u16,
         cache: &mut FontByteCache,
     ) -> Result<Self, FontError> {
-        let result = discovery::discover_fonts(family, weight);
+        let result = discovery::discover_fonts(family, weight, bold_weight);
         Self::from_discovery(&result, cache)
     }
 

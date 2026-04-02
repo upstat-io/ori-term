@@ -248,13 +248,15 @@ pub(super) fn rasterize_from_face(
 
 /// Embolden strength in pixels for synthetic bold.
 ///
-/// Adapted from Ghostty's formula: `ceil(height_26dot6 * 64 / 2048)` converted
-/// from `FreeType` 26.6 fixed-point to swash pixel coordinates. Scales with
-/// font size so bold looks consistent from 8pt to 24pt.
+/// Reduced from Ghostty's original `2.0` multiplier to `1.5` to compensate
+/// for the gamma-aware alpha correction (`TEXT_GAMMA = 1.8`) applied after
+/// rasterization. The correction boosts intermediate alpha values by ~20%,
+/// so the stroke widening must be proportionally smaller to avoid
+/// double-compounding bold weight.
 ///
-/// Examples: 17px → 0.53px, 20px → 0.63px, 32px → 1.0px.
+/// Examples: 17px → 0.41px, 20px → 0.47px, 32px → 0.75px.
 pub(super) fn embolden_strength(cell_height: f32) -> f32 {
-    (cell_height * 2.0).ceil() / 64.0
+    (cell_height * 1.5).ceil() / 64.0
 }
 
 /// Standard synthetic italic angle in degrees.
