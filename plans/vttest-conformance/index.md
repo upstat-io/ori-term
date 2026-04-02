@@ -34,7 +34,7 @@ status.rs, handler/status.rs, status_text_area_size_chars
 ---
 
 ### Section 02: Origin Mode & Scroll Regions
-**File:** `section-02-origin-mode.md` | **Status:** Not Started
+**File:** `section-02-origin-mode.md` | **Status:** Complete
 
 ```
 origin mode, DECOM, DECSTBM, scroll region, goto_origin_aware
