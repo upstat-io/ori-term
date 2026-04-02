@@ -57,6 +57,12 @@ pub struct GpuState {
     /// True only when the successful init used `dcomp=true`. Callers use this
     /// to decide whether `WS_EX_NOREDIRECTIONBITMAP` is safe on the window.
     uses_dcomp: bool,
+    /// Whether the device supports dual-source blending for LCD subpixel text.
+    ///
+    /// When true, the subpixel pipeline uses per-channel GPU compositing
+    /// (more optically correct, no CPU background color dependency). When
+    /// false, falls back to the `mix()` approach with `bg_color` as instance data.
+    pub(crate) dual_source_blending: bool,
     /// Vulkan pipeline cache (compiled shaders cached to disk across sessions).
     pub(super) pipeline_cache: Option<wgpu::PipelineCache>,
     pipeline_cache_path: Option<PathBuf>,
@@ -101,7 +107,9 @@ impl GpuState {
         }
 
         // Auto-detection: platform-native backend first, then fallbacks.
-        // Windows: DX12 → Vulkan → others.
+        // Windows: DX12 (DComp) → DX12 → Vulkan → others.
+        //   DX12 with vendored wgpu-hal patch: DXGI_SCALING_NONE instead of
+        //   STRETCH prevents DWM from stretching the old frame during resize.
         // macOS: Metal → others.
         // Linux: Vulkan → others.
         #[cfg(target_os = "windows")]
@@ -116,7 +124,7 @@ impl GpuState {
             if let Some(state) = Self::try_init(window, wgpu::Backends::DX12, false, transparent) {
                 return Ok(state);
             }
-            log::warn!("DX12 init failed, falling back to Vulkan");
+            log::warn!("DX12 init failed, falling back to other backends");
         }
 
         #[cfg(target_os = "macos")]
@@ -384,6 +392,13 @@ impl GpuState {
              cache={t_cache:?}",
         );
 
+        let dual_source = device
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
+        if dual_source {
+            log::info!("dual-source blending available for LCD subpixel");
+        }
+
         Some(Self {
             instance,
             device,
@@ -394,6 +409,7 @@ impl GpuState {
             supports_view_formats,
             present_mode,
             uses_dcomp: dcomp,
+            dual_source_blending: dual_source,
             pipeline_cache,
             pipeline_cache_path,
         })
@@ -425,6 +441,10 @@ impl GpuState {
             pipeline_cache::load_pipeline_cache(&device, &info);
         drop(adapter);
 
+        let dual_source = device
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
+
         Some(Self {
             instance,
             device,
@@ -435,6 +455,7 @@ impl GpuState {
             supports_view_formats: false,
             present_mode: wgpu::PresentMode::Fifo,
             uses_dcomp: false,
+            dual_source_blending: dual_source,
             pipeline_cache,
             pipeline_cache_path,
         })

@@ -34,11 +34,11 @@ sections:
   - **Found**: 2026-03-27 — manual sign-off (Section 14.4)
   - **Fixed**: 2026-03-27 — Added Step 5.5 in `process_event()`: after dispatch, if the event is `MouseDown`, no overlay consumed it, no `REQUEST_FOCUS` was issued, and focus is active, clear focus via `interaction.clear_focus()`.
 
-- [ ] **BUG-03.2**: Layout solver `min_height` applies to border-box, not content-box — padding not additive like CSS
-  - **File(s)**: `oriterm_ui/src/layout/solver.rs` (lines 39-44, 420-437), `oriterm_ui/src/layout/layout_box.rs`
+- [x] **BUG-03.2**: Layout solver `min_height` applies to border-box, not content-box — padding not additive like CSS
+  - **File(s)**: `oriterm_ui/src/layout/solver.rs` (lines 39-54), `oriterm_ui/src/layout/layout_box.rs`
   - **Root cause**: The layout solver treats `min_height` as a constraint on the **outer rect** (border-box). When a widget has `min_height: 44px` and `padding: 10px`, the total outer height is 44px with only 24px for content. In the CSS content-box model the user expects, `min-height: 44px` should apply to the **content area**, and padding (20px total) should be added on top, yielding 64px outer height. This affects all widgets using `min_height` + padding (SettingRowWidget, FormRow, etc.) and will become critical when flow wrapping is implemented for smaller screens.
   - **Found**: 2026-03-28 — manual sign-off (Section 14.4), screenshot comparison showing cramped setting rows
-  - **Fix**: Change `min_height`/`min_width` semantics in the layout solver to apply to the content area (content-box), then add padding on top. This is a fundamental change: update `solve()` in solver.rs to subtract padding from `min_height`/`min_width` before passing constraints to content measurement, then add padding back to the final outer rect. All existing `min_height` values across widgets will need audit since they currently assume border-box semantics. Add tests for `Hug + padding + min_height` interaction.
+  - **Fixed**: 2026-04-01 — Changed `solve()` in solver.rs to inflate `min_width`/`min_height` by padding when non-zero (content-box → border-box conversion). Updated doc comments on `LayoutBox.min_width`/`min_height` to document content-box semantics. Added 4 layout tests (`min_height_content_box_adds_padding`, `min_width_content_box_adds_padding`, `min_height_without_padding_unchanged`, `min_height_flex_content_box`). Strengthened setting_row tests to verify `content_rect.height() >= MIN_HEIGHT`. Regenerated visual regression references. Only call site affected: `setting_row/mod.rs` (min_height 44 + vh padding 10 → 64px outer, giving proper content breathing room).
 
 ---
 

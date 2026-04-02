@@ -88,6 +88,12 @@ sections:
   - **Found**: 2026-03-29 — manual, user feature request
   - **Fix**: Add tooltip rendering when `hovered_footer == Some(HoveredFooterTarget::ConfigPath)` showing `self.config_path` in full. May require tooltip infrastructure (overlay or simple painted rect near cursor).
 
+- [ ] `[BUG-02-012][medium]` **Font family selector should be searchable with OS font enumeration** — found by manual.
+  Repro: Open Settings > Font > Family dropdown. Currently a static list — should enumerate installed OS fonts and support type-to-filter.
+  Subsystem: `oriterm/src/app/settings_overlay/form_builder/` (font dropdown), `oriterm/src/font/discovery/` (font enumeration)
+  Found: 2026-04-01 | Source: manual — user feature request
+  Note: Requires platform font enumeration (DirectWrite on Windows, fontconfig on Linux, CoreText on macOS) and a searchable/filterable dropdown widget.
+
 - [x] **BUG-02.11**: Sidebar cursor icon is pointer over entire area — should only be pointer over interactive items
   - **File(s)**: `oriterm_ui/src/widgets/sidebar_nav/mod.rs`, `input.rs`
   - **Root cause**: `layout()` set a static `CursorIcon::Pointer` on the top-level `LayoutBox`, making cursor pointer everywhere.

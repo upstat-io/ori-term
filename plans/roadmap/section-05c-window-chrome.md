@@ -1,7 +1,7 @@
 ---
 section: 5C
 title: Window Chrome (Title Bar + Controls)
-status: in-progress
+status: complete
 reviewed: true
 last_verified: "2026-03-31"
 tier: 2
@@ -147,10 +147,10 @@ sections:
 ## Verification Notes (2026-03-29)
 
 ### Test Coverage Gaps
-- [ ] No tests for `ChromeMode::Dialog` layout. All 11 ChromeLayout tests use Full mode. The `compute_with_mode(_, _, _, ChromeMode::Dialog)` path (1 control instead of 3) has zero direct test coverage.
-- [ ] No test for control button click cycle (mouse-up action emission). `control_button_hover_sets_pressed` tests mouse-down only. The full click contract (down + up = action emitted) is untested at the unit level.
+- [x] No tests for `ChromeMode::Dialog` layout. Added 3 Dialog-mode tests: `layout_dialog_mode_single_close_button`, `layout_dialog_close_at_right_edge`, `layout_dialog_title_wider_than_full`. Done 2026-04-01.
+- [x] No test for control button click cycle (mouse-up action emission). Added `click_cycle_emits_clicked_action` — verifies mouse-down produces no action, mouse-up emits `Clicked`. Done 2026-04-01.
 - [x] Fullscreen hidden test (`layout_fullscreen_hidden`) — fixed: replaced vacuous `.all()` on empty Vec with `assert!(interactive_rects.is_empty())`. Done 2026-03-31.
-- [ ] No test for `WindowChromeWidget` draw output. Drawing is partially mitigated by tab bar golden tests (section 05A).
+- [x] No test for `WindowChromeWidget` draw output. Added `chrome_paint_produces_scene_output` — verifies paint produces caption background rects via WidgetTestHarness. Done 2026-04-01.
 
 ### Plan/Reality Divergences (Non-Defects)
 - `SYMBOL_STROKE_WIDTH` and `CLOSE_HOVER_COLOR` constants listed in 5C.1 do not exist. Symbols are now icon-atlas-based; close hover color is theme-derived.

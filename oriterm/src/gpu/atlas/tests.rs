@@ -23,7 +23,7 @@ fn test_glyph(width: u32, height: u32) -> RasterizedGlyph {
 
 fn test_key(glyph_id: u16) -> RasterKey {
     RasterKey {
-        glyph_id,
+        glyph_id: glyph_id.into(),
         face_idx: FaceIdx::REGULAR,
         weight: 0,
         size_q6: 896, // ~14px

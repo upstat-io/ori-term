@@ -64,9 +64,9 @@ impl Grid {
 
     /// Common post-resize cleanup: scroll region, cursor clamping, dirty.
     ///
-    /// `dirty.resize()` unconditionally calls `mark_all()`, so all lines
-    /// are guaranteed dirty after this returns. Callers need not mark dirty
-    /// separately.
+    /// `dirty.resize()` marks all dirty only when the line/column count
+    /// actually changed. Callers that reflow content should call
+    /// `dirty.mark_all()` explicitly if needed.
     fn finalize_resize(&mut self) {
         self.scroll_region = 0..self.lines;
 

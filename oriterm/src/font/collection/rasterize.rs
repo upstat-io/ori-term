@@ -44,10 +44,11 @@ impl FontCollection {
         // COLRv1 compositor first — uses the correct COLR clip box for canvas
         // sizing, preventing bottom/right edge clipping (BUG-04-001). Falls
         // through to swash for non-COLR glyphs or if compositing fails.
-        let glyph = try_rasterize_colr_v1(fd, key.glyph_id, size).or_else(|| {
+        let gid_u16 = key.glyph_id as u16;
+        let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
-                key.glyph_id,
+                gid_u16,
                 size,
                 &face_vars.settings,
                 effective_synthetic,
@@ -98,10 +99,11 @@ impl FontCollection {
         let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
-        let glyph = try_rasterize_colr_v1(fd, key.glyph_id, size).or_else(|| {
+        let gid_u16 = key.glyph_id as u16;
+        let glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {
             rasterize_from_face(
                 fd,
-                key.glyph_id,
+                gid_u16,
                 size,
                 &face_vars.settings,
                 effective_synthetic,

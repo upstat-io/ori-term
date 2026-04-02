@@ -58,6 +58,8 @@ paths:
 
 **Owns:**
 - Pane lifecycle (create, resize, close)
+- Terminal IO thread (per-pane thread owning `Term` exclusively — VTE parsing, reflow, snapshot production)
+- Snapshot double buffer (lock-free snapshot transfer from IO thread to main thread)
 - PTY I/O (read/write, event pump)
 - PaneRegistry (flat pane storage)
 - MuxBackend trait (embedded + daemon)

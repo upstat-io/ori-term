@@ -24,9 +24,6 @@ impl InProcessMux {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 MuxEvent::PaneOutput(id) => {
-                    if let Some(pane) = panes.get(&id) {
-                        pane.clear_wakeup();
-                    }
                     self.notifications.push(MuxNotification::PaneOutput(id));
                 }
                 MuxEvent::PaneExited { pane_id, exit_code } => {
@@ -110,6 +107,12 @@ impl InProcessMux {
     /// Discard all pending notifications without draining to an external buffer.
     pub fn discard_notifications(&mut self) {
         self.notifications.clear();
+    }
+
+    /// Push a notification directly (used by `EmbeddedMux` for IO-thread
+    /// snapshot-driven `PaneOutput` notifications).
+    pub fn push_notification(&mut self, notif: MuxNotification) {
+        self.notifications.push(notif);
     }
 
     // Accessors

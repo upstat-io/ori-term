@@ -913,7 +913,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
     let mut map = HashMap::new();
     for &gid in glyph_ids {
         let key = RasterKey {
-            glyph_id: gid,
+            glyph_id: gid.into(),
             face_idx: FaceIdx::REGULAR,
             weight: 0,
             size_q6,
@@ -2102,6 +2102,7 @@ fn selection_wide_char_highlights_both_cells() {
             flags: CellFlags::WIDE_CHAR,
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2113,6 +2114,7 @@ fn selection_wide_char_highlights_both_cells() {
             flags: CellFlags::WIDE_CHAR_SPACER,
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2124,6 +2126,7 @@ fn selection_wide_char_highlights_both_cells() {
             flags: CellFlags::empty(),
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
     ];
@@ -2243,6 +2246,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
             flags: CellFlags::WIDE_CHAR,
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2254,6 +2258,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
             flags: CellFlags::WIDE_CHAR_SPACER,
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2265,6 +2270,7 @@ fn selection_wide_char_spacer_only_highlights_both() {
             flags: CellFlags::empty(),
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
     ];
@@ -2380,6 +2386,7 @@ fn selection_block_cursor_skips_inversion() {
             flags: CellFlags::empty(),
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2391,6 +2398,7 @@ fn selection_block_cursor_skips_inversion() {
             flags: CellFlags::empty(),
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
         RenderableCell {
@@ -2402,6 +2410,7 @@ fn selection_block_cursor_skips_inversion() {
             flags: CellFlags::empty(),
             underline_color: None,
             has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: Vec::new(),
         },
     ];
@@ -2457,6 +2466,7 @@ fn selection_inverse_cell_uses_palette_defaults() {
         flags: CellFlags::INVERSE,
         underline_color: None,
         has_hyperlink: false,
+        hyperlink_uri: None,
         zerowidth: Vec::new(),
     }];
 
@@ -2506,6 +2516,7 @@ fn selection_fg_eq_bg_falls_back_to_palette() {
         flags: CellFlags::empty(),
         underline_color: None,
         has_hyperlink: false,
+        hyperlink_uri: None,
         zerowidth: Vec::new(),
     }];
 
@@ -2560,6 +2571,7 @@ fn selection_hidden_cell_stays_invisible() {
         flags: CellFlags::HIDDEN,
         underline_color: None,
         has_hyperlink: false,
+        hyperlink_uri: None,
         zerowidth: Vec::new(),
     }];
 

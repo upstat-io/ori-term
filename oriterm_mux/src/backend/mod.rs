@@ -21,6 +21,7 @@ use crate::PaneSnapshot;
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
 use crate::mux_event::{MuxEvent, MuxNotification};
+use crate::pane::MarkCursor;
 use crate::registry::PaneEntry;
 use crate::{DomainId, PaneId};
 
@@ -87,8 +88,9 @@ pub trait MuxBackend {
 
     /// Resize a pane's terminal grid and PTY.
     ///
-    /// In embedded mode, calls `Pane::resize_grid` + `Pane::resize_pty`.
-    /// In daemon mode, sends a fire-and-forget `Resize` PDU.
+    /// In embedded mode, resizes the old Term for dual-Term consistency and
+    /// sends a `Resize` command to the IO thread (which does reflow + PTY
+    /// resize). In daemon mode, sends a fire-and-forget `Resize` PDU.
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16);
 
     // -- Mode query --
@@ -125,10 +127,10 @@ pub trait MuxBackend {
     fn scroll_to_bottom(&mut self, pane_id: PaneId);
 
     /// Scroll to the nearest prompt above the current viewport.
-    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) -> bool;
+    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId);
 
     /// Scroll to the nearest prompt below the current viewport.
-    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) -> bool;
+    fn scroll_to_next_prompt(&mut self, pane_id: PaneId);
 
     // -- Search operations --
 
@@ -240,6 +242,14 @@ pub trait MuxBackend {
     /// the viewport center. Returns `None` if no zone is found or shell
     /// integration is not active.
     fn select_command_input(&self, _pane_id: PaneId) -> Option<Selection> {
+        None
+    }
+
+    /// Enter mark mode: scrolls to bottom on the IO thread, returns the
+    /// cursor position as a `MarkCursor`. The IO thread owns the authoritative
+    /// terminal state, so cursor reads must go through this reply path.
+    fn enter_mark_mode(&mut self, pane_id: PaneId) -> Option<MarkCursor> {
+        let _ = pane_id;
         None
     }
 

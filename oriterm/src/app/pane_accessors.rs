@@ -2,7 +2,6 @@
 //!
 //! Extracted from `mod.rs` to keep the parent under the 500-line limit.
 
-use oriterm_core::grid::StableRowIndex;
 use oriterm_core::{Selection, SelectionPoint};
 use oriterm_mux::{MarkCursor, PaneId};
 use winit::window::WindowId;
@@ -48,22 +47,15 @@ impl App {
 
     /// Enter mark mode for a pane, placing the cursor at the terminal cursor.
     ///
-    /// Scrolls to bottom first, refreshes the snapshot, then reads the
-    /// terminal cursor position from snapshot data.
+    /// Uses the IO thread's `EnterMarkMode` reply command which atomically
+    /// scrolls to bottom and reads the cursor position from authoritative
+    /// terminal state — avoiding stale snapshot data.
     pub(super) fn enter_mark_mode(&mut self, pane_id: PaneId) {
         if self.mark_cursors.contains_key(&pane_id) {
             return;
         }
         let Some(mux) = self.mux.as_mut() else { return };
-        mux.scroll_to_bottom(pane_id);
-        if mux.is_pane_snapshot_dirty(pane_id) || mux.pane_snapshot(pane_id).is_none() {
-            mux.refresh_pane_snapshot(pane_id);
-        }
-        if let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) {
-            let mc = MarkCursor {
-                row: StableRowIndex(snapshot.stable_row_base + snapshot.cursor.row as u64),
-                col: snapshot.cursor.col as usize,
-            };
+        if let Some(mc) = mux.enter_mark_mode(pane_id) {
             self.mark_cursors.insert(pane_id, mc);
         }
     }

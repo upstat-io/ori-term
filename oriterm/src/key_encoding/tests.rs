@@ -27,6 +27,7 @@ fn enc(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> {
         text: None,
         location: KeyLocation::Standard,
         event_type: KeyEventType::Press,
+        alternate_key: None,
     })
 }
 
@@ -39,6 +40,7 @@ fn enc_text(key: Key, mods: Modifiers, mode: TermMode, text: &str) -> Vec<u8> {
         text: Some(text),
         location: KeyLocation::Standard,
         event_type: KeyEventType::Press,
+        alternate_key: None,
     })
 }
 
@@ -51,6 +53,7 @@ fn enc_numpad(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> {
         text: None,
         location: KeyLocation::Numpad,
         event_type: KeyEventType::Press,
+        alternate_key: None,
     })
 }
 
@@ -63,6 +66,7 @@ fn enc_release(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> {
         text: None,
         location: KeyLocation::Standard,
         event_type: KeyEventType::Release,
+        alternate_key: None,
     })
 }
 
@@ -693,6 +697,7 @@ fn enc_event(
         text,
         location: KeyLocation::Standard,
         event_type,
+        alternate_key: None,
     })
 }
 
@@ -752,13 +757,13 @@ fn kitty_f1() {
 
 #[test]
 fn kitty_f1_report_all() {
-    // With REPORT_ALL_KEYS_AS_ESC, F1 gets the full CSI u treatment.
+    // With REPORT_ALL_KEYS_AS_ESC, F1 uses its legacy terminator `P`.
     let r = enc(
         Key::Named(NamedKey::F1),
         Modifiers::empty(),
         kitty_all_flags(),
     );
-    assert_eq!(r, b"\x1b[57364u");
+    assert_eq!(r, b"\x1b[1P");
 }
 
 #[test]
@@ -775,13 +780,13 @@ fn kitty_arrow_up() {
 
 #[test]
 fn kitty_arrow_up_report_all() {
-    // With REPORT_ALL_KEYS_AS_ESC, ArrowUp uses CSI u.
+    // With REPORT_ALL_KEYS_AS_ESC, ArrowUp uses its legacy terminator `A`.
     let r = enc(
         Key::Named(NamedKey::ArrowUp),
         Modifiers::empty(),
         kitty_all_flags(),
     );
-    assert_eq!(r, b"\x1b[57352u");
+    assert_eq!(r, b"\x1b[1A");
 }
 
 #[test]
@@ -1001,13 +1006,14 @@ fn kitty_disambiguate_uses_legacy_for_unambiguous_arrow() {
 
 #[test]
 fn kitty_report_all_overrides_legacy_for_arrow_up() {
-    // REPORT_ALL_KEYS_AS_ESC forces CSI u even for unambiguous keys.
+    // REPORT_ALL_KEYS_AS_ESC forces CSI encoding (not legacy SS3/CSI)
+    // but uses the legacy terminator `A` per the Kitty spec.
     let kitty = enc(
         Key::Named(NamedKey::ArrowUp),
         Modifiers::empty(),
         kitty_all_flags(),
     );
-    assert_eq!(kitty, b"\x1b[57352u");
+    assert_eq!(kitty, b"\x1b[1A");
 }
 
 #[test]
@@ -1178,14 +1184,14 @@ fn kitty_ctrl_shift_arrow_up() {
 
 #[test]
 fn kitty_ctrl_shift_arrow_up_report_all() {
-    // With REPORT_ALL_KEYS_AS_ESC, modified ArrowUp uses CSI u.
+    // With REPORT_ALL_KEYS_AS_ESC, modified ArrowUp uses legacy terminator `A`.
     let r = enc(
         Key::Named(NamedKey::ArrowUp),
         Modifiers::CONTROL | Modifiers::SHIFT,
         kitty_all_flags(),
     );
-    // Ctrl=4, Shift=1, param = 1 + 4 + 1 = 6.
-    assert_eq!(r, b"\x1b[57352;6u");
+    // Ctrl=4, Shift=1, param = 1 + 4 + 1 = 6. Base=1 for letter keys.
+    assert_eq!(r, b"\x1b[1;6A");
 }
 
 #[test]
@@ -1561,7 +1567,7 @@ fn kitty_text_emoji_codepoint() {
 
 #[test]
 fn kitty_named_key_repeat() {
-    // F1 repeat with REPORT_EVENT_TYPES — event type suffix :2.
+    // F1 repeat with REPORT_EVENT_TYPES — legacy terminator `P`, event suffix :2.
     let r = enc_event(
         Key::Named(NamedKey::F1),
         Modifiers::empty(),
@@ -1569,12 +1575,12 @@ fn kitty_named_key_repeat() {
         None,
         KeyEventType::Repeat,
     );
-    assert_eq!(r, b"\x1b[57364;1:2u");
+    assert_eq!(r, b"\x1b[1;1:2P");
 }
 
 #[test]
 fn kitty_arrow_repeat() {
-    // Arrow key repeat.
+    // Arrow key repeat — legacy terminator `A`, event suffix :2.
     let r = enc_event(
         Key::Named(NamedKey::ArrowUp),
         Modifiers::empty(),
@@ -1582,7 +1588,42 @@ fn kitty_arrow_repeat() {
         None,
         KeyEventType::Repeat,
     );
-    assert_eq!(r, b"\x1b[57352;1:2u");
+    assert_eq!(r, b"\x1b[1;1:2A");
+}
+
+// ==================== Kitty: legacy tilde terminators with report_all ====================
+
+#[test]
+fn kitty_insert_report_all_uses_tilde() {
+    let r = enc(
+        Key::Named(NamedKey::Insert),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    // Insert: base=2, terminator=~.
+    assert_eq!(r, b"\x1b[2~");
+}
+
+#[test]
+fn kitty_f5_report_all_uses_tilde() {
+    let r = enc(
+        Key::Named(NamedKey::F5),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    // F5: base=15, terminator=~.
+    assert_eq!(r, b"\x1b[15~");
+}
+
+#[test]
+fn kitty_delete_with_mods_report_all() {
+    let r = enc(
+        Key::Named(NamedKey::Delete),
+        Modifiers::CONTROL,
+        kitty_all_flags(),
+    );
+    // Delete: base=3, Ctrl mod=5, terminator=~.
+    assert_eq!(r, b"\x1b[3;5~");
 }
 
 // ==================== Ctrl+/ and Ctrl+@ edge cases ====================
@@ -1603,6 +1644,59 @@ fn ctrl_at() {
     // Ctrl+@ = NUL (0x00), via the backtick/2 alias.
     let r = enc(Key::Character("`".into()), Modifiers::CONTROL, no_mode());
     assert_eq!(r, vec![0x00]);
+}
+
+// ==================== Kitty: REPORT_ALTERNATE_KEYS ====================
+
+#[test]
+fn kitty_alternate_key_included_when_different() {
+    // When REPORT_ALTERNATE_KEYS + REPORT_ALL are active and the alternate
+    // key differs from the logical key, it appears as `base::alternate`.
+    let mode = kitty_report_all() | TermMode::REPORT_ALTERNATE_KEYS;
+    let r = encode_key(&KeyInput {
+        key: &Key::Character("z".into()),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("z"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: Some(b'y' as u32), // e.g., German QWERTZ layout.
+    });
+    // base=122 (z), alternate=121 (y) → ESC[122::121;1u.
+    assert_eq!(r, b"\x1b[122::121;1u");
+}
+
+#[test]
+fn kitty_alternate_key_omitted_when_same() {
+    // When alternate matches logical, no ::alternate suffix.
+    let mode = kitty_disambiguate() | TermMode::REPORT_ALTERNATE_KEYS;
+    let r = encode_key(&KeyInput {
+        key: &Key::Character("a".into()),
+        mods: Modifiers::empty(),
+        mode,
+        text: Some("a"),
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None, // Same as logical (filtered at call site).
+    });
+    // Plain text — printable, no mods, no alternate.
+    assert_eq!(r, b"a");
+}
+
+#[test]
+fn kitty_alternate_key_not_reported_without_flag() {
+    // Without REPORT_ALTERNATE_KEYS flag, alternate_key is ignored.
+    let r = encode_key(&KeyInput {
+        key: &Key::Character("z".into()),
+        mods: Modifiers::CONTROL,
+        mode: kitty_disambiguate(),
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: Some(b'y' as u32),
+    });
+    // Ctrl+z = codepoint 122, mod 5. No alternate in output.
+    assert_eq!(r, b"\x1b[122;5u");
 }
 
 #[test]

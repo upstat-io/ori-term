@@ -789,7 +789,7 @@ PaneOutput, PaneExited, PaneTitleChanged, PaneBell
 ---
 
 ### Section 31: In-Process Mux + Multi-Pane Rendering
-**File:** `section-31-in-process-mux.md` | **Tier:** 4M | **Status:** Not Started
+**File:** `section-31-in-process-mux.md` | **Tier:** 4M | **Status:** Complete
 
 ```
 InProcessMux, in-process mux, synchronous fast path, no daemon
@@ -823,7 +823,7 @@ handle_resize, handle_scale_factor_changed, resize ALL panes
 ---
 
 ### Section 33: Split Navigation + Floating Panes
-**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** In Progress
+**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** Complete
 
 ```
 spatial navigation, Alt+Arrow, focus pane direction, cycle pane

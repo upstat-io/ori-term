@@ -67,10 +67,18 @@ fn layout_height_at_least_min_height() {
     let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
     let node = compute_layout(&lb, viewport);
 
+    // min_height is content-box: outer rect >= MIN_HEIGHT + vertical padding.
     assert!(
         node.rect.height() >= MIN_HEIGHT,
-        "height {} should be >= {}",
+        "outer height {} should be >= {}",
         node.rect.height(),
+        MIN_HEIGHT
+    );
+    // Content area itself should meet the minimum.
+    assert!(
+        node.content_rect.height() >= MIN_HEIGHT,
+        "content height {} should be >= MIN_HEIGHT {}",
+        node.content_rect.height(),
         MIN_HEIGHT
     );
 }
@@ -321,8 +329,14 @@ fn setting_row_with_tags_min_height() {
 
     assert!(
         node.rect.height() >= MIN_HEIGHT,
-        "tagged row height {} should be >= {}",
+        "tagged row outer height {} should be >= {}",
         node.rect.height(),
+        MIN_HEIGHT
+    );
+    assert!(
+        node.content_rect.height() >= MIN_HEIGHT,
+        "tagged row content height {} should be >= MIN_HEIGHT {}",
+        node.content_rect.height(),
         MIN_HEIGHT
     );
 }

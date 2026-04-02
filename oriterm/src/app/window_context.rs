@@ -144,4 +144,13 @@ impl WindowContext {
             ui_stale: true,
         }
     }
+
+    /// Force full content re-extract and re-shape on the next redraw.
+    ///
+    /// Called after font config changes so the redraw path treats the next
+    /// frame as content-changed even though terminal content didn't change.
+    pub(super) fn invalidate_font_caches(&mut self) {
+        self.last_rendered_pane = None;
+        self.frame = None;
+    }
 }

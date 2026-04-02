@@ -533,7 +533,7 @@ fn rasterize_ligature_glyph_id_produces_bitmap() {
             continue;
         }
         let key = RasterKey {
-            glyph_id: sg.glyph_id,
+            glyph_id: sg.glyph_id.into(),
             face_idx: FaceIdx(sg.face_index),
             weight: 0,
             size_q6,
@@ -873,7 +873,7 @@ fn rasterize_with_synthesis(
 ) -> Option<super::RasterizedGlyph> {
     let resolved = fc.resolve(ch, GlyphStyle::Regular);
     let key = RasterKey {
-        glyph_id: resolved.glyph_id,
+        glyph_id: resolved.glyph_id.into(),
         face_idx: resolved.face_idx,
         weight: 0,
         size_q6: super::size_key(fc.size_px()),

@@ -86,6 +86,7 @@ fn kitty_codepoint(key: NamedKey) -> Option<u32> {
 pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
     let report_all = input.mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC);
     let report_events = input.mode.contains(TermMode::REPORT_EVENT_TYPES);
+    let report_alternate = input.mode.contains(TermMode::REPORT_ALTERNATE_KEYS);
     let report_text = input.mode.contains(TermMode::REPORT_ASSOCIATED_TEXT);
 
     // DISAMBIGUATE_ESC_CODES (flags=1) only uses CSI u for keys that are
@@ -137,8 +138,28 @@ pub(super) fn encode_kitty(input: &KeyInput<'_>) -> Vec<u8> {
         None
     };
 
-    // Build CSI u sequence.
-    build_csi_u(codepoint, input.mods, event_suffix, text.as_deref())
+    // Extract named key for legacy terminator lookup.
+    let named = match input.key {
+        Key::Named(n) => Some(*n),
+        _ => None,
+    };
+
+    // Resolve alternate key for REPORT_ALTERNATE_KEYS mode.
+    let alternate = if report_alternate {
+        input.alternate_key.filter(|&alt| alt != codepoint)
+    } else {
+        None
+    };
+
+    // Build CSI sequence with legacy or `u` terminator.
+    build_csi_sequence(
+        codepoint,
+        input.mods,
+        event_suffix,
+        text.as_deref(),
+        named,
+        alternate,
+    )
 }
 
 /// Extract the Unicode codepoint from a single-character string.
@@ -219,43 +240,106 @@ fn encode_associated_text(text: &str) -> Option<String> {
 /// `DISAMBIGUATE_ESC_CODES` mode compatible with shells that don't
 /// bind the CSI u functional key codepoints.
 fn has_unambiguous_legacy(named: NamedKey) -> bool {
-    matches!(
-        named,
-        // Letter-terminated (CSI/SS3 + unique terminator).
-        NamedKey::ArrowUp
-            | NamedKey::ArrowDown
-            | NamedKey::ArrowLeft
-            | NamedKey::ArrowRight
-            | NamedKey::Home
-            | NamedKey::End
-            | NamedKey::F1
-            | NamedKey::F2
-            | NamedKey::F3
-            | NamedKey::F4
-            // Tilde-terminated (CSI num ~).
-            | NamedKey::Insert
-            | NamedKey::Delete
-            | NamedKey::PageUp
-            | NamedKey::PageDown
-            | NamedKey::F5
-            | NamedKey::F6
-            | NamedKey::F7
-            | NamedKey::F8
-            | NamedKey::F9
-            | NamedKey::F10
-            | NamedKey::F11
-            | NamedKey::F12
-    )
+    legacy_csi_info(named).is_some()
 }
 
-/// Build the final `ESC [ codepoint ; modifier [: event_type] [; text] u` sequence.
-fn build_csi_u(codepoint: u32, mods: Modifiers, event_suffix: &str, text: Option<&str>) -> Vec<u8> {
+/// Legacy CSI encoding for a named key.
+///
+/// When a key has a well-known legacy CSI sequence, the Kitty spec prefers
+/// that terminator over the universal `u`. For letter-terminated keys
+/// (arrows, Home/End, F1-F4), the base number is 1. For tilde-terminated
+/// keys (Insert, Delete, PageUp/Down, F5-F12), it is the traditional
+/// numeric parameter.
+struct LegacyCsiInfo {
+    /// Numeric parameter (1 for letter keys, traditional number for tilde keys).
+    base: u32,
+    /// Terminator byte (`A`-`S` for letter keys, `~` for tilde keys).
+    terminator: u8,
+}
+
+/// Look up legacy CSI info for a named key.
+///
+/// Returns `None` for keys that have no legacy terminator (they use `u`).
+fn legacy_csi_info(named: NamedKey) -> Option<LegacyCsiInfo> {
+    // Letter-terminated keys: base = 1.
+    let letter = match named {
+        NamedKey::ArrowUp => Some(b'A'),
+        NamedKey::ArrowDown => Some(b'B'),
+        NamedKey::ArrowRight => Some(b'C'),
+        NamedKey::ArrowLeft => Some(b'D'),
+        NamedKey::Home => Some(b'H'),
+        NamedKey::End => Some(b'F'),
+        NamedKey::F1 => Some(b'P'),
+        NamedKey::F2 => Some(b'Q'),
+        NamedKey::F3 => Some(b'R'),
+        NamedKey::F4 => Some(b'S'),
+        _ => None,
+    };
+    if let Some(term) = letter {
+        return Some(LegacyCsiInfo {
+            base: 1,
+            terminator: term,
+        });
+    }
+
+    // Tilde-terminated keys: base = traditional numeric parameter.
+    let num = match named {
+        NamedKey::Insert => Some(2),
+        NamedKey::Delete => Some(3),
+        NamedKey::PageUp => Some(5),
+        NamedKey::PageDown => Some(6),
+        NamedKey::F5 => Some(15),
+        NamedKey::F6 => Some(17),
+        NamedKey::F7 => Some(18),
+        NamedKey::F8 => Some(19),
+        NamedKey::F9 => Some(20),
+        NamedKey::F10 => Some(21),
+        NamedKey::F11 => Some(23),
+        NamedKey::F12 => Some(24),
+        _ => None,
+    };
+    num.map(|n| LegacyCsiInfo {
+        base: n,
+        terminator: b'~',
+    })
+}
+
+/// Build a CSI key sequence with the appropriate terminator.
+///
+/// Keys with legacy CSI encodings use their traditional terminator
+/// (e.g., `A` for `ArrowUp`, `~` for `Insert`). All other keys use `u`.
+/// When `alternate_key` is `Some`, the base field includes it as
+/// `base::alternate` (per Kitty `REPORT_ALTERNATE_KEYS` spec).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "CSI sequence needs all encoding parameters"
+)]
+fn build_csi_sequence(
+    codepoint: u32,
+    mods: Modifiers,
+    event_suffix: &str,
+    text: Option<&str>,
+    named: Option<NamedKey>,
+    alternate_key: Option<u32>,
+) -> Vec<u8> {
+    let (base, terminator) = match named.and_then(legacy_csi_info) {
+        Some(info) => (info.base, info.terminator),
+        None => (codepoint, b'u'),
+    };
+
+    // Format base field: `base` or `base::alternate` (skipping shifted_key).
+    let base_field = match alternate_key {
+        Some(alt) => format!("{base}::{alt}"),
+        None => base.to_string(),
+    };
+
     let mod_param = mods.xterm_param();
-    if text.is_some() || mod_param > 0 || !event_suffix.is_empty() {
+    let t = terminator as char;
+    if text.is_some() || mod_param > 0 || !event_suffix.is_empty() || alternate_key.is_some() {
         let m = if mod_param > 0 { mod_param } else { 1 };
-        let text_suffix = text.map_or(String::new(), |t| format!(";{t}"));
-        format!("\x1b[{codepoint};{m}{event_suffix}{text_suffix}u").into_bytes()
+        let text_suffix = text.map_or(String::new(), |txt| format!(";{txt}"));
+        format!("\x1b[{base_field};{m}{event_suffix}{text_suffix}{t}").into_bytes()
     } else {
-        format!("\x1b[{codepoint}u").into_bytes()
+        format!("\x1b[{base_field}{t}").into_bytes()
     }
 }

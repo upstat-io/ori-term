@@ -121,7 +121,7 @@ impl PtyHandle {
     /// Take the PTY output reader (child to parent).
     ///
     /// Returns `None` if already taken. The reader is handed to the
-    /// [`PtyEventLoop`](super::event_loop::PtyEventLoop) background thread.
+    /// [`PtyReader`](super::reader::PtyReader) background thread.
     pub fn take_reader(&mut self) -> Option<Box<dyn io::Read + Send>> {
         self.reader.take()
     }
@@ -136,8 +136,8 @@ impl PtyHandle {
 
     /// Take the PTY control handle (for resize operations).
     ///
-    /// Returns `None` if already taken. The control handle is typically
-    /// handed to the [`PtyEventLoop`](super::event_loop::PtyEventLoop).
+    /// Returns `None` if already taken. The control handle is handed to
+    /// the Terminal IO thread for resize operations.
     pub fn take_control(&mut self) -> Option<PtyControl> {
         self.control.take()
     }

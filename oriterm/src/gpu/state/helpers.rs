@@ -33,11 +33,20 @@ pub(super) fn pick_adapter(
 
 /// Request a device and queue from the adapter.
 ///
-/// Requests `PIPELINE_CACHE` feature if the adapter supports it.
+/// Requests optional features if the adapter supports them:
+/// - `PIPELINE_CACHE` — shader compilation caching across sessions.
+/// - `DUAL_SOURCE_BLENDING` — per-channel LCD subpixel compositing
+///   without requiring CPU-side background color knowledge.
 pub(super) fn request_device(adapter: &wgpu::Adapter) -> Option<(wgpu::Device, wgpu::Queue)> {
     let mut features = wgpu::Features::empty();
     if adapter.features().contains(wgpu::Features::PIPELINE_CACHE) {
         features |= wgpu::Features::PIPELINE_CACHE;
+    }
+    if adapter
+        .features()
+        .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+    {
+        features |= wgpu::Features::DUAL_SOURCE_BLENDING;
     }
 
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {

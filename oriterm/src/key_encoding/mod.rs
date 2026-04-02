@@ -8,7 +8,7 @@ mod kitty;
 mod legacy;
 
 use bitflags::bitflags;
-use winit::keyboard::{Key, KeyLocation, ModifiersState};
+use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState, PhysicalKey};
 
 use oriterm_core::TermMode;
 
@@ -67,8 +67,8 @@ impl From<ModifiersState> for Modifiers {
 
 /// Bundled key event for encoding.
 ///
-/// Groups the six parameters of a key event into a single struct to keep
-/// the public API clean (avoids clippy `too_many_arguments`).
+/// Groups key event parameters into a single struct to keep the public
+/// API clean (avoids clippy `too_many_arguments`).
 pub struct KeyInput<'a> {
     /// The logical key identifier (named key or character).
     pub key: &'a Key,
@@ -82,6 +82,12 @@ pub struct KeyInput<'a> {
     pub location: KeyLocation,
     /// Whether this is a press, repeat, or release event.
     pub event_type: KeyEventType,
+    /// US keyboard layout codepoint for the physical key.
+    ///
+    /// Used by `REPORT_ALTERNATE_KEYS` (Kitty flag 4) to report the
+    /// key that corresponds to the physical position on a US layout.
+    /// `None` when unavailable or when it matches the logical key.
+    pub alternate_key: Option<u32>,
 }
 
 /// Encode a key event into bytes to send to the PTY.
@@ -112,6 +118,96 @@ pub fn encode_key(input: &KeyInput<'_>) -> Vec<u8> {
     }
 
     legacy::encode_legacy(input.key, input.mods, input.mode, input.text)
+}
+
+/// Map a physical key to its US keyboard layout codepoint.
+///
+/// Returns `None` for non-character physical keys (modifiers, function keys)
+/// or when the physical key matches the logical key (no layout difference).
+/// Only character keys that differ between keyboard layouts benefit from
+/// `REPORT_ALTERNATE_KEYS` reporting.
+pub fn physical_key_to_us_codepoint(physical: PhysicalKey, logical: &Key) -> Option<u32> {
+    let code = match physical {
+        PhysicalKey::Code(c) => c,
+        PhysicalKey::Unidentified(_) => return None,
+    };
+    let us_cp = keycode_to_us_char(code)?;
+
+    // Only report when the alternate differs from the logical key.
+    let logical_cp = match logical {
+        Key::Character(s) => {
+            let mut chars = s.chars();
+            let c = chars.next()?;
+            if chars.next().is_some() {
+                return None;
+            }
+            c as u32
+        }
+        _ => return None, // Named keys don't need alternate reporting.
+    };
+
+    if us_cp == logical_cp {
+        None
+    } else {
+        Some(us_cp)
+    }
+}
+
+/// Map a `KeyCode` (physical position) to US QWERTY character codepoint.
+fn keycode_to_us_char(code: KeyCode) -> Option<u32> {
+    Some(match code {
+        // Letters (lowercase).
+        KeyCode::KeyA => b'a' as u32,
+        KeyCode::KeyB => b'b' as u32,
+        KeyCode::KeyC => b'c' as u32,
+        KeyCode::KeyD => b'd' as u32,
+        KeyCode::KeyE => b'e' as u32,
+        KeyCode::KeyF => b'f' as u32,
+        KeyCode::KeyG => b'g' as u32,
+        KeyCode::KeyH => b'h' as u32,
+        KeyCode::KeyI => b'i' as u32,
+        KeyCode::KeyJ => b'j' as u32,
+        KeyCode::KeyK => b'k' as u32,
+        KeyCode::KeyL => b'l' as u32,
+        KeyCode::KeyM => b'm' as u32,
+        KeyCode::KeyN => b'n' as u32,
+        KeyCode::KeyO => b'o' as u32,
+        KeyCode::KeyP => b'p' as u32,
+        KeyCode::KeyQ => b'q' as u32,
+        KeyCode::KeyR => b'r' as u32,
+        KeyCode::KeyS => b's' as u32,
+        KeyCode::KeyT => b't' as u32,
+        KeyCode::KeyU => b'u' as u32,
+        KeyCode::KeyV => b'v' as u32,
+        KeyCode::KeyW => b'w' as u32,
+        KeyCode::KeyX => b'x' as u32,
+        KeyCode::KeyY => b'y' as u32,
+        KeyCode::KeyZ => b'z' as u32,
+        // Digits.
+        KeyCode::Digit1 => b'1' as u32,
+        KeyCode::Digit2 => b'2' as u32,
+        KeyCode::Digit3 => b'3' as u32,
+        KeyCode::Digit4 => b'4' as u32,
+        KeyCode::Digit5 => b'5' as u32,
+        KeyCode::Digit6 => b'6' as u32,
+        KeyCode::Digit7 => b'7' as u32,
+        KeyCode::Digit8 => b'8' as u32,
+        KeyCode::Digit9 => b'9' as u32,
+        KeyCode::Digit0 => b'0' as u32,
+        // Punctuation (US layout).
+        KeyCode::Minus => b'-' as u32,
+        KeyCode::Equal => b'=' as u32,
+        KeyCode::BracketLeft => b'[' as u32,
+        KeyCode::BracketRight => b']' as u32,
+        KeyCode::Backslash => b'\\' as u32,
+        KeyCode::Semicolon => b';' as u32,
+        KeyCode::Quote => b'\'' as u32,
+        KeyCode::Backquote => b'`' as u32,
+        KeyCode::Comma => b',' as u32,
+        KeyCode::Period => b'.' as u32,
+        KeyCode::Slash => b'/' as u32,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

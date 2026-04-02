@@ -21,7 +21,7 @@ pub(crate) const DASHED_GLYPH_ID: u16 = 0xFFF2;
 /// Construct a [`RasterKey`] for a decoration pattern glyph.
 pub(crate) fn decoration_key(glyph_id: u16, size_q6: u32) -> RasterKey {
     RasterKey {
-        glyph_id,
+        glyph_id: glyph_id.into(),
         face_idx: FaceIdx::BUILTIN,
         weight: 0,
         size_q6,

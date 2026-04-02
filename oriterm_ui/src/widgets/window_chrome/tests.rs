@@ -14,7 +14,7 @@ use super::constants::{
     CAPTION_HEIGHT, CAPTION_HEIGHT_MAXIMIZED, CONTROL_BUTTON_WIDTH, RESIZE_BORDER_WIDTH,
 };
 use super::controls::{ControlButtonColors, WindowControlButton};
-use super::layout::{ChromeLayout, ControlKind};
+use super::layout::{ChromeLayout, ChromeMode, ControlKind};
 
 // -- Test helpers --
 
@@ -159,4 +159,118 @@ fn has_two_controllers() {
 fn has_visual_state_animator() {
     let btn = WindowControlButton::new(ControlKind::Close, test_button_colors());
     assert!(btn.visual_states().is_some());
+}
+
+// -- ChromeMode::Dialog layout tests --
+
+#[test]
+fn layout_dialog_mode_single_close_button() {
+    let layout = ChromeLayout::compute_with_mode(800.0, false, false, ChromeMode::Dialog);
+    assert_eq!(
+        layout.controls.len(),
+        1,
+        "dialog mode should have 1 control"
+    );
+    assert_eq!(layout.controls[0].kind, ControlKind::Close);
+    assert_eq!(layout.interactive_rects.len(), 1);
+    assert_eq!(layout.caption_height, CAPTION_HEIGHT);
+    assert!(layout.visible);
+    assert_eq!(layout.mode, ChromeMode::Dialog);
+}
+
+#[test]
+fn layout_dialog_close_at_right_edge() {
+    let width = 600.0;
+    let layout = ChromeLayout::compute_with_mode(width, false, false, ChromeMode::Dialog);
+    let close = layout.controls[0].rect;
+    let epsilon = 0.001;
+    assert!((close.right() - width).abs() < epsilon);
+    assert_eq!(close.width(), CONTROL_BUTTON_WIDTH);
+}
+
+#[test]
+fn layout_dialog_title_wider_than_full() {
+    let width = 800.0;
+    let full = ChromeLayout::compute_with_mode(width, false, false, ChromeMode::Full);
+    let dialog = ChromeLayout::compute_with_mode(width, false, false, ChromeMode::Dialog);
+    // Dialog has 1 button vs 3, so title area should be wider.
+    assert!(
+        dialog.title_rect.width() > full.title_rect.width(),
+        "dialog title ({}) should be wider than full title ({})",
+        dialog.title_rect.width(),
+        full.title_rect.width(),
+    );
+}
+
+// -- Control button click cycle test --
+
+#[test]
+fn click_cycle_emits_clicked_action() {
+    use std::time::Instant;
+
+    use crate::action::WidgetAction;
+    use crate::geometry::Point;
+    use crate::input::{InputEvent, Modifiers, MouseButton};
+
+    use super::WindowChromeWidget;
+
+    let mut chrome = WindowChromeWidget::new("Test", 800.0);
+    let now = Instant::now();
+
+    // Target the close button (last control).
+    let close_rect = chrome.interactive_rects().last().copied().unwrap();
+    let center = Point::new(
+        close_rect.x() + close_rect.width() / 2.0,
+        close_rect.y() + close_rect.height() / 2.0,
+    );
+
+    // Mouse-down should not emit an action yet.
+    let down = InputEvent::MouseDown {
+        pos: center,
+        button: MouseButton::Left,
+        modifiers: Modifiers::NONE,
+    };
+    let result_down = chrome.dispatch_input(&down, now);
+    assert!(
+        result_down.actions.is_empty(),
+        "mouse-down alone should not emit actions"
+    );
+
+    // Mouse-up completes the click and emits Clicked.
+    let up = InputEvent::MouseUp {
+        pos: center,
+        button: MouseButton::Left,
+        modifiers: Modifiers::NONE,
+    };
+    let result_up = chrome.dispatch_input(&up, now);
+    assert_eq!(
+        result_up.actions.len(),
+        1,
+        "mouse-up should emit exactly one action"
+    );
+    assert!(
+        matches!(result_up.actions[0], WidgetAction::Clicked(_)),
+        "action should be Clicked, got {:?}",
+        result_up.actions[0],
+    );
+}
+
+// -- WindowChromeWidget draw output test --
+
+#[test]
+fn chrome_paint_produces_scene_output() {
+    use crate::testing::WidgetTestHarness;
+
+    use super::WindowChromeWidget;
+
+    let chrome = WindowChromeWidget::new("Paint Test", 800.0);
+    let mut h = WidgetTestHarness::new(chrome);
+    let scene = h.render();
+
+    // Chrome should produce at least a caption background rect.
+    let rects = crate::testing::render_assert::rects(&scene);
+    assert!(
+        !rects.is_empty(),
+        "chrome should paint at least the caption background"
+    );
 }

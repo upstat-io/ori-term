@@ -3,7 +3,7 @@ section: 17
 title: Drag & Drop
 status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-01"
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
 sections:
@@ -144,7 +144,7 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 
 ### Gap Analysis (2026-03-29)
 
-- [ ] Unit tests for `compute_drop_index()` in `merge_core.rs` — pure function with edge cases (zero width, clamping) but zero direct tests. Low severity, indirectly exercised through integration.
+- [x] Unit tests for `compute_drop_index()` in `merge_core.rs` — 10 tests covering zero width, clamping, negative coords, scale, boundary conditions. Added 2026-04-01.
 
 ### Naming Discrepancies (Non-Blocking)
 

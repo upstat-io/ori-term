@@ -38,6 +38,9 @@ Font discovery, collection, shaping, rasterization, COLRv1, emoji fallback.
   (5) `rasterize_ligature_glyph_id_produces_bitmap` — calt-substituted glyph IDs rasterize to valid bitmaps through swash
   The full pipeline (run segmentation → rustybuzz shaping with calt/liga features → column mapping → glyph rasterization) is verified end-to-end. Original report was likely caused by a font that lacks GSUB/calt tables, a config with `features = []`, or was already resolved by intervening changes.
 
+- [x] `[BUG-04-005][high]` **Bold text no longer renders — regression** — found by manual.
+  Resolved: 2026-04-01. Could not reproduce — 34 bold tests pass, font pipeline confirmed correct. User confirmed bold works after rebuild. Likely stale binary.
+
 - [ ] `[BUG-04-004][medium]` **Emoji in tab title vanishes after monitor transition** — found by manual.
   Repro: Set a tab title containing an emoji (e.g. via OSC 2). Drag the window between monitors with different DPI/scale factors. The emoji sometimes disappears from the tab bar while ASCII text remains.
   Subsystem: `oriterm/src/gpu/window_renderer/font_config.rs` (`clear_and_recache`), `oriterm/src/font/collection/mod.rs` (glyph cache), `oriterm/src/app/mod.rs` (`handle_dpi_change`)

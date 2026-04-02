@@ -37,6 +37,7 @@ fn content_with_cursor(
                 flags: CellFlags::empty(),
                 underline_color: None,
                 has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: Vec::new(),
             });
         }
@@ -492,6 +493,7 @@ fn binding_takes_priority_over_pty_send() {
         text: Some("a"),
         location: winit::keyboard::KeyLocation::Standard,
         event_type: KeyEventType::Press,
+        alternate_key: None,
     });
     assert_eq!(pty_bytes, b"a", "unbound 'a' should encode as PTY output");
 }
@@ -541,6 +543,7 @@ fn ctrl_c_smart_copy_falls_through_to_pty_without_selection() {
         text: None,
         location: winit::keyboard::KeyLocation::Standard,
         event_type: KeyEventType::Press,
+        alternate_key: None,
     });
     assert_eq!(
         pty_bytes,
