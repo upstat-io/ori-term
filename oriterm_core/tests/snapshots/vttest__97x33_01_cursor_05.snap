@@ -2,12 +2,12 @@
 source: oriterm_core/tests/vttest.rs
 expression: text
 ---
-Test of cursor-control characters inside ESC sequences.                                                                             
-Below should be four identical lines:                                                                                               
-                                                                                                                                    
-A B C D E F G H I                                                                                                                   
-A B C D E F G H I                                                                                                                   
-A B C D E F G H I                                                                                                                   
-A B C D E F G H I                                                                                                                   
-                                                                                                                                    
+Test of cursor-control characters inside ESC sequences.                                          
+Below should be four identical lines:                                                            
+                                                                                                 
+A B C D E F G H I                                                                                
+A B C D E F G H I                                                                                
+A B C D E F G H I                                                                                
+A B C D E F G H I                                                                                
+                                                                                                 
 Push <RETURN>

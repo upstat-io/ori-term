@@ -2,23 +2,23 @@
 source: oriterm_core/tests/vttest.rs
 expression: text
 ---
-Test of leading zeros in ESC sequences.                                                                                             
-Two lines below you should see the sentence "This is a correct sentence".                                                           
-                                                                                                                                    
-This is a correct sentence                                                                                                          
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
-                                                                                                                                    
+Test of leading zeros in ESC sequences.                                                                                 
+Two lines below you should see the sentence "This is a correct sentence".                                               
+                                                                                                                        
+This is a correct sentence                                                                                              
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
 Push <RETURN>

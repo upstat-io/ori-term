@@ -5576,3 +5576,137 @@ fn origin_mode_cup_row_zero_maps_to_region_start() {
     feed(&mut t, b"\x1b[1;1H");
     assert_eq!(t.grid().cursor().line(), 9);
 }
+
+// --- DECCOLM (132-column mode) tests ---
+
+#[test]
+fn deccolm_set_clears_screen() {
+    let mut t = term();
+    // Write content, then set DECCOLM (CSI ? 3 h).
+    feed(&mut t, b"Hello, world!");
+    feed(&mut t, b"\x1b[?3h");
+    // Screen should be cleared — first cell is blank.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
+    // Cursor should be at origin.
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+#[test]
+fn deccolm_reset_clears_screen() {
+    let mut t = term();
+    // Write content, then reset DECCOLM (CSI ? 3 l).
+    feed(&mut t, b"Hello, world!");
+    feed(&mut t, b"\x1b[?3l");
+    // Screen should be cleared.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
+    // Cursor at origin.
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+#[test]
+fn deccolm_preserves_grid_dimensions() {
+    let mut t = term();
+    let (lines, cols) = (t.grid().lines(), t.grid().cols());
+    // Set DECCOLM — grid should NOT resize.
+    feed(&mut t, b"\x1b[?3h");
+    assert_eq!(t.grid().lines(), lines);
+    assert_eq!(t.grid().cols(), cols);
+    // Reset DECCOLM — grid still same size.
+    feed(&mut t, b"\x1b[?3l");
+    assert_eq!(t.grid().lines(), lines);
+    assert_eq!(t.grid().cols(), cols);
+}
+
+#[test]
+fn deccolm_resets_scroll_region() {
+    let mut t = term();
+    // Set a scroll region, then toggle DECCOLM.
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[?3h");
+    // Scroll region should be reset to full screen.
+    // Verify by writing at line 1 and checking the region doesn't constrain.
+    let region = t.grid().scroll_region();
+    assert_eq!(region.start, 0);
+    assert_eq!(region.end, t.grid().lines());
+}
+
+#[test]
+fn decawm_wrap_fills_line() {
+    let mut t = term();
+    // DECAWM is on by default. Write 81 chars — 80 fill row 0, 81st wraps.
+    feed(&mut t, &[b'*'; 81]);
+    // 81st char triggers wrap to row 1, then writes at col 0.
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(1));
+    // Row 0 should be fully filled with '*'.
+    for col in 0..80 {
+        assert_eq!(
+            t.grid()[crate::index::Line(0)][Column(col)].ch,
+            '*',
+            "col {col} should be '*'"
+        );
+    }
+    // Row 1 col 0 should also be '*' (the 81st char).
+    assert_eq!(t.grid()[crate::index::Line(1)][Column(0)].ch, '*');
+}
+
+#[test]
+fn decawm_off_no_wrap() {
+    let mut t = term();
+    // Disable DECAWM (CSI ? 7 l).
+    feed(&mut t, b"\x1b[?7l");
+    // Write 85 chars — more than 80 columns.
+    for i in 0..85 {
+        let ch = b'A' + (i % 26);
+        feed(&mut t, &[ch]);
+    }
+    // Cursor should stay on line 0, at wrap-pending position (col 80).
+    assert_eq!(t.grid().cursor().line(), 0);
+    // Last column should contain the last character written (85th char = 'K').
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(79)].ch,
+        char::from(b'A' + (84 % 26))
+    );
+    // Row 1 should be empty — no wrap occurred.
+    assert_eq!(t.grid()[crate::index::Line(1)][Column(0)].ch, ' ');
+}
+
+#[test]
+fn decawm_with_control_chars() {
+    let mut t = term();
+    // DECAWM on (default). Write 78 chars, then BS, then 4 more chars.
+    // BS at col 78 → col 77. Then 4 chars fill cols 77–80, wrapping.
+    feed(&mut t, &[b'X'; 78]);
+    feed(&mut t, b"\x08"); // BS
+    feed(&mut t, b"ABCD");
+    // After BS: col 77. A→77, B→78, C→79, D→wrap to line 1, col 0.
+    // Wait, actually after 78 X's, cursor is at col 78. BS → col 77.
+    // A→77 (cursor 78), B→78 (cursor 79), C→79 (cursor 80 = wrap pending).
+    // D triggers wrap → line 1, col 0, write D.
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(1));
+    assert_eq!(t.grid()[crate::index::Line(1)][Column(0)].ch, 'D');
+}
+
+#[test]
+fn deccolm_set_then_reset_roundtrip() {
+    let mut t = term();
+    let (lines, cols) = (t.grid().lines(), t.grid().cols());
+    // Write content.
+    feed(&mut t, b"ABCDEF");
+    // Set DECCOLM.
+    feed(&mut t, b"\x1b[?3h");
+    // Write new content.
+    feed(&mut t, b"XYZ");
+    // Reset DECCOLM.
+    feed(&mut t, b"\x1b[?3l");
+    // Grid dimensions unchanged throughout.
+    assert_eq!(t.grid().lines(), lines);
+    assert_eq!(t.grid().cols(), cols);
+    // Screen cleared by DECCOLM reset.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
