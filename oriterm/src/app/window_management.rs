@@ -397,11 +397,16 @@ impl App {
     /// Used by tear-off merge: the tab was already moved out, so the
     /// window's state is empty. This removes the OS window and context
     /// without touching the mux layer.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(super) fn remove_empty_window(&mut self, winit_id: WindowId) {
         if let Some(ctx) = self.windows.get(&winit_id) {
             let session_wid = ctx.window.session_window_id();
             self.session.remove_window(session_wid);
+            // Cloak the window before dropping to suppress the DWM close
+            // animation (shrink + fade). Cloaking makes the window instantly
+            // invisible at the compositor level — DestroyWindow then has
+            // nothing to animate.
+            #[cfg(target_os = "windows")]
+            oriterm_ui::platform_windows::cloak_window(ctx.window.window());
         }
 
         let removed = self.window_manager.unregister(winit_id);

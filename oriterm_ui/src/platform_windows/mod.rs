@@ -18,8 +18,8 @@ use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Dwm::{
-    DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED, DwmExtendFrameIntoClientArea,
-    DwmGetWindowAttribute, DwmSetWindowAttribute,
+    DWMWA_CLOAK, DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED,
+    DwmExtendFrameIntoClientArea, DwmGetWindowAttribute, DwmSetWindowAttribute,
 };
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
@@ -407,6 +407,31 @@ pub fn set_transitions_enabled(window: &Window, enabled: bool) {
             hwnd,
             DWMWA_TRANSITIONS_FORCEDISABLED as u32,
             (&raw const value).cast(),
+            size_of::<i32>() as u32,
+        );
+    }
+}
+
+/// Cloak a window so DWM considers it invisible without any animation.
+///
+/// Unlike `ShowWindow(SW_HIDE)`, cloaking operates at the DWM compositor
+/// level — the window becomes instantly invisible with no transition.
+/// A cloaked window produces no visible animation when subsequently
+/// destroyed, because DWM has nothing to animate.
+pub fn cloak_window(window: &Window) {
+    let Some(hwnd) = hwnd_from_window(window) else {
+        return;
+    };
+    let cloak: i32 = 1;
+    // SAFETY: `DwmSetWindowAttribute` with `DWMWA_CLOAK` is a standard
+    // DWM API (Windows 8+). Writing a BOOL-sized value is the documented
+    // calling convention.
+    #[allow(unsafe_code)]
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAK as u32,
+            (&raw const cloak).cast(),
             size_of::<i32>() as u32,
         );
     }

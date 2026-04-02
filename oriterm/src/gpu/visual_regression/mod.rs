@@ -27,6 +27,7 @@ mod settings_dialog;
 mod status_bar;
 mod tab_bar_brutal;
 mod tab_bar_icons;
+mod vttest;
 
 use std::path::PathBuf;
 
