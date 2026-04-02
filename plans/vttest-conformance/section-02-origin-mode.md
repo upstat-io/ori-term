@@ -92,7 +92,7 @@ Based on diagnosis, fix the cursor positioning logic. Key areas to verify:
 - [x] Add unit test: `origin_mode_cup_at_boundaries` — `origin_mode_cup_row_zero_maps_to_region_start` (new) + `origin_mode_cup_clamps_to_scroll_region` (pre-existing)
 - [x] Add unit test: `origin_mode_preserves_column` — `origin_mode_preserves_column` (new)
 - [x] Add unit test: `dsr_cursor_position_in_decom` — `dsr_reports_relative_position_in_origin_mode` (new, replaces `dsr_reports_absolute_position_even_in_origin_mode`). Fixed `status_device_status()` to subtract scroll region start when DECOM active.
-- [ ] `/tpr-review` checkpoint
+- [x] `/tpr-review` checkpoint — passed, 2 findings resolved (TPR-02-001, TPR-02-002)
 
 ---
 
