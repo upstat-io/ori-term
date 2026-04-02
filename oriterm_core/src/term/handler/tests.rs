@@ -5710,3 +5710,24 @@ fn deccolm_set_then_reset_roundtrip() {
     assert_eq!(t.grid().cursor().line(), 0);
     assert_eq!(t.grid().cursor().col(), Column(0));
 }
+
+// --- DECSCNM (Reverse Video, mode 5) ---
+
+#[test]
+fn decscnm_set_enables_reverse_video() {
+    use crate::term::TermMode;
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::REVERSE_VIDEO));
+    feed(&mut t, b"\x1b[?5h");
+    assert!(t.mode().contains(TermMode::REVERSE_VIDEO));
+}
+
+#[test]
+fn decscnm_reset_disables_reverse_video() {
+    use crate::term::TermMode;
+    let mut t = term();
+    feed(&mut t, b"\x1b[?5h");
+    assert!(t.mode().contains(TermMode::REVERSE_VIDEO));
+    feed(&mut t, b"\x1b[?5l");
+    assert!(!t.mode().contains(TermMode::REVERSE_VIDEO));
+}

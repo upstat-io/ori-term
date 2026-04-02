@@ -33,6 +33,7 @@ pub(crate) fn extract_frame_from_snapshot(
 ) -> FrameInput {
     let content = snapshot_to_renderable(snapshot);
     let palette = snapshot_palette(snapshot);
+    let reverse_video = content.mode.contains(TermMode::REVERSE_VIDEO);
 
     FrameInput {
         content,
@@ -47,6 +48,7 @@ pub(crate) fn extract_frame_from_snapshot(
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
         window_focused: true,
+        reverse_video,
         fg_dim: 1.0,
         text_blink_opacity: 1.0,
         subpixel_positioning: true,
@@ -152,6 +154,7 @@ pub(crate) fn extract_frame_from_snapshot_into(
     out.content_cols = snapshot.cols as usize;
     out.content_rows = snapshot.cells.len();
     out.palette = snapshot_palette(snapshot);
+    out.reverse_video = out.content.mode.contains(TermMode::REVERSE_VIDEO);
     out.selection = None;
     out.search = None;
     out.hovered_cell = None;

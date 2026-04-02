@@ -666,6 +666,31 @@ fn clear_color_respects_palette_opacity() {
     assert_eq!(frame.clear_color, expected);
 }
 
+// ── DECSCNM (reverse video) ──
+
+#[test]
+fn reverse_video_clear_color_uses_swapped_bg() {
+    let mut input = FrameInput::test_grid(10, 5, "A");
+    let original_fg = input.palette.foreground;
+
+    // Simulate DECSCNM: swap palette fg/bg and set reverse_video flag.
+    std::mem::swap(&mut input.palette.foreground, &mut input.palette.background);
+    input.reverse_video = true;
+
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Clear color should be the original foreground (now stored as palette.background
+    // after the swap in extract).
+    let expected = [
+        f64::from(srgb_to_linear(original_fg.r)),
+        f64::from(srgb_to_linear(original_fg.g)),
+        f64::from(srgb_to_linear(original_fg.b)),
+        1.0,
+    ];
+    assert_eq!(frame.clear_color, expected);
+}
+
 // ── prepare_frame_into ──
 
 #[test]
