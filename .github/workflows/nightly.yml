@@ -2,6 +2,10 @@ name: Nightly Release
 
 # Create a PR from dev → main every night if there are new commits.
 # The auto-release workflow tags and releases after merge.
+#
+# Before creating the PR, merge main → dev to absorb the version-bump
+# commit that auto-release pushed after the previous nightly merge.
+# This prevents Cargo.lock conflicts on every PR.
 
 on:
   schedule:
@@ -17,7 +21,7 @@ jobs:
   nightly-pr:
     name: Nightly PR
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -36,6 +40,55 @@ jobs:
             echo "No new commits on dev since last merge. Skipping."
           else
             echo "$AHEAD new commit(s) on dev ahead of main."
+          fi
+
+      # Merge main → dev to absorb the version-bump commit from the last
+      # auto-release.  Cargo.lock conflicts are expected and resolved by
+      # regenerating the lockfile.
+      - name: Install Rust (for lockfile regen)
+        if: steps.check.outputs.ahead != '0'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Sync main into dev
+        if: steps.check.outputs.ahead != '0'
+        id: sync
+        run: |
+          BEHIND=$(git rev-list --count origin/dev..origin/main)
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "dev already contains all main commits. No sync needed."
+            exit 0
+          fi
+          echo "$BEHIND commit(s) on main not in dev — merging."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout dev
+
+          if git merge origin/main --no-edit -m "chore: merge main into dev (nightly sync)"; then
+            echo "Clean merge."
+          else
+            # Only Cargo.lock conflicts are expected from the version bump.
+            CONFLICTED=$(git diff --name-only --diff-filter=U)
+            if [ "$CONFLICTED" != "Cargo.lock" ]; then
+              echo "::error::Unexpected merge conflicts in: $CONFLICTED"
+              git merge --abort
+              exit 1
+            fi
+            echo "Cargo.lock conflict — regenerating lockfile."
+            git checkout --theirs Cargo.lock
+            cargo generate-lockfile
+            git add Cargo.lock
+            git commit --no-edit -m "chore: merge main into dev (nightly sync)"
+          fi
+
+          git push origin dev
+
+          # Re-check ahead count after sync.
+          git fetch origin main dev
+          AHEAD=$(git rev-list --count origin/main..origin/dev)
+          echo "ahead=$AHEAD" >> $GITHUB_OUTPUT
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "After sync, dev has no new commits beyond main. Skipping PR."
           fi
 
       - name: Check for existing PR
