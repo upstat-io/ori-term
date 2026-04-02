@@ -8,14 +8,77 @@
 //! even though these only read state and send events.
 
 use log::debug;
-use vte::ansi::{Mode, NamedMode, PrivateMode};
+use vte::ansi::{Color, Mode, NamedColor, NamedMode, PrivateMode};
 
+use crate::cell::CellFlags;
 use crate::event::{Event, EventListener};
 use crate::term::{Term, TermMode};
 
 use super::helpers::{
     crate_version_number, mode_report_value, named_private_mode_flag, named_private_mode_number,
 };
+
+/// Build the SGR parameter string for the current cursor attributes.
+///
+/// Returns `"0"` when all attributes are default, otherwise a semicolon-
+/// separated list of SGR codes (e.g. `"0;1;4;31"` for bold+underline+red fg).
+fn build_sgr_string(flags: CellFlags, fg: Color, bg: Color) -> String {
+    let mut params = vec!["0".to_string()];
+
+    if flags.contains(CellFlags::BOLD) {
+        params.push("1".to_string());
+    }
+    if flags.contains(CellFlags::DIM) {
+        params.push("2".to_string());
+    }
+    if flags.contains(CellFlags::ITALIC) {
+        params.push("3".to_string());
+    }
+    if flags.contains(CellFlags::UNDERLINE) {
+        params.push("4".to_string());
+    }
+    if flags.contains(CellFlags::BLINK) {
+        params.push("5".to_string());
+    }
+    if flags.contains(CellFlags::INVERSE) {
+        params.push("7".to_string());
+    }
+    if flags.contains(CellFlags::HIDDEN) {
+        params.push("8".to_string());
+    }
+    if flags.contains(CellFlags::STRIKETHROUGH) {
+        params.push("9".to_string());
+    }
+
+    push_color_params(&mut params, fg, true);
+    push_color_params(&mut params, bg, false);
+
+    params.join(";")
+}
+
+/// Append SGR color parameters for foreground or background.
+fn push_color_params(params: &mut Vec<String>, color: Color, is_fg: bool) {
+    let base = if is_fg { 30 } else { 40 };
+    match color {
+        Color::Named(NamedColor::Foreground | NamedColor::Background) => {}
+        Color::Named(named) => {
+            let idx = named as u8;
+            // SGR 30-37 for colors 0-7, SGR 90-97 for bright colors 8-15.
+            let code = match idx {
+                0..8 => base + idx,
+                8..16 => base + 60 + idx - 8,
+                _ => return,
+            };
+            params.push(format!("{code}"));
+        }
+        Color::Indexed(idx) => {
+            params.push(format!("{};5;{idx}", base + 8));
+        }
+        Color::Spec(rgb) => {
+            params.push(format!("{};2;{};{};{}", base + 8, rgb.r, rgb.g, rgb.b));
+        }
+    }
+}
 
 #[expect(
     clippy::needless_pass_by_ref_mut,
@@ -119,8 +182,12 @@ impl<T: EventListener> Term<T> {
                 let bottom = region.end;
                 format!("\x1bP1$r{top};{bottom}r\x1b\\")
             }
-            // SGR: current graphic rendition.
-            b"m" => "\x1bP1$r0m\x1b\\".to_string(),
+            // SGR: current graphic rendition from cursor template.
+            b"m" => {
+                let t = self.grid().cursor().template();
+                let sgr = build_sgr_string(t.flags, t.fg, t.bg);
+                format!("\x1bP1$r{sgr}m\x1b\\")
+            }
             // Unrecognized query: report invalid.
             _ => {
                 debug!(

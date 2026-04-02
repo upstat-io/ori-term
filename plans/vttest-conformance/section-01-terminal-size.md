@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Terminal Size Reporting"
-status: in-progress
+status: complete
 reviewed: true
 goal: "vttest sees the correct terminal size at all dimensions, not hardcoded 80x24"
 inspired_by:
@@ -9,8 +9,8 @@ inspired_by:
   - "Alacritty window_report (alacritty_terminal/src/term/mod.rs)"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-02
 sections:
   - id: "01.1"
     title: "Diagnose the 80-Column Bug"
@@ -23,15 +23,15 @@ sections:
     status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "01.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: Terminal Size Reporting
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** vttest receives the correct terminal dimensions via CSI 18t and uses them for all drawing operations. `vttest_border_fills_*` passes at 80x24, 97x33, and 120x40.
 
 **Context:** vttest's first action after launch is querying the terminal size via DA (device attributes) and CSI 18t (text area size in characters). The border test (menu 1, screen 01) draws a `*`/`+` border that should fill the entire terminal. Currently, the border fills only 80 columns regardless of actual PTY size. This blocks all non-80-column testing.
@@ -103,7 +103,12 @@ After the fix, the border test output changes at non-80-column sizes. Update all
 
 ## 01.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-01-001][medium]` `oriterm_core/src/term/handler/status.rs` — The new DECRQSS SGR path reports the wrong state for any non-default rendition.
+  Resolved: Fixed `build_sgr_string()` to read cursor template flags/colors and emit correct SGR codes. Added `decrqss_sgr_reports_bold` test. 2026-04-02.
+- [x] `[TPR-01-002][medium]` `crates/vte/src/ansi/dispatch/mod.rs` / `oriterm_core/src/term/handler/status.rs` / `oriterm_core/src/term/handler/tests.rs` — The new DECRQSS parser/handler path has no direct regression coverage.
+  Resolved: Added 5 DECRQSS tests: `decrqss_decscl_reports_vt400`, `decrqss_decstbm_reports_scroll_region`, `decrqss_sgr_reports_default_rendition`, `decrqss_sgr_reports_bold`, `decrqss_unknown_reports_invalid`. All feed DCS through the VTE parser and verify response bytes. 2026-04-02.
+- [x] `[TPR-01-003][low]` Plan bookkeeping out of sync with repository state.
+  Resolved: Fixed body status text ("Not Started" → "In Progress"), fixed Section 06 GPU test commands to include `--features gpu-tests`. Section 02 origin mode tests pass but section work not yet started — the origin mode test passing is a side effect of the DA1+DECRQSS+size fixes, not intentional Section 02 work. 2026-04-02.
 
 ---
 
@@ -119,6 +124,6 @@ After the fix, the border test output changes at non-80-column sizes. Update all
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed — 3 findings, all resolved (SGR fix, DECRQSS tests, plan bookkeeping)
 
 **Exit Criteria:** `vttest_border_fills_*` passes at all 3 terminal sizes. The vttest border screen renders identically to xterm's output — `*`/`+` border filling the entire terminal area with no gaps.
