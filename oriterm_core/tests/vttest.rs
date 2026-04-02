@@ -601,3 +601,247 @@ fn vttest_deccolm_preserves_grid_width() {
         "DECCOLM should NOT resize grid (no-resize design)"
     );
 }
+
+// -- Menu 3: Character Sets --
+//
+// Tests DEC Special Graphics (line drawing), UK National, US ASCII,
+// and G0/G1 designation/invocation via SO/SI.
+
+/// DEC Special Graphics box-drawing characters used by vttest.
+const LINE_DRAWING_CHARS: &[char] = &[
+    '┌', // l: top-left corner
+    '┐', // k: top-right corner
+    '└', // m: bottom-left corner
+    '┘', // j: bottom-right corner
+    '─', // q: horizontal line
+    '│', // x: vertical line
+    '├', // t: T-junction right
+    '┤', // u: T-junction left
+    '┬', // w: T-junction down
+    '┴', // v: T-junction up
+    '┼', // n: cross
+];
+
+/// Check that the grid contains at least `min_count` distinct
+/// DEC Special Graphics line-drawing characters.
+fn assert_has_line_drawing_chars(grid: &[Vec<char>], min_count: usize, context: &str) {
+    let mut found: std::collections::HashSet<char> = std::collections::HashSet::new();
+    for row in grid {
+        for &ch in row {
+            if LINE_DRAWING_CHARS.contains(&ch) {
+                found.insert(ch);
+            }
+        }
+    }
+    assert!(
+        found.len() >= min_count,
+        "{context}: expected at least {min_count} distinct line-drawing chars, \
+         found {}: {found:?}",
+        found.len()
+    );
+}
+
+/// Walk sub-screens of a vttest menu-3 sub-item, returning the number
+/// of screens captured. Applies line-drawing structural assertions.
+fn walk_menu3_subscreens(
+    s: &mut VtTestSession,
+    label: &str,
+    sub_item: &str,
+    tag: &str,
+    check_line_drawing: bool,
+) -> (usize, bool) {
+    let mut screen = 1;
+    let mut saw_line_drawing = false;
+    loop {
+        let text = s.grid_text();
+
+        // Return to sub-menu means all screens captured.
+        if text.contains("Enter choice number") {
+            break;
+        }
+
+        if check_line_drawing {
+            let grid = grid_chars(&s.term);
+            let has_drawing = grid
+                .iter()
+                .any(|row| row.iter().any(|ch| LINE_DRAWING_CHARS.contains(ch)));
+            if has_drawing {
+                saw_line_drawing = true;
+                assert_has_line_drawing_chars(
+                    &grid,
+                    3,
+                    &format!("{label} {sub_item} screen {screen}"),
+                );
+            }
+        }
+
+        insta::assert_snapshot!(format!("{label}_03_{tag}_{screen:02}"), text);
+
+        s.send(b"\r");
+        screen += 1;
+
+        if screen > 20 {
+            break;
+        }
+    }
+    (screen - 1, saw_line_drawing)
+}
+
+/// Run vttest menu 3 (character sets) at a given size, capturing all screens.
+///
+/// Menu 3 has a sub-menu. We test sub-items 8 (VT100 character sets)
+/// and 9 (Shift In/Shift Out).
+fn run_menu3_character_sets(cols: u16, rows: u16) {
+    let mut s = VtTestSession::new(cols, rows);
+    let label = s.size_label();
+
+    // Wait for main menu.
+    s.wait_for("Enter choice number", 5000);
+
+    // Select menu 3: Character Sets.
+    s.send(b"3\r");
+
+    // Wait for sub-menu.
+    s.wait_for("Menu 3", 3000);
+    insta::assert_snapshot!(format!("{label}_03_menu"), s.grid_text());
+
+    // Sub-item 8: Test VT100 Character Sets (DEC Special Graphics).
+    s.send(b"8\r");
+    let (count_8, saw_drawing) = walk_menu3_subscreens(&mut s, &label, "sub8", "vt100cs", true);
+    assert!(
+        count_8 > 0,
+        "{label}: sub-item 8 should have at least one screen"
+    );
+    assert!(
+        saw_drawing,
+        "{label}: VT100 Character Sets should contain DEC Special Graphics line-drawing characters"
+    );
+
+    // Sub-item 9: Test Shift In/Shift Out (SI/SO).
+    s.send(b"9\r");
+    let (count_9, _) = walk_menu3_subscreens(&mut s, &label, "sub9", "siso", false);
+    assert!(
+        count_9 > 0,
+        "{label}: sub-item 9 should have at least one screen"
+    );
+
+    // Exit sub-menu back to main menu.
+    s.send(b"0\r");
+}
+
+#[test]
+fn vttest_menu3_80x24() {
+    if !vttest_available() {
+        eprintln!("vttest not installed, skipping");
+        return;
+    }
+    run_menu3_character_sets(80, 24);
+}
+
+// -- Menu 8: VT102 Features (Insert/Delete Char/Line) --
+
+/// Run vttest menu 8 (VT102 features) at a given size, capturing all screens.
+///
+/// Menu 8 tests ICH (insert character), DCH (delete character),
+/// IL (insert line), and DL (delete line).
+fn run_menu8_vt102(cols: u16, rows: u16) {
+    let mut s = VtTestSession::new(cols, rows);
+    let label = s.size_label();
+
+    // Wait for main menu.
+    s.wait_for("Enter choice number", 5000);
+
+    // Select menu 8: VT102 features.
+    s.send(b"8\r");
+
+    // Walk through all sub-screens.
+    let mut screen = 1;
+    loop {
+        let text = s.grid_text();
+
+        if text.contains("Enter choice number") {
+            break;
+        }
+
+        // Structural assertions for ICH/DCH/IL/DL screens.
+        let grid = grid_chars(&s.term);
+        assert_vt102_screen_structure(&grid, &text, screen, &label);
+
+        insta::assert_snapshot!(format!("{label}_08_vt102_{screen:02}"), text);
+
+        s.send(b"\r");
+        screen += 1;
+
+        if screen > 20 {
+            break;
+        }
+    }
+
+    assert!(
+        screen > 1,
+        "{label}: menu 8 should have at least one screen"
+    );
+}
+
+/// Structural assertions for VT102 menu 8 screens.
+fn assert_vt102_screen_structure(grid: &[Vec<char>], _text: &str, screen: usize, label: &str) {
+    match screen {
+        // Screen 2: IL/DL accordion result — A's on top, X's on bottom.
+        2 => {
+            assert!(
+                grid[0].iter().all(|&c| c == 'A'),
+                "{label} screen 2: top row should be all A's"
+            );
+            let last = grid.len() - 1;
+            assert!(
+                grid[last].iter().all(|&c| c == 'X'),
+                "{label} screen 2: bottom row should be all X's"
+            );
+        }
+        // Screen 3: Insert Mode — first char 'A', last non-space 'B'.
+        3 => {
+            assert_eq!(
+                grid[0][0], 'A',
+                "{label} screen 3: first char should be 'A'"
+            );
+            let last_nonspace = grid[0].iter().rposition(|&c| c != ' ');
+            if let Some(pos) = last_nonspace {
+                assert_eq!(
+                    grid[0][pos], 'B',
+                    "{label} screen 3: last non-space char should be 'B'"
+                );
+            }
+        }
+        // Screen 4: Delete Character — row 0 starts with "AB".
+        4 => {
+            assert_eq!(
+                grid[0][0], 'A',
+                "{label} screen 4: row 0 col 0 should be 'A'"
+            );
+            assert_eq!(
+                grid[0][1], 'B',
+                "{label} screen 4: row 0 col 1 should be 'B'"
+            );
+        }
+        // Screen 5: DCH stagger — each row shorter by 1 on the right.
+        5 => {
+            let len0 = grid[0].iter().rposition(|&c| c != ' ').unwrap_or(0);
+            let len1 = grid[1].iter().rposition(|&c| c != ' ').unwrap_or(0);
+            assert!(
+                len0 > len1,
+                "{label} screen 5: row 0 should be longer than row 1 \
+                 (stagger), got len0={len0}, len1={len1}"
+            );
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn vttest_menu8_80x24() {
+    if !vttest_available() {
+        eprintln!("vttest not installed, skipping");
+        return;
+    }
+    run_menu8_vt102(80, 24);
+}

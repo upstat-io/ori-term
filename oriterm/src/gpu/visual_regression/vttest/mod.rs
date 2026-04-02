@@ -6,6 +6,8 @@
 //! against golden reference PNGs — capturing colors, attributes, borders,
 //! and character rendering.
 
+mod menus_3_8;
+
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -48,7 +50,7 @@ impl EventListener for PtyResponder {
 }
 
 /// Holds a vttest session with PTY, Term, and GPU renderer.
-struct VtTestSession {
+pub(super) struct VtTestSession {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     writer: Box<dyn Write + Send>,
     term: Term<PtyResponder>,
@@ -59,7 +61,7 @@ struct VtTestSession {
 }
 
 impl VtTestSession {
-    fn new(cols: u16, rows: u16) -> Self {
+    pub(super) fn new(cols: u16, rows: u16) -> Self {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -146,7 +148,7 @@ impl VtTestSession {
     }
 
     /// Wait until no new PTY output for `quiet_ms`.
-    fn wait(&mut self, quiet_ms: u64) {
+    pub(super) fn wait(&mut self, quiet_ms: u64) {
         loop {
             if self.drain_blocking(quiet_ms) == 0 {
                 break;
@@ -155,7 +157,7 @@ impl VtTestSession {
     }
 
     /// Wait until the grid contains `needle`.
-    fn wait_for(&mut self, needle: &str, timeout_ms: u64) {
+    pub(super) fn wait_for(&mut self, needle: &str, timeout_ms: u64) {
         let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
         loop {
             self.drain_blocking(100);
@@ -170,14 +172,14 @@ impl VtTestSession {
     }
 
     /// Send bytes and wait for screen to settle.
-    fn send(&mut self, key: &[u8]) {
+    pub(super) fn send(&mut self, key: &[u8]) {
         self.writer.write_all(key).expect("write key");
         self.writer.flush().expect("flush");
         self.wait(300);
     }
 
     /// Serialize the visible grid to text for content-based waiting.
-    fn grid_text(&self) -> String {
+    pub(super) fn grid_text(&self) -> String {
         let content = self.term.renderable_content();
         let lines = content.lines;
         let cols = content.cols;
@@ -248,7 +250,7 @@ impl VtTestSession {
     }
 
     /// Render the current screen to pixels and compare against a golden ref.
-    fn assert_golden(
+    pub(super) fn assert_golden(
         &self,
         name: &str,
         gpu: &GpuState,
@@ -267,7 +269,7 @@ impl VtTestSession {
     }
 }
 
-fn vttest_available() -> bool {
+pub(super) fn vttest_available() -> bool {
     std::process::Command::new("vttest")
         .arg("--help")
         .stdout(std::process::Stdio::null())

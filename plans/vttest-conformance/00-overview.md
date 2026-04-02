@@ -164,7 +164,7 @@ Phase 5 - Verification
 | 01 | Terminal Size Reporting | `section-01-terminal-size.md` | Complete |
 | 02 | Origin Mode & Scroll Regions | `section-02-origin-mode.md` | Complete |
 | 03 | Screen Features & DECCOLM | `section-03-screen-features.md` | Complete |
-| 04 | Character Sets & VT102 | `section-04-charsets-vt102.md` | Not Started |
+| 04 | Character Sets & VT102 | `section-04-charsets-vt102.md` | Complete |
 | 05 | Fade Blink | `section-05-fade-blink.md` | Not Started |
 | 06 | Test Automation Expansion | `section-06-test-expansion.md` | Not Started |
 | 07 | Verification & Metrics | `section-07-verification.md` | Not Started |
