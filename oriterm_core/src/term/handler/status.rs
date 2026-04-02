@@ -149,7 +149,14 @@ impl<T: EventListener> Term<T> {
                     .send_event(Event::PtyWrite("\x1b[0n".to_string()));
             }
             6 => {
-                let line = self.grid().cursor().line() + 1;
+                // Per DEC spec, when DECOM is active, DSR 6 reports the
+                // cursor position relative to the scroll region origin.
+                let abs_line = self.grid().cursor().line();
+                let line = if self.mode.contains(TermMode::ORIGIN) {
+                    abs_line.saturating_sub(self.grid().scroll_region().start) + 1
+                } else {
+                    abs_line + 1
+                };
                 let col = self.grid().cursor().col().0 + 1;
                 let response = format!("\x1b[{line};{col}R");
                 self.event_listener.send_event(Event::PtyWrite(response));

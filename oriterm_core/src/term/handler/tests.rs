@@ -770,7 +770,7 @@ fn decsc_decrc_saves_and_restores_cursor_position() {
 // --- DSR cursor position report in ORIGIN mode ---
 
 #[test]
-fn dsr_reports_absolute_position_even_in_origin_mode() {
+fn dsr_reports_relative_position_in_origin_mode() {
     let (mut t, listener) = term_with_recorder();
     feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
     feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
@@ -778,8 +778,21 @@ fn dsr_reports_absolute_position_even_in_origin_mode() {
     feed(&mut t, b"\x1b[6n"); // DSR
 
     let events = listener.events();
-    // CPR: absolute line 4 + 1 = 5, col 0 + 1 = 1.
-    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[5;1R)"));
+    // Per DEC spec, DECOM DSR 6 reports position relative to scroll
+    // region origin. CUP(1,1) in region 5-15 → relative row 1, col 1.
+    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[1;1R)"));
+}
+
+#[test]
+fn dsr_reports_absolute_position_without_origin_mode() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[5;10H"); // CUP → absolute line 4, col 9
+    feed(&mut t, b"\x1b[6n"); // DSR
+
+    let events = listener.events();
+    // Without DECOM, DSR 6 reports absolute position.
+    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[5;10R)"));
 }
 
 // --- Text area size report ---
@@ -5520,4 +5533,46 @@ fn decrqss_unknown_reports_invalid() {
         events.iter().any(|e| e == "PtyWrite(\x1bP0$r\x1b\\)"),
         "DECRQSS unknown query should report invalid (0$r): {events:?}"
     );
+}
+
+// --- Origin mode additional tests (Section 02) ---
+
+#[test]
+fn decaln_while_origin_mode_active() {
+    let mut t = term();
+    // Set narrow scroll region and enable DECOM.
+    feed(&mut t, b"\x1b[5;15r");
+    feed(&mut t, b"\x1b[?6h");
+    // DECALN: fills screen with 'E', resets scroll region to full screen.
+    feed(&mut t, b"\x1b#8");
+    // After DECALN, scroll region is full screen. CUP(1,1) in DECOM
+    // should go to absolute line 0 (full-screen region start = 0).
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+    // Screen should be filled with 'E'.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'E');
+    assert_eq!(t.grid()[crate::index::Line(23)][Column(79)].ch, 'E');
+}
+
+#[test]
+fn origin_mode_preserves_column() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
+    // CUP(3,40) — row 3 in region is absolute line 6, col 39.
+    feed(&mut t, b"\x1b[3;40H");
+    assert_eq!(t.grid().cursor().line(), 6);
+    // Column is NOT offset by DECOM — always 0-based from screen left.
+    assert_eq!(t.grid().cursor().col(), Column(39));
+}
+
+#[test]
+fn origin_mode_cup_row_zero_maps_to_region_start() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[10;20r"); // DECSTBM 10–20
+    feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
+    // CUP with row=1 (1-based minimum) → absolute line 9 (region start).
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 9);
 }
