@@ -1968,6 +1968,7 @@ dependencies = [
  "insta",
  "log",
  "parking_lot",
+ "portable-pty",
  "regex",
  "unicode-width",
  "vte",
