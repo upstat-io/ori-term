@@ -4,7 +4,6 @@
 //! 500-line limit. Each method maps `NamedPrivateMode` variants to
 //! `TermMode` flag changes and side effects (events, screen swaps).
 
-use log::debug;
 use vte::ansi::{NamedPrivateMode, PrivateMode};
 
 use crate::event::{Event, EventListener};
@@ -92,7 +91,7 @@ impl<T: EventListener> Term<T> {
                 self.mode.insert(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ColumnMode => {
-                debug!("Ignoring DECSET for unimplemented mode {named:?}");
+                self.apply_deccolm(132);
             }
         }
     }
@@ -158,9 +157,32 @@ impl<T: EventListener> Term<T> {
                 self.mode.remove(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ColumnMode => {
-                debug!("Ignoring DECRST for unimplemented mode {named:?}");
+                self.apply_deccolm(self.default_cols);
             }
         }
+    }
+
+    /// DECCOLM: switch column mode (80 ↔ 132).
+    ///
+    /// Per DEC spec, changing DECCOLM:
+    /// 1. Resizes the grid to the target column count
+    /// 2. Clears the screen (ED 2)
+    /// 3. Resets scroll margins to full screen
+    /// 4. Homes the cursor
+    fn apply_deccolm(&mut self, cols: usize) {
+        let lines = self.grid().lines();
+        // Resize grid (no reflow — DECCOLM is a mode switch, not a window resize).
+        self.resize(lines, cols, false);
+        // Home cursor first (erase_display asserts cursor is in bounds).
+        self.grid_mut().cursor_mut().set_line(0);
+        self.grid_mut()
+            .cursor_mut()
+            .set_col(crate::index::Column(0));
+        // Clear screen.
+        self.grid_mut()
+            .erase_display(crate::grid::editing::DisplayEraseMode::All);
+        // Reset scroll region.
+        self.grid_mut().set_scroll_region(1, None);
     }
 
     /// XTSAVE: save current state of listed private modes.

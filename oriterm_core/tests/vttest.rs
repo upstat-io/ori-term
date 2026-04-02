@@ -73,7 +73,8 @@ impl VtTestSession {
 
         let mut cmd = CommandBuilder::new("vttest");
         // vttest hardcodes 80x24 — pass actual size as LINESxMIN_COLS.MAX_COLS.
-        cmd.arg(format!("{rows}x{cols}.{cols}"));
+        // max_cols=132 so vttest's pass-1 (DECCOLM set) draws at 132 columns.
+        cmd.arg(format!("{rows}x{cols}.132"));
         cmd.env("TERM", "xterm-256color");
 
         let child = pair
@@ -535,83 +536,34 @@ fn vttest_border_fills_120x40() {
     assert_border_fills_terminal(&grid, 120, 40);
 }
 
-// -- Origin mode: screen 02 must be identical to screen 01 --
+// -- DECCOLM: screen 02 is the 132-column version of the border --
 //
-// vttest draws the same border with and without origin mode (DECOM).
-// If origin mode is implemented correctly, the output is byte-identical.
+// vttest menu 1 draws the border twice: pass 0 at min_cols (screen 01)
+// and pass 1 at max_cols with DECCOLM set (screen 02). Screen 02 should
+// fill the 132-column grid correctly.
 
-/// Capture screens 01 and 02 from menu 1 and return both grids.
-fn capture_border_screens_01_and_02(cols: u16, rows: u16) -> (Vec<Vec<char>>, Vec<Vec<char>>) {
+/// Capture screen 02 (132-col pass) from menu 1 and verify the border.
+fn capture_deccolm_border(cols: u16, rows: u16) -> Vec<Vec<char>> {
     let mut s = VtTestSession::new(cols, rows);
     s.wait_for("Enter choice number", 5000);
     s.send(b"1\r");
 
-    let screen_01 = grid_chars(&s.term);
-
-    // Advance to screen 02.
+    // Screen 01 (min_cols border) — skip it.
     s.send(b"\r");
 
-    let screen_02 = grid_chars(&s.term);
-
-    (screen_01, screen_02)
+    // Screen 02 (max_cols=132 border after DECCOLM set).
+    grid_chars(&s.term)
 }
 
 #[test]
-fn vttest_origin_mode_matches_normal_80x24() {
+fn vttest_deccolm_border_fills_132_cols() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
         return;
     }
-    let (s01, s02) = capture_border_screens_01_and_02(80, 24);
-
-    for r in 0..s01.len() {
-        for c in 0..s01[r].len() {
-            assert_eq!(
-                s01[r][c], s02[r][c],
-                "origin mode mismatch at row {r}, col {c}: \
-                 normal='{}', origin='{}'",
-                s01[r][c], s02[r][c],
-            );
-        }
-    }
-}
-
-#[test]
-fn vttest_origin_mode_matches_normal_97x33() {
-    if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
-        return;
-    }
-    let (s01, s02) = capture_border_screens_01_and_02(97, 33);
-
-    for r in 0..s01.len() {
-        for c in 0..s01[r].len() {
-            assert_eq!(
-                s01[r][c], s02[r][c],
-                "origin mode mismatch at row {r}, col {c}: \
-                 normal='{}', origin='{}'",
-                s01[r][c], s02[r][c],
-            );
-        }
-    }
-}
-
-#[test]
-fn vttest_origin_mode_matches_normal_120x40() {
-    if !vttest_available() {
-        eprintln!("vttest not installed, skipping");
-        return;
-    }
-    let (s01, s02) = capture_border_screens_01_and_02(120, 40);
-
-    for r in 0..s01.len() {
-        for c in 0..s01[r].len() {
-            assert_eq!(
-                s01[r][c], s02[r][c],
-                "origin mode mismatch at row {r}, col {c}: \
-                 normal='{}', origin='{}'",
-                s01[r][c], s02[r][c],
-            );
-        }
-    }
+    let grid = capture_deccolm_border(80, 24);
+    // After DECCOLM set, grid should be 132 columns wide.
+    assert_eq!(grid[0].len(), 132, "DECCOLM should resize grid to 132 cols");
+    // Border should fill the 132-column grid.
+    assert_border_fills_terminal(&grid, 132, 24);
 }

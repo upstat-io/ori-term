@@ -72,7 +72,8 @@ impl VtTestSession {
 
         let mut cmd = CommandBuilder::new("vttest");
         // vttest hardcodes 80x24 — pass actual size as LINESxMIN_COLS.MAX_COLS.
-        cmd.arg(format!("{rows}x{cols}.{cols}"));
+        // max_cols=132 so vttest's pass-1 (DECCOLM set) draws at 132 columns.
+        cmd.arg(format!("{rows}x{cols}.132"));
         cmd.env("TERM", "xterm-256color");
 
         let child = pair

@@ -195,6 +195,11 @@ pub struct Term<T: EventListener> {
     cell_pixel_height: u16,
     /// Whether image protocols (Kitty, Sixel, iTerm2) are enabled.
     image_protocol_enabled: bool,
+    /// Column count from the PTY/window (restored on DECCOLM reset).
+    ///
+    /// DECCOLM switches between 80 and 132 columns. When DECCOLM is
+    /// reset, the grid returns to this width. Updated by `resize()`.
+    default_cols: usize,
 }
 
 impl<T: EventListener> Term<T> {
@@ -233,6 +238,7 @@ impl<T: EventListener> Term<T> {
             cell_pixel_width: 8,
             cell_pixel_height: 16,
             image_protocol_enabled: true,
+            default_cols: cols,
         }
     }
 
@@ -431,6 +437,9 @@ impl<T: EventListener> Term<T> {
         if new_lines == 0 || new_cols == 0 {
             return;
         }
+        // External resizes (PTY/window) update the default column count
+        // so DECCOLM reset restores to the correct width.
+        self.default_cols = new_cols;
         if self.grid.lines() == new_lines && self.grid.cols() == new_cols {
             return;
         }
