@@ -165,6 +165,10 @@ pub(crate) struct App {
     // Cursor blink state (application-level, not terminal-level).
     cursor_blink: CursorBlink,
 
+    // Text blink timer for SGR 5/6 blinking text.
+    // Runs continuously (not gated by per-cell flags — the timer is cheap).
+    text_blink: CursorBlink,
+
     // Whether the OS mouse cursor is currently hidden (typing auto-hide).
     mouse_cursor_hidden: bool,
 

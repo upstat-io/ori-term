@@ -3932,3 +3932,39 @@ fn url_underline_y_base_integer_at_fractional_scale() {
         "expected URL underline at Y={expected_y} (base={row1_base} + offset={underline_offset})"
     );
 }
+
+// ── Text blink opacity tests (Section 05B) ──
+
+#[test]
+fn blink_cell_gets_dimmed_fg() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cells[0].flags = CellFlags::BLINK;
+    input.text_blink_opacity = 0.5;
+    // fg_dim defaults to 1.0 in test_grid, so effective alpha = 1.0 * 0.5 = 0.5.
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // The glyph instance's fg alpha should be fg_dim * text_blink_opacity = 0.5.
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert!(
+        (glyph.fg_color[3] - 0.5).abs() < 0.01,
+        "blink cell alpha should be ~0.5, got {}",
+        glyph.fg_color[3],
+    );
+}
+
+#[test]
+fn non_blink_cell_ignores_text_blink_opacity() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.text_blink_opacity = 0.5;
+    // No BLINK flag — fg_dim = 1.0 unmodified.
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert!(
+        (glyph.fg_color[3] - 1.0).abs() < 0.01,
+        "non-blink cell alpha should be 1.0, got {}",
+        glyph.fg_color[3],
+    );
+}

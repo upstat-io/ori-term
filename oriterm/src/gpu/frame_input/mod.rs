@@ -375,6 +375,12 @@ pub struct FrameInput {
     /// alpha proportionally for unfocused panes. Set by the multi-pane
     /// render path; single-pane rendering always uses 1.0.
     pub fg_dim: f32,
+    /// Opacity multiplier for cells with `CellFlags::BLINK`.
+    ///
+    /// 0.0 = hidden, 1.0 = visible (default, no blink effect). Driven by
+    /// the app-layer text blink timer each frame. Non-BLINK cells ignore
+    /// this value.
+    pub text_blink_opacity: f32,
     /// Whether subpixel glyph positioning is enabled.
     ///
     /// When `false`, all glyph X offsets snap to integer pixels (no fractional
@@ -490,6 +496,7 @@ impl FrameInput {
             mark_cursor: None,
             window_focused: true,
             fg_dim: 1.0,
+            text_blink_opacity: 1.0,
             subpixel_positioning: true,
             prompt_marker_rows: Vec::new(),
         }

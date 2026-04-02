@@ -103,6 +103,25 @@ cursor_blink_interval_ms = 250
 }
 
 #[test]
+fn text_blink_defaults() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert_eq!(parsed.terminal.text_blink_rate_ms, 500);
+    assert!(parsed.terminal.text_blink_fade);
+}
+
+#[test]
+fn text_blink_from_toml() {
+    let toml_str = r#"
+[terminal]
+text_blink_rate_ms = 250
+text_blink_fade = false
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.terminal.text_blink_rate_ms, 250);
+    assert!(!parsed.terminal.text_blink_fade);
+}
+
+#[test]
 fn cursor_style_serde_variants() {
     use oriterm_core::CursorShape;
 

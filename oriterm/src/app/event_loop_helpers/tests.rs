@@ -12,6 +12,8 @@ fn idle_input() -> ControlFlowInput {
         has_animations: false,
         blinking_active: false,
         next_blink_change: now + Duration::from_secs(1),
+        text_blink_active: false,
+        next_text_blink_change: now + Duration::from_secs(1),
         budget_remaining: Duration::from_millis(16),
         now,
         scheduler_wake: None,

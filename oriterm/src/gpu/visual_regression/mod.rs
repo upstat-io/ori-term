@@ -29,6 +29,7 @@ mod settings_dialog;
 mod status_bar;
 mod tab_bar_brutal;
 mod tab_bar_icons;
+mod text_blink_tests;
 mod vttest;
 mod weight_tests;
 

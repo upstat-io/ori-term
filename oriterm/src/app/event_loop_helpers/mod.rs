@@ -271,6 +271,10 @@ pub(super) struct ControlFlowInput {
     /// During fade transitions this is ~16ms (animation frame rate); during
     /// plateaus it is ~530ms (phase boundary).
     pub next_blink_change: std::time::Instant,
+    /// Whether text blink timer is active (always true — any cell could blink).
+    pub text_blink_active: bool,
+    /// Next text blink change time (only meaningful if `text_blink_active`).
+    pub next_text_blink_change: std::time::Instant,
     /// Time remaining until frame budget allows next render.
     pub budget_remaining: std::time::Duration,
     /// Current time.
@@ -307,10 +311,19 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
     }
     if input.has_animations {
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
-    } else if input.blinking_active {
+    } else if input.blinking_active || input.text_blink_active {
+        // Pick the earliest blink change across both timers.
+        let mut wake_at = if input.blinking_active {
+            input.next_blink_change
+        } else {
+            input.next_text_blink_change
+        };
+        if input.text_blink_active {
+            wake_at = wake_at.min(input.next_text_blink_change);
+        }
         match input.scheduler_wake {
-            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(input.next_blink_change)),
-            None => ControlFlowDecision::WaitUntil(input.next_blink_change),
+            Some(wake) => ControlFlowDecision::WaitUntil(wake.min(wake_at)),
+            None => ControlFlowDecision::WaitUntil(wake_at),
         }
     } else if let Some(wake) = input.scheduler_wake {
         ControlFlowDecision::WaitUntil(wake)
