@@ -1069,3 +1069,28 @@ fn scroll_up_preserves_row_content_in_scrollback() {
         assert_eq!(oldest[Column(col)].ch, 'A');
     }
 }
+
+// --- Scroll region edge cases (Section 02.3) ---
+
+#[test]
+fn single_line_scroll_region_rejected() {
+    let mut grid = Grid::new(24, 80);
+    let original = grid.scroll_region.clone();
+    // top == bottom (1-based 5,5 → 0-based 4..5 = 1 line): rejected.
+    grid.set_scroll_region(5, Some(5));
+    assert_eq!(grid.scroll_region, original);
+}
+
+#[test]
+fn scroll_region_at_screen_edges() {
+    let mut grid = Grid::new(24, 80);
+    // Region spanning the entire screen.
+    grid.set_scroll_region(1, Some(24));
+    assert_eq!(grid.scroll_region, 0..24);
+    // Region starting at line 1 with subset.
+    grid.set_scroll_region(1, Some(10));
+    assert_eq!(grid.scroll_region, 0..10);
+    // Region ending at last line.
+    grid.set_scroll_region(20, Some(24));
+    assert_eq!(grid.scroll_region, 19..24);
+}
