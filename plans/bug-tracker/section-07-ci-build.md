@@ -28,7 +28,11 @@ sections:
 
 ## 07.1 Active Bugs
 
-- None.
+- [ ] `[BUG-07-004][medium]` **Windows PTY size propagation test removed** — found by tpr-review.
+  Repro: `#[cfg(unix)]` gate on `pty_size_is_propagated` test means Windows CI has zero PTY size coverage. ConPTY-size regressions can now slip through unchecked.
+  Subsystem: `oriterm_core/tests/vttest.rs:226`
+  Found: 2026-04-02 | Source: tpr-review
+  Fix: Add a Windows-specific PTY size test using ConPTY (not `stty`), or use a cross-platform approach that works on both Unix and Windows.
 
 ---
 

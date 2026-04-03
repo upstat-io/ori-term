@@ -35,7 +35,7 @@ FramePalette, RenderableContent, vttest 02_03, 02_04, 02_14
 ---
 
 ### Section 02: VT102 Insert/Delete Line with Scroll Regions
-**File:** `section-02-vt102-scroll.md` | **Status:** Not Started
+**File:** `section-02-vt102-scroll.md` | **Status:** In Progress
 
 ```
 insert_lines, delete_lines, IL, DL, CSI L, CSI M

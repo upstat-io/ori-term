@@ -1,7 +1,7 @@
 ---
 plan: "golden-image-audit"
 title: "Golden Image Audit & Test Methodology Fix"
-status: not-started
+status: in-progress
 references:
   - "oriterm/src/gpu/visual_regression/"
   - "oriterm/tests/references/"
@@ -95,8 +95,8 @@ Phase 3 - Revalidation
 
 | Bug | Root Cause | Fix Location | Status |
 |-----|-----------|-------------|--------|
-| DECSCNM not rendering (12 images) | Mode 5 not recognized in VTE parser; no TermMode flag; no renderer logic | Section 01 | Not Started |
-| VT102 IL/DL wrong with scroll regions (5 screens: 08-12) | Off-by-one or boundary error in `grid/scroll/mod.rs` IL/DL when DECSTBM active | Section 02 | Not Started |
+| DECSCNM not rendering (12 images) | Mode 5 not recognized in VTE parser; no TermMode flag; no renderer logic | Section 01 | Fixed (`9b37ca07`) |
+| VT102 IL/DL wrong with scroll regions (5 screens: 08-12) | DECCOLM (132-col mode) unimplemented — not IL/DL | Section 02 | Fixed (`6937781a`) |
 | inverse_video.png may be wrong | SGR 7 works in vttest but test setup may not apply it correctly | Section 04 | Not Started |
 | Text blink tests are single-frame | No multi-frame capture to prove opacity animation | Section 03 | Not Started |
 
@@ -125,6 +125,6 @@ Phase 3 - Revalidation
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` | Complete |
-| 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` | Not Started |
+| 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` | In Progress |
 | 03 | Text Blink Multi-Frame Verification | `section-03-text-blink-tests.md` | Not Started |
 | 04 | Golden Image Revalidation | `section-04-revalidation.md` | Not Started |
