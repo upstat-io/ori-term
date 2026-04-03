@@ -232,16 +232,32 @@ impl App {
         }
     }
 
-    /// Schedule a delayed wakeup for the next blink animation frame.
+    /// Schedule a delayed wakeup for the next blink state change.
     ///
-    /// Spawns a short-lived thread that sleeps for ~16ms then sends a
-    /// `MuxWakeup` event to force `about_to_wait` to fire. This is a
-    /// fallback for platforms where `ControlFlow::WaitUntil` doesn't
-    /// reliably wake the event loop (observed on Windows/WSL2).
+    /// Uses `next_change()` to sleep until the next visual change — ~16ms
+    /// during fade transitions, ~300ms during plateaus. Sends `MuxWakeup`
+    /// to force the event loop to iterate, working around platforms where
+    /// `ControlFlow::WaitUntil` doesn't reliably wake (Windows/WSL2).
     pub(super) fn schedule_blink_wakeup(&self) {
+        let delay = if self.text_blink.is_animating()
+            || (self.blinking_active && self.cursor_blink.is_animating())
+        {
+            std::time::Duration::from_millis(16)
+        } else {
+            // During plateau: wake at the next phase boundary.
+            let now = std::time::Instant::now();
+            let next = self.text_blink.next_change().min(if self.blinking_active {
+                self.cursor_blink.next_change()
+            } else {
+                self.text_blink.next_change()
+            });
+            next.saturating_duration_since(now)
+                .max(std::time::Duration::from_millis(1))
+        };
+
         let sender = self.event_proxy.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(16));
+            std::thread::sleep(delay);
             sender.send(crate::event::TermEvent::MuxWakeup);
         });
     }
