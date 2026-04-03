@@ -271,7 +271,7 @@ IME, input method, Ime::Commit, Ime::Preedit, composition
 ---
 
 ### Section 09: Selection & Clipboard
-**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** Not Started
+**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** Complete
 
 ```
 selection, Selection, SelectionRange, SelectionPoint, SelectionMode
