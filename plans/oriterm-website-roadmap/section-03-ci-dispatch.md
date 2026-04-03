@@ -8,8 +8,8 @@ inspired_by:
   - "ori-lang-website deploy.yml repository_dispatch trigger"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-04-02
 sections:
   - id: "03.1"
     title: "Create dispatch workflow"
@@ -19,7 +19,7 @@ sections:
     status: in-progress
   - id: "03.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
   - id: "03.N"
     title: "Completion Checklist"
     status: in-progress
@@ -27,7 +27,7 @@ sections:
 
 # Section 03: CI Dispatch
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Create `.github/workflows/notify-website.yml` in the ori_term repo that sends a `repository_dispatch` event to `ori_term_website` whenever roadmap plan files change on main.
 
 **Context:** The website is a static build — it only reflects roadmap changes when rebuilt. This workflow automates the rebuild trigger so that updating a plan section's status in ori_term automatically propagates to the live website.
@@ -89,7 +89,10 @@ This step requires manual action by the user in the GitHub UI.
 
 ## 03.R Third Party Review Findings
 
-- None.
+- [ ] `[TPR-03-001][medium]` `.github/workflows/notify-website.yml:3-18`, `plans/oriterm-website-roadmap/section-03-ci-dispatch.md:86-105` — Section 03 marks the sender-path verification complete, but the cited evidence is a manual `gh api` dispatch that bypasses the `notify-website.yml` workflow entirely.
+  Evidence: The workflow under review triggers only on `push` to `main` with `plans/roadmap/**` changes. The current plan text says that requirement was tested, but the only recorded proof is a manual `repository_dispatch` call and the resulting website run.
+  Impact: The sender workflow's branch/path trigger and secret wiring remain unverified, so Section 03 does not yet satisfy its own exit criteria.
+  Required plan update: Leave the push-based verification step and completion-checklist item open until a real `plans/roadmap/**` push on `main` triggers the website run via `notify-website.yml`.
 
 ---
 

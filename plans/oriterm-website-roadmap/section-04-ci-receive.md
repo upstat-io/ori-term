@@ -8,8 +8,8 @@ inspired_by:
   - "ori-lang-website deploy.yml (checkout + symlink pattern)"
 depends_on: ["02", "03"]
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-04-02
 sections:
   - id: "04.1"
     title: "Add repository_dispatch trigger"
@@ -22,15 +22,15 @@ sections:
     status: in-progress
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
   - id: "04.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 04: CI Receive
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Update the ori_term_website's `deploy.yml` to also trigger on `repository_dispatch`, checkout the ori_term repo so the data loader can read roadmap files, and rebuild/deploy.
 
 **Context:** The existing `deploy.yml` already handles push-to-main and manual dispatch triggers, and deploys to GitHub Pages. We need to add: (1) the `repository_dispatch` trigger from Section 03, (2) a step to clone the ori_term repo, and (3) a symlink so the relative path `../ori_term/` resolves correctly in the GitHub Actions workspace.
@@ -109,7 +109,10 @@ Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
 
 ## 04.R Third Party Review Findings
 
-- None.
+- [ ] `[TPR-04-001][medium]` `plans/oriterm-website-roadmap/section-04-ci-receive.md:102-126`, `plans/oriterm-website-roadmap/section-03-ci-dispatch.md:86-105` — Section 04 claims the full end-to-end pipeline is verified, but the recorded evidence only proves the receiver workflow handles a manual `repository_dispatch`.
+  Evidence: The current notes cite a manual `gh api` dispatch and the resulting `ori_term_website` run. That bypasses the upstream `notify-website.yml` sender workflow, so it is not the documented "push to `plans/roadmap/` on `main`" path.
+  Impact: Section 04.3 and the end-to-end completion checklist overstate coverage; the full ori_term-push-to-deploy chain remains unverified.
+  Required plan update: Re-run verification from a real roadmap change on `ori_term` `main`, then confirm the resulting website run and deploy before marking Section 04.3 or the end-to-end checklist item complete.
 
 ---
 
@@ -120,7 +123,7 @@ Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
 - [x] Symlink step creates `$GITHUB_WORKSPACE/../ori_term`
 - [x] Normal push-to-main builds still work — verified via GH Actions run #23932186961
 - [ ] Dispatch-triggered builds work (end-to-end from ori_term push to deployed site)
-- [x] Deployed site shows correct roadmap data — verified via successful deploy
+- [ ] Deployed site shows correct roadmap data
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** The full pipeline works end-to-end: push a change to `ori_term/plans/roadmap/section-XX.md` on main → ori_term's `notify-website.yml` fires → ori_term_website's `deploy.yml` receives the dispatch → checks out ori_term → builds with real roadmap data → deploys to GitHub Pages with updated content.
