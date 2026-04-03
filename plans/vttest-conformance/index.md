@@ -89,7 +89,7 @@ multi-frame capture, frame sequence, opacity ramp
 ---
 
 ### Section 05B: Text Blink Rendering (SGR 5/6)
-**File:** `section-05b-text-blink.md` | **Status:** Not Started
+**File:** `section-05b-text-blink.md` | **Status:** Complete
 
 ```
 text blink, SGR 5, SGR 6, slow blink, rapid blink

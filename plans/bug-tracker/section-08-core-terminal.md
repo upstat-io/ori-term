@@ -18,6 +18,12 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Found: 2026-03-29 | Source: manual
   Note: Active work in roadmap section 27 (command palette) plans bell notification modes.
 
+- [ ] `[BUG-08-3][low]` **vttest.rs exceeds 500-line file size limit (956 lines)** — found by tpr-review.
+  Repro: `wc -l oriterm_core/tests/vttest.rs` shows 956 lines. CLAUDE.md excludes only `tests.rs` files from the 500-line limit; `vttest.rs` is not exempt.
+  Subsystem: `oriterm_core/tests/vttest.rs`
+  Found: 2026-04-03 | Source: tpr-review
+  Fix: Split into per-menu test modules (e.g., `vttest/menu1.rs`, `vttest/menu2.rs`, `vttest/menu8.rs`) with shared helpers in a common module. Rerun all vttest tests after split.
+
 - [x] `[BUG-08-2][high]` **Selection highlight cannot be dismissed — sticks after selecting text** — found by manual.
   Found: 2026-03-30 | Source: manual
   Root cause: Every left-click created a `PressAction::New(Selection)` — even single clicks without drag. `handle_release()` only cleared button flags, never the selection. No Escape handling existed.
