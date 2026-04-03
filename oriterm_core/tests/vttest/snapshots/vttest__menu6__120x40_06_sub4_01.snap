@@ -1,0 +1,43 @@
+---
+source: oriterm_core/tests/vttest/menu6.rs
+expression: text
+---
+Test of Device Attributes report (what are you)                                                                         
+                                                                                                                        
+Report is: <27> [ ? 6 4 ; 6 ; 4 c  VT400 family                                                                         
+    6 = selective erase                                                                                                 
+    4 = Sixel graphics                                                                                                  
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+Push <RETURN>

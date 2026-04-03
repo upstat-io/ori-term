@@ -1,0 +1,37 @@
+---
+source: oriterm_core/tests/vttest/menu8.rs
+expression: text
+---
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA                                                  
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB                                                   
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC                                                    
+The right column should be staggered DDDDDDD                                                     
+by one.  Push <RETURN>EEEEEEEEEEEEEEEEEEEEE                                                      
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                                       
+GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG                                                        
+HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH                                                         
+IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII                                                          
+JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ                                                           
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK                                                            
+LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL                                                             
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM                                                              
+NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN                                                               
+OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO                                                                
+PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP                                                                 
+QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ                                                                  
+RRRRRRRRRRRRRRRRRRRRRRRRRRRRRR                                                                   
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSS                                                                    
+TTTTTTTTTTTTTTTTTTTTTTTTTTTT                                                                     
+UUUUUUUUUUUUUUUUUUUUUUUUUUU                                                                      
+VVVVVVVVVVVVVVVVVVVVVVVVVV                                                                       
+WWWWWWWWWWWWWWWWWWWWWWWWW                                                                        
+XXXXXXXXXXXXXXXXXXXXXXXX                                                                         
+YYYYYYYYYYYYYYYYYYYYYYY                                                                          
+ZZZZZZZZZZZZZZZZZZZZZZ                                                                           
+[[[[[[[[[[[[[[[[[[[[[                                                                            
+\\\\\\\\\\\\\\\\\\\\                                                                             
+]]]]]]]]]]]]]]]]]]]                                                                              
+^^^^^^^^^^^^^^^^^^                                                                               
+_________________                                                                                
+````````````````                                                                                 
+aaaaaaaaaaaaaaa
