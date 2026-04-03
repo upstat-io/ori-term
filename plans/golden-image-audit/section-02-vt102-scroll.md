@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "VT102 Insert/Delete Line with Scroll Regions"
-status: in-progress
+status: complete
 reviewed: true
 goal: "vttest VT102 second-round screens (08-14) have structural assertions preventing silent regression"
 inspired_by:
@@ -9,7 +9,7 @@ inspired_by:
   - "WezTerm insert_lines (term/src/terminalstate/performer.rs)"
 depends_on: []
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-02
 sections:
   - id: "02.1"
@@ -21,15 +21,15 @@ sections:
     tests: 9
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 02: VT102 Insert/Delete Line with Scroll Regions
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** vttest VT102 second-round screens (08-14) have structural assertions preventing silent regression.
 
 **Context:** vttest menu 8 has 14 screens. The first 7 (01-07) run without a scroll region. Screens 08-14 repeat the same tests WITH a scroll region set via DECSTBM. All screens now render correctly — the original rendering bug was caused by missing DECCOLM support (not IL/DL scroll region logic), fixed in commit `6937781a`.
@@ -124,6 +124,6 @@ The existing `assert_vt102_screen_structure()` function has match arms only for 
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
 - [x] TPR-02-001 resolved (structural assertions implemented)
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** Structural assertions for screens 1, 8-14 prevent future regressions from being silently accepted via snapshot approval.
