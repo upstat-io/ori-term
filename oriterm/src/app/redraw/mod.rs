@@ -266,6 +266,11 @@ impl App {
                 }
             };
             frame.text_blink_opacity = text_blink_opacity;
+            if (text_blink_opacity - 1.0).abs() > 0.01 || text_blink_opacity < 0.01 {
+                log::info!(
+                    "text_blink redraw: opacity={text_blink_opacity:.3} content_changed={content_changed}"
+                );
+            }
 
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
@@ -417,9 +422,14 @@ impl App {
             }
 
             // Full content render when terminal content changed, selection
-            // changed, or chrome/overlay visuals are stale. Only cursor-
-            // blink-only frames may reuse the cached texture.
-            let needs_full_render = content_changed || selection_changed || ctx.ui_stale;
+            // changed, blink opacity changed, or chrome/overlay visuals are
+            // stale. Without this, the content cache texture retains the
+            // previous frame's blink state and the new glyph instances
+            // (with updated opacity) are never uploaded or rendered.
+            let blink_changed = (text_blink_opacity - ctx.prev_text_blink_opacity).abs() > 0.001;
+            ctx.prev_text_blink_opacity = text_blink_opacity;
+            let needs_full_render =
+                content_changed || selection_changed || ctx.ui_stale || blink_changed;
 
             // Overlay tiers render above the cached content every frame, so
             // only chrome animations keep the content cache stale.

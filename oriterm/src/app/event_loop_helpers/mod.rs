@@ -255,6 +255,7 @@ impl App {
                 .max(std::time::Duration::from_millis(1))
         };
 
+        log::info!("schedule_blink_wakeup: delay={delay:?}");
         let sender = self.event_proxy.clone();
         std::thread::spawn(move || {
             std::thread::sleep(delay);
