@@ -33,10 +33,10 @@ sections:
 
 # Section 01: DECSCNM Reverse Video Rendering
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** When DECSCNM (mode 5) is active, the entire screen renders with swapped default fg/bg — white background, dark text. 12 vttest golden images show correct light-background rendering.
 
-**Context:** DECSCNM (`CSI ? 5 h`) is completely unimplemented. The gap exists at ALL 5 stages of the pipeline: parser doesn't recognize mode 5, no TermMode flag exists, no handler case, no renderer logic. vttest menu 2 screens 02_03, 02_04, and 02_14 all say "light background" but render with a dark background — frozen as "correct" golden images.
+**Context:** DECSCNM (`CSI ? 5 h`) is now fully implemented across all 5 stages of the pipeline: VTE parser recognizes mode 5 as `NamedPrivateMode::ReverseVideo`, `TermMode::REVERSE_VIDEO` flag exists, handler cases for DECSET/DECRST, and renderer swaps palette fg/bg. All 9 vttest golden images re-rendered and visually verified.
 
 **Reference implementations:**
 - **WezTerm** `term/src/terminalstate/mod.rs:274`: Stores `reverse_video_mode: bool` in terminal state. `wezterm-gui/src/termwindow/render/screen_line.rs:172-189`: When `params.dims.reverse_video` is true, fills line bg with fg color.
