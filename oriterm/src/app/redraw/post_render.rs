@@ -46,7 +46,9 @@ impl App {
         if blinking_now && !self.blinking_active {
             self.reset_cursor_blink();
         }
-        self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
+        // Formula: cursor_should_blink(). Two sites exist by design:
+        // focus handler (event_loop.rs) for immediate state, post_render for frame state.
+        self.blinking_active = self.cursor_should_blink(blinking_now);
 
         // Keep the IME candidate window positioned at the terminal cursor.
         self.update_ime_cursor_area();

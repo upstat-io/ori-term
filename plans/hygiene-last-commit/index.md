@@ -67,11 +67,12 @@ render_dispatch.rs, event_loop_helpers/mod.rs, event_loop.rs
 **File:** `section-04-scattered-and-bloat.md` | **Status:** Not Started
 
 ```
-apply_theme, tab_bar.apply_theme, status_bar.apply_theme
-blinking_active, config.terminal.cursor_blink, CURSOR_BLINKING
-config_reload/mod.rs, window_management.rs, tab_bar_input/mod.rs
-BLOAT, 500-line limit, file splitting
-dead_code, move_tab_to_new_window, render_strategy, damage
+apply_theme, tab_bar.apply_theme, status_bar.apply_theme, apply_theme_to_chrome
+text_cache.clear, invalidation_mut, damage_mut, theme drift, missing invalidation
+blinking_active, config.terminal.cursor_blink, CURSOR_BLINKING, cursor_should_blink
+config_reload/mod.rs, window_management.rs, tab_bar_input/mod.rs, mod.rs 500-line limit
+BLOAT, 500-line limit, file splitting, window_config.rs, editing.rs, create.rs
+dead_code, move_tab_to_new_window, widget_pipeline, apply_requests, DispatchResult
 ```
 
 ---

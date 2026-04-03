@@ -1,17 +1,16 @@
-//! Window lifecycle: create, close, and exit.
+//! Window creation helpers.
 //!
-//! Coordinates OS window creation/destruction with the mux layer.
-//! All windows share a single GPU device and pipeline set; each window
-//! owns its own renderer, font collection, and glyph atlases.
+//! Creates OS windows with GPU surfaces, renderers, chrome/tab bar widgets,
+//! and grid widgets. Extracted from `window_management/mod.rs` to keep it
+//! under the 500-line limit.
 
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::session::WindowId as SessionWindowId;
-use oriterm_ui::window::WindowConfig;
 
-use super::App;
-use super::window_context::WindowContext;
+use super::super::App;
+use super::super::window_context::WindowContext;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 use crate::window_manager::types::{ManagedWindow, WindowKind};
@@ -24,7 +23,10 @@ impl App {
     /// window. An initial tab with one pane is spawned in the new window.
     ///
     /// Returns the winit [`WindowId`] of the new window, or `None` on failure.
-    pub(super) fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Option<WindowId> {
+    pub(in crate::app) fn create_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+    ) -> Option<WindowId> {
         let (winit_id, session_wid) = self.create_window_bare(event_loop)?;
 
         // Extract geometry from the new window's per-window renderer
@@ -43,8 +45,9 @@ impl App {
             } else {
                 0.0
             };
-            let wl =
-                super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
+            let wl = super::super::chrome::compute_window_layout(
+                w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
+            );
             (wl.cols, wl.rows)
         };
 
@@ -127,7 +130,7 @@ impl App {
     /// creating tabs, clearing the surface, and showing the window.
     ///
     /// Returns `(winit_id, session_window_id)` or `None` on failure.
-    pub(super) fn create_window_bare(
+    pub(in crate::app) fn create_window_bare(
         &mut self,
         event_loop: &ActiveEventLoop,
     ) -> Option<(WindowId, SessionWindowId)> {
@@ -140,14 +143,14 @@ impl App {
         // backend. If the GPU fell back from DX12+DComp to Vulkan during init,
         // new windows must not set WS_EX_NOREDIRECTIONBITMAP either.
         let dcomp_active = gpu.uses_dcomp();
-        let window_config = WindowConfig {
+        let window_config = oriterm_ui::window::WindowConfig {
             title: "ori".into(),
             transparent: opacity < 1.0,
             blur: self.config.window.blur && opacity < 1.0,
             opacity,
-            decoration: super::init::decoration_to_mode(self.config.window.decorations),
+            decoration: super::super::init::decoration_to_mode(self.config.window.decorations),
             use_compositor_surface: dcomp_active && opacity < 1.0,
-            ..WindowConfig::default()
+            ..oriterm_ui::window::WindowConfig::default()
         };
 
         // Allocate a GUI-local window ID (mux is a flat pane server).
@@ -183,7 +186,9 @@ impl App {
         } else {
             0.0
         };
-        let wl = super::chrome::compute_window_layout(w, h, &cell, scale, hidden, tb_h, sb_h, 0.0);
+        let wl = super::super::chrome::compute_window_layout(
+            w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
+        );
 
         // Terminal grid widget.
         let cols = wl.cols;
@@ -222,10 +227,11 @@ impl App {
         font_set: crate::font::FontSet,
     ) -> Option<crate::gpu::WindowRenderer> {
         let scale = window.scale_factor().factor() as f32;
-        let physical_dpi = super::DEFAULT_DPI * scale;
-        let hinting = super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
+        let physical_dpi = super::super::DEFAULT_DPI * scale;
+        let hinting =
+            super::super::config_reload::resolve_hinting(&self.config.font, f64::from(scale));
         let opacity = f64::from(self.config.window.effective_opacity());
-        let format = super::config_reload::resolve_subpixel_mode(
+        let format = super::super::config_reload::resolve_subpixel_mode(
             &self.config.font,
             f64::from(scale),
             opacity,
@@ -249,7 +255,7 @@ impl App {
                 return None;
             }
         };
-        super::config_reload::apply_font_config(
+        super::super::config_reload::apply_font_config(
             &mut font_collection,
             &self.config.font,
             &self.user_fallback_map,
@@ -267,7 +273,7 @@ impl App {
         )
         .ok()
         .map(|mut sizes| {
-            super::config_reload::apply_font_config_to_ui_sizes(
+            super::super::config_reload::apply_font_config_to_ui_sizes(
                 &mut sizes,
                 &self.config.font,
                 &self.user_fallback_map,
@@ -279,225 +285,11 @@ impl App {
             crate::gpu::WindowRenderer::new(gpu, pipelines, font_collection, ui_sizes);
         let scale_f64 = f64::from(scale);
         let subpx_pos =
-            super::config_reload::resolve_subpixel_positioning(&self.config.font, scale_f64);
+            super::super::config_reload::resolve_subpixel_positioning(&self.config.font, scale_f64);
         renderer.set_subpixel_positioning(subpx_pos);
         let atlas_filter =
-            super::config_reload::resolve_atlas_filtering(&self.config.font, scale_f64);
+            super::super::config_reload::resolve_atlas_filtering(&self.config.font, scale_f64);
         renderer.set_atlas_filtering(atlas_filter, gpu, &pipelines.atlas_layout);
         Some(renderer)
-    }
-
-    /// Close a single window.
-    ///
-    /// If this is the last window, calls [`exit_app`](Self::exit_app) which
-    /// terminates the process (`ConPTY`-safe: must exit before dropping panes).
-    /// Otherwise, removes the window and drops its panes on background threads.
-    pub(super) fn close_window(&mut self, winit_id: WindowId, _event_loop: &ActiveEventLoop) {
-        // Look up the mux window ID for this OS window.
-        let Some(ctx) = self.windows.get(&winit_id) else {
-            log::warn!("close_window: unknown winit id {winit_id:?}");
-            return;
-        };
-        let session_wid = ctx.window.session_window_id();
-
-        // If this is the last window, exit the process immediately.
-        // ConPTY safety: process::exit() must run before pane destructors.
-        if self.windows.len() <= 1 {
-            self.exit_app();
-        }
-
-        // Collect all pane IDs from the local session for this window.
-        let pane_ids = self.collect_window_panes(session_wid);
-
-        // Close each pane in the mux (pane-only — no tab/window cascade).
-        if let Some(mux) = &mut self.mux {
-            for &pid in &pane_ids {
-                mux.close_pane(pid);
-            }
-        }
-
-        // Remove tabs and window from local session.
-        self.remove_window_session_state(session_wid);
-
-        // Clean up pane resources (PTY kill + background drop in embedded mode).
-        if let Some(mux) = &mut self.mux {
-            for id in pane_ids {
-                mux.cleanup_closed_pane(id);
-            }
-        }
-
-        // Unregister from window manager (cascades to children).
-        let removed = self.window_manager.unregister(winit_id);
-
-        // Remove dialog contexts for cascaded children.
-        for removed_win in &removed {
-            if removed_win.kind.is_dialog() {
-                self.dialogs.remove(&removed_win.winit_id);
-            }
-        }
-
-        // Remove the window context.
-        self.windows.remove(&winit_id);
-
-        // If the closed window was focused, focus the next available window.
-        self.transfer_focus_from(winit_id);
-
-        log::info!(
-            "window closed: {winit_id:?}, {} remaining",
-            self.windows.len()
-        );
-
-        // Drain any mux notifications generated by the close.
-        self.pump_close_notifications();
-    }
-
-    /// Close a window whose last tab was just closed.
-    ///
-    /// Resolves the mux window ID to a winit window ID. If this is the last
-    /// OS window, exits the process. Otherwise closes the mux window (which
-    /// has no tabs/panes left) and removes the OS window.
-    pub(super) fn close_empty_session_window(&mut self, session_wid: SessionWindowId) {
-        // If this is the only OS window, exit.
-        if self.windows.len() <= 1 {
-            self.exit_app();
-        }
-
-        // Find the winit window that renders this session window.
-        let winit_id = self
-            .windows
-            .iter()
-            .find(|(_, ctx)| ctx.window.session_window_id() == session_wid)
-            .map(|(&id, _)| id);
-
-        let Some(winit_id) = winit_id else {
-            // No OS window for this session window — just remove local state.
-            self.session.remove_window(session_wid);
-            return;
-        };
-
-        // Window is already empty (no tabs/panes) — just remove session state.
-        self.session.remove_window(session_wid);
-
-        // Unregister from window manager (cascades to dialog children).
-        let removed = self.window_manager.unregister(winit_id);
-        for removed_win in &removed {
-            if removed_win.kind.is_dialog() {
-                self.dialogs.remove(&removed_win.winit_id);
-            }
-        }
-        self.windows.remove(&winit_id);
-
-        self.transfer_focus_from(winit_id);
-
-        log::info!(
-            "empty window closed: {winit_id:?} (session {session_wid:?}), {} remaining",
-            self.windows.len()
-        );
-    }
-
-    /// Remove a window from the App without closing mux resources.
-    ///
-    /// Used by tear-off merge: the tab was already moved out, so the
-    /// window's state is empty. This removes the OS window and context
-    /// without touching the mux layer.
-    pub(super) fn remove_empty_window(&mut self, winit_id: WindowId) {
-        if let Some(ctx) = self.windows.get(&winit_id) {
-            let session_wid = ctx.window.session_window_id();
-            self.session.remove_window(session_wid);
-            // Cloak the window before dropping to suppress the DWM close
-            // animation (shrink + fade). Cloaking makes the window instantly
-            // invisible at the compositor level — DestroyWindow then has
-            // nothing to animate.
-            #[cfg(target_os = "windows")]
-            oriterm_ui::platform_windows::cloak_window(ctx.window.window());
-        }
-
-        let removed = self.window_manager.unregister(winit_id);
-        for removed_win in &removed {
-            if removed_win.kind.is_dialog() {
-                self.dialogs.remove(&removed_win.winit_id);
-            }
-        }
-        self.windows.remove(&winit_id);
-
-        // If the removed window was focused, pick another.
-        self.transfer_focus_from(winit_id);
-
-        log::info!(
-            "empty window removed: {winit_id:?}, {} remaining",
-            self.windows.len()
-        );
-    }
-
-    /// Terminate the application.
-    ///
-    /// Saves GPU pipeline cache and exits the process. This method does not
-    /// return. `ConPTY` safety: `process::exit()` runs before any pane
-    /// destructors, preventing deadlocks with the `ConPTY` API.
-    pub(super) fn exit_app(&self) -> ! {
-        if let Some(gpu) = &self.gpu {
-            gpu.save_pipeline_cache_async();
-        }
-        log::info!("exit_app: shutting down");
-        std::process::exit(0)
-    }
-
-    /// Collect all pane IDs from the local session for a window.
-    ///
-    /// Iterates each tab in the window and collects pane IDs from the split
-    /// tree and floating layer. Returns an empty list if the window has no tabs.
-    fn collect_window_panes(
-        &self,
-        session_wid: crate::session::WindowId,
-    ) -> Vec<oriterm_mux::PaneId> {
-        let Some(win) = self.session.get_window(session_wid) else {
-            return Vec::new();
-        };
-        let mut panes = Vec::new();
-        for &tab_id in win.tabs() {
-            if let Some(tab) = self.session.get_tab(tab_id) {
-                panes.extend(tab.all_panes());
-            }
-        }
-        panes
-    }
-
-    /// Remove a window and all its tabs from the local session.
-    fn remove_window_session_state(&mut self, session_wid: crate::session::WindowId) {
-        let tab_ids: Vec<crate::session::TabId> = self
-            .session
-            .get_window(session_wid)
-            .map(|w| w.tabs().to_vec())
-            .unwrap_or_default();
-        for tid in tab_ids {
-            self.session.remove_tab(tid);
-        }
-        self.session.remove_window(session_wid);
-    }
-
-    /// Drain mux notifications generated by pane close operations.
-    ///
-    /// Handles `PaneClosed` notifications that arise from individual
-    /// `mux.close_pane()` calls. Separated from the main `pump_mux_events`
-    /// to avoid re-entrancy issues during `close_window`.
-    fn pump_close_notifications(&mut self) {
-        let Some(mux) = &mut self.mux else { return };
-        mux.drain_notifications(&mut self.notification_buf);
-        if self.notification_buf.is_empty() {
-            return;
-        }
-
-        self.with_drained_notifications(|this, notification| {
-            if let oriterm_mux::MuxNotification::PaneClosed { pane_id: id, .. } = notification {
-                // Clean up backend resources and caches.
-                if let Some(mux) = this.mux.as_mut() {
-                    mux.cleanup_closed_pane(id);
-                }
-                for ctx in this.windows.values_mut() {
-                    ctx.pane_cache.remove(id);
-                }
-            }
-            // Other pane notifications are no-ops during close.
-        });
     }
 }

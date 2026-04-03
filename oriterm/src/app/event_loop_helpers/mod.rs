@@ -319,6 +319,29 @@ impl App {
             }
         }
     }
+
+    /// Whether cursor blinking is enabled: config allows it AND the terminal
+    /// has set the `CURSOR_BLINKING` mode via DECSCUSR.
+    pub(super) fn cursor_should_blink(&self, terminal_blinking: bool) -> bool {
+        self.config.terminal.cursor_blink && terminal_blinking
+    }
+
+    /// Apply the current UI theme to all window chrome widgets and invalidate caches.
+    ///
+    /// This is the canonical theme-application path. All sites that change
+    /// `self.ui_theme` must call this afterwards instead of manually applying.
+    pub(super) fn apply_theme_to_chrome(&mut self) {
+        for ctx in self.windows.values_mut() {
+            ctx.tab_bar.apply_theme(&self.ui_theme);
+            ctx.status_bar.apply_theme(&self.ui_theme);
+            ctx.pane_cache.invalidate_all();
+            ctx.text_cache.clear();
+            ctx.root.invalidation_mut().invalidate_all();
+            ctx.root.damage_mut().reset();
+            ctx.root.mark_dirty();
+            ctx.ui_stale = true;
+        }
+    }
 }
 
 /// Inputs for the control flow decision (no winit types).

@@ -135,17 +135,10 @@ impl App {
         let new_theme = super::super::resolve_ui_theme(&self.config);
         if new_theme != self.ui_theme {
             self.ui_theme = new_theme;
-            for ctx in self.windows.values_mut() {
-                ctx.tab_bar.apply_theme(&self.ui_theme);
-                ctx.status_bar.apply_theme(&self.ui_theme);
-            }
         }
-
-        // Invalidate render caches and mark dirty.
-        for ctx in self.windows.values_mut() {
-            ctx.pane_cache.invalidate_all();
-            ctx.root.mark_dirty();
-        }
+        // Always invalidate chrome — even if theme didn't change, settings
+        // changes to fonts/colors/cursor affect cached text shapes and rendering.
+        self.apply_theme_to_chrome();
     }
 
     /// Dismiss the topmost overlay.
