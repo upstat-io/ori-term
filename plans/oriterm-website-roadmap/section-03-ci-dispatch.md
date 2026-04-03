@@ -93,6 +93,10 @@ This step requires manual action by the user in the GitHub UI.
   Evidence: The workflow under review triggers only on `push` to `main` with `plans/roadmap/**` changes. The current plan text says that requirement was tested, but the only recorded proof is a manual `repository_dispatch` call and the resulting website run.
   Impact: The sender workflow's branch/path trigger and secret wiring remain unverified, so Section 03 does not yet satisfy its own exit criteria.
   Required plan update: Leave the push-based verification step and completion-checklist item open until a real `plans/roadmap/**` push on `main` triggers the website run via `notify-website.yml`.
+- [ ] `[TPR-03-002][low]` `.github/workflows/notify-website.yml:1-18`, `plans/oriterm-website-roadmap/section-03-ci-dispatch.md:1-16` — Section 03 implementation landed while the section still says `reviewed: false`, which violates the roadmap review gate in `CLAUDE.md`.
+  Evidence: `CLAUDE.md` says roadmap sections with `reviewed: false` "must not be implemented without review". This section still has `reviewed: false`, yet 03.1 is marked complete and `.github/workflows/notify-website.yml` exists in the repo.
+  Impact: The mandatory pre-implementation review checkpoint was bypassed, so the section's design and verification assumptions were allowed to land without the required `/review-plan` pass.
+  Required plan update: Run `/review-plan` for Section 03 and keep further implementation blocked until the section can truthfully be marked `reviewed: true`.
 
 ---
 

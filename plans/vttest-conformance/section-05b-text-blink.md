@@ -1,7 +1,7 @@
 ---
 section: "05B"
 title: "Text Blink Rendering (SGR 5/6)"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Cells with CellFlags::BLINK visually blink at configurable rate, verified by GPU visual regression tests"
 inspired_by:
@@ -29,12 +29,12 @@ sections:
     status: complete
   - id: "05B.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 05B: Text Blink Rendering (SGR 5/6)
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Terminal cells with the BLINK attribute (SGR 5 slow, SGR 6 rapid) visually blink. The existing `fg_dim` alpha pipeline carries the blink opacity to the GPU — no shader changes needed.
 
 **Context:** The VTE handler already parses SGR 5/6 and stores `CellFlags::BLINK` per cell (`oriterm_core/src/term/handler/sgr.rs:46`). The GPU prepare pipeline already has an `fg_dim: f32` opacity parameter that flows to every `push_glyph()` call. But no code reads the BLINK flag during rendering — blinking text renders as static text. vttest menu 2 screens 13-14 test SGR graphic rendition including blink. This section makes blink visible.
@@ -135,6 +135,6 @@ Add a `text_blink: CursorBlink` timer to App, drive it from the event loop, and 
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** Blinking text (SGR 5/6) visually animates in the terminal. GPU tests verify BLINK-flagged cells respond to text_blink_opacity while non-BLINK cells are unaffected. Configuration allows adjusting rate and enabling/disabling fade.
