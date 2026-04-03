@@ -14,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 use oriterm_core::event::{Event, EventListener};
-use oriterm_core::{Rgb, Term, TermMode, Theme};
+use oriterm_core::{CellFlags, Rgb, Term, TermMode, Theme};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use super::{compare_with_reference, headless_env, render_to_pixels};
@@ -267,6 +267,13 @@ impl VtTestSession {
         }
     }
 
+    /// Build a `FrameInput` with a custom `text_blink_opacity`.
+    fn frame_input_with_blink(&self, cell: CellMetrics, text_blink_opacity: f32) -> FrameInput {
+        let mut input = self.frame_input(cell);
+        input.text_blink_opacity = text_blink_opacity;
+        input
+    }
+
     /// Render the current screen to pixels and compare against a golden ref.
     pub(super) fn assert_golden(
         &self,
@@ -443,4 +450,132 @@ fn vttest_golden_menu2_120x40() {
         return;
     }
     run_menu2_golden(120, 40);
+}
+
+/// Navigate vttest to the SGR blink screen (menu 2 screen 13) and verify
+/// that rendering at different `text_blink_opacity` values produces
+/// visibly different output for BLINK cells while non-BLINK cells stay
+/// constant.
+#[test]
+fn vttest_blink_multi_frame() {
+    if !vttest_available() {
+        return;
+    }
+
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut s = VtTestSession::new(80, 24);
+    s.wait_for("Enter choice number", 5000);
+    s.send(b"2\r");
+
+    // Advance to screen 13 (SGR test — dark background with blink text).
+    for _ in 1..13 {
+        s.send(b"\r");
+    }
+
+    // Verify we actually have BLINK cells in this screen.
+    let content = s.term.renderable_content();
+    let blink_count = content
+        .cells
+        .iter()
+        .filter(|c| c.flags.contains(CellFlags::BLINK) && c.ch != ' ')
+        .count();
+    assert!(
+        blink_count > 0,
+        "screen 13 should contain cells with CellFlags::BLINK, found 0"
+    );
+
+    // Find a BLINK cell and a non-BLINK non-space cell for comparison.
+    let blink_idx = content
+        .cells
+        .iter()
+        .position(|c| c.flags.contains(CellFlags::BLINK) && c.ch != ' ')
+        .expect("should have a BLINK cell");
+    let normal_idx = content
+        .cells
+        .iter()
+        .position(|c| !c.flags.contains(CellFlags::BLINK) && c.ch != ' ')
+        .expect("should have a non-BLINK cell");
+
+    let cell = renderer.cell_metrics();
+    let cols = 80_usize;
+
+    let blink_col = blink_idx % cols;
+    let blink_row = blink_idx / cols;
+    let normal_col = normal_idx % cols;
+    let normal_row = normal_idx / cols;
+
+    // Render 3 frames at opacity 1.0, 0.5, and 0.0.
+    let opacities = [1.0_f32, 0.5, 0.0];
+    let mut blink_brightness = Vec::new();
+    let mut normal_brightness = Vec::new();
+
+    for &opacity in &opacities {
+        let input = s.frame_input_with_blink(cell, opacity);
+        let w = input.viewport.width;
+        let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
+
+        let b_br = cell_brightness(&pixels, w, blink_col, blink_row, cell.width, cell.height);
+        let n_br = cell_brightness(&pixels, w, normal_col, normal_row, cell.width, cell.height);
+
+        blink_brightness.push(b_br);
+        normal_brightness.push(n_br);
+    }
+
+    // BLINK cell brightness must decrease: 1.0 > 0.5 > 0.0.
+    assert!(
+        blink_brightness[0] > blink_brightness[1],
+        "BLINK cell should dim at 0.5: full={} half={}",
+        blink_brightness[0],
+        blink_brightness[1],
+    );
+    assert!(
+        blink_brightness[1] > blink_brightness[2],
+        "BLINK cell should dim at 0.0: half={} hidden={}",
+        blink_brightness[1],
+        blink_brightness[2],
+    );
+
+    // Non-BLINK cell brightness must stay constant (within tolerance).
+    for i in 0..2 {
+        let diff = (normal_brightness[i] as i32 - normal_brightness[i + 1] as i32).abs();
+        assert!(
+            diff < 5,
+            "non-BLINK cell should be constant: frame{}={} frame{}={} diff={}",
+            i,
+            normal_brightness[i],
+            i + 1,
+            normal_brightness[i + 1],
+            diff,
+        );
+    }
+}
+
+/// Compute the average RGB brightness across all pixels in a grid cell.
+///
+/// Sums R+G+B for every pixel within the cell bounds and divides by pixel
+/// count. This avoids false readings from sampling glyph counters (holes
+/// inside letters like 'b', 'e', 'o').
+fn cell_brightness(pixels: &[u8], width: u32, col: usize, row: usize, cw: f32, ch: f32) -> u32 {
+    let x0 = (col as f32 * cw) as u32;
+    let y0 = (row as f32 * ch) as u32;
+    let x1 = ((col + 1) as f32 * cw).ceil() as u32;
+    let y1 = ((row + 1) as f32 * ch).ceil() as u32;
+
+    let mut total: u64 = 0;
+    let mut count: u64 = 0;
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let idx = ((py * width + px) * 4) as usize;
+            total += pixels[idx] as u64 + pixels[idx + 1] as u64 + pixels[idx + 2] as u64;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return 0;
+    }
+    (total / count) as u32
 }
