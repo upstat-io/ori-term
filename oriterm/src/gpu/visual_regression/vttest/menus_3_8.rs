@@ -169,17 +169,19 @@ fn vttest_golden_menu6_80x24() {
     run_menu6_golden(80, 24);
 }
 
-// Menu 7: VT52 mode (unimplemented, baseline only).
+// Menu 7: VT52 mode (unimplemented — navigation-only, no golden images).
+//
+// VT52 escape sequences are not processed, so the rendered output is
+// non-deterministic (timing-dependent garbage). Golden image comparison
+// would be inherently flaky. The text-based test in
+// `oriterm_core/tests/vttest/menu7.rs` already verifies navigation
+// doesn't crash. Menu 7 is excluded from the conformance pass rate.
 
-/// Run vttest menu 7 and capture golden images.
+/// Run vttest menu 7 and verify navigation completes without crash.
+///
+/// No golden image assertions — VT52 output is non-deterministic.
 fn run_menu7_golden(cols: u16, rows: u16) {
-    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
     let mut s = VtTestSession::new(cols, rows);
-    let label = format!("{}x{}", cols, rows);
 
     s.wait_for("Enter choice number", 5000);
     s.send(b"7\r");
@@ -191,19 +193,14 @@ fn run_menu7_golden(cols: u16, rows: u16) {
             break;
         }
 
-        s.assert_golden(
-            &format!("vttest_{label}_07_vt52_{screen:02}"),
-            &gpu,
-            &pipelines,
-            &mut renderer,
-        );
-
         s.send(b"\r");
         screen += 1;
         if screen > 20 {
             break;
         }
     }
+
+    assert!(screen > 1, "menu 7 should have at least one screen");
 }
 
 #[test]
