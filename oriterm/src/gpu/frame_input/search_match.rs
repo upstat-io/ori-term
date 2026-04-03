@@ -2,7 +2,7 @@
 
 use oriterm_core::grid::StableRowIndex;
 
-use super::SearchMatch;
+use oriterm_core::SearchMatch;
 
 /// Check if `(stable_row, col)` falls within a search match span.
 pub(super) fn cell_in_search_match(
