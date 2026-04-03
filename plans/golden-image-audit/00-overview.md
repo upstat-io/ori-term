@@ -37,7 +37,7 @@ GPU Prepare (oriterm/src/gpu/prepare/)
 Golden Images (oriterm/tests/references/)
   │  12 DECSCNM images to re-render
   │  5 VT102 images to re-render after scroll fix (screens 08-12)
-  │  3 text_blink images to replace with multi-frame tests
+  │  text_blink images are correct; add cross-frame consistency test
   ▼
 compare_with_reference() — validates correctness
 ```
@@ -61,7 +61,7 @@ Section 02 (VT102 Scroll Region Fix)
   │
   └──► Section 04 (Revalidation — re-render VT102 golden images)
 
-Section 03 (Text Blink Multi-Frame) ◄── independent
+Section 03 (Text Blink Cross-Frame) ◄── independent
 
 Section 04 (Golden Image Revalidation) ◄── depends on 01 + 02
 ```
@@ -77,9 +77,9 @@ Phase 1 - Rendering Fixes (parallel)
   └─ 02: VT102 IL/DL scroll region boundary fix
   Gate: vttest light-background screens show white bg; VT102 08-12 show correct top-line content
 
-Phase 2 - Test Methodology Fix
-  └─ 03: Text blink multi-frame verification
-  Gate: Multi-frame captures prove opacity changes over time
+Phase 2 - Test Gap Fill
+  └─ 03: Text blink cross-frame consistency assertion
+  Gate: Cross-frame test proves non-BLINK cells constant while BLINK cells change
 
 Phase 3 - Revalidation
   └─ 04: Re-render ALL affected golden images, visual inspection
@@ -98,7 +98,7 @@ Phase 3 - Revalidation
 | DECSCNM not rendering (12 images) | Mode 5 not recognized in VTE parser; no TermMode flag; no renderer logic | Section 01 | Fixed (`9b37ca07`) |
 | VT102 IL/DL wrong with scroll regions (5 screens: 08-12) | DECCOLM (132-col mode) unimplemented — not IL/DL | Section 02 | Fixed (`6937781a`) |
 | inverse_video.png may be wrong | SGR 7 works in vttest but test setup may not apply it correctly | Section 04 | Not Started |
-| Text blink tests are single-frame | No multi-frame capture to prove opacity animation | Section 03 | Not Started |
+| Text blink tests lack cross-frame assertion | Existing 3 tests prove per-frame correctness but no test compares non-BLINK brightness across opacity values | Section 03 | Not Started |
 
 ## Metrics (Current State)
 
@@ -106,9 +106,9 @@ Phase 3 - Revalidation
 |------|--------------|-------------|
 | DECSCNM (vttest 02_03, 02_04, 02_14) | 9 (3 resolutions x 3 screens) | — |
 | VT102 scroll region (08_vt102_08-12) | 5 | — |
-| Text blink (methodology, not rendering) | 3 | — |
+| Text blink (missing cross-frame assertion) | 0 (images are correct; gap is a missing test) | — |
 | inverse_video.png (needs investigation) | 1 | — |
-| **Total broken** | **17-18** | **131** |
+| **Total broken** | **14-15** | **131** |
 
 ## Estimated Effort
 
@@ -116,9 +116,9 @@ Phase 3 - Revalidation
 |---------|-----------|------------|------------|
 | 01 DECSCNM Rendering | ~100 | Medium | — |
 | 02 VT102 Scroll Region | ~100 | High | — |
-| 03 Text Blink Multi-Frame | ~150 | Medium | — |
+| 03 Text Blink Cross-Frame | ~30 | Low | — |
 | 04 Golden Image Revalidation | ~20 | Low | 01, 02 |
-| **Total new** | **~370** | | |
+| **Total new** | **~250** | | |
 
 ## Quick Reference
 
@@ -126,5 +126,5 @@ Phase 3 - Revalidation
 |----|-------|------|--------|
 | 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` | Complete |
 | 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` | Complete |
-| 03 | Text Blink Multi-Frame Verification | `section-03-text-blink-tests.md` | Not Started |
+| 03 | Text Blink Cross-Frame Consistency Assertion | `section-03-text-blink-tests.md` | Not Started |
 | 04 | Golden Image Revalidation | `section-04-revalidation.md` | Not Started |
