@@ -241,6 +241,16 @@ This pass reads the code *locally* — each file on its own terms.
 - [ ] Directory structure mirrors the logical module structure?
 - [ ] Files touched by these commits that were already over 500 lines — were they split?
 
+**Plan Annotation Hygiene:**
+- [ ] No stale plan annotations from completed plans? Run `plan-annotations.sh` (in this skill's folder) to scan
+- [ ] Active plan annotations acceptable only while the plan is in progress
+
+**Unsafe & FFI (for wgpu interop, platform FFI, GPU buffer mapping):**
+- [ ] Every unsafe block has a `// SAFETY:` comment?
+- [ ] Unsafe scope minimized?
+- [ ] Platform-specific FFI isolated behind `#[cfg(target_os)]` with all three platforms covered?
+- [ ] C types use `std::ffi` where applicable, never raw primitives?
+
 **Naming, Comments, Visibility, Style:**
 - [ ] Verb-prefix conventions used? (render_, draw_, handle_, encode_)
 - [ ] No decorative banners, no commented-out code, no bare TODOs?

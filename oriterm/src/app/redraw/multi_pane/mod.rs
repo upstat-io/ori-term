@@ -77,15 +77,11 @@ impl App {
                     f.palette.background
                 });
             let win_focused = ctx.window.window().has_focus();
-            let opacity = if ctx.window.surface_has_alpha() {
-                f64::from(if win_focused {
-                    self.config.window.effective_opacity()
-                } else {
-                    self.config.window.effective_unfocused_opacity()
-                })
-            } else {
-                1.0
-            };
+            let opacity = f64::from(super::draw_helpers::resolve_palette_opacity(
+                ctx.window.surface_has_alpha(),
+                win_focused,
+                &self.config,
+            ));
 
             renderer.begin_multi_pane_frame(viewport, bg, opacity);
 
@@ -97,10 +93,23 @@ impl App {
             let mut any_content_changed = false;
             let mut scratch_frame_pane = None;
 
+            // Compute text blink opacity once (same for all panes) and detect
+            // changes. When blink opacity changes, all cached panes are stale
+            // because the old alpha is baked into glyph instances.
+            let text_blink_opacity = super::draw_helpers::blink_opacity(
+                self.text_blink.intensity(),
+                self.config.terminal.text_blink_fade,
+            );
+            let blink_opacity_changed = (text_blink_opacity - ctx.prev_text_blink_opacity).abs()
+                > super::draw_helpers::BLINK_OPACITY_EPSILON;
+            ctx.prev_text_blink_opacity = text_blink_opacity;
+
             for layout in layouts {
                 let pane_id = layout.pane_id;
 
                 // Dirty check: unified snapshot-based dirty tracking.
+                // Blink opacity changes invalidate all cached panes because
+                // the old alpha is baked into glyph instances.
                 let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
                 let snap_dirty = self
                     .mux
@@ -110,7 +119,11 @@ impl App {
                     .mux
                     .as_ref()
                     .is_some_and(|m| m.pane_snapshot(pane_id).is_none());
-                let dirty = layout.is_focused || snap_dirty || no_snapshot || !is_cached;
+                let dirty = layout.is_focused
+                    || snap_dirty
+                    || no_snapshot
+                    || !is_cached
+                    || blink_opacity_changed;
                 any_content_changed |= dirty;
 
                 if dirty {
@@ -149,14 +162,8 @@ impl App {
                         frame.content_cols = snapshot.cols as usize;
                         frame.content_rows = snapshot.cells.len();
                         frame.palette = snapshot_palette(snapshot);
-                        frame.selection = None;
-                        frame.search = None;
-                        frame.hovered_cell = None;
-                        frame.hovered_url_segments.clear();
-                        frame.mark_cursor = None;
+                        frame.clear_transient_fields();
                         frame.window_focused = true;
-                        frame.fg_dim = 1.0;
-                        frame.prompt_marker_rows.clear();
                         scratch_frame_pane = Some(pane_id);
                     } else if helpers::should_reextract_scratch_frame(
                         content_refreshed,
@@ -195,13 +202,11 @@ impl App {
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
                     let pane_focused = ctx.window.window().has_focus();
-                    frame.palette.opacity = if !ctx.window.surface_has_alpha() {
-                        1.0
-                    } else if pane_focused {
-                        self.config.window.effective_opacity()
-                    } else {
-                        self.config.window.effective_unfocused_opacity()
-                    };
+                    frame.palette.opacity = super::draw_helpers::resolve_palette_opacity(
+                        ctx.window.surface_has_alpha(),
+                        pane_focused,
+                        &self.config,
+                    );
                     frame.window_focused = pane_focused;
                     frame.subpixel_positioning = renderer.subpixel_positioning();
 
@@ -279,31 +284,18 @@ impl App {
                         inactive_opacity
                     };
 
-                    // Text blink: same opacity for all panes (not per-focus).
-                    frame.text_blink_opacity = {
-                        let raw = self.text_blink.intensity();
-                        if self.config.terminal.text_blink_fade {
-                            raw
-                        } else if raw > 0.5 {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    };
+                    // Text blink: same opacity for all panes (pre-computed above).
+                    frame.text_blink_opacity = text_blink_opacity;
 
                     let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
                     // Compute cursor opacity per-pane using current frame's
                     // blinking_now (not stale self.blinking_active alone).
                     let pane_cursor_opacity = if layout.is_focused {
                         if blinking_now && self.blinking_active {
-                            let raw = self.cursor_blink.intensity();
-                            if self.config.terminal.cursor_blink_fade {
-                                raw
-                            } else if raw > 0.5 {
-                                1.0
-                            } else {
-                                0.0
-                            }
+                            super::draw_helpers::blink_opacity(
+                                self.cursor_blink.intensity(),
+                                self.config.terminal.cursor_blink_fade,
+                            )
                         } else {
                             1.0
                         }
@@ -367,132 +359,23 @@ impl App {
                 }
             }
 
-            // Phase gating: prepare + prepaint widget trees if dirty.
-            super::draw_helpers::phase_gate_widgets(
-                &mut ctx.root,
-                &mut ctx.tab_bar,
-                ctx.tab_bar_phys_rect,
-                renderer,
-                &ctx.text_cache,
+            // Chrome: tab bar, overlays, search bar, status bar, window border.
+            let needs_full_render = super::chrome::render_chrome(
+                ctx,
+                &self.config,
                 &self.ui_theme,
-                scale,
-                ctx.ui_stale,
-            );
-
-            // Chrome: tab bar, overlays, search bar, status bar.
-            let tab_bar_hidden =
-                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
-            let logical_w = (w as f32 / scale).round() as u32;
-            let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
-            let tab_bar_ref = (!tab_bar_hidden).then_some(&ctx.tab_bar);
-            let tb_phys = ctx.tab_bar_phys_rect;
-            let tab_bar_bounds = oriterm_ui::geometry::Rect::new(
-                tb_phys.x() / scale,
-                tb_phys.y() / scale,
-                tb_phys.width() / scale,
-                tb_phys.height() / scale,
-            );
-            let tab_bar_animating = Self::draw_tab_bar(
-                tab_bar_ref,
-                renderer,
-                &mut ctx.chrome_scene,
-                tab_bar_bounds,
-                scale,
                 gpu,
-                &self.ui_theme,
-                &ctx.text_cache,
-                interaction,
-                flags,
-                damage,
+                &super::chrome::ChromeParams {
+                    pane_count: layouts.len(),
+                    content_dirty: any_content_changed,
+                    selection_changed: false,
+                    blink_changed: false,
+                },
             );
-            if tab_bar_animating {
-                ctx.root.mark_dirty();
-            }
 
-            let logical_size = (logical_w as f32, h as f32 / scale);
-            let (overlays, layer_tree, interaction, flags) = ctx
-                .root
-                .overlays_layer_tree_interaction_and_frame_requests();
-            let overlays_animating = Self::draw_overlays(
-                overlays,
-                renderer,
-                &mut ctx.chrome_scene,
-                logical_size,
-                scale,
-                gpu,
-                layer_tree,
-                &self.ui_theme,
-                &ctx.text_cache,
-                interaction,
-                flags,
-            );
-            if overlays_animating {
-                ctx.root.mark_dirty();
-            }
-
-            // Search bar from focused pane.
-            if let Some(search) = ctx.frame.as_ref().and_then(|f| f.search.as_ref()) {
-                let chrome_h = if tab_bar_hidden {
-                    0.0
-                } else {
-                    ctx.tab_bar.metrics().height
-                };
-                Self::draw_search_bar(
-                    search,
-                    renderer,
-                    &mut ctx.chrome_scene,
-                    &mut ctx.search_bar_buf,
-                    logical_w as f32,
-                    chrome_h,
-                    scale,
-                    gpu,
-                    &ctx.text_cache,
-                );
-            }
-
-            // Status bar at the bottom of the window.
-            if self.config.window.show_status_bar
-                && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
-            {
-                let pane_count = layouts.len();
-                let (cols, rows) = ctx
-                    .frame
-                    .as_ref()
-                    .map_or((0, 0), |f| (f.content_cols, f.content_rows));
-                ctx.status_bar
-                    .set_data(super::draw_helpers::status_bar_data(pane_count, cols, rows));
-                let phys = ctx.status_bar_phys_rect;
-                let sb_bounds = oriterm_ui::geometry::Rect::new(
-                    phys.x() / scale,
-                    phys.y() / scale,
-                    phys.width() / scale,
-                    phys.height() / scale,
-                );
-                Self::draw_status_bar(
-                    &ctx.status_bar,
-                    renderer,
-                    &mut ctx.chrome_scene,
-                    sb_bounds,
-                    scale,
-                    gpu,
-                    &self.ui_theme,
-                    &ctx.text_cache,
-                );
-            }
-
-            // Full content render when any pane changed or chrome is stale.
-            let needs_full_render = any_content_changed || ctx.ui_stale;
-
-            ctx.ui_stale = tab_bar_animating;
-
-            // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
-            // macOS: the compositor provides a native window shadow — no border needed.
-            #[cfg(not(target_os = "macos"))]
-            if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
-                let border_color =
-                    crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);
-                renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
-            }
+            // Re-borrow renderer for GPU submission (prior borrow ended
+            // when render_chrome returned via NLL).
+            let renderer = ctx.renderer.as_mut().expect("renderer checked");
 
             ctx.window.apply_pending_surface_resize(gpu);
 
