@@ -9,8 +9,8 @@ inspired_by:
   - "WezTerm insert_lines (term/src/terminalstate/performer.rs)"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-04-02
 sections:
   - id: "02.1"
     title: "Diagnose Scroll Region IL/DL Bug"
@@ -26,7 +26,7 @@ sections:
     tests: 9
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
   - id: "02.N"
     title: "Completion Checklist"
     status: not-started
@@ -175,7 +175,12 @@ The existing `assert_vt102_screen_structure()` function has match arms only for 
 
 ## 02.R Third Party Review Findings
 
-- None.
+- [ ] `[TPR-02-001][medium]` `oriterm_core/tests/vttest.rs:793-842` — Structural assertions only cover screens 2-5; second-round screens 08-12 and regression-guard screens 13-14 fall through `_ => {}` with no semantic checks. A future breakage in the fixed path can be re-approved by snapshot churn alone.
+  Evidence: `assert_vt102_screen_structure()` match arms end at screen 5; screens 8-14 hit catch-all.
+  Impact: Defeats the purpose of the golden image audit — broken rendering can pass tests silently.
+- [ ] `[TPR-02-002][medium]` `plans/golden-image-audit/section-02-vt102-scroll.md` — Plan metadata says Section 02 is `not-started` and describes an unresolved scroll-region IL/DL bug, but code already has DECCOLM/Mode-40 fix with passing regression test `vttest_deccolm_resizes_to_132_with_mode_40`. Plan drift will mislead future resume/review work.
+  Evidence: Section frontmatter `status: not-started`; code has the fix at `oriterm_core/src/term/handler/modes.rs`.
+  Impact: Resume tooling will re-diagnose an already-fixed issue or duplicate work.
 
 ---
 

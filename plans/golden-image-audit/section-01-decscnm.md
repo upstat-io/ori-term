@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "DECSCNM Reverse Video Rendering"
-status: in-progress
+status: complete
 reviewed: true
 goal: "vttest light-background screens render with white background and dark text"
 inspired_by:
@@ -28,7 +28,7 @@ sections:
     status: not-started
   - id: "01.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: DECSCNM Reverse Video Rendering
@@ -127,6 +127,6 @@ The renderer must swap default fg/bg when REVERSE_VIDEO is active. Two changes n
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** vttest light-background screens render with a white/light background. Golden images show visually correct reverse video rendering. DECSCNM mode 5 is fully implemented from parser through renderer.

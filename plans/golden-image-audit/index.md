@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: DECSCNM Reverse Video Rendering
-**File:** `section-01-decscnm.md` | **Status:** Not Started
+**File:** `section-01-decscnm.md` | **Status:** Complete
 
 ```
 DECSCNM, reverse video, mode 5, light background, dark background

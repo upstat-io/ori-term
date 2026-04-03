@@ -124,7 +124,7 @@ Phase 3 - Revalidation
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` | Not Started |
+| 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` | Complete |
 | 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` | Not Started |
 | 03 | Text Blink Multi-Frame Verification | `section-03-text-blink-tests.md` | Not Started |
 | 04 | Golden Image Revalidation | `section-04-revalidation.md` | Not Started |
