@@ -1,36 +1,36 @@
 ---
 section: "01"
 title: "Data Loader"
-status: not-started
+status: complete
 reviewed: true
 goal: "Create a TypeScript module that reads ori_term roadmap section files and returns typed Tier[] data"
 inspired_by:
   - "ori-lang-website plan-data.ts (~/projects/ori-lang-website/src/lib/plan-data.ts)"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-02
 sections:
   - id: "01.1"
     title: "Add js-yaml dependency"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "Create roadmap-data.ts"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Verification"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "01.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 01: Data Loader
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Create `src/lib/roadmap-data.ts` in ori_term_website that reads `section-*.md` files from `../ori_term/plans/roadmap/`, parses YAML frontmatter, and returns typed `Tier[]` data matching the TmuxRoadmap component's interface.
 
 **Context:** The TmuxRoadmap component currently has ~100 lines of hardcoded tier/section data. This data must come from the actual roadmap plan files so it stays in sync with development progress. The ori-lang-website has a reference implementation (`plan-data.ts`) that does the same thing for the ori_lang roadmap.
@@ -48,9 +48,9 @@ sections:
 
 Install `js-yaml` for proper YAML frontmatter parsing. This is a build-time dependency only — not shipped to the browser.
 
-- [ ] Run `npm install js-yaml` in ori_term_website
-- [ ] Run `npm install -D @types/js-yaml` for TypeScript types
-- [ ] Verify `npm run build` still succeeds after adding the dependency
+- [x] Run `npm install js-yaml` in ori_term_website
+- [x] Run `npm install -D @types/js-yaml` for TypeScript types
+- [x] Verify `npm run build` still succeeds after adding the dependency
 
 ---
 
@@ -65,7 +65,7 @@ Create the data loading module. It must:
 4. Group sections by tier
 5. Return typed `Tier[]` array
 
-- [ ] Create `src/lib/roadmap-data.ts` with the following exports:
+- [x] Create `src/lib/roadmap-data.ts` with the following exports:
 
   ```typescript
   import fs from 'node:fs';
@@ -98,7 +98,7 @@ Create the data loading module. It must:
   }
   ```
 
-- [ ] Implement `normalizeStatus()`:
+- [x] Implement `normalizeStatus()`:
   ```typescript
   function normalizeStatus(raw: string): Status {
     const s = raw.toLowerCase().replace(/_/g, '-');
@@ -111,7 +111,7 @@ Create the data loading module. It must:
   }
   ```
 
-- [ ] Implement `parseFrontmatter()` — extract YAML between `---` delimiters:
+- [x] Implement `parseFrontmatter()` — extract YAML between `---` delimiters:
   ```typescript
   function parseFrontmatter(content: string): SectionFrontmatter | null {
     const match = content.match(/^---\n([\s\S]*?)\n---/);
@@ -124,7 +124,7 @@ Create the data loading module. It must:
   }
   ```
 
-- [ ] Implement `loadRoadmapSections()`:
+- [x] Implement `loadRoadmapSections()`:
   ```typescript
   export function loadRoadmapSections(dir: string): Section[] {
     const files = fs.readdirSync(dir)
@@ -154,7 +154,7 @@ Create the data loading module. It must:
     : String(fm.section),
   ```
 
-- [ ] Implement `groupByTier()`:
+- [x] Implement `groupByTier()`:
   ```typescript
   // Tier metadata — canonical tier names
   const TIER_META: Record<string, string> = {
@@ -208,32 +208,35 @@ Create the data loading module. It must:
   }
   ```
 
-- [ ] Export `loadRoadmapTiers` as the primary entry point
-- [ ] Verify the module compiles: `npx tsc --noEmit src/lib/roadmap-data.ts` (or just `npm run build`)
+- [x] Export `loadRoadmapTiers` as the primary entry point
+- [x] Verify the module compiles: `npx tsc --noEmit src/lib/roadmap-data.ts` (or just `npm run build`)
 
 ---
 
 ## 01.3 Verification
 
-- [ ] Write a quick smoke test: create a temporary Node script that calls `loadRoadmapTiers()` and prints the result. Verify it produces 10 tiers with the correct section counts matching the actual roadmap files.
-- [ ] Verify `npm run build` succeeds (Astro build doesn't break from the new module)
+- [x] Write a quick smoke test: create a temporary Node script that calls `loadRoadmapTiers()` and prints the result. Verify it produces 10 tiers with the correct section counts matching the actual roadmap files.
+- [x] Verify `npm run build` succeeds (Astro build doesn't break from the new module)
 
 ---
 
 ## 01.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-01-001][medium]` `~/projects/ori_term_website/src/lib/roadmap-data.ts:1-3` — Section 01 marks the loader compile verification complete, but the advertised check does not pass with the current file. Running `npx tsc --noEmit src/lib/roadmap-data.ts` in `ori_term_website` fails because `node:fs`, `node:path`, and `js-yaml` are imported as default exports without `esModuleInterop`.
+  Resolved: Switched to named imports (`{ readdirSync, readFileSync }`, `{ join, resolve }`, `{ load as yamlLoad }`) on 2026-04-02. Both `npx tsc --noEmit src/lib/roadmap-data.ts` and `npm run build` now pass clean.
+- [x] `[TPR-01-002][low]` `plans/oriterm-website-roadmap/section-01-data-loader.md:4,14-28,33`, `plans/oriterm-website-roadmap/index.md:15-16`, `plans/oriterm-website-roadmap/00-overview.md:117-122` — Section 01 bookkeeping is internally contradictory. Frontmatter says `in-progress` and marks 01.1-01.3 complete, but the prose status line, index entry, and overview quick reference all still say `Not Started`.
+  Resolved: Updated prose status, index entry, and overview quick reference to match frontmatter on 2026-04-02.
 
 ---
 
 ## 01.N Completion Checklist
 
-- [ ] `js-yaml` and `@types/js-yaml` installed in ori_term_website
-- [ ] `src/lib/roadmap-data.ts` exists with `loadRoadmapTiers()` export
-- [ ] `loadRoadmapTiers()` reads from `../ori_term/plans/roadmap/` by default
-- [ ] Returns 10 tiers with correct section counts (53 total sections)
-- [ ] Status normalization handles all 5 values: complete, in-progress, not-started, superseded, partial/partially-started
-- [ ] `npm run build` succeeds
-- [ ] `/tpr-review` passed
+- [x] `js-yaml` and `@types/js-yaml` installed in ori_term_website
+- [x] `src/lib/roadmap-data.ts` exists with `loadRoadmapTiers()` export
+- [x] `loadRoadmapTiers()` reads from `../ori_term/plans/roadmap/` by default
+- [x] Returns 10 tiers with correct section counts (53 total sections)
+- [x] Status normalization handles all 5 values: complete, in-progress, not-started, superseded, partial/partially-started
+- [x] `npm run build` succeeds
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** `loadRoadmapTiers()` returns a `Tier[]` array matching the shape of the currently hardcoded data in TmuxRoadmap.svelte, with all 53 sections correctly parsed from the real roadmap files.

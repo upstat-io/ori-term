@@ -1,7 +1,7 @@
 ---
 plan: "oriterm-website-roadmap"
 title: "OriTerm Website Roadmap Pipeline: Exhaustive Implementation Plan"
-status: not-started
+status: in-progress
 references:
   - "ori-lang-website/src/lib/plan-data.ts"
   - "ori-lang-website/.github/workflows/deploy.yml"
@@ -116,7 +116,7 @@ Phase 3 - CI Pipeline
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Data Loader | `section-01-data-loader.md` | Not Started |
+| 01 | Data Loader | `section-01-data-loader.md` | Complete |
 | 02 | Wire Component | `section-02-wire-component.md` | Not Started |
 | 03 | CI Dispatch | `section-03-ci-dispatch.md` | Not Started |
 | 04 | CI Receive | `section-04-ci-receive.md` | Not Started |
