@@ -141,6 +141,28 @@ impl CursorBlink {
         self.out_duration = interval;
     }
 
+    /// Whether the blink is currently in a fade transition (not a plateau).
+    ///
+    /// During fade transitions, the event loop must redraw every ~16ms to
+    /// produce smooth animation. During plateaus, redraws only happen at
+    /// phase boundaries.
+    pub fn is_animating(&self) -> bool {
+        let total = self.in_duration + self.out_duration;
+        if total.is_zero() {
+            return false;
+        }
+        let cycle_pos = self.epoch.elapsed().as_secs_f64() % total.as_secs_f64();
+        let in_secs = self.in_duration.as_secs_f64();
+        let out_secs = self.out_duration.as_secs_f64();
+        let ff = f64::from(FADE_FRACTION);
+
+        let fade_out_start = in_secs * (1.0 - ff);
+        let hidden_plateau_end = in_secs + out_secs * (1.0 - ff);
+
+        // In fade-out or fade-in phase.
+        (cycle_pos >= fade_out_start && cycle_pos < in_secs) || cycle_pos >= hidden_plateau_end
+    }
+
     /// Moves the epoch backward by `duration`, simulating elapsed time.
     ///
     /// Used in tests to position the timer at a specific point in the

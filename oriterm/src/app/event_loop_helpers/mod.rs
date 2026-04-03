@@ -232,6 +232,29 @@ impl App {
         }
     }
 
+    /// Drive cursor blink and text blink timers.
+    ///
+    /// Marks windows dirty and requests redraw when opacity changes OR
+    /// when actively fading (`is_animating`) to ensure continuous redraws
+    /// during fade transitions even when the per-frame delta is below
+    /// the `update()` threshold.
+    pub(super) fn drive_blink_timers(&mut self) {
+        if self.blinking_active && (self.cursor_blink.update() || self.cursor_blink.is_animating())
+        {
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.root.mark_dirty();
+                ctx.window.window().request_redraw();
+            }
+        }
+
+        if self.text_blink.update() || self.text_blink.is_animating() {
+            for ctx in self.windows.values_mut() {
+                ctx.root.mark_dirty();
+                ctx.window.window().request_redraw();
+            }
+        }
+    }
+
     /// Tick overlay animations in dialog windows.
     ///
     /// Drives dropdown fade-in/fade-out transitions and cleans up
