@@ -63,7 +63,6 @@ impl App {
     /// `--connect` + `--window` to render it.
     ///
     /// Refuses if the tab is the last tab in the last window.
-    #[allow(dead_code, reason = "superseded by tear_off_tab in Section 17.2")]
     pub(in crate::app) fn move_tab_to_new_window(
         &mut self,
         tab_id: TabId,

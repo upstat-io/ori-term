@@ -40,10 +40,6 @@ mod tab_drag;
 mod tab_management;
 #[cfg(test)]
 pub(crate) mod test_support;
-#[allow(
-    dead_code,
-    reason = "incremental pipeline — delivery loop wired in OverlayManager migration"
-)]
 mod widget_pipeline;
 pub(crate) mod window_context;
 mod window_management;
@@ -377,15 +373,7 @@ impl App {
 
         // Update UI chrome theme (tab bar, status bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
-        for ctx in self.windows.values_mut() {
-            ctx.tab_bar.apply_theme(&self.ui_theme);
-            ctx.status_bar.apply_theme(&self.ui_theme);
-            ctx.pane_cache.invalidate_all();
-            ctx.text_cache.clear();
-            ctx.root.invalidation_mut().invalidate_all();
-            ctx.root.damage_mut().reset();
-            ctx.root.mark_dirty();
-        }
+        self.apply_theme_to_chrome();
     }
 
     /// Read the terminal mode, locking briefly.

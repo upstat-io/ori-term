@@ -137,10 +137,12 @@ impl ApplicationHandler<TermEvent> for App {
                         self.active_window = Some(mux_id);
                     }
                     // Re-evaluate blink from config + pane's terminal mode.
-                    self.blinking_active = self.config.terminal.cursor_blink
-                        && self
-                            .terminal_mode()
-                            .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
+                    // Formula: cursor_should_blink(). Two sites exist by design:
+                    // focus handler (here) for immediate state, post_render for frame state.
+                    let mode_blink = self
+                        .terminal_mode()
+                        .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
+                    self.blinking_active = self.cursor_should_blink(mode_blink);
                     self.send_focus_event(true);
                 } else {
                     // Freeze cursor visible when window loses focus.
