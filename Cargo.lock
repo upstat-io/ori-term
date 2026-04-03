@@ -1098,9 +1098,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.13.0"
+version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
+checksum = "45a8a2b9cb3e0b0c1803dbb0758ffac5de2f425b23c28f518faabd9d805342ff"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",
@@ -1915,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260402.2"
+version = "0.2.0-alpha.20260403"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1959,7 +1959,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260402.2"
+version = "0.2.0-alpha.20260403"
 dependencies = [
  "base64",
  "bitflags 2.11.0",
@@ -1976,7 +1976,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260402.2"
+version = "0.2.0-alpha.20260403"
 dependencies = [
  "libc",
  "log",
@@ -1986,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260402.2"
+version = "0.2.0-alpha.20260403"
 dependencies = [
  "base64",
  "bincode",
@@ -2007,7 +2007,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260402.2"
+version = "0.2.0-alpha.20260403"
 dependencies = [
  "criterion",
  "image",
