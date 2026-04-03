@@ -152,7 +152,7 @@ Note: `urgent_redraw` (lines 435-442) and `has_animations` (lines 461-468) also 
 - [x] Replace `let any_dirty = ...` (line 432 of `event_loop.rs`) with `let any_dirty = self.is_any_window_dirty();`.
 - [x] Replace `let still_dirty = ...` (line 459 of `event_loop.rs`) with `let still_dirty = self.is_any_window_dirty();`.
 - [x] Verify `event_loop.rs` stays under 500 lines (now 495).
-- [ ] Optionally, extract `is_any_urgent_redraw(&self) -> bool` and `has_active_animations(&self) -> bool` into `render_dispatch.rs` to further reduce `about_to_wait`. Low priority — do not block completion. If both extracted, `event_loop.rs` drops ~8 more lines to ~487; `render_dispatch.rs` grows to ~115.
+- [x] Optionally, extract `is_any_urgent_redraw(&self) -> bool` and `has_active_animations(&self) -> bool` into `render_dispatch.rs` to further reduce `about_to_wait`. Low priority — do not block completion. If both extracted, `event_loop.rs` drops ~8 more lines to ~487; `render_dispatch.rs` grows to ~115. Actual: `event_loop.rs` 495→481, `render_dispatch.rs` 103→128.
 - [x] Run `./build-all.sh` and `./clippy-all.sh`.
 
 ---

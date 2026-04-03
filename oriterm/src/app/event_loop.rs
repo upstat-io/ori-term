@@ -431,14 +431,7 @@ impl ApplicationHandler<TermEvent> for App {
         // Check if any window (terminal or dialog) is dirty and render it.
         let any_dirty = self.is_any_window_dirty();
         let now = std::time::Instant::now();
-        let urgent_redraw = self
-            .windows
-            .values()
-            .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw())
-            || self
-                .dialogs
-                .values()
-                .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw());
+        let urgent_redraw = self.is_any_urgent_redraw();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         // Render when dirty. PresentMode::Mailbox/Fifo provide hardware
@@ -456,14 +449,7 @@ impl ApplicationHandler<TermEvent> for App {
 
         // Decide ControlFlow via pure function (testable without winit).
         let still_dirty = self.is_any_window_dirty();
-        let has_animations = self
-            .windows
-            .values()
-            .any(|c| c.root.layer_animator().is_any_animating())
-            || self
-                .dialogs
-                .values()
-                .any(|c| c.root.layer_animator().is_any_animating());
+        let has_animations = self.has_active_animations();
         let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {

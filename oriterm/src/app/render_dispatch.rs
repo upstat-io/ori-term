@@ -100,4 +100,29 @@ impl App {
         self.windows.values().any(|c| c.root.is_dirty())
             || self.dialogs.values().any(|c| c.root.is_dirty())
     }
+
+    /// Returns `true` if any dirty window has requested an urgent redraw.
+    ///
+    /// Urgent redraws bypass the frame budget gate (e.g., user-initiated
+    /// actions that should be visible immediately).
+    pub(super) fn is_any_urgent_redraw(&self) -> bool {
+        self.windows
+            .values()
+            .any(|c| c.root.is_dirty() && c.root.is_urgent_redraw())
+            || self
+                .dialogs
+                .values()
+                .any(|c| c.root.is_dirty() && c.root.is_urgent_redraw())
+    }
+
+    /// Returns `true` if any window has active compositor animations.
+    pub(super) fn has_active_animations(&self) -> bool {
+        self.windows
+            .values()
+            .any(|c| c.root.layer_animator().is_any_animating())
+            || self
+                .dialogs
+                .values()
+                .any(|c| c.root.layer_animator().is_any_animating())
+    }
 }
