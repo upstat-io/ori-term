@@ -1,7 +1,7 @@
 ---
 plan: "hygiene-last-commit"
 title: "Hygiene: Last Commit (Blink Timer + Event Loop)"
-status: in-progress
+status: complete
 references:
   - "plans/completed/vttest-conformance/section-05-fade-blink.md"
 ---
@@ -69,4 +69,4 @@ Sections 01–04 are independent and can be worked in any order. Section 05 requ
 | 02 | Blink Timer Fixes | `section-02-blink-timers.md` | Complete |
 | 03 | Render Dispatch Consolidation | `section-03-render-dispatch.md` | Complete |
 | 04 | Scattered Knowledge and Bloat | `section-04-scattered-and-bloat.md` | Complete |
-| 05 | Cleanup | `section-05-cleanup.md` | Not Started |
+| 05 | Cleanup | `section-05-cleanup.md` | Complete |

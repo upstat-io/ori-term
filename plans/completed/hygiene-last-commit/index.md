@@ -2,7 +2,7 @@
 reroute: true
 name: "Hygiene Fixes"
 full_name: "Hygiene: Last Commit (Blink Timer + Event Loop)"
-status: active
+status: resolved
 order: 1
 ---
 
@@ -78,7 +78,7 @@ dead_code, move_tab_to_new_window, widget_pipeline, apply_requests, DispatchResu
 ---
 
 ### Section 05: Cleanup
-**File:** `section-05-cleanup.md` | **Status:** Not Started
+**File:** `section-05-cleanup.md` | **Status:** Complete
 
 ```
 test-all, clippy-all, build-all, plan deletion
