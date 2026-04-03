@@ -297,12 +297,6 @@ impl FrameInput {
         self.content_rows
     }
 
-    /// Whether the entire viewport needs a full repaint.
-    #[allow(dead_code, reason = "damage tracking optimization for later sections")]
-    pub fn needs_full_repaint(&self) -> bool {
-        self.content.all_dirty
-    }
-
     /// Build a test frame from a text string.
     ///
     /// Creates a grid of `cols × rows` cells. `text` is laid out left-to-right,
