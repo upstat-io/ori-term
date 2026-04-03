@@ -85,6 +85,7 @@ use oriterm_ui::theme::UiTheme;
 /// Wraps the concrete `EventLoopProxy` behind a callback so logic layers
 /// don't depend on winit's concrete type. The concrete binding is set up
 /// in the constructors from `EventLoopProxy::send_event`.
+#[derive(Clone)]
 pub(crate) struct EventSender(Arc<dyn Fn(TermEvent) + Send + Sync>);
 
 impl EventSender {
