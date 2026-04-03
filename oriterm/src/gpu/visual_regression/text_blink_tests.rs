@@ -150,6 +150,67 @@ fn text_blink_half() {
     );
 }
 
+/// End-to-end blink test through `WindowRenderer::prepare()` with the
+/// cursor-only fast path active (`content_changed = false`).
+///
+/// This is the test that catches the actual runtime bug: the renderer's
+/// fast path must detect `text_blink_opacity` changes and do a full
+/// instance rebuild, not just update the cursor.
+#[test]
+fn text_blink_survives_fast_path() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let cell = renderer.cell_metrics();
+
+    // Frame 1: opacity 1.0, content_changed = true (full rebuild).
+    let input_full = blink_input(cell, 1.0);
+    let w = input_full.viewport.width;
+    let h = input_full.viewport.height;
+    let target = gpu.create_render_target(w, h);
+    renderer.prepare(&input_full, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.render_frame(&gpu, &pipelines, target.view());
+    let pixels_full = gpu
+        .read_render_target(&target)
+        .expect("readback should succeed");
+
+    // Frame 2: opacity 0.0, content_changed = false (fast path eligible).
+    // If has_visual_change() doesn't detect the opacity change, the
+    // renderer takes the cursor-only path and BLINK cells stay bright.
+    let input_hidden = blink_input(cell, 0.0);
+    let target2 = gpu.create_render_target(w, h);
+    renderer.prepare(&input_hidden, &gpu, &pipelines, (0.0, 0.0), 1.0, false);
+    renderer.render_frame(&gpu, &pipelines, target2.view());
+    let pixels_hidden = gpu
+        .read_render_target(&target2)
+        .expect("readback should succeed");
+
+    // BLINK cell must be dimmer in frame 2.
+    let blink_full = cell_pixel(&pixels_full, w, BLINK_COL, cell.width, cell.height);
+    let blink_hidden = cell_pixel(&pixels_hidden, w, BLINK_COL, cell.width, cell.height);
+    let br_full: u32 = blink_full[0] as u32 + blink_full[1] as u32 + blink_full[2] as u32;
+    let br_hidden: u32 = blink_hidden[0] as u32 + blink_hidden[1] as u32 + blink_hidden[2] as u32;
+
+    assert!(
+        br_full > br_hidden + 50,
+        "BLINK cell must dim when opacity drops (content_changed=false): \
+         full={br_full} hidden={br_hidden}. If equal, the fast path skipped the rebuild.",
+    );
+
+    // Non-BLINK cell must stay constant.
+    let normal_full = cell_pixel(&pixels_full, w, NORMAL_COL, cell.width, cell.height);
+    let normal_hidden = cell_pixel(&pixels_hidden, w, NORMAL_COL, cell.width, cell.height);
+    let diff: i32 = (0..3)
+        .map(|i| (normal_full[i] as i32 - normal_hidden[i] as i32).abs())
+        .sum();
+    assert!(
+        diff < 5,
+        "non-BLINK cell should be constant: full={normal_full:?} hidden={normal_hidden:?}",
+    );
+}
+
 /// Cross-frame test: renders at 3 opacity levels in one function and asserts
 /// that non-BLINK cell brightness is constant while BLINK cell brightness
 /// decreases monotonically.
