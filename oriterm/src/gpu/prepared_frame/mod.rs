@@ -126,6 +126,9 @@ pub struct PreparedFrame {
     /// state — including intra-line column changes during drag. Persists
     /// across `clear()` and `save_terminal_tier()`.
     pub(crate) prev_selection_snapshot: Option<SelectionDamageSnapshot>,
+    /// Previous frame's text blink opacity — detects blink timer changes
+    /// that require a full instance rebuild (not just cursor-only update).
+    pub(crate) prev_text_blink_opacity: f32,
     /// Reusable scratch buffer for per-row dirty flags (incremental rendering).
     pub(crate) scratch_dirty: Vec<bool>,
     /// Viewport pixel dimensions for uniform buffer update.
@@ -157,6 +160,7 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
+            prev_text_blink_opacity: 1.0,
             scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
@@ -196,6 +200,7 @@ impl PreparedFrame {
             row_ranges: Vec::new(),
             saved_tier: SavedTerminalTier::new(),
             prev_selection_snapshot: None,
+            prev_text_blink_opacity: 1.0,
             scratch_dirty: Vec::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
