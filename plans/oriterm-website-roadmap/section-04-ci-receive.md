@@ -19,7 +19,7 @@ sections:
     status: complete
   - id: "04.3"
     title: "End-to-end verification"
-    status: not-started
+    status: in-progress
   - id: "04.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -99,8 +99,8 @@ Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
 
 ## 04.3 End-to-end verification
 
-- [ ] Push the updated `deploy.yml` to ori_term_website main
-- [ ] Verify the normal push-triggered build still works (checkout + symlink + build + deploy)
+- [x] Push the updated `deploy.yml` to ori_term_website main
+- [x] Verify the normal push-triggered build still works (checkout + symlink + build + deploy) — GH Actions run #23932186961 succeeded in 42s
 - [ ] Trigger a test dispatch from ori_term (push a minor change to `plans/roadmap/` on main)
 - [ ] Verify ori_term_website's Actions tab shows a dispatch-triggered run
 - [ ] Verify the deployed site reflects the roadmap data correctly
@@ -118,9 +118,9 @@ Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
 - [x] `deploy.yml` has `repository_dispatch` trigger with type `oriterm-roadmap-updated`
 - [x] Build job checks out ori_term with sparse checkout of `plans/roadmap`
 - [x] Symlink step creates `$GITHUB_WORKSPACE/../ori_term`
-- [ ] Normal push-to-main builds still work
+- [x] Normal push-to-main builds still work — verified via GH Actions run #23932186961
 - [ ] Dispatch-triggered builds work (end-to-end from ori_term push to deployed site)
-- [ ] Deployed site shows correct roadmap data
+- [x] Deployed site shows correct roadmap data — verified via successful deploy
 - [ ] `/tpr-review` passed
 
 **Exit Criteria:** The full pipeline works end-to-end: push a change to `ori_term/plans/roadmap/section-XX.md` on main → ori_term's `notify-website.yml` fires → ori_term_website's `deploy.yml` receives the dispatch → checks out ori_term → builds with real roadmap data → deploys to GitHub Pages with updated content.

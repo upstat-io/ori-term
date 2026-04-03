@@ -22,7 +22,7 @@ sections:
     status: not-started
   - id: "03.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 03: CI Dispatch
