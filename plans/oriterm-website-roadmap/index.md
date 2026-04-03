@@ -13,7 +13,7 @@
 ## Keyword Clusters by Section
 
 ### Section 01: Data Loader
-**File:** `section-01-data-loader.md` | **Status:** Not Started
+**File:** `section-01-data-loader.md` | **Status:** Complete
 
 ```
 roadmap-data.ts, loadRoadmapSections, groupByTier, parseYamlFrontmatter
