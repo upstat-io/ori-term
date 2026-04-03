@@ -117,7 +117,7 @@ Phase 3 - CI Pipeline
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Data Loader | `section-01-data-loader.md` | Complete |
-| 02 | Wire Component | `section-02-wire-component.md` | Not Started |
+| 02 | Wire Component | `section-02-wire-component.md` | Complete |
 | 03 | CI Dispatch | `section-03-ci-dispatch.md` | Not Started |
 | 04 | CI Receive | `section-04-ci-receive.md` | Not Started |
 

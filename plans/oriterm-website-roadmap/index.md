@@ -25,7 +25,7 @@ ori-lang-website, plan-data.ts, loadAllSections, reference implementation
 ---
 
 ### Section 02: Wire Component
-**File:** `section-02-wire-component.md` | **Status:** Not Started
+**File:** `section-02-wire-component.md` | **Status:** Complete
 
 ```
 TmuxRoadmap.svelte, roadmap.astro, props, hardcoded data removal
