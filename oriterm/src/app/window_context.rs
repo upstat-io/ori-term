@@ -97,6 +97,9 @@ pub(crate) struct WindowContext {
     /// hasn't changed. Set by chrome hover, overlay animations, and other
     /// UI state changes. Cleared after a full content render.
     pub(super) ui_stale: bool,
+    /// Previous frame's text blink opacity — detects blink changes that
+    /// require a full content cache re-render (not just cursor overlay).
+    pub(super) prev_text_blink_opacity: f32,
 }
 
 impl WindowContext {
@@ -142,6 +145,7 @@ impl WindowContext {
             render_strategy: RenderStrategy::TerminalCached,
             damage: DamageSet::default(),
             ui_stale: true,
+            prev_text_blink_opacity: 1.0,
         }
     }
 

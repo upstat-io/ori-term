@@ -337,10 +337,7 @@ impl ApplicationHandler<TermEvent> for App {
             }
             TermEvent::MuxWakeup => {
                 self.perf.record_wakeup();
-                // The real work happens in `pump_mux_events()` during
-                // `about_to_wait`. This wakeup just ensures the event loop
-                // doesn't sleep past pending mux events. Dirty marking
-                // happens per-pane in `handle_mux_notification`.
+                log::info!("MuxWakeup received");
             }
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);
