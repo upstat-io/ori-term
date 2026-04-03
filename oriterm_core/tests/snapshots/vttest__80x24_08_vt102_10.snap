@@ -1,8 +1,0 @@
----
-source: oriterm_core/tests/vttest.rs
-expression: text
----
-A**********************************************************************************************************************************B
-                                                                                                                                    
-                                                                                                                                    
-Test of 'Insert Mode'. The top line should be 'A*** ... ***B'. Push <RETURN>

@@ -1,0 +1,26 @@
+---
+source: oriterm_core/tests/vttest/menu3.rs
+expression: s.grid_text()
+---
+                                                                                                 
+                                                                                                 
+         Menu 3: Character-Set Tests                                                             
+                                                                                                 
+         Choose test type:                                                                       
+                                                                                                 
+          0. Exit                                                                                
+          1. Reset (G0 ASCII, G1 Latin-1, no NRC mode)                                           
+          2. Enable highlighting of non-ISO-8859-1 mapping                                       
+          3. Enable National Replacement Character (NRC) mode                                    
+          4. Specify G0 (now US ASCII)                                                           
+          5. Specify G1 (now ISO Latin-1)                                                        
+          6. Specify G2 (now ISO Latin-1)                                                        
+          7. Specify G3 (now ISO Latin-1)                                                        
+          8. Test VT100 Character Sets                                                           
+          9. Test Shift In/Shift Out (SI/SO)                                                     
+          10. Test VT220 Locking Shifts                                                          
+          11. Test VT220 Single Shifts                                                           
+          12* Test Soft Character Sets                                                           
+          13. Test Keyboard Layout with G0 Selection                                             
+                                                                                                 
+          Enter choice number (0 - 13):

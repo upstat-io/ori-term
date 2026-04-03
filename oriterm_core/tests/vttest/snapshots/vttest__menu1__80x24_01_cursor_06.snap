@@ -1,0 +1,24 @@
+---
+source: oriterm_core/tests/vttest/menu1.rs
+expression: text
+---
+Test of leading zeros in ESC sequences.                                         
+Two lines below you should see the sentence "This is a correct sentence".       
+                                                                                
+This is a correct sentence                                                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+Push <RETURN>

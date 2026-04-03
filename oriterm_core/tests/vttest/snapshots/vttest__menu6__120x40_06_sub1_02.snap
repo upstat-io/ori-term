@@ -1,0 +1,16 @@
+---
+source: oriterm_core/tests/vttest/menu6.rs
+expression: text
+---
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+This is a test of the ANSWERBACK MESSAGE. (To load the A.B.M.                                                           
+see the TEST KEYBOARD part of this program). Below here, the                                                            
+current answerback message in your terminal should be                                                                   
+displayed. Finish this test with RETURN.                                                                                
+                                                                                                                        
+ <13>                                                                                                                   
+                                                                                                                        
+Push <RETURN>

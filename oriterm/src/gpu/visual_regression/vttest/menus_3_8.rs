@@ -1,4 +1,4 @@
-//! vttest golden image tests for menus 3 (character sets) and 8 (VT102).
+//! vttest golden image tests for menus 3-8.
 
 use super::{VtTestSession, vttest_available};
 use crate::gpu::visual_regression::headless_env;
@@ -53,6 +53,165 @@ fn vttest_golden_menu3_80x24() {
         return;
     }
     run_menu3_golden(80, 24);
+}
+
+// Menu 4: Double-size characters (DECDHL/DECDWL — unimplemented, baseline only).
+
+/// Run vttest menu 4 and capture golden images.
+///
+/// DECDHL/DECDWL are not implemented — text renders at normal size.
+/// Golden images serve as a baseline for when support is added.
+fn run_menu4_golden(cols: u16, rows: u16) {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut s = VtTestSession::new(cols, rows);
+    let label = format!("{}x{}", cols, rows);
+
+    s.wait_for("Enter choice number", 5000);
+    s.send(b"4\r");
+
+    let mut screen = 1;
+    loop {
+        let text = s.grid_text();
+        if text.contains("Enter choice number") {
+            break;
+        }
+
+        s.assert_golden(
+            &format!("vttest_{label}_04_dblsize_{screen:02}"),
+            &gpu,
+            &pipelines,
+            &mut renderer,
+        );
+
+        s.send(b"\r");
+        screen += 1;
+        if screen > 20 {
+            break;
+        }
+    }
+}
+
+#[test]
+fn vttest_golden_menu4_80x24() {
+    if !vttest_available() {
+        return;
+    }
+    run_menu4_golden(80, 24);
+}
+
+// Menu 6: Terminal reports (DA, DSR, DECRQM).
+
+/// Run vttest menu 6 and capture golden images.
+///
+/// Menu 6 has a sub-menu. We enter each sub-item and capture screens.
+fn run_menu6_golden(cols: u16, rows: u16) {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut s = VtTestSession::new(cols, rows);
+    let label = format!("{}x{}", cols, rows);
+
+    s.wait_for("Enter choice number", 5000);
+    s.send(b"6\r");
+
+    // Check for sub-menu.
+    let text = s.grid_text();
+    if text.contains("Menu 6") || text.contains("menu 6") {
+        s.assert_golden(
+            &format!("vttest_{label}_06_menu"),
+            &gpu,
+            &pipelines,
+            &mut renderer,
+        );
+
+        // Walk sub-items 1-6.
+        for item in 1..=6 {
+            let item_text = s.grid_text();
+            if !item_text.contains("Enter choice number") {
+                continue;
+            }
+            s.send(format!("{item}\r").as_bytes());
+
+            let mut screen = 1;
+            loop {
+                let t = s.grid_text();
+                if t.contains("Enter choice number") {
+                    break;
+                }
+                s.assert_golden(
+                    &format!("vttest_{label}_06_sub{item}_{screen:02}"),
+                    &gpu,
+                    &pipelines,
+                    &mut renderer,
+                );
+                s.send(b"\r");
+                screen += 1;
+                if screen > 10 {
+                    break;
+                }
+            }
+        }
+        s.send(b"0\r");
+    }
+}
+
+#[test]
+fn vttest_golden_menu6_80x24() {
+    if !vttest_available() {
+        return;
+    }
+    run_menu6_golden(80, 24);
+}
+
+// Menu 7: VT52 mode (unimplemented, baseline only).
+
+/// Run vttest menu 7 and capture golden images.
+fn run_menu7_golden(cols: u16, rows: u16) {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut s = VtTestSession::new(cols, rows);
+    let label = format!("{}x{}", cols, rows);
+
+    s.wait_for("Enter choice number", 5000);
+    s.send(b"7\r");
+
+    let mut screen = 1;
+    loop {
+        let text = s.grid_text();
+        if text.contains("Enter choice number") {
+            break;
+        }
+
+        s.assert_golden(
+            &format!("vttest_{label}_07_vt52_{screen:02}"),
+            &gpu,
+            &pipelines,
+            &mut renderer,
+        );
+
+        s.send(b"\r");
+        screen += 1;
+        if screen > 20 {
+            break;
+        }
+    }
+}
+
+#[test]
+fn vttest_golden_menu7_80x24() {
+    if !vttest_available() {
+        return;
+    }
+    run_menu7_golden(80, 24);
 }
 
 /// Run vttest menu 8 (VT102 insert/delete) and capture golden images.

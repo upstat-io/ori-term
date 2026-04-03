@@ -102,7 +102,7 @@ fill_frame_shaped, GlyphEmitter, vttest menu 2 screen 13-14
 ---
 
 ### Section 06: Test Automation Expansion
-**File:** `section-06-test-expansion.md` | **Status:** Not Started
+**File:** `section-06-test-expansion.md` | **Status:** In Progress
 
 ```
 vttest automation, menu 5 keyboard, menu 6 terminal reports

@@ -1,0 +1,20 @@
+---
+source: oriterm_core/tests/vttest/menu6.rs
+expression: text
+---
+                                                                                                                        
+                                                                                                                        
+         Menu 6: Terminal Reports/Responses                                                                             
+                                                                                                                        
+         Choose test type:                                                                                              
+                                                                                                                        
+          0. Exit                                                                                                       
+          1. <ENQ> (AnswerBack Message)                                                                                 
+          2. Set/Reset Mode - LineFeed / Newline                                                                        
+          3. Device Status Report (DSR)                 VT100 & up                                                      
+          4. Primary Device Attributes (DA)             VT100 & up                                                      
+          5. Secondary Device Attributes (DA)           VT220 & up                                                      
+          6. Tertiary Device Attributes (DA)            VT420                                                           
+          7. Request Terminal Parameters (DECREQTPARM)  VT100                                                           
+                                                                                                                        
+          Enter choice number (0 - 7):
