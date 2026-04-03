@@ -3,9 +3,9 @@
 use super::{JumpListTask, build_jump_list_tasks};
 
 #[test]
-fn build_returns_one_built_in_task() {
+fn build_returns_two_built_in_tasks() {
     let tasks = build_jump_list_tasks();
-    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks.len(), 2);
 }
 
 #[test]
@@ -13,6 +13,13 @@ fn new_window_task_has_correct_arguments() {
     let tasks = build_jump_list_tasks();
     assert_eq!(tasks[0].label, "New Window");
     assert_eq!(tasks[0].arguments, "--new-window");
+}
+
+#[test]
+fn new_tab_task_has_correct_arguments() {
+    let tasks = build_jump_list_tasks();
+    assert_eq!(tasks[1].label, "New Tab");
+    assert_eq!(tasks[1].arguments, "--new-tab");
 }
 
 #[test]

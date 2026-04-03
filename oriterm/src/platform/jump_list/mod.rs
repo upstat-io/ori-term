@@ -26,11 +26,18 @@ pub(crate) struct JumpListTask {
 /// will be added once the profile system is implemented.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn build_jump_list_tasks() -> Vec<JumpListTask> {
-    vec![JumpListTask {
-        label: "New Window".to_owned(),
-        arguments: "--new-window".to_owned(),
-        description: "Open a new terminal window".to_owned(),
-    }]
+    vec![
+        JumpListTask {
+            label: "New Window".to_owned(),
+            arguments: "--new-window".to_owned(),
+            description: "Open a new terminal window".to_owned(),
+        },
+        JumpListTask {
+            label: "New Tab".to_owned(),
+            arguments: "--new-tab".to_owned(),
+            description: "Open a new tab in the current window".to_owned(),
+        },
+    ]
 }
 
 #[cfg(target_os = "windows")]
