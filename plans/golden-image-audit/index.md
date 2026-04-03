@@ -48,7 +48,7 @@ assert_vt102_screen_structure, structural assertions
 ---
 
 ### Section 03: Text Blink Cross-Frame Consistency Assertion
-**File:** `section-03-text-blink-tests.md` | **Status:** Not Started
+**File:** `section-03-text-blink-tests.md` | **Status:** Complete
 
 ```
 text blink, cross-frame consistency, opacity invariant

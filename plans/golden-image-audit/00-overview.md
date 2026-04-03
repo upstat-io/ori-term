@@ -98,7 +98,7 @@ Phase 3 - Revalidation
 | DECSCNM not rendering (12 images) | Mode 5 not recognized in VTE parser; no TermMode flag; no renderer logic | Section 01 | Fixed (`9b37ca07`) |
 | VT102 IL/DL wrong with scroll regions (5 screens: 08-12) | DECCOLM (132-col mode) unimplemented — not IL/DL | Section 02 | Fixed (`6937781a`) |
 | inverse_video.png may be wrong | SGR 7 works in vttest but test setup may not apply it correctly | Section 04 | Not Started |
-| Text blink tests lack cross-frame assertion | Existing 3 tests prove per-frame correctness but no test compares non-BLINK brightness across opacity values | Section 03 | Not Started |
+| Text blink tests lack cross-frame assertion | Existing 3 tests prove per-frame correctness but no test compares non-BLINK brightness across opacity values | Section 03 | Fixed (`2d0ca1c8`) |
 
 ## Metrics (Current State)
 
@@ -126,5 +126,5 @@ Phase 3 - Revalidation
 |----|-------|------|--------|
 | 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` | Complete |
 | 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` | Complete |
-| 03 | Text Blink Cross-Frame Consistency Assertion | `section-03-text-blink-tests.md` | Not Started |
+| 03 | Text Blink Cross-Frame Consistency Assertion | `section-03-text-blink-tests.md` | Complete |
 | 04 | Golden Image Revalidation | `section-04-revalidation.md` | Not Started |
