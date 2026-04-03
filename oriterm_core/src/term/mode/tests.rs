@@ -99,6 +99,7 @@ fn all_flags_are_distinct() {
         TermMode::SIXEL_SCROLLING,
         TermMode::SIXEL_CURSOR_RIGHT,
         TermMode::REVERSE_VIDEO,
+        TermMode::ENABLE_MODE_3,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).

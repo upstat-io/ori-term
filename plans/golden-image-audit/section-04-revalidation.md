@@ -71,9 +71,11 @@ Read every re-rendered golden image to confirm visual correctness:
 - [ ] Read all `vttest_*_02_03.png` (3 sizes) — verify white/light background
 - [ ] Read all `vttest_*_02_04.png` (3 sizes) — verify white/light background
 - [ ] Read all `vttest_*_02_14.png` (3 sizes) — verify white/light background with SGR rendition pattern
-- [ ] Read `vttest_80x24_08_vt102_09.png` — verify top line shows A's
-- [ ] Read `vttest_80x24_08_vt102_10.png` — verify top line starts with A
-- [ ] Read `vttest_80x24_08_vt102_11.png` — verify top line shows "AB"
+- [ ] Read `vttest_80x24_08_vt102_08.png` — verify top line shows A's (accordion with scroll region)
+- [ ] Read `vttest_80x24_08_vt102_09.png` — verify top line shows A's (IL/DL result)
+- [ ] Read `vttest_80x24_08_vt102_10.png` — verify top line starts with A, ends with B (insert mode)
+- [ ] Read `vttest_80x24_08_vt102_11.png` — verify top line shows "AB" (delete char)
+- [ ] Read `vttest_80x24_08_vt102_12.png` — verify top line shows A's (DCH stagger)
 - [ ] Read `inverse_video.png` — verify inverse line has visible fg/bg swap
 - [ ] Confirm no other golden images were inadvertently changed
 
@@ -88,7 +90,7 @@ Read every re-rendered golden image to confirm visual correctness:
 ## 04.N Completion Checklist
 
 - [ ] All 9 DECSCNM golden images show light background (visually verified)
-- [ ] All 3 VT102 golden images show correct top-line content (visually verified)
+- [ ] All 5 VT102 golden images (08-12) show correct top-line content (visually verified)
 - [ ] `inverse_video.png` shows visible inverse video effect (visually verified)
 - [ ] No other golden images inadvertently changed
 - [ ] `./build-all.sh` green

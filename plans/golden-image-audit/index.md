@@ -34,15 +34,15 @@ FramePalette, RenderableContent, vttest 02_03, 02_04, 02_14
 
 ---
 
-### Section 02: VT102 Insert/Delete with Scroll Regions
+### Section 02: VT102 Insert/Delete Line with Scroll Regions
 **File:** `section-02-vt102-scroll.md` | **Status:** Not Started
 
 ```
-insert_lines, delete_lines, insert_blank, delete_chars
-IL, DL, ICH, DCH, CSI L, CSI M, CSI @, CSI P
+insert_lines, delete_lines, IL, DL, CSI L, CSI M
 scroll region, DECSTBM, scroll_range_down, scroll_range_up
 rotate_right, rotate_left, grid/scroll/mod.rs
-vttest 08_vt102_09, 08_vt102_10, 08_vt102_11
+vttest 08_vt102_08 through 08_vt102_12
+assert_vt102_screen_structure, structural assertions
 ```
 
 ---
@@ -77,6 +77,6 @@ full audit, re-render, revalidation sweep
 | ID | Title | File |
 |----|-------|------|
 | 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` |
-| 02 | VT102 Insert/Delete with Scroll Regions | `section-02-vt102-scroll.md` |
+| 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` |
 | 03 | Text Blink Multi-Frame Verification | `section-03-text-blink-tests.md` |
 | 04 | Golden Image Revalidation | `section-04-revalidation.md` |
