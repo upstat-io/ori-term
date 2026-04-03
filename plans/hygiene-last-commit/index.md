@@ -64,7 +64,7 @@ render_dispatch.rs, event_loop_helpers/mod.rs, event_loop.rs
 ---
 
 ### Section 04: Scattered Knowledge and Bloat
-**File:** `section-04-scattered-and-bloat.md` | **Status:** Not Started
+**File:** `section-04-scattered-and-bloat.md` | **Status:** Complete
 
 ```
 apply_theme, tab_bar.apply_theme, status_bar.apply_theme, apply_theme_to_chrome
