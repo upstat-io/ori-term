@@ -337,7 +337,6 @@ impl ApplicationHandler<TermEvent> for App {
             }
             TermEvent::MuxWakeup => {
                 self.perf.record_wakeup();
-                log::info!("MuxWakeup received");
             }
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);

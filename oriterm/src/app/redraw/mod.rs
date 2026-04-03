@@ -266,11 +266,6 @@ impl App {
                 }
             };
             frame.text_blink_opacity = text_blink_opacity;
-            if (text_blink_opacity - 1.0).abs() > 0.01 || text_blink_opacity < 0.01 {
-                log::info!(
-                    "text_blink redraw: opacity={text_blink_opacity:.3} content_changed={content_changed}"
-                );
-            }
 
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
