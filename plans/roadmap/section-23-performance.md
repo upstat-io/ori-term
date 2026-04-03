@@ -467,7 +467,7 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 - [x] LRU page eviction when all pages are full
 - [x] Color emoji support via separate `Rgba8UnormSrgb` atlas
 - [x] Add `log::debug!` in `GlyphAtlas::insert()` when page utilization exceeds 80% — computed via `RectPacker::free_area()` (total page pixels - free area) / total page pixels. Logs page index, utilization percentage, and glyph count
-- [ ] Stress-test with heavy Unicode workload (CJK + emoji + combining marks filling 240x80 grid). If 4 pages overflow, make max pages configurable via `GlyphAtlas::new(max_pages: u32)` with a default of 4
+- [x] Stress-test with heavy Unicode workload: 3 tests added (2026-04-03) — `stress_test_heavy_unicode_workload` (5,300 mixed CJK/ASCII/combining glyphs, fits in ≤4 pages), `stress_test_color_emoji_atlas` (1,000 color emoji 32×32, fits in ≤4 pages), `stress_test_overflow_triggers_lru_eviction` (4,000 large 64×64 glyphs, triggers LRU eviction, verifies page count stays at 4). No `max_pages` configurability needed — 4 pages handles worst-case 240×80 grid comfortably
 
 ### Frame Pacing
 
@@ -630,8 +630,8 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 - [ ] `cargo bench` -- all benchmarks compile and run without error
 
 **Hygiene issues found (verified 2026-03-29):**
-- [ ] `oriterm/src/gpu/atlas/mod.rs` exceeds 500-line limit (579 lines) -- extract grow_texture/materialize/evict_lru_page to submodule
-- [ ] `needs_full_repaint()` still `#[allow(dead_code)]` -- decision made via all_dirty directly, function unused
-- [ ] `PaneRenderCache::retain_only()` is dead code with reason annotation -- genuinely unwired
+- [x] `oriterm/src/gpu/atlas/mod.rs` under 500-line limit (457 lines) — growth/texture submodules already extracted (verified 2026-04-03)
+- [x] `needs_full_repaint()` dead code removed — tests updated to use `content.all_dirty` directly (2026-04-03)
+- [x] `PaneRenderCache::retain_only()` dead code removed — re-add when batch prune call site is wired (2026-04-03)
 
 **Exit Criteria:** Terminal handles heavy workloads (large file output, rapid scrolling, complex TUIs) smoothly at 60fps with bounded memory usage. Performance is measured, baselined, and regression-tested.

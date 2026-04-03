@@ -113,15 +113,6 @@ impl PaneRenderCache {
         self.entries.remove(&pane_id);
     }
 
-    /// Remove entries for panes not in the active set.
-    ///
-    /// Belt-and-suspenders cleanup: ensures stale entries don't accumulate
-    /// if an individual `remove()` call is missed during pane close.
-    #[allow(dead_code, reason = "batch prune API — call site wired when needed")]
-    pub(crate) fn retain_only(&mut self, active: &std::collections::HashSet<PaneId>) {
-        self.entries.retain(|id, _| active.contains(id));
-    }
-
     /// Invalidate all cached panes (e.g. atlas rebuild, font change).
     pub(crate) fn invalidate_all(&mut self) {
         self.entries.clear();
