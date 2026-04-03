@@ -1,30 +1,30 @@
 ---
 section: "03"
 title: "Text Blink Cross-Frame Consistency Assertion"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Add a cross-frame assertion proving non-BLINK cell brightness is constant while BLINK cells change"
 inspired_by:
   - "Existing text blink tests (oriterm/src/gpu/visual_regression/text_blink_tests.rs)"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-02
 sections:
   - id: "03.1"
     title: "Add Cross-Frame Consistency Test"
     status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "03.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 03: Text Blink Cross-Frame Consistency Assertion
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Add a single cross-frame test that renders at 3 opacity levels in one test function and asserts that non-BLINK cell brightness is constant across frames while BLINK cell brightness changes.
 
 **Context:** The existing `text_blink_visible`, `text_blink_hidden`, and `text_blink_half` tests already render at three `text_blink_opacity` values (1.0, 0.5, 0.0) and assert pixel brightness properties per frame. Each proves behavioral correctness at its opacity level. However, since they run as independent tests, no assertion compares the non-BLINK cell across frames to prove it stays constant. A cross-frame test fills this narrow gap.
@@ -69,7 +69,9 @@ Add one test that renders 3 frames in one function to make cross-frame assertion
 
 ## 03.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-03-001][medium]` `plans/golden-image-audit/section-03-text-blink-tests.md:4-28`, `plans/golden-image-audit/00-overview.md:94-130`, `plans/golden-image-audit/index.md:50-58` — Section 03's implementation and checklist are in progress, but the surrounding plan artifacts still advertise the work as "Not Started."
+  Evidence: The section frontmatter says `status: in-progress` and the implementation/checklist items are checked off, yet the section body still says `**Status:** Not Started`, and both the plan overview and index list Section 03 as `Not Started`.
+  Resolved: All status text synced to In Progress / Complete on 2026-04-02.
 
 ---
 
@@ -85,6 +87,6 @@ Add one test that renders 3 frames in one function to make cross-frame assertion
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `./test-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** Text blink test suite proves both per-frame correctness (existing tests) AND cross-frame consistency (new test): BLINK cells change brightness while non-BLINK cells remain constant across opacity values.
