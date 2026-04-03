@@ -394,22 +394,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.pump_mux_events();
         self.perf.last_pump_time = pump_start.elapsed();
 
-        // Drive cursor blink timer only when blinking is active.
-        if self.blinking_active && self.cursor_blink.update() {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-                ctx.window.window().request_redraw();
-            }
-        }
-
-        // Drive text blink timer unconditionally (any cell in any pane could
-        // have CellFlags::BLINK; the timer cost is negligible).
-        if self.text_blink.update() {
-            for ctx in self.windows.values_mut() {
-                ctx.root.mark_dirty();
-                ctx.window.window().request_redraw();
-            }
-        }
+        self.drive_blink_timers();
 
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
