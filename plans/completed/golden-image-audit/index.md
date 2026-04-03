@@ -2,7 +2,7 @@
 reroute: true
 name: "Golden Audit"
 full_name: "Golden Image Audit & Test Methodology Fix"
-status: active
+status: resolved
 order: 1
 ---
 
@@ -61,7 +61,7 @@ FrameInput, CellFlags::BLINK, text_blink_tests.rs
 ---
 
 ### Section 04: Golden Image Revalidation
-**File:** `section-04-revalidation.md` | **Status:** Not Started
+**File:** `section-04-revalidation.md` | **Status:** Complete (OBE)
 
 ```
 golden image, visual regression, reference PNG
