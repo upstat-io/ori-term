@@ -96,6 +96,10 @@ fn all_flags_are_distinct() {
         TermMode::ALTERNATE_SCROLL,
         TermMode::MOUSE_URXVT,
         TermMode::MOUSE_X10,
+        TermMode::SIXEL_SCROLLING,
+        TermMode::SIXEL_CURSOR_RIGHT,
+        TermMode::REVERSE_VIDEO,
+        TermMode::ENABLE_MODE_3,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).
@@ -157,6 +161,19 @@ fn default_does_not_have_new_modes() {
     assert!(!mode.contains(TermMode::REVERSE_WRAP));
     assert!(!mode.contains(TermMode::MOUSE_URXVT));
     assert!(!mode.contains(TermMode::MOUSE_X10));
+    assert!(!mode.contains(TermMode::REVERSE_VIDEO));
+}
+
+#[test]
+fn reverse_video_set_and_clear() {
+    let mut mode = TermMode::default();
+    assert!(!mode.contains(TermMode::REVERSE_VIDEO));
+
+    mode.insert(TermMode::REVERSE_VIDEO);
+    assert!(mode.contains(TermMode::REVERSE_VIDEO));
+
+    mode.remove(TermMode::REVERSE_VIDEO);
+    assert!(!mode.contains(TermMode::REVERSE_VIDEO));
 }
 
 #[test]

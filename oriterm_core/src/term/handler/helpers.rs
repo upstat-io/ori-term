@@ -23,11 +23,13 @@ pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
     match mode {
         NamedPrivateMode::CursorKeys => 1,
         NamedPrivateMode::ColumnMode => 3,
-        NamedPrivateMode::X10Mouse => 9,
+        NamedPrivateMode::ReverseVideo => 5,
         NamedPrivateMode::Origin => 6,
         NamedPrivateMode::LineWrap => 7,
+        NamedPrivateMode::X10Mouse => 9,
         NamedPrivateMode::BlinkingCursor => 12,
         NamedPrivateMode::ShowCursor => 25,
+        NamedPrivateMode::EnableMode3 => 40,
         NamedPrivateMode::ReverseWraparound => 45,
         NamedPrivateMode::AltScreen => 47,
         NamedPrivateMode::ReportMouseClicks => 1000,
@@ -75,6 +77,8 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::AlternateScroll => Some(TermMode::ALTERNATE_SCROLL),
         NamedPrivateMode::SixelScrolling => Some(TermMode::SIXEL_SCROLLING),
         NamedPrivateMode::SixelCursorRight => Some(TermMode::SIXEL_CURSOR_RIGHT),
+        NamedPrivateMode::ReverseVideo => Some(TermMode::REVERSE_VIDEO),
+        NamedPrivateMode::EnableMode3 => Some(TermMode::ENABLE_MODE_3),
         NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }

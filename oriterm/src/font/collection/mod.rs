@@ -106,6 +106,18 @@ pub(crate) struct FontCollection {
     scale_context: ScaleContext,
     // Config
     weight: u16,
+    /// Absolute weight for bold text (CSS 100-900).
+    ///
+    /// Used by [`face_variations`] when selecting the `wght` axis value for
+    /// Bold and `BoldItalic` face slots and synthetic-BOLD fallbacks.
+    bold_weight: u16,
+    /// Pre-built 256-entry LUT for `pow(alpha, 1.0 / gamma)` alpha correction.
+    ///
+    /// Compensates for the visual weight loss when swash's raw coverage masks
+    /// are composited in linear space with sRGB output. Without correction,
+    /// text appears ~100 CSS weight units lighter than DirectWrite/browser
+    /// rendering. Built from [`TEXT_GAMMA`](rasterize::TEXT_GAMMA).
+    gamma_lut: [u8; 256],
     family_name: String,
     /// Collection-wide OpenType features applied to all primary faces.
     ///
@@ -131,6 +143,7 @@ impl FontCollection {
         dpi: f32,
         format: GlyphFormat,
         weight: u16,
+        bold_weight: u16,
         hinting: HintingMode,
     ) -> Result<Self, FontError> {
         let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
@@ -145,6 +158,7 @@ impl FontCollection {
             FaceIdx::REGULAR,
             SyntheticFlags::NONE,
             weight,
+            bold_weight,
             &regular_face.axes,
         );
         let font_metrics = compute_metrics(
@@ -219,6 +233,8 @@ impl FontCollection {
             cache_bytes: 0,
             scale_context: ScaleContext::new(),
             weight,
+            bold_weight,
+            gamma_lut: rasterize::build_gamma_lut(rasterize::TEXT_GAMMA),
             family_name: font_set.family_name,
             features: default_features(),
             codepoint_map: CodepointMap::new(),
@@ -395,7 +411,13 @@ impl FontCollection {
             return None;
         }
         let size = effective_size_for(face_idx, self.size_px, &self.fallback_meta);
-        let vars = face_variations(face_idx, SyntheticFlags::NONE, self.weight, &fd.axes);
+        let vars = face_variations(
+            face_idx,
+            SyntheticFlags::NONE,
+            self.weight,
+            self.bold_weight,
+            &fd.axes,
+        );
         let fr = font_ref(fd);
         let coords = face::normalize_coords(&fr, &vars.settings);
         let advance = fr.glyph_metrics(&coords).scale(size).advance_width(gid);

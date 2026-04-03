@@ -47,6 +47,7 @@ fn headless_tab_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .ok()?;
@@ -56,6 +57,7 @@ fn headless_tab_bar_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         GlyphFormat::Alpha,
         HintingMode::Full,
         400,
+        550,
         &crate::font::ui_font_sizes::PRELOAD_SIZES,
     )
     .ok()?;
@@ -118,6 +120,7 @@ fn embedded_font_resolves_emoji_glyph() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection should build");

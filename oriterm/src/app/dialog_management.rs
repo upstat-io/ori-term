@@ -372,6 +372,7 @@ impl App {
             crate::font::GlyphFormat::Alpha,
             crate::font::HintingMode::None,
             400,
+            600,
             crate::font::ui_font_sizes::PRELOAD_SIZES,
         )
         .ok()

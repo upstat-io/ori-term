@@ -44,6 +44,7 @@ pub(super) fn headless_dialog_env_with_dpi(
         GlyphFormat::Alpha,
         HintingMode::Full,
         UI_FONT_WEIGHT,
+        550,
         PRELOAD_SIZES,
     )
     .ok()?;

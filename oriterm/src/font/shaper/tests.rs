@@ -31,6 +31,7 @@ fn test_collection() -> FontCollection {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build")
@@ -1657,6 +1658,7 @@ fn test_ui_measurer() -> (crate::font::ui_font_sizes::UiFontSizes, FontCollectio
         GlyphFormat::Alpha,
         HintingMode::Full,
         400,
+        550,
         crate::font::ui_font_sizes::PRELOAD_SIZES,
     )
     .expect("registry must build");
@@ -1666,6 +1668,7 @@ fn test_ui_measurer() -> (crate::font::ui_font_sizes::UiFontSizes, FontCollectio
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("fallback must build");
@@ -2149,6 +2152,7 @@ fn embedded_collection() -> FontCollection {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build")

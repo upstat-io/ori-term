@@ -46,8 +46,14 @@ pub(crate) struct FontConfig {
     pub family: Option<String>,
     /// CSS-style font weight (100-900). Default: 400 (Regular).
     ///
-    /// Bold is derived as `min(900, weight + 300)`, matching CSS "bolder".
+    /// Bold is derived as `min(900, weight + 150)` unless `bold_weight` is set.
     pub weight: u16,
+    /// Explicit CSS-style font weight for bold text (100-900).
+    ///
+    /// When `None` (default), bold weight is derived as `min(900, weight + 150)`.
+    /// Set this to override the automatic derivation — e.g. `700` for standard
+    /// Bold or `600` for `SemiBold`.
+    pub bold_weight: Option<u16>,
     /// CSS-style font weight for tab bar text (100-900).
     /// When `None`, defaults to 600 (`SemiBold`).
     pub tab_bar_font_weight: Option<u16>,
@@ -102,6 +108,7 @@ impl Default for FontConfig {
             line_height: 1.0,
             family: None,
             weight: 400,
+            bold_weight: None,
             tab_bar_font_weight: None,
             tab_bar_font_family: None,
             features: vec!["calt".into(), "liga".into()],
@@ -127,10 +134,17 @@ impl FontConfig {
         self.weight.clamp(100, 900)
     }
 
-    /// Returns the bold weight derived from the user weight: `min(900, weight + 300)`.
-    #[allow(dead_code, reason = "used in config hot reload (Section 13.4)")]
+    /// Returns the bold weight: explicit `bold_weight` if set, else `min(900, weight + 150)`.
+    ///
+    /// The `+150` default accounts for the gamma-aware alpha correction
+    /// (`TEXT_GAMMA = 1.8`) which boosts all glyph coverage by ~100 visual
+    /// weight units. Without compensation, bold at `+200` or `+300` appears
+    /// over-heavy because the gamma boost compounds with the weight increase.
     pub fn effective_bold_weight(&self) -> u16 {
-        (self.effective_weight() + 300).min(900)
+        self.bold_weight.map_or_else(
+            || (self.effective_weight() + 150).min(900),
+            |w| w.clamp(100, 900),
+        )
     }
 
     /// Returns `tab_bar_font_weight` clamped to [100, 900], defaulting to 600 (`SemiBold`).

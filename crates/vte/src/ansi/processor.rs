@@ -23,6 +23,8 @@ pub(super) enum DcsState {
     None,
     /// Active sixel sequence (DCS action `q`).
     Sixel,
+    /// DECRQSS: Request Status String (DCS `$q` ... ST).
+    Decrqss,
 }
 
 /// Internal state for VTE processor.
@@ -39,6 +41,9 @@ pub(super) struct ProcessorState<T: Timeout> {
 
     /// Active DCS sequence type for routing `put`/`unhook` calls.
     pub(super) dcs_state: DcsState,
+
+    /// Buffer for DECRQSS data bytes (the status type being queried).
+    pub(super) decrqss_buf: Vec<u8>,
 }
 
 /// State for synchronized terminal updates.

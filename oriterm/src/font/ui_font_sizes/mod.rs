@@ -36,6 +36,7 @@ pub(crate) struct UiFontSizes {
     format: GlyphFormat,
     hinting: HintingMode,
     weight: u16,
+    bold_weight: u16,
     /// Keyed by physical `size_q6`.
     collections: BTreeMap<u32, FontCollection>,
     /// All logical pixel sizes that have been inserted.
@@ -61,7 +62,7 @@ impl UiFontSizes {
     /// passed to [`FontCollection::new`] with the given `dpi`.
     #[expect(
         clippy::too_many_arguments,
-        reason = "font registry requires all parameters: font data, DPI, format, hinting, weight, sizes"
+        reason = "font registry requires all parameters: font data, DPI, format, hinting, weight, bold_weight, sizes"
     )]
     pub(crate) fn new(
         font_set: FontSet,
@@ -69,6 +70,7 @@ impl UiFontSizes {
         format: GlyphFormat,
         hinting: HintingMode,
         weight: u16,
+        bold_weight: u16,
         preload_logical_sizes: &[f32],
     ) -> Result<Self, FontError> {
         let mut collections = BTreeMap::new();
@@ -77,7 +79,15 @@ impl UiFontSizes {
 
         for &logical_px in preload_logical_sizes {
             let size_pt = logical_to_pt(logical_px);
-            let fc = FontCollection::new(font_set.clone(), size_pt, dpi, format, weight, hinting)?;
+            let fc = FontCollection::new(
+                font_set.clone(),
+                size_pt,
+                dpi,
+                format,
+                weight,
+                bold_weight,
+                hinting,
+            )?;
             let q6 = size_key(fc.size_px());
             if (logical_px - DEFAULT_LOGICAL_SIZE).abs() < 0.01 {
                 default_q6 = q6;
@@ -89,7 +99,15 @@ impl UiFontSizes {
         // If the default wasn't in the preload list, create it now.
         if default_q6 == 0 {
             let size_pt = logical_to_pt(DEFAULT_LOGICAL_SIZE);
-            let fc = FontCollection::new(font_set.clone(), size_pt, dpi, format, weight, hinting)?;
+            let fc = FontCollection::new(
+                font_set.clone(),
+                size_pt,
+                dpi,
+                format,
+                weight,
+                bold_weight,
+                hinting,
+            )?;
             default_q6 = size_key(fc.size_px());
             collections.insert(default_q6, fc);
             logical_sizes.push(DEFAULT_LOGICAL_SIZE);
@@ -101,6 +119,7 @@ impl UiFontSizes {
             format,
             hinting,
             weight,
+            bold_weight,
             collections,
             logical_sizes,
             default_q6,
@@ -212,6 +231,7 @@ impl UiFontSizes {
                 self.dpi,
                 self.format,
                 self.weight,
+                self.bold_weight,
                 self.hinting,
             )?;
             if let Some(ref hook) = self.post_rebuild_hook {
@@ -260,6 +280,7 @@ impl UiFontSizes {
             self.dpi,
             self.format,
             self.weight,
+            self.bold_weight,
             self.hinting,
         )?;
         if let Some(ref hook) = self.post_rebuild_hook {
@@ -286,6 +307,7 @@ impl UiFontSizes {
                 self.dpi,
                 self.format,
                 self.weight,
+                self.bold_weight,
                 self.hinting,
             )?;
             if let Some(ref hook) = self.post_rebuild_hook {

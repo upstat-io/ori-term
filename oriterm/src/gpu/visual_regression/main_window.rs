@@ -36,6 +36,7 @@ fn headless_composed_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .ok()?;
@@ -45,6 +46,7 @@ fn headless_composed_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         GlyphFormat::Alpha,
         HintingMode::Full,
         400,
+        550,
         &PRELOAD_SIZES,
     )
     .ok()?;
@@ -63,6 +65,7 @@ fn headless_composed_env_192dpi() -> Option<(GpuState, GpuPipelines, WindowRende
         192.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .ok()?;
@@ -72,6 +75,7 @@ fn headless_composed_env_192dpi() -> Option<(GpuState, GpuPipelines, WindowRende
         GlyphFormat::Alpha,
         HintingMode::Full,
         400,
+        550,
         &PRELOAD_SIZES,
     )
     .ok()?;
@@ -131,7 +135,7 @@ fn render_main_window(
 
     // Prepare grid (fills instance buffers, clears, begins atlas frame).
     let origin = (wl.grid_rect.x(), wl.grid_rect.y());
-    renderer.prepare(&input, gpu, pipelines, origin, true, true);
+    renderer.prepare(&input, gpu, pipelines, origin, 1.0, true);
 
     let text_cache = TextShapeCache::new();
 

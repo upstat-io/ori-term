@@ -10,24 +10,24 @@
 
 #![allow(unsafe_code, reason = "Win32 FFI via windows-sys")]
 
+mod dwm;
 mod subclass;
+
+pub use dwm::{cloak_window, set_transitions_enabled};
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
-use windows_sys::Win32::Graphics::Dwm::{
-    DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED, DwmExtendFrameIntoClientArea,
-    DwmGetWindowAttribute, DwmSetWindowAttribute,
-};
+use windows_sys::Win32::Foundation::{HWND, POINT};
+use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, GetWindowRect, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_THICKFRAME,
+    GWL_STYLE, GetCursorPos, GetWindowLongPtrW, SW_SHOW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_THICKFRAME,
 };
 
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -355,7 +355,7 @@ pub fn cursor_screen_pos() -> (i32, i32) {
 /// unavailable. Returns `(left, top, right, bottom)` in screen coordinates.
 pub fn visible_frame_bounds(window: &Window) -> Option<(i32, i32, i32, i32)> {
     let hwnd = hwnd_from_window(window)?;
-    let rect = try_dwm_frame_bounds(hwnd)?;
+    let rect = dwm::try_dwm_frame_bounds(hwnd)?;
     Some((rect.left, rect.top, rect.right, rect.bottom))
 }
 
@@ -392,67 +392,7 @@ pub fn modal_loop_just_ended() -> bool {
     MODAL_LOOP_ENDED.swap(false, Ordering::Relaxed)
 }
 
-/// Disable or enable DWM window transition animations.
-///
-/// Chrome pattern: wrap `set_visible(true)` with `set_transitions_enabled(false/true)`
-/// to prevent the OS fade-in animation during tab tear-off. This gives an
-/// instantaneous window appearance instead of a distracting transition.
-pub fn set_transitions_enabled(window: &Window, enabled: bool) {
-    let Some(hwnd) = hwnd_from_window(window) else {
-        return;
-    };
-    let value: i32 = i32::from(!enabled);
-    unsafe {
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
-            (&raw const value).cast(),
-            size_of::<i32>() as u32,
-        );
-    }
-}
-
 // Private helpers
-
-/// Queries DWM for the visible frame bounds of an HWND.
-///
-/// Returns `None` if DWM composition is unavailable (e.g. disabled,
-/// or running on an older Windows version without DWM).
-fn try_dwm_frame_bounds(hwnd: HWND) -> Option<RECT> {
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    let hr = unsafe {
-        DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
-            (&raw mut rect).cast(),
-            size_of::<RECT>() as u32,
-        )
-    };
-    if hr == 0 { Some(rect) } else { None }
-}
-
-/// Returns the visible frame bounds for an HWND via DWM.
-///
-/// Uses `DWMWA_EXTENDED_FRAME_BOUNDS` which excludes the invisible DWM
-/// border that `GetWindowRect` includes on windows with `WS_THICKFRAME`.
-/// Falls back to `GetWindowRect` if the DWM query fails.
-pub(super) fn visible_frame_bounds_hwnd(hwnd: HWND) -> RECT {
-    try_dwm_frame_bounds(hwnd).unwrap_or_else(|| {
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        unsafe { GetWindowRect(hwnd, &raw mut rect) };
-        rect
-    })
-}
 
 fn snap_ptrs() -> &'static Mutex<HashMap<usize, usize>> {
     SNAP_PTRS.get_or_init(|| Mutex::new(HashMap::new()))

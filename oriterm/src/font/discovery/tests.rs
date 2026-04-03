@@ -69,7 +69,7 @@ fn fallback_spec_consistency() {
 /// `discover_fonts` always succeeds — the embedded fallback guarantees a result.
 #[test]
 fn discover_finds_at_least_one_font() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     assert!(
         result.primary.has_variant[0],
         "discover_fonts must always find at least a Regular variant",
@@ -79,7 +79,7 @@ fn discover_finds_at_least_one_font() {
 /// A bogus family name doesn't panic and falls through to defaults or embedded.
 #[test]
 fn unknown_family_falls_back() {
-    let result = discover_fonts(Some("NonExistentFontFamily_XYZ_12345"), 400);
+    let result = discover_fonts(Some("NonExistentFontFamily_XYZ_12345"), 400, 550);
     assert!(
         result.primary.has_variant[0],
         "bogus family should fall back gracefully",
@@ -89,7 +89,7 @@ fn unknown_family_falls_back() {
 /// If a discovered Regular path is `Some`, the file actually exists on disk.
 #[test]
 fn discovered_regular_path_exists() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     if let Some(path) = &result.primary.paths[0] {
         assert!(
             path.exists(),
@@ -103,7 +103,7 @@ fn discovered_regular_path_exists() {
 /// All discovered fallback paths should exist on disk.
 #[test]
 fn discovered_fallback_paths_exist() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     for fb in &result.fallbacks {
         assert!(
             fb.path.exists(),
@@ -124,7 +124,7 @@ fn resolve_user_fallback_nonexistent() {
 #[test]
 fn different_weights_succeed() {
     for weight in [100, 300, 400, 700, 900] {
-        let result = discover_fonts(None, weight);
+        let result = discover_fonts(None, weight, (weight + 150).min(900));
         assert!(
             result.primary.has_variant[0],
             "weight {weight} should still find a Regular variant",
@@ -180,7 +180,7 @@ fn linux_finds_dejavu() {
 /// Verify `discover_fonts` result is internally consistent.
 #[test]
 fn discovery_result_consistency() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     verify_result_consistency(&result);
 }
 
@@ -199,7 +199,7 @@ fn embedded_font_has_metrics() {
 /// Discovered primary family name is non-empty.
 #[test]
 fn discovered_family_name_nonempty() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     assert!(
         !result.primary.family_name.is_empty(),
         "primary family name must not be empty",
@@ -212,7 +212,7 @@ fn discovered_family_name_nonempty() {
 /// the discovery layer should have filtered them to `None`.
 #[test]
 fn discovered_variant_paths_distinct() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     let regular = &result.primary.paths[0];
     for (i, path) in result.primary.paths.iter().enumerate().skip(1) {
         if let (Some(r), Some(p)) = (regular, path) {
@@ -228,17 +228,17 @@ fn discovered_variant_paths_distinct() {
 /// passes the same consistency checks regardless of override outcome.
 #[test]
 fn user_override_result_consistent() {
-    let bogus = discover_fonts(Some("__bogus_font__"), 400);
+    let bogus = discover_fonts(Some("__bogus_font__"), 400, 550);
     verify_result_consistency(&bogus);
 
-    let no_override = discover_fonts(None, 400);
+    let no_override = discover_fonts(None, 400, 550);
     verify_result_consistency(&no_override);
 }
 
 /// Fallback discovery deduplicates — no two fallbacks share the same path.
 #[test]
 fn fallback_paths_unique() {
-    let result = discover_fonts(None, 400);
+    let result = discover_fonts(None, 400, 550);
     let mut seen = std::collections::HashSet::new();
     for fb in &result.fallbacks {
         assert!(
