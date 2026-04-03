@@ -35,7 +35,7 @@ FramePalette, RenderableContent, vttest 02_03, 02_04, 02_14
 ---
 
 ### Section 02: VT102 Insert/Delete Line with Scroll Regions
-**File:** `section-02-vt102-scroll.md` | **Status:** Not Started
+**File:** `section-02-vt102-scroll.md` | **Status:** Complete
 
 ```
 insert_lines, delete_lines, IL, DL, CSI L, CSI M
@@ -47,15 +47,15 @@ assert_vt102_screen_structure, structural assertions
 
 ---
 
-### Section 03: Text Blink Multi-Frame Verification
+### Section 03: Text Blink Cross-Frame Consistency Assertion
 **File:** `section-03-text-blink-tests.md` | **Status:** Not Started
 
 ```
-text blink, multi-frame capture, animation verification
-text_blink_opacity, CursorBlink, intensity, next_change
+text blink, cross-frame consistency, opacity invariant
+text_blink_opacity, blink_input, cell_pixel, render_to_pixels
 text_blink_visible, text_blink_hidden, text_blink_half
-frame sequence, opacity ramp, advance_time
-render_to_pixels, FrameInput, CellFlags::BLINK
+non-BLINK constant brightness, BLINK monotonic decrease
+FrameInput, CellFlags::BLINK, text_blink_tests.rs
 ```
 
 ---
@@ -78,5 +78,5 @@ full audit, re-render, revalidation sweep
 |----|-------|------|
 | 01 | DECSCNM Reverse Video Rendering | `section-01-decscnm.md` |
 | 02 | VT102 Insert/Delete Line with Scroll Regions | `section-02-vt102-scroll.md` |
-| 03 | Text Blink Multi-Frame Verification | `section-03-text-blink-tests.md` |
+| 03 | Text Blink Cross-Frame Consistency Assertion | `section-03-text-blink-tests.md` |
 | 04 | Golden Image Revalidation | `section-04-revalidation.md` |
