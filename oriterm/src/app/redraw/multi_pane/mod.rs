@@ -274,7 +274,11 @@ impl App {
                         let pos = (frame.content.cursor.line, frame.content.cursor.column.0);
                         if pos != self.last_cursor_pos {
                             self.last_cursor_pos = pos;
+                            // Inline reset_cursor_blink: split borrow
+                            // prevents &mut self while self.windows is borrowed.
                             self.cursor_blink.reset();
+                            self.blink_wakeup_gen
+                                .store(0, std::sync::atomic::Ordering::Release);
                         }
                     }
 

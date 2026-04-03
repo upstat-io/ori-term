@@ -15,6 +15,8 @@ pub(crate) use font_config::{
     resolve_subpixel_mode, resolve_subpixel_positioning,
 };
 
+use std::sync::atomic::Ordering;
+
 use super::{App, DEFAULT_DPI};
 use crate::config::{Config, FontConfig};
 use crate::font::{FontByteCache, FontCollection, FontSet};
@@ -301,6 +303,8 @@ impl App {
         if new.terminal.cursor_blink_interval_ms != self.config.terminal.cursor_blink_interval_ms {
             let interval = std::time::Duration::from_millis(new.terminal.cursor_blink_interval_ms);
             self.cursor_blink.set_interval(interval);
+            // Invalidate any pending wakeup thread so it reschedules with the new interval.
+            self.blink_wakeup_gen.store(0, Ordering::Release);
             log::info!(
                 "config reload: cursor blink interval={}ms",
                 new.terminal.cursor_blink_interval_ms
@@ -310,6 +314,8 @@ impl App {
         if new.terminal.text_blink_rate_ms != self.config.terminal.text_blink_rate_ms {
             let interval = std::time::Duration::from_millis(new.terminal.text_blink_rate_ms);
             self.text_blink.set_interval(interval);
+            // Invalidate any pending wakeup thread so it reschedules with the new interval.
+            self.blink_wakeup_gen.store(0, Ordering::Release);
             log::info!(
                 "config reload: text blink interval={}ms",
                 new.terminal.text_blink_rate_ms

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
@@ -130,6 +131,8 @@ impl App {
             text_blink: CursorBlink::new(text_blink_interval),
             mouse_cursor_hidden: false,
             blinking_active: false,
+            blink_wakeup_gen: Arc::new(AtomicU64::new(0)),
+            next_blink_gen: 1,
             last_cursor_pos: (0, 0),
             mouse: MouseState::new(),
             pane_selections: HashMap::new(),

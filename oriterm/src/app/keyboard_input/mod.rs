@@ -283,7 +283,7 @@ impl App {
                 }
             }
             self.write_pane_input(pane_id, &bytes);
-            self.cursor_blink.reset();
+            self.reset_cursor_blink();
 
             // Hide the mouse cursor while the user types.
             let hide_ctx = oriterm_ui::interaction::cursor_hide::HideContext {
