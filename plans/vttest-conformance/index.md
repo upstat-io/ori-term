@@ -2,7 +2,7 @@
 reroute: true
 name: "VTTest"
 full_name: "VTTest Conformance"
-status: queued
+status: active
 order: 2
 ---
 
