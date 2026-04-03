@@ -492,14 +492,11 @@ impl ApplicationHandler<TermEvent> for App {
             }
         }
 
-        // During blink fade transitions, schedule a wakeup via the event
-        // proxy as a fallback. WaitUntil may not reliably wake the event
-        // loop on all platforms (observed on Windows/WSL2). The MuxWakeup
-        // event forces about_to_wait to fire on the next iteration.
-        if self.text_blink.is_animating()
-            || (self.blinking_active && self.cursor_blink.is_animating())
-        {
-            self.schedule_blink_wakeup();
-        }
+        // Schedule a wakeup for the next blink state change via the
+        // event proxy. WaitUntil doesn't reliably wake the event loop
+        // on all platforms (observed on Windows/WSL2). The thread sleeps
+        // until the next visual change (~16ms during fades, ~300ms during
+        // plateaus) then sends MuxWakeup.
+        self.schedule_blink_wakeup();
     }
 }
