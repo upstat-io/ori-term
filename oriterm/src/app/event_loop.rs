@@ -429,8 +429,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.drain_pending_destroy();
 
         // Check if any window (terminal or dialog) is dirty and render it.
-        let any_dirty = self.windows.values().any(|ctx| ctx.root.is_dirty())
-            || self.dialogs.values().any(|ctx| ctx.root.is_dirty());
+        let any_dirty = self.is_any_window_dirty();
         let now = std::time::Instant::now();
         let urgent_redraw = self
             .windows
@@ -456,8 +455,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.perf.maybe_log();
 
         // Decide ControlFlow via pure function (testable without winit).
-        let still_dirty = self.windows.values().any(|c| c.root.is_dirty())
-            || self.dialogs.values().any(|c| c.root.is_dirty());
+        let still_dirty = self.is_any_window_dirty();
         let has_animations = self
             .windows
             .values()

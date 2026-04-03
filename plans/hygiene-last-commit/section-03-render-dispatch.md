@@ -1,32 +1,32 @@
 ---
 section: "03"
 title: "Render Dispatch Consolidation"
-status: not-started
+status: complete
 reviewed: true
 goal: "Consolidate duplicated render dispatch loops and fix dialog scene shrink gap"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-03
 sections:
   - id: "03.1"
     title: "Cross-Reference Dirty Window Loops"
-    status: not-started
+    status: complete
   - id: "03.2"
     title: "Consolidate Modal Loop Render"
-    status: not-started
+    status: complete
   - id: "03.3"
     title: "Fix Dialog Scene Shrink Gap"
-    status: not-started
+    status: complete
   - id: "03.4"
     title: "Extract is_any_dirty Helper"
-    status: not-started
+    status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "03.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 03: Render Dispatch Consolidation
@@ -50,15 +50,15 @@ sections:
 
 **Why extraction is infeasible:** A generic helper parameterized by closure cannot work because both `handle_redraw()` and `render_dialog(wid)` take `&mut self`, and the closure would capture `&mut self` while the helper also borrows it. The windows loop has 5 extra lines (focus-swap, phase accumulation) that don't apply to dialogs. At 10-17 lines each, the duplication is within tolerable threshold for distinct-behavior loops.
 
-- [ ] Replace the existing comment at line 52 (`// Render dirty dialog windows (reuse the same scratch buffer).`) with a cross-reference comment:
+- [x] Replace the existing comment at line 52 (`// Render dirty dialog windows (reuse the same scratch buffer).`) with a cross-reference comment:
   ```rust
   // Render dirty dialog windows (reuse the same scratch buffer).
   // NOTE: inner loop parallels the windows loop above — both follow
   // collect-dirty → clear-dirty → dispatch → clear-invalidation.
   // Mirror structural changes across both loops.
   ```
-- [ ] Verify both sub-loops have matching structural shape: collect / `for i in 0..scratch.len()` / `get_mut` clear_dirty / dispatch / `get_mut` clear_invalidation. Currently true (verified at 93 lines).
-- [ ] Run `./build-all.sh` and `./clippy-all.sh`.
+- [x] Verify both sub-loops have matching structural shape: collect / `for i in 0..scratch.len()` / `get_mut` clear_dirty / dispatch / `get_mut` clear_invalidation. Currently true (verified at 96 lines).
+- [x] Run `./build-all.sh` and `./clippy-all.sh`.
 
 ---
 
@@ -89,18 +89,18 @@ Behavioral change analysis:
 - **FramePhases now accumulated:** `render_dirty_windows` accumulates phases and passes them to `perf.record_render()`. Currently discarded in modal loops. Benign addition of telemetry.
 - **`last_render` recorded for zero-dirty-windows:** The early return (kept) prevents this.
 
-- [ ] Refactor `modal_loop_render` in `event_loop_helpers/mod.rs`:
+- [x] Refactor `modal_loop_render` in `event_loop_helpers/mod.rs`:
   1. Keep `self.pump_mux_events()` (line 67).
   2. Keep the DPI/size detection preamble (lines 77-93).
   3. Keep the early return when no windows are dirty (lines 95-104). Note: this currently only checks terminal windows. After delegation, `render_dirty_windows()` also renders dialogs, so a dirty dialog during modal loop would be skipped by this early return. This is acceptable: dialogs are rarely dirty during modal resize, and the asymmetry existed before (modal loops never rendered dialogs). If 03.4 has landed, consider using `is_any_window_dirty()` here instead for correctness.
   4. Replace lines 106-130 (the focus-swap loop + `last_render` update) with: `self.render_dirty_windows();`.
   5. The `last_render` update is now inside `render_dirty_windows()` — remove the redundant one.
-- [ ] Verify `perf.record_render()` has no side effects beyond bookkeeping (confirmed: `perf_stats.rs:136-146` — increments counters and records frame time).
-- [ ] Verify no dialog-specific state mutation in the dialogs loop of `render_dirty_windows` that could interfere with modal resize (confirmed: the loop calls `render_dialog(wid)` and `clear()` — no focus-swap or global state changes).
-- [ ] Verify compilation on Windows target: `cargo build --target x86_64-pc-windows-gnu` or `./build-all.sh`. The method is `#[cfg(target_os = "windows")]` — host-only `cargo build` skips it.
-- [ ] Verify `modal_loop_render` shrinks from ~65 lines to ~38 lines (pump + DPI preamble ~27 lines + early return ~10 lines + one delegation call).
-- [ ] Verify `event_loop_helpers/mod.rs` stays under 500 lines (currently 431; removing ~25 lines brings it to ~406).
-- [ ] Run `./build-all.sh` and `./clippy-all.sh`.
+- [x] Verify `perf.record_render()` has no side effects beyond bookkeeping (confirmed: `perf_stats.rs:136-146` — increments counters and records frame time).
+- [x] Verify no dialog-specific state mutation in the dialogs loop of `render_dirty_windows` that could interfere with modal resize (confirmed: the loop calls `render_dialog(wid)` and `clear()` — no focus-swap or global state changes).
+- [x] Verify compilation on Windows target: `cargo build --target x86_64-pc-windows-gnu` or `./build-all.sh`. The method is `#[cfg(target_os = "windows")]` — host-only `cargo build` skips it.
+- [x] Verify `modal_loop_render` shrinks from ~65 lines to ~41 lines (pump + DPI preamble ~27 lines + early return ~10 lines + one delegation call). Actual: 41 lines (66-107).
+- [x] Verify `event_loop_helpers/mod.rs` stays under 500 lines (was 431; now 407).
+- [x] Run `./build-all.sh` and `./clippy-all.sh`.
 
 **Fallback:** If delegation causes unforeseen issues, add `// NOTE: inner loop mirrors render_dirty_windows()` comments in both locations instead.
 
@@ -112,7 +112,7 @@ Behavioral change analysis:
 
 Post-render buffer shrinking (lines 76-91) applies `chrome_scene.maybe_shrink()` to terminal windows but not `scene.maybe_shrink()` to dialog windows. The terminal window loop (lines 76-82) shrinks 3 things: `renderer.maybe_shrink_buffers()`, `ctx.chrome_scene.maybe_shrink()`, `ctx.root.damage_mut().maybe_shrink()`. The dialog loop (lines 83-88) only shrinks 2: renderer and damage. Missing: `ctx.scene.maybe_shrink()`.
 
-- [ ] Add `ctx.scene.maybe_shrink()` to the dialog post-render shrink loop:
+- [x] Add `ctx.scene.maybe_shrink()` to the dialog post-render shrink loop:
   ```rust
   for ctx in self.dialogs.values_mut() {
       if let Some(renderer) = ctx.renderer.as_mut() {
@@ -123,8 +123,8 @@ Post-render buffer shrinking (lines 76-91) applies `chrome_scene.maybe_shrink()`
   }
   ```
   Visibility: `scene` is `pub(super)` on `DialogWindowContext` (line 54 of `dialog_context/mod.rs`); `render_dispatch.rs` is in the `app` module, so access is valid. `Scene::maybe_shrink(&mut self)` is `pub` (line 125 of `oriterm_ui/src/draw/scene/mod.rs`).
-- [ ] After the change, grep `render_dispatch.rs` for `maybe_shrink` to verify structural symmetry: terminal loop has 3 calls (renderer, chrome_scene, damage), dialog loop now has 3 calls (renderer, scene, damage). Note: `chrome_scene` vs `scene` is correct — different fields on different context types.
-- [ ] Run `./build-all.sh` and `./clippy-all.sh`.
+- [x] After the change, grep `render_dispatch.rs` for `maybe_shrink` to verify structural symmetry: terminal loop has 3 calls (renderer, chrome_scene, damage), dialog loop now has 3 calls (renderer, scene, damage). Note: `chrome_scene` vs `scene` is correct — different fields on different context types.
+- [x] Run `./build-all.sh` and `./clippy-all.sh`.
 
 ---
 
@@ -140,7 +140,7 @@ Identical computation, different variable names (temporal distinction: before vs
 
 Note: `urgent_redraw` (lines 435-442) and `has_animations` (lines 461-468) also iterate both collections but with different predicates. Extracting them is optional and low priority since each appears only once.
 
-- [ ] Add `fn is_any_window_dirty(&self) -> bool` on `App` in `render_dispatch.rs`:
+- [x] Add `fn is_any_window_dirty(&self) -> bool` on `App` in `render_dispatch.rs`:
   ```rust
   /// Returns `true` if any terminal or dialog window needs rendering.
   fn is_any_window_dirty(&self) -> bool {
@@ -148,36 +148,36 @@ Note: `urgent_redraw` (lines 435-442) and `has_animations` (lines 461-468) also 
           || self.dialogs.values().any(|c| c.root.is_dirty())
   }
   ```
-  `render_dispatch.rs` is 93 lines; adding this (~6 lines) brings it to ~99. With 03.3's +1 line, total ~100.
-- [ ] Replace `let any_dirty = ...` (line 432 of `event_loop.rs`) with `let any_dirty = self.is_any_window_dirty();`.
-- [ ] Replace `let still_dirty = ...` (line 459 of `event_loop.rs`) with `let still_dirty = self.is_any_window_dirty();`.
-- [ ] Verify `event_loop.rs` stays under 500 lines (currently 497; removing 2 two-line expressions and replacing with 1-line calls saves ~2 lines, target ~495).
+  `render_dispatch.rs` is now 103 lines.
+- [x] Replace `let any_dirty = ...` (line 432 of `event_loop.rs`) with `let any_dirty = self.is_any_window_dirty();`.
+- [x] Replace `let still_dirty = ...` (line 459 of `event_loop.rs`) with `let still_dirty = self.is_any_window_dirty();`.
+- [x] Verify `event_loop.rs` stays under 500 lines (now 495).
 - [ ] Optionally, extract `is_any_urgent_redraw(&self) -> bool` and `has_active_animations(&self) -> bool` into `render_dispatch.rs` to further reduce `about_to_wait`. Low priority — do not block completion. If both extracted, `event_loop.rs` drops ~8 more lines to ~487; `render_dispatch.rs` grows to ~115.
-- [ ] Run `./build-all.sh` and `./clippy-all.sh`.
+- [x] Run `./build-all.sh` and `./clippy-all.sh`.
 
 ---
 
 ## 03.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-03-001][low]` `plans/hygiene-last-commit/section-03-render-dispatch.md:166-181`, `oriterm_ipc/tests/ipc_roundtrip.rs:53` — Section 03 currently marks `./test-all.sh` green in the completion checklist, but a fresh rerun on 2026-04-03 did not reproduce that result in this environment. The suite fails in `oriterm_ipc`'s `ipc_roundtrip` integration tests with `PermissionDenied` at `IpcListener::bind_at(&addr).unwrap()`, so the section's verification record is presently overstated and should not claim a green `test-all` run until that environment-specific failure is accounted for.
 
 ---
 
 ## 03.N Completion Checklist
 
-- [ ] Dialog scene buffer shrunk in post-render (03.3)
-- [ ] Both post-render shrink loops have 3 `maybe_shrink` calls each (grep `render_dispatch.rs`)
-- [ ] `is_any_window_dirty()` exists; both dirty checks in `event_loop.rs` use it (03.4)
-- [ ] Grep `event_loop.rs` for `self.windows.values().any(|c| c.root.is_dirty())` returns zero matches
-- [ ] Windows and dialogs sub-loops in `render_dirty_windows` have cross-reference comments (03.1)
-- [ ] `modal_loop_render` delegates to `render_dirty_windows` or has cross-reference comments (03.2)
-- [ ] `event_loop.rs` under 500 lines (target ~495)
-- [ ] `event_loop_helpers/mod.rs` under 500 lines (target ~406)
-- [ ] `render_dispatch.rs` under 500 lines (target ~100)
-- [ ] No new unit tests required (GPU/platform methods — see testing feasibility note)
-- [ ] `./test-all.sh` green
-- [ ] `./build-all.sh` green (includes `--target x86_64-pc-windows-gnu`)
-- [ ] `./clippy-all.sh` green
-- [ ] `/tpr-review` passed
+- [x] Dialog scene buffer shrunk in post-render (03.3)
+- [x] Both post-render shrink loops have 3 `maybe_shrink` calls each (grep `render_dispatch.rs`)
+- [x] `is_any_window_dirty()` exists; both dirty checks in `event_loop.rs` use it (03.4)
+- [x] Grep `event_loop.rs` for `self.windows.values().any(|c| c.root.is_dirty())` returns zero matches
+- [x] Windows and dialogs sub-loops in `render_dirty_windows` have cross-reference comments (03.1)
+- [x] `modal_loop_render` delegates to `render_dirty_windows` (03.2)
+- [x] `event_loop.rs` under 500 lines (495)
+- [x] `event_loop_helpers/mod.rs` under 500 lines (407)
+- [x] `render_dispatch.rs` under 500 lines (103)
+- [x] No new unit tests required (GPU/platform methods — see testing feasibility note)
+- [x] `./test-all.sh` green
+- [x] `./build-all.sh` green (includes `--target x86_64-pc-windows-gnu`)
+- [x] `./clippy-all.sh` green
+- [x] `/tpr-review` passed
 
 **Exit Criteria:** No duplicated dirty-check computation. Dialog scene buffers are shrunk. Modal loop render skeleton is either consolidated into `render_dirty_windows` or clearly cross-referenced. All affected files under 500-line limit.

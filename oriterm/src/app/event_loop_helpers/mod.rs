@@ -103,31 +103,7 @@ impl App {
             return;
         }
 
-        let saved_focused = self.focused_window_id;
-        let saved_active = self.active_window;
-
-        for i in 0..self.scratch_dirty_windows.len() {
-            let wid = self.scratch_dirty_windows[i];
-            if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.root.clear_dirty();
-            }
-            let mux_wid = self
-                .windows
-                .get(&wid)
-                .map(|ctx| ctx.window.session_window_id());
-            self.focused_window_id = Some(wid);
-            self.active_window = mux_wid;
-            self.handle_redraw();
-            // Clear invalidation AFTER render so selective walks can consume
-            // the dirty state. Matches the pattern in render_dispatch.rs.
-            if let Some(ctx) = self.windows.get_mut(&wid) {
-                ctx.root.invalidation_mut().clear();
-            }
-        }
-
-        self.focused_window_id = saved_focused;
-        self.active_window = saved_active;
-        self.last_render = std::time::Instant::now();
+        self.render_dirty_windows();
     }
 
     /// Send a focus-in or focus-out escape sequence to the active pane.
