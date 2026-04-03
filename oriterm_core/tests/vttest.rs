@@ -809,6 +809,13 @@ fn run_menu8_vt102(cols: u16, rows: u16) {
 /// Structural assertions for VT102 menu 8 screens.
 fn assert_vt102_screen_structure(grid: &[Vec<char>], _text: &str, screen: usize, label: &str) {
     match screen {
+        // Screen 1: First-round accordion result — row 0 = all A's.
+        1 => {
+            assert!(
+                grid[0].iter().all(|&c| c == 'A'),
+                "{label} screen 1: top row should be all A's"
+            );
+        }
         // Screen 2: IL/DL accordion result — A's on top, X's on bottom.
         2 => {
             assert!(
@@ -856,6 +863,85 @@ fn assert_vt102_screen_structure(grid: &[Vec<char>], _text: &str, screen: usize,
                  (stagger), got len0={len0}, len1={len1}"
             );
         }
+        // Screen 6: ICH stagger — row 0 starts with 'A'.
+        6 => {
+            assert_eq!(
+                grid[0][0], 'A',
+                "{label} screen 6: row 0 col 0 should be 'A'"
+            );
+        }
+        // Screen 7: ICH ANSI test — informational text.
+        7 => {
+            assert_eq!(
+                grid[0][0], 'I',
+                "{label} screen 7: row 0 should start with 'I' (informational text)"
+            );
+        }
+        // Screen 8: Second-round accordion (with scroll region) — row 0 = all A's.
+        8 => {
+            assert!(
+                grid[0].iter().all(|&c| c == 'A'),
+                "{label} screen 8: top row should be all A's"
+            );
+        }
+        // Screen 9: Second-round IL/DL result (with scroll region) — row 0 = all A's.
+        9 => {
+            assert!(
+                grid[0].iter().all(|&c| c == 'A'),
+                "{label} screen 9: top row should be all A's"
+            );
+        }
+        // Screen 10: Second-round Insert Mode — first char 'A', last non-space 'B'.
+        10 => {
+            assert_eq!(
+                grid[0][0], 'A',
+                "{label} screen 10: first char should be 'A'"
+            );
+            let last_nonspace = grid[0].iter().rposition(|&c| c != ' ');
+            if let Some(pos) = last_nonspace {
+                assert_eq!(
+                    grid[0][pos], 'B',
+                    "{label} screen 10: last non-space char should be 'B'"
+                );
+            }
+        }
+        // Screen 11: Second-round Delete Character — row 0 starts with "AB".
+        11 => {
+            assert_eq!(
+                grid[0][0], 'A',
+                "{label} screen 11: row 0 col 0 should be 'A'"
+            );
+            assert_eq!(
+                grid[0][1], 'B',
+                "{label} screen 11: row 0 col 1 should be 'B'"
+            );
+        }
+        // Screen 12: Second-round DCH stagger — row 0 longer than row 1.
+        12 => {
+            let len0 = grid[0].iter().rposition(|&c| c != ' ').unwrap_or(0);
+            let len1 = grid[1].iter().rposition(|&c| c != ' ').unwrap_or(0);
+            assert!(
+                len0 > len1,
+                "{label} screen 12: row 0 should be longer than row 1 \
+                 (stagger), got len0={len0}, len1={len1}"
+            );
+        }
+        // Screen 13: Second-round ICH stagger (with scroll region) — row 0 starts with 'A'.
+        13 => {
+            assert_eq!(
+                grid[0][0], 'A',
+                "{label} screen 13: row 0 col 0 should be 'A'"
+            );
+        }
+        // Screen 14: Second-round ICH ANSI test — informational text.
+        14 => {
+            assert_eq!(
+                grid[0][0], 'I',
+                "{label} screen 14: row 0 should start with 'I' (informational text)"
+            );
+        }
+        // All 14 screens are covered above. This catch-all exists only for
+        // safety if vttest ever adds new screens.
         _ => {}
     }
 }
