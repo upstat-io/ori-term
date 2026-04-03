@@ -491,5 +491,15 @@ impl ApplicationHandler<TermEvent> for App {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(t));
             }
         }
+
+        // During blink fade transitions, schedule a wakeup via the event
+        // proxy as a fallback. WaitUntil may not reliably wake the event
+        // loop on all platforms (observed on Windows/WSL2). The MuxWakeup
+        // event forces about_to_wait to fire on the next iteration.
+        if self.text_blink.is_animating()
+            || (self.blinking_active && self.cursor_blink.is_animating())
+        {
+            self.schedule_blink_wakeup();
+        }
     }
 }

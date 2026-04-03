@@ -232,6 +232,20 @@ impl App {
         }
     }
 
+    /// Schedule a delayed wakeup for the next blink animation frame.
+    ///
+    /// Spawns a short-lived thread that sleeps for ~16ms then sends a
+    /// `MuxWakeup` event to force `about_to_wait` to fire. This is a
+    /// fallback for platforms where `ControlFlow::WaitUntil` doesn't
+    /// reliably wake the event loop (observed on Windows/WSL2).
+    pub(super) fn schedule_blink_wakeup(&self) {
+        let sender = self.event_proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(16));
+            sender.send(crate::event::TermEvent::MuxWakeup);
+        });
+    }
+
     /// Drive cursor blink and text blink timers.
     ///
     /// Marks windows dirty and requests redraw when opacity changes OR
