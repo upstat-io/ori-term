@@ -149,3 +149,65 @@ fn text_blink_half() {
         "blink cell at 0.5 should be dimmer than normal: blink={blink_brightness} normal={normal_brightness}",
     );
 }
+
+/// Cross-frame test: renders at 3 opacity levels in one function and asserts
+/// that non-BLINK cell brightness is constant while BLINK cell brightness
+/// decreases monotonically.
+#[test]
+fn text_blink_cross_frame_consistency() {
+    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let cell = renderer.cell_metrics();
+
+    // Render 3 frames at different text_blink_opacity values.
+    let input_1_0 = blink_input(cell, 1.0);
+    let pixels_1_0 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input_1_0);
+    let input_0_5 = blink_input(cell, 0.5);
+    let pixels_0_5 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input_0_5);
+    let input_0_0 = blink_input(cell, 0.0);
+    let pixels_0_0 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input_0_0);
+
+    let w = input_1_0.viewport.width;
+
+    // Extract non-BLINK cell pixel from each frame.
+    let n_1_0 = cell_pixel(&pixels_1_0, w, NORMAL_COL, cell.width, cell.height);
+    let n_0_5 = cell_pixel(&pixels_0_5, w, NORMAL_COL, cell.width, cell.height);
+    let n_0_0 = cell_pixel(&pixels_0_0, w, NORMAL_COL, cell.width, cell.height);
+
+    // Non-BLINK cell RGB should be constant across all 3 frames.
+    // text_blink_opacity only affects BLINK-flagged cells in the prepare pipeline.
+    for (a, b, label) in [
+        (n_1_0, n_0_5, "1.0 vs 0.5"),
+        (n_0_5, n_0_0, "0.5 vs 0.0"),
+        (n_1_0, n_0_0, "1.0 vs 0.0"),
+    ] {
+        let diff: i32 = (0..3).map(|i| (a[i] as i32 - b[i] as i32).abs()).sum();
+        assert!(
+            diff < 5,
+            "non-BLINK cell should be constant across frames ({label}): \
+             {a:?} vs {b:?}, diff={diff}",
+        );
+    }
+
+    // Extract BLINK cell pixel from each frame and compute brightness.
+    let b_1_0 = cell_pixel(&pixels_1_0, w, BLINK_COL, cell.width, cell.height);
+    let b_0_5 = cell_pixel(&pixels_0_5, w, BLINK_COL, cell.width, cell.height);
+    let b_0_0 = cell_pixel(&pixels_0_0, w, BLINK_COL, cell.width, cell.height);
+
+    let br_1_0: u32 = b_1_0[0] as u32 + b_1_0[1] as u32 + b_1_0[2] as u32;
+    let br_0_5: u32 = b_0_5[0] as u32 + b_0_5[1] as u32 + b_0_5[2] as u32;
+    let br_0_0: u32 = b_0_0[0] as u32 + b_0_0[1] as u32 + b_0_0[2] as u32;
+
+    // BLINK cell brightness must decrease monotonically: 1.0 > 0.5 > 0.0.
+    assert!(
+        br_1_0 > br_0_5,
+        "BLINK brightness should decrease: 1.0={br_1_0} should be > 0.5={br_0_5}",
+    );
+    assert!(
+        br_0_5 > br_0_0,
+        "BLINK brightness should decrease: 0.5={br_0_5} should be > 0.0={br_0_0}",
+    );
+}
