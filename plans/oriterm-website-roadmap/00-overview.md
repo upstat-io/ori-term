@@ -118,7 +118,7 @@ Phase 3 - CI Pipeline
 |----|-------|------|--------|
 | 01 | Data Loader | `section-01-data-loader.md` | Complete |
 | 02 | Wire Component | `section-02-wire-component.md` | Complete |
-| 03 | CI Dispatch | `section-03-ci-dispatch.md` | Not Started |
-| 04 | CI Receive | `section-04-ci-receive.md` | Not Started |
+| 03 | CI Dispatch | `section-03-ci-dispatch.md` | In Progress |
+| 04 | CI Receive | `section-04-ci-receive.md` | In Progress |
 
 <!-- tp-help skipped: Steps 4b, 6b, 7b, 8b — scope is clear with reference implementation to follow, user approved architecture directly -->

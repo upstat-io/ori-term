@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "CI Receive"
-status: not-started
+status: in-progress
 reviewed: false
 goal: "Update ori_term_website deploy.yml to receive dispatches, clone ori_term, and rebuild"
 inspired_by:
@@ -13,10 +13,10 @@ third_party_review:
 sections:
   - id: "04.1"
     title: "Add repository_dispatch trigger"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "Add ori_term checkout and symlink steps"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "End-to-end verification"
     status: not-started
@@ -46,7 +46,7 @@ sections:
 
 **File(s):** `~/projects/ori_term_website/.github/workflows/deploy.yml`
 
-- [ ] Add `repository_dispatch` to the existing `on:` block:
+- [x] Add `repository_dispatch` to the existing `on:` block:
   ```yaml
   on:
     push:
@@ -65,7 +65,7 @@ sections:
 
 Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
 
-- [ ] Add ori_term checkout step:
+- [x] Add ori_term checkout step:
   ```yaml
   - name: Checkout ori_term (roadmap data)
     uses: actions/checkout@v4
@@ -78,14 +78,14 @@ Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
   ```
   Uses sparse checkout to only fetch `plans/roadmap/` — no need for the entire ori_term repo (saves time and bandwidth).
 
-- [ ] Add symlink step:
+- [x] Add symlink step:
   ```yaml
   - name: Symlink ori_term for relative path resolution
     run: ln -s "$GITHUB_WORKSPACE/ori_term" "$GITHUB_WORKSPACE/../ori_term"
   ```
   This makes `../ori_term/plans/roadmap/` resolve correctly from the website's working directory, matching the local dev setup.
 
-- [ ] Verify the final `deploy.yml` step order:
+- [x] Verify the final `deploy.yml` step order:
   1. Checkout website (existing)
   2. **Checkout ori_term** (new)
   3. **Symlink ori_term** (new)
@@ -115,9 +115,9 @@ Add steps to the build job, BEFORE the `npm ci` / `npm run build` steps:
 
 ## 04.N Completion Checklist
 
-- [ ] `deploy.yml` has `repository_dispatch` trigger with type `oriterm-roadmap-updated`
-- [ ] Build job checks out ori_term with sparse checkout of `plans/roadmap`
-- [ ] Symlink step creates `$GITHUB_WORKSPACE/../ori_term`
+- [x] `deploy.yml` has `repository_dispatch` trigger with type `oriterm-roadmap-updated`
+- [x] Build job checks out ori_term with sparse checkout of `plans/roadmap`
+- [x] Symlink step creates `$GITHUB_WORKSPACE/../ori_term`
 - [ ] Normal push-to-main builds still work
 - [ ] Dispatch-triggered builds work (end-to-end from ori_term push to deployed site)
 - [ ] Deployed site shows correct roadmap data
