@@ -194,6 +194,7 @@ pub(super) fn rebuild_ui_font_sizes(
         crate::font::GlyphFormat::Alpha,
         HintingMode::None,
         400,
+        550,
         ui_font_sizes::PRELOAD_SIZES,
     ) {
         Ok(mut ui_sizes) => {

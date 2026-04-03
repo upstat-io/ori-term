@@ -39,15 +39,16 @@ fn resolve_font_dwrite(
 /// Bold-Italic paths are filtered: if DirectWrite returns the same file as Regular
 /// (fuzzy fallback), the variant is treated as unavailable.
 ///
-/// `weight` is CSS-style (100–900) for the Regular slot. Bold is derived as
-/// `min(weight + 300, 900)` per the CSS "bolder" algorithm.
+/// `weight` is CSS-style (100–900) for the Regular slot. `bold_weight` is the
+/// absolute CSS weight for the Bold slot (e.g. 550 for the default `+150`, 700 for Bold).
 fn resolve_family_dwrite(
     collection: &dwrote::FontCollection,
     family_name: &str,
     weight: u16,
+    bold_weight: u16,
 ) -> Option<[Option<PathBuf>; 4]> {
     let regular_weight = dwrote::FontWeight::from_u32(u32::from(weight));
-    let bold_weight = dwrote::FontWeight::from_u32(u32::from(weight.saturating_add(300).min(900)));
+    let bold_weight = dwrote::FontWeight::from_u32(u32::from(bold_weight));
 
     let regular = resolve_font_dwrite(
         collection,
@@ -139,12 +140,16 @@ fn resolve_fallbacks_dwrite(collection: &dwrote::FontCollection) -> Vec<Fallback
 
 /// Try to find a user-specified family via DirectWrite, falling back to
 /// static path if DirectWrite doesn't find it.
-pub(super) fn try_user_family(name: &str, weight: u16) -> Option<DiscoveryResult> {
+pub(super) fn try_user_family(
+    name: &str,
+    weight: u16,
+    bold_weight: u16,
+) -> Option<DiscoveryResult> {
     log::debug!("font discovery: creating DirectWrite system font collection (user family)");
     let collection = dwrote::FontCollection::system();
 
     // Try DirectWrite first.
-    if let Some(paths) = resolve_family_dwrite(&collection, name, weight) {
+    if let Some(paths) = resolve_family_dwrite(&collection, name, weight, bold_weight) {
         let primary = super::family_from_paths(name, paths, FontOrigin::UserConfig);
         let fallbacks = resolve_fallbacks_dwrite(&collection);
         return Some(DiscoveryResult { primary, fallbacks });
@@ -170,13 +175,13 @@ pub(super) fn try_user_family(name: &str, weight: u16) -> Option<DiscoveryResult
 ///
 /// Tries DirectWrite resolution first (using `DWRITE_FAMILY_NAMES`), then
 /// falls back to static path scanning (using `PRIMARY_FAMILIES`).
-pub(super) fn try_platform_defaults(weight: u16) -> Option<DiscoveryResult> {
+pub(super) fn try_platform_defaults(weight: u16, bold_weight: u16) -> Option<DiscoveryResult> {
     log::debug!("font discovery: creating DirectWrite system font collection (platform defaults)");
     let collection = dwrote::FontCollection::system();
 
     // DirectWrite first.
     for name in DWRITE_FAMILY_NAMES {
-        if let Some(paths) = resolve_family_dwrite(&collection, name, weight) {
+        if let Some(paths) = resolve_family_dwrite(&collection, name, weight, bold_weight) {
             let primary = super::family_from_paths(name, paths, FontOrigin::DirectWrite);
             let fallbacks = resolve_fallbacks_dwrite(&collection);
             return Some(DiscoveryResult { primary, fallbacks });

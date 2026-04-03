@@ -322,7 +322,7 @@ impl App {
             .as_ref()
             .is_some_and(|mux| mux.is_pane_snapshot_dirty(pane_id));
         should_redraw_after_pty_input(PtyInputRedrawState {
-            cursor_hidden_by_blink: self.blinking_active && !self.cursor_blink.is_visible(),
+            cursor_hidden_by_blink: self.blinking_active && self.cursor_blink.intensity() < 0.01,
             snapshot_dirty,
             snapshot_display_offset,
         })

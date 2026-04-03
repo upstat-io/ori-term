@@ -103,11 +103,20 @@ pub struct DiscoveryResult {
 /// 2. Try platform defaults in priority order.
 /// 3. Fall back to the embedded `JetBrains` Mono regular.
 ///
-/// The `weight` parameter (CSS-style, 100–900) controls the Regular weight;
-/// Bold is derived as `min(weight + 300, 900)`.
+/// The `weight` parameter (CSS-style, 100–900) controls the Regular weight.
+/// `bold_weight` is the absolute CSS weight for Bold (e.g. 550 for the default `+150`).
 ///
 /// This function always succeeds — the embedded fallback guarantees a result.
-pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryResult {
+pub fn discover_fonts(
+    family_override: Option<&str>,
+    weight: u16,
+    bold_weight: u16,
+) -> DiscoveryResult {
+    // `bold_weight` is used on Windows (DirectWrite). On other platforms,
+    // directory-scan discovery doesn't use it — silence the warning.
+    #[cfg(not(target_os = "windows"))]
+    let _ = bold_weight;
+
     // Build the font index once for directory-scanning platforms.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let font_index = {
@@ -126,11 +135,11 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
         let result = {
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
-                try_user_family_with_index(name, weight, &font_index)
+                try_user_family_with_index(name, weight, bold_weight, &font_index)
             }
             #[cfg(target_os = "windows")]
             {
-                try_user_family(name, weight)
+                try_user_family(name, weight, bold_weight)
             }
         };
         if let Some(result) = result {
@@ -144,11 +153,11 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
     let result = {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
-            try_platform_defaults_with_index(weight, &font_index)
+            try_platform_defaults_with_index(weight, bold_weight, &font_index)
         }
         #[cfg(target_os = "windows")]
         {
-            try_platform_defaults(weight)
+            try_platform_defaults(weight, bold_weight)
         }
     };
     if let Some(result) = result {
@@ -201,7 +210,7 @@ pub fn discover_ui_fonts() -> DiscoveryResult {
 
     // Fall back to terminal font discovery.
     log::info!("UI font discovery: no UI font found, falling back to terminal font");
-    discover_fonts(None, 400)
+    discover_fonts(None, 400, 550)
 }
 
 /// Try UI font families using a pre-built font index (Linux/macOS).
@@ -278,8 +287,8 @@ fn embedded_family() -> FamilyDiscovery {
 
 /// Try to find a user-specified family name via platform discovery (Windows).
 #[cfg(target_os = "windows")]
-fn try_user_family(name: &str, weight: u16) -> Option<DiscoveryResult> {
-    windows::try_user_family(name, weight)
+fn try_user_family(name: &str, weight: u16, bold_weight: u16) -> Option<DiscoveryResult> {
+    windows::try_user_family(name, weight, bold_weight)
 }
 
 /// Try to find a user-specified family name using a pre-built font index (Linux/macOS).
@@ -287,6 +296,7 @@ fn try_user_family(name: &str, weight: u16) -> Option<DiscoveryResult> {
 fn try_user_family_with_index(
     name: &str,
     weight: u16,
+    _bold_weight: u16,
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
     #[cfg(target_os = "linux")]
@@ -301,14 +311,15 @@ fn try_user_family_with_index(
 
 /// Try platform default families in priority order (Windows).
 #[cfg(target_os = "windows")]
-fn try_platform_defaults(weight: u16) -> Option<DiscoveryResult> {
-    windows::try_platform_defaults(weight)
+fn try_platform_defaults(weight: u16, bold_weight: u16) -> Option<DiscoveryResult> {
+    windows::try_platform_defaults(weight, bold_weight)
 }
 
 /// Try platform default families using a pre-built font index (Linux/macOS).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn try_platform_defaults_with_index(
     weight: u16,
+    _bold_weight: u16,
     index: &HashMap<String, PathBuf>,
 ) -> Option<DiscoveryResult> {
     #[cfg(target_os = "linux")]

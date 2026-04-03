@@ -90,6 +90,10 @@ impl CursorStyle {
 /// Terminal behavior configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent config toggles: cursor/text blink, image_protocol, image_animation"
+)]
 pub(crate) struct TerminalConfig {
     /// Override shell (default: system shell).
     pub shell: Option<String>,
@@ -99,8 +103,20 @@ pub(crate) struct TerminalConfig {
     pub cursor_style: CursorStyle,
     /// Enable cursor blinking (default: true).
     pub cursor_blink: bool,
+    /// Smooth fade for cursor blink transitions (default: true).
+    ///
+    /// When enabled, the cursor fades in/out using eased opacity. When
+    /// disabled, the cursor blinks with a hard on/off toggle.
+    pub cursor_blink_fade: bool,
     /// Blink interval in milliseconds (default: 530).
     pub cursor_blink_interval_ms: u64,
+    /// Blink rate for SGR 5/6 blinking text in milliseconds (default: 500).
+    pub text_blink_rate_ms: u64,
+    /// Smooth fade for text blink transitions (default: true).
+    ///
+    /// When enabled, blinking text fades in/out using eased opacity. When
+    /// disabled, blinking text toggles with a hard on/off switch.
+    pub text_blink_fade: bool,
     /// Enable/disable all image protocols (Kitty, Sixel, iTerm2).
     pub image_protocol: bool,
     /// CPU-side image cache memory limit in bytes (default: 320 MB).
@@ -120,7 +136,10 @@ impl Default for TerminalConfig {
             scrollback: 10_000,
             cursor_style: CursorStyle::default(),
             cursor_blink: true,
+            cursor_blink_fade: true,
             cursor_blink_interval_ms: 530,
+            text_blink_rate_ms: 500,
+            text_blink_fade: true,
             image_protocol: true,
             image_memory_limit: 320 * 1_000_000, // 320 MB (SI, not MiB)
             image_gpu_memory_limit: 512 * 1_000_000, // 512 MB (SI, not MiB)

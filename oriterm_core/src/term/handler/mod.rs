@@ -40,6 +40,16 @@ impl<T: EventListener> Handler for Term<T> {
     fn input(&mut self, c: char) {
         self.selection_dirty = true;
 
+        // DECAWM off: when cursor is at wrap-pending position (past last
+        // column), snap it back to the last column. The next character
+        // overwrites the last cell instead of wrapping to the next line.
+        if !self.mode.contains(TermMode::LINE_WRAP) {
+            let cols = self.grid().cols();
+            if self.grid().cursor().col().0 >= cols {
+                self.grid_mut().cursor_mut().set_col(Column(cols - 1));
+            }
+        }
+
         // Fast path: ASCII printable (0x20–0x7E), no charset mapping, no
         // INSERT mode. Skips charset.translate(), UnicodeWidthChar::width(),
         // insert_blank(), and image pruning. The grid's put_char_ascii
@@ -65,6 +75,18 @@ impl<T: EventListener> Handler for Term<T> {
             self.grid_mut().push_zerowidth(c);
             return;
         }
+
+        // Wide char at last column with DECAWM off: doesn't fit, skip it.
+        // Cursor stays at wrap-pending so subsequent narrow chars overwrite.
+        if width == 2 && !self.mode.contains(TermMode::LINE_WRAP) {
+            let col = self.grid().cursor().col().0;
+            let cols = self.grid().cols();
+            if col + 1 >= cols {
+                self.grid_mut().cursor_mut().set_col(Column(cols));
+                return;
+            }
+        }
+
         let prev = self.grid().total_evicted();
         let insert = self.mode.contains(TermMode::INSERT);
         let grid = self.grid_mut();
@@ -436,6 +458,9 @@ impl<T: EventListener> Handler for Term<T> {
     }
     fn iterm2_file(&mut self, params: &[&[u8]]) {
         self.handle_iterm2_file(params);
+    }
+    fn decrqss(&mut self, query: &[u8]) {
+        self.status_decrqss(query);
     }
 }
 

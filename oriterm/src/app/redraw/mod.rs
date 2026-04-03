@@ -2,21 +2,20 @@
 
 mod draw_helpers;
 mod multi_pane;
+mod post_render;
 pub(in crate::app) mod preedit;
 mod search_bar;
 
 use std::time::Instant;
 
-use oriterm_core::{Column, CursorShape, TermMode};
-use oriterm_ui::invalidation::DirtyKind;
-
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 use super::perf_stats::FramePhases;
 use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize,
-    extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette,
+    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
+    extract_frame_from_snapshot_into, snapshot_palette,
 };
+use oriterm_core::{Column, CursorShape, TermMode};
 
 impl App {
     /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
@@ -242,8 +241,31 @@ impl App {
 
             // On false→true transition, force cursor visible this frame (the
             // timer reset hasn't happened yet, so is_visible() may be stale).
-            let cursor_blink_visible =
-                !blinking_now || !self.blinking_active || self.cursor_blink.is_visible();
+            let cursor_opacity = if blinking_now && self.blinking_active {
+                let raw = self.cursor_blink.intensity();
+                if self.config.terminal.cursor_blink_fade {
+                    raw
+                } else if raw > 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                1.0_f32
+            };
+
+            // Text blink opacity: always active (any cell could have BLINK).
+            let text_blink_opacity = {
+                let raw = self.text_blink.intensity();
+                if self.config.terminal.text_blink_fade {
+                    raw
+                } else if raw > 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            };
+            frame.text_blink_opacity = text_blink_opacity;
 
             // Grid origin from layout bounds. When the layout engine
             // positions the grid (e.g. below a tab bar), this shifts all
@@ -261,7 +283,7 @@ impl App {
                 gpu,
                 pipelines,
                 origin,
-                cursor_blink_visible,
+                cursor_opacity,
                 content_changed,
             );
 
@@ -272,76 +294,18 @@ impl App {
             renderer.resolve_icons(gpu, scale);
             phases.prepare = prepare_start.elapsed();
 
-            // Phase gating: compute widget dirty level from lifecycle
-            // events, animation state, and per-widget invalidation.
-            // On cursor-blink-only frames (no UI changes), skip the
-            // entire prepare + prepaint pipeline.
+            // Phase gating: prepare + prepaint widget trees if dirty.
             let widgets_start = Instant::now();
-            let now = widgets_start;
-            let lifecycle_events = ctx.root.interaction_mut().drain_events();
-            let widget_dirty = {
-                let mut d = ctx.root.invalidation().max_dirty_kind();
-                if !lifecycle_events.is_empty() {
-                    d = d.merge(DirtyKind::Prepaint);
-                }
-                if ctx.ui_stale {
-                    d = d.merge(DirtyKind::Prepaint);
-                }
-                d
-            };
-            ctx.root.frame_requests_mut().reset();
-
-            log::debug!(
-                "phase gating: widget_dirty={widget_dirty:?} (Layout=full, Prepaint=hover/lifecycle, Paint=blink, Clean=skip)"
+            draw_helpers::phase_gate_widgets(
+                &mut ctx.root,
+                &mut ctx.tab_bar,
+                ctx.tab_bar_phys_rect,
+                renderer,
+                &ctx.text_cache,
+                &self.ui_theme,
+                scale,
+                ctx.ui_stale,
             );
-
-            if widget_dirty >= DirtyKind::Prepaint {
-                let (interaction, invalidation, flags) =
-                    ctx.root.interaction_invalidation_and_frame_requests_mut();
-                super::widget_pipeline::prepare_widget_tree(
-                    &mut ctx.tab_bar,
-                    interaction,
-                    Some(invalidation),
-                    &lifecycle_events,
-                    None,
-                    Some(flags),
-                    now,
-                );
-                // Prepare overlay widget trees.
-                ctx.root.prepare_overlay_widgets(&lifecycle_events, now);
-
-                // Prepaint: resolve visual state (interaction + animator)
-                // into widget fields. Compute layout bounds so
-                // PrepaintCtx::bounds reflects real screen positions.
-                let tb_phys = ctx.tab_bar_phys_rect;
-                let prepaint_tab_bounds = oriterm_ui::geometry::Rect::new(
-                    tb_phys.x() / scale,
-                    tb_phys.y() / scale,
-                    tb_phys.width() / scale,
-                    tb_phys.height() / scale,
-                );
-                let prepaint_bounds = draw_helpers::collect_tab_bar_prepaint_bounds(
-                    &ctx.tab_bar,
-                    renderer,
-                    &ctx.text_cache,
-                    &self.ui_theme,
-                    scale,
-                    prepaint_tab_bounds,
-                );
-                let (interaction, flags) = ctx.root.interaction_and_frame_requests();
-                let invalidation = ctx.root.invalidation();
-                super::widget_pipeline::prepaint_widget_tree(
-                    &mut ctx.tab_bar,
-                    &prepaint_bounds,
-                    Some(interaction),
-                    &self.ui_theme,
-                    now,
-                    Some(flags),
-                    Some(invalidation),
-                );
-                ctx.root
-                    .prepaint_overlay_widgets(&prepaint_bounds, &self.ui_theme, now);
-            }
 
             // Draw tab bar (unified chrome bar). Tab bar contains text
             // (tab titles), so uses the text-aware draw list conversion.
@@ -428,18 +392,11 @@ impl App {
             if self.config.window.show_status_bar
                 && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
             {
-                let pane_count = 1;
-                ctx.status_bar
-                    .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
-                        shell_name: "shell".into(),
-                        pane_count: format!(
-                            "{pane_count} pane{}",
-                            if pane_count == 1 { "" } else { "s" }
-                        ),
-                        grid_size: format!("{}\u{00d7}{}", frame.content_cols, frame.content_rows,),
-                        encoding: "UTF-8".into(),
-                        term_type: "xterm-256color".into(),
-                    });
+                ctx.status_bar.set_data(draw_helpers::status_bar_data(
+                    1,
+                    frame.content_cols,
+                    frame.content_rows,
+                ));
                 let phys = ctx.status_bar_phys_rect;
                 let sb_bounds = oriterm_ui::geometry::Rect::new(
                     phys.x() / scale,
@@ -492,48 +449,8 @@ impl App {
             (result, blinking_now, cursor_pos)
         };
 
-        self.handle_render_result(render_result);
-
-        // Reset blink to visible when the cursor moves (PTY output moved it).
-        if cursor_pos != self.last_cursor_pos {
-            self.last_cursor_pos = cursor_pos;
-            self.cursor_blink.reset();
-        }
-
-        // Update blink state after rendering (no state mutation during render).
-        if blinking_now && !self.blinking_active {
-            self.cursor_blink.reset();
-        }
-        self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
-
-        // Keep the IME candidate window positioned at the terminal cursor.
-        // Called every frame (not just during preedit) so Windows knows the
-        // cursor area before composition starts — otherwise the candidate
-        // popup defaults to the bottom-right corner (Alacritty pattern).
-        self.update_ime_cursor_area();
+        self.finish_render(render_result, blinking_now, Some(cursor_pos));
 
         phases
-    }
-
-    /// Handle the result of a render pass, recovering from surface loss.
-    fn handle_render_result(&mut self, result: Result<(), SurfaceError>) {
-        match result {
-            Ok(()) => log::trace!("render ok"),
-            Err(SurfaceError::Lost) => {
-                log::warn!("surface lost, reconfiguring");
-                let Some(gpu) = self.gpu.as_ref() else { return };
-                if let Some(ctx) = self
-                    .focused_window_id
-                    .and_then(|id| self.windows.get_mut(&id))
-                {
-                    let (w, h) = ctx.window.size_px();
-                    ctx.window.resize_surface(w, h, gpu);
-                    // Force immediate reconfigure for error recovery
-                    // (can't defer — the surface is lost).
-                    ctx.window.apply_pending_surface_resize(gpu);
-                }
-            }
-            Err(e) => log::error!("render error: {e}"),
-        }
     }
 }

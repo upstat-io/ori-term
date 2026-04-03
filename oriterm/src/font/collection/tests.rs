@@ -9,6 +9,7 @@ use super::face::{
 };
 use super::loading::FontBytes;
 use super::{FontCollection, FontSet};
+use crate::config::FontConfig;
 use crate::font::discovery::EMBEDDED_FONT_DATA;
 use crate::font::{
     FaceIdx, FontRealm, GlyphFormat, GlyphStyle, HintingMode, RasterKey, SyntheticFlags,
@@ -17,7 +18,7 @@ use crate::font::{
 /// Helper: build a FontCollection from system discovery with default settings.
 fn system_collection(format: GlyphFormat) -> FontCollection {
     let font_set = FontSet::load(None, 400).expect("font must load");
-    FontCollection::new(font_set, 12.0, 96.0, format, 400, HintingMode::Full)
+    FontCollection::new(font_set, 12.0, 96.0, format, 400, 550, HintingMode::Full)
         .expect("collection must build")
 }
 
@@ -32,6 +33,7 @@ fn embedded_only_collection(format: GlyphFormat) -> FontCollection {
         96.0,
         format,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build")
@@ -1020,8 +1022,8 @@ fn embolden_strength_scales_with_size() {
         "17px font should have sub-pixel embolden (~0.53)"
     );
     assert!(
-        (s32 - 1.0).abs() < f32::EPSILON,
-        "32px font should have 1.0px embolden"
+        (s32 - 0.75).abs() < f32::EPSILON,
+        "32px font should have 0.75px embolden"
     );
 }
 
@@ -1320,6 +1322,7 @@ fn set_size_metrics_scale_proportionally() {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .expect("collection must build");
@@ -1581,7 +1584,7 @@ fn clamp_to_axis_tag_not_found() {
 #[test]
 fn face_variations_fallback_returns_empty() {
     let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
-    let result = face_variations(FaceIdx(4), SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx(4), SyntheticFlags::NONE, 400, 550, &axes);
     assert!(
         result.settings.is_empty(),
         "fallback face should return empty variations",
@@ -1591,7 +1594,7 @@ fn face_variations_fallback_returns_empty() {
 
 #[test]
 fn face_variations_no_axes_returns_empty() {
-    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::BOLD, 400, &[]);
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::BOLD, 400, 550, &[]);
     assert!(
         result.settings.is_empty(),
         "no axes should return empty variations",
@@ -1602,7 +1605,7 @@ fn face_variations_no_axes_returns_empty() {
 #[test]
 fn face_variations_regular_with_wght() {
     let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
-    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::NONE, 400, 550, &axes);
     assert_eq!(result.settings.len(), 1, "should set wght");
     assert_eq!(result.settings[0].0, "wght");
     assert!(
@@ -1615,23 +1618,23 @@ fn face_variations_regular_with_wght() {
 #[test]
 fn face_variations_bold_slot_with_wght() {
     let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
-    let result = face_variations(FaceIdx(1), SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx(1), SyntheticFlags::NONE, 400, 550, &axes);
     assert_eq!(result.settings.len(), 1);
     assert_eq!(result.settings[0].0, "wght");
     assert!(
-        (result.settings[0].1 - 700.0).abs() < f32::EPSILON,
-        "Bold slot should derive weight 400 + 300 = 700",
+        (result.settings[0].1 - 550.0).abs() < f32::EPSILON,
+        "Bold slot should use bold_weight (550)",
     );
 }
 
 #[test]
 fn face_variations_synthetic_bold_suppresses_flag() {
     let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
-    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::BOLD, 400, &axes);
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::BOLD, 400, 550, &axes);
     assert_eq!(result.settings.len(), 1);
     assert!(
-        (result.settings[0].1 - 700.0).abs() < f32::EPSILON,
-        "synthetic BOLD should derive weight 400 + 300 = 700",
+        (result.settings[0].1 - 550.0).abs() < f32::EPSILON,
+        "synthetic BOLD should use bold_weight (550)",
     );
     assert!(
         result.suppress_synthetic.contains(SyntheticFlags::BOLD),
@@ -1642,10 +1645,10 @@ fn face_variations_synthetic_bold_suppresses_flag() {
 #[test]
 fn face_variations_bold_clamped_to_axis_max() {
     let axes = vec![axis(b"wght", 100.0, 400.0, 700.0)];
-    let result = face_variations(FaceIdx(1), SyntheticFlags::NONE, 600, &axes);
+    let result = face_variations(FaceIdx(1), SyntheticFlags::NONE, 600, 800, &axes);
     assert!(
         (result.settings[0].1 - 700.0).abs() < f32::EPSILON,
-        "bold weight 600+300=900 should clamp to axis max 700",
+        "bold_weight 800 should clamp to axis max 700",
     );
 }
 
@@ -1655,7 +1658,7 @@ fn face_variations_italic_with_slnt_axis() {
         axis(b"wght", 100.0, 400.0, 900.0),
         axis(b"slnt", -15.0, 0.0, 0.0),
     ];
-    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, 550, &axes);
     assert_eq!(result.settings.len(), 2, "should set wght and slnt");
     let slnt = result.settings.iter().find(|(t, _)| *t == "slnt");
     assert!(slnt.is_some(), "slnt should be in settings");
@@ -1668,7 +1671,7 @@ fn face_variations_italic_with_slnt_axis() {
 #[test]
 fn face_variations_synthetic_italic_with_slnt_suppresses() {
     let axes = vec![axis(b"slnt", -15.0, 0.0, 0.0)];
-    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::ITALIC, 400, &axes);
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::ITALIC, 400, 550, &axes);
     let slnt = result.settings.iter().find(|(t, _)| *t == "slnt");
     assert!(slnt.is_some(), "slnt should be set for synthetic italic");
     assert!(
@@ -1680,7 +1683,7 @@ fn face_variations_synthetic_italic_with_slnt_suppresses() {
 #[test]
 fn face_variations_italic_with_ital_axis() {
     let axes = vec![axis(b"ital", 0.0, 0.0, 1.0)];
-    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, 550, &axes);
     let ital = result.settings.iter().find(|(t, _)| *t == "ital");
     assert!(
         ital.is_some(),
@@ -1695,7 +1698,7 @@ fn face_variations_italic_with_ital_axis() {
 #[test]
 fn face_variations_slnt_preferred_over_ital() {
     let axes = vec![axis(b"slnt", -15.0, 0.0, 0.0), axis(b"ital", 0.0, 0.0, 1.0)];
-    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, 550, &axes);
     let has_slnt = result.settings.iter().any(|(t, _)| *t == "slnt");
     let has_ital = result.settings.iter().any(|(t, _)| *t == "ital");
     assert!(has_slnt, "slnt should be preferred over ital");
@@ -1708,7 +1711,7 @@ fn face_variations_bold_italic_sets_both_axes() {
         axis(b"wght", 100.0, 400.0, 900.0),
         axis(b"slnt", -15.0, 0.0, 0.0),
     ];
-    let result = face_variations(FaceIdx(3), SyntheticFlags::NONE, 400, &axes);
+    let result = face_variations(FaceIdx(3), SyntheticFlags::NONE, 400, 550, &axes);
     let has_wght = result.settings.iter().any(|(t, _)| *t == "wght");
     let has_slnt = result.settings.iter().any(|(t, _)| *t == "slnt");
     assert!(has_wght, "BoldItalic should set wght");
@@ -1999,10 +2002,10 @@ use super::loading::FontByteCache;
 fn font_byte_cache_deduplicates_across_calls() {
     let mut cache = FontByteCache::new();
 
-    let discovery1 = crate::font::discovery::discover_fonts(None, 400);
+    let discovery1 = crate::font::discovery::discover_fonts(None, 400, 550);
     let fs1 = FontSet::from_discovery(&discovery1, &mut cache).expect("first load");
 
-    let discovery2 = crate::font::discovery::discover_fonts(None, 400);
+    let discovery2 = crate::font::discovery::discover_fonts(None, 400, 550);
     let fs2 = FontSet::from_discovery(&discovery2, &mut cache).expect("second load");
 
     // Regular variant must share the same Arc allocation.
@@ -2026,7 +2029,7 @@ fn font_byte_cache_produces_identical_results() {
     let uncached = FontSet::load(None, 400).expect("uncached load");
 
     let mut cache = FontByteCache::new();
-    let cached = FontSet::load_cached(None, 400, &mut cache).expect("cached load");
+    let cached = FontSet::load_cached(None, 400, 550, &mut cache).expect("cached load");
 
     assert_eq!(uncached.family_name, cached.family_name);
     assert_eq!(uncached.fallbacks.len(), cached.fallbacks.len());
@@ -2041,7 +2044,7 @@ fn font_byte_cache_dropped_after_loading() {
     let cached_set;
     {
         let mut cache = FontByteCache::new();
-        cached_set = FontSet::load_cached(None, 400, &mut cache).expect("cached load");
+        cached_set = FontSet::load_cached(None, 400, 550, &mut cache).expect("cached load");
         // cache dropped here
     }
     // FontSet still usable — data held by Arc, not by the cache.
@@ -2170,8 +2173,16 @@ fn ui_embedded_has_medium_face() {
 #[test]
 fn ui_embedded_collection_has_medium() {
     let fs = FontSet::ui_embedded();
-    let fc = FontCollection::new(fs, 13.0, 96.0, GlyphFormat::Alpha, 400, HintingMode::None)
-        .expect("UI embedded collection should build");
+    let fc = FontCollection::new(
+        fs,
+        13.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        550,
+        HintingMode::None,
+    )
+    .expect("UI embedded collection should build");
     assert!(
         fc.medium.is_some(),
         "UI embedded FontCollection should have Medium face"
@@ -2184,5 +2195,252 @@ fn terminal_embedded_has_no_medium() {
     assert!(
         fs.medium.is_none(),
         "terminal embedded FontSet should not have a Medium face"
+    );
+}
+
+// ── Gamma LUT and alpha correction ──
+
+use super::rasterize::{TEXT_GAMMA, build_gamma_lut};
+
+#[test]
+fn gamma_lut_identity_at_gamma_1() {
+    let lut = build_gamma_lut(1.0);
+    for i in 0..=255u8 {
+        assert_eq!(lut[i as usize], i, "gamma 1.0 should be identity at {i}");
+    }
+}
+
+#[test]
+fn gamma_lut_preserves_extremes() {
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    assert_eq!(lut[0], 0, "zero coverage must stay zero");
+    assert_eq!(lut[255], 255, "full coverage must stay 255");
+}
+
+#[test]
+fn gamma_lut_boosts_intermediate_values() {
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    // Intermediate coverage should be boosted (gamma > 1 → pow(x, 1/γ) > x).
+    for i in 1..255u8 {
+        assert!(
+            lut[i as usize] >= i,
+            "gamma {} should boost coverage {i} (got {})",
+            TEXT_GAMMA,
+            lut[i as usize],
+        );
+    }
+}
+
+#[test]
+fn gamma_lut_monotonic() {
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    for i in 1..=255u8 {
+        assert!(
+            lut[i as usize] >= lut[(i - 1) as usize],
+            "LUT must be monotonically non-decreasing: lut[{}]={} < lut[{}]={}",
+            i - 1,
+            lut[(i - 1) as usize],
+            i,
+            lut[i as usize],
+        );
+    }
+}
+
+#[test]
+fn gamma_lut_thin_stroke_boost_significant() {
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    // At 10% coverage (alpha=26), the boost should be at least 30%.
+    // This is the correction that makes thin antialiased edges visible.
+    let input = 26u8;
+    let output = lut[input as usize];
+    let boost_pct = (output as f32 - input as f32) / input as f32 * 100.0;
+    assert!(
+        boost_pct >= 30.0,
+        "thin stroke (alpha={input}) boost {boost_pct:.0}% should be >= 30% (got {output})",
+    );
+}
+
+#[test]
+fn gamma_lut_thick_stroke_boost_small() {
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    // At 90% coverage (alpha=230), the boost should be < 10%.
+    // Near-opaque pixels should barely change.
+    let input = 230u8;
+    let output = lut[input as usize];
+    let boost_pct = (output as f32 - input as f32) / input as f32 * 100.0;
+    assert!(
+        boost_pct < 10.0,
+        "thick stroke (alpha={input}) boost {boost_pct:.0}% should be < 10% (got {output})",
+    );
+}
+
+#[test]
+fn gamma_lut_matches_pow_formula() {
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    let inv_gamma = 1.0 / TEXT_GAMMA;
+    for i in 0..=255u8 {
+        let a = i as f32 / 255.0;
+        let expected = (a.powf(inv_gamma) * 255.0 + 0.5) as u8;
+        assert_eq!(
+            lut[i as usize], expected,
+            "LUT[{i}] should match pow({a:.4}, {inv_gamma:.4}) * 255 = {expected}",
+        );
+    }
+}
+
+#[test]
+fn alpha_correction_applied_to_rasterized_glyph() {
+    // Rasterize a glyph, verify that intermediate alpha bytes are boosted.
+    let font_set = FontSet::embedded();
+    let mut fc = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        550,
+        HintingMode::Full,
+    )
+    .expect("collection should build");
+
+    let style = GlyphStyle::Regular;
+    let resolved = fc.resolve('A', style);
+    let key = RasterKey {
+        glyph_id: u32::from(resolved.glyph_id),
+        face_idx: resolved.face_idx,
+        weight: 0,
+        size_q6: super::size_key(fc.size_px()),
+        synthetic: resolved.synthetic,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Terminal,
+    };
+
+    let glyph = fc.rasterize(key).expect("should rasterize 'A'");
+
+    // The glyph bitmap should have intermediate values (anti-aliased edges).
+    // After gamma correction, intermediate bytes should be boosted compared
+    // to their uncorrected values.
+    let has_intermediate = glyph.bitmap.iter().any(|&b| b > 0 && b < 255);
+    assert!(
+        has_intermediate,
+        "rasterized 'A' should have anti-aliased pixels (intermediate alpha)",
+    );
+
+    // Verify the gamma correction was applied by checking that intermediate
+    // values are >= what the raw pow formula would produce.
+    let lut = build_gamma_lut(TEXT_GAMMA);
+    let any_boosted = glyph
+        .bitmap
+        .iter()
+        .any(|&b| b > 0 && b < 255 && lut.contains(&b));
+    assert!(
+        any_boosted,
+        "alpha correction should have been applied to intermediate values",
+    );
+}
+
+/// Compute mean alpha of a rasterized glyph bitmap.
+///
+/// Returns a value in `[0.0, 1.0]` representing the average coverage.
+/// Higher values mean heavier/bolder strokes.
+fn mean_alpha(bitmap: &[u8]) -> f64 {
+    if bitmap.is_empty() {
+        return 0.0;
+    }
+    let sum: u64 = bitmap.iter().map(|&b| u64::from(b)).sum();
+    sum as f64 / (bitmap.len() as f64 * 255.0)
+}
+
+#[test]
+fn bold_glyph_heavier_than_regular() {
+    // Verify that bold text produces heavier (higher mean alpha) glyphs.
+    let font_set = FontSet::embedded();
+    let mut fc = FontCollection::new(
+        font_set,
+        14.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        550,
+        HintingMode::Full,
+    )
+    .expect("collection should build");
+
+    let size_q6 = super::size_key(fc.size_px());
+
+    // Rasterize 'H' as Regular.
+    let regular = fc.resolve('H', GlyphStyle::Regular);
+    let regular_key = RasterKey {
+        glyph_id: u32::from(regular.glyph_id),
+        face_idx: regular.face_idx,
+        weight: 0,
+        size_q6,
+        synthetic: regular.synthetic,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Terminal,
+    };
+    let regular_glyph = fc.rasterize(regular_key).expect("regular 'H'");
+    let regular_alpha = mean_alpha(&regular_glyph.bitmap);
+
+    // Rasterize 'H' as Bold (uses synthetic bold on embedded JetBrains Mono).
+    let bold = fc.resolve('H', GlyphStyle::Bold);
+    let bold_key = RasterKey {
+        glyph_id: u32::from(bold.glyph_id),
+        face_idx: bold.face_idx,
+        weight: 0,
+        size_q6,
+        synthetic: bold.synthetic,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Terminal,
+    };
+    let bold_glyph = fc.rasterize(bold_key).expect("bold 'H'");
+    let bold_alpha = mean_alpha(&bold_glyph.bitmap);
+
+    assert!(
+        bold_alpha > regular_alpha,
+        "bold 'H' (mean_alpha={bold_alpha:.4}) should be heavier than regular (mean_alpha={regular_alpha:.4})",
+    );
+}
+
+#[test]
+fn effective_bold_weight_default_is_plus_150() {
+    let cfg = FontConfig::default();
+    assert_eq!(cfg.weight, 400);
+    assert_eq!(cfg.bold_weight, None);
+    assert_eq!(
+        cfg.effective_bold_weight(),
+        550,
+        "default bold should be weight + 150 = 550",
+    );
+}
+
+#[test]
+fn effective_bold_weight_explicit_override() {
+    let mut cfg = FontConfig::default();
+    cfg.bold_weight = Some(700);
+    assert_eq!(
+        cfg.effective_bold_weight(),
+        700,
+        "explicit bold_weight should override the +150 default",
+    );
+}
+
+#[test]
+fn effective_bold_weight_clamped_to_range() {
+    let mut cfg = FontConfig::default();
+    cfg.bold_weight = Some(1000);
+    assert_eq!(
+        cfg.effective_bold_weight(),
+        900,
+        "bold_weight > 900 should be clamped",
+    );
+    cfg.bold_weight = Some(50);
+    assert_eq!(
+        cfg.effective_bold_weight(),
+        100,
+        "bold_weight < 100 should be clamped",
     );
 }

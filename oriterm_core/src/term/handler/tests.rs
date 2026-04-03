@@ -41,8 +41,16 @@ impl EventListener for RecordingListener {
 
 /// Create a Term with 24 lines, 80 columns, and a recording listener.
 fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
+    term_with_recorder_sized(24, 80)
+}
+
+/// Create a Term with the given dimensions and a recording listener.
+fn term_with_recorder_sized(
+    lines: usize,
+    cols: usize,
+) -> (Term<RecordingListener>, RecordingListener) {
     let listener = RecordingListener::new();
-    let term = Term::new(24, 80, 0, Theme::default(), listener.clone());
+    let term = Term::new(lines, cols, 0, Theme::default(), listener.clone());
     (term, listener)
 }
 
@@ -437,7 +445,8 @@ fn da1_produces_device_attributes() {
     feed(&mut t, b"\x1b[c");
 
     let events = listener.events();
-    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[?6;4c)"));
+    // VT420-class (64) with ANSI color (6) and sixel (4).
+    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[?64;6;4c)"));
 }
 
 // --- ORIGIN mode tests ---
@@ -761,7 +770,7 @@ fn decsc_decrc_saves_and_restores_cursor_position() {
 // --- DSR cursor position report in ORIGIN mode ---
 
 #[test]
-fn dsr_reports_absolute_position_even_in_origin_mode() {
+fn dsr_reports_relative_position_in_origin_mode() {
     let (mut t, listener) = term_with_recorder();
     feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
     feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
@@ -769,8 +778,21 @@ fn dsr_reports_absolute_position_even_in_origin_mode() {
     feed(&mut t, b"\x1b[6n"); // DSR
 
     let events = listener.events();
-    // CPR: absolute line 4 + 1 = 5, col 0 + 1 = 1.
-    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[5;1R)"));
+    // Per DEC spec, DECOM DSR 6 reports position relative to scroll
+    // region origin. CUP(1,1) in region 5-15 → relative row 1, col 1.
+    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[1;1R)"));
+}
+
+#[test]
+fn dsr_reports_absolute_position_without_origin_mode() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[5;10H"); // CUP → absolute line 4, col 9
+    feed(&mut t, b"\x1b[6n"); // DSR
+
+    let events = listener.events();
+    // Without DECOM, DSR 6 reports absolute position.
+    assert!(events.iter().any(|e| e == "PtyWrite(\x1b[5;10R)"));
 }
 
 // --- Text area size report ---
@@ -5388,4 +5410,435 @@ fn decaln_clears_cell_attributes() {
             .flags
             .contains(crate::cell::CellFlags::BOLD)
     );
+}
+
+// --- DA1 response format (vttest conformance) ---
+
+#[test]
+fn da1_response_indicates_vt220_class() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[c");
+
+    let events = listener.events();
+    let da1 = events
+        .iter()
+        .find(|e| e.starts_with("PtyWrite(\x1b[?"))
+        .expect("DA1 response should be emitted");
+
+    // vttest requires the DA1 response to indicate VT200+ class.
+    // The response must start with CSI ? 62 (VT220), 63 (VT320),
+    // or 64 (VT420) for vttest to send CSI 18t size queries.
+    assert!(
+        da1.contains("?62;") || da1.contains("?63;") || da1.contains("?64;"),
+        "DA1 response must indicate VT220+ class (62/63/64), got: {da1}"
+    );
+}
+
+#[test]
+fn csi_18t_at_non_80_cols() {
+    let (mut t, listener) = term_with_recorder_sized(40, 120);
+    feed(&mut t, b"\x1b[18t");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[8;40;120t)"),
+        "CSI 18t should report actual grid dimensions (40x120), got: {events:?}"
+    );
+}
+
+#[test]
+fn csi_18t_at_97x33() {
+    let (mut t, listener) = term_with_recorder_sized(33, 97);
+    feed(&mut t, b"\x1b[18t");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1b[8;33;97t)"),
+        "CSI 18t should report actual grid dimensions (33x97), got: {events:?}"
+    );
+}
+
+// --- DECRQSS tests (DCS $ q ... ST) ---
+
+#[test]
+fn decrqss_decscl_reports_vt400() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q " p ST — request conformance level.
+    feed(&mut t, b"\x1bP$q\"p\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1bP1$r64;1\"p\x1b\\)"),
+        "DECRQSS DECSCL should report VT400 level: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_decstbm_reports_scroll_region() {
+    let (mut t, listener) = term_with_recorder();
+    // Set scroll region to lines 5-15 (1-based).
+    feed(&mut t, b"\x1b[5;15r");
+    // DCS $ q r ST — request scroll region.
+    feed(&mut t, b"\x1bP$qr\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r5;15r\x1b\\)"),
+        "DECRQSS DECSTBM should report 5;15: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_sgr_reports_default_rendition() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q m ST — request SGR status.
+    feed(&mut t, b"\x1bP$qm\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r0m\x1b\\)"),
+        "DECRQSS SGR should report reset (0m) at default: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_sgr_reports_bold() {
+    let (mut t, listener) = term_with_recorder();
+    // Enable bold via SGR 1.
+    feed(&mut t, b"\x1b[1m");
+    // DCS $ q m ST — request SGR status.
+    feed(&mut t, b"\x1bP$qm\x1b\\");
+
+    let events = listener.events();
+    let sgr_resp = events
+        .iter()
+        .find(|e| e.starts_with("PtyWrite(\x1bP1$r") && e.ends_with("m\x1b\\)"))
+        .expect("DECRQSS SGR response should be emitted");
+    assert!(
+        sgr_resp.contains(";1") || sgr_resp.contains("r1"),
+        "DECRQSS SGR should include bold (1): {sgr_resp}"
+    );
+}
+
+#[test]
+fn decrqss_unknown_reports_invalid() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q Z ST — unknown query.
+    feed(&mut t, b"\x1bP$qZ\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP0$r\x1b\\)"),
+        "DECRQSS unknown query should report invalid (0$r): {events:?}"
+    );
+}
+
+// --- Origin mode additional tests (Section 02) ---
+
+#[test]
+fn decaln_while_origin_mode_active() {
+    let mut t = term();
+    // Set narrow scroll region and enable DECOM.
+    feed(&mut t, b"\x1b[5;15r");
+    feed(&mut t, b"\x1b[?6h");
+    // DECALN: fills screen with 'E', resets scroll region to full screen.
+    feed(&mut t, b"\x1b#8");
+    // After DECALN, scroll region is full screen. CUP(1,1) in DECOM
+    // should go to absolute line 0 (full-screen region start = 0).
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+    // Screen should be filled with 'E'.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'E');
+    assert_eq!(t.grid()[crate::index::Line(23)][Column(79)].ch, 'E');
+}
+
+#[test]
+fn origin_mode_preserves_column() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
+    // CUP(3,40) — row 3 in region is absolute line 6, col 39.
+    feed(&mut t, b"\x1b[3;40H");
+    assert_eq!(t.grid().cursor().line(), 6);
+    // Column is NOT offset by DECOM — always 0-based from screen left.
+    assert_eq!(t.grid().cursor().col(), Column(39));
+}
+
+#[test]
+fn origin_mode_cup_row_zero_maps_to_region_start() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[10;20r"); // DECSTBM 10–20
+    feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
+    // CUP with row=1 (1-based minimum) → absolute line 9 (region start).
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 9);
+}
+
+// --- DECCOLM (132-column mode) tests ---
+
+#[test]
+fn deccolm_set_clears_screen() {
+    let mut t = term();
+    // Write content, then set DECCOLM (CSI ? 3 h).
+    feed(&mut t, b"Hello, world!");
+    feed(&mut t, b"\x1b[?3h");
+    // Screen should be cleared — first cell is blank.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
+    // Cursor should be at origin.
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+#[test]
+fn deccolm_reset_clears_screen() {
+    let mut t = term();
+    // Write content, then reset DECCOLM (CSI ? 3 l).
+    feed(&mut t, b"Hello, world!");
+    feed(&mut t, b"\x1b[?3l");
+    // Screen should be cleared.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
+    // Cursor at origin.
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+#[test]
+fn deccolm_preserves_grid_dimensions() {
+    let mut t = term();
+    let (lines, cols) = (t.grid().lines(), t.grid().cols());
+    // Set DECCOLM — grid should NOT resize.
+    feed(&mut t, b"\x1b[?3h");
+    assert_eq!(t.grid().lines(), lines);
+    assert_eq!(t.grid().cols(), cols);
+    // Reset DECCOLM — grid still same size.
+    feed(&mut t, b"\x1b[?3l");
+    assert_eq!(t.grid().lines(), lines);
+    assert_eq!(t.grid().cols(), cols);
+}
+
+#[test]
+fn deccolm_resets_scroll_region() {
+    let mut t = term();
+    // Set a scroll region, then toggle DECCOLM.
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[?3h");
+    // Scroll region should be reset to full screen.
+    // Verify by writing at line 1 and checking the region doesn't constrain.
+    let region = t.grid().scroll_region();
+    assert_eq!(region.start, 0);
+    assert_eq!(region.end, t.grid().lines());
+}
+
+#[test]
+fn decawm_wrap_fills_line() {
+    let mut t = term();
+    // DECAWM is on by default. Write 81 chars — 80 fill row 0, 81st wraps.
+    feed(&mut t, &[b'*'; 81]);
+    // 81st char triggers wrap to row 1, then writes at col 0.
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(1));
+    // Row 0 should be fully filled with '*'.
+    for col in 0..80 {
+        assert_eq!(
+            t.grid()[crate::index::Line(0)][Column(col)].ch,
+            '*',
+            "col {col} should be '*'"
+        );
+    }
+    // Row 1 col 0 should also be '*' (the 81st char).
+    assert_eq!(t.grid()[crate::index::Line(1)][Column(0)].ch, '*');
+}
+
+#[test]
+fn decawm_off_no_wrap() {
+    let mut t = term();
+    // Disable DECAWM (CSI ? 7 l).
+    feed(&mut t, b"\x1b[?7l");
+    // Write 85 chars — more than 80 columns.
+    for i in 0..85 {
+        let ch = b'A' + (i % 26);
+        feed(&mut t, &[ch]);
+    }
+    // Cursor should stay on line 0, at wrap-pending position (col 80).
+    assert_eq!(t.grid().cursor().line(), 0);
+    // Last column should contain the last character written (85th char = 'K').
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(79)].ch,
+        char::from(b'A' + (84 % 26))
+    );
+    // Row 1 should be empty — no wrap occurred.
+    assert_eq!(t.grid()[crate::index::Line(1)][Column(0)].ch, ' ');
+}
+
+#[test]
+fn decawm_with_control_chars() {
+    let mut t = term();
+    // DECAWM on (default). Write 78 chars, then BS, then 4 more chars.
+    // BS at col 78 → col 77. Then 4 chars fill cols 77–80, wrapping.
+    feed(&mut t, &[b'X'; 78]);
+    feed(&mut t, b"\x08"); // BS
+    feed(&mut t, b"ABCD");
+    // After BS: col 77. A→77, B→78, C→79, D→wrap to line 1, col 0.
+    // Wait, actually after 78 X's, cursor is at col 78. BS → col 77.
+    // A→77 (cursor 78), B→78 (cursor 79), C→79 (cursor 80 = wrap pending).
+    // D triggers wrap → line 1, col 0, write D.
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(1));
+    assert_eq!(t.grid()[crate::index::Line(1)][Column(0)].ch, 'D');
+}
+
+#[test]
+fn deccolm_set_then_reset_roundtrip() {
+    let mut t = term();
+    let (lines, cols) = (t.grid().lines(), t.grid().cols());
+    // Write content.
+    feed(&mut t, b"ABCDEF");
+    // Set DECCOLM.
+    feed(&mut t, b"\x1b[?3h");
+    // Write new content.
+    feed(&mut t, b"XYZ");
+    // Reset DECCOLM.
+    feed(&mut t, b"\x1b[?3l");
+    // Grid dimensions unchanged throughout.
+    assert_eq!(t.grid().lines(), lines);
+    assert_eq!(t.grid().cols(), cols);
+    // Screen cleared by DECCOLM reset.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+// --- DECSTBM scroll region with IL/DL ---
+
+#[test]
+fn scroll_region_fill_preserves_row_zero() {
+    // Diagnostic: does filling rows with linefeeds inside a scroll region
+    // corrupt row 0 (which is outside the region)?
+    let mut t = term();
+
+    // Write A's on row 0.
+    feed(&mut t, b"AAAAAAAAAA");
+    // Move to row 1 (CR+LF).
+    feed(&mut t, b"\r\n");
+    // Set scroll region: rows 2-24 (1-based), i.e., 0-based 1..24.
+    feed(&mut t, b"\x1b[2;24r");
+    // Home cursor to row 2, col 1 (inside scroll region).
+    feed(&mut t, b"\x1b[2;1H");
+
+    // Fill rows inside region with B's via prints + linefeeds.
+    for _ in 0..30 {
+        feed(&mut t, b"BBBBBBBBBB\n");
+    }
+
+    // Check row 0.
+    let grid = t.grid();
+    assert_eq!(
+        grid[crate::index::Line(0)][Column(0)].ch,
+        'A',
+        "row 0 should still be A after fill with scroll region active"
+    );
+}
+
+#[test]
+fn il_within_scroll_region_preserves_row_zero() {
+    let mut t = term();
+    // Write A's on row 0.
+    feed(&mut t, b"AAAAAAAAAA");
+    feed(&mut t, b"\r\n");
+    // Write B's on row 1.
+    feed(&mut t, b"BBBBBBBBBB");
+    // Set scroll region: rows 2-24 (1-based), i.e., 0-based 1..24.
+    feed(&mut t, b"\x1b[2;24r");
+    // Position cursor at row 2 col 1 (inside scroll region).
+    feed(&mut t, b"\x1b[2;1H");
+    // IL 1: insert 1 blank line at cursor.
+    feed(&mut t, b"\x1b[1L");
+
+    let grid = t.grid();
+    assert_eq!(
+        grid[crate::index::Line(0)][Column(0)].ch,
+        'A',
+        "row 0 should still be A after IL within scroll region"
+    );
+    assert_eq!(
+        grid[crate::index::Line(1)][Column(0)].ch,
+        ' ',
+        "row 1 should be blank (inserted line)"
+    );
+}
+
+#[test]
+fn accordion_with_scroll_region_preserves_row_zero() {
+    // Exact vttest menu 8 reproduction: first round fill → second round accordion.
+    // vttest source: /tmp/vttest-20251205/main.c lines 961-986.
+    let mut t = term(); // 24x80
+
+    // First round fill (main.c:961-966): fill all 24 rows with A-X.
+    feed(&mut t, b"\x1b[2J"); // ED: clear screen
+    feed(&mut t, b"\x1b[1;1H"); // CUP(1,1)
+    for row in 1..=24u8 {
+        feed(&mut t, &format!("\x1b[{};1H", row).into_bytes());
+        let ch = b'A' - 1 + row;
+        let line: Vec<u8> = vec![ch; 80];
+        feed(&mut t, &line);
+    }
+    // Prompt overlay (main.c:968-970).
+    feed(&mut t, b"\x1b[4;1H");
+    feed(
+        &mut t,
+        b"Screen accordion test (Insert & Delete Line). Push <RETURN>",
+    );
+
+    // Verify row 0 has A's.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'A');
+
+    // Second round setup (main.c:972-975): RI, EL 2, DECSTBM, DECOM.
+    feed(&mut t, b"\x1bM"); // RI: reverse index
+    feed(&mut t, b"\x1b[2K"); // EL 2: erase entire line
+    feed(&mut t, b"\x1b[2;23r"); // DECSTBM(2,23): scroll region rows 2-23
+    feed(&mut t, b"\x1b[?6h"); // DECOM ON
+
+    // CUP(1,1) with DECOM (main.c:976).
+    feed(&mut t, b"\x1b[1;1H");
+
+    // Accordion loop (main.c:977-980): IL(n), DL(n) for n=1..max_lines.
+    for n in 1..=24u8 {
+        feed(&mut t, &format!("\x1b[{}L", n).into_bytes());
+        feed(&mut t, &format!("\x1b[{}M", n).into_bytes());
+    }
+
+    // Cleanup (main.c:981-982).
+    feed(&mut t, b"\x1b[?6l"); // DECOM OFF
+    feed(&mut t, b"\x1b[r"); // Reset DECSTBM
+
+    // Row 0 should still have A's — it was outside the scroll region.
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].ch,
+        'A',
+        "row 0 should still be A after second-round accordion"
+    );
+}
+
+// --- DECSCNM (Reverse Video, mode 5) ---
+
+#[test]
+fn decscnm_set_enables_reverse_video() {
+    use crate::term::TermMode;
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::REVERSE_VIDEO));
+    feed(&mut t, b"\x1b[?5h");
+    assert!(t.mode().contains(TermMode::REVERSE_VIDEO));
+}
+
+#[test]
+fn decscnm_reset_disables_reverse_video() {
+    use crate::term::TermMode;
+    let mut t = term();
+    feed(&mut t, b"\x1b[?5h");
+    assert!(t.mode().contains(TermMode::REVERSE_VIDEO));
+    feed(&mut t, b"\x1b[?5l");
+    assert!(!t.mode().contains(TermMode::REVERSE_VIDEO));
 }

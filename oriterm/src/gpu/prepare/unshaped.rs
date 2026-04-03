@@ -37,7 +37,7 @@ pub(crate) fn prepare_frame(
         input.palette.background,
         opacity,
     );
-    fill_frame(input, atlas, &mut frame, origin, true);
+    fill_frame(input, atlas, &mut frame, origin, 1.0);
     frame
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn prepare_frame_into(
     out.clear();
     out.viewport = input.viewport;
     out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
-    fill_frame(input, atlas, out, origin, true);
+    fill_frame(input, atlas, out, origin, 1.0);
 }
 
 /// Unshaped per-cell rendering: emit instances into `frame`.
@@ -68,12 +68,13 @@ fn fill_frame(
     atlas: &dyn AtlasLookup,
     frame: &mut PreparedFrame,
     origin: (f32, f32),
-    cursor_blink_visible: bool,
+    cursor_opacity: f32,
 ) {
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
     let fg_dim = input.fg_dim;
+    let text_blink_opacity = input.text_blink_opacity;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
     let search = input.search.as_ref();
@@ -92,14 +93,8 @@ fn fill_frame(
         let x = ox + col as f32 * cw;
         let y = (oy + cell.line as f32 * ch).round();
 
-        let (fg, bg) = resolve_cell_colors(
-            cell,
-            sel,
-            search,
-            &cursor,
-            cursor_blink_visible,
-            &input.palette,
-        );
+        let (fg, bg) =
+            resolve_cell_colors(cell, sel, search, &cursor, cursor_opacity, &input.palette);
 
         // Background: skip default palette background so the window clear
         // color (with theme opacity for glass/acrylic) shows through.
@@ -121,6 +116,15 @@ fn fill_frame(
             );
         }
 
+        // Per-cell alpha: BLINK cells fade with text_blink_opacity.
+        let is_blink = cell.flags.contains(CellFlags::BLINK);
+        let cell_dim = if is_blink {
+            fg_dim * text_blink_opacity
+        } else {
+            fg_dim
+        };
+        let deco_alpha = if is_blink { text_blink_opacity } else { 1.0 };
+
         let is_hovered = input.hovered_cell == Some((cell.line, col));
         decorations::DecorationContext {
             backgrounds: &mut frame.backgrounds,
@@ -128,6 +132,7 @@ fn fill_frame(
             atlas,
             size_q6: 0,
             metrics: &input.cell_size,
+            alpha: deco_alpha,
         }
         .draw(
             cell.flags,
@@ -157,7 +162,7 @@ fn fill_frame(
                 };
                 frame
                     .glyphs
-                    .push_glyph(rect, uv, fg, fg_dim, entry.page, CLIP_UNCLIPPED);
+                    .push_glyph(rect, uv, fg, cell_dim, entry.page, CLIP_UNCLIPPED);
             }
         }
     }
@@ -170,7 +175,7 @@ fn fill_frame(
 
     // Cursor instances (gated by terminal visibility AND application blink state).
     // Unfocused windows always render a steady hollow block cursor.
-    if cursor.visible && cursor_blink_visible {
+    if cursor.visible && cursor_opacity > 0.0 {
         let shape = if input.window_focused {
             cursor.shape
         } else {
@@ -186,6 +191,7 @@ fn fill_frame(
             ox,
             oy,
             input.palette.cursor_color,
+            cursor_opacity,
         );
     }
 

@@ -30,6 +30,11 @@ pub(super) struct DecorationContext<'a> {
     pub(super) atlas: &'a dyn AtlasLookup,
     pub(super) size_q6: u32,
     pub(super) metrics: &'a CellMetrics,
+    /// Alpha multiplier for all decoration output.
+    ///
+    /// 1.0 for normal cells. For cells with `CellFlags::BLINK`, set to the
+    /// current text blink opacity so decorations fade alongside glyphs.
+    pub(super) alpha: f32,
 }
 
 impl DecorationContext<'_> {
@@ -82,7 +87,7 @@ impl DecorationContext<'_> {
                         h: t,
                     },
                     fg,
-                    1.0,
+                    self.alpha,
                 );
             } else {
                 // Dotted underline for non-hovered hyperlinks.
@@ -94,6 +99,7 @@ impl DecorationContext<'_> {
                         underline_y,
                         cell_width,
                         t,
+                        self.alpha,
                     );
                 }
             }
@@ -112,7 +118,7 @@ impl DecorationContext<'_> {
                 w: cell_width,
                 h: t,
             };
-            self.backgrounds.push_rect(rect, fg, 1.0);
+            self.backgrounds.push_rect(rect, fg, self.alpha);
         }
     }
 
@@ -124,24 +130,25 @@ impl DecorationContext<'_> {
         reason = "underline dispatch: flags, color, and position/dimensions"
     )]
     fn draw_underline(&mut self, flags: CellFlags, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
+        let alpha = self.alpha;
         if flags.contains(CellFlags::CURLY_UNDERLINE) {
             if !self.try_atlas_decoration(CURLY_GLYPH_ID, color, x, y) {
-                draw_curly_underline_rects(self.backgrounds, color, x, y, w, t);
+                draw_curly_underline_rects(self.backgrounds, color, x, y, w, t, alpha);
             }
         } else if flags.contains(CellFlags::DOUBLE_UNDERLINE) {
-            draw_double_underline(self.backgrounds, color, x, y, w, t);
+            draw_double_underline(self.backgrounds, color, x, y, w, t, alpha);
         } else if flags.contains(CellFlags::DOTTED_UNDERLINE) {
             if !self.try_atlas_decoration(DOTTED_GLYPH_ID, color, x, y) {
-                draw_dotted_underline_rects(self.backgrounds, color, x, y, w, t);
+                draw_dotted_underline_rects(self.backgrounds, color, x, y, w, t, alpha);
             }
         } else if flags.contains(CellFlags::DASHED_UNDERLINE) {
             if !self.try_atlas_decoration(DASHED_GLYPH_ID, color, x, y) {
-                draw_dashed_underline_rects(self.backgrounds, color, x, y, w, t);
+                draw_dashed_underline_rects(self.backgrounds, color, x, y, w, t, alpha);
             }
         } else {
             // Single underline (plain UNDERLINE flag).
             self.backgrounds
-                .push_rect(ScreenRect { x, y, w, h: t }, color, 1.0);
+                .push_rect(ScreenRect { x, y, w, h: t }, color, alpha);
         }
     }
 
@@ -167,7 +174,7 @@ impl DecorationContext<'_> {
                 h: entry.height as f32,
             };
             self.glyphs
-                .push_glyph(rect, uv, color, 1.0, entry.page, CLIP_UNCLIPPED);
+                .push_glyph(rect, uv, color, self.alpha, entry.page, CLIP_UNCLIPPED);
             true
         } else {
             false
@@ -182,7 +189,15 @@ impl DecorationContext<'_> {
     clippy::too_many_arguments,
     reason = "rect fallback: renderer, color, geometry"
 )]
-fn draw_curly_underline_rects(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
+fn draw_curly_underline_rects(
+    bg: &mut InstanceWriter,
+    color: Rgb,
+    x: f32,
+    y: f32,
+    w: f32,
+    t: f32,
+    alpha: f32,
+) {
     let amplitude = curly_amplitude(t);
     let steps = w as usize;
     for dx in 0..steps {
@@ -194,7 +209,7 @@ fn draw_curly_underline_rects(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f3
             w: 1.0,
             h: t,
         };
-        bg.push_rect(rect, color, 1.0);
+        bg.push_rect(rect, color, alpha);
     }
 }
 
@@ -203,9 +218,17 @@ fn draw_curly_underline_rects(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f3
     clippy::too_many_arguments,
     reason = "rect fallback: renderer, color, geometry"
 )]
-fn draw_double_underline(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
+fn draw_double_underline(
+    bg: &mut InstanceWriter,
+    color: Rgb,
+    x: f32,
+    y: f32,
+    w: f32,
+    t: f32,
+    alpha: f32,
+) {
     let gap = (t + 1.0).ceil();
-    bg.push_rect(ScreenRect { x, y, w, h: t }, color, 1.0);
+    bg.push_rect(ScreenRect { x, y, w, h: t }, color, alpha);
     bg.push_rect(
         ScreenRect {
             x,
@@ -214,7 +237,7 @@ fn draw_double_underline(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w:
             h: t,
         },
         color,
-        1.0,
+        alpha,
     );
 }
 
@@ -230,6 +253,7 @@ fn draw_dotted_underline_rects(
     y: f32,
     w: f32,
     t: f32,
+    alpha: f32,
 ) {
     let steps = w as usize;
     for dx in (0..steps).step_by(2) {
@@ -239,7 +263,7 @@ fn draw_dotted_underline_rects(
             w: 1.0,
             h: t,
         };
-        bg.push_rect(rect, color, 1.0);
+        bg.push_rect(rect, color, alpha);
     }
 }
 
@@ -255,6 +279,7 @@ fn draw_dashed_underline_rects(
     y: f32,
     w: f32,
     t: f32,
+    alpha: f32,
 ) {
     let steps = w as usize;
     for dx in 0..steps {
@@ -265,7 +290,7 @@ fn draw_dashed_underline_rects(
                 w: 1.0,
                 h: t,
             };
-            bg.push_rect(rect, color, 1.0);
+            bg.push_rect(rect, color, alpha);
         }
     }
 }

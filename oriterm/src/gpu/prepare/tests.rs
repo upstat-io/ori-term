@@ -666,6 +666,31 @@ fn clear_color_respects_palette_opacity() {
     assert_eq!(frame.clear_color, expected);
 }
 
+// ── DECSCNM (reverse video) ──
+
+#[test]
+fn reverse_video_clear_color_uses_swapped_bg() {
+    let mut input = FrameInput::test_grid(10, 5, "A");
+    let original_fg = input.palette.foreground;
+
+    // Simulate DECSCNM: swap palette fg/bg and set reverse_video flag.
+    std::mem::swap(&mut input.palette.foreground, &mut input.palette.background);
+    input.reverse_video = true;
+
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // Clear color should be the original foreground (now stored as palette.background
+    // after the swap in extract).
+    let expected = [
+        f64::from(srgb_to_linear(original_fg.r)),
+        f64::from(srgb_to_linear(original_fg.g)),
+        f64::from(srgb_to_linear(original_fg.b)),
+        1.0,
+    ];
+    assert_eq!(frame.clear_color, expected);
+}
+
 // ── prepare_frame_into ──
 
 #[test]
@@ -1359,7 +1384,7 @@ fn shaped_into_matches_shaped() {
     let fresh = prepare_frame_shaped(&input, &atlas, &shaped, (0.0, 0.0));
 
     let mut reused = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut reused, (0.0, 0.0), true);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut reused, (0.0, 0.0), 1.0);
 
     assert_eq!(fresh.backgrounds.as_bytes(), reused.backgrounds.as_bytes());
     assert_eq!(fresh.glyphs.as_bytes(), reused.glyphs.as_bytes());
@@ -1415,7 +1440,7 @@ fn shaped_into_reuses_allocation() {
     }];
     let small_col_starts = vec![0];
     let small_shaped = shaped_one_row(2, &small_glyphs, &small_col_starts, size_q6);
-    prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame, (0.0, 0.0), true);
+    prepare_frame_shaped_into(&small, &atlas, &small_shaped, &mut frame, (0.0, 0.0), 1.0);
 
     assert_eq!(frame.backgrounds.len(), 2);
     assert!(first_bg > frame.backgrounds.len());
@@ -3006,11 +3031,11 @@ fn fill_frame_shaped_accumulates_without_clearing() {
     let mut frame = PreparedFrame::new(ViewportSize::new(32, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
     // First fill: pane A at origin (0,0).
-    fill_frame_shaped(&input_a, &atlas, &shaped_a, &mut frame, (0.0, 0.0), true);
+    fill_frame_shaped(&input_a, &atlas, &shaped_a, &mut frame, (0.0, 0.0), 1.0);
     let count_after_a = frame.backgrounds.len();
 
     // Second fill: pane B at origin (16,0) — appends, does NOT clear.
-    fill_frame_shaped(&input_b, &atlas, &shaped_b, &mut frame, (16.0, 0.0), false);
+    fill_frame_shaped(&input_b, &atlas, &shaped_b, &mut frame, (16.0, 0.0), 0.0);
     let count_after_b = frame.backgrounds.len();
 
     assert_eq!(count_after_a, 2, "pane A should produce 2 bg instances");
@@ -3032,9 +3057,9 @@ fn two_panes_at_correct_offsets() {
     let mut frame = PreparedFrame::new(ViewportSize::new(16, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
     // Pane A at (0, 0).
-    fill_frame_shaped(&input_a, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+    fill_frame_shaped(&input_a, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
     // Pane B at (400, 0).
-    fill_frame_shaped(&input_b, &atlas, &shaped, &mut frame, (400.0, 0.0), false);
+    fill_frame_shaped(&input_b, &atlas, &shaped, &mut frame, (400.0, 0.0), 0.0);
 
     // Pane A background at x=0.
     let bg_a = nth_instance(frame.backgrounds.as_bytes(), 0);
@@ -3070,7 +3095,7 @@ fn lower_pane_origin_is_not_culled_by_local_pane_height() {
 
     // Simulate a lower split pane: pane-local viewport is one row tall,
     // but the pane origin is well below that in window coordinates.
-    fill_frame_shaped(&input, &atlas, &shaped, &mut frame, (0.0, 200.0), false);
+    fill_frame_shaped(&input, &atlas, &shaped, &mut frame, (0.0, 200.0), 0.0);
 
     assert_eq!(
         frame.glyphs.len(),
@@ -3094,25 +3119,18 @@ fn cursor_only_in_focused_pane() {
 
     let mut frame = PreparedFrame::new(ViewportSize::new(16, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
 
-    // Focused pane: cursor_blink_visible = true.
-    fill_frame_shaped(
-        &input_focused,
-        &atlas,
-        &shaped,
-        &mut frame,
-        (0.0, 0.0),
-        true,
-    );
+    // Focused pane: cursor_opacity = 1.0 (fully visible).
+    fill_frame_shaped(&input_focused, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
     let cursor_after_focused = frame.cursors.len();
 
-    // Unfocused pane: cursor_blink_visible = false.
+    // Unfocused pane: cursor_opacity = 0.0 (hidden).
     fill_frame_shaped(
         &input_unfocused,
         &atlas,
         &shaped,
         &mut frame,
         (100.0, 0.0),
-        false,
+        0.0,
     );
     let cursor_after_unfocused = frame.cursors.len();
 
@@ -3763,11 +3781,11 @@ fn incremental_all_dirty_matches_full_rebuild() {
 
     // First pass: full rebuild into reusable frame to populate row_ranges.
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
 
     // Second pass: all_dirty = true means full rebuild again.
     input.content.all_dirty = true;
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
 
     assert_eq!(
         fresh.backgrounds.as_bytes(),
@@ -3797,7 +3815,7 @@ fn incremental_no_dirty_rows_matches_cached() {
 
     // First pass: full rebuild populates row_ranges.
     let mut frame = PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0);
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
 
     // Capture the full rebuild output.
     let full_bg = frame.backgrounds.as_bytes().to_vec();
@@ -3807,7 +3825,7 @@ fn incremental_no_dirty_rows_matches_cached() {
     input.content.all_dirty = false;
     input.content.cursor.visible = false;
     input.content.damage.clear();
-    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+    prepare_frame_shaped_into(&input, &atlas, &shaped, &mut frame, (0.0, 0.0), 1.0);
 
     assert_eq!(
         full_bg,
@@ -3937,5 +3955,41 @@ fn url_underline_y_base_integer_at_fractional_scale() {
     assert!(
         found_underline,
         "expected URL underline at Y={expected_y} (base={row1_base} + offset={underline_offset})"
+    );
+}
+
+// ── Text blink opacity tests (Section 05B) ──
+
+#[test]
+fn blink_cell_gets_dimmed_fg() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.content.cells[0].flags = CellFlags::BLINK;
+    input.text_blink_opacity = 0.5;
+    // fg_dim defaults to 1.0 in test_grid, so effective alpha = 1.0 * 0.5 = 0.5.
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    // The glyph instance's fg alpha should be fg_dim * text_blink_opacity = 0.5.
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert!(
+        (glyph.fg_color[3] - 0.5).abs() < 0.01,
+        "blink cell alpha should be ~0.5, got {}",
+        glyph.fg_color[3],
+    );
+}
+
+#[test]
+fn non_blink_cell_ignores_text_blink_opacity() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.text_blink_opacity = 0.5;
+    // No BLINK flag — fg_dim = 1.0 unmodified.
+    let atlas = atlas_with(&['A']);
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let glyph = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert!(
+        (glyph.fg_color[3] - 1.0).abs() < 0.01,
+        "non-blink cell alpha should be 1.0, got {}",
+        glyph.fg_color[3],
     );
 }

@@ -73,6 +73,7 @@ impl FontCollection {
             FaceIdx::REGULAR,
             SyntheticFlags::NONE,
             self.weight,
+            self.bold_weight,
             &regular.axes,
         );
         let fm = compute_metrics(

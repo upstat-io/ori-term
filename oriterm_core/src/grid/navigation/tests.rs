@@ -675,3 +675,38 @@ fn tab_backward_from_wrap_pending_snaps_to_last_stop() {
     // Search backward from col 80: first stop at 72.
     assert_eq!(grid.cursor().col(), Column(72));
 }
+
+#[test]
+fn tab_stop_across_set_and_clear_sequence() {
+    let mut grid = Grid::new(24, 80);
+    // Clear all default stops.
+    grid.clear_tab_stop(TabClearMode::All);
+    // Set custom stops at columns 6, 12, 18.
+    for &col in &[6, 12, 18] {
+        grid.cursor_mut().set_col(Column(col));
+        grid.set_tab_stop();
+    }
+    // Clear the stop at 12.
+    grid.cursor_mut().set_col(Column(12));
+    grid.clear_tab_stop(TabClearMode::Current);
+    // Tab from col 0 should go to 6 (first custom stop).
+    grid.cursor_mut().set_col(Column(0));
+    grid.tab();
+    assert_eq!(grid.cursor().col(), Column(6));
+    // Tab from 6 should skip cleared 12 and go to 18.
+    grid.tab();
+    assert_eq!(grid.cursor().col(), Column(18));
+    // Tab from 18 should go to end of line (no more stops).
+    grid.tab();
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
+#[test]
+fn tab_stop_at_right_margin_no_wrap() {
+    let mut grid = Grid::new(24, 80);
+    // Cursor at column 79 (last column).
+    grid.cursor_mut().set_col(Column(79));
+    grid.tab();
+    // No tab stop past 79; cursor stays at 79.
+    assert_eq!(grid.cursor().col(), Column(79));
+}

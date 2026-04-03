@@ -369,12 +369,24 @@ pub struct FrameInput {
     /// When `false`, the cursor renders as a hollow block regardless of the
     /// terminal's configured cursor shape. Set from `App::focused_window_id`.
     pub window_focused: bool,
+    /// Screen-wide reverse video (DECSCNM, mode 5).
+    ///
+    /// When `true`, the palette's default foreground and background have been
+    /// swapped in the Extract phase. The Prepare phase uses the already-swapped
+    /// palette — no additional logic is needed for clear color or cell defaults.
+    pub reverse_video: bool,
     /// Foreground alpha multiplier for inactive pane dimming.
     ///
     /// 1.0 = fully opaque (default, focused pane). Values < 1.0 dim glyph
     /// alpha proportionally for unfocused panes. Set by the multi-pane
     /// render path; single-pane rendering always uses 1.0.
     pub fg_dim: f32,
+    /// Opacity multiplier for cells with `CellFlags::BLINK`.
+    ///
+    /// 0.0 = hidden, 1.0 = visible (default, no blink effect). Driven by
+    /// the app-layer text blink timer each frame. Non-BLINK cells ignore
+    /// this value.
+    pub text_blink_opacity: f32,
     /// Whether subpixel glyph positioning is enabled.
     ///
     /// When `false`, all glyph X offsets snap to integer pixels (no fractional
@@ -489,7 +501,9 @@ impl FrameInput {
             hovered_url_segments: Vec::new(),
             mark_cursor: None,
             window_focused: true,
+            reverse_video: false,
             fg_dim: 1.0,
+            text_blink_opacity: 1.0,
             subpixel_positioning: true,
             prompt_marker_rows: Vec::new(),
         }

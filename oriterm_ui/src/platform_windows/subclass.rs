@@ -78,7 +78,7 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
     // Visible frame bounds in screen coordinates (physical pixels).
     // Uses DWMWA_EXTENDED_FRAME_BOUNDS to exclude the invisible DWM border
     // that GetWindowRect includes for WS_THICKFRAME windows.
-    let rect = super::visible_frame_bounds_hwnd(hwnd);
+    let rect = super::dwm::visible_frame_bounds_hwnd(hwnd);
 
     // Client-relative physical coordinates.
     let point = Point::new((cursor_x - rect.left) as f32, (cursor_y - rect.top) as f32);

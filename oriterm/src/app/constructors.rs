@@ -106,6 +106,7 @@ impl App {
             let _ = config_proxy.send_event(TermEvent::ConfigReload);
         }));
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
+        let text_blink_interval = Duration::from_millis(config.terminal.text_blink_rate_ms);
         let ui_theme = resolve_ui_theme(&config);
         let event_sender = EventSender(Arc::new(move |ev| {
             let _ = event_proxy.send_event(ev);
@@ -126,6 +127,7 @@ impl App {
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
+            text_blink: CursorBlink::new(text_blink_interval),
             mouse_cursor_hidden: false,
             blinking_active: false,
             last_cursor_pos: (0, 0),

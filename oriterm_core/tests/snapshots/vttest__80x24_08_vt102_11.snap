@@ -1,0 +1,8 @@
+---
+source: oriterm_core/tests/vttest.rs
+expression: text
+---
+AB                                                                                                                                  
+                                                                                                                                    
+                                                                                                                                    
+Test of 'Delete Character'. The top line should be 'AB'. Push <RETURN>

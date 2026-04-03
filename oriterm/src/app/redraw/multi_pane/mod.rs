@@ -91,7 +91,6 @@ impl App {
 
             let dim_inactive = self.config.pane.dim_inactive;
             let inactive_opacity = self.config.pane.effective_inactive_opacity();
-            let cursor_blink_visible = !self.blinking_active || self.cursor_blink.is_visible();
 
             let mut focused_rect = None;
             let mut blinking_now = self.blinking_active;
@@ -280,8 +279,37 @@ impl App {
                         inactive_opacity
                     };
 
+                    // Text blink: same opacity for all panes (not per-focus).
+                    frame.text_blink_opacity = {
+                        let raw = self.text_blink.intensity();
+                        if self.config.terminal.text_blink_fade {
+                            raw
+                        } else if raw > 0.5 {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    };
+
                     let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
-                    let pane_cursor_visible = cursor_blink_visible && layout.is_focused;
+                    // Compute cursor opacity per-pane using current frame's
+                    // blinking_now (not stale self.blinking_active alone).
+                    let pane_cursor_opacity = if layout.is_focused {
+                        if blinking_now && self.blinking_active {
+                            let raw = self.cursor_blink.intensity();
+                            if self.config.terminal.cursor_blink_fade {
+                                raw
+                            } else if raw > 0.5 {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        } else {
+                            1.0
+                        }
+                    } else {
+                        0.0
+                    };
 
                     let cached = ctx
                         .pane_cache
@@ -290,7 +318,7 @@ impl App {
                                 frame,
                                 gpu,
                                 origin,
-                                pane_cursor_visible,
+                                pane_cursor_opacity,
                                 target,
                             );
                         });
@@ -339,86 +367,24 @@ impl App {
                 }
             }
 
-            // Phase gating: skip prepare + prepaint on cursor-blink frames.
-            {
-                let now = std::time::Instant::now();
-                let lifecycle_events = ctx.root.interaction_mut().drain_events();
-                let widget_dirty = {
-                    let mut d = ctx.root.invalidation().max_dirty_kind();
-                    if !lifecycle_events.is_empty() {
-                        d = d.merge(oriterm_ui::invalidation::DirtyKind::Prepaint);
-                    }
-                    if ctx.ui_stale {
-                        d = d.merge(oriterm_ui::invalidation::DirtyKind::Prepaint);
-                    }
-                    d
-                };
-                ctx.root.frame_requests_mut().reset();
+            // Phase gating: prepare + prepaint widget trees if dirty.
+            super::draw_helpers::phase_gate_widgets(
+                &mut ctx.root,
+                &mut ctx.tab_bar,
+                ctx.tab_bar_phys_rect,
+                renderer,
+                &ctx.text_cache,
+                &self.ui_theme,
+                scale,
+                ctx.ui_stale,
+            );
 
-                log::debug!("multi-pane phase gating: widget_dirty={widget_dirty:?}");
-
-                if widget_dirty >= oriterm_ui::invalidation::DirtyKind::Prepaint {
-                    let (interaction, invalidation, flags) =
-                        ctx.root.interaction_invalidation_and_frame_requests_mut();
-                    super::super::widget_pipeline::prepare_widget_tree(
-                        &mut ctx.tab_bar,
-                        interaction,
-                        Some(invalidation),
-                        &lifecycle_events,
-                        None,
-                        Some(flags),
-                        now,
-                    );
-                    // Prepare overlay widget trees.
-                    ctx.root.prepare_overlay_widgets(&lifecycle_events, now);
-
-                    // Prepaint: resolve visual state into widget fields.
-                    // Compute layout bounds so PrepaintCtx::bounds reflects
-                    // real screen positions.
-                    let s = ctx.window.scale_factor().factor() as f32;
-                    let tb_phys = ctx.tab_bar_phys_rect;
-                    let prepaint_tab_bounds = oriterm_ui::geometry::Rect::new(
-                        tb_phys.x() / s,
-                        tb_phys.y() / s,
-                        tb_phys.width() / s,
-                        tb_phys.height() / s,
-                    );
-                    let prepaint_bounds = super::draw_helpers::collect_tab_bar_prepaint_bounds(
-                        &ctx.tab_bar,
-                        renderer,
-                        &ctx.text_cache,
-                        &self.ui_theme,
-                        s,
-                        prepaint_tab_bounds,
-                    );
-                    let (interaction, flags) = ctx.root.interaction_and_frame_requests();
-                    let invalidation = ctx.root.invalidation();
-                    super::super::widget_pipeline::prepaint_widget_tree(
-                        &mut ctx.tab_bar,
-                        &prepaint_bounds,
-                        Some(interaction),
-                        &self.ui_theme,
-                        now,
-                        Some(flags),
-                        Some(invalidation),
-                    );
-                    ctx.root
-                        .prepaint_overlay_widgets(&prepaint_bounds, &self.ui_theme, now);
-                }
-            }
-
-            // Chrome, tab bar, overlays, search bar (shared with single-pane path).
-            // Tab bar drawing skipped when hidden.
+            // Chrome: tab bar, overlays, search bar, status bar.
             let tab_bar_hidden =
                 self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
-            let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = (w as f32 / scale).round() as u32;
             let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
-            let tab_bar_ref = if tab_bar_hidden {
-                None
-            } else {
-                Some(&ctx.tab_bar)
-            };
+            let tab_bar_ref = (!tab_bar_hidden).then_some(&ctx.tab_bar);
             let tb_phys = ctx.tab_bar_phys_rect;
             let tab_bar_bounds = oriterm_ui::geometry::Rect::new(
                 tb_phys.x() / scale,
@@ -465,47 +431,36 @@ impl App {
             }
 
             // Search bar from focused pane.
-            if let Some(frame) = ctx.frame.as_ref() {
-                if let Some(search) = frame.search.as_ref() {
-                    let chrome_h = if tab_bar_hidden {
-                        0.0
-                    } else {
-                        ctx.tab_bar.metrics().height
-                    };
-                    Self::draw_search_bar(
-                        search,
-                        renderer,
-                        &mut ctx.chrome_scene,
-                        &mut ctx.search_bar_buf,
-                        logical_w as f32,
-                        chrome_h,
-                        scale,
-                        gpu,
-                        &ctx.text_cache,
-                    );
-                }
+            if let Some(search) = ctx.frame.as_ref().and_then(|f| f.search.as_ref()) {
+                let chrome_h = if tab_bar_hidden {
+                    0.0
+                } else {
+                    ctx.tab_bar.metrics().height
+                };
+                Self::draw_search_bar(
+                    search,
+                    renderer,
+                    &mut ctx.chrome_scene,
+                    &mut ctx.search_bar_buf,
+                    logical_w as f32,
+                    chrome_h,
+                    scale,
+                    gpu,
+                    &ctx.text_cache,
+                );
             }
 
-            // Update and draw status bar at the bottom of the window.
+            // Status bar at the bottom of the window.
             if self.config.window.show_status_bar
                 && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
             {
                 let pane_count = layouts.len();
-                let (sb_cols, sb_rows) = ctx
+                let (cols, rows) = ctx
                     .frame
                     .as_ref()
                     .map_or((0, 0), |f| (f.content_cols, f.content_rows));
                 ctx.status_bar
-                    .set_data(oriterm_ui::widgets::status_bar::StatusBarData {
-                        shell_name: "shell".into(),
-                        pane_count: format!(
-                            "{pane_count} pane{}",
-                            if pane_count == 1 { "" } else { "s" }
-                        ),
-                        grid_size: format!("{sb_cols}\u{00d7}{sb_rows}"),
-                        encoding: "UTF-8".into(),
-                        term_type: "xterm-256color".into(),
-                    });
+                    .set_data(super::draw_helpers::status_bar_data(pane_count, cols, rows));
                 let phys = ctx.status_bar_phys_rect;
                 let sb_bounds = oriterm_ui::geometry::Rect::new(
                     phys.x() / scale,
@@ -546,15 +501,7 @@ impl App {
             (result, blinking_now)
         };
 
-        self.handle_render_result(render_result);
-
-        // Update blink state after rendering (no state mutation during render).
-        if blinking_now && !self.blinking_active {
-            self.cursor_blink.reset();
-        }
-        self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
-
-        self.update_ime_cursor_area();
+        self.finish_render(render_result, blinking_now, None);
     }
 }
 

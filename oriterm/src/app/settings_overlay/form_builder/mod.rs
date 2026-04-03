@@ -53,6 +53,8 @@ pub(crate) struct SettingsIds {
     // Terminal page.
     pub cursor_picker: WidgetId,
     pub cursor_blink_toggle: WidgetId,
+    pub cursor_blink_fade_toggle: WidgetId,
+    pub text_blink_fade_toggle: WidgetId,
     pub scrollback_input: WidgetId,
     pub shell_input: WidgetId,
     pub paste_warning_dropdown: WidgetId,
@@ -166,6 +168,8 @@ impl SettingsIds {
             line_height_input: WidgetId::placeholder(),
             cursor_picker: WidgetId::placeholder(),
             cursor_blink_toggle: WidgetId::placeholder(),
+            cursor_blink_fade_toggle: WidgetId::placeholder(),
+            text_blink_fade_toggle: WidgetId::placeholder(),
             scrollback_input: WidgetId::placeholder(),
             shell_input: WidgetId::placeholder(),
             paste_warning_dropdown: WidgetId::placeholder(),

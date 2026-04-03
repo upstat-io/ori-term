@@ -35,6 +35,7 @@ fn headless_brutal_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         96.0,
         GlyphFormat::Alpha,
         400,
+        550,
         HintingMode::Full,
     )
     .ok()?;
@@ -44,6 +45,7 @@ fn headless_brutal_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
         GlyphFormat::Alpha,
         HintingMode::Full,
         400,
+        550,
         &PRELOAD_SIZES,
     )
     .ok()?;
