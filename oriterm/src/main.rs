@@ -58,6 +58,9 @@ fn main() {
     if args.new_window {
         log::info!("--new-window requested");
     }
+    if args.new_tab {
+        log::info!("--new-tab requested");
+    }
     #[cfg(windows)]
     set_app_user_model_id();
 
