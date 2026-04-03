@@ -398,6 +398,7 @@ impl ApplicationHandler<TermEvent> for App {
         if self.blinking_active && self.cursor_blink.update() {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.root.mark_dirty();
+                ctx.window.window().request_redraw();
             }
         }
 
@@ -406,6 +407,7 @@ impl ApplicationHandler<TermEvent> for App {
         if self.text_blink.update() {
             for ctx in self.windows.values_mut() {
                 ctx.root.mark_dirty();
+                ctx.window.window().request_redraw();
             }
         }
 

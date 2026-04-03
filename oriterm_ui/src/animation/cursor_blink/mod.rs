@@ -141,6 +141,14 @@ impl CursorBlink {
         self.out_duration = interval;
     }
 
+    /// Moves the epoch backward by `duration`, simulating elapsed time.
+    ///
+    /// Used in tests to position the timer at a specific point in the
+    /// blink cycle without sleeping.
+    pub fn backdate(&mut self, duration: Duration) {
+        self.epoch -= duration;
+    }
+
     /// Resets the blink cycle to the start (full opacity).
     ///
     /// Called on keypress so the cursor stays visible while the user types.

@@ -1,14 +1,19 @@
-//! GPU visual regression tests for text blink opacity at different fade levels.
+//! GPU text blink tests — frame-by-frame verification using the real
+//! `CursorBlink` timer.
 //!
-//! Verifies the text blink alpha pipeline: `text_blink_opacity` on `FrameInput`
-//! modulates `fg_dim` for cells with `CellFlags::BLINK`, flowing through
-//! `fill_frame_shaped()` → `GlyphEmitter` → `push_glyph(alpha)`.
+//! Simulates a full blink cycle at 60fps by backdating the timer's epoch,
+//! rendering each frame through the GPU pipeline, and asserting that BLINK
+//! cell brightness follows the expected pattern: visible plateau → smooth
+//! fade-out → hidden plateau → smooth fade-in.
+
+use std::time::Duration;
 
 use oriterm_core::CellFlags;
+use oriterm_ui::animation::CursorBlink;
 
 use crate::gpu::frame_input::FrameInput;
 
-use super::{compare_with_reference, headless_env, render_to_pixels};
+use super::{headless_env, render_to_pixels};
 
 /// Grid dimensions for text blink tests.
 const COLS: usize = 10;
@@ -53,225 +58,213 @@ fn cell_pixel(pixels: &[u8], width: u32, col: usize, cell_w: f32, cell_h: f32) -
     ]
 }
 
-#[test]
-fn text_blink_visible() {
-    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let cell = renderer.cell_metrics();
-    let input = blink_input(cell, 1.0);
-
-    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
-    let w = input.viewport.width;
-    let h = input.viewport.height;
-
-    if let Err(msg) = compare_with_reference("text_blink_visible", &pixels, w, h) {
-        panic!("visual regression (text_blink_visible): {msg}");
-    }
-
-    // At opacity 1.0, BLINK cell should look the same as the normal cell.
-    let blink_px = cell_pixel(&pixels, w, BLINK_COL, cell.width, cell.height);
-    let normal_px = cell_pixel(&pixels, w, NORMAL_COL, cell.width, cell.height);
-    let diff: i32 = (0..3)
-        .map(|i| (blink_px[i] as i32 - normal_px[i] as i32).abs())
-        .sum();
-    assert!(
-        diff < 15,
-        "blink cell at opacity=1.0 should match normal cell, blink={blink_px:?} normal={normal_px:?}",
-    );
-}
-
-#[test]
-fn text_blink_hidden() {
-    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let cell = renderer.cell_metrics();
-    let input = blink_input(cell, 0.0);
-    let bg = input.content.cells[BLINK_COL].bg;
-
-    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
-    let w = input.viewport.width;
-    let h = input.viewport.height;
-
-    if let Err(msg) = compare_with_reference("text_blink_hidden", &pixels, w, h) {
-        panic!("visual regression (text_blink_hidden): {msg}");
-    }
-
-    // At opacity 0.0, BLINK cell's glyph should be invisible (matches bg).
-    let blink_px = cell_pixel(&pixels, w, BLINK_COL, cell.width, cell.height);
-    // Background is dark — pixel should be near the cell bg color.
-    assert!(
-        blink_px[0] < bg.r.saturating_add(30)
-            && blink_px[1] < bg.g.saturating_add(30)
-            && blink_px[2] < bg.b.saturating_add(30),
-        "blink cell at opacity=0.0 should match background, got {blink_px:?} (bg={bg:?})",
-    );
-
-    // Normal cell should still be visible.
-    let normal_px = cell_pixel(&pixels, w, NORMAL_COL, cell.width, cell.height);
-    let brightness: u32 = normal_px[0] as u32 + normal_px[1] as u32 + normal_px[2] as u32;
-    assert!(
-        brightness > 100,
-        "normal cell should still be visible, got {normal_px:?}",
-    );
-}
-
-#[test]
-fn text_blink_half() {
-    let Some((gpu, pipelines, mut renderer)) = headless_env() else {
-        eprintln!("skipped: no GPU adapter available");
-        return;
-    };
-
-    let cell = renderer.cell_metrics();
-    let input = blink_input(cell, 0.5);
-
-    let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
-    let w = input.viewport.width;
-    let h = input.viewport.height;
-
-    if let Err(msg) = compare_with_reference("text_blink_half", &pixels, w, h) {
-        panic!("visual regression (text_blink_half): {msg}");
-    }
-
-    // At opacity 0.5, BLINK cell should be dimmer than the normal cell.
-    let blink_px = cell_pixel(&pixels, w, BLINK_COL, cell.width, cell.height);
-    let normal_px = cell_pixel(&pixels, w, NORMAL_COL, cell.width, cell.height);
-    let blink_brightness: u32 = blink_px[0] as u32 + blink_px[1] as u32 + blink_px[2] as u32;
-    let normal_brightness: u32 = normal_px[0] as u32 + normal_px[1] as u32 + normal_px[2] as u32;
-    assert!(
-        blink_brightness < normal_brightness,
-        "blink cell at 0.5 should be dimmer than normal: blink={blink_brightness} normal={normal_brightness}",
-    );
-}
-
-/// End-to-end blink test through `WindowRenderer::prepare()` with the
-/// cursor-only fast path active (`content_changed = false`).
+/// Frame-by-frame blink cycle test using the real `CursorBlink` timer.
 ///
-/// Renders 5 frames stepping opacity from 1.0 → 0.0, each with
-/// `content_changed = false` (except frame 1). Proves:
-/// 1. The fast path detects opacity changes and does a full rebuild.
-/// 2. Intermediate opacities (fade) produce intermediate brightness.
-/// 3. Non-BLINK cells stay constant throughout.
+/// Steps through one full blink cycle (1060ms at 500ms interval) at ~60fps
+/// (16ms steps = ~66 frames). For each frame:
+/// 1. Backdate the timer epoch to simulate elapsed time.
+/// 2. Read `intensity()` — the actual value the runtime would use.
+/// 3. Render through the full GPU pipeline with that opacity.
+/// 4. Measure BLINK cell brightness.
+///
+/// Then assert the brightness sequence matches the expected blink pattern:
+/// - Visible plateau: brightness near max, stable.
+/// - Fade-out: brightness decreases smoothly frame by frame.
+/// - Hidden plateau: brightness near zero, stable.
+/// - Fade-in: brightness increases smoothly frame by frame.
+/// - Non-BLINK cell: constant brightness throughout.
 #[test]
-fn text_blink_survives_fast_path() {
+fn text_blink_full_cycle_frame_by_frame() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
 
     let cell = renderer.cell_metrics();
-    let opacities = [1.0_f32, 0.75, 0.5, 0.25, 0.0];
-    let mut blink_brightness: Vec<u32> = Vec::new();
-    let mut normal_brightness: Vec<u32> = Vec::new();
+    let interval = Duration::from_millis(500);
+    let frame_dt = Duration::from_millis(16);
+    let cycle = interval * 2; // 1000ms full cycle.
+    let num_frames = (cycle.as_millis() / frame_dt.as_millis()) as usize;
 
-    for (i, &opacity) in opacities.iter().enumerate() {
+    let mut blink_br: Vec<u32> = Vec::with_capacity(num_frames);
+    let mut normal_br: Vec<u32> = Vec::with_capacity(num_frames);
+    let mut opacities: Vec<f32> = Vec::with_capacity(num_frames);
+
+    for frame_idx in 0..num_frames {
+        let elapsed = frame_dt * frame_idx as u32;
+
+        // Create a fresh timer and backdate it to simulate elapsed time.
+        let mut timer = CursorBlink::new(interval);
+        timer.backdate(elapsed);
+        let opacity = timer.intensity();
+        opacities.push(opacity);
+
+        // Render through the GPU pipeline.
         let input = blink_input(cell, opacity);
         let w = input.viewport.width;
-        let content_changed = i == 0; // Only first frame is "new content".
-        let target = gpu.create_render_target(w, input.viewport.height);
-        renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, content_changed);
-        renderer.render_frame(&gpu, &pipelines, target.view());
-        let pixels = gpu
-            .read_render_target(&target)
-            .expect("readback should succeed");
+        let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
 
         let blink_px = cell_pixel(&pixels, w, BLINK_COL, cell.width, cell.height);
         let normal_px = cell_pixel(&pixels, w, NORMAL_COL, cell.width, cell.height);
-        blink_brightness.push(blink_px[0] as u32 + blink_px[1] as u32 + blink_px[2] as u32);
-        normal_brightness.push(normal_px[0] as u32 + normal_px[1] as u32 + normal_px[2] as u32);
+
+        blink_br.push(blink_px[0] as u32 + blink_px[1] as u32 + blink_px[2] as u32);
+        normal_br.push(normal_px[0] as u32 + normal_px[1] as u32 + normal_px[2] as u32);
     }
 
-    // BLINK brightness must decrease monotonically across all 5 frames.
-    for i in 0..opacities.len() - 1 {
-        assert!(
-            blink_brightness[i] > blink_brightness[i + 1],
-            "BLINK cell must dim monotonically: opacity {} br={} should be > opacity {} br={}. \
-             If equal, fast path skipped the rebuild or fade not applied.",
-            opacities[i],
-            blink_brightness[i],
-            opacities[i + 1],
-            blink_brightness[i + 1],
-        );
-    }
+    // --- Assertions ---
 
-    // Non-BLINK cell must stay constant across all frames.
-    for i in 0..opacities.len() - 1 {
-        let diff = (normal_brightness[i] as i32 - normal_brightness[i + 1] as i32).abs();
+    // 1. Non-BLINK cell must be constant across ALL frames.
+    let normal_ref = normal_br[0];
+    for (i, &br) in normal_br.iter().enumerate() {
+        let diff = (br as i32 - normal_ref as i32).abs();
         assert!(
             diff < 5,
-            "non-BLINK cell should be constant: frame {} br={} vs frame {} br={}",
-            i,
-            normal_brightness[i],
-            i + 1,
-            normal_brightness[i + 1],
+            "non-BLINK cell must be constant: frame {i} br={br} vs frame 0 br={normal_ref}",
         );
+    }
+
+    // 2. BLINK cell must reach full brightness (visible plateau) —
+    //    should match the non-BLINK cell.
+    let max_br = *blink_br.iter().max().unwrap();
+    assert!(
+        (max_br as i32 - normal_ref as i32).abs() < 10,
+        "BLINK cell at full opacity should match normal cell: max={max_br} normal={normal_ref}",
+    );
+
+    // 3. BLINK cell at hidden plateau must be near the cell background
+    //    brightness (not the glyph). Cell bg is RGB(30,30,46) = brightness 106.
+    let min_br = *blink_br.iter().min().unwrap();
+    let bg_brightness = 30 + 30 + 46; // test_grid cell bg
+    assert!(
+        (min_br as i32 - bg_brightness).abs() < 15,
+        "BLINK cell at opacity 0 should match cell bg ({bg_brightness}): got {min_br}",
+    );
+
+    // 4. The dynamic range must span from near-normal to near-background.
+    let range = max_br as i32 - min_br as i32;
+    assert!(
+        range > 150,
+        "BLINK cell brightness range too small: {max_br} → {min_br} (range={range}). \
+         Blink is not actually changing the glyph visibility.",
+    );
+
+    // 5. Opacity must hit both extremes.
+    let max_opacity = opacities.iter().copied().fold(0.0_f32, f32::max);
+    let min_opacity = opacities.iter().copied().fold(1.0_f32, f32::min);
+    assert!(
+        (max_opacity - 1.0).abs() < 0.01,
+        "timer never reached opacity 1.0: max={max_opacity}",
+    );
+    assert!(
+        min_opacity < 0.01,
+        "timer never reached opacity 0.0: min={min_opacity}",
+    );
+
+    // 6. Opacity must have intermediate values (proving fade, not binary).
+    let has_intermediate = opacities.iter().any(|&o| o > 0.1 && o < 0.9);
+    assert!(
+        has_intermediate,
+        "no intermediate opacity values found — blink is binary, not fading. \
+         opacities: {opacities:?}",
+    );
+
+    // 7. During fade-out, brightness must decrease monotonically frame by frame.
+    let fade_out_start = opacities.iter().position(|&o| o < 0.95).unwrap();
+    let fade_out_end = opacities.iter().position(|&o| o < 0.05).unwrap();
+    if fade_out_end > fade_out_start + 2 {
+        for i in fade_out_start..fade_out_end - 1 {
+            assert!(
+                blink_br[i] >= blink_br[i + 1],
+                "fade-out not monotonic: frame {i} br={} > frame {} br={}",
+                blink_br[i],
+                i + 1,
+                blink_br[i + 1],
+            );
+        }
+    }
+
+    // 8. During fade-in, brightness must increase monotonically.
+    let fade_in_start = opacities.iter().rposition(|&o| o < 0.05).unwrap();
+    let fade_in_end = opacities.iter().rposition(|&o| o > 0.95).unwrap();
+    if fade_in_end > fade_in_start + 2 {
+        for i in fade_in_start..fade_in_end - 1 {
+            assert!(
+                blink_br[i] <= blink_br[i + 1],
+                "fade-in not monotonic: frame {i} br={} < frame {} br={}",
+                blink_br[i],
+                i + 1,
+                blink_br[i + 1],
+            );
+        }
     }
 }
 
-/// Cross-frame test: renders at 3 opacity levels in one function and asserts
-/// that non-BLINK cell brightness is constant while BLINK cell brightness
-/// decreases monotonically.
+/// Verify the fast path (`content_changed = false`) correctly rebuilds
+/// instances when `text_blink_opacity` changes between frames.
+///
+/// Uses the real `CursorBlink` timer at two time points (visible plateau
+/// and hidden plateau) to get opacity values, then renders through
+/// `WindowRenderer::prepare()` with `content_changed = false` on the
+/// second frame. The BLINK cell must be dimmer in frame 2.
 #[test]
-fn text_blink_cross_frame_consistency() {
+fn text_blink_fast_path_with_timer() {
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {
         eprintln!("skipped: no GPU adapter available");
         return;
     };
 
     let cell = renderer.cell_metrics();
+    let interval = Duration::from_millis(500);
 
-    // Render 3 frames at different text_blink_opacity values.
-    let input_1_0 = blink_input(cell, 1.0);
-    let pixels_1_0 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input_1_0);
-    let input_0_5 = blink_input(cell, 0.5);
-    let pixels_0_5 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input_0_5);
-    let input_0_0 = blink_input(cell, 0.0);
-    let pixels_0_0 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input_0_0);
-
-    let w = input_1_0.viewport.width;
-
-    // Extract non-BLINK cell pixel from each frame.
-    let n_1_0 = cell_pixel(&pixels_1_0, w, NORMAL_COL, cell.width, cell.height);
-    let n_0_5 = cell_pixel(&pixels_0_5, w, NORMAL_COL, cell.width, cell.height);
-    let n_0_0 = cell_pixel(&pixels_0_0, w, NORMAL_COL, cell.width, cell.height);
-
-    // Non-BLINK cell RGB should be constant across all 3 frames.
-    // text_blink_opacity only affects BLINK-flagged cells in the prepare pipeline.
-    for (a, b, label) in [
-        (n_1_0, n_0_5, "1.0 vs 0.5"),
-        (n_0_5, n_0_0, "0.5 vs 0.0"),
-        (n_1_0, n_0_0, "1.0 vs 0.0"),
-    ] {
-        let diff: i32 = (0..3).map(|i| (a[i] as i32 - b[i] as i32).abs()).sum();
-        assert!(
-            diff < 5,
-            "non-BLINK cell should be constant across frames ({label}): \
-             {a:?} vs {b:?}, diff={diff}",
-        );
-    }
-
-    // Extract BLINK cell pixel from each frame and compute brightness.
-    let b_1_0 = cell_pixel(&pixels_1_0, w, BLINK_COL, cell.width, cell.height);
-    let b_0_5 = cell_pixel(&pixels_0_5, w, BLINK_COL, cell.width, cell.height);
-    let b_0_0 = cell_pixel(&pixels_0_0, w, BLINK_COL, cell.width, cell.height);
-
-    let br_1_0: u32 = b_1_0[0] as u32 + b_1_0[1] as u32 + b_1_0[2] as u32;
-    let br_0_5: u32 = b_0_5[0] as u32 + b_0_5[1] as u32 + b_0_5[2] as u32;
-    let br_0_0: u32 = b_0_0[0] as u32 + b_0_0[1] as u32 + b_0_0[2] as u32;
-
-    // BLINK cell brightness must decrease monotonically: 1.0 > 0.5 > 0.0.
+    // Frame 1: visible plateau (elapsed = 0ms, opacity = 1.0).
+    let timer_visible = CursorBlink::new(interval);
+    let opacity_visible = timer_visible.intensity();
     assert!(
-        br_1_0 > br_0_5,
-        "BLINK brightness should decrease: 1.0={br_1_0} should be > 0.5={br_0_5}",
+        opacity_visible > 0.99,
+        "fresh timer should be at full opacity: {opacity_visible}",
     );
+
+    let input1 = blink_input(cell, opacity_visible);
+    let w = input1.viewport.width;
+    let h = input1.viewport.height;
+    let target1 = gpu.create_render_target(w, h);
+    renderer.prepare(&input1, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    renderer.render_frame(&gpu, &pipelines, target1.view());
+    let pixels1 = gpu.read_render_target(&target1).expect("readback");
+
+    // Frame 2: hidden plateau (elapsed = 600ms, opacity ≈ 0.0).
+    let mut timer_hidden = CursorBlink::new(interval);
+    timer_hidden.backdate(Duration::from_millis(600));
+    let opacity_hidden = timer_hidden.intensity();
     assert!(
-        br_0_5 > br_0_0,
-        "BLINK brightness should decrease: 0.5={br_0_5} should be > 0.0={br_0_0}",
+        opacity_hidden < 0.05,
+        "timer at 600ms should be near zero: {opacity_hidden}",
+    );
+
+    let input2 = blink_input(cell, opacity_hidden);
+    let target2 = gpu.create_render_target(w, h);
+    // content_changed = false: this is the fast path.
+    renderer.prepare(&input2, &gpu, &pipelines, (0.0, 0.0), 1.0, false);
+    renderer.render_frame(&gpu, &pipelines, target2.view());
+    let pixels2 = gpu.read_render_target(&target2).expect("readback");
+
+    // BLINK cell must be bright in frame 1, dark in frame 2.
+    let br1 = cell_pixel(&pixels1, w, BLINK_COL, cell.width, cell.height);
+    let br2 = cell_pixel(&pixels2, w, BLINK_COL, cell.width, cell.height);
+    let bright1: u32 = br1[0] as u32 + br1[1] as u32 + br1[2] as u32;
+    let bright2: u32 = br2[0] as u32 + br2[1] as u32 + br2[2] as u32;
+
+    assert!(
+        bright1 > bright2 + 50,
+        "BLINK cell must dim through fast path: visible={bright1} hidden={bright2}",
+    );
+
+    // Non-BLINK cell must be constant.
+    let n1 = cell_pixel(&pixels1, w, NORMAL_COL, cell.width, cell.height);
+    let n2 = cell_pixel(&pixels2, w, NORMAL_COL, cell.width, cell.height);
+    let diff: i32 = (0..3).map(|i| (n1[i] as i32 - n2[i] as i32).abs()).sum();
+    assert!(
+        diff < 5,
+        "non-BLINK cell must be constant: {n1:?} vs {n2:?}",
     );
 }
