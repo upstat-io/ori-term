@@ -37,7 +37,7 @@ client:load, Astro frontmatter, fs.readdirSync
 ---
 
 ### Section 03: CI Dispatch
-**File:** `section-03-ci-dispatch.md` | **Status:** Not Started
+**File:** `section-03-ci-dispatch.md` | **Status:** In Progress
 
 ```
 notify-website.yml, repository_dispatch, GitHub Actions
@@ -49,7 +49,7 @@ ori_term/.github/workflows, on.push.paths
 ---
 
 ### Section 04: CI Receive
-**File:** `section-04-ci-receive.md` | **Status:** Not Started
+**File:** `section-04-ci-receive.md` | **Status:** In Progress
 
 ```
 deploy.yml, repository_dispatch trigger, checkout ori_term
