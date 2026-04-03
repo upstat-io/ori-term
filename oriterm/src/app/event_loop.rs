@@ -394,7 +394,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.pump_mux_events();
         self.perf.last_pump_time = pump_start.elapsed();
 
-        self.drive_blink_timers();
+        let blink_animating = self.drive_blink_timers();
 
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
@@ -451,7 +451,7 @@ impl ApplicationHandler<TermEvent> for App {
         // On Immediate mode (no hardware pacing), apply a client-side budget
         // gate to prevent uncapped redraws during sustained PTY output.
         let needs_budget = self.gpu.as_ref().is_some_and(GpuState::needs_frame_budget);
-        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw) {
+        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw || blink_animating) {
             self.render_dirty_windows();
         }
 

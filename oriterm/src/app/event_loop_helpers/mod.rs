@@ -252,9 +252,16 @@ impl App {
     /// when actively fading (`is_animating`) to ensure continuous redraws
     /// during fade transitions even when the per-frame delta is below
     /// the `update()` threshold.
-    pub(super) fn drive_blink_timers(&mut self) {
+    ///
+    /// Returns `true` if any blink animation is active (fade transition
+    /// in progress). The caller uses this to bypass the frame budget gate
+    /// which would otherwise block animation redraws.
+    pub(super) fn drive_blink_timers(&mut self) -> bool {
+        let mut animating = false;
+
         if self.blinking_active && (self.cursor_blink.update() || self.cursor_blink.is_animating())
         {
+            animating = true;
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.root.mark_dirty();
                 ctx.window.window().request_redraw();
@@ -262,11 +269,14 @@ impl App {
         }
 
         if self.text_blink.update() || self.text_blink.is_animating() {
+            animating = true;
             for ctx in self.windows.values_mut() {
                 ctx.root.mark_dirty();
                 ctx.window.window().request_redraw();
             }
         }
+
+        animating
     }
 
     /// Tick overlay animations in dialog windows.
