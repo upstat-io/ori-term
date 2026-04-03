@@ -12,7 +12,6 @@ fn idle_input() -> ControlFlowInput {
         has_animations: false,
         blinking_active: false,
         next_blink_change: now + Duration::from_secs(1),
-        text_blink_active: false,
         next_text_blink_change: now + Duration::from_secs(1),
         budget_remaining: Duration::from_millis(16),
         now,
@@ -21,17 +20,14 @@ fn idle_input() -> ControlFlowInput {
 }
 
 #[test]
-fn idle_returns_wait() {
-    let input = idle_input();
-    assert_eq!(compute_control_flow(&input), ControlFlowDecision::Wait);
-}
-
-#[test]
-fn not_still_dirty_goes_idle() {
-    // When rendering completed all dirty windows, go idle.
+fn idle_returns_text_blink_wait() {
+    // Text blink timer always contributes — true idle is WaitUntil, not Wait.
     let input = idle_input();
     let result = compute_control_flow(&input);
-    assert_eq!(result, ControlFlowDecision::Wait);
+    assert_eq!(
+        result,
+        ControlFlowDecision::WaitUntil(input.next_text_blink_change),
+    );
 }
 
 #[test]

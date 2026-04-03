@@ -38,13 +38,13 @@ impl App {
         if let Some(pos) = cursor_pos {
             if pos != self.last_cursor_pos {
                 self.last_cursor_pos = pos;
-                self.cursor_blink.reset();
+                self.reset_cursor_blink();
             }
         }
 
         // Blink state transition: reset on off→on edge.
         if blinking_now && !self.blinking_active {
-            self.cursor_blink.reset();
+            self.reset_cursor_blink();
         }
         self.blinking_active = self.config.terminal.cursor_blink && blinking_now;
 

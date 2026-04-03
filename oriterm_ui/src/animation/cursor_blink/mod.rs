@@ -22,6 +22,27 @@ const FADE_FRACTION: f32 = 0.38;
 /// Animation frame interval for fade transitions (~60fps).
 const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
+/// Precomputed phase boundaries for one blink cycle.
+///
+/// Eliminates repeated boundary computation across `intensity_at()`,
+/// `next_change()`, and `is_animating()`.
+struct PhaseBounds {
+    /// Position within the current cycle (seconds).
+    cycle_pos: f64,
+    /// Elapsed seconds at the start of the current cycle.
+    cycle_start_secs: f64,
+    /// Start of fade-out transition (end of visible plateau), in cycle-local seconds.
+    fade_out_start: f64,
+    /// End of visible phase / start of hidden plateau (= `in_secs`), in cycle-local seconds.
+    fade_out_end: f64,
+    /// End of hidden plateau / start of fade-in, in cycle-local seconds.
+    hidden_plateau_end: f64,
+    /// Duration of fade-out transition (`in_secs * FADE_FRACTION`).
+    fade_out_dur: f64,
+    /// Duration of fade-in transition (`out_secs * FADE_FRACTION`).
+    fade_in_dur: f64,
+}
+
 /// Default xterm cursor blink interval (530ms on, 530ms off).
 #[cfg(test)]
 const DEFAULT_BLINK_INTERVAL: Duration = Duration::from_millis(530);
@@ -89,31 +110,19 @@ impl CursorBlink {
     /// Use with `ControlFlow::WaitUntil` to schedule event loop wakeups.
     pub fn next_change(&self) -> Instant {
         let elapsed = self.epoch.elapsed();
-        let total = self.in_duration + self.out_duration;
-        if total.is_zero() {
+        let Some(pb) = self.phase_bounds(elapsed) else {
             return self.epoch + Duration::from_secs(1);
-        }
+        };
 
-        let total_secs = total.as_secs_f64();
-        let cycle_pos = elapsed.as_secs_f64() % total_secs;
-        let cycle_start_secs = elapsed.as_secs_f64() - cycle_pos;
-
-        let in_secs = self.in_duration.as_secs_f64();
-        let out_secs = self.out_duration.as_secs_f64();
-        let ff = f64::from(FADE_FRACTION);
-
-        let fade_out_start = in_secs * (1.0 - ff);
-        let hidden_plateau_end = in_secs + out_secs * (1.0 - ff);
-
-        if cycle_pos < fade_out_start {
+        if pb.cycle_pos < pb.fade_out_start {
             // Visible plateau → wake at start of fade-out.
-            self.epoch + Duration::from_secs_f64(cycle_start_secs + fade_out_start)
-        } else if cycle_pos < in_secs {
+            self.epoch + Duration::from_secs_f64(pb.cycle_start_secs + pb.fade_out_start)
+        } else if pb.cycle_pos < pb.fade_out_end {
             // Fade out → next animation frame.
             Instant::now() + ANIMATION_FRAME_INTERVAL
-        } else if cycle_pos < hidden_plateau_end {
+        } else if pb.cycle_pos < pb.hidden_plateau_end {
             // Hidden plateau → wake at start of fade-in.
-            self.epoch + Duration::from_secs_f64(cycle_start_secs + hidden_plateau_end)
+            self.epoch + Duration::from_secs_f64(pb.cycle_start_secs + pb.hidden_plateau_end)
         } else {
             // Fade in → next animation frame.
             Instant::now() + ANIMATION_FRAME_INTERVAL
@@ -128,13 +137,6 @@ impl CursorBlink {
         self.intensity() > 0.5
     }
 
-    /// Alias for [`next_change`](Self::next_change).
-    ///
-    /// Retained for call-site compatibility; prefer `next_change()` in new code.
-    pub fn next_toggle(&self) -> Instant {
-        self.next_change()
-    }
-
     /// Updates both phase durations (e.g. on config reload).
     pub fn set_interval(&mut self, interval: Duration) {
         self.in_duration = interval;
@@ -147,20 +149,12 @@ impl CursorBlink {
     /// produce smooth animation. During plateaus, redraws only happen at
     /// phase boundaries.
     pub fn is_animating(&self) -> bool {
-        let total = self.in_duration + self.out_duration;
-        if total.is_zero() {
+        let Some(pb) = self.phase_bounds(self.epoch.elapsed()) else {
             return false;
-        }
-        let cycle_pos = self.epoch.elapsed().as_secs_f64() % total.as_secs_f64();
-        let in_secs = self.in_duration.as_secs_f64();
-        let out_secs = self.out_duration.as_secs_f64();
-        let ff = f64::from(FADE_FRACTION);
-
-        let fade_out_start = in_secs * (1.0 - ff);
-        let hidden_plateau_end = in_secs + out_secs * (1.0 - ff);
-
+        };
         // In fade-out or fade-in phase.
-        (cycle_pos >= fade_out_start && cycle_pos < in_secs) || cycle_pos >= hidden_plateau_end
+        (pb.cycle_pos >= pb.fade_out_start && pb.cycle_pos < pb.fade_out_end)
+            || pb.cycle_pos >= pb.hidden_plateau_end
     }
 
     /// Moves the epoch backward by `duration`, simulating elapsed time.
@@ -191,34 +185,45 @@ impl CursorBlink {
 
     /// Computes opacity at a given elapsed duration from epoch.
     fn intensity_at(&self, elapsed: Duration) -> f32 {
+        let Some(pb) = self.phase_bounds(elapsed) else {
+            return 1.0;
+        };
+
+        if pb.cycle_pos < pb.fade_out_start {
+            1.0
+        } else if pb.cycle_pos < pb.fade_out_end {
+            let t = ((pb.cycle_pos - pb.fade_out_start) / pb.fade_out_dur) as f32;
+            1.0 - self.out_ease.apply(t)
+        } else if pb.cycle_pos < pb.hidden_plateau_end {
+            0.0
+        } else {
+            let t = ((pb.cycle_pos - pb.hidden_plateau_end) / pb.fade_in_dur) as f32;
+            self.in_ease.apply(t)
+        }
+    }
+
+    /// Computes phase boundaries at a given elapsed duration from epoch.
+    ///
+    /// Returns `None` if the total cycle duration is zero.
+    fn phase_bounds(&self, elapsed: Duration) -> Option<PhaseBounds> {
         let total = self.in_duration + self.out_duration;
         if total.is_zero() {
-            return 1.0;
+            return None;
         }
-
         let total_secs = total.as_secs_f64();
         let cycle_pos = elapsed.as_secs_f64() % total_secs;
-
         let in_secs = self.in_duration.as_secs_f64();
         let out_secs = self.out_duration.as_secs_f64();
         let ff = f64::from(FADE_FRACTION);
-
-        let fade_out_start = in_secs * (1.0 - ff);
-        let fade_out_dur = in_secs * ff;
-        let hidden_plateau_end = in_secs + out_secs * (1.0 - ff);
-        let fade_in_dur = out_secs * ff;
-
-        if cycle_pos < fade_out_start {
-            1.0
-        } else if cycle_pos < in_secs {
-            let t = ((cycle_pos - fade_out_start) / fade_out_dur) as f32;
-            1.0 - self.out_ease.apply(t)
-        } else if cycle_pos < hidden_plateau_end {
-            0.0
-        } else {
-            let t = ((cycle_pos - hidden_plateau_end) / fade_in_dur) as f32;
-            self.in_ease.apply(t)
-        }
+        Some(PhaseBounds {
+            cycle_pos,
+            cycle_start_secs: elapsed.as_secs_f64() - cycle_pos,
+            fade_out_start: in_secs * (1.0 - ff),
+            fade_out_end: in_secs,
+            hidden_plateau_end: in_secs + out_secs * (1.0 - ff),
+            fade_out_dur: in_secs * ff,
+            fade_in_dur: out_secs * ff,
+        })
     }
 }
 

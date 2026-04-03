@@ -167,7 +167,7 @@ impl ApplicationHandler<TermEvent> for App {
                 }
                 // Reset blink timer so cursor is visible immediately
                 // (on focus-in: fresh start; on focus-out: frozen visible).
-                self.cursor_blink.reset();
+                self.reset_cursor_blink();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.set_active(focused);
                     ctx.root.mark_dirty();
@@ -475,7 +475,6 @@ impl ApplicationHandler<TermEvent> for App {
             has_animations,
             blinking_active: self.blinking_active,
             next_blink_change: self.cursor_blink.next_change(),
-            text_blink_active: true,
             next_text_blink_change: self.text_blink.next_change(),
             budget_remaining: remaining,
             now,

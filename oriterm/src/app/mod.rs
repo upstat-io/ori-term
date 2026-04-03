@@ -50,6 +50,7 @@ mod window_management;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 use winit::keyboard::ModifiersState;
@@ -176,6 +177,13 @@ pub(crate) struct App {
     // Whether the terminal's CURSOR_BLINKING mode is active.
     // Cached from the last extracted frame to gate blink timer in about_to_wait.
     blinking_active: bool,
+
+    // Generation counter for blink wakeup thread deduplication.
+    // 0 = no pending thread. Nonzero = generation of the pending thread.
+    // CAS ensures stale threads don't clear the flag after a reset+respawn.
+    blink_wakeup_gen: Arc<AtomicU64>,
+    // Monotonic generation counter (main thread only, never zero).
+    next_blink_gen: u64,
 
     // Last cursor position (line, column) for blink-reset-on-move detection.
     // Compared per frame; reset blink when the cursor moves due to PTY output.

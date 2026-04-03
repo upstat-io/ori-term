@@ -4,6 +4,8 @@
 //! the 500-line limit. Contains theme resolution, modifier conversion, and
 //! platform-specific modal loop support.
 
+use std::sync::atomic::Ordering;
+
 use winit::keyboard::ModifiersState;
 
 use oriterm_core::Theme;
@@ -232,13 +234,32 @@ impl App {
         }
     }
 
+    /// Reset the cursor blink cycle and invalidate any pending wakeup thread.
+    ///
+    /// Sets the generation counter to zero so `schedule_blink_wakeup()` can
+    /// spawn a new thread with the correct delay. The old sleeper's CAS will
+    /// fail because its generation no longer matches, preventing it from
+    /// clearing the new thread's guard.
+    pub(super) fn reset_cursor_blink(&mut self) {
+        self.cursor_blink.reset();
+        self.blink_wakeup_gen.store(0, Ordering::Release);
+    }
+
     /// Schedule a delayed wakeup for the next blink state change.
     ///
     /// Uses `next_change()` to sleep until the next visual change — ~16ms
     /// during fade transitions, ~300ms during plateaus. Sends `MuxWakeup`
     /// to force the event loop to iterate, working around platforms where
     /// `ControlFlow::WaitUntil` doesn't reliably wake (Windows/WSL2).
-    pub(super) fn schedule_blink_wakeup(&self) {
+    ///
+    /// At most one pending wakeup thread at a time: a generation counter
+    /// prevents stale threads from clearing the guard after a reset+respawn.
+    pub(super) fn schedule_blink_wakeup(&mut self) {
+        // A nonzero generation means a thread is already pending.
+        if self.blink_wakeup_gen.load(Ordering::Acquire) != 0 {
+            return;
+        }
+
         let delay = if self.text_blink.is_animating()
             || (self.blinking_active && self.cursor_blink.is_animating())
         {
@@ -255,10 +276,22 @@ impl App {
                 .max(std::time::Duration::from_millis(1))
         };
 
+        let wakeup_gen = self.next_blink_gen;
+        self.next_blink_gen = wakeup_gen.wrapping_add(1).max(1);
+        self.blink_wakeup_gen.store(wakeup_gen, Ordering::Release);
         let sender = self.event_proxy.clone();
+        let gen_ref = self.blink_wakeup_gen.clone();
         std::thread::spawn(move || {
             std::thread::sleep(delay);
-            sender.send(crate::event::TermEvent::MuxWakeup);
+            // Only send MuxWakeup if we're still the active generation.
+            // If a reset or config reload spawned a newer thread, our CAS
+            // fails and this thread exits silently — no stale wakeup.
+            if gen_ref
+                .compare_exchange(wakeup_gen, 0, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                sender.send(crate::event::TermEvent::MuxWakeup);
+            }
         });
     }
 
@@ -334,9 +367,10 @@ pub(super) struct ControlFlowInput {
     /// During fade transitions this is ~16ms (animation frame rate); during
     /// plateaus it is ~530ms (phase boundary).
     pub next_blink_change: std::time::Instant,
-    /// Whether text blink timer is active (always true — any cell could blink).
-    pub text_blink_active: bool,
-    /// Next text blink change time (only meaningful if `text_blink_active`).
+    /// Next text blink phase boundary (always active — unconditional timer).
+    ///
+    /// Any cell could have the BLINK flag; scanning cells each frame is too
+    /// expensive, so the timer runs unconditionally (~2 wakeups/sec).
     pub next_text_blink_change: std::time::Instant,
     /// Time remaining until frame budget allows next render.
     pub budget_remaining: std::time::Duration,
@@ -353,6 +387,10 @@ pub(super) struct ControlFlowInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ControlFlowDecision {
     /// Sleep until an external event arrives.
+    #[allow(
+        dead_code,
+        reason = "reserved for future use when all timers can be disabled"
+    )]
     Wait,
     /// Sleep until the given instant.
     WaitUntil(std::time::Instant),
@@ -374,24 +412,18 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
     }
     if input.has_animations {
         ControlFlowDecision::WaitUntil(input.now + std::time::Duration::from_millis(16))
-    } else if input.blinking_active || input.text_blink_active {
-        // Pick the earliest blink change across both timers.
-        let mut wake_at = if input.blinking_active {
-            input.next_blink_change
-        } else {
-            input.next_text_blink_change
-        };
-        if input.text_blink_active {
-            wake_at = wake_at.min(input.next_text_blink_change);
+    } else {
+        // Text blink timer always contributes (any cell could have BLINK flag;
+        // scanning cells each frame is too expensive, so the timer runs
+        // unconditionally at ~2 wakeups/sec — negligible cost).
+        let mut wake_at = input.next_text_blink_change;
+        if input.blinking_active {
+            wake_at = wake_at.min(input.next_blink_change);
         }
         match input.scheduler_wake {
             Some(wake) => ControlFlowDecision::WaitUntil(wake.min(wake_at)),
             None => ControlFlowDecision::WaitUntil(wake_at),
         }
-    } else if let Some(wake) = input.scheduler_wake {
-        ControlFlowDecision::WaitUntil(wake)
-    } else {
-        ControlFlowDecision::Wait
     }
 }
 
