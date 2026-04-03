@@ -2,7 +2,7 @@
 reroute: true
 name: "VTTest"
 full_name: "VTTest Conformance"
-status: active
+status: resolved
 order: 2
 ---
 
@@ -102,7 +102,7 @@ fill_frame_shaped, GlyphEmitter, vttest menu 2 screen 13-14
 ---
 
 ### Section 06: Test Automation Expansion
-**File:** `section-06-test-expansion.md` | **Status:** In Progress
+**File:** `section-06-test-expansion.md` | **Status:** Complete
 
 ```
 vttest automation, menu 5 keyboard, menu 6 terminal reports
@@ -116,7 +116,7 @@ compare_with_reference, headless_env, render_to_pixels
 ---
 
 ### Section 07: Verification & Metrics
-**File:** `section-07-verification.md` | **Status:** Not Started
+**File:** `section-07-verification.md` | **Status:** Complete
 
 ```
 conformance audit, pass rate, 90% target

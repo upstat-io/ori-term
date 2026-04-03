@@ -641,6 +641,21 @@ fn da2_produces_secondary_device_attributes() {
     );
 }
 
+#[test]
+fn da3_produces_tertiary_device_attributes() {
+    let (mut t, listener) = term_with_recorder();
+    // CSI = c — tertiary device attributes.
+    feed(&mut t, b"\x1b[=c");
+
+    let events = listener.events();
+    // DA3 response: DCS ! | 00000000 ST.
+    assert!(
+        events
+            .iter()
+            .any(|e| e == "PtyWrite(\x1bP!|00000000\x1b\\)")
+    );
+}
+
 // --- DECRPM (mode report) tests ---
 
 #[test]
