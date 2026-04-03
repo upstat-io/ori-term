@@ -91,8 +91,11 @@ impl<T: EventListener> Term<T> {
                 self.mode.insert(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ReverseVideo => self.mode.insert(TermMode::REVERSE_VIDEO),
+            NamedPrivateMode::EnableMode3 => {
+                self.mode.insert(TermMode::ENABLE_MODE_3);
+            }
             NamedPrivateMode::ColumnMode => {
-                self.apply_deccolm();
+                self.apply_deccolm(true);
             }
         }
     }
@@ -158,8 +161,11 @@ impl<T: EventListener> Term<T> {
                 self.mode.remove(TermMode::SIXEL_CURSOR_RIGHT);
             }
             NamedPrivateMode::ReverseVideo => self.mode.remove(TermMode::REVERSE_VIDEO),
+            NamedPrivateMode::EnableMode3 => {
+                self.mode.remove(TermMode::ENABLE_MODE_3);
+            }
             NamedPrivateMode::ColumnMode => {
-                self.apply_deccolm();
+                self.apply_deccolm(false);
             }
         }
     }
@@ -171,9 +177,21 @@ impl<T: EventListener> Term<T> {
     /// 2. Clears the screen (ED 2)
     /// 3. Homes the cursor
     ///
-    /// We do NOT resize the grid — content reflows at the current width.
-    /// This matches `WezTerm` and Alacritty (both skip the resize).
-    fn apply_deccolm(&mut self) {
+    /// When Mode 40 (`ENABLE_MODE_3`) is active, the grid is resized to
+    /// 132 columns (set) or 80 columns (reset). When Mode 40 is NOT
+    /// active, only the side effects run — the grid is not resized.
+    /// This matches Ghostty's approach (Alacritty/WezTerm skip resize
+    /// entirely; Ghostty gates it behind Mode 40).
+    fn apply_deccolm(&mut self, set: bool) {
+        // Resize grid if Mode 40 is enabled.
+        if self.mode.contains(TermMode::ENABLE_MODE_3) {
+            let new_cols = if set { 132 } else { self.deccolm_default_cols };
+            let lines = self.grid().lines();
+            // No reflow — DECCOLM resize discards content (screen is cleared
+            // below), so reflowing into scrollback would be incorrect.
+            self.grid_mut().resize(lines, new_cols, false);
+        }
+
         // Reset scroll region first so goto_origin_aware uses the full screen.
         self.grid_mut().set_scroll_region(1, None);
         // Clear screen and images (matching clear_screen handler).

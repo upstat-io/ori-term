@@ -178,10 +178,11 @@ impl PrivateMode {
             3 => Self::Named(NamedPrivateMode::ColumnMode),
             5 => Self::Named(NamedPrivateMode::ReverseVideo),
             6 => Self::Named(NamedPrivateMode::Origin),
-            9 => Self::Named(NamedPrivateMode::X10Mouse),
             7 => Self::Named(NamedPrivateMode::LineWrap),
+            9 => Self::Named(NamedPrivateMode::X10Mouse),
             12 => Self::Named(NamedPrivateMode::BlinkingCursor),
             25 => Self::Named(NamedPrivateMode::ShowCursor),
+            40 => Self::Named(NamedPrivateMode::EnableMode3),
             45 => Self::Named(NamedPrivateMode::ReverseWraparound),
             47 => Self::Named(NamedPrivateMode::AltScreen),
             1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
@@ -241,9 +242,14 @@ pub enum NamedPrivateMode {
     /// CSI ? 5 l -> normal video (dark background, light text).
     ReverseVideo = 5,
     Origin = 6,
+    LineWrap = 7,
     /// X10 mouse reporting -- press only, no release, no modifiers.
     X10Mouse = 9,
-    LineWrap = 7,
+    /// DECNRCM / enable mode 3 — gate for DECCOLM (mode 3).
+    ///
+    /// When set, DECCOLM (mode 3) actually resizes to 80/132 columns.
+    /// When reset, DECCOLM only performs side effects (clear, home, reset margins).
+    EnableMode3 = 40,
     BlinkingCursor = 12,
     ShowCursor = 25,
     /// DECAWM reverse wraparound -- BS at column 0 wraps to previous line.

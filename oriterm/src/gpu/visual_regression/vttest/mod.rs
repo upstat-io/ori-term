@@ -103,8 +103,11 @@ impl VtTestSession {
         });
 
         let listener = PtyResponder::new();
-        let term = Term::new(rows as usize, cols as usize, 0, Theme::default(), listener);
-        let proc = vte::ansi::Processor::new();
+        let mut term = Term::new(rows as usize, cols as usize, 0, Theme::default(), listener);
+        let mut proc = vte::ansi::Processor::new();
+
+        // Enable Mode 40 so DECCOLM (mode 3) resizes the grid to 80/132.
+        proc.advance(&mut term, b"\x1b[?40h");
 
         Self {
             rx,

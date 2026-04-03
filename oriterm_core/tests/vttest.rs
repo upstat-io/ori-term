@@ -102,8 +102,13 @@ impl VtTestSession {
         });
 
         let listener = PtyResponder::new();
-        let term = Term::new(rows as usize, cols as usize, 0, Theme::default(), listener);
-        let proc = vte::ansi::Processor::new();
+        let mut term = Term::new(rows as usize, cols as usize, 0, Theme::default(), listener);
+        let mut proc = vte::ansi::Processor::new();
+
+        // Enable Mode 40 (ENABLE_MODE_3) so that DECCOLM (mode 3) actually
+        // resizes the grid to 80/132 columns. vttest's 132-column iteration
+        // relies on this for correct rendering.
+        proc.advance(&mut term, b"\x1b[?40h");
 
         Self {
             rx,
@@ -588,17 +593,18 @@ fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
 }
 
 #[test]
-fn vttest_deccolm_preserves_grid_width() {
+fn vttest_deccolm_resizes_to_132_with_mode_40() {
     if !vttest_available() {
         eprintln!("vttest not installed, skipping");
         return;
     }
     let grid = capture_deccolm_screen(80, 24);
-    // DECCOLM does NOT resize — grid stays at 80 columns.
+    // Mode 40 is enabled in the vttest session setup, so DECCOLM
+    // resizes the grid to 132 columns.
     assert_eq!(
         grid[0].len(),
-        80,
-        "DECCOLM should NOT resize grid (no-resize design)"
+        132,
+        "DECCOLM should resize grid to 132 columns when Mode 40 is enabled"
     );
 }
 

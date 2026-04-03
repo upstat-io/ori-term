@@ -5711,6 +5711,117 @@ fn deccolm_set_then_reset_roundtrip() {
     assert_eq!(t.grid().cursor().col(), Column(0));
 }
 
+// --- DECSTBM scroll region with IL/DL ---
+
+#[test]
+fn scroll_region_fill_preserves_row_zero() {
+    // Diagnostic: does filling rows with linefeeds inside a scroll region
+    // corrupt row 0 (which is outside the region)?
+    let mut t = term();
+
+    // Write A's on row 0.
+    feed(&mut t, b"AAAAAAAAAA");
+    // Move to row 1 (CR+LF).
+    feed(&mut t, b"\r\n");
+    // Set scroll region: rows 2-24 (1-based), i.e., 0-based 1..24.
+    feed(&mut t, b"\x1b[2;24r");
+    // Home cursor to row 2, col 1 (inside scroll region).
+    feed(&mut t, b"\x1b[2;1H");
+
+    // Fill rows inside region with B's via prints + linefeeds.
+    for _ in 0..30 {
+        feed(&mut t, b"BBBBBBBBBB\n");
+    }
+
+    // Check row 0.
+    let grid = t.grid();
+    assert_eq!(
+        grid[crate::index::Line(0)][Column(0)].ch,
+        'A',
+        "row 0 should still be A after fill with scroll region active"
+    );
+}
+
+#[test]
+fn il_within_scroll_region_preserves_row_zero() {
+    let mut t = term();
+    // Write A's on row 0.
+    feed(&mut t, b"AAAAAAAAAA");
+    feed(&mut t, b"\r\n");
+    // Write B's on row 1.
+    feed(&mut t, b"BBBBBBBBBB");
+    // Set scroll region: rows 2-24 (1-based), i.e., 0-based 1..24.
+    feed(&mut t, b"\x1b[2;24r");
+    // Position cursor at row 2 col 1 (inside scroll region).
+    feed(&mut t, b"\x1b[2;1H");
+    // IL 1: insert 1 blank line at cursor.
+    feed(&mut t, b"\x1b[1L");
+
+    let grid = t.grid();
+    assert_eq!(
+        grid[crate::index::Line(0)][Column(0)].ch,
+        'A',
+        "row 0 should still be A after IL within scroll region"
+    );
+    assert_eq!(
+        grid[crate::index::Line(1)][Column(0)].ch,
+        ' ',
+        "row 1 should be blank (inserted line)"
+    );
+}
+
+#[test]
+fn accordion_with_scroll_region_preserves_row_zero() {
+    // Exact vttest menu 8 reproduction: first round fill → second round accordion.
+    // vttest source: /tmp/vttest-20251205/main.c lines 961-986.
+    let mut t = term(); // 24x80
+
+    // First round fill (main.c:961-966): fill all 24 rows with A-X.
+    feed(&mut t, b"\x1b[2J"); // ED: clear screen
+    feed(&mut t, b"\x1b[1;1H"); // CUP(1,1)
+    for row in 1..=24u8 {
+        feed(&mut t, &format!("\x1b[{};1H", row).into_bytes());
+        let ch = b'A' - 1 + row;
+        let line: Vec<u8> = vec![ch; 80];
+        feed(&mut t, &line);
+    }
+    // Prompt overlay (main.c:968-970).
+    feed(&mut t, b"\x1b[4;1H");
+    feed(
+        &mut t,
+        b"Screen accordion test (Insert & Delete Line). Push <RETURN>",
+    );
+
+    // Verify row 0 has A's.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'A');
+
+    // Second round setup (main.c:972-975): RI, EL 2, DECSTBM, DECOM.
+    feed(&mut t, b"\x1bM"); // RI: reverse index
+    feed(&mut t, b"\x1b[2K"); // EL 2: erase entire line
+    feed(&mut t, b"\x1b[2;23r"); // DECSTBM(2,23): scroll region rows 2-23
+    feed(&mut t, b"\x1b[?6h"); // DECOM ON
+
+    // CUP(1,1) with DECOM (main.c:976).
+    feed(&mut t, b"\x1b[1;1H");
+
+    // Accordion loop (main.c:977-980): IL(n), DL(n) for n=1..max_lines.
+    for n in 1..=24u8 {
+        feed(&mut t, &format!("\x1b[{}L", n).into_bytes());
+        feed(&mut t, &format!("\x1b[{}M", n).into_bytes());
+    }
+
+    // Cleanup (main.c:981-982).
+    feed(&mut t, b"\x1b[?6l"); // DECOM OFF
+    feed(&mut t, b"\x1b[r"); // Reset DECSTBM
+
+    // Row 0 should still have A's — it was outside the scroll region.
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].ch,
+        'A',
+        "row 0 should still be A after second-round accordion"
+    );
+}
+
 // --- DECSCNM (Reverse Video, mode 5) ---
 
 #[test]

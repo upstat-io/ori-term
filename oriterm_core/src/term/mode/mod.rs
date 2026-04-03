@@ -74,6 +74,10 @@ bitflags! {
         const SIXEL_CURSOR_RIGHT     = 1 << 28;
         /// DECSCNM (mode 5) — reverse video. Swaps default fg/bg screen-wide.
         const REVERSE_VIDEO          = 1 << 29;
+        /// Mode 40 — enable DECCOLM (mode 3) resize. When set, DECCOLM
+        /// actually resizes the grid to 80/132 columns. When reset,
+        /// DECCOLM only performs side effects (clear, home, reset margins).
+        const ENABLE_MODE_3          = 1 << 30;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()
