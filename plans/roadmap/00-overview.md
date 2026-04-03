@@ -1,5 +1,7 @@
 # ori_term Rebuild — Overview
 
+<!-- Last verified: 2026-04-02 -->
+
 ## Mandate
 
 Rebuild ori_term from scratch. The old prototype proved the feature set (GPU window, PTY, VTE, tabs, fonts) but the architecture grew organically and became untenable: god objects, single-mutex contention, coupled VTE handler, rendering holding locks during GPU work, circular imports. The rebuild keeps all features but fixes the foundation with a multi-crate workspace, clean threading, and proper separation of concerns.
