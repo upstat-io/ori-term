@@ -1915,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260403.2"
+version = "0.2.0-alpha.20260403.3"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1959,7 +1959,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260403.2"
+version = "0.2.0-alpha.20260403.3"
 dependencies = [
  "base64",
  "bitflags 2.11.0",
@@ -1976,7 +1976,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260403.2"
+version = "0.2.0-alpha.20260403.3"
 dependencies = [
  "libc",
  "log",
@@ -1986,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260403.2"
+version = "0.2.0-alpha.20260403.3"
 dependencies = [
  "base64",
  "bincode",
@@ -2007,7 +2007,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260403.2"
+version = "0.2.0-alpha.20260403.3"
 dependencies = [
  "criterion",
  "image",
