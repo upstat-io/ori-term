@@ -183,7 +183,29 @@ h.click(center);              // Click helper (move + down + up)
 let scene = h.render();       // Paint capture (returns Scene)
 ```
 
-Key APIs: `mouse_move()`, `mouse_down()`, `mouse_up()`, `click()`, `key_press()`, `tab()`, `shift_tab()`, `scroll()`, `drag()`, `type_text()`, `advance_time()`, `render()`, `is_hot()`, `is_active()`, `is_focused()`, `interaction_state()`, `get_widget()`, `all_widget_ids()`, `widgets_with_sense()`, `push_popup()`, `has_overlays()`, `dismiss_overlays()`.
+Key APIs: `mouse_move()`, `mouse_down()`, `mouse_up()`, `click()`, `key_press()`, `tab()`, `shift_tab()`, `scroll()`, `drag()`, `type_text()`, `advance_time()`, `resize()`, `render()`, `is_hot()`, `is_active()`, `is_focused()`, `interaction_state()`, `get_widget()`, `all_widget_ids()`, `widgets_with_sense()`, `push_popup()`, `has_overlays()`, `dismiss_overlays()`.
+
+---
+
+## GPU Render Path Testing
+
+The production render path uses **content caching** (`render_cached`): content is rendered to an offscreen cache texture, then copied to the surface via `copy_texture_to_texture`. Test-only `render_frame()` skips this entirely — it renders directly to an offscreen target. **Bugs in the cached path are invisible to `render_frame()`.**
+
+**`render_frame_cached()`** (`oriterm/src/gpu/window_renderer/render.rs`) is the test-only method that exercises the production cached render path. It accepts a target size that may differ from the prepared viewport — exactly the mismatch that occurs when the surface is reconfigured during interactive resize.
+
+**Writing cached render path tests** (in `oriterm/src/gpu/visual_regression/resize_stress.rs`):
+```rust
+// Prepare at one size, render to a smaller target (simulates resize race).
+renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+renderer.render_frame_cached(&gpu, &pipelines, target_w, target_h, true);
+```
+
+**Key rule**: When testing GPU rendering under resize or any condition where viewport and surface dimensions may diverge, always use `render_frame_cached()`. Use `gpu.create_copy_dst_target()` when manually creating destination targets (adds `COPY_DST` usage to simulate a surface texture).
+
+**Test-only APIs**:
+- `WindowRenderer::render_frame_cached()` — cached render to controllable target size
+- `GpuState::create_copy_dst_target()` — render target with `COPY_DST` for copy destinations
+- `RenderTarget::texture()` — backing texture access for copy operations
 
 ---
 

@@ -10,7 +10,7 @@ use crate::grid::CursorShape;
 use crate::index::{Column, Line};
 use crate::theme::Theme;
 
-use super::{Term, TermMode};
+use super::{RenderableContent, Term, TermMode};
 
 fn make_term() -> Term<VoidListener> {
     Term::new(24, 80, 1000, Theme::default(), VoidListener)
@@ -1814,7 +1814,6 @@ fn prompt_markers_evicted_by_manual_prune() {
 
 use crate::grid::StableRowIndex;
 use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
-use crate::term::renderable::RenderableContent;
 use std::sync::Arc;
 
 /// Store a 2×2 RGBA test image and place it at the given cell row/col.
@@ -2036,4 +2035,328 @@ fn image_cache_mut_debug_asserts_on_missing_alt_cache() {
     let mut term = make_term();
     term.mode.insert(TermMode::ALT_SCREEN);
     let _cache = term.image_cache_mut();
+}
+
+// Resize + snapshot integration tests.
+//
+// These tests exercise the critical path that's untested: resize the terminal
+// then immediately extract a renderable snapshot. This is what happens on
+// every window resize — the IO thread resizes the grid and produces a
+// snapshot for the renderer.
+
+#[test]
+fn resize_then_snapshot_empty_term() {
+    let mut term = make_term();
+    term.resize(10, 40, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.lines, 10);
+    assert_eq!(snap.cols, 40);
+    assert_eq!(snap.cells.len(), 10 * 40);
+}
+
+#[test]
+fn resize_then_snapshot_with_content() {
+    let mut term = make_term();
+    feed(&mut term, b"hello world\r\nline two\r\nline three");
+    term.resize(10, 40, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.lines, 10);
+    assert_eq!(snap.cols, 40);
+    assert_eq!(snap.cells.len(), 10 * 40);
+    // First cell should still be 'h'.
+    assert_eq!(snap.cells[0].ch, 'h');
+}
+
+#[test]
+fn resize_then_snapshot_reuses_buffer() {
+    use RenderableContent;
+
+    let mut term = make_term();
+    feed(&mut term, b"content");
+    let mut buf = RenderableContent::default();
+
+    term.renderable_content_into(&mut buf);
+    assert_eq!(buf.lines, 24);
+    assert_eq!(buf.cols, 80);
+
+    term.resize(10, 40, true);
+    term.renderable_content_into(&mut buf);
+    assert_eq!(buf.lines, 10);
+    assert_eq!(buf.cols, 40);
+    assert_eq!(buf.cells.len(), 10 * 40);
+}
+
+#[test]
+fn resize_shrink_then_snapshot_cursor_in_bounds() {
+    let mut term = make_term();
+    // Move cursor to bottom-right area.
+    feed(&mut term, b"\x1b[20;70H");
+    assert_eq!(term.grid().cursor().line(), 19);
+
+    // Shrink dramatically.
+    term.resize(5, 20, true);
+    let snap = term.renderable_content();
+
+    // Cursor must be clamped within new bounds.
+    assert!(
+        snap.cursor.line < 5,
+        "cursor line {} out of bounds",
+        snap.cursor.line
+    );
+    assert!(
+        snap.cursor.column.0 < 20,
+        "cursor col {} out of bounds",
+        snap.cursor.column.0
+    );
+    assert_eq!(snap.cells.len(), 5 * 20);
+}
+
+#[test]
+fn resize_grow_then_snapshot_with_scrollback() {
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    // Fill terminal so content overflows into scrollback.
+    for i in 0..10 {
+        let line = format!("line{i:05}\r\n");
+        feed(&mut term, line.as_bytes());
+    }
+    assert!(term.grid().scrollback().len() > 0);
+
+    // Grow — should restore scrollback rows.
+    term.resize(15, 10, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.lines, 15);
+    assert_eq!(snap.cols, 10);
+    assert_eq!(snap.cells.len(), 15 * 10);
+}
+
+#[test]
+fn resize_reflow_wrap_then_snapshot() {
+    let mut term = Term::new(5, 20, 100, Theme::default(), VoidListener);
+    feed(&mut term, b"abcdefghijklmnopqrst");
+
+    // Shrink cols — content wraps across two lines.
+    term.resize(5, 10, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.cols, 10);
+    assert_eq!(snap.cells.len(), 5 * 10);
+    // First line should have 'a'..'j', second 'k'..'t'.
+    assert_eq!(snap.cells[0].ch, 'a');
+    assert_eq!(snap.cells[10].ch, 'k');
+}
+
+#[test]
+fn resize_reflow_unwrap_then_snapshot() {
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    feed(&mut term, b"abcdefghijklmnopqrst");
+
+    // Grow cols — two wrapped lines should merge.
+    term.resize(5, 20, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.cols, 20);
+    assert_eq!(snap.cells.len(), 5 * 20);
+    assert_eq!(snap.cells[0].ch, 'a');
+    assert_eq!(snap.cells[19].ch, 't');
+}
+
+#[test]
+fn resize_on_alt_screen_then_snapshot() {
+    let mut term = make_term();
+    feed(&mut term, b"primary content");
+    term.swap_alt();
+    feed(&mut term, b"alt content");
+
+    // Resize while on alt screen.
+    term.resize(10, 40, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.lines, 10);
+    assert_eq!(snap.cols, 40);
+    assert_eq!(snap.cells.len(), 10 * 40);
+}
+
+#[test]
+fn resize_snapshot_damage_is_all_dirty() {
+    let mut term = make_term();
+    feed(&mut term, b"content");
+    // Drain initial damage.
+    term.reset_damage();
+
+    term.resize(10, 40, true);
+    let snap = term.renderable_content();
+    assert!(snap.all_dirty, "resize should mark all dirty");
+}
+
+#[test]
+fn resize_snapshot_display_offset_reset() {
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    // Fill scrollback.
+    for i in 0..20 {
+        let line = format!("line{i:03}\r\n");
+        feed(&mut term, line.as_bytes());
+    }
+    // Scroll back.
+    term.grid_mut().scroll_display(5);
+    assert!(term.grid().display_offset() > 0);
+
+    // Resize resets display_offset to 0.
+    term.resize(10, 10, true);
+    let snap = term.renderable_content();
+    assert_eq!(snap.display_offset, 0, "resize should reset display_offset");
+}
+
+// Stress resize: rapid dimension changes simulating window drag.
+
+#[test]
+fn stress_resize_rapid_dimension_changes() {
+    let mut term = make_term();
+    feed(&mut term, b"hello world\r\nsecond line\r\nthird line");
+
+    let sizes: &[(usize, usize)] = &[
+        (24, 80),
+        (23, 79),
+        (20, 60),
+        (10, 40),
+        (5, 20),
+        (1, 1),
+        (2, 2),
+        (3, 3),
+        (5, 5),
+        (10, 10),
+        (50, 200),
+        (100, 300),
+        (24, 80),
+        (1, 1),
+        (24, 80),
+        (3, 100),
+        (100, 3),
+        (1, 200),
+        (200, 1),
+    ];
+    let mut buf = RenderableContent::default();
+
+    for &(rows, cols) in sizes {
+        term.resize(rows, cols, true);
+        term.renderable_content_into(&mut buf);
+        assert_eq!(
+            buf.lines, rows,
+            "lines mismatch after resize to {rows}x{cols}"
+        );
+        assert_eq!(
+            buf.cols, cols,
+            "cols mismatch after resize to {rows}x{cols}"
+        );
+        assert_eq!(
+            buf.cells.len(),
+            rows * cols,
+            "cell count mismatch after resize to {rows}x{cols}"
+        );
+        assert!(
+            buf.cursor.line < rows,
+            "cursor line {} >= rows {rows} after resize to {rows}x{cols}",
+            buf.cursor.line
+        );
+        assert!(
+            buf.cursor.column.0 < cols,
+            "cursor col {} >= cols {cols} after resize to {rows}x{cols}",
+            buf.cursor.column.0
+        );
+    }
+}
+
+#[test]
+fn stress_resize_with_scrollback_and_reflow() {
+    let mut term = Term::new(10, 40, 500, Theme::default(), VoidListener);
+    // Fill with enough content to populate scrollback.
+    for i in 0..100 {
+        let line = format!("line {i:04} with some padding text here\r\n");
+        feed(&mut term, line.as_bytes());
+    }
+
+    let sizes: &[(usize, usize)] = &[
+        (10, 40),
+        (5, 20),
+        (3, 10),
+        (1, 5),
+        (20, 80),
+        (10, 40),
+        (50, 120),
+        (5, 10),
+        (10, 40),
+    ];
+    let mut buf = RenderableContent::default();
+
+    for &(rows, cols) in sizes {
+        term.resize(rows, cols, true);
+        term.renderable_content_into(&mut buf);
+        assert_eq!(buf.lines, rows);
+        assert_eq!(buf.cols, cols);
+        assert_eq!(buf.cells.len(), rows * cols);
+        assert!(buf.cursor.line < rows);
+        assert!(buf.cursor.column.0 < cols);
+    }
+}
+
+#[test]
+fn stress_resize_alternating_grow_shrink() {
+    let mut term = make_term();
+    feed(&mut term, b"test content for resize cycles");
+    let mut buf = RenderableContent::default();
+
+    // Simulate interactive window drag: alternating grow/shrink.
+    for i in 0..50 {
+        let rows = if i % 2 == 0 { 10 } else { 30 };
+        let cols = if i % 3 == 0 { 40 } else { 120 };
+        term.resize(rows, cols, true);
+        term.renderable_content_into(&mut buf);
+        assert_eq!(buf.lines, rows);
+        assert_eq!(buf.cols, cols);
+        assert_eq!(buf.cells.len(), rows * cols);
+    }
+}
+
+#[test]
+fn stress_resize_with_wide_chars() {
+    let mut term = Term::new(10, 20, 100, Theme::default(), VoidListener);
+    // Write CJK wide characters.
+    feed(&mut term, "日本語テスト".as_bytes());
+
+    let sizes: &[(usize, usize)] = &[
+        (10, 20),
+        (10, 10),
+        (10, 5),
+        (10, 3),
+        (10, 2),
+        (10, 20),
+        (10, 40),
+        (10, 10),
+        (10, 20),
+    ];
+    let mut buf = RenderableContent::default();
+
+    for &(rows, cols) in sizes {
+        term.resize(rows, cols, true);
+        term.renderable_content_into(&mut buf);
+        assert_eq!(buf.lines, rows);
+        assert_eq!(buf.cols, cols);
+        assert_eq!(buf.cells.len(), rows * cols);
+    }
+}
+
+#[test]
+fn stress_resize_vte_output_between_resizes() {
+    let mut term = make_term();
+    let mut buf = RenderableContent::default();
+
+    // Interleave VTE output with resizes (simulates resize during active output).
+    for i in 0..20 {
+        let line = format!("output line {i}\r\n");
+        feed(&mut term, line.as_bytes());
+
+        let rows = 10 + (i % 15);
+        let cols = 40 + (i * 3 % 60);
+        term.resize(rows, cols, true);
+        term.renderable_content_into(&mut buf);
+        assert_eq!(buf.lines, rows);
+        assert_eq!(buf.cols, cols);
+        assert_eq!(buf.cells.len(), rows * cols);
+    }
 }
