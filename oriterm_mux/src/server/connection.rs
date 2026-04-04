@@ -73,7 +73,8 @@ impl ClientConnection {
     /// in the write buffer. The caller should register `WRITABLE` interest
     /// when [`has_pending_writes`] returns `true`.
     pub(super) fn queue_frame(&mut self, seq: u32, pdu: &MuxPdu) -> std::io::Result<()> {
-        self.frame_writer.queue(seq, pdu)?;
+        // TODO(34.8): pass `self.compress_enabled` based on negotiated FEAT_ZSTD.
+        self.frame_writer.queue(seq, pdu, false)?;
         self.frame_writer.flush_to(&mut self.stream)
     }
 

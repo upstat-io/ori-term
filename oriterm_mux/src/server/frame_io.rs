@@ -74,8 +74,12 @@ impl FrameWriter {
     }
 
     /// Serialize a frame and append it to the outgoing buffer.
-    pub fn queue(&mut self, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
-        crate::protocol::encode::encode_into_buf(&mut self.buf, seq, pdu)
+    ///
+    /// When `compress` is true, payloads above the compression threshold are
+    /// zstd-compressed. The caller should set this based on the per-connection
+    /// negotiated features (`FEAT_ZSTD`).
+    pub fn queue(&mut self, seq: u32, pdu: &MuxPdu, compress: bool) -> io::Result<()> {
+        crate::protocol::encode::encode_into_buf(&mut self.buf, seq, pdu, compress)
     }
 
     /// Write as much buffered data as possible to the stream.

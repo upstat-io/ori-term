@@ -107,11 +107,13 @@ These share identical logic (bincode serialize, validate size, construct header,
   - [x] Add `DecodeError::BadMagic(u16)` variant for magic validation failures
   - [x] After decode/encode extraction, only the shared functions need updating -- verify all call sites work
   - [x] Update all test roundtrips in `protocol/tests.rs` (header_roundtrip, header_zero_values, header_max_values, etc.)
-- [ ] Compression: `zstd` (level 1) for payloads > 4KB
-  - [ ] Add `zstd` dependency to `oriterm_mux/Cargo.toml`
-  - [ ] In shared encode path: after bincode serialize, if `payload.len() > 4096`, compress with zstd level 1. If compressed is smaller, set `COMPRESSED` flag in header and write compressed payload. If compressed is larger, clear flag and write original.
-  - [ ] In shared decode path: after reading payload bytes, if `COMPRESSED` flag set, decompress before bincode deserialization
-  - [ ] Threshold: compress only when `payload_len > 4096` -- `NotifyPaneSnapshot` with an 80x24 grid is the primary target (~50-200KB bincode, compresses well due to repeated cell structures)
+- [x] Compression: `zstd` (level 1) for payloads > 4KB (completed 2026-04-04):
+  - [x] Add `zstd = "0.13"` dependency to `oriterm_mux/Cargo.toml`
+  - [x] Shared encode path: `encode_into_buf()` takes `compress: bool` parameter. When true and payload > 4096 bytes, compresses with zstd level 1. Falls back to uncompressed if compressed is larger.
+  - [x] Shared decode path: `try_decode_from_buf()` checks `FLAG_COMPRESSED` and decompresses with zstd before bincode deserialization. Decompression errors returned as `DecodeError::Io`.
+  - [x] `FrameWriter::queue()` takes `compress: bool`, passed through to encode. `ClientConnection::queue_frame()` passes `false` for now (TODO: wire per-connection FEAT_ZSTD negotiation).
+  - [x] `ProtocolCodec::encode_frame()` passes `false` (blocking client path, compression controlled by caller)
+  - [x] Fixed `header_unknown_flags_ignored` test: uses `0xFE` (all bits except COMPRESSED) instead of `0xFF`
 - [x] Version negotiation via extended Hello/HelloAck (completed 2026-04-04):
   - [x] Add `protocol_version: u8` and `features: u64` fields to `MuxPdu::Hello`
   - [x] Add `protocol_version: u8` and `features: u64` fields to `MuxPdu::HelloAck`

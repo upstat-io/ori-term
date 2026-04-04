@@ -100,13 +100,16 @@ fn header_bad_magic_random_bytes() {
 
 #[test]
 fn header_unknown_flags_ignored() {
-    // All flag bits set — decoder should accept (forward compat).
+    // Unknown flag bits (excluding COMPRESSED=0x01) are silently ignored
+    // for forward compatibility.
     let pdu = MuxPdu::Ping;
     let mut buf = Vec::new();
     ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
 
-    // Overwrite the flags byte (offset 3) with 0xFF.
-    buf[3] = 0xFF;
+    // Set all bits EXCEPT COMPRESSED (0x01). COMPRESSED would trigger zstd
+    // decompression on an uncompressed payload, which is a valid error, not
+    // a forward-compat issue.
+    buf[3] = 0xFE;
 
     let mut reader = Cursor::new(buf);
     let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
