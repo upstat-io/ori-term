@@ -6,8 +6,8 @@
 
 use std::io::{self, Read, Write};
 
+use super::MAX_PAYLOAD;
 use super::messages::MuxPdu;
-use super::{FrameHeader, MAX_PAYLOAD};
 
 /// A decoded frame: sequence number + PDU.
 #[derive(Debug, Clone)]
@@ -102,31 +102,12 @@ impl ProtocolCodec {
 
     /// Encode a PDU and write it as a framed message.
     ///
-    /// Writes the 10-byte header followed by the bincode payload atomically
-    /// (single `write_all` call for each segment).
+    /// Writes the header followed by the bincode payload atomically
+    /// (single `write_all` call for the assembled frame).
     pub fn encode_frame<W: Write>(writer: &mut W, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
-        let payload =
-            bincode::serialize(pdu).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let payload_len: u32 = payload.len().try_into().map_err(|_overflow| {
-            io::Error::new(io::ErrorKind::InvalidData, "payload exceeds u32 capacity")
-        })?;
-
-        if payload_len > MAX_PAYLOAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("payload too large: {payload_len} bytes (max {MAX_PAYLOAD})"),
-            ));
-        }
-
-        let header = FrameHeader {
-            msg_type: pdu.msg_type() as u16,
-            seq,
-            payload_len,
-        };
-
-        writer.write_all(&header.encode())?;
-        writer.write_all(&payload)?;
+        let mut buf = Vec::new();
+        super::encode::encode_into_buf(&mut buf, seq, pdu)?;
+        writer.write_all(&buf)?;
         writer.flush()
     }
 

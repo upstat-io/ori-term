@@ -7,7 +7,7 @@
 use std::io::{self, Write};
 
 use crate::MuxPdu;
-use crate::protocol::{DecodeError, DecodedFrame, FrameHeader, MAX_PAYLOAD};
+use crate::protocol::{DecodeError, DecodedFrame};
 
 /// Result of a single `read_from` call.
 #[derive(Debug, PartialEq, Eq)]
@@ -75,29 +75,7 @@ impl FrameWriter {
 
     /// Serialize a frame and append it to the outgoing buffer.
     pub fn queue(&mut self, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
-        let payload =
-            bincode::serialize(pdu).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let payload_len: u32 = payload.len().try_into().map_err(|_overflow| {
-            io::Error::new(io::ErrorKind::InvalidData, "payload exceeds u32 capacity")
-        })?;
-
-        if payload_len > MAX_PAYLOAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("payload too large: {payload_len} bytes (max {MAX_PAYLOAD})"),
-            ));
-        }
-
-        let header = FrameHeader {
-            msg_type: pdu.msg_type() as u16,
-            seq,
-            payload_len,
-        };
-
-        self.buf.extend_from_slice(&header.encode());
-        self.buf.extend_from_slice(&payload);
-        Ok(())
+        crate::protocol::encode::encode_into_buf(&mut self.buf, seq, pdu)
     }
 
     /// Write as much buffered data as possible to the stream.

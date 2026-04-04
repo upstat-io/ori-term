@@ -20,6 +20,7 @@
 
 mod codec;
 pub(crate) mod decode;
+pub(crate) mod encode;
 pub(crate) mod messages;
 pub(crate) mod msg_type;
 mod snapshot;
