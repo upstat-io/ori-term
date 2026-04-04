@@ -78,6 +78,7 @@ pub(crate) struct WindowContext {
 
     // Reusable buffers.
     pub(super) search_bar_buf: String,
+    pub(super) debug_overlay_buf: String,
 
     // Surface strategy and damage tracking.
     #[expect(
@@ -97,6 +98,9 @@ pub(crate) struct WindowContext {
     /// hasn't changed. Set by chrome hover, overlay animations, and other
     /// UI state changes. Cleared after a full content render.
     pub(super) ui_stale: bool,
+    /// Previous frame's text blink opacity — detects blink changes that
+    /// require a full content cache re-render (not just cursor overlay).
+    pub(super) prev_text_blink_opacity: f32,
 }
 
 impl WindowContext {
@@ -139,9 +143,11 @@ impl WindowContext {
             last_tab_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
+            debug_overlay_buf: String::new(),
             render_strategy: RenderStrategy::TerminalCached,
             damage: DamageSet::default(),
             ui_stale: true,
+            prev_text_blink_opacity: 1.0,
         }
     }
 

@@ -1,0 +1,44 @@
+---
+source: oriterm_core/tests/vttest/menu3.rs
+expression: text
+---
+         These are the G0 and G1 character sets.                                                                        
+                                                                                                                        
+Character set B (US ASCII)                     Selected as G0 (with SI)                                                 
+          !"#$%&'()*+,-./0123456789:;<=>?                                                                               
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_                                                                               
+         `abcdefghijklmnopqrstuvwxyz{|}~                                                                                
+Character set A (ISO Latin-1)                  Selected as G1 (with SO)                                                 
+          !"#$%&'()*+,-./0123456789:;<=>?                                                                               
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_                                                                               
+         `abcdefghijklmnopqrstuvwxyz{|}~                                                                                
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+Push <RETURN>

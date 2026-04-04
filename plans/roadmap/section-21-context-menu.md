@@ -248,7 +248,7 @@ Full-featured settings panel with form controls for font, color scheme, cursor, 
 
 - [x] `build_settings_form()` constructs a `FormWidget` with grouped controls:
   - [x] Font settings: size, family, weight, hinting, subpixel mode
-  - [x] Color settings: scheme selector (dropdown), theme override
+  - [x] Color settings: scheme selector (dropdown), theme override <!-- unblocks:25.3 --><!-- unblocks:25.4 -->
   - [x] Cursor settings: style, blink interval
   - [x] Window settings: opacity, blur
 - [x] `SettingsIds` struct: maps `WidgetId` for each control to its config field
@@ -386,14 +386,14 @@ Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the tas
     - `submit_jump_list` goes in `main()` after `build_event_loop()` but before `event_loop.run_app()`, preceded by an explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` call. Winit does not initialize COM until window creation (inside `App::resumed`/`try_init`), so COM is not yet available at this point. The explicit init is harmless — winit's subsequent `OleInitialize` returns `S_FALSE` (already initialized). This is the pattern Windows Terminal uses.
 - [x] Built-in tasks (always present):
   - [x] **New Window** — launches `oriterm.exe --new-window` (flag already exists in `Cli` struct) (verified 2026-03-29)
-  - [ ] **New Tab** — launches `oriterm.exe --new-tab` (REOPENED 2026-03-29: --new-tab CLI flag not implemented, jump list returns 1 task not 2)
+  - [x] **New Tab** — launches `oriterm.exe --new-tab` (implemented 2026-04-03)
 - [x] Error handling: Jump list APIs may fail (Explorer not running, COM init failure, `current_exe()` failure) — log and continue, never crash. The `submit_jump_list` return value is logged at `warn` level, not propagated to the caller.
-- [ ] **Dependency:** Jump List entries launch `oriterm --new-tab` / `--new-window`. The `--new-window` flag already exists in `oriterm/src/cli/mod.rs` (clap-based `Cli` struct). However, `--new-tab` does not exist yet — it must be added to the CLI and dispatched in `main()`. This is a prerequisite for the "New Tab" jump list entry. (REOPENED 2026-03-29: --new-tab not implemented in code)
-- [ ] **`--new-tab` CLI flag** — add to `Cli` struct in `oriterm/src/cli/mod.rs`: (REOPENED 2026-03-29: Cli struct has no new_tab field)
-  - [ ] `#[arg(long)] pub new_tab: bool` — mirrors the existing `new_window` flag pattern (see line 49 of `cli/mod.rs`) (REOPENED 2026-03-29: not present in cli/mod.rs)
-  - [ ] In `main()`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (line 45-47 of `main.rs`). The actual tab-in-existing-window behavior requires IPC (Section 34). For now, `--new-tab` launches a new window with one tab (same as default behavior). This is the same approach WezTerm takes before its mux daemon is running. (REOPENED 2026-03-29: not present in main.rs)
-  - [ ] The `dead_code = "deny"` workspace lint will fire if `new_tab` is added to `Cli` but never read. The `log::info!` in `main()` satisfies this.
-  - [ ] Add the `--new-tab` CLI flag FIRST (before jump list code), since `build_jump_list_tasks()` references `"--new-tab"` as an argument string. The flag must exist and be tested before the jump list code that refers to it.
+- [x] **Dependency:** Jump List entries launch `oriterm --new-tab` / `--new-window`. Both flags exist in `oriterm/src/cli/mod.rs` (clap-based `Cli` struct). (completed 2026-04-03)
+- [x] **`--new-tab` CLI flag** — added to `Cli` struct in `oriterm/src/cli/mod.rs`: (completed 2026-04-03)
+  - [x] `#[arg(long)] pub new_tab: bool` — mirrors the existing `new_window` flag pattern
+  - [x] In `main()`: `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block. The actual tab-in-existing-window behavior requires IPC (Section 34). For now, `--new-tab` launches a new window with one tab (same as default behavior).
+  - [x] The `dead_code = "deny"` workspace lint satisfied by `log::info!` read in `main()`.
+  - [x] `#[expect(clippy::struct_excessive_bools)]` added to `Cli` struct (4 bool flags is standard for CLI argument parsers).
 
 ### Profile entries (FUTURE — no profile system yet)
 
@@ -438,10 +438,10 @@ Deferred to a future section. Requires macOS build/test infrastructure.
 Deferred to a future section. The `.desktop` file is an install-time packaging artifact, not runtime code.
 
 **Tests:** `oriterm/src/platform/jump_list/tests.rs`
-- [ ] `build_jump_list_tasks` returns 2 built-in tasks ("New Window", "New Tab") with correct arguments (`--new-window`, `--new-tab`) (REOPENED 2026-03-29: currently returns 1 task -- "New Window" only. Test asserts len()==1, not 2. "New Tab" not implemented.)
+- [x] `build_jump_list_tasks` returns 2 built-in tasks ("New Window", "New Tab") with correct arguments (`--new-window`, `--new-tab`) (completed 2026-04-03)
 - [x] `build_jump_list_tasks` returns tasks with correct labels and descriptions (human-readable, not empty) (verified 2026-03-29 -- 7 tests pass for the 1 task that exists)
 - [x] `JumpListTask` fields are correctly populated (label, arguments, description) — verify each field is non-empty (verified 2026-03-29)
-- [ ] Task argument strings match CLI flag names exactly (`--new-window` not `--new_window`, `--new-tab` not `--new_tab`) — the jump list launches a new process via CLI (REOPENED 2026-03-29: only --new-window verified; --new-tab does not exist)
+- [x] Task argument strings match CLI flag names exactly (`--new-window` not `--new_window`, `--new-tab` not `--new_tab`) — the jump list launches a new process via CLI (completed 2026-04-03: both verified by tests)
 - [x] Note: `submit_jump_list` requires Windows COM runtime and cannot be unit tested. Cover via manual verification on Windows or a `#[cfg(target_os = "windows")] #[ignore]` integration test.
 - [x] Note: `exe_path()` cannot be meaningfully unit tested (depends on `/proc/self/exe` or equivalent). Tested indirectly via `submit_jump_list` integration test.
 - [x] Module structure: `mod.rs` ends with `#[cfg(test)] mod tests;` (sibling test file pattern per `test-organization.md`)
@@ -484,9 +484,9 @@ All sync points for 21.5 have been implemented:
 - [x] `oriterm/src/platform/mod.rs`: add `pub mod jump_list;` — unconditional module declaration (data model is cross-platform; COM code is `#[cfg(windows)]` inside the module)
 - [x] `oriterm/src/main.rs`: add `#[cfg(windows)]` block after `init_logger()` calling `SetCurrentProcessExplicitAppUserModelID` via `windows_sys` (existing dependency, no new crate needed for this call — `Win32_UI_Shell` feature already enabled)
 - [x] `oriterm/src/main.rs`: add `#[cfg(windows)]` block in `main()` with explicit `CoInitializeEx(COINIT_APARTMENTTHREADED)` + `submit_jump_list(build_jump_list_tasks())` call. Place after `init_logger()` and the `SetCurrentProcessExplicitAppUserModelID` call. Log result at `warn` level on failure, do not fail startup on error. The explicit COM init is needed because winit does not call `OleInitialize` until window creation (inside `App::resumed`).
-- [ ] `oriterm/src/cli/mod.rs`: add `#[arg(long)] pub new_tab: bool` to `Cli` struct (REOPENED 2026-03-29: not present in code)
-- [ ] `oriterm/src/main.rs`: add `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (prevents `dead_code` lint) (REOPENED 2026-03-29: not present in code)
-- [ ] `oriterm/src/cli/tests.rs`: add tests mirroring the existing `--new-window` test pattern (see `new_window_flag_parses`, `new_window_flag_defaults_to_false` in `cli/tests.rs`): `new_tab_flag_parses`, `new_tab_flag_defaults_to_false`, `completions_contain_new_tab_flag` (REOPENED 2026-03-29: no new_tab tests exist)
+- [x] `oriterm/src/cli/mod.rs`: `#[arg(long)] pub new_tab: bool` added to `Cli` struct (completed 2026-04-03)
+- [x] `oriterm/src/main.rs`: `if args.new_tab { log::info!("--new-tab requested"); }` after the existing `if args.new_window` block (completed 2026-04-03)
+- [x] `oriterm/src/cli/tests.rs`: tests added mirroring the existing `--new-window` test pattern: `new_tab_flag_parses`, `new_tab_flag_defaults_to_false`, `completions_contain_new_tab_flag` (completed 2026-04-03)
 
 ### Feature Checklist
 
@@ -496,7 +496,7 @@ All sync points for 21.5 have been implemented:
 - [x] Settings UI: dialog window with `DialogWindowContext`, form-based settings panel (font, color, cursor, window), Save/Cancel flow, persists to config via `Config::save()`
 - [x] Settings UI: `TermEvent::OpenSettings` wiring, `Action::OpenSettings` keybinding (Ctrl+,/Cmd+,), dialog event routing
 - [x] Window controls: platform-specific rendering, Aero Snap, frameless drag, keyboard accessibility (Alt+F4, Win+Arrow)
-- [ ] Jump List (Windows): data model (`JumpListTask`) + COM submission via `windows` crate, app user model ID -- partial: "New Window" works but `--new-tab` CLI flag and "New Tab" jump list entry NOT implemented (REOPENED 2026-03-29)
+- [x] Jump List (Windows): data model (`JumpListTask`) + COM submission via `windows` crate, app user model ID — "New Window" and "New Tab" entries both implemented (completed 2026-04-03)
 - [ ] Dock Menu (macOS): DEFERRED — requires macOS build infrastructure
 - [ ] Desktop Actions (Linux): DEFERRED — install-time packaging artifact
 

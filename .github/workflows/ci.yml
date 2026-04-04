@@ -101,7 +101,8 @@ jobs:
             libxkbcommon-dev \
             libegl-dev \
             libvulkan-dev \
-            fonts-dejavu-core
+            fonts-dejavu-core \
+            vttest
       - uses: Swatinem/rust-cache@v2
         with:
           key: test-linux

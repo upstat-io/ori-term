@@ -19,7 +19,12 @@ impl WindowRenderer {
             .selection
             .as_ref()
             .and_then(|s| s.damage_snapshot(input.rows()));
-        new_sel != self.prepared.prev_selection_snapshot
+        if new_sel != self.prepared.prev_selection_snapshot {
+            return true;
+        }
+        // Text blink opacity change requires full instance rebuild so
+        // BLINK-flagged cells get the updated alpha.
+        (input.text_blink_opacity - self.prepared.prev_text_blink_opacity).abs() > 0.001
     }
 
     /// Run the Prepare phase: shape text and build GPU instance buffers.

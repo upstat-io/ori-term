@@ -137,10 +137,12 @@ impl ApplicationHandler<TermEvent> for App {
                         self.active_window = Some(mux_id);
                     }
                     // Re-evaluate blink from config + pane's terminal mode.
-                    self.blinking_active = self.config.terminal.cursor_blink
-                        && self
-                            .terminal_mode()
-                            .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
+                    // Formula: cursor_should_blink(). Two sites exist by design:
+                    // focus handler (here) for immediate state, post_render for frame state.
+                    let mode_blink = self
+                        .terminal_mode()
+                        .is_some_and(|m| m.contains(oriterm_core::TermMode::CURSOR_BLINKING));
+                    self.blinking_active = self.cursor_should_blink(mode_blink);
                     self.send_focus_event(true);
                 } else {
                     // Freeze cursor visible when window loses focus.
@@ -167,7 +169,7 @@ impl ApplicationHandler<TermEvent> for App {
                 }
                 // Reset blink timer so cursor is visible immediately
                 // (on focus-in: fresh start; on focus-out: frozen visible).
-                self.cursor_blink.reset();
+                self.reset_cursor_blink();
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.tab_bar.set_active(focused);
                     ctx.root.mark_dirty();
@@ -337,10 +339,6 @@ impl ApplicationHandler<TermEvent> for App {
             }
             TermEvent::MuxWakeup => {
                 self.perf.record_wakeup();
-                // The real work happens in `pump_mux_events()` during
-                // `about_to_wait`. This wakeup just ensures the event loop
-                // doesn't sleep past pending mux events. Dirty marking
-                // happens per-pane in `handle_mux_notification`.
             }
             TermEvent::CreateWindow => {
                 self.create_window(event_loop);
@@ -394,20 +392,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.pump_mux_events();
         self.perf.last_pump_time = pump_start.elapsed();
 
-        // Drive cursor blink timer only when blinking is active.
-        if self.blinking_active && self.cursor_blink.update() {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-            }
-        }
-
-        // Drive text blink timer unconditionally (any cell in any pane could
-        // have CellFlags::BLINK; the timer cost is negligible).
-        if self.text_blink.update() {
-            for ctx in self.windows.values_mut() {
-                ctx.root.mark_dirty();
-            }
-        }
+        let blink_animating = self.drive_blink_timers();
 
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
@@ -446,17 +431,9 @@ impl ApplicationHandler<TermEvent> for App {
         self.drain_pending_destroy();
 
         // Check if any window (terminal or dialog) is dirty and render it.
-        let any_dirty = self.windows.values().any(|ctx| ctx.root.is_dirty())
-            || self.dialogs.values().any(|ctx| ctx.root.is_dirty());
+        let any_dirty = self.is_any_window_dirty();
         let now = std::time::Instant::now();
-        let urgent_redraw = self
-            .windows
-            .values()
-            .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw())
-            || self
-                .dialogs
-                .values()
-                .any(|ctx| ctx.root.is_dirty() && ctx.root.is_urgent_redraw());
+        let urgent_redraw = self.is_any_urgent_redraw();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
         // Render when dirty. PresentMode::Mailbox/Fifo provide hardware
@@ -464,7 +441,7 @@ impl ApplicationHandler<TermEvent> for App {
         // On Immediate mode (no hardware pacing), apply a client-side budget
         // gate to prevent uncapped redraws during sustained PTY output.
         let needs_budget = self.gpu.as_ref().is_some_and(GpuState::needs_frame_budget);
-        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw) {
+        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw || blink_animating) {
             self.render_dirty_windows();
         }
 
@@ -473,16 +450,8 @@ impl ApplicationHandler<TermEvent> for App {
         self.perf.maybe_log();
 
         // Decide ControlFlow via pure function (testable without winit).
-        let still_dirty = self.windows.values().any(|c| c.root.is_dirty())
-            || self.dialogs.values().any(|c| c.root.is_dirty());
-        let has_animations = self
-            .windows
-            .values()
-            .any(|c| c.root.layer_animator().is_any_animating())
-            || self
-                .dialogs
-                .values()
-                .any(|c| c.root.layer_animator().is_any_animating());
+        let still_dirty = self.is_any_window_dirty();
+        let has_animations = self.has_active_animations();
         let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {
@@ -492,7 +461,6 @@ impl ApplicationHandler<TermEvent> for App {
             has_animations,
             blinking_active: self.blinking_active,
             next_blink_change: self.cursor_blink.next_change(),
-            text_blink_active: true,
             next_text_blink_change: self.text_blink.next_change(),
             budget_remaining: remaining,
             now,
@@ -504,5 +472,12 @@ impl ApplicationHandler<TermEvent> for App {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(t));
             }
         }
+
+        // Schedule a wakeup for the next blink state change via the
+        // event proxy. WaitUntil doesn't reliably wake the event loop
+        // on all platforms (observed on Windows/WSL2). The thread sleeps
+        // until the next visual change (~16ms during fades, ~300ms during
+        // plateaus) then sends MuxWakeup.
+        self.schedule_blink_wakeup();
     }
 }

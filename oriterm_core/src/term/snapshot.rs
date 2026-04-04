@@ -260,16 +260,10 @@ impl<T: EventListener> Term<T> {
         let bottom =
             crate::grid::StableRowIndex(stable_row_base + viewport_lines.saturating_sub(1) as u64);
 
-        let mut visible_buf = Vec::new();
-        cache.fill_viewport_placements(top, bottom, &mut visible_buf);
-        if visible_buf.is_empty() {
-            return;
-        }
-
         let cw = f32::from(cell_w);
         let ch = f32::from(cell_h);
 
-        for p in &visible_buf {
+        for p in cache.viewport_placements(top, bottom) {
             // Signed offset: images starting above the viewport have negative Y,
             // so their visible bottom portion renders correctly. The GPU clips
             // fragments outside the framebuffer (implicit viewport scissor).

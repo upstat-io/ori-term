@@ -50,6 +50,9 @@ impl App {
         self.active_window = saved_active;
 
         // Render dirty dialog windows (reuse the same scratch buffer).
+        // NOTE: inner loop parallels the windows loop above — both follow
+        // collect-dirty → clear-dirty → dispatch → clear-invalidation.
+        // Mirror structural changes across both loops.
         self.scratch_dirty_windows.clear();
         self.scratch_dirty_windows.extend(
             self.dialogs
@@ -84,10 +87,42 @@ impl App {
             if let Some(renderer) = ctx.renderer.as_mut() {
                 renderer.maybe_shrink_buffers();
             }
+            ctx.scene.maybe_shrink();
             ctx.root.damage_mut().maybe_shrink();
         }
         if let Some(mux) = self.mux.as_mut() {
             mux.maybe_shrink_renderable_caches();
         }
+    }
+
+    /// Returns `true` if any terminal or dialog window needs rendering.
+    pub(super) fn is_any_window_dirty(&self) -> bool {
+        self.windows.values().any(|c| c.root.is_dirty())
+            || self.dialogs.values().any(|c| c.root.is_dirty())
+    }
+
+    /// Returns `true` if any dirty window has requested an urgent redraw.
+    ///
+    /// Urgent redraws bypass the frame budget gate (e.g., user-initiated
+    /// actions that should be visible immediately).
+    pub(super) fn is_any_urgent_redraw(&self) -> bool {
+        self.windows
+            .values()
+            .any(|c| c.root.is_dirty() && c.root.is_urgent_redraw())
+            || self
+                .dialogs
+                .values()
+                .any(|c| c.root.is_dirty() && c.root.is_urgent_redraw())
+    }
+
+    /// Returns `true` if any window has active compositor animations.
+    pub(super) fn has_active_animations(&self) -> bool {
+        self.windows
+            .values()
+            .any(|c| c.root.layer_animator().is_any_animating())
+            || self
+                .dialogs
+                .values()
+                .any(|c| c.root.layer_animator().is_any_animating())
     }
 }

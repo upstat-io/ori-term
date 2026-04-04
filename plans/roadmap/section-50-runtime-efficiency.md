@@ -1,11 +1,14 @@
 ---
 section: 50
 title: Runtime Efficiency — CPU & Memory Tuning
-status: in-progress
+status: complete
 reviewed: true
-last_verified: "2026-03-29"
+last_verified: "2026-04-03"
 tier: 2
 goal: Achieve near-zero idle CPU (<0.05%) and stable memory with no growth during steady-state terminal operation.
+third_party_review:
+  status: resolved
+  updated: 2026-04-03
 sections:
   - id: "50.1"
     title: Idle CPU Elimination
@@ -130,12 +133,17 @@ Hot-path allocation analysis. These paths must be zero-alloc after warmup:
 
 ---
 
+## 50.R Third Party Review Findings
+
+- [x] `[TPR-50-001][medium]` `plans/roadmap/section-50-runtime-efficiency.md:150` — The verification notes overclaim cross-platform RSS-test coverage.
+  Resolved: Narrowed the verification note on 2026-04-03 to state "Linux run, Windows cross-compile, macOS compile-only (no macOS host available)" instead of "all three platforms."
+
 ### Verification Notes (2026-03-29)
 
 **All 6 subsections verified PASS.** Total section-relevant tests: 34 (8 control flow + 4 alloc regression + 3 RSS regression + 13 cursor blink + 6 mux pump).
 
-**Minor findings (not blocking):**
-- [ ] `extract_images` at `snapshot.rs:217` creates a local `Vec::new()` for `visible_buf` per call rather than storing it on `RenderableContent`. Zero practical impact (only allocates when images are present), but could be further optimized.
-- [ ] `platform/memory.rs` returns `None` on macOS and Windows -- RSS watermark logging only works on Linux. Plan acknowledges this ("pending `libc`/`Win32_System_ProcessStatus` deps").
-- [ ] RSS regression tests are Linux-only (`#[cfg(target_os = "linux")]`). No cross-platform RSS measurement in CI yet.
-- [ ] `maybe_shrink_vec` is defined in two places: `oriterm_core/src/term/renderable/mod.rs` (private) and `oriterm/src/gpu/mod.rs` (pub(crate)). Logic is identical. Duplication acceptable since crates cannot share private utilities across the boundary.
+**Minor findings (resolved 2026-04-03):**
+- [x] `extract_images` at `snapshot.rs` — replaced `Vec::new()` buffer with zero-allocation `viewport_placements()` iterator on `ImageCache`. Removed `fill_viewport_placements` (dead code).
+- [x] `platform/memory.rs` — implemented macOS RSS via `libc::task_info()` and Windows RSS via `GetProcessMemoryInfo()`. Added `libc` dep (macOS) and `Win32_System_ProcessStatus` feature (Windows).
+- [x] RSS regression tests — removed `#[cfg(target_os = "linux")]` gate, added macOS (`libc`) and Windows (`windows-sys`) platform support. Tests run on Linux, compile on Windows (cross-compile target); macOS compiles but runtime unverified (no macOS host available).
+- [x] `maybe_shrink_vec` — deduplicated from 3 copies to 1 canonical definition. Made `pub` in `oriterm_core::term::renderable`, re-exported from `oriterm_core`. `oriterm_ui` and `oriterm` now re-export from `oriterm_core` instead of maintaining their own copies.

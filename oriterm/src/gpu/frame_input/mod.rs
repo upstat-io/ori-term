@@ -5,14 +5,15 @@
 //! and semantic palette colors. The Prepare phase consumes a `FrameInput` and
 //! produces a [`PreparedFrame`](super::prepared_frame::PreparedFrame).
 
+mod search;
 mod search_match;
+
+pub use search::FrameSearch;
 
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::index::Side;
-use oriterm_core::search::MatchType;
 use oriterm_core::selection::{Selection, SelectionBounds, SelectionMode};
-use oriterm_core::{Column, CursorShape, RenderableContent, Rgb, SearchMatch};
-use oriterm_mux::PaneSnapshot;
+use oriterm_core::{Column, CursorShape, RenderableContent, Rgb};
 
 use crate::font::CellMetrics;
 use crate::url_detect::UrlSegment;
@@ -119,145 +120,6 @@ pub struct SelectionDamageSnapshot {
     pub end_side: Side,
     /// Selection mode (char/word/line/block affects damage scope).
     pub mode: SelectionMode,
-}
-
-/// Search rendering snapshot for one frame.
-///
-/// Contains the match data and viewport mapping needed to classify cells
-/// for search highlighting. Built from `PaneSnapshot` search fields —
-/// copies the match list for frame-local access.
-#[derive(Debug)]
-pub struct FrameSearch {
-    /// Matches from the search state (copied per frame).
-    matches: Vec<SearchMatch>,
-    /// Index of the focused match.
-    focused: usize,
-    /// Stable row index of viewport line 0.
-    base_stable: u64,
-    /// Total match count (for search bar "N of M" display).
-    match_count: usize,
-    /// Query string (for search bar display).
-    query: String,
-}
-
-impl FrameSearch {
-    /// Build from snapshot search data.
-    ///
-    /// Converts wire-format search matches into `SearchMatch` values
-    /// for client-side highlight rendering. Used in daemon mode where
-    /// search state lives on the server.
-    pub fn from_snapshot(snapshot: &PaneSnapshot) -> Option<Self> {
-        if !snapshot.search_active {
-            return None;
-        }
-        let matches: Vec<SearchMatch> = snapshot
-            .search_matches
-            .iter()
-            .map(|m| SearchMatch {
-                start_row: StableRowIndex(m.start_row),
-                start_col: m.start_col as usize,
-                end_row: StableRowIndex(m.end_row),
-                end_col: m.end_col as usize,
-            })
-            .collect();
-        let match_count = matches.len();
-        let focused = snapshot.search_focused.map_or(0, |f| f as usize);
-        Some(Self {
-            matches,
-            focused,
-            base_stable: snapshot.stable_row_base,
-            match_count,
-            query: snapshot.search_query.clone(),
-        })
-    }
-
-    /// Refill this `FrameSearch` from a snapshot, reusing allocations.
-    ///
-    /// Returns `false` if search is not active (caller should set field to `None`).
-    #[allow(
-        dead_code,
-        reason = "infrastructure for allocation-reusing extract path"
-    )]
-    pub fn update_from_snapshot(&mut self, snapshot: &PaneSnapshot) -> bool {
-        if !snapshot.search_active {
-            return false;
-        }
-        self.matches.clear();
-        self.matches
-            .extend(snapshot.search_matches.iter().map(|m| SearchMatch {
-                start_row: StableRowIndex(m.start_row),
-                start_col: m.start_col as usize,
-                end_row: StableRowIndex(m.end_row),
-                end_col: m.end_col as usize,
-            }));
-        self.match_count = self.matches.len();
-        self.focused = snapshot.search_focused.map_or(0, |f| f as usize);
-        self.base_stable = snapshot.stable_row_base;
-        self.query.clear();
-        self.query.push_str(&snapshot.search_query);
-        true
-    }
-
-    /// Classify a visible cell for search match highlighting.
-    pub fn cell_match_type(&self, viewport_line: usize, col: usize) -> MatchType {
-        if self.matches.is_empty() {
-            return MatchType::None;
-        }
-        let stable = StableRowIndex(self.base_stable + viewport_line as u64);
-
-        // Binary search: find first match whose start is beyond (row, col).
-        let idx = self
-            .matches
-            .partition_point(|m| (m.start_row, m.start_col) <= (stable, col));
-
-        let start = idx.saturating_sub(1);
-        let end = (idx + 1).min(self.matches.len());
-
-        for i in start..end {
-            if cell_in_search_match(&self.matches[i], stable, col) {
-                return if i == self.focused {
-                    MatchType::FocusedMatch
-                } else {
-                    MatchType::Match
-                };
-            }
-        }
-        MatchType::None
-    }
-
-    /// Total number of matches.
-    pub fn match_count(&self) -> usize {
-        self.match_count
-    }
-
-    /// 1-based focused match index (for "N of M" display).
-    pub fn focused_display(&self) -> usize {
-        if self.match_count == 0 {
-            0
-        } else {
-            self.focused + 1
-        }
-    }
-
-    /// The current query string.
-    pub fn query(&self) -> &str {
-        &self.query
-    }
-
-    /// Build a test search snapshot from manually constructed matches.
-    ///
-    /// `focused` is the index into `matches` of the focused match.
-    /// `stable_row_base` maps viewport line 0 to stable row coordinates.
-    #[cfg(test)]
-    pub fn for_test(matches: Vec<SearchMatch>, focused: usize, stable_row_base: u64) -> Self {
-        Self {
-            match_count: matches.len(),
-            matches,
-            focused,
-            base_stable: stable_row_base,
-            query: String::from("test"),
-        }
-    }
 }
 
 /// Mark-mode cursor override for the Prepare phase.
@@ -402,6 +264,21 @@ pub struct FrameInput {
 }
 
 impl FrameInput {
+    /// Clear transient per-frame fields after a `swap_renderable_content` swap.
+    ///
+    /// After the swap path replaces the `content` field in-place, these
+    /// overlay fields must be reset so the next annotation pass starts clean.
+    /// Called by both single-pane and multi-pane swap paths.
+    pub fn clear_transient_fields(&mut self) {
+        self.selection = None;
+        self.search = None;
+        self.hovered_cell = None;
+        self.hovered_url_segments.clear();
+        self.mark_cursor = None;
+        self.fg_dim = 1.0;
+        self.prompt_marker_rows.clear();
+    }
+
     /// Number of grid columns in the content.
     ///
     /// Returns the content-derived column count, not viewport-derived.
@@ -418,12 +295,6 @@ impl FrameInput {
     /// Returns the content-derived row count. See [`columns()`](Self::columns).
     pub fn rows(&self) -> usize {
         self.content_rows
-    }
-
-    /// Whether the entire viewport needs a full repaint.
-    #[allow(dead_code, reason = "damage tracking optimization for later sections")]
-    pub fn needs_full_repaint(&self) -> bool {
-        self.content.all_dirty
     }
 
     /// Build a test frame from a text string.
@@ -509,8 +380,6 @@ impl FrameInput {
         }
     }
 }
-
-use search_match::cell_in_search_match;
 
 #[cfg(test)]
 mod tests;

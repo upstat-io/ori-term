@@ -1,0 +1,44 @@
+---
+source: oriterm_core/tests/vttest/menu8.rs
+expression: text
+---
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA                                                             
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB                                                              
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC                                                               
+The right column should be staggered DDDDDDDDDDDDDDDDDDD                                                                
+by one.  Push <RETURN>EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE                                                                 
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                                                  
+GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG                                                                   
+HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH                                                                    
+IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII                                                                     
+JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ                                                                      
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK                                                                       
+LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL                                                                        
+MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM                                                                         
+NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN                                                                          
+OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO                                                                           
+PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP                                                                            
+QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ                                                                             
+RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR                                                                              
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS                                                                               
+TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT                                                                                
+UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU                                                                                 
+VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV                                                                                  
+WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW                                                                                   
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX                                                                                    
+YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY                                                                                     
+ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ                                                                                      
+[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[                                                                                       
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\                                                                                        
+]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]                                                                                         
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                                                                          
+_____________________________                                                                                           
+````````````````````````````                                                                                            
+aaaaaaaaaaaaaaaaaaaaaaaaaaa                                                                                             
+bbbbbbbbbbbbbbbbbbbbbbbbbb                                                                                              
+ccccccccccccccccccccccccc                                                                                               
+dddddddddddddddddddddddd                                                                                                
+eeeeeeeeeeeeeeeeeeeeeee                                                                                                 
+ffffffffffffffffffffff                                                                                                  
+ggggggggggggggggggggg                                                                                                   
+hhhhhhhhhhhhhhhhhhhh

@@ -401,19 +401,17 @@ impl GlyphAtlas {
     }
 
     /// Number of cached glyph entries.
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
     /// Whether the cache is empty.
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
+    #[allow(dead_code, reason = "clippy::len_without_is_empty requires this")]
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
     /// Number of active atlas pages.
-    #[allow(dead_code, reason = "used in tests and diagnostics")]
     pub fn page_count(&self) -> usize {
         self.pages.len()
     }

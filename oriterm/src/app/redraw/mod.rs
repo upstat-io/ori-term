@@ -1,5 +1,7 @@
 //! Three-phase rendering pipeline: Extract → Prepare → Render.
 
+mod chrome;
+mod debug_overlay;
 mod draw_helpers;
 mod multi_pane;
 mod post_render;
@@ -128,13 +130,7 @@ impl App {
                 frame.content_cols = snapshot.cols as usize;
                 frame.content_rows = snapshot.cells.len();
                 frame.palette = snapshot_palette(snapshot);
-                frame.selection = None;
-                frame.search = None;
-                frame.hovered_cell = None;
-                frame.hovered_url_segments.clear();
-                frame.mark_cursor = None;
-                frame.fg_dim = 1.0;
-                frame.prompt_marker_rows.clear();
+                frame.clear_transient_fields();
             } else if content_changed || ctx.frame.is_none() {
                 // Only re-extract when content actually changed. On cursor-
                 // blink-only redraws the existing frame is still valid — skip
@@ -156,17 +152,12 @@ impl App {
             let frame = ctx.frame.as_mut().expect("frame just assigned");
 
             // Set window opacity from config, accounting for focus state.
-            // Unfocused windows use the dimmer unfocused_opacity value.
-            // Force 1.0 when the surface doesn't support alpha (Vulkan Opaque
-            // on Windows) — sub-1.0 opacity produces an invisible window.
             let focused = ctx.window.window().has_focus();
-            frame.palette.opacity = if !ctx.window.surface_has_alpha() {
-                1.0
-            } else if focused {
-                self.config.window.effective_opacity()
-            } else {
-                self.config.window.effective_unfocused_opacity()
-            };
+            frame.palette.opacity = draw_helpers::resolve_palette_opacity(
+                ctx.window.surface_has_alpha(),
+                focused,
+                &self.config,
+            );
             frame.window_focused = focused;
             frame.subpixel_positioning = renderer.subpixel_positioning();
 
@@ -242,29 +233,19 @@ impl App {
             // On false→true transition, force cursor visible this frame (the
             // timer reset hasn't happened yet, so is_visible() may be stale).
             let cursor_opacity = if blinking_now && self.blinking_active {
-                let raw = self.cursor_blink.intensity();
-                if self.config.terminal.cursor_blink_fade {
-                    raw
-                } else if raw > 0.5 {
-                    1.0
-                } else {
-                    0.0
-                }
+                draw_helpers::blink_opacity(
+                    self.cursor_blink.intensity(),
+                    self.config.terminal.cursor_blink_fade,
+                )
             } else {
                 1.0_f32
             };
 
             // Text blink opacity: always active (any cell could have BLINK).
-            let text_blink_opacity = {
-                let raw = self.text_blink.intensity();
-                if self.config.terminal.text_blink_fade {
-                    raw
-                } else if raw > 0.5 {
-                    1.0
-                } else {
-                    0.0
-                }
-            };
+            let text_blink_opacity = draw_helpers::blink_opacity(
+                self.text_blink.intensity(),
+                self.config.terminal.text_blink_fade,
+            );
             frame.text_blink_opacity = text_blink_opacity;
 
             // Grid origin from layout bounds. When the layout engine
@@ -294,147 +275,82 @@ impl App {
             renderer.resolve_icons(gpu, scale);
             phases.prepare = prepare_start.elapsed();
 
-            // Phase gating: prepare + prepaint widget trees if dirty.
+            // Blink delta: detect opacity changes that require full re-render.
+            let blink_changed = (text_blink_opacity - ctx.prev_text_blink_opacity).abs()
+                > draw_helpers::BLINK_OPACITY_EPSILON;
+            ctx.prev_text_blink_opacity = text_blink_opacity;
+
+            // Chrome: tab bar, overlays, search bar, status bar, window border.
             let widgets_start = Instant::now();
-            draw_helpers::phase_gate_widgets(
-                &mut ctx.root,
-                &mut ctx.tab_bar,
-                ctx.tab_bar_phys_rect,
-                renderer,
-                &ctx.text_cache,
+            let needs_full_render = chrome::render_chrome(
+                ctx,
+                &self.config,
                 &self.ui_theme,
-                scale,
-                ctx.ui_stale,
-            );
-
-            // Draw tab bar (unified chrome bar). Tab bar contains text
-            // (tab titles), so uses the text-aware draw list conversion.
-            // Skipped when the tab bar is hidden.
-            let tab_bar_hidden =
-                self.config.window.tab_bar_position == crate::config::TabBarPosition::Hidden;
-            let logical_w = (w as f32 / scale).round() as u32;
-            let (interaction, flags, damage) = ctx.root.interaction_frame_requests_and_damage_mut();
-            let tab_bar_ref = if tab_bar_hidden {
-                None
-            } else {
-                Some(&ctx.tab_bar)
-            };
-            let tb_phys = ctx.tab_bar_phys_rect;
-            let tab_bar_bounds = oriterm_ui::geometry::Rect::new(
-                tb_phys.x() / scale,
-                tb_phys.y() / scale,
-                tb_phys.width() / scale,
-                tb_phys.height() / scale,
-            );
-            let tab_bar_animating = Self::draw_tab_bar(
-                tab_bar_ref,
-                renderer,
-                &mut ctx.chrome_scene,
-                tab_bar_bounds,
-                scale,
                 gpu,
-                &self.ui_theme,
-                &ctx.text_cache,
-                interaction,
-                flags,
-                damage,
+                &chrome::ChromeParams {
+                    pane_count: 1,
+                    content_dirty: content_changed,
+                    selection_changed,
+                    blink_changed,
+                },
             );
-            if tab_bar_animating {
-                ctx.root.mark_dirty();
-            }
-
-            // Draw overlays with per-overlay compositor opacity.
-            let logical_size = (logical_w as f32, h as f32 / scale);
-            let (overlays, layer_tree, interaction, flags) = ctx
-                .root
-                .overlays_layer_tree_interaction_and_frame_requests();
-            let overlays_animating = Self::draw_overlays(
-                overlays,
-                renderer,
-                &mut ctx.chrome_scene,
-                logical_size,
-                scale,
-                gpu,
-                layer_tree,
-                &self.ui_theme,
-                &ctx.text_cache,
-                interaction,
-                flags,
-            );
-            if overlays_animating {
-                ctx.root.mark_dirty();
-            }
-
-            // Draw search bar overlay when search is active.
-            if let Some(search) = frame.search.as_ref() {
-                // Position below all chrome (caption + tab bar).
-                // When the tab bar is hidden, chrome height is zero so
-                // the search badge sits at the top of the grid area.
-                let chrome_h = if tab_bar_hidden {
-                    0.0
-                } else {
-                    ctx.tab_bar.metrics().height
-                };
-                Self::draw_search_bar(
-                    search,
-                    renderer,
-                    &mut ctx.chrome_scene,
-                    &mut ctx.search_bar_buf,
-                    logical_w as f32,
-                    chrome_h,
-                    scale,
-                    gpu,
-                    &ctx.text_cache,
-                );
-            }
-
-            // Update and draw status bar at the bottom of the window.
-            if self.config.window.show_status_bar
-                && self.config.window.tab_bar_position != crate::config::TabBarPosition::Bottom
-            {
-                ctx.status_bar.set_data(draw_helpers::status_bar_data(
-                    1,
-                    frame.content_cols,
-                    frame.content_rows,
-                ));
-                let phys = ctx.status_bar_phys_rect;
-                let sb_bounds = oriterm_ui::geometry::Rect::new(
-                    phys.x() / scale,
-                    phys.y() / scale,
-                    phys.width() / scale,
-                    phys.height() / scale,
-                );
-                Self::draw_status_bar(
-                    &ctx.status_bar,
-                    renderer,
-                    &mut ctx.chrome_scene,
-                    sb_bounds,
-                    scale,
-                    gpu,
-                    &self.ui_theme,
-                    &ctx.text_cache,
-                );
-            }
-
-            // Full content render when terminal content changed, selection
-            // changed, or chrome/overlay visuals are stale. Only cursor-
-            // blink-only frames may reuse the cached texture.
-            let needs_full_render = content_changed || selection_changed || ctx.ui_stale;
-
-            // Overlay tiers render above the cached content every frame, so
-            // only chrome animations keep the content cache stale.
-            ctx.ui_stale = tab_bar_animating;
-
-            // Window border: 2px border-strong frame, skipped when maximized/fullscreen.
-            // macOS: the compositor provides a native window shadow — no border needed.
-            #[cfg(not(target_os = "macos"))]
-            if !ctx.window.is_maximized() && !ctx.window.is_fullscreen() {
-                let border_color =
-                    crate::gpu::scene_convert::color_to_rgb(self.ui_theme.border_strong);
-                renderer.append_window_border(w, h, border_color, (2.0 * scale).round());
-            }
-
             phases.widgets = widgets_start.elapsed();
+
+            // Debug performance overlay (Ctrl+Shift+F12).
+            if self.debug_overlay_enabled {
+                // Update EWMA FPS from last render interval.
+                let elapsed = self.last_render.elapsed().as_secs_f32();
+                if elapsed > 0.0 {
+                    let instant_fps = 1.0 / elapsed;
+                    // EWMA with alpha=0.1 for smooth display.
+                    self.debug_fps = if self.debug_fps < 1.0 {
+                        instant_fps
+                    } else {
+                        0.1 * instant_fps + 0.9 * self.debug_fps
+                    };
+                }
+
+                let renderer = ctx.renderer.as_mut().expect("renderer checked");
+                let stats = debug_overlay::DebugStats {
+                    fps: self.debug_fps,
+                    dirty_rows: renderer
+                        .prepared
+                        .scratch_dirty
+                        .iter()
+                        .filter(|&&d| d)
+                        .count(),
+                    total_rows: renderer.prepared.scratch_dirty.len(),
+                    instances: renderer.prepared.total_instances(),
+                    draw_calls: renderer.prepared.count_draw_calls(),
+                    mono_atlas: (renderer.atlas().len(), renderer.atlas().page_count()),
+                    subpixel_atlas: (
+                        renderer.subpixel_atlas().len(),
+                        renderer.subpixel_atlas().page_count(),
+                    ),
+                    color_atlas: (
+                        renderer.color_atlas().len(),
+                        renderer.color_atlas().page_count(),
+                    ),
+                };
+                let (pw, ph) = ctx.window.size_px();
+                let lw = pw as f32 / scale;
+                let lh = ph as f32 / scale;
+                Self::draw_debug_overlay(
+                    &stats,
+                    renderer,
+                    &mut ctx.chrome_scene,
+                    &mut ctx.debug_overlay_buf,
+                    lw,
+                    lh,
+                    scale,
+                    gpu,
+                    &ctx.text_cache,
+                );
+            }
+
+            // Re-borrow renderer for GPU submission (prior borrow ended
+            // when render_chrome returned via NLL).
+            let renderer = ctx.renderer.as_mut().expect("renderer checked");
 
             // Apply deferred DXGI ResizeBuffers just before acquiring the
             // surface texture. This minimizes the gap between swap chain

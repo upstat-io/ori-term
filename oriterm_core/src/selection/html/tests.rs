@@ -142,6 +142,61 @@ fn curly_underline_maps_to_wavy() {
     assert!(html.contains("text-decoration:underline wavy"));
 }
 
+// -- Underline color --
+
+#[test]
+fn underline_color_produces_text_decoration_color() {
+    use std::sync::Arc;
+
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::UNDERLINE;
+    grid.put_char('U');
+
+    // Set underline color to red via CellExtra.
+    let cell = &mut grid[crate::index::Line(0)][Column(0)];
+    let extra = cell
+        .extra
+        .get_or_insert_with(|| Arc::new(crate::cell::CellExtra::new()));
+    Arc::make_mut(extra).underline_color = Some(Color::Spec(vte::ansi::Rgb { r: 255, g: 0, b: 0 }));
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(html.contains("text-decoration:underline"));
+    assert!(
+        html.contains("text-decoration-color:#ff0000"),
+        "underline color should produce text-decoration-color CSS: {html}"
+    );
+}
+
+#[test]
+fn underline_color_without_underline_style_not_emitted() {
+    use std::sync::Arc;
+
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    // No underline flag — just the color in extra.
+    grid.put_char('N');
+
+    let cell = &mut grid[crate::index::Line(0)][Column(0)];
+    let extra = cell
+        .extra
+        .get_or_insert_with(|| Arc::new(crate::cell::CellExtra::new()));
+    Arc::make_mut(extra).underline_color = Some(Color::Spec(vte::ansi::Rgb { r: 0, g: 255, b: 0 }));
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 0);
+    let html = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+
+    // No underline style → no text-decoration at all → no color either.
+    assert!(
+        !html.contains("text-decoration-color"),
+        "underline color without underline style should not emit CSS"
+    );
+}
+
 // -- Strikethrough --
 
 #[test]

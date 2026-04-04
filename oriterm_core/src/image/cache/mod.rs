@@ -242,37 +242,34 @@ impl ImageCache {
         }
     }
 
-    /// Fill `out` with placements visible in the given stable row range (inclusive).
+    /// Iterate placements visible in the given stable row range (inclusive).
     ///
-    /// Reuses `out`'s allocation across frames for zero-alloc steady state.
-    pub(crate) fn fill_viewport_placements<'a>(
-        &'a self,
+    /// Zero-allocation: returns an iterator that filters in-place. Preferred
+    /// for the hot render path where no intermediate buffer is needed.
+    pub(crate) fn viewport_placements(
+        &self,
         top_row: StableRowIndex,
         bottom_row: StableRowIndex,
-        out: &mut Vec<&'a ImagePlacement>,
-    ) {
-        out.clear();
-        out.extend(self.placements.iter().filter(|p| {
+    ) -> impl Iterator<Item = &ImagePlacement> {
+        self.placements.iter().filter(move |p| {
             let placement_bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
             p.cell_row <= bottom_row && placement_bottom >= top_row
-        }));
+        })
     }
 
     /// Convenience wrapper returning a new `Vec` of visible placements.
     ///
-    /// For hot-path rendering, prefer [`fill_viewport_placements`] with a
-    /// reusable buffer. This allocates on every call.
+    /// For hot-path rendering, prefer [`viewport_placements`] (zero-allocation
+    /// iterator). This allocates on every call — intended for tests only.
     ///
-    /// [`fill_viewport_placements`]: Self::fill_viewport_placements
+    /// [`viewport_placements`]: Self::viewport_placements
     #[cfg(test)]
     pub(crate) fn placements_in_viewport(
         &self,
         top_row: StableRowIndex,
         bottom_row: StableRowIndex,
     ) -> Vec<&ImagePlacement> {
-        let mut out = Vec::new();
-        self.fill_viewport_placements(top_row, bottom_row, &mut out);
-        out
+        self.viewport_placements(top_row, bottom_row).collect()
     }
 
     /// Remove placements whose `cell_row` is before the eviction boundary.

@@ -122,7 +122,7 @@ fn frame_input_grid_dimensions() {
 }
 
 #[test]
-fn frame_input_needs_full_repaint() {
+fn frame_input_all_dirty_indicates_full_repaint() {
     let mut content = empty_content();
     content.all_dirty = true;
 
@@ -146,7 +146,7 @@ fn frame_input_needs_full_repaint() {
         prompt_marker_rows: Vec::new(),
     };
 
-    assert!(input.needs_full_repaint());
+    assert!(input.content.all_dirty);
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn frame_input_incremental_repaint() {
         prompt_marker_rows: Vec::new(),
     };
 
-    assert!(!input.needs_full_repaint());
+    assert!(!input.content.all_dirty);
 }
 
 // --- test_grid helper ---

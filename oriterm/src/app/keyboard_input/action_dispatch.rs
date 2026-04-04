@@ -97,7 +97,7 @@ impl App {
                         mux.scroll_to_bottom(pane_id);
                     }
                     self.write_pane_input(pane_id, text.as_bytes());
-                    self.cursor_blink.reset();
+                    self.reset_cursor_blink();
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.root.mark_dirty();
@@ -244,6 +244,13 @@ impl App {
             }
             Action::ZoomReset => {
                 self.reset_font_size();
+                true
+            }
+            Action::ToggleDebugOverlay => {
+                self.debug_overlay_enabled = !self.debug_overlay_enabled;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.root.mark_dirty();
+                }
                 true
             }
             Action::None => true,

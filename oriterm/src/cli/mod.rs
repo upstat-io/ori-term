@@ -17,6 +17,10 @@ use crate::keybindings::{self, Action, BindingKey, KeyBinding};
 
 /// GPU-accelerated terminal emulator.
 #[derive(Parser)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "CLI argument struct — boolean flags are the standard clap pattern"
+)]
 #[command(
     name = "oriterm",
     version = env!("ORITERM_VERSION"),
@@ -48,6 +52,14 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub new_window: bool,
 
+    /// Open a new tab in an existing window (or new window if none exists).
+    ///
+    /// When the IPC daemon is running, sends a "new tab" request to the
+    /// existing instance. Without a daemon, launches a new window with one
+    /// tab (same as default behavior).
+    #[arg(long)]
+    pub new_tab: bool,
+
     /// Force embedded (single-process) mode, ignoring config.
     ///
     /// Bypasses daemon auto-start entirely. Useful for debugging,
@@ -62,6 +74,14 @@ pub(crate) struct Cli {
     /// `--features profile` to also enable per-allocation counting.
     #[arg(long)]
     pub profile: bool,
+
+    /// Write per-keypress latency to a CSV file next to the binary.
+    ///
+    /// Records `timestamp_ms, event_to_present_ms` for every keypress.
+    /// Use for measuring input-to-display latency. The file is created
+    /// at `<binary_dir>/oriterm-latency.csv`.
+    #[arg(long)]
+    pub latency_log: bool,
 }
 
 /// Diagnostic subcommands that run headlessly.
