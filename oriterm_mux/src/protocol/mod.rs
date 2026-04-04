@@ -27,6 +27,7 @@ pub(crate) mod decode;
 pub(crate) mod encode;
 pub(crate) mod messages;
 pub(crate) mod msg_type;
+mod pdu_traits;
 mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};

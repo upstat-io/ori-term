@@ -221,7 +221,7 @@ Tiered coalescing requires the server to know each pane's visibility state per c
 - [ ] Tiered coalescing (different push intervals based on pane visibility):
   - [ ] Add `SetPanePriority` PDU: `{ pane_id: PaneId, priority: u8 }` where 0=focused, 1=visible, 2=hidden
     - [ ] Add `SetPanePriority` variant to `MuxPdu` in `protocol/messages.rs` (append at end for wire compat)
-    - [ ] **FILE SIZE WARNING:** `messages.rs` is currently 485 lines. Adding `SetPanePriority` + extending `Hello`/`HelloAck` with version/features fields (34.1) will push it past 500 lines. Plan to split: extract `MuxPdu::msg_type()`, `is_fire_and_forget()`, and `is_notification()` match arms into a separate `protocol/pdu_traits.rs` submodule (~120 lines) before or during this work.
+    - [x] **FILE SIZE:** `messages.rs` split done (376 lines). `pdu_traits.rs` extracted (120 lines). Safe margin for new variants.
     - [ ] Add `MsgType::SetPanePriority` with a new ID (e.g., `0x0129`) in `protocol/msg_type.rs`
     - [ ] Add `MsgType::from_u16` match arm for the new ID
     - [ ] Add `MuxPdu::msg_type()` match arm returning `MsgType::SetPanePriority`
