@@ -80,20 +80,26 @@ fn main() {
     if profiling {
         log::info!("profiling mode enabled (--profile)");
     }
+    let latency_log = args.latency_log;
+    if latency_log {
+        log::info!("latency logging enabled (--latency-log)");
+    }
 
     let mut app = if let Some(ref socket) = args.connect {
         // Explicit --connect always uses daemon mode (regardless of config).
-        app::App::new_daemon(proxy, config, socket, args.window, profiling)
+        app::App::new_daemon(proxy, config, socket, args.window, profiling, latency_log)
     } else if embedded {
         log::info!("embedded mode (config or --embedded flag)");
-        app::App::new(proxy, config, profiling)
+        app::App::new(proxy, config, profiling, latency_log)
     } else {
         // Daemon mode with retry + fallback.
         match ensure_daemon_with_retry() {
-            Ok(socket_path) => app::App::new_daemon(proxy, config, &socket_path, None, profiling),
+            Ok(socket_path) => {
+                app::App::new_daemon(proxy, config, &socket_path, None, profiling, latency_log)
+            }
             Err(e) => {
                 log::warn!("daemon auto-start failed after retries, using embedded mode: {e}");
-                app::App::new(proxy, config, profiling)
+                app::App::new(proxy, config, profiling, latency_log)
             }
         }
     };

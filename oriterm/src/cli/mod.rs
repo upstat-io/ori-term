@@ -74,6 +74,14 @@ pub(crate) struct Cli {
     /// `--features profile` to also enable per-allocation counting.
     #[arg(long)]
     pub profile: bool,
+
+    /// Write per-keypress latency to a CSV file next to the binary.
+    ///
+    /// Records `timestamp_ms, event_to_present_ms` for every keypress.
+    /// Use for measuring input-to-display latency. The file is created
+    /// at `<binary_dir>/oriterm-latency.csv`.
+    #[arg(long)]
+    pub latency_log: bool,
 }
 
 /// Diagnostic subcommands that run headlessly.
