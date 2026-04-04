@@ -362,7 +362,7 @@ pub enum MuxPdu {
     /// create a new tab in its active window.
     NotifyNewTab,
 
-    /// Server-pushed pane snapshot (proactive, throttled to ~60fps).
+    /// Server-pushed pane snapshot (proactive, throttled to ~250fps / 4ms).
     ///
     /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
     NotifyPaneSnapshot {

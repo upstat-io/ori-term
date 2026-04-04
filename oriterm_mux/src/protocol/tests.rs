@@ -97,8 +97,11 @@ fn msg_type_roundtrip_all() {
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
         MsgType::NotifyPaneMetadataChanged,
-        MsgType::NotifyPaneBell,
+        MsgType::NotifyCommandComplete,
+        MsgType::NotifyClipboardStore,
         MsgType::NotifyPaneSnapshot,
+        MsgType::NotifyClipboardLoad,
+        MsgType::NotifyPaneBell,
     ];
     for t in types {
         let raw = t as u16;
@@ -1085,6 +1088,81 @@ fn notify_new_tab_roundtrip() {
     assert_eq!(frame.seq, 0);
     assert_eq!(frame.pdu, MuxPdu::NotifyNewTab);
     assert!(frame.pdu.is_notification());
+}
+
+#[test]
+fn roundtrip_notify_command_complete() {
+    let pane_id = PaneId::from_raw(7);
+    let frame = roundtrip(
+        0,
+        MuxPdu::NotifyCommandComplete {
+            pane_id,
+            duration_ms: 1234,
+        },
+    );
+    assert_eq!(frame.seq, 0);
+    assert!(frame.pdu.is_notification());
+    match frame.pdu {
+        MuxPdu::NotifyCommandComplete {
+            pane_id: pid,
+            duration_ms,
+        } => {
+            assert_eq!(pid, pane_id);
+            assert_eq!(duration_ms, 1234);
+        }
+        other => panic!("expected NotifyCommandComplete, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_notify_clipboard_store() {
+    let pane_id = PaneId::from_raw(3);
+    let frame = roundtrip(
+        0,
+        MuxPdu::NotifyClipboardStore {
+            pane_id,
+            clipboard_type: 0,
+            text: "hello".to_string(),
+        },
+    );
+    assert_eq!(frame.seq, 0);
+    assert!(frame.pdu.is_notification());
+    match frame.pdu {
+        MuxPdu::NotifyClipboardStore {
+            pane_id: pid,
+            clipboard_type,
+            text,
+        } => {
+            assert_eq!(pid, pane_id);
+            assert_eq!(clipboard_type, 0);
+            assert_eq!(text, "hello");
+        }
+        other => panic!("expected NotifyClipboardStore, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_notify_clipboard_load() {
+    let pane_id = PaneId::from_raw(5);
+    let frame = roundtrip(
+        0,
+        MuxPdu::NotifyClipboardLoad {
+            pane_id,
+            clipboard_type: 1,
+        },
+    );
+    assert_eq!(frame.seq, 0);
+    assert!(frame.pdu.is_notification());
+    match frame.pdu {
+        MuxPdu::NotifyClipboardLoad {
+            pane_id: pid,
+            clipboard_type,
+        } => {
+            assert_eq!(pid, pane_id);
+            assert_eq!(clipboard_type, 1);
+        }
+        other => panic!("expected NotifyClipboardLoad, got {other:?}"),
+    }
 }
 
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader

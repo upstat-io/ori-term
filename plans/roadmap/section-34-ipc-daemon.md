@@ -127,10 +127,10 @@ These share identical logic (bincode serialize, validate size, construct header,
 **Remaining tests** (all in `oriterm_mux/src/protocol/tests.rs` unless noted):
 
 Pre-existing bug fixes (fix first):
-- [ ] `msg_type_roundtrip_all`: add `NotifyCommandComplete`, `NotifyClipboardStore`, `NotifyClipboardLoad` -- currently missing from the roundtrip array (verified 2026-04-04)
-- [ ] `roundtrip_notify_command_complete`: new roundtrip test -- `MuxPdu::NotifyCommandComplete { pane_id, duration_ms: 1234 }`
-- [ ] `roundtrip_notify_clipboard_store`: new roundtrip test -- `MuxPdu::NotifyClipboardStore { pane_id, clipboard_type: 0, text: "hello" }`
-- [ ] `roundtrip_notify_clipboard_load`: new roundtrip test -- `MuxPdu::NotifyClipboardLoad { pane_id, clipboard_type: 1 }`
+- [x] `msg_type_roundtrip_all`: add `NotifyCommandComplete`, `NotifyClipboardStore`, `NotifyClipboardLoad` -- currently missing from the roundtrip array (verified 2026-04-04, fixed 2026-04-04)
+- [x] `roundtrip_notify_command_complete`: new roundtrip test -- `MuxPdu::NotifyCommandComplete { pane_id, duration_ms: 1234 }` (added 2026-04-04)
+- [x] `roundtrip_notify_clipboard_store`: new roundtrip test -- `MuxPdu::NotifyClipboardStore { pane_id, clipboard_type: 0, text: "hello" }` (added 2026-04-04)
+- [x] `roundtrip_notify_clipboard_load`: new roundtrip test -- `MuxPdu::NotifyClipboardLoad { pane_id, clipboard_type: 1 }` (added 2026-04-04)
 
 Header extension tests:
 - [ ] `header_14byte_roundtrip`: encode/decode a 14-byte header with magic=0x4F54, version=1, flags=0, type=0x0101, seq=42, payload_len=1024. Assert all fields survive roundtrip.
@@ -348,11 +348,11 @@ IPC integration tests (in `server/tests.rs`, Unix-gated, require live daemon):
 - [x] `cargo test` -- 470 tests pass (verified 2026-04-04)
 
 **Remaining for full completion:**
-- [ ] **Pre-requisite fixes** (found during review, fix before or alongside hardening):
-  - [ ] Fix stale comment in `server/mod.rs:203`: says "16ms" but `SNAPSHOT_PUSH_INTERVAL` is 4ms
-  - [ ] Fix stale module doc in `server/push/mod.rs:4`: says "~60fps (16ms interval)" but constant is 4ms (250fps)
-  - [ ] Fix stale doc comment in `protocol/messages.rs:365`: `NotifyPaneSnapshot` says "throttled to ~60fps" but actual rate is 250fps (4ms)
-  - [ ] Fix `msg_type_roundtrip_all` test: add missing `NotifyCommandComplete`, `NotifyClipboardStore`, `NotifyClipboardLoad` variants
+- [x] **Pre-requisite fixes** (found during review, fixed 2026-04-04):
+  - [x] Fix stale comment in `server/mod.rs:203`: says "16ms" but `SNAPSHOT_PUSH_INTERVAL` is 4ms
+  - [x] Fix stale module doc in `server/push/mod.rs:4`: says "~60fps (16ms interval)" but constant is 4ms (250fps)
+  - [x] Fix stale doc comment in `protocol/messages.rs:365`: `NotifyPaneSnapshot` says "throttled to ~60fps" but actual rate is 250fps (4ms)
+  - [x] Fix `msg_type_roundtrip_all` test: add missing `NotifyCommandComplete`, `NotifyClipboardStore`, `NotifyClipboardLoad` variants
 - [ ] All 34.1-34.4 hardening items complete
 - [ ] **Implementation order** (must be sequential due to dependencies):
   0. **Pre-existing fixes** (34.5 prerequisite): fix stale comments in `server/mod.rs:203`, `server/push/mod.rs:4`, and `protocol/messages.rs:365`. Fix missing `msg_type_roundtrip_all` variants. Add missing PDU roundtrip tests for `NotifyCommandComplete`/`NotifyClipboardStore`/`NotifyClipboardLoad`.

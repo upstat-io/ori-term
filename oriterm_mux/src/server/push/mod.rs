@@ -1,7 +1,7 @@
 //! Server-push snapshot logic.
 //!
 //! Proactively pushes [`PaneSnapshot`]s to clients that advertised
-//! [`CAP_SNAPSHOT_PUSH`]. Push rate is throttled to ~60fps (16ms interval).
+//! [`CAP_SNAPSHOT_PUSH`]. Push rate is throttled to ~250fps (4ms interval).
 //! Clients above the write high-water mark are deferred to a trailing-edge
 //! flush that retries once their buffer drains.
 
