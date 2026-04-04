@@ -112,17 +112,15 @@ These share identical logic (bincode serialize, validate size, construct header,
   - [ ] In shared encode path: after bincode serialize, if `payload.len() > 4096`, compress with zstd level 1. If compressed is smaller, set `COMPRESSED` flag in header and write compressed payload. If compressed is larger, clear flag and write original.
   - [ ] In shared decode path: after reading payload bytes, if `COMPRESSED` flag set, decompress before bincode deserialization
   - [ ] Threshold: compress only when `payload_len > 4096` -- `NotifyPaneSnapshot` with an 80x24 grid is the primary target (~50-200KB bincode, compresses well due to repeated cell structures)
-- [ ] Version negotiation via extended Hello/HelloAck:
-  - [ ] Add `protocol_version: u8` and `features: u64` fields to `MuxPdu::Hello` (alongside existing `pid`). This is a breaking bincode change (see architecture notes).
-  - [ ] Add `protocol_version: u8` and `features: u64` fields to `MuxPdu::HelloAck` (alongside existing `client_id`)
-  - [ ] Add constants: `CURRENT_PROTOCOL_VERSION: u8 = 1`, `FEAT_ZSTD: u64 = 1`
-  - [ ] Server `dispatch_request` Hello handler: if `Hello.protocol_version > CURRENT_PROTOCOL_VERSION`, respond `Error { message: "version mismatch" }` and disconnect. If equal or less, proceed (backward compat for older clients).
-  - [ ] Server: negotiate features as intersection of client + server capabilities, store negotiated features per-connection in `ClientConnection` (add `negotiated_features: u64` field)
-  - [ ] Client: if `HelloAck.protocol_version != CURRENT_PROTOCOL_VERSION`, log error and disconnect
-  - [ ] Feature flag `FEAT_ZSTD = 1`: compression only used when both sides negotiated it. Encode path checks `negotiated_features & FEAT_ZSTD != 0` before compressing.
-  - [ ] Update `ClientTransport::connect()` to send version/features in Hello and validate HelloAck version
-  - [ ] Update `dispatch_request` Hello handler to validate version and negotiate features
-  - [ ] Update `one_shot::request_new_tab()` to send version/features in Hello (add `protocol_version: CURRENT_PROTOCOL_VERSION, features: 0` -- one-shot doesn't need compression)
+- [x] Version negotiation via extended Hello/HelloAck (completed 2026-04-04):
+  - [x] Add `protocol_version: u8` and `features: u64` fields to `MuxPdu::Hello`
+  - [x] Add `protocol_version: u8` and `features: u64` fields to `MuxPdu::HelloAck`
+  - [x] Add constants: `CURRENT_PROTOCOL_VERSION: u8 = 1`, `FEAT_ZSTD: u64 = 1`
+  - [x] Server dispatch: reject clients with version > server, negotiate features via intersection
+  - [x] Client transport: send version/features in Hello, log negotiated features from HelloAck
+  - [x] One-shot client: send version with features=0 (no compression needed)
+  - [x] Daemon binary stop command: updated Hello with version fields
+  - [x] All tests updated (protocol, server, client, e2e)
 
 **Remaining tests** (all in `oriterm_mux/src/protocol/tests.rs` unless noted):
 

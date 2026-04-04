@@ -31,6 +31,8 @@ pub fn request_new_tab(socket_path: &Path) -> io::Result<()> {
         1,
         &MuxPdu::Hello {
             pid: std::process::id(),
+            protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0, // One-shot client doesn't need compression.
         },
     )?;
     let hello_resp = codec.decode_frame(&mut stream).map_err(decode_to_io)?;

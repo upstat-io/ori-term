@@ -95,7 +95,15 @@ impl ClientTransport {
 
         // Send Hello handshake.
         let pid = std::process::id();
-        ProtocolCodec::encode_frame(&mut stream, 1, &MuxPdu::Hello { pid })?;
+        ProtocolCodec::encode_frame(
+            &mut stream,
+            1,
+            &MuxPdu::Hello {
+                pid,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: crate::protocol::FEAT_ZSTD,
+            },
+        )?;
 
         // Read HelloAck (blocking, no timeout — daemon should respond quickly).
         let frame = ProtocolCodec::new()
@@ -108,7 +116,18 @@ impl ClientTransport {
             })?;
 
         let client_id = match frame.pdu {
-            MuxPdu::HelloAck { client_id } => client_id,
+            MuxPdu::HelloAck {
+                client_id,
+                protocol_version,
+                features,
+            } => {
+                log::info!(
+                    "connected to daemon at {}, assigned {client_id} \
+                     (server v={protocol_version}, features=0x{features:X})",
+                    path.display(),
+                );
+                client_id
+            }
             MuxPdu::Error { message } => {
                 return Err(io::Error::other(format!(
                     "daemon rejected handshake: {message}"
@@ -120,11 +139,6 @@ impl ClientTransport {
                 )));
             }
         };
-
-        log::info!(
-            "connected to daemon at {}, assigned {client_id}",
-            path.display()
-        );
 
         // Advertise capabilities (fire-and-forget, no ack expected).
         let cap_seq = 2; // seq 1 was Hello; we'll start RPC seqs from 3.
