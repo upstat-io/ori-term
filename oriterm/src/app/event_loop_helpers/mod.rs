@@ -92,14 +92,44 @@ impl App {
             }
         }
 
-        self.scratch_dirty_windows.clear();
-        self.scratch_dirty_windows.extend(
-            self.windows
-                .iter()
-                .filter(|(_, ctx)| ctx.root.is_dirty())
-                .map(|(&id, _)| id),
-        );
-        if self.scratch_dirty_windows.is_empty() {
+        // Detect size/DPI changes for dialog windows.
+        // Same issue: winit does not dispatch Resized during modal loops.
+        {
+            self.scratch_dirty_windows.clear();
+            self.scratch_dirty_windows
+                .extend(self.dialogs.keys().copied());
+            for i in 0..self.scratch_dirty_windows.len() {
+                let wid = self.scratch_dirty_windows[i];
+                let needs_resize = self.dialogs.get(&wid).is_some_and(|ctx| {
+                    let inner = ctx.window.inner_size();
+                    ctx.surface_config.width != inner.width
+                        || ctx.surface_config.height != inner.height
+                });
+                if needs_resize {
+                    // DPI detection — subclass proc consumed WM_DPICHANGED.
+                    if let Some(ctx) = self.dialogs.get(&wid) {
+                        if let Some(new_scale) =
+                            oriterm_ui::platform_windows::get_current_dpi(ctx.window.as_ref())
+                        {
+                            let cur = ctx.scale_factor.factor();
+                            if (new_scale - cur).abs() > 0.001 {
+                                self.handle_dialog_dpi_change(wid, new_scale);
+                            }
+                        }
+                    }
+                    if let Some(gpu) = self.gpu.as_ref() {
+                        let inner = self.dialogs[&wid].window.inner_size();
+                        if let Some(ctx) = self.dialogs.get_mut(&wid) {
+                            ctx.resize_surface(inner.width, inner.height, gpu);
+                        }
+                    }
+                    self.refresh_dialog_platform_rects(wid);
+                }
+            }
+        }
+
+        // Check both terminal and dialog windows for dirty state.
+        if !self.is_any_window_dirty() {
             return;
         }
 

@@ -496,9 +496,9 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 
 ### Resize Rendering Performance
 
-- [ ] **BUG (Windows-only):** Dialog resize shows uninitialized surface (baby blue background) — GPU redraw during `WM_SIZING` modal loop is too slow. The render timer in `WM_ENTERSIZEMOVE` fires `WM_TIMER` which invalidates, but the redraw can't keep up with the resize rate. Investigate: frame budget during modal resize, whether the `WM_TIMER` approach is optimal, or if `WM_PAINT` handling during modal loop needs improvement. Affects both settings dialogs and main windows. Discovered during chrome plan verification (2026-03-10).
-  - [ ] Fix must be behind `#[cfg(target_os = "windows")]` — macOS and Linux do not have this modal resize loop issue
-  - [ ] Verify macOS and Linux resize behavior is smooth (no equivalent bug)
+- [x] **BUG (Windows-only):** Dialog resize shows uninitialized surface (baby blue background) — `modal_loop_render()` only detected size changes for terminal windows, not dialogs. Also early-returned when terminal windows were clean, skipping dirty dialogs. Root cause: `WM_SIZING` modal loop generates `RedrawRequested` via timer, but dialog resize went undetected. **Fix:** Added dialog size/DPI detection loop to `modal_loop_render()` (parallel to existing terminal window loop) and changed dirty check to use `is_any_window_dirty()` which checks both. `handle_dialog_dpi_change` visibility widened to `pub(in crate::app)`.
+  - [x] Fix is behind `#[cfg(target_os = "windows")]` — entire `modal_loop_render()` function is cfg-gated
+  - [x] macOS and Linux verified: no modal resize loops; `WindowEvent::Resized` fires normally, `handle_resize`/`resize_surface` run via standard event dispatch path
 
 ### Debug Overlay
 
