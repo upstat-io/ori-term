@@ -77,9 +77,10 @@ fn make_term() -> Term<VoidListener> {
 }
 
 /// Threshold for "zero-alloc" assertion. Accounts for noise from parallel
-/// test threads (~5-20 allocs per measurement window). A real regression
-/// adding per-cell allocation would produce ~1920 allocs on a 24x80 grid.
-const ZERO_ALLOC_THRESHOLD: u64 = 50;
+/// test threads and platform allocator behavior. Windows CI sees up to ~200
+/// noise allocs from concurrent threads; a real regression adding per-cell
+/// allocation would produce ~1920 allocs on a 24×80 grid.
+const ZERO_ALLOC_THRESHOLD: u64 = 300;
 
 // --- Tests ---
 
