@@ -9,6 +9,7 @@
 //! `RUST_LOG=debug`). Frame timing min/max/avg and idle detection are
 //! included in profiling mode.
 
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 /// Interval between performance log lines.
@@ -95,16 +96,27 @@ pub(super) struct PerfStats {
     key_to_render_max: Duration,
     /// Number of frames that measured key-to-render latency.
     key_to_render_count: u32,
+
+    /// CSV file for per-keypress latency recording (`--latency-log`).
+    latency_csv: Option<std::io::BufWriter<std::fs::File>>,
+    /// Startup instant for CSV timestamps.
+    startup: Instant,
 }
 
 impl PerfStats {
     /// Create a new counter set.
     ///
     /// Pass `profiling: true` for `--profile` mode (info-level logging).
-    pub(super) fn new(profiling: bool) -> Self {
+    /// Pass `latency_log: true` for `--latency-log` CSV output.
+    pub(super) fn new(profiling: bool, latency_log: bool) -> Self {
         let now = Instant::now();
         let initial_rss = if profiling {
             crate::platform::memory::rss_bytes()
+        } else {
+            None
+        };
+        let latency_csv = if latency_log {
+            Self::open_latency_csv()
         } else {
             None
         };
@@ -129,6 +141,28 @@ impl PerfStats {
             key_to_render_sum: Duration::ZERO,
             key_to_render_max: Duration::ZERO,
             key_to_render_count: 0,
+            latency_csv,
+            startup: now,
+        }
+    }
+
+    /// Open the latency CSV file next to the binary.
+    fn open_latency_csv() -> Option<std::io::BufWriter<std::fs::File>> {
+        let path = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("oriterm-latency.csv")))
+            .unwrap_or_else(|| std::path::PathBuf::from("oriterm-latency.csv"));
+        match std::fs::File::create(&path) {
+            Ok(f) => {
+                let mut w = std::io::BufWriter::new(f);
+                let _ = writeln!(w, "timestamp_ms,event_to_present_ms");
+                log::info!("latency log: {}", path.display());
+                Some(w)
+            }
+            Err(e) => {
+                log::warn!("failed to create latency CSV at {}: {e}", path.display());
+                None
+            }
         }
     }
 
@@ -153,6 +187,13 @@ impl PerfStats {
             self.key_to_render_sum += latency;
             self.key_to_render_max = self.key_to_render_max.max(latency);
             self.key_to_render_count += 1;
+
+            // Write to CSV when latency logging is enabled.
+            if let Some(csv) = self.latency_csv.as_mut() {
+                let ts = self.startup.elapsed().as_millis();
+                let lat_ms = latency.as_secs_f64() * 1000.0;
+                let _ = writeln!(csv, "{ts},{lat_ms:.3}");
+            }
 
             // Log slow frames individually for stutter diagnosis.
             if latency.as_millis() > 16 || frame_time.as_millis() > 8 {

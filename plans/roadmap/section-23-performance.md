@@ -566,10 +566,10 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 
 ### Latency Benchmark
 
-- [ ] Add internal latency instrumentation (behind a `--latency-log` CLI flag or compile-time feature):
-  - [ ] Record `Instant::now()` at `KeyboardInput` event receipt in `handle_keyboard_input()`
-  - [ ] Record `Instant::now()` at `frame.present()` call in `WindowRenderer::render()`
-  - [ ] Log the delta for each keypress to a CSV file (`timestamp, event_to_present_ms`)
+- [x] Add internal latency instrumentation (behind `--latency-log` CLI flag):
+  - [x] Record `Instant::now()` at `KeyboardInput` event receipt — already existed as `perf.last_key_time` in `PerfStats`
+  - [x] Record `Instant::now()` at render completion — already existed in `PerfStats::record_render()`
+  - [x] Log the delta for each keypress to CSV file (`oriterm-latency.csv` next to binary): `timestamp_ms,event_to_present_ms` with BufWriter for efficient I/O
 - [ ] Target: p50 <3ms, p95 <5ms, p99 <8ms from `KeyboardInput` to `frame.present()`
 - [ ] External validation: use `typometer` (https://github.com/blakesmith/typometer) or `Termpal` for end-to-end latency measurement including display pipeline lag
 
