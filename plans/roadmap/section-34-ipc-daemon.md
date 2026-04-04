@@ -90,12 +90,12 @@ These share identical logic (bincode serialize, validate size, construct header,
   - [x] Refactor `ProtocolCodec::try_decode()` in `codec.rs` to call `decode::try_decode_from_buf()`
   - [x] Refactor `FrameReader::try_decode()` in `frame_io.rs` to call `decode::try_decode_from_buf()`
   - [x] Verify all existing tests pass (no behavioral change)
-- [ ] Extract shared encode logic (recommended before compression):
-  - [ ] Create `oriterm_mux/src/protocol/encode.rs` with shared `encode_to_buf(buf: &mut Vec<u8>, seq: u32, pdu: &MuxPdu, flags: u8) -> io::Result<()>`
-  - [ ] Add `mod encode;` to `protocol/mod.rs`
-  - [ ] Refactor `ProtocolCodec::encode_frame()` in `codec.rs` to delegate to it
-  - [ ] Refactor `FrameWriter::queue()` in `frame_io.rs` to delegate to it
-  - [ ] Verify all existing tests pass (no behavioral change)
+- [x] Extract shared encode logic (completed 2026-04-04):
+  - [x] Create `oriterm_mux/src/protocol/encode.rs` with shared `encode_into_buf(buf: &mut Vec<u8>, seq: u32, pdu: &MuxPdu) -> io::Result<()>`
+  - [x] Add `mod encode;` to `protocol/mod.rs`
+  - [x] Refactor `ProtocolCodec::encode_frame()` in `codec.rs` to delegate to it
+  - [x] Refactor `FrameWriter::queue()` in `frame_io.rs` to delegate to it
+  - [x] Verify all existing tests pass (no behavioral change)
 - [ ] Extend frame header from 10 to 14 bytes: `magic(u16) + version(u8) + flags(u8) + type(u16) + seq(u32) + payload_len(u32)`
   - [ ] Add `FrameHeader` fields: `magic: u16`, `version: u8`, `flags: u8`
   - [ ] Magic bytes `0x4F54` ("OT") -- reject streams that don't start with magic (early detection of non-oriterm connections)
