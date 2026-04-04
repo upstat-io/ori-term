@@ -273,26 +273,14 @@ The `pane_snapshots` cache survives reconnection (field on `MuxClient`, not `Cli
 
 **Remaining hardening (genuinely not started):**
 - [ ] Reconnection:
-  - [ ] Detect connection loss: `ClientTransport::is_alive()` returns false when reader thread exits (already implemented via `alive` AtomicBool in `transport/mod.rs:74`)
-  - [ ] Store socket path and wakeup closure in `MuxClient` for reconnection:
-    - [ ] Add `socket_path: PathBuf` field to `MuxClient`
-    - [ ] Add `wakeup: Arc<dyn Fn() + Send + Sync>` field to `MuxClient`
-    - [ ] Update `MuxClient::connect()` to store both before creating transport
-  - [ ] Add `MuxClient::reconnect()` method:
-    - [ ] Set `self.transport = None` -- this drops the old `ClientTransport`, which: (1) closes send channel, (2) signals wake pipe, (3) joins reader thread, (4) closes self-pipe write end (Unix). All synchronous.
-    - [ ] Call `ClientTransport::connect(&self.socket_path, Arc::clone(&self.wakeup))`
-    - [ ] This performs a fresh Hello handshake (gets a new `ClientId`)
-    - [ ] `SetCapabilities` with `CAP_SNAPSHOT_PUSH` is sent inside `ClientTransport::connect()` already (seq 2) -- no additional work needed
-    - [ ] Collect pane IDs from `self.pane_snapshots.keys()` into a Vec before iterating (borrow checker)
-    - [ ] For each pane ID: call `subscribe_pane(pane_id)` which sends `Subscribe` RPC and caches the returned snapshot
-    - [ ] If tiered coalescing is implemented: re-send `SetPanePriority` for all panes (needs stored priority state in MuxClient -- add `pane_priorities: HashMap<PaneId, u8>` field)
-    - [ ] Store the new transport in `self.transport = Some(transport)`
-  - [ ] Reconnection policy: attempt every 500ms, max 3 attempts, then surface error to GUI
-    - [ ] Add `reconnect_with_backoff(&mut self) -> io::Result<()>` that loops with sleep
-    - [ ] On final failure, return `Err` -- caller (App event loop) decides what to do (show error bar, fall back to embedded mode, etc.)
-  - [ ] `pane_snapshots` cache survives reconnection -- it's a field on `MuxClient`, not on `ClientTransport`. UI shows last-known state during reconnection attempt.
-  - [ ] `dirty_panes` and `pending_refresh` state: clear `pending_refresh` on reconnect (stale). Mark all panes in `pane_snapshots` as dirty so the render loop fetches fresh snapshots post-reconnect.
-  - [ ] App event loop integration: check `backend.is_connected()` periodically (e.g., on timer or after failed operations), trigger reconnect. `MuxBackend::is_connected()` already has a default returning `true`, and `MuxClient` overrides it via `ClientTransport::is_alive()`.
+  - [x] Connection loss detection: `ClientTransport::is_alive()` + `MuxClient::is_connected()` (already implemented)
+  - [x] Store `socket_path: PathBuf` and `wakeup: Arc<dyn Fn()>` on `MuxClient` for reconnection
+  - [x] `MuxClient::reconnect()`: drops old transport (joins reader thread), establishes new connection (fresh Hello), re-subscribes to all cached panes, clears `pending_refresh`, marks all panes dirty
+  - [x] `MuxClient::reconnect_with_backoff(max_attempts)`: 500ms between attempts, returns last error on failure
+  - [x] `pane_snapshots` cache survives reconnection (field on `MuxClient`, not transport)
+  - [x] `dirty_panes` marked for all cached panes after reconnect
+  - [ ] App event loop integration: check `is_connected()` periodically, trigger reconnect (deferred to app integration)
+  - [ ] Re-send `SetPanePriority` after reconnect (needs stored priority in MuxClient — deferred to app integration)
 
 **Remaining tests:**
 
