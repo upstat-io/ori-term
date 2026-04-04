@@ -19,16 +19,8 @@ pub use scene::{
 };
 pub use shadow::Shadow;
 
-/// Shrinks a Vec if capacity vastly exceeds usage (> 4x len and > 4096 elements).
-///
-/// Standard buffer shrink discipline shared by `Scene` and `DamageTracker`.
-pub(crate) fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
-    let cap = v.capacity();
-    let len = v.len();
-    if cap > 4 * len && cap > 4096 {
-        v.shrink_to(len * 2);
-    }
-}
+// Re-export from oriterm_core for crate-internal use.
+pub(crate) use oriterm_core::maybe_shrink_vec;
 
 #[cfg(test)]
 mod tests;

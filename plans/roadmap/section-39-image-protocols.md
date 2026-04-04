@@ -29,7 +29,7 @@ sections:
 
 # Section 39: Image Protocols
 
-**Status:** In Progress (39.1-39.4 complete, 39.5 in-progress with daemon items deferred)
+**Status:** In Progress (39.1-39.4 complete, 39.5 in-progress — all remaining items blocked-by:34 daemon mode)
 **Goal:** Display images inline in the terminal via Kitty Graphics Protocol, Sixel, and iTerm2 image protocol. GPU-accelerated compositing with configurable z-ordering (above or below text), animation support, and memory-managed image cache with eviction. This is a must-have feature — every modern terminal except Alacritty supports at least one image protocol.
 
 **Crate:** `oriterm_core` (image storage, protocol parsing, image decode), `oriterm` (GPU rendering in `oriterm/src/gpu/`, texture management)
@@ -496,14 +496,14 @@ Render cached images as GPU textures composited into the terminal frame.
   - [x] `opacity: f32` — for animation fade transitions (default 1.0)
 - [x] In `Term::renderable_content_into()`: query `self.image_cache().placements_in_viewport()`, convert `StableRowIndex` to viewport pixel positions, push into `out.images`
 - [x] Populate `out.image_data: Vec<(ImageId, Arc<Vec<u8>>, u32, u32)>` with `(id, pixel_data, width, height)` for all images referenced by visible placements. Always populate (not just on dirty) because viewport scrolling may bring previously off-screen images into view without `ImageCache::dirty` being set. The GPU layer's `ensure_uploaded()` deduplicates by `ImageId`. The `Arc` clone is cheap (refcount increment, no data copy).
-- [ ] `PaneSnapshot` extension: add `images: Vec<WirePlacement>` for daemon-mode rendering (with `WirePlacement` mirroring `RenderablePlacement` but using serializable types). **Note:** Daemon mode image support is a significant complexity multiplier (multi-megabyte payloads per snapshot). Recommended: defer daemon image support — get local image rendering working first, then extend to daemon mode in a follow-up.
+- [ ] `PaneSnapshot` extension: add `images: Vec<WirePlacement>` for daemon-mode rendering (with `WirePlacement` mirroring `RenderablePlacement` but using serializable types). **Note:** Daemon mode image support is a significant complexity multiplier (multi-megabyte payloads per snapshot). Recommended: defer daemon image support — get local image rendering working first, then extend to daemon mode in a follow-up. <!-- blocked-by:34 -->
 
 ### FrameInput bridge
 
 - [x] Add `images: Vec<RenderablePlacement>` field to `FrameInput` in `oriterm/src/gpu/frame_input/mod.rs`
 - [x] Add `image_data: Vec<(ImageId, Arc<Vec<u8>>, u32, u32)>` field to `FrameInput` — pixel data for GPU texture upload
 - [x] Add `images_dirty: bool` field to `FrameInput` — propagated from `RenderableContent`
-- [ ] In `extract_frame_from_snapshot()` in `oriterm/src/gpu/extract/from_snapshot/mod.rs`: convert `WirePlacement` to `RenderablePlacement` and populate `frame.images`. For daemon mode, `WirePlacement` must carry pixel data (serialized) since the daemon has the image cache, not the client.
+- [ ] In `extract_frame_from_snapshot()` in `oriterm/src/gpu/extract/from_snapshot/mod.rs`: convert `WirePlacement` to `RenderablePlacement` and populate `frame.images`. For daemon mode, `WirePlacement` must carry pixel data (serialized) since the daemon has the image cache, not the client. <!-- blocked-by:34 -->
 
 ### Image texture management
 
@@ -652,17 +652,17 @@ Render cached images as GPU textures composited into the terminal frame.
 - [x] `window_renderer/mod.rs` — `WindowRenderer`: add `image_texture_cache`, `image_instance_buffer` fields
 - [x] `window_renderer/render.rs` — `render_frame()`: add image draw passes (below-text and above-text)
 - [x] `frame_input/mod.rs` — `FrameInput`: add `images`, `image_data`, `images_dirty` fields
-- [ ] `extract/from_snapshot/mod.rs` — `extract_frame_from_snapshot()`: convert `WirePlacement` to `RenderablePlacement` <!-- deferred: daemon image support -->
+- [ ] `extract/from_snapshot/mod.rs` — `extract_frame_from_snapshot()`: convert `WirePlacement` to `RenderablePlacement` <!-- blocked-by:34 -->
 - [x] `prepared_frame/mod.rs` — add `image_quads_below`, `image_quads_above` fields
 - [x] `mod.rs` — add `pub mod image_render;`
 
 **oriterm_mux changes** (`oriterm_mux/src/`):
-- [ ] `protocol/snapshot.rs` — `PaneSnapshot`: add `images: Vec<WirePlacement>` field; add `WirePlacement` struct <!-- deferred: daemon image support -->
-- [ ] Snapshot extraction: include image placements when serializing pane state for daemon mode <!-- deferred: daemon image support -->
+- [ ] `protocol/snapshot.rs` — `PaneSnapshot`: add `images: Vec<WirePlacement>` field; add `WirePlacement` struct <!-- blocked-by:34 -->
+- [ ] Snapshot extraction: include image placements when serializing pane state for daemon mode <!-- blocked-by:34 -->
 
 ### Completion checklist
 
-- [ ] All 39.1–39.5 items complete (39.5 has 2 deferred daemon-mode items)
+- [ ] All 39.1–39.5 items complete (39.5 has daemon-mode items blocked-by:34)
 - [x] Kitty Graphics Protocol: transmit, place, delete, animate, query, response
 - [x] Sixel: decode and render legacy sixel images, HLS palette support
 - [x] iTerm2: `imgcat`-compatible inline image display, all sizing modes
@@ -678,7 +678,7 @@ Render cached images as GPU textures composited into the terminal frame.
 - [x] Alt screen: image caches swap with grid on alt screen enter/exit
 - [x] RIS: full reset clears all image caches
 - [x] Tab close: image resources cleaned up (Drop-based)
-- [ ] Daemon mode: images included in `PaneSnapshot` for remote rendering <!-- deferred: daemon image support -->
+- [ ] Daemon mode: images included in `PaneSnapshot` for remote rendering <!-- blocked-by:34 -->
 - [x] `./build-all.sh` — builds cleanly
 - [x] `./test-all.sh` — all image protocol tests pass
 - [x] `./clippy-all.sh` — no warnings

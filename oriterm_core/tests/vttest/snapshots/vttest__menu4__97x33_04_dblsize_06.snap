@@ -1,0 +1,33 @@
+---
+source: oriterm_core/tests/vttest/menu4.rs
+expression: text
+---
+Exactly half of the box should remain. Push <RETURN>                                             
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+┌──────────────────────────────────────┐                                                         
+┌──────────────────────────────────────┐                                                         
+│                                       │                                                        
+│                                       │                                                        
+│ * The mad programmer strikes again *  │                                                        
+│ * The mad programmer strikes again *  │                                                        
+│                                      │                                                         
+│                                      │                                                         
+└──────────────────────────────────────┘                                                         
+└──────────────────────────────────────┘

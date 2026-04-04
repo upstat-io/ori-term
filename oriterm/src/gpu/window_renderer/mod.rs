@@ -255,10 +255,19 @@ impl WindowRenderer {
         .with_terminal_collection(&self.font_collection)
     }
 
-    /// Glyph atlas for cache statistics.
-    #[allow(dead_code, reason = "atlas access for diagnostics and Section 6")]
+    /// Monochrome glyph atlas.
     pub fn atlas(&self) -> &GlyphAtlas {
         &self.atlas
+    }
+
+    /// Subpixel glyph atlas.
+    pub fn subpixel_atlas(&self) -> &GlyphAtlas {
+        &self.subpixel_atlas
+    }
+
+    /// Color glyph atlas (emoji).
+    pub fn color_atlas(&self) -> &GlyphAtlas {
+        &self.color_atlas
     }
 
     /// UI font sizes registry (GPU-test accessor).

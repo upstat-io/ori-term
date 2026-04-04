@@ -86,7 +86,6 @@ oriterm      → oriterm_core, oriterm_ui, oriterm_mux (application shell)
 ### Tabs & Window Chrome
 - Tab reordering with smooth animation
 - Tab tear-off into new windows and merge back (Chrome-style drag)
-- Tab hover preview — scaled-down live terminal thumbnail via offscreen render targets
 - Bell indicator on inactive tabs
 - GPU-rendered context menus with shadows and rounded corners
 - Settings overlay with color scheme selector
@@ -94,17 +93,18 @@ oriterm      → oriterm_core, oriterm_ui, oriterm_mux (application shell)
 - Frameless drag, double-click to maximize, Aero Snap on Windows
 
 ### Split Panes
-- Horizontal (Ctrl+Shift+D) and vertical (Ctrl+Shift+E) splits
+- Split right (Ctrl+Shift+O) and split down (Ctrl+Shift+E)
 - Immutable split tree with structural sharing via Arc
-- Spatial navigation — Alt+Arrow to focus by direction, Alt+[/] to cycle
-- Drag-to-resize dividers with 5px hit zone, keyboard resize with Alt+Shift+Arrow
-- Equalize pane sizes, zoom/unzoom (Ctrl+Shift+Z)
-- Undo/redo split history
+- Spatial navigation — Ctrl+Alt+Arrow to focus by direction
+- Drag-to-resize dividers, keyboard resize with Ctrl+Alt+Shift+Arrow
+- Equalize pane sizes (Ctrl+Shift+=), zoom/unzoom (Ctrl+Shift+Z)
+- Undo/redo split history (Ctrl+Shift+U / Ctrl+Shift+Y)
+- Close pane (Ctrl+Shift+W)
 - Focus border — accent-colored on active, dimming on inactive
 - Per-pane render cache with dirty checking
 
 ### Floating Panes
-- Toggle floating overlay (Ctrl+Shift+F)
+- Toggle floating overlay (Ctrl+Shift+P)
 - Float-tile toggle (Ctrl+Shift+G) — move panes between floating and tiled
 - Mouse-driven drag and resize with snap-to-edge
 - Z-ordering with drop shadows
@@ -121,15 +121,15 @@ oriterm      → oriterm_core, oriterm_ui, oriterm_mux (application shell)
 - Paste confirmation dialog for large/multi-line pastes (configurable)
 
 ### Mark Mode
-- Modal navigation toggled with Ctrl+Shift+Space
-- Cursor movement — hjkl, arrows, word/line motions, page scrolling
-- Visual selection — character, word, line modes
-- Yank (y) to copy selected text
-- Search integration — /, ? forward/backward with n, N to cycle
-- zz to center view
+- Modal navigation toggled with Ctrl+Shift+M
+- Cursor movement — arrows, Ctrl+Left/Right for words, Home/End for line, Ctrl+Home/End for buffer
+- Extend selection with Shift+movement keys
+- Enter to copy selection and exit, Escape to cancel
+- Ctrl+A to select entire buffer
+- PageUp/PageDown for page scrolling, auto-scrolls to keep cursor visible
 
 ### Search
-- Ctrl+F overlay with match count and navigation
+- Ctrl+Shift+F overlay with match count and navigation
 - Plain text and regex search modes
 - Highlighted matches across viewport and scrollback
 - Next/previous keyboard navigation
@@ -141,17 +141,17 @@ oriterm      → oriterm_core, oriterm_ui, oriterm_mux (application shell)
 
 ### Color & Theming
 - 24-bit truecolor, 256-color palette, 16-color ANSI
-- 100+ built-in themes — Catppuccin, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, and more
+- 50+ built-in themes — Catppuccin, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, and more
 - TOML theme files with hot-reload via file watcher
 - Light/dark auto-switch following system appearance
-- Import from iTerm2, Ghostty, and base16 formats
+- Import from iTerm2, Ghostty, and base16 formats (via included converter tools)
 - Minimum contrast enforcement (WCAG 2.0 luminance-based)
 
 ### Configuration
 - TOML config — fonts, colors, keybindings, behavior, window settings
 - Hot reload — file watcher triggers live config updates
 - Configurable keybindings with action binding
-- Font size zoom — Ctrl+=/Ctrl+-
+- Font size zoom — Ctrl+=/Ctrl+-, Ctrl+0 to reset
 
 ### Shell Integration
 - Shell detection — bash, zsh, fish, PowerShell
@@ -188,6 +188,7 @@ These features are planned but not yet implemented:
 - **Remote domains** — SSH and WSL shell spawning with mixed local+remote panes
 - **Remote attach** — TCP+TLS transport, predictive local echo (Mosh-style), bandwidth-aware rendering
 - **TUI client** — terminal-in-terminal multiplexer (tmux replacement) connecting to the same daemon
+- **Tab hover preview** — scaled-down live terminal thumbnail via offscreen render targets
 - **Vi mode** — full vi-style navigation with count prefixes, f/t motions, bracket matching
 - **Hints / Quick select** — vimium-style pattern matching for URLs, paths, git hashes with keyboard labels
 - **Command palette** — Ctrl+Shift+P fuzzy-search action picker

@@ -235,12 +235,13 @@ pub fn prepare_frame_shaped_into(
         fill_frame_shaped(input, atlas, shaped, out, origin, cursor_opacity);
     }
 
-    // Update selection snapshot for next frame's damage tracking.
+    // Update selection and blink snapshots for next frame's damage tracking.
     let num_rows = input.rows();
     out.prev_selection_snapshot = input
         .selection
         .as_ref()
         .and_then(|s| s.damage_snapshot(num_rows));
+    out.prev_text_blink_opacity = input.text_blink_opacity;
 }
 
 /// Cursor-blink-only fast path: rebuild only cursor instances.

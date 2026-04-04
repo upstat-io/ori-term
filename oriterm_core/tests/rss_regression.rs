@@ -4,27 +4,70 @@
 //! to verify memory plateaus. Placed in a separate integration test binary
 //! so process memory is isolated from other test suites.
 //!
-//! Linux-only: reads `/proc/self/statm` for RSS measurement. Other
-//! platforms skip these tests at compile time.
+//! Cross-platform: Linux reads `/proc/self/statm`, macOS uses `task_info`,
+//! Windows uses `GetProcessMemoryInfo`. Other platforms skip at compile time.
 
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
 use oriterm_core::{Term, Theme, VoidListener};
 
-/// Read the current process RSS in bytes from `/proc/self/statm`.
+/// Read the current process RSS in bytes.
 ///
-/// Field layout: `size resident shared text lib data dt` (pages).
-/// Page size is 4096 on x86_64 Linux (the only Linux target we build for).
+/// Platform-specific: Linux reads `/proc/self/statm`, macOS uses Mach
+/// `task_info`, Windows uses `GetProcessMemoryInfo`.
 fn rss_bytes() -> usize {
-    let statm =
-        std::fs::read_to_string("/proc/self/statm").expect("failed to read /proc/self/statm");
-    let resident_pages: usize = statm
-        .split_whitespace()
-        .nth(1)
-        .expect("missing resident field")
-        .parse()
-        .expect("non-numeric resident field");
-    resident_pages * 4096
+    platform_rss().expect("failed to read process RSS")
+}
+
+#[cfg(target_os = "linux")]
+fn platform_rss() -> Option<usize> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let resident_pages: usize = statm.split_whitespace().nth(1)?.parse().ok()?;
+    Some(resident_pages * 4096)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_rss() -> Option<usize> {
+    #[allow(unsafe_code, deprecated)]
+    unsafe {
+        let mut info: libc::mach_task_basic_info_data_t = std::mem::zeroed();
+        let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
+        let kr = libc::task_info(
+            libc::mach_task_self_,
+            libc::MACH_TASK_BASIC_INFO,
+            std::ptr::addr_of_mut!(info).cast(),
+            &mut count,
+        );
+        if kr == libc::KERN_SUCCESS {
+            Some(info.resident_size as usize)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(windows)]
+fn platform_rss() -> Option<usize> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    #[allow(unsafe_code)]
+    unsafe {
+        let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+        counters.cb = size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        let ok = GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters,
+            size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        );
+        if ok != 0 {
+            Some(counters.WorkingSetSize)
+        } else {
+            None
+        }
+    }
 }
 
 fn make_term(scrollback: usize) -> Term<VoidListener> {
@@ -63,17 +106,24 @@ fn rss_plateaus_under_sustained_output() {
 
     let rss_after_sustained = rss_bytes();
 
-    // RSS growth should be minimal — under 2 MB. The scrollback is bounded
-    // (1000 rows), so old rows are recycled. Any significant growth indicates
-    // a leak (unbounded buffer, stale cache, etc.).
+    // RSS growth should be minimal. The scrollback is bounded (1000 rows),
+    // so old rows are recycled. Any significant growth indicates a leak.
+    // macOS threshold is higher (8 MB) because its zone allocator retains
+    // freed pages more aggressively than Linux's mmap/munmap.
     let growth = rss_after_sustained.saturating_sub(rss_after_warmup);
+    let threshold = if cfg!(target_os = "macos") {
+        8 * MB
+    } else {
+        2 * MB
+    };
     assert!(
-        growth < 2 * MB,
+        growth < threshold,
         "RSS grew {:.1} MB after 100k lines (warmup: {:.1} MB, after: {:.1} MB). \
-         Expected < 2 MB growth with bounded scrollback.",
+         Expected < {:.0} MB growth with bounded scrollback.",
         growth as f64 / MB as f64,
         rss_after_warmup as f64 / MB as f64,
         rss_after_sustained as f64 / MB as f64,
+        threshold as f64 / MB as f64,
     );
 }
 

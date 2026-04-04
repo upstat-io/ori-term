@@ -1,0 +1,22 @@
+---
+source: oriterm_core/tests/vttest/menu5.rs
+expression: s.grid_text()
+---
+                                                                                
+                                                                                
+         Menu 5: Keyboard Tests                                                 
+                                                                                
+         Choose test type:                                                      
+                                                                                
+          0. Exit                                                               
+          1. LED Lights                                                         
+          2. Auto Repeat                                                        
+          3. KeyBoard Layout                                                    
+          4. Cursor Keys                                                        
+          5. Numeric Keypad                                                     
+          6. Editing Keypad                                                     
+          7. Function Keys                                                      
+          8. AnswerBack                                                         
+          9. Control Keys                                                       
+                                                                                
+          Enter choice number (0 - 9):

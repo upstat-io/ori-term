@@ -1,7 +1,7 @@
 ---
 section: 9
 title: Selection & Clipboard
-status: in-progress
+status: complete
 reviewed: true
 last_verified: "2026-03-29"
 tier: 3
@@ -21,7 +21,7 @@ sections:
     status: complete
   - id: "9.5"
     title: Copy Operations
-    status: in-progress
+    status: complete
   - id: "9.6"
     title: Paste Operations
     status: complete
@@ -30,7 +30,7 @@ sections:
     status: complete
   - id: "9.8"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 09: Selection & Clipboard
@@ -309,7 +309,7 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
     - [x] Underline styles (single, double, curly/wavy, dotted, dashed via `text-decoration`)
     - [x] Strikethrough rendering (`text-decoration:line-through`)
     - [x] Dim/faint rendering (`opacity:0.5`)
-    - [ ] Underline color (`text-decoration-color`) <!-- blocked-by:38 — requires colored underline support from Section 38 -->
+    - [x] Underline color (`text-decoration-color`) — reads `CellExtra::underline_color`, resolves through palette
     - [x] HIDDEN cells (SGR 8) skipped in HTML output
     - [x] HTML entity escaping (`&`, `<`, `>`, `"`, `'`) via `push_html_escaped()`
     - [x] INVERSE (SGR 7) cells: fg/bg swapped before style resolution
@@ -465,7 +465,7 @@ Visual highlighting of selected text during GPU rendering.
 
 ## 9.8 Section Completion (verified 2026-03-29 -- 348 total tests, all pass)
 
-- [ ] All 9.1-9.7 items complete *(blocked: 9.5 has one item pending Section 38 — underline color in HTML copy)*
+- [x] All 9.1-9.7 items complete
 - [x] `cargo test -p oriterm_core --target x86_64-pc-windows-gnu` — selection model tests pass (verified 2026-03-29 -- 170 selection + 55 paste)
 - [x] `cargo test -p oriterm --target x86_64-pc-windows-gnu` — clipboard + mouse selection tests pass (verified 2026-03-29 -- mouse(57), mark_mode(52), clipboard(8), frame_input(26), prepare(158), dirty_skip(13), snapshot_grid(14))
 - [x] `cargo clippy --workspace --target x86_64-pc-windows-gnu` — no warnings (verified 2026-03-29)

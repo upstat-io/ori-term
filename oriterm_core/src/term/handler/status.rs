@@ -137,6 +137,12 @@ impl<T: EventListener> Term<T> {
                 let response = format!("\x1b[>0;{version};1c");
                 self.event_listener.send_event(Event::PtyWrite(response));
             }
+            Some('=') => {
+                // DA3: unit ID. DCS response: DCS ! | XXXXXXXX ST.
+                // Eight zero digits as unit ID (same as xterm default).
+                let response = "\x1bP!|00000000\x1b\\".to_string();
+                self.event_listener.send_event(Event::PtyWrite(response));
+            }
             Some(c) => debug!("Unsupported DA intermediate '{c}'"),
         }
     }

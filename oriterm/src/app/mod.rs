@@ -40,16 +40,13 @@ mod tab_drag;
 mod tab_management;
 #[cfg(test)]
 pub(crate) mod test_support;
-#[allow(
-    dead_code,
-    reason = "incremental pipeline — delivery loop wired in OverlayManager migration"
-)]
 mod widget_pipeline;
 pub(crate) mod window_context;
 mod window_management;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 use winit::keyboard::ModifiersState;
@@ -85,6 +82,7 @@ use oriterm_ui::theme::UiTheme;
 /// Wraps the concrete `EventLoopProxy` behind a callback so logic layers
 /// don't depend on winit's concrete type. The concrete binding is set up
 /// in the constructors from `EventLoopProxy::send_event`.
+#[derive(Clone)]
 pub(crate) struct EventSender(Arc<dyn Fn(TermEvent) + Send + Sync>);
 
 impl EventSender {
@@ -176,6 +174,13 @@ pub(crate) struct App {
     // Cached from the last extracted frame to gate blink timer in about_to_wait.
     blinking_active: bool,
 
+    // Generation counter for blink wakeup thread deduplication.
+    // 0 = no pending thread. Nonzero = generation of the pending thread.
+    // CAS ensures stale threads don't clear the flag after a reset+respawn.
+    blink_wakeup_gen: Arc<AtomicU64>,
+    // Monotonic generation counter (main thread only, never zero).
+    next_blink_gen: u64,
+
     // Last cursor position (line, column) for blink-reset-on-move detection.
     // Compared per frame; reset blink when the cursor moves due to PTY output.
     last_cursor_pos: (usize, usize),
@@ -243,6 +248,11 @@ pub(crate) struct App {
 
     // Performance counters logged periodically.
     perf: PerfStats,
+
+    // Debug performance overlay toggle (Ctrl+Shift+F12).
+    debug_overlay_enabled: bool,
+    // EWMA-smoothed FPS for the debug overlay display.
+    debug_fps: f32,
 }
 
 impl App {
@@ -368,15 +378,7 @@ impl App {
 
         // Update UI chrome theme (tab bar, status bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
-        for ctx in self.windows.values_mut() {
-            ctx.tab_bar.apply_theme(&self.ui_theme);
-            ctx.status_bar.apply_theme(&self.ui_theme);
-            ctx.pane_cache.invalidate_all();
-            ctx.text_cache.clear();
-            ctx.root.invalidation_mut().invalidate_all();
-            ctx.root.damage_mut().reset();
-            ctx.root.mark_dirty();
-        }
+        self.apply_theme_to_chrome();
     }
 
     /// Read the terminal mode, locking briefly.

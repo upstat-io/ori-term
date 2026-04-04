@@ -1,0 +1,24 @@
+---
+source: oriterm_core/tests/vttest/menu5.rs
+expression: text
+---
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+                                                                                                 
+Test of the AUTO REPEAT feature                                                                  
+                                                                                                 
+Hold down an alphanumeric key for a while, then push RETURN.                                     
+Auto Repeat OFF: a                                                                               
+OK.                                                                                              
+                                                                                                 
+Hold down an alphanumeric key for a while, then push RETURN.                                     
+Auto Repeat ON: a                                                                                
+Not enough characters read.                                                                      
+                                                                                                 
+Push <RETURN>

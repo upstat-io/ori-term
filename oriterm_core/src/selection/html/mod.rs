@@ -330,6 +330,7 @@ struct CellStyle {
     bold: bool,
     italic: bool,
     underline: UnderlineKind,
+    underline_color: Option<Rgb>,
     strikethrough: bool,
     dim: bool,
 }
@@ -375,6 +376,11 @@ impl CellStyle {
             } else {
                 UnderlineKind::None
             },
+            underline_color: cell
+                .extra
+                .as_ref()
+                .and_then(|e| e.underline_color)
+                .map(|c| ctx.palette.resolve(c)),
             strikethrough: flags.contains(CellFlags::STRIKETHROUGH),
             dim: flags.contains(CellFlags::DIM),
         }
@@ -387,6 +393,7 @@ impl CellStyle {
             && !self.bold
             && !self.italic
             && self.underline == UnderlineKind::None
+            && self.underline_color.is_none()
             && !self.strikethrough
             && !self.dim
     }
@@ -431,6 +438,13 @@ impl CellStyle {
             buf.push_str("text-decoration:");
             buf.push_str(dec);
             buf.push(';');
+            if let Some(uc) = self.underline_color {
+                let _ = write!(
+                    buf,
+                    "text-decoration-color:#{:02x}{:02x}{:02x};",
+                    uc.r, uc.g, uc.b
+                );
+            }
         }
     }
 }

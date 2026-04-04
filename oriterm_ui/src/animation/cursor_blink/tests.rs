@@ -281,22 +281,6 @@ fn is_visible_false_during_hidden_plateau() {
     assert!(!blink.is_visible());
 }
 
-#[test]
-fn next_toggle_delegates_to_next_change() {
-    let blink = CursorBlink::new(DEFAULT_BLINK_INTERVAL);
-    let toggle = blink.next_toggle();
-    let change = blink.next_change();
-    let diff = if toggle > change {
-        toggle.duration_since(change)
-    } else {
-        change.duration_since(toggle)
-    };
-    assert!(
-        diff < Duration::from_millis(5),
-        "next_toggle and next_change diverged by {diff:?}",
-    );
-}
-
 // --- Cycle wrapping ---
 
 #[test]

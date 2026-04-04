@@ -56,17 +56,8 @@ pub(crate) fn srgb_f32_to_linear(s: f32) -> f32 {
     }
 }
 
-/// Shrink a Vec if capacity vastly exceeds usage (> 4x len and > 4096 elements).
-///
-/// Applies the standard buffer shrink discipline to prevent unbounded growth
-/// of reused scratch buffers.
-pub(crate) fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
-    let cap = v.capacity();
-    let len = v.len();
-    if cap > 4 * len && cap > 4096 {
-        v.shrink_to(len * 2);
-    }
-}
+// Re-export from oriterm_core for crate-internal use.
+pub(crate) use oriterm_core::maybe_shrink_vec;
 
 #[cfg(all(test, feature = "gpu-tests"))]
 mod pipeline_tests;

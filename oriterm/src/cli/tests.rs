@@ -572,7 +572,29 @@ fn new_window_with_subcommand_parses() {
     assert!(cli.command.is_some());
 }
 
-// ── --embedded flag ──
+// ── --new-tab flag ──
+
+#[test]
+fn new_tab_flag_parses() {
+    let cli = Cli::try_parse_from(["oriterm", "--new-tab"]).unwrap();
+    assert!(cli.new_tab);
+}
+
+#[test]
+fn new_tab_flag_defaults_to_false() {
+    let cli = Cli::try_parse_from(["oriterm"]).unwrap();
+    assert!(!cli.new_tab);
+}
+
+#[test]
+fn completions_contain_new_tab_flag() {
+    let output = generate_completions(Shell::Bash);
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("new-tab"),
+        "bash completions should mention --new-tab flag"
+    );
+}
 
 // ── --embedded flag ──
 

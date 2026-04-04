@@ -60,7 +60,7 @@ Binary protocol for communication between the mux daemon and GUI clients. Design
 - [x] Transport: Unix domain socket (Linux/macOS), named pipe (Windows) via `oriterm_ipc` crate (verified 2026-03-29)
 - [x] `ProtocolCodec` with streaming decode, forward-compat (skips unknown msg_type) (verified 2026-03-29)
 - [x] Frame encode/decode roundtrip tests: 1060+ lines in `oriterm_mux/src/protocol/tests.rs` (verified 2026-03-29)
-- [x] Wire snapshot types (`WireCell`, `WireCursor`, etc.) in `oriterm_mux/src/protocol/snapshot.rs` (verified 2026-03-29)
+- [x] Wire snapshot types (`WireCell`, `WireCursor`, etc.) in `oriterm_mux/src/protocol/snapshot.rs` (verified 2026-03-29) <!-- unblocks:39.5 --><!-- unblocks:39.6 -->
 
 **Remaining hardening (genuinely not started):**
 - [ ] Magic bytes: `0x4F54` ("OT") in header -- not implemented (no magic field in current 10-byte header)

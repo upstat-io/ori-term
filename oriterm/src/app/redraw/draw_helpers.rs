@@ -1,4 +1,5 @@
-//! Draw helper methods for tab bar, overlays, and widget pipeline phases.
+//! Draw helper methods for tab bar, overlays, chrome rendering, and widget
+//! pipeline phases.
 //!
 //! Extracted from `mod.rs` to keep the module under the 500-line limit.
 
@@ -326,6 +327,48 @@ pub(super) fn phase_gate_widgets(
             Some(invalidation),
         );
         root.prepaint_overlay_widgets(&prepaint_bounds, ui_theme, now);
+    }
+}
+
+/// Resolve window opacity from surface alpha support and focus state.
+///
+/// Returns 1.0 when the surface doesn't support alpha (Vulkan Opaque on
+/// Windows), the focused opacity when focused, and the unfocused opacity
+/// otherwise.
+pub(super) fn resolve_palette_opacity(
+    surface_has_alpha: bool,
+    focused: bool,
+    config: &crate::config::Config,
+) -> f32 {
+    if !surface_has_alpha {
+        1.0
+    } else if focused {
+        config.window.effective_opacity()
+    } else {
+        config.window.effective_unfocused_opacity()
+    }
+}
+
+/// Threshold for blink opacity snap: above this the blink is fully visible,
+/// at or below it the blink is fully hidden. Used when smooth fade is disabled.
+pub(super) const BLINK_SNAP_THRESHOLD: f32 = 0.5;
+
+/// Minimum change in blink opacity between frames that triggers a full content
+/// cache re-render (avoids re-rendering for imperceptible sub-pixel changes).
+pub(super) const BLINK_OPACITY_EPSILON: f32 = 0.001;
+
+/// Compute final blink opacity from the raw animation intensity.
+///
+/// When `use_fade` is true, returns the raw intensity for a smooth fade
+/// effect. Otherwise snaps to binary (1.0 or 0.0) based on
+/// [`BLINK_SNAP_THRESHOLD`].
+pub(super) fn blink_opacity(raw: f32, use_fade: bool) -> f32 {
+    if use_fade {
+        raw
+    } else if raw > BLINK_SNAP_THRESHOLD {
+        1.0
+    } else {
+        0.0
     }
 }
 

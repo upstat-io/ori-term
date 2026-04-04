@@ -1350,3 +1350,157 @@ fn padding_zero_buffer_reused() {
     let expected_size = (PAGE_SIZE as usize + GLYPH_PADDING as usize) * 4;
     assert_eq!(atlas.padding_zeros_len(), expected_size);
 }
+
+// Heavy Unicode workload: CJK + emoji + combining marks filling a 240x80 grid.
+// Verifies the atlas handles mixed glyph sizes without exceeding 4 pages.
+
+#[test]
+fn stress_test_heavy_unicode_workload() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+
+    // Simulate a 240x80 grid with mixed content:
+    // - ASCII glyphs (8x14): ~60% of cells
+    // - CJK glyphs (16x14): ~30% of cells (double-width, so 15% of codepoints)
+    // - Combining marks (4x14): ~10% of cells (zero-width overlay)
+
+    let mut id: u16 = 0;
+    let mut inserted = 0u32;
+
+    // ASCII: 200 unique glyphs at 8x14 (printable ASCII + common symbols).
+    for _ in 0..200 {
+        let glyph = test_glyph(8, 14);
+        if atlas
+            .insert(test_key(id), &glyph, &gpu.device, &gpu.queue)
+            .is_some()
+        {
+            inserted += 1;
+        }
+        id += 1;
+    }
+
+    // CJK: 5,000 unique glyphs at 16x14 (CJK Unified Ideographs subset).
+    for _ in 0..5_000 {
+        let glyph = test_glyph(16, 14);
+        if atlas
+            .insert(test_key(id), &glyph, &gpu.device, &gpu.queue)
+            .is_some()
+        {
+            inserted += 1;
+        }
+        id += 1;
+    }
+
+    // Combining marks: 100 unique glyphs at 4x14 (diacritics, ZWJ overlays).
+    for _ in 0..100 {
+        let glyph = test_glyph(4, 14);
+        if atlas
+            .insert(test_key(id), &glyph, &gpu.device, &gpu.queue)
+            .is_some()
+        {
+            inserted += 1;
+        }
+        id += 1;
+    }
+
+    // All glyphs should have been inserted successfully.
+    assert_eq!(inserted, 5_300, "all glyphs should be inserted");
+    assert_eq!(atlas.len(), 5_300);
+
+    // A 240x80 grid worth of mixed glyphs should fit within 4 pages.
+    assert!(
+        atlas.page_count() <= 4,
+        "atlas should use at most 4 pages, got {}",
+        atlas.page_count(),
+    );
+}
+
+#[test]
+fn stress_test_color_emoji_atlas() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    // Color emoji use a separate atlas (Rgba8UnormSrgb, 4 bytes/pixel).
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Color);
+
+    // Emoji at 32x32 (typical rasterized size at 14px font).
+    // Each takes (32+1)x(32+1) = 1,089 pixels in the atlas.
+    // One 2048x2048 page = 4,194,304 pixels → ~3,852 emoji per page.
+    // 4 pages → ~15,408 emoji. Insert 1,000 to stress without overflow.
+    let mut inserted = 0u32;
+    for id in 0..1_000u16 {
+        let glyph = RasterizedGlyph {
+            width: 32,
+            height: 32,
+            bearing_x: 0,
+            bearing_y: 32,
+            advance: 32.0,
+            format: GlyphFormat::Color,
+            bitmap: vec![0xFF; 32 * 32 * 4],
+        };
+        if atlas
+            .insert(test_key(id), &glyph, &gpu.device, &gpu.queue)
+            .is_some()
+        {
+            inserted += 1;
+        }
+    }
+
+    assert_eq!(inserted, 1_000);
+    assert!(
+        atlas.page_count() <= 4,
+        "color atlas should use at most 4 pages, got {}",
+        atlas.page_count(),
+    );
+    assert_eq!(atlas.len(), 1_000);
+}
+
+#[test]
+fn stress_test_overflow_triggers_lru_eviction() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+
+    // Fill all 4 pages to capacity. Each page is 2048x2048 = 4M pixels.
+    // Using 64x64 glyphs + 1px padding = 65x65 = 4,225 pixels each.
+    // One page fits ~992 such glyphs. 4 pages → ~3,968 glyphs.
+    // Insert 4,000 to trigger eviction on the 4th page.
+    let mut id: u16 = 0;
+    for _ in 0..4_000 {
+        let glyph = test_glyph(64, 64);
+        atlas.insert(test_key(id), &glyph, &gpu.device, &gpu.queue);
+        id += 1;
+    }
+
+    // Atlas should have evicted the LRU page when it ran out of space.
+    assert_eq!(atlas.page_count(), 4, "should stay at 4 pages (MAX_PAGES)");
+
+    // Touch recent glyphs (last batch) — they should still be cached.
+    atlas.begin_frame();
+    let recent_key = test_key(id - 1);
+    assert!(
+        atlas.lookup(recent_key).is_some(),
+        "recently inserted glyph should survive eviction"
+    );
+
+    // Oldest glyphs (first batch) may have been evicted from the LRU page.
+    // This is expected behavior — the atlas uses LRU eviction to stay bounded.
+    let total_cached = atlas.len();
+    assert!(
+        total_cached < 4_000,
+        "some glyphs should have been evicted (cached: {total_cached})"
+    );
+    assert!(
+        total_cached > 2_000,
+        "most glyphs should survive (cached: {total_cached})"
+    );
+}

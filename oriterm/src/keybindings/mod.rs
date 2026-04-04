@@ -104,6 +104,8 @@ pub(crate) enum Action {
     RedoSplit,
     /// Open the settings overlay.
     OpenSettings,
+    /// Toggle the debug performance overlay.
+    ToggleDebugOverlay,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -177,6 +179,7 @@ impl Action {
             Self::UndoSplit => "UndoSplit",
             Self::RedoSplit => "RedoSplit",
             Self::OpenSettings => "OpenSettings",
+            Self::ToggleDebugOverlay => "ToggleDebugOverlay",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }
