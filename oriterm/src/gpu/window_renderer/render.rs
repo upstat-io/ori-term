@@ -24,6 +24,110 @@ use super::{SurfaceError, WindowRenderer};
 use crate::gpu::pipelines::GpuPipelines;
 
 impl WindowRenderer {
+    /// Render using the cached content path to an offscreen target.
+    ///
+    /// Exercises the same code path as production `render_cached`: renders
+    /// content to the offscreen content cache texture, then copies to the
+    /// output target. The `target_width × target_height` may differ from
+    /// the prepared viewport — this tests the exact mismatch scenario that
+    /// occurs during vertical window resize (surface reconfigured to a new
+    /// size between `prepare()` and `render_to_surface()`).
+    #[cfg(all(test, feature = "gpu-tests"))]
+    pub fn render_frame_cached(
+        &mut self,
+        gpu: &GpuState,
+        pipelines: &GpuPipelines,
+        target_width: u32,
+        target_height: u32,
+        content_changed: bool,
+    ) {
+        let device = &gpu.device;
+        let queue = &gpu.queue;
+        let vp = self.prepared.viewport;
+
+        // Rebuild atlas bind groups if any atlas texture grew since last render.
+        self.rebuild_stale_atlas_bind_groups(device, &pipelines.atlas_layout);
+
+        // Update screen_size uniform.
+        self.uniform_buffer
+            .write_screen_size(queue, vp.width as f32, vp.height as f32);
+
+        // Ensure content cache matches the *prepared* viewport (not the target).
+        self.ensure_content_cache(device, vp.width, vp.height, gpu);
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("frame_encoder"),
+        });
+
+        if content_changed {
+            self.upload_instance_buffers(device, queue);
+            self.upload_image_instances(device, queue);
+
+            let cache_view = self
+                .content_cache_view
+                .as_ref()
+                .expect("cache just ensured");
+            let clear = self.clear_color();
+            {
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("content_cache_pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: cache_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(clear),
+                            store: StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    ..Default::default()
+                });
+                Self::record_cached_content_passes(pipelines, self, &mut pass);
+            }
+        } else {
+            self.upload_overlay_and_cursor_buffers(device, queue);
+        }
+
+        // Copy cached content to the output target. Clamp the copy
+        // extent to the destination size — same fix as production
+        // render_cached, preventing overrun when the target is smaller
+        // than the prepared viewport.
+        let output = gpu.create_copy_dst_target(target_width, target_height);
+        let cache_tex = self.content_cache.as_ref().expect("cache ensured");
+        let copy_w = vp.width.min(target_width);
+        let copy_h = vp.height.min(target_height);
+        encoder.copy_texture_to_texture(
+            cache_tex.as_image_copy(),
+            output.texture().as_image_copy(),
+            Extent3d {
+                width: copy_w,
+                height: copy_h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Draw overlays and cursor on top.
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("overlay_cursor_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: output.view(),
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            });
+            Self::record_overlay_pass(pipelines, self, &mut pass);
+            Self::record_cursor_pass(pipelines, self, &mut pass);
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
     /// Upload the stored prepared frame to the GPU and execute draw calls.
     ///
     /// Reads from `self.prepared` (filled by [`prepare`](Self::prepare)).
@@ -226,14 +330,20 @@ impl WindowRenderer {
             self.upload_overlay_and_cursor_buffers(device, queue);
         }
 
-        // Copy cached content to surface texture.
+        // Copy cached content to surface texture. Clamp the copy extent
+        // to the destination size — the surface may have been reconfigured
+        // to a smaller size between prepare() and render_to_surface()
+        // during interactive window resize.
         let cache_tex = self.content_cache.as_ref().expect("cache ensured");
+        let dst_size = output.texture.size();
+        let copy_w = vp.width.min(dst_size.width);
+        let copy_h = vp.height.min(dst_size.height);
         encoder.copy_texture_to_texture(
             cache_tex.as_image_copy(),
             output.texture.as_image_copy(),
             Extent3d {
-                width: vp.width,
-                height: vp.height,
+                width: copy_w,
+                height: copy_h,
                 depth_or_array_layers: 1,
             },
         );

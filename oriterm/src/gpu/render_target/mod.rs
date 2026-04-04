@@ -38,6 +38,12 @@ impl RenderTarget {
         &self.view
     }
 
+    /// Returns the backing texture for copy operations.
+    #[cfg(all(test, feature = "gpu-tests"))]
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.texture
+    }
+
     /// Returns the width in pixels.
     pub fn width(&self) -> u32 {
         self.width
@@ -103,6 +109,39 @@ impl GpuState {
         reason = "used by tests now, production consumers in later sections"
     )]
     pub fn create_render_target(&self, width: u32, height: u32) -> RenderTarget {
+        self.create_render_target_with_usage(
+            width,
+            height,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        )
+    }
+
+    /// Create a render target that can receive `copy_texture_to_texture`.
+    ///
+    /// Includes `COPY_DST` usage, simulating a surface texture that is the
+    /// destination of the content cache copy in `render_cached`.
+    #[cfg(all(test, feature = "gpu-tests"))]
+    pub fn create_copy_dst_target(&self, width: u32, height: u32) -> RenderTarget {
+        self.create_render_target_with_usage(
+            width,
+            height,
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+        )
+    }
+
+    /// Create an offscreen render target with custom usage flags.
+    #[allow(
+        dead_code,
+        reason = "used by tests now, production consumers in later sections"
+    )]
+    fn create_render_target_with_usage(
+        &self,
+        width: u32,
+        height: u32,
+        usage: wgpu::TextureUsages,
+    ) -> RenderTarget {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen_render_target"),
             size: wgpu::Extent3d {
@@ -114,7 +153,7 @@ impl GpuState {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.render_format(),
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage,
             view_formats: &[],
         });
 

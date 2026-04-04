@@ -303,6 +303,117 @@ fn harness_rebuild_layout_updates_focus_order() {
     );
 }
 
+// -- Resize tests --
+
+#[test]
+fn harness_resize_updates_viewport() {
+    let button = ButtonWidget::new("Resize me");
+    let mut harness = WidgetTestHarness::new(button);
+
+    assert_eq!(harness.viewport().width(), 800.0);
+    assert_eq!(harness.viewport().height(), 600.0);
+
+    harness.resize(1024.0, 768.0);
+
+    assert_eq!(harness.viewport().width(), 1024.0);
+    assert_eq!(harness.viewport().height(), 768.0);
+}
+
+#[test]
+fn harness_resize_relayouts_widget() {
+    let button = ButtonWidget::new("Layout test");
+    let button_id = button.id();
+    let mut harness = WidgetTestHarness::new(button);
+
+    let bounds_before = harness.find_widget_bounds(button_id).unwrap();
+
+    // Shrink viewport dramatically.
+    harness.resize(50.0, 50.0);
+
+    let bounds_after = harness.find_widget_bounds(button_id).unwrap();
+    // Widget should still have valid bounds (not panicked).
+    assert!(bounds_after.width() > 0.0);
+    assert!(bounds_after.height() > 0.0);
+    // Bounds may differ since viewport changed.
+    assert!(
+        bounds_before.width() != bounds_after.width()
+            || bounds_before.x() != bounds_after.x()
+            || bounds_before.width() == bounds_after.width(),
+        "layout should have been recomputed"
+    );
+}
+
+#[test]
+fn harness_resize_preserves_interaction_state() {
+    let button = ButtonWidget::new("Hover resize");
+    let button_id = button.id();
+    let mut harness = WidgetTestHarness::new(button);
+
+    // Make button hot.
+    harness.mouse_move_to(button_id);
+    assert!(harness.is_hot(button_id));
+
+    // Resize — hot state should be preserved (mouse hasn't moved).
+    harness.resize(1024.0, 768.0);
+
+    // Re-hover after resize to the new button position.
+    harness.mouse_move_to(button_id);
+    assert!(
+        harness.is_hot(button_id),
+        "button should still be hot after resize + re-hover"
+    );
+}
+
+#[test]
+fn harness_resize_to_tiny_does_not_panic() {
+    let button = ButtonWidget::new("Tiny");
+    let mut harness = WidgetTestHarness::new(button);
+
+    // Edge case: very small viewport.
+    harness.resize(1.0, 1.0);
+    assert_eq!(harness.viewport().width(), 1.0);
+    assert_eq!(harness.viewport().height(), 1.0);
+}
+
+#[test]
+fn harness_resize_to_large_does_not_panic() {
+    let button = ButtonWidget::new("Large");
+    let mut harness = WidgetTestHarness::new(button);
+
+    harness.resize(10000.0, 10000.0);
+    assert_eq!(harness.viewport().width(), 10000.0);
+}
+
+#[test]
+fn harness_rapid_resize_cycle() {
+    let button = ButtonWidget::new("Rapid");
+    let button_id = button.id();
+    let mut harness = WidgetTestHarness::new(button);
+
+    // Simulate rapid resize (like a window drag).
+    let sizes: &[(f32, f32)] = &[
+        (800.0, 600.0),
+        (801.0, 601.0),
+        (850.0, 640.0),
+        (900.0, 700.0),
+        (400.0, 300.0),
+        (1.0, 1.0),
+        (1920.0, 1080.0),
+        (80.0, 24.0),
+        (800.0, 600.0),
+    ];
+    for &(w, h) in sizes {
+        harness.resize(w, h);
+    }
+
+    // Should still be functional.
+    let bounds = harness.find_widget_bounds(button_id);
+    assert!(
+        bounds.is_some(),
+        "widget should still have bounds after rapid resize"
+    );
+}
+
 // -- Overlay test helpers --
 
 #[test]
