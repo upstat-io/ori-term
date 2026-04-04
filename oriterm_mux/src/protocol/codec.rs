@@ -7,7 +7,7 @@
 use std::io::{self, Read, Write};
 
 use super::messages::MuxPdu;
-use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
+use super::{FrameHeader, MAX_PAYLOAD};
 
 /// A decoded frame: sequence number + PDU.
 #[derive(Debug, Clone)]
@@ -177,48 +177,6 @@ impl ProtocolCodec {
     /// `Some(Err(e))` on a decode error (malformed bytes are consumed),
     /// or `None` if there aren't enough bytes yet.
     fn try_decode(&mut self) -> Option<Result<DecodedFrame, DecodeError>> {
-        if self.buf.len() < HEADER_LEN {
-            return None;
-        }
-
-        let header = FrameHeader::decode(
-            self.buf[..HEADER_LEN]
-                .try_into()
-                .expect("checked length >= HEADER_LEN"),
-        );
-
-        // Validate payload size.
-        if header.payload_len > MAX_PAYLOAD {
-            self.buf.drain(..HEADER_LEN);
-            return Some(Err(DecodeError::PayloadTooLarge(header.payload_len)));
-        }
-
-        // Validate message type. Wait for the full frame, then drain it.
-        if super::msg_type::MsgType::from_u16(header.msg_type).is_none() {
-            let total = HEADER_LEN + header.payload_len as usize;
-            if self.buf.len() < total {
-                return None; // Not enough data yet.
-            }
-            self.buf.drain(..total);
-            return Some(Err(DecodeError::UnknownMsgType(header.msg_type)));
-        }
-
-        let total = HEADER_LEN + header.payload_len as usize;
-        if self.buf.len() < total {
-            return None;
-        }
-
-        // Deserialize the payload.
-        let payload = &self.buf[HEADER_LEN..total];
-        let result: Result<MuxPdu, _> = bincode::deserialize(payload);
-        self.buf.drain(..total);
-
-        match result {
-            Ok(pdu) => Some(Ok(DecodedFrame {
-                seq: header.seq,
-                pdu,
-            })),
-            Err(e) => Some(Err(DecodeError::Deserialize(e))),
-        }
+        super::decode::try_decode_from_buf(&mut self.buf)
     }
 }

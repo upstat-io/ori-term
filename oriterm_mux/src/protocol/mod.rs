@@ -19,12 +19,15 @@
 //! - payload: bincode-serialized variant fields.
 
 mod codec;
+pub(crate) mod decode;
 pub(crate) mod messages;
 pub(crate) mod msg_type;
 mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
 pub use messages::MuxPdu;
+// Re-export for server/tests.rs (test-only consumer outside protocol module).
+#[cfg(test)]
 pub(crate) use msg_type::MsgType;
 pub use snapshot::{
     PaneSnapshot, WireCell, WireCellFlags, WireCursor, WireCursorShape, WireRgb, WireSearchMatch,

@@ -7,8 +7,7 @@
 use std::io::{self, Write};
 
 use crate::MuxPdu;
-use crate::protocol::{DecodeError, DecodedFrame, FrameHeader, MsgType};
-use crate::protocol::{HEADER_LEN, MAX_PAYLOAD};
+use crate::protocol::{DecodeError, DecodedFrame, FrameHeader, MAX_PAYLOAD};
 
 /// Result of a single `read_from` call.
 #[derive(Debug, PartialEq, Eq)]
@@ -52,51 +51,7 @@ impl FrameReader {
     /// `Some(Err(e))` on a decode error (the malformed bytes are consumed),
     /// or `None` if there aren't enough bytes yet.
     pub fn try_decode(&mut self) -> Option<Result<DecodedFrame, DecodeError>> {
-        if self.buf.len() < HEADER_LEN {
-            return None;
-        }
-
-        let header = FrameHeader::decode(
-            self.buf[..HEADER_LEN]
-                .try_into()
-                .expect("checked length >= HEADER_LEN"),
-        );
-
-        // Validate payload size.
-        if header.payload_len > MAX_PAYLOAD {
-            // Drain the header bytes and report the error.
-            self.buf.drain(..HEADER_LEN);
-            return Some(Err(DecodeError::PayloadTooLarge(header.payload_len)));
-        }
-
-        // Validate message type. Wait for the full frame to be buffered,
-        // then drain all of it to keep the stream aligned.
-        if MsgType::from_u16(header.msg_type).is_none() {
-            let total = HEADER_LEN + header.payload_len as usize;
-            if self.buf.len() < total {
-                return None; // Not enough data yet — wait for full frame.
-            }
-            self.buf.drain(..total);
-            return Some(Err(DecodeError::UnknownMsgType(header.msg_type)));
-        }
-
-        let total = HEADER_LEN + header.payload_len as usize;
-        if self.buf.len() < total {
-            return None;
-        }
-
-        // Deserialize the payload.
-        let payload = &self.buf[HEADER_LEN..total];
-        let result: Result<MuxPdu, _> = bincode::deserialize(payload);
-        self.buf.drain(..total);
-
-        match result {
-            Ok(pdu) => Some(Ok(DecodedFrame {
-                seq: header.seq,
-                pdu,
-            })),
-            Err(e) => Some(Err(DecodeError::Deserialize(e))),
-        }
+        crate::protocol::decode::try_decode_from_buf(&mut self.buf)
     }
 }
 
