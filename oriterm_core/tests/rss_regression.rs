@@ -28,7 +28,7 @@ fn platform_rss() -> Option<usize> {
 
 #[cfg(target_os = "macos")]
 fn platform_rss() -> Option<usize> {
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, deprecated)]
     unsafe {
         let mut info: libc::mach_task_basic_info_data_t = std::mem::zeroed();
         let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;

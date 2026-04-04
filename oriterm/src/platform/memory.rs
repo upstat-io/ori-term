@@ -30,7 +30,7 @@ fn platform_rss() -> Option<usize> {
     // SAFETY: FFI calls to Mach kernel APIs. `mach_task_self_` is the current
     // task port (extern static). `task_info()` fills a zeroed struct — no
     // aliasing or lifetime issues. All types come from `libc` with correct ABI.
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, deprecated)]
     unsafe {
         let mut info: libc::mach_task_basic_info_data_t = std::mem::zeroed();
         let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
