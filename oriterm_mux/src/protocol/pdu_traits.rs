@@ -38,6 +38,7 @@ impl MuxPdu {
             Self::ExtractHtml { .. } => MsgType::ExtractHtml,
             Self::SetCapabilities { .. } => MsgType::SetCapabilities,
             Self::RequestNewTab => MsgType::RequestNewTab,
+            Self::SetPanePriority { .. } => MsgType::SetPanePriority,
             Self::SpawnPane { .. } => MsgType::SpawnPane,
             Self::ListPanes => MsgType::ListPanes,
             Self::SetImageConfig { .. } => MsgType::SetImageConfig,
@@ -86,6 +87,7 @@ impl MuxPdu {
                 | Self::SearchPrevMatch { .. }
                 | Self::SetCapabilities { .. }
                 | Self::SetImageConfig { .. }
+                | Self::SetPanePriority { .. }
         )
     }
 

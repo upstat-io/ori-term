@@ -212,6 +212,19 @@ pub enum MuxPdu {
     /// other connected clients and replies with [`NewTabAck`](Self::NewTabAck).
     RequestNewTab,
 
+    /// Set the push priority for a pane (affects push interval).
+    ///
+    /// Fire-and-forget: no response expected. Priority values:
+    /// - `0` = focused (4ms push)
+    /// - `1` = visible unfocused (16ms push)
+    /// - `2` = hidden (100ms push)
+    SetPanePriority {
+        /// Pane to set priority for.
+        pane_id: PaneId,
+        /// Priority level (0=focused, 1=visible, 2=hidden).
+        priority: u8,
+    },
+
     /// List all live pane IDs.
     ListPanes,
 

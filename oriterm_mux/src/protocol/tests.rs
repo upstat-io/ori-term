@@ -165,6 +165,7 @@ fn msg_type_roundtrip_all() {
         MsgType::ListPanes,
         MsgType::SetImageConfig,
         MsgType::RequestNewTab,
+        MsgType::SetPanePriority,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
         MsgType::Subscribed,
@@ -1313,6 +1314,35 @@ fn roundtrip_notify_clipboard_load() {
         }
         other => panic!("expected NotifyClipboardLoad, got {other:?}"),
     }
+}
+
+// -- SetPanePriority tests --
+
+#[test]
+fn roundtrip_set_pane_priority() {
+    let pdu = MuxPdu::SetPanePriority {
+        pane_id: PaneId::from_raw(5),
+        priority: 2,
+    };
+    let frame = roundtrip(50, pdu);
+    assert_eq!(frame.seq, 50);
+    match frame.pdu {
+        MuxPdu::SetPanePriority { pane_id, priority } => {
+            assert_eq!(pane_id, PaneId::from_raw(5));
+            assert_eq!(priority, 2);
+        }
+        other => panic!("expected SetPanePriority, got {other:?}"),
+    }
+}
+
+#[test]
+fn set_pane_priority_is_fire_and_forget() {
+    let pdu = MuxPdu::SetPanePriority {
+        pane_id: PaneId::from_raw(1),
+        priority: 0,
+    };
+    assert!(pdu.is_fire_and_forget());
+    assert!(!pdu.is_notification());
 }
 
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader

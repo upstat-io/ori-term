@@ -270,6 +270,11 @@ pub fn dispatch_request(
             None // Fire-and-forget — no ack.
         }
 
+        MuxPdu::SetPanePriority { pane_id, priority } => {
+            conn.set_pane_priority(pane_id, priority);
+            None // Fire-and-forget.
+        }
+
         MuxPdu::RequestNewTab => {
             log::info!("new-tab request from client {}", conn.id());
             Some(MuxPdu::NewTabAck)

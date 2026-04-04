@@ -35,6 +35,7 @@ pub(crate) enum MsgType {
     SetImageConfig = 0x0126,
     SetBoldIsBright = 0x0127,
     RequestNewTab = 0x0128,
+    SetPanePriority = 0x0129,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -96,6 +97,7 @@ impl MsgType {
             0x0126 => Some(Self::SetImageConfig),
             0x0127 => Some(Self::SetBoldIsBright),
             0x0128 => Some(Self::RequestNewTab),
+            0x0129 => Some(Self::SetPanePriority),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),
