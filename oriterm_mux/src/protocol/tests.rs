@@ -78,6 +78,7 @@ fn msg_type_roundtrip_all() {
         MsgType::SpawnPane,
         MsgType::ListPanes,
         MsgType::SetImageConfig,
+        MsgType::RequestNewTab,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
         MsgType::Subscribed,
@@ -90,7 +91,9 @@ fn msg_type_roundtrip_all() {
         MsgType::ExtractHtmlResp,
         MsgType::SpawnPaneResponse,
         MsgType::ListPanesResponse,
+        MsgType::NewTabAck,
         MsgType::Error,
+        MsgType::NotifyNewTab,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
         MsgType::NotifyPaneMetadataChanged,
@@ -1058,6 +1061,30 @@ fn forward_compat_codec_skips_unknown_and_stays_aligned() {
     let frame = codec.decode_frame(&mut reader).unwrap();
     assert_eq!(frame.seq, 42);
     assert!(matches!(frame.pdu, MuxPdu::Ping));
+}
+
+// -- New tab protocol roundtrip tests --
+
+#[test]
+fn request_new_tab_roundtrip() {
+    let frame = roundtrip(10, MuxPdu::RequestNewTab);
+    assert_eq!(frame.seq, 10);
+    assert_eq!(frame.pdu, MuxPdu::RequestNewTab);
+}
+
+#[test]
+fn new_tab_ack_roundtrip() {
+    let frame = roundtrip(11, MuxPdu::NewTabAck);
+    assert_eq!(frame.seq, 11);
+    assert_eq!(frame.pdu, MuxPdu::NewTabAck);
+}
+
+#[test]
+fn notify_new_tab_roundtrip() {
+    let frame = roundtrip(0, MuxPdu::NotifyNewTab);
+    assert_eq!(frame.seq, 0);
+    assert_eq!(frame.pdu, MuxPdu::NotifyNewTab);
+    assert!(frame.pdu.is_notification());
 }
 
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader

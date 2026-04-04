@@ -41,6 +41,7 @@ pub fn dispatch_request(
         MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
         _ => None,
     };
+    let is_new_tab = matches!(&pdu, MuxPdu::RequestNewTab);
 
     let response = match pdu {
         MuxPdu::Hello { pid } => {
@@ -244,6 +245,11 @@ pub fn dispatch_request(
             None // Fire-and-forget — no ack.
         }
 
+        MuxPdu::RequestNewTab => {
+            log::info!("new-tab request from client {}", conn.id());
+            Some(MuxPdu::NewTabAck)
+        }
+
         MuxPdu::Ping => Some(MuxPdu::PingAck),
 
         MuxPdu::Shutdown => {
@@ -342,5 +348,10 @@ pub fn dispatch_request(
         sub_changed,
         unsubscribed_pane: unsub_pane,
         response,
+        broadcast: if is_new_tab {
+            Some(MuxPdu::NotifyNewTab)
+        } else {
+            None
+        },
     }
 }

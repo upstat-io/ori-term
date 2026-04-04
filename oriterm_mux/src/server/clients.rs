@@ -199,6 +199,26 @@ impl MuxServer {
             }
         }
 
+        // Broadcast to all other connected clients (e.g., NotifyNewTab).
+        if let Some(broadcast_pdu) = result.broadcast {
+            self.scratch_clients.clear();
+            self.scratch_clients.extend(
+                self.connections
+                    .keys()
+                    .filter(|&&cid| cid != client_id)
+                    .copied(),
+            );
+            for i in 0..self.scratch_clients.len() {
+                let cid = self.scratch_clients[i];
+                if let Some(conn) = self.connections.get_mut(&cid) {
+                    let _ = conn.queue_frame(0, &broadcast_pdu);
+                }
+            }
+            for i in 0..self.scratch_clients.len() {
+                self.update_write_interest(self.scratch_clients[i]);
+            }
+        }
+
         if let Some(resp_pdu) = result.response {
             let is_shutdown = matches!(resp_pdu, MuxPdu::ShutdownAck);
             let Some(conn) = self.connections.get_mut(&client_id) else {

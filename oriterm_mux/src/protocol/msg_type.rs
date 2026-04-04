@@ -34,6 +34,7 @@ pub(crate) enum MsgType {
     ListPanes = 0x0125,
     SetImageConfig = 0x0126,
     SetBoldIsBright = 0x0127,
+    RequestNewTab = 0x0128,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -48,6 +49,7 @@ pub(crate) enum MsgType {
     ExtractHtmlResp = 0x0214,
     SpawnPaneResponse = 0x0216,
     ListPanesResponse = 0x0217,
+    NewTabAck = 0x0218,
     Error = 0x02FF,
 
     // Push notifications (daemon → client).
@@ -59,6 +61,7 @@ pub(crate) enum MsgType {
     NotifyClipboardStore = 0x0306,
     NotifyClipboardLoad = 0x0308,
     NotifyPaneSnapshot = 0x0307,
+    NotifyNewTab = 0x0309,
 }
 
 impl MsgType {
@@ -92,6 +95,7 @@ impl MsgType {
             0x0125 => Some(Self::ListPanes),
             0x0126 => Some(Self::SetImageConfig),
             0x0127 => Some(Self::SetBoldIsBright),
+            0x0128 => Some(Self::RequestNewTab),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),
@@ -104,6 +108,7 @@ impl MsgType {
             0x0214 => Some(Self::ExtractHtmlResp),
             0x0216 => Some(Self::SpawnPaneResponse),
             0x0217 => Some(Self::ListPanesResponse),
+            0x0218 => Some(Self::NewTabAck),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
@@ -113,6 +118,7 @@ impl MsgType {
             0x0306 => Some(Self::NotifyClipboardStore),
             0x0308 => Some(Self::NotifyClipboardLoad),
             0x0307 => Some(Self::NotifyPaneSnapshot),
+            0x0309 => Some(Self::NotifyNewTab),
             _ => None,
         }
     }

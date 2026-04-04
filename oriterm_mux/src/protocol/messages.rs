@@ -205,6 +205,12 @@ pub enum MuxPdu {
         theme: Option<String>,
     },
 
+    /// Request that other clients create a new tab.
+    ///
+    /// The daemon broadcasts [`NotifyNewTab`](Self::NotifyNewTab) to all
+    /// other connected clients and replies with [`NewTabAck`](Self::NewTabAck).
+    RequestNewTab,
+
     /// List all live pane IDs.
     ListPanes,
 
@@ -285,6 +291,9 @@ pub enum MuxPdu {
         pane_ids: Vec<PaneId>,
     },
 
+    /// Acknowledgment for [`RequestNewTab`](Self::RequestNewTab).
+    NewTabAck,
+
     /// Error response for a failed request.
     Error {
         /// Human-readable error description.
@@ -349,6 +358,10 @@ pub enum MuxPdu {
         clipboard_type: u8,
     },
 
+    /// Another client requested a new tab. The receiving client should
+    /// create a new tab in its active window.
+    NotifyNewTab,
+
     /// Server-pushed pane snapshot (proactive, throttled to ~60fps).
     ///
     /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
@@ -389,6 +402,7 @@ impl MuxPdu {
             Self::ExtractText { .. } => MsgType::ExtractText,
             Self::ExtractHtml { .. } => MsgType::ExtractHtml,
             Self::SetCapabilities { .. } => MsgType::SetCapabilities,
+            Self::RequestNewTab => MsgType::RequestNewTab,
             Self::SpawnPane { .. } => MsgType::SpawnPane,
             Self::ListPanes => MsgType::ListPanes,
             Self::SetImageConfig { .. } => MsgType::SetImageConfig,
@@ -404,7 +418,9 @@ impl MuxPdu {
             Self::ExtractHtmlResp { .. } => MsgType::ExtractHtmlResp,
             Self::SpawnPaneResponse { .. } => MsgType::SpawnPaneResponse,
             Self::ListPanesResponse { .. } => MsgType::ListPanesResponse,
+            Self::NewTabAck => MsgType::NewTabAck,
             Self::Error { .. } => MsgType::Error,
+            Self::NotifyNewTab => MsgType::NotifyNewTab,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
             Self::NotifyPaneMetadataChanged { .. } => MsgType::NotifyPaneMetadataChanged,
@@ -450,6 +466,7 @@ impl MuxPdu {
                 | Self::NotifyClipboardStore { .. }
                 | Self::NotifyClipboardLoad { .. }
                 | Self::NotifyPaneSnapshot { .. }
+                | Self::NotifyNewTab
         )
     }
 }

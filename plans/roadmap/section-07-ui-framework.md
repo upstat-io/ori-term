@@ -477,14 +477,14 @@ Floating UI that renders above the main widget tree.
 
 - [x] Rich overlay content — overlays can contain any widget (Box<dyn Widget>)
 
-- [ ] Overlay consumers (wiring deferred to their respective sections):
-  - [ ] Context menus — right-click popup (Section 21)
-  - [ ] Dropdown lists — popup on `OpenDropdown` action (Section 21)
-  - [ ] Command palette — fuzzy search overlay (Section 27)
-  - [ ] Settings panel — modal dialog (Section 21)
-  - [ ] Tooltips — hover-triggered overlay (Section 24)
-  - [ ] Search bar — overlay anchored to top of terminal (Section 11)
-  - [ ] Tab hover previews — Chrome/Windows-style terminal thumbnail overlay (Section 16)
+- [ ] Overlay consumers (wiring deferred to their respective sections): <!-- blocked-by:21 --><!-- blocked-by:27 --><!-- blocked-by:24 --><!-- blocked-by:11 --><!-- blocked-by:16 -->
+  - [ ] Context menus — right-click popup (Section 21) <!-- blocked-by:21 -->
+  - [ ] Dropdown lists — popup on `OpenDropdown` action (Section 21) <!-- blocked-by:21 -->
+  - [ ] Command palette — fuzzy search overlay (Section 27) <!-- blocked-by:27 -->
+  - [ ] Settings panel — modal dialog (Section 21) <!-- blocked-by:21 -->
+  - [ ] Tooltips — hover-triggered overlay (Section 24) <!-- blocked-by:24 -->
+  - [ ] Search bar — overlay anchored to top of terminal (Section 11) <!-- blocked-by:11 -->
+  - [ ] Tab hover previews — Chrome/Windows-style terminal thumbnail overlay (Section 16) <!-- blocked-by:16 -->
 
 ---
 
@@ -578,8 +578,8 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
   - [x] `set_cell_metrics()` / `set_grid_size()` — updated on resize
   - [x] Reports preferred size based on cell dimensions and grid size
   - [x] `set_bounds(rect)` — stores layout bounds from `compute_window_layout` results for the GPU prepare pipeline to read.
-  - [ ] *(Alternative path — not planned)* Direct DrawList cell rendering: `RenderableContent` to `DrawCommand`s for backgrounds, glyphs, cursor, selection, search highlights. Would unify rendering but add DrawList overhead for 1920+ cells/frame.
-  - [ ] *(Blocked on Section 39 image pipeline)* Offscreen texture rendering: render grid to offscreen texture at arbitrary scale for thumbnails/previews.
+  - [ ] *(Alternative path — not planned)* Direct DrawList cell rendering: `RenderableContent` to `DrawCommand`s for backgrounds, glyphs, cursor, selection, search highlights. Would unify rendering but add DrawList overhead for 1920+ cells/frame. <!-- deferred: alternative path, not planned -->
+  - [ ] *(Blocked on Section 39 image pipeline)* Offscreen texture rendering: render grid to offscreen texture at arbitrary scale for thumbnails/previews. <!-- blocked-by:39 -->
 
 - [x] Grid origin offset in prepare pipeline
   - [x] `origin: (f32, f32)` parameter on `fill_frame_shaped()`, `prepare_frame_shaped_into()`, and related functions — pixel offset for all cell positions
@@ -591,11 +591,11 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
   - [x] Fixed-size layout (`320×200` default, configurable via `with_size(width, height, scale)`)
   - [x] `is_focusable() → false`
   - [x] Placeholder draw: rounded rectangle with theme background (`bg_secondary`, `CORNER_RADIUS = 6.0`)
-  - [ ] Render terminal at thumbnail resolution to offscreen texture (blocked on Section 39 image pipeline)
-  - [ ] Display in overlay on tab hover (unblocks Section 16.3 tab hover previews)
-  - [ ] Re-render only when source terminal content is dirty
-  - [ ] Apply rounded corners, subtle shadow, smooth fade-in animation
-  - [ ] Wire to consumers: tab bar hover, taskbar window preview, window switcher
+  - [ ] Render terminal at thumbnail resolution to offscreen texture <!-- blocked-by:39 -->
+  - [ ] Display in overlay on tab hover <!-- blocked-by:39 --><!-- blocked-by:16 -->
+  - [ ] Re-render only when source terminal content is dirty <!-- blocked-by:39 -->
+  - [ ] Apply rounded corners, subtle shadow, smooth fade-in animation <!-- blocked-by:39 -->
+  - [ ] Wire to consumers: tab bar hover, taskbar window preview, window switcher <!-- blocked-by:16 --><!-- blocked-by:39 -->
 
 - [x] Integration:
   - [x] `WindowContext` owns `TerminalGridWidget` (non-optional), created in `try_init()` and `create_window()`
@@ -606,13 +606,13 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
   - [x] Mouse events within the grid are routed to terminal mouse handling
   - [x] Wire main window layout as `Column { TabBar, TerminalGrid, StatusBar(optional) }` through the layout engine (currently positioned manually)
 
-- [ ] Unify tab bar, context menus, settings, search overlay, terminal previews, and terminal grid through the same DrawList rendering pipeline (foundation laid — individual wiring in consuming sections)
+- [ ] Unify tab bar, context menus, settings, search overlay, terminal previews, and terminal grid through the same DrawList rendering pipeline (foundation laid — individual wiring in consuming sections) <!-- blocked-by:21 --><!-- blocked-by:27 --><!-- blocked-by:39 -->
 
 ---
 
 ## 07.12 Section Completion (verified 2026-03-29)
 
-- [ ] All 07.1-07.11 unchecked items complete (remaining: 07.8 overlay consumers, 07.11 preview widget + layout engine wiring)
+- [ ] All 07.1-07.11 unchecked items complete (remaining: 07.8 overlay consumers, 07.11 preview widget + layout engine wiring) <!-- blocked-by:11 --><!-- blocked-by:16 --><!-- blocked-by:21 --><!-- blocked-by:24 --><!-- blocked-by:27 --><!-- blocked-by:39 -->
 - [x] Layout caching in `compute_layout` — skip recomputation when layout is not dirty (deferred from 07.3) (verified 2026-03-29)
 - [x] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines (verified 2026-03-29 -- 24 draw tests)
 - [x] Layout engine computes correct positions for nested flex containers (verified 2026-03-29 -- 71 layout tests)
