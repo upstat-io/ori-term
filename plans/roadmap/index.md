@@ -996,7 +996,7 @@ zellij modes, tmux key table, wezterm key_tables
 ```
 
 ### Section 50: Runtime Efficiency — CPU & Memory Tuning
-**File:** `section-50-runtime-efficiency.md` | **Tier:** 2 | **Status:** Not Started
+**File:** `section-50-runtime-efficiency.md` | **Tier:** 2 | **Status:** In Progress
 
 ```
 idle CPU, CPU usage, event loop spin, busy wait, ControlFlow::Wait, ControlFlow
@@ -1102,7 +1102,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 47 | Semantic Prompt State Management | `section-47-semantic-prompt-state.md` | 5 | Not Started |
 | 48 | Native OS Scrollbars | `section-48-native-scrollbars.md` | 5 | Not Started |
 | 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
-| 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Not Started |
+| 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Complete |
 | 51 | Rich Status Bar — Shell, CWD, Git, Process | `section-51-rich-status-bar.md` | 5 | Not Started |
 
 ## Tier Summary

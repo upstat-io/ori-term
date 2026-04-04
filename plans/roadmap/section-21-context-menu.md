@@ -248,7 +248,7 @@ Full-featured settings panel with form controls for font, color scheme, cursor, 
 
 - [x] `build_settings_form()` constructs a `FormWidget` with grouped controls:
   - [x] Font settings: size, family, weight, hinting, subpixel mode
-  - [x] Color settings: scheme selector (dropdown), theme override
+  - [x] Color settings: scheme selector (dropdown), theme override <!-- unblocks:25.3 --><!-- unblocks:25.4 -->
   - [x] Cursor settings: style, blink interval
   - [x] Window settings: opacity, blur
 - [x] `SettingsIds` struct: maps `WidgetId` for each control to its config field

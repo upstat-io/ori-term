@@ -1926,6 +1926,7 @@ dependencies = [
  "clipboard-win",
  "dwrote",
  "image",
+ "libc",
  "log",
  "memmap2",
  "notify",
@@ -1966,12 +1967,14 @@ dependencies = [
  "criterion",
  "image",
  "insta",
+ "libc",
  "log",
  "parking_lot",
  "portable-pty",
  "regex",
  "unicode-width",
  "vte",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

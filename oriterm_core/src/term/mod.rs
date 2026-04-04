@@ -18,7 +18,7 @@ pub use charset::CharsetState;
 pub use mode::TermMode;
 pub use renderable::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
-    RenderablePlacement, TermDamage,
+    RenderablePlacement, TermDamage, maybe_shrink_vec,
 };
 
 use std::collections::{HashMap, VecDeque};
