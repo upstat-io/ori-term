@@ -25,6 +25,10 @@ pub enum MuxPdu {
     Hello {
         /// OS process ID of the connecting client.
         pid: u32,
+        /// Protocol version the client speaks.
+        protocol_version: u8,
+        /// Feature flags the client supports (bitmask).
+        features: u64,
     },
 
     /// Close a single pane.
@@ -230,6 +234,10 @@ pub enum MuxPdu {
     HelloAck {
         /// Assigned client ID for this connection.
         client_id: ClientId,
+        /// Protocol version the server speaks.
+        protocol_version: u8,
+        /// Negotiated feature flags (intersection of client + server).
+        features: u64,
     },
 
     /// Pane closed successfully.

@@ -55,6 +55,12 @@ pub const PROTOCOL_VERSION: u8 = 1;
 /// Flag: payload is zstd-compressed.
 pub const FLAG_COMPRESSED: u8 = 0x01;
 
+/// Current IPC protocol version for Hello/HelloAck negotiation.
+pub const CURRENT_PROTOCOL_VERSION: u8 = 1;
+
+/// Feature flag: client and server support zstd compression.
+pub const FEAT_ZSTD: u64 = 1;
+
 /// Frame header on the wire (14 bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FrameHeader {

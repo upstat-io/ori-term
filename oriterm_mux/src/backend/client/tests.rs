@@ -528,6 +528,8 @@ mod transport_tests {
                 frame.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(99),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -563,6 +565,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -607,6 +611,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -667,6 +673,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -704,6 +712,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -749,6 +759,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -797,6 +809,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -839,6 +853,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -906,6 +922,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -956,6 +974,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();
@@ -1017,6 +1037,8 @@ mod transport_tests {
                 hello.seq,
                 &MuxPdu::HelloAck {
                     client_id: ClientId::from_raw(1),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: 0,
                 },
             )
             .unwrap();

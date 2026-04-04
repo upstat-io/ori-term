@@ -220,7 +220,14 @@ fn roundtrip(seq: u32, pdu: MuxPdu) -> DecodedFrame {
 
 #[test]
 fn roundtrip_hello() {
-    roundtrip(1, MuxPdu::Hello { pid: 12345 });
+    roundtrip(
+        1,
+        MuxPdu::Hello {
+            pid: 12345,
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    );
 }
 
 #[test]
@@ -229,6 +236,8 @@ fn roundtrip_hello_ack() {
         1,
         MuxPdu::HelloAck {
             client_id: ClientId::from_raw(7),
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
         },
     );
 }
@@ -602,12 +611,23 @@ fn snapshot_with_cjk_emoji_combining() {
 #[test]
 fn sequence_correlation() {
     let mut buf = Vec::new();
-    ProtocolCodec::encode_frame(&mut buf, 100, &MuxPdu::Hello { pid: 1 }).unwrap();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        100,
+        &MuxPdu::Hello {
+            pid: 1,
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    )
+    .unwrap();
     ProtocolCodec::encode_frame(
         &mut buf,
         100,
         &MuxPdu::HelloAck {
             client_id: ClientId::from_raw(1),
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
         },
     )
     .unwrap();
@@ -776,11 +796,20 @@ fn decode_truncated_payload() {
 fn multiple_frames_sequential() {
     let mut buf = Vec::new();
     let pdus = vec![
-        (1, MuxPdu::Hello { pid: 1000 }),
+        (
+            1,
+            MuxPdu::Hello {
+                pid: 1000,
+                protocol_version: super::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        ),
         (
             1,
             MuxPdu::HelloAck {
                 client_id: ClientId::from_raw(1),
+                protocol_version: super::CURRENT_PROTOCOL_VERSION,
+                features: 0,
             },
         ),
         (
@@ -951,9 +980,13 @@ fn roundtrip_boundary_payload_sizes() {
 
 #[test]
 fn wire_bytes_stable_for_hello() {
-    // Pin the exact wire encoding for Hello { pid: 42 } at seq=1.
+    // Pin the exact wire encoding for Hello at seq=1.
     // If the serialization format changes, this test catches it.
-    let pdu = MuxPdu::Hello { pid: 42 };
+    let pdu = MuxPdu::Hello {
+        pid: 42,
+        protocol_version: super::CURRENT_PROTOCOL_VERSION,
+        features: 0,
+    };
     let mut buf = Vec::new();
     ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
 
@@ -961,7 +994,14 @@ fn wire_bytes_stable_for_hello() {
     let mut reader = Cursor::new(&buf);
     let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
     assert_eq!(frame.seq, 1);
-    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
+    assert_eq!(
+        frame.pdu,
+        MuxPdu::Hello {
+            pid: 42,
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        }
+    );
 
     // Pin header bytes: magic, version, flags, msg_type, seq, payload_len.
     assert_eq!(buf[0..2], [0x54, 0x4F]); // FRAME_MAGIC LE

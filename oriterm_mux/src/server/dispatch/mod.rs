@@ -44,11 +44,36 @@ pub fn dispatch_request(
     let is_new_tab = matches!(&pdu, MuxPdu::RequestNewTab);
 
     let response = match pdu {
-        MuxPdu::Hello { pid } => {
-            log::info!("client {} handshake (pid={pid})", conn.id());
-            Some(MuxPdu::HelloAck {
-                client_id: conn.id(),
-            })
+        MuxPdu::Hello {
+            pid,
+            protocol_version,
+            features,
+        } => {
+            if protocol_version > crate::protocol::CURRENT_PROTOCOL_VERSION {
+                log::warn!(
+                    "client {} version mismatch: client={protocol_version}, server={}",
+                    conn.id(),
+                    crate::protocol::CURRENT_PROTOCOL_VERSION,
+                );
+                Some(MuxPdu::Error {
+                    message: format!(
+                        "version mismatch: server speaks v{}, client wants v{protocol_version}",
+                        crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    ),
+                })
+            } else {
+                let server_features = crate::protocol::FEAT_ZSTD;
+                let negotiated = features & server_features;
+                log::info!(
+                    "client {} handshake (pid={pid}, v={protocol_version}, features=0x{negotiated:X})",
+                    conn.id(),
+                );
+                Some(MuxPdu::HelloAck {
+                    client_id: conn.id(),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: negotiated,
+                })
+            }
         }
 
         MuxPdu::SpawnPane { shell, cwd, theme } => {

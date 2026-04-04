@@ -1271,7 +1271,16 @@ fn raw_socket_latency_baseline() {
 
     // Handshake.
     let pid = std::process::id();
-    ProtocolCodec::encode_frame(&mut stream, 1, &MuxPdu::Hello { pid }).expect("write Hello");
+    ProtocolCodec::encode_frame(
+        &mut stream,
+        1,
+        &MuxPdu::Hello {
+            pid,
+            protocol_version: oriterm_mux::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    )
+    .expect("write Hello");
     let mut codec = ProtocolCodec::new();
     let frame = codec.decode_frame(&mut stream).expect("read HelloAck");
     assert!(matches!(frame.pdu, MuxPdu::HelloAck { .. }));
