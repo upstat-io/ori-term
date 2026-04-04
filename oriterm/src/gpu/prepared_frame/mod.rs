@@ -208,7 +208,6 @@ impl PreparedFrame {
     }
 
     /// Total instance count across all thirteen buffers.
-    #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn total_instances(&self) -> usize {
         self.backgrounds.len()
             + self.glyphs.len()

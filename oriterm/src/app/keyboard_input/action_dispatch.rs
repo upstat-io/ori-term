@@ -246,6 +246,13 @@ impl App {
                 self.reset_font_size();
                 true
             }
+            Action::ToggleDebugOverlay => {
+                self.debug_overlay_enabled = !self.debug_overlay_enabled;
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.root.mark_dirty();
+                }
+                true
+            }
             Action::None => true,
         }
     }

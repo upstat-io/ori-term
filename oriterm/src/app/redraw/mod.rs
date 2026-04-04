@@ -1,6 +1,7 @@
 //! Three-phase rendering pipeline: Extract → Prepare → Render.
 
 mod chrome;
+mod debug_overlay;
 mod draw_helpers;
 mod multi_pane;
 mod post_render;
@@ -294,6 +295,58 @@ impl App {
                 },
             );
             phases.widgets = widgets_start.elapsed();
+
+            // Debug performance overlay (Ctrl+Shift+F12).
+            if self.debug_overlay_enabled {
+                // Update EWMA FPS from last render interval.
+                let elapsed = self.last_render.elapsed().as_secs_f32();
+                if elapsed > 0.0 {
+                    let instant_fps = 1.0 / elapsed;
+                    // EWMA with alpha=0.1 for smooth display.
+                    self.debug_fps = if self.debug_fps < 1.0 {
+                        instant_fps
+                    } else {
+                        0.1 * instant_fps + 0.9 * self.debug_fps
+                    };
+                }
+
+                let renderer = ctx.renderer.as_mut().expect("renderer checked");
+                let stats = debug_overlay::DebugStats {
+                    fps: self.debug_fps,
+                    dirty_rows: renderer
+                        .prepared
+                        .scratch_dirty
+                        .iter()
+                        .filter(|&&d| d)
+                        .count(),
+                    total_rows: renderer.prepared.scratch_dirty.len(),
+                    instances: renderer.prepared.total_instances(),
+                    draw_calls: renderer.prepared.count_draw_calls(),
+                    mono_atlas: (renderer.atlas().len(), renderer.atlas().page_count()),
+                    subpixel_atlas: (
+                        renderer.subpixel_atlas().len(),
+                        renderer.subpixel_atlas().page_count(),
+                    ),
+                    color_atlas: (
+                        renderer.color_atlas().len(),
+                        renderer.color_atlas().page_count(),
+                    ),
+                };
+                let (pw, ph) = ctx.window.size_px();
+                let lw = pw as f32 / scale;
+                let lh = ph as f32 / scale;
+                Self::draw_debug_overlay(
+                    &stats,
+                    renderer,
+                    &mut ctx.chrome_scene,
+                    &mut ctx.debug_overlay_buf,
+                    lw,
+                    lh,
+                    scale,
+                    gpu,
+                    &ctx.text_cache,
+                );
+            }
 
             // Re-borrow renderer for GPU submission (prior borrow ended
             // when render_chrome returned via NLL).
