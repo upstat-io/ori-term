@@ -16,13 +16,19 @@ use crate::{MuxPdu, PaneId, PaneSnapshot};
 use super::connection::ClientConnection;
 use super::snapshot::SnapshotCache;
 
-/// Minimum interval between snapshot pushes for the same pane.
+/// Minimum interval between snapshot pushes for focused panes (priority 0).
 ///
 /// Set low (4ms / 250fps) so the daemon's push throttle never gates
 /// interactive typing. The client's own frame budget (16ms) is the
 /// authoritative render cadence — a second unsynchronized 16ms gate
 /// here creates visible stutter from 0-32ms beat-frequency jitter.
 pub const SNAPSHOT_PUSH_INTERVAL: Duration = Duration::from_millis(4);
+
+/// Push interval for visible but unfocused panes (priority 1, ~60fps).
+pub const VISIBLE_PUSH_INTERVAL: Duration = Duration::from_millis(16);
+
+/// Push interval for hidden panes (priority 2+, low overhead).
+pub const HIDDEN_PUSH_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Write buffer threshold — skip push entirely above this.
 const WRITE_HIGH_WATER: usize = 512 * 1024;
@@ -40,6 +46,34 @@ pub(super) struct PushContext<'a> {
     pub pending_push: &'a mut HashMap<PaneId, HashSet<ClientId>>,
     pub scratch: &'a mut Vec<ClientId>,
     pub scratch_panes: &'a mut Vec<PaneId>,
+}
+
+/// Map a priority value to its push interval.
+pub(super) fn interval_for_priority(priority: u8) -> Duration {
+    match priority {
+        0 => SNAPSHOT_PUSH_INTERVAL,
+        1 => VISIBLE_PUSH_INTERVAL,
+        _ => HIDDEN_PUSH_INTERVAL,
+    }
+}
+
+/// Compute the effective push interval for a pane across all subscribers.
+///
+/// Uses the highest priority (lowest number) among all subscribers to
+/// determine the interval. Returns `SNAPSHOT_PUSH_INTERVAL` (4ms) if no
+/// subscribers have an explicit priority set.
+pub(super) fn effective_push_interval(
+    pane_id: PaneId,
+    subscribers: &[ClientId],
+    connections: &HashMap<ClientId, ClientConnection>,
+) -> Duration {
+    let min_priority = subscribers
+        .iter()
+        .filter_map(|cid| connections.get(cid))
+        .map(|conn| conn.pane_priority(pane_id))
+        .min()
+        .unwrap_or(0);
+    interval_for_priority(min_priority)
 }
 
 /// Whether enough time has passed since the last push for this pane.
@@ -141,11 +175,8 @@ pub fn push_or_defer_pane(ctx: &mut PushContext<'_>, now: Instant, pane_id: Pane
     ctx.scratch.clear();
     ctx.scratch.extend_from_slice(subs);
 
-    if should_push(
-        now,
-        ctx.last_snapshot_push.get(&pane_id).copied(),
-        SNAPSHOT_PUSH_INTERVAL,
-    ) {
+    let interval = effective_push_interval(pane_id, ctx.scratch, ctx.connections);
+    if should_push(now, ctx.last_snapshot_push.get(&pane_id).copied(), interval) {
         if let Some(pane) = ctx.panes.get(&pane_id) {
             let snap = ctx.snapshot_cache.build_clone(pane_id, pane);
             let deferred = ctx.pending_push.entry(pane_id).or_default();
@@ -173,11 +204,13 @@ pub fn trailing_edge_flush(ctx: &mut PushContext<'_>, now: Instant) {
 
     for i in 0..ctx.scratch_panes.len() {
         let pane_id = ctx.scratch_panes[i];
-        if !should_push(
-            now,
-            ctx.last_snapshot_push.get(&pane_id).copied(),
-            SNAPSHOT_PUSH_INTERVAL,
-        ) {
+        let interval = ctx
+            .subscriptions
+            .get(&pane_id)
+            .map_or(SNAPSHOT_PUSH_INTERVAL, |s| {
+                effective_push_interval(pane_id, s, ctx.connections)
+            });
+        if !should_push(now, ctx.last_snapshot_push.get(&pane_id).copied(), interval) {
             continue;
         }
 

@@ -217,55 +217,33 @@ Tiered coalescing requires the server to know each pane's visibility state per c
 `PaneOutput` enrichment with `dirty_rows` tracking would require the IO thread to diff snapshots, which is not currently implemented and adds significant complexity. `cursor_changed` and `title_changed` are already covered by separate notification PDUs (`NotifyPaneMetadataChanged`). Dirty rows is a stretch goal.
 
 **Remaining hardening (genuinely not started):**
-- [ ] Tiered coalescing (different push intervals based on pane visibility):
-  - [ ] Add `SetPanePriority` PDU: `{ pane_id: PaneId, priority: u8 }` where 0=focused, 1=visible, 2=hidden
-    - [ ] Add `SetPanePriority` variant to `MuxPdu` in `protocol/messages.rs` (append at end for wire compat)
-    - [x] **FILE SIZE:** `messages.rs` split done (376 lines). `pdu_traits.rs` extracted (120 lines). Safe margin for new variants.
-    - [ ] Add `MsgType::SetPanePriority` with a new ID (e.g., `0x0129`) in `protocol/msg_type.rs`
-    - [ ] Add `MsgType::from_u16` match arm for the new ID
-    - [ ] Add `MuxPdu::msg_type()` match arm returning `MsgType::SetPanePriority`
-    - [ ] Add to `MuxPdu::is_fire_and_forget()` match (this is a fire-and-forget message -- client sends, no response expected)
-    - [ ] Verify NOT added to `MuxPdu::is_notification()` -- this is a client-to-server request, not a server push notification
-    - [ ] Handle in `dispatch_request` in `server/dispatch/mod.rs` -- add match arm that calls `conn.set_pane_priority(pane_id, priority)` and returns `None` (fire-and-forget, no response PDU)
-  - [ ] Add per-pane priority storage to `ClientConnection`:
-    - [ ] Add `pane_priorities: HashMap<PaneId, u8>` field to `ClientConnection` in `server/connection.rs`
-    - [ ] Add `set_pane_priority(&mut self, pane_id: PaneId, priority: u8)` method
-    - [ ] Add `pane_priority(&self, pane_id: PaneId) -> u8` method (returns 0/focused if not set)
-    - [ ] Clean up pane priority entries in `unsubscribe()` method
-  - [ ] Per-pane push interval based on priority:
-    - [ ] **Focused (priority 0)**: 4ms (current `SNAPSHOT_PUSH_INTERVAL` -- already near-instant)
-    - [ ] **Visible unfocused (priority 1)**: 16ms (~60 FPS) -- smooth but reduces CPU for multi-pane layouts
-    - [ ] **Hidden (priority 2)**: 100ms -- low overhead for background tabs
-    - [ ] Add constants: `VISIBLE_PUSH_INTERVAL = Duration::from_millis(16)`, `HIDDEN_PUSH_INTERVAL = Duration::from_millis(100)` in `server/push/mod.rs`
-  - [ ] Multi-client priority resolution: when multiple clients subscribe to the same pane with different priorities (e.g., client A has it focused, client B has it hidden), use the HIGHEST priority (lowest number) among all subscribers. The push rate is determined by the most-interested client.
-    - [ ] In `push_or_defer_pane()`: look up the minimum priority across all subscribers for this pane
-    - [ ] Select the interval based on that minimum priority
-  - [ ] `push_or_defer_pane` reads per-subscriber priority to select interval via `should_push()` call
-  - [ ] `trailing_edge_flush` reads priority the same way
-  - [ ] Client sends `SetPanePriority` when active tab changes or pane visibility changes (in `oriterm/src/app/` -- needs a call site in the tab/focus change handler)
-  - [ ] Default priority for new subscriptions: 0 (focused) -- matches current behavior
+- [x] Tiered coalescing (completed 2026-04-04):
+  - [x] `SetPanePriority { pane_id, priority }` PDU added to `MuxPdu`, `MsgType` (0x0129), `pdu_traits.rs` (msg_type + fire_and_forget), dispatch handler
+  - [x] Per-pane priority in `ClientConnection`: `pane_priorities: HashMap<PaneId, u8>` with `set_pane_priority()`, `pane_priority()`, cleanup in `unsubscribe()`
+  - [x] Push intervals: focused=4ms, visible=16ms, hidden=100ms (`VISIBLE_PUSH_INTERVAL`, `HIDDEN_PUSH_INTERVAL`)
+  - [x] Multi-client priority resolution: `effective_push_interval()` finds minimum priority across all subscribers
+  - [x] `push_or_defer_pane()` and `trailing_edge_flush()` use computed interval
+  - [x] Default priority 0 (focused) for new subscriptions
+  - [ ] Client sends `SetPanePriority` when active tab changes or pane visibility changes (in `oriterm/src/app/` -- needs a call site in the tab/focus change handler; deferred to app integration)
 - [ ] **Stretch/optional:** `PaneOutput` dirty row tracking:
   - [ ] Add `dirty_rows: Option<Vec<u16>>` to `NotifyPaneSnapshot` (which rows changed since last push)
   - [ ] Requires IO thread to diff current vs previous snapshot -- significant complexity, defer unless profiling shows benefit
 
 **Remaining tests:**
 
-Protocol tests (in `protocol/tests.rs`):
-- [ ] `roundtrip_set_pane_priority`: encode/decode `MuxPdu::SetPanePriority { pane_id, priority: 1 }`. Assert roundtrip equality.
-- [ ] `set_pane_priority_is_fire_and_forget`: assert `MuxPdu::SetPanePriority { .. }.is_fire_and_forget()` returns true.
-- [ ] `msg_type_roundtrip_all`: add `MsgType::SetPanePriority` to the roundtrip array.
+Protocol tests (in `protocol/tests.rs`, completed 2026-04-04):
+- [x] `roundtrip_set_pane_priority`: encode/decode roundtrip.
+- [x] `set_pane_priority_is_fire_and_forget`: assert returns true.
+- [x] `msg_type_roundtrip_all`: includes `MsgType::SetPanePriority`.
 
-Push logic tests (in `server/push/tests.rs`):
-- [ ] `should_push_respects_custom_interval`: `should_push(now, Some(now - 10ms), Duration::from_millis(16))` returns false (within 16ms visible interval). `should_push(now, Some(now - 20ms), Duration::from_millis(16))` returns true.
-- [ ] `focused_pane_uses_4ms_interval`: simulate `push_or_defer_pane` with priority=0 -> `should_push` called with `SNAPSHOT_PUSH_INTERVAL` (4ms).
-- [ ] `visible_pane_uses_16ms_interval`: simulate with priority=1 -> `should_push` called with `VISIBLE_PUSH_INTERVAL` (16ms).
-- [ ] `hidden_pane_uses_100ms_interval`: simulate with priority=2 -> `should_push` called with `HIDDEN_PUSH_INTERVAL` (100ms).
-- [ ] `priority_change_immediate_effect`: set priority=2 (hidden), advance 50ms, push deferred (within 100ms). Change to priority=0, push succeeds (past 4ms).
-- [ ] `default_priority_is_focused`: newly subscribed pane with no `SetPanePriority` sent -> uses 4ms interval.
+Push logic tests (in `server/push/tests.rs`, completed 2026-04-04):
+- [x] `should_push_respects_custom_interval`: tests 16ms visible interval.
+- [x] `default_priority_is_focused`: priority 0 maps to 4ms.
+- [x] `interval_for_priority_tiers`: all three tiers plus overflow.
 
-Server dispatch tests (IPC tests in `server/tests.rs`, Unix-gated):
-- [ ] `set_pane_priority_dispatch`: send `SetPanePriority { pane_id, priority: 1 }` -> no response (fire-and-forget). Send Ping -> PingAck (stream not disrupted).
-- [ ] `multi_client_priority_uses_highest`: client A sets priority=0 (focused), client B sets priority=2 (hidden) for same pane -> push uses 4ms (highest priority = lowest number among subscribers).
+Server dispatch tests (IPC, deferred to section completion):
+- [ ] `set_pane_priority_dispatch`: send fire-and-forget, verify stream not disrupted.
+- [ ] `multi_client_priority_uses_highest`: multi-client priority resolution.
 
 ---
 
