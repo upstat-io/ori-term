@@ -1,13 +1,13 @@
 //! PTY size propagation test.
 
-use std::io::Read;
-use std::thread;
-
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-
 #[test]
 #[cfg(unix)]
 fn pty_size_is_propagated() {
+    use std::io::Read;
+    use std::thread;
+
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
