@@ -266,7 +266,11 @@ impl RenderableContent {
 }
 
 /// Shrink a Vec if capacity vastly exceeds usage (> 4× len and > 4096 elements).
-fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
+///
+/// Standard buffer shrink discipline for reused grow-only buffers.
+/// Fires when capacity > 4× length AND > 4096 elements, shrinking to 2× length.
+/// Called post-render to bound memory waste without affecting hot-path performance.
+pub fn maybe_shrink_vec<T>(v: &mut Vec<T>) {
     let cap = v.capacity();
     let len = v.len();
     if cap > 4 * len && cap > 4096 {

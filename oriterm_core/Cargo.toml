@@ -24,6 +24,12 @@ criterion = { version = "0.5", features = ["html_reports"] }
 insta = "1"
 portable-pty = "0.9.0"
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
 [[bench]]
 name = "grid"
 harness = false

@@ -128,7 +128,7 @@ Automatically switch theme based on system appearance.
 - [x] On system theme change:
   - [x] Swap palette to the appropriate scheme via `build_palette_from_config()`
   - [x] Mark all grid lines dirty for redraw
-- [ ] Settings dropdown improvements: <!-- blocked-by:7 -->
+- [ ] Settings dropdown improvements: <!-- blocked-by:21 -->
   - [ ] Group themes by light/dark/universal
   - [ ] Show "(dark)" / "(light)" label next to theme names
 
@@ -147,7 +147,7 @@ Automatically switch theme based on system appearance.
 - [x] 50+ themes available by name in config (verified 2026-03-29, 54 built-in)
 - [x] Custom themes loadable from TOML files in theme directory (verified 2026-03-29)
 - [x] Light/dark auto-switching works (verified 2026-03-29)
-- [ ] Settings dropdown lists all available themes (built-in + user) <!-- blocked-by:7 -->
+- [ ] Settings dropdown lists all available themes (built-in + user) <!-- blocked-by:21 -->
 - [x] Theme hot-reload works (edit theme file, see change) (verified 2026-03-29)
 - [x] User themes in theme directory discovered automatically (verified 2026-03-29)
 - [x] Theme conversion scripts for iTerm2/Ghostty/base16 formats (verified 2026-03-29)
