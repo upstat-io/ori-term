@@ -1,0 +1,14 @@
+---
+source: oriterm_ui/src/widgets/tab_bar/tests.rs
+assertion_line: 2074
+expression: snap
+---
+Scene: 5 quads, 1 text, 2 lines, 0 icons, 0 images
+  Q00 (0.0, 0.0, 800.0×36.0) fill=#16161c
+  Q01 (0.0, 34.0, 800.0×2.0) fill=#2a2a36
+  Q02 (0.0, 0.0, 200.0×36.0) fill=#0e0e12
+  Q03 (0.0, 0.0, 200.0×2.0) fill=#6d9be0
+  Q04 (0.0, 34.0, 200.0×2.0) fill=#0e0e12
+  T00 (14.0, 10.0) "Tab 1" 40.0×16.0 #d4d4dc
+  L00 (200.0, 0.0)→(200.0, 36.0) w=1.0 #2a2a36
+  L01 (238.0, 0.0)→(238.0, 36.0) w=1.0 #2a2a36
