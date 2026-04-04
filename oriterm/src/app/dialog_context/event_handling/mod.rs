@@ -378,7 +378,7 @@ impl App {
     }
 
     /// Update dialog fonts and state for a new DPI scale factor.
-    fn handle_dialog_dpi_change(&mut self, window_id: WindowId, new_scale: f64) {
+    pub(in crate::app) fn handle_dialog_dpi_change(&mut self, window_id: WindowId, new_scale: f64) {
         let Some(gpu) = self.gpu.as_ref() else { return };
         let Some(ctx) = self.dialogs.get_mut(&window_id) else {
             return;
