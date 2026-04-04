@@ -43,6 +43,9 @@ sections:
   - id: "07.12"
     title: Section Completion
     status: in-progress
+third_party_review:
+  status: none
+  updated: null
 ---
 
 # Section 07: 2D UI Framework

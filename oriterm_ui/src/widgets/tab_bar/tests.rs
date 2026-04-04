@@ -2048,3 +2048,62 @@ fn colors_from_theme_has_bar_border() {
     let colors = TabBarColors::from_theme(&theme);
     assert_eq!(colors.bar_border, theme.border);
 }
+
+// Golden / scene snapshot tests
+//
+// These use `WidgetTestHarness` + `scene_to_snapshot` + `insta` to verify
+// that the tab bar's paint output is stable. Any visual regression (moved
+// quads, changed colors, missing text) will show up as a snapshot diff.
+
+use crate::testing::{WidgetTestHarness, scene_to_snapshot};
+
+/// Creates a tab bar with `n` tabs named "Tab 1", "Tab 2", ... and renders it.
+fn render_tab_bar(n: usize, window_width: f32) -> String {
+    let mut widget = TabBarWidget::new(window_width);
+    let tabs: Vec<TabEntry> = (1..=n).map(|i| TabEntry::new(format!("Tab {i}"))).collect();
+    widget.set_tabs(tabs);
+    widget.set_active_index(0);
+    let mut h = WidgetTestHarness::with_size(widget, window_width, 36.0);
+    let scene = h.render();
+    scene_to_snapshot(&scene)
+}
+
+#[test]
+fn golden_single_tab() {
+    let snap = render_tab_bar(1, 800.0);
+    insta::assert_snapshot!(snap);
+}
+
+#[test]
+fn golden_three_tabs() {
+    let snap = render_tab_bar(3, 800.0);
+    insta::assert_snapshot!(snap);
+}
+
+#[test]
+fn golden_many_tabs_narrow_window() {
+    let snap = render_tab_bar(10, 600.0);
+    insta::assert_snapshot!(snap);
+}
+
+#[test]
+fn golden_active_tab_switch() {
+    let mut widget = TabBarWidget::new(800.0);
+    widget.set_tabs(vec![
+        TabEntry::new("Alpha"),
+        TabEntry::new("Beta"),
+        TabEntry::new("Gamma"),
+    ]);
+    widget.set_active_index(1);
+    let mut h = WidgetTestHarness::with_size(widget, 800.0, 36.0);
+    let scene = h.render();
+    insta::assert_snapshot!(scene_to_snapshot(&scene));
+}
+
+#[test]
+fn golden_render_is_deterministic() {
+    // Two renders of the same state produce identical snapshots.
+    let snap1 = render_tab_bar(3, 800.0);
+    let snap2 = render_tab_bar(3, 800.0);
+    assert_eq!(snap1, snap2);
+}

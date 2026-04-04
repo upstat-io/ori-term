@@ -434,10 +434,10 @@ fn primitive_structs_under_cache_line() {
         "ImagePrimitive is {} bytes, expected <= 120",
         size_of::<ImagePrimitive>()
     );
-    // TextRun owns ShapedText (Vec allocation), so it's inherently larger.
+    // TextRun owns ShapedText (Vec + String allocations), so it's inherently larger.
     assert!(
-        size_of::<TextRun>() <= 128,
-        "TextRun is {} bytes, expected <= 128",
+        size_of::<TextRun>() <= 160,
+        "TextRun is {} bytes, expected <= 160",
         size_of::<TextRun>()
     );
 }

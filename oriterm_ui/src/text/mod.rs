@@ -297,6 +297,11 @@ pub struct ShapedText {
     /// Used by the glyph cache to route rasterization to the correct font
     /// collection, preventing `size_q6` collisions between UI and terminal fonts.
     pub font_source: FontSource,
+    /// Original source text (for debugging and snapshot testing).
+    ///
+    /// Populated by `with_source()`. Empty by default — production shapers
+    /// may omit it. Test shapers (`MockMeasurer`) always set it.
+    pub source: String,
 }
 
 impl ShapedText {
@@ -321,7 +326,15 @@ impl ShapedText {
             size_q6,
             weight,
             font_source: FontSource::Ui,
+            source: String::new(),
         }
+    }
+
+    /// Attaches the original source text for debugging and snapshot testing.
+    #[must_use]
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = source.into();
+        self
     }
 
     /// Whether this text block contains no glyphs.
