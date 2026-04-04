@@ -913,6 +913,9 @@ mod transport_tests {
 
             // Send a frame with an unknown msg type + 4-byte payload.
             let header = crate::protocol::FrameHeader {
+                magic: crate::protocol::FRAME_MAGIC,
+                version: crate::protocol::PROTOCOL_VERSION,
+                flags: 0,
                 msg_type: 0xFFFF,
                 seq: 0,
                 payload_len: 4,

@@ -8,12 +8,14 @@
 use std::io;
 
 use super::messages::MuxPdu;
-use super::{FrameHeader, MAX_PAYLOAD};
+use super::{FRAME_MAGIC, FrameHeader, MAX_PAYLOAD, PROTOCOL_VERSION};
 
 /// Encode a PDU into a frame and append the bytes to `buf`.
 ///
-/// Writes the header followed by the bincode payload. The caller owns `buf`
-/// and decides how to send the bytes (blocking write, non-blocking queue, etc.).
+/// Writes the 14-byte header followed by the bincode payload. The caller owns
+/// `buf` and decides how to send the bytes (blocking write, non-blocking queue,
+/// etc.). The `flags` parameter is currently always `0` — compression support
+/// will set [`FLAG_COMPRESSED`](super::FLAG_COMPRESSED) when implemented.
 pub(crate) fn encode_into_buf(buf: &mut Vec<u8>, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
     let payload =
         bincode::serialize(pdu).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -30,6 +32,9 @@ pub(crate) fn encode_into_buf(buf: &mut Vec<u8>, seq: u32, pdu: &MuxPdu) -> io::
     }
 
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: pdu.msg_type() as u16,
         seq,
         payload_len,

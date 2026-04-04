@@ -96,17 +96,17 @@ These share identical logic (bincode serialize, validate size, construct header,
   - [x] Refactor `ProtocolCodec::encode_frame()` in `codec.rs` to delegate to it
   - [x] Refactor `FrameWriter::queue()` in `frame_io.rs` to delegate to it
   - [x] Verify all existing tests pass (no behavioral change)
-- [ ] Extend frame header from 10 to 14 bytes: `magic(u16) + version(u8) + flags(u8) + type(u16) + seq(u32) + payload_len(u32)`
-  - [ ] Add `FrameHeader` fields: `magic: u16`, `version: u8`, `flags: u8`
-  - [ ] Magic bytes `0x4F54` ("OT") -- reject streams that don't start with magic (early detection of non-oriterm connections)
-  - [ ] Version field `u8` -- protocol version, currently `1`. Increment on breaking wire changes.
-  - [ ] Flags field `u8` -- `COMPRESSED = 0x01` (payload is zstd-compressed). Reserved bits ignored on decode.
-  - [ ] Update `HEADER_LEN` constant from 10 to 14 in `protocol/mod.rs`
-  - [ ] Update `FrameHeader::encode()`: write magic(2) + version(1) + flags(1) + type(2) + seq(4) + payload_len(4) = 14 bytes
-  - [ ] Update `FrameHeader::decode()`: read 14 bytes, validate magic before parsing rest
-  - [ ] Add `DecodeError::BadMagic(u16)` variant for magic validation failures
-  - [ ] After decode/encode extraction, only the shared functions need updating -- verify all call sites work
-  - [ ] Update all test roundtrips in `protocol/tests.rs` (header_roundtrip, header_zero_values, header_max_values, etc.)
+- [x] Extend frame header from 10 to 14 bytes: `magic(u16) + version(u8) + flags(u8) + type(u16) + seq(u32) + payload_len(u32)` (completed 2026-04-04)
+  - [x] Add `FrameHeader` fields: `magic: u16`, `version: u8`, `flags: u8`
+  - [x] Magic bytes `0x4F54` ("OT") -- reject streams that don't start with magic (early detection of non-oriterm connections)
+  - [x] Version field `u8` -- protocol version, currently `1`. Increment on breaking wire changes.
+  - [x] Flags field `u8` -- `COMPRESSED = 0x01` (payload is zstd-compressed). Reserved bits ignored on decode.
+  - [x] Update `HEADER_LEN` constant from 10 to 14 in `protocol/mod.rs`
+  - [x] Update `FrameHeader::encode()`: write magic(2) + version(1) + flags(1) + type(2) + seq(4) + payload_len(4) = 14 bytes
+  - [x] Update `FrameHeader::decode()`: read 14 bytes (magic validation in shared decode path)
+  - [x] Add `DecodeError::BadMagic(u16)` variant for magic validation failures
+  - [x] After decode/encode extraction, only the shared functions need updating -- verify all call sites work
+  - [x] Update all test roundtrips in `protocol/tests.rs` (header_roundtrip, header_zero_values, header_max_values, etc.)
 - [ ] Compression: `zstd` (level 1) for payloads > 4KB
   - [ ] Add `zstd` dependency to `oriterm_mux/Cargo.toml`
   - [ ] In shared encode path: after bincode serialize, if `payload.len() > 4096`, compress with zstd level 1. If compressed is smaller, set `COMPRESSED` flag in header and write compressed payload. If compressed is larger, clear flag and write original.
@@ -132,14 +132,14 @@ Pre-existing bug fixes (fix first):
 - [x] `roundtrip_notify_clipboard_store`: new roundtrip test -- `MuxPdu::NotifyClipboardStore { pane_id, clipboard_type: 0, text: "hello" }` (added 2026-04-04)
 - [x] `roundtrip_notify_clipboard_load`: new roundtrip test -- `MuxPdu::NotifyClipboardLoad { pane_id, clipboard_type: 1 }` (added 2026-04-04)
 
-Header extension tests:
-- [ ] `header_14byte_roundtrip`: encode/decode a 14-byte header with magic=0x4F54, version=1, flags=0, type=0x0101, seq=42, payload_len=1024. Assert all fields survive roundtrip.
-- [ ] `header_14byte_zero_values`: all fields zero except magic (which must always be 0x4F54). Assert roundtrip.
-- [ ] `header_14byte_max_values`: max u16/u8/u32 values. Assert roundtrip.
-- [ ] `header_bad_magic_rejected`: first 2 bytes = 0x0000 -> `DecodeError::BadMagic(0x0000)`. Verify stream is not consumed past header.
-- [ ] `header_bad_magic_random_bytes`: first 2 bytes = 0xDEAD -> `DecodeError::BadMagic(0xDEAD)`.
-- [ ] `header_unknown_flags_ignored`: flags=0xFF (all bits set, only COMPRESSED=0x01 defined) -- decode succeeds, unknown bits silently ignored. Verifies forward compatibility.
-- [ ] `header_version_field_preserved`: version=5 in header -> decoded header.version == 5. (Header decode doesn't reject versions; version negotiation is at PDU level.)
+Header extension tests (all completed 2026-04-04 — existing header_roundtrip/zero_values/max_values updated to 14-byte format + 4 new tests):
+- [x] `header_roundtrip` (was `header_14byte_roundtrip`): encode/decode a 14-byte header with magic=0x4F54, version=1, flags=0. Assert all fields survive roundtrip.
+- [x] `header_zero_values` (was `header_14byte_zero_values`): all fields zero except magic. Assert roundtrip.
+- [x] `header_max_values` (was `header_14byte_max_values`): max u16/u8/u32 values. Assert roundtrip.
+- [x] `header_bad_magic_rejected`: magic=0x0000 -> `DecodeError::BadMagic(0x0000)`.
+- [x] `header_bad_magic_random_bytes`: magic=0xDEAD -> `DecodeError::BadMagic(0xDEAD)`.
+- [x] `header_unknown_flags_ignored`: flags=0xFF, decode succeeds (forward compat).
+- [x] `header_version_field_preserved`: version=5 in header -> decoded header.version == 5.
 
 Compression tests:
 - [ ] `compression_roundtrip_large_payload`: encode a `NotifyPaneSnapshot` with 200x50 grid (>4KB payload). Assert COMPRESSED flag is set in wire bytes. Decode and assert equality.
@@ -156,9 +156,9 @@ Version negotiation tests (IPC tests in `server/tests.rs`, Unix-gated):
 - [ ] `feature_negotiation_no_features`: client sends features=0 -> HelloAck.features = 0. No compression used even for large payloads on this connection.
 - [ ] `feature_negotiation_unknown_bits_preserved`: client sends features with unknown bit set (e.g., 0x80) -> server ignores unknown bits in intersection (result has only known bits).
 
-Forward compat tests (update existing):
-- [ ] Update `forward_compat_codec_skips_unknown_and_stays_aligned` to use 14-byte header format
-- [ ] Update `frame_reader_forward_compat_skips_unknown_and_stays_aligned` in `server/tests.rs` to use 14-byte header
+Forward compat tests (updated existing, completed 2026-04-04):
+- [x] Update `forward_compat_codec_skips_unknown_and_stays_aligned` to use 14-byte header format
+- [x] Update `frame_reader_forward_compat_skips_unknown_and_stays_aligned` in `server/tests.rs` to use 14-byte header
 
 ---
 

@@ -5,10 +5,10 @@
 //! maintain their own `Vec<u8>` buffer and delegate here for the actual
 //! header-parse → validate → deserialize → drain sequence.
 
-use super::messages::MuxPdu;
 use super::msg_type::MsgType;
-use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
+use super::{FRAME_MAGIC, FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 use crate::protocol::codec::{DecodeError, DecodedFrame};
+use crate::protocol::messages::MuxPdu;
 
 /// Try to decode one complete frame from a buffer.
 ///
@@ -27,6 +27,12 @@ pub(crate) fn try_decode_from_buf(buf: &mut Vec<u8>) -> Option<Result<DecodedFra
             .try_into()
             .expect("checked length >= HEADER_LEN"),
     );
+
+    // Validate magic bytes — early detection of non-oriterm connections.
+    if header.magic != FRAME_MAGIC {
+        buf.drain(..HEADER_LEN);
+        return Some(Err(DecodeError::BadMagic(header.magic)));
+    }
 
     // Validate payload size.
     if header.payload_len > MAX_PAYLOAD {
