@@ -11,7 +11,9 @@ mod transport;
 
 use std::collections::{HashMap, HashSet};
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::PaneId;
 use crate::PaneSnapshot;
@@ -34,6 +36,12 @@ use self::transport::ClientTransport;
 pub struct MuxClient {
     /// IPC transport (reader thread + socket). `None` when test-only stub.
     transport: Option<ClientTransport>,
+
+    /// Daemon socket path (stored for reconnection).
+    socket_path: Option<PathBuf>,
+
+    /// Event loop wakeup callback (stored for reconnection).
+    wakeup: Option<Arc<dyn Fn() + Send + Sync>>,
 
     /// Buffered notifications from the background reader thread.
     notifications: Vec<MuxNotification>,
@@ -59,10 +67,12 @@ impl MuxClient {
         socket_path: &std::path::Path,
         wakeup: Arc<dyn Fn() + Send + Sync>,
     ) -> io::Result<Self> {
-        let transport = ClientTransport::connect(socket_path, wakeup)?;
+        let transport = ClientTransport::connect(socket_path, Arc::clone(&wakeup))?;
         log::info!("MuxClient connected, client_id={}", transport.client_id());
         Ok(Self {
             transport: Some(transport),
+            socket_path: Some(socket_path.to_path_buf()),
+            wakeup: Some(wakeup),
             notifications: Vec::new(),
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
@@ -77,6 +87,8 @@ impl MuxClient {
     pub fn new() -> Self {
         Self {
             transport: None,
+            socket_path: None,
+            wakeup: None,
             notifications: Vec::new(),
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
@@ -124,7 +136,7 @@ impl MuxClient {
     ///
     /// Measures raw IPC overhead with zero payload (no snapshot building,
     /// no serialization of grid data). Used for latency diagnostics.
-    pub fn ping_rpc(&mut self) -> io::Result<std::time::Duration> {
+    pub fn ping_rpc(&mut self) -> io::Result<Duration> {
         let start = std::time::Instant::now();
         match self.rpc(MuxPdu::Ping)? {
             MuxPdu::PingAck => Ok(start.elapsed()),
@@ -139,6 +151,79 @@ impl MuxClient {
         self.transport
             .as_ref()
             .is_some_and(ClientTransport::is_alive)
+    }
+
+    /// Attempt to reconnect to the daemon.
+    ///
+    /// Drops the old transport (joining the reader thread), establishes a new
+    /// connection, and re-subscribes to all panes that were in the snapshot
+    /// cache. Cached snapshots survive — the UI shows last-known state during
+    /// the reconnection window.
+    ///
+    /// Returns `Ok(())` on success, `Err` if the connection could not be
+    /// re-established (daemon down, socket gone, etc.).
+    pub fn reconnect(&mut self) -> io::Result<()> {
+        let socket_path = self.socket_path.as_ref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotConnected,
+                "no socket path for reconnection",
+            )
+        })?;
+        let wakeup = self.wakeup.as_ref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotConnected,
+                "no wakeup callback for reconnection",
+            )
+        })?;
+
+        // Drop old transport — joins reader thread, closes socket.
+        self.transport = None;
+
+        // Establish new connection.
+        let transport = ClientTransport::connect(socket_path, Arc::clone(wakeup))?;
+        log::info!("reconnected, new client_id={}", transport.client_id());
+        self.transport = Some(transport);
+
+        // Clear stale state.
+        self.pending_refresh.clear();
+
+        // Re-subscribe to all cached panes. Collect keys first (borrow checker).
+        let pane_ids: Vec<PaneId> = self.pane_snapshots.keys().copied().collect();
+        for pane_id in &pane_ids {
+            self.subscribe_pane(*pane_id);
+        }
+
+        // Mark all panes dirty so the render loop fetches fresh snapshots.
+        self.dirty_panes.extend(pane_ids);
+
+        Ok(())
+    }
+
+    /// Attempt reconnection with exponential backoff.
+    ///
+    /// Tries up to `max_attempts` times with 500ms between attempts. Returns
+    /// `Ok(())` on the first successful reconnection, or the last error if
+    /// all attempts fail. The caller (App event loop) decides what to do on
+    /// final failure (show error bar, fall back to embedded mode, etc.).
+    pub fn reconnect_with_backoff(&mut self, max_attempts: u32) -> io::Result<()> {
+        let delay = Duration::from_millis(500);
+        let mut last_err = None;
+        for attempt in 1..=max_attempts {
+            match self.reconnect() {
+                Ok(()) => {
+                    log::info!("reconnected on attempt {attempt}/{max_attempts}");
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!("reconnect attempt {attempt}/{max_attempts} failed: {e}");
+                    last_err = Some(e);
+                    if attempt < max_attempts {
+                        std::thread::sleep(delay);
+                    }
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| io::Error::other("reconnect failed")))
     }
 
     /// Send an RPC request to the daemon and return the response.
