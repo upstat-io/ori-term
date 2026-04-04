@@ -85,6 +85,7 @@ pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
                 formatter: osc52_response_formatter(ct),
             })
         }
+        MuxPdu::NotifyNewTab => Some(MuxNotification::NewTab),
         other => {
             log::debug!("unexpected notification PDU: {other:?}");
             None
