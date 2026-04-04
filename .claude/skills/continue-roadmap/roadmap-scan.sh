@@ -385,7 +385,9 @@ for f in "$ROADMAP_DIR"/section-*.md; do
         mismatch=" !! MISMATCH: frontmatter=not-started but ${checked} checked"
     fi
 
-    if [[ "$unchecked" -eq 0 ]]; then
+    if [[ "$status" == "superseded" ]]; then
+        echo "[done] Section ${section}: ${title} (superseded)${mismatch}"
+    elif [[ "$unchecked" -eq 0 ]]; then
         echo "[done] Section ${section}: ${title} (${checked}/${total})${mismatch}"
     else
         pct=0
@@ -395,7 +397,8 @@ for f in "$ROADMAP_DIR"/section-*.md; do
         echo "[open] Section ${section}: ${title} (${checked}/${total}, ${pct}%)${mismatch}"
 
         # Track first sequential incomplete (fallback if no priority)
-        if [[ -z "$first_incomplete" ]]; then
+        # Skip superseded sections — their work lives in other sections.
+        if [[ -z "$first_incomplete" && "$status" != "superseded" ]]; then
             first_incomplete="$f"
         fi
     fi
