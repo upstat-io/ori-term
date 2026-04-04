@@ -106,17 +106,24 @@ fn rss_plateaus_under_sustained_output() {
 
     let rss_after_sustained = rss_bytes();
 
-    // RSS growth should be minimal — under 2 MB. The scrollback is bounded
-    // (1000 rows), so old rows are recycled. Any significant growth indicates
-    // a leak (unbounded buffer, stale cache, etc.).
+    // RSS growth should be minimal. The scrollback is bounded (1000 rows),
+    // so old rows are recycled. Any significant growth indicates a leak.
+    // macOS threshold is higher (8 MB) because its zone allocator retains
+    // freed pages more aggressively than Linux's mmap/munmap.
     let growth = rss_after_sustained.saturating_sub(rss_after_warmup);
+    let threshold = if cfg!(target_os = "macos") {
+        8 * MB
+    } else {
+        2 * MB
+    };
     assert!(
-        growth < 2 * MB,
+        growth < threshold,
         "RSS grew {:.1} MB after 100k lines (warmup: {:.1} MB, after: {:.1} MB). \
-         Expected < 2 MB growth with bounded scrollback.",
+         Expected < {:.0} MB growth with bounded scrollback.",
         growth as f64 / MB as f64,
         rss_after_warmup as f64 / MB as f64,
         rss_after_sustained as f64 / MB as f64,
+        threshold as f64 / MB as f64,
     );
 }
 
