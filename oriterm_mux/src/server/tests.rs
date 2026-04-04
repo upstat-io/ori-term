@@ -7,7 +7,7 @@
 //! waiting for readiness events that never fire.
 
 use crate::MuxPdu;
-use crate::protocol::{FrameHeader, ProtocolCodec};
+use crate::protocol::{FRAME_MAGIC, FrameHeader, HEADER_LEN, PROTOCOL_VERSION, ProtocolCodec};
 
 use super::frame_io::FrameReader;
 use super::pid_file::{PidFile, read_pid};
@@ -78,7 +78,7 @@ fn frame_reader_empty_returns_none() {
 #[test]
 fn frame_reader_partial_header_returns_none() {
     let mut reader = FrameReader::new();
-    // Only 5 bytes (less than 10-byte header).
+    // Only 5 bytes (less than 14-byte header).
     reader.extend(&[0x01, 0x01, 0x00, 0x00, 0x00]);
     assert!(reader.try_decode().is_none());
 }
@@ -136,7 +136,7 @@ fn frame_reader_partial_payload_waits() {
     ProtocolCodec::encode_frame(&mut full, 5, &pdu).unwrap();
 
     // Feed just the header + half the payload.
-    let split_at = 10 + (full.len() - 10) / 2;
+    let split_at = HEADER_LEN + (full.len() - HEADER_LEN) / 2;
     reader.extend(&full[..split_at]);
     assert!(reader.try_decode().is_none());
 
@@ -152,12 +152,15 @@ fn frame_reader_unknown_msg_type_returns_error() {
     let mut reader = FrameReader::new();
 
     // Construct a header with an invalid message type.
-    let mut buf = [0u8; 10];
-    buf[0..2].copy_from_slice(&0xFFFFu16.to_le_bytes()); // bad msg type
-    buf[2..6].copy_from_slice(&1u32.to_le_bytes()); // seq
-    buf[6..10].copy_from_slice(&0u32.to_le_bytes()); // payload_len = 0
-
-    reader.extend(&buf);
+    let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
+        msg_type: 0xFFFF,
+        seq: 1,
+        payload_len: 0,
+    };
+    reader.extend(&header.encode());
     let result = reader.try_decode().unwrap();
     assert!(result.is_err());
 }
@@ -216,6 +219,9 @@ fn frame_reader_recovers_after_payload_too_large() {
 
     // First: a bad frame with payload_len > MAX_PAYLOAD.
     let bad_header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: MAX_PAYLOAD + 1,
@@ -244,6 +250,9 @@ fn frame_reader_forward_compat_skips_unknown_and_stays_aligned() {
 
     // Frame 1: unknown msg_type 0xFFFF with 8-byte payload.
     let header1 = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 0,
         payload_len: 8,
@@ -273,6 +282,9 @@ fn frame_reader_forward_compat_skips_unknown_and_stays_aligned() {
 #[test]
 fn frame_reader_forward_compat_waits_for_full_unknown_frame() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 0,
         payload_len: 20,

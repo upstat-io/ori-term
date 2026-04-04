@@ -23,6 +23,8 @@ pub struct DecodedFrame {
 pub enum DecodeError {
     /// I/O error reading from the stream.
     Io(io::Error),
+    /// Magic bytes do not match `0x4F54`.
+    BadMagic(u16),
     /// Payload exceeds [`MAX_PAYLOAD`].
     PayloadTooLarge(u32),
     /// Unknown message type ID in the header.
@@ -35,6 +37,7 @@ impl std::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::BadMagic(m) => write!(f, "bad magic bytes: 0x{m:04X} (expected 0x4F54)"),
             Self::PayloadTooLarge(n) => {
                 write!(f, "payload too large: {n} bytes (max {MAX_PAYLOAD})")
             }
@@ -49,7 +52,7 @@ impl std::error::Error for DecodeError {
         match self {
             Self::Io(e) => Some(e),
             Self::Deserialize(e) => Some(e),
-            _ => None,
+            Self::BadMagic(_) | Self::PayloadTooLarge(_) | Self::UnknownMsgType(_) => None,
         }
     }
 }

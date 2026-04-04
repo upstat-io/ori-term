@@ -6,7 +6,7 @@ use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
 use super::messages::MuxPdu;
 use super::msg_type::MsgType;
 use super::snapshot::{PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
-use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
+use super::{FRAME_MAGIC, FrameHeader, HEADER_LEN, MAX_PAYLOAD, PROTOCOL_VERSION};
 use crate::id::{ClientId, PaneId};
 
 // -- FrameHeader tests --
@@ -14,6 +14,9 @@ use crate::id::{ClientId, PaneId};
 #[test]
 fn header_roundtrip() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0x0103,
         seq: 42,
         payload_len: 1024,
@@ -27,6 +30,9 @@ fn header_roundtrip() {
 #[test]
 fn header_zero_values() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: 0,
+        flags: 0,
         msg_type: 0,
         seq: 0,
         payload_len: 0,
@@ -38,12 +44,89 @@ fn header_zero_values() {
 #[test]
 fn header_max_values() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: u8::MAX,
+        flags: u8::MAX,
         msg_type: u16::MAX,
         seq: u32::MAX,
         payload_len: u32::MAX,
     };
     let decoded = FrameHeader::decode(&header.encode());
     assert_eq!(header, decoded);
+}
+
+#[test]
+fn header_bad_magic_rejected() {
+    let header = FrameHeader {
+        magic: 0x0000,
+        version: PROTOCOL_VERSION,
+        flags: 0,
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: 0,
+    };
+    let mut buf = header.encode().to_vec();
+    // Append dummy bytes so the codec has enough to read.
+    buf.extend_from_slice(&[0u8; 64]);
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
+    assert!(
+        matches!(err, DecodeError::BadMagic(0x0000)),
+        "expected BadMagic(0), got {err:?}"
+    );
+}
+
+#[test]
+fn header_bad_magic_random_bytes() {
+    let header = FrameHeader {
+        magic: 0xDEAD,
+        version: PROTOCOL_VERSION,
+        flags: 0,
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: 0,
+    };
+    let mut buf = header.encode().to_vec();
+    buf.extend_from_slice(&[0u8; 64]);
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
+    assert!(
+        matches!(err, DecodeError::BadMagic(0xDEAD)),
+        "expected BadMagic(0xDEAD), got {err:?}"
+    );
+}
+
+#[test]
+fn header_unknown_flags_ignored() {
+    // All flag bits set — decoder should accept (forward compat).
+    let pdu = MuxPdu::Ping;
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
+
+    // Overwrite the flags byte (offset 3) with 0xFF.
+    buf[3] = 0xFF;
+
+    let mut reader = Cursor::new(buf);
+    let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
+    assert_eq!(frame.seq, 1);
+    assert!(matches!(frame.pdu, MuxPdu::Ping));
+}
+
+#[test]
+fn header_version_field_preserved() {
+    let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: 5,
+        flags: 0,
+        msg_type: 0x0103,
+        seq: 42,
+        payload_len: 1024,
+    };
+    let encoded = header.encode();
+    let decoded = FrameHeader::decode(&encoded);
+    assert_eq!(decoded.version, 5);
 }
 
 // -- MsgType tests --
@@ -628,6 +711,9 @@ fn notification_delivery() {
 fn decode_payload_too_large() {
     // Craft a header with payload_len > MAX_PAYLOAD.
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: MAX_PAYLOAD + 1,
@@ -644,6 +730,9 @@ fn decode_payload_too_large() {
 #[test]
 fn decode_unknown_msg_type() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 1,
         payload_len: 0,
@@ -657,7 +746,7 @@ fn decode_unknown_msg_type() {
 
 #[test]
 fn decode_truncated_header() {
-    let buf = vec![0u8; 5]; // Only 5 bytes, header needs 10.
+    let buf = vec![0u8; 5]; // Only 5 bytes, header needs 14.
     let mut reader = Cursor::new(buf);
     let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
@@ -666,6 +755,9 @@ fn decode_truncated_header() {
 #[test]
 fn decode_truncated_payload() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: 100,
@@ -771,6 +863,9 @@ fn decode_payload_exactly_at_max() {
     // A header claiming exactly MAX_PAYLOAD bytes should be accepted
     // (the check is > MAX_PAYLOAD, not >=).
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: MAX_PAYLOAD,
@@ -790,6 +885,9 @@ fn decode_garbage_payload_returns_deserialize_error() {
     // bytes are random garbage that can't be deserialized.
     let garbage = vec![0xFF; 32];
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: garbage.len() as u32,
@@ -810,6 +908,9 @@ fn decode_empty_payload_for_pdu_with_fields() {
     // A Hello PDU requires a pid field. Sending an empty payload (len=0)
     // should cause a deserialization error, not a panic.
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: 0,
@@ -862,11 +963,14 @@ fn wire_bytes_stable_for_hello() {
     assert_eq!(frame.seq, 1);
     assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
 
-    // Pin header bytes: msg_type=0x0101 LE, seq=1 LE, payload_len LE.
-    assert_eq!(buf[0..2], [0x01, 0x01]); // MsgType::Hello
-    assert_eq!(buf[2..6], [0x01, 0x00, 0x00, 0x00]); // seq=1
+    // Pin header bytes: magic, version, flags, msg_type, seq, payload_len.
+    assert_eq!(buf[0..2], [0x54, 0x4F]); // FRAME_MAGIC LE
+    assert_eq!(buf[2], 1); // PROTOCOL_VERSION
+    assert_eq!(buf[3], 0); // flags
+    assert_eq!(buf[4..6], [0x01, 0x01]); // MsgType::Hello
+    assert_eq!(buf[6..10], [0x01, 0x00, 0x00, 0x00]); // seq=1
     // Payload len and content depend on bincode, but header is stable.
-    let payload_len = u32::from_le_bytes([buf[6], buf[7], buf[8], buf[9]]);
+    let payload_len = u32::from_le_bytes([buf[10], buf[11], buf[12], buf[13]]);
     assert_eq!(buf.len(), HEADER_LEN + payload_len as usize);
 
     // Pin total frame size. bincode for Hello { pid: 42 }:
@@ -1043,6 +1147,9 @@ fn forward_compat_codec_skips_unknown_and_stays_aligned() {
 
     // Frame 1: unknown msg_type 0xFFFF with 100-byte payload.
     let header1 = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 0,
         payload_len: 100,
