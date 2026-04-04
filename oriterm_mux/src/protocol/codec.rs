@@ -109,7 +109,7 @@ impl ProtocolCodec {
     /// (single `write_all` call for the assembled frame).
     pub fn encode_frame<W: Write>(writer: &mut W, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
         let mut buf = Vec::new();
-        super::encode::encode_into_buf(&mut buf, seq, pdu)?;
+        super::encode::encode_into_buf(&mut buf, seq, pdu, false)?;
         writer.write_all(&buf)?;
         writer.flush()
     }

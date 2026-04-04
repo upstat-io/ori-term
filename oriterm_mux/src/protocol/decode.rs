@@ -6,7 +6,7 @@
 //! header-parse → validate → deserialize → drain sequence.
 
 use super::msg_type::MsgType;
-use super::{FRAME_MAGIC, FrameHeader, HEADER_LEN, MAX_PAYLOAD};
+use super::{FLAG_COMPRESSED, FRAME_MAGIC, FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 use crate::protocol::codec::{DecodeError, DecodedFrame};
 use crate::protocol::messages::MuxPdu;
 
@@ -17,6 +17,8 @@ use crate::protocol::messages::MuxPdu;
 /// or `None` if there aren't enough bytes yet.
 ///
 /// On success or error, consumed bytes are drained from `buf`.
+/// If the `COMPRESSED` flag is set in the header, the payload is
+/// decompressed with zstd before bincode deserialization.
 pub(crate) fn try_decode_from_buf(buf: &mut Vec<u8>) -> Option<Result<DecodedFrame, DecodeError>> {
     if buf.len() < HEADER_LEN {
         return None;
@@ -56,10 +58,24 @@ pub(crate) fn try_decode_from_buf(buf: &mut Vec<u8>) -> Option<Result<DecodedFra
         return None;
     }
 
-    // Deserialize the payload.
-    let payload = &buf[HEADER_LEN..total];
-    let result: Result<MuxPdu, _> = bincode::deserialize(payload);
+    // Extract and drain the raw payload bytes.
+    let raw_payload = buf[HEADER_LEN..total].to_vec();
     buf.drain(..total);
+
+    // Decompress if the COMPRESSED flag is set.
+    let payload_bytes = if header.flags & FLAG_COMPRESSED != 0 {
+        match zstd::decode_all(raw_payload.as_slice()) {
+            Ok(decompressed) => decompressed,
+            Err(e) => {
+                return Some(Err(DecodeError::Io(e)));
+            }
+        }
+    } else {
+        raw_payload
+    };
+
+    // Deserialize the (possibly decompressed) payload.
+    let result: Result<MuxPdu, _> = bincode::deserialize(&payload_bytes);
 
     match result {
         Ok(pdu) => Some(Ok(DecodedFrame {
