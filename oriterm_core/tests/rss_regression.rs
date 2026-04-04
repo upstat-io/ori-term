@@ -33,7 +33,7 @@ fn platform_rss() -> Option<usize> {
         let mut info: libc::mach_task_basic_info_data_t = std::mem::zeroed();
         let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
         let kr = libc::task_info(
-            libc::mach_task_self(),
+            libc::mach_task_self_,
             libc::MACH_TASK_BASIC_INFO,
             std::ptr::addr_of_mut!(info).cast(),
             &mut count,
@@ -48,8 +48,6 @@ fn platform_rss() -> Option<usize> {
 
 #[cfg(windows)]
 fn platform_rss() -> Option<usize> {
-    use std::mem;
-
     use windows_sys::Win32::System::ProcessStatus::{
         GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
     };
@@ -57,12 +55,12 @@ fn platform_rss() -> Option<usize> {
 
     #[allow(unsafe_code)]
     unsafe {
-        let mut counters: PROCESS_MEMORY_COUNTERS = mem::zeroed();
-        counters.cb = mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+        counters.cb = size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
         let ok = GetProcessMemoryInfo(
             GetCurrentProcess(),
             &mut counters,
-            mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
         );
         if ok != 0 {
             Some(counters.WorkingSetSize)
