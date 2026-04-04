@@ -502,11 +502,11 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 
 ### Debug Overlay
 
-- [ ] Optional FPS counter and dirty-row percentage in debug overlay
-- [ ] Toggled via config flag or keyboard shortcut
-- [ ] Shows: current FPS, dirty rows this frame, total instance count, atlas utilization
-- [ ] Implement as a new overlay type in the compositor layer (similar to existing overlays)
-- [ ] **File:** new `oriterm/src/gpu/debug_overlay/mod.rs` (keep under 500 lines)
+- [x] Optional FPS counter and dirty-row percentage in debug overlay
+- [x] Toggled via keyboard shortcut (`Ctrl+Shift+F12` → `ToggleDebugOverlay` action, also configurable via keybind TOML)
+- [x] Shows: current FPS (EWMA-smoothed), dirty rows this frame (count + percentage), total instance count, draw call count, atlas utilization (mono/subpixel/color: glyphs cached + pages active)
+- [x] Implemented as a StatusBadge overlay in bottom-left corner, rendered via `append_ui_scene_with_text()` (same pattern as search bar). **File:** `oriterm/src/app/redraw/debug_overlay.rs` (95 lines)
+- [x] Atlas stats exposed via new `subpixel_atlas()` and `color_atlas()` accessors on `WindowRenderer`
 
 ### Skip Off-Screen Content
 

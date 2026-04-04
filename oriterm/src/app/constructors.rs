@@ -155,6 +155,8 @@ impl App {
             scratch_pane_mcs: HashMap::new(),
             last_render: Instant::now(),
             perf: PerfStats::new(profiling),
+            debug_overlay_enabled: false,
+            debug_fps: 0.0,
         }
     }
 }

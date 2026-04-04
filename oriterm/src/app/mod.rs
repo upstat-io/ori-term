@@ -248,6 +248,11 @@ pub(crate) struct App {
 
     // Performance counters logged periodically.
     perf: PerfStats,
+
+    // Debug performance overlay toggle (Ctrl+Shift+F12).
+    debug_overlay_enabled: bool,
+    // EWMA-smoothed FPS for the debug overlay display.
+    debug_fps: f32,
 }
 
 impl App {

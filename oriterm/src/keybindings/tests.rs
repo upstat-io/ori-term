@@ -536,6 +536,7 @@ fn action_as_str_roundtrip() {
         Action::ToggleFloatTile,
         Action::UndoSplit,
         Action::RedoSplit,
+        Action::ToggleDebugOverlay,
         Action::None,
     ];
     for action in &actions {

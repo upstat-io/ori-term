@@ -180,6 +180,7 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "UndoSplit" => Action::UndoSplit,
         "RedoSplit" => Action::RedoSplit,
         "OpenSettings" | "open_settings" => Action::OpenSettings,
+        "ToggleDebugOverlay" => Action::ToggleDebugOverlay,
         "None" => Action::None,
         _ => return None,
     })

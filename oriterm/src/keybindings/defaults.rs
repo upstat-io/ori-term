@@ -99,6 +99,8 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(ch("a"), ctrl, Action::SelectAll),
         // Settings overlay.
         bind(ch(","), ctrl, Action::OpenSettings),
+        // Debug performance overlay.
+        bind(named(NamedKey::F12), cs, Action::ToggleDebugOverlay),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),

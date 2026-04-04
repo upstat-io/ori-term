@@ -78,6 +78,7 @@ pub(crate) struct WindowContext {
 
     // Reusable buffers.
     pub(super) search_bar_buf: String,
+    pub(super) debug_overlay_buf: String,
 
     // Surface strategy and damage tracking.
     #[expect(
@@ -142,6 +143,7 @@ impl WindowContext {
             last_tab_press: None,
             text_cache: TextShapeCache::new(),
             search_bar_buf: String::new(),
+            debug_overlay_buf: String::new(),
             render_strategy: RenderStrategy::TerminalCached,
             damage: DamageSet::default(),
             ui_stale: true,
