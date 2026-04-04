@@ -84,12 +84,12 @@ Bincode backward-compat for Hello/HelloAck: bincode 1.3 uses sequential field en
 These share identical logic (bincode serialize, validate size, construct header, write). Consider extracting a shared `encode_to_buf(buf: &mut Vec<u8>, seq: u32, pdu: &MuxPdu, flags: u8) -> io::Result<()>` into `protocol/encode.rs` before adding compression, mirroring the decode extraction. Otherwise compression logic must be implemented twice.
 
 **Remaining hardening (genuinely not started):**
-- [ ] Extract shared decode logic to eliminate algorithmic duplication (MUST happen before header change):
-  - [ ] Create `oriterm_mux/src/protocol/decode.rs` with shared `try_decode_from_buf(buf: &mut Vec<u8>) -> Option<Result<DecodedFrame, DecodeError>>`
-  - [ ] Add `mod decode;` to `protocol/mod.rs`
-  - [ ] Refactor `ProtocolCodec::try_decode()` in `codec.rs` to call `decode::try_decode_from_buf()`
-  - [ ] Refactor `FrameReader::try_decode()` in `frame_io.rs` to call `decode::try_decode_from_buf()`
-  - [ ] Verify all existing tests pass (no behavioral change)
+- [x] Extract shared decode logic to eliminate algorithmic duplication (completed 2026-04-04):
+  - [x] Create `oriterm_mux/src/protocol/decode.rs` with shared `try_decode_from_buf(buf: &mut Vec<u8>) -> Option<Result<DecodedFrame, DecodeError>>`
+  - [x] Add `mod decode;` to `protocol/mod.rs`
+  - [x] Refactor `ProtocolCodec::try_decode()` in `codec.rs` to call `decode::try_decode_from_buf()`
+  - [x] Refactor `FrameReader::try_decode()` in `frame_io.rs` to call `decode::try_decode_from_buf()`
+  - [x] Verify all existing tests pass (no behavioral change)
 - [ ] Extract shared encode logic (recommended before compression):
   - [ ] Create `oriterm_mux/src/protocol/encode.rs` with shared `encode_to_buf(buf: &mut Vec<u8>, seq: u32, pdu: &MuxPdu, flags: u8) -> io::Result<()>`
   - [ ] Add `mod encode;` to `protocol/mod.rs`
