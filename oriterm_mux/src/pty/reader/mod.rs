@@ -13,10 +13,13 @@ use crossbeam_channel::Sender;
 
 /// PTY read buffer size.
 ///
-/// Large buffer (1 MB, matching Alacritty) so the reader can accumulate
-/// data while the IO thread is busy processing commands. Prevents
-/// `ConPTY` back-pressure on Windows during flood output.
-const READ_BUFFER_SIZE: usize = 0x10_0000; // 1 MB
+/// 128 KB matches `WezTerm`. Smaller buffers cause the reader to return
+/// from `read()` more frequently, which drains the `ConPTY` output pipe
+/// in smaller chunks. This gives conhost more opportunities to process
+/// the input pipe between output flushes — critical for Ctrl+C delivery
+/// during sustained output flooding (BUG-11-1). Alacritty uses 1 MB but
+/// doesn't use `ConPTY` (it uses non-blocking I/O with polling).
+const READ_BUFFER_SIZE: usize = 0x2_0000; // 128 KB
 
 /// PTY byte forwarder — reads shell output and sends to the IO thread.
 ///
@@ -55,6 +58,14 @@ impl PtyReader {
     }
 
     /// Main read loop — runs until PTY closes or shutdown is signaled.
+    ///
+    /// After each read, sleeps 1ms so that `ConPTY`'s conhost can process
+    /// the input pipe between output bursts. Without this, the tight read
+    /// loop keeps the output pipe drained so aggressively that conhost
+    /// never gets a scheduling window to handle input — making Ctrl+C
+    /// unresponsive during sustained output flooding (BUG-11-1). `WezTerm`
+    /// achieves the same effect by doing VTE parsing inline on its reader
+    /// thread (~5-10ms per 128KB chunk).
     fn run(mut self) {
         let mut buf = vec![0u8; READ_BUFFER_SIZE];
 
@@ -81,6 +92,16 @@ impl PtyReader {
                 // IO thread channel disconnected — shut down.
                 break;
             }
+
+            // Pause between reads so ConPTY's conhost can process input.
+            // WezTerm achieves this naturally because its reader does VTE
+            // parsing inline (~5-10ms per 128KB chunk). Our reader offloads
+            // parsing to the IO thread and loops back to read() instantly,
+            // starving conhost's input thread (BUG-11-1). A 1ms sleep
+            // after each read gives conhost scheduling time to handle
+            // Ctrl+C between output bursts. Throughput impact is minimal:
+            // 128KB per 1ms = 128 MB/s, far above terminal needs.
+            thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 }

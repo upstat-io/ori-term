@@ -119,13 +119,10 @@ pub fn dispatch_request(
         MuxPdu::SignalChild { pane_id, signal } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 if let Some(sig) = signal_from_wire(signal) {
-                    let sent = pane.signal_child(sig);
-                    log::info!("SignalChild({pane_id}, {sig:?}): sent={sent}");
+                    pane.signal_child(sig);
                 } else {
                     log::warn!("unknown signal {signal} for {pane_id}");
                 }
-            } else {
-                log::warn!("SignalChild: pane {pane_id} not found");
             }
             None // Fire-and-forget.
         }
