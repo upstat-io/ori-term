@@ -78,6 +78,11 @@ bitflags! {
         /// actually resizes the grid to 80/132 columns. When reset,
         /// DECCOLM only performs side effects (clear, home, reset margins).
         const ENABLE_MODE_3          = 1 << 30;
+        /// Mode 9001 — ConPTY win32-input mode.
+        ///
+        /// When set, key events should be encoded as Win32 keyboard input
+        /// records (`CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`) instead of VT text.
+        const WIN32_INPUT            = 1 << 31;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()

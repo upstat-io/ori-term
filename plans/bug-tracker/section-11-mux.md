@@ -11,7 +11,12 @@ Bugs in the pane multiplexer — PTY I/O, IO thread behavior, pane lifecycle, me
 
 ## Open Bugs
 
-(none)
+- [ ] `[BUG-11-3][high]` **OSC 10/11/12 color queries silently dropped — no reply sent to requesting app** — found by manual.
+  Repro: Run `printf '\e]10;?\e\\'` in oriterm — no response. Apps querying terminal colors (e.g., vim, neovim, delta, bat) get no reply, causing hangs or incorrect color detection.
+  Subsystem: `oriterm_mux/src/pane/io_thread/event_proxy/mod.rs` (line 150 — ColorRequest dropped), `oriterm_mux/src/mux_event/tests.rs` (line 445 — test asserts no MuxEvent for ColorRequest)
+  Analysis: Core correctly emits `Event::ColorRequest(index, closure)` in `oriterm_core/src/term/handler/osc.rs:94`. The closure takes the current `Rgb` color and returns the OSC response string that should be written back to the PTY. However, the IO-thread event proxy at `event_proxy/mod.rs:150` groups ColorRequest with CursorBlinkingChange and MouseCursorDirty as "events that don't need mux routing" and only wakes the event loop. The response string is never generated and never written to the PTY. The fix requires the event proxy to invoke the closure with the current color from the palette, then write the resulting response bytes back to the PTY (similar to how PtyWrite events are handled). The existing test asserting no MuxEvent for ColorRequest must also be updated.
+  Found: 2026-04-05 | Source: manual
+  Note: Roadmap section 38 (protocol extensions) documents OSC 10/11/12 core implementation as complete but did not verify end-to-end mux routing. Section 30 (pane domain) explicitly documented ColorRequest as "non-routed" — this was a design gap, not intentional.
 
 - [ ] `[BUG-11-2][high]` **Memory (RSS) grows during output flooding and does not decrease after killing panes** — found by manual.
   Repro: Open multiple panes. Flood each with sustained output (e.g., `yes`, `cat /dev/urandom`). Observe RSS climbing. Kill the panes (close tabs). RSS does not decrease.
