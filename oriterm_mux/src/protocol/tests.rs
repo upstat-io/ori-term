@@ -6,7 +6,7 @@ use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
 use super::messages::MuxPdu;
 use super::msg_type::MsgType;
 use super::snapshot::{PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
-use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
+use super::{FRAME_MAGIC, FrameHeader, HEADER_LEN, MAX_PAYLOAD, PROTOCOL_VERSION};
 use crate::id::{ClientId, PaneId};
 
 // -- FrameHeader tests --
@@ -14,6 +14,9 @@ use crate::id::{ClientId, PaneId};
 #[test]
 fn header_roundtrip() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0x0103,
         seq: 42,
         payload_len: 1024,
@@ -27,6 +30,9 @@ fn header_roundtrip() {
 #[test]
 fn header_zero_values() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: 0,
+        flags: 0,
         msg_type: 0,
         seq: 0,
         payload_len: 0,
@@ -38,12 +44,92 @@ fn header_zero_values() {
 #[test]
 fn header_max_values() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: u8::MAX,
+        flags: u8::MAX,
         msg_type: u16::MAX,
         seq: u32::MAX,
         payload_len: u32::MAX,
     };
     let decoded = FrameHeader::decode(&header.encode());
     assert_eq!(header, decoded);
+}
+
+#[test]
+fn header_bad_magic_rejected() {
+    let header = FrameHeader {
+        magic: 0x0000,
+        version: PROTOCOL_VERSION,
+        flags: 0,
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: 0,
+    };
+    let mut buf = header.encode().to_vec();
+    // Append dummy bytes so the codec has enough to read.
+    buf.extend_from_slice(&[0u8; 64]);
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
+    assert!(
+        matches!(err, DecodeError::BadMagic(0x0000)),
+        "expected BadMagic(0), got {err:?}"
+    );
+}
+
+#[test]
+fn header_bad_magic_random_bytes() {
+    let header = FrameHeader {
+        magic: 0xDEAD,
+        version: PROTOCOL_VERSION,
+        flags: 0,
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: 0,
+    };
+    let mut buf = header.encode().to_vec();
+    buf.extend_from_slice(&[0u8; 64]);
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
+    assert!(
+        matches!(err, DecodeError::BadMagic(0xDEAD)),
+        "expected BadMagic(0xDEAD), got {err:?}"
+    );
+}
+
+#[test]
+fn header_unknown_flags_ignored() {
+    // Unknown flag bits (excluding COMPRESSED=0x01) are silently ignored
+    // for forward compatibility.
+    let pdu = MuxPdu::Ping;
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
+
+    // Set all bits EXCEPT COMPRESSED (0x01). COMPRESSED would trigger zstd
+    // decompression on an uncompressed payload, which is a valid error, not
+    // a forward-compat issue.
+    buf[3] = 0xFE;
+
+    let mut reader = Cursor::new(buf);
+    let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
+    assert_eq!(frame.seq, 1);
+    assert!(matches!(frame.pdu, MuxPdu::Ping));
+}
+
+#[test]
+fn header_version_field_preserved() {
+    let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: 5,
+        flags: 0,
+        msg_type: 0x0103,
+        seq: 42,
+        payload_len: 1024,
+    };
+    let encoded = header.encode();
+    let decoded = FrameHeader::decode(&encoded);
+    assert_eq!(decoded.version, 5);
 }
 
 // -- MsgType tests --
@@ -78,6 +164,8 @@ fn msg_type_roundtrip_all() {
         MsgType::SpawnPane,
         MsgType::ListPanes,
         MsgType::SetImageConfig,
+        MsgType::RequestNewTab,
+        MsgType::SetPanePriority,
         MsgType::HelloAck,
         MsgType::PaneClosedAck,
         MsgType::Subscribed,
@@ -90,12 +178,17 @@ fn msg_type_roundtrip_all() {
         MsgType::ExtractHtmlResp,
         MsgType::SpawnPaneResponse,
         MsgType::ListPanesResponse,
+        MsgType::NewTabAck,
         MsgType::Error,
+        MsgType::NotifyNewTab,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
         MsgType::NotifyPaneMetadataChanged,
-        MsgType::NotifyPaneBell,
+        MsgType::NotifyCommandComplete,
+        MsgType::NotifyClipboardStore,
         MsgType::NotifyPaneSnapshot,
+        MsgType::NotifyClipboardLoad,
+        MsgType::NotifyPaneBell,
     ];
     for t in types {
         let raw = t as u16;
@@ -131,7 +224,14 @@ fn roundtrip(seq: u32, pdu: MuxPdu) -> DecodedFrame {
 
 #[test]
 fn roundtrip_hello() {
-    roundtrip(1, MuxPdu::Hello { pid: 12345 });
+    roundtrip(
+        1,
+        MuxPdu::Hello {
+            pid: 12345,
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    );
 }
 
 #[test]
@@ -140,6 +240,8 @@ fn roundtrip_hello_ack() {
         1,
         MuxPdu::HelloAck {
             client_id: ClientId::from_raw(7),
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
         },
     );
 }
@@ -513,12 +615,23 @@ fn snapshot_with_cjk_emoji_combining() {
 #[test]
 fn sequence_correlation() {
     let mut buf = Vec::new();
-    ProtocolCodec::encode_frame(&mut buf, 100, &MuxPdu::Hello { pid: 1 }).unwrap();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        100,
+        &MuxPdu::Hello {
+            pid: 1,
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    )
+    .unwrap();
     ProtocolCodec::encode_frame(
         &mut buf,
         100,
         &MuxPdu::HelloAck {
             client_id: ClientId::from_raw(1),
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
         },
     )
     .unwrap();
@@ -622,6 +735,9 @@ fn notification_delivery() {
 fn decode_payload_too_large() {
     // Craft a header with payload_len > MAX_PAYLOAD.
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: MAX_PAYLOAD + 1,
@@ -638,6 +754,9 @@ fn decode_payload_too_large() {
 #[test]
 fn decode_unknown_msg_type() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 1,
         payload_len: 0,
@@ -651,7 +770,7 @@ fn decode_unknown_msg_type() {
 
 #[test]
 fn decode_truncated_header() {
-    let buf = vec![0u8; 5]; // Only 5 bytes, header needs 10.
+    let buf = vec![0u8; 5]; // Only 5 bytes, header needs 14.
     let mut reader = Cursor::new(buf);
     let err = ProtocolCodec::new().decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
@@ -660,6 +779,9 @@ fn decode_truncated_header() {
 #[test]
 fn decode_truncated_payload() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: 100,
@@ -678,11 +800,20 @@ fn decode_truncated_payload() {
 fn multiple_frames_sequential() {
     let mut buf = Vec::new();
     let pdus = vec![
-        (1, MuxPdu::Hello { pid: 1000 }),
+        (
+            1,
+            MuxPdu::Hello {
+                pid: 1000,
+                protocol_version: super::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        ),
         (
             1,
             MuxPdu::HelloAck {
                 client_id: ClientId::from_raw(1),
+                protocol_version: super::CURRENT_PROTOCOL_VERSION,
+                features: 0,
             },
         ),
         (
@@ -765,6 +896,9 @@ fn decode_payload_exactly_at_max() {
     // A header claiming exactly MAX_PAYLOAD bytes should be accepted
     // (the check is > MAX_PAYLOAD, not >=).
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: MAX_PAYLOAD,
@@ -784,6 +918,9 @@ fn decode_garbage_payload_returns_deserialize_error() {
     // bytes are random garbage that can't be deserialized.
     let garbage = vec![0xFF; 32];
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: garbage.len() as u32,
@@ -804,6 +941,9 @@ fn decode_empty_payload_for_pdu_with_fields() {
     // A Hello PDU requires a pid field. Sending an empty payload (len=0)
     // should cause a deserialization error, not a panic.
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: 0,
@@ -844,9 +984,13 @@ fn roundtrip_boundary_payload_sizes() {
 
 #[test]
 fn wire_bytes_stable_for_hello() {
-    // Pin the exact wire encoding for Hello { pid: 42 } at seq=1.
+    // Pin the exact wire encoding for Hello at seq=1.
     // If the serialization format changes, this test catches it.
-    let pdu = MuxPdu::Hello { pid: 42 };
+    let pdu = MuxPdu::Hello {
+        pid: 42,
+        protocol_version: super::CURRENT_PROTOCOL_VERSION,
+        features: 0,
+    };
     let mut buf = Vec::new();
     ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
 
@@ -854,13 +998,23 @@ fn wire_bytes_stable_for_hello() {
     let mut reader = Cursor::new(&buf);
     let frame = ProtocolCodec::new().decode_frame(&mut reader).unwrap();
     assert_eq!(frame.seq, 1);
-    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
+    assert_eq!(
+        frame.pdu,
+        MuxPdu::Hello {
+            pid: 42,
+            protocol_version: super::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        }
+    );
 
-    // Pin header bytes: msg_type=0x0101 LE, seq=1 LE, payload_len LE.
-    assert_eq!(buf[0..2], [0x01, 0x01]); // MsgType::Hello
-    assert_eq!(buf[2..6], [0x01, 0x00, 0x00, 0x00]); // seq=1
+    // Pin header bytes: magic, version, flags, msg_type, seq, payload_len.
+    assert_eq!(buf[0..2], [0x54, 0x4F]); // FRAME_MAGIC LE
+    assert_eq!(buf[2], 1); // PROTOCOL_VERSION
+    assert_eq!(buf[3], 0); // flags
+    assert_eq!(buf[4..6], [0x01, 0x01]); // MsgType::Hello
+    assert_eq!(buf[6..10], [0x01, 0x00, 0x00, 0x00]); // seq=1
     // Payload len and content depend on bincode, but header is stable.
-    let payload_len = u32::from_le_bytes([buf[6], buf[7], buf[8], buf[9]]);
+    let payload_len = u32::from_le_bytes([buf[10], buf[11], buf[12], buf[13]]);
     assert_eq!(buf.len(), HEADER_LEN + payload_len as usize);
 
     // Pin total frame size. bincode for Hello { pid: 42 }:
@@ -1037,6 +1191,9 @@ fn forward_compat_codec_skips_unknown_and_stays_aligned() {
 
     // Frame 1: unknown msg_type 0xFFFF with 100-byte payload.
     let header1 = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 0,
         payload_len: 100,
@@ -1058,6 +1215,134 @@ fn forward_compat_codec_skips_unknown_and_stays_aligned() {
     let frame = codec.decode_frame(&mut reader).unwrap();
     assert_eq!(frame.seq, 42);
     assert!(matches!(frame.pdu, MuxPdu::Ping));
+}
+
+// -- New tab protocol roundtrip tests --
+
+#[test]
+fn request_new_tab_roundtrip() {
+    let frame = roundtrip(10, MuxPdu::RequestNewTab);
+    assert_eq!(frame.seq, 10);
+    assert_eq!(frame.pdu, MuxPdu::RequestNewTab);
+}
+
+#[test]
+fn new_tab_ack_roundtrip() {
+    let frame = roundtrip(11, MuxPdu::NewTabAck);
+    assert_eq!(frame.seq, 11);
+    assert_eq!(frame.pdu, MuxPdu::NewTabAck);
+}
+
+#[test]
+fn notify_new_tab_roundtrip() {
+    let frame = roundtrip(0, MuxPdu::NotifyNewTab);
+    assert_eq!(frame.seq, 0);
+    assert_eq!(frame.pdu, MuxPdu::NotifyNewTab);
+    assert!(frame.pdu.is_notification());
+}
+
+#[test]
+fn roundtrip_notify_command_complete() {
+    let pane_id = PaneId::from_raw(7);
+    let frame = roundtrip(
+        0,
+        MuxPdu::NotifyCommandComplete {
+            pane_id,
+            duration_ms: 1234,
+        },
+    );
+    assert_eq!(frame.seq, 0);
+    assert!(frame.pdu.is_notification());
+    match frame.pdu {
+        MuxPdu::NotifyCommandComplete {
+            pane_id: pid,
+            duration_ms,
+        } => {
+            assert_eq!(pid, pane_id);
+            assert_eq!(duration_ms, 1234);
+        }
+        other => panic!("expected NotifyCommandComplete, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_notify_clipboard_store() {
+    let pane_id = PaneId::from_raw(3);
+    let frame = roundtrip(
+        0,
+        MuxPdu::NotifyClipboardStore {
+            pane_id,
+            clipboard_type: 0,
+            text: "hello".to_string(),
+        },
+    );
+    assert_eq!(frame.seq, 0);
+    assert!(frame.pdu.is_notification());
+    match frame.pdu {
+        MuxPdu::NotifyClipboardStore {
+            pane_id: pid,
+            clipboard_type,
+            text,
+        } => {
+            assert_eq!(pid, pane_id);
+            assert_eq!(clipboard_type, 0);
+            assert_eq!(text, "hello");
+        }
+        other => panic!("expected NotifyClipboardStore, got {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_notify_clipboard_load() {
+    let pane_id = PaneId::from_raw(5);
+    let frame = roundtrip(
+        0,
+        MuxPdu::NotifyClipboardLoad {
+            pane_id,
+            clipboard_type: 1,
+        },
+    );
+    assert_eq!(frame.seq, 0);
+    assert!(frame.pdu.is_notification());
+    match frame.pdu {
+        MuxPdu::NotifyClipboardLoad {
+            pane_id: pid,
+            clipboard_type,
+        } => {
+            assert_eq!(pid, pane_id);
+            assert_eq!(clipboard_type, 1);
+        }
+        other => panic!("expected NotifyClipboardLoad, got {other:?}"),
+    }
+}
+
+// -- SetPanePriority tests --
+
+#[test]
+fn roundtrip_set_pane_priority() {
+    let pdu = MuxPdu::SetPanePriority {
+        pane_id: PaneId::from_raw(5),
+        priority: 2,
+    };
+    let frame = roundtrip(50, pdu);
+    assert_eq!(frame.seq, 50);
+    match frame.pdu {
+        MuxPdu::SetPanePriority { pane_id, priority } => {
+            assert_eq!(pane_id, PaneId::from_raw(5));
+            assert_eq!(priority, 2);
+        }
+        other => panic!("expected SetPanePriority, got {other:?}"),
+    }
+}
+
+#[test]
+fn set_pane_priority_is_fire_and_forget() {
+    let pdu = MuxPdu::SetPanePriority {
+        pane_id: PaneId::from_raw(1),
+        priority: 0,
+    };
+    assert!(pdu.is_fire_and_forget());
+    assert!(!pdu.is_notification());
 }
 
 // FrameReader forward-compat tests live in `server/tests.rs` where FrameReader

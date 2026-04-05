@@ -20,6 +20,7 @@ pub mod domain;
 pub mod id;
 pub mod in_process;
 pub mod mux_event;
+pub mod one_shot;
 pub mod pane;
 pub mod protocol;
 pub mod pty;

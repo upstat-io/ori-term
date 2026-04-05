@@ -25,6 +25,7 @@ mod main_window;
 mod meta_tests;
 mod multi_size;
 mod reference_tests;
+mod resize_stress;
 mod settings_dialog;
 mod status_bar;
 mod tab_bar_brutal;

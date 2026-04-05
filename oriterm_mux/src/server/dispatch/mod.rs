@@ -41,13 +41,39 @@ pub fn dispatch_request(
         MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
         _ => None,
     };
+    let is_new_tab = matches!(&pdu, MuxPdu::RequestNewTab);
 
     let response = match pdu {
-        MuxPdu::Hello { pid } => {
-            log::info!("client {} handshake (pid={pid})", conn.id());
-            Some(MuxPdu::HelloAck {
-                client_id: conn.id(),
-            })
+        MuxPdu::Hello {
+            pid,
+            protocol_version,
+            features,
+        } => {
+            if protocol_version > crate::protocol::CURRENT_PROTOCOL_VERSION {
+                log::warn!(
+                    "client {} version mismatch: client={protocol_version}, server={}",
+                    conn.id(),
+                    crate::protocol::CURRENT_PROTOCOL_VERSION,
+                );
+                Some(MuxPdu::Error {
+                    message: format!(
+                        "version mismatch: server speaks v{}, client wants v{protocol_version}",
+                        crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    ),
+                })
+            } else {
+                let server_features = crate::protocol::FEAT_ZSTD;
+                let negotiated = features & server_features;
+                log::info!(
+                    "client {} handshake (pid={pid}, v={protocol_version}, features=0x{negotiated:X})",
+                    conn.id(),
+                );
+                Some(MuxPdu::HelloAck {
+                    client_id: conn.id(),
+                    protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                    features: negotiated,
+                })
+            }
         }
 
         MuxPdu::SpawnPane { shell, cwd, theme } => {
@@ -244,6 +270,16 @@ pub fn dispatch_request(
             None // Fire-and-forget — no ack.
         }
 
+        MuxPdu::SetPanePriority { pane_id, priority } => {
+            conn.set_pane_priority(pane_id, priority);
+            None // Fire-and-forget.
+        }
+
+        MuxPdu::RequestNewTab => {
+            log::info!("new-tab request from client {}", conn.id());
+            Some(MuxPdu::NewTabAck)
+        }
+
         MuxPdu::Ping => Some(MuxPdu::PingAck),
 
         MuxPdu::Shutdown => {
@@ -342,5 +378,10 @@ pub fn dispatch_request(
         sub_changed,
         unsubscribed_pane: unsub_pane,
         response,
+        broadcast: if is_new_tab {
+            Some(MuxPdu::NotifyNewTab)
+        } else {
+            None
+        },
     }
 }

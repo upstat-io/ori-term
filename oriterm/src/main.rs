@@ -60,6 +60,9 @@ fn main() {
     }
     if args.new_tab {
         log::info!("--new-tab requested");
+        if try_relay_new_tab() {
+            return;
+        }
     }
     #[cfg(windows)]
     set_app_user_model_id();
@@ -197,6 +200,29 @@ fn ensure_daemon_with_retry() -> std::io::Result<std::path::PathBuf> {
         }
     }
     Err(last_err.unwrap_or_else(|| std::io::Error::other("daemon start failed")))
+}
+
+/// Try to relay a new-tab request to an already-running daemon.
+///
+/// If a daemon is running, sends [`MuxPdu::RequestNewTab`] and returns
+/// `true` — the caller should exit. If no daemon is available, returns
+/// `false` — the caller should fall through to normal startup.
+fn try_relay_new_tab() -> bool {
+    let socket_path = oriterm_mux::server::socket_path();
+    if !socket_path.exists() {
+        log::info!("no daemon socket found, starting new window");
+        return false;
+    }
+    match oriterm_mux::one_shot::request_new_tab(&socket_path) {
+        Ok(()) => {
+            log::info!("new-tab request relayed to daemon, exiting");
+            true
+        }
+        Err(e) => {
+            log::warn!("failed to relay new-tab to daemon: {e}, starting new window");
+            false
+        }
+    }
 }
 
 /// Set the Windows App User Model ID for taskbar grouping and Jump Lists.

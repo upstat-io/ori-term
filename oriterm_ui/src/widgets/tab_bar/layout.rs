@@ -13,8 +13,7 @@
 //! `per_tab_widths` and `tab_positions`.
 
 use super::constants::{
-    CONTROLS_ZONE_WIDTH, DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_LEFT_MARGIN,
-    TabBarMetrics,
+    DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_LEFT_MARGIN, TabBarMetrics,
 };
 
 /// Computed tab bar layout geometry.
@@ -37,6 +36,8 @@ pub struct TabBarLayout {
     per_tab_widths: Vec<f32>,
     /// Horizontal padding within each tab (from metrics).
     tab_padding: f32,
+    /// Width reserved for window control buttons (from metrics).
+    controls_zone_width: f32,
 }
 
 impl TabBarLayout {
@@ -88,7 +89,7 @@ impl TabBarLayout {
                 - left_inset
                 - NEW_TAB_BUTTON_WIDTH
                 - DROPDOWN_BUTTON_WIDTH
-                - CONTROLS_ZONE_WIDTH)
+                - metrics.controls_zone_width)
                 .max(0.0);
 
             if tab_count == 0 {
@@ -121,6 +122,7 @@ impl TabBarLayout {
             tab_positions,
             per_tab_widths,
             tab_padding: metrics.tab_padding,
+            controls_zone_width: metrics.controls_zone_width,
         }
     }
 
@@ -162,7 +164,7 @@ impl TabBarLayout {
 
     /// X coordinate of the start of the window controls zone.
     pub fn controls_x(&self) -> f32 {
-        self.window_width - CONTROLS_ZONE_WIDTH
+        self.window_width - self.controls_zone_width
     }
 
     /// Left X coordinate of the tab at the given index.

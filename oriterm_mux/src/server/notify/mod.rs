@@ -94,8 +94,9 @@ pub fn notification_to_pdu(
         )),
 
         // PaneOutput is intercepted by drain_mux_events before reaching
-        // this function — included here for match exhaustiveness.
-        MuxNotification::PaneOutput(_) => None,
+        // this function. NewTab comes from IPC dispatch, not PTY events.
+        // Both included here for match exhaustiveness.
+        MuxNotification::PaneOutput(_) | MuxNotification::NewTab => None,
     }
 }
 

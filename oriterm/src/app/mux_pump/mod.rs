@@ -127,6 +127,12 @@ impl App {
                 let response = formatter(&text);
                 self.write_pane_input(pane_id, response.as_bytes());
             }
+            MuxNotification::NewTab => {
+                log::info!("received new-tab request from another instance");
+                if let Some(win_id) = self.active_window {
+                    self.new_tab_in_window(win_id);
+                }
+            }
         }
     }
 

@@ -6,8 +6,8 @@
 
 use std::io::{self, Read, Write};
 
+use super::MAX_PAYLOAD;
 use super::messages::MuxPdu;
-use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 
 /// A decoded frame: sequence number + PDU.
 #[derive(Debug, Clone)]
@@ -23,6 +23,8 @@ pub struct DecodedFrame {
 pub enum DecodeError {
     /// I/O error reading from the stream.
     Io(io::Error),
+    /// Magic bytes do not match `0x4F54`.
+    BadMagic(u16),
     /// Payload exceeds [`MAX_PAYLOAD`].
     PayloadTooLarge(u32),
     /// Unknown message type ID in the header.
@@ -35,6 +37,7 @@ impl std::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::BadMagic(m) => write!(f, "bad magic bytes: 0x{m:04X} (expected 0x4F54)"),
             Self::PayloadTooLarge(n) => {
                 write!(f, "payload too large: {n} bytes (max {MAX_PAYLOAD})")
             }
@@ -49,7 +52,7 @@ impl std::error::Error for DecodeError {
         match self {
             Self::Io(e) => Some(e),
             Self::Deserialize(e) => Some(e),
-            _ => None,
+            Self::BadMagic(_) | Self::PayloadTooLarge(_) | Self::UnknownMsgType(_) => None,
         }
     }
 }
@@ -102,31 +105,12 @@ impl ProtocolCodec {
 
     /// Encode a PDU and write it as a framed message.
     ///
-    /// Writes the 10-byte header followed by the bincode payload atomically
-    /// (single `write_all` call for each segment).
+    /// Writes the header followed by the bincode payload atomically
+    /// (single `write_all` call for the assembled frame).
     pub fn encode_frame<W: Write>(writer: &mut W, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
-        let payload =
-            bincode::serialize(pdu).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let payload_len: u32 = payload.len().try_into().map_err(|_overflow| {
-            io::Error::new(io::ErrorKind::InvalidData, "payload exceeds u32 capacity")
-        })?;
-
-        if payload_len > MAX_PAYLOAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("payload too large: {payload_len} bytes (max {MAX_PAYLOAD})"),
-            ));
-        }
-
-        let header = FrameHeader {
-            msg_type: pdu.msg_type() as u16,
-            seq,
-            payload_len,
-        };
-
-        writer.write_all(&header.encode())?;
-        writer.write_all(&payload)?;
+        let mut buf = Vec::new();
+        super::encode::encode_into_buf(&mut buf, seq, pdu, false)?;
+        writer.write_all(&buf)?;
         writer.flush()
     }
 
@@ -177,48 +161,6 @@ impl ProtocolCodec {
     /// `Some(Err(e))` on a decode error (malformed bytes are consumed),
     /// or `None` if there aren't enough bytes yet.
     fn try_decode(&mut self) -> Option<Result<DecodedFrame, DecodeError>> {
-        if self.buf.len() < HEADER_LEN {
-            return None;
-        }
-
-        let header = FrameHeader::decode(
-            self.buf[..HEADER_LEN]
-                .try_into()
-                .expect("checked length >= HEADER_LEN"),
-        );
-
-        // Validate payload size.
-        if header.payload_len > MAX_PAYLOAD {
-            self.buf.drain(..HEADER_LEN);
-            return Some(Err(DecodeError::PayloadTooLarge(header.payload_len)));
-        }
-
-        // Validate message type. Wait for the full frame, then drain it.
-        if super::msg_type::MsgType::from_u16(header.msg_type).is_none() {
-            let total = HEADER_LEN + header.payload_len as usize;
-            if self.buf.len() < total {
-                return None; // Not enough data yet.
-            }
-            self.buf.drain(..total);
-            return Some(Err(DecodeError::UnknownMsgType(header.msg_type)));
-        }
-
-        let total = HEADER_LEN + header.payload_len as usize;
-        if self.buf.len() < total {
-            return None;
-        }
-
-        // Deserialize the payload.
-        let payload = &self.buf[HEADER_LEN..total];
-        let result: Result<MuxPdu, _> = bincode::deserialize(payload);
-        self.buf.drain(..total);
-
-        match result {
-            Ok(pdu) => Some(Ok(DecodedFrame {
-                seq: header.seq,
-                pdu,
-            })),
-            Err(e) => Some(Err(DecodeError::Deserialize(e))),
-        }
+        super::decode::try_decode_from_buf(&mut self.buf)
     }
 }
