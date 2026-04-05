@@ -1,0 +1,115 @@
+//! Modern editor-inspired color schemes.
+
+#![allow(clippy::unreadable_literal)]
+
+use super::{BuiltinScheme, ansi16, rgb};
+
+pub(super) const NIGHT_OWL: BuiltinScheme = BuiltinScheme {
+    name: "Night Owl",
+    ansi: ansi16([
+        0x011627, 0xef5350, 0x22da6e, 0xaddb67, 0x82aaff, 0xc792ea, 0x21c7a8, 0xd6deeb, 0x637777,
+        0xef5350, 0x22da6e, 0xaddb67, 0x82aaff, 0xc792ea, 0x21c7a8, 0xffffff,
+    ]),
+    fg: rgb(0xd6deeb),
+    bg: rgb(0x011627),
+    cursor: rgb(0x80a4c2),
+};
+
+pub(super) const PALENIGHT: BuiltinScheme = BuiltinScheme {
+    name: "Palenight",
+    ansi: ansi16([
+        0x292d3e, 0xf07178, 0xc3e88d, 0xffcb6b, 0x82aaff, 0xc792ea, 0x89ddff, 0xa6accd, 0x676e95,
+        0xf07178, 0xc3e88d, 0xffcb6b, 0x82aaff, 0xc792ea, 0x89ddff, 0xffffff,
+    ]),
+    fg: rgb(0xa6accd),
+    bg: rgb(0x292d3e),
+    cursor: rgb(0xffcc00),
+};
+
+pub(super) const HORIZON: BuiltinScheme = BuiltinScheme {
+    name: "Horizon",
+    ansi: ansi16([
+        0x16161c, 0xe95678, 0x29d398, 0xfab795, 0x26bbd9, 0xee64ac, 0x59e1e3, 0xd5d8da, 0x5b5858,
+        0xec6a88, 0x3fdaa4, 0xfbc3a7, 0x3fc4de, 0xf075b5, 0x6be4e6, 0xffffff,
+    ]),
+    fg: rgb(0xe0e0e0),
+    bg: rgb(0x1c1e26),
+    cursor: rgb(0xe95678),
+};
+
+pub(super) const POIMANDRES: BuiltinScheme = BuiltinScheme {
+    name: "Poimandres",
+    ansi: ansi16([
+        0x1b1e28, 0xd0679d, 0x5de4c7, 0xfffac2, 0x89ddff, 0xfcc5e9, 0xadd7ff, 0xffffff, 0xa6accd,
+        0xd0679d, 0x5de4c7, 0xfffac2, 0x89ddff, 0xfcc5e9, 0xadd7ff, 0xffffff,
+    ]),
+    fg: rgb(0xe4f0fb),
+    bg: rgb(0x1b1e28),
+    cursor: rgb(0xa6accd),
+};
+
+pub(super) const VESPER: BuiltinScheme = BuiltinScheme {
+    name: "Vesper",
+    ansi: ansi16([
+        0x101010, 0xf5a191, 0x90b99f, 0xe6b99d, 0xaca1cf, 0xe29eca, 0xea83a5, 0xb0b0b0, 0x7b7b7b,
+        0xff8080, 0xa8d8b9, 0xffd1a6, 0xb9aeda, 0xf0b6d6, 0xf5a0c0, 0xffffff,
+    ]),
+    fg: rgb(0xb0b0b0),
+    bg: rgb(0x101010),
+    cursor: rgb(0xffc799),
+};
+
+pub(super) const SONOKAI: BuiltinScheme = BuiltinScheme {
+    name: "Sonokai",
+    ansi: ansi16([
+        0x181819, 0xfc5d7c, 0x9ed072, 0xe7c664, 0x76cce0, 0xb39df3, 0xf39660, 0xe2e2e3, 0x7f8490,
+        0xfc5d7c, 0x9ed072, 0xe7c664, 0x76cce0, 0xb39df3, 0xf39660, 0xe2e2e3,
+    ]),
+    fg: rgb(0xe2e2e3),
+    bg: rgb(0x2c2e34),
+    cursor: rgb(0xe2e2e3),
+};
+
+pub(super) const ONEDARK_PRO: BuiltinScheme = BuiltinScheme {
+    name: "OneDark Pro",
+    ansi: ansi16([
+        0x282c34, 0xe06c75, 0x98c379, 0xd19a66, 0x61afef, 0xc678dd, 0x56b6c2, 0xabb2bf, 0x5c6370,
+        0xe06c75, 0x98c379, 0xd19a66, 0x61afef, 0xc678dd, 0x56b6c2, 0xffffff,
+    ]),
+    fg: rgb(0xabb2bf),
+    bg: rgb(0x282c34),
+    cursor: rgb(0x528bff),
+};
+
+pub(super) const MOONFLY: BuiltinScheme = BuiltinScheme {
+    name: "Moonfly",
+    ansi: ansi16([
+        0x323437, 0xff5454, 0x8cc85f, 0xe3c78a, 0x80a0ff, 0xd183e8, 0x79dac8, 0xc6c6c6, 0x949494,
+        0xff5189, 0xa0d17b, 0xf09479, 0x74b2ff, 0xd183e8, 0x85dc85, 0xe4e4e4,
+    ]),
+    fg: rgb(0xbdbdbd),
+    bg: rgb(0x080808),
+    cursor: rgb(0x9e9e9e),
+};
+
+pub(super) const OXOCARBON: BuiltinScheme = BuiltinScheme {
+    name: "Oxocarbon",
+    ansi: ansi16([
+        0x262626, 0xee5396, 0x42be65, 0xffe97b, 0x33b1ff, 0xff7eb6, 0x3ddbd9, 0xdde1e6, 0x393939,
+        0xee5396, 0x42be65, 0xffe97b, 0x33b1ff, 0xff7eb6, 0x3ddbd9, 0xf2f4f8,
+    ]),
+    fg: rgb(0xf2f4f8),
+    bg: rgb(0x161616),
+    cursor: rgb(0xf2f4f8),
+};
+
+pub(super) const ANDROMEDA: BuiltinScheme = BuiltinScheme {
+    name: "Andromeda",
+    ansi: ansi16([
+        0x000000, 0xee5d43, 0x96e072, 0xffe66d, 0x7cb7ff, 0xc74ded, 0x00e8c6, 0xd5ced9, 0x686868,
+        0xee5d43, 0x96e072, 0xffe66d, 0x7cb7ff, 0xc74ded, 0x00e8c6, 0xffffff,
+    ]),
+    fg: rgb(0xd5ced9),
+    bg: rgb(0x23262e),
+    cursor: rgb(0xf8f8f0),
+};
