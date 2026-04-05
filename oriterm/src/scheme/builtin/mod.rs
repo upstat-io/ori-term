@@ -1,4 +1,4 @@
-//! Built-in color scheme definitions (50+ schemes).
+//! Built-in color scheme definitions (100+ schemes).
 //!
 //! Pure const data — no logic. Each scheme defines 16 ANSI colors plus
 //! foreground, background, and cursor colors.
@@ -8,6 +8,8 @@
 #![allow(clippy::unreadable_literal)]
 
 mod catppuccin;
+mod extended;
+mod extended2;
 mod material;
 mod modern;
 mod nature;
@@ -105,4 +107,57 @@ pub(super) const BUILTIN_SCHEMES: &[&BuiltinScheme] = &[
     &retro::PAPERCOLOR_LIGHT,
     &modern::OXOCARBON,
     &modern::ANDROMEDA,
+    // Extended batch 1.
+    &extended::MONOKAI_PRO,
+    &extended::MONOKAI_SODA,
+    &extended::ARGONAUT,
+    &extended::ESPRESSO,
+    &extended::NIGHTFLY,
+    &extended::SRCERY,
+    &extended::COBALT2,
+    &extended::JELLYBEANS,
+    &extended::MOLOKAI,
+    &extended::WOMBAT,
+    &extended::AFTERGLOW,
+    &extended::SPACEGRAY,
+    &extended::TENDER,
+    &extended::FLATLAND,
+    &extended::TWILIGHT,
+    // Extended batch 2.
+    &extended2::MODUS_VIVENDI,
+    &extended2::MODUS_OPERANDI,
+    &extended2::PENCIL_DARK,
+    &extended2::PENCIL_LIGHT,
+    &extended2::SEOUL256_DARK,
+    &extended2::SEOUL256_LIGHT,
+    &extended2::TANGO_DARK,
+    &extended2::TANGO_LIGHT,
+    &extended2::ZENBONES_DARK,
+    &extended2::ZENBONES_LIGHT,
+    &extended2::NVIM_DARK,
+    &extended2::NVIM_LIGHT,
+    &extended2::EVERBLUSH,
+    &extended2::FAIRY_FLOSS,
+    &extended2::SHADES_OF_PURPLE,
+    &extended2::SYNTHWAVE,
+    &extended2::SAKURA,
+    &extended2::SPACEDUCK,
+    &extended2::QUIET_LIGHT,
+    &extended2::BASE16_DEFAULT_DARK,
+    &extended2::BASE16_DEFAULT_LIGHT,
+    &extended2::BASE16_MONOKAI,
+    &extended2::BASE16_OCEAN_DARK,
+    &extended2::BASE16_EIGHTIES,
+    &extended2::XCODE_DUSK,
+    &extended2::APPRENTICE,
+    &extended2::DARK_PLUS,
+    &extended2::UBUNTU,
+    &extended2::HOMEBREW,
+    &extended2::BLULOCO_DARK,
+    &extended2::BLULOCO_LIGHT,
+    &extended2::DUSKFOX,
+    &extended2::NORDFOX,
+    &extended2::BREEZE,
+    &extended2::CAMPBELL,
+    &extended2::NOVA,
 ];

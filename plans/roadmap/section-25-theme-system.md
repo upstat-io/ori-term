@@ -15,7 +15,7 @@ sections:
     status: complete
   - id: "25.2"
     title: Built-in Theme Library
-    status: in-progress
+    status: complete
   - id: "25.3"
     title: "Light/Dark Auto-Switch"
     status: in-progress
@@ -94,19 +94,19 @@ oriterm/src/scheme/builtin/
 - [x] Horizon (1), Poimandres (1), Vesper (1), Sonokai (1), OneDark Pro (1), Moonfly (1)
 - [x] PaperColor (2), Oxocarbon (1), Andromeda (1)
 
-**Remaining ~47 schemes to reach 100+:**
-- [ ] Batch 1 (15 schemes): Monokai Pro, Monokai Soda, Atom One Dark/Light, Nightfly, Srcery, Cobalt2, Jellybeans, Molokai, Wombat, Afterglow, Spacegray, Tender, Flatland, Twilight
-- [ ] Batch 2 (18 schemes, dark/light pairs): Modus Vivendi/Operandi, Lucius, Pencil, Seoul256, Xcode, Tango, Vim, Nvim, Zenbones
-- [ ] Batch 3 (9 schemes): Everblush, Fairy Floss, Shades of Purple, Synthwave 84, Rosebox, Sakura, Spaceduck, Quiet Light, Rigel
-- [ ] Batch 4 (5 schemes, base16): Base16 Default Dark/Light, Base16 Monokai, Base16 Ocean, Base16 Eighties
-- [ ] Each batch: verify against canonical source, separate commit, run `all_builtins_produce_valid_palettes` after each
+**51 additional schemes added (104 total, exceeds 100+ target):** (completed 2026-04-04)
+- [x] Batch 1 (15 in `extended.rs`): Monokai Pro, Monokai Soda, Argonaut, Espresso, Nightfly, Srcery, Cobalt2, Jellybeans, Molokai, Wombat, Afterglow, Spacegray, Tender, Flatland, Twilight
+- [x] Batch 2 (18 dark/light pairs in `extended2.rs`): Modus Vivendi/Operandi, Pencil Dark/Light, Seoul256 Dark/Light, Tango Dark/Light, Zenbones Dark/Light, Nvim Dark/Light, Bluloco Dark/Light
+- [x] Batch 3 (9 creative/modern in `extended2.rs`): Everblush, Fairy Floss, Shades of Purple, Synthwave, Sakura, Spaceduck, Quiet Light, Xcode Dusk, Nova
+- [x] Batch 4 (5 base16 in `extended2.rs`): Base16 Default Dark/Light, Base16 Monokai, Base16 Ocean Dark, Base16 Eighties
+- [x] Bonus (5 platform/classic in `extended2.rs`): Apprentice, Dark+, Ubuntu, Homebrew, Campbell; Nightfox family: Duskfox, Nordfox; KDE: Breeze
 
 **Conversion tools** (complete): `tools/convert-iterm2.py`, `tools/convert-ghostty.py`, `tools/convert-base16.py`
 
 **Tests:**
 - [x] 6 passing: `builtin_schemes_have_valid_rgb`, `builtin_names_unique`, `builtin_names_not_empty` (asserts >= 50), `find_builtin_*`, `all_builtins_produce_valid_palettes`, `discover_all_roundtrip_resolve`
-- [ ] Update `builtin_names_not_empty` to assert `>= 100` after reaching target
-- [ ] After all batches: verify no submodule exceeds 500 lines
+- [x] Update `builtin_names_not_empty` and `discover_all_includes_builtins` to assert `>= 100` (completed 2026-04-04)
+- [x] After all batches: verify no submodule exceeds 500 lines — largest is `extended2.rs` at 439 lines (verified 2026-04-04)
 
 ---
 
@@ -137,10 +137,10 @@ Missing coverage (2 tests):
 ## 25.4 Section Completion
 
 - [x] 25.2a `builtin.rs` split complete (prerequisite for 100+ schemes) (completed 2026-04-04)
-- [ ] 100+ themes available by name (53 as of 2026-04-04, needs ~47 more)
+- [x] 100+ themes available by name (104 built-in as of 2026-04-04)
 - [ ] Settings dropdown lists themes with light/dark grouping
 - [ ] 4 missing tests written (`discover_count_returns_builtin_count`, `count_themes_nonexistent_dir`, `build_palette_fallback_when_scheme_missing`, `build_palette_conditional_dark`)
-- [ ] `builtin_names_not_empty` assertion updated to `>= 100`
+- [x] `builtin_names_not_empty` assertion updated to `>= 100` (completed 2026-04-04)
 - [x] Custom themes loadable from TOML files
 - [x] Light/dark auto-switching works
 - [x] Theme hot-reload works
