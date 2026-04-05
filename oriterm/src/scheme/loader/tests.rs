@@ -275,3 +275,26 @@ fn parse_theme_with_bom() {
         "TOML with UTF-8 BOM should parse (toml crate strips BOM)"
     );
 }
+
+#[test]
+fn count_themes_nonexistent_dir() {
+    let count = super::count_themes(Path::new("/nonexistent/theme/dir"));
+    assert_eq!(count, 0, "nonexistent directory should return 0");
+}
+
+#[test]
+fn count_themes_empty_dir() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let count = super::count_themes(dir.path());
+    assert_eq!(count, 0, "empty directory should return 0");
+}
+
+#[test]
+fn count_themes_counts_toml_only() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(dir.path().join("theme1.toml"), "").expect("write");
+    std::fs::write(dir.path().join("theme2.toml"), "").expect("write");
+    std::fs::write(dir.path().join("readme.txt"), "").expect("write");
+    let count = super::count_themes(dir.path());
+    assert_eq!(count, 2, "should count only .toml files");
+}

@@ -17,6 +17,8 @@ use super::super::snapshot::SnapshotCache;
 pub(in crate::server) struct DispatchResult {
     /// Response PDU to send back to the client.
     pub response: Option<MuxPdu>,
+    /// PDU to broadcast to all OTHER connected clients (excludes sender).
+    pub broadcast: Option<MuxPdu>,
     /// Whether the request changed subscription state (Subscribe/Unsubscribe).
     pub sub_changed: bool,
     /// Pane that was unsubscribed (for `pending_push` cleanup).

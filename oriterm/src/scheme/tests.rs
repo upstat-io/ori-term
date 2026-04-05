@@ -31,8 +31,8 @@ fn find_builtin_missing_returns_none() {
 fn builtin_names_not_empty() {
     let names = builtin_names();
     assert!(
-        names.len() >= 50,
-        "expected 50+ builtins, got {}",
+        names.len() >= 100,
+        "expected 100+ builtins, got {}",
         names.len()
     );
 }
@@ -254,7 +254,7 @@ fn resolve_scheme_absolute_path_missing_file() {
 #[test]
 fn discover_all_includes_builtins() {
     let all = super::discover_all();
-    assert!(all.len() >= 50, "expected 50+ schemes, got {}", all.len());
+    assert!(all.len() >= 100, "expected 100+ schemes, got {}", all.len());
     assert!(
         all.iter().any(|s| s.name == "Nord"),
         "should include Nord builtin"
@@ -408,5 +408,62 @@ fn config_foreground_overrides_scheme() {
             b: 0xCC
         },
         "config foreground should override scheme foreground",
+    );
+}
+
+/// Fallback to default palette when scheme name is not found.
+#[test]
+fn build_palette_fallback_when_scheme_missing() {
+    let mut colors = crate::config::ColorConfig::default();
+    colors.scheme = "Nonexistent Theme That Does Not Exist".to_owned();
+
+    let palette = crate::app::config_reload::build_palette_from_config(&colors, Theme::Dark);
+    let default = oriterm_core::Palette::for_theme(Theme::Dark);
+    assert_eq!(
+        palette.foreground(),
+        default.foreground(),
+        "unknown scheme should fall back to default palette",
+    );
+}
+
+/// Conditional scheme resolves correctly with dark theme.
+#[test]
+fn build_palette_conditional_dark() {
+    let mut colors = crate::config::ColorConfig::default();
+    colors.scheme = "dark:Nord, light:Solarized Light".to_owned();
+
+    let palette = crate::app::config_reload::build_palette_from_config(&colors, Theme::Dark);
+    let nord = find_builtin("Nord").expect("Nord should exist");
+    let nord_palette = palette_from_scheme(&nord);
+    assert_eq!(
+        palette.foreground(),
+        nord_palette.foreground(),
+        "dark theme should resolve to Nord",
+    );
+}
+
+/// Conditional scheme resolves correctly with light theme.
+#[test]
+fn build_palette_conditional_light() {
+    let mut colors = crate::config::ColorConfig::default();
+    colors.scheme = "dark:Nord, light:Solarized Light".to_owned();
+
+    let palette = crate::app::config_reload::build_palette_from_config(&colors, Theme::Light);
+    let sol = find_builtin("Solarized Light").expect("Solarized Light should exist");
+    let sol_palette = palette_from_scheme(&sol);
+    assert_eq!(
+        palette.foreground(),
+        sol_palette.foreground(),
+        "light theme should resolve to Solarized Light",
+    );
+}
+
+/// `discover_count` returns the correct built-in count.
+#[test]
+fn discover_count_returns_builtin_count() {
+    let (builtin, _user) = super::discover_count();
+    assert!(
+        builtin >= 100,
+        "expected 100+ builtins from discover_count, got {builtin}",
     );
 }

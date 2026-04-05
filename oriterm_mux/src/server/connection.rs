@@ -4,7 +4,7 @@
 //! [`ClientConnection`] with a unique [`ClientId`] and the mio [`Token`]
 //! used for event dispatching.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use mio::Token;
 
@@ -29,6 +29,8 @@ pub(crate) struct ClientConnection {
     frame_writer: FrameWriter,
     /// Panes this client is subscribed to for push notifications.
     subscribed_panes: HashSet<PaneId>,
+    /// Per-pane push priority (0=focused, 1=visible, 2=hidden).
+    pane_priorities: HashMap<PaneId, u8>,
     /// Protocol capabilities advertised by the client.
     capabilities: u32,
 }
@@ -43,6 +45,7 @@ impl ClientConnection {
             frame_reader: FrameReader::new(),
             frame_writer: FrameWriter::new(),
             subscribed_panes: HashSet::new(),
+            pane_priorities: HashMap::new(),
             capabilities: 0,
         }
     }
@@ -73,7 +76,8 @@ impl ClientConnection {
     /// in the write buffer. The caller should register `WRITABLE` interest
     /// when [`has_pending_writes`] returns `true`.
     pub(super) fn queue_frame(&mut self, seq: u32, pdu: &MuxPdu) -> std::io::Result<()> {
-        self.frame_writer.queue(seq, pdu)?;
+        // TODO(34.8): pass `self.compress_enabled` based on negotiated FEAT_ZSTD.
+        self.frame_writer.queue(seq, pdu, false)?;
         self.frame_writer.flush_to(&mut self.stream)
     }
 
@@ -95,6 +99,7 @@ impl ClientConnection {
     /// Remove a pane subscription.
     pub(super) fn unsubscribe(&mut self, pane_id: PaneId) {
         self.subscribed_panes.remove(&pane_id);
+        self.pane_priorities.remove(&pane_id);
     }
 
     /// All pane IDs this client is subscribed to.
@@ -110,6 +115,16 @@ impl ClientConnection {
     /// Whether the client advertised a given capability flag.
     pub(super) fn has_capability(&self, flag: u32) -> bool {
         self.capabilities & flag != 0
+    }
+
+    /// Set the push priority for a pane.
+    pub(super) fn set_pane_priority(&mut self, pane_id: PaneId, priority: u8) {
+        self.pane_priorities.insert(pane_id, priority);
+    }
+
+    /// Push priority for a pane (0=focused if unset).
+    pub(super) fn pane_priority(&self, pane_id: PaneId) -> u8 {
+        self.pane_priorities.get(&pane_id).copied().unwrap_or(0)
     }
 
     /// Number of bytes buffered but not yet flushed to the stream.

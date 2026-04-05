@@ -249,6 +249,8 @@ fn try_ipc_shutdown(sock: &std::path::Path) -> bool {
         1,
         &MuxPdu::Hello {
             pid: std::process::id(),
+            protocol_version: oriterm_mux::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
         },
     )
     .is_err()

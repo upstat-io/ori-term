@@ -200,7 +200,7 @@ impl MuxServer {
             let timeout = if self.pending_push.is_empty() {
                 Duration::from_millis(100)
             } else {
-                push::SNAPSHOT_PUSH_INTERVAL // 16ms — retries fire promptly.
+                push::SNAPSHOT_PUSH_INTERVAL // 4ms — retries fire promptly.
             };
             self.poll.poll(&mut events, Some(timeout))?;
 

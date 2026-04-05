@@ -13,10 +13,12 @@ mod harness_inspect;
 mod mock_measurer;
 mod query;
 pub mod render_assert;
+pub mod scene_snapshot;
 
 pub use harness::WidgetTestHarness;
 pub use harness_inspect::WidgetRef;
 pub use mock_measurer::MockMeasurer;
+pub use scene_snapshot::scene_to_snapshot;
 
 use crate::theme::UiTheme;
 

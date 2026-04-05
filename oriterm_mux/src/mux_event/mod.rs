@@ -317,6 +317,11 @@ pub enum MuxNotification {
         /// Formats the clipboard text into a PTY response.
         formatter: Arc<dyn Fn(&str) -> String + Send + Sync>,
     },
+    /// Another process requested a new tab via the daemon.
+    ///
+    /// The receiving client should create a new tab in its active window
+    /// using its own configuration.
+    NewTab,
 }
 
 impl fmt::Debug for MuxNotification {
@@ -341,6 +346,7 @@ impl fmt::Debug for MuxNotification {
                 clipboard_type,
                 ..
             } => write!(f, "ClipboardLoad({pane_id}, {clipboard_type:?})"),
+            Self::NewTab => write!(f, "NewTab"),
         }
     }
 }

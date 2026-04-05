@@ -38,6 +38,7 @@ impl crate::widgets::TextMeasurer for StubMeasurer {
             size_q6: 0,
             weight: 400,
             font_source: crate::text::FontSource::Ui,
+            source: String::new(),
         }
     }
 }

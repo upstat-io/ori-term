@@ -64,7 +64,7 @@ pub const CONTROL_BUTTON_MARGIN: f32 = 12.0;
 
 /// Total width reserved for window control buttons on Linux/macOS.
 ///
-/// `12 + 3×24 + 2×8 + 12 = 100px`.
+/// `12 + 3×24 + 2×8 + 12 = 112px`.
 #[cfg(not(target_os = "windows"))]
 pub const CONTROLS_ZONE_WIDTH: f32 = CONTROL_BUTTON_MARGIN
     + 3.0 * CONTROL_BUTTON_DIAMETER
@@ -108,6 +108,8 @@ pub struct TabBarMetrics {
     pub min_width: f32,
     /// Maximum tab width.
     pub max_width: f32,
+    /// Width reserved for window control buttons (platform-dependent).
+    pub controls_zone_width: f32,
 }
 
 impl TabBarMetrics {
@@ -118,6 +120,7 @@ impl TabBarMetrics {
         tab_padding: TAB_PADDING,
         min_width: TAB_MIN_WIDTH,
         max_width: TAB_MAX_WIDTH,
+        controls_zone_width: CONTROLS_ZONE_WIDTH,
     };
 
     /// Compact style metrics — shorter height, tighter padding.
@@ -127,5 +130,6 @@ impl TabBarMetrics {
         tab_padding: 10.0,
         min_width: 64.0,
         max_width: 180.0,
+        controls_zone_width: CONTROLS_ZONE_WIDTH,
     };
 }

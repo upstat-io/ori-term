@@ -78,6 +78,7 @@ impl TextMeasurer for MockMeasurer {
             None => (self.line_height, self.line_height * 0.8),
         };
         ShapedText::new(glyphs, width, height, baseline, 0, style.weight.value())
+            .with_source(transformed)
     }
 }
 

@@ -165,6 +165,19 @@ impl WidgetTestHarness {
         self.root.clear_popups();
     }
 
+    /// Resizes the viewport and re-runs layout.
+    ///
+    /// Simulates a window resize event: updates the viewport on the
+    /// `WindowRoot`, recomputes layout, and delivers lifecycle events.
+    /// Widgets that respond to size changes (e.g. terminal grids, flex
+    /// containers) will receive updated bounds.
+    pub fn resize(&mut self, width: f32, height: f32) {
+        let viewport = Rect::new(0.0, 0.0, width, height);
+        self.root.set_viewport(viewport);
+        self.rebuild_layout();
+        self.root.prepare(self.clock, &self.theme);
+    }
+
     /// Finds a widget's layout bounds by ID.
     ///
     /// Searches the layout tree for a node with the given widget ID.

@@ -1271,7 +1271,16 @@ fn raw_socket_latency_baseline() {
 
     // Handshake.
     let pid = std::process::id();
-    ProtocolCodec::encode_frame(&mut stream, 1, &MuxPdu::Hello { pid }).expect("write Hello");
+    ProtocolCodec::encode_frame(
+        &mut stream,
+        1,
+        &MuxPdu::Hello {
+            pid,
+            protocol_version: oriterm_mux::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    )
+    .expect("write Hello");
     let mut codec = ProtocolCodec::new();
     let frame = codec.decode_frame(&mut stream).expect("read HelloAck");
     assert!(matches!(frame.pdu, MuxPdu::HelloAck { .. }));
@@ -1403,4 +1412,65 @@ fn ipc_latency_under_5ms() {
         snap_median < Duration::from_millis(10),
         "snapshot median {snap_median:?} exceeds 10ms — render path regression"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Shadow snapshot tests (Section 34.2)
+// ---------------------------------------------------------------------------
+
+/// Panes survive client disconnects. When client A spawns a pane and
+/// disconnects, the pane stays alive in the daemon. Client B can then
+/// close it — proving the pane didn't get cleaned up prematurely.
+#[test]
+fn pane_survives_client_disconnect() {
+    let daemon = TestDaemon::start();
+
+    // Client A: spawn a pane.
+    let mut client_a = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client_a);
+
+    // Client A disconnects.
+    drop(client_a);
+
+    // Give the daemon time to process the disconnect.
+    thread::sleep(Duration::from_millis(200));
+
+    // Client B connects and closes the pane — this proves the pane is
+    // still alive in the daemon (close_pane sends ClosePane RPC).
+    let mut client_b = daemon.connect_client();
+    let result = client_b.close_pane(pane_id);
+    // close_pane on a live pane should return PaneRemoved (not NotFound).
+    assert!(
+        matches!(
+            result,
+            oriterm_mux::in_process::ClosePaneResult::PaneRemoved
+        ),
+        "expected PaneRemoved for a live pane, got {result:?}"
+    );
+}
+
+/// Two clients can spawn and close panes independently. Verifies the
+/// daemon correctly tracks pane ownership across connections.
+#[test]
+fn multi_client_independent_panes() {
+    let daemon = TestDaemon::start();
+
+    let mut client_a = daemon.connect_client();
+    let mut client_b = daemon.connect_client();
+
+    let pane_a = spawn_test_pane(&mut client_a);
+    let pane_b = spawn_test_pane(&mut client_b);
+
+    // Both panes exist.
+    assert_ne!(pane_a, pane_b, "each spawn should produce a unique PaneId");
+
+    // Client A closes its pane.
+    client_a.close_pane(pane_a);
+
+    // Client B's pane should still be alive — send input to verify.
+    client_b.send_input(pane_b, b"echo ALIVE\n");
+    wait_for_text_in_snapshot(&mut client_b, pane_b, "ALIVE", Duration::from_secs(5));
+
+    // Clean up.
+    client_b.close_pane(pane_b);
 }

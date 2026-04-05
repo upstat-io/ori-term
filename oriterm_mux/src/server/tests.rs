@@ -7,7 +7,7 @@
 //! waiting for readiness events that never fire.
 
 use crate::MuxPdu;
-use crate::protocol::{FrameHeader, ProtocolCodec};
+use crate::protocol::{FRAME_MAGIC, FrameHeader, HEADER_LEN, PROTOCOL_VERSION, ProtocolCodec};
 
 use super::frame_io::FrameReader;
 use super::pid_file::{PidFile, read_pid};
@@ -78,7 +78,7 @@ fn frame_reader_empty_returns_none() {
 #[test]
 fn frame_reader_partial_header_returns_none() {
     let mut reader = FrameReader::new();
-    // Only 5 bytes (less than 10-byte header).
+    // Only 5 bytes (less than 14-byte header).
     reader.extend(&[0x01, 0x01, 0x00, 0x00, 0x00]);
     assert!(reader.try_decode().is_none());
 }
@@ -88,14 +88,25 @@ fn frame_reader_complete_frame() {
     let mut reader = FrameReader::new();
 
     // Encode a Hello PDU.
-    let pdu = MuxPdu::Hello { pid: 42 };
+    let pdu = MuxPdu::Hello {
+        pid: 42,
+        protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+        features: 0,
+    };
     let mut buf = Vec::new();
     ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
 
     reader.extend(&buf);
     let frame = reader.try_decode().unwrap().unwrap();
     assert_eq!(frame.seq, 1);
-    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
+    assert_eq!(
+        frame.pdu,
+        MuxPdu::Hello {
+            pid: 42,
+            protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        }
+    );
 
     // No more frames.
     assert!(reader.try_decode().is_none());
@@ -106,7 +117,16 @@ fn frame_reader_multiple_frames_in_one_read() {
     let mut reader = FrameReader::new();
 
     let mut buf = Vec::new();
-    ProtocolCodec::encode_frame(&mut buf, 1, &MuxPdu::Hello { pid: 1 }).unwrap();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        1,
+        &MuxPdu::Hello {
+            pid: 1,
+            protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        },
+    )
+    .unwrap();
     ProtocolCodec::encode_frame(&mut buf, 2, &MuxPdu::Ping).unwrap();
     ProtocolCodec::encode_frame(&mut buf, 3, &MuxPdu::ListPanes).unwrap();
 
@@ -114,7 +134,14 @@ fn frame_reader_multiple_frames_in_one_read() {
 
     let f1 = reader.try_decode().unwrap().unwrap();
     assert_eq!(f1.seq, 1);
-    assert_eq!(f1.pdu, MuxPdu::Hello { pid: 1 });
+    assert_eq!(
+        f1.pdu,
+        MuxPdu::Hello {
+            pid: 1,
+            protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        }
+    );
 
     let f2 = reader.try_decode().unwrap().unwrap();
     assert_eq!(f2.seq, 2);
@@ -131,12 +158,16 @@ fn frame_reader_multiple_frames_in_one_read() {
 fn frame_reader_partial_payload_waits() {
     let mut reader = FrameReader::new();
 
-    let pdu = MuxPdu::Hello { pid: 99 };
+    let pdu = MuxPdu::Hello {
+        pid: 99,
+        protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+        features: 0,
+    };
     let mut full = Vec::new();
     ProtocolCodec::encode_frame(&mut full, 5, &pdu).unwrap();
 
     // Feed just the header + half the payload.
-    let split_at = 10 + (full.len() - 10) / 2;
+    let split_at = HEADER_LEN + (full.len() - HEADER_LEN) / 2;
     reader.extend(&full[..split_at]);
     assert!(reader.try_decode().is_none());
 
@@ -144,7 +175,14 @@ fn frame_reader_partial_payload_waits() {
     reader.extend(&full[split_at..]);
     let frame = reader.try_decode().unwrap().unwrap();
     assert_eq!(frame.seq, 5);
-    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 99 });
+    assert_eq!(
+        frame.pdu,
+        MuxPdu::Hello {
+            pid: 99,
+            protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        }
+    );
 }
 
 #[test]
@@ -152,12 +190,15 @@ fn frame_reader_unknown_msg_type_returns_error() {
     let mut reader = FrameReader::new();
 
     // Construct a header with an invalid message type.
-    let mut buf = [0u8; 10];
-    buf[0..2].copy_from_slice(&0xFFFFu16.to_le_bytes()); // bad msg type
-    buf[2..6].copy_from_slice(&1u32.to_le_bytes()); // seq
-    buf[6..10].copy_from_slice(&0u32.to_le_bytes()); // payload_len = 0
-
-    reader.extend(&buf);
+    let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
+        msg_type: 0xFFFF,
+        seq: 1,
+        payload_len: 0,
+    };
+    reader.extend(&header.encode());
     let result = reader.try_decode().unwrap();
     assert!(result.is_err());
 }
@@ -185,7 +226,11 @@ fn frame_reader_no_data_returns_none() {
 fn frame_reader_byte_by_byte() {
     let mut reader = FrameReader::new();
 
-    let pdu = MuxPdu::Hello { pid: 77 };
+    let pdu = MuxPdu::Hello {
+        pid: 77,
+        protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+        features: 0,
+    };
     let mut full = Vec::new();
     ProtocolCodec::encode_frame(&mut full, 3, &pdu).unwrap();
 
@@ -203,7 +248,14 @@ fn frame_reader_byte_by_byte() {
     // Now the full frame is in the buffer.
     let frame = reader.try_decode().unwrap().unwrap();
     assert_eq!(frame.seq, 3);
-    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 77 });
+    assert_eq!(
+        frame.pdu,
+        MuxPdu::Hello {
+            pid: 77,
+            protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+            features: 0,
+        }
+    );
     assert!(reader.try_decode().is_none());
 }
 
@@ -216,6 +268,9 @@ fn frame_reader_recovers_after_payload_too_large() {
 
     // First: a bad frame with payload_len > MAX_PAYLOAD.
     let bad_header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: MsgType::Hello as u16,
         seq: 1,
         payload_len: MAX_PAYLOAD + 1,
@@ -244,6 +299,9 @@ fn frame_reader_forward_compat_skips_unknown_and_stays_aligned() {
 
     // Frame 1: unknown msg_type 0xFFFF with 8-byte payload.
     let header1 = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 0,
         payload_len: 8,
@@ -273,6 +331,9 @@ fn frame_reader_forward_compat_skips_unknown_and_stays_aligned() {
 #[test]
 fn frame_reader_forward_compat_waits_for_full_unknown_frame() {
     let header = FrameHeader {
+        magic: FRAME_MAGIC,
+        version: PROTOCOL_VERSION,
+        flags: 0,
         msg_type: 0xFFFF,
         seq: 0,
         payload_len: 20,
@@ -556,7 +617,15 @@ mod ipc {
     fn hello_handshake_roundtrip() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 42 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 42,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
 
         let mut events = mio::Events::with_capacity(16);
         server
@@ -574,7 +643,7 @@ mod ipc {
         let (seq, resp) = recv_pdu(&mut client);
         assert_eq!(seq, 1);
         match resp {
-            MuxPdu::HelloAck { client_id } => {
+            MuxPdu::HelloAck { client_id, .. } => {
                 assert_ne!(client_id.raw(), 0);
             }
             other => panic!("expected HelloAck, got {other:?}"),
@@ -601,7 +670,15 @@ mod ipc {
     fn input_is_fire_and_forget() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -647,21 +724,37 @@ mod ipc {
     fn duplicate_hello_returns_second_ack() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 42 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 42,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let (_, first_resp) = recv_pdu(&mut client);
         let first_id = match first_resp {
-            MuxPdu::HelloAck { client_id } => client_id,
+            MuxPdu::HelloAck { client_id, .. } => client_id,
             other => panic!("expected HelloAck, got {other:?}"),
         };
 
-        send_pdu(&mut client, 2, &MuxPdu::Hello { pid: 42 });
+        send_pdu(
+            &mut client,
+            2,
+            &MuxPdu::Hello {
+                pid: 42,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let (seq, second_resp) = recv_pdu(&mut client);
         assert_eq!(seq, 2);
 
         match second_resp {
-            MuxPdu::HelloAck { client_id } => {
+            MuxPdu::HelloAck { client_id, .. } => {
                 assert_eq!(
                     client_id, first_id,
                     "duplicate Hello should return the same client ID"
@@ -677,7 +770,15 @@ mod ipc {
     fn unsubscribe_without_subscribe_succeeds() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -762,7 +863,15 @@ mod ipc {
     fn spawn_pane_roundtrip() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -794,7 +903,15 @@ mod ipc {
     fn list_panes_empty() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -817,7 +934,15 @@ mod ipc {
     fn ping_returns_ping_ack() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 99 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 99,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -835,7 +960,15 @@ mod ipc {
     fn resize_fire_and_forget_no_response() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -876,17 +1009,33 @@ mod ipc {
         server.accept_connections().unwrap();
         assert_eq!(server.client_count(), 2);
 
-        send_pdu(&mut c1, 1, &MuxPdu::Hello { pid: 1 });
-        send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
+        send_pdu(
+            &mut c1,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
+        send_pdu(
+            &mut c2,
+            1,
+            &MuxPdu::Hello {
+                pid: 2,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let (_, r1) = recv_pdu(&mut c1);
         let (_, r2) = recv_pdu(&mut c2);
         let id1 = match r1 {
-            MuxPdu::HelloAck { client_id } => client_id,
+            MuxPdu::HelloAck { client_id, .. } => client_id,
             other => panic!("expected HelloAck, got {other:?}"),
         };
         let id2 = match r2 {
-            MuxPdu::HelloAck { client_id } => client_id,
+            MuxPdu::HelloAck { client_id, .. } => client_id,
             other => panic!("expected HelloAck, got {other:?}"),
         };
         assert_ne!(id1, id2, "clients should get different IDs");
@@ -914,7 +1063,15 @@ mod ipc {
     fn notification_pdu_from_client_returns_error() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -939,7 +1096,15 @@ mod ipc {
     fn shutdown_via_ipc_sets_flag() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
@@ -1024,7 +1189,15 @@ mod ipc {
     fn double_shutdown_is_idempotent() {
         let (_dir, mut server, mut client) = server_with_client();
 
-        send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+        send_pdu(
+            &mut client,
+            1,
+            &MuxPdu::Hello {
+                pid: 1,
+                protocol_version: crate::protocol::CURRENT_PROTOCOL_VERSION,
+                features: 0,
+            },
+        );
         poll_and_dispatch(&mut server);
         let _ = recv_pdu(&mut client);
 
