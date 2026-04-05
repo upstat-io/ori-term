@@ -661,7 +661,7 @@ window shadow, padding, margin, GRID_PADDING
 ---
 
 ### Section 25: Theme System
-**File:** `section-25-theme-system.md` | **Tier:** 6 | **Status:** In Progress
+**File:** `section-25-theme-system.md` | **Tier:** 6 | **Status:** Complete
 
 ```
 theme, ColorScheme, color scheme, palette, BUILTIN_SCHEMES
@@ -1081,7 +1081,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 40 | Vi Mode + Copy Mode | `section-40-vi-copy-mode.md` | 3 | Not Started |
 | 41 | Hints + Quick Select | `section-41-hints-quick-select.md` | 3 | Not Started |
 | 24 | Visual Polish | `section-24-visual-polish.md` | 6 | In Progress |
-| 25 | Theme System | `section-25-theme-system.md` | 6 | In Progress |
+| 25 | Theme System | `section-25-theme-system.md` | 6 | Complete |
 | 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
 | 27 | Command Palette & Quick Terminal | `section-27-command-palette.md` | 7 | Not Started |
 | 28 | Extensibility | `section-28-extensibility.md` | 7 | Not Started |
