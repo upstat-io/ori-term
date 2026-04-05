@@ -11,11 +11,11 @@ Bugs in the pane multiplexer — PTY I/O, IO thread behavior, pane lifecycle, me
 
 ## Open Bugs
 
-- [ ] `[BUG-11-1][high]` **Ctrl+C unresponsive during sustained output flooding across multiple panes** — found by manual.
-  Repro: Open 2+ panes. Run `yes` or `cat /dev/urandom` in each to flood output. Press Ctrl+C — it fails to interrupt the processes. Single-pane flooding may still respond; the issue worsens with multiple simultaneous floods.
-  Subsystem: `oriterm_mux/src/pane/io_thread/mod.rs`, `oriterm/src/app/event_loop.rs`
-  Analysis: PTY input path is: winit keyboard event → main thread dispatch → `PaneNotifier::notify()` → writer thread → PTY fd. During multi-pane flooding, the main thread may be starved by constant snapshot consumption, redraw requests, and frame rendering for multiple dirty panes. Keyboard events from winit queue up but aren't dispatched to the PTY fast enough. Alternatively, the OS-level PTY write buffer may be full if the child process is too busy writing output to read its input fd. The IO thread itself has a 64KB parse chunk limit with command draining between chunks, but this doesn't help if the bottleneck is upstream (main thread) or downstream (OS PTY buffer).
-  Found: 2026-04-01 | Source: manual
+- [ ] `[BUG-11-1][critical]` **All input blocked during sustained output flooding (even single pane)** — found by manual.
+  Repro: Run a flood script (e.g., `yes`, `cat /dev/urandom`, or any rapid-output loop) in a single pane. Attempt Ctrl+C or any keyboard input — nothing is accepted. All forms of input are blocked for the duration of the flood. Worsens with multiple panes but occurs with just one.
+  Subsystem: `oriterm_mux/src/pane/io_thread/mod.rs`, `oriterm/src/app/event_loop.rs`, `oriterm/src/app/keyboard_input/mod.rs`, `oriterm/src/app/pane_accessors.rs`
+  Analysis: Input path is winit keyboard event → `handle_keyboard_input()` → `encode_key_to_pty()` → `write_pane_input()` → `notifier.notify()` → PTY writer thread → `write()` syscall. During flooding, multiple bottlenecks compound: (1) The PTY writer thread blocks on `write()` when the kernel PTY buffer fills — the child process is too busy writing output to drain its input fd, so keyboard bytes queue indefinitely. (2) The main thread event loop tightens around `pump_mux_events()` → snapshot consumption → `render_dirty_windows()`, starving winit keyboard event dispatch. (3) IO thread parses 64KB chunks and produces snapshots continuously, keeping the main thread in a tight render loop. The result is that keyboard events either never reach the PTY (writer thread blocked) or are never dispatched from winit (main thread starved). This is not just a multi-pane issue — a single pane flooding at sufficient throughput triggers both bottlenecks.
+  Found: 2026-04-01 | Source: manual | Updated: 2026-04-04 (severity escalated from high → critical, confirmed single-pane repro)
   Note: Roadmap section 23 (performance) and section 50 (runtime efficiency) touch this area.
 
 - [ ] `[BUG-11-2][high]` **Memory (RSS) grows during output flooding and does not decrease after killing panes** — found by manual.
