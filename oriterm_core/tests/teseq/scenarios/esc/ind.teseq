@@ -1,0 +1,6 @@
+|TOP|
+: Esc [ 24 ; 1 H
+|bottom|
+: Esc D
+. CR/^M
+|scrolled|

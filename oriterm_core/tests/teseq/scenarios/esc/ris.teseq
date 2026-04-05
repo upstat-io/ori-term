@@ -1,0 +1,3 @@
+|Some content|
+: Esc [ 5 ; 10 H
+: Esc c

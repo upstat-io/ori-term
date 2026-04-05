@@ -1,0 +1,5 @@
+[terminal]
+scrollback = 100
+
+[expect]
+cursor = { col = 0, line = 23 }

@@ -1,0 +1,8 @@
+|LINE0|
+. CR/^M LF/^J
+|LINE1|
+. CR/^M LF/^J
+|LINE2|
+: Esc [ 1 ; 1 H
+: Esc M
+|inserted|

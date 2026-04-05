@@ -85,9 +85,18 @@ impl Drop for TestDaemon {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Build a `SpawnConfig` for tests with history suppressed so fence commands
+/// don't pollute the user's `~/.zsh_history`.
+fn test_spawn_config() -> SpawnConfig {
+    SpawnConfig {
+        env: vec![("HISTFILE".into(), "/dev/null".into())],
+        ..SpawnConfig::default()
+    }
+}
+
 /// Spawn a pane in the daemon, returning its ID.
 fn spawn_test_pane(client: &mut MuxClient) -> PaneId {
-    let config = SpawnConfig::default();
+    let config = test_spawn_config();
     client
         .spawn_pane(&config, Theme::Dark)
         .expect("spawn_pane should succeed")
