@@ -89,6 +89,9 @@ pub struct PaneParts {
     pub io_selection_dirty: Arc<AtomicBool>,
     /// Write-stall detection flag (shared with writer thread).
     pub write_stalled: Arc<AtomicBool>,
+    /// Dup'd PTY master fd for `tcgetpgrp()` (Unix only).
+    #[cfg(unix)]
+    pub master_fd: Option<std::os::unix::io::OwnedFd>,
 }
 
 /// Owns all per-shell-session state: IO thread handle, PTY handles, threads.
@@ -169,11 +172,16 @@ pub struct Pane {
     /// Ctrl+C — if stalled, it sends SIGINT directly to the child process
     /// group, bypassing the blocked PTY writer.
     write_stalled: Arc<AtomicBool>,
-    /// Child process ID for direct signal delivery.
-    ///
-    /// Used to send SIGINT/SIGTERM to the child process group when the
-    /// PTY writer is stalled (kernel buffer full, child not reading stdin).
+    /// Child process ID (fallback for signal delivery on Windows).
     child_pid: Option<u32>,
+    /// Dup'd PTY master fd for `tcgetpgrp()` (Unix only).
+    ///
+    /// The original master fd is owned by the IO thread via `PtyControl`.
+    /// This is a `dup()`'d copy so we can query the foreground process
+    /// group from the main thread without locking the IO thread.
+    #[cfg(unix)]
+    #[allow(dead_code, reason = "will be used for tcgetpgrp-based signal delivery")]
+    master_fd: Option<std::os::unix::io::OwnedFd>,
 }
 
 impl Pane {
@@ -205,6 +213,8 @@ impl Pane {
             search_active: Arc::new(AtomicBool::new(false)),
             write_stalled: parts.write_stalled,
             child_pid,
+            #[cfg(unix)]
+            master_fd: parts.master_fd,
         }
     }
 

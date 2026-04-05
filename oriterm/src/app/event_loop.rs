@@ -11,7 +11,6 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use super::App;
 use super::event_loop_helpers::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 use crate::event::TermEvent;
-use crate::gpu::GpuState;
 
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -436,12 +435,13 @@ impl ApplicationHandler<TermEvent> for App {
         let urgent_redraw = self.is_any_urgent_redraw();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
-        // Render when dirty. PresentMode::Mailbox/Fifo provide hardware
-        // pacing — render immediately to minimize input-to-display latency.
-        // On Immediate mode (no hardware pacing), apply a client-side budget
-        // gate to prevent uncapped redraws during sustained PTY output.
-        let needs_budget = self.gpu.as_ref().is_some_and(GpuState::needs_frame_budget);
-        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw || blink_animating) {
+        // Render when dirty, gated by a 16ms frame budget in ALL present
+        // modes. Without the budget gate, Mailbox mode renders every
+        // about_to_wait() call (~1ms cycle), starving winit's message pump
+        // and blocking keyboard dispatch during sustained PTY output.
+        // The 16ms budget ensures the event loop yields to winit between
+        // frames so keyboard events (including Ctrl+C) are always dispatched.
+        if any_dirty && (budget_elapsed || urgent_redraw || blink_animating) {
             self.render_dirty_windows();
         }
 
@@ -456,7 +456,6 @@ impl ApplicationHandler<TermEvent> for App {
 
         let input = ControlFlowInput {
             still_dirty,
-            needs_budget,
             budget_elapsed,
             has_animations,
             blinking_active: self.blinking_active,

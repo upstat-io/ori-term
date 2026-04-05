@@ -71,6 +71,15 @@ impl PtyControl {
             })
             .map_err(pty_err)
     }
+
+    /// Get the PTY master file descriptor (Unix only).
+    ///
+    /// Used for `tcgetpgrp()` to find the foreground process group for
+    /// signal delivery.
+    #[cfg(unix)]
+    pub fn master_fd(&self) -> Option<std::os::unix::io::RawFd> {
+        self.0.as_raw_fd()
+    }
 }
 
 /// Configuration for spawning a PTY.

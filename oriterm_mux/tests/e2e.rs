@@ -1474,3 +1474,258 @@ fn multi_client_independent_panes() {
     // Clean up.
     client_b.close_pane(pane_b);
 }
+
+// ---------------------------------------------------------------------------
+// Tests: BUG-11-1 — Input blocked during output flooding
+// ---------------------------------------------------------------------------
+
+/// BUG-11-1: Ctrl+C + signal_child during flooding.
+///
+/// Note: signal_child currently sends to shell PGID, not foreground PGID.
+/// Disabled until tcgetpgrp-based delivery is implemented.
+#[test]
+#[ignore = "signal_child sends to shell PGID, not foreground PGID — needs tcgetpgrp fix"]
+fn bug_11_1_ctrl_c_during_flood_via_signal_child() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    // Start `yes` — produces infinite "y\n" output, never reads stdin.
+    client.send_input(pane_id, b"yes\n");
+
+    // Wait for flooding to start — snapshot should contain "y" lines.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            let has_y = snap.cells.iter().any(|row| {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                line.starts_with('y')
+            });
+            if has_y {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for `yes` output"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    // Let `yes` flood for a bit so the PTY writer stalls.
+    thread::sleep(Duration::from_millis(500));
+
+    // Send Ctrl+C through the normal input path (may be stuck).
+    client.send_input(pane_id, b"\x03");
+
+    // Also send SIGINT directly — this is the fix path.
+    client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+
+    // The shell prompt should return after `yes` dies.
+    // Look for the `$` prompt character within 5 seconds.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_prompt = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            // Check for a prompt-like line (contains $ or #).
+            let has_prompt = snap.cells.iter().any(|row| {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim();
+                trimmed.ends_with('$') || trimmed.ends_with('#')
+            });
+            if has_prompt {
+                saw_prompt = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    if !saw_prompt {
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            eprintln!("=== Snapshot after Ctrl+C + signal_child ===");
+            for (i, row) in snap.cells.iter().enumerate() {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    eprintln!("  row {i}: {trimmed:?}");
+                }
+            }
+        }
+    }
+
+    assert!(
+        saw_prompt,
+        "shell prompt must return after Ctrl+C kills `yes`"
+    );
+
+    client.close_pane(pane_id);
+}
+
+/// Test: does plain send_input(b"\x03") kill `yes` without signal_child?
+/// If yes, the PTY input buffer isn't full and the kernel handles SIGINT.
+/// If no, the writer thread is somehow blocked even for 1 byte.
+#[test]
+fn bug_11_1_plain_ctrl_c_without_signal_child() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    client.send_input(pane_id, b"yes\n");
+
+    // Wait for output.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cells.iter().any(|row| {
+                row.iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .starts_with('y')
+            }) {
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for yes");
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    // Let it flood.
+    thread::sleep(Duration::from_millis(500));
+
+    // Send ONLY \x03 through normal input — no signal_child.
+    client.send_input(pane_id, b"\x03");
+
+    // Check if prompt returns.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_prompt = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cells.iter().any(|row| {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim();
+                trimmed.ends_with('$') || trimmed.ends_with('#') || trimmed.ends_with('%')
+            }) {
+                saw_prompt = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    if !saw_prompt {
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            eprintln!("=== Snapshot after plain \\x03 ===");
+            for (i, row) in snap.cells.iter().enumerate() {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    eprintln!("  row {i}: {trimmed:?}");
+                }
+            }
+        }
+    }
+
+    assert!(
+        saw_prompt,
+        "plain send_input(\\x03) must kill yes — PTY input buffer should not be full"
+    );
+
+    client.close_pane(pane_id);
+}
+
+/// Verify that `signal_child` alone can kill a flooding process.
+///
+/// Disabled: same tcgetpgrp issue as above.
+#[test]
+#[ignore = "signal_child sends to shell PGID, not foreground PGID — needs tcgetpgrp fix"]
+fn signal_child_alone_kills_flooding_process() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let pane_id = spawn_test_pane_ready(&mut client);
+
+    // Start `yes`.
+    client.send_input(pane_id, b"yes\n");
+
+    // Wait for output to start.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cells.iter().any(|row| {
+                row.iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .starts_with('y')
+            }) {
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for `yes`");
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    // Let it flood.
+    thread::sleep(Duration::from_millis(500));
+
+    // Send ONLY signal_child — no send_input. The signal must bypass the
+    // PTY writer entirely.
+    client.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
+
+    // Shell prompt should return.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_prompt = false;
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut n = Vec::new();
+        client.drain_notifications(&mut n);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            if snap.cells.iter().any(|row| {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim();
+                trimmed.ends_with('$') || trimmed.ends_with('#')
+            }) {
+                saw_prompt = true;
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    if !saw_prompt {
+        // Dump snapshot for diagnosis.
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            eprintln!("=== Snapshot after signal_child ===");
+            for (i, row) in snap.cells.iter().enumerate() {
+                let line: String = row.iter().map(|c| c.ch).collect();
+                let trimmed = line.trim_end();
+                if !trimmed.is_empty() {
+                    eprintln!("  row {i}: {trimmed:?}");
+                }
+            }
+        }
+    }
+
+    assert!(
+        saw_prompt,
+        "signal_child(Interrupt) alone must kill `yes` and return the prompt"
+    );
+
+    client.close_pane(pane_id);
+}

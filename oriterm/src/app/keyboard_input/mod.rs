@@ -282,6 +282,11 @@ impl App {
                     mux.scroll_to_bottom(pane_id);
                 }
             }
+            log::info!(
+                "encode_key_to_pty: sending {} bytes to {pane_id} (contains 0x03: {})",
+                bytes.len(),
+                bytes.contains(&0x03),
+            );
             self.write_pane_input(pane_id, &bytes);
 
             // Send SIGINT directly to the child process group when Ctrl+C
@@ -291,6 +296,7 @@ impl App {
             // SIGINT anyway when \x03 reaches the line discipline; in raw
             // mode most programs catch SIGINT gracefully.
             if bytes.contains(&0x03) {
+                log::info!("Ctrl+C detected — sending SignalChild to {pane_id}");
                 if let Some(mux) = self.mux.as_mut() {
                     mux.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
                 }
