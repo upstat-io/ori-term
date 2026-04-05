@@ -550,11 +550,11 @@ Establish performance baselines and regression testing. Every optimization in th
 
 **Note on testability:** The prepare phase (`fill_frame_shaped`, `prepare_frame_shaped`) is pure computation (no wgpu types) and can be benchmarked with criterion using the existing mock `AtlasLookup` from tests. GPU submit and present benchmarks require a live `wgpu::Device` — these must be `#[ignore]` tests or manual benchmarks, not CI-blocking criterion benchmarks. The `oriterm/benches/rendering.rs` file should focus on the prepare phase.
 
-- [ ] Add `oriterm/benches/rendering.rs` with criterion benchmarks using mock `AtlasLookup` from `oriterm/src/gpu/prepare/tests.rs`. **Blocker**: `oriterm` is a binary crate (no `lib.rs`) — benchmark binaries cannot import `pub(crate)` types. Requires either extracting a `lib.rs` or restructuring gpu modules. Deferred.
-  - [ ] `bench_prepare_plain`: 120x50 grid of plain ASCII text → `fill_frame_shaped()` → `PreparedFrame`
-  - [ ] `bench_prepare_colored`: 120x50 grid where every cell has a unique fg/bg color (worst case for instance generation)
-  - [ ] `bench_prepare_240x80`: 240x80 grid (large terminal) with mixed content
-- [ ] Target: prepare phase completes in <2ms for 120x50, <8ms for 240x80 (must fit within 16ms frame budget with headroom for GPU upload and present)
+- [x] Add `oriterm/benches/rendering.rs` with criterion benchmarks. Resolved the `lib.rs` blocker by extracting a library crate root (`oriterm/src/lib.rs`) with `pub use entry::run;` for the binary entry point and `pub mod gpu;` with benchmark-facing re-exports. (implemented 2026-04-04)
+  - [x] `bench_prepare_plain`: 120x50 grid of plain ASCII text → `prepare_frame_shaped_into()` → `PreparedFrame`. Baseline: ~942 µs
+  - [x] `bench_prepare_colored`: 120x50 grid where every cell has a unique fg/bg color (worst case for instance generation). Baseline: ~775 µs
+  - [x] `bench_prepare_240x80`: 240x80 grid (large terminal) with mixed content. Baseline: ~2.21 ms
+- [x] Target: prepare phase completes in <2ms for 120x50, <8ms for 240x80 (must fit within 16ms frame budget with headroom for GPU upload and present). All targets met: 120x50 ~0.94ms, 240x80 ~2.21ms
 - [ ] Manual test (not criterion): run `yes | head -100000` and verify 60fps is maintained. Measure frame drops by logging frame time >16ms in debug mode
 - [ ] Manual test: 256-color gradient filling 120x50 grid — verify no visible jank during continuous scrolling
 
@@ -591,7 +591,7 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
   - [x] Realistic: `output_burst` (100 lines of compiler output) and `tui_redraw` (10-line partial update)
 - [ ] Missing benchmarks to add (see Throughput and Rendering Benchmark subsections above for details):
   - [x] `vte_throughput.rs`: ASCII-only, mixed, and heavy-escape VTE parsing (oriterm_core/benches/)
-  - [ ] `rendering.rs`: prepare-phase benchmarks with mock atlas (oriterm/benches/) — blocked: binary crate, no lib.rs
+  - [x] `rendering.rs`: prepare-phase benchmarks with mock atlas (oriterm/benches/) — implemented 2026-04-04 via lib.rs extraction. 3 benchmarks: plain, colored, mixed
   - [x] `bench_renderable_content_into`: snapshot extraction for 80x24, 120x50, and 240x80 grids (oriterm_core/benches/grid.rs). Baseline: 20µs/52µs/167µs — well under 0.5ms threshold
   - [x] `bench_dirty_drain`: `DirtyTracker::drain()` for 50 and 80 lines (oriterm_core/benches/grid.rs). Baseline: 384ns/608ns
 - [ ] Add `cargo bench` to CI pipeline. Store criterion baseline JSON in `benches/baseline/` directory. Fail CI if any benchmark regresses by >10% vs. stored baseline (use `criterion --load-baseline` and `--save-baseline`)
@@ -621,12 +621,12 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 **Remaining verification and optimization:**
 - [ ] All 23.4-23.5 unchecked items complete
 - [ ] `cat 100MB_file.txt` completes with no frame >32ms (2x budget) -- verify via debug frame-time logging
-- [ ] `fill_frame_shaped()` with 120x50 colored grid completes in <2ms (criterion benchmark)
+- [x] `fill_frame_shaped()` with 120x50 colored grid completes in <2ms (criterion benchmark) — verified: ~775 µs
 - [ ] RSS bounded by scrollback limit: after filling 10K-line scrollback, RSS does not grow further over 10 minutes of continued output
 - [ ] Idle terminal CPU <0.5% measured over 30 seconds with no PTY output (only cursor blink wakes)
 - [ ] Keypress-to-present latency: p95 <5ms (measured via internal instrumentation)
 - [ ] `yes | head -100000` renders final line with no visible frame drops
-- [ ] `oriterm/benches/rendering.rs` added and baselined (<2ms for 120x50 prepare) -- BLOCKED: binary crate has no lib.rs
+- [x] `oriterm/benches/rendering.rs` added and baselined (<2ms for 120x50 prepare) — verified: ~942 µs plain, ~775 µs colored
 - [ ] `./build-all.sh` -- all targets compile
 - [ ] `./test-all.sh` -- all tests pass
 - [ ] `./clippy-all.sh` -- no warnings

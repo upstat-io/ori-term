@@ -1924,6 +1924,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "clipboard-win",
+ "criterion",
  "dwrote",
  "image",
  "libc",
