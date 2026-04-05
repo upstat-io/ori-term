@@ -22,7 +22,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: TeseqHarness & Infrastructure
-**File:** `section-01-infrastructure.md` | **Status:** Not Started
+**File:** `section-01-infrastructure.md` | **Status:** Complete
 
 ```
 TeseqHarness, ScenarioSpec, RecordedEvent, RecordedListener

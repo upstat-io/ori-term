@@ -1,6 +1,7 @@
 //! Image cache with LRU eviction and configurable memory limits.
 
 mod animation;
+mod eviction;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -150,19 +151,12 @@ impl ImageCache {
 
         let id = data.id;
 
-        // If replacing an existing image, subtract its old memory and
-        // remove stale placements (dimensions may have changed).
-        if let Some(old) = self.images.remove(&id) {
-            self.memory_used = self.memory_used.saturating_sub(old.data.len());
-            let before = self.placements.len();
-            self.placements.retain(|p| p.image_id != id);
-            if self.placements.len() != before {
-                log::info!(
-                    "image store: replaced id={}, removed {} stale placements",
-                    id.0,
-                    before - self.placements.len(),
-                );
-            }
+        // If replacing an existing image, fully remove the old one
+        // (including animation state and frame memory) before inserting
+        // the new data. Uses `remove_image()` which handles all cleanup.
+        if self.images.contains_key(&id) {
+            log::info!("image store: replacing existing id={}", id.0);
+            self.remove_image(id);
         }
 
         self.memory_used += size;
@@ -249,12 +243,32 @@ impl ImageCache {
     }
 
     /// Remove all placements at a specific cell position.
+    ///
+    /// After removing placements, prunes any images that no longer have
+    /// any placements (prevents orphaned image data from accumulating).
     pub(crate) fn remove_by_position(&mut self, col: usize, row: StableRowIndex) {
-        let before = self.placements.len();
+        // Collect image IDs of removed placements for orphan pruning.
+        let removed_ids: Vec<ImageId> = self
+            .placements
+            .iter()
+            .filter(|p| p.cell_col == col && p.cell_row == row)
+            .map(|p| p.image_id)
+            .collect();
+
+        if removed_ids.is_empty() {
+            return;
+        }
+
         self.placements
             .retain(|p| !(p.cell_col == col && p.cell_row == row));
-        if self.placements.len() != before {
-            self.dirty = true;
+        self.dirty = true;
+
+        // Prune orphaned images (no remaining placements).
+        for id in removed_ids {
+            let has_placement = self.placements.iter().any(|p| p.image_id == id);
+            if !has_placement {
+                self.remove_image(id);
+            }
         }
     }
 
@@ -313,29 +327,54 @@ impl ImageCache {
         left: Option<usize>,
         right: Option<usize>,
     ) {
-        let before = self.placements.len();
+        // Collect image IDs of placements that will be removed.
+        let removed_ids: Vec<ImageId> = self
+            .placements
+            .iter()
+            .filter(|p| {
+                let pb = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
+                let pr = p.cell_col + p.cols.saturating_sub(1);
+                let row_overlap = p.cell_row <= bottom && pb >= top;
+                if !row_overlap {
+                    return false;
+                }
+                match (left, right) {
+                    (Some(l), Some(r)) => p.cell_col <= r && pr >= l,
+                    (Some(l), None) => pr >= l,
+                    (None, Some(r)) => p.cell_col <= r,
+                    (None, None) => true,
+                }
+            })
+            .map(|p| p.image_id)
+            .collect();
+
+        if removed_ids.is_empty() {
+            return;
+        }
+
         self.placements.retain(|p| {
-            let placement_bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
-            let placement_right = p.cell_col + p.cols.saturating_sub(1);
-
-            // Check row overlap.
-            let row_overlap = p.cell_row <= bottom && placement_bottom >= top;
+            let pb = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
+            let pr = p.cell_col + p.cols.saturating_sub(1);
+            let row_overlap = p.cell_row <= bottom && pb >= top;
             if !row_overlap {
-                return true; // Keep — no row overlap.
+                return true;
             }
-
-            // Check column overlap (if bounds specified).
             let col_overlap = match (left, right) {
-                (Some(l), Some(r)) => p.cell_col <= r && placement_right >= l,
-                (Some(l), None) => placement_right >= l,
+                (Some(l), Some(r)) => p.cell_col <= r && pr >= l,
+                (Some(l), None) => pr >= l,
                 (None, Some(r)) => p.cell_col <= r,
-                (None, None) => true, // Full row erase.
+                (None, None) => true,
             };
-
-            !col_overlap // Keep if no column overlap.
+            !col_overlap
         });
-        if self.placements.len() != before {
-            self.dirty = true;
+        self.dirty = true;
+
+        // Prune orphaned images (no remaining placements).
+        for id in removed_ids {
+            let has_placement = self.placements.iter().any(|p| p.image_id == id);
+            if !has_placement {
+                self.remove_image(id);
+            }
         }
     }
 
@@ -388,66 +427,6 @@ impl ImageCache {
                     self.dirty = true;
                 }
             }
-        }
-    }
-
-    /// Evict least-recently-used images until under memory limit.
-    ///
-    /// Prefers images with zero placements first, then evicts placed
-    /// images by LRU order (Ghostty pattern). Builds a placed-ID set
-    /// once to avoid O(n*m) per-eviction placement scans.
-    fn evict_lru(&mut self) {
-        let placed = self.placed_id_set();
-
-        while self.memory_used > self.memory_limit && !self.images.is_empty() {
-            if !self.evict_one(&placed) {
-                break;
-            }
-        }
-    }
-
-    /// Evict the single least-recently-used image. Returns `true` if
-    /// an image was evicted.
-    ///
-    /// Uses a precomputed set of placed image IDs for O(n) candidate
-    /// selection (unplaced first, then oldest access counter).
-    fn evict_one(&mut self, placed: &std::collections::HashSet<ImageId>) -> bool {
-        let victim = self
-            .images
-            .iter()
-            .map(|(id, img)| (*id, img.last_accessed, placed.contains(id)))
-            .min_by(|a, b| {
-                a.2.cmp(&b.2) // false (no placements) < true
-                    .then(a.1.cmp(&b.1)) // oldest access first
-            });
-
-        if let Some((id, _, _)) = victim {
-            self.remove_image(id);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Build a `HashSet` of image IDs that have at least one placement.
-    fn placed_id_set(&self) -> std::collections::HashSet<ImageId> {
-        self.placements.iter().map(|p| p.image_id).collect()
-    }
-
-    /// Remove images that have no remaining placements.
-    pub(crate) fn remove_orphans(&mut self) {
-        let placed = self.placed_id_set();
-        let orphans: Vec<ImageId> = self
-            .images
-            .keys()
-            .filter(|id| !placed.contains(id))
-            .copied()
-            .collect();
-
-        for id in orphans {
-            // Delegates to `remove_image` to clean up all associated state:
-            // animations, animation_frames, frame_starts, and memory tracking.
-            self.remove_image(id);
         }
     }
 }
