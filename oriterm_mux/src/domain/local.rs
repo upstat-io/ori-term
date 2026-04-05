@@ -128,7 +128,16 @@ impl LocalDomain {
         let notifier = PaneNotifier::new(tx);
 
         // 6. Spawn the writer thread (owns rx + writer, sets shutdown flag).
-        let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
+        //    The write_stalled flag lets the main thread detect when the
+        //    writer is blocked on a full kernel PTY buffer and send SIGINT
+        //    directly to the child process group.
+        let write_stalled = Arc::new(AtomicBool::new(false));
+        let writer_thread = spawn_pty_writer(
+            writer,
+            rx,
+            Arc::clone(&shutdown),
+            Arc::clone(&write_stalled),
+        )?;
 
         // 7. Spawn the Terminal IO thread (owns Term, VTE processors, PtyControl).
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
@@ -160,6 +169,7 @@ impl LocalDomain {
             pty,
             mode_cache,
             io_selection_dirty,
+            write_stalled,
         }))
     }
 }

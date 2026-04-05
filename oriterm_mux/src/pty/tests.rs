@@ -392,8 +392,13 @@ fn writer_thread_delivers_input() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
 
     tx.send(Msg::Input(b"hello".to_vec())).unwrap();
     tx.send(Msg::Shutdown).unwrap();
@@ -420,8 +425,13 @@ fn writer_thread_batches_queued_messages() {
     tx.send(Msg::Input(b"ccc".to_vec())).unwrap();
     tx.send(Msg::Shutdown).unwrap();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
     handle.join().expect("writer thread panicked");
 
     let mut buf = Vec::new();
@@ -435,8 +445,13 @@ fn writer_thread_shutdown_sets_flag() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
 
     tx.send(Msg::Shutdown).unwrap();
     handle.join().expect("writer thread panicked");
@@ -453,8 +468,13 @@ fn writer_thread_channel_close_sets_flag() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
 
     // Drop the sender — channel closes, thread exits.
     drop(tx);
@@ -464,4 +484,50 @@ fn writer_thread_channel_close_sets_flag() {
         shutdown.load(Ordering::Acquire),
         "shutdown flag must be set on channel close",
     );
+}
+
+#[test]
+fn writer_thread_sets_stall_flag_during_write() {
+    // Create a pipe with a tiny buffer. Fill it so the next write blocks.
+    // The write_stalled flag should become true while the writer is blocked.
+    use std::thread;
+    use std::time::Duration;
+
+    let (reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let stalled = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&stalled),
+    )
+    .expect("spawn writer thread");
+
+    // Send enough data to fill the pipe buffer and cause a stall.
+    // Pipe buffers are typically 64KB on Linux, 4KB on some systems.
+    // Send 256KB to ensure we exceed the buffer on all platforms.
+    let big_data = vec![b'X'; 256 * 1024];
+    tx.send(Msg::Input(big_data)).unwrap();
+
+    // Wait for the writer to enter the blocked write.
+    let mut saw_stalled = false;
+    for _ in 0..100 {
+        thread::sleep(Duration::from_millis(10));
+        if stalled.load(Ordering::Acquire) {
+            saw_stalled = true;
+            break;
+        }
+    }
+    assert!(
+        saw_stalled,
+        "write_stalled flag must be set while write blocks on full pipe"
+    );
+
+    // Clean up: drop the reader to unblock the writer, then shut down.
+    drop(reader);
+    tx.send(Msg::Shutdown).unwrap();
+    handle.join().expect("writer thread panicked");
 }
