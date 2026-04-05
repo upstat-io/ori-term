@@ -100,6 +100,26 @@ impl LocalDomain {
             .take_control()
             .ok_or_else(|| io::Error::other("PTY control unavailable"))?;
 
+        // 2b. Dup the master fd for signal delivery (Unix).
+        //     `tcgetpgrp(master_fd)` needs a valid fd to the PTY master.
+        //     The control handle moves to the IO thread, so we dup it now.
+        #[cfg(unix)]
+        #[allow(
+            unsafe_code,
+            reason = "libc::dup + OwnedFd::from_raw_fd require unsafe"
+        )]
+        let master_fd = {
+            use std::os::unix::io::FromRawFd;
+            control.master_fd().map(|fd| {
+                // SAFETY: dup() is a standard POSIX syscall. The source fd
+                // is valid (obtained from MasterPty::as_raw_fd()). OwnedFd
+                // takes ownership and closes on drop.
+                let duped = unsafe { libc::dup(fd) };
+                assert!(duped >= 0, "dup(master_fd) failed");
+                unsafe { std::os::unix::io::OwnedFd::from_raw_fd(duped) }
+            })
+        };
+
         // 3. Set up shared atomics.
         let io_grid_dirty = Arc::new(AtomicBool::new(false));
         let mode_cache = Arc::new(AtomicU32::new(oriterm_core::TermMode::default().bits()));
@@ -170,6 +190,8 @@ impl LocalDomain {
             mode_cache,
             io_selection_dirty,
             write_stalled,
+            #[cfg(unix)]
+            master_fd,
         }))
     }
 }

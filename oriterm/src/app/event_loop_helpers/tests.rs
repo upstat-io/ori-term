@@ -7,7 +7,6 @@ fn idle_input() -> ControlFlowInput {
     let now = Instant::now();
     ControlFlowInput {
         still_dirty: false,
-        needs_budget: false,
         budget_elapsed: false,
         has_animations: false,
         blinking_active: false,
@@ -31,9 +30,24 @@ fn idle_returns_text_blink_wait() {
 }
 
 #[test]
-fn still_dirty_after_render_wakes_immediately() {
+fn still_dirty_waits_for_budget() {
+    // BUG-11-1 fix: dirty windows always respect frame budget to prevent
+    // event loop starvation during sustained PTY output flooding.
     let mut input = idle_input();
     input.still_dirty = true;
+    input.budget_elapsed = false;
+    input.budget_remaining = Duration::from_millis(8);
+
+    let result = compute_control_flow(&input);
+    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(8));
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn still_dirty_budget_elapsed_wakes_immediately() {
+    let mut input = idle_input();
+    input.still_dirty = true;
+    input.budget_elapsed = true;
 
     let result = compute_control_flow(&input);
     let expected = ControlFlowDecision::WaitUntil(input.now);
@@ -137,43 +151,7 @@ fn animations_take_priority_over_scheduler_wake() {
     assert_eq!(result, expected);
 }
 
-// Budget gate tests (PresentMode::Immediate)
-
-#[test]
-fn still_dirty_with_budget_gate_waits_for_budget() {
-    let mut input = idle_input();
-    input.still_dirty = true;
-    input.needs_budget = true;
-    input.budget_elapsed = false;
-    input.budget_remaining = Duration::from_millis(8);
-
-    let result = compute_control_flow(&input);
-    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(8));
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn still_dirty_with_budget_gate_elapsed_wakes_immediately() {
-    let mut input = idle_input();
-    input.still_dirty = true;
-    input.needs_budget = true;
-    input.budget_elapsed = true;
-
-    let result = compute_control_flow(&input);
-    let expected = ControlFlowDecision::WaitUntil(input.now);
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn still_dirty_without_budget_gate_wakes_immediately() {
-    let mut input = idle_input();
-    input.still_dirty = true;
-    input.needs_budget = false;
-
-    let result = compute_control_flow(&input);
-    let expected = ControlFlowDecision::WaitUntil(input.now);
-    assert_eq!(result, expected);
-}
+// Budget gate tests — now applies to ALL present modes (BUG-11-1).
 
 // Fade blink wakeup tests
 

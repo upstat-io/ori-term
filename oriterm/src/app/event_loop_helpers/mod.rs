@@ -382,9 +382,6 @@ impl App {
 pub(super) struct ControlFlowInput {
     /// Whether any window still has dirty flag after rendering.
     pub still_dirty: bool,
-    /// Whether the surface requires client-side frame budget gating
-    /// (true for `PresentMode::Immediate`, false for `Mailbox`/`Fifo`).
-    pub needs_budget: bool,
     /// Whether the frame budget has elapsed since last render.
     pub budget_elapsed: bool,
     /// Whether compositor animations are running.
@@ -430,13 +427,14 @@ pub(super) enum ControlFlowDecision {
 /// No winit types — testable without a display server. Mirrors the
 /// decision tree in `about_to_wait`.
 pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
-    // Still dirty after render attempt.
+    // Still dirty after render attempt — wake when the frame budget
+    // elapses. Enforced in ALL present modes so the event loop yields
+    // to winit's message pump between frames (fixes keyboard starvation
+    // during sustained PTY output flooding — BUG-11-1).
     if input.still_dirty {
-        if input.needs_budget && !input.budget_elapsed {
-            // Budget-gated: wake when the budget elapses.
+        if !input.budget_elapsed {
             return ControlFlowDecision::WaitUntil(input.now + input.budget_remaining);
         }
-        // Otherwise wake immediately to retry.
         return ControlFlowDecision::WaitUntil(input.now);
     }
     if input.has_animations {
