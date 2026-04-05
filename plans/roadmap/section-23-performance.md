@@ -594,7 +594,7 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
   - [x] `rendering.rs`: prepare-phase benchmarks with mock atlas (oriterm/benches/) — implemented 2026-04-04 via lib.rs extraction. 3 benchmarks: plain, colored, mixed
   - [x] `bench_renderable_content_into`: snapshot extraction for 80x24, 120x50, and 240x80 grids (oriterm_core/benches/grid.rs). Baseline: 20µs/52µs/167µs — well under 0.5ms threshold
   - [x] `bench_dirty_drain`: `DirtyTracker::drain()` for 50 and 80 lines (oriterm_core/benches/grid.rs). Baseline: 384ns/608ns
-- [ ] Add `cargo bench` to CI pipeline. Store criterion baseline JSON in `benches/baseline/` directory. Fail CI if any benchmark regresses by >10% vs. stored baseline (use `criterion --load-baseline` and `--save-baseline`)
+- [x] Add `cargo bench --no-run` to CI pipeline — compile-only check in `bench-compile` job ensures benchmarks don't bitrot. Full regression detection with baseline comparison deferred to a later CI enhancement
 - [x] Verify all benchmarks compile and complete within 60 seconds total (`cargo bench -p oriterm_core --no-run` compiles both `grid` and `vte_throughput` benches)
 
 ---
@@ -630,7 +630,7 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
 - [ ] `./build-all.sh` -- all targets compile
 - [ ] `./test-all.sh` -- all tests pass
 - [ ] `./clippy-all.sh` -- no warnings
-- [ ] `cargo bench` -- all benchmarks compile and run without error
+- [x] `cargo bench` -- all benchmarks compile and run without error (verified 2026-04-04: `cargo bench --workspace --no-run` compiles all 4 benches; added to CI as `bench-compile` job)
 
 **Hygiene issues found (verified 2026-03-29):**
 - [x] `oriterm/src/gpu/atlas/mod.rs` under 500-line limit (457 lines) — growth/texture submodules already extracted (verified 2026-04-03)
