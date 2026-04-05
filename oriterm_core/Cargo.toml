@@ -23,6 +23,8 @@ vte = { version = "0.15.0", features = ["ansi"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = "1"
 portable-pty = "0.9.0"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 libc = "0.2"

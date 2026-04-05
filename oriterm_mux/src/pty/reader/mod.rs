@@ -93,7 +93,7 @@ impl PtyReader {
                 break;
             }
 
-            // Pause between reads so ConPTY's conhost can process input.
+            // ConPTY only: pause between reads so conhost can process input.
             // WezTerm achieves this naturally because its reader does VTE
             // parsing inline (~5-10ms per 128KB chunk). Our reader offloads
             // parsing to the IO thread and loops back to read() instantly,
@@ -101,6 +101,10 @@ impl PtyReader {
             // after each read gives conhost scheduling time to handle
             // Ctrl+C between output bursts. Throughput impact is minimal:
             // 128KB per 1ms = 128 MB/s, far above terminal needs.
+            //
+            // Unix PTYs don't need this — the kernel scheduler provides
+            // natural interleaving between the child process and our reader.
+            #[cfg(windows)]
             thread::sleep(std::time::Duration::from_millis(1));
         }
     }

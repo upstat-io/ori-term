@@ -166,6 +166,19 @@ fn snapshot_contains(snapshot: &PaneSnapshot, text: &str) -> bool {
     false
 }
 
+/// Check whether a snapshot contains a shell prompt line.
+///
+/// Recognizes common prompt suffixes: `$` (bash/zsh), `#` (root),
+/// `%` (csh/tcsh), `>` (PowerShell/fish), `❯` (starship/pure).
+fn snapshot_has_prompt(snapshot: &PaneSnapshot) -> bool {
+    const PROMPT_CHARS: &[char] = &['$', '#', '%', '>', '❯'];
+    snapshot.cells.iter().any(|row| {
+        let line: String = row.iter().map(|c| c.ch).collect();
+        let trimmed = line.trim();
+        !trimmed.is_empty() && PROMPT_CHARS.iter().any(|&ch| trimmed.ends_with(ch))
+    })
+}
+
 /// Poll until a snapshot satisfies a predicate, with a 15s deadline.
 ///
 /// Replaces fixed `thread::sleep` calls with event-driven waiting.
@@ -1534,13 +1547,7 @@ fn bug_11_1_ctrl_c_during_flood_via_signal_child() {
         let mut n = Vec::new();
         client.drain_notifications(&mut n);
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            // Check for a prompt-like line (contains $ or #).
-            let has_prompt = snap.cells.iter().any(|row| {
-                let line: String = row.iter().map(|c| c.ch).collect();
-                let trimmed = line.trim();
-                trimmed.ends_with('$') || trimmed.ends_with('#')
-            });
-            if has_prompt {
+            if snapshot_has_prompt(&snap) {
                 saw_prompt = true;
                 break;
             }
@@ -1614,11 +1621,7 @@ fn bug_11_1_plain_ctrl_c_without_signal_child() {
         let mut n = Vec::new();
         client.drain_notifications(&mut n);
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snap.cells.iter().any(|row| {
-                let line: String = row.iter().map(|c| c.ch).collect();
-                let trimmed = line.trim();
-                trimmed.ends_with('$') || trimmed.ends_with('#') || trimmed.ends_with('%')
-            }) {
+            if snapshot_has_prompt(&snap) {
                 saw_prompt = true;
                 break;
             }
@@ -1696,11 +1699,7 @@ fn signal_child_alone_kills_flooding_process() {
         let mut n = Vec::new();
         client.drain_notifications(&mut n);
         if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snap.cells.iter().any(|row| {
-                let line: String = row.iter().map(|c| c.ch).collect();
-                let trimmed = line.trim();
-                trimmed.ends_with('$') || trimmed.ends_with('#')
-            }) {
+            if snapshot_has_prompt(&snap) {
                 saw_prompt = true;
                 break;
             }

@@ -1973,6 +1973,8 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "regex",
+ "serde",
+ "toml",
  "unicode-width",
  "vte",
  "windows-sys 0.60.2",

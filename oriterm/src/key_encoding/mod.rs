@@ -104,16 +104,16 @@ pub struct KeyInput<'a> {
 /// presses, unhandled keys, or suppressed release events).
 ///
 /// Dispatch priority:
-/// 1. **`ConPTY` win32 input mode** — when `DECSET ? 9001` is active.
 /// 1. **Kitty keyboard protocol** — when any `KITTY_KEYBOARD_PROTOCOL` flag is set.
 /// 2. **`APP_KEYPAD` numpad** — numpad keys in application keypad mode.
 /// 3. **Legacy xterm** — standard VT/xterm escape sequences.
+///
+/// **Note:** Win32 input mode (`DECSET ?9001`) is parsed and tracked as a
+/// terminal mode, and the encoder exists in `win32.rs`, but dispatch is not
+/// yet wired here. Activation is tracked in roadmap Section 08b (Input
+/// Event Normalization). The mode tracking is needed independently for
+/// `ConPTY` Ctrl+C delivery (BUG-11-1).
 pub fn encode_key(input: &KeyInput<'_>) -> Vec<u8> {
-    // Win32 input mode (`DECSET ?9001`) is parsed and tracked but NOT used
-    // for encoding. ConPTY's Win32 input records don't work through the WSL
-    // bridge — Ctrl+C encoded as KEY_EVENT_RECORD is silently dropped.
-    // Raw `\x03` through the legacy path is the only reliable mechanism.
-
     // Kitty keyboard protocol takes priority when any flag is set.
     if input.mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL) {
         return kitty::encode_kitty(input);

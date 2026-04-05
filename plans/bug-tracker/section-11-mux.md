@@ -32,6 +32,13 @@ Bugs in the pane multiplexer — PTY I/O, IO thread behavior, pane lifecycle, me
   Found: 2026-04-01 | Source: manual
   Note: Roadmap section 50 (runtime efficiency) covers memory discipline.
 
+- [ ] `[BUG-11-5][medium]` **signal_child() sends SIGINT to shell PGID instead of foreground PGID** — found by tpr-review.
+  Repro: Spawn a pane, run `yes` (foreground job). Call `signal_child(Signal::Interrupt)`. SIGINT goes to the shell's process group, not the foreground process group running `yes`.
+  Subsystem: `oriterm_mux/src/pane/mod.rs:442` (`send_signal_platform`)
+  Analysis: `kill(-pid, SIGINT)` uses the shell PID as the process group ID. This works when the shell IS the foreground process, but misses foreground jobs (`yes`, `cat`, etc.) that run in their own process group. The fix is to use `tcgetpgrp(pty_fd)` to obtain the foreground PGID and signal that instead. Two e2e tests are `#[ignore]` waiting for this: `e2e.rs:1487` and `e2e.rs:1654`.
+  Found: 2026-04-05 | Source: tpr-review
+  Note: Keyboard Ctrl+C (BUG-11-1) works correctly — the kernel PTY layer handles `\x03` → SIGINT to the foreground PGID. This bug only affects the programmatic `signal_child()` path.
+
 ## Resolved Bugs
 
 - [x] `[BUG-11-1][critical]` **All input blocked during sustained output flooding (even single pane)** — found by manual.
