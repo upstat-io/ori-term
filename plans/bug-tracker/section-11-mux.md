@@ -11,8 +11,15 @@ Bugs in the pane multiplexer — PTY I/O, IO thread behavior, pane lifecycle, me
 
 ## Open Bugs
 
-- [ ] `[BUG-11-3][high]` **OSC 10/11/12 color queries silently dropped — no reply sent to requesting app** — found by manual.
-  Repro: Run `printf '\e]10;?\e\\'` in oriterm — no response. Apps querying terminal colors (e.g., vim, neovim, delta, bat) get no reply, causing hangs or incorrect color detection.
+- [ ] `[BUG-11-4][high]` **DA1/DA2/DA3, DSR 5/6, CSI 18t, and DECRQM produce no response in the live terminal** — found by manual.
+  Repro: Run `printf '\e[c'` (DA1), `printf '\e[5n'` (DSR 5), `printf '\e[>c'` (DA2), `printf '\e[18t'` (CSI 18t) in oriterm — no response received by the requesting process.
+  Subsystem: `oriterm_mux/src/pane/io_thread/event_proxy/mod.rs` (PtyWrite forwarding), `oriterm_mux/src/in_process/event_pump.rs` (PtyWrite handling), `oriterm_mux/src/pty/mod.rs` (writer thread)
+  Analysis: Code analysis shows the full pipeline appears wired: core handlers emit `Event::PtyWrite(response)` in `oriterm_core/src/term/handler/status.rs`, the IO-thread event proxy forwards these as `MuxEvent::PtyWrite`, and the event pump at `event_pump.rs:66` calls `pane.write_input()` which enqueues to the PTY writer thread. Despite the code paths existing, live testing confirms no response is received. Root cause unknown — needs runtime instrumentation (logging at each hop: event proxy send, event pump receive, writer thread write) to identify where the response is lost. Possible causes: (1) timing/ordering issue where the event pump doesn't run between the response being generated and the shell timing out its read, (2) ConPTY on Windows intercepting or dropping the response, (3) event loop wakeup not triggering `pump_mux_events()` in time, (4) some other runtime condition not visible to static analysis.
+  Found: 2026-04-05 | Source: manual
+  Note: Roadmap sections 02/30/38 document these handlers as implemented and verified by unit tests, but end-to-end mux round-trip was never tested in the live app. The vttest integration tests (`oriterm_core/tests/vttest/`) bypass the mux entirely.
+
+- [ ] `[BUG-11-3][high]` **OSC 10/11/12 color queries silently dropped ��� no reply sent to requesting app** — found by manual.
+  Repro: Run `printf '\e]10;?\e\\'` in oriterm ��� no response. Apps querying terminal colors (e.g., vim, neovim, delta, bat) get no reply, causing hangs or incorrect color detection.
   Subsystem: `oriterm_mux/src/pane/io_thread/event_proxy/mod.rs` (line 150 — ColorRequest dropped), `oriterm_mux/src/mux_event/tests.rs` (line 445 — test asserts no MuxEvent for ColorRequest)
   Analysis: Core correctly emits `Event::ColorRequest(index, closure)` in `oriterm_core/src/term/handler/osc.rs:94`. The closure takes the current `Rgb` color and returns the OSC response string that should be written back to the PTY. However, the IO-thread event proxy at `event_proxy/mod.rs:150` groups ColorRequest with CursorBlinkingChange and MouseCursorDirty as "events that don't need mux routing" and only wakes the event loop. The response string is never generated and never written to the PTY. The fix requires the event proxy to invoke the closure with the current color from the palette, then write the resulting response bytes back to the PTY (similar to how PtyWrite events are handled). The existing test asserting no MuxEvent for ColorRequest must also be updated.
   Found: 2026-04-05 | Source: manual

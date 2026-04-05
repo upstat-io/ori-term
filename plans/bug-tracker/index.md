@@ -111,7 +111,8 @@ accent-color, border-color, DwmSetWindowAttribute, WM_NCHITTEST
 ```
 mux, pane, pty, io-thread, flood, backpressure, ctrl+c, interrupt, memory,
 rss, leak, scrollback, snapshot, writer-thread, reader-thread, kill, close,
-osc, color-query, event-proxy, color-request, osc-10, osc-11, osc-12
+osc, color-query, event-proxy, color-request, osc-10, osc-11, osc-12,
+da1, da2, da3, dsr, decrqm, csi-18t, pty-write, device-attributes, device-status
 ```
 
 ---
