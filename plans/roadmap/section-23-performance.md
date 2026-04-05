@@ -6,6 +6,9 @@ reviewed: true
 last_verified: "2026-03-29"
 tier: 5
 goal: Optimize rendering, parsing, and memory for heavy terminal workloads
+third_party_review:
+  status: none
+  updated: null
 sections:
   - id: "23.1"
     title: Damage Tracking
@@ -443,17 +446,17 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
 **Complexity warning:** This is the highest-risk item in the section. `upload_buffer()` in `helpers.rs` already uses grow-only power-of-2 buffer allocation (recreates only when the existing buffer is too small), so buffers persist across frames when instance counts are stable. However, it always writes the full buffer contents at offset 0 via `queue.write_buffer()`. Partial updates require: (1) row-to-byte-offset mapping that accounts for variable-width characters, (2) selective `write_buffer()` calls with non-zero offsets for dirty regions only. Profile the full-buffer upload cost FIRST (120x50 grid = ~14K instances = ~1.1 MB at 80 bytes/instance). If upload is <0.5ms, skip this optimization entirely.
 
 - [x] **Profile first:** added `Instant::now()` timing instrumentation to `upload_instance_buffers()` in `render.rs`. Logs total bytes and wall time at `debug!` level every frame. Run with `RUST_LOG=oriterm::gpu::window_renderer::render=debug` to see results. Typical 120×50 grid: ~14K instances × 80 bytes = ~1.1 MB total upload. Measurement via runtime logging — actual numbers depend on GPU driver and buffer state
-- [ ] With damage tracking (23.1), only rebuild instances for dirty rows within `fill_frame_shaped()`
-- [ ] **Prerequisite**: row-to-instance-range mapping in `PreparedFrame` (see Instance Buffer Caching above)
-- [ ] Use `wgpu::Queue::write_buffer()` with offset for partial buffer updates:
-  - [ ] Calculate byte offset for the dirty row's instance range
-  - [ ] Upload only the changed region, not the entire buffer
-  - [ ] GPU buffers already persist across frames (grow-only power-of-2 allocation in `upload_buffer()`). The change is to call `write_buffer()` with a non-zero offset for dirty regions instead of always writing from offset 0
+- [x] With damage tracking (23.1), only rebuild instances for dirty rows within `fill_frame_shaped()` (verified 2026-04-04 — implemented as `fill_frame_incremental()` in `prepare/dirty_skip/mod.rs`, called from `prepare_frame_shaped_into()` when `!all_dirty && saved_tier.has_cached_rows()`)
+- [x] **Prerequisite**: row-to-instance-range mapping in `PreparedFrame` (verified 2026-04-04 — `row_ranges: Vec<RowInstanceRanges>` populated by both full and incremental paths)
+- [x] Use `wgpu::Queue::write_buffer()` with offset for partial buffer updates: (implemented 2026-04-04)
+  - [x] Calculate byte offset for the dirty row's instance range — `first_dirty_byte_offsets()` in `render_helpers.rs` finds the first dirty row via `scratch_dirty` and returns per-buffer offsets from `row_ranges`
+  - [x] Upload only the changed region, not the entire buffer — `upload_buffer_partial()` in `helpers.rs` writes `data[offset..]` at the given byte offset; falls back to full upload when the buffer needs recreating
+  - [x] GPU buffers already persist across frames (grow-only power-of-2 allocation in `upload_buffer()`). The change is to call `write_buffer()` with a non-zero offset for dirty regions instead of always writing from offset 0 — `upload_instance_buffers()` now uses the partial path for terminal-tier buffers (bg, glyphs, subpixel, color) when `was_incremental` is true
 - [ ] Alternative: persistent mapped buffer with `wgpu::BufferUsages::MAP_WRITE | COPY_SRC`
   - [ ] Map once, write dirty regions, unmap before draw
   - [ ] May have better performance for frequent small updates
   - [ ] **Warning:** mapped buffer API varies across backends. Verify `MAP_WRITE | COPY_SRC` is supported on all three platforms (Windows/macOS/Linux) with the wgpu backends in use (Vulkan, Metal, DX12)
-- [ ] When pane cache hits and the pane is clean, skip the GPU upload entirely (not just the prepare phase)
+- [x] When pane cache hits and the pane is clean, skip the GPU upload entirely (not just the prepare phase) — (verified 2026-04-04: when `content_changed == false`, `render_cached()` calls `upload_overlay_and_cursor_buffers()` which skips all terminal-tier buffers. When `content_changed == true` but incremental path ran with few dirty rows, partial upload skips clean rows' bytes. Combined, clean panes avoid terminal buffer GPU writes.)
 - [ ] Measure: compare full-buffer upload vs. partial update latency
 
 ### Glyph Atlas Growth

@@ -226,9 +226,11 @@ pub fn prepare_frame_shaped_into(
         out.image_quads_above.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+        out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
         // Full rebuild path.
+        out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
