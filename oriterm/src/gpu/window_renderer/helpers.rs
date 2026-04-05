@@ -315,6 +315,47 @@ pub(super) fn upload_buffer(
     }
 }
 
+/// Upload data to an existing GPU buffer starting at `offset`.
+///
+/// If the buffer does not exist or is too small for the full data, falls back
+/// to a full upload (recreating the buffer if needed). Otherwise, writes only
+/// `data[offset..]` to the GPU buffer at the given byte offset.
+///
+/// Used by the partial upload path to skip re-uploading clean rows whose
+/// instance data is already present in the GPU buffer from the previous frame.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors upload_buffer signature plus offset parameter"
+)]
+pub(super) fn upload_buffer_partial(
+    device: &Device,
+    queue: &Queue,
+    slot: &mut Option<Buffer>,
+    data: &[u8],
+    offset: usize,
+    label: &'static str,
+) {
+    if data.is_empty() {
+        return;
+    }
+
+    let needed = data.len() as u64;
+    let can_partial = match slot {
+        Some(buf) => buf.size() >= needed,
+        None => false,
+    };
+
+    if can_partial {
+        // Buffer exists and is large enough — upload only from offset.
+        if let Some(buf) = slot.as_ref() {
+            queue.write_buffer(buf, offset as u64, &data[offset..]);
+        }
+    } else {
+        // Buffer missing or too small — full upload with growth.
+        upload_buffer(device, queue, slot, data, label);
+    }
+}
+
 /// Record a single instanced draw call into the render pass.
 ///
 /// Sets the pipeline, bind groups, and vertex buffer, then issues an
