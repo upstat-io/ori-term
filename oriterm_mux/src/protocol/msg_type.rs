@@ -36,6 +36,7 @@ pub(crate) enum MsgType {
     SetBoldIsBright = 0x0127,
     RequestNewTab = 0x0128,
     SetPanePriority = 0x0129,
+    SignalChild = 0x012A,
 
     // Responses (daemon → client).
     HelloAck = 0x0201,
@@ -98,6 +99,7 @@ impl MsgType {
             0x0127 => Some(Self::SetBoldIsBright),
             0x0128 => Some(Self::RequestNewTab),
             0x0129 => Some(Self::SetPanePriority),
+            0x012A => Some(Self::SignalChild),
             0x0201 => Some(Self::HelloAck),
             0x0205 => Some(Self::PaneClosedAck),
             0x0207 => Some(Self::Subscribed),

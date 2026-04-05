@@ -116,6 +116,17 @@ pub fn dispatch_request(
             None // Fire-and-forget.
         }
 
+        MuxPdu::SignalChild { pane_id, signal } => {
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                if let Some(sig) = signal_from_wire(signal) {
+                    pane.signal_child(sig);
+                } else {
+                    log::warn!("unknown signal {signal} for {pane_id}");
+                }
+            }
+            None // Fire-and-forget.
+        }
+
         MuxPdu::Resize {
             pane_id,
             cols,
@@ -383,5 +394,13 @@ pub fn dispatch_request(
         } else {
             None
         },
+    }
+}
+
+/// Map a wire signal byte to the `Signal` enum.
+fn signal_from_wire(wire: u8) -> Option<crate::pane::Signal> {
+    match wire {
+        0 => Some(crate::pane::Signal::Interrupt),
+        _ => None,
     }
 }

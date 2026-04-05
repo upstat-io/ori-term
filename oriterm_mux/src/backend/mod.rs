@@ -191,7 +191,7 @@ pub trait MuxBackend {
     /// Send a signal directly to a pane's child process group.
     ///
     /// Bypasses the PTY writer when stalled. Returns `true` if sent.
-    fn signal_child(&self, _pane_id: PaneId, _signal: crate::Signal) -> bool {
+    fn signal_child(&mut self, _pane_id: PaneId, _signal: crate::Signal) -> bool {
         false
     }
 

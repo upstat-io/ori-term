@@ -315,6 +315,20 @@ impl MuxBackend for MuxClient {
         }
     }
 
+    fn signal_child(&mut self, pane_id: PaneId, signal: crate::Signal) -> bool {
+        let sig = match signal {
+            crate::Signal::Interrupt => 0,
+        };
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SignalChild {
+                pane_id,
+                signal: sig,
+            });
+            return true;
+        }
+        false
+    }
+
     fn pane_ids(&self) -> Vec<PaneId> {
         self.pane_snapshots.keys().copied().collect()
     }
