@@ -6,6 +6,7 @@
 
 mod kitty;
 mod legacy;
+mod win32;
 
 use bitflags::bitflags;
 use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState, PhysicalKey};
@@ -96,10 +97,15 @@ pub struct KeyInput<'a> {
 /// presses, unhandled keys, or suppressed release events).
 ///
 /// Dispatch priority:
+/// 1. **`ConPTY` win32 input mode** — when `DECSET ? 9001` is active.
 /// 1. **Kitty keyboard protocol** — when any `KITTY_KEYBOARD_PROTOCOL` flag is set.
 /// 2. **`APP_KEYPAD` numpad** — numpad keys in application keypad mode.
 /// 3. **Legacy xterm** — standard VT/xterm escape sequences.
 pub fn encode_key(input: &KeyInput<'_>) -> Vec<u8> {
+    if input.mode.contains(TermMode::WIN32_INPUT) {
+        return win32::encode_win32(input);
+    }
+
     // Kitty keyboard protocol takes priority when any flag is set.
     if input.mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL) {
         return kitty::encode_kitty(input);

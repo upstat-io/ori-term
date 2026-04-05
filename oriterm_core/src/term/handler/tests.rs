@@ -5196,6 +5196,7 @@ fn decset_decrst_flag_sync() {
         NamedPrivateMode::AlternateScroll,
         NamedPrivateMode::SixelScrolling,
         NamedPrivateMode::SixelCursorRight,
+        NamedPrivateMode::Win32Input,
     ];
 
     for variant in flag_variants {

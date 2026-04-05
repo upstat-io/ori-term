@@ -92,43 +92,47 @@ You are helping with ori_term, a GPU-accelerated terminal emulator in Rust (wgpu
 {Any rules from CLAUDE.md or .claude/rules/ that apply — e.g., "no workarounds, must be architecturally correct", "crate boundary: this must live in oriterm_ui not oriterm"}
 ```
 
-### Step 3: Call Codex
+### Step 3: Call Codex via Agent
 
-```bash
-codex exec "{prompt}" --full-auto --json
+**CRITICAL: Use an Agent, NOT direct Bash.** The Bash tool has a 120-second default timeout that kills codex before it finishes. An Agent has no timeout and will wait for codex to complete.
+
+Spawn an Agent with this pattern:
+
+```
+Launch Agent with prompt:
+  "Run the following codex command and return the full output:
+   
+   codex exec '{prompt}' --full-auto --json 2>/dev/null | tail -200
+   
+   Then parse the JSONL output to extract agent_message items:
+   
+   cat <output> | python3 -c \"
+   import sys, json
+   for line in sys.stdin:
+       line = line.strip()
+       if not line: continue
+       try:
+           obj = json.loads(line)
+           if obj.get('type') == 'item.completed' and obj.get('item', {}).get('type') == 'agent_message':
+               print(obj['item']['text'])
+       except json.JSONDecodeError: pass
+   \" | tail -3000
+   
+   Return the extracted messages."
 ```
 
-**Important:** The prompt must be a single string. For multiline prompts, use a heredoc:
+**DO NOT:**
+- Run `codex exec` directly via Bash tool (will timeout or auto-background)
+- Set `run_in_background: true` on the Agent
+- Set any timeout on the Bash call inside the Agent
 
-```bash
-codex exec "$(cat <<'PROMPT'
-You are helping with ori_term, a GPU-accelerated terminal emulator in Rust.
+### Step 4: Apply the Answer
 
-## Question
-{question}
-
-## Context
-{context}
-PROMPT
-)" --full-auto --json
-```
-
-**NO TIMEOUT.** Do NOT set a Bash `timeout:` parameter or prefix with `timeout`. Codex reviews legitimately take 5-15 minutes. Let them run to completion.
-
-### Step 4: Parse Response
-
-Extract agent messages from the JSONL output (type: `item.completed`, item.type: `agent_message`). The last few messages contain the answer.
-
-### Step 5: Apply the Answer
-
-- If Codex provided a solution, evaluate it against CLAUDE.md rules before applying
-- If Codex suggested an approach, consider it alongside your own analysis
-- If Codex found something you missed, incorporate the insight
+- Evaluate Codex's response against CLAUDE.md rules before applying
+- You have full project context that Codex doesn't — use your judgment to filter
 - If Codex disagrees with your approach, present both perspectives to the user
 
-**Do NOT blindly apply Codex's suggestions.** You have full project context that Codex doesn't — use your judgment to filter and adapt.
-
-### Step 6: Brief the User
+### Step 5: Brief the User
 
 Tell the user:
 - What you asked Codex

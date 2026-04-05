@@ -48,6 +48,7 @@ pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
         NamedPrivateMode::SyncUpdate => 2026,
         NamedPrivateMode::SixelScrolling => 80,
         NamedPrivateMode::SixelCursorRight => 8452,
+        NamedPrivateMode::Win32Input => 9001,
     }
 }
 
@@ -79,6 +80,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::SixelCursorRight => Some(TermMode::SIXEL_CURSOR_RIGHT),
         NamedPrivateMode::ReverseVideo => Some(TermMode::REVERSE_VIDEO),
         NamedPrivateMode::EnableMode3 => Some(TermMode::ENABLE_MODE_3),
+        NamedPrivateMode::Win32Input => Some(TermMode::WIN32_INPUT),
         NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }
