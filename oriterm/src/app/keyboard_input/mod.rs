@@ -284,17 +284,15 @@ impl App {
             }
             self.write_pane_input(pane_id, &bytes);
 
-            // When the PTY writer is stalled (kernel buffer full, child not
-            // reading stdin) and the user pressed Ctrl+C, send SIGINT directly
-            // to the child process group. The byte \x03 was already queued via
-            // write_pane_input but won't reach the child until the writer
-            // unblocks — which is exactly what SIGINT accomplishes.
+            // Send SIGINT directly to the child process group when Ctrl+C
+            // is pressed. In daemon mode the PTY writer runs in a separate
+            // process — we can't check its stall flag. Sending the signal
+            // unconditionally is safe: in cooked mode the kernel would send
+            // SIGINT anyway when \x03 reaches the line discipline; in raw
+            // mode most programs catch SIGINT gracefully.
             if bytes.contains(&0x03) {
-                if let Some(mux) = self.mux.as_ref() {
-                    if mux.is_write_stalled(pane_id) {
-                        log::info!("PTY writer stalled — sending SIGINT directly to child");
-                        mux.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
-                    }
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.signal_child(pane_id, oriterm_mux::Signal::Interrupt);
                 }
             }
 
