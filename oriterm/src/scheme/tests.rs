@@ -31,8 +31,8 @@ fn find_builtin_missing_returns_none() {
 fn builtin_names_not_empty() {
     let names = builtin_names();
     assert!(
-        names.len() >= 50,
-        "expected 50+ builtins, got {}",
+        names.len() >= 100,
+        "expected 100+ builtins, got {}",
         names.len()
     );
 }
@@ -254,7 +254,7 @@ fn resolve_scheme_absolute_path_missing_file() {
 #[test]
 fn discover_all_includes_builtins() {
     let all = super::discover_all();
-    assert!(all.len() >= 50, "expected 50+ schemes, got {}", all.len());
+    assert!(all.len() >= 100, "expected 100+ schemes, got {}", all.len());
     assert!(
         all.iter().any(|s| s.name == "Nord"),
         "should include Nord builtin"
