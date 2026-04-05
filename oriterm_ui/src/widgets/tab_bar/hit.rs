@@ -77,7 +77,7 @@ pub fn hit_test(x: f32, y: f32, layout: &TabBarLayout, bar_height: f32) -> TabBa
     // Window controls zone (rightmost).
     let controls_x = layout.controls_x();
     if x >= controls_x {
-        return hit_test_controls(x - controls_x, y, bar_height);
+        return hit_test_controls(x - controls_x, y, bar_height, layout.controls_zone_width());
     }
 
     // Tab strip: close button checked first (higher priority than tab body).
@@ -118,12 +118,12 @@ pub fn hit_test_default(x: f32, y: f32, layout: &TabBarLayout) -> TabBarHit {
 /// Hit-test within the window controls zone (Windows: rectangular buttons).
 ///
 /// `offset_x` is relative to the start of the controls zone. Buttons are
-/// laid out left-to-right: Minimize, Maximize, Close.
+/// laid out left-to-right: Minimize, Maximize, Close. Button width is
+/// derived from `zone_width` to stay in sync with rendering.
 #[cfg(target_os = "windows")]
-fn hit_test_controls(offset_x: f32, _y: f32, _bar_height: f32) -> TabBarHit {
-    use crate::widgets::window_chrome::constants::CONTROL_BUTTON_WIDTH;
-
-    match (offset_x / CONTROL_BUTTON_WIDTH) as usize {
+fn hit_test_controls(offset_x: f32, _y: f32, _bar_height: f32, zone_width: f32) -> TabBarHit {
+    let button_width = zone_width / 3.0;
+    match (offset_x / button_width) as usize {
         0 => TabBarHit::Minimize,
         1 => TabBarHit::Maximize,
         _ => TabBarHit::CloseWindow,
@@ -136,7 +136,7 @@ fn hit_test_controls(offset_x: f32, _y: f32, _bar_height: f32) -> TabBarHit {
 /// Uses circular hit regions centered vertically in the tab bar.
 /// Misses between circles fall through to `DragArea`.
 #[cfg(not(target_os = "windows"))]
-fn hit_test_controls(offset_x: f32, y: f32, bar_height: f32) -> TabBarHit {
+fn hit_test_controls(offset_x: f32, y: f32, bar_height: f32, _zone_width: f32) -> TabBarHit {
     use super::constants::{
         CONTROL_BUTTON_DIAMETER, CONTROL_BUTTON_MARGIN, CONTROL_BUTTON_SPACING,
     };

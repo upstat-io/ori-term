@@ -55,7 +55,7 @@ pub(super) fn build_page(
     )
 }
 
-/// Schemes section: auto-fill grid of scheme cards.
+/// Schemes section: cards grouped by dark/light brightness.
 ///
 /// Captures each card's `WidgetId` into `ids.scheme_card_ids` so the
 /// action handler can match `Selected` actions from card clicks.
@@ -66,23 +66,48 @@ fn build_schemes_section(
 ) -> Box<dyn Widget> {
     let names = scheme::builtin_names();
 
-    // Build all cards first to collect IDs, then set the group so each
-    // card only reacts to Selected actions from sibling cards (TPR-11-002).
-    let mut cards: Vec<SchemeCardWidget> = Vec::new();
+    // Build all cards first, partitioned by brightness.
+    let mut dark_cards: Vec<SchemeCardWidget> = Vec::new();
+    let mut light_cards: Vec<SchemeCardWidget> = Vec::new();
     for (i, name) in names.iter().enumerate() {
-        let data = match scheme::find_builtin(name) {
-            Some(s) => scheme_to_card_data(&s, s.name == config.colors.scheme),
+        let resolved = match scheme::find_builtin(name) {
+            Some(s) => s,
             None => continue,
         };
+        let brightness = resolved.brightness();
+        let selected = resolved.name.eq_ignore_ascii_case(&config.colors.scheme);
+        let data = scheme_to_card_data(&resolved, selected);
         let card = SchemeCardWidget::new(data, i, theme);
         ids.scheme_card_ids.push(card.id());
-        cards.push(card);
+        if brightness == scheme::SchemeBrightness::Light {
+            light_cards.push(card);
+        } else {
+            dark_cards.push(card);
+        }
     }
+
+    // Set the scheme group on all cards so selection deselects siblings.
     let group_ids = ids.scheme_card_ids.clone();
-    for card in &mut cards {
+    for card in dark_cards.iter_mut().chain(light_cards.iter_mut()) {
         card.set_scheme_group(group_ids.clone());
     }
 
+    let dark_grid = build_card_grid(dark_cards);
+    let light_grid = build_card_grid(light_cards);
+
+    Box::new(
+        ContainerWidget::column()
+            .with_width(SizeSpec::Fill)
+            .with_gap(CARD_GAP)
+            .with_child(build_section_header("Dark Schemes", theme))
+            .with_child(dark_grid)
+            .with_child(build_section_header("Light Schemes", theme))
+            .with_child(light_grid),
+    )
+}
+
+/// Builds an auto-fill grid of scheme cards.
+fn build_card_grid(cards: Vec<SchemeCardWidget>) -> Box<dyn Widget> {
     let mut grid = ContainerWidget::grid(
         GridColumns::AutoFill {
             min_width: CARD_MIN_WIDTH,
@@ -93,13 +118,7 @@ fn build_schemes_section(
     for card in cards {
         grid = grid.with_child(Box::new(card));
     }
-
-    Box::new(
-        ContainerWidget::column()
-            .with_width(SizeSpec::Fill)
-            .with_child(build_section_header("Schemes", theme))
-            .with_child(Box::new(grid)),
-    )
+    Box::new(grid)
 }
 
 /// Palette editor: special colors + ANSI color grids for the active scheme.

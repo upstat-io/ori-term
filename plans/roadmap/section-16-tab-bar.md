@@ -7,8 +7,8 @@ last_verified: "2026-04-03"
 tier: 4
 goal: Tab bar layout, rendering, and hit testing with DPI awareness
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: "2026-04-04"
 sections:
   - id: "16.1"
     title: Tab Bar Layout + Constants
@@ -276,6 +276,13 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] `MuxNotification::PaneTitleChanged` debug format
 
 ---
+
+## 16.R Third Party Review Findings
+
+- [x] `[TPR-16-001][high]` `oriterm_ui/src/widgets/tab_bar/widget/controls_draw.rs:25` — `TabBarMetrics.controls_zone_width` does not fully propagate into control-button rendering or controller hit rects.
+  Resolved: Replaced compile-time `BUTTON_WIDTH` const with `button_width()` method that derives from `self.metrics.controls_zone_width`. Both `draw_window_controls()` and `control_rect()` now use the active metric. Fixed on 2026-04-04.
+- [x] `[TPR-16-002][medium]` `oriterm_ui/src/widgets/tab_bar/hit.rs:71` — Hit test used hardcoded constants instead of metric-aware zone width.
+  Resolved: Added `controls_zone_width()` accessor to `TabBarLayout`, threaded zone width through `hit_test_controls()`. Windows path derives button width from `zone_width / 3.0`. Fixed on 2026-04-04.
 
 ## 16.4 Section Completion
 

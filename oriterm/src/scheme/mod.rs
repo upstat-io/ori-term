@@ -11,6 +11,15 @@ use oriterm_core::{Palette, Rgb, Theme};
 
 use builtin::BUILTIN_SCHEMES;
 
+/// Whether a color scheme is dark or light.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SchemeBrightness {
+    /// Dark background, light text.
+    Dark,
+    /// Light background, dark text.
+    Light,
+}
+
 /// A resolved color scheme with 16 ANSI colors and semantic colors.
 #[derive(Debug, Clone)]
 pub(crate) struct ColorScheme {
@@ -51,6 +60,37 @@ impl BuiltinScheme {
             selection_fg: None,
             selection_bg: None,
         }
+    }
+}
+
+/// Luminance threshold separating dark from light backgrounds.
+///
+/// Uses the ITU-R BT.601 luma formula: `Y = 0.299R + 0.587G + 0.114B`.
+/// Values below this threshold are classified as dark.
+const LUMINANCE_THRESHOLD: f32 = 128.0;
+
+impl ColorScheme {
+    /// Classify this scheme as dark or light based on background luminance.
+    pub(crate) fn brightness(&self) -> SchemeBrightness {
+        brightness_of(self.bg)
+    }
+
+    /// Label suffix for display: `" (dark)"` or `" (light)"`.
+    pub(crate) fn brightness_label(&self) -> &'static str {
+        match self.brightness() {
+            SchemeBrightness::Dark => " (dark)",
+            SchemeBrightness::Light => " (light)",
+        }
+    }
+}
+
+/// Classify a background color as dark or light.
+fn brightness_of(bg: Rgb) -> SchemeBrightness {
+    let luma = 0.299 * bg.r as f32 + 0.587 * bg.g as f32 + 0.114 * bg.b as f32;
+    if luma < LUMINANCE_THRESHOLD {
+        SchemeBrightness::Dark
+    } else {
+        SchemeBrightness::Light
     }
 }
 

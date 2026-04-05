@@ -39,14 +39,20 @@ pub(super) fn build_page(
     )
 }
 
-/// Theme section: color scheme dropdown.
+/// Theme section: color scheme dropdown with "(dark)" / "(light)" labels.
 fn build_theme_section(config: &Config, ids: &mut SettingsIds, theme: &UiTheme) -> Box<dyn Widget> {
     let names = crate::scheme::builtin_names();
     let selected = names
         .iter()
-        .position(|n| *n == config.colors.scheme)
+        .position(|n| n.eq_ignore_ascii_case(&config.colors.scheme))
         .unwrap_or(0);
-    let items: Vec<String> = names.iter().map(|s| (*s).to_owned()).collect();
+    let items: Vec<String> = names
+        .iter()
+        .map(|name| {
+            let label = crate::scheme::find_builtin(name).map_or("", |s| s.brightness_label());
+            format!("{name}{label}")
+        })
+        .collect();
     let dropdown = DropdownWidget::new(items).with_selected(selected);
     ids.theme_dropdown = dropdown.id();
 

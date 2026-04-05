@@ -3,8 +3,8 @@
 use oriterm_core::{Rgb, Theme};
 
 use super::{
-    ColorScheme, builtin_names, find_builtin, palette_from_scheme, parse_conditional,
-    resolve_scheme_name,
+    ColorScheme, SchemeBrightness, builtin_names, find_builtin, palette_from_scheme,
+    parse_conditional, resolve_scheme_name,
 };
 
 #[test]
@@ -466,4 +466,78 @@ fn discover_count_returns_builtin_count() {
         builtin >= 100,
         "expected 100+ builtins from discover_count, got {builtin}",
     );
+}
+
+// --- brightness classification ---
+
+/// Dark schemes (dark background) are classified as `Dark`.
+#[test]
+fn brightness_dark_scheme() {
+    let scheme = find_builtin("Catppuccin Mocha").expect("builtin exists");
+    assert_eq!(scheme.brightness(), SchemeBrightness::Dark);
+}
+
+/// Light schemes (light background) are classified as `Light`.
+#[test]
+fn brightness_light_scheme() {
+    let scheme = find_builtin("Catppuccin Latte").expect("builtin exists");
+    assert_eq!(scheme.brightness(), SchemeBrightness::Light);
+}
+
+/// Known dark themes are classified correctly.
+#[test]
+fn brightness_known_dark_themes() {
+    for name in ["Nord", "Dracula", "Tokyo Night", "Gruvbox Dark", "One Dark"] {
+        let scheme = find_builtin(name).expect(name);
+        assert_eq!(
+            scheme.brightness(),
+            SchemeBrightness::Dark,
+            "{name} should be dark",
+        );
+    }
+}
+
+/// Known light themes are classified correctly.
+#[test]
+fn brightness_known_light_themes() {
+    for name in [
+        "Solarized Light",
+        "One Light",
+        "Gruvbox Light",
+        "Tokyo Night Light",
+    ] {
+        let scheme = find_builtin(name).expect(name);
+        assert_eq!(
+            scheme.brightness(),
+            SchemeBrightness::Light,
+            "{name} should be light",
+        );
+    }
+}
+
+/// Every builtin has a valid brightness (no panics, all are Dark or Light).
+#[test]
+fn brightness_all_builtins_classified() {
+    let mut dark = 0;
+    let mut light = 0;
+    for name in builtin_names() {
+        let scheme = find_builtin(name).expect(name);
+        match scheme.brightness() {
+            SchemeBrightness::Dark => dark += 1,
+            SchemeBrightness::Light => light += 1,
+        }
+    }
+    // Sanity: both categories should have schemes.
+    assert!(dark > 0, "expected at least 1 dark scheme");
+    assert!(light > 0, "expected at least 1 light scheme");
+}
+
+/// `brightness_label` returns the correct suffix.
+#[test]
+fn brightness_label_suffix() {
+    let dark = find_builtin("Nord").unwrap();
+    assert_eq!(dark.brightness_label(), " (dark)");
+
+    let light = find_builtin("Solarized Light").unwrap();
+    assert_eq!(light.brightness_label(), " (light)");
 }

@@ -13,19 +13,19 @@ use crate::geometry::Rect;
 use crate::widgets::{DrawCtx, Widget};
 
 #[cfg(not(target_os = "macos"))]
-use super::super::constants::CONTROLS_ZONE_WIDTH;
-#[cfg(not(target_os = "macos"))]
 use super::TabBarWidget;
 
-/// Width of each control button (zone width divided equally among 3 buttons).
-///
-/// On Windows this equals `CONTROL_BUTTON_WIDTH` (46px); on Linux
-/// the zone is smaller (100px) so buttons are ~33px each.
+/// Number of window control buttons (minimize, maximize, close).
 #[cfg(not(target_os = "macos"))]
-const BUTTON_WIDTH: f32 = CONTROLS_ZONE_WIDTH / 3.0;
+const CONTROL_BUTTON_COUNT: f32 = 3.0;
 
 #[cfg(not(target_os = "macos"))]
 impl TabBarWidget {
+    /// Width of each control button derived from the active metrics.
+    fn button_width(&self) -> f32 {
+        self.metrics.controls_zone_width / CONTROL_BUTTON_COUNT
+    }
+
     /// Draws the window control buttons (minimize, maximize/restore, close).
     ///
     /// Called from [`Widget::draw`] after the dropdown button and before the
@@ -35,14 +35,10 @@ impl TabBarWidget {
     pub(super) fn draw_window_controls(&self, ctx: &mut DrawCtx<'_>) {
         let controls_x = self.layout.controls_x();
         let y0 = ctx.bounds.y();
+        let bw = self.button_width();
 
         for (i, ctrl) in self.controls.iter().enumerate() {
-            let btn_rect = Rect::new(
-                controls_x + i as f32 * BUTTON_WIDTH,
-                y0,
-                BUTTON_WIDTH,
-                self.metrics.height,
-            );
+            let btn_rect = Rect::new(controls_x + i as f32 * bw, y0, bw, self.metrics.height);
             let mut child_ctx = DrawCtx {
                 measurer: ctx.measurer,
                 scene: ctx.scene,
@@ -65,11 +61,7 @@ impl TabBarWidget {
     /// button positions without duplicating geometry logic.
     pub(super) fn control_rect(&self, index: usize) -> Rect {
         let controls_x = self.layout.controls_x();
-        Rect::new(
-            controls_x + index as f32 * BUTTON_WIDTH,
-            0.0,
-            BUTTON_WIDTH,
-            self.metrics.height,
-        )
+        let bw = self.button_width();
+        Rect::new(controls_x + index as f32 * bw, 0.0, bw, self.metrics.height)
     }
 }
