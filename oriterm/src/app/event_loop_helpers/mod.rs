@@ -398,8 +398,6 @@ pub(super) struct ControlFlowInput {
     /// Any cell could have the BLINK flag; scanning cells each frame is too
     /// expensive, so the timer runs unconditionally (~2 wakeups/sec).
     pub next_text_blink_change: std::time::Instant,
-    /// Time remaining until frame budget allows next render.
-    pub budget_remaining: std::time::Duration,
     /// Current time.
     pub now: std::time::Instant,
     /// Earliest deferred repaint from `RenderScheduler`.
@@ -427,13 +425,17 @@ pub(super) enum ControlFlowDecision {
 /// No winit types — testable without a display server. Mirrors the
 /// decision tree in `about_to_wait`.
 pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
-    // Still dirty after render attempt — wake when the frame budget
-    // elapses. Enforced in ALL present modes so the event loop yields
-    // to winit's message pump between frames (fixes keyboard starvation
-    // during sustained PTY output flooding — BUG-11-1).
+    // Still dirty after render attempt — sleep until the next event
+    // if the frame budget hasn't elapsed yet. Using `Wait` instead of
+    // `WaitUntil` because WaitUntil doesn't reliably sleep on
+    // Windows/WSL2 (observed: returns immediately, creating a tight
+    // loop that starves keyboard dispatch — BUG-11-1). With `Wait`,
+    // the coalesced MuxWakeup from the next PTY snapshot wakes us,
+    // and winit's PeekMessage drains ALL pending messages (including
+    // keyboard events) before calling about_to_wait().
     if input.still_dirty {
         if !input.budget_elapsed {
-            return ControlFlowDecision::WaitUntil(input.now + input.budget_remaining);
+            return ControlFlowDecision::Wait;
         }
         return ControlFlowDecision::WaitUntil(input.now);
     }
