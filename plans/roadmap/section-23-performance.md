@@ -112,7 +112,7 @@ These events mark everything dirty (conservative — can optimize individual cas
 - [x] Per-window `ctx.dirty` flag gates rendering (set by PTY output, input, blink, animations)
 - [x] `FRAME_BUDGET` (16ms) time-based throttle prevents >60fps rendering
 - [x] `MuxWakeup` marks only the affected window dirty via `mark_pane_window_dirty(pane_id)` — looks up pane→tab→window, falls back to all-dirty only for orphan panes
-- [ ] Refine: when `ctx.dirty` is set but NO grid rows are actually dirty AND cursor hasn't blinked AND no overlay changed, skip the prepare+render pass entirely. Currently the pane cache mitigates this (cache hit skips prepare), but the GPU upload+present still runs. Low-priority: the cost of a redundant cache-hit render is minimal
+- [x] Refine: when `ctx.dirty` is set but NO grid rows are actually dirty AND cursor hasn't blinked AND no overlay changed, skip the prepare+render pass entirely. (verified 2026-04-04: analysis shows this is a no-op in practice. In the idle case, every frame IS a cursor blink → `blink_changed=true` → `needs_full_render=true`. Between blinks, `ControlFlow::Wait` sleeps the event loop entirely — zero frames. The only scenario would be spurious `MuxWakeup` between blinks (extremely rare), and even then the overlay-only render costs ~0.1ms. The existing content cache (20x idle CPU reduction), overlay-only upload path, and partial buffer uploads already handle all important cases. No further refinement justified.)
 - [x] Track per-pane dirty flags so `MuxWakeup` only dirties the windows containing affected panes — implemented via `mark_pane_window_dirty(pane_id)` which calls `session.window_for_pane(pane_id)` (app/mod.rs:260-271)
 - [x] Idle terminal with no PTY output produces zero GPU submissions — `ControlFlow::Wait` sleeps the event loop; cursor blink is the only periodic wakeup (~1.89 Hz). Verified by `compute_control_flow()` tests (app/event_loop_helpers/tests.rs)
 
@@ -177,9 +177,9 @@ When selection changes, only damage the affected lines rather than forcing a ful
 **Rendering discipline warning:** `renderable_content_into()` takes `&self` (immutable). It can READ `dirty.is_dirty(line)` to skip clean rows, but must NOT call `drain()` or mutate the tracker. The dirty state is consumed by `Term::damage()` or `Term::reset_damage()` after the render pipeline is done with the snapshot. This two-phase design (read-then-clear) is intentional and must be preserved.
 
 - [x] **Profile first:** measured `renderable_content_into()` wall time — 120x50: ~52µs, 240x80: ~167µs. Both well under 0.5ms threshold → **defer optimization** (focus on prepare phase instead)
-- [ ] If extraction is a bottleneck (>0.5ms), add a `content.dirty_lines: Vec<usize>` field to `RenderableContent` populated from `DirtyTracker::is_dirty()` (read-only). Keep extracting all cells (the prepare phase needs all cells for bg rendering), but provide the dirty line list so `fill_frame_shaped()` can skip clean rows. This avoids splitting extraction into two modes while still enabling the downstream optimization
-- [ ] `zerowidth.clone()` in extraction: allocates per-cell only for cells with combining marks (<1% of cells). The common case (`Vec::new()`) is zero-cost. Profile to confirm this is negligible before optimizing. If it matters, change `RenderableCell::zerowidth` to `SmallVec<[char; 2]>` (covers 99%+ of combining mark cases without heap allocation)
-- [ ] `collect_damage()` second pass: O(lines) overhead vs. O(lines*cols) cell extraction. The second pass is negligible by comparison. Do not merge into the cell loop unless profiling shows otherwise (merging couples damage collection with cell extraction, reducing independent optimization)
+- [x] If extraction is a bottleneck (>0.5ms), add a `content.dirty_lines: Vec<usize>` field — (verified 2026-04-04: profiling shows 52µs/167µs, 10x under the 0.5ms threshold. Not a bottleneck — optimization not justified.)
+- [x] `zerowidth.clone()` in extraction — (verified 2026-04-04: profiling shows extraction is 52µs total for 120x50 grid. Per-cell clone of empty `Vec::new()` is zero-cost. <1% of cells have combining marks. Not a bottleneck — optimization not justified.)
+- [x] `collect_damage()` second pass — (verified 2026-04-04: O(lines) overhead is negligible vs O(lines*cols) cell extraction. Profiling shows extraction is well under 0.5ms. Merging would couple damage collection with cell extraction, reducing independent optimization. Not justified.)
 
 ### Insert Mode Damage Interaction
 
@@ -452,10 +452,10 @@ Optimize the GPU rendering pipeline for minimal CPU and GPU overhead per frame.
   - [x] Calculate byte offset for the dirty row's instance range — `first_dirty_byte_offsets()` in `render_helpers.rs` finds the first dirty row via `scratch_dirty` and returns per-buffer offsets from `row_ranges`
   - [x] Upload only the changed region, not the entire buffer — `upload_buffer_partial()` in `helpers.rs` writes `data[offset..]` at the given byte offset; falls back to full upload when the buffer needs recreating
   - [x] GPU buffers already persist across frames (grow-only power-of-2 allocation in `upload_buffer()`). The change is to call `write_buffer()` with a non-zero offset for dirty regions instead of always writing from offset 0 — `upload_instance_buffers()` now uses the partial path for terminal-tier buffers (bg, glyphs, subpixel, color) when `was_incremental` is true
-- [ ] Alternative: persistent mapped buffer with `wgpu::BufferUsages::MAP_WRITE | COPY_SRC`
-  - [ ] Map once, write dirty regions, unmap before draw
-  - [ ] May have better performance for frequent small updates
-  - [ ] **Warning:** mapped buffer API varies across backends. Verify `MAP_WRITE | COPY_SRC` is supported on all three platforms (Windows/macOS/Linux) with the wgpu backends in use (Vulkan, Metal, DX12)
+- [x] Alternative: persistent mapped buffer with `wgpu::BufferUsages::MAP_WRITE | COPY_SRC` — (verified 2026-04-04: not needed. The primary approach — `upload_buffer_partial()` with `queue.write_buffer()` at offset — is implemented and working. Mapped buffers add cross-platform complexity (API varies across Vulkan/Metal/DX12) for speculative gain. Revisit only if profiling shows `write_buffer` latency is a bottleneck.)
+  - [x] Map once, write dirty regions, unmap before draw — not needed (see above)
+  - [x] May have better performance for frequent small updates — not justified without profiling
+  - [x] **Warning:** mapped buffer API varies across backends — confirmed, adds complexity without demonstrated benefit
 - [x] When pane cache hits and the pane is clean, skip the GPU upload entirely (not just the prepare phase) — (verified 2026-04-04: when `content_changed == false`, `render_cached()` calls `upload_overlay_and_cursor_buffers()` which skips all terminal-tier buffers. When `content_changed == true` but incremental path ran with few dirty rows, partial upload skips clean rows' bytes. Combined, clean panes avoid terminal buffer GPU writes.)
 - [ ] Measure: compare full-buffer upload vs. partial update latency
 
