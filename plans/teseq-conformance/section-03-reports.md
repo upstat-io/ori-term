@@ -3,14 +3,14 @@ section: "03"
 title: "Reports & Response Validation"
 status: not-started
 reviewed: false
-goal: "Create scenarios that validate outbound terminal responses (DA, DSR, DECRQM) and establish the response analysis pipeline using teseq"
+goal: "Create scenarios that validate outbound terminal responses (DA, DSR, DECRQM) with raw PtyWrite byte assertions as the canonical oracle and optional teseq debug analysis"
 success_criteria:
-  - "DA1 scenario captures correct PtyWrite response and validates via teseq analysis"
-  - "DA2 and DA3 scenarios capture correct responses"
-  - "DSR cursor position report scenario validates correct cursor coordinates in response"
-  - "DECRQM scenarios validate mode report responses for key modes"
-  - "Outbound teseq analysis pipeline works: capture PtyWrite → pipe through teseq → golden compare"
-  - "Satisfies mission criteria: DA1, DA2, DA3, DSR, DECRQM coverage with outbound teseq analysis"
+  - "DA1 scenario validates correct PtyWrite response bytes via assert_pty_writes"
+  - "DA2 and DA3 scenarios validate correct response bytes"
+  - "DSR cursor position report scenario validates correct cursor coordinates in response bytes"
+  - "DECRQM scenarios validate mode report response bytes for key modes"
+  - "Outbound response pipeline works: assert_pty_writes (canonical), assert_response_snapshot (hex golden), analyze_response (debug aid)"
+  - "Satisfies mission criteria: DA1, DA2, DA3, DSR, DECRQM coverage with raw PtyWrite byte assertions"
 inspired_by:
   - "ori_term handler/tests.rs — DA/DSR tests via RecordingListener + PtyWrite event capture"
   - "ori_term vttest menu6 (oriterm_core/tests/vttest/menu6.rs) — report validation via PtyResponder"
@@ -21,7 +21,7 @@ third_party_review:
   updated: null
 sections:
   - id: "03.1"
-    title: "Outbound Teseq Analysis Pipeline"
+    title: "Outbound Response Assertion Pipeline"
     status: not-started
   - id: "03.2"
     title: "Device Attributes Scenarios (DA1/DA2/DA3)"
@@ -43,45 +43,94 @@ sections:
 # Section 03: Reports & Response Validation
 
 **Status:** Not Started
-**Goal:** Validate that ori_term generates correct outbound responses to terminal queries (DA, DSR, DECRQM). This section uses the `RecordedEvent::PtyWrite` payloads from Section 01's harness and adds a teseq analysis pipeline to produce human-readable golden files of response bytes.
+**Goal:** Validate that ori_term generates correct outbound responses to terminal queries (DA, DSR, DECRQM). This section uses the `RecordedEvent::PtyWrite` payloads from Section 01's harness with raw byte assertions as the canonical oracle (`assert_pty_writes`). Teseq analysis is available as an optional debug aid for human-readable output when tests fail, but is never the golden oracle.
 
 **Success Criteria:**
 
-- [ ] Outbound teseq analysis helper works: PtyWrite bytes → teseq subprocess → human-readable output
-- [ ] DA1 response matches expected format (`ESC [ ? 62 ; 4 ; 6 ; 8 ; 18 ; 22 c`)
+- [ ] Outbound response assertion pipeline works: `assert_pty_writes` for canonical raw byte checks, `assert_response_snapshot` for hex golden, `analyze_response` for optional debug
+- [ ] DA1 response matches expected format (`ESC [ ? 64 ; 6 ; 4 c` — VT420 class with ANSI color + sixel)
 - [ ] DA2 response matches expected format
 - [ ] DA3 response matches expected format
 - [ ] DSR cursor position response encodes correct coordinates
 - [ ] DECRQM responses correctly report mode states (set/reset)
-- [ ] All response golden files capture teseq-analyzed output for human-readable diffs
+- [ ] All response scenarios use `assert_pty_writes` as the canonical assertion (raw bytes, no teseq dependency)
 
 **Context:** Terminal responses are critical for interoperability — programs like vttest, tmux, and SSH clients make decisions based on DA responses. The vttest conformance work (Section 06 of completed plan) already validated DA responses in the PTY context. This section tests the same responses through the teseq harness, adding human-readable teseq analysis as a second validation layer.
 
 **Reference implementations:**
-- **ori_term** `handler/status.rs:1-60`: DA1 response generation (`\x1b[?62;4;6;8;18;22c`)
-- **ori_term** `handler/status.rs:60-120`: DA2 response, DA3 response
-- **ori_term** `handler/status.rs:120-200`: DSR cursor position reporting
+- **ori_term** `handler/status.rs` — `status_identify_terminal()`: DA1/DA2/DA3 response generation
+- **ori_term** `handler/status.rs` — `status_device_status()`: DSR cursor position reporting
+- **ori_term** `handler/status.rs` — `status_report_private_mode()`: DECRQM response generation
 - **ori_term** `handler/tests.rs` — DA/DSR tests capture events via `RecordingListener`
 
 **Depends on:** Section 01 (RecordedEvent with PtyWrite payloads), Section 02 (basic scenario pattern established).
 
 ---
 
-## 03.1 Outbound Teseq Analysis Pipeline
+## 03.1 Outbound Response Assertion Pipeline
 
 **File(s):** `oriterm_core/tests/teseq/harness/assertions.rs` (extend)
 
-Add a response analysis helper that pipes PtyWrite bytes through `teseq` for human-readable golden comparison.
+Add response assertion helpers. **Design principle:** Raw PtyWrite bytes are the canonical assertion (via `assert_pty_writes`). Teseq analysis is an optional supplementary debug aid (via `analyze_response`) — never the oracle. This keeps test correctness independent of teseq's output format, which is version-fragile and human-oriented.
 
-- [ ] Implement `analyze_response(response_bytes: &str) -> Result<String, String>`:
+- [ ] Implement `assert_pty_writes(outcome: &ScenarioOutcome, expected: &[&str])`:
   ```rust
-  /// Pipe response bytes through teseq for human-readable analysis.
+  /// Assert PtyWrite response bytes match expected values exactly.
   ///
-  /// Returns the teseq-annotated output (escape sequence labels, descriptions).
-  /// Falls back to hex dump if teseq is unavailable.
+  /// This is the canonical response assertion — raw bytes are the oracle,
+  /// not teseq output. Each entry in `expected` is compared verbatim against
+  /// the corresponding PtyWrite event payload.
+  pub fn assert_pty_writes(outcome: &ScenarioOutcome, expected: &[&str]) {
+      let actual: Vec<&str> = outcome.events.iter()
+          .filter_map(|e| match e {
+              RecordedEvent::PtyWrite(s) => Some(s.as_str()),
+              _ => None,
+          })
+          .collect();
+      assert_eq!(
+          actual.len(), expected.len(),
+          "expected {} PtyWrite events, got {}: {:?}",
+          expected.len(), actual.len(), actual
+      );
+      for (i, (got, want)) in actual.iter().zip(expected).enumerate() {
+          assert_eq!(
+              got, want,
+              "PtyWrite[{i}] mismatch:\n  got:  {:02x?}\n  want: {:02x?}",
+              got.as_bytes(), want.as_bytes()
+          );
+      }
+  }
+  ```
+
+- [ ] Implement `assert_response_snapshot(outcome: &ScenarioOutcome, name: &str)`:
+  ```rust
+  /// Snapshot PtyWrite response bytes for golden comparison.
+  ///
+  /// Snapshots the raw response bytes (hex-escaped for readability).
+  /// This is a secondary assertion — `assert_pty_writes` is the primary
+  /// canonical check. The snapshot catches unexpected format changes.
+  pub fn assert_response_snapshot(outcome: &ScenarioOutcome, name: &str) {
+      let pty_writes: Vec<String> = outcome.events.iter()
+          .filter_map(|e| match e {
+              RecordedEvent::PtyWrite(s) => Some(format!("{:02x?}", s.as_bytes())),
+              _ => None,
+          })
+          .collect();
+      insta::assert_snapshot!(format!("{name}_responses"), pty_writes.join("\n"));
+  }
+  ```
+
+- [ ] Implement `analyze_response(response_bytes: &str) -> Result<String, String>` (supplementary debug helper):
+  ```rust
+  /// Pipe response bytes through teseq for human-readable debug output.
+  ///
+  /// This is NOT an oracle — it is a debug aid for understanding response
+  /// content when tests fail. Never use the return value as a golden
+  /// assertion target. Falls back to hex dump if teseq is unavailable.
   pub fn analyze_response(response_bytes: &str) -> Result<String, String> {
+      use std::io::Write as _;  // needed for write_all on ChildStdin
+
       if !teseq_available() {
-          // Fallback: hex dump for CI environments without teseq
           return Ok(format!("hex: {:02x?}", response_bytes.as_bytes()));
       }
 
@@ -92,38 +141,16 @@ Add a response analysis helper that pipes PtyWrite bytes through `teseq` for hum
           .spawn()
           .map_err(|e| format!("failed to spawn teseq: {e}"))?;
 
+      // take() returns Option<ChildStdin>; safe to unwrap because we set piped().
       child.stdin.take().unwrap()
           .write_all(response_bytes.as_bytes())
           .map_err(|e| format!("failed to write to teseq: {e}"))?;
+      // Drop stdin (implicit via take()) to signal EOF to teseq.
 
       let output = child.wait_with_output()
           .map_err(|e| format!("teseq failed: {e}"))?;
 
       Ok(String::from_utf8_lossy(&output.stdout).to_string())
-  }
-  ```
-
-- [ ] Implement `assert_response_snapshot(outcome: &ScenarioOutcome, name: &str)`:
-  ```rust
-  /// Assert PtyWrite responses match golden teseq analysis.
-  pub fn assert_response_snapshot(outcome: &ScenarioOutcome, name: &str) {
-      let pty_writes: Vec<_> = outcome.events.iter()
-          .filter_map(|e| match e {
-              RecordedEvent::PtyWrite(s) => Some(s.as_str()),
-              _ => None,
-          })
-          .collect();
-
-      let mut analysis = String::new();
-      for (i, response) in pty_writes.iter().enumerate() {
-          if i > 0 { analysis.push_str("---\n"); }
-          match analyze_response(response) {
-              Ok(text) => analysis.push_str(&text),
-              Err(e) => analysis.push_str(&format!("ERROR: {e}\n")),
-          }
-      }
-
-      insta::assert_snapshot!(format!("{name}_responses"), analysis);
   }
   ```
 
@@ -143,24 +170,26 @@ Add a response analysis helper that pipes PtyWrite bytes through `teseq` for hum
   events = ["PtyWrite"]
   grid_snapshot = false
   ```
-  Expected response: `\x1b[?62;4;6;8;18;22c` (VT220 class, columns, reports, etc.)
+  Expected response: `\x1b[?64;6;4c` (VT420 class, ANSI color, sixel graphics).
+  Source: `oriterm_core/src/term/handler/status.rs` in `status_identify_terminal()`, DA1 branch.
 
 - [ ] Create DA2 scenario `da2.teseq`:
   ```
   : Esc [ > c
   ```
-  Expected response: secondary device attributes (xterm-compatible)
+  Expected response: `\x1b[>0;{version};1c` where `{version}` is computed from `CARGO_PKG_VERSION` via the same algorithm as `crate_version_number()` in `helpers.rs`. That function is `pub(super)` (not exported), so the test must replicate the version computation: parse `env!("CARGO_PKG_VERSION")`, strip pre-release suffix, split on `.`, reverse, and sum `part * 100^i`. Add a `compute_da2_version()` helper in the test harness (e.g., in `assertions.rs`). Do NOT hardcode a version number — it changes on every release. Format: terminal type 0 (VT100-compatible), version number, conformance level 1.
 
 - [ ] Create DA3 scenario `da3.teseq`:
   ```
   : Esc [ = c
   ```
-  Expected response: tertiary device attributes
+  Expected response: `\x1bP!|00000000\x1b\\` (DCS response with eight zero digits as unit ID, same as xterm default). Source: `status.rs:142`.
 
 - [ ] Each DA scenario:
-  - Validates PtyWrite event was emitted via `assert_event_snapshot`
-  - Validates response content via `assert_response_snapshot` (teseq-analyzed golden)
+  - Validates response bytes via `assert_pty_writes` (canonical — raw byte comparison)
+  - Validates response snapshot via `assert_response_snapshot` (secondary — hex golden)
   - Grid snapshot disabled (DA doesn't change visible content)
+  - Optional: `analyze_response()` output printed on failure for debug readability
 
 - [ ] Register family module `csi_reports.rs` in `main.rs`
 
@@ -190,14 +219,10 @@ Add a response analysis helper that pipes PtyWrite bytes through `teseq` for hum
   : Esc [ 3 ; 10 H
   : Esc [ 6 n
   ```
-  `dsr_origin_mode.toml`:
-  ```toml
-  [setup]
-  pre_feed = ["\\x1b[?40h"]
-  ```
-  Expected response: cursor position relative to scroll region origin when DECOM is set.
+  No sidecar needed (DECOM and scroll region are set in the scenario itself).
+  Expected response: `\x1b[3;10R` — cursor position relative to scroll region origin when DECOM is set. CUP 3;10 in origin mode places cursor at absolute row 7 (region start 5 + 3 - 1), col 10 (1-based). DSR reports relative position (3;10).
 
-- [ ] Each DSR scenario validates both the PtyWrite event content and teseq analysis.
+- [ ] Each DSR scenario validates response bytes via `assert_pty_writes` (canonical raw byte check). `assert_response_snapshot` provides secondary hex golden comparison.
 
 - [ ] **TPR checkpoint** — `/tpr-review` covering 03.1–03.3 implementation work
 
@@ -224,7 +249,7 @@ Add a response analysis helper that pipes PtyWrite bytes through `teseq` for hum
   ```
   : Esc [ ? 7 $ p
   ```
-  Expected response reflecting DECAWM state.
+  Expected response: `\x1b[?7;1$y` (mode 7 = set = auto-wrap enabled, which is the default state).
 
 - [ ] Register and verify: `timeout 150 cargo test -p oriterm_core --test teseq -- csi_reports`
 
@@ -238,19 +263,23 @@ Add a response analysis helper that pipes PtyWrite bytes through `teseq` for hum
 
 ## 03.N Completion Checklist
 
-- [ ] Outbound teseq analysis pipeline: `analyze_response()` and `assert_response_snapshot()` work
+- [ ] Outbound response pipeline: `assert_pty_writes()` (canonical), `assert_response_snapshot()` (hex golden), `analyze_response()` (debug aid)
+- [ ] `compute_da2_version()` helper computes version from `CARGO_PKG_VERSION` (no hardcoded version numbers)
 - [ ] DA1, DA2, DA3 scenarios created with response golden snapshots
 - [ ] DSR cursor position scenarios created (home, moved, origin mode)
 - [ ] DECRQM scenarios created (DECTCEM set/reset, DECAWM)
-- [ ] All response golden files show human-readable teseq output
+- [ ] All response scenarios use `assert_pty_writes` with raw expected bytes (canonical, no teseq dependency)
 - [ ] Event snapshots validate PtyWrite events were emitted
 - [ ] 10+ report scenarios pass
 - [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `./test-all.sh` green — no regressions
+- [ ] `timeout 150 ./test-all.sh` green — no regressions
 - [ ] Plan annotation cleanup
 - [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata
+- [ ] **Plan sync** — update plan metadata:
+  - [ ] This section's frontmatter `status` → `complete`
+  - [ ] `00-overview.md` Quick Reference table updated
+  - [ ] `index.md` section status updated
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** `cargo test -p oriterm_core --test teseq -- csi_reports` passes with 10+ report scenarios. Each scenario validates both the PtyWrite event emission and the teseq-analyzed response content against golden files. DA1/DA2/DA3 responses match ori_term's documented device attributes. DSR responses encode correct cursor coordinates. Zero regressions.
+**Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- csi_reports` passes with 10+ report scenarios. Each scenario validates PtyWrite response bytes via `assert_pty_writes` (canonical raw byte comparison) and `assert_response_snapshot` (hex golden). DA1/DA2/DA3 responses match ori_term's actual response strings in `handler/status.rs`. DSR responses encode correct cursor coordinates. Teseq analysis is available as a debug aid but is not the oracle. Zero regressions.

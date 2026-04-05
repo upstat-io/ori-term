@@ -41,6 +41,14 @@ impl<T: EventListener> Term<T> {
             }
         };
 
+        log::info!(
+            "kitty: action={:?} id={:?} pid={:?} payload={}B",
+            cmd.action,
+            cmd.image_id,
+            cmd.placement_id,
+            cmd.payload.len(),
+        );
+
         match cmd.action {
             KittyAction::Query => self.kitty_query(&cmd),
             KittyAction::Transmit => self.kitty_transmit(cmd),
@@ -158,6 +166,7 @@ impl<T: EventListener> Term<T> {
     /// Delete images/placements based on the delete specifier.
     fn kitty_delete(&mut self, cmd: &KittyCommand) {
         let spec = cmd.delete_specifier.unwrap_or(b'a');
+        let before_pls = self.image_cache().placement_count();
 
         // Extract positions before borrowing cache mutably.
         let grid = self.grid();
@@ -238,6 +247,14 @@ impl<T: EventListener> Term<T> {
             b'N' => debug!("kitty delete d=N not yet implemented"),
             _ => debug!("kitty delete specifier {:?} not implemented", spec as char),
         }
+
+        let after_pls = self.image_cache().placement_count();
+        log::info!(
+            "kitty delete: d={} — placements {}->{}",
+            spec as char,
+            before_pls,
+            after_pls,
+        );
     }
 
     /// Accumulate a chunk for multi-part transmission.

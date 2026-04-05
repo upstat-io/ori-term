@@ -73,19 +73,35 @@ sections:
 
 Each attribute scenario sets an SGR attribute, writes text, then verifies the cell flags.
 
-- [ ] Extend `ScenarioOutcome` (or add a helper) to inspect cell attributes:
+- [ ] Add cell attribute inspection helpers to `assertions.rs` (or as methods on `ScenarioOutcome`):
   ```rust
+  /// Find the RenderableCell at (line, col) in the outcome's cell list.
+  ///
+  /// `ScenarioOutcome::cells` is `Vec<RenderableCell>` (row-major).
+  /// `RenderableCell` has `line: usize` and `column: Column`. Linear scan
+  /// is fine — test grids are small (80x24 = 1920 cells max).
+  fn find_cell(outcome: &ScenarioOutcome, line: usize, col: usize) -> &RenderableCell {
+      outcome.cells.iter()
+          .find(|c| c.line == line && c.column.0 == col)
+          .unwrap_or_else(|| panic!("no cell at line={line}, col={col}"))
+  }
+
   /// Get the CellFlags for a specific cell position.
-  pub fn cell_flags_at(&self, line: usize, col: usize) -> CellFlags {
-      // Query from RenderableContent cells
+  pub fn cell_flags_at(outcome: &ScenarioOutcome, line: usize, col: usize) -> CellFlags {
+      find_cell(outcome, line, col).flags
   }
 
   /// Get the foreground Rgb for a specific cell.
-  pub fn cell_fg_at(&self, line: usize, col: usize) -> Rgb { ... }
+  pub fn cell_fg_at(outcome: &ScenarioOutcome, line: usize, col: usize) -> Rgb {
+      find_cell(outcome, line, col).fg
+  }
 
   /// Get the background Rgb for a specific cell.
-  pub fn cell_bg_at(&self, line: usize, col: usize) -> Rgb { ... }
+  pub fn cell_bg_at(outcome: &ScenarioOutcome, line: usize, col: usize) -> Rgb {
+      find_cell(outcome, line, col).bg
+  }
   ```
+  Note: These are free functions in `assertions.rs`, not methods on `ScenarioOutcome`, to keep `runner.rs` clean.
 
 - [ ] Create attribute scenarios:
 
@@ -240,11 +256,14 @@ Each attribute scenario sets an SGR attribute, writes text, then verifies the ce
 - [ ] Combination scenarios: stacking, selective reset, inverse+color (3 scenarios)
 - [ ] 15+ total SGR scenarios pass
 - [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `./test-all.sh` green — no regressions
+- [ ] `timeout 150 ./test-all.sh` green — no regressions
 - [ ] Plan annotation cleanup
 - [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata
+- [ ] **Plan sync** — update plan metadata:
+  - [ ] This section's frontmatter `status` → `complete`
+  - [ ] `00-overview.md` Quick Reference table updated
+  - [ ] `index.md` section status updated
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** `cargo test -p oriterm_core --test teseq -- sgr` passes with 15+ SGR scenarios. Cell attribute inspection validates CellFlags and resolved Rgb colors. Bold-as-bright promotion, 256-color indexed, and TrueColor RGB all validated against palette resolution. Zero regressions.
+**Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- sgr` passes with 15+ SGR scenarios. Cell attribute inspection validates CellFlags and resolved Rgb colors. Bold-as-bright promotion, 256-color indexed, and TrueColor RGB all validated against palette resolution. Zero regressions.

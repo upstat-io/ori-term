@@ -7,7 +7,7 @@ goal: "Create foundational scenario files for C0 controls and basic CSI sequence
 success_criteria:
   - "C0 control scenarios pass: CR, LF, BS, TAB, BEL, FF, VT, SO, SI"
   - "CSI cursor movement scenarios pass: CUP, CUU, CUD, CUF, CUB, VPA, HPA, CHA with boundary checks"
-  - "CSI erase scenarios pass: ED modes 0-3, EL modes 0-3"
+  - "CSI erase scenarios pass: ED modes 0-3 (including ED 3 scrollback erase), EL modes 0-2"
   - "CSI insert/delete scenarios pass: ICH, DCH, IL, DL with content verification"
   - "ESC sequence scenarios pass: DECSC/DECRC (save/restore cursor), RIS, SCS (G0/G1 charset designation)"
   - "All scenarios run at 80x24; cursor movement also at 97x33 and 120x40"
@@ -53,13 +53,13 @@ sections:
 
 - [ ] 9+ C0 control scenarios pass with grid + event snapshots
 - [ ] 8+ CSI cursor movement scenarios pass (including boundary edge cases)
-- [ ] 6+ CSI erase scenarios pass (ED and EL variants)
+- [ ] 7+ CSI erase scenarios pass (ED modes 0-3 and EL variants)
 - [ ] 4+ CSI insert/delete scenarios pass
 - [ ] 4+ ESC sequence scenarios pass (save/restore, charset)
 - [ ] Total: 30+ scenarios, all with insta golden snapshots
 - [ ] Satisfies mission criteria for C0, cursor, erase, insert/delete, and ESC coverage
 
-**Context:** The existing handler unit tests (`oriterm_core/src/term/handler/tests.rs`, 5,860 lines) already validate each of these sequences individually via byte-feed + grid-cell assertions. This section's scenarios don't duplicate that coverage — they validate the teseq harness pipeline end-to-end and create human-readable scenario files that serve as documentation of expected behavior. Multi-sequence interaction scenarios (which handler tests don't cover) come in Sections 04-06.
+**Context:** The existing handler unit tests (`oriterm_core/src/term/handler/tests.rs`, 5,860 lines) already validate each of these sequences individually via byte-feed + grid-cell assertions. This section's scenarios deliberately overlap with handler tests for three specific purposes: (1) validating the teseq harness pipeline end-to-end before building complex scenarios, (2) establishing the scenario authoring pattern that Sections 03-06 follow, and (3) producing full-grid insta snapshots (vs. handler tests' per-cell assertions) that catch grid-wide side effects. If a scenario would test nothing beyond what handler/tests.rs already covers AND its only purpose is coverage, it does not belong here — keep the scenario count lean. Multi-sequence interaction scenarios (the framework's primary value-add) come in Sections 04-06.
 
 **Reference implementations:**
 - **WezTerm** `term/src/test/c0.rs`: C0 tests organized by control character (BS, LF, CR, TAB)
@@ -117,6 +117,7 @@ Create scenario files for each C0 control character that ori_term handles. Each 
   |world|
   ```
   `lf.toml`: `[expect] cursor = { col = 10, line = 1 }`
+  Note: LF preserves column (VTE behavior). "hello" ends at col 5, LF moves to (5, 1), then "world" writes at cols 5-9, cursor lands at col 10. Grid shows "hello" on line 0 and "     world" on line 1 (5 spaces + world).
 
   **`bs.teseq`** — Backspace moves cursor left:
   ```
@@ -139,7 +140,8 @@ Create scenario files for each C0 control character that ori_term handles. Each 
   . BEL/^G
   | World|
   ```
-  `bel.toml`: `[expect] cursor = { col = 12, line = 0 } events = ["Bell"]`
+  `bel.toml`: `[expect] cursor = { col = 11, line = 0 } events = ["Bell"]`
+  Cursor: "Hello" (5 chars) + BEL (no movement) + " World" (6 chars) = col 11.
 
   **`ff.teseq`** — Form feed same as LF:
   ```
@@ -167,7 +169,7 @@ Create scenario files for each C0 control character that ori_term handles. Each 
   [setup]
   pre_feed = ["\\x1b)0"]
   ```
-  (Designate G1 as DEC Special Graphics before SO)
+  Pre-feed designates G1 as DEC Special Graphics (`ESC ) 0`). After SO, `qqqqq` maps to `─────` (horizontal line, U+2500) in DEC Special Graphics. After SI, `--------` renders as literal ASCII dashes. Grid snapshot should show the Unicode line-drawing characters followed by dashes.
 
 - [ ] Register family module in `main.rs`: `mod c0;`
 - [ ] Verify all C0 scenarios pass: `timeout 150 cargo test -p oriterm_core --test teseq -- c0`
@@ -292,6 +294,48 @@ Erase operations (ED and EL) with pre-populated grid content.
   : Esc [ 2 J
   ```
 
+  **`ed_scrollback.teseq`** — ED 3 (erase scrollback buffer):
+  The scenario must first push content into scrollback (by writing more lines than the visible grid), then issue ED 3 to clear it. A 24-line grid with 30 lines of content puts 6 lines into scrollback.
+  ```
+  |Line 01|.
+  |Line 02|.
+  |Line 03|.
+  |Line 04|.
+  |Line 05|.
+  |Line 06|.
+  |Line 07|.
+  |Line 08|.
+  |Line 09|.
+  |Line 10|.
+  |Line 11|.
+  |Line 12|.
+  |Line 13|.
+  |Line 14|.
+  |Line 15|.
+  |Line 16|.
+  |Line 17|.
+  |Line 18|.
+  |Line 19|.
+  |Line 20|.
+  |Line 21|.
+  |Line 22|.
+  |Line 23|.
+  |Line 24|.
+  |Line 25|.
+  |Line 26|.
+  |Line 27|.
+  |Line 28|.
+  |Line 29|.
+  |Line 30|.
+  : Esc [ 3 J
+  ```
+  `ed_scrollback.toml`:
+  ```toml
+  [terminal]
+  scrollback = 100
+  ```
+  Before ED 3: 6 lines in scrollback (30 written - 24 visible). After ED 3: scrollback cleared (scrollback_len = 0), visible content preserved (Lines 07-30 visible, Lines 01-06 gone). Grid snapshot validates visible content. Assert `scrollback_len == 0` via `assert_scrollback_empty()` (defined in Section 01.5). `ScenarioOutcome::scrollback_len` is already populated from `content.scrollback_len` (Section 01.4).
+
   **`el_right.teseq`** — EL 0 (erase to right of cursor):
   ```
   |AAAAAAAAAA|
@@ -382,7 +426,7 @@ Erase operations (ED and EL) with pre-populated grid content.
   : Esc 8
   |Z|
   ```
-  (X at (9,19), save cursor, move to (0,0), Y there, restore cursor, Z at (9,20))
+  CUP 10;20 = line 9, col 19 (0-based). X writes at (9,19), cursor advances to (9,20). DECSC saves (9,20). CUP 1;1 moves to (0,0). Y writes at (0,0). DECRC restores to (9,20). Z writes at (9,20), cursor at (9,21).
 
   **`ris.teseq`** — RIS (full reset, ESC c):
   ```
@@ -427,7 +471,7 @@ Erase operations (ED and EL) with pre-populated grid content.
 
 - [ ] C0 scenario files created: cr, lf, bs, tab, bel, ff, vt, so_si (8+ scenarios)
 - [ ] CSI cursor scenarios created: cup_basic, cup_origin, cup_clamp, cuu_cud, cuf_cub, vpa, hpa, cha (8+ scenarios)
-- [ ] CSI erase scenarios created: ed_below, ed_above, ed_all, el_right, el_left, el_all (6 scenarios)
+- [ ] CSI erase scenarios created: ed_below, ed_above, ed_all, ed_scrollback, el_right, el_left, el_all (7 scenarios)
 - [ ] CSI insert/delete scenarios created: ich, dch, il, dl (4 scenarios)
 - [ ] ESC scenarios created: decsc_decrc, ris, scs_g0, ind_ri (4 scenarios)
 - [ ] Family modules registered in main.rs: c0, csi_cursor, csi_erase, csi_insert_delete, esc
@@ -435,11 +479,14 @@ Erase operations (ED and EL) with pre-populated grid content.
 - [ ] All insta snapshots generated and reviewed for correctness
 - [ ] Total: 30+ scenario files with golden snapshots
 - [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `./test-all.sh` green — no regressions
+- [ ] `timeout 150 ./test-all.sh` green — no regressions
 - [ ] Plan annotation cleanup
 - [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata
+- [ ] **Plan sync** — update plan metadata:
+  - [ ] This section's frontmatter `status` → `complete`
+  - [ ] `00-overview.md` Quick Reference table updated
+  - [ ] `index.md` section status updated
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** `cargo test -p oriterm_core --test teseq` passes with 30+ scenario tests covering C0 controls, CSI cursor movement, CSI erase, CSI insert/delete, and ESC sequences. All scenarios have insta golden snapshots reviewed for correctness. Multi-size variants pass for cursor clamping. Zero regressions.
+**Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq` passes with 30+ scenario tests covering C0 controls, CSI cursor movement, CSI erase, CSI insert/delete, and ESC sequences. All scenarios have insta golden snapshots reviewed for correctness. Multi-size variants pass for cursor clamping. Zero regressions.
