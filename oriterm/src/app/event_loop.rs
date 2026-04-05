@@ -391,7 +391,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.pump_mux_events();
         self.perf.last_pump_time = pump_start.elapsed();
 
-        let blink_animating = self.drive_blink_timers();
+        self.drive_blink_timers();
 
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
@@ -435,13 +435,14 @@ impl ApplicationHandler<TermEvent> for App {
         let urgent_redraw = self.is_any_urgent_redraw();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
-        // Render when dirty, gated by a 16ms frame budget in ALL present
-        // modes. Without the budget gate, Mailbox mode renders every
-        // about_to_wait() call (~1ms cycle), starving winit's message pump
-        // and blocking keyboard dispatch during sustained PTY output.
-        // The 16ms budget ensures the event loop yields to winit between
-        // frames so keyboard events (including Ctrl+C) are always dispatched.
-        if any_dirty && (budget_elapsed || urgent_redraw || blink_animating) {
+        // Render when dirty, strictly gated by the 16ms frame budget.
+        // Blink animations naturally hit the budget window (they run at
+        // 60fps = 16ms intervals) so they don't need a bypass. The strict
+        // gate prevents event loop starvation during sustained PTY output
+        // flooding where about_to_wait() is called continuously — without
+        // it, blink_animating=true causes uncapped rendering that starves
+        // winit's keyboard dispatch (BUG-11-1).
+        if any_dirty && (budget_elapsed || urgent_redraw) {
             self.render_dirty_windows();
         }
 
