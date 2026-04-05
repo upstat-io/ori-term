@@ -15,11 +15,12 @@ Create a new plan directory with index and section files using the standard plan
 ```
 /create-plan <name> [description]
 /create-plan <add xyz to roadmap>
+/create-plan add "<subsection title>" subsection to plans/<plan-dir>
 ```
 
 - `name`: Directory name for the plan (kebab-case, e.g., `gpu-refactor`, `mux-architecture`)
 - `description`: Optional one-line description of the plan's goal
-- **Roadmap mode**: If the name/description indicates adding to the roadmap (e.g., "add tab bar to roadmap", "roadmap: selection"), this command operates in **Roadmap Mode** — see the dedicated section below.
+- **Existing plan mode**: If the input references an existing plan directory (e.g., "add X to plans/repr-opt", "add section to roadmap"), this command operates in **Existing Plan Mode** — see the dedicated section below.
 
 ---
 
@@ -27,7 +28,12 @@ Create a new plan directory with index and section files using the standard plan
 
 **New Plan Mode** (default): The argument names a new plan directory. Creates `plans/{name}/` from scratch.
 
-**Roadmap Mode**: The argument indicates adding a section to the existing roadmap. Detected when the input contains "roadmap" or references an existing roadmap section. Operates on `plans/roadmap/` instead of creating a new directory.
+**Existing Plan Mode**: The argument indicates adding a section or subsection to an existing plan. Detected when:
+- The input contains "roadmap" or references an existing roadmap section (legacy Roadmap Mode — operates on `plans/roadmap/`)
+- The input references any existing plan directory (e.g., "add X to plans/gpu-refactor", "add subsection to plans/mux-flatten")
+- The input uses the explicit syntax: `add "<title>" subsection to plans/<dir>`
+
+When in Existing Plan Mode, the target is the referenced plan directory. See "Existing Plan Mode" section below for the full workflow.
 
 Both modes follow the SAME research rigor, the SAME iterative deepening, the SAME sequential writing discipline. The difference is the target: a new plan vs. an existing one.
 
@@ -47,9 +53,9 @@ These principles govern the entire plan creation process. When in doubt, consult
 
 5. **Iterative deepening over parallel breadth** — Start wide, then go deep on what matters. Each research pass builds on the findings of the prior pass.
 
-6. **Incremental design** — Every section must touch the real system. No section should build types, traits, abstractions, or infrastructure in isolation. Every section starts from the production code path, modifies it, and produces an observable, verifiable change in the running application.
+6. **External consultations are SEQUENTIAL and FOREGROUND** — All `/tp-help` and `/tpr-review` invocations MUST run in the foreground (NOT `run_in_background`). MUST wait for each to complete and read its output before proceeding. NEVER launch them in parallel with each other or with other agents/skills. The pipeline is sequential by design — each consultation's feedback informs the next step.
 
-7. **Continuous third-party feedback** — Don't wait until the end to get outside eyes. Use `/tp-help` liberally throughout planning to get a second brain's perspective on research findings, architecture decisions, section designs, and plan coherence. Each consultation is a conversation, not a one-shot — if `/tp-help` raises concerns, address them and re-consult until the concern is resolved. The goal is a back-and-forth dialogue that stress-tests every major decision.
+7. **Rules are woven in, not assumed** — Plans cannot assume the implementer has CLAUDE.md or `.claude/rules/*.md` loaded in context. Every section must embed the specific rules that govern its work — TDD discipline, file size limits, crate ordering, test conventions, module boundaries, rendering pipeline purity, cross-platform requirements. The plan is a self-contained execution document. If a rule applies to a section's work, it must appear in that section — either as a checklist constraint, a callout, or an inline requirement. The goal is for rules to appear organically as part of the work description, not as a separate "rules to follow" appendix.
 
 ---
 
@@ -76,11 +82,131 @@ If not provided via arguments, use `AskUserQuestion` to ask:
 
 Do NOT ask for sections yet. Sections emerge from research, not from guessing.
 
+### Step 1B: Mission Expansion
+
+The user's input is typically a generic, high-level mission statement. Your job is to expand it into a **full executable mission statement** before any research or plan creation begins.
+
+Take the user's rough goal and expand it into:
+
+1. **Concrete scope**: What crates, subsystems, files, and features are in scope? What's explicitly out?
+2. **Deliverables**: What specific, verifiable outcomes does this plan produce? (Not "improve X" — "X does Y where it currently does Z")
+3. **Success criteria**: How do you know the mission is complete? What tests pass? What behavior changes?
+4. **Boundaries**: What does this plan NOT do? Where does it hand off to other plans or future work?
+
+**Scoping discipline — CRITICAL:**
+
+The terminal emulator is under active development. Plans exist to build out the emulator's feature set. Scoping must reflect this reality:
+
+**Valid reasons to scope something OUT:**
+- It doesn't fit ori_term's architecture — would feel tacked on, not organic to the emulator's design
+- It doesn't improve the emulator meaningfully — busywork with no architectural payoff
+- It's architecturally incoherent with the existing design direction
+- It belongs in a different plan that addresses a different subsystem (but must be cross-linked as a dependency)
+
+**INVALID reasons to scope something out:**
+- "The UI framework doesn't support X yet" — that's a blocker to resolve (Step 1C), not a scope exclusion
+- "The GPU renderer can't handle Y" — same: blocker, not scope
+- "We'd need to add Z infrastructure first" — same: blocker, not scope
+- Any "missing prerequisite" or "missing feature" argument — if we always scoped out features because prerequisites were missing, no features would ever get built. Missing prerequisites are what Step 1C (Blocker Identification) captures and what the plan resolves.
+
+When evaluating scope, ask: "Is this being excluded because it doesn't belong in ori_term, or because building it requires work?" Only the first is valid. The second is the plan's job.
+
+### Step 1C: Blocker Identification
+
+The mission must remove any blockers in its way. Before the mission can be fulfilled, you must identify what stands between the current codebase state and the mission's goals.
+
+1. **Identify blockers**: What existing bugs, missing features, incomplete infrastructure, or broken subsystems would prevent the mission from being fulfilled?
+2. **Check existing tracking**: For each blocker, search:
+   - `plans/roadmap/` — is it a roadmap item? Which section?
+   - `plans/bug-tracker/` — is it a tracked bug? Which entry?
+   - Other `plans/*/` directories — is it queued in another plan? Which section?
+   - CLAUDE.md memory entries — is it a known issue?
+3. **Resolution strategy**: For each blocker:
+   - If tracked elsewhere: this plan MUST include executing/resolving the blocker. Add it as a section or checklist item. When complete, update the original location (roadmap section, bug-tracker entry, other plan) as resolved with a cross-link back to this plan's section.
+   - If not tracked anywhere: this plan owns it entirely. Add it as a section or checklist item.
+   - If the blocker is too large to include (would double the plan's scope): flag it via `AskUserQuestion` — the user decides whether to expand scope or split into prerequisite plans.
+4. **Cross-link format**: When resolving a blocker from another plan, add `<!-- resolved-by: plans/{this-plan}/section-NN -->` to the original location, and `<!-- resolves: plans/{other-plan}/section-MM item description -->` to this plan's item.
+
+### Step 1D: Consensus Loop with Codex (MANDATORY — ITERATE UNTIL AGREEMENT)
+
+**SEQUENTIAL & FOREGROUND — MANDATORY.** Every `/tp-help` call in this loop MUST run in the foreground (NOT `run_in_background`). You MUST wait for each to complete and read its output before proceeding. Do NOT launch these in parallel with any other agent or skill invocation.
+
+This is not a single consultation — it is a **consensus loop**. You and Codex iterate on the mission's direction, approach, and integration points until you reach genuine agreement. The loop runs until one of two outcomes:
+
+1. **Consensus reached**: You and Codex agree on how the plan integrates with ori_term's architecture, what the approach should be, and that it's a good fit.
+2. **Agreed rejection**: You and Codex both agree that part or all of the proposed direction is not a good fit for ori_term — in which case, document why and propose an alternative direction.
+
+**Loop protocol:**
+
+**Round 1** — Present the full picture to Codex:
+
+Build a `/tp-help` prompt that includes:
+- The user's original generic mission statement
+- Your expanded mission (scope, deliverables, success criteria, boundaries) from Step 1B
+- The identified blockers and their resolution strategy from Step 1C
+- Your proposed direction and approach — how does this integrate with ori_term's existing architecture?
+- Any open questions or uncertainties
+
+Ask Codex specifically:
+- "Is this mission statement complete and executable? Are there gaps?"
+- "Are the identified blockers comprehensive, or am I missing dependencies?"
+- "Is the scope right — too broad, too narrow, or just right for a single plan?"
+- "Does this direction integrate well with ori_term's architecture? Where are the natural integration points?"
+- "What would you change about the approach?"
+
+**Round 2+** — Respond to Codex's feedback:
+
+After each Codex response, evaluate:
+- **Points of agreement**: Lock these in. They become part of the consensus.
+- **Points of disagreement**: For each, either (a) accept Codex's point and update the mission, or (b) push back with specific reasoning and ask Codex to reconsider. Do NOT silently ignore disagreements.
+- **New concerns raised**: Address each one. If Codex identified a blocker or integration issue you missed, incorporate it.
+- **Integration fit**: If Codex questions whether something fits ori_term, engage seriously — is there a better organic integration point? Or is this genuinely not the right approach?
+- **Scoping pushback**: If Codex suggests scoping something out because "the UI framework doesn't support X yet" or "Y infrastructure is missing," push back — those are blockers to resolve, not scope exclusions. The only valid reason to exclude something is that it doesn't fit ori_term's design. Missing prerequisites are what the plan exists to build.
+
+Call `/tp-help` again with:
+- What you agree on so far (locked-in consensus points)
+- What you're still iterating on (with your response to Codex's feedback)
+- Updated mission statement reflecting changes from this round
+- Specific questions for the remaining disagreements
+
+**Loop termination**: The loop ends when BOTH of these are true:
+- You and Codex agree on the mission direction, scope, approach, and integration points (or agree that something should be excluded and why)
+- There are no unresolved disagreements or open questions between you
+
+**Do NOT cap the loop at a fixed number of rounds.** Most missions will converge in 2-3 rounds. Some may take 4-5. The loop runs until consensus, not until a counter expires.
+
+**After consensus**, compile the results:
+
+1. **Consensus points**: What you and Codex agreed on — direction, approach, integration points, scope
+2. **Rejected directions**: What you both agreed is not a good fit for ori_term, and why
+3. **Draft execution outline**: A preliminary sketch of how the plan will be executed — approximate section structure, rough ordering, key phases. This is a draft (full planning hasn't run yet), but it gives the user a sense of shape:
+   - What gets built first (foundation/prerequisites)
+   - What the core implementation phases are
+   - What integration/verification looks like
+   - Where the major risks and decision points are
+
+### Step 1E: Mission Proposal to User
+
+**MANDATORY — DO NOT SKIP.** Use `AskUserQuestion` to present the consensus results to the user for approval before proceeding.
+
+Present:
+1. **Original input**: What the user said
+2. **Expanded mission**: The full executable mission statement (scope, deliverables, success criteria, boundaries)
+3. **Claude + Codex consensus**: What was agreed on — direction, approach, integration points. Present this as a unified position, not a transcript. The user should see what was decided and why.
+4. **Rejected directions** (if any): What was considered and ruled out as not fitting ori_term, with reasoning
+5. **Identified blockers**: Each blocker, where it's currently tracked (if anywhere), and how this plan will resolve it
+6. **Cross-plan impacts**: Which other plans/roadmap items will be updated as resolved when this plan executes
+7. **Draft execution outline**: The preliminary plan shape — section structure, ordering, phases. Flag this as a draft that will be refined during the full research and planning phases.
+
+Ask: "Does this mission and approach accurately capture what you want? Any adjustments to the direction, scope, or approach before I proceed with research and plan creation?"
+
+**Do NOT proceed to Step 2 until the user approves the mission.** If they redirect or adjust, go back to Step 1B with the new direction and repeat Steps 1C-1E (including the consensus loop).
+
 ### Step 2: Read the Template & Hygiene Rules
 
 Read `.claude/skills/create-plan/plan-schema.md` for the structure reference.
 
-The full rule set is embedded below (source of truth files — do not maintain separate copies). Use these rules when structuring plan sections to ensure plans account for module boundary discipline, file size limits, rendering pipeline purity, and other hygiene requirements from the start.
+The full rule set is embedded below (source of truth files — do not maintain separate copies). Use these rules when structuring plan sections to ensure plans account for module boundary discipline, file size limits, rendering pipeline purity, cross-platform requirements, and other hygiene requirements from the start.
 
 **Implementation Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
 @.claude/rules/impl-hygiene.md
@@ -242,28 +368,7 @@ OUTPUT FORMAT:
 
 **Output**: For each critical file, write a paragraph (not a list) explaining how the code works, what invariants it maintains, and what would break if changed. This understanding is what grounds the plan.
 
-**This step cannot be parallelized.** Each file read may inform what to look for in the next file.
-
-### Step 4b: `/tp-help` Feedback — Research Completeness (ITERATE UNTIL RESOLVED)
-
-After Pass 2 completes, use `/tp-help` to get a second opinion on the research findings so far. Build a context package containing:
-
-- **The complete file inventory** from Pass 1 (all files found, types, functions, boundaries)
-- **The deep-read summaries** from Pass 2 (invariants, control flow, what would break)
-- **All UNCLEAR items** — things the research couldn't determine
-- **The plan's stated goal/scope**
-
-Ask Codex:
-1. "Does this inventory seem complete? Are there files/modules we're likely missing?"
-2. "Based on these invariants and control flow, what are the riskiest parts of this plan?"
-3. "What edge cases or failure modes should we investigate before designing the architecture?"
-
-**Iteration loop:**
-- If Codex identifies missing areas, run targeted follow-up research (Grep/Read) and re-consult.
-- If Codex flags risks, investigate them during Pass 3-4 and confirm they're addressed.
-- Continue until Codex confirms the research base looks solid or raises no new concerns.
-
-This step typically takes 1-3 rounds. Don't shortcut it — gaps found here prevent wrong architecture later.
+**This step cannot be parallelized.** Each file read may inform what to look for in the next file. If reading file A reveals that it delegates to file B in a non-obvious way, read file B next.
 
 ### Step 5: Pass 3 — Pattern Study (single focused agent)
 
@@ -369,26 +474,26 @@ For each design decision:
 
 **Note**: Passes 3 and 4 CAN run in parallel with each other (they are independent), but both MUST wait for Passes 1-2 to complete (they depend on knowing what files and code are relevant).
 
-### Step 6b: `/tp-help` Feedback — Patterns & Design Decisions (ITERATE UNTIL RESOLVED)
+---
 
-After Passes 3 and 4 complete, use `/tp-help` to stress-test the recommended patterns and design decisions. Build a context package containing:
+### Step 6B: Third-Party Architectural Consultation
 
-- **The analogous feature patterns** from Pass 3 (recommended implementation order, layer trace)
-- **The design decisions** from Pass 4 (options, recommendations, prior art evidence)
-- **Key constraints** from CLAUDE.md that apply (crate boundaries, performance invariants, no-workaround policy)
+**SEQUENTIAL & FOREGROUND — MANDATORY.** This `/tp-help` call MUST run in the foreground (NOT `run_in_background`). You MUST wait for it to complete and read its output before proceeding to Phase 3. Do NOT launch this in parallel with any other agent or skill invocation.
 
-Ask Codex:
-1. "Here are the patterns from analogous features. Does this recommended pattern make sense for {topic}, or are there structural differences that would make it break down?"
-2. "For each design decision, do you agree with the recommended approach? What would you do differently and why?"
-3. "Given these constraints (crate boundaries, performance invariants), what pitfalls do you see in this approach?"
+**After ALL research passes complete**, call `/tp-help` to get a second opinion on the architectural direction before committing to it. This is the highest-leverage consultation point — all research is in, but no architecture is locked.
 
-**Iteration loop:**
-- If Codex challenges a pattern recommendation, investigate the alternative — read the code it references, compare trade-offs, and re-consult with your analysis.
-- If Codex identifies a constraint conflict, verify against the actual codebase and adjust the recommendation.
-- If Codex proposes a better approach, evaluate it against the reference implementations and re-consult with your assessment.
-- Continue until all design decisions have been defended or revised. Every decision entering Phase 3 should have survived at least one round of challenge.
+Build a `/tp-help` prompt that includes:
+- The plan's mission/goal
+- A condensed summary of key research findings (critical files, sync points, design decisions, analogous patterns, existing bugs)
+- The 2-3 most important architectural decisions you're about to make
+- Your preliminary architectural direction
 
-This step typically takes 2-4 rounds. The architecture is the most consequential part of the plan — invest here.
+Ask Codex specifically:
+- "Do you see any architectural risks I'm missing?"
+- "Is this the right decomposition for this problem?"
+- "Are there better patterns from the reference terminal emulators for this specific case?"
+
+Evaluate Codex's response against your research — you have deeper codebase context, so filter accordingly. Incorporate useful insights into the architecture design.
 
 ---
 
@@ -405,35 +510,11 @@ After ALL research passes complete, synthesize findings into a structured archit
 3. **Implementation pattern** — the exact pattern that analogous features follow, and how this plan should follow it (from Pass 3)
 4. **Design decisions** — for each decision, the recommended approach with evidence from prior art (from Pass 4)
 5. **All sync points** — every enum, match, registry that must be updated together
-6. **Test strategy** — existing coverage AND planned test requirements per section: what tests exist (from Pass 1-2), what harness patterns (WidgetTestHarness, sibling tests.rs, architecture tests), what edge cases
+6. **Test strategy** — existing coverage AND planned test requirements per section: what tests exist (from Pass 1-2), what matrix dimensions (types x patterns) each section needs, where semantic pin tests are needed, what harness patterns (WidgetTestHarness, sibling tests.rs, architecture tests)
 7. **All unclear items** — things the research couldn't determine
 8. **All existing bugs found** — bugs discovered during research (these go into the plan)
 9. **Hygiene pre-scan** — files that need splitting or cleanup
 10. **Dependency chain** — what must be built first, what gates what, what can be parallelized
-
-### Step 7b: `/tp-help` Feedback — Architecture Synthesis (ITERATE UNTIL RESOLVED)
-
-Before writing the overview, use `/tp-help` to challenge the synthesized architecture. This is the most critical feedback point — the architecture drives everything downstream.
-
-Build a context package containing:
-- **The proposed architecture** — data flow, crate boundaries, key types, pipeline stages
-- **The dependency chain** — what must be built first, what gates what
-- **Design decisions with recommendations** — from Step 6b's validated decisions
-- **The proposed section breakdown** — rough section topics and ordering
-- **Key constraints** — performance invariants, crate boundaries, cross-platform requirements
-
-Ask Codex:
-1. "Here's the proposed architecture for {topic}. What are the weakest points? Where would this most likely break down during implementation?"
-2. "Does this dependency chain make sense? Are there hidden dependencies we're missing?"
-3. "Is this section breakdown right? Are any sections trying to do too much? Are any too thin to justify their own section?"
-4. "What's the biggest risk in this plan that we haven't addressed?"
-
-**Iteration loop — MINIMUM 2 rounds:**
-- **Round 1**: Present architecture, get initial critique.
-- **Round 2**: Address the critique (adjust architecture, add mitigations, restructure sections), re-present with changes highlighted. Ask: "We addressed X, Y, Z. Does this resolve your concerns? What else?"
-- **Round 3+ (if needed)**: Continue until Codex raises no new structural concerns. If a concern can't be resolved architecturally, flag it as a known risk in the overview.
-
-Do not shortcut this to a single round. The back-and-forth IS the value — it simulates the design review you'd get from a senior engineer.
 
 ### Step 8: Write `00-overview.md` FIRST
 
@@ -441,49 +522,55 @@ The overview is the **load-bearing design document**. It is NOT boilerplate fill
 
 Write `00-overview.md` following the template in `.claude/skills/create-plan/plan-schema.md`, grounding every element in research:
 
-- **Mission**: Based on the actual problem discovered during research
-- **Architecture diagram**: Based on the actual data flow map from Pass 2's deep read
-- **Design principles**: Based on patterns observed in analogous features (Pass 3) and prior art (Pass 4)
-- **Section dependency graph**: Based on actual crate dependencies and sync points found in Pass 1
-- **Implementation sequence**: Based on the analogous feature pattern from Pass 3
+- **Mission**: Based on the actual problem discovered during research — what exists, what's broken, what's missing
+- **Mission Success Criteria**: Concrete, testable conditions that prove the mission is complete — derived from the approved mission statement (Step 1E). Every criterion must be traceable to at least one section. A criterion with no section delivering it is a plan gap.
+- **Architecture diagram**: Based on the actual data flow map from Pass 2's deep read — show how data enters, transforms, and exits
+- **Design principles**: Based on patterns observed in analogous features (Pass 3) and prior art (Pass 4) — cite the specific evidence
+- **Section dependency graph**: Based on actual crate dependencies and sync points found in Pass 1 — show which sections gate others
+- **Implementation sequence**: Based on the analogous feature pattern from Pass 3 — follow the same order that worked before
 - **Design decisions**: Include the key design decisions from Pass 4 with recommended approaches and evidence
 - **Known bugs**: Include ALL bugs found during research passes
 - **Metrics**: Use actual line counts from the hygiene pre-scan
 
 **Also create `index.md`** with keyword clusters using REAL keywords from the research (actual type names, function names, file names — not placeholders).
 
-### Step 8b: `/tp-help` Feedback — Overview Quality Check
+### Step 8B: Architecture Sanity Check via /tp-help
 
-After writing the overview and index, use `/tp-help` for a concrete review of the written document.
+**SEQUENTIAL & FOREGROUND — MANDATORY.** This `/tp-help` call MUST run in the foreground (NOT `run_in_background`). You MUST wait for it to complete and read its output before proceeding to Step 9. Do NOT launch this in parallel with any other agent or skill invocation.
 
-Send Codex the full text of `00-overview.md` and ask:
-1. "Read this overview. Is the architecture diagram accurate and complete? Does it miss any data flow paths?"
-2. "Are the design principles well-justified? Would you add or remove any?"
-3. "Is the implementation sequence correct? Would re-ordering any phases reduce risk?"
-4. "Are the exit criteria measurable and sufficient? Could a section pass its criteria without actually being done?"
+**Before presenting to the user**, call `/tp-help` to sanity-check the written overview architecture. This catches issues before the user sees them.
 
-**Single round is acceptable here** if the architecture already survived Step 7b's multi-round challenge. Fix any issues raised before presenting to the user.
+Build a `/tp-help` prompt that includes:
+- The content of `00-overview.md` (or a focused summary of: mission, dependency graph, implementation sequence, key design decisions)
+- The proposed section list with goals and ordering
+
+Ask Codex specifically:
+- "Does this section decomposition and ordering make sense?"
+- "Are there dependency ordering issues I'm missing?"
+- "Would you structure this differently?"
+
+Incorporate feedback into `00-overview.md` before presenting to the user. If Codex flags a fundamental issue, address it now — don't pass known problems to the user review.
 
 ### Step 9: User Review of Architecture (MANDATORY — DO NOT SKIP)
 
 **You MUST use `AskUserQuestion` here.** Present the architecture and get explicit buy-in before writing sections.
 
 Present:
-1. **The architecture**: Summarize the design from `00-overview.md`
-2. **The proposed sections**: List each section with its goal, what files it touches, and what it depends on
-3. **Design decisions**: For each key design decision, present the recommended approach with evidence
-4. **Analogous pattern**: "Feature X follows this pattern: {pattern}. This plan will follow the same pattern."
-5. **Resolve unclear items**: For every `UNCLEAR` item from research, ask the user
+1. **The architecture**: Summarize the design from `00-overview.md` — mission, data flow, key design decisions
+2. **The proposed sections**: List each section with its goal, what files it touches, and what it depends on. Explain WHY these sections and WHY this order.
+3. **Design decisions**: For each key design decision, present the recommended approach with evidence. Ask if the user agrees or wants a different approach.
+4. **Analogous pattern**: "Feature X follows this pattern: {pattern}. This plan will follow the same pattern. Does this align with your vision?"
+5. **Resolve unclear items**: For every `UNCLEAR` item from research, ask the user.
 6. **Report existing bugs**: "During research, I found these existing issues: {list}. Per zero-deferral, these will be included in the plan."
-7. **Scope adjustments**: If research revealed the scope is larger or smaller than expected, propose adjustments
+7. **Scope adjustments**: If research revealed the scope is larger or smaller than expected, propose adjustments with rationale.
 
-**Do NOT proceed to Phase 4 until the user responds and approves the architecture.**
+**Do NOT proceed to Phase 4 until the user responds and approves the architecture.** If they redirect or adjust scope, update the overview and re-present. If they change design decisions, update accordingly. The architecture must be agreed upon before sections are detailed.
 
 ---
 
 ## Phase 4: Sequential Section Writing (MANDATORY SEQUENTIAL — NO PARALLELISM)
 
-**CRITICAL RULE: Write sections ONE AT A TIME, IN ORDER.** Do NOT launch parallel agents to write sections.
+**CRITICAL RULE: Write sections ONE AT A TIME, IN ORDER.** Do NOT launch parallel agents to write sections. Each section depends on decisions and details from prior sections. Section N is not written until Section N-1 is complete.
 
 ### Step 10: Create Directory Structure
 
@@ -512,92 +599,54 @@ For each section, in order from 01 to N:
 - **File paths**: Use EXACT paths from research (verified to exist)
 - **Type signatures**: Use EXACT signatures from research (copy from source)
 - **Function references**: Use EXACT function names from research
-- **Registration sync points**: List ALL sync points from research
-- **Analogous pattern**: Reference the analogous feature's implementation pattern
-- **Code examples**: Show target implementation based on actual code patterns found during research
-- **Test strategy**: Every section that modifies code MUST include testing requirements:
-  - **Test harness**: Specify which pattern — WidgetTestHarness for widgets, sibling tests.rs for unit tests, architecture tests for crate boundaries
-  - **Edge cases**: Unicode, CJK, emoji, platform differences, error paths
-  - **TDD ordering**: "Write failing tests BEFORE implementation" as the section's FIRST checklist item
-- **Dependencies on prior sections**: Explicitly reference what earlier sections provide
-- **What this section provides to later sections**: State what downstream sections will depend on
+- **Registration sync points**: List ALL sync points from research for any new enum variant/type/entry
+- **Analogous pattern**: Reference the analogous feature's implementation pattern — "Follow the same pattern as {feature} in {files}"
+- **Code examples**: Show target implementation based on actual code patterns found during research, not invented patterns
+- **Test strategy**: Every section that modifies code MUST include matrix testing and pinning requirements per CLAUDE.md — this is not deferred to implementation or review:
+  - **Matrix dimensions**: Identify ALL types and ALL control-flow patterns that flow through the changed code path. The plan must name these explicitly (e.g., "test with ASCII, CJK, emoji, combining marks, ZWJ sequences" and "test resize, scroll, reflow, selection, search"). Missing cells are future regressions.
+  - **Semantic pin**: At least one test per behavioral change that ONLY passes with the new semantics — a permanent regression guard. The plan must describe what the pin tests.
+  - **TDD ordering**: "Write failing test matrix BEFORE implementation" as the section's FIRST checklist item; "Verify all tests pass in debug and release" as the LAST item.
+  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, widget tests via WidgetTestHarness, architecture tests, visual regression tests).
+  - A section without explicit matrix dimensions and semantic pin requirements is NOT executable.
+- **Dependencies on prior sections**: Explicitly reference what earlier sections provide. "This section uses the {type} defined in Section {N} ({file path})."
+- **What this section provides to later sections**: State what downstream sections will depend on. "Section {M} will use the {API/type/pattern} established here."
+
+- **Success criteria**: Every section MUST have detailed success criteria — concrete, testable conditions that prove the section's work is done. Not "implement X" but "X produces Y when Z is run." Each criterion must connect upward to at least one mission success criterion in `00-overview.md`. A section without success criteria is not executable.
+- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. Read CLAUDE.md and the relevant rule files (`.claude/rules/test-organization.md` for test sections, `.claude/rules/impl-hygiene.md` for module boundaries, `.claude/rules/crate-boundaries.md` for crate ownership, `.claude/rules/code-hygiene.md` for surface cleanliness) and embed the applicable constraints directly into the section's tasks. For example: if a section adds a new widget, the checklist item should say "Add `FooWidget` in `oriterm_ui/src/widgets/foo/mod.rs` — implement Widget trait, add to widget registry, create sibling `tests.rs` with WidgetTestHarness tests" rather than "Add widget (remember to follow conventions)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
 
 **Frontmatter includes:**
-- Section ID, title, status: not-started, goal
+- Section ID, title, status: not-started, goal, `success_criteria` list
 - `reviewed` field (see rules below)
 - `inspired_by` with actual reference implementations found
 - `depends_on` based on actual crate dependency chain AND section content dependencies
 - `third_party_review: { status: none, updated: null }`
 - `## {NN}.R Third Party Review Findings` block (empty, with `- None.`) before the completion checklist
-- Completion checklist at the end (always includes final `/tpr-review`)
+- Completion checklist at the end — MUST include both `/tpr-review` AND `/impl-hygiene-review last commit` as final gates (hygiene review runs after TPR is clean, per `plan-schema.md`)
 - **Mid-section TPR checkpoints** on substantial subsections per `plan-schema.md` TPR Checkpoint Rules — catch issues early, not just at section end
 
 **`reviewed` field rules:**
-- **Section 01**: `reviewed: true` — validated during plan creation against the research findings.
-- **All other sections (02+)**: `reviewed: false` — not yet validated against implementation reality.
+- **Section 01**: `reviewed: true` — it is the starting point of implementation and was validated during plan creation against the research findings.
+- **All other sections (02+)**: `reviewed: false` — they have NOT been validated against actual implementation reality. As Section 01 is implemented, assumptions in later sections may become stale or wrong.
 
 **After writing each section**, briefly verify:
-- File paths referenced exist
+- File paths referenced in this section exist
 - Type/function names referenced exist
-- References to prior sections are accurate
+- References to prior sections are accurate (re-read the referenced section if needed)
 - No contradictions with prior sections
-
-### Step 11b: `/tp-help` Feedback During Section Writing (PERIODIC — EVERY 2-3 SECTIONS)
-
-Don't wait until all sections are written to get feedback. After every 2-3 sections (or after any particularly complex/risky section), use `/tp-help` for a mid-flight check.
-
-**After sections 1-2** (foundation sections), send Codex:
-- The full text of sections 1-2
-- The overview's architecture and section dependency graph
-- Ask: "Do these foundation sections properly set up what later sections need? Are the task breakdowns specific enough to implement without ambiguity? What's missing?"
-
-**After sections 3-5** (core implementation sections), send Codex:
-- The full text of sections 3-5 (and summaries of 1-2)
-- Ask: "Are these sections maintaining consistency with the architecture? Are the code examples realistic? Do the exit criteria actually prove the section is complete?"
-
-**After any section with complex design decisions**, send Codex:
-- That section's full text plus the relevant design decision from the overview
-- Ask: "Does this section's implementation approach match the design decision we made? Are there edge cases the checklist doesn't cover?"
-
-**Iteration loop for each checkpoint:**
-- If Codex identifies gaps, fix them in the already-written sections before continuing.
-- If Codex suggests restructuring, evaluate whether it's better to adjust now (cheap) or later (expensive). Default to adjusting now.
-- Re-consult after fixes: "We added X and restructured Y. Does this address your concerns?"
-
-**For plans with 6+ sections**, this means at least 2-3 feedback rounds during section writing. For plans with 3-4 sections, at least 1 round after writing 2 sections.
 
 Then proceed to the next section.
 
 ### Step 12: Update Overview and Index
 
 After all sections are written:
-- Update `00-overview.md` with the final section list and any adjustments
-- Update `index.md` with complete keyword clusters for all sections
+- Update `00-overview.md` with the final section list, dependency graph, and any adjustments that emerged during sequential writing
+- Update `index.md` with complete keyword clusters for all sections — using actual type names, function names, and file names from the written sections
 
 ---
 
 ## Phase 5: Cohesion Review & Finalization
 
-### Step 12b: `/tp-help` Feedback — Full Plan Review (ITERATE UNTIL RESOLVED)
-
-Before running the automated cohesion check, get a holistic third-party review of the complete plan. This catches structural issues that per-section feedback misses — things like drift between the overview and later sections, or implicit assumptions that span multiple sections.
-
-Send Codex the **complete plan**: `00-overview.md` + all section files + `index.md`. Ask:
-
-1. "Read this entire plan front-to-back. Does the story hold together? Does each section logically follow from the previous one?"
-2. "Are there any implicit dependencies between sections that aren't declared in `depends_on`?"
-3. "Do the exit criteria accumulate correctly — would completing all sections in order actually achieve the mission stated in the overview?"
-4. "Is there any work that falls between sections — something no section owns but must happen?"
-5. "If you were implementing this plan, what would surprise you or trip you up?"
-
-**Iteration loop — MINIMUM 2 rounds:**
-- **Round 1**: Full plan review, get structural critique.
-- **Round 2**: Fix issues raised (update sections, add missing dependencies, close gaps), re-send the changed sections. Ask: "We fixed X, added Y, restructured Z. Does the plan hold together now? Anything else?"
-- **Round 3+ (if needed)**: Continue until Codex confirms the plan is coherent or only raises minor style concerns.
-
-This is the last major quality gate before automated review. Invest in getting it right.
-
-### Step 13: Cohesion Check
+### Step 13: Cohesion Check (before /review-plan)
 
 Launch **one agent** to read the ENTIRE plan front-to-back and check for internal coherence:
 
@@ -605,22 +654,23 @@ Launch **one agent** to read the ENTIRE plan front-to-back and check for interna
 You are reviewing a newly created plan for internal coherence. Read EVERY file in the plan directory: {plan_dir}/
 
 Check for:
-1. CONTRADICTIONS: Does Section X say one thing and Section Y say another?
-2. GAPS: Is there work that falls between sections?
-3. REDUNDANCY: Do multiple sections do the same work?
+1. CONTRADICTIONS: Does Section X say one thing and Section Y say another? (e.g., Section 2 says "add type Foo to module Bar" but Section 5 says "add type Baz to module Bar" for the same purpose)
+2. GAPS: Is there work that falls between sections? (e.g., Section 2 produces a type that Section 4 consumes, but no section handles the transformation between them)
+3. REDUNDANCY: Do multiple sections do the same work? (e.g., both Section 3 and Section 5 add the same match arm)
 4. BROKEN REFERENCES: Does Section X reference a type/file/function from Section Y that Section Y doesn't actually define?
 5. ORDERING ISSUES: Does Section X depend on work described in Section Y, but X comes before Y?
-6. SYNC POINT COMPLETENESS: Are ALL sync points accounted for across all sections?
-7. OVERVIEW ALIGNMENT: Does the overview still match what the sections actually describe?
+6. SYNC POINT COMPLETENESS: Are ALL sync points (enum variants, match arms, registry entries) accounted for across all sections? Is any sync point mentioned in one section but forgotten in its counterpart section?
+7. OVERVIEW ALIGNMENT: Does the overview's architecture diagram, dependency graph, and implementation sequence still match what the sections actually describe?
+8. SUCCESS CRITERIA COVERAGE: Does every mission success criterion in 00-overview.md trace to at least one section that delivers it? Does every section have its own success criteria? Does each section criterion connect upward to at least one mission criterion? A mission criterion with no section delivering it is a plan gap. A section without success criteria is not executable.
 
 For each issue found, report:
-  ISSUE TYPE: {contradiction/gap/redundancy/broken-ref/ordering/sync-gap/overview-drift}
+  ISSUE TYPE: {contradiction/gap/redundancy/broken-ref/ordering/sync-gap/overview-drift/criteria-gap}
   SECTIONS: {which sections are involved}
   DETAILS: {what the issue is}
   FIX: {how to resolve it}
 ```
 
-Fix all issues found before proceeding.
+Fix all issues found by the cohesion check before proceeding.
 
 ### Step 14: Self-Check Before Review
 
@@ -632,7 +682,8 @@ Do a quick self-audit:
 4. **No placeholder content** — no "TBD", no "placeholder keywords", no "to be determined"
 5. **No assumptions** — every technical claim traces to research
 6. **No contradictions** — cohesion check passed clean
-7. **Test strategy per section** — every code-modifying section has test requirements with correct harness patterns
+7. **Test strategy per section** — every code-modifying section has: explicit matrix dimensions (types x patterns), semantic pin requirements, TDD ordering (failing tests first, debug+release last)
+8. **Success criteria hierarchy** — `00-overview.md` has mission success criteria; every section has its own success criteria in both frontmatter and body; every mission criterion maps to at least one section; every section criterion maps upward to at least one mission criterion
 
 Fix any issues found.
 
@@ -646,12 +697,16 @@ Show the user:
 
 ### Step 16: Run /review-plan (MANDATORY — USE THE ACTUAL SKILL)
 
-**CRITICAL: Run the actual `/review-plan` skill using the Skill tool.** Do NOT reimplement the review logic.
+**SEQUENTIAL & FOREGROUND — MANDATORY.** The `/review-plan` skill internally calls `/tp-help` multiple times (before agents and between agents). All of those internal calls are sequential and foreground — do NOT attempt to optimize by running them in parallel or background. Wait for `/review-plan` to complete fully before proceeding.
+
+**CRITICAL: Run the actual `/review-plan` skill using the Skill tool.** Do NOT reimplement the review logic. Do NOT spawn your own review agents. Use the Skill tool to invoke `/review-plan` with the plan directory path as the argument.
 
 ```
 Skill: review-plan
 Args: plans/{name}/
 ```
+
+This runs the formal review pipeline as defined in the `/review-plan` skill. It will edit the plan files directly to fix any issues.
 
 ### Step 17: Post-Review Summary
 
@@ -674,25 +729,30 @@ If the user says **no**: do not add reroute frontmatter (plan is not a reroute).
 
 **Input:** `/create-plan gpu-refactor "Restructure GPU rendering pipeline for damage tracking"`
 
-**Phase 1**: Read CLAUDE.md. Ask user about scope ("Which crates? Grid rendering only or UI too?").
+**Phase 1**: Read CLAUDE.md. Ask user about scope. Expand mission. Identify blockers (missing damage rect type, atlas invalidation). Consensus loop with Codex (2-3 rounds). Present mission proposal to user.
 
 **Phase 2**:
 - *Pass 1*: Launch 2 parallel agents — (1) survey `oriterm_gpu`, `oriterm/src/app/` rendering code, all GPU-related files; (2) audit tests, hygiene state, performance invariants.
 - *Pass 2*: Deep-read the 12 most critical files. Understand how `GpuRenderer::draw_frame()` works, how the atlas manages glyphs, how damage tracking would integrate.
-- *`/tp-help` Round 1*: "Here's our file inventory and deep-read findings. Are we missing any critical files? What are the riskiest parts?" → Codex flags that we didn't look at the buffer shrink discipline. Read those files, re-consult. → "Looks solid now."
 - *Pass 3*: Trace how the existing cell rendering pipeline works end-to-end.
 - *Pass 4*: Study Alacritty's damage tracking, Ghostty's multi-backend approach, WezTerm's texture atlas.
-- *`/tp-help` Round 2*: "We recommend Alacritty's damage tracking approach adapted for wgpu. Codex, do you agree or would you go a different direction?" → Codex suggests also looking at how Ghostty handles partial redraws. Investigate, re-consult with comparison. → "Alacritty's approach is better for ori_term because X."
 
-**Phase 3**: Synthesize architecture.
-- *`/tp-help` Rounds 3-4*: Present architecture, get critique. "The weakest point is the atlas invalidation during damage tracking." Adjust architecture, re-consult. "That fixes it."
-- Write `00-overview.md`. `/tp-help` quick check on the written overview. Present to user.
+**Phase 3**: Design architecture. `/tp-help` architectural consultation. Write `00-overview.md` with data flow, design decisions, dependency graph. `/tp-help` sanity check. Present to user: "Found N critical files. The existing pattern shows {pattern}. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
 
-**Phase 4**: After user approves, write sections sequentially.
-- After sections 1-2: `/tp-help` — "Do these foundation sections set up later sections correctly?" → "Section 2 is missing the damage rect type that section 4 needs." Fix, re-consult.
-- After sections 4-5: `/tp-help` — "Are these core sections maintaining consistency?" → "Looks good."
+**Phase 4**: After user approves architecture, write sections sequentially:
+- Section 01 (damage types) → read it → write Section 02 (tracking integration, building on 01's types) → read both → write Section 03 (atlas invalidation, building on 01+02).
 
-**Phase 5**: `/tp-help` full plan review (2 rounds) → cohesion check → self-check → report → run `/review-plan plans/gpu-refactor/`.
+**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/gpu-refactor/`.
+
+**Creates:**
+```
+plans/gpu-refactor/
+├── index.md
+├── 00-overview.md
+├── section-01-damage-types.md
+├── section-02-tracking-integration.md
+└── section-03-atlas-invalidation.md
+```
 
 ---
 
@@ -707,20 +767,18 @@ If the user says **no**: do not add reroute frontmatter (plan is not a reroute).
 
 ---
 
-## `/tp-help` Feedback Cadence Summary
+## Expected `/tp-help` Cadence
 
-The planning process includes **6 structured `/tp-help` checkpoints**, each with iterative follow-up. Here's the expected cadence for a typical plan:
+The planning process includes **structured `/tp-help` checkpoints**. Here's the expected cadence:
 
-| Checkpoint | Phase | When | Min Rounds | Purpose |
-|------------|-------|------|------------|---------|
-| **Step 4b** | Research | After Pass 1+2 | 1-3 | Validate research completeness |
-| **Step 6b** | Research | After Pass 3+4 | 2-4 | Stress-test pattern & design decisions |
-| **Step 7b** | Architecture | Before writing overview | 2+ | Challenge architecture design |
-| **Step 8b** | Architecture | After writing overview | 1 | Quality check written document |
-| **Step 11b** | Sections | Every 2-3 sections | 1-2 per batch | Mid-flight course correction |
-| **Step 12b** | Finalization | Before cohesion check | 2+ | Full plan structural review |
+| Checkpoint | Phase | When | Purpose |
+|------------|-------|------|---------|
+| **Step 1D** | Prerequisites | After mission expansion | Consensus on direction and scope |
+| **Step 6B** | Research | After all 4 passes | Architectural direction validation |
+| **Step 8B** | Architecture | After writing overview | Sanity check written document |
+| **Step 16** | Finalization | /review-plan internally | Review agents' /tp-help calls |
 
-**Expected total**: 8-15+ `/tp-help` rounds across a full plan creation. For a simple 3-section plan, expect ~8. For a complex 10-section plan, expect ~15+.
+**Expected total**: 6-12+ `/tp-help` rounds across a full plan creation. The consensus loop (Step 1D) alone may take 2-5 rounds.
 
 **The rule**: Every major decision point gets challenged by a second brain before it becomes load-bearing. No decision survives on the strength of a single perspective.
 
@@ -733,10 +791,21 @@ The planning process includes **6 structured `/tp-help` checkpoints**, each with
 **Every checklist item in a plan must be implementable by the agent executing that section.** When writing plan items:
 
 - Do NOT use soft language that invites skipping: "bonus", "future", "lower priority", "nice to have", "if time permits", "stretch goal".
-- Do NOT label items "requires architectural change" — architectural changes are implementation tasks, not deferrals.
-- Do NOT create items that are descriptions of work rather than work itself.
-- If an item genuinely cannot be done within the section (blocked by unimplemented feature, needs user decision), use `<!-- blocked-by:X -->` with a concrete blocker reference.
+- Do NOT label items "requires architectural change" — architectural changes are implementation tasks, not deferrals. If a 30-line change across 3 files is needed, describe the change and make it a checkbox.
+- Do NOT create items that are descriptions of work rather than work itself. "Investigate whether X" is acceptable; "Document the approach for Y" when Y can be implemented is not.
+- If an item genuinely cannot be done within the section (blocked by an unimplemented feature, needs user decision), use `<!-- blocked-by:X -->` with a concrete blocker reference — not vague language.
 - Every item must pass this test: "Can the implementing agent, with access to the codebase, complete this item in a single session?" If no, break it into items that can.
+
+## Matrix Testing & Semantic Pinning Rule
+
+**Every section that modifies code must specify its test strategy at plan creation time.** This is not deferred to implementation or to `/review-plan` — the plan itself must describe:
+
+1. **Matrix dimensions**: The types and control-flow patterns that flow through the section's code paths. These are the rows and columns of the test matrix. Name them explicitly — "ASCII, CJK, emoji, combining marks, ZWJ sequences" for character dimension; "resize, scroll, reflow, selection, search" for operation dimension. Missing cells are future regressions.
+2. **Semantic pin**: At least one test per behavioral change that ONLY passes with the new semantics. Without a pin, a regression can silently revert the fix. The plan must describe what each pin tests.
+3. **TDD discipline**: The section's first checklist item writes the failing test matrix. The section's last checklist item verifies debug + release. Tests frame the implementation, not follow it.
+4. **Cross-section coverage**: If a fix in Section N touches code owned by Section M, the test matrix must cover Section M's types and patterns too. Plan boundaries = test boundaries.
+
+A section without these is not executable per CLAUDE.md. The `/review-plan` skill enforces this during review — but catching it at creation time avoids the review rejection cycle.
 
 ## Zero Assumptions Rule
 
@@ -745,21 +814,23 @@ The planning process includes **6 structured `/tp-help` checkpoints**, each with
 - **File paths**: Must exist in the codebase (verified by Glob/Read)
 - **Type/function signatures**: Must match actual source (verified by reading the file)
 - **Behavior descriptions**: Must match actual code behavior (verified by reading the implementation)
-- **Registration sync points**: Must be the complete list (verified by Grep)
+- **Registration sync points**: Must be the complete list (verified by Grep for all match arms / enum variants)
 - **Patterns to follow**: Must reference actual analogous implementations (verified by reading them)
 
-If you cannot verify a claim, it MUST be flagged as `<!-- UNVERIFIED: {reason} -->` and reported to the user in Step 9.
+If you cannot verify a claim, it MUST be flagged as `<!-- UNVERIFIED: {reason} -->` and reported to the user in Step 9. Unverified claims are not acceptable in the final plan — they must be resolved before Phase 4 or removed.
 
 ## Reviewed Field Semantics
 
-The `reviewed: true/false` field in section frontmatter is a **pre-implementation gate**.
+The `reviewed: true/false` field in section frontmatter is a **pre-implementation gate** — it tracks whether a section has been validated against the current codebase right before you start implementing it.
+
+**Why this exists:** Plans are written with assumptions about how the code works. But as you implement Section 01, reality changes — deviations, discoveries, refactors, bug fixes. A section written before prior sections were implemented may reference stale file paths, wrong function signatures, or invalid approaches. `reviewed: false` means "not yet validated against implementation reality."
 
 **Rules:**
 - **Section 01** is always `reviewed: true` at creation — it's the starting point.
-- **All other sections** are `reviewed: false` at creation.
-- **Single-section review** (`/review-plan plans/foo/section-03.md`): pre-implementation gate. After confirming accuracy, flip to `reviewed: true`.
-- **Whole-plan review** (`/review-plan plans/foo/`): improves quality but does NOT change `reviewed` values.
-- **`/continue-roadmap`** starting a `reviewed: false` section: triggers a single-section review first.
+- **All other sections** are `reviewed: false` at creation — plans, not validated reality.
+- **Single-section review** (`/review-plan plans/foo/section-03.md`): This is the pre-implementation gate. After confirming accuracy, flip to `reviewed: true`.
+- **Whole-plan review** (`/review-plan plans/foo/`): Fixes issues, improves quality, but does NOT change `reviewed` values. You're improving the plan holistically, not gating specific sections.
+- **`/continue-roadmap`** starting a `reviewed: false` section: triggers a single-section review first, which flips to `true` after validation.
 
 ---
 
@@ -784,64 +855,116 @@ Profile after modifying hot paths.
 
 ---
 
-## Roadmap Mode
+## Existing Plan Mode
 
-When the input indicates adding to the roadmap (e.g., `/create-plan add selection to roadmap`), this command operates on `plans/roadmap/` instead of creating a new plan directory.
+When the input indicates adding to an existing plan — whether the roadmap, a rerouted plan, or any other plan directory — this command operates on that plan's directory instead of creating a new one.
 
-**Same rigor, different target.** Every phase applies identically.
+**Trigger examples:**
+- `/create-plan add selection to roadmap` → operates on `plans/roadmap/`
+- `/create-plan add "damage rect tracking" subsection to plans/gpu-refactor` → operates on `plans/gpu-refactor/`
+- `/create-plan roadmap: tab bar rendering` → operates on `plans/roadmap/`
 
-### Roadmap Mode: How It Differs
+**Same rigor, different target.** Every phase applies identically — the research depth, the iterative deepening, the sequential writing, the cohesion review. The only differences are structural: you're inserting into an existing plan, not creating a fresh one.
+
+### Subsection vs Section Granularity
+
+When invoked from `/continue-roadmap` impediment resolution, the work is typically a **subsection** added to an existing section — not a whole new section file. The granularity depends on scope:
+
+- **Subsection** (most common for impediments): Add a `## XX.Y` block to an existing section file. Example: adding `## 03.5b Damage Rect Tracking` to `section-03-gpu-pipeline.md` to resolve missing GPU infrastructure.
+- **Section**: Add a new section file when the work is large enough to warrant its own file (100+ lines of plan content, multiple subsections, distinct from existing section scope).
+
+For subsections: update the parent section's YAML frontmatter `sections:` array to include the new subsection entry. For sections: create a new section file and update `00-overview.md` and `index.md`.
+
+### Existing Plan Mode: How It Differs
 
 #### Phase 1 Differences
 
 - **Step 1**: Instead of asking for a plan name, identify:
-  1. **What feature/section** to add to the roadmap
+  1. **What feature/section/subsection** to add to the plan
   2. **Where it fits** — after which existing section? What does it depend on?
   3. **What it might affect** — which existing sections reference related code?
+  4. **What it unblocks** — which blocked items will this resolve? (Critical for impediment-driven additions)
 
-- **Step 2**: In addition to the template and hygiene rules, **read the entire roadmap**:
-  - `plans/roadmap/00-overview.md` — understand the mission, architecture, dependency graph
-  - `plans/roadmap/index.md` — understand the keyword structure and section numbering
-  - **Every existing section file** — understand what's already planned
+- **Step 2**: In addition to the template and hygiene rules, **read the target plan**:
+  - `plans/<dir>/00-overview.md` — understand the mission, architecture, dependency graph
+  - `plans/<dir>/index.md` — understand the keyword structure and section numbering
+  - **The section(s) most related to the new work** — understand what's already planned, what's complete, what's in progress
+  - Pay attention to: section dependencies, implementation sequence, cross-section interactions
 
 #### Phase 2 Differences
 
-Research adds a roadmap-specific dimension:
+Research is identical in rigor, but adds a plan-specific dimension:
 
-- **Pass 1**: Also identify which existing roadmap sections touch the same files/types/crates
-- **Pass 2**: Also deep-read the 2-3 existing roadmap sections most related to the new one
+- **Pass 1**: In addition to the standard inventory, identify:
+  - Which existing plan sections touch the same files/types/crates
+  - Which existing sections might need updates due to the new section/subsection
+  - Whether any completed sections already partially cover the new scope
+
+- **Pass 2**: In addition to deep-reading critical files, deep-read:
+  - The 2-3 existing plan sections most related to the new one
+  - Any completed sections that the new work builds on (to understand what was actually implemented vs. what was planned)
 
 #### Phase 3 Differences
 
-- **Step 7**: Synthesis must include impact analysis on existing roadmap
-- **Step 8**: **Update** the existing `00-overview.md` and `index.md` instead of creating new ones
-- **Step 9**: Present impact on existing sections alongside the new section proposal
+- **Step 7**: Synthesis must include:
+  - **Impact analysis**: How does the new section/subsection affect the existing plan? Does it change dependencies? Does it invalidate assumptions in other sections?
+  - **Insertion point**: Where does it go? For subsections: which `## XX.Y` header, what ID? For sections: which section number? (May require renumbering)
+  - **Dependency updates**: Which existing sections need `depends_on` updates?
+  - **Unblock analysis** (for impediment-driven additions): Which `<!-- blocked: ... -->` comments will this resolve? List them explicitly.
+
+- **Step 8**: Instead of writing a new `00-overview.md`:
+  - **For subsections**: Update the parent section's YAML frontmatter `sections:` array to include the new subsection entry. Update the section body with the new `## XX.Y` block.
+  - **For sections**: Create the new section file. Update `00-overview.md` — add the new section to the architecture diagram, dependency graph, implementation sequence, quick reference table, and estimated effort. Update `index.md` — add keyword clusters for the new section.
+  - If the overview or index format has drifted from the current template (`.claude/skills/create-plan/plan-schema.md`), bring them up to date while you're editing them
+
+- **Step 9**: Present to the user:
+  - The proposed new section/subsection with its goals and scope
+  - The impact on existing sections (what changes, what doesn't)
+  - Which blocked items this will unblock (for impediment-driven additions)
+  - Any existing sections that need updates and what those updates are
 
 #### Phase 4 Differences
 
-- After writing the new section(s), update any existing sections that are affected
-- Update `depends_on`, cross-references, `00-overview.md`, `index.md`
+- **Step 11**: Write the new section(s)/subsection(s) following the same sequential discipline. If multiple are needed, write them in order.
+
+- **After writing**: Update any existing sections that are affected:
+  - Update `depends_on` in sections that now depend on the new work
+  - Update cross-references in sections that reference related code
+  - Update `00-overview.md` dependency graph and implementation sequence (for new sections)
+  - Update `index.md` with new keywords (for new sections)
+  - **Remove `<!-- blocked: ... -->` comments** from items that the new work will unblock (for impediment-driven additions)
+  - If any existing section's content is now stale or contradicted by the new work, fix it. Flag the section as `reviewed: false` if you changed its assumptions.
 
 #### Phase 5 Differences
 
-- Cohesion check reads the ENTIRE roadmap (all sections, not just new ones)
-- Run `/review-plan plans/roadmap/` (the full roadmap)
-- Skip the reroute question
+- **Step 13**: The cohesion check reads the relevant plan sections (all sections for full plans; the parent section + neighbors for subsection additions), checking that:
+  - The new work is consistent with existing sections
+  - No existing section contradicts the new work
+  - The dependency graph in `00-overview.md` is accurate (if modified)
+  - The implementation sequence still makes sense
+  - Cross-references between sections are all valid
 
-### Roadmap Mode: The "Leave It Better" Rule
+- **Step 16**: Run `/review-plan` on the affected plan directory
 
-**You MUST leave the roadmap in better shape than you found it.** When operating in roadmap mode:
+- **Step 18**: Skip the reroute question if operating on a plan that is already a reroute or the roadmap itself
 
-1. **Format drift**: If existing sections don't match the current template, update them
-2. **Stale content**: Fix stale file paths, outdated type signatures
-3. **Missing cross-references**: Add explicit `depends_on` or co-implementation callouts
-4. **Overview accuracy**: The overview must accurately reflect the current state after your changes
+### Existing Plan Mode: The "Leave It Better" Rule
 
-### Roadmap Mode: Example
+**You MUST leave the plan in better shape than you found it.** When operating in existing plan mode:
+
+1. **Format drift**: If the plan's existing sections don't match the current template format (`.claude/skills/create-plan/plan-schema.md`), update them to match. This includes frontmatter fields, section structure, completion checklists, and third-party review blocks.
+2. **Stale content**: If you encounter stale file paths, outdated type signatures, or references to code that no longer exists, fix them.
+3. **Missing cross-references**: If sections reference each other implicitly but lack explicit `depends_on` or co-implementation callouts, add them.
+4. **Incomplete hygiene**: If sections lack completion checklists, exit criteria, or test strategies, add them.
+5. **Overview accuracy**: The overview's architecture diagram, dependency graph, and implementation sequence must accurately reflect the current state of the plan after your changes.
+
+This is not optional cleanup — it's a mandatory part of existing plan mode. Every touch of the plan is an opportunity to improve its coherence and accuracy.
+
+### Existing Plan Mode: Example
 
 **Input:** `/create-plan add tab bar rendering to roadmap`
 
-**Phase 1**: Read CLAUDE.md. Read the entire roadmap. Identify this relates to UI framework work, probably depends on existing widget infrastructure.
+**Phase 1**: Read CLAUDE.md. Read the entire roadmap. Expand mission. Identify blockers. Consensus loop. Present proposal.
 
 **Phase 2**: Survey tab bar code, existing roadmap sections touching UI, reference implementations.
 
