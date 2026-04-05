@@ -9,7 +9,7 @@ success_criteria:
   - "Coverage gap analysis identifies sequences not yet covered and prioritizes future additions"
   - "CI integration: Linux CI installs teseq and runs tests; macOS/Windows gracefully skip"
   - "CLAUDE.md updated with teseq test commands and scenario authoring instructions"
-  - "All 80+ scenarios pass at their designated sizes"
+  - "All 84+ scenarios pass at their designated sizes"
   - "Satisfies mission criteria: CI green, test-all.sh passes, platform graceful skip"
 inspired_by:
   - "ori_term vttest-conformance section-07-verification — conformance metric tracking"
@@ -69,19 +69,20 @@ Build a comprehensive test matrix documenting every scenario.
   |--------|-----------|-------|-------------|
   | C0 (`c0/`) | 8+ | 80x24 | CR, LF, BS, TAB, BEL, FF, VT, SO/SI |
   | CSI Cursor (`csi/cursor/`) | 8+ | 80x24, 97x33, 120x40 | CUP, CUU, CUD, CUF, CUB, VPA, HPA, CHA |
-  | CSI Erase (`csi/erase/`) | 6 | 80x24 | ED 0-3, EL 0-3 |
+  | CSI Erase (`csi/erase/`) | 7 | 80x24 | ED 0-3, EL 0-2 |
   | CSI Insert/Delete (`csi/insert_delete/`) | 4 | 80x24 | ICH, DCH, IL, DL |
   | CSI Reports (`csi/reports/`) | 10+ | 80x24 | DA1/2/3, DSR, DECRQM |
   | CSI Modes (`csi/modes/`) | 12+ | 80x24, 97x33, 120x40 | DECOM, DECCOLM, alt screen, IRM, wrap |
   | CSI SGR (`csi/sgr/`) | 15+ | 80x24 | Attributes, 16/256/TrueColor, combos |
   | ESC (`esc/`) | 4+ | 80x24 | DECSC/RC, RIS, SCS, IND/RI |
-  | OSC (from workflows) | 3+ | 80x24 | Title, CWD, colors |
+  | OSC (`osc/`) | 4+ | 80x24 | Title (0/2), icon name (1), clipboard (52), color query (4/10/11) |
   | Workflows (`workflows/`) | 12+ | 80x24, 97x33, 120x40 | Mode combos, handshakes, real-world |
-  | **Total** | **80+** | | |
+  | **Total** | **84+** | | |
 
 - [ ] **Coverage gap analysis** — identify sequences NOT yet covered:
-  - DCS sequences (DECRQSS, Sixel, Kitty image protocol) — complex, may warrant future plan
-  - OSC sequences beyond title/CWD — color query/set (OSC 4/10/11), clipboard (OSC 52)
+  - OSC 7 (CWD) — handled by `RawInterceptor` in `oriterm_mux`, not `Term<T>`; tested at mux layer (`oriterm_mux/src/shell_integration/tests.rs::interceptor_osc7_sets_cwd`), not teseq harness
+  - DCS sequences (DECRQSS, Sixel, Kitty image protocol) — complex, may warrant future plan. Note: DECRQSS IS implemented in `status.rs` and could be added as a teseq scenario (it uses PtyWrite events)
+  - OSC color set (OSC 4/10/11 with color values, not just queries) — Section 06.4 covers queries only
   - Tab stops (HTS, TBC) — not tested in teseq yet
   - Soft terminal reset (DECSTR via CSI ! p) — not tested
   - Conformance level (DECSCL) — not tested
@@ -96,7 +97,7 @@ Build a comprehensive test matrix documenting every scenario.
 - [ ] **Graceful skip verification:**
   - Verify `reseq_available()` returns false when `reseq` is not installed
   - Verify all teseq tests print "reseq not installed, skipping" and return Ok (not panic/fail)
-  - Test by temporarily renaming `/usr/bin/reseq` and running `cargo test -p oriterm_core --test teseq`
+  - Test by temporarily renaming `/usr/bin/reseq` and running `timeout 150 cargo test -p oriterm_core --test teseq`
 
 - [ ] **CI considerations:**
   - Linux CI: `sudo apt install teseq` in CI setup (Debian/Ubuntu package available)
@@ -107,7 +108,7 @@ Build a comprehensive test matrix documenting every scenario.
 - [ ] **`test-all.sh` integration:**
   - Verify `./test-all.sh` runs teseq tests as part of `cargo test --workspace`
   - No modifications needed to `test-all.sh` — Cargo auto-discovers integration tests
-  - Verify: `timeout 150 ./test-all.sh` passes with teseq tests included
+  - Verify: `timeout 150 ./test-all.sh` passes with teseq tests included (mandatory timeout per CLAUDE.md)
 
 ---
 
@@ -136,10 +137,10 @@ Build a comprehensive test matrix documenting every scenario.
 
 - [ ] `./build-all.sh` green (all platforms)
 - [ ] `./clippy-all.sh` green (no warnings)
-- [ ] `./test-all.sh` green (all tests pass, including teseq)
-- [ ] `cargo test -p oriterm_core --test teseq` — all scenarios pass
-- [ ] `cargo test -p oriterm_core --test vttest` — no regressions in vttest
-- [ ] `cargo test -p oriterm_core` — no regressions in handler unit tests
+- [ ] `timeout 150 ./test-all.sh` green (all tests pass, including teseq)
+- [ ] `timeout 150 cargo test -p oriterm_core --test teseq` — all scenarios pass
+- [ ] `timeout 150 cargo test -p oriterm_core --test vttest` — no regressions in vttest
+- [ ] `timeout 150 cargo test -p oriterm_core` — no regressions in handler unit tests
 
 ---
 
@@ -151,13 +152,13 @@ Build a comprehensive test matrix documenting every scenario.
 
 ## 07.N Completion Checklist
 
-- [ ] Test matrix documented with scenario counts per family (80+ total)
+- [ ] Test matrix documented with scenario counts per family (84+ total)
 - [ ] Coverage gap analysis completed with priority ranking
 - [ ] Graceful skip verified on platform without reseq
 - [ ] CI integration documented
 - [ ] CLAUDE.md updated with teseq commands and paths
 - [ ] Scenario authoring guide in main.rs module docs
-- [ ] All builds green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`
+- [ ] All builds green: `./build-all.sh`, `./clippy-all.sh`, `timeout 150 ./test-all.sh`
 - [ ] No regressions in vttest or handler tests
 - [ ] Plan annotation cleanup: all temporary scaffolding removed from `.rs` files
 - [ ] **Plan sync** — update plan metadata:
@@ -168,4 +169,4 @@ Build a comprehensive test matrix documenting every scenario.
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** Complete test matrix showing 80+ scenarios across 10 protocol families, all passing. Coverage gaps documented and prioritized. CI graceful degradation verified. CLAUDE.md updated. `./test-all.sh` green with zero regressions across all existing test suites. The teseq framework is production-ready for ongoing scenario additions.
+**Exit Criteria:** Complete test matrix showing 84+ scenarios across 10 protocol families, all passing. Coverage gaps documented and prioritized. CI graceful degradation verified. CLAUDE.md updated. `timeout 150 ./test-all.sh` green with zero regressions across all existing test suites. The teseq framework is production-ready for ongoing scenario additions.

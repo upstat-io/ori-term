@@ -149,6 +149,22 @@ impl ImageCache {
         data.last_accessed = self.access_counter;
 
         let id = data.id;
+
+        // If replacing an existing image, subtract its old memory and
+        // remove stale placements (dimensions may have changed).
+        if let Some(old) = self.images.remove(&id) {
+            self.memory_used = self.memory_used.saturating_sub(old.data.len());
+            let before = self.placements.len();
+            self.placements.retain(|p| p.image_id != id);
+            if self.placements.len() != before {
+                log::info!(
+                    "image store: replaced id={}, removed {} stale placements",
+                    id.0,
+                    before - self.placements.len(),
+                );
+            }
+        }
+
         self.memory_used += size;
         self.images.insert(id, data);
         self.dirty = true;

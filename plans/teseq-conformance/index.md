@@ -1,3 +1,11 @@
+---
+reroute: true
+name: "Teseq Conformance"
+full_name: "Teseq Conformance: Human-Readable Escape Sequence Test Framework"
+status: active
+order: 1
+---
+
 # Teseq Conformance Index
 
 > **Maintenance Notice:** Update this index when adding/modifying sections.
@@ -25,7 +33,7 @@ grid_text, grid_chars, cursor_position, events, pty_writes
 insta, assert_snapshot, snapshots
 feed, vte::ansi::Processor, Term, EventListener
 oriterm_core/tests/teseq, main.rs, harness/
-pre_feed, post_feed, expect_outbound, ScenarioPhase
+pre_feed, setup, SetupConfig, TerminalConfig, ExpectConfig
 ```
 
 ---
@@ -53,7 +61,8 @@ DA, DA1, DA2, DA3, device_attributes, primary, secondary, tertiary
 DSR, device_status_report, cursor_position_report
 DECRQM, mode_report, DECRPM
 PtyWrite, Event::PtyWrite, outbound, response
-teseq, analysis, response_analysis, golden
+assert_pty_writes, assert_response_snapshot, analyze_response
+teseq, analysis, response_analysis, debug_aid
 scenarios/csi/reports/, da_handshake
 RecordedEvent, pty_writes, take_responses
 ```
@@ -102,8 +111,11 @@ alt_screen_roundtrip, 1049_enter_exit
 deccolm_transition, 132_to_80
 da_handshake, query_response
 shell_startup, editor, multi_step
-edge_case, malformed, partial, interleaved
-scenarios/workflows/
+OSC, osc_title, osc_icon_name, osc_clipboard, osc_color_query
+title, icon_name, clipboard, OSC_52, OSC_0, OSC_1, OSC_2, OSC_4, OSC_10, OSC_11
+edge_case, malformed, partial, interleaved, erase_with_attrs, rapid_mode_toggle
+zero_params, large_params, boundary
+scenarios/workflows/, scenarios/osc/
 ```
 
 ---

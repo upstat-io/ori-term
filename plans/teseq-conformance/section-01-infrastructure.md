@@ -10,7 +10,7 @@ success_criteria:
   - "reseq subprocess converts .teseq files to raw bytes; graceful skip when unavailable"
   - "Sidecar TOML parsing supports terminal config, pre_feed, and assertion expectations"
   - "insta snapshots capture grid state and events for golden comparison"
-  - "cargo test -p oriterm_core --test teseq passes with smoke scenario"
+  - "timeout 150 cargo test -p oriterm_core --test teseq passes with smoke scenario"
   - "Satisfies mission criteria: TeseqHarness exists, RecordedEvent enum, sidecar TOML, reseq subprocess"
 inspired_by:
   - "ori_term VtTestSession (oriterm_core/tests/vttest/session.rs) — PTY session + grid extraction + insta snapshots"
@@ -181,7 +181,7 @@ Structured event capture that preserves payload data, unlike the existing `Recor
       ColorRequest(usize),                  // closure stripped
       PtyWrite(String),                     // verbatim response bytes
       CursorBlinkingChange,
-      Cwd(String),
+      Cwd(String),                          // emitted by mux RawInterceptor, not Term<T>
       CommandComplete,                      // duration stripped (non-deterministic)
       MouseCursorDirty,
       ChildExit(i32),
@@ -230,18 +230,21 @@ Structured event capture that preserves payload data, unlike the existing `Recor
       /// Only PtyWrite events (response bytes).
       pub fn pty_writes(&self) -> Vec<String> { ... }
 
-      /// Clear all captured events.
-      pub fn clear(&mut self) { ... }
+      /// Clear all captured events (interior mutability via Arc<Mutex>).
+      pub fn clear(&self) { ... }
   }
 
   impl EventListener for RecordedListener {
       fn send_event(&self, event: Event) {
+          // EventListener::send_event takes Event by value; convert to reference for From impl.
           self.events.lock().unwrap().push(RecordedEvent::from(&event));
       }
   }
   ```
 
 - [ ] `RecordedListener` uses `Arc<Mutex<Vec<RecordedEvent>>>` — same concurrency pattern as existing `RecordingListener` but with structured data instead of strings.
+
+- [ ] **Sync mechanism:** The `From<&Event> for RecordedEvent` impl uses an exhaustive `match` on `Event`. When a new `Event` variant is added to `oriterm_core::event::Event`, the compiler will produce a non-exhaustive match error in `events.rs`, forcing the implementer to add a corresponding `RecordedEvent` variant. This is compile-time enforcement — no separate sync test needed. Add a comment above the `From` impl documenting this: `// Exhaustive match ensures RecordedEvent stays in sync with Event.`
 
 ---
 
@@ -319,11 +322,14 @@ The core runner: constructs `Term<RecordedListener>`, applies setup, feeds bytes
       pub events: Vec<RecordedEvent>,
       pub cols: usize,
       pub rows: usize,
+      pub scrollback_len: usize,  // from RenderableContent::scrollback_len (for ED 3 validation)
   }
   ```
 
 - [ ] Implement `TeseqHarness`:
   ```rust
+  /// Integration tests must use fully qualified `vte::ansi::Processor`
+  /// (not a `use` re-export from `oriterm_core` internals).
   pub struct TeseqHarness {
       term: Term<RecordedListener>,
       proc: vte::ansi::Processor,
@@ -338,7 +344,7 @@ The core runner: constructs `Term<RecordedListener>`, applies setup, feeds bytes
           let listener = RecordedListener::new();
           let theme = match spec.terminal.theme.as_str() {
               "light" => Theme::Light,
-              _ => Theme::default(),
+              _ => Theme::default(),  // Dark (default) or Unknown — both use dark palette
           };
           let mut term = Term::new(
               spec.terminal.rows,
@@ -362,6 +368,10 @@ The core runner: constructs `Term<RecordedListener>`, applies setup, feeds bytes
       }
 
       /// Feed the .teseq scenario through the terminal.
+      ///
+      /// Takes the path explicitly (same as `from_scenario`) because the harness
+      /// does not store the path — keeping it stateless avoids lifetime issues.
+      /// Callers pass the same `&Path` to both `from_scenario` and `run`.
       pub fn run(&mut self, teseq_path: &Path) -> ScenarioOutcome {
           let bytes = compile_teseq(teseq_path)
               .expect("reseq compilation failed");
@@ -377,17 +387,19 @@ The core runner: constructs `Term<RecordedListener>`, applies setup, feeds bytes
           let content = self.term.renderable_content();
           let grid_text = grid_text_from_content(&content);
           let grid_chars = grid_chars_from_content(&content);
-          let cursor = self.term.grid().cursor();
 
+          // Use RenderableCursor from content (single source of truth)
+          // rather than querying grid().cursor() separately.
           ScenarioOutcome {
               grid_text,
               grid_chars,
               cells: content.cells.clone(),  // preserve for attribute inspection
-              cursor_col: cursor.col().0,
-              cursor_line: cursor.line(),
+              cursor_col: content.cursor.column.0,
+              cursor_line: content.cursor.line,
               events: self.listener.events(),
               cols: content.cols,
               rows: content.lines,
+              scrollback_len: content.scrollback_len,
           }
       }
   }
@@ -397,6 +409,7 @@ The core runner: constructs `Term<RecordedListener>`, applies setup, feeds bytes
   - Converts escape notation like `\x1b[?40h` to raw bytes
   - Handles `\x##` hex escapes, `\e` or `\x1b` for ESC, `\n`, `\r`, `\t`
   - Used for `pre_feed` strings in sidecar TOML
+  - **TOML escaping note:** TOML strings use `\\` for literal backslash. So `pre_feed = ["\\x1b[?40h"]` in TOML yields the Rust string `\x1b[?40h`, which `parse_escape_string` then converts to raw bytes `[0x1b, 0x5b, 0x3f, 0x34, 0x30, 0x68]`. This double-escape layer is inherent to TOML — document it in the scenario authoring guide (Section 07.3).
 
 - [ ] Implement `grid_text_from_content()` and `grid_chars_from_content()`:
   - Same logic as `VtTestSession::grid_text()` in `session.rs:187-207`
@@ -457,6 +470,10 @@ Assertion helpers that integrate with insta and provide convenience methods for 
       if let Some(cursor) = &spec.expect.cursor {
           assert_cursor(outcome, cursor.col, cursor.line);
       }
+      // Event name matching: each `expected_event` string is matched against the
+      // Debug output of RecordedEvent variants. This uses `contains()` for
+      // flexibility (e.g., "Bell" matches "Bell", "Title" matches "Title(...)").
+      // For exact payload matching, use dedicated assertion helpers instead.
       for expected_event in &spec.expect.events {
           assert!(
               outcome.events.iter().any(|e| format!("{e:?}").contains(expected_event)),
@@ -464,6 +481,18 @@ Assertion helpers that integrate with insta and provide convenience methods for 
               outcome.events
           );
       }
+  }
+  ```
+
+- [ ] Implement scrollback assertion:
+  ```rust
+  /// Assert scrollback buffer is empty (e.g., after ED 3).
+  pub fn assert_scrollback_empty(outcome: &ScenarioOutcome) {
+      assert_eq!(
+          outcome.scrollback_len, 0,
+          "expected empty scrollback, got {} lines",
+          outcome.scrollback_len
+      );
   }
   ```
 
@@ -517,15 +546,17 @@ Wire everything together with a smoke test that proves the full pipeline works.
   ```
   |Hello|
   . BEL/^G
-  | World|.
+  | World|
   ```
+  Produces raw bytes: `Hello\x07 World` (no trailing LF — no `.` after the closing `|`).
 
 - [ ] Create smoke scenario sidecar `scenarios/c0/bel.toml`:
   ```toml
   [expect]
-  cursor = { col = 12, line = 0 }
+  cursor = { col = 11, line = 0 }
   events = ["Bell"]
   ```
+  Cursor: "Hello" (5 chars) + BEL (no movement) + " World" (6 chars) = col 11, line 0.
 
 - [ ] Create smoke test in `main.rs`:
   ```rust
@@ -542,12 +573,12 @@ Wire everything together with a smoke test that proves the full pipeline works.
 
       harness::assert_grid_snapshot(&outcome, "smoke_bel_grid");
       harness::assert_event_snapshot(&outcome, "smoke_bel_events");
-      harness::assert_cursor(&outcome, 12, 0);
+      harness::assert_cursor(&outcome, 11, 0);
   }
   ```
 
-- [ ] Verify: `cargo test -p oriterm_core --test teseq` compiles and the smoke test passes
-- [ ] Verify: `./build-all.sh` and `./clippy-all.sh` and `./test-all.sh` all pass
+- [ ] Verify: `timeout 150 cargo test -p oriterm_core --test teseq` compiles and the smoke test passes
+- [ ] Verify: `./build-all.sh` and `./clippy-all.sh` and `timeout 150 ./test-all.sh` all pass
 
 ---
 
@@ -570,12 +601,12 @@ Wire everything together with a smoke test that proves the full pipeline works.
 - [ ] `TeseqHarness::from_scenario()` constructs Term with spec config and applies pre_feed
 - [ ] `TeseqHarness::run()` feeds compiled bytes and returns `ScenarioOutcome`
 - [ ] `grid_text_from_content()` and `grid_chars_from_content()` match VtTestSession behavior
-- [ ] Assertion helpers work: `assert_grid_snapshot`, `assert_event_snapshot`, `assert_cursor`
+- [ ] Assertion helpers work: `assert_grid_snapshot`, `assert_event_snapshot`, `assert_cursor`, `assert_scrollback_empty`
 - [ ] Smoke test (`smoke_bel`) passes end-to-end: `.teseq` → reseq → bytes → Term → snapshot assertion
 - [ ] `toml` and `serde` added to dev-dependencies in `oriterm_core/Cargo.toml`
 - [ ] No new warnings from `./clippy-all.sh`
 - [ ] `./build-all.sh` green
-- [ ] `./test-all.sh` green — no regressions
+- [ ] `timeout 150 ./test-all.sh` green — no regressions
 - [ ] Plan annotation cleanup: no temporary scaffolding in `.rs` files
 - [ ] All intermediate TPR checkpoint findings resolved
 - [ ] **Plan sync** — update plan metadata:
@@ -585,4 +616,4 @@ Wire everything together with a smoke test that proves the full pipeline works.
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** `cargo test -p oriterm_core --test teseq -- smoke_bel` passes. The teseq harness loads a `.teseq` scenario, compiles it via `reseq`, feeds it through `Term<RecordedListener>`, captures grid state and events, and validates against insta golden snapshots — all in a single test function. Zero regressions in `./test-all.sh`.
+**Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- smoke_bel` passes. The teseq harness loads a `.teseq` scenario, compiles it via `reseq`, feeds it through `Term<RecordedListener>`, captures grid state and events, and validates against insta golden snapshots — all in a single test function. Zero regressions in `timeout 150 ./test-all.sh`.

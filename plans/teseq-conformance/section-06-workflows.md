@@ -10,9 +10,10 @@ success_criteria:
   - "DECCOLM 80→132→80 transition workflow validates grid resize chain"
   - "DA handshake workflow validates query→response→continuation sequence"
   - "Shell prompt simulation workflow exercises common shell escape sequence patterns"
-  - "Edge case scenarios: malformed sequences, rapid mode toggles, boundary conditions"
+  - "OSC scenarios validate title (0/2), icon name (1), clipboard (52), color query (4/10/11)"
+  - "Edge case scenarios: rapid mode toggles, boundary conditions, erase-with-attributes cross-cutting"
   - "Workflow scenarios run at 80x24, 97x33, and 120x40"
-  - "Satisfies mission criteria: multi-sequence workflow coverage"
+  - "Satisfies mission criteria: multi-sequence workflow coverage and OSC coverage"
 inspired_by:
   - "Alacritty ref tests (alacritty_terminal/tests/ref/) — real-world recordings (tmux_git_log, vim_simple_edit)"
   - "ori_term vttest integration — multi-step menu navigation as workflow testing"
@@ -55,9 +56,10 @@ sections:
 - [ ] 4+ mode combination workflows pass at multiple sizes
 - [ ] 2+ query-response workflows validate full handshake sequences
 - [ ] 3+ real-world pattern workflows exercise common terminal usage
-- [ ] 3+ edge case scenarios test boundary conditions
-- [ ] 12+ total workflow scenarios pass
-- [ ] Satisfies mission criteria for multi-sequence workflow coverage
+- [ ] 4+ OSC scenarios validate title, icon name, clipboard, color query
+- [ ] 4+ edge case scenarios test boundary conditions and cross-cutting concerns
+- [ ] 15+ total workflow + OSC scenarios pass
+- [ ] Satisfies mission criteria for multi-sequence workflow coverage and OSC coverage
 
 **Context:** Existing test surfaces cover isolated sequences (handler tests) and black-box vttest conformance (vttest tests). The gap is *authored multi-sequence interactions* — scenarios where you deliberately construct a sequence of operations and verify the cumulative effect. This is where real bugs hide: mode A works, mode B works, but A→B→A produces unexpected state.
 
@@ -174,8 +176,9 @@ Scenarios that mimic common terminal application patterns.
 
 - [ ] **`real_shell_prompt.teseq`** — Typical shell prompt escape sequence pattern:
   ```
-  : Esc ] 0 ; user@host:~ Esc \
-  : Esc ] 7 ; file:///home/user Esc \
+  : Esc ]
+  |0;user@host:~|
+  : Esc \
   : Esc [ 1 ; 32 m
   |user@host|
   : Esc [ 0 m
@@ -185,7 +188,8 @@ Scenarios that mimic common terminal application patterns.
   : Esc [ 0 m
   |$ |
   ```
-  Validates: OSC title set, OSC CWD set, colored prompt rendered correctly.
+  Note: OSC content uses `|...|` text lines, not inline on `: Esc` control lines (spaces on `: Esc` lines are stripped by reseq). OSC 7 (CWD) is intentionally omitted — it is handled by `RawInterceptor` in `oriterm_mux`, not `Term<T>`, so it would be a silent no-op here.
+  Validates: OSC title set, colored prompt with bold+color attributes rendered correctly.
 
 - [ ] **`real_clear_and_redraw.teseq`** — Application clears screen and redraws:
   ```
@@ -215,33 +219,51 @@ Scenarios that mimic common terminal application patterns.
 
 **File(s):** `oriterm_core/tests/teseq/scenarios/osc/*.teseq`, `oriterm_core/tests/teseq/osc.rs`
 
-Dedicated OSC scenarios covering title, CWD, clipboard, and color queries. These satisfy the mission success criteria for OSC coverage.
+Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (OSC 52), and color queries (OSC 4/10/11). OSC 7 (CWD) is tested at the mux layer, not here (see note below).
 
 - [ ] **`osc_title.teseq`** — Set window title via OSC 0 and OSC 2:
   ```
-  : Esc ] 0 ; My Terminal Title Esc \
-  : Esc ] 2 ; Window Title Only Esc \
+  : Esc ]
+  |0;My Terminal Title|
+  : Esc \
+  : Esc ]
+  |2;Window Title Only|
+  : Esc \
   ```
-  Assert: `RecordedEvent::Title("My Terminal Title")`, then `RecordedEvent::Title("Window Title Only")`.
+  Note: OSC text content MUST be in `|...|` delimiters (teseq text lines), not on `: Esc` control lines. The `: Esc` lines strip spaces between tokens.
+  Assert: OSC 0 emits BOTH `RecordedEvent::Title("My Terminal Title")` AND `RecordedEvent::IconName("My Terminal Title")` (per VTE dispatch: OSC 0 sets both title and icon name). OSC 2 emits only `RecordedEvent::Title("Window Title Only")`. Total: 3 events (Title, IconName, Title).
 
-- [ ] **`osc_cwd.teseq`** — Set current working directory via OSC 7:
+- [ ] **`osc_icon_name.teseq`** — Set icon name via OSC 1:
   ```
-  : Esc ] 7 ; file:///home/user/project Esc \
+  : Esc ]
+  |1;My Icon Name|
+  : Esc \
   ```
-  Assert: `RecordedEvent::Cwd("/home/user/project")`.
+  Assert: `RecordedEvent::IconName("My Icon Name")`.
+
+  **OSC 7 (CWD) is NOT tested here.** OSC 7 is handled by `RawInterceptor` in `oriterm_mux`, not by `Term<T>`. The VTE trait method `set_working_directory` is a default no-op on `Term<T>` — the teseq harness feeds bytes only through `vte::ansi::Processor`, so `Event::Cwd` will never be emitted. CWD is already tested at the mux layer (`oriterm_mux/src/shell_integration/tests.rs::interceptor_osc7_sets_cwd`). Implementing `set_working_directory` on `Term<T>` solely for this test would be a workaround that duplicates the mux's CWD responsibility, violating the crate boundary contract.
 
 - [ ] **`osc_clipboard.teseq`** — Clipboard store via OSC 52:
   ```
-  : Esc ] 52 ; c ; SGVsbG8= Esc \
+  : Esc ]
+  |52;c;SGVsbG8=|
+  : Esc \
   ```
   Assert: `RecordedEvent::ClipboardStore(Clipboard, "Hello")` (base64-decoded).
 
-- [ ] **`osc_color_query.teseq`** — Query foreground/background colors via OSC 10/11:
+- [ ] **`osc_color_query.teseq`** — Query foreground/background/palette colors via OSC 4/10/11:
   ```
-  : Esc ] 10 ; ? Esc \
-  : Esc ] 11 ; ? Esc \
+  : Esc ]
+  |4;1;?|
+  : Esc \
+  : Esc ]
+  |10;?|
+  : Esc \
+  : Esc ]
+  |11;?|
+  : Esc \
   ```
-  Assert: `RecordedEvent::ColorRequest` events emitted.
+  Assert: `RecordedEvent::ColorRequest(1)` for palette index 1 (red, OSC 4), `RecordedEvent::ColorRequest(256)` for foreground (OSC 10, `NamedColor::Foreground as usize = 256`), and `RecordedEvent::ColorRequest(257)` for background (OSC 11, `NamedColor::Background as usize = 257`). The closure is stripped by `RecordedEvent`.
 
 - [ ] Register family module `osc.rs` in `main.rs`.
 
@@ -284,6 +306,16 @@ Boundary conditions and unusual sequences.
   ```
   Validates: Large params clamped to grid boundaries without panic.
 
+- [ ] **`edge_erase_with_attrs.teseq`** — Erase inherits cursor template background:
+  ```
+  |AAAAAAAAAA|
+  : Esc [ 1 ; 5 H
+  : Esc [ 42 m
+  : Esc [ 0 K
+  : Esc [ 0 m
+  ```
+  Validates: EL 0 (erase right) at col 4 with green background active — erased cells (cols 4-79) should have green bg from the cursor template. Cells before the cursor (cols 0-3) retain original (default) bg. Requires cell attribute inspection (Section 05 helpers). This is the cross-cutting erase+SGR test that Section 02 basic erase scenarios defer.
+
 ---
 
 ## 06.R Third Party Review Findings
@@ -297,15 +329,19 @@ Boundary conditions and unusual sequences.
 - [ ] Mode combination workflows: scroll+origin, DECCOLM lifecycle, alt screen+modes (3+ scenarios)
 - [ ] Query-response workflows: DA handshake, cursor tracking DSR (2+ scenarios)
 - [ ] Real-world pattern workflows: shell prompt, clear+redraw, status bar (3+ scenarios)
-- [ ] Edge case scenarios: rapid toggles, zero params, large params (3+ scenarios)
+- [ ] OSC scenarios: title (0/2), icon name (1), clipboard (52), color query (4/10/11) (4+ scenarios)
+- [ ] Edge case scenarios: rapid toggles, zero params, large params, erase-with-attrs (4+ scenarios)
 - [ ] Workflow scenarios run at 80x24, 97x33, and 120x40
-- [ ] 12+ total workflow scenarios pass
+- [ ] 15+ total workflow + OSC scenarios pass
 - [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `./test-all.sh` green — no regressions
+- [ ] `timeout 150 ./test-all.sh` green — no regressions
 - [ ] Plan annotation cleanup
 - [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata
+- [ ] **Plan sync** — update plan metadata:
+  - [ ] This section's frontmatter `status` → `complete`
+  - [ ] `00-overview.md` Quick Reference table updated
+  - [ ] `index.md` section status updated
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** `cargo test -p oriterm_core --test teseq -- workflows` passes with 12+ workflow scenarios. Multi-sequence interactions, query-response handshakes, real-world patterns, and edge cases all validated. Mode combination workflows run at 3 terminal sizes. Zero regressions.
+**Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- workflows` and `timeout 150 cargo test -p oriterm_core --test teseq -- osc` pass with 15+ workflow + OSC scenarios. Multi-sequence interactions, query-response handshakes, real-world patterns, OSC events, and edge cases all validated. Mode combination workflows run at 3 terminal sizes. Zero regressions.

@@ -90,22 +90,25 @@ fn ctrl_c() {
 
 #[test]
 fn ctrl_c_win32_input_mode() {
+    // Win32 input mode is parsed but NOT used for encoding �� Ctrl+C goes
+    // through the legacy path as raw 0x03 for reliable ConPTY delivery.
     let r = enc(
         Key::Character("c".into()),
         Modifiers::CONTROL,
         win32_input_mode(),
     );
-    assert_eq!(r, b"\x1b[67;46;3;1;8;1_".to_vec());
+    assert_eq!(r, vec![0x03]);
 }
 
 #[test]
 fn ctrl_c_release_win32_input_mode() {
+    // Key releases produce empty output in legacy mode (no encoding).
     let r = enc_release(
         Key::Character("c".into()),
         Modifiers::CONTROL,
         win32_input_mode(),
     );
-    assert_eq!(r, b"\x1b[67;46;0;0;8;1_".to_vec());
+    assert_eq!(r, Vec::<u8>::new());
 }
 
 #[test]
