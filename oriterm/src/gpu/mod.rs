@@ -25,21 +25,31 @@ pub(crate) mod window_renderer;
 pub(crate) use extract::{
     extract_frame_from_snapshot, extract_frame_from_snapshot_into, snapshot_palette,
 };
-pub(crate) use frame_input::{
-    FrameInput, FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize,
-};
+pub use frame_input::{FrameInput, FramePalette, ViewportSize};
+pub(crate) use frame_input::{FrameSearch, FrameSelection, MarkCursorOverride};
 pub(crate) use pane_cache::PaneRenderCache;
 pub(crate) use pipelines::GpuPipelines;
 pub(crate) use state::GpuState;
 pub(crate) use transparency::apply_transparency;
 pub(crate) use window_renderer::{SurfaceError, WindowRenderer};
 
+// Benchmark-facing re-exports: types needed by criterion benchmarks in
+// `oriterm/benches/`. Kept as `pub` so the benchmark binary (a separate
+// compilation unit) can access them through `oriterm::gpu::`.
+pub use atlas::{AtlasEntry, AtlasKind};
+pub use instance_writer::{INSTANCE_SIZE, InstanceWriter};
+pub use prepare::{AtlasLookup, ShapedFrame, prepare_frame_shaped_into};
+pub use prepared_frame::PreparedFrame;
+
+// Font types needed by benchmarks and `AtlasLookup` implementors.
+pub use crate::font::{CellMetrics, FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
+
 /// Decode a single sRGB byte (0–255) to a linear-light `f32` (0.0–1.0).
 ///
 /// Uses the IEC 61966-2-1 piecewise transfer function. Values at or below
 /// the 0.04045 threshold are scaled linearly; above it the standard 2.4
 /// power curve is applied.
-pub(crate) fn srgb_to_linear(srgb_byte: u8) -> f32 {
+pub fn srgb_to_linear(srgb_byte: u8) -> f32 {
     let s = f32::from(srgb_byte) / 255.0;
     srgb_f32_to_linear(s)
 }
@@ -48,7 +58,7 @@ pub(crate) fn srgb_to_linear(srgb_byte: u8) -> f32 {
 ///
 /// Same transfer function as [`srgb_to_linear`] but for float inputs
 /// (e.g. UI Color components stored as sRGB f32).
-pub(crate) fn srgb_f32_to_linear(s: f32) -> f32 {
+pub fn srgb_f32_to_linear(s: f32) -> f32 {
     if s <= 0.04045 {
         s / 12.92
     } else {
