@@ -2057,9 +2057,25 @@ fn colors_from_theme_has_bar_border() {
 
 use crate::testing::{WidgetTestHarness, scene_to_snapshot};
 
+/// Fixed controls zone width for golden tests (matches Linux/macOS value).
+///
+/// Platform-specific `CONTROLS_ZONE_WIDTH` differs between Windows (138px)
+/// and Linux/macOS (112px), causing snapshot mismatches. Golden tests use
+/// this fixed value so snapshots are identical on all platforms.
+const GOLDEN_CONTROLS_ZONE_WIDTH: f32 = 112.0;
+
+/// Platform-independent metrics for golden snapshot tests.
+fn golden_metrics() -> TabBarMetrics {
+    TabBarMetrics {
+        controls_zone_width: GOLDEN_CONTROLS_ZONE_WIDTH,
+        ..TabBarMetrics::DEFAULT
+    }
+}
+
 /// Creates a tab bar with `n` tabs named "Tab 1", "Tab 2", ... and renders it.
 fn render_tab_bar(n: usize, window_width: f32) -> String {
-    let mut widget = TabBarWidget::new(window_width);
+    let metrics = golden_metrics();
+    let mut widget = TabBarWidget::with_theme_and_metrics(window_width, &UiTheme::dark(), metrics);
     let tabs: Vec<TabEntry> = (1..=n).map(|i| TabEntry::new(format!("Tab {i}"))).collect();
     widget.set_tabs(tabs);
     widget.set_active_index(0);
@@ -2088,7 +2104,8 @@ fn golden_many_tabs_narrow_window() {
 
 #[test]
 fn golden_active_tab_switch() {
-    let mut widget = TabBarWidget::new(800.0);
+    let metrics = golden_metrics();
+    let mut widget = TabBarWidget::with_theme_and_metrics(800.0, &UiTheme::dark(), metrics);
     widget.set_tabs(vec![
         TabEntry::new("Alpha"),
         TabEntry::new("Beta"),
