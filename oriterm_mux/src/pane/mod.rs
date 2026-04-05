@@ -87,6 +87,8 @@ pub struct PaneParts {
     pub io_handle: PaneIoHandle,
     /// Shared selection-dirty flag (passed to IO thread).
     pub io_selection_dirty: Arc<AtomicBool>,
+    /// Write-stall detection flag (shared with writer thread).
+    pub write_stalled: Arc<AtomicBool>,
 }
 
 /// Owns all per-shell-session state: IO thread handle, PTY handles, threads.
@@ -160,6 +162,18 @@ pub struct Pane {
     /// Allows `is_search_active()` to work without locking the terminal
     /// or requiring a reply channel to the IO thread.
     search_active: Arc<AtomicBool>,
+    /// Write-stall detection flag (shared with writer thread).
+    ///
+    /// Set by the writer thread before a potentially-blocking `write()`,
+    /// cleared after. The main thread checks this when the user presses
+    /// Ctrl+C — if stalled, it sends SIGINT directly to the child process
+    /// group, bypassing the blocked PTY writer.
+    write_stalled: Arc<AtomicBool>,
+    /// Child process ID for direct signal delivery.
+    ///
+    /// Used to send SIGINT/SIGTERM to the child process group when the
+    /// PTY writer is stalled (kernel buffer full, child not reading stdin).
+    child_pid: Option<u32>,
 }
 
 impl Pane {
@@ -167,6 +181,7 @@ impl Pane {
     ///
     /// Called by `LocalDomain::spawn_pane` after setting up the PTY pipeline.
     pub fn from_parts(parts: PaneParts) -> Self {
+        let child_pid = parts.pty.process_id();
         Self {
             id: parts.id,
             domain_id: parts.domain_id,
@@ -188,6 +203,8 @@ impl Pane {
             mark_cursor: None,
             search: None,
             search_active: Arc::new(AtomicBool::new(false)),
+            write_stalled: parts.write_stalled,
+            child_pid,
         }
     }
 
@@ -374,6 +391,90 @@ impl Pane {
     pub fn write_input(&self, bytes: &[u8]) {
         self.notifier.notify(bytes);
     }
+
+    /// Whether the PTY writer thread is blocked on a `write()` call.
+    ///
+    /// When `true`, the kernel PTY buffer is full (the child isn't reading
+    /// stdin). Keyboard input queued via [`write_input`](Self::write_input)
+    /// won't reach the child until the buffer drains. Use
+    /// [`signal_child`](Self::signal_child) to send SIGINT directly.
+    pub fn is_write_stalled(&self) -> bool {
+        self.write_stalled.load(Ordering::Acquire)
+    }
+
+    /// Send a signal directly to the child process group.
+    ///
+    /// Bypasses the PTY writer when it's stalled. On Unix, sends the signal
+    /// to the process group (kills the foreground job, e.g. `yes`). On
+    /// Windows, uses `GenerateConsoleCtrlEvent` for `CTRL_C_EVENT`.
+    ///
+    /// Returns `true` if the signal was sent, `false` if the child PID is
+    /// unknown or the platform doesn't support direct signal delivery.
+    pub fn signal_child(&self, signal: Signal) -> bool {
+        let Some(pid) = self.child_pid else {
+            return false;
+        };
+        send_signal_to_child(pid, signal)
+    }
+}
+
+/// Cross-platform signal type for direct child process signaling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signal {
+    /// Interrupt (Ctrl+C) — `SIGINT` on Unix, `CTRL_C_EVENT` on Windows.
+    Interrupt,
+}
+
+/// Send a signal to a child process group.
+///
+/// On Unix, uses `kill(-pid, sig)` to signal the entire process group.
+/// On Windows, uses `GenerateConsoleCtrlEvent` for Ctrl+C delivery.
+fn send_signal_to_child(pid: u32, signal: Signal) -> bool {
+    send_signal_platform(pid, signal)
+}
+
+#[cfg(unix)]
+#[allow(unsafe_code, reason = "libc::kill requires unsafe FFI call")]
+fn send_signal_platform(pid: u32, signal: Signal) -> bool {
+    let sig = match signal {
+        Signal::Interrupt => libc::SIGINT,
+    };
+    // Negative PID sends to the entire process group.
+    // SAFETY: kill() is a standard POSIX syscall. Negative PID targets the
+    // process group. The PID comes from portable-pty's Child::process_id().
+    let result = unsafe { libc::kill(-(pid as libc::pid_t), sig) };
+    if result != 0 {
+        log::warn!(
+            "kill(-{pid}, {sig}) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        return false;
+    }
+    true
+}
+
+#[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "GenerateConsoleCtrlEvent requires unsafe FFI call"
+)]
+fn send_signal_platform(pid: u32, signal: Signal) -> bool {
+    use windows_sys::Win32::System::Console::{CTRL_C_EVENT, GenerateConsoleCtrlEvent};
+
+    let event = match signal {
+        Signal::Interrupt => CTRL_C_EVENT,
+    };
+    // SAFETY: GenerateConsoleCtrlEvent is a standard Win32 console API.
+    // The PID comes from portable-pty's Child::process_id().
+    let result = unsafe { GenerateConsoleCtrlEvent(event, pid) };
+    if result == 0 {
+        log::warn!(
+            "GenerateConsoleCtrlEvent({event}, {pid}) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]

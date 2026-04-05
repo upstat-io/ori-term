@@ -158,7 +158,8 @@ impl PtyHandle {
     }
 
     /// Get the child process ID, if available.
-    #[allow(dead_code, reason = "used when pane reports process info to the UI")]
+    ///
+    /// Used for direct signal delivery when the PTY writer is stalled.
     pub fn process_id(&self) -> Option<u32> {
         self.child.process_id()
     }

@@ -286,6 +286,16 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
+    fn is_write_stalled(&self, pane_id: PaneId) -> bool {
+        self.panes.get(&pane_id).is_some_and(Pane::is_write_stalled)
+    }
+
+    fn signal_child(&self, pane_id: PaneId, signal: crate::Signal) -> bool {
+        self.panes
+            .get(&pane_id)
+            .is_some_and(|p| p.signal_child(signal))
+    }
+
     fn set_bell(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.set_bell();

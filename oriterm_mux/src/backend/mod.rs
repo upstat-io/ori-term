@@ -179,6 +179,22 @@ pub trait MuxBackend {
     /// In daemon mode, sends a fire-and-forget `Input` PDU to the daemon.
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]);
 
+    /// Whether the PTY writer thread for a pane is blocked on a write.
+    ///
+    /// When `true`, the kernel PTY buffer is full and keyboard input
+    /// queued via [`send_input`](Self::send_input) won't reach the child.
+    /// Use [`signal_child`](Self::signal_child) to send Ctrl+C directly.
+    fn is_write_stalled(&self, _pane_id: PaneId) -> bool {
+        false
+    }
+
+    /// Send a signal directly to a pane's child process group.
+    ///
+    /// Bypasses the PTY writer when stalled. Returns `true` if sent.
+    fn signal_child(&self, _pane_id: PaneId, _signal: crate::Signal) -> bool {
+        false
+    }
+
     // -- Pane metadata --
 
     /// Current working directory of a pane (from OSC 7).
