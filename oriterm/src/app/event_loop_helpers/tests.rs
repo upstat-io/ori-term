@@ -12,7 +12,6 @@ fn idle_input() -> ControlFlowInput {
         blinking_active: false,
         next_blink_change: now + Duration::from_secs(1),
         next_text_blink_change: now + Duration::from_secs(1),
-        budget_remaining: Duration::from_millis(16),
         now,
         scheduler_wake: None,
     }
@@ -30,17 +29,16 @@ fn idle_returns_text_blink_wait() {
 }
 
 #[test]
-fn still_dirty_waits_for_budget() {
-    // BUG-11-1 fix: dirty windows always respect frame budget to prevent
-    // event loop starvation during sustained PTY output flooding.
+fn still_dirty_budget_not_elapsed_waits() {
+    // BUG-11-1 fix: when dirty but budget hasn't elapsed, use Wait (not
+    // WaitUntil) so winit truly sleeps and processes keyboard events on
+    // the next MuxWakeup. WaitUntil is broken on Windows/WSL2.
     let mut input = idle_input();
     input.still_dirty = true;
     input.budget_elapsed = false;
-    input.budget_remaining = Duration::from_millis(8);
 
     let result = compute_control_flow(&input);
-    let expected = ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(8));
-    assert_eq!(result, expected);
+    assert_eq!(result, ControlFlowDecision::Wait);
 }
 
 #[test]

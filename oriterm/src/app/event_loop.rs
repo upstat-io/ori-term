@@ -452,7 +452,6 @@ impl ApplicationHandler<TermEvent> for App {
         // Decide ControlFlow via pure function (testable without winit).
         let still_dirty = self.is_any_window_dirty();
         let has_animations = self.has_active_animations();
-        let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {
             still_dirty,
@@ -461,7 +460,6 @@ impl ApplicationHandler<TermEvent> for App {
             blinking_active: self.blinking_active,
             next_blink_change: self.cursor_blink.next_change(),
             next_text_blink_change: self.text_blink.next_change(),
-            budget_remaining: remaining,
             now,
             scheduler_wake: None,
         };
