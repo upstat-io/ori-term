@@ -108,6 +108,44 @@ sections:
   |restored|
   ```
 
+- [ ] **`il_in_scroll_region.teseq`** — IL within DECSTBM, verify lines outside region do not shift:
+  ```
+  |Line 1|
+  . CR/^M LF/^J
+  |Line 2|
+  . CR/^M LF/^J
+  |Line 3|
+  . CR/^M LF/^J
+  |Line 4|
+  . CR/^M LF/^J
+  |Line 5|
+  . CR/^M LF/^J
+  |Line 6|
+  : Esc [ 2 ; 5 r
+  : Esc [ 3 ; 1 H
+  : Esc [ 1 L
+  ```
+  Grid snapshot: Row 0 "Line 1" unchanged (above region). Row 1 "Line 2" unchanged (region top). Row 2 blank (inserted). Row 3 "Line 3" (shifted down). Row 4 "Line 4" (shifted down). Row 5 "Line 6" unchanged (below region — Line 5 pushed out of region bottom). Validates IL only shifts within DECSTBM scroll region boundaries. <!-- unblocks:02.R -->
+
+- [ ] **`dl_in_scroll_region.teseq`** — DL within DECSTBM, verify lines outside region do not shift:
+  ```
+  |Line 1|
+  . CR/^M LF/^J
+  |Line 2|
+  . CR/^M LF/^J
+  |Line 3|
+  . CR/^M LF/^J
+  |Line 4|
+  . CR/^M LF/^J
+  |Line 5|
+  . CR/^M LF/^J
+  |Line 6|
+  : Esc [ 2 ; 5 r
+  : Esc [ 3 ; 1 H
+  : Esc [ 1 M
+  ```
+  Grid snapshot: Row 0 "Line 1" unchanged (above region). Row 1 "Line 2" unchanged (region top). Row 2 "Line 4" (shifted up from row 3). Row 3 "Line 5" (shifted up). Row 4 blank (new blank at region bottom). Row 5 "Line 6" unchanged (below region). Validates DL only shifts within DECSTBM scroll region boundaries. <!-- unblocks:02.R -->
+
 - [ ] Multi-size variants for `origin_scroll_basic` and `origin_scroll_overflow` with separate `.toml` sidecars for 97x33 and 120x40. Each variant adjusts the scroll region in the `.teseq` to proportionally fit the new terminal size (e.g., 97x33 uses `DECSTBM 8;28` instead of `5;20`) and the `.toml` sets `[terminal] cols = 97 rows = 33`. Grid snapshots are size-specific — generate new goldens for each size.
 
 ---
