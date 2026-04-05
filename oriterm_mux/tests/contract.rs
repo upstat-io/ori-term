@@ -165,12 +165,21 @@ impl Drop for TestDaemon {
 // Factory functions
 // ---------------------------------------------------------------------------
 
+/// Build a `SpawnConfig` for tests with history suppressed so fence commands
+/// don't pollute the user's `~/.zsh_history`.
+fn test_spawn_config() -> SpawnConfig {
+    SpawnConfig {
+        env: vec![("HISTFILE".into(), "/dev/null".into())],
+        ..SpawnConfig::default()
+    }
+}
+
 /// Create a `TestContext` backed by `EmbeddedMux`.
 fn embedded_context() -> TestContext {
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
 
-    let config = SpawnConfig::default();
+    let config = test_spawn_config();
     let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
     // Wait for the shell to be ready by sending a fence command and
@@ -191,7 +200,7 @@ fn daemon_context() -> TestContext {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let config = SpawnConfig::default();
+    let config = test_spawn_config();
     let pane_id = client.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
     // Wait for the shell to be ready by sending a fence command and

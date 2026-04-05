@@ -1,0 +1,7 @@
+|AAAAAAAAAA|
+. CR/^M LF/^J
+|BBBBBBBBBB|
+. CR/^M LF/^J
+|CCCCCCCCCC|
+: Esc [ 2 ; 5 H
+: Esc [ 1 J
