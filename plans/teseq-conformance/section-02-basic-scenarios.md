@@ -18,7 +18,7 @@ inspired_by:
   - "ori_term handler/tests.rs — individual sequence tests as reference for expected behavior"
 depends_on: ["01"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-05
 sections:
   - id: "02.1"
@@ -26,7 +26,7 @@ sections:
     status: complete
   - id: "02.2"
     title: "CSI Cursor Movement Scenarios"
-    status: complete
+    status: in-progress
   - id: "02.3"
     title: "CSI Erase Scenarios"
     status: complete
@@ -38,15 +38,15 @@ sections:
     status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 02: Basic Scenario Suite
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Create the foundational scenario files that validate the TeseqHarness works end-to-end and establish the pattern for all subsequent scenario sections. These scenarios cover well-understood sequences where the expected behavior is already tested by handler unit tests — the value here is validating the harness pipeline, establishing the authoring pattern, and creating human-readable scenario documentation.
 
 **Success Criteria:**
@@ -597,7 +597,8 @@ Erase operations (ED and EL) with pre-populated grid content.
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- [ ] `[TPR-02-001][major]` Section 02 delegates IL/DL scroll-region coverage to Section 04, but Section 04 does not currently own any IL/DL-within-DECSTBM scenarios. The mission criterion "ICH, DCH, IL, DL with scroll region interactions" has no owning section. **Action required before Section 04 implementation:** Add IL/DL-within-DECSTBM scenarios to `section-04-mode-interactions.md` subsection 04.1 (Origin Mode + Scroll Region). Specifically: (1) `il_in_scroll_region.teseq` — IL within DECSTBM, verify lines outside region do not shift; (2) `dl_in_scroll_region.teseq` — DL within DECSTBM, verify lines outside region do not shift. This is a Section 04 plan edit, not a Section 02 implementation task.
+- [x] `[TPR-02-001][major]` Section 02 delegates IL/DL scroll-region coverage to Section 04, but Section 04 does not currently own any IL/DL-within-DECSTBM scenarios. The mission criterion "ICH, DCH, IL, DL with scroll region interactions" has no owning section. **Action required before Section 04 implementation:** Add IL/DL-within-DECSTBM scenarios to `section-04-mode-interactions.md` subsection 04.1 (Origin Mode + Scroll Region). Specifically: (1) `il_in_scroll_region.teseq` — IL within DECSTBM, verify lines outside region do not shift; (2) `dl_in_scroll_region.teseq` — DL within DECSTBM, verify lines outside region do not shift. This is a Section 04 plan edit, not a Section 02 implementation task.
+  Resolved: Validated and integrated into Section 04.1 on 2026-04-05.
 - [x] `[TPR-02-002][low]` ~~The ED 3 note named the snapshot as `c0_ed_scrollback`, but it lives in the CSI erase family.~~ **Fixed:** Renamed to `csi_erase_ed_scrollback` throughout the plan and added a custom test function in 02.3 that calls both `assert_spec` and `assert_scrollback_empty`.
 
 ---
@@ -622,10 +623,10 @@ Erase operations (ED and EL) with pre-populated grid content.
 - [x] Total: 34 scenario files with golden snapshots (8 + 10 + 7 + 4 + 5)
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] Plan annotation cleanup
+- [x] Plan annotation cleanup
 - [ ] All TPR checkpoint findings resolved
 - [ ] **Plan sync** — update plan metadata:
-  - [x] This section's frontmatter `status` → `complete`
+  - [ ] This section's frontmatter `status` → `complete`
   - [x] `00-overview.md` Quick Reference table updated
   - [x] `index.md` section status updated
 - [ ] `/tpr-review` passed (final, full-section)

@@ -49,7 +49,7 @@ sections:
 
 # Section 01: TeseqHarness & Infrastructure
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Build the complete test harness from scenario loading through assertion checking. When this section is complete, a single `.teseq` scenario file can be loaded, compiled to bytes via `reseq`, fed through `Term<RecordedListener>`, and validated against insta golden snapshots — all with a single function call from a `#[test]` function.
 
 **Success Criteria:**
