@@ -51,9 +51,11 @@ sections:
 
 **Tests (48 passing):** 15 in `loader/tests.rs` (TOML parsing, hex validation, format edge cases), 33 in `scheme/tests.rs` (builtin lookup, discovery, palette construction, conditional parsing, config overrides).
 
-Missing coverage (2 tests):
-- [ ] `discover_count_returns_builtin_count` — `discover_count()` is `pub(crate)` but untested
-- [ ] `count_themes_nonexistent_dir` — `count_themes()` only tested indirectly via `discover_themes` equivalents
+Previously missing coverage (now complete):
+- [x] `discover_count_returns_builtin_count` — verifies `discover_count()` returns 100+ builtins (completed 2026-04-04)
+- [x] `count_themes_nonexistent_dir` — verifies 0 for missing dir (completed 2026-04-04)
+- [x] `count_themes_empty_dir` — verifies 0 for empty dir (completed 2026-04-04)
+- [x] `count_themes_counts_toml_only` — verifies only `.toml` files counted (completed 2026-04-04)
 
 ---
 
@@ -128,9 +130,10 @@ oriterm/src/scheme/builtin/
 - [x] Platform detection: `system_theme_*` (2), `parse_dbus_*` (5), `gtk_*` (6), `classify_*` (12), `gsettings_color_scheme_*` (5), `kdeglobals_*` (7)
 - [x] Config integration: `config_foreground_overrides_scheme`
 
-Missing coverage (2 tests):
-- [ ] `build_palette_fallback_when_scheme_missing` — fallback to `Palette::for_theme()` when scheme not found (only the found-path is tested)
-- [ ] `build_palette_conditional_dark` — conditional scheme + dark theme end-to-end integration
+Previously missing coverage (now complete):
+- [x] `build_palette_fallback_when_scheme_missing` — verifies fallback to default palette (completed 2026-04-04)
+- [x] `build_palette_conditional_dark` — verifies dark theme resolves to dark scheme (completed 2026-04-04)
+- [x] `build_palette_conditional_light` — verifies light theme resolves to light scheme (completed 2026-04-04)
 
 ---
 
@@ -139,7 +142,7 @@ Missing coverage (2 tests):
 - [x] 25.2a `builtin.rs` split complete (prerequisite for 100+ schemes) (completed 2026-04-04)
 - [x] 100+ themes available by name (104 built-in as of 2026-04-04)
 - [ ] Settings dropdown lists themes with light/dark grouping
-- [ ] 4 missing tests written (`discover_count_returns_builtin_count`, `count_themes_nonexistent_dir`, `build_palette_fallback_when_scheme_missing`, `build_palette_conditional_dark`)
+- [x] 7 missing tests written: `discover_count_returns_builtin_count`, `count_themes_nonexistent_dir`, `count_themes_empty_dir`, `count_themes_counts_toml_only`, `build_palette_fallback_when_scheme_missing`, `build_palette_conditional_dark`, `build_palette_conditional_light` (completed 2026-04-04)
 - [x] `builtin_names_not_empty` assertion updated to `>= 100` (completed 2026-04-04)
 - [x] Custom themes loadable from TOML files
 - [x] Light/dark auto-switching works
