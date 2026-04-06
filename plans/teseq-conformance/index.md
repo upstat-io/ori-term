@@ -89,7 +89,7 @@ scenarios/csi/modes/, scenarios/workflows/
 ---
 
 ### Section 05: SGR & Color Scenarios
-**File:** `section-05-sgr-colors.md` | **Status:** In Progress
+**File:** `section-05-sgr-colors.md` | **Status:** Complete
 
 ```
 SGR, select_graphic_rendition, attributes

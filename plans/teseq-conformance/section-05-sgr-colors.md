@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "SGR & Color Scenarios"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create comprehensive SGR scenarios covering text attributes, underline styles, underline colors, all color modes (16, 256, TrueColor), color resolution edge cases (bold-as-bright, DIM priority, inverse, DECSCNM), and selective resets — with rendered cell attribute validation"
 success_criteria:
@@ -67,7 +67,7 @@ sections:
 
 # Section 05: SGR & Color Scenarios
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Comprehensive SGR coverage through teseq scenarios. While handler tests validate SGR parsing at the byte level, these scenarios validate the *rendered result* — CellFlags and resolved colors as they appear in `RenderableContent`. This catches bugs in the color resolution pipeline (bold-as-bright promotion, dim application, inverse swapping, DECSCNM interaction, underline color resolution) that byte-level tests miss.
 
 **Success Criteria:**
@@ -431,7 +431,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: Both 'A' (UNDERLINE) and 'B' (CURLY_UNDERLINE) have underline color `Some(Rgb { r: 0, g: 255, b: 0 })`. This matches the existing handler test `sgr_underline_color_survives_underline_type_change`.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 05.1-05.2 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 05.1-05.2 implementation work
 
 ---
 
@@ -531,7 +531,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   This tests the `bold_is_bright: false` code path in `resolve_fg()` — when `bold_is_bright` is false, the `is_bold` checks in all three color branches are skipped, so bold has no effect on color resolution. Reuses the same `.teseq` file as `color_bold_bright` but with the config toggled. Matches existing renderable tests `bold_is_bright_false_skips_indexed_promotion` and `bold_is_bright_false_skips_named_promotion`.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 05.3 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 05.3 implementation work
 
 ---
 
@@ -583,7 +583,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert each cell's bg Rgb matches the specified values exactly (TrueColor is passthrough — `Color::Spec(rgb)` resolves to `rgb` without palette lookup).
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 05.4 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 05.4 implementation work
 
 ---
 
@@ -702,7 +702,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   - "NoInv" (line 5, col 0): STRIKETHROUGH set, INVERSE cleared
   - "NoStrike" (line 6, col 0): no SGR flags
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 05.5a implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 05.5a implementation work
 
 ---
 
@@ -752,7 +752,7 @@ This subsection covers the full-reset (SGR 0) and color-specific resets (SGR 39/
   ```
   Assert: "Colored" (line 0, col 0) has UNDERLINE flag + `cell_underline_color_at` returns `Some(Rgb { r: 200, g: 100, b: 50 })`. "Default" (line 1, col 0) has UNDERLINE flag preserved + `cell_underline_color_at` returns `None`.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 05.5b implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 05.5b implementation work
 
 ---
 
@@ -835,7 +835,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: fg is `Rgb { r: 100, g: 200, b: 50 }` — DECSCNM only swaps the default fg/bg palette entries, not explicit TrueColor values. This is because `resolve_fg` on `Color::Spec(rgb)` returns `rgb` directly (only dim reduces it) — the palette swap affects `Color::Named(Foreground/Background)` resolution but not `Color::Spec`.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 05.6 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 05.6 implementation work
 
 ---
 
@@ -917,29 +917,29 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
 ## 05.N Completion Checklist
 
 - [x] Scaffolding complete: `scenarios/csi/sgr/` directory, `sgr/mod.rs` + 6 submodules, `main.rs` registration (05.0a)
-- [ ] Cell attribute inspection helpers added to harness: `assert_cell_flags_contain`, `assert_cell_flags_not_contain`, `cell_fg_at`, `cell_bg_at`, `cell_underline_color_at` (05.0b)
-- [ ] `set_bold_is_bright()` method added to `TeseqHarness` (05.0c)
-- [ ] Re-exports in `harness/mod.rs` updated for all new helpers (05.0b)
-- [ ] Text attribute scenarios: bold, dim, italic, underline, blink, blink_fast, inverse, hidden, strikethrough (9 scenarios, 05.1)
-- [ ] Underline style scenarios: single, double, curly, dotted, dashed, mutual exclusion, cancel-subparam (7 scenarios, 05.2)
-- [ ] Underline color scenarios: truecolor, 256-color, reset, style-change survival (4 scenarios, 05.2)
-- [ ] 16-color scenarios: fg colors, bg colors, bold-as-bright, bold-no-promote, bold-bright-disabled (5 scenarios, 05.3)
-- [ ] 256-color scenarios: fg and bg indexed colors (2 scenarios, 05.4)
-- [ ] TrueColor scenarios: fg and bg RGB colors (2 scenarios, 05.4)
-- [ ] Selective attribute resets: SGR 21/22/23/24/25/27/28/29, progressive removal (9 scenarios, 05.5a)
-- [ ] Default color/template resets: SGR 0/39/49/59 (4 scenarios, 05.5b)
-- [ ] Color resolution edge cases: dim+bold (3 variants), inverse, DECSCNM (3 variants) (7 scenarios, 05.6)
-- [ ] Combination scenarios: stacking, separate sequences, last-wins, empty-sgr-resets, dim+bold, cursor-move persistence (6 scenarios, 05.7)
-- [ ] 40+ total SGR scenarios pass (target: ~55)
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] Plan annotation cleanup
-- [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata:
+- [x] Cell attribute inspection helpers added to harness: `assert_cell_flags_contain`, `assert_cell_flags_not_contain`, `cell_fg_at`, `cell_bg_at`, `cell_underline_color_at` (05.0b)
+- [x] `set_bold_is_bright()` method added to `TeseqHarness` (05.0c)
+- [x] Re-exports in `harness/mod.rs` updated for all new helpers (05.0b)
+- [x] Text attribute scenarios: bold, dim, italic, underline, blink, blink_fast, inverse, hidden, strikethrough (9 scenarios, 05.1)
+- [x] Underline style scenarios: single, double, curly, dotted, dashed, mutual exclusion, cancel-subparam (7 scenarios, 05.2)
+- [x] Underline color scenarios: truecolor, 256-color, reset, style-change survival (4 scenarios, 05.2)
+- [x] 16-color scenarios: fg colors, bg colors, bold-as-bright, bold-no-promote, bold-bright-disabled (5 scenarios, 05.3)
+- [x] 256-color scenarios: fg and bg indexed colors (2 scenarios, 05.4)
+- [x] TrueColor scenarios: fg and bg RGB colors (2 scenarios, 05.4)
+- [x] Selective attribute resets: SGR 21/22/23/24/25/27/28/29, progressive removal (9 scenarios, 05.5a)
+- [x] Default color/template resets: SGR 0/39/49/59 (4 scenarios, 05.5b)
+- [x] Color resolution edge cases: dim+bold (3 variants), inverse, DECSCNM (3 variants) (7 scenarios, 05.6)
+- [x] Combination scenarios: stacking, separate sequences, last-wins, empty-sgr-resets, dim+bold, cursor-move persistence (6 scenarios, 05.7)
+- [x] 40+ total SGR scenarios pass (target: ~55)
+- [x] `./build-all.sh` green, `./clippy-all.sh` green
+- [x] `timeout 150 ./test-all.sh` green — no regressions
+- [x] Plan annotation cleanup
+- [x] All TPR checkpoint findings resolved
+- [x] **Plan sync** — update plan metadata:
   - [ ] This section's frontmatter `status` -> `complete`
   - [ ] `00-overview.md` Quick Reference table updated
   - [ ] `index.md` section status updated
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed
+- [x] `/tpr-review` passed (final, full-section)
+- [x] `/impl-hygiene-review last commit` passed
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- sgr` passes with 40+ SGR scenarios (target: ~55). Cell attribute inspection validates CellFlags (via `contains()` pattern), resolved Rgb colors, and underline colors. Bold-as-bright promotion, bold-as-bright disabled, DIM+bold priority, 256-color indexed, TrueColor RGB, all 5 underline styles, underline colors, all selective resets (SGR 21-29/39/49/59), inverse color swap, DECSCNM cross-cutting — all validated against the color resolution pipeline. Zero regressions.
