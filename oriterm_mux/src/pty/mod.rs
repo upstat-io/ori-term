@@ -5,7 +5,7 @@
 //! communication. Uses `portable-pty` for platform abstraction: `ConPTY`
 //! on Windows, `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
-pub(crate) mod adopt;
+pub mod adopt;
 pub(crate) mod lifecycle;
 pub(crate) mod reader;
 mod spawn;
