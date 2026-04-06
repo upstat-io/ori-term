@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Complex Workflow Scenarios"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create multi-sequence workflow scenarios testing real-world terminal interaction patterns that no existing test surface covers"
 success_criteria:
@@ -45,7 +45,7 @@ sections:
     status: in-progress
   - id: "06.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 06: Complex Workflow Scenarios
@@ -469,27 +469,27 @@ Boundary conditions and unusual sequences.
 
 ## 06.N Completion Checklist
 
-- [ ] Mode combination workflows: scroll+origin, DECCOLM lifecycle, alt screen+modes, DECSC attrs, DECSC origin flag (5 base scenarios)
-- [ ] Query-response workflows: DA handshake, cursor tracking DSR (2 scenarios)
-- [ ] Real-world pattern workflows: shell prompt, clear+redraw, charset switching, status bar (4 scenarios)
-- [ ] OSC scenarios: title (0/2), icon name (1), clipboard (52), color query (4/10/11) (4 scenarios)
-- [ ] Edge case scenarios: rapid toggles, zero params, large params, erase-with-attrs, chunked-feed OSC, chunked-feed CSI (6 scenarios, 2 are pure-Rust)
-- [ ] Mode combination workflows run at 80x24, 97x33, and 120x40 (separate .teseq/.toml per size — 15 .teseq files for 5 base x 3 sizes)
-- [ ] `real_status_bar` multi-size variants (97x33, 120x40) with adjusted row numbers and padding width
-- [ ] DECSC production fixes applied if conformance gaps found (charset save/restore, origin mode save/restore) — see 06.1 fix items
-- [ ] DECCOLM companion pure-Rust test (`deccolm_lifecycle_intermediate_assertions`) validates intermediate state
-- [ ] 19 base .teseq + 12 multi-size .teseq + 3 pure-Rust = 34 total test functions pass
-- [ ] `workflows.rs` stays under 500 lines; if it grows past ~400 lines, split into submodules (e.g., `workflows/mod.rs` + `workflows/mode.rs` + `workflows/edge.rs`)
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] `timeout 150 cargo test -p oriterm_core --test teseq --release` green — verify no optimizer-sensitive bugs in chunked-feed or workflow tests
-- [ ] Plan annotation cleanup
-- [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata:
-  - [ ] This section's frontmatter `status` → `complete`
-  - [ ] `00-overview.md` Quick Reference table updated
-  - [ ] `index.md` section status updated
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed
+- [x] Mode combination workflows: scroll+origin, DECCOLM lifecycle, alt screen+modes, DECSC attrs, DECSC origin flag (5 base scenarios)
+- [x] Query-response workflows: DA handshake, cursor tracking DSR (2 scenarios)
+- [x] Real-world pattern workflows: shell prompt, clear+redraw, charset switching, status bar (4 scenarios)
+- [x] OSC scenarios: title (0/2), icon name (1), clipboard (52), color query (4/10/11) (4 scenarios)
+- [x] Edge case scenarios: rapid toggles, zero params, large params, erase-with-attrs, chunked-feed OSC, chunked-feed CSI (6 scenarios, 2 are pure-Rust)
+- [x] Mode combination workflows run at 80x24, 97x33, and 120x40 (separate .teseq/.toml per size — 15 .teseq files for 5 base x 3 sizes)
+- [x] `real_status_bar` multi-size variants (97x33, 120x40) with adjusted row numbers and padding width
+- [x] DECSC production fixes applied if conformance gaps found (charset save/restore, origin mode save/restore) — see 06.1 fix items
+- [x] DECCOLM companion pure-Rust test (`deccolm_lifecycle_intermediate_assertions`) validates intermediate state
+- [x] 19 base .teseq + 12 multi-size .teseq + 3 pure-Rust = 34 total test functions pass
+- [x] `workflows.rs` stays under 500 lines; if it grows past ~400 lines, split into submodules (e.g., `workflows/mod.rs` + `workflows/mode.rs` + `workflows/edge.rs`)
+- [x] `./build-all.sh` green, `./clippy-all.sh` green
+- [x] `timeout 150 ./test-all.sh` green — no regressions
+- [x] `timeout 150 cargo test -p oriterm_core --test teseq --release` green — verify no optimizer-sensitive bugs in chunked-feed or workflow tests
+- [x] Plan annotation cleanup
+- [x] All TPR checkpoint findings resolved
+- [x] **Plan sync** — update plan metadata:
+  - [x] This section's frontmatter `status` → `complete`
+  - [x] `00-overview.md` Quick Reference table updated
+  - [x] `index.md` section status updated
+- [x] `/tpr-review` passed (final, full-section)
+- [x] `/impl-hygiene-review last commit` passed
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- workflows` and `timeout 150 cargo test -p oriterm_core --test teseq -- osc` pass with 34 total test functions (19 base .teseq + 12 multi-size .teseq + 3 pure-Rust) in both debug and release profiles. Multi-sequence interactions, query-response handshakes, real-world patterns (including charset switching), DECSC attribute save/restore (with production fixes if needed), OSC events, chunked-feed resilience, and edge cases all validated. Mode combination workflows run at 3 terminal sizes (separate .teseq/.toml per size). Zero regressions.

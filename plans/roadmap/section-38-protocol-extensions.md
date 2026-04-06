@@ -49,6 +49,9 @@ sections:
   - id: "38.14"
     title: "Text Sizing Protocol (OSC 66)"
     status: not-started
+  - id: "38.15"
+    title: "iTerm2 Feature Reporting (OSC 1337 Capabilities)"
+    status: not-started
   - id: "38.R"
     title: "Third Party Review Findings"
     status: not-started
