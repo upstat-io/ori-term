@@ -49,6 +49,18 @@ sections:
   - id: "24.15"
     title: "Cursor Trail/Smear Effect"
     status: not-started
+  - id: "24.16"
+    title: "Swap Foreground/Background Colors"
+    status: not-started
+  - id: "24.17"
+    title: "Window Padding Color Extend"
+    status: not-started
+  - id: "24.18"
+    title: "Padding Respects Background Opacity"
+    status: not-started
+  - id: "24.19"
+    title: "Unified Background Image Across Splits"
+    status: not-started
   - id: "24.10"
     title: Section Completion
     status: not-started
@@ -671,6 +683,77 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] Must not impact idle CPU — trail only renders during cursor movement frames
 
 **Priority:** Low — cosmetic/aesthetic feature, but highly requested across terminal emulators.
+
+---
+
+## 24.16 Swap Foreground/Background Colors
+
+<!-- WezTerm audit (batch 4-closed): #706 (swap fg/bg colors keybind) -->
+
+**Source:** WezTerm #706 — Keybind to toggle inverted colors (swap foreground and background for the entire terminal). Useful for quickly switching between dark and light appearance without changing the theme.
+
+**Required work:**
+
+- [ ] Action: `ToggleInvertedColors` — swaps the default fg and bg colors in the active palette
+- [ ] When inverted: all cells render with swapped fg/bg (including the palette's default colors)
+- [ ] Does NOT affect cells with explicit SGR colors — only affects default fg/bg
+- [ ] Toggle state per-pane (not global)
+- [ ] Config reload resets to normal
+- [ ] Test: toggle inverted, verify default text renders with swapped colors; explicit SGR colors unchanged
+
+**Priority:** Low — quick visual accessibility toggle.
+
+---
+
+## 24.17 Window Padding Color Extend
+
+<!-- Ghostty audit (closed): #2099, #3661 (window-padding-color = extend) -->
+
+**Source:** Ghostty `window-padding-color = extend` — Padding area uses the nearest cell's background color instead of the terminal's default bg. Prevents ugly color mismatch borders around the grid (e.g., tmux status bar color vs padding color).
+
+**Required work:**
+
+- [ ] Config option: `padding_color = "default" | "extend"` (default: use terminal bg; extend: sample edge cells)
+- [ ] When `extend`: for each padding region (top/bottom/left/right), sample the bg color of the nearest grid row/column
+- [ ] Top padding: use row 0's bg; bottom padding: use last row's bg; left/right: use respective column's bg
+- [ ] Must update when grid content changes (damage-tracked, not per-frame)
+- [ ] Test: set extend mode with tmux (colored status bar) → verify bottom padding matches status bar color
+
+**Priority:** Low — cosmetic but highly requested. Ghostty, Kitty, and WezTerm all support this.
+
+---
+
+## 24.18 Padding Respects Background Opacity
+
+<!-- Kitty audit (closed): #7895, #7921 (padding solid when background_opacity < 1) -->
+
+**Source:** Kitty #7895 — When `background_opacity < 1`, padding area remains solid/opaque. Should be transparent like the rest of the terminal.
+
+**Required work:**
+
+- [ ] Apply `background_opacity` to padding fill as well as grid cells
+- [ ] Ensure vibrancy/blur effects extend through padding area (platform-specific)
+- [ ] Test: set opacity=0.8, verify padding area is semi-transparent matching the grid
+
+**Priority:** Low — affects transparency users. Simple fix if padding is rendered as a rect with the same opacity.
+
+---
+
+## 24.19 Unified Background Image Across Splits
+
+<!-- Ghostty audit (closed): #10052 (unified background image across splits) -->
+
+**Source:** Ghostty #10052 — When using a background image with split panes, the image is duplicated per pane. A unified mode would render one background image spanning the entire window, with splits overlaid on top.
+
+**Required work:**
+
+- [ ] Config option: `background_image_mode = "per_pane" | "unified"` (default: per_pane)
+- [ ] When unified: render background image to window-sized texture, then composite grid panes on top
+- [ ] Image position is relative to the window, not the pane — panes are transparent overlays
+- [ ] Must handle window resize (re-scale/re-position the image)
+- [ ] Test: set unified mode with 2 splits → verify single continuous image beneath both panes
+
+**Priority:** Low — cosmetic feature for background image users.
 
 ---
 

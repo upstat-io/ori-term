@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::harness::{
     self, ScenarioOutcome, TeseqHarness, analyze_response, assert_pty_writes,
-    assert_response_snapshot, pipe_through_command, reseq_available,
+    assert_response_snapshot, compute_da2_version, pipe_through_command, reseq_available,
 };
 
 /// Run a report scenario and apply spec assertions.
@@ -23,21 +23,6 @@ fn run_scenario(name: &str) -> Option<ScenarioOutcome> {
     let outcome = h.run(&path);
     harness::assert_spec(&outcome, h.spec(), &format!("csi_reports_{name}"));
     Some(outcome)
-}
-
-/// Replicate `crate_version_number()` from `handler/helpers.rs`.
-///
-/// Uses the same algorithm so tests track version bumps automatically.
-/// Do NOT hardcode a version number — it changes on every release.
-fn compute_da2_version() -> usize {
-    let mut result = 0usize;
-    let version = env!("CARGO_PKG_VERSION");
-    let version = version.split('-').next().unwrap_or(version);
-    for (i, part) in version.split('.').rev().enumerate() {
-        let n = part.parse::<usize>().unwrap_or(0);
-        result += n * 100usize.pow(i as u32);
-    }
-    result
 }
 
 // --- DA1 ---

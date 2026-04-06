@@ -25,6 +25,9 @@ sections:
   - id: "45.7"
     title: "Password-Aware Paste Warning"
     status: not-started
+  - id: "45.8"
+    title: "Read-Only Pane Mode"
+    status: not-started
   - id: "45.5"
     title: Section Completion
     status: not-started
@@ -374,6 +377,27 @@ Protect against command injection via file paths and dangerous URIs.
 - [ ] Test: enter password prompt (`read -s`), paste text with newline → verify dialog shows masked content
 
 **Priority:** Medium — security/privacy feature.
+
+---
+
+## 45.8 Read-Only Pane Mode
+
+<!-- Ghostty audit (batch 4): #8432 (add support for marking terminal as read-only) -->
+
+**Source:** Ghostty #8432, Windows Terminal read-only pane feature — Mark a pane as read-only so no input is sent to the PTY. Selection, copy, and scrolling still work. Useful for monitoring logs, preventing accidental input in production sessions.
+
+**Required work:**
+
+- [ ] Action: `ToggleReadOnly` — toggles read-only state on the focused pane
+- [ ] When read-only: suppress all keyboard input and mouse input to PTY (no key encoding, no mouse reporting)
+- [ ] Still allow: selection, copy, scroll, keybindings that don't produce PTY input (zoom, split navigation, etc.)
+- [ ] Visual indicator: read-only badge/icon in tab bar or pane border
+- [ ] Persist across session save/restore
+- [ ] Test: toggle read-only, type → verify no output to PTY; select text → verify copy works; toggle off → verify input resumes
+
+**Priority:** Low — safety feature for monitoring/production use.
+
+**Reference:** Windows Terminal read-only pane, tmux `synchronize-panes` (related concept).
 
 ---
 

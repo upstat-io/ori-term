@@ -5,7 +5,7 @@ use std::path::Path;
 use super::harness::{
     self, RecordedListener, ScenarioOutcome, TeseqHarness, assert_cell_flags_contain,
     assert_mode_contains, assert_mode_not_contains, assert_pty_writes, assert_scrollback_empty,
-    cell_bg_at, cell_fg_at, reseq_available,
+    cell_bg_at, cell_fg_at, compute_da2_version, reseq_available,
 };
 
 mod edge;
@@ -29,16 +29,4 @@ fn run_scenario(name: &str) -> Option<ScenarioOutcome> {
     let outcome = h.run(&path);
     harness::assert_spec(&outcome, h.spec(), &format!("workflows_{name}"));
     Some(outcome)
-}
-
-/// Replicate `crate_version_number()` from `handler/helpers.rs`.
-fn compute_da2_version() -> usize {
-    let mut result = 0usize;
-    let version = env!("CARGO_PKG_VERSION");
-    let version = version.split('-').next().unwrap_or(version);
-    for (i, part) in version.split('.').rev().enumerate() {
-        let n = part.parse::<usize>().unwrap_or(0);
-        result += n * 100usize.pow(i as u32);
-    }
-    result
 }

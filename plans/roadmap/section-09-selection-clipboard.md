@@ -31,6 +31,12 @@ sections:
   - id: "9.9"
     title: "Pause Viewport During Selection"
     status: not-started
+  - id: "9.10"
+    title: "Copy as HTML / Copy with ANSI"
+    status: not-started
+  - id: "9.11"
+    title: "Clipboard Codepoint Map"
+    status: not-started
   - id: "9.8"
     title: Section Completion
     status: complete
@@ -482,6 +488,49 @@ Visual highlighting of selected text during GPU rendering.
 - [ ] Test: start selection, write 100 lines to PTY during selection, verify viewport doesn't scroll; release mouse, verify snap to bottom
 
 **Priority:** Medium — significant usability improvement for users who select text while processes are running.
+
+---
+
+## 9.10 Copy as HTML / Copy with ANSI
+
+<!-- WezTerm audit (batch 4): #2223 (Copy as HTML and/or Copy with ANSI) -->
+
+**Source:** WezTerm #2223 — When copying terminal text, users want the option to preserve formatting. Two modes: (1) Copy as HTML — clipboard contains HTML with `<span>` tags carrying color/bold/italic styles; (2) Copy with ANSI — clipboard contains raw ANSI escape codes so pasting into another terminal preserves colors.
+
+**Problem:** ori_term currently copies plain text only (Section 9.5). The HTML copy infrastructure exists (`selection/html/mod.rs`) but it's only used for internal formatting, not clipboard export.
+
+**Required work:**
+
+- [ ] Action: `CopyAsHtml` — copies selection as HTML to clipboard (using `CF_HTML` on Windows, `text/html` MIME type on Linux/macOS)
+- [ ] Action: `CopyWithAnsi` — copies selection with SGR escape codes preserved (plain text with ANSI formatting)
+- [ ] Use existing `selection/html/mod.rs` as the base for HTML generation
+- [ ] For ANSI copy: walk selected cells, emit SGR codes when attributes change
+- [ ] Context menu integration: "Copy", "Copy as HTML", "Copy as ANSI" options
+- [ ] Test: select colored text, CopyAsHtml → verify clipboard contains `<span style="color:...">` markup
+
+**Priority:** Low — nice-to-have for users who paste terminal output into documents/presentations.
+
+**Reference:** GNOME Terminal "Copy as HTML", iTerm2 "Copy with Styles".
+
+---
+
+## 9.11 Clipboard Codepoint Map
+
+<!-- Ghostty audit (batch 4-closed): #8383 (clipboard-codepoint-map configuration) -->
+
+**Source:** Ghostty #8383, already in Ghostty 1.3.0 — Config to replace specific codepoints during copy. E.g., replace non-breaking space (U+00A0) with regular space (U+0020) so pasted text doesn't have invisible formatting artifacts.
+
+**Required work:**
+
+- [ ] Config option: `clipboard_codepoint_map = { "00A0" = "0020", "200B" = "" }` — maps source codepoints to replacement codepoints (or empty string for deletion)
+- [ ] Apply map in `selection_to_string()` after extracting text, before placing on clipboard
+- [ ] Common use cases: NBSP→space, zero-width space→delete, smart quotes→straight quotes
+- [ ] Must not affect the grid or rendering — only the clipboard copy output
+- [ ] Test: cell contains U+00A0, copy → verify clipboard has U+0020
+
+**Priority:** Low — polish feature, but solves a real annoyance with pasted text from some applications.
+
+**Reference:** Ghostty `clipboard-codepoint-map`, already shipping in Ghostty 1.3.0.
 
 ---
 

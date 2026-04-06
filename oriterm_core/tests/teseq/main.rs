@@ -7,6 +7,8 @@
 //! Requires `reseq` installed (`sudo apt install teseq`).
 //! Tests gracefully skip when reseq is unavailable.
 //!
+//! See <https://www.gnu.org/software/teseq/> for teseq/reseq documentation.
+//!
 //! # Commands
 //!
 //! - Run: `cargo test -p oriterm_core --test teseq`

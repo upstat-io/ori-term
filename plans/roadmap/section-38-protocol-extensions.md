@@ -55,6 +55,9 @@ sections:
   - id: "38.16"
     title: "Mode 2027 Grapheme Cluster Width"
     status: not-started
+  - id: "38.17"
+    title: "OSC 22 Cursor Style Stack"
+    status: not-started
   - id: "38.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -561,6 +564,26 @@ Support DCS passthrough for applications running inside nested terminals or mult
 **Priority:** Medium — enables apps like Helix, WezTerm's terminal, and libvaxis to detect proper Unicode width support.
 
 **Reference:** [Contour terminal mode 2027 proposal](https://github.com/contour-terminal/contour/discussions/504), WezTerm and Foot implementations.
+
+---
+
+## 38.17 OSC 22 Cursor Style Stack
+
+<!-- Kitty audit (batch 4-closed): #6711 (OSC 22 support - cursor style push/pop) -->
+
+**Source:** Kitty #6711 — OSC 22 provides a push/pop stack for cursor style, similar to CSI 22/23 for window title. Applications push the current cursor style before changing it, then pop to restore. Supported by xterm and Foot.
+
+**Required work:**
+
+- [ ] Parse OSC 22: push current cursor style (shape, blink, color) onto a stack
+- [ ] Parse OSC 23 (for cursor context): pop and restore cursor style from stack
+- [ ] Stack depth limit (match title stack: 4096)
+- [ ] Separate from the window title stack — cursor style is independent
+- [ ] Test: push cursor style, change to underline, pop → verify original block style restored
+
+**Priority:** Low — xterm/Foot support this, useful for TUI apps that temporarily change cursor style.
+
+**Reference:** xterm OSC 22 documentation, Foot cursor stack implementation.
 
 ---
 

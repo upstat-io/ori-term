@@ -80,7 +80,7 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 **Primary**: `./fmt-all.sh`, `./clippy-all.sh`, `./build-all.sh`, `./test-all.sh`
 **Build**: `cargo build --target x86_64-pc-windows-gnu` (debug), `cargo build --target x86_64-pc-windows-gnu --release` (release)
-**Teseq scenarios**: `cargo test -p oriterm_core --test teseq`
+**Teseq scenarios**: `cargo test -p oriterm_core --test teseq` (requires `reseq` — `sudo apt install teseq` on Linux; tests skip gracefully on macOS/Windows where teseq is unavailable)
 **Update teseq snapshots**: `INSTA_UPDATE=1 cargo test -p oriterm_core --test teseq`
 **After EVERY change, run `./build-all.sh`, `./clippy-all.sh`, and `./test-all.sh`. No exceptions. Do not skip any of these.**
 

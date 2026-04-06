@@ -320,6 +320,7 @@ keyboard selection, mark mode, Shift+arrows
 file drag-and-drop, auto-quote paths
 selection rendering, invert colors, highlight
 pause viewport, freeze scroll, selection in progress, mouseDown buffer
+copy as HTML, CopyAsHtml, CopyWithAnsi, CF_HTML, formatted copy, styled clipboard
 ```
 
 ---
@@ -578,6 +579,7 @@ VT52, DECANM, private mode 2, ESC <, VT52 cursor addressing
 OSC 5522, Kitty clipboard protocol, rich clipboard, MIME type
 OSC 66, text sizing protocol, explicit width, scale factor
 OSC 1337, iTerm2 capabilities, Terminal Feature Reporting, feature detection
+mode 2027, grapheme cluster width, DECRQM 2027, unicode width detection
 ```
 
 ---
@@ -597,6 +599,7 @@ image memory, image eviction, LRU, memory limit, 256 MB
 viu, timg, hologram, ranger preview, Jupyter inline plot
 image scroll, CSI T, scroll down, image placement follow text
 SIXEL color default, omitted parameter, color definition, Pu Px Py Pz
+XTSMGRAPHICS, CSI ? Pi, graphics size negotiation, Sixel area, color registers
 Kitty animation memory, GIF memory leak, animation frame eviction, max_image_memory
 ```
 
@@ -814,6 +817,7 @@ window title sanitize, OSC 0 sanitize, OSC 7 validate
 clipboard_max_size, primary_write, primary_read, ask policy, deny policy
 homograph attack, mixed-script URL, Cyrillic lookalike, paste detection
 password paste, concealed field, mask paste content, password-aware
+read-only pane, ToggleReadOnly, input suppression, monitoring mode
 ```
 
 ---
@@ -1035,6 +1039,7 @@ smart selection, command output extraction, prompt region
 Vec<PromptMarker> replacement, cell stamping, grid-level tracking
 OSC 133 click_events, click_events=2, relative Y coordinate, prompt click
 click-to-move delay, multi-click, double-click cancel, cursor reposition
+copy last command output, CopyLastCommandOutput, semantic zone extract
 ```
 
 ---
