@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+use super::PtyLifecycle;
+
 /// Convert a `portable_pty` error into `io::Error`.
 fn pty_err(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(e.to_string())
@@ -190,6 +192,24 @@ impl PtyHandle {
     #[allow(dead_code, reason = "used when pane reports child exit to UI")]
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         self.child.try_wait().map(|opt| opt.map(ExitStatus::from))
+    }
+}
+
+impl PtyLifecycle for PtyHandle {
+    fn kill(&mut self) -> io::Result<()> {
+        Self::kill(self)
+    }
+
+    fn wait(&mut self) -> io::Result<ExitStatus> {
+        Self::wait(self)
+    }
+
+    fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        Self::try_wait(self)
+    }
+
+    fn process_id(&self) -> Option<u32> {
+        Self::process_id(self)
     }
 }
 

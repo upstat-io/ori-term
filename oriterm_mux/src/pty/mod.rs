@@ -5,6 +5,7 @@
 //! communication. Uses `portable-pty` for platform abstraction: `ConPTY`
 //! on Windows, `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
+pub(crate) mod lifecycle;
 pub(crate) mod reader;
 mod spawn;
 
@@ -15,6 +16,7 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+pub(crate) use lifecycle::PtyLifecycle;
 pub(crate) use reader::PtyReader;
 #[allow(
     unused_imports,

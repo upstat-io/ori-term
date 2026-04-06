@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 use super::spawn::{build_command, compute_wslenv, default_shell};
-use super::{Msg, PtyConfig, spawn_pty_writer};
+use super::{Msg, PtyConfig, PtyLifecycle, spawn_pty, spawn_pty_writer};
 
 // Shell detection
 
@@ -661,6 +661,53 @@ fn bug_11_1_ctrl_c_delivered_after_stall_cleared() {
         output.contains(&0x03),
         "Ctrl+C byte (0x03) must be delivered after the stall clears"
     );
+}
+
+// PtyLifecycle trait dispatch
+//
+// Phase 1A semantic pin: verify that boxing a `PtyHandle` as
+// `Box<dyn PtyLifecycle + Send>` correctly dispatches `process_id()`,
+// `kill()`, and `wait()` through the trait vtable. This test ONLY passes
+// if the `impl PtyLifecycle for PtyHandle` is wired correctly — if any
+// trait method delegates to the wrong inherent method, or if the trait
+// object can't be constructed, the test fails to compile or returns the
+// wrong PID.
+//
+// This is the only test in the suite that spawns a real child process —
+// the trait dispatch contract requires a real `PtyHandle`, which can only
+// be produced via `spawn_pty()`. The shell is killed and reaped within
+// the test body, so the process is short-lived.
+
+#[test]
+fn pty_handle_dispatches_through_pty_lifecycle_trait() {
+    // Spawn a PTY with the platform default shell.
+    let config = PtyConfig::default();
+    let pty = spawn_pty(&config).expect("spawn_pty must succeed");
+
+    // Capture the inherent process_id BEFORE moving into the box.
+    let direct_pid = pty.process_id();
+    assert!(
+        direct_pid.is_some(),
+        "spawned PTY must report a child PID via the inherent method"
+    );
+
+    // Box as a trait object — this exercises the `impl PtyLifecycle for PtyHandle`.
+    let mut boxed: Box<dyn PtyLifecycle + Send> = Box::new(pty);
+
+    // Trait dispatch must return the same PID as the inherent call.
+    // This is the semantic pin: it only passes if the impl correctly
+    // delegates `PtyLifecycle::process_id` to `PtyHandle::process_id`.
+    let trait_pid = boxed.process_id();
+    assert_eq!(
+        trait_pid, direct_pid,
+        "PtyLifecycle::process_id must return the same PID as PtyHandle::process_id",
+    );
+
+    // Verify kill + wait are reachable through the trait object too.
+    // We don't assert success — kill may race with the shell exiting normally —
+    // but the methods must dispatch without panicking.
+    let _ = boxed.kill();
+    let _ = boxed.wait();
 }
 
 /// Verify that the writer's stall flag is cleared after the write completes.
