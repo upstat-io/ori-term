@@ -186,7 +186,7 @@ impl LocalDomain {
             reader_thread,
             writer_thread,
             io_handle,
-            pty,
+            pty: Box::new(pty),
             mode_cache,
             io_selection_dirty,
             write_stalled,
