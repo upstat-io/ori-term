@@ -349,3 +349,101 @@ fn color_bold_bright_disabled() {
     let normal_red = palette.resolve(Color::Indexed(1));
     assert_eq!(cell_fg_at(&outcome, 0, 0), normal_red);
 }
+
+// 05.4 256-color & TrueColor scenarios
+
+#[test]
+fn color_256_fg() {
+    let Some(outcome) = run_scenario("color_256_fg") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "Red 256" at col 0: SGR 38;5;196.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(196))
+    );
+    // "Green 256" at col 7: SGR 38;5;46.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 7),
+        palette.resolve(Color::Indexed(46))
+    );
+    // "Blue 256" at col 16: SGR 38;5;21.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 16),
+        palette.resolve(Color::Indexed(21))
+    );
+}
+
+#[test]
+fn color_256_bg() {
+    let Some(outcome) = run_scenario("color_256_bg") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "Red bg" at col 0: SGR 48;5;196.
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(196))
+    );
+    // "Green bg" at col 6: SGR 48;5;46.
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 6),
+        palette.resolve(Color::Indexed(46))
+    );
+    // "Blue bg" at col 14: SGR 48;5;21.
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 14),
+        palette.resolve(Color::Indexed(21))
+    );
+}
+
+#[test]
+fn color_rgb_fg() {
+    let Some(outcome) = run_scenario("color_rgb_fg") else {
+        return;
+    };
+    // "Orange" at col 0: SGR 38;2;255;128;0.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        Rgb {
+            r: 255,
+            g: 128,
+            b: 0
+        }
+    );
+    // "Spring" at col 6: SGR 38;2;0;255;128.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 6),
+        Rgb {
+            r: 0,
+            g: 255,
+            b: 128
+        }
+    );
+}
+
+#[test]
+fn color_rgb_bg() {
+    let Some(outcome) = run_scenario("color_rgb_bg") else {
+        return;
+    };
+    // "Orange bg" at col 0: SGR 48;2;255;128;0.
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 0),
+        Rgb {
+            r: 255,
+            g: 128,
+            b: 0
+        }
+    );
+    // "Spring bg" at col 9: SGR 48;2;0;255;128.
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 9),
+        Rgb {
+            r: 0,
+            g: 255,
+            b: 128
+        }
+    );
+}
