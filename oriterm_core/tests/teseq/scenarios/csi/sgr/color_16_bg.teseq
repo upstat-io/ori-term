@@ -1,0 +1,21 @@
+: Esc [ 40 m
+|blk|
+: Esc [ 41 m
+|red|
+: Esc [ 42 m
+|grn|
+: Esc [ 43 m
+|yel|
+: Esc [ 44 m
+|blu|
+: Esc [ 45 m
+|mag|
+: Esc [ 46 m
+|cyn|
+: Esc [ 47 m
+|wht|
+: Esc [ 100 m
+|Bblk|
+: Esc [ 101 m
+|Bred|
+: Esc [ 0 m

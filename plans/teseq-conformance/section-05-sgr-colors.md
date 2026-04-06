@@ -41,7 +41,7 @@ sections:
     status: complete
   - id: "05.3"
     title: "16-Color & Bold-as-Bright Scenarios"
-    status: not-started
+    status: complete
   - id: "05.4"
     title: "256-Color & TrueColor Scenarios"
     status: not-started
@@ -75,10 +75,10 @@ sections:
 - [x] All 9 basic text attributes tested via cell flag inspection (8 base + blink_fast)
 - [x] All 5 underline styles tested (single, double, curly, dotted, dashed) with mutual exclusion + 4:0 cancel sub-param
 - [x] Underline colors tested (SGR 58 set, SGR 59 reset) via `cell_underline_color_at`
-- [ ] 16-color foreground/background tested with correct Rgb resolution
+- [x] 16-color foreground/background tested with correct Rgb resolution
 - [ ] 256-color indexed colors tested
 - [ ] TrueColor RGB colors tested
-- [ ] Bold-as-bright color promotion validated
+- [x] Bold-as-bright color promotion validated
 - [ ] DIM + bold interaction validated (DIM takes priority, no bright promotion)
 - [ ] All selective resets tested (SGR 21/22/23/24/25/27/28/29/39/49/59)
 - [ ] Inverse + DECSCNM cross-cutting validated
@@ -439,7 +439,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
 
 **File(s):** `oriterm_core/tests/teseq/scenarios/csi/sgr/color_*.teseq`
 
-- [ ] **`color_16_fg.teseq`** — All 8 foreground colors + 8 bright:
+- [x] **`color_16_fg.teseq`** — All 8 foreground colors + 8 bright:
   ```
   : Esc [ 30 m
   |blk|
@@ -465,7 +465,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert each cell group has the correct resolved Rgb from the palette. Use `Palette::default()` in the test to get expected colors and compare via `cell_fg_at()`.
 
-- [ ] **`color_16_bg.teseq`** — All 8 background colors + 8 bright:
+- [x] **`color_16_bg.teseq`** — All 8 background colors + 8 bright:
   ```
   : Esc [ 40 m
   |blk|
@@ -491,7 +491,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert each cell group has the correct resolved Rgb background from the palette. Use `Palette::default()` in the test to get expected colors and compare via `cell_bg_at()`.
 
-- [ ] **`color_bold_bright.teseq`** — Bold + ANSI color 0-7 triggers bright promotion:
+- [x] **`color_bold_bright.teseq`** — Bold + ANSI color 0-7 triggers bright promotion:
   ```
   : Esc [ 1 ; 31 m
   |Bold red|
@@ -500,7 +500,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   Assert fg resolves to bright red (palette index 9) not normal red (palette index 1).
   `bold_is_bright` defaults to `true` (`term/mod.rs:233`) and the TeseqHarness uses this default.
 
-- [ ] **`color_bold_no_promote_above_7.teseq`** — Bold + indexed 100 does NOT promote:
+- [x] **`color_bold_no_promote_above_7.teseq`** — Bold + indexed 100 does NOT promote:
   ```
   : Esc [ 1 m
   : Esc [ 38 ; 5 ; 100 m
@@ -509,7 +509,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert fg resolves to palette index 100, not 108.
 
-- [ ] **`color_bold_bright_disabled`** — Rust test (not `.teseq` scenario) that creates a harness, calls `set_bold_is_bright(false)` (added in 05.0c), feeds SGR 1;31 + text via `proc.advance()`, and asserts fg resolves to normal red (palette index 1) not bright red:
+- [x] **`color_bold_bright_disabled`** — Rust test (not `.teseq` scenario) that creates a harness, calls `set_bold_is_bright(false)` (added in 05.0c), feeds SGR 1;31 + text via `proc.advance()`, and asserts fg resolves to normal red (palette index 1) not bright red:
   ```rust
   #[test]
   fn color_bold_bright_disabled() {

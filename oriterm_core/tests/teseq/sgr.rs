@@ -9,7 +9,7 @@ use oriterm_core::color::{Palette, Rgb};
 
 use super::harness::{
     self, ScenarioOutcome, TeseqHarness, assert_cell_flags_contain, assert_cell_flags_not_contain,
-    cell_underline_color_at, reseq_available,
+    cell_bg_at, cell_fg_at, cell_underline_color_at, reseq_available,
 };
 
 /// Run an SGR scenario and apply spec assertions.
@@ -249,4 +249,103 @@ fn underline_color_survives_style_change() {
     // 'B' at col 1: CURLY_UNDERLINE + green underline color (survived style switch).
     assert_cell_flags_contain(&outcome, 0, 1, CellFlags::CURLY_UNDERLINE);
     assert_eq!(cell_underline_color_at(&outcome, 0, 1), Some(green));
+}
+
+// 05.3 16-color & bold-as-bright scenarios
+
+#[test]
+fn color_16_fg() {
+    let Some(outcome) = run_scenario("color_16_fg") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "blk" at col 0-2: SGR 30 = black (index 0).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(0))
+    );
+    // "red" at col 3-5: SGR 31 = red (index 1).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 3),
+        palette.resolve(Color::Indexed(1))
+    );
+    // "grn" at col 6-8: SGR 32 = green (index 2).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 6),
+        palette.resolve(Color::Indexed(2))
+    );
+    // "Bblk" at col 24-27: SGR 90 = bright black (index 8).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 24),
+        palette.resolve(Color::Indexed(8))
+    );
+    // "Bred" at col 28-31: SGR 91 = bright red (index 9).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 28),
+        palette.resolve(Color::Indexed(9))
+    );
+}
+
+#[test]
+fn color_16_bg() {
+    let Some(outcome) = run_scenario("color_16_bg") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "blk" at col 0-2: SGR 40 = black bg (index 0).
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(0))
+    );
+    // "red" at col 3-5: SGR 41 = red bg (index 1).
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 3),
+        palette.resolve(Color::Indexed(1))
+    );
+    // "Bblk" at col 24-27: SGR 100 = bright black bg (index 8).
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 24),
+        palette.resolve(Color::Indexed(8))
+    );
+}
+
+#[test]
+fn color_bold_bright() {
+    let Some(outcome) = run_scenario("color_bold_bright") else {
+        return;
+    };
+    let palette = Palette::default();
+    // Bold + red (SGR 1;31) with bold_is_bright=true → bright red (index 9).
+    let bright_red = palette.resolve(Color::Indexed(9));
+    assert_eq!(cell_fg_at(&outcome, 0, 0), bright_red);
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD);
+}
+
+#[test]
+fn color_bold_no_promote_above_7() {
+    let Some(outcome) = run_scenario("color_bold_no_promote_above_7") else {
+        return;
+    };
+    let palette = Palette::default();
+    // Bold + indexed 100 does NOT promote to 108.
+    let idx100 = palette.resolve(Color::Indexed(100));
+    assert_eq!(cell_fg_at(&outcome, 0, 0), idx100);
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD);
+}
+
+#[test]
+fn color_bold_bright_disabled() {
+    if !reseq_available() {
+        eprintln!("reseq not installed, skipping");
+        return;
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/teseq/scenarios/csi/sgr/color_bold_bright.teseq");
+    let mut h = TeseqHarness::from_scenario(&path);
+    h.set_bold_is_bright(false);
+    let outcome = h.run(&path);
+    // Bold + red with bold_is_bright=false → normal red (index 1), not bright.
+    let palette = Palette::default();
+    let normal_red = palette.resolve(Color::Indexed(1));
+    assert_eq!(cell_fg_at(&outcome, 0, 0), normal_red);
 }
