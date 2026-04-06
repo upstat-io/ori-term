@@ -45,21 +45,4 @@ impl ImageCache {
     pub(super) fn placed_id_set(&self) -> std::collections::HashSet<ImageId> {
         self.placements.iter().map(|p| p.image_id).collect()
     }
-
-    /// Remove images that have no remaining placements.
-    pub(crate) fn remove_orphans(&mut self) {
-        let placed = self.placed_id_set();
-        let orphans: Vec<ImageId> = self
-            .images
-            .keys()
-            .filter(|id| !placed.contains(id))
-            .copied()
-            .collect();
-
-        for id in orphans {
-            // Delegates to `remove_image` to clean up all associated state:
-            // animations, animation_frames, frame_starts, and memory tracking.
-            self.remove_image(id);
-        }
-    }
 }
