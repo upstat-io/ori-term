@@ -76,6 +76,12 @@ impl<T: EventListener> Term<T> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
+        // DECSC sidecar state is per-screen (VT220 spec).
+        std::mem::swap(&mut self.saved_charset, &mut self.inactive_saved_charset);
+        std::mem::swap(
+            &mut self.saved_origin_mode,
+            &mut self.inactive_saved_origin_mode,
+        );
         // Swap image caches. Alt cache is guaranteed Some after ensure_alt_grid.
         let alt_cache = self.alt_image_cache.take().unwrap();
         let primary_cache = std::mem::replace(&mut self.image_cache, alt_cache);

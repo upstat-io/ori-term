@@ -38,6 +38,9 @@ sections:
   - id: "08B.4"
     title: "Dispatch Integration + Action Repeat Policy"
     status: not-started
+  - id: "08B.5"
+    title: "Alt+Non-ASCII Key Encoding"
+    status: not-started
   - id: "08B.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -483,6 +486,27 @@ This subsection uses the `NormalizedKeyEvent` from 08B.2 and `encode_normalized(
 
 - [ ] `./build-all.sh` green, `./clippy-all.sh` green
 - [ ] `./test-all.sh` green — all existing keyboard_input tests pass, plus new repeat policy tests
+
+---
+
+## 08B.5 Alt+Non-ASCII Key Encoding
+
+<!-- Ghostty audit: #7110 (alt+é should send ESC é) -->
+
+**Source:** Ghostty #7110 — On non-US keyboard layouts (AZERTY, etc.), pressing Alt+é should send ESC followed by the é character (U+00E9). Instead, Ghostty sends only ESC, and the following character gets a U+FFFD replacement prefix. Alacritty had the same bug (#4862).
+
+**Problem:** The Alt key encoding path (`try_encode_alt`) typically sends ESC + the character's byte. But for non-ASCII characters (é, è, ç, à), the encoding may fail because the character doesn't fit in a single byte, or the platform reports the key event without the text field when Alt is held.
+
+**Required work:**
+
+- [ ] In the Alt encoding path of `NormalizedKeyEvent`: when Alt is held and the resolved text is a non-ASCII Unicode character, send ESC followed by the UTF-8 encoding of that character
+- [ ] Ensure `resolve_text()` correctly resolves the base character even when Alt is held (platform may strip the text)
+- [ ] Handle AZERTY, QWERTZ, and other non-US layouts where number keys produce accented characters
+- [ ] Test: Alt+é → ESC + U+00E9 (2 bytes UTF-8); Alt+ç → ESC + U+00E7
+
+**Priority:** Medium — affects all non-US keyboard layout users.
+
+**Reference:** Alacritty #4862, xterm Alt encoding behavior.
 
 ---
 

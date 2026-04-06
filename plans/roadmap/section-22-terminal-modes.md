@@ -2,7 +2,7 @@
 section: 22
 title: Terminal Modes
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-04-01"
 tier: 5
 goal: Comprehensive DECSET/DECRST mode support, mode interactions, image protocol
@@ -28,6 +28,12 @@ sections:
   - id: "22.7"
     title: Image Protocol
     status: complete
+  - id: "22.9"
+    title: "titeInhibit (Alt Screen Inhibit)"
+    status: not-started
+  - id: "22.10"
+    title: "Scroll Bindings Alt Screen Suppression"
+    status: not-started
   - id: "22.8"
     title: Section Completion
     status: complete
@@ -271,6 +277,48 @@ Complete reference of every DECSET/DECRST private mode.
 **Moved to Section 39.** Image protocol support (Kitty Graphics, Sixel, iTerm2) is now a dedicated section with full design detail. See `section-39-image-protocols.md`.
 
 - [x] Section 39 complete (Kitty Graphics + Sixel + iTerm2 image protocols — daemon-mode deferred)
+
+---
+
+## 22.9 titeInhibit (Alt Screen Inhibit)
+
+<!-- Ghostty audit: #4502 (xterm titeInhibit feature) -->
+
+**Source:** Ghostty #4502 — xterm's `titeInhibit` config prevents applications from entering the alternate screen. Users want `man`, `less`, `vim` output to remain on screen after exit instead of being cleared.
+
+**Problem:** ori_term has no config to inhibit alt screen entry. Applications that use ti/te (modes 1047/1049) always switch to alt screen.
+
+**Required work:**
+
+- [ ] Config option: `alt_screen_inhibit = false` (default: allow alt screen)
+- [ ] When enabled: silently ignore DECSET 1047/1049 (alt screen enter) and DECRST 1047/1049 (alt screen leave)
+- [ ] Ensure programs still function correctly — they think they're in alt screen but output goes to the primary screen
+- [ ] Check xterm source (MIT licensed) for all places titeInhibit affects behavior
+- [ ] Test: enable inhibit, run `less file.txt`, quit — verify content remains on primary screen
+
+**Priority:** Low — power-user feature, commonly requested.
+
+**Reference:** xterm titeInhibit documentation, less -X flag (achieves same effect per-app).
+
+---
+
+## 22.10 Scroll Bindings Alt Screen Suppression
+
+<!-- Ghostty audit: #6765 (scroll bindings should respect alt screen) -->
+
+**Source:** Ghostty #6765 — Keybinding-driven scroll actions (Shift+PageUp, scroll_to_top) should be suppressed when in alt screen mode, because alt screen apps don't use the scrollback buffer. With Ghostty's `performable:` prefix, unperformable actions pass the key through to the application.
+
+**Problem:** ori_term's keybinding scroll (Shift+PageUp etc.) always scrolls the viewport regardless of alt screen mode. Mouse scroll correctly respects alt screen (sends arrow keys when `ALTERNATE_SCROLL` is active), but keybinding scroll does not.
+
+**Required work:**
+
+- [ ] Check `TermMode::ALT_SCREEN` in `execute_scroll()` (`oriterm/src/app/keyboard_input/action_dispatch.rs`)
+- [ ] When in alt screen: either pass the key through to the PTY (so the app handles it) or suppress silently
+- [ ] Config option: `scroll_passthrough_alt_screen = true` (default: pass through)
+- [ ] Also suppress `scroll_to_top` / `scroll_to_bottom` in alt screen (no scrollback to navigate)
+- [ ] Test: enter alt screen (vim), press Shift+PageUp → verify key is forwarded to vim, not consumed by scroll
+
+**Priority:** Medium — affects users who bind scroll keys and use TUI apps.
 
 ---
 

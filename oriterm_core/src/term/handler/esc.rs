@@ -34,6 +34,8 @@ impl<T: EventListener> Term<T> {
         self.charset = CharsetState::default();
         self.saved_charset = None;
         self.saved_origin_mode = None;
+        self.inactive_saved_charset = None;
+        self.inactive_saved_origin_mode = None;
         self.palette = crate::color::Palette::for_theme(self.theme);
         self.cursor_shape = crate::grid::CursorShape::default();
         self.title.clear();
