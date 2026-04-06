@@ -25,6 +25,9 @@ sections:
   - id: "16.6"
     title: "Tab Activity Indicator"
     status: not-started
+  - id: "16.7"
+    title: "Hyperlinks in Tab Bar Status"
+    status: not-started
   - id: "16.4"
     title: Section Completion
     status: in-progress
@@ -302,6 +305,24 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 **Priority:** Medium — commonly requested feature, strong quality-of-life improvement.
 
 **Reference:** Roxterm activity notification, iTerm2 tab activity badge, Kitty `tab_activity_symbol`.
+
+---
+
+## 16.7 Hyperlinks in Tab Bar Status
+
+<!-- WezTerm audit (open scan): #7347 (allow hyperlinks in tab bar status) -->
+
+**Source:** WezTerm #7347 — Tab bar status areas (left/right status) should support OSC 8 hyperlinks so that clickable URLs and interactive elements can be embedded in the status line.
+
+**Required work:**
+
+- [ ] Parse OSC 8 hyperlinks within tab bar status text (from Lua `set_left_status`/`set_right_status` or shell integration)
+- [ ] Render hyperlinks with underline in the tab bar text
+- [ ] Hit testing: when clicking a hyperlinked region in the status bar, open the URL
+- [ ] Hover: show URL tooltip and underline on hover (same as grid hyperlinks)
+- [ ] Test: set status text containing OSC 8 URL, click → verify URL opens
+
+**Priority:** Low — enables interactive tab bar widgets (e.g., clickable branch names, build status links).
 
 ---
 

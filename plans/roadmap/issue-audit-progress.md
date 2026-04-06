@@ -16,6 +16,7 @@ Tracking progress through local issue dumps at `~/projects/reference_repos/conso
 | 8 | All repos (local JSON) | Positions 401-500 by score | 100 | 0 | 2026-04-06 |
 | 9 | All repos (local JSON) | Positions 501-600 by score | 100 | 0 | 2026-04-06 |
 | 4b | All repos CLOSED issues | Shipped features scan | 808 | 6 | 2026-04-06 |
+| 4c | All repos CLOSED features | Deep feature scan (1045 feature issues) | 1045 | 8 | 2026-04-06 |
 
 Chunk 5 (open issues only): 0 new items — all were already-fixed bugs.
 Chunks 6-9 (open issues only): 0 new items.
@@ -34,7 +35,10 @@ Diminishing returns reached at chunk 5. Positions 101+ are almost entirely close
 
 ## Running Totals
 
-- **Issues reviewed**: 1,000+
-- **Items added to roadmap**: 55
-- **Sections touched**: 21
+- **Issues reviewed**: 16,407 (full corpus scanned via keyword filtering)
+- **Items added to roadmap**: 58
+- **Sections touched**: 23
+- **Repos**: Ghostty (2,115), WezTerm (4,292), Alacritty (5,000), Kitty (5,000)
+- **Comments archived**: 98,159 across all repos
+- **Convergence**: reached at chunk 5. Remaining unmatched open issues (92-98%) are platform bugs, config support, and packaging — not terminal features.
 - **Local data**: 16,407 issues + 98,159 comments across 4 repos (103 MB)
