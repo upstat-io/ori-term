@@ -29,19 +29,19 @@ sections:
     status: complete
   - id: "03.3"
     title: "Device Status Report Scenarios (DSR)"
-    status: complete
+    status: in-progress
   - id: "03.4"
     title: "Private Mode Report Scenarios (DECRQM Private)"
     status: complete
   - id: "03.5"
     title: "ANSI Mode Report Scenarios (DECRQM ANSI)"
-    status: complete
+    status: in-progress
   - id: "03.R"
     title: "Third Party Review Findings"
     status: in-progress
   - id: "03.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 03: Reports & Response Validation
@@ -709,6 +709,10 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
   Resolved: Fixed on 2026-04-05. Gated `oriterm-release-published` dispatch on `needs.publish.result == 'success'`; roadmap event remains unconditional within the job.
 - [x] `[TPR-03-005][low]` `oriterm_core/tests/teseq/csi_reports.rs:262` / `oriterm_core/tests/teseq/harness/assertions.rs:155` — the non-zero-exit fix in `analyze_response()` is still unpinned by a regression test.
   Resolved: Fixed on 2026-04-05. Extracted `pipe_through_command()` from `analyze_response()` and added `pipe_through_command_returns_err_on_nonzero_exit` test using `false` command.
+- [x] `[TPR-03-006][medium]` `oriterm_core/tests/teseq/csi_reports.rs:271` — the new non-zero-exit regression test is Unix-only.
+  Resolved: Fixed on 2026-04-05. Added `args` parameter to `pipe_through_command()` and made test cross-platform: `false` on Unix, `cmd /C exit 1` on Windows via `#[cfg(unix)]`/`#[cfg(windows)]` branches.
+- [x] `[TPR-03-007][low]` `.github/workflows/auto-release.yml:350` — the roadmap-notify fix still falls back to tip-commit-only detection for zero-before pushes.
+  Resolved: Fixed on 2026-04-05. Changed zero-before fallback from `HEAD~1` to `$(git hash-object -t tree /dev/null)` (empty tree), ensuring the full push is diffed on initial or recreated branch pushes.
 
 ---
 

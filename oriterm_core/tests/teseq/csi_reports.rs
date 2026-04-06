@@ -270,12 +270,16 @@ fn analyze_response_produces_output() {
 #[test]
 fn pipe_through_command_returns_err_on_nonzero_exit() {
     // Tests the non-zero-exit error path extracted into pipe_through_command.
-    // Uses /bin/false which always exits 1, avoiding PATH manipulation.
-    let result = pipe_through_command("false", "");
+    // Uses platform-appropriate commands that always exit non-zero.
+    #[cfg(unix)]
+    let result = pipe_through_command("false", &[], "");
+    #[cfg(windows)]
+    let result = pipe_through_command("cmd", &["/C", "exit", "1"], "");
+
     assert!(result.is_err(), "expected Err for non-zero exit");
     let err_msg = result.unwrap_err();
     assert!(
-        err_msg.contains("false exited with"),
+        err_msg.contains("exited with"),
         "unexpected error: {err_msg}"
     );
 }
