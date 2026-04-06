@@ -22,6 +22,9 @@ sections:
   - id: "39.5"
     title: Image Rendering + GPU Compositing
     status: in-progress
+  - id: "39.7"
+    title: "Kitty Images Scroll with Text"
+    status: not-started
   - id: "39.6"
     title: Section Completion
     status: in-progress
@@ -605,6 +608,28 @@ Render cached images as GPU textures composited into the terminal frame.
   - [x] GPU memory limit evicts oldest textures
   - [x] Config `image_protocol = false` produces no image quads (handler early-return)
   - [x] Resize recalculates cell-count-based placement pixel dimensions (in `image/tests.rs`)
+
+---
+
+## 39.7 Kitty Images Scroll with Text
+
+<!-- Ghostty audit: #4323 (Kitty images aren't scrolled with text) -->
+
+**Source:** Ghostty #4323 — Images placed via Kitty graphics protocol don't follow text when scrolled with CSI sequences. When `CSI T` (scroll down) is used, the text moves but images stay in their original position, creating a visual disconnect.
+
+**Problem:** Kitty images are placed at absolute screen positions. When terminal content scrolls (via CSI scroll sequences, not user viewport scroll), image placements must be updated to follow their associated text rows.
+
+**Required work:**
+
+- [ ] Track image placement row association: when an image is placed, record which row it's attached to
+- [ ] When CSI scroll sequences (SU/SD/IL/DL) move rows, update image placement positions accordingly
+- [ ] Handle scrollback: when the image's associated row scrolls into scrollback, the image should be visible when scrolling back to that position
+- [ ] Handle image deletion: images scrolled off the bottom of scrollback should be garbage collected
+- [ ] Test: place image via Kitty protocol, scroll text with CSI 4T, verify image moves with its row
+
+**Priority:** Medium — affects any application using Kitty graphics with scrolling content (terminals-in-terminals, TUI image viewers).
+
+**Reference:** Kitty graphics protocol spec — placement behavior during scroll operations.
 
 ---
 

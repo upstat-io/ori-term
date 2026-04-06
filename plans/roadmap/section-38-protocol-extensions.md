@@ -43,6 +43,12 @@ sections:
   - id: "38.11"
     title: "VT52 Compatibility Mode (DECANM)"
     status: not-started
+  - id: "38.13"
+    title: "Kitty Clipboard Protocol (OSC 5522)"
+    status: not-started
+  - id: "38.14"
+    title: "Text Sizing Protocol (OSC 66)"
+    status: not-started
   - id: "38.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -464,6 +470,51 @@ Support DCS passthrough for applications running inside nested terminals or mult
 **Priority:** Low — niche compatibility, few modern apps use VT52 sequences.
 
 **Reference:** VT100 User Guide Chapter 3 (vt100.net), xterm VT52 support.
+
+---
+
+## 38.13 Kitty Clipboard Protocol (OSC 5522)
+
+<!-- Ghostty audit: #10549 (Implement the Kitty Clipboard Protocol) -->
+
+**Source:** Ghostty #10549 — The Kitty Clipboard Protocol (OSC 5522) allows applications to copy/paste rich content (not just plain text) from the terminal. Supports MIME types, multiple clipboard targets, and chunked transfer.
+
+**Problem:** ori_term only supports OSC 52 (standard xterm clipboard — plain text, base64 encoded). OSC 5522 is a newer protocol that enables rich clipboard operations.
+
+**Required work:**
+
+- [ ] Parse OSC 5522 sequences in VTE handler (separate from OSC 52)
+- [ ] Support MIME type negotiation (text/plain, text/html, image/png, etc.)
+- [ ] Support chunked clipboard data transfer for large payloads
+- [ ] Implement clipboard read/write with type metadata via platform clipboard APIs
+- [ ] Security: respect clipboard policy settings (Section 45) for OSC 5522 same as OSC 52
+- [ ] Test: send OSC 5522 with text/html content, verify clipboard contains HTML data
+
+**Priority:** Low — emerging protocol, not widely adopted yet. Kitty and (soon) Ghostty support it.
+
+**Reference:** [Kitty Clipboard Protocol spec](https://sw.kovidgoyal.net/kitty/clipboard/)
+
+---
+
+## 38.14 Text Sizing Protocol (OSC 66)
+
+<!-- Ghostty audit: #10333 (Implement the Text Sizing Protocol) -->
+
+**Source:** Ghostty #10333 — The Text Sizing Protocol (OSC 66) lets applications specify scale factors and explicit widths for text. An alternative to mode 2027 (Unicode width override) — applications can explicitly tell the terminal how wide a given grapheme should be.
+
+**Problem:** ori_term relies on `unicode-width` crate for cell width calculation. Some graphemes (emoji, CJK variants, new Unicode additions) have ambiguous width. OSC 66 lets applications override width explicitly, eliminating width disagreements between app and terminal.
+
+**Required work:**
+
+- [ ] Parse OSC 66 sequences (parser already exists in Ghostty; spec from Kitty)
+- [ ] Associate OSC 66 metadata with cells in the grid (scale factor, explicit width)
+- [ ] Render cells with explicit width: when OSC 66 specifies width=2 for a normally-width-1 char, render it spanning 2 cells
+- [ ] Start with width specification only (like Foot), defer scaling for later
+- [ ] Test: application sends OSC 66 specifying width=2 for ASCII char → verify it occupies 2 cells
+
+**Priority:** Low — new protocol, Kitty and Foot implement it, Ghostty in progress.
+
+**Reference:** [Kitty Text Sizing Protocol spec](https://github.com/kovidgoyal/kitty/blob/master/docs/text-sizing-protocol.rst)
 
 ---
 
