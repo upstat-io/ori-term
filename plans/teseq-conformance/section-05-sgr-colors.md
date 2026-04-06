@@ -27,8 +27,8 @@ inspired_by:
   - "WezTerm term/src/test/csi.rs — color palette and attribute tests"
 depends_on: ["01", "02"]
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-04-06
 sections:
   - id: "05.0"
     title: "Scaffolding & Harness Extension"
@@ -59,7 +59,7 @@ sections:
     status: complete
   - id: "05.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "05.N"
     title: "Completion Checklist"
     status: not-started
@@ -67,7 +67,7 @@ sections:
 
 # Section 05: SGR & Color Scenarios
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Comprehensive SGR coverage through teseq scenarios. While handler tests validate SGR parsing at the byte level, these scenarios validate the *rendered result* — CellFlags and resolved colors as they appear in `RenderableContent`. This catches bugs in the color resolution pipeline (bold-as-bright promotion, dim application, inverse swapping, DECSCNM interaction, underline color resolution) that byte-level tests miss.
 
 **Success Criteria:**
@@ -901,7 +901,11 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
 
 ## 05.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-05-001][medium]` [plans/teseq-conformance/section-05-sgr-colors.md:11](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L11), [plans/teseq-conformance/section-05-sgr-colors.md:78](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L78), [plans/teseq-conformance/section-05-sgr-colors.md:442](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L442), [oriterm_core/tests/teseq/scenarios/csi/sgr/color_16_fg.teseq:1](/home/eric/projects/ori_term/oriterm_core/tests/teseq/scenarios/csi/sgr/color_16_fg.teseq#L1), [oriterm_core/tests/teseq/scenarios/csi/sgr/color_16_bg.teseq:1](/home/eric/projects/ori_term/oriterm_core/tests/teseq/scenarios/csi/sgr/color_16_bg.teseq#L1), [oriterm_core/tests/teseq/sgr.rs:257](/home/eric/projects/ori_term/oriterm_core/tests/teseq/sgr.rs#L257) — Section 05 marks the full 16-color matrix complete, but the committed scenarios only exercise codes `30-37`, `90-91`, `40-47`, and `100-101`, and the Rust assertions sample only black, red, green, bright black, and bright red.
+  Validation: the plan explicitly claims "all 8 base + 8 bright colors" for both foreground and background, yet the fixtures stop after `91`/`101`, so bright green through bright white (`92-97` and `102-107`) never appear in the teseq corpus. Because the grid snapshots do not encode color, those missing bright colors have no other coverage in this section. This leaves six bright foreground mappings and six bright background mappings unpinned while the checklist and success criteria report the 16-color work as done.
+
+- [x] `[TPR-05-002][low]` [plans/teseq-conformance/section-05-sgr-colors.md:4](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L4), [plans/teseq-conformance/section-05-sgr-colors.md:70](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L70), [plans/teseq-conformance/index.md:91](/home/eric/projects/ori_term/plans/teseq-conformance/index.md#L91), [plans/teseq-conformance/00-overview.md:37](/home/eric/projects/ori_term/plans/teseq-conformance/00-overview.md#L37), [plans/teseq-conformance/00-overview.md:189](/home/eric/projects/ori_term/plans/teseq-conformance/00-overview.md#L189) — The coordinating plan files are out of sync with the committed Section 05 work.
+  Validation: `section-05-sgr-colors.md` frontmatter is `in-progress` and its subsections `05.0` through `05.7` are all marked complete, but the prose header in the same file still says `Status: Not Started`. The higher-level plan files also still report Section 05 as `Not Started` and leave the SGR mission criterion unchecked. That stale status is enough to mislead `/continue-plan` style workflows and to hide the actual review/fix backlog behind a false "not started" state.
 
 ---
 
