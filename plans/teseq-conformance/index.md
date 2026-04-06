@@ -95,11 +95,21 @@ scenarios/csi/modes/, scenarios/workflows/
 SGR, select_graphic_rendition, attributes
 bold, dim, italic, underline, blink, inverse, hidden, strikethrough
 ANSI, 16_color, 256_color, TrueColor, RGB
-bold_as_bright, color_promotion
-underline_style, curly, dotted, dashed
-reset, default, color_reset
+bold_as_bright, color_promotion, set_bold_is_bright
+blink_fast, BlinkFast, BlinkSlow, SGR_6
+underline_style, curly, dotted, dashed, double_underline, ALL_UNDERLINES, cancel_subparam, SGR_4_0
+underline_color, SGR_58, SGR_59, CellExtra
+dim_priority, dim_bold, DIM_wins, dim_rgb
+selective_reset, SGR_21, SGR_22, SGR_23, SGR_24, SGR_25, SGR_27, SGR_28, SGR_29, SGR_39, SGR_49, SGR_59
+DECSCNM, reverse_video, REVERSE_VIDEO, palette_swap, double_swap
+inverse, apply_inverse, color_swap
+resolve_fg, resolve_bg, color_resolution
+reset, default, color_reset, empty_sgr, parameterless
+contains, intersects, flags_assertion
+cell_fg_at, cell_bg_at, cell_underline_color_at
+assert_cell_flags_contain, assert_cell_flags_not_contain
 scenarios/csi/sgr/
-CellFlags, fg, bg, Rgb
+CellFlags, fg, bg, Rgb, RenderableCell
 ```
 
 ---
