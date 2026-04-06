@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Trigger website rebuild
         run: |
-          gh api repos/upstat-io/ori_term_website/dispatches \
+          gh api repos/upstat-io/ori-term-website/dispatches \
             -f event_type=oriterm-roadmap-updated
         env:
           GH_TOKEN: ${{ secrets.ORI_TERM_PAT }}
