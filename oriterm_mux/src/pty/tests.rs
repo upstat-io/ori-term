@@ -527,8 +527,9 @@ fn writer_thread_sets_stall_flag_during_write() {
     );
 
     // Clean up: drop the reader to unblock the writer, then shut down.
+    // The writer may have already exited (broken pipe), so ignore SendError.
     drop(reader);
-    tx.send(Msg::Shutdown).unwrap();
+    let _ = tx.send(Msg::Shutdown);
     handle.join().expect("writer thread panicked");
 }
 
@@ -602,8 +603,8 @@ fn bug_11_1_ctrl_c_stuck_behind_stalled_write() {
     drop(reader);
 
     // 4. Writer unblocks (write returns error because reader closed).
-    //    Shut down cleanly.
-    tx.send(Msg::Shutdown).unwrap();
+    //    The writer may have already exited (broken pipe), so ignore SendError.
+    let _ = tx.send(Msg::Shutdown);
     handle.join().expect("writer thread panicked");
 }
 
