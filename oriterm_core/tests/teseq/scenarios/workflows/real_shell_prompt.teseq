@@ -1,0 +1,11 @@
+: Esc ]
+|0;user@host:~|
+: Esc \
+: Esc [ 1 ; 32 m
+|user@host|
+: Esc [ 0 m
+|:|
+: Esc [ 1 ; 34 m
+|~|
+: Esc [ 0 m
+|$ |

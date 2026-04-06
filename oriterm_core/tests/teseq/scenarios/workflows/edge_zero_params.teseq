@@ -1,0 +1,8 @@
+: Esc [ 0 ; 0 H
+|At origin via zeros|
+. CR/^M LF/^J
+: Esc [ H
+|At origin via omit|
+. CR/^M LF/^J
+: Esc [ 0 A
+|CUU zero|

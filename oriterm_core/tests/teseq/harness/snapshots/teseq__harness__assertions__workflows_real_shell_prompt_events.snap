@@ -1,0 +1,6 @@
+---
+source: oriterm_core/tests/teseq/harness/assertions.rs
+expression: event_text
+---
+Title("user@host:~")
+IconName("user@host:~")
