@@ -439,6 +439,25 @@ Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 
 ---
 
+## 13.12 Ambiguous Width Character Config
+
+<!-- WezTerm audit (batch 4-closed): #1888 (treat ambiguous width chars as fullwidth) -->
+
+**Source:** WezTerm #1888 — Some CJK users need "ambiguous width" Unicode characters (e.g., Greek letters, certain symbols) to be treated as fullwidth (width 2) instead of the default halfwidth (width 1). This is a common need for East Asian users whose locale expects these characters to be double-width.
+
+**Required work:**
+
+- [ ] Config option: `ambiguous_width = 1` (default: 1 = halfwidth, 2 = fullwidth)
+- [ ] Affects `unicode-width` calculations in the grid: when a character has `EastAsianWidth::Ambiguous`, use the configured width instead of the default
+- [ ] Must propagate to: cell placement (`put_char`), selection boundaries, reflow, cursor movement
+- [ ] Test: with `ambiguous_width = 2`, print Greek α → verify cursor advances 2 columns
+
+**Priority:** Low — affects East Asian locale users with specific Unicode display preferences.
+
+**Reference:** WezTerm `treat_east_asian_ambiguous_as_wide`, xterm `cjkWidth` resource, locale `LANG=ja_JP` expectations.
+
+---
+
 ## 13.10 Section Completion
 
 - [x] All 13.1-13.9 items complete (verified 2026-03-29)

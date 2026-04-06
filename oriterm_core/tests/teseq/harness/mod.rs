@@ -18,3 +18,19 @@ pub use events::{RecordedEvent, RecordedListener};
 pub use loader::ScenarioSpec;
 pub use reseq::{compile_teseq, reseq_available, teseq_available};
 pub use runner::{ScenarioOutcome, TeseqHarness};
+
+/// Compute DA2 version number from `CARGO_PKG_VERSION`.
+///
+/// Replicates `crate_version_number()` from `handler/helpers.rs` so test
+/// assertions track version bumps automatically. Do NOT hardcode a version
+/// number — it changes on every release.
+pub fn compute_da2_version() -> usize {
+    let mut result = 0usize;
+    let version = env!("CARGO_PKG_VERSION");
+    let version = version.split('-').next().unwrap_or(version);
+    for (i, part) in version.split('.').rev().enumerate() {
+        let n = part.parse::<usize>().unwrap_or(0);
+        result += n * 100usize.pow(i as u32);
+    }
+    result
+}
