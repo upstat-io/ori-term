@@ -18,4 +18,16 @@
 |Bblk|
 : Esc [ 101 m
 |Bred|
+: Esc [ 102 m
+|Bgrn|
+: Esc [ 103 m
+|Byel|
+: Esc [ 104 m
+|Bblu|
+: Esc [ 105 m
+|Bmag|
+: Esc [ 106 m
+|Bcyn|
+: Esc [ 107 m
+|Bwht|
 : Esc [ 0 m
