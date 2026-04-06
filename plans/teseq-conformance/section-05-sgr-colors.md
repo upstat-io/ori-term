@@ -47,7 +47,7 @@ sections:
     status: complete
   - id: "05.5a"
     title: "Selective Attribute Resets (SGR 21-29)"
-    status: not-started
+    status: complete
   - id: "05.5b"
     title: "Default Color & Template Resets (SGR 0/39/49/59)"
     status: not-started
@@ -593,7 +593,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
 
 The codebase implements all standard selective SGR resets. Each cancel code has a dedicated `Attr::Cancel*` variant in VTE (`crates/vte/src/ansi/dispatch/csi.rs`, SGR dispatch table) and a corresponding `remove()` call in `term/handler/sgr.rs`. This subsection covers attribute cancel codes (SGR 21-29).
 
-- [ ] **`reset_21_cancel_bold.teseq`** — SGR 21 cancels bold only:
+- [x] **`reset_21_cancel_bold.teseq`** — SGR 21 cancels bold only:
   ```
   : Esc [ 1 ; 3 m
   |BI|
@@ -604,7 +604,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   Assert "BI" has BOLD+ITALIC. Assert "I" has ITALIC but not BOLD.
   Note: SGR 21 maps to `Attr::CancelBold` in VTE (line 299), which removes only BOLD. SGR 22 maps to `Attr::CancelBoldDim` which removes BOLD and DIM simultaneously.
 
-- [ ] **`reset_22_cancel_bold_dim.teseq`** — SGR 22 cancels both bold and dim:
+- [x] **`reset_22_cancel_bold_dim.teseq`** — SGR 22 cancels both bold and dim:
   ```
   : Esc [ 1 ; 2 m
   |BD|
@@ -614,7 +614,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   ```
   Assert "BD" has BOLD+DIM. Assert "Neither" has neither BOLD nor DIM.
 
-- [ ] **`reset_23_cancel_italic.teseq`** — SGR 23 cancels italic:
+- [x] **`reset_23_cancel_italic.teseq`** — SGR 23 cancels italic:
   ```
   : Esc [ 3 ; 1 m
   |IB|
@@ -624,7 +624,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   ```
   Assert "IB" has ITALIC+BOLD. Assert "B" has BOLD but not ITALIC.
 
-- [ ] **`reset_24_cancel_underline.teseq`** — SGR 24 cancels ALL underline styles:
+- [x] **`reset_24_cancel_underline.teseq`** — SGR 24 cancels ALL underline styles:
   ```
   : Esc [ 4 : 3 m
   |Curly|
@@ -635,7 +635,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   Assert "Curly" has CURLY_UNDERLINE. Assert "None" has none of ALL_UNDERLINES.
   This tests that SGR 24 clears the `ALL_UNDERLINES` mask (all 5 styles), not just `UNDERLINE`.
 
-- [ ] **`reset_25_cancel_blink.teseq`** — SGR 25 cancels blink:
+- [x] **`reset_25_cancel_blink.teseq`** — SGR 25 cancels blink:
   ```
   : Esc [ 5 ; 1 m
   |BlinkBold|
@@ -645,7 +645,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   ```
   Assert "BlinkBold" has BLINK+BOLD. Assert "Bold" has BOLD but not BLINK.
 
-- [ ] **`reset_27_cancel_inverse.teseq`** — SGR 27 cancels inverse:
+- [x] **`reset_27_cancel_inverse.teseq`** — SGR 27 cancels inverse:
   ```
   : Esc [ 7 ; 3 m
   |InvItalic|
@@ -655,7 +655,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   ```
   Assert "InvItalic" has INVERSE+ITALIC. Assert "Italic" has ITALIC but not INVERSE.
 
-- [ ] **`reset_28_cancel_hidden.teseq`** — SGR 28 cancels hidden:
+- [x] **`reset_28_cancel_hidden.teseq`** — SGR 28 cancels hidden:
   ```
   : Esc [ 8 ; 1 m
   |HidBold|
@@ -665,7 +665,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   ```
   Assert "HidBold" has HIDDEN+BOLD. Assert "Bold" has BOLD but not HIDDEN.
 
-- [ ] **`reset_29_cancel_strike.teseq`** — SGR 29 cancels strikethrough:
+- [x] **`reset_29_cancel_strike.teseq`** — SGR 29 cancels strikethrough:
   ```
   : Esc [ 9 ; 3 m
   |StrikeItalic|
@@ -675,7 +675,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
   ```
   Assert "StrikeItalic" has STRIKETHROUGH+ITALIC. Assert "Italic" has ITALIC but not STRIKETHROUGH.
 
-- [ ] **`reset_selective_preserves_others.teseq`** — comprehensive test: apply bold+italic+underline+blink+inverse+strikethrough, then cancel them one at a time, verifying each cancel removes only its target:
+- [x] **`reset_selective_preserves_others.teseq`** — comprehensive test: apply bold+italic+underline+blink+inverse+strikethrough, then cancel them one at a time, verifying each cancel removes only its target:
   ```
   : Esc [ 1 ; 3 ; 4 ; 5 ; 7 ; 9 m
   |All|

@@ -1,0 +1,5 @@
+: Esc [ 8 ; 1 m
+|HidBold|
+: Esc [ 28 m
+|Bold|
+: Esc [ 0 m

@@ -1,0 +1,5 @@
+: Esc [ 9 ; 3 m
+|StrikeItalic|
+: Esc [ 29 m
+|Italic|
+: Esc [ 0 m

@@ -447,3 +447,150 @@ fn color_rgb_bg() {
         }
     );
 }
+
+// 05.5a Selective attribute resets (SGR 21-29)
+
+#[test]
+fn reset_21_cancel_bold() {
+    let Some(outcome) = run_scenario("reset_21_cancel_bold") else {
+        return;
+    };
+    // "BI" at col 0: BOLD+ITALIC.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD | CellFlags::ITALIC);
+    // "I" at col 2: ITALIC only, BOLD cancelled by SGR 21.
+    assert_cell_flags_contain(&outcome, 0, 2, CellFlags::ITALIC);
+    assert_cell_flags_not_contain(&outcome, 0, 2, CellFlags::BOLD);
+}
+
+#[test]
+fn reset_22_cancel_bold_dim() {
+    let Some(outcome) = run_scenario("reset_22_cancel_bold_dim") else {
+        return;
+    };
+    // "BD" at col 0: BOLD+DIM.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD | CellFlags::DIM);
+    // "Neither" at col 2: neither BOLD nor DIM.
+    assert_cell_flags_not_contain(&outcome, 0, 2, CellFlags::BOLD | CellFlags::DIM);
+}
+
+#[test]
+fn reset_23_cancel_italic() {
+    let Some(outcome) = run_scenario("reset_23_cancel_italic") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::ITALIC | CellFlags::BOLD);
+    // "B" at col 2: BOLD only, ITALIC cancelled.
+    assert_cell_flags_contain(&outcome, 0, 2, CellFlags::BOLD);
+    assert_cell_flags_not_contain(&outcome, 0, 2, CellFlags::ITALIC);
+}
+
+#[test]
+fn reset_24_cancel_underline() {
+    let Some(outcome) = run_scenario("reset_24_cancel_underline") else {
+        return;
+    };
+    // "Curly" at col 0: CURLY_UNDERLINE set.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::CURLY_UNDERLINE);
+    // "None" at col 5: ALL_UNDERLINES cleared.
+    assert_cell_flags_not_contain(&outcome, 0, 5, CellFlags::ALL_UNDERLINES);
+}
+
+#[test]
+fn reset_25_cancel_blink() {
+    let Some(outcome) = run_scenario("reset_25_cancel_blink") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BLINK | CellFlags::BOLD);
+    // "Bold" at col 9: BOLD only, BLINK cancelled.
+    assert_cell_flags_contain(&outcome, 0, 9, CellFlags::BOLD);
+    assert_cell_flags_not_contain(&outcome, 0, 9, CellFlags::BLINK);
+}
+
+#[test]
+fn reset_27_cancel_inverse() {
+    let Some(outcome) = run_scenario("reset_27_cancel_inverse") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::INVERSE | CellFlags::ITALIC);
+    // "Italic" at col 9: ITALIC only, INVERSE cancelled.
+    assert_cell_flags_contain(&outcome, 0, 9, CellFlags::ITALIC);
+    assert_cell_flags_not_contain(&outcome, 0, 9, CellFlags::INVERSE);
+}
+
+#[test]
+fn reset_28_cancel_hidden() {
+    let Some(outcome) = run_scenario("reset_28_cancel_hidden") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::HIDDEN | CellFlags::BOLD);
+    // "Bold" at col 7: BOLD only, HIDDEN cancelled.
+    assert_cell_flags_contain(&outcome, 0, 7, CellFlags::BOLD);
+    assert_cell_flags_not_contain(&outcome, 0, 7, CellFlags::HIDDEN);
+}
+
+#[test]
+fn reset_29_cancel_strike() {
+    let Some(outcome) = run_scenario("reset_29_cancel_strike") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::STRIKETHROUGH | CellFlags::ITALIC);
+    // "Italic" at col 12: ITALIC only, STRIKETHROUGH cancelled.
+    assert_cell_flags_contain(&outcome, 0, 12, CellFlags::ITALIC);
+    assert_cell_flags_not_contain(&outcome, 0, 12, CellFlags::STRIKETHROUGH);
+}
+
+#[test]
+fn reset_selective_preserves_others() {
+    let Some(outcome) = run_scenario("reset_selective_preserves_others") else {
+        return;
+    };
+    let all = CellFlags::BOLD
+        | CellFlags::ITALIC
+        | CellFlags::UNDERLINE
+        | CellFlags::BLINK
+        | CellFlags::INVERSE
+        | CellFlags::STRIKETHROUGH;
+    // Line 0 "All": all 6 flags set.
+    assert_cell_flags_contain(&outcome, 0, 0, all);
+    // Line 1 "NoBold": BOLD cleared, rest remain.
+    assert_cell_flags_not_contain(&outcome, 1, 0, CellFlags::BOLD);
+    assert_cell_flags_contain(
+        &outcome,
+        1,
+        0,
+        CellFlags::ITALIC
+            | CellFlags::UNDERLINE
+            | CellFlags::BLINK
+            | CellFlags::INVERSE
+            | CellFlags::STRIKETHROUGH,
+    );
+    // Line 2 "NoItalic": ITALIC cleared.
+    assert_cell_flags_not_contain(&outcome, 2, 0, CellFlags::BOLD | CellFlags::ITALIC);
+    assert_cell_flags_contain(
+        &outcome,
+        2,
+        0,
+        CellFlags::UNDERLINE | CellFlags::BLINK | CellFlags::INVERSE | CellFlags::STRIKETHROUGH,
+    );
+    // Line 3 "NoUL": UNDERLINE cleared.
+    assert_cell_flags_not_contain(&outcome, 3, 0, CellFlags::ALL_UNDERLINES);
+    assert_cell_flags_contain(
+        &outcome,
+        3,
+        0,
+        CellFlags::BLINK | CellFlags::INVERSE | CellFlags::STRIKETHROUGH,
+    );
+    // Line 4 "NoBlink": BLINK cleared.
+    assert_cell_flags_not_contain(&outcome, 4, 0, CellFlags::BLINK);
+    assert_cell_flags_contain(
+        &outcome,
+        4,
+        0,
+        CellFlags::INVERSE | CellFlags::STRIKETHROUGH,
+    );
+    // Line 5 "NoInv": INVERSE cleared.
+    assert_cell_flags_not_contain(&outcome, 5, 0, CellFlags::INVERSE);
+    assert_cell_flags_contain(&outcome, 5, 0, CellFlags::STRIKETHROUGH);
+    // Line 6 "NoStrike": STRIKETHROUGH cleared, no SGR flags remain.
+    assert_cell_flags_not_contain(&outcome, 6, 0, all);
+}
