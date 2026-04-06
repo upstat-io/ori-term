@@ -269,12 +269,37 @@ fn color_16_fg() {
         cell_fg_at(&outcome, 0, 3),
         palette.resolve(Color::Indexed(1))
     );
-    // "grn" at col 6-8: SGR 32 = green (index 2).
+    // "grn" at col 6: SGR 32 = green (index 2).
     assert_eq!(
         cell_fg_at(&outcome, 0, 6),
         palette.resolve(Color::Indexed(2))
     );
-    // "Bblk" at col 24-27: SGR 90 = bright black (index 8).
+    // "yel" at col 9: SGR 33 = yellow (index 3).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 9),
+        palette.resolve(Color::Indexed(3))
+    );
+    // "blu" at col 12: SGR 34 = blue (index 4).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 12),
+        palette.resolve(Color::Indexed(4))
+    );
+    // "mag" at col 15: SGR 35 = magenta (index 5).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 15),
+        palette.resolve(Color::Indexed(5))
+    );
+    // "cyn" at col 18: SGR 36 = cyan (index 6).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 18),
+        palette.resolve(Color::Indexed(6))
+    );
+    // "wht" at col 21: SGR 37 = white (index 7).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 21),
+        palette.resolve(Color::Indexed(7))
+    );
+    // "Bblk" at col 24: SGR 90 = bright black (index 8).
     assert_eq!(
         cell_fg_at(&outcome, 0, 24),
         palette.resolve(Color::Indexed(8))
@@ -297,12 +322,22 @@ fn color_16_bg() {
         cell_bg_at(&outcome, 0, 0),
         palette.resolve(Color::Indexed(0))
     );
-    // "red" at col 3-5: SGR 41 = red bg (index 1).
+    // "red" at col 3: SGR 41 = red bg (index 1).
     assert_eq!(
         cell_bg_at(&outcome, 0, 3),
         palette.resolve(Color::Indexed(1))
     );
-    // "Bblk" at col 24-27: SGR 100 = bright black bg (index 8).
+    // "cyn" at col 18: SGR 46 = cyan bg (index 6).
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 18),
+        palette.resolve(Color::Indexed(6))
+    );
+    // "wht" at col 21: SGR 47 = white bg (index 7).
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 21),
+        palette.resolve(Color::Indexed(7))
+    );
+    // "Bblk" at col 24: SGR 100 = bright black bg (index 8).
     assert_eq!(
         cell_bg_at(&outcome, 0, 24),
         palette.resolve(Color::Indexed(8))
