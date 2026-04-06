@@ -713,6 +713,8 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
   Resolved: Fixed on 2026-04-05. Added `args` parameter to `pipe_through_command()` and made test cross-platform: `false` on Unix, `cmd /C exit 1` on Windows via `#[cfg(unix)]`/`#[cfg(windows)]` branches.
 - [x] `[TPR-03-007][low]` `.github/workflows/auto-release.yml:350` — the roadmap-notify fix still falls back to tip-commit-only detection for zero-before pushes.
   Resolved: Fixed on 2026-04-05. Changed zero-before fallback from `HEAD~1` to `$(git hash-object -t tree /dev/null)` (empty tree), ensuring the full push is diffed on initial or recreated branch pushes.
+- [x] `[TPR-03-008][medium]` `.github/workflows/auto-release.yml:331` — `notify-website` now suppresses roadmap rebuilds whenever `publish` fails.
+  Resolved: Fixed on 2026-04-05. Removed `publish` result gate from job-level `if` condition. The job now runs after `prepare` succeeds regardless of `publish` outcome. Release event dispatch is already independently gated on `needs.publish.result == 'success'` inside the step.
 
 ---
 
