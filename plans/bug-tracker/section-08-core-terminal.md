@@ -36,6 +36,13 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Subsystem: `crates/vte/src/ansi/dispatch/mod.rs`, `oriterm_core/src/term/handler/mod.rs`
   Found: 2026-04-03 | Source: vttest conformance audit
 
+- [ ] `[BUG-08-7][high]` **Kitty delete dispatch has 4 wrong specifier mappings** — found by tpr-review.
+  Repro: Send Kitty graphics delete commands with d=a, d=c, d=p, d=r specifiers. Behavior diverges from protocol spec.
+  Detail: Verified against official Kitty protocol docs (sw.kovidgoyal.net/kitty/graphics-protocol/) and WezTerm reference. Errors: (1) d=a clears ALL images+placements (spec: visible placements only); (2) d=c uses cursor column (spec: cursor position — cell intersection); (3) d=p does placement-ID deletion (spec: cell position x,y intersection); (4) d=r does cursor-position deletion (spec: image-ID range x≤id≤y). Also missing: d=q/Q (cell+z-index deletion), d=f/F (animation frame deletion).
+  Subsystem: `oriterm_core/src/term/handler/image/kitty.rs`
+  Found: 2026-04-05 | Source: tpr-review (TPR iteration 4)
+  Note: Active work in roadmap section 39 (Image Protocols) covers Kitty image support.
+
 - [x] `[BUG-08-3][low]` **vttest.rs exceeds 500-line file size limit (956 lines)** — found by tpr-review.
   Found: 2026-04-03 | Source: tpr-review
   Fixed: 2026-04-03 — Split into `tests/vttest/` directory with per-menu modules (main.rs, session.rs, pty_size.rs, menu1-8.rs). Largest file is 239 lines. All 29 tests pass. 207 snapshots regenerated under new module paths.
