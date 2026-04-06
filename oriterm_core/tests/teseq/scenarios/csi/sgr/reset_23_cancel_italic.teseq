@@ -1,0 +1,5 @@
+: Esc [ 3 ; 1 m
+|IB|
+: Esc [ 23 m
+|B|
+: Esc [ 0 m

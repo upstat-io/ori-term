@@ -1,0 +1,5 @@
+: Esc [ 4 : 3 m
+|Curly|
+: Esc [ 24 m
+|None|
+: Esc [ 0 m

@@ -1,0 +1,5 @@
+: Esc [ 5 ; 1 m
+|BlinkBold|
+: Esc [ 25 m
+|Bold|
+: Esc [ 0 m
