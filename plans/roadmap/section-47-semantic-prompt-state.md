@@ -37,6 +37,9 @@ sections:
   - id: "47.11"
     title: "Click-to-Move Multi-Click Delay"
     status: not-started
+  - id: "47.12"
+    title: "Copy Last Command Output"
+    status: not-started
   - id: "47.9"
     title: Section Completion
     status: not-started
@@ -320,6 +323,28 @@ Migrate all existing prompt consumers from `Vec<PromptMarker>` to the new cell/r
 - [ ] Must integrate with existing click-count state machine in mouse selection
 
 **Priority:** Low — requires click-to-move feature (Section 47.7) first.
+
+---
+
+## 47.12 Copy Last Command Output
+
+<!-- Ghostty audit (batch 4): #11747 (copy_last_command_output action) -->
+
+**Source:** Ghostty #11747 — Users want a single keybind to copy the output of the last command to the clipboard. This requires OSC 133 semantic zones to identify where command output starts and ends.
+
+**Required work:**
+
+- [ ] Action: `CopyLastCommandOutput` — uses OSC 133 prompt markers to find the output region between the last command's prompt-end (OSC 133;C) and the next prompt-start (OSC 133;A)
+- [ ] Extract text from that region using `selection_to_string()` equivalent
+- [ ] Copy to clipboard (respect clipboard policy from Section 45)
+- [ ] If no semantic zones available: fall back to copying everything from the last line that looks like a prompt to cursor position
+- [ ] Keybinding: `Ctrl+Shift+C` (with no selection active) could trigger this, or a dedicated binding
+- [ ] Requires Section 47.1-47.3 (semantic content type + prompt iterator) as prerequisite
+- [ ] Test: run a command, invoke CopyLastCommandOutput → verify clipboard contains only the command's output, not the prompt or next prompt
+
+**Priority:** Low — depends on semantic prompt infrastructure, but high value when available.
+
+**Reference:** Kitty's `scroll_to_prompt`, iTerm2 "Select Output of Last Command".
 
 ---
 
