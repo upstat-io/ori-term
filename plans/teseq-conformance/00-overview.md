@@ -34,7 +34,7 @@ Build a teseq-powered escape sequence test framework for ori_term that uses GNU 
 - [ ] Erase-with-attributes workflow validates erased cells inherit cursor template background (SGR + ED/EL cross-cutting concern, tested in workflows)
 - [ ] CSI insert/delete scenarios cover: ICH, DCH, IL, DL with scroll region interactions
 - [x] Mode interaction scenarios cover: DECOM+DECSTBM, DECCOLM+DECAWM, DECCOLM negative control (no Mode 40), alt screen (1049/1047) with mode leakage and re-entry semantics, IRM edge cases (margin, wide chars), cross-cutting mode combinations, scrollback integrity
-- [ ] SGR scenarios cover: 16-color, 256-color, TrueColor, bold-as-bright, dim, inverse, underline styles
+- [ ] SGR scenarios cover: 16-color, 256-color, TrueColor, bold-as-bright (default + disabled), DIM+bold priority, inverse, DECSCNM cross-cutting, all 5 underline styles, underline cancel via sub-param (SGR 4:0), underline colors (SGR 58/59), all selective resets (SGR 21-29/39/49/59), BlinkFast=BlinkSlow equivalence, parameterless SGR reset
 - [x] Report/response scenarios cover: DA1, DA2, DA3, DSR cursor position, DECRQM with raw PtyWrite byte assertions (teseq analysis as optional debug aid, not oracle)
 - [ ] ESC sequence scenarios cover: DECSC/DECRC, RIS, character set designation (SCS G0/G1)
 - [ ] OSC scenarios cover: title+icon (0), icon name (1), title (2), clipboard (52), color query (4/10/11)
@@ -147,7 +147,7 @@ Phase 4 - Verification
 | Crate | Production LOC | Test LOC | Total |
 |-------|---------------|----------|-------|
 | `oriterm_core` | ~15,000 | ~10,500 | ~25,500 |
-| **New (teseq tests)** | **0** | **~2,750 est.** | **~2,750 est.** |
+| **New (teseq tests)** | **0** | **~3,420 est.** | **~3,420 est.** |
 
 Existing escape sequence test coverage:
 - Handler unit tests: 5,860 lines (individual sequences)
@@ -168,10 +168,10 @@ Existing escape sequence test coverage:
 | 02 Basic Scenario Suite | ~550 | Medium | 01 |
 | 03 Reports & Response Validation | ~300 | Medium | 01, 02 |
 | 04 Mode Interaction Scenarios | ~620 | High | 01, 02 |
-| 05 SGR & Color Scenarios | ~300 | Medium | 01, 02 |
+| 05 SGR & Color Scenarios | ~800 | Medium-High | 01, 02 |
 | 06 Complex Workflow Scenarios | ~400 | High | 01-05 |
 | 07 Verification & CI Integration | ~250 | Low | 01-06 |
-| **Total new** | **~3,020** | | |
+| **Total new** | **~3,420** | | |
 | **Total deleted** | **~0** | | |
 
 ## Known Bugs (Pre-existing)
