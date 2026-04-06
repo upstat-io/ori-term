@@ -2,7 +2,7 @@
 section: 13
 title: Configuration & Keybindings
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 3
 goal: TOML configuration with file watching and hot reload, user-configurable keybindings with defaults
@@ -34,6 +34,9 @@ sections:
   - id: "13.9"
     title: Shell Completion Scripts
     status: complete
+  - id: "13.11"
+    title: "Configurable Font Size Step"
+    status: not-started
   - id: "13.10"
     title: Section Completion
     status: complete
@@ -414,6 +417,25 @@ Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 - [x] **Tests:** (verified 2026-03-29 — 5 completion tests pass)
   - [x] Each shell variant produces non-empty output (verified 2026-03-29)
   - [x] Output contains expected subcommand names (verified 2026-03-29)
+
+---
+
+## 13.11 Configurable Font Size Step
+
+<!-- WezTerm audit: #7325 (increase/decrease font size by amount other than 10%) -->
+
+**Source:** WezTerm #7325 — Font zoom uses a fixed 10% step. Bitmap font users need exact 2x scaling; other users want finer or coarser steps. The zoom action should accept a configurable factor.
+
+**Required work:**
+
+- [ ] Config option: `font_size_step = 1.0` (absolute points; default 1.0pt, matching current behavior approximately)
+- [ ] Alternative: `font_size_factor = 1.1` (multiplicative; default 10% increase)
+- [ ] Action variants: `IncreaseFontSize(amount)` / `DecreaseFontSize(amount)` where amount overrides the config default
+- [ ] Ensure font size snaps to whole points when using integer steps (avoids sub-pixel drift)
+- [ ] Keybinding supports parameterized actions: `Ctrl+= = IncreaseFontSize(2.0)` for 2pt steps
+- [ ] Test: set step to 2.0, zoom 3 times from 12pt → verify 14pt, 16pt, 18pt
+
+**Priority:** Low — quality-of-life for bitmap font users and users with specific scaling needs.
 
 ---
 

@@ -521,6 +521,26 @@ Support DCS passthrough for applications running inside nested terminals or mult
 
 ---
 
+## 38.15 iTerm2 Feature Reporting (OSC 1337 Capabilities)
+
+<!-- WezTerm audit: #7369 (iTerm2 Terminal Feature Reporting OSC 1337 Capabilities) -->
+
+**Source:** WezTerm #7369 — iTerm2 published a standard way to query terminal capabilities via `OSC 1337;Capabilities`. Applications send the query; the terminal responds with a feature string (e.g., `T1CwMUBSxF` — each letter indicates a supported feature: `F` = inline files, `Sx` = Sixel, etc.).
+
+**Required work:**
+
+- [ ] Parse `OSC 1337;Capabilities` query
+- [ ] Respond with `OSC 1337;Capabilities=FEATURES` where FEATURES encodes ori_term's supported features
+- [ ] Feature flags to report: `F` (inline files/images), `Sx` (Sixel), `C` (cursor shape), `U` (underline styles), etc.
+- [ ] This replaces checking `TERM_PROGRAM` for feature detection — applications can query directly
+- [ ] Test: send capabilities query, verify response contains correct feature flags
+
+**Priority:** Low — progressive enhancement, helps applications detect image protocol support.
+
+**Reference:** [iTerm2 Feature Reporting spec](https://iterm2.com/feature-reporting/), `it2caps` test script.
+
+---
+
 ## 38.12 Section Completion
 
 **Already complete (verified 2026-03-29):**

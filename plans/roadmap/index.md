@@ -229,6 +229,8 @@ dwrote, DirectWrite, Windows font, system fonts
 block glyph gamma, medium shade, U+2592, sRGB, alpha correction
 selective ligature, disable ligature, per-sequence, ligature filter
 Indic script, Devanagari, Bengali, Thai, Tamil, complex script, vowel mark
+underline glyph-break, undercurl beneath, text-decoration-skip-ink, descender
+RTL, BiDi, right-to-left, Arabic, Hebrew, Persian, UAX#9, unicode-bidi
 ```
 
 ---
@@ -317,6 +319,7 @@ HTML Format, RTF, CF_UNICODETEXT, formatted copy
 keyboard selection, mark mode, Shift+arrows
 file drag-and-drop, auto-quote paths
 selection rendering, invert colors, highlight
+pause viewport, freeze scroll, selection in progress, mouseDown buffer
 ```
 
 ---
@@ -334,6 +337,7 @@ mouse selection state machine, SelectionState
 auto-scroll, drag above/below viewport
 horizontal scroll, WheelLeft, WheelRight, button 6, button 7, x-axis
 TUI scroll magnitude, trackpad scroll, precision scroll, scroll forwarding
+inertial scroll cancel, momentum scroll, screen switch, alt screen scroll cancel
 ```
 
 ---
@@ -375,6 +379,7 @@ file watcher, notify, config monitor
 keybindings, KeyBinding, Action, shortcut
 Ctrl+Shift+C, Ctrl+Shift+V, Ctrl+Tab, Ctrl+T
 zoom, font size, Ctrl+=, Ctrl+-
+font size step, IncreaseFontSize, DecreaseFontSize, configurable zoom factor
 ```
 
 ---
@@ -572,6 +577,7 @@ capability reporting, progressive enhancement, feature discovery
 VT52, DECANM, private mode 2, ESC <, VT52 cursor addressing
 OSC 5522, Kitty clipboard protocol, rich clipboard, MIME type
 OSC 66, text sizing protocol, explicit width, scale factor
+OSC 1337, iTerm2 capabilities, Terminal Feature Reporting, feature detection
 ```
 
 ---
@@ -590,6 +596,8 @@ image animation, frame, animated GIF, animation control
 image memory, image eviction, LRU, memory limit, 256 MB
 viu, timg, hologram, ranger preview, Jupyter inline plot
 image scroll, CSI T, scroll down, image placement follow text
+SIXEL color default, omitted parameter, color definition, Pu Px Py Pz
+Kitty animation memory, GIF memory leak, animation frame eviction, max_image_memory
 ```
 
 ---
@@ -698,6 +706,8 @@ window shadow, padding, margin, GRID_PADDING
 partial line clip, max_line_clip_pixels, last line, extra row, pixel waste
 resize overlay, dimensions overlay, cols x rows, resize indicator
 toggle background opacity, ToggleBackgroundOpacity, transparency toggle
+minimum contrast, WCAG, luminance, contrast ratio, accessibility
+cursor trail, cursor smear, motion blur, cursor animation, Neovide
 ```
 
 ---
@@ -919,6 +929,7 @@ Unix domain socket, named pipe, IPC transport
 shadow grid, reconnect snapshot, PaneContent
 PID file, daemon lifecycle, --daemon, --stop, --persist
 PDU size limit, MAX_PDU_PAYLOAD_SIZE, bounded allocation, OOM, memory safety
+tmux control mode, tmux -CC, TmuxDomain, %output, %window-add, %layout-change
 ```
 
 ---

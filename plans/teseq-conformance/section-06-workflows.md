@@ -22,7 +22,7 @@ inspired_by:
   - "Ghostty fuzz corpus (test/fuzz-libghostty/corpus/) — edge case byte sequences"
 depends_on: ["01", "02", "03", "04", "05"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-06
 sections:
   - id: "06.1"
@@ -42,7 +42,7 @@ sections:
     status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "06.N"
     title: "Completion Checklist"
     status: complete
@@ -55,17 +55,17 @@ sections:
 
 **Success Criteria:**
 
-- [ ] 5 mode combination workflows pass at 80x24 base size (including DECSC attribute save/restore)
-- [ ] Mode combination multi-size variants: 5 workflows x 3 sizes = 15 .teseq files (+ 1 companion Rust test for DECCOLM)
-- [ ] 2 query-response workflows validate full handshake sequences
-- [ ] 4 real-world pattern workflows exercise common terminal usage (including charset switching)
-- [ ] 4 OSC scenarios validate title, icon name, clipboard, color query
-- [ ] 6 edge case scenarios test boundary conditions, cross-cutting concerns, and chunked-feed resilience
-- [ ] 19 base .teseq scenarios + 12 multi-size .teseq variants + 3 pure-Rust tests = 34 total test functions pass
+- [x] 5 mode combination workflows pass at 80x24 base size (including DECSC attribute save/restore)
+- [x] Mode combination multi-size variants: 5 workflows x 3 sizes = 15 .teseq files (+ 1 companion Rust test for DECCOLM)
+- [x] 2 query-response workflows validate full handshake sequences
+- [x] 4 real-world pattern workflows exercise common terminal usage (including charset switching)
+- [x] 4 OSC scenarios validate title, icon name, clipboard, color query
+- [x] 6 edge case scenarios test boundary conditions, cross-cutting concerns, and chunked-feed resilience
+- [x] 19 base .teseq scenarios + 12 multi-size .teseq variants + 3 pure-Rust tests = 34 total test functions pass
   - Base .teseq: 5 mode combo + 2 query + 4 real-world + 4 OSC + 4 edge = 19
   - Multi-size: 10 mode combo variants + 2 status_bar variants = 12
   - Pure-Rust: 2 chunked-feed + 1 DECCOLM lifecycle = 3
-- [ ] Satisfies mission criteria for multi-sequence workflow coverage, OSC coverage, and ESC workflow coverage
+- [x] Satisfies mission criteria for multi-sequence workflow coverage, OSC coverage, and ESC workflow coverage
 
 **TDD ordering:** Write each `.teseq` + `.toml` scenario first, run the test to confirm it fails (or produces a new insta snapshot), then implement any production fixes (DECSC conformance gaps) and accept the snapshot. This ensures tests are validated as meaningful before being marked green.
 
@@ -236,7 +236,7 @@ Multi-step query/response sequences that simulate real terminal handshakes.
   ```
   Validates: Each DSR response encodes the correct cursor position via `assert_pty_writes()`. Three PtyWrite events with progressively updated 1-based coordinates: `\x1b[5;10R`, `\x1b[2;10R`, `\x1b[2;30R`. Raw bytes are the oracle; no teseq analysis in assertions.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 06.1–06.2 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 06.1–06.2 implementation work (covered by full-section TPR)
 
 ---
 
@@ -460,10 +460,11 @@ Boundary conditions and unusual sequences.
   Impact: this is a direct hygiene-rule violation in the new test surface and makes further Section 06 follow-up work harder to review and maintain.
   Resolved: Fixed on 2026-04-06. Split workflows.rs into workflows/mod.rs + 4 submodules (mode.rs, query.rs, real_world.rs, edge.rs). All under 500 lines.
 
-- [ ] `[TPR-06-004][medium]` [oriterm_core/src/term/alt_screen.rs](/home/eric/projects/ori_term/oriterm_core/src/term/alt_screen.rs#L79) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L106) — The new per-screen DECSC sidecar swap has no regression test, even though Section 06 requires targeted handler coverage after each DECSC fix.
+- [x] `[TPR-06-004][medium]` [oriterm_core/src/term/alt_screen.rs](/home/eric/projects/ori_term/oriterm_core/src/term/alt_screen.rs#L79) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L106) — The new per-screen DECSC sidecar swap has no regression test, even though Section 06 requires targeted handler coverage after each DECSC fix.
   Evidence: `toggle_alt_common()` now swaps `saved_charset` and `saved_origin_mode` between primary and alternate screens, but the current test surface only covers plain DECSC restore and ordinary alt-screen cursor/content behavior. A repo-wide search over `oriterm_core/src/term/handler/tests.rs`, `oriterm_core/src/term/tests.rs`, and `oriterm_core/tests/teseq/` finds no case that saves DECSC state on one screen, switches with `1047`/`1049`, and then verifies `DECRC` restores the correct per-screen charset/origin pair.
   Impact: the exact cross-screen contamination bug fixed in `a3bcedf6` can regress without tripping either the handler tests or the teseq workflows, which violates the repo rule that bug fixes ship with tests and leaves a shared terminal-state path without a semantic pin.
   Required plan update: Add a focused handler test that saves distinct charset/origin combinations on primary and alt screens, toggles between them, and proves `DECRC` restores the matching per-screen sidecar state.
+  Resolved: Validated on 2026-04-06. Test `decsc_sidecar_isolation_across_alt_screen` already exists at `oriterm_core/tests/teseq/workflows/mode.rs:352` (added in commit 87801e87). It saves DEC Special Graphics + origin mode on primary, switches to alt, does different DECSC with ASCII + no origin, switches back, and verifies DECRC restores the primary's charset and origin mode.
 
 ---
 

@@ -19,6 +19,9 @@ sections:
   - id: "10.5"
     title: "TUI Scroll Magnitude Forwarding"
     status: not-started
+  - id: "10.6"
+    title: "Cancel Inertial Scroll on Screen Switch"
+    status: not-started
   - id: "10.3"
     title: Section Completion
     status: complete
@@ -149,6 +152,24 @@ Encode mouse events and send to PTY when terminal applications request mouse tra
 **Priority:** Medium — affects all trackpad users running tmux/vim/neovim.
 
 **Reference:** Kitty scroll multiplier, Ghostty scroll sensitivity config.
+
+---
+
+## 10.6 Cancel Inertial Scroll on Screen Switch
+
+<!-- Ghostty audit: #3845 (cancel inertial scroll when changing between primary/alt screen) -->
+
+**Source:** Ghostty #3845 — When a user is scrolling with a trackpad (inertial/momentum scroll) and an application switches between primary and alt screen (e.g., opening vim, less, or hitting Ctrl+C in a TUI), the remaining momentum scroll events continue to arrive and get forwarded to the new screen. This causes unexpected scrolling in the newly-switched screen.
+
+**Required work:**
+
+- [ ] Detect screen switch events (mode 1049/1047 set/reset) in the VTE handler
+- [ ] On screen switch: set a "cancel inertial scroll" flag
+- [ ] In the scroll handler: when flag is set, discard incoming scroll events until a brief cooldown (200-300ms) expires or a new deliberate scroll gesture starts
+- [ ] Only apply to `PixelDelta` (trackpad) events, not `LineDelta` (mouse wheel) — mouse wheels don't have inertia
+- [ ] Test: simulate rapid scroll events, trigger alt screen switch, verify scroll events after switch are discarded
+
+**Priority:** Low — affects trackpad users switching between terminal apps and shell.
 
 ---
 
