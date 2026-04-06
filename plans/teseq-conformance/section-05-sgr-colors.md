@@ -38,7 +38,7 @@ sections:
     status: complete
   - id: "05.2"
     title: "Underline Style & Color Scenarios"
-    status: not-started
+    status: complete
   - id: "05.3"
     title: "16-Color & Bold-as-Bright Scenarios"
     status: not-started
@@ -72,9 +72,9 @@ sections:
 
 **Success Criteria:**
 
-- [ ] All 9 basic text attributes tested via cell flag inspection (8 base + blink_fast)
-- [ ] All 5 underline styles tested (single, double, curly, dotted, dashed) with mutual exclusion + 4:0 cancel sub-param
-- [ ] Underline colors tested (SGR 58 set, SGR 59 reset) via `cell_underline_color_at`
+- [x] All 9 basic text attributes tested via cell flag inspection (8 base + blink_fast)
+- [x] All 5 underline styles tested (single, double, curly, dotted, dashed) with mutual exclusion + 4:0 cancel sub-param
+- [x] Underline colors tested (SGR 58 set, SGR 59 reset) via `cell_underline_color_at`
 - [ ] 16-color foreground/background tested with correct Rgb resolution
 - [ ] 256-color indexed colors tested
 - [ ] TrueColor RGB colors tested
@@ -327,7 +327,7 @@ Create scenarios for all 8 basic SGR attributes plus the BlinkFast equivalence.
 
 The codebase supports 5 underline styles that are mutually exclusive (setting one clears all others via `ALL_UNDERLINES` mask). SGR 58/59 set/clear a custom underline color stored in `CellExtra`.
 
-- [ ] **`underline_single.teseq`** — SGR `4` (or `4:1`):
+- [x] **`underline_single.teseq`** — SGR `4` (or `4:1`):
   ```
   : Esc [ 4 m
   |Single underline|
@@ -335,7 +335,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: `UNDERLINE` set, none of `DOUBLE_UNDERLINE | CURLY_UNDERLINE | DOTTED_UNDERLINE | DASHED_UNDERLINE`.
 
-- [ ] **`underline_double.teseq`** — SGR `4:2`:
+- [x] **`underline_double.teseq`** — SGR `4:2`:
   ```
   : Esc [ 4 : 2 m
   |Double underline|
@@ -344,7 +344,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   Note: VTE uses colon sub-parameters for underline styles. `[4, 2]` in VTE's param array is the colon-separated form `4:2`, dispatched as `DoubleUnderline`. Semicolon-separated `4;2` produces two separate params `[4]` then `[2]`, dispatched as `Underline` then `Dim` — completely different behavior. The `.teseq` scenario MUST use `4 : 2` (colon, not semicolon). Reseq strips spaces on `: Esc` lines but preserves colons, so `4 : 2` becomes `4:2` in the output byte stream. Do NOT use `4 ; 2` — that would set underline+dim, not double underline. (Note: SGR 21 in VTE is `CancelBold`, not `DoubleUnderline` — see Section 05.5a.)
   Assert: `DOUBLE_UNDERLINE` set, `UNDERLINE` not set.
 
-- [ ] **`underline_curly.teseq`** — SGR `4:3`:
+- [x] **`underline_curly.teseq`** — SGR `4:3`:
   ```
   : Esc [ 4 : 3 m
   |Curly underline|
@@ -352,7 +352,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: `CURLY_UNDERLINE` set, `UNDERLINE` not set.
 
-- [ ] **`underline_dotted.teseq`** — SGR `4:4`:
+- [x] **`underline_dotted.teseq`** — SGR `4:4`:
   ```
   : Esc [ 4 : 4 m
   |Dotted underline|
@@ -360,7 +360,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: `DOTTED_UNDERLINE` set, `UNDERLINE` not set.
 
-- [ ] **`underline_dashed.teseq`** — SGR `4:5`:
+- [x] **`underline_dashed.teseq`** — SGR `4:5`:
   ```
   : Esc [ 4 : 5 m
   |Dashed underline|
@@ -368,7 +368,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: `DASHED_UNDERLINE` set, `UNDERLINE` not set.
 
-- [ ] **`underline_mutual_exclusion.teseq`** — switching styles clears the previous:
+- [x] **`underline_mutual_exclusion.teseq`** — switching styles clears the previous:
   ```
   : Esc [ 4 m
   |S|
@@ -380,7 +380,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: 'S' has UNDERLINE only, 'C' has CURLY_UNDERLINE only, 'D' has DOUBLE_UNDERLINE only. Each position has none of the other underline flags.
 
-- [ ] **`underline_color_truecolor.teseq`** — SGR 58;2;R;G;B sets underline color:
+- [x] **`underline_color_truecolor.teseq`** — SGR 58;2;R;G;B sets underline color:
   ```
   : Esc [ 4 m
   : Esc [ 58 ; 2 ; 255 ; 0 ; 128 m
@@ -390,7 +390,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   Assert via `cell_underline_color_at()`: `Some(Rgb { r: 255, g: 0, b: 128 })`.
   Note: The underline color in `RenderableCell` is resolved through `palette.resolve()` in `snapshot.rs:132`. For TrueColor `Color::Spec`, this is a passthrough.
 
-- [ ] **`underline_color_256.teseq`** — SGR 58;5;N sets indexed underline color:
+- [x] **`underline_color_256.teseq`** — SGR 58;5;N sets indexed underline color:
   ```
   : Esc [ 4 m
   : Esc [ 58 ; 5 ; 196 m
@@ -399,7 +399,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: `cell_underline_color_at()` returns the palette-resolved Rgb for index 196.
 
-- [ ] **`underline_color_reset.teseq`** — SGR 59 clears underline color:
+- [x] **`underline_color_reset.teseq`** — SGR 59 clears underline color:
   ```
   : Esc [ 4 m
   : Esc [ 58 ; 2 ; 255 ; 0 ; 0 m
@@ -410,7 +410,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: 'R' (col 0) of "Red UL" has `Some(Rgb { r: 255, g: 0, b: 0 })`, 'D' (col 0) of "Default UL" has `None`.
 
-- [ ] **`underline_cancel_subparam.teseq`** — SGR `4:0` cancels underline via sub-parameter:
+- [x] **`underline_cancel_subparam.teseq`** — SGR `4:0` cancels underline via sub-parameter:
   ```
   : Esc [ 4 : 3 m
   |Curly|
@@ -420,7 +420,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert: 'C' has `CURLY_UNDERLINE`, 'N' has none of `ALL_UNDERLINES`. This tests the `[4, 0] => CancelUnderline` VTE dispatch path (csi.rs:288), which is distinct from `SGR 24` (`[24] => CancelUnderline`). Both paths should produce the same result — clearing all underline styles via `ALL_UNDERLINES` mask.
 
-- [ ] **`underline_color_survives_style_change.teseq`** — underline color persists when style changes:
+- [x] **`underline_color_survives_style_change.teseq`** — underline color persists when style changes:
   ```
   : Esc [ 4 m
   : Esc [ 58 ; 2 ; 0 ; 255 ; 0 m

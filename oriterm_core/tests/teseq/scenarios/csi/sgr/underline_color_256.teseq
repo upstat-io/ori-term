@@ -1,0 +1,4 @@
+: Esc [ 4 m
+: Esc [ 58 ; 5 ; 196 m
+|Indexed underline|
+: Esc [ 0 m

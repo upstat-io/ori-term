@@ -2,11 +2,14 @@
 
 use std::path::Path;
 
+use vte::ansi::Color;
+
 use oriterm_core::cell::CellFlags;
+use oriterm_core::color::{Palette, Rgb};
 
 use super::harness::{
     self, ScenarioOutcome, TeseqHarness, assert_cell_flags_contain, assert_cell_flags_not_contain,
-    reseq_available,
+    cell_underline_color_at, reseq_available,
 };
 
 /// Run an SGR scenario and apply spec assertions.
@@ -111,4 +114,139 @@ fn attr_blink_fast() {
     // SGR 6 (BlinkFast) sets the same BLINK flag as SGR 5 (BlinkSlow).
     assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BLINK);
     assert_cell_flags_not_contain(&outcome, 0, 10, CellFlags::BLINK);
+}
+
+// 05.2 Underline style & color scenarios
+
+#[test]
+fn underline_single() {
+    let Some(outcome) = run_scenario("underline_single") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+    let others = CellFlags::DOUBLE_UNDERLINE
+        | CellFlags::CURLY_UNDERLINE
+        | CellFlags::DOTTED_UNDERLINE
+        | CellFlags::DASHED_UNDERLINE;
+    assert_cell_flags_not_contain(&outcome, 0, 0, others);
+}
+
+#[test]
+fn underline_double() {
+    let Some(outcome) = run_scenario("underline_double") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::DOUBLE_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+}
+
+#[test]
+fn underline_curly() {
+    let Some(outcome) = run_scenario("underline_curly") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::CURLY_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+}
+
+#[test]
+fn underline_dotted() {
+    let Some(outcome) = run_scenario("underline_dotted") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::DOTTED_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+}
+
+#[test]
+fn underline_dashed() {
+    let Some(outcome) = run_scenario("underline_dashed") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::DASHED_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+}
+
+#[test]
+fn underline_mutual_exclusion() {
+    let Some(outcome) = run_scenario("underline_mutual_exclusion") else {
+        return;
+    };
+    // 'S' at col 0: UNDERLINE only.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 0, CellFlags::CURLY_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 0, CellFlags::DOUBLE_UNDERLINE);
+    // 'C' at col 1: CURLY_UNDERLINE only.
+    assert_cell_flags_contain(&outcome, 0, 1, CellFlags::CURLY_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 1, CellFlags::UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 1, CellFlags::DOUBLE_UNDERLINE);
+    // 'D' at col 2: DOUBLE_UNDERLINE only.
+    assert_cell_flags_contain(&outcome, 0, 2, CellFlags::DOUBLE_UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 2, CellFlags::UNDERLINE);
+    assert_cell_flags_not_contain(&outcome, 0, 2, CellFlags::CURLY_UNDERLINE);
+}
+
+#[test]
+fn underline_color_truecolor() {
+    let Some(outcome) = run_scenario("underline_color_truecolor") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+    assert_eq!(
+        cell_underline_color_at(&outcome, 0, 0),
+        Some(Rgb {
+            r: 255,
+            g: 0,
+            b: 128
+        })
+    );
+}
+
+#[test]
+fn underline_color_256() {
+    let Some(outcome) = run_scenario("underline_color_256") else {
+        return;
+    };
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+    let expected = Palette::default().resolve(Color::Indexed(196));
+    assert_eq!(cell_underline_color_at(&outcome, 0, 0), Some(expected));
+}
+
+#[test]
+fn underline_color_reset() {
+    let Some(outcome) = run_scenario("underline_color_reset") else {
+        return;
+    };
+    // "Red UL" at line 0: underline color set.
+    assert_eq!(
+        cell_underline_color_at(&outcome, 0, 0),
+        Some(Rgb { r: 255, g: 0, b: 0 })
+    );
+    // "Default UL" at line 0 after "Red UL" (col 6): underline color cleared.
+    assert_eq!(cell_underline_color_at(&outcome, 0, 6), None);
+}
+
+#[test]
+fn underline_cancel_subparam() {
+    let Some(outcome) = run_scenario("underline_cancel_subparam") else {
+        return;
+    };
+    // 'C' at col 0: CURLY_UNDERLINE set.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::CURLY_UNDERLINE);
+    // 'N' at col 5 (after "Curly"): all underlines cleared by SGR 4:0.
+    assert_cell_flags_not_contain(&outcome, 0, 5, CellFlags::ALL_UNDERLINES);
+}
+
+#[test]
+fn underline_color_survives_style_change() {
+    let Some(outcome) = run_scenario("underline_color_survives_style_change") else {
+        return;
+    };
+    let green = Rgb { r: 0, g: 255, b: 0 };
+    // 'A' at col 0: UNDERLINE + green underline color.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+    assert_eq!(cell_underline_color_at(&outcome, 0, 0), Some(green));
+    // 'B' at col 1: CURLY_UNDERLINE + green underline color (survived style switch).
+    assert_cell_flags_contain(&outcome, 0, 1, CellFlags::CURLY_UNDERLINE);
+    assert_eq!(cell_underline_color_at(&outcome, 0, 1), Some(green));
 }
