@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Basic Scenario Suite"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create foundational scenario files for C0 controls and basic CSI sequences that validate the harness end-to-end and establish the scenario authoring pattern"
 success_criteria:
@@ -26,7 +26,7 @@ sections:
     status: complete
   - id: "02.2"
     title: "CSI Cursor Movement Scenarios"
-    status: in-progress
+    status: complete
   - id: "02.3"
     title: "CSI Erase Scenarios"
     status: complete
@@ -41,12 +41,12 @@ sections:
     status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 02: Basic Scenario Suite
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Create the foundational scenario files that validate the TeseqHarness works end-to-end and establish the pattern for all subsequent scenario sections. These scenarios cover well-understood sequences where the expected behavior is already tested by handler unit tests — the value here is validating the harness pipeline, establishing the authoring pattern, and creating human-readable scenario documentation.
 
 **Success Criteria:**
@@ -311,7 +311,7 @@ Cursor movement sequences with boundary conditions.
 - [x] Inspect each new `.snap` file to verify grid content matches traces
 - [x] Verify: `timeout 150 cargo test -p oriterm_core --test teseq -- csi_cursor`
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 02.1-02.2 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 02.1-02.2 implementation work
 
 ---
 
@@ -624,12 +624,12 @@ Erase operations (ED and EL) with pre-populated grid content.
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green — no regressions
 - [x] Plan annotation cleanup
-- [ ] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata:
-  - [ ] This section's frontmatter `status` → `complete`
+- [x] All TPR checkpoint findings resolved
+- [x] **Plan sync** — update plan metadata:
+  - [x] This section's frontmatter `status` → `complete`
   - [x] `00-overview.md` Quick Reference table updated
   - [x] `index.md` section status updated
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed
+- [x] `/tpr-review` passed (final, full-section)
+- [x] `/impl-hygiene-review last commit` passed
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq` passes with 30+ scenario tests covering C0 controls, CSI cursor movement, CSI erase, CSI insert/delete, and ESC sequences. All scenarios have insta golden snapshots reviewed for correctness. Multi-size variants pass for cursor clamping. All multi-line scenarios correctly use CR+LF for column-zero line starts. `main.rs` contains only `#![allow(dead_code)]`, `mod harness;`, and the five family `mod` declarations (no `smoke_bel` test function). Zero regressions.

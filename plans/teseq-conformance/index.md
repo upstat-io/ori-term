@@ -39,7 +39,7 @@ pre_feed, setup, SetupConfig, TerminalConfig, ExpectConfig
 ---
 
 ### Section 02: Basic Scenario Suite
-**File:** `section-02-basic-scenarios.md` | **Status:** In Progress
+**File:** `section-02-basic-scenarios.md` | **Status:** Complete
 
 ```
 c0, control, CR, LF, BS, TAB, BEL, FF, VT, SO, SI

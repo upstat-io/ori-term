@@ -38,7 +38,7 @@ Track and fix all discovered bugs across the ori_term codebase. This is a living
 | 05 | Config | `section-05-config.md` | 5 | 1 |
 | 06 | Rendering & Perf | `section-06-rendering-perf.md` | 10 | 5 |
 | 07 | CI & Build | `section-07-ci-build.md` | 3 | 0 (TPR resolved) |
-| 08 | Core Terminal | `section-08-core-terminal.md` | 2 | 1 |
+| 08 | Core Terminal | `section-08-core-terminal.md` | 7 | 5 |
 | 09 | Session & Tab/Window | `section-09-session.md` | 1 | 1 |
 | 10 | Platform Windows | `section-10-platform-windows.md` | 1 | 1 |
 | 11 | Mux & Pane I/O | `section-11-mux.md` | 4 | 4 |
