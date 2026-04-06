@@ -299,9 +299,24 @@ impl<T: EventListener> Handler for Term<T> {
 
     fn save_cursor_position(&mut self) {
         self.grid_mut().save_cursor();
+        // VT220 spec: DECSC also saves charset state and origin mode flag.
+        self.saved_charset = Some(self.charset.clone());
+        self.saved_origin_mode = Some(self.mode.contains(TermMode::ORIGIN));
     }
     fn restore_cursor_position(&mut self) {
         self.grid_mut().restore_cursor();
+        // VT220 spec: DECRC also restores charset state and origin mode flag.
+        if let Some(charset) = self.saved_charset.take() {
+            self.charset = charset;
+            self.saved_charset = Some(self.charset.clone());
+        }
+        if let Some(origin) = self.saved_origin_mode {
+            if origin {
+                self.mode.insert(TermMode::ORIGIN);
+            } else {
+                self.mode.remove(TermMode::ORIGIN);
+            }
+        }
     }
 
     fn set_mode(&mut self, mode: Mode) {
