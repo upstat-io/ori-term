@@ -594,3 +594,289 @@ fn reset_selective_preserves_others() {
     // Line 6 "NoStrike": STRIKETHROUGH cleared, no SGR flags remain.
     assert_cell_flags_not_contain(&outcome, 6, 0, all);
 }
+
+// 05.5b Default color & template resets (SGR 0/39/49/59)
+
+#[test]
+fn reset_sgr0() {
+    let Some(outcome) = run_scenario("reset_sgr0") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "All on" at col 0: BOLD+ITALIC+UNDERLINE, fg=red, bg=green.
+    assert_cell_flags_contain(
+        &outcome,
+        0,
+        0,
+        CellFlags::BOLD | CellFlags::ITALIC | CellFlags::UNDERLINE,
+    );
+    // Bold-as-bright: red (1) → bright red (9).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(9))
+    );
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(2))
+    );
+    // "Clean" at col 6: no SGR flags, default colors.
+    let sgr_flags = CellFlags::BOLD
+        | CellFlags::DIM
+        | CellFlags::ITALIC
+        | CellFlags::UNDERLINE
+        | CellFlags::BLINK
+        | CellFlags::INVERSE
+        | CellFlags::HIDDEN
+        | CellFlags::STRIKETHROUGH;
+    assert_cell_flags_not_contain(&outcome, 0, 6, sgr_flags);
+}
+
+#[test]
+fn reset_39_default_fg() {
+    let Some(outcome) = run_scenario("reset_39_default_fg") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "Red bold" at col 0: BOLD + red fg.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD);
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(9))
+    ); // bold-as-bright: red→bright red
+    // "Default fg bold" at col 8: BOLD preserved, fg reset to default.
+    assert_cell_flags_contain(&outcome, 0, 8, CellFlags::BOLD);
+    let default_fg = palette.resolve(Color::Named(vte::ansi::NamedColor::Foreground));
+    assert_eq!(cell_fg_at(&outcome, 0, 8), default_fg);
+}
+
+#[test]
+fn reset_49_default_bg() {
+    let Some(outcome) = run_scenario("reset_49_default_bg") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "Green bg italic" at col 0: ITALIC + green bg.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::ITALIC);
+    assert_eq!(
+        cell_bg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(2))
+    );
+    // "Default bg italic" at col 15: ITALIC preserved, bg reset to default.
+    assert_cell_flags_contain(&outcome, 0, 15, CellFlags::ITALIC);
+    let default_bg = palette.resolve(Color::Named(vte::ansi::NamedColor::Background));
+    assert_eq!(cell_bg_at(&outcome, 0, 15), default_bg);
+}
+
+#[test]
+fn reset_59_underline_color() {
+    let Some(outcome) = run_scenario("reset_59_underline_color") else {
+        return;
+    };
+    // "Colored" at col 0: UNDERLINE + custom underline color.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::UNDERLINE);
+    assert_eq!(
+        cell_underline_color_at(&outcome, 0, 0),
+        Some(Rgb {
+            r: 200,
+            g: 100,
+            b: 50
+        })
+    );
+    // "Default" at col 7: UNDERLINE preserved, underline color cleared.
+    assert_cell_flags_contain(&outcome, 0, 7, CellFlags::UNDERLINE);
+    assert_eq!(cell_underline_color_at(&outcome, 0, 7), None);
+}
+
+// 05.6 Color resolution edge cases
+
+#[test]
+fn edge_dim_bold_named() {
+    let Some(outcome) = run_scenario("edge_dim_bold_named") else {
+        return;
+    };
+    let palette = Palette::default();
+    // DIM + BOLD + red: DIM takes priority, resolves to DimRed, NOT BrightRed.
+    let dim_red = palette.resolve(Color::Named(vte::ansi::NamedColor::DimRed));
+    assert_eq!(cell_fg_at(&outcome, 0, 0), dim_red);
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD | CellFlags::DIM);
+}
+
+#[test]
+fn edge_dim_bold_indexed() {
+    let Some(outcome) = run_scenario("edge_dim_bold_indexed") else {
+        return;
+    };
+    let palette = Palette::default();
+    // DIM + BOLD + indexed 2: dimmed green, not bright green.
+    let base = palette.resolve(Color::Indexed(2));
+    let expected = Rgb {
+        r: (base.r as u16 * 2 / 3) as u8,
+        g: (base.g as u16 * 2 / 3) as u8,
+        b: (base.b as u16 * 2 / 3) as u8,
+    };
+    assert_eq!(cell_fg_at(&outcome, 0, 0), expected);
+}
+
+#[test]
+fn edge_dim_bold_truecolor() {
+    let Some(outcome) = run_scenario("edge_dim_bold_truecolor") else {
+        return;
+    };
+    // DIM on TrueColor 150,120,90 → 2/3 of each = 100,80,60.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        Rgb {
+            r: 100,
+            g: 80,
+            b: 60
+        }
+    );
+}
+
+#[test]
+fn edge_inverse_colors() {
+    let Some(outcome) = run_scenario("edge_inverse_colors") else {
+        return;
+    };
+    let palette = Palette::default();
+    let red = palette.resolve(Color::Indexed(1));
+    let green = palette.resolve(Color::Indexed(2));
+    // "Red on green" at col 0: fg=red, bg=green.
+    assert_eq!(cell_fg_at(&outcome, 0, 0), red);
+    assert_eq!(cell_bg_at(&outcome, 0, 0), green);
+    // "Inverted" at col 12: fg=green, bg=red (swapped).
+    assert_eq!(cell_fg_at(&outcome, 0, 12), green);
+    assert_eq!(cell_bg_at(&outcome, 0, 12), red);
+}
+
+#[test]
+fn edge_decscnm_basic() {
+    let Some(outcome) = run_scenario("edge_decscnm_basic") else {
+        return;
+    };
+    let palette = Palette::default();
+    let default_fg = palette.resolve(Color::Named(vte::ansi::NamedColor::Foreground));
+    let default_bg = palette.resolve(Color::Named(vte::ansi::NamedColor::Background));
+    // DECSCNM swaps default palette: text fg becomes original bg, text bg becomes original fg.
+    assert_eq!(cell_fg_at(&outcome, 0, 0), default_bg);
+    assert_eq!(cell_bg_at(&outcome, 0, 0), default_fg);
+}
+
+#[test]
+fn edge_decscnm_inverse() {
+    let Some(outcome) = run_scenario("edge_decscnm_inverse") else {
+        return;
+    };
+    let palette = Palette::default();
+    let default_fg = palette.resolve(Color::Named(vte::ansi::NamedColor::Foreground));
+    let default_bg = palette.resolve(Color::Named(vte::ansi::NamedColor::Background));
+    // DECSCNM + SGR 7 = double swap → back to normal appearance.
+    assert_eq!(cell_fg_at(&outcome, 0, 0), default_fg);
+    assert_eq!(cell_bg_at(&outcome, 0, 0), default_bg);
+}
+
+#[test]
+fn edge_decscnm_explicit_color() {
+    let Some(outcome) = run_scenario("edge_decscnm_explicit_color") else {
+        return;
+    };
+    // DECSCNM doesn't affect explicit TrueColor — Color::Spec resolves directly.
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        Rgb {
+            r: 100,
+            g: 200,
+            b: 50
+        }
+    );
+}
+
+// 05.7 Attribute stacking & combination scenarios
+
+#[test]
+fn combo_stack() {
+    let Some(outcome) = run_scenario("combo_stack") else {
+        return;
+    };
+    let palette = Palette::default();
+    // "Bold italic underline red" at col 0.
+    assert_cell_flags_contain(
+        &outcome,
+        0,
+        0,
+        CellFlags::BOLD | CellFlags::ITALIC | CellFlags::UNDERLINE,
+    );
+    // Bold-as-bright: red → bright red (index 9).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(9))
+    );
+    // "Normal" at col 25: no SGR flags.
+    let sgr = CellFlags::BOLD | CellFlags::ITALIC | CellFlags::UNDERLINE;
+    assert_cell_flags_not_contain(&outcome, 0, 25, sgr);
+}
+
+#[test]
+fn combo_separate_sequences() {
+    let Some(outcome) = run_scenario("combo_separate_sequences") else {
+        return;
+    };
+    // Three separate SGR sequences accumulate.
+    assert_cell_flags_contain(
+        &outcome,
+        0,
+        0,
+        CellFlags::BOLD | CellFlags::ITALIC | CellFlags::UNDERLINE,
+    );
+}
+
+#[test]
+fn combo_color_last_wins() {
+    let Some(outcome) = run_scenario("combo_color_last_wins") else {
+        return;
+    };
+    let palette = Palette::default();
+    // SGR 31;32;33 → yellow wins (SGR 33 = index 3).
+    assert_eq!(
+        cell_fg_at(&outcome, 0, 0),
+        palette.resolve(Color::Indexed(3))
+    );
+}
+
+#[test]
+fn combo_dim_then_bold() {
+    let Some(outcome) = run_scenario("combo_dim_then_bold") else {
+        return;
+    };
+    let palette = Palette::default();
+    // DIM + BOLD + red: both flags set, DIM takes priority for color.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD | CellFlags::DIM);
+    let dim_red = palette.resolve(Color::Named(vte::ansi::NamedColor::DimRed));
+    assert_eq!(cell_fg_at(&outcome, 0, 0), dim_red);
+}
+
+#[test]
+fn combo_empty_sgr_resets() {
+    let Some(outcome) = run_scenario("combo_empty_sgr_resets") else {
+        return;
+    };
+    // "Styled" at col 0: BOLD+ITALIC.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD | CellFlags::ITALIC);
+    // "Plain" at col 6: no flags (CSI m = SGR 0).
+    assert_cell_flags_not_contain(&outcome, 0, 6, CellFlags::BOLD | CellFlags::ITALIC);
+}
+
+#[test]
+fn combo_sgr_persists_cursor_move() {
+    let Some(outcome) = run_scenario("combo_sgr_persists_cursor_move") else {
+        return;
+    };
+    let palette = Palette::default();
+    let bright_red = palette.resolve(Color::Indexed(9));
+    // 'A' at col 0: BOLD + red.
+    assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD);
+    assert_eq!(cell_fg_at(&outcome, 0, 0), bright_red);
+    // 'B' at col 4 (CHA 5 = 1-based col 5 = 0-based col 4): BOLD + red survives cursor move.
+    assert_cell_flags_contain(&outcome, 0, 4, CellFlags::BOLD);
+    assert_eq!(cell_fg_at(&outcome, 0, 4), bright_red);
+}

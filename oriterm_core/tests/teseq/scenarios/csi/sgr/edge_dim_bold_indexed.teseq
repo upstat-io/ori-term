@@ -1,0 +1,4 @@
+: Esc [ 1 ; 2 m
+: Esc [ 38 ; 5 ; 2 m
+|DimBoldGreen|
+: Esc [ 0 m

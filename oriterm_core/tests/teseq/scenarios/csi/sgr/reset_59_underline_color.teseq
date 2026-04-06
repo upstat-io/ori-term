@@ -1,0 +1,6 @@
+: Esc [ 4 m
+: Esc [ 58 ; 2 ; 200 ; 100 ; 50 m
+|Colored|
+: Esc [ 59 m
+|Default|
+: Esc [ 0 m

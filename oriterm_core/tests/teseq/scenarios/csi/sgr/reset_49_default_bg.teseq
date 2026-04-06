@@ -1,0 +1,5 @@
+: Esc [ 42 ; 3 m
+|Green bg italic|
+: Esc [ 49 m
+|Default bg italic|
+: Esc [ 0 m
