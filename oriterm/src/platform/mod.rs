@@ -5,6 +5,8 @@
 //! behind a shared interface.
 
 pub(crate) mod config_paths;
+#[cfg(target_os = "windows")]
+pub(crate) mod default_terminal;
 pub(crate) mod jump_list;
 pub(crate) mod memory;
 pub(crate) mod notify;
