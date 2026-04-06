@@ -182,13 +182,17 @@ fn reset_sgr0() {
     let green_bg = palette.resolve(Color::Indexed(2));
     assert_eq!(cell_bg_at(&outcome, 0, 0), green_bg);
 
-    // "Clean" at col 6: no SGR flags.
+    // "Clean" at col 6: no SGR flags, default colors restored.
     assert_cell_flags_not_contain(
         &outcome,
         0,
         6,
         CellFlags::BOLD | CellFlags::ITALIC | CellFlags::UNDERLINE,
     );
+    let default_fg = palette.resolve(Color::Named(NamedColor::Foreground));
+    let default_bg = palette.resolve(Color::Named(NamedColor::Background));
+    assert_eq!(cell_fg_at(&outcome, 0, 6), default_fg);
+    assert_eq!(cell_bg_at(&outcome, 0, 6), default_bg);
 }
 
 #[test]

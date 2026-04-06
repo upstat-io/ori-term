@@ -77,8 +77,14 @@ fn combo_empty_sgr_resets() {
     };
     // "Styled" at col 0: BOLD + ITALIC.
     assert_cell_flags_contain(&outcome, 0, 0, CellFlags::BOLD | CellFlags::ITALIC);
-    // "Plain" at col 6: neither BOLD nor ITALIC (empty CSI m = SGR 0).
+    // "Styled" also has red fg (SGR 31 → bright red with bold-as-bright).
+    let palette = Palette::default();
+    let bright_red = palette.resolve(Color::Indexed(9));
+    assert_eq!(cell_fg_at(&outcome, 0, 0), bright_red);
+    // "Plain" at col 6: neither BOLD nor ITALIC, and default fg (empty CSI m = SGR 0).
     assert_cell_flags_not_contain(&outcome, 0, 6, CellFlags::BOLD | CellFlags::ITALIC);
+    let default_fg = palette.resolve(Color::Named(NamedColor::Foreground));
+    assert_eq!(cell_fg_at(&outcome, 0, 6), default_fg);
 }
 
 #[test]
