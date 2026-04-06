@@ -187,5 +187,5 @@ None discovered during research that directly affect this plan. Existing test in
 | 03 | Reports & Response Validation | `section-03-reports.md` | Complete |
 | 04 | Mode Interaction Scenarios | `section-04-mode-interactions.md` | Complete |
 | 05 | SGR & Color Scenarios | `section-05-sgr-colors.md` | Complete |
-| 06 | Complex Workflow Scenarios | `section-06-workflows.md` | Not Started |
+| 06 | Complex Workflow Scenarios | `section-06-workflows.md` | Complete |
 | 07 | Verification & CI Integration | `section-07-verification.md` | Not Started |

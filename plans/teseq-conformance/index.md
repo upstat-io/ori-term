@@ -115,7 +115,7 @@ CellFlags, fg, bg, Rgb, RenderableCell
 ---
 
 ### Section 06: Complex Workflow Scenarios
-**File:** `section-06-workflows.md` | **Status:** Not Started
+**File:** `section-06-workflows.md` | **Status:** Complete
 
 ```
 workflow, multi_sequence, interaction, combination

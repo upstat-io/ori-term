@@ -25,6 +25,12 @@ sections:
   - id: "39.7"
     title: "Kitty Images Scroll with Text"
     status: not-started
+  - id: "39.8"
+    title: "SIXEL Color Parameter Default Fix"
+    status: not-started
+  - id: "39.9"
+    title: "Kitty Image Animation Memory Safety"
+    status: not-started
   - id: "39.6"
     title: Section Completion
     status: in-progress
@@ -630,6 +636,40 @@ Render cached images as GPU textures composited into the terminal frame.
 **Priority:** Medium — affects any application using Kitty graphics with scrolling content (terminals-in-terminals, TUI image viewers).
 
 **Reference:** Kitty graphics protocol spec — placement behavior during scroll operations.
+
+---
+
+## 39.8 SIXEL Color Parameter Default Fix
+
+<!-- WezTerm audit: #7344 (SIXEL omitted color params not treated as 0 but as 100) -->
+
+**Source:** WezTerm #7344 — Per VT330/VT340 spec, omitted parameters in SIXEL color definitions (`#Pc;Pu;Px;Py;Pz`) should default to 0, not 100. When a color parameter is omitted between semicolons (e.g., `#1;2;;50;50`), WezTerm treats the missing value as 100 (max) instead of 0 (min), producing wrong colors.
+
+**Required work:**
+
+- [ ] In SIXEL color parsing: treat omitted parameters (empty between semicolons) as 0 per DCS spec
+- [ ] Verify against xterm and Alacritty reference behavior
+- [ ] Test: `#;2;;;` (all omitted) should produce black (HSL 0,0,0), not white
+
+**Priority:** Low — affects SIXEL color accuracy.
+
+---
+
+## 39.9 Kitty Image Animation Memory Safety
+
+<!-- WezTerm audit: #7400 (memory leak with kitty + gif) -->
+
+**Source:** WezTerm #7400 — Displaying animated GIFs via Kitty graphics protocol causes unbounded memory growth and eventual freeze. Each animation frame accumulates in the image cache without eviction, pinning a CPU core at 100%.
+
+**Required work:**
+
+- [ ] Implement frame-count limit for Kitty image animations (e.g., max 256 frames in memory)
+- [ ] Evict oldest frames when limit exceeded (ring buffer for animation frames)
+- [ ] Bound total image memory: enforce `max_image_memory` budget across all images, evict LRU when exceeded
+- [ ] Ensure animation frame disposal modes are respected (replace, keep, combine)
+- [ ] Test: display animated GIF with 1000+ frames, verify memory stays bounded
+
+**Priority:** Medium — affects any user displaying animated images in the terminal.
 
 ---
 

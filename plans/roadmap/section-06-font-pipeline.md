@@ -76,6 +76,12 @@ sections:
   - id: "6.24"
     title: "Indic/Complex Script Shaping"
     status: not-started
+  - id: "6.25"
+    title: "Underline Glyph-Break Rendering"
+    status: not-started
+  - id: "6.26"
+    title: "Minimal RTL/BiDi Support"
+    status: not-started
   - id: "6.21"
     title: Section Completion
     status: complete
@@ -1032,6 +1038,50 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 **Priority:** Low — affects non-Latin script users, complex to implement correctly in a fixed-width grid.
 
 **Reference:** Ghostty #2603 (Devanagari), #3912 (Bengali), #3753 (Thai), #5085 (Tamil). Kitty's approach to complex scripts.
+
+---
+
+## 6.25 Underline Glyph-Break Rendering
+
+<!-- Ghostty audit: #2061 (draw underlines beneath glyphs and break around glyphs) -->
+
+**Source:** Ghostty #2061 — Modern rendering systems (macOS, Chromium) draw underlines *beneath* descenders and interrupt them around glyph strokes. This prevents underlines from obscuring characters like `_`, `g`, `p`, `y` and undercurls from hiding error indicators.
+
+**Required work:**
+
+- [ ] Detect glyph descender regions per cell (from rasterized glyph alpha mask)
+- [ ] When drawing underline/undercurl: skip segments that overlap with glyph ink
+- [ ] Approach: rasterize underline to a separate layer, mask out pixels where glyph alpha > threshold
+- [ ] Apply to all decoration styles: straight underline, double, dotted, dashed, curly (undercurl)
+- [ ] Config option: `underline_glyph_break = true` (default: true, matching modern expectations)
+- [ ] Test: visual regression comparing `_foo` with undercurl — decoration should break around the underscore
+
+**Priority:** Medium — significant readability improvement, especially for LSP error highlighting.
+
+**Reference:** macOS CoreText underline rendering, Chromium text-decoration-skip-ink, CSS `text-decoration-skip-ink: auto`.
+
+---
+
+## 6.26 Minimal RTL/BiDi Support
+
+<!-- Ghostty audit: #1442 (minimal RTL support for single lines) -->
+
+**Source:** Ghostty #1442 — Arabic, Hebrew, and Persian text renders incorrectly: wrong glyph shaping (isolated forms instead of connected), wrong character order within words, wrong word order on line. Three distinct problems: (1) contextual shaping, (2) intra-word character order, (3) inter-word (bidi) order.
+
+**Problem:** ori_term has no BiDi support. Arabic/Hebrew text appears left-to-right with disconnected glyphs. This is a known-hard problem — the Unicode BiDi algorithm (UAX#9) is complex, and terminal grids add constraints.
+
+**Required work:**
+
+- [ ] Level 1 (shaping): Ensure rustybuzz applies Arabic/Hebrew contextual forms (initial/medial/final/isolated) — this may already work if the correct font is used and shaping runs are segmented by script
+- [ ] Level 2 (character order): Reverse character order within RTL runs so characters display right-to-left within the fixed LTR grid
+- [ ] Level 3 (word order — optional): Apply Unicode BiDi Algorithm (UAX#9) to reorder words on a line. Most terminals skip this and just handle Levels 1-2.
+- [ ] Scope: single-line BiDi only (no cross-line reordering, no mixed-direction paragraphs)
+- [ ] Cursor movement must respect logical order (not visual order) for editing
+- [ ] Test: render `بسم الله` — verify connected glyphs in correct right-to-left order
+
+**Priority:** Low — affects Arabic/Hebrew/Persian users, complex to implement in a terminal grid.
+
+**Reference:** Konsole BiDi implementation, unicode-bidi crate, UAX#9 spec. Most terminal emulators punt on this entirely.
 
 ---
 

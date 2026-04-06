@@ -43,6 +43,12 @@ sections:
   - id: "24.13"
     title: "Toggle Background Opacity Keybind"
     status: not-started
+  - id: "24.14"
+    title: "Minimum Contrast Enforcement"
+    status: not-started
+  - id: "24.15"
+    title: "Cursor Trail/Smear Effect"
+    status: not-started
   - id: "24.10"
     title: Section Completion
     status: not-started
@@ -622,6 +628,49 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] Test: set background_opacity=0.8, trigger toggle → verify opacity becomes 1.0; trigger again → verify opacity returns to 0.8
 
 **Priority:** Low — polish feature for transparency users.
+
+---
+
+## 24.14 Minimum Contrast Enforcement
+
+<!-- Ghostty audit: #1524 (enhance minimum-contrast enforcement) -->
+
+**Source:** Ghostty #1524 — Basic minimum-contrast falls back to black/white for foreground, which is too aggressive. Better approach: find the closest shade of grey that meets the WCAG contrast ratio threshold against the background, preserving the original color's intent.
+
+**Required work:**
+
+- [ ] Config option: `minimum_contrast = 4.5` (WCAG AA ratio; 0 = disabled, 1 = any visible difference)
+- [ ] Implement in the color resolution path (per-cell, during prepare phase): compute contrast ratio between resolved fg and bg
+- [ ] If below threshold: adjust fg luminance toward the nearest shade that meets the ratio, not a hard flip to black/white
+- [ ] Use relative luminance formula: `L = 0.2126*R + 0.7152*G + 0.0722*B` (linearized sRGB)
+- [ ] Handle edge cases: dim text, inverse video, selection highlighting
+- [ ] Shader-based or CPU-based: can be done in prepare phase (CPU) since it's per-cell, not per-pixel
+- [ ] Test: set minimum_contrast=4.5, use a dark grey fg on dark bg → verify fg is brightened just enough to meet ratio
+
+**Priority:** Medium — important for accessibility and readability on low-contrast themes.
+
+**Reference:** Ghostty `minimum-contrast`, iTerm2 minimum contrast, WCAG 2.0 contrast ratio formula.
+
+---
+
+## 24.15 Cursor Trail/Smear Effect
+
+<!-- WezTerm audit: #7387 (cursor trail / smear effect); Ghostty discussions -->
+
+**Source:** WezTerm #7387 — Animated cursor trail that shows the cursor's movement path. A frequently requested feature that Kitty and Neovide implement. Creates a "smear" or "trail" effect when the cursor moves between positions.
+
+**Required work:**
+
+- [ ] Config options: `cursor_trail = false`, `cursor_trail_duration = 0.3s`, `cursor_trail_opacity = 0.5`
+- [ ] Track cursor position changes: when cursor moves, record (old_pos, new_pos, timestamp)
+- [ ] Render a fading trail from old to new position:
+  - Option A: render a semi-transparent cursor shape at each intermediate position (simple, like Kitty)
+  - Option B: render a motion blur/smear between positions (more complex, like Neovide)
+- [ ] Trail fades over `cursor_trail_duration` seconds
+- [ ] Use existing animation infrastructure (Section 43 compositor layers + opacity animation)
+- [ ] Must not impact idle CPU — trail only renders during cursor movement frames
+
+**Priority:** Low — cosmetic/aesthetic feature, but highly requested across terminal emulators.
 
 ---
 
