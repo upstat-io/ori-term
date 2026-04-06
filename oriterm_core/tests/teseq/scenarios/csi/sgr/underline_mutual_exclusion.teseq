@@ -1,0 +1,7 @@
+: Esc [ 4 m
+|S|
+: Esc [ 4 : 3 m
+|C|
+: Esc [ 4 : 2 m
+|D|
+: Esc [ 0 m
