@@ -238,6 +238,20 @@ impl Pane {
         self.domain_id
     }
 
+    /// Child process ID, if known.
+    ///
+    /// For spawned panes, this is the shell's PID. For adopted panes
+    /// (Section 03.9 Windows handoff), this is the client process ID
+    /// reported by the console host. Used for direct signal delivery
+    /// when the PTY writer is stalled.
+    #[allow(
+        dead_code,
+        reason = "used when stall-recovery wires direct signal delivery"
+    )]
+    pub fn process_id(&self) -> Option<u32> {
+        self.child_pid
+    }
+
     // -- Lock-free accessors --
 
     /// Current terminal mode bits (lock-free).

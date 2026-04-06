@@ -11,6 +11,8 @@ use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::Sender;
 
+use super::adopt::{AdoptedPtyHandle, ExitSignal};
+
 /// PTY read buffer size.
 ///
 /// 128 KB matches `WezTerm`. Smaller buffers cause the reader to return
@@ -34,6 +36,12 @@ pub struct PtyReader {
     byte_tx: Sender<Vec<u8>>,
     /// Shared shutdown flag — set by the IO thread or writer thread on exit.
     shutdown: Arc<AtomicBool>,
+    /// Optional exit signal — set when the reader thread exits via any
+    /// path (EOF, error, shutdown). For spawned PTYs this is `None` —
+    /// `PtyHandle::wait` blocks on the underlying `Child` directly. For
+    /// adopted PTYs (Section 03.9 Windows handoff) this is `Some(_)` so
+    /// [`AdoptedPtyHandle::wait`] can wake when the reader observes EOF.
+    exit_signal: Option<ExitSignal>,
 }
 
 impl PtyReader {
@@ -47,7 +55,19 @@ impl PtyReader {
             reader,
             byte_tx,
             shutdown,
+            exit_signal: None,
         }
+    }
+
+    /// Attach an exit signal to wake an [`AdoptedPtyHandle::wait`] caller
+    /// when the reader thread exits.
+    ///
+    /// Used by `oriterm_mux::domain::handoff::adopt_pane` for Section 03.9
+    /// Windows Default Terminal handoff. Spawned PTYs do not call this.
+    #[must_use]
+    pub fn with_exit_signal(mut self, signal: ExitSignal) -> Self {
+        self.exit_signal = Some(signal);
+        self
     }
 
     /// Spawn the reader thread. Returns a join handle.
@@ -67,6 +87,19 @@ impl PtyReader {
     /// achieves the same effect by doing VTE parsing inline on its reader
     /// thread (~5-10ms per 128KB chunk).
     fn run(mut self) {
+        self.read_loop();
+
+        // Signal exit to any AdoptedPtyHandle::wait caller. Runs on every
+        // exit path (EOF, error, shutdown) because read_loop returns
+        // before this point in all cases.
+        if let Some(signal) = self.exit_signal.take() {
+            AdoptedPtyHandle::deliver_exit(&signal);
+        }
+    }
+
+    /// Inner read loop — extracted so [`Self::run`] can run cleanup after
+    /// it returns regardless of which exit path was taken.
+    fn read_loop(&mut self) {
         let mut buf = vec![0u8; READ_BUFFER_SIZE];
 
         loop {

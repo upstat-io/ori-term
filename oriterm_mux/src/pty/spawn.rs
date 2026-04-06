@@ -44,6 +44,21 @@ impl ExitStatus {
     pub fn signal(&self) -> Option<&str> {
         self.signal.as_deref()
     }
+
+    /// Synthesize a "successful EOF" status for adopted PTYs.
+    ///
+    /// `ori_term` does not own the child process behind an adopted PTY —
+    /// the console host that handed the session off owns it. When the
+    /// reader thread observes EOF on the adopted reader, it signals
+    /// `AdoptedPtyHandle::wait` to wake using this synthesized status.
+    /// The actual exit code is unknown to `ori_term`; reporting `0`/no
+    /// signal is the closest fit because the I/O stream closed cleanly.
+    pub(crate) fn synthesized_eof() -> Self {
+        Self {
+            code: 0,
+            signal: None,
+        }
+    }
 }
 
 impl From<portable_pty::ExitStatus> for ExitStatus {
