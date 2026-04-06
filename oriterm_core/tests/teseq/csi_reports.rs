@@ -9,16 +9,20 @@ use super::harness::{
 
 /// Run a report scenario and apply spec assertions.
 ///
+/// Returns `None` when `reseq` is unavailable (graceful skip with visible message).
 /// Returns the outcome for callers to perform additional response assertions.
-/// Callers must guard with `if !reseq_available() { return; }` before calling.
-fn run_scenario(name: &str) -> ScenarioOutcome {
+fn run_scenario(name: &str) -> Option<ScenarioOutcome> {
+    if !reseq_available() {
+        eprintln!("reseq not installed, skipping");
+        return None;
+    }
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/teseq/scenarios/csi/reports")
         .join(format!("{name}.teseq"));
     let mut h = TeseqHarness::from_scenario(&path);
     let outcome = h.run(&path);
     harness::assert_spec(&outcome, h.spec(), &format!("csi_reports_{name}"));
-    outcome
+    Some(outcome)
 }
 
 /// Replicate `crate_version_number()` from `handler/helpers.rs`.
@@ -40,11 +44,9 @@ fn compute_da2_version() -> usize {
 
 #[test]
 fn da1() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("da1") else {
         return;
-    }
-    let outcome = run_scenario("da1");
+    };
     assert_pty_writes(&outcome, &["\x1b[?64;6;4c"]);
     assert_response_snapshot(&outcome, "csi_reports_da1");
 }
@@ -77,11 +79,9 @@ fn da2_version_drift_check() {
 
 #[test]
 fn da2() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("da2") else {
         return;
-    }
-    let outcome = run_scenario("da2");
+    };
     let expected = format!("\x1b[>0;{};1c", compute_da2_version());
     assert_pty_writes(&outcome, &[&expected]);
     assert_response_snapshot(&outcome, "csi_reports_da2");
@@ -91,11 +91,9 @@ fn da2() {
 
 #[test]
 fn da3() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("da3") else {
         return;
-    }
-    let outcome = run_scenario("da3");
+    };
     assert_pty_writes(&outcome, &["\x1bP!|00000000\x1b\\"]);
     assert_response_snapshot(&outcome, "csi_reports_da3");
 }
@@ -104,11 +102,9 @@ fn da3() {
 
 #[test]
 fn dsr_device_status() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("dsr_device_status") else {
         return;
-    }
-    let outcome = run_scenario("dsr_device_status");
+    };
     assert_pty_writes(&outcome, &["\x1b[0n"]);
     assert_response_snapshot(&outcome, "csi_reports_dsr_device_status");
 }
@@ -117,11 +113,9 @@ fn dsr_device_status() {
 
 #[test]
 fn dsr_cursor_home() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("dsr_cursor_home") else {
         return;
-    }
-    let outcome = run_scenario("dsr_cursor_home");
+    };
     assert_pty_writes(&outcome, &["\x1b[1;1R"]);
     assert_response_snapshot(&outcome, "csi_reports_dsr_cursor_home");
 }
@@ -130,11 +124,9 @@ fn dsr_cursor_home() {
 
 #[test]
 fn dsr_cursor_moved() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("dsr_cursor_moved") else {
         return;
-    }
-    let outcome = run_scenario("dsr_cursor_moved");
+    };
     assert_pty_writes(&outcome, &["\x1b[10;20R"]);
     assert_response_snapshot(&outcome, "csi_reports_dsr_cursor_moved");
 }
@@ -143,11 +135,9 @@ fn dsr_cursor_moved() {
 
 #[test]
 fn dsr_origin_mode() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("dsr_origin_mode") else {
         return;
-    }
-    let outcome = run_scenario("dsr_origin_mode");
+    };
     assert_pty_writes(&outcome, &["\x1b[3;10R"]);
     assert_response_snapshot(&outcome, "csi_reports_dsr_origin_mode");
 }
@@ -156,11 +146,9 @@ fn dsr_origin_mode() {
 
 #[test]
 fn decrqm_dectcem() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("decrqm_dectcem") else {
         return;
-    }
-    let outcome = run_scenario("decrqm_dectcem");
+    };
     assert_pty_writes(&outcome, &["\x1b[?25;1$y"]);
     assert_response_snapshot(&outcome, "csi_reports_decrqm_dectcem");
 }
@@ -169,11 +157,9 @@ fn decrqm_dectcem() {
 
 #[test]
 fn decrqm_dectcem_off() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("decrqm_dectcem_off") else {
         return;
-    }
-    let outcome = run_scenario("decrqm_dectcem_off");
+    };
     assert_pty_writes(&outcome, &["\x1b[?25;2$y"]);
     assert_response_snapshot(&outcome, "csi_reports_decrqm_dectcem_off");
 }
@@ -182,11 +168,9 @@ fn decrqm_dectcem_off() {
 
 #[test]
 fn decrqm_decawm() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("decrqm_decawm") else {
         return;
-    }
-    let outcome = run_scenario("decrqm_decawm");
+    };
     assert_pty_writes(&outcome, &["\x1b[?7;1$y"]);
     assert_response_snapshot(&outcome, "csi_reports_decrqm_decawm");
 }
@@ -195,11 +179,9 @@ fn decrqm_decawm() {
 
 #[test]
 fn decrqm_unknown() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("decrqm_unknown") else {
         return;
-    }
-    let outcome = run_scenario("decrqm_unknown");
+    };
     assert_pty_writes(&outcome, &["\x1b[?9999;0$y"]);
     assert_response_snapshot(&outcome, "csi_reports_decrqm_unknown");
 }
@@ -208,11 +190,9 @@ fn decrqm_unknown() {
 
 #[test]
 fn ansi_mode_irm_default() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("ansi_mode_irm_default") else {
         return;
-    }
-    let outcome = run_scenario("ansi_mode_irm_default");
+    };
     assert_pty_writes(&outcome, &["\x1b[4;2$y"]);
     assert_response_snapshot(&outcome, "csi_reports_ansi_mode_irm_default");
 }
@@ -221,11 +201,9 @@ fn ansi_mode_irm_default() {
 
 #[test]
 fn ansi_mode_irm_set() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("ansi_mode_irm_set") else {
         return;
-    }
-    let outcome = run_scenario("ansi_mode_irm_set");
+    };
     assert_pty_writes(&outcome, &["\x1b[4;1$y"]);
     assert_response_snapshot(&outcome, "csi_reports_ansi_mode_irm_set");
 }
@@ -234,11 +212,9 @@ fn ansi_mode_irm_set() {
 
 #[test]
 fn ansi_mode_lnm_default() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("ansi_mode_lnm_default") else {
         return;
-    }
-    let outcome = run_scenario("ansi_mode_lnm_default");
+    };
     assert_pty_writes(&outcome, &["\x1b[20;2$y"]);
     assert_response_snapshot(&outcome, "csi_reports_ansi_mode_lnm_default");
 }
@@ -247,11 +223,9 @@ fn ansi_mode_lnm_default() {
 
 #[test]
 fn ansi_mode_unknown() {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
+    let Some(outcome) = run_scenario("ansi_mode_unknown") else {
         return;
-    }
-    let outcome = run_scenario("ansi_mode_unknown");
+    };
     assert_pty_writes(&outcome, &["\x1b[99;0$y"]);
     assert_response_snapshot(&outcome, "csi_reports_ansi_mode_unknown");
 }
