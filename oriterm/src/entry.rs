@@ -14,6 +14,22 @@ use crate::event::TermEvent;
 /// and runs the application. This is the main entry point called by the
 /// binary.
 pub fn run() {
+    // Section 03.9 Phase 4 — Windows Default Terminal handoff path.
+    //
+    // `conhost.exe` activates `oriterm.exe` with the `-Embedding` flag
+    // (and nothing else) when a registered default terminal needs to
+    // receive a console session. We must intercept this BEFORE clap
+    // parses, because `-Embedding` is not a clap-defined flag and
+    // `Cli::parse()` would reject it.
+    //
+    // The handoff path skips the normal startup (jump list, daemon
+    // discovery, etc.) and goes straight to the COM server lifecycle.
+    #[cfg(target_os = "windows")]
+    if has_embedding_arg() {
+        run_default_terminal_handoff();
+        return;
+    }
+
     let args = crate::cli::Cli::parse();
 
     // CLI subcommands run headlessly — no window, no event loop.
@@ -88,6 +104,57 @@ pub fn run() {
         }
     };
 
+    if let Err(e) = event_loop.run_app(&mut app) {
+        log::error!("event loop error: {e}");
+    }
+}
+
+/// Detect the conhost-issued `-Embedding` flag.
+///
+/// Conhost passes `-Embedding` (case-insensitive) as the SOLE
+/// command-line argument when activating a registered default terminal
+/// via `CoCreateInstance`. We scan for it manually because clap would
+/// reject the unknown flag.
+#[cfg(target_os = "windows")]
+fn has_embedding_arg() -> bool {
+    std::env::args()
+        .skip(1) // skip argv[0]
+        .any(|arg| arg.eq_ignore_ascii_case("-Embedding"))
+}
+
+/// Run the COM server lifecycle and hand the resulting payload to a
+/// fresh `App::new_handoff` event loop.
+///
+/// This replaces the entire normal startup path when conhost has
+/// activated us as the default terminal. We skip jump list submission
+/// and daemon discovery — the COM server runs as a `REGCLS_SINGLEUSE`
+/// process that handles exactly one session.
+#[cfg(target_os = "windows")]
+fn run_default_terminal_handoff() {
+    init_logger();
+    log::info!(
+        "oriterm {} — default-terminal handoff (-Embedding)",
+        env!("ORITERM_VERSION")
+    );
+    install_panic_hook();
+
+    let handoff = match crate::platform::default_terminal::run_com_server() {
+        Ok(payload) => payload,
+        Err(e) => {
+            log::error!("default-terminal handoff failed: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Build the event loop and the App with the adopted pane payload.
+    // No jump list submission — that uses APARTMENTTHREADED COM and
+    // would conflict with the MULTITHREADED initialization
+    // `run_com_server` already performed.
+    let event_loop = build_event_loop();
+    let proxy = event_loop.create_proxy();
+    let config = Config::load();
+
+    let mut app = crate::app::App::new_handoff(proxy, config, handoff, false, false);
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop error: {e}");
     }

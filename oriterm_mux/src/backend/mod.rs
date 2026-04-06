@@ -41,6 +41,24 @@ pub struct ImageConfig {
     pub animation_enabled: bool,
 }
 
+/// Per-pane parameters for [`MuxBackend::adopt_pane`].
+///
+/// Bundles the terminal dimensions, scrollback size, and theme so the
+/// trait method stays under the hygiene rule's argument limit. The
+/// `AdoptedPtyHandle` is passed separately because callers typically
+/// own it via move semantics already.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdoptPaneRequest {
+    /// Initial terminal rows (typically from `TERMINAL_STARTUP_INFO.dwYCountChars`).
+    pub rows: u16,
+    /// Initial terminal columns (typically from `TERMINAL_STARTUP_INFO.dwXCountChars`).
+    pub cols: u16,
+    /// Scrollback buffer size in lines (from the user's config).
+    pub scrollback: usize,
+    /// Color theme for the new pane.
+    pub theme: Theme,
+}
+
 /// Abstraction over in-process and daemon-mode multiplexer access.
 ///
 /// The App calls trait methods identically regardless of whether
@@ -80,6 +98,28 @@ pub trait MuxBackend {
     /// The client owns tab/window grouping — the mux creates the pane
     /// and manages its PTY lifecycle. Returns `PaneId` for the new pane.
     fn spawn_pane(&mut self, config: &SpawnConfig, theme: Theme) -> io::Result<PaneId>;
+
+    /// Adopt a pane from a Windows console handoff.
+    ///
+    /// Wraps the pre-existing PTY handles delivered by `conhost.exe`'s
+    /// `ITerminalHandoff3::EstablishPtyHandoff` callback (Section 03.9
+    /// Phase 3) into a [`Pane`](crate::pane::Pane). Embedded mux uses
+    /// [`InProcessMux::adopt_standalone_pane`](crate::in_process::InProcessMux::adopt_standalone_pane);
+    /// daemon mode rejects the call because the COM server is a
+    /// `REGCLS_SINGLEUSE` standalone process that cannot relay handoffs
+    /// over IPC.
+    ///
+    /// Default impl returns `Err(io::Error::other("not supported"))`
+    /// so non-handoff backends compile without changes.
+    fn adopt_pane(
+        &mut self,
+        _adopted: crate::pty::AdoptedPtyHandle,
+        _request: AdoptPaneRequest,
+    ) -> io::Result<PaneId> {
+        Err(io::Error::other(
+            "default-terminal handoff requires embedded mux mode",
+        ))
+    }
 
     /// Close a single pane.
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult;

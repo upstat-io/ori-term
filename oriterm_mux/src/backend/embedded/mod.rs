@@ -14,12 +14,13 @@ use std::sync::mpsc;
 use oriterm_core::Selection;
 use oriterm_core::{RenderableContent, Theme};
 
-use super::{ImageConfig, MuxBackend};
+use super::{AdoptPaneRequest, ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::{ClosePaneResult, InProcessMux};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::io_thread::PaneIoCommand;
 use crate::pane::{MarkCursor, Pane};
+use crate::pty::AdoptedPtyHandle;
 use crate::registry::PaneEntry;
 use crate::server::snapshot::fill_snapshot_from_renderable;
 use crate::{DomainId, PaneId, PaneSnapshot};
@@ -113,6 +114,18 @@ impl MuxBackend for EmbeddedMux {
         let (pane_id, pane) =
             self.mux
                 .spawn_standalone_pane(config, theme, &self.guarded_wakeup)?;
+        self.panes.insert(pane_id, pane);
+        Ok(pane_id)
+    }
+
+    fn adopt_pane(
+        &mut self,
+        adopted: AdoptedPtyHandle,
+        request: AdoptPaneRequest,
+    ) -> io::Result<PaneId> {
+        let (pane_id, pane) =
+            self.mux
+                .adopt_standalone_pane(adopted, request, &self.guarded_wakeup)?;
         self.panes.insert(pane_id, pane);
         Ok(pane_id)
     }
