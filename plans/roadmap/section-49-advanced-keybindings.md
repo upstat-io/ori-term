@@ -25,6 +25,9 @@ sections:
   - id: "49.7"
     title: "Side Modifier Binding"
     status: not-started
+  - id: "49.8"
+    title: "ANY Modifier Wildcard"
+    status: not-started
   - id: "49.5"
     title: Section Completion
     status: not-started
@@ -218,6 +221,24 @@ Remap key/modifier combinations at the terminal level before any binding lookup 
 - [ ] Test: bind left_ctrl+a and right_ctrl+a to different actions, verify correct dispatch
 
 **Priority:** Low — niche but commonly requested by power users.
+
+---
+
+## 49.8 ANY Modifier Wildcard
+
+<!-- WezTerm audit (closed): #288 (add ANY mod choice to effectively ignore mods) -->
+
+**Source:** WezTerm #288 — Allow `ANY` as a modifier in keybindings to match regardless of held modifiers. `ANY+Click = action` fires whether Ctrl, Shift, Alt, or no modifier is held. Useful for mouse bindings where you want the action to work regardless of modifier state.
+
+**Required work:**
+
+- [ ] Add `Modifiers::ANY` variant that matches any modifier combination
+- [ ] In keybinding lookup: when a binding specifies `ANY`, skip modifier comparison
+- [ ] Syntax: `any+button_left = action` or `any+a = action`
+- [ ] Priority: specific modifier bindings take precedence over ANY bindings
+- [ ] Test: bind `any+left_click = SelectWord`, verify it fires with and without Ctrl/Shift/Alt held
+
+**Priority:** Low — convenience for mouse binding configuration.
 
 ---
 
