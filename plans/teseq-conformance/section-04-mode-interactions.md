@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Mode Interaction Scenarios"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create multi-sequence scenarios testing mode combinations that individual handler tests don't cover — DECOM+scroll, DECCOLM transitions, alt screen roundtrips, IRM, and cross-cutting mode interactions"
 success_criteria:
@@ -45,15 +45,15 @@ sections:
     status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 04: Mode Interaction Scenarios
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Test multi-mode combinations where individual handler tests fall short. The existing handler tests validate each mode in isolation. These scenarios test the *interaction* between modes — the edge cases that only manifest when multiple modes are active simultaneously. Also exercises negative controls (DECCOLM without Mode 40) and state dimensions invisible to grid-only assertions (mode flags surviving alt-screen swap).
 
 **Success Criteria:**
@@ -682,12 +682,12 @@ These scenarios test mode combinations that span multiple subsections. Each exer
 - [x] `timeout 150 ./test-all.sh` green — no regressions
 - [x] Plan annotation cleanup
 - [x] All TPR checkpoint findings resolved
-- [ ] **Plan sync** — update plan metadata:
-  - [ ] This section's frontmatter `status` → `complete`
+- [x] **Plan sync** — update plan metadata:
+  - [x] This section's frontmatter `status` → `complete`
   - [x] `00-overview.md` Quick Reference table updated
   - [x] `index.md` section status updated
   - [x] `section-07-verification.md` scenario count updated (CSI Modes: 34+, total: 106+)
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed
+- [x] `/tpr-review` passed (final, full-section) — clean on iteration 3, 2026-04-06
+- [x] `/impl-hygiene-review last commit` passed — 1 finding (csi_reports guard centralization), fixed 2026-04-06
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions` passes with 34+ scenarios testing mode combinations. DECOM+DECSTBM, DECCOLM transitions (including negative control without Mode 40), alt screen roundtrips (including mode leakage, 1049 vs 1047 re-entry semantics), IRM edge cases (margin, wide chars), and cross-cutting mode combinations all validated at multiple sizes. Mode flags verified via TermMode assertions, not just grid content. Scrollback integrity checked after sub-region overflow and DECCOLM clear. These scenarios serve as permanent regression guards for the bugs fixed during vttest conformance. Zero regressions.
