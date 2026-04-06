@@ -27,7 +27,7 @@ inspired_by:
   - "WezTerm term/src/test/csi.rs — color palette and attribute tests"
 depends_on: ["01", "02"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-06
 sections:
   - id: "05.0"
@@ -59,10 +59,10 @@ sections:
     status: complete
   - id: "05.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "05.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 05: SGR & Color Scenarios
@@ -936,9 +936,9 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
 - [x] Plan annotation cleanup
 - [x] All TPR checkpoint findings resolved
 - [x] **Plan sync** — update plan metadata:
-  - [ ] This section's frontmatter `status` -> `complete`
-  - [ ] `00-overview.md` Quick Reference table updated
-  - [ ] `index.md` section status updated
+  - [x] This section's frontmatter `status` -> `complete`
+  - [x] `00-overview.md` Quick Reference table updated
+  - [x] `index.md` section status updated
 - [x] `/tpr-review` passed (final, full-section)
 - [x] `/impl-hygiene-review last commit` passed
 
