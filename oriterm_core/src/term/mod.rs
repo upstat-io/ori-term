@@ -129,6 +129,10 @@ pub struct Term<T: EventListener> {
     theme: Theme,
     /// Character set translation state (G0–G3).
     charset: CharsetState,
+    /// DECSC-saved charset state (restored by DECRC).
+    saved_charset: Option<CharsetState>,
+    /// DECSC-saved origin mode flag (restored by DECRC).
+    saved_origin_mode: Option<bool>,
     /// Window title (set by OSC 0/2).
     title: String,
     /// Icon name (set by OSC 0/1).
@@ -213,6 +217,8 @@ impl<T: EventListener> Term<T> {
             palette: Palette::for_theme(theme),
             theme,
             charset: CharsetState::default(),
+            saved_charset: None,
+            saved_origin_mode: None,
             title: String::new(),
             icon_name: String::new(),
             cwd: None,

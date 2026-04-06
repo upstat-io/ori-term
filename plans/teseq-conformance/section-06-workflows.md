@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Complex Workflow Scenarios"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Create multi-sequence workflow scenarios testing real-world terminal interaction patterns that no existing test surface covers"
 success_criteria:
@@ -27,7 +27,7 @@ third_party_review:
 sections:
   - id: "06.1"
     title: "Mode Combination Workflows"
-    status: not-started
+    status: in-progress
   - id: "06.2"
     title: "Query-Response Workflows"
     status: not-started
@@ -101,11 +101,11 @@ sections:
 4. **Multi-size variants** — create 97x33 and 120x40 variants for all 5 base scenarios.
 
 **DECSC production fix items** (own the fix, do not leave as expected failures):
-- [ ] If `mode_decsc_attrs` reveals charset is NOT saved/restored: extend `save_cursor_position()` in `oriterm_core/src/term/handler/mod.rs` to also clone `self.charset` into a new `saved_charset: Option<CharsetState>` field on `Term`, and restore it in `restore_cursor_position()`. The `Cursor` struct (`oriterm_core/src/grid/cursor/mod.rs`) already saves SGR attributes via the template cell. Charset state lives on `Term`, not `Cursor` — so `Term` must save it separately. File path: `oriterm_core/src/term/mod.rs` (add `saved_charset` field), `oriterm_core/src/term/handler/mod.rs` (save/restore logic).
-- [ ] If `mode_decsc_origin_flag` reveals origin mode is NOT saved/restored: extend `save_cursor_position()` to also save `self.mode.contains(TermMode::ORIGIN)` into a new `saved_origin_mode: Option<bool>` field on `Term`, and in `restore_cursor_position()` set/clear `TermMode::ORIGIN` accordingly. File path: same as above.
-- [ ] After any DECSC production fix, run `timeout 150 ./test-all.sh` to verify no regressions. Add a targeted unit test in `oriterm_core/src/term/handler/tests.rs` for each fix.
+- [x] If `mode_decsc_attrs` reveals charset is NOT saved/restored: extend `save_cursor_position()` in `oriterm_core/src/term/handler/mod.rs` to also clone `self.charset` into a new `saved_charset: Option<CharsetState>` field on `Term`, and restore it in `restore_cursor_position()`. The `Cursor` struct (`oriterm_core/src/grid/cursor/mod.rs`) already saves SGR attributes via the template cell. Charset state lives on `Term`, not `Cursor` — so `Term` must save it separately. File path: `oriterm_core/src/term/mod.rs` (add `saved_charset` field), `oriterm_core/src/term/handler/mod.rs` (save/restore logic).
+- [x] If `mode_decsc_origin_flag` reveals origin mode is NOT saved/restored: extend `save_cursor_position()` to also save `self.mode.contains(TermMode::ORIGIN)` into a new `saved_origin_mode: Option<bool>` field on `Term`, and in `restore_cursor_position()` set/clear `TermMode::ORIGIN` accordingly. File path: same as above.
+- [x] After any DECSC production fix, run `timeout 150 ./test-all.sh` to verify no regressions. Add a targeted unit test in `oriterm_core/src/term/handler/tests.rs` for each fix.
 
-- [ ] **`mode_scroll_origin_fill.teseq`** — Complete scroll region + origin mode workflow:
+- [x] **`mode_scroll_origin_fill.teseq`** — Complete scroll region + origin mode workflow:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h
@@ -134,7 +134,7 @@ sections:
   ```
   Validates: 16-line scroll region overflows, origin mode cursor stays within region, disabling origin mode returns to absolute positioning. Multi-dimensional assertions: (1) grid snapshot shows scrolled content within rows 4-19 and "After origin off" at row 0; (2) cursor position at (0, 16) after "After origin off" text; (3) `assert_mode_not_contains(TermMode::ORIGIN)` confirms origin mode is off; (4) scrollback is empty (content overflows within the scroll region, not the full grid).
 
-- [ ] **`mode_deccolm_full_cycle.teseq`** — Complete DECCOLM lifecycle:
+- [x] **`mode_deccolm_full_cycle.teseq`** — Complete DECCOLM lifecycle:
   ```
   |Original 80-col content|.
   : Esc [ ? 3 h
@@ -152,7 +152,7 @@ sections:
   ```
   Validates: 80→132 transition clears display, resets scroll margins, and homes cursor; origin mode works at 132 columns with scroll region; 132→80 transition again clears display, resets margins, and homes cursor. **Implementation note:** The `.teseq` file captures the full sequence and validates the final state. A companion pure-Rust test (`deccolm_lifecycle_intermediate_assertions` in `workflows.rs`) feeds the same sequence in phases (pre-DECCOLM content, then DECCOLM set, then 132-col content, etc.) and asserts cursor=(0,0) and empty grid after each DECCOLM transition. This is necessary because `TeseqHarness::run()` feeds all bytes at once with no intermediate checkpoints.
 
-- [ ] **`mode_alt_with_modes.teseq`** — Alt screen with modes active:
+- [x] **`mode_alt_with_modes.teseq`** — Alt screen with modes active:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h
@@ -164,7 +164,7 @@ sections:
   ```
   Validates: Alt screen preserves scroll region and origin mode settings on return. Multi-dimensional assertions: (1) grid snapshot shows "Primary with modes" text restored at the correct position after returning from alt screen; (2) `assert_mode_contains(TermMode::ORIGIN)` confirms origin mode survived the alt screen roundtrip; (3) cursor position is restored to the primary screen position (not the alt screen position); (4) verify scroll region is still active by checking mode flags.
 
-- [ ] **`mode_decsc_attrs.teseq`** — DECSC saves SGR attributes and active charset (not just position):
+- [x] **`mode_decsc_attrs.teseq`** — DECSC saves SGR attributes and active charset (not just position):
   ```
   : Esc [ 1 ; 31 m
   : Esc ( 0
@@ -182,7 +182,7 @@ sections:
   <!-- deferred from Section 02.5 scope note: "additional saved-state dimensions require
        workflow scenarios (Section 06) to validate" -->
 
-- [ ] **`mode_decsc_origin_flag.teseq`** — DECSC saves origin mode flag:
+- [x] **`mode_decsc_origin_flag.teseq`** — DECSC saves origin mode flag:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h

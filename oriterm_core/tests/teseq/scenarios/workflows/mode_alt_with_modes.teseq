@@ -1,0 +1,9 @@
+: Esc [ 5 ; 20 r
+: Esc [ ? 6 h
+: Esc [ 3 ; 10 H
+|Primary with modes|
+. CR/^M LF/^J
+: Esc [ ? 1049 h
+|Alt screen|
+. CR/^M LF/^J
+: Esc [ ? 1049 l

@@ -33,3 +33,7 @@ mod mode_interactions;
 
 // Family modules (Section 05).
 mod sgr;
+
+// Family modules (Section 06).
+mod osc;
+mod workflows;
