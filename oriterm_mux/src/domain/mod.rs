@@ -5,6 +5,7 @@
 //! provides identity and metadata. Concrete implementations ([`LocalDomain`])
 //! handle actual PTY spawning.
 
+pub(crate) mod handoff;
 pub(crate) mod local;
 pub(crate) mod wsl;
 
@@ -12,6 +13,11 @@ use std::path::PathBuf;
 
 use crate::id::DomainId;
 
+#[allow(
+    unused_imports,
+    reason = "consumed by oriterm/src/platform/default_terminal in Section 03.9 Phase 4"
+)]
+pub use handoff::{AdoptConfig, adopt_pane};
 pub use local::LocalDomain;
 #[allow(unused_imports, reason = "used when WSL domain is wired in Section 35")]
 pub use wsl::WslDomain;
