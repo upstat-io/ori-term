@@ -450,24 +450,18 @@ fn test_scroll_display() {
     let mut notifs = Vec::new();
     client.drain_notifications(&mut notifs);
 
-    // Scroll up by 10 lines and poll until display_offset reflects it.
+    // Scroll up by 10 lines. The IO thread processes commands FIFO, so the
+    // sync_pane_snapshot RPC chained right after scroll_display sends a
+    // SnapshotNow barrier that waits behind the scroll command. Single
+    // round-trip — no polling, no sleep, no flake under heavy load.
     client.scroll_display(pane_id, 10);
-    let scroll_deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        client.poll_events();
-        notifs.clear();
-        client.drain_notifications(&mut notifs);
-        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snap.display_offset == 10 {
-                break;
-            }
-        }
-        assert!(
-            Instant::now() < scroll_deadline,
-            "timed out waiting for display_offset=10"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot");
+    assert_eq!(
+        snap.display_offset, 10,
+        "scroll_display(10) must set display_offset to 10",
+    );
 }
 
 /// 14.2: Scroll to bottom resets display_offset.
@@ -496,44 +490,27 @@ fn test_scroll_to_bottom() {
     let mut notifs = Vec::new();
     client.drain_notifications(&mut notifs);
 
-    // Scroll up, then back to bottom.
+    // Scroll up. The SnapshotNow IO barrier inside sync_pane_snapshot waits
+    // behind the ScrollDisplay command (FIFO command queue), so a single
+    // round-trip is enough to observe the post-scroll state.
     client.scroll_display(pane_id, 10);
-    // Poll until scroll-up takes effect.
-    let scroll_deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        client.poll_events();
-        notifs.clear();
-        client.drain_notifications(&mut notifs);
-        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snap.display_offset == 10 {
-                break;
-            }
-        }
-        assert!(
-            Instant::now() < scroll_deadline,
-            "timed out waiting for scroll up"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after scroll_display");
+    assert_eq!(
+        snap.display_offset, 10,
+        "scroll_display(10) must set display_offset to 10",
+    );
 
+    // Scroll back to bottom — same single-round-trip pattern.
     client.scroll_to_bottom(pane_id);
-    // Poll until scroll-to-bottom takes effect.
-    let btm_deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        client.poll_events();
-        notifs.clear();
-        client.drain_notifications(&mut notifs);
-        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
-            if snap.display_offset == 0 {
-                break;
-            }
-        }
-        assert!(
-            Instant::now() < btm_deadline,
-            "timed out waiting for scroll_to_bottom"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
+    let snap = client
+        .sync_pane_snapshot(pane_id)
+        .expect("sync_pane_snapshot must return a snapshot after scroll_to_bottom");
+    assert_eq!(
+        snap.display_offset, 0,
+        "scroll_to_bottom must reset display_offset to 0",
+    );
 }
 
 /// 14.2: Query pane mode bits — verify bracketed paste mode.

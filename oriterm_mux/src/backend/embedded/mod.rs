@@ -410,6 +410,24 @@ impl MuxBackend for EmbeddedMux {
         self.snapshot_cache.get(&pane_id)
     }
 
+    fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot> {
+        use std::time::Duration;
+
+        // Step 1: send the IO thread barrier and wait for it to drain
+        // any earlier commands and publish a fresh snapshot. The 500ms
+        // ceiling is generous — under normal load this completes in
+        // sub-millisecond time.
+        let pane = self.panes.get(&pane_id)?;
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::SnapshotNow { reply: tx });
+        let _ = rx.recv_timeout(Duration::from_millis(500));
+
+        // Step 2: refresh and clone — refresh_pane_snapshot mutably
+        // borrows self, so we can't return its &PaneSnapshot directly.
+        let snapshot = self.refresh_pane_snapshot(pane_id)?.clone();
+        Some(snapshot)
+    }
+
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
         self.snapshot_dirty.remove(&pane_id);
     }

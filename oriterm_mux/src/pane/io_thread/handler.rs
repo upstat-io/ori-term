@@ -200,6 +200,13 @@ impl<T: EventListener> PaneIoThread<T> {
                 let sel = self.build_zone_selection(Term::command_input_range);
                 let _ = reply.send(sel);
             }
+            PaneIoCommand::SnapshotNow { reply } => {
+                // Force grid_dirty so produce_snapshot doesn't no-op when
+                // the caller chained SnapshotNow after non-mutating commands.
+                self.grid_dirty.store(true, Ordering::Release);
+                self.produce_snapshot();
+                let _ = reply.send(());
+            }
             _ => {} // All other variants handled in handle_command.
         }
     }

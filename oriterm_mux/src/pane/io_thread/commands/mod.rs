@@ -42,6 +42,24 @@ pub enum PaneIoCommand {
     SetBoldIsBright(bool),
     /// Force all lines dirty (after config change, etc.).
     MarkAllDirty,
+    /// Produce a fresh snapshot now and reply when done.
+    ///
+    /// IO thread barrier — because commands are processed FIFO, sending
+    /// `SnapshotNow` after one or more state-mutating commands and waiting
+    /// for the reply guarantees that:
+    /// 1. all earlier commands have been processed,
+    /// 2. a fresh snapshot reflecting their effects is sitting in the
+    ///    `SnapshotDoubleBuffer` ready to be swapped to the main thread.
+    ///
+    /// Used by `MuxBackend::sync_pane_snapshot` to provide a deterministic
+    /// "scroll then read" pattern for tests and any callers that need a
+    /// guaranteed-fresh snapshot. Production render code uses the async
+    /// push pipeline and does not need this.
+    SnapshotNow {
+        /// Reply channel — sender notifies the caller when the snapshot
+        /// has been published to the double buffer.
+        reply: Sender<()>,
+    },
     /// Update image protocol configuration.
     SetImageConfig(ImageConfig),
     /// Extract plain text from a selection region (response via oneshot).
@@ -94,6 +112,7 @@ impl fmt::Debug for PaneIoCommand {
             Self::SetCursorShape(shape) => write!(f, "SetCursorShape({shape:?})"),
             Self::SetBoldIsBright(b) => write!(f, "SetBoldIsBright({b})"),
             Self::MarkAllDirty => write!(f, "MarkAllDirty"),
+            Self::SnapshotNow { .. } => write!(f, "SnapshotNow {{ .. }}"),
             Self::SetImageConfig(..) => write!(f, "SetImageConfig(..)"),
             Self::ExtractText { .. } => write!(f, "ExtractText {{ .. }}"),
             Self::ExtractHtml { .. } => write!(f, "ExtractHtml {{ .. }}"),

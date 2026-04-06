@@ -325,6 +325,23 @@ pub trait MuxBackend {
     /// Build (embedded) or fetch (daemon) a fresh snapshot and cache it.
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot>;
 
+    /// Synchronously fetch a fresh snapshot, draining any in-flight IO
+    /// commands first.
+    ///
+    /// Unlike [`refresh_pane_snapshot`](Self::refresh_pane_snapshot),
+    /// which is fast-path push-driven and may return stale data, this
+    /// method:
+    /// 1. Sends a `SnapshotNow` IO command to the pane's IO thread.
+    /// 2. Waits for the IO thread to process all earlier commands (FIFO)
+    ///    and publish a fresh snapshot to the double buffer.
+    /// 3. Returns the fresh snapshot, owned (no shared borrow).
+    ///
+    /// Used by tests and any caller that needs deterministic
+    /// "scroll then read" semantics. Production render code should
+    /// continue to use the async push pipeline via
+    /// `refresh_pane_snapshot`.
+    fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot>;
+
     /// Clear the dirty flag for a pane's cached snapshot.
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId);
 

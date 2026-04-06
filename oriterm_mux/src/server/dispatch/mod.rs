@@ -318,6 +318,16 @@ pub fn dispatch_request(
 
         MuxPdu::GetPaneSnapshot { pane_id } => match ctx.panes.get(&pane_id) {
             Some(pane) => {
+                use std::time::Duration;
+                // IO thread barrier: wait for all earlier commands (e.g.
+                // ScrollDisplay) to drain and a fresh snapshot to be
+                // published. Without this, callers chaining
+                // `scroll_display` + `GetPaneSnapshot` could read a stale
+                // snapshot because IO command processing and snapshot
+                // pushes are decoupled from the wire response path.
+                let (tx, rx) = crossbeam_channel::bounded(1);
+                pane.send_io_command(PaneIoCommand::SnapshotNow { reply: tx });
+                let _ = rx.recv_timeout(Duration::from_millis(500));
                 let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
                 Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
             }
