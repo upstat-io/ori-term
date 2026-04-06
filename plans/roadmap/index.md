@@ -301,7 +301,7 @@ Alt+non-ASCII, Alt+é, AZERTY, ESC+character, non-US keyboard layout
 ---
 
 ### Section 09: Selection & Clipboard
-**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 selection, Selection, SelectionRange, SelectionPoint, SelectionMode
@@ -326,7 +326,7 @@ copy as HTML, CopyAsHtml, CopyWithAnsi, CF_HTML, formatted copy, styled clipboar
 ---
 
 ### Section 10: Mouse Input & Reporting
-**File:** `section-10-mouse-input.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-10-mouse-input.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 mouse reporting, mouse mode, 1000, 1002, 1003, 1006
@@ -339,6 +339,7 @@ auto-scroll, drag above/below viewport
 horizontal scroll, WheelLeft, WheelRight, button 6, button 7, x-axis
 TUI scroll magnitude, trackpad scroll, precision scroll, scroll forwarding
 inertial scroll cancel, momentum scroll, screen switch, alt screen scroll cancel
+click-through unfocused, acceptsFirstMouse, focus click passthrough
 ```
 
 ---
@@ -356,7 +357,7 @@ row_text, text extraction, byte offset mapping
 ---
 
 ### Section 12: Resize & Reflow
-**File:** `section-12-resize-reflow.md` | **Tier:** 3 | **Status:** Not Started
+**File:** `section-12-resize-reflow.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 reflow, resize, Grid::resize, logical line, re-wrap
@@ -366,12 +367,13 @@ LEADING_WIDE_CHAR_SPACER, split point
 PTY resize, TIOCSWINSZ, ConPTY, PtySize
 window resize, grid_dims_for_size, SIGWINCH
 zero dimension guard, alternate screen resize
+window step resize, grid-aligned, WM_NORMAL_HINTS, resize increment, snap to cell
 ```
 
 ---
 
 ### Section 13: Configuration & Keybindings
-**File:** `section-13-config-keybindings.md` | **Tier:** 3 | **Status:** Not Started
+**File:** `section-13-config-keybindings.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 config, Config, TOML, config.toml, hot reload
@@ -554,6 +556,7 @@ benchmarks, criterion, throughput, latency, FPS, regression, vte_throughput
 selection damage, selection_dirty, symmetric difference, incremental damage
 synchronized output, Mode 2026, sync_bytes_count, MuxWakeup coalescing
 debug overlay, FPS counter, atlas utilization, dirty row percentage
+SIMD parser, vector instructions, SSE2, NEON, fast ASCII scan, bulk parse
 ```
 
 ---
@@ -711,6 +714,10 @@ resize overlay, dimensions overlay, cols x rows, resize indicator
 toggle background opacity, ToggleBackgroundOpacity, transparency toggle
 minimum contrast, WCAG, luminance, contrast ratio, accessibility
 cursor trail, cursor smear, motion blur, cursor animation, Neovide
+window-padding-color, extend, nearest cell bg, padding color match
+padding opacity, transparent padding, background_opacity padding
+unified background image, single image across splits, composite
+swap fg bg, ToggleInvertedColors, invert colors keybind
 ```
 
 ---
@@ -894,7 +901,7 @@ window naming, rename window, RenameWindow, custom window title
 ---
 
 ### Section 33: Split Navigation + Floating Panes
-**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** Complete
+**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** In Progress
 
 ```
 spatial navigation, Alt+Arrow, focus pane direction, cycle pane
@@ -910,6 +917,7 @@ floating drag, floating resize, snap-to-edge, minimum size
 render_frame_scissored, drop shadow, floating z-order, raise, lower
 undo split, redo split, Ctrl+Shift+U, Ctrl+Shift+Y, SplitHistory
 split rotation, rotate direction, H to V, RotateSplitDirection, focus-following rotate
+per-pane title, pane label, split title bar, pane identity indicator
 ```
 
 ---
@@ -1072,6 +1080,7 @@ visual indicator, active key table, key table name
 zellij modes, tmux key table, wezterm key_tables
 modifier-only keybinding, ctrl=action, release trigger, modifier press
 side modifier, left_shift, right_shift, left_ctrl, right_ctrl, KeyLocation
+ANY modifier wildcard, any+click, ignore modifiers, modifier-agnostic binding
 ```
 
 ### Section 50: Runtime Efficiency — CPU & Memory Tuning

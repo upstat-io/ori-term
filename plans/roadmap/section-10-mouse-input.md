@@ -1,7 +1,7 @@
 ---
 section: 10
 title: Mouse Input & Reporting
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-03-29"
 tier: 3
@@ -21,6 +21,9 @@ sections:
     status: not-started
   - id: "10.6"
     title: "Cancel Inertial Scroll on Screen Switch"
+    status: not-started
+  - id: "10.7"
+    title: "Click-Through on Unfocused Window"
     status: not-started
   - id: "10.3"
     title: Section Completion
@@ -170,6 +173,27 @@ Encode mouse events and send to PTY when terminal applications request mouse tra
 - [ ] Test: simulate rapid scroll events, trigger alt screen switch, verify scroll events after switch are discarded
 
 **Priority:** Low — affects trackpad users switching between terminal apps and shell.
+
+---
+
+## 10.7 Click-Through on Unfocused Window
+
+<!-- Alacritty audit (closed): #2929 (allow first click on unfocused window to pass through) -->
+
+**Source:** Alacritty #2929 — On macOS (and optionally other platforms), the first click on an unfocused terminal window should pass through to the terminal instead of just focusing the window. This matches native macOS app behavior and avoids a "wasted click" when switching to the terminal to click a URL or position the cursor.
+
+**Required work:**
+
+- [ ] Config option: `click_through_unfocused = true` (default: true on macOS, false on other platforms — matching platform conventions)
+- [ ] When enabled: on window focus event triggered by mouse click, forward the click event to the terminal after focusing
+- [ ] When disabled: first click only focuses the window, no click event forwarded
+- [ ] Must interact correctly with: URL click (Ctrl+click), selection start, mouse reporting
+- [ ] Platform-specific: macOS `acceptsFirstMouse` returns YES; Windows/Linux handle via focus event + synthetic click
+- [ ] Test: unfocused window, click on URL → verify window focuses AND URL opens in one click
+
+**Priority:** Low — UX polish, especially important on macOS where this is the expected behavior.
+
+**Reference:** Alacritty `acceptsFirstMouse`, macOS HIG (click-through behavior).
 
 ---
 
