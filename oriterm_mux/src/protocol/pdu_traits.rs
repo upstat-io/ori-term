@@ -39,6 +39,7 @@ impl MuxPdu {
             Self::SetCapabilities { .. } => MsgType::SetCapabilities,
             Self::RequestNewTab => MsgType::RequestNewTab,
             Self::SetPanePriority { .. } => MsgType::SetPanePriority,
+            Self::SignalChild { .. } => MsgType::SignalChild,
             Self::SpawnPane { .. } => MsgType::SpawnPane,
             Self::ListPanes => MsgType::ListPanes,
             Self::SetImageConfig { .. } => MsgType::SetImageConfig,
@@ -88,6 +89,7 @@ impl MuxPdu {
                 | Self::SetCapabilities { .. }
                 | Self::SetImageConfig { .. }
                 | Self::SetPanePriority { .. }
+                | Self::SignalChild { .. }
         )
     }
 

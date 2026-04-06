@@ -270,6 +270,28 @@ IME, input method, Ime::Commit, Ime::Preedit, composition
 
 ---
 
+### Section 08B: Input Event Normalization + Keyboard Encoding Pipeline
+**File:** `section-08b-input-pipeline.md` | **Tier:** 3 | **Status:** Not Started
+
+```
+NormalizedKeyEvent, normalized key event, key normalization, input pipeline
+text resolution, resolve_text, text fallback, winit text None
+consumed_mods, effective_mods, modifier consumption, layout modifiers
+unshifted_codepoint, unshifted key, base codepoint
+encode_normalized, encoding pipeline, priority chain, try_build
+numpad, numpad fix, APP_KEYPAD, numpad normal mode, KeyLocation::Numpad
+Shift uppercase, Shift letter, Shift fallback, case conversion
+key repeat, repeat fix, action repeat policy, is_repeatable
+KeyAction, Press, Repeat, Release, event type
+NormalizedKey, Named, Character, Unidentified
+Lua hook, Lua key event, Lua integration, UserData
+platform diagnostic, key event logging, winit key event
+Ghostty KeyEvent, Alacritty SequenceBuilder, WezTerm normalize_shift
+encode_numpad_app, try_encode_numpad, try_encode_named, try_encode_control, try_encode_text
+```
+
+---
+
 ### Section 09: Selection & Clipboard
 **File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** Complete
 
@@ -661,7 +683,7 @@ window shadow, padding, margin, GRID_PADDING
 ---
 
 ### Section 25: Theme System
-**File:** `section-25-theme-system.md` | **Tier:** 6 | **Status:** In Progress
+**File:** `section-25-theme-system.md` | **Tier:** 6 | **Status:** Complete
 
 ```
 theme, ColorScheme, color scheme, palette, BUILTIN_SCHEMES
@@ -702,16 +724,27 @@ terminal inspector, Ctrl+Shift+I, debug overlay, escape sequence log
 
 ---
 
-### Section 28: Extensibility
+### Section 28: Extensibility (Lua Runtime + Features)
 **File:** `section-28-extensibility.md` | **Tier:** 7 | **Status:** Not Started
 
 ```
-Lua, mlua, scripting, event hooks, plugin
-oriterm.on, oriterm.new_tab, oriterm.send_text, API
+Lua 5.4, mlua, lua54, vendored, ScriptEngine, scripting engine
+oriterm/src/lua/, engine.rs, sandbox.rs, events.rs, commands.rs, dispatch.rs
+single long-lived state, main thread, Neovim model, policy layer, routing layer
+sandbox, set_environment, memory_limit, instruction_limit, set_hook
+CallbackFlags, bitset, per-event registration, zero idle overhead
+LuaEvent, LuaCommand, command buffer, dispatch_event, execute_lua_command
+oriterm.on, oriterm.active_tab, oriterm.active_pane, oriterm.send_text
+LuaPaneId, LuaTabId, UserData, LuaContext, host bridge
+format_tab_title, on_command_complete, on_bell, built-in behaviors, parity tests
+keybinding interception, post-match, KeyResult, pass, cancel, replace
+init.lua, scripts/*.lua, hot-reload, ScriptReload, bytecode cache
+degraded mode, Rust fallback, LuaConfig, [lua] TOML section
+PaneTitleChanged, PaneCwdChanged, PaneIconChanged, distinct metadata notifications
 custom shaders, WGSL, post-processing, CRT effect
 smart paste, multi-line warning, ESC sanitize, large paste
 undo close tab, closed_tabs, Ctrl+Shift+T, restore CWD
-session serialization, workspace presets, broadcast input
+session recording, asciicast, workspaces, WorkspaceId
 ```
 
 ---
@@ -1027,6 +1060,47 @@ WezTerm LocalProcessInfo, Ptyxis tab monitor, adaptive polling
 
 ---
 
+### Section 52: Native PTY Layer
+**File:** `section-52-native-pty.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+native PTY, portable-pty replacement, direct syscalls, libc, windows-sys
+PtyCommand, OsString, command builder, PtyHandle, PtyControl, ChildProcess
+openpty, setsid, TIOCSCTTY, signal reset, close_random_fds, EIO to EOF
+ConPTY, CreatePseudoConsole, ResizePseudoConsole, ClosePseudoConsole
+overlapped pipes, CreateNamedPipeW, FILE_FLAG_OVERLAPPED, CancelIoEx
+passthrough flag, PSEUDOCONSOLE_PASSTHROUGH_MODE, 0x8, ConPTY passthrough
+sideloaded conpty.dll, LoadLibraryW, GetProcAddress, NuGet, Windows Terminal
+PtyTransportKind, ConPty, RawPipe, transport enum
+spawn_pty, spawn_conpty, PtyConfig, ExitStatus
+PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, ProcThreadAttributeList
+environment block, UTF-16, CreateProcessW, STARTUPINFOEXW
+filedescriptor, downcast-rs, winapi, nix, dependency elimination
+BUG-07-004, Windows PTY size test, mode con, ConPTY size propagation
+```
+
+---
+
+### Section 53: Raw Pipe Bypass for VT-Native Shells
+**File:** `section-53-raw-pipe-bypass.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+raw pipe, VT-native, ConPTY bypass, zero-overhead passthrough
+WSL, wsl.exe, VT passthrough, image protocol passthrough
+Sixel DCS passthrough, Kitty APC passthrough, iTerm2 OSC passthrough
+spawn_raw_pipe, CREATE_NO_WINDOW, no ConPTY, direct pipes
+ResizeStrategy, WslInterop, resize without ConPTY
+PtyTransport, RawPipeWithFallback, domain-level transport selection
+WslDomain, LocalDomain, transport preference, fallback
+conhost bypass, no screen buffer, no VtEngine, no translation
+image protocols on Windows, DCS strip, APC strip, ConPTY mangling
+Win32 input mode exclusion, PSEUDOCONSOLE_WIN32_INPUT_MODE, VT encoding, key encoding transport awareness
+Ctrl+C signal delivery, 0x03 stdin write, WSLENV propagation, --cd working directory
+OSC 133 shell integration, OSC 7 CWD reporting, raw pipe passthrough
+```
+
+---
+
 ### Ghostty 1.3.0 Parity — Items in Completed Sections
 
 These features from Ghostty 1.3.0 belong in sections already marked complete. They should be addressed when those sections are revisited or as standalone follow-up work.
@@ -1060,7 +1134,8 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 05C | Window Chrome | `section-05c-window-chrome.md` | 2 | Complete |
 | 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | Complete |
 | 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
-| 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |
+| 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Complete (runtime bugs → 08B) |
+| 08B | Input Event Normalization | `section-08b-input-pipeline.md` | 3 | Not Started |
 | 09 | Selection & Clipboard | `section-09-selection-clipboard.md` | 3 | Not Started |
 | 10 | Mouse Input & Reporting | `section-10-mouse-input.md` | 3 | Complete |
 | 11 | Search | `section-11-search.md` | 3 | Not Started |
@@ -1081,7 +1156,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 40 | Vi Mode + Copy Mode | `section-40-vi-copy-mode.md` | 3 | Not Started |
 | 41 | Hints + Quick Select | `section-41-hints-quick-select.md` | 3 | Not Started |
 | 24 | Visual Polish | `section-24-visual-polish.md` | 6 | In Progress |
-| 25 | Theme System | `section-25-theme-system.md` | 6 | In Progress |
+| 25 | Theme System | `section-25-theme-system.md` | 6 | Complete |
 | 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
 | 27 | Command Palette & Quick Terminal | `section-27-command-palette.md` | 7 | Not Started |
 | 28 | Extensibility | `section-28-extensibility.md` | 7 | Not Started |
@@ -1104,6 +1179,8 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 49 | Advanced Keybinding System | `section-49-advanced-keybindings.md` | 5 | Not Started |
 | 50 | Runtime Efficiency — CPU & Memory Tuning | `section-50-runtime-efficiency.md` | 2 | Complete |
 | 51 | Rich Status Bar — Shell, CWD, Git, Process | `section-51-rich-status-bar.md` | 5 | Not Started |
+| **52** | **Native PTY Layer** | **`section-52-native-pty.md`** | **5** | **Not Started** |
+| **53** | **Raw Pipe Bypass for VT-Native Shells** | **`section-53-raw-pipe-bypass.md`** | **5** | **Not Started** |
 
 ## Tier Summary
 
@@ -1115,7 +1192,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39, 42-43, 45, 47-51 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings, rich status bar) |
+| 5 | 22-23, 38-39, 42-43, 45, 47-53 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings, rich status bar, native PTY, raw pipe bypass) |
 | 6 | 24-25, 46 | Polish (visual refinements, themes, macOS app bundle) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |
@@ -1189,6 +1266,14 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
   |                         |
   37 TUI Client (oriterm-tui)
        (depends on 36; can connect locally via 44)
+
+  52 Native PTY Layer
+  |  (replaces portable-pty from 03)
+  |  (improves 39 image protocols on Windows)
+  |
+  53 Raw Pipe Bypass
+       (depends on 52)
+       (enables 39 image protocols on Windows via ConPTY bypass)
 
   ~~15~~ Tab Struct           -> SUPERSEDED by 30, 32
   ~~18~~ Multi-Window         -> SUPERSEDED by 32

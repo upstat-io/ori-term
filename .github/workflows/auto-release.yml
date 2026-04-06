@@ -323,3 +323,18 @@ jobs:
         run: |
           gh release upload "$RELEASE_TAG" artifacts/* \
             --repo "${{ github.repository }}"
+
+  # ── Job 6: Notify website to rebuild ──────────────────────────────────
+  notify-website:
+    name: Notify Website
+    needs: [prepare, publish]
+    if: always() && needs.prepare.outputs.skip != 'true' && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Trigger website rebuild
+        env:
+          GH_TOKEN: ${{ secrets.ORI_TERM_PAT }}
+        run: |
+          gh api repos/upstat-io/ori_term_website/dispatches \
+            -f event_type=oriterm-release-published

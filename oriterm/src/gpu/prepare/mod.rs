@@ -12,7 +12,7 @@
 mod decorations;
 pub(crate) mod dirty_skip;
 mod emit;
-pub(crate) mod shaped_frame;
+mod shaped_frame;
 #[cfg(test)]
 mod unshaped;
 
@@ -31,7 +31,7 @@ use crate::gpu::instance_writer::{CLIP_UNCLIPPED, ScreenRect};
 use dirty_skip::{BufferLengths, RowInstanceRanges, fill_frame_incremental};
 use emit::{GlyphEmitter, build_cursor, draw_prompt_markers, draw_url_hover_underline};
 
-pub(crate) use shaped_frame::ShapedFrame;
+pub use shaped_frame::ShapedFrame;
 #[cfg(test)]
 pub(crate) use unshaped::{prepare_frame, prepare_frame_into};
 
@@ -226,9 +226,11 @@ pub fn prepare_frame_shaped_into(
         out.image_quads_above.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
+        out.was_incremental = true;
         fill_frame_incremental(input, atlas, shaped, out, origin, cursor_opacity);
     } else {
         // Full rebuild path.
+        out.was_incremental = false;
         out.clear();
         out.viewport = input.viewport;
         out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));

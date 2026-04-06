@@ -18,6 +18,10 @@ fn app_keypad_mode() -> TermMode {
     TermMode::default() | TermMode::APP_KEYPAD
 }
 
+fn win32_input_mode() -> TermMode {
+    TermMode::default() | TermMode::WIN32_INPUT
+}
+
 /// Encode a key press at standard location with no text.
 fn enc(key: Key, mods: Modifiers, mode: TermMode) -> Vec<u8> {
     encode_key(&KeyInput {
@@ -82,6 +86,29 @@ fn ctrl_a() {
 fn ctrl_c() {
     let r = enc(Key::Character("c".into()), Modifiers::CONTROL, no_mode());
     assert_eq!(r, vec![0x03]);
+}
+
+#[test]
+fn ctrl_c_win32_input_mode() {
+    // Win32 input mode is parsed but NOT used for encoding �� Ctrl+C goes
+    // through the legacy path as raw 0x03 for reliable ConPTY delivery.
+    let r = enc(
+        Key::Character("c".into()),
+        Modifiers::CONTROL,
+        win32_input_mode(),
+    );
+    assert_eq!(r, vec![0x03]);
+}
+
+#[test]
+fn ctrl_c_release_win32_input_mode() {
+    // Key releases produce empty output in legacy mode (no encoding).
+    let r = enc_release(
+        Key::Character("c".into()),
+        Modifiers::CONTROL,
+        win32_input_mode(),
+    );
+    assert_eq!(r, Vec::<u8>::new());
 }
 
 #[test]

@@ -45,6 +45,17 @@ pub enum MuxPdu {
         data: Vec<u8>,
     },
 
+    /// Send a signal to a pane's child process group. Fire-and-forget.
+    ///
+    /// Bypasses the PTY writer when it's stalled (kernel buffer full).
+    /// Used for Ctrl+C delivery during output flooding.
+    SignalChild {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Signal to send (maps to `Signal` enum).
+        signal: u8,
+    },
+
     /// Resize a pane's terminal grid. Fire-and-forget.
     Resize {
         /// Target pane.

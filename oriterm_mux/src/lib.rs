@@ -32,7 +32,7 @@ pub use backend::{EmbeddedMux, ImageConfig, MuxBackend, MuxClient};
 pub use domain::SpawnConfig;
 pub use id::{ClientId, DomainId, PaneId};
 pub use mux_event::MuxNotification;
-pub use pane::MarkCursor;
+pub use pane::{MarkCursor, Signal};
 pub use protocol::{
     MuxPdu, PaneSnapshot, ProtocolCodec, WireCell, WireCellFlags, WireCursor, WireCursorShape,
     WireRgb,

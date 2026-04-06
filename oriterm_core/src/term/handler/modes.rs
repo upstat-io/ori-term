@@ -94,6 +94,7 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::EnableMode3 => {
                 self.mode.insert(TermMode::ENABLE_MODE_3);
             }
+            NamedPrivateMode::Win32Input => self.mode.insert(TermMode::WIN32_INPUT),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(true);
             }
@@ -164,6 +165,7 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::EnableMode3 => {
                 self.mode.remove(TermMode::ENABLE_MODE_3);
             }
+            NamedPrivateMode::Win32Input => self.mode.remove(TermMode::WIN32_INPUT),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(false);
             }

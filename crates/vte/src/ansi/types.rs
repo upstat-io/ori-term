@@ -201,6 +201,7 @@ impl PrivateMode {
             2026 => Self::Named(NamedPrivateMode::SyncUpdate),
             80 => Self::Named(NamedPrivateMode::SixelScrolling),
             8452 => Self::Named(NamedPrivateMode::SixelCursorRight),
+            9001 => Self::Named(NamedPrivateMode::Win32Input),
             _ => Self::Unknown(mode),
         }
     }
@@ -274,6 +275,12 @@ pub enum NamedPrivateMode {
     BracketedPaste = 2004,
     /// The mode is handled automatically by [`Processor`](super::Processor).
     SyncUpdate = 2026,
+    /// ConPTY win32-input mode (`CSI ? 9001 h/l`).
+    ///
+    /// When set, the hosting terminal should encode keys as
+    /// `CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _` so conhost can reconstruct
+    /// full `KEY_EVENT_RECORD`s and handle special cases like Ctrl+C.
+    Win32Input = 9001,
     /// DECSDM -- sixel scrolling mode (DEC VT340).
     ///
     /// When set (DECSET 80): sixel images scroll when they reach the bottom

@@ -167,6 +167,11 @@ impl TabBarLayout {
         self.window_width - self.controls_zone_width
     }
 
+    /// Width reserved for the window controls zone.
+    pub fn controls_zone_width(&self) -> f32 {
+        self.controls_zone_width
+    }
+
     /// Left X coordinate of the tab at the given index.
     pub fn tab_x(&self, index: usize) -> f32 {
         self.tab_positions

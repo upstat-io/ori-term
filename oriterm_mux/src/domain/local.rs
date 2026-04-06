@@ -100,6 +100,26 @@ impl LocalDomain {
             .take_control()
             .ok_or_else(|| io::Error::other("PTY control unavailable"))?;
 
+        // 2b. Dup the master fd for signal delivery (Unix).
+        //     `tcgetpgrp(master_fd)` needs a valid fd to the PTY master.
+        //     The control handle moves to the IO thread, so we dup it now.
+        #[cfg(unix)]
+        #[allow(
+            unsafe_code,
+            reason = "libc::dup + OwnedFd::from_raw_fd require unsafe"
+        )]
+        let master_fd = {
+            use std::os::unix::io::FromRawFd;
+            control.master_fd().map(|fd| {
+                // SAFETY: dup() is a standard POSIX syscall. The source fd
+                // is valid (obtained from MasterPty::as_raw_fd()). OwnedFd
+                // takes ownership and closes on drop.
+                let duped = unsafe { libc::dup(fd) };
+                assert!(duped >= 0, "dup(master_fd) failed");
+                unsafe { std::os::unix::io::OwnedFd::from_raw_fd(duped) }
+            })
+        };
+
         // 3. Set up shared atomics.
         let io_grid_dirty = Arc::new(AtomicBool::new(false));
         let mode_cache = Arc::new(AtomicU32::new(oriterm_core::TermMode::default().bits()));
@@ -128,7 +148,16 @@ impl LocalDomain {
         let notifier = PaneNotifier::new(tx);
 
         // 6. Spawn the writer thread (owns rx + writer, sets shutdown flag).
-        let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
+        //    The write_stalled flag lets the main thread detect when the
+        //    writer is blocked on a full kernel PTY buffer and send SIGINT
+        //    directly to the child process group.
+        let write_stalled = Arc::new(AtomicBool::new(false));
+        let writer_thread = spawn_pty_writer(
+            writer,
+            rx,
+            Arc::clone(&shutdown),
+            Arc::clone(&write_stalled),
+        )?;
 
         // 7. Spawn the Terminal IO thread (owns Term, VTE processors, PtyControl).
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
@@ -160,6 +189,9 @@ impl LocalDomain {
             pty,
             mode_cache,
             io_selection_dirty,
+            write_stalled,
+            #[cfg(unix)]
+            master_fd,
         }))
     }
 }

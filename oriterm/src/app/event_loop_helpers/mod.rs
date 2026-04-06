@@ -382,9 +382,6 @@ impl App {
 pub(super) struct ControlFlowInput {
     /// Whether any window still has dirty flag after rendering.
     pub still_dirty: bool,
-    /// Whether the surface requires client-side frame budget gating
-    /// (true for `PresentMode::Immediate`, false for `Mailbox`/`Fifo`).
-    pub needs_budget: bool,
     /// Whether the frame budget has elapsed since last render.
     pub budget_elapsed: bool,
     /// Whether compositor animations are running.
@@ -401,8 +398,6 @@ pub(super) struct ControlFlowInput {
     /// Any cell could have the BLINK flag; scanning cells each frame is too
     /// expensive, so the timer runs unconditionally (~2 wakeups/sec).
     pub next_text_blink_change: std::time::Instant,
-    /// Time remaining until frame budget allows next render.
-    pub budget_remaining: std::time::Duration,
     /// Current time.
     pub now: std::time::Instant,
     /// Earliest deferred repaint from `RenderScheduler`.
@@ -430,13 +425,18 @@ pub(super) enum ControlFlowDecision {
 /// No winit types — testable without a display server. Mirrors the
 /// decision tree in `about_to_wait`.
 pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
-    // Still dirty after render attempt.
+    // Still dirty after render attempt — sleep until the next event
+    // if the frame budget hasn't elapsed yet. Using `Wait` instead of
+    // `WaitUntil` because WaitUntil doesn't reliably sleep on
+    // Windows/WSL2 (observed: returns immediately, creating a tight
+    // loop that starves keyboard dispatch — BUG-11-1). With `Wait`,
+    // the coalesced MuxWakeup from the next PTY snapshot wakes us,
+    // and winit's PeekMessage drains ALL pending messages (including
+    // keyboard events) before calling about_to_wait().
     if input.still_dirty {
-        if input.needs_budget && !input.budget_elapsed {
-            // Budget-gated: wake when the budget elapses.
-            return ControlFlowDecision::WaitUntil(input.now + input.budget_remaining);
+        if !input.budget_elapsed {
+            return ControlFlowDecision::Wait;
         }
-        // Otherwise wake immediately to retry.
         return ControlFlowDecision::WaitUntil(input.now);
     }
     if input.has_animations {

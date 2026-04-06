@@ -6,6 +6,14 @@
 
 mod kitty;
 mod legacy;
+// Win32 input mode module exists but is not wired into encode_key().
+// ConPTY's Win32 input records don't work through the WSL bridge —
+// Ctrl+C is silently dropped. Kept for future native Windows support.
+#[allow(
+    dead_code,
+    reason = "reserved for native Windows ConPTY (non-WSL) support"
+)]
+mod win32;
 
 use bitflags::bitflags;
 use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState, PhysicalKey};
@@ -99,6 +107,12 @@ pub struct KeyInput<'a> {
 /// 1. **Kitty keyboard protocol** — when any `KITTY_KEYBOARD_PROTOCOL` flag is set.
 /// 2. **`APP_KEYPAD` numpad** — numpad keys in application keypad mode.
 /// 3. **Legacy xterm** — standard VT/xterm escape sequences.
+///
+/// **Note:** Win32 input mode (`DECSET ?9001`) is parsed and tracked as a
+/// terminal mode, and the encoder exists in `win32.rs`, but dispatch is not
+/// yet wired here. Activation is tracked in roadmap Section 08b (Input
+/// Event Normalization). The mode tracking is needed independently for
+/// `ConPTY` Ctrl+C delivery (BUG-11-1).
 pub fn encode_key(input: &KeyInput<'_>) -> Vec<u8> {
     // Kitty keyboard protocol takes priority when any flag is set.
     if input.mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL) {
