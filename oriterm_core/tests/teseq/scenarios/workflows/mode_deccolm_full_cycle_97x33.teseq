@@ -1,0 +1,11 @@
+|Original 80-col content|
+. CR/^M LF/^J
+: Esc [ ? 3 h
+|132-col: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+. CR/^M LF/^J
+: Esc [ ? 6 h
+: Esc [ 5 ; 28 r
+|In origin mode at 132|
+. CR/^M LF/^J
+: Esc [ ? 3 l
+|Back to 80|

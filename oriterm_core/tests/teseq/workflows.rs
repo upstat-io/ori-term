@@ -118,3 +118,163 @@ fn mode_decsc_origin_flag() {
         "expected 'relative' at scroll region top (row 4), got: {line4:?}"
     );
 }
+
+// Multi-size variants (97x33)
+
+#[test]
+fn mode_scroll_origin_fill_97x33() {
+    let Some(outcome) = run_scenario("mode_scroll_origin_fill_97x33") else {
+        return;
+    };
+    assert_mode_not_contains(&outcome, TermMode::ORIGIN);
+    assert_scrollback_empty(&outcome);
+}
+
+#[test]
+fn mode_deccolm_full_cycle_97x33() {
+    let Some(outcome) = run_scenario("mode_deccolm_full_cycle_97x33") else {
+        return;
+    };
+    // DECCOLM ?3l restores to the original terminal width (97).
+    assert_eq!(outcome.cols, 97, "expected 97 columns after DECCOLM off");
+    assert!(
+        outcome.grid_text.contains("Back to 80"),
+        "content after DECCOLM off not found"
+    );
+    assert_mode_contains(&outcome, TermMode::ORIGIN);
+}
+
+#[test]
+fn mode_alt_with_modes_97x33() {
+    let Some(outcome) = run_scenario("mode_alt_with_modes_97x33") else {
+        return;
+    };
+    assert_mode_contains(&outcome, TermMode::ORIGIN);
+    assert!(
+        outcome.grid_text.contains("Primary with modes"),
+        "primary screen content not restored after alt screen exit"
+    );
+}
+
+#[test]
+fn mode_decsc_attrs_97x33() {
+    let Some(outcome) = run_scenario("mode_decsc_attrs_97x33") else {
+        return;
+    };
+    // After DECRC, cursor should return to saved position (line 9, col 19).
+    assert_eq!(outcome.cursor_line, 9, "DECRC should restore cursor line");
+    assert_eq!(outcome.cursor_col, 34, "cursor col after 'q after restore'");
+    // DEC Special Graphics 'q' -> U+2500 at the save position.
+    let ch = outcome.grid_chars[9][19];
+    assert_eq!(
+        ch, '\u{2500}',
+        "expected DEC Special Graphics horizontal line at (9,19), got {ch:?} — \
+         charset was not saved/restored by DECSC/DECRC"
+    );
+    assert_cell_flags_contain(&outcome, 9, 19, oriterm_core::cell::CellFlags::BOLD);
+    let fg = cell_fg_at(&outcome, 9, 19);
+    assert!(
+        fg.r > 100,
+        "expected red-ish fg after DECRC restore, got r={} g={} b={}",
+        fg.r,
+        fg.g,
+        fg.b
+    );
+}
+
+#[test]
+fn mode_decsc_origin_flag_97x33() {
+    let Some(outcome) = run_scenario("mode_decsc_origin_flag_97x33") else {
+        return;
+    };
+    assert!(
+        outcome.grid_text.starts_with("absolute"),
+        "expected 'absolute' at row 0"
+    );
+    assert_mode_contains(&outcome, TermMode::ORIGIN);
+    let line4 = &outcome.grid_text.lines().nth(4).unwrap_or("");
+    assert!(
+        line4.trim_end().starts_with("relative"),
+        "expected 'relative' at scroll region top (row 4), got: {line4:?}"
+    );
+}
+
+// Multi-size variants (120x40)
+
+#[test]
+fn mode_scroll_origin_fill_120x40() {
+    let Some(outcome) = run_scenario("mode_scroll_origin_fill_120x40") else {
+        return;
+    };
+    assert_mode_not_contains(&outcome, TermMode::ORIGIN);
+    assert_scrollback_empty(&outcome);
+}
+
+#[test]
+fn mode_deccolm_full_cycle_120x40() {
+    let Some(outcome) = run_scenario("mode_deccolm_full_cycle_120x40") else {
+        return;
+    };
+    // DECCOLM ?3l restores to the original terminal width (120).
+    assert_eq!(outcome.cols, 120, "expected 120 columns after DECCOLM off");
+    assert!(
+        outcome.grid_text.contains("Back to 80"),
+        "content after DECCOLM off not found"
+    );
+    assert_mode_contains(&outcome, TermMode::ORIGIN);
+}
+
+#[test]
+fn mode_alt_with_modes_120x40() {
+    let Some(outcome) = run_scenario("mode_alt_with_modes_120x40") else {
+        return;
+    };
+    assert_mode_contains(&outcome, TermMode::ORIGIN);
+    assert!(
+        outcome.grid_text.contains("Primary with modes"),
+        "primary screen content not restored after alt screen exit"
+    );
+}
+
+#[test]
+fn mode_decsc_attrs_120x40() {
+    let Some(outcome) = run_scenario("mode_decsc_attrs_120x40") else {
+        return;
+    };
+    // After DECRC, cursor should return to saved position (line 14, col 29).
+    assert_eq!(outcome.cursor_line, 14, "DECRC should restore cursor line");
+    assert_eq!(outcome.cursor_col, 44, "cursor col after 'q after restore'");
+    // DEC Special Graphics 'q' -> U+2500 at the save position.
+    let ch = outcome.grid_chars[14][29];
+    assert_eq!(
+        ch, '\u{2500}',
+        "expected DEC Special Graphics horizontal line at (14,29), got {ch:?} — \
+         charset was not saved/restored by DECSC/DECRC"
+    );
+    assert_cell_flags_contain(&outcome, 14, 29, oriterm_core::cell::CellFlags::BOLD);
+    let fg = cell_fg_at(&outcome, 14, 29);
+    assert!(
+        fg.r > 100,
+        "expected red-ish fg after DECRC restore, got r={} g={} b={}",
+        fg.r,
+        fg.g,
+        fg.b
+    );
+}
+
+#[test]
+fn mode_decsc_origin_flag_120x40() {
+    let Some(outcome) = run_scenario("mode_decsc_origin_flag_120x40") else {
+        return;
+    };
+    assert!(
+        outcome.grid_text.starts_with("absolute"),
+        "expected 'absolute' at row 0"
+    );
+    assert_mode_contains(&outcome, TermMode::ORIGIN);
+    let line4 = &outcome.grid_text.lines().nth(4).unwrap_or("");
+    assert!(
+        line4.trim_end().starts_with("relative"),
+        "expected 'relative' at scroll region top (row 4), got: {line4:?}"
+    );
+}

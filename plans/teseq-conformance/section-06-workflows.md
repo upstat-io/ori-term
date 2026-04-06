@@ -27,7 +27,7 @@ third_party_review:
 sections:
   - id: "06.1"
     title: "Mode Combination Workflows"
-    status: in-progress
+    status: complete
   - id: "06.2"
     title: "Query-Response Workflows"
     status: not-started
@@ -197,7 +197,7 @@ sections:
   Validates: DECSC saves the origin mode flag. After DECRC, origin mode is restored (re-enabled), so the cursor returns to the top of the scroll region (row 4, absolute) rather than row 0. "relative" appears within the scroll region. "absolute" appears at row 0, col 0 (written while origin mode was off).
   **Implementation note — potential conformance gap:** ori_term's `save_cursor_position()` only saves the `Cursor` struct via `grid.save_cursor()`. Origin mode is a `TermMode` flag on `Term`, not part of `Cursor`. Per VT220 spec, DECSC saves the origin mode flag. If this scenario reveals origin mode is NOT restored, that is a conformance bug to fix (extend save/restore to include origin mode flag). File a bug if origin mode save/restore fails.
 
-- [ ] Multi-size variants: all 5 mode workflows run at 80x24, 97x33, and 120x40. Each size gets a separate `.teseq` + `.toml` pair with coordinates adjusted for the terminal dimensions. This is the established pattern — see `origin_scroll_basic_97x33.teseq`/`.toml` in `scenarios/csi/modes/` for reference. Specific adjustments per scenario:
+- [x] Multi-size variants: all 5 mode workflows run at 80x24, 97x33, and 120x40. Each size gets a separate `.teseq` + `.toml` pair with coordinates adjusted for the terminal dimensions. This is the established pattern — see `origin_scroll_basic_97x33.teseq`/`.toml` in `scenarios/csi/modes/` for reference. Specific adjustments per scenario:
   - `mode_scroll_origin_fill`: adjust scroll region (e.g., `5;28r` for 97x33, `5;35r` for 120x40) and line count.
   - `mode_deccolm_full_cycle`: DECCOLM always resizes to 132 columns regardless of base size; adjust scroll region for taller terminals.
   - `mode_alt_with_modes`: adjust scroll region row numbers and CUP coordinates.
