@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::harness::{
     self, ScenarioOutcome, TeseqHarness, analyze_response, assert_pty_writes,
-    assert_response_snapshot, reseq_available,
+    assert_response_snapshot, pipe_through_command, reseq_available,
 };
 
 /// Run a report scenario and apply spec assertions.
@@ -267,8 +267,15 @@ fn analyze_response_produces_output() {
     assert!(!output.is_empty(), "analyze_response returned empty string");
 }
 
-// Note: the non-zero-exit error path in analyze_response (line 155 of assertions.rs)
-// cannot be directly tested because the project denies unsafe_code, which prevents
-// PATH manipulation via std::env::set_var. The happy-path test above provides
-// coverage of the function's success contract; the error branch is a 3-line guard
-// clause whose correctness is evident from inspection.
+#[test]
+fn pipe_through_command_returns_err_on_nonzero_exit() {
+    // Tests the non-zero-exit error path extracted into pipe_through_command.
+    // Uses /bin/false which always exits 1, avoiding PATH manipulation.
+    let result = pipe_through_command("false", "");
+    assert!(result.is_err(), "expected Err for non-zero exit");
+    let err_msg = result.unwrap_err();
+    assert!(
+        err_msg.contains("false exited with"),
+        "unexpected error: {err_msg}"
+    );
+}

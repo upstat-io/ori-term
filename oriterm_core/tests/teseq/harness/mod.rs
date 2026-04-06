@@ -11,6 +11,7 @@ pub mod runner;
 pub use assertions::{
     analyze_response, assert_cursor, assert_event_snapshot, assert_grid_snapshot,
     assert_pty_writes, assert_response_snapshot, assert_scrollback_empty, assert_spec,
+    pipe_through_command,
 };
 pub use events::{RecordedEvent, RecordedListener};
 pub use loader::ScenarioSpec;

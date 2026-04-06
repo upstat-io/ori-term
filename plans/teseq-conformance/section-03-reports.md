@@ -707,6 +707,8 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
   Required plan update: return an `Err` on non-zero exit status and add coverage for the failing-subprocess path.
 - [x] `[TPR-03-004][medium]` `.github/workflows/auto-release.yml:342` — roadmap-only pushes still dispatch the `oriterm-release-published` website event.
   Resolved: Fixed on 2026-04-05. Gated `oriterm-release-published` dispatch on `needs.publish.result == 'success'`; roadmap event remains unconditional within the job.
+- [x] `[TPR-03-005][low]` `oriterm_core/tests/teseq/csi_reports.rs:262` / `oriterm_core/tests/teseq/harness/assertions.rs:155` — the non-zero-exit fix in `analyze_response()` is still unpinned by a regression test.
+  Resolved: Fixed on 2026-04-05. Extracted `pipe_through_command()` from `analyze_response()` and added `pipe_through_command_returns_err_on_nonzero_exit` test using `false` command.
 
 ---
 
