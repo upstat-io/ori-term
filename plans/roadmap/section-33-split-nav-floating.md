@@ -1,7 +1,7 @@
 ---
 section: 33
 title: Split Navigation + Floating Panes
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-04-01"
 tier: 4M
@@ -24,6 +24,9 @@ sections:
     status: complete
   - id: "33.7"
     title: "Split Rotation + Focus-Following Rotate"
+    status: not-started
+  - id: "33.8"
+    title: "Per-Pane Title Label in Splits"
     status: not-started
   - id: "33.6"
     title: Section Completion
@@ -314,6 +317,28 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 **Priority:** Medium — common workflow for users who frequently switch between horizontal and vertical layouts.
 
 **Reference:** GNOME Terminator split rotation, tmux `select-layout` toggle.
+
+---
+
+## 33.8 Per-Pane Title Label in Splits
+
+<!-- Ghostty audit (closed): #11774 (always-visible per-pane title/label in split mode) -->
+
+**Source:** Ghostty #11774 — When working with multiple splits, there's no persistent visual indicator identifying each pane. Users want a small title bar per split showing CWD, process name, or custom label.
+
+**Required work:**
+
+- [ ] Config option: `show_pane_title = true` (default: false; when true, show a small title bar at the top of each split pane)
+- [ ] Title content: process name, CWD short path, or user-set name (from OSC 0/2 or manual rename)
+- [ ] Render as a thin bar (14-16px) at the top of each pane within the split layout
+- [ ] Active pane title uses accent color; inactive panes use dim color
+- [ ] Must reduce grid rows by 1 to accommodate the title bar within the pane's allocated space
+- [ ] Clicking the title bar focuses the pane
+- [ ] Test: create 2 splits, verify each shows a title with the running process name
+
+**Priority:** Low — quality-of-life for users with many splits.
+
+**Reference:** tmux pane title (`pane-border-format`), VS Code terminal tab header.
 
 ---
 

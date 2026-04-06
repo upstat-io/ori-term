@@ -17,7 +17,7 @@ inspired_by:
   - "ori_term vttest session.rs:232-239 — vttest_available() graceful skip pattern"
 depends_on: ["01", "02", "03", "04", "05", "06"]
 third_party_review:
-  status: resolved
+  status: findings
   updated: 2026-04-06
 sections:
   - id: "07.1"
@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "07.N"
     title: "Completion Checklist"
     status: not-started
@@ -124,7 +124,7 @@ Build a comprehensive test matrix documenting every scenario.
     - `osc.rs` — guard present (returns `Option<ScenarioOutcome>`), 4 tests call it
     - `sgr/mod.rs` — guard present (returns `Option<ScenarioOutcome>`), sub-modules (`attributes.rs`, `colors.rs`, `combinations.rs`, `edge_cases.rs`, `resets.rs`, `underlines.rs`) call `super::run_scenario`
     - `workflows/mod.rs` — guard present (returns `Option<ScenarioOutcome>`), sub-modules (`edge.rs`, `mode.rs`, `query.rs`, `real_world.rs`) call `super::run_scenario`
-  - **Pattern 2 (inline guard):** `csi_erase.rs::ed_scrollback` has its own `if !reseq_available()` guard because it calls `TeseqHarness::from_scenario()` directly (not via `run_scenario()`). Verify this guard is present.
+  - **Pattern 2 (inline guard):** Two tests bypass their family `run_scenario()` and have their own `if !reseq_available()` guard: `csi_erase.rs::ed_scrollback` (calls `TeseqHarness::from_scenario()` directly) and `sgr/colors.rs::color_bold_bright_disabled` (scenario-variant that reuses `color_bold_bright.teseq` with different config). Both guards verified present.
   - **Pure-Rust tests (must NOT guard):** Verify these 7 tests do not call `reseq_available()`:
     - `csi_reports.rs::da2_version_drift_check` — uses `Term::new()` directly
     - `csi_reports.rs::analyze_response_produces_output` — exercises `analyze_response()` helper
@@ -223,6 +223,11 @@ Collate evidence from 07.1-07.4 against every mission success criterion in `00-o
 - [x] `[TPR-07-001][low]` [plans/teseq-conformance/section-07-verification.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-07-verification.md#L12) — Section 07's headline success criteria and test matrix carried incorrect counts.
   Evidence: original plan had `171 .teseq + 5 pure-Rust` but actual counts are `168 .teseq + 7 pure-Rust + 1 scenario-variant = 176`.
   Resolution: Fixed during /review-plan Mode A review. Success criteria, test matrix, completion checklist, and exit criteria all updated to `168 .teseq + 7 pure-Rust + 1 variant = 176`. Test matrix restructured with Variant column and per-family counts verified against `find` and `cargo test --list`.
+
+- [ ] `[TPR-07-002][low]` [plans/teseq-conformance/section-07-verification.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-07-verification.md#L115) — The skip-path audit no longer enumerates every test that bypasses the family `run_scenario()` helper.
+  Evidence: 07.2 says only `csi_erase.rs::ed_scrollback` uses an inline `if !reseq_available()` guard, but [sgr/colors.rs](/home/eric/projects/ori_term/oriterm_core/tests/teseq/sgr/colors.rs#L96) also bypasses `super::run_scenario()` for the scenario-variant case and carries its own direct `reseq` guard.
+  Impact: Section 07 claims a completed skip-boundary audit, but the documented inventory is incomplete. Future reviews can incorrectly assume all SGR submodule tests route through `super::run_scenario()`.
+  Required plan update: Amend 07.2's Pattern 1/Pattern 2 notes to include the SGR variant test and clarify that not every SGR submodule test uses `super::run_scenario()`.
 
 ---
 
