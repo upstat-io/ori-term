@@ -59,7 +59,7 @@ sections:
     status: complete
   - id: "05.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "05.N"
     title: "Completion Checklist"
     status: not-started
@@ -102,7 +102,7 @@ sections:
 
 **Depends on:** Section 01 (TeseqHarness), Section 02 (basic pattern).
 
-**File size note:** The `sgr.rs` test module will contain ~55 test functions at ~5-7 lines each, totaling ~350-400 lines. Test files are exempt from the 500-line limit per `code-hygiene.md`. No submodule split needed.
+**File size note:** The SGR test module was split from a monolithic `sgr.rs` (917 lines) into `sgr/mod.rs` (shared `run_scenario` helper) plus 6 submodules: `attributes.rs`, `underlines.rs`, `colors.rs`, `resets.rs`, `edge_cases.rs`, `combinations.rs` — all under 230 lines each.
 
 ---
 
@@ -116,7 +116,7 @@ This subsection has two parts: (A) creating the module and directory scaffolding
 
 - [x] **Create scenario directory** `oriterm_core/tests/teseq/scenarios/csi/sgr/`. This is the home for all `.teseq` and `.toml` sidecar files in this section. Currently `scenarios/csi/` contains `cursor/`, `erase/`, `insert_delete/`, `reports/`, `modes/` — `sgr/` does not yet exist.
 
-- [x] **Create `oriterm_core/tests/teseq/sgr.rs`** — the Rust test module for all SGR scenarios. Follow the `Option<ScenarioOutcome>` pattern established by `mode_interactions.rs` and `csi_reports.rs`, since every SGR test needs to perform cell-level assertions beyond the sidecar spec:
+- [x] **Create `oriterm_core/tests/teseq/sgr/mod.rs`** — the SGR test module (split into submodules: attributes, underlines, colors, resets, edge_cases, combinations). `mod.rs` contains the shared `run_scenario` helper following the `Option<ScenarioOutcome>` pattern:
   ```rust
   //! SGR & color scenarios (attributes, underline styles, colors, selective resets).
 
@@ -907,11 +907,16 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
 - [x] `[TPR-05-006][low]` [plans/teseq-conformance/section-05-sgr-colors.md:63](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L63), [plans/teseq-conformance/section-05-sgr-colors.md:918](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L918), [plans/teseq-conformance/section-05-sgr-colors.md:902](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L902), [oriterm_core/tests/teseq/sgr/colors.rs:16](/home/eric/projects/ori_term/oriterm_core/tests/teseq/sgr/colors.rs#L16), [oriterm_core/tests/teseq/sgr/mod.rs:7](/home/eric/projects/ori_term/oriterm_core/tests/teseq/sgr/mod.rs#L7) — Section 05's bookkeeping still describes the pre-fix state, so the plan now misreports both what remains open and what has already been fixed.
   Validation: the current tree has the expanded 16-color loops in `colors.rs` and the split `sgr/` submodules in `sgr/mod.rs`, but `05.R` still lists the old missing-color and oversize-`sgr.rs` findings as if they were current. At the same time, `05.N` remains `not-started` with every checklist item unchecked, even though `cargo test -p oriterm_core --test teseq` now passes. That stale review/checklist state is enough to mislead future `/continue-plan` or review runs about the real remaining work.
 
+- [x] `[TPR-05-007][low]` [plans/teseq-conformance/section-05-sgr-colors.md:105](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L105), [plans/teseq-conformance/section-05-sgr-colors.md:115](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L115), [plans/teseq-conformance/section-05-sgr-colors.md:119](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L119), [plans/teseq-conformance/section-05-sgr-colors.md:914](/home/eric/projects/ori_term/plans/teseq-conformance/section-05-sgr-colors.md#L914), [oriterm_core/tests/teseq/sgr/mod.rs:7](/home/eric/projects/ori_term/oriterm_core/tests/teseq/sgr/mod.rs#L7), [oriterm_core/tests/teseq/sgr/colors.rs:1](/home/eric/projects/ori_term/oriterm_core/tests/teseq/sgr/colors.rs#L1) — `TPR-05-006` was closed before the section text was actually synced to the split `sgr/` module layout.
+  Evidence: the current plan still says the work lives in a single `sgr.rs`, says no submodule split is needed, and leaves the completion checklist anchored to that old file path, but the committed tree has `sgr/mod.rs` plus dedicated `attributes.rs`, `colors.rs`, `combinations.rs`, `edge_cases.rs`, `resets.rs`, and `underlines.rs`.
+  Impact: `/continue-plan` and future review passes will keep reading stale implementation instructions, and the checked `TPR-05-006` entry now overstates the amount of bookkeeping that has actually been fixed.
+  Required plan update: rewrite the file-size note, scaffolding subsection, and checklist entries to describe the current `sgr/` directory layout, then either reopen or replace `TPR-05-006` only after those plan references are truly synchronized.
+
 ---
 
 ## 05.N Completion Checklist
 
-- [ ] Scaffolding complete: `scenarios/csi/sgr/` directory, `sgr.rs` module, `main.rs` registration (05.0a)
+- [x] Scaffolding complete: `scenarios/csi/sgr/` directory, `sgr/mod.rs` + 6 submodules, `main.rs` registration (05.0a)
 - [ ] Cell attribute inspection helpers added to harness: `assert_cell_flags_contain`, `assert_cell_flags_not_contain`, `cell_fg_at`, `cell_bg_at`, `cell_underline_color_at` (05.0b)
 - [ ] `set_bold_is_bright()` method added to `TeseqHarness` (05.0c)
 - [ ] Re-exports in `harness/mod.rs` updated for all new helpers (05.0b)
