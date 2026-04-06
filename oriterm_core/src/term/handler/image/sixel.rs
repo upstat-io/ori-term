@@ -98,7 +98,10 @@ impl<T: EventListener> Term<T> {
 
         // Remove any existing placement at this position (prevents
         // stale placements from accumulating during sixel animation).
+        // Also prune orphaned image data — sixel overwrite replaces the
+        // entire image, so the old payload should not linger.
         self.image_cache_mut().remove_by_position(col, stable_row);
+        self.image_cache_mut().remove_orphans();
 
         self.image_cache_mut().place(placement);
 
