@@ -1,7 +1,7 @@
 ---
 section: 13
 title: Configuration & Keybindings
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-03-29"
 tier: 3

@@ -110,7 +110,7 @@ Build a comprehensive test matrix documenting every scenario.
 - [x] **Graceful skip verification:**
   - Verify `reseq_available()` returns false when `reseq` is not in PATH
   - Verify all .teseq-dependent tests print "reseq not installed, skipping" and return Ok (not panic/fail)
-  - Verify by code inspection that `reseq_available()` in `harness/reseq.rs` uses `Command::new("reseq").arg("--version")` PATH lookup (same proven pattern as `vttest_available()`). Optionally test with PATH manipulation: `timeout 150 env PATH=$(echo $PATH | tr ':' '\n' | grep -v $(dirname $(which reseq)) | tr '\n' ':') cargo test -p oriterm_core --test teseq` (removes reseq's directory from PATH; 169 reseq-dependent tests should skip, 7 pure-Rust tests should pass)
+  - Verified by code inspection: `reseq_available()` in `harness/reseq.rs` uses `Command::new("reseq").arg("--version")` PATH lookup (same proven pattern as `vttest_available()`). Note: PATH manipulation verification is unreliable when `reseq` shares a directory with system utilities (e.g., `/usr/bin/false` used by `pipe_through_command_returns_err_on_nonzero_exit`); code inspection is the authoritative verification method
 
 - [x] **Skip path correctness audit** — verify every family module enforces the skip boundary:
   - **Pattern 1 (parent `run_scenario` with guard):** Grep `fn run_scenario` in all `.rs` files under `oriterm_core/tests/teseq/`. Expected: 10 definitions, each containing `if !reseq_available()` as the first statement:
