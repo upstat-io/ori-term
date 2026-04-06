@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use super::harness::{
-    self, ScenarioOutcome, TeseqHarness, assert_pty_writes, assert_response_snapshot,
-    reseq_available,
+    self, ScenarioOutcome, TeseqHarness, analyze_response, assert_pty_writes,
+    assert_response_snapshot, reseq_available,
 };
 
 /// Run a report scenario and apply spec assertions.
@@ -254,4 +254,15 @@ fn ansi_mode_unknown() {
     let outcome = run_scenario("ansi_mode_unknown");
     assert_pty_writes(&outcome, &["\x1b[99;0$y"]);
     assert_response_snapshot(&outcome, "csi_reports_ansi_mode_unknown");
+}
+
+// --- analyze_response coverage ---
+
+#[test]
+fn analyze_response_produces_output() {
+    // Exercises analyze_response: teseq happy path if available, hex fallback otherwise.
+    let result = analyze_response("\x1b[?64;6;4c");
+    assert!(result.is_ok(), "analyze_response failed: {:?}", result);
+    let output = result.unwrap();
+    assert!(!output.is_empty(), "analyze_response returned empty string");
 }

@@ -732,7 +732,7 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
 - [x] Plan annotation cleanup
 - [x] All TPR checkpoint findings resolved
 - [x] **Plan sync** — update plan metadata:
-  - [x] This section's frontmatter `status` → `complete`, subsection statuses updated
+  - [ ] This section's frontmatter `status` → `complete`, subsection statuses updated (currently `in-progress` — pending final TPR clean pass)
   - [x] `00-overview.md` Quick Reference table status updated for this section
   - [x] `00-overview.md` mission success criteria checkboxes updated (check off any now satisfied)
   - [x] `index.md` section status updated
