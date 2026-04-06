@@ -2,7 +2,7 @@
 section: 17
 title: Drag & Drop
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-04-01"
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
@@ -13,6 +13,9 @@ sections:
   - id: "17.2"
     title: OS-Level Drag + Merge
     status: complete
+  - id: "17.4"
+    title: "URL Drag-and-Drop from External Apps"
+    status: not-started
   - id: "17.3"
     title: Section Completion
     status: complete
@@ -127,6 +130,29 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
   - [x] Set to true after seamless merge
   - [x] Checked in mouse-up handler: if true, ignore the release and clear the flag
   - [x] Prevents the stale button-up from finalizing a non-existent drag
+
+---
+
+## 17.4 URL Drag-and-Drop from External Apps
+
+<!-- WezTerm audit: #7612 (drag-and-drop support for URLs from browser) -->
+
+**Source:** WezTerm #7612 — Users want to drag links from Firefox/Chrome into the terminal and have the URL pasted. Currently only file drag-and-drop is supported.
+
+**Problem:** Section 17.1-17.2 covers tab dragging and file drops. URL drops from external apps (browsers, file managers) use different MIME types (`text/uri-list`, `text/plain`) that aren't handled.
+
+**Required work:**
+
+- [ ] Handle `text/uri-list` MIME type in the drop handler (winit `DroppedFile` or platform DnD API)
+- [ ] Handle `text/plain` drops (some apps drop URLs as plain text)
+- [ ] On URL drop: paste the URL text into the focused pane's PTY
+  - If bracketed paste is enabled: wrap in bracketed paste escape sequences
+  - Quote URLs containing shell metacharacters (spaces, `&`, `?`, etc.)
+- [ ] Support both `file://` URIs (convert to local path, existing behavior) and `http://`/`https://` URLs (new: paste as text)
+- [ ] Visual feedback: drop zone indicator when hovering with a droppable URL
+- [ ] Test: simulate URL drop event, verify correct text pasted to PTY with bracketed paste wrapping
+
+**Priority:** Low — convenience feature.
 
 ---
 

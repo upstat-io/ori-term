@@ -2,7 +2,7 @@
 section: 5
 title: Window + GPU Rendering
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-31"
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
@@ -52,6 +52,9 @@ sections:
   - id: "5.14"
     title: "Integration: Working Terminal"
     status: complete
+  - id: "5.16"
+    title: "GPU Device Lost Recovery"
+    status: not-started
   - id: "5.15"
     title: Section Completion
     status: complete
@@ -672,6 +675,34 @@ The "it works" milestone. Everything comes together.
 - [x] Verify threading:
   - [x] PTY reader thread processes output without blocking renderer
   - [x] No visible stutter when output is flowing
+
+---
+
+## 5.16 GPU Device Lost Recovery
+
+<!-- WezTerm audit: #7519 (Windows sleep/resume D3D11 crash), #7703 (crash on macOS sleep in fullscreen) -->
+
+**Source:** WezTerm #7519, #7703 — After system sleep/resume, the GPU device is lost. WezTerm crashes with APPCRASH in d3d11.dll or EGL errors on macOS. This affects all laptop users.
+
+**Problem:** ori_term has a `SurfaceError::Lost` variant in `oriterm/src/gpu/window_renderer/error.rs` but NO recovery mechanism. `GpuState` is initialized once at startup and never re-created. After device loss (sleep, GPU disconnect, driver update), rendering hangs permanently.
+
+**Required work:**
+
+- [ ] Detect device lost: handle `SurfaceError::Lost` from `surface.get_current_texture()`, and `wgpu::Device::poll()` returning `DeviceLost` maintenance
+- [ ] Implement `GpuState::recreate()`: drop existing device/queue/surface, request new adapter + device, reconfigure surface
+- [ ] Rebuild dependent state after device recreation:
+  - Glyph atlas (re-upload all cached glyphs to new GPU textures)
+  - Content cache texture (rebuild from scratch)
+  - All render pipelines (shader modules, bind group layouts, pipeline layouts)
+  - Instance buffers and uniform buffers
+- [ ] Resume rendering seamlessly — terminal state (grid, scrollback, selection) is unaffected since it lives in oriterm_core/oriterm_mux, not on the GPU
+- [ ] Debounce: if device loss occurs repeatedly (bad driver), back off exponentially instead of spinning
+- [ ] Cross-platform: test on Windows (D3D12/Vulkan), macOS (Metal), Linux (Vulkan) — each backend has different device loss semantics
+- [ ] Test: simulate device lost via wgpu test surface (if possible), or mock the error path; verify atlas is rebuilt and rendering resumes
+
+**Priority:** High — affects every laptop user who closes their lid.
+
+**Reference:** Alacritty `display/mod.rs` device lost handling, wgpu device lost callback API.
 
 ---
 

@@ -1,34 +1,13 @@
-//! Complex workflow scenarios (mode combinations, query-response, real-world patterns, edge cases).
-
-use std::path::Path;
+//! Mode combination workflow tests (base + multi-size variants).
 
 use oriterm_core::TermMode;
 
-use super::harness::{
-    self, RecordedListener, ScenarioOutcome, TeseqHarness, assert_cell_flags_contain,
-    assert_mode_contains, assert_mode_not_contains, assert_pty_writes, assert_scrollback_empty,
-    cell_bg_at, cell_fg_at, reseq_available,
+use super::{
+    RecordedListener, assert_cell_flags_contain, assert_mode_contains, assert_mode_not_contains,
+    assert_scrollback_empty, cell_fg_at, run_scenario,
 };
 
-/// Run a workflow scenario and apply spec assertions.
-///
-/// Returns `None` when `reseq` is unavailable (graceful skip with visible message).
-/// Returns the outcome for callers to perform additional assertions.
-fn run_scenario(name: &str) -> Option<ScenarioOutcome> {
-    if !reseq_available() {
-        eprintln!("reseq not installed, skipping");
-        return None;
-    }
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/teseq/scenarios/workflows")
-        .join(format!("{name}.teseq"));
-    let mut h = TeseqHarness::from_scenario(&path);
-    let outcome = h.run(&path);
-    harness::assert_spec(&outcome, h.spec(), &format!("workflows_{name}"));
-    Some(outcome)
-}
-
-// Mode combination workflows
+// --- Base (80x24) ---
 
 #[test]
 fn mode_scroll_origin_fill() {
@@ -78,9 +57,8 @@ fn mode_decsc_attrs() {
     // After DECRC, cursor should return to saved position (line 4, col 9).
     assert_eq!(outcome.cursor_line, 4, "DECRC should restore cursor line");
     assert_eq!(outcome.cursor_col, 24, "cursor col after 'q after restore'");
-    // The 'q' at col 9 should render as a DEC Special Graphics character
-    // if charset was properly saved/restored. Under DEC Special Graphics,
-    // 'q' maps to U+2500 HORIZONTAL LINE (─).
+    // The 'q' at col 9 should render as a DEC Special Graphics character.
+    // Under DEC Special Graphics, 'q' maps to U+2500 HORIZONTAL LINE.
     let ch = outcome.grid_chars[4][9];
     assert_eq!(
         ch, '\u{2500}',
@@ -89,7 +67,7 @@ fn mode_decsc_attrs() {
     );
     // Bold flag should be restored on the text after DECRC.
     assert_cell_flags_contain(&outcome, 4, 9, oriterm_core::cell::CellFlags::BOLD);
-    // Red foreground should be restored — resolved Rgb red component should be nonzero.
+    // Red foreground should be restored.
     let fg = cell_fg_at(&outcome, 4, 9);
     assert!(
         fg.r > 100,
@@ -120,7 +98,7 @@ fn mode_decsc_origin_flag() {
     );
 }
 
-// Multi-size variants (97x33)
+// --- Multi-size variants (97x33) ---
 
 #[test]
 fn mode_scroll_origin_fill_97x33() {
@@ -200,7 +178,7 @@ fn mode_decsc_origin_flag_97x33() {
     );
 }
 
-// Multi-size variants (120x40)
+// --- Multi-size variants (120x40) ---
 
 #[test]
 fn mode_scroll_origin_fill_120x40() {
@@ -280,230 +258,87 @@ fn mode_decsc_origin_flag_120x40() {
     );
 }
 
-// Query-response workflows
+// --- DECCOLM lifecycle intermediate assertions (pure Rust, no .teseq) ---
 
-/// Replicate `crate_version_number()` from `handler/helpers.rs`.
-fn compute_da2_version() -> usize {
-    let mut result = 0usize;
-    let version = env!("CARGO_PKG_VERSION");
-    let version = version.split('-').next().unwrap_or(version);
-    for (i, part) in version.split('.').rev().enumerate() {
-        let n = part.parse::<usize>().unwrap_or(0);
-        result += n * 100usize.pow(i as u32);
-    }
-    result
-}
-
+/// Feeds the DECCOLM lifecycle sequence in phases and asserts intermediate state
+/// after each transition (80->132 and 132->80): cursor homes to (0,0) and grid clears.
 #[test]
-fn query_da_handshake() {
-    let Some(outcome) = run_scenario("query_da_handshake") else {
-        return;
-    };
-    let da2_version = compute_da2_version();
-    assert_pty_writes(
-        &outcome,
-        &[
-            "\x1b[?64;6;4c",
-            &format!("\x1b[>0;{da2_version};1c"),
-            "\x1bP!|00000000\x1b\\",
-        ],
-    );
-}
-
-#[test]
-fn query_cursor_tracking() {
-    let Some(outcome) = run_scenario("query_cursor_tracking") else {
-        return;
-    };
-    // CUP 5;10 → DSR → CUU 3 → DSR → CUF 20 → DSR
-    // DSR reports 1-based coordinates.
-    assert_pty_writes(&outcome, &["\x1b[5;10R", "\x1b[2;10R", "\x1b[2;30R"]);
-}
-
-// Real-world pattern workflows
-
-#[test]
-fn real_shell_prompt() {
-    let Some(outcome) = run_scenario("real_shell_prompt") else {
-        return;
-    };
-    // OSC 0 should have emitted Title + IconName events.
-    use super::harness::RecordedEvent;
-    let has_title = outcome
-        .events
-        .iter()
-        .any(|e| matches!(e, RecordedEvent::Title(t) if t == "user@host:~"));
-    assert!(has_title, "expected Title event from OSC 0");
-    // Grid should show the colored prompt.
-    assert!(
-        outcome.grid_text.contains("user@host:~$"),
-        "prompt text not found in grid"
-    );
-}
-
-#[test]
-fn real_clear_and_redraw() {
-    let Some(outcome) = run_scenario("real_clear_and_redraw") else {
-        return;
-    };
-    // Old content should be gone (ED 2 cleared it).
-    assert!(
-        !outcome.grid_text.contains("Old content"),
-        "old content should be erased by ED 2"
-    );
-    // New content should be present.
-    assert!(
-        outcome.grid_text.contains("New content line 1"),
-        "new content not found"
-    );
-}
-
-#[test]
-fn real_charset_switching() {
-    let Some(outcome) = run_scenario("real_charset_switching") else {
-        return;
-    };
-    // DEC Special Graphics box characters should appear in the grid.
-    // 'l' -> ┌, 'q' -> ─, 'k' -> ┐, 'x' -> │, 'm' -> └, 'j' -> ┘
-    let line0: String = outcome.grid_chars[0].iter().collect();
-    assert!(
-        line0.contains('\u{250C}'),
-        "expected box-drawing top-left corner (┌) on line 0, got: {line0:?}"
-    );
-    // "Text" should appear in ASCII between the box sides.
-    assert!(
-        outcome.grid_text.contains("Text"),
-        "ASCII text inside box not found"
-    );
-}
-
-#[test]
-fn real_status_bar() {
-    let Some(outcome) = run_scenario("real_status_bar") else {
-        return;
-    };
-    // "Main content area" at row 0.
-    assert!(
-        outcome.grid_text.starts_with("Main content area"),
-        "main content not at row 0"
-    );
-    // Status bar text at row 23 (last row of 80x24).
-    let line23 = outcome.grid_text.lines().nth(23).unwrap_or("");
-    assert!(
-        line23.contains("Status: OK"),
-        "status bar not found at row 23: {line23:?}"
-    );
-}
-
-// Edge case scenarios
-
-#[test]
-fn edge_rapid_mode_toggle() {
-    let Some(outcome) = run_scenario("edge_rapid_mode_toggle") else {
-        return;
-    };
-    // After rapid toggling, origin mode should be off (last toggle was ?6l).
-    assert_mode_not_contains(&outcome, TermMode::ORIGIN);
-    // "After toggles" at row 4, col 9 (CUP 5;10 with 1-based coords).
-    assert!(
-        outcome.grid_text.contains("After toggles"),
-        "text after mode toggles not found"
-    );
-}
-
-#[test]
-fn edge_zero_params() {
-    let Some(outcome) = run_scenario("edge_zero_params") else {
-        return;
-    };
-    // CUP 0;0 → home, write "At origin via zeros\n".
-    // CUP (omitted) → home, write "At origin via omit\n" (overwrites).
-    // CUU 0 → treated as CUU 1, moves up to row 0. Write "CUU zero" overwrites cols 0-7.
-    // Row 0 should start with "CUU zero".
-    assert!(
-        outcome.grid_text.starts_with("CUU zero"),
-        "expected row 0 to start with 'CUU zero' (CUU 0 treated as 1)"
-    );
-}
-
-#[test]
-fn edge_large_params() {
-    let Some(outcome) = run_scenario("edge_large_params") else {
-        return;
-    };
-    // CUP 99999;99999 clamps to bottom-right corner, "Clamped" wraps.
-    // CUU 99999 clamps to row 0 but keeps column. "Top" appears on row 0.
-    let line0 = outcome.grid_text.lines().next().unwrap_or("");
-    assert!(
-        line0.contains("Top"),
-        "expected 'Top' somewhere on row 0 after CUU 99999 clamp, got: {line0:?}"
-    );
-    // "Clamped" should be visible near the bottom (clamped to last row/col).
-    assert!(
-        outcome.grid_text.contains("lamped"),
-        "expected 'Clamped' near bottom-right after CUP 99999;99999"
-    );
-}
-
-#[test]
-fn edge_erase_with_attrs() {
-    let Some(outcome) = run_scenario("edge_erase_with_attrs") else {
-        return;
-    };
-    // Cells 0-3 retain original content "AAAA" with default bg.
-    let ch0 = outcome.grid_chars[0][0];
-    assert_eq!(ch0, 'A', "expected 'A' at (0,0)");
-    // Cells 4+ were erased with green bg active (SGR 42).
-    // Erased cells should inherit the cursor template's green bg.
-    let bg_erased = cell_bg_at(&outcome, 0, 4);
-    let bg_default = cell_bg_at(&outcome, 0, 0);
-    assert_ne!(
-        bg_erased, bg_default,
-        "erased cell bg should differ from default (green vs default)"
-    );
-}
-
-// Chunked-feed edge cases (pure Rust, no .teseq files)
-
-#[test]
-fn edge_chunked_osc() {
-    use super::harness::RecordedEvent;
+fn deccolm_lifecycle_intermediate_assertions() {
     use oriterm_core::{Term, Theme};
+
     let listener = RecordedListener::new();
     let mut term = Term::new(24, 80, 0, Theme::default(), listener.clone());
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
-    // Split an OSC title sequence across two advance() calls.
-    let chunk1 = b"\x1b]0;MyT";
-    let chunk2 = b"itle\x07";
-    proc.advance(&mut term, chunk1);
-    proc.advance(&mut term, chunk2);
-    let events = listener.events();
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, RecordedEvent::Title(t) if t == "MyTitle")),
-        "expected Title('MyTitle') from chunked OSC, got: {events:?}"
-    );
-}
 
-#[test]
-fn edge_chunked_csi() {
-    use oriterm_core::{Term, Theme};
-    let listener = RecordedListener::new();
-    let mut term = Term::new(24, 80, 0, Theme::default(), listener.clone());
-    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
-    // Split CSI CUP 5;10H across two advance() calls.
-    let chunk1 = b"\x1b[5;";
-    let chunk2 = b"10H";
-    proc.advance(&mut term, chunk1);
-    proc.advance(&mut term, chunk2);
+    // Enable DECCOLM support (mode 40).
+    proc.advance(&mut term, b"\x1b[?40h");
+
+    // Write some content at (0,0) on the 80-col screen.
+    proc.advance(&mut term, b"Original 80-col content");
     let content = term.renderable_content();
+    assert_eq!(content.cols, 80, "initial cols should be 80");
+    assert!(content.cursor.column.0 > 0, "cursor should have advanced");
+
+    // Transition to 132 columns (DECCOLM ?3h).
+    proc.advance(&mut term, b"\x1b[?3h");
+    let content = term.renderable_content();
+    assert_eq!(content.cols, 132, "cols should be 132 after DECCOLM on");
     assert_eq!(
-        content.cursor.column.0, 9,
-        "cursor col should be 9 (0-based) after CUP 5;10"
+        content.cursor.line, 0,
+        "cursor line should be 0 after DECCOLM 80->132 transition"
     );
     assert_eq!(
-        content.cursor.line, 4,
-        "cursor line should be 4 (0-based) after CUP 5;10"
+        content.cursor.column.0, 0,
+        "cursor col should be 0 after DECCOLM 80->132 transition"
+    );
+    // Grid should be cleared after DECCOLM transition.
+    let grid_text: String = content
+        .cells
+        .iter()
+        .map(|c| {
+            if c.ch == ' ' || c.ch == '\0' {
+                ' '
+            } else {
+                c.ch
+            }
+        })
+        .collect();
+    assert!(
+        grid_text.trim().is_empty(),
+        "grid should be cleared after DECCOLM 80->132, got: {:?}",
+        grid_text.trim()
+    );
+
+    // Write content at 132-col width.
+    proc.advance(&mut term, b"Wide 132-col content here");
+
+    // Transition back to 80 columns (DECCOLM ?3l).
+    proc.advance(&mut term, b"\x1b[?3l");
+    let content = term.renderable_content();
+    assert_eq!(content.cols, 80, "cols should be 80 after DECCOLM off");
+    assert_eq!(
+        content.cursor.line, 0,
+        "cursor line should be 0 after DECCOLM 132->80 transition"
+    );
+    assert_eq!(
+        content.cursor.column.0, 0,
+        "cursor col should be 0 after DECCOLM 132->80 transition"
+    );
+    // Grid should be cleared again.
+    let grid_text: String = content
+        .cells
+        .iter()
+        .map(|c| {
+            if c.ch == ' ' || c.ch == '\0' {
+                ' '
+            } else {
+                c.ch
+            }
+        })
+        .collect();
+    assert!(
+        grid_text.trim().is_empty(),
+        "grid should be cleared after DECCOLM 132->80, got: {:?}",
+        grid_text.trim()
     );
 }

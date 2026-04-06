@@ -40,10 +40,13 @@ sections:
   - id: "38.10"
     title: DCS Passthrough
     status: not-started
+  - id: "38.11"
+    title: "VT52 Compatibility Mode (DECANM)"
+    status: not-started
   - id: "38.R"
     title: "Third Party Review Findings"
     status: not-started
-  - id: "38.11"
+  - id: "38.12"
     title: Section Completion
     status: not-started
 ---
@@ -439,7 +442,32 @@ Support DCS passthrough for applications running inside nested terminals or mult
 
 ---
 
-## 38.11 Section Completion
+## 38.11 VT52 Compatibility Mode (DECANM)
+
+<!-- WezTerm audit: #7460 (DECANM vt52 default state backwards) -->
+
+**Source:** WezTerm #7460 — DECANM (private mode 2) defaults to reset state (VT52) instead of set state (ANSI). Multiple terminal emulators get this wrong.
+
+**Problem:** ori_term does not implement private mode 2 (DECANM) at all. The `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs` skips from mode 1 (CursorKeys) to mode 3 (ColumnMode). VT52 mode is completely absent.
+
+**Required work:**
+
+- [ ] Add `Decanm = 2` to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs`
+- [ ] Default DECANM to SET (ANSI mode) per VT100 spec — reset = VT52, set = ANSI
+- [ ] Implement VT52 parser state in `crates/vte/`:
+  - VT52 cursor addressing (ESC Y row col)
+  - VT52 direct cursor positioning
+  - ESC < to return from VT52 to ANSI mode
+- [ ] Support DECRQM query for mode 2 (reports 1=set for ANSI mode)
+- [ ] Add teseq scenario for VT52 mode entry/exit
+
+**Priority:** Low — niche compatibility, few modern apps use VT52 sequences.
+
+**Reference:** VT100 User Guide Chapter 3 (vt100.net), xterm VT52 support.
+
+---
+
+## 38.12 Section Completion
 
 **Already complete (verified 2026-03-29):**
 - [x] DA1/DA2 responses are correct and fast (verified 2026-03-29)

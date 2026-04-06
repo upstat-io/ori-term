@@ -2,7 +2,7 @@
 section: 16
 title: Tab Bar & Chrome
 status: in-progress
-reviewed: true
+reviewed: false
 last_verified: "2026-04-03"
 tier: 4
 goal: Tab bar layout, rendering, and hit testing with DPI awareness
@@ -22,6 +22,9 @@ sections:
   - id: "16.5"
     title: Tab Icons & Emoji
     status: complete
+  - id: "16.6"
+    title: "Tab Activity Indicator"
+    status: not-started
   - id: "16.4"
     title: Section Completion
     status: in-progress
@@ -274,6 +277,31 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] Emoji detection: plain text, empty, flags, ZWJ sequences
 - [x] Event pipeline: `IconName`/`ResetIconName` events + `PaneIconChanged` mux event
 - [x] `MuxNotification::PaneTitleChanged` debug format
+
+---
+
+## 16.6 Tab Activity Indicator
+
+<!-- WezTerm audit: #7671 (highlight background tab titles when text changes) -->
+
+**Source:** WezTerm #7671 — When a background tab has new output, users have no visual indicator. This is a commonly requested feature across all terminal emulators (Roxterm, iTerm2, Kitty all have it).
+
+**Problem:** ori_term has bell pulse animation in the tab bar, but no general "activity in background tab" indicator. Users running long commands in background tabs have no way to know when output appears without switching to that tab.
+
+**Required work:**
+
+- [ ] Add `has_unseen_output: bool` flag to pane state (set by IO thread when new output arrives while tab is not active, cleared when tab becomes the active tab)
+- [ ] Add visual indicator in `TabBarWidget` rendering:
+  - Different title color or subtle highlight for tabs with unseen output
+  - Dot badge or colored accent indicator
+  - Distinct from bell pulse (which is transient)
+- [ ] Config options: `tab_activity_indicator = true/false`, configurable color
+- [ ] Optional silence detection: only show activity after N seconds of no output (prevents constant flickering during sustained output)
+- [ ] Tests: write output to background pane, verify indicator appears in tab bar rendering; switch to tab, verify indicator clears
+
+**Priority:** Medium — commonly requested feature, strong quality-of-life improvement.
+
+**Reference:** Roxterm activity notification, iTerm2 tab activity badge, Kitty `tab_activity_symbol`.
 
 ---
 

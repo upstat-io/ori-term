@@ -22,8 +22,8 @@ inspired_by:
   - "Ghostty fuzz corpus (test/fuzz-libghostty/corpus/) — edge case byte sequences"
 depends_on: ["01", "02", "03", "04", "05"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-06
 sections:
   - id: "06.1"
     title: "Mode Combination Workflows"
@@ -42,7 +42,7 @@ sections:
     status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "06.N"
     title: "Completion Checklist"
     status: not-started
@@ -445,7 +445,20 @@ Boundary conditions and unusual sequences.
 
 ## 06.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-06-001][high]` [oriterm_core/src/term/handler/esc.rs](/home/eric/projects/ori_term/oriterm_core/src/term/handler/esc.rs#L19) / [oriterm_core/src/term/handler/mod.rs](/home/eric/projects/ori_term/oriterm_core/src/term/handler/mod.rs#L300) / [oriterm_core/src/grid/mod.rs](/home/eric/projects/ori_term/oriterm_core/src/grid/mod.rs#L197) / [oriterm_core/src/term/handler/tests.rs](/home/eric/projects/ori_term/oriterm_core/src/term/handler/tests.rs#L2730) — `RIS` clears the grid’s saved cursor but leaves the new DECSC sidecar state live, so a later `DECRC` can resurrect stale origin-mode and charset state after a full reset.
+  Evidence: `esc_reset_state()` resets `grid`, `mode`, and `charset`, but never clears `saved_charset` or `saved_origin_mode`; `restore_cursor_position()` always reapplies those fields when they are `Some`; `grid.reset()` only clears `saved_cursor`. The existing `esc_c_ris_clears_saved_cursor` test proves only the cursor-position half of the reset path, not the new sidecar state added by this section.
+  Impact: `ESC c` is no longer a full reset for DECSC state. A sequence such as `ESC ( 0`, `DECSET ? 6`, `DECSC`, `RIS`, `DECRC` can restore DEC Special Graphics and origin mode into what should be a clean post-reset terminal, skewing later character rendering and cursor addressing.
+  Resolved: Fixed on 2026-04-06. Cleared `saved_charset` and `saved_origin_mode` in `esc_reset_state()`.
+
+- [x] `[TPR-06-002][medium]` [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L64) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L460) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L462) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L477) / [oriterm_core/tests/teseq/workflows.rs](/home/eric/projects/ori_term/oriterm_core/tests/teseq/workflows.rs#L1) / [oriterm_core/tests/teseq/osc.rs](/home/eric/projects/ori_term/oriterm_core/tests/teseq/osc.rs#L1) — Section 06 is marked through 06.5 complete, but the required verification surface is still short of the planned 34 tests.
+  Evidence: the plan’s own completion math still requires 12 multi-size variants and 3 pure-Rust tests, including `real_status_bar_97x33`, `real_status_bar_120x40`, and `deccolm_lifecycle_intermediate_assertions`. Current code has 27 tests in `workflows.rs` and 4 in `osc.rs` for 31 total, and none of those three planned tests exist.
+  Impact: the section overstates completion and leaves two bottom-row status-bar size variants plus the only planned intermediate DECCOLM clear/home assertions unverified, which narrows coverage exactly where this plan said teseq alone was insufficient.
+  Resolved: Fixed on 2026-04-06. Added `real_status_bar_97x33`, `real_status_bar_120x40`, and `deccolm_lifecycle_intermediate_assertions` tests. Total now 34.
+
+- [x] `[TPR-06-003][low]` [oriterm_core/tests/teseq/workflows.rs](/home/eric/projects/ori_term/oriterm_core/tests/teseq/workflows.rs#L1) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L73) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L464) — `workflows.rs` is now 509 lines, past the repo’s hard 500-line limit and past this section’s own split threshold.
+  Evidence: `wc -l oriterm_core/tests/teseq/workflows.rs` reports 509 lines. The section reminder says to split once the file grows past roughly 400 lines, and the repo rules cap non-`tests.rs` source files at 500 lines.
+  Impact: this is a direct hygiene-rule violation in the new test surface and makes further Section 06 follow-up work harder to review and maintain.
+  Resolved: Fixed on 2026-04-06. Split workflows.rs into workflows/mod.rs + 4 submodules (mode.rs, query.rs, real_world.rs, edge.rs). All under 500 lines.
 
 ---
 

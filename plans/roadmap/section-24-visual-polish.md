@@ -34,6 +34,12 @@ sections:
   - id: "24.9"
     title: Scrollable Menus
     status: in-progress
+  - id: "24.11"
+    title: "Partial Last Line Clipping"
+    status: not-started
+  - id: "24.12"
+    title: "Resize Dimensions Overlay"
+    status: not-started
   - id: "24.10"
     title: Section Completion
     status: not-started
@@ -555,6 +561,44 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] `Home` key scrolls to top and hovers first clickable entry (blocked: Home key not implemented)
 - [ ] `End` key scrolls to bottom and hovers last clickable entry (blocked: End key not implemented)
 - [ ] Scroll position resets on menu rebuild (new entries)
+
+---
+
+## 24.11 Partial Last Line Clipping
+
+<!-- WezTerm audit: #7568 (clip last few pixels to fit extra line) -->
+
+**Source:** WezTerm #7568 — When screen height doesn't evenly divide by cell height, up to `cell_height - 1` pixels are wasted at the bottom, leaving an ugly blank strip. Users want the option to clip a few pixels from the last line to fit an extra row.
+
+**Required work:**
+
+- [ ] Config option: `max_line_clip_pixels = 0` (default: no clipping; e.g., `4` clips up to 4 pixels)
+- [ ] In grid dimension calculation (`compute_window_layout` / `grid_dims_for_size`), if remaining pixels < threshold, add one more row to the grid dimensions
+- [ ] Clip the bottom of that last row during rendering (scissor rect on the grid render area)
+- [ ] Ensure cursor, selection, and scroll all work correctly with the clipped row
+- [ ] Test: set clip threshold to cell_height-1, verify the maximum extra row gain
+
+**Priority:** Low — cosmetic improvement for fullscreen users.
+
+---
+
+## 24.12 Resize Dimensions Overlay
+
+<!-- WezTerm audit: #7672 (action for showing information in modal popup) -->
+
+**Source:** WezTerm #7672 — Many terminals (iTerm2, Kitty, Ghostty) show a centered `80×24` overlay during window resize. ori_term doesn't have this visual feedback.
+
+**Required work:**
+
+- [ ] Centered, semi-transparent overlay showing `{cols}×{rows}` text during window resize
+- [ ] Auto-dismiss after resize stops (500ms debounce timer)
+- [ ] Use existing overlay/compositor layer system from Section 43
+- [ ] Config option: `show_resize_overlay = true/false`
+- [ ] Test: resize window in WidgetTestHarness, verify overlay appears with correct dimensions and auto-dismisses
+
+**Priority:** Low — nice visual polish, commonly expected in modern terminals.
+
+**Reference:** iTerm2 resize indicator, Kitty resize overlay, Ghostty resize display.
 
 ---
 

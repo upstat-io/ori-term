@@ -2,7 +2,7 @@
 section: 34
 title: IPC Protocol + Daemon Mode
 status: in-progress
-reviewed: true
+reviewed: false
 tier: 7A
 last_verified: "2026-04-04"
 third_party_review:
@@ -22,6 +22,9 @@ sections:
   - id: "34.4"
     title: MuxClient + Auto-Start
     status: in-progress
+  - id: "34.6"
+    title: "PDU Size Limits & Memory Safety"
+    status: not-started
   - id: "34.5"
     title: Section Completion
     status: not-started
@@ -297,6 +300,27 @@ IPC integration tests (in `server/tests.rs`, Unix-gated, require live daemon):
 - [ ] `reconnect_failure_after_max_attempts`: create `MuxClient`, simulate disconnect, daemon not reachable -> `reconnect_with_backoff()` returns `Err` after 3 attempts.
 - [ ] `inflight_rpc_returns_error_on_disconnect`: start an RPC, drop transport mid-flight -> `rpc()` returns `io::Error` (does not hang or panic).
 - [ ] `reconnect_resends_pane_priorities`: if tiered coalescing is implemented, `reconnect()` re-sends `SetPanePriority` for all panes using stored priorities.
+
+---
+
+## 34.6 PDU Size Limits & Memory Safety
+
+<!-- WezTerm audit: #7527 (unbounded PDU memory allocation causes OOM crashes and stack overflow) -->
+
+**Source:** WezTerm #7527 — WezTerm's mux codec allocates memory based on network-provided size values in the PDU header without validation. Attackers or buggy clients can send a PDU header claiming a multi-GB payload, causing the decoder to allocate that much memory immediately, leading to OOM crashes and stack overflows.
+
+**Problem:** When ori_term implements the wire protocol (34.1), the codec MUST include bounded allocation from day one. This is a security-critical requirement.
+
+**Required work:**
+
+- [ ] Define `MAX_PDU_PAYLOAD_SIZE` constant (e.g., 64 MB hard cap — scrollback transfer for a 100K-line pane at ~100 bytes/line = ~10MB, so 64MB is generous)
+- [ ] In frame header decode: validate `payload_len <= MAX_PDU_PAYLOAD_SIZE` BEFORE allocating the payload buffer
+- [ ] Reject oversized frames with a protocol error PDU, then close the connection — do not allocate
+- [ ] Per-connection memory budget: track total allocated bytes across in-flight PDUs; reject new PDUs if budget exceeded
+- [ ] Fuzz test: send randomized PDU headers with extreme `payload_len` values, verify no allocation occurs and connection is closed cleanly
+- [ ] Test: send a PDU header claiming 1 GB payload → verify rejection without allocation spike
+
+**Priority:** Medium — security & stability (must be in place when daemon mode ships).
 
 ---
 

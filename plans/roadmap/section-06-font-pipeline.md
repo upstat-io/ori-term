@@ -2,7 +2,7 @@
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 2
 goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
@@ -67,6 +67,12 @@ sections:
   - id: "6.20"
     title: Font Codepoint Mapping
     status: complete
+  - id: "6.22"
+    title: "Block Glyph Gamma Correction"
+    status: not-started
+  - id: "6.23"
+    title: "Selective Ligature Disable"
+    status: not-started
   - id: "6.21"
     title: Section Completion
     status: complete
@@ -953,6 +959,51 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
   - [x] Range parsing: hex range, single codepoint
   - [x] Multiple maps: first matching range wins
   - [x] Invalid font family: warning logged, fallback to normal chain
+
+---
+
+## 6.22 Block Glyph Gamma Correction
+
+<!-- WezTerm audit: #7462 (custom "Medium shade" block glyphs very dark) -->
+
+**Source:** WezTerm #7462 — Built-in medium shade glyphs (U+2592, U+1FB90, etc.) appear much darker than expected on dark backgrounds. The root cause is that alpha values (e.g., alpha=128 for medium shade) are applied in sRGB space rather than linear, making perceptually "50% shade" appear as ~22% brightness due to gamma.
+
+**Problem:** ori_term's built-in glyph rasterization in `oriterm/src/gpu/builtin_glyphs/` uses `canvas.fill_rect(..., 128)` for medium shade. When the GPU blends this alpha value in sRGB space, the result is perceptually too dark.
+
+**Required work:**
+
+- [ ] Audit all shade alpha values in `legacy_computing/mod.rs` `draw_shade_block()`:
+  - Light shade (U+2591): alpha ~64 in sRGB → should be ~105 for perceptual 25%
+  - Medium shade (U+2592, U+1FB90): alpha ~128 → should be ~186 for perceptual 50%
+  - Dark shade (U+2593): alpha ~192 → should be ~227 for perceptual 75%
+- [ ] Either: adjust alpha values to compensate for sRGB gamma (pre-correct), OR: ensure the shader does sRGB-correct blending
+- [ ] Visual comparison against xterm and Alacritty for reference brightness
+- [ ] Test: visual regression test comparing shade glyphs at multiple alpha levels
+
+**Priority:** Low — cosmetic, but noticeable on dark themes.
+
+**Reference:** WezTerm PR `d3e49e6` (set_color fix), sRGB transfer function (gamma ~2.2).
+
+---
+
+## 6.23 Selective Ligature Disable
+
+<!-- WezTerm audit: #7708 (ability to disable specific ligatures) -->
+
+**Source:** WezTerm #7708 — Users want to disable individual ligature combinations (e.g., `***` triggers an unwanted ligature in password fields) while keeping other ligatures like `!=`, `=>`, `->`.
+
+**Problem:** ori_term supports OpenType feature flags globally (Section 6.7 — `liga`, `calt` on/off per font) but not per-glyph-sequence filtering. There's no way to say "disable the `***` ligature but keep everything else."
+
+**Required work:**
+
+- [ ] Config option: `disabled_ligatures = ["***", "//"]` — list of character sequences whose ligature substitutions should be suppressed
+- [ ] Implementation approach (choose one):
+  - **(a)** Post-shaping filter: after rustybuzz shapes a run, detect when a ligature glyph corresponds to a disabled sequence and split it back into individual glyphs
+  - **(b)** Pre-shaping split: before shaping, scan the run text for disabled sequences and insert shaping boundaries that prevent the ligature substitution
+  - **(c)** Harfbuzz feature scoping: use per-range feature overrides in rustybuzz to disable `liga`/`calt` for specific character positions
+- [ ] Test: configure `disabled_ligatures = ["***"]`, shape `***` → verify 3 individual `*` glyphs, not one ligature glyph; shape `!=` → verify ligature still works
+
+**Priority:** Low — niche but well-motivated (password field visual distraction).
 
 ---
 
