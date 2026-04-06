@@ -152,5 +152,10 @@ pub fn analyze_response(response_bytes: &str) -> Result<String, String> {
         .wait_with_output()
         .map_err(|e| format!("teseq failed: {e}"))?;
 
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("teseq exited with {}: {}", output.status, stderr));
+    }
+
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }

@@ -47,7 +47,7 @@ sections:
 - [ ] `PersistentTextureCache` stores pane-keyed GPU textures, supports `write_region()` for sub-region RGBA uploads — satisfies mission criterion for minimap texture management
 - [ ] Global GPU memory budget (configurable, default 64 MiB across all panes) with LRU eviction — satisfies mission criterion for bounded GPU memory
 - [ ] `FrameCapture` renders a source texture to a smaller target with linear-filtered sampling — satisfies mission criterion for expose/tab thumbnails
-- [ ] Content cache texture includes `TEXTURE_BINDING` usage flag when frame capture is active — satisfies mission criterion for source texture sampling <!-- reviewed: cohesion fix — body criteria now matches frontmatter -->
+- [ ] Content cache texture includes `TEXTURE_BINDING` usage flag when frame capture is active — satisfies mission criterion for source texture sampling
 - [ ] Zero per-frame allocation in the update path (staging buffers reused via `.clear()` + capacity retention)
 - [ ] `./build-all.sh` green, `./clippy-all.sh` green, `./test-all.sh` green
 
@@ -85,9 +85,8 @@ The minimap is the first consumer: one texture per pane, updated row-by-row as t
       last_frame: u64,
   }
   ```
-  <!-- reviewed: executability fix — added missing bind_group field; the bind_group() method says "lazily creates bind group on first request (cached on entry)" but the struct was missing the field -->
 
-- [ ] Define `TextureCacheKey` — richer key supporting multiple textures per pane: <!-- reviewed: accuracy fix -->
+- [ ] Define `TextureCacheKey` — richer key supporting multiple textures per pane:
   ```rust
   /// Distinguishes different texture purposes for the same pane.
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -103,7 +102,7 @@ The minimap is the first consumer: one texture per pane, updated row-by-row as t
       pub purpose: TexturePurpose,
   }
   ```
-  Import `PaneId` from `oriterm_mux::id::PaneId` (the `oriterm` crate depends on `oriterm_mux`). <!-- reviewed: executability fix — specified import path for PaneId -->
+  Import `PaneId` from `oriterm_mux::id::PaneId` (the `oriterm` crate depends on `oriterm_mux`).
   A pane may need multiple textures at different sizes (minimap, expose thumbnail, tab preview). Using bare `PaneId` as the key would force a single texture per pane. The compound key allows each purpose to have its own entry with independent dimensions and update cadence.
 
 - [ ] Define `PersistentTextureCache` — keyed cache with global budget:
@@ -152,7 +151,7 @@ The minimap is the first consumer: one texture per pane, updated row-by-row as t
 
 - [ ] Implement `advance_frame()` — increments `frame_counter`. Called once per frame.
 
-- [ ] Source file `oriterm/src/gpu/texture_cache/mod.rs` must stay under 500 lines. Tests in sibling `tests.rs` with `#[cfg(test)] mod tests;` at bottom of mod.rs. No `mod tests { }` wrapper inside `tests.rs` — the file IS the module. <!-- reviewed: executability fix — inlined test-organization.md rule directly into task -->
+- [ ] Source file `oriterm/src/gpu/texture_cache/mod.rs` must stay under 500 lines. Tests in sibling `tests.rs` with `#[cfg(test)] mod tests;` at bottom of mod.rs. No `mod tests { }` wrapper inside `tests.rs` — the file IS the module.
 
 - [ ] Register module: add `pub(crate) mod texture_cache;` to `oriterm/src/gpu/mod.rs` (currently 79 lines — ample headroom). Insert alphabetically after `transparency` line.
 
@@ -179,7 +178,6 @@ A GPU-side frame capture and downscale pipeline. Renders a source texture at red
 
 This is a render pass, not a compute shader — simpler, and linear filtering is built into the texture sampler.
 
-<!-- reviewed: accuracy fix -->
 **Critical texture usage constraint:** The existing content cache texture (`ensure_content_cache` in `window_renderer/render.rs`) is created with `RENDER_ATTACHMENT | COPY_SRC` — it does NOT have `TEXTURE_BINDING`. The `FrameCapture` pipeline needs to **sample** from its source texture via `textureSample()`, which requires `TEXTURE_BINDING` usage. The content cache cannot be sampled directly. Solutions:
 1. Add `TEXTURE_BINDING` to the content cache usage flags when frame capture is enabled (cheapest — just one extra flag). This is the recommended approach.
 2. Copy to an intermediate texture with `TEXTURE_BINDING` before sampling (wasteful extra copy).
@@ -198,13 +196,13 @@ Option 1 is correct: when `FrameCapture` is active, `ensure_content_cache` must 
   }
   ```
 
-- [ ] Implement `FrameCapture::new(device, target_format)` — creates: <!-- reviewed: accuracy fix -->
+- [ ] Implement `FrameCapture::new(device, target_format)` — creates:
   - WGSL shader: fullscreen triangle-strip vertex shader + texture sample fragment shader (standard downscale pattern)
   - Bind group layout: sampler (binding 0) + source texture (binding 1)
   - Render pipeline with the shader, targeting `target_format`, primitive topology `TriangleStrip`
   - Sampler: `FilterMode::Linear` for both mag and min (linear downscale)
 
-- [ ] Write WGSL shader `oriterm/src/gpu/shaders/capture.wgsl`: <!-- reviewed: accuracy fix -->
+- [ ] Write WGSL shader `oriterm/src/gpu/shaders/capture.wgsl`:
   ```wgsl
   // Fullscreen triangle-strip shader for texture downscale capture.
   // 4 vertices (TriangleStrip), no vertex buffer.
@@ -234,14 +232,14 @@ Option 1 is correct: when `FrameCapture` is active, `ensure_content_cache` must 
   ```
   Uses a triangle strip (4 vertices, draw call: `draw(4, 1, 0, 0)`) matching the existing codebase convention. UVs are interpolated from the vertex shader (0..1 range maps source texture corners to output corners). No uniform buffer needed — the render pass viewport controls output dimensions, and the UV-based sampling handles the downscale mapping. The linear sampler produces the filtered result.
 
-- [ ] Implement `capture(encoder, device, source_view, target_view, target_width, target_height)`: <!-- reviewed: accuracy fix -->
+- [ ] Implement `capture(encoder, device, source_view, target_view, target_width, target_height)`:
   - Creates bind group for source texture + sampler
   - Begins render pass targeting `target_view` with `LoadOp::Clear` (transparent)
   - Sets viewport to `(0, 0, target_width, target_height)`
   - Draws fullscreen triangle strip (4 vertices via `draw(4, 1, 0, 0)`, no vertex buffer) — matches existing codebase convention
   - The GPU's linear sampler handles downscale filtering automatically — UVs map 0..1 across the source texture, the viewport controls output size
 
-- [ ] Update `ensure_content_cache()` in `oriterm/src/gpu/window_renderer/render.rs` (currently 441 lines) to add `TEXTURE_BINDING` to the content cache texture usage flags. The change is at line ~410, in the `device.create_texture()` call — change: <!-- reviewed: accuracy fix --> <!-- reviewed: executability fix — pinned exact location and line count -->
+- [ ] Update `ensure_content_cache()` in `oriterm/src/gpu/window_renderer/render.rs` (currently 441 lines) to add `TEXTURE_BINDING` to the content cache texture usage flags. The change is at line ~410, in the `device.create_texture()` call — change:
   ```rust
   // Current (line ~410):
   usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
@@ -260,7 +258,7 @@ Option 1 is correct: when `FrameCapture` is active, `ensure_content_cache` must 
   pool.release(target_id);
   ```
 
-- [ ] Source file under 500 lines. Tests in sibling `tests.rs` with `#[cfg(test)] mod tests;` at bottom of mod.rs. No `mod tests { }` wrapper inside `tests.rs`. <!-- reviewed: executability fix — inlined test-organization.md rule -->
+- [ ] Source file under 500 lines. Tests in sibling `tests.rs` with `#[cfg(test)] mod tests;` at bottom of mod.rs. No `mod tests { }` wrapper inside `tests.rs`.
 
 - [ ] Register module: add `pub(crate) mod capture;` to `oriterm/src/gpu/mod.rs`. Insert alphabetically after `bind_groups` line.
 
@@ -273,7 +271,7 @@ Option 1 is correct: when `FrameCapture` is active, `ensure_content_cache` must 
   - **Semantic pin:** downscale a 2x2 checkerboard (black/white) to 1x1 → should produce gray (linear blend), not black or white
 
 - [ ] Verify all tests pass: `timeout 150 cargo test -p oriterm -- capture`
-- [ ] Verify TEXTURE_BINDING test passes: `timeout 150 cargo test -p oriterm -- content_cache` <!-- reviewed: executability fix — added explicit verification step for the TEXTURE_BINDING change -->
+- [ ] Verify TEXTURE_BINDING test passes: `timeout 150 cargo test -p oriterm -- content_cache`
 
 ---
 
