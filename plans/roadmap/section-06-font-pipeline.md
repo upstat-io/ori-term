@@ -1,7 +1,7 @@
 ---
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-03-29"
 tier: 2
@@ -67,6 +67,21 @@ sections:
   - id: "6.20"
     title: Font Codepoint Mapping
     status: complete
+  - id: "6.22"
+    title: Block Glyph Gamma Correction
+    status: not-started
+  - id: "6.23"
+    title: Selective Ligature Disable
+    status: not-started
+  - id: "6.24"
+    title: "Indic/Complex Script Shaping"
+    status: not-started
+  - id: "6.25"
+    title: Underline Glyph-Break Rendering
+    status: not-started
+  - id: "6.26"
+    title: "Minimal RTL/BiDi Support"
+    status: not-started
   - id: "6.22"
     title: "Block Glyph Gamma Correction"
     status: not-started
