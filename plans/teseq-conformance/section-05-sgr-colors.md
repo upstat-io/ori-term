@@ -50,13 +50,13 @@ sections:
     status: complete
   - id: "05.5b"
     title: "Default Color & Template Resets (SGR 0/39/49/59)"
-    status: not-started
+    status: complete
   - id: "05.6"
     title: "Color Resolution Edge Cases"
-    status: not-started
+    status: complete
   - id: "05.7"
     title: "Attribute Stacking & Combination Scenarios"
-    status: not-started
+    status: complete
   - id: "05.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -79,12 +79,12 @@ sections:
 - [x] 256-color indexed colors tested
 - [x] TrueColor RGB colors tested
 - [x] Bold-as-bright color promotion validated
-- [ ] DIM + bold interaction validated (DIM takes priority, no bright promotion)
-- [ ] All selective resets tested (SGR 21/22/23/24/25/27/28/29/39/49/59)
-- [ ] Inverse + DECSCNM cross-cutting validated
-- [ ] CellFlags assertions use `contains()` pattern throughout
-- [ ] Attribute stacking, reset, and parameterless SGR (CSI m) validated
-- [ ] 40+ SGR scenarios pass (target: ~55)
+- [x] DIM + bold interaction validated (DIM takes priority, no bright promotion)
+- [x] All selective resets tested (SGR 21/22/23/24/25/27/28/29/39/49/59)
+- [x] Inverse + DECSCNM cross-cutting validated
+- [x] CellFlags assertions use `contains()` pattern throughout
+- [x] Attribute stacking, reset, and parameterless SGR (CSI m) validated
+- [x] 40+ SGR scenarios pass (target: ~55)
 
 **Context:** SGR scenarios differ from other scenario types because the *grid text* doesn't change based on attributes — "hello" looks the same whether it's bold or not in `grid_text()`. Instead, these scenarios need to inspect `RenderableCell` attributes (flags, fg, bg, underline_color). The harness needs cell attribute inspection helpers beyond plain text comparison.
 
@@ -712,7 +712,7 @@ The codebase implements all standard selective SGR resets. Each cancel code has 
 
 This subsection covers the full-reset (SGR 0) and color-specific resets (SGR 39/49/59) that operate on colors rather than attribute flags.
 
-- [ ] **`reset_sgr0.teseq`** — SGR 0 clears all attributes and colors:
+- [x] **`reset_sgr0.teseq`** — SGR 0 clears all attributes and colors:
   ```
   : Esc [ 1 ; 3 ; 4 ; 31 ; 42 m
   |All on|
@@ -721,7 +721,7 @@ This subsection covers the full-reset (SGR 0) and color-specific resets (SGR 39/
   ```
   Assert "All on" (line 0, col 0) has BOLD+ITALIC+UNDERLINE flags, fg=red (`Palette::default().resolve(Color::Named(Red))`), bg=green (`Palette::default().resolve(Color::Named(Green))`). Assert "Clean" (line 1, col 0) has no SGR flags (BOLD, DIM, ITALIC, UNDERLINE, BLINK, INVERSE, HIDDEN, STRIKETHROUGH all cleared), default fg (palette foreground), default bg (palette background).
 
-- [ ] **`reset_39_default_fg.teseq`** — SGR 39 resets fg to default, preserving other attrs:
+- [x] **`reset_39_default_fg.teseq`** — SGR 39 resets fg to default, preserving other attrs:
   ```
   : Esc [ 1 ; 31 m
   |Red bold|
@@ -731,7 +731,7 @@ This subsection covers the full-reset (SGR 0) and color-specific resets (SGR 39/
   ```
   Assert: "Red bold" (line 0, col 0) has BOLD flag + red fg. "Default fg bold" (line 1, col 0) has BOLD flag + default fg (palette foreground color via `Palette::default().resolve(Color::Named(Foreground))`), bg unchanged (still default).
 
-- [ ] **`reset_49_default_bg.teseq`** — SGR 49 resets bg to default, preserving other attrs:
+- [x] **`reset_49_default_bg.teseq`** — SGR 49 resets bg to default, preserving other attrs:
   ```
   : Esc [ 42 ; 3 m
   |Green bg italic|
@@ -741,7 +741,7 @@ This subsection covers the full-reset (SGR 0) and color-specific resets (SGR 39/
   ```
   Assert: "Green bg italic" (line 0, col 0) has ITALIC flag + green bg. "Default bg italic" (line 1, col 0) has ITALIC flag preserved, bg resets to default palette background.
 
-- [ ] **`reset_59_underline_color.teseq`** — SGR 59 resets underline color, preserving underline style:
+- [x] **`reset_59_underline_color.teseq`** — SGR 59 resets underline color, preserving underline style:
   ```
   : Esc [ 4 m
   : Esc [ 58 ; 2 ; 200 ; 100 ; 50 m
@@ -762,7 +762,7 @@ This subsection covers the full-reset (SGR 0) and color-specific resets (SGR 39/
 
 These scenarios test the color resolution pipeline in `term/renderable/mod.rs` — the layer between raw `Color` enum values and final `Rgb` output.
 
-- [ ] **`edge_dim_bold_named.teseq`** — DIM + BOLD on a named color: DIM takes priority:
+- [x] **`edge_dim_bold_named.teseq`** — DIM + BOLD on a named color: DIM takes priority:
   ```
   : Esc [ 1 ; 2 ; 31 m
   |DimBoldRed|
@@ -770,7 +770,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: fg resolves to dimmed red, NOT bright red. Compute expected via `Palette::default().resolve(Color::Named(vte::ansi::NamedColor::DimRed))` (add `use vte::ansi::NamedColor;` to `sgr.rs` imports). This validates the DIM-wins-over-bold-as-bright rule in `resolve_fg()` — the `is_dim` branch takes priority over the `bold_is_bright && is_bold` branch for Named colors. Matches existing renderable test `bold_plus_dim_named_color`.
 
-- [ ] **`edge_dim_bold_indexed.teseq`** — DIM + BOLD on indexed 0-7: no bright promotion:
+- [x] **`edge_dim_bold_indexed.teseq`** — DIM + BOLD on indexed 0-7: no bright promotion:
   ```
   : Esc [ 1 ; 2 m
   : Esc [ 38 ; 5 ; 2 m
@@ -779,7 +779,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: fg resolves to dimmed green (2/3 of each channel of palette index 2), NOT bright green (palette index 10). `dim_rgb` is `pub(crate)` so the test computes the expected value inline: `let base = palette.resolve(Color::Indexed(2)); let expected = Rgb { r: (base.r as u16 * 2 / 3) as u8, g: (base.g as u16 * 2 / 3) as u8, b: (base.b as u16 * 2 / 3) as u8 };`.
 
-- [ ] **`edge_dim_bold_truecolor.teseq`** — DIM + BOLD on TrueColor: only dim applies (bold doesn't affect TrueColor):
+- [x] **`edge_dim_bold_truecolor.teseq`** — DIM + BOLD on TrueColor: only dim applies (bold doesn't affect TrueColor):
   ```
   : Esc [ 1 ; 2 m
   : Esc [ 38 ; 2 ; 150 ; 120 ; 90 m
@@ -788,7 +788,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: fg resolves to `Rgb { r: 100, g: 80, b: 60 }` (2/3 of each channel).
 
-- [ ] **`edge_inverse_colors.teseq`** — Inverse with explicit fg/bg swaps them:
+- [x] **`edge_inverse_colors.teseq`** — Inverse with explicit fg/bg swaps them:
   ```
   : Esc [ 31 ; 42 m
   |Red on green|
@@ -798,7 +798,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: "Red on green" has fg=red, bg=green. "Inverted" has fg=green, bg=red. This validates `apply_inverse()` in `renderable/mod.rs` — when `INVERSE` flag is set, fg and bg are swapped. Matches existing renderable test `apply_inverse_swaps_defaults`.
 
-- [ ] **`edge_decscnm_basic.teseq`** — DECSCNM (mode 5) swaps default fg/bg:
+- [x] **`edge_decscnm_basic.teseq`** — DECSCNM (mode 5) swaps default fg/bg:
   ```toml
   # edge_decscnm_basic.toml
   [setup]
@@ -809,7 +809,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: default cells have fg=original_bg and bg=original_fg. DECSCNM is implemented by cloning and swapping the palette before color resolution (`snapshot.rs:92-106`).
 
-- [ ] **`edge_decscnm_inverse.teseq`** — DECSCNM + SGR 7 = double swap = normal appearance:
+- [x] **`edge_decscnm_inverse.teseq`** — DECSCNM + SGR 7 = double swap = normal appearance:
   ```toml
   # edge_decscnm_inverse.toml
   [setup]
@@ -822,7 +822,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: "Double swapped" has fg=original_fg, bg=original_bg (DECSCNM swaps palette, SGR 7 swaps again → back to normal). This matches the existing renderable test `decscnm_plus_inverse_is_double_swap`.
 
-- [ ] **`edge_decscnm_explicit_color.teseq`** — DECSCNM does NOT affect explicitly set colors:
+- [x] **`edge_decscnm_explicit_color.teseq`** — DECSCNM does NOT affect explicitly set colors:
   ```toml
   # edge_decscnm_explicit_color.toml
   [setup]
@@ -843,7 +843,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
 
 **File(s):** `oriterm_core/tests/teseq/scenarios/csi/sgr/combo_*.teseq`
 
-- [ ] **`combo_stack.teseq`** — Multiple attributes stacked in one CSI:
+- [x] **`combo_stack.teseq`** — Multiple attributes stacked in one CSI:
   ```
   : Esc [ 1 ; 3 ; 4 ; 31 m
   |Bold italic underline red|
@@ -852,7 +852,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert all four attributes active on first text (BOLD+ITALIC+UNDERLINE flags, red fg), none on second.
 
-- [ ] **`combo_separate_sequences.teseq`** — Attributes accumulate across separate SGR sequences:
+- [x] **`combo_separate_sequences.teseq`** — Attributes accumulate across separate SGR sequences:
   ```
   : Esc [ 1 m
   : Esc [ 3 m
@@ -862,7 +862,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert BOLD+ITALIC+UNDERLINE all set. This validates that SGR attributes are additive (each SGR modifies the cursor template, not replaces it).
 
-- [ ] **`combo_color_last_wins.teseq`** — Multiple fg colors in one sequence: last wins:
+- [x] **`combo_color_last_wins.teseq`** — Multiple fg colors in one sequence: last wins:
   ```
   : Esc [ 31 ; 32 ; 33 m
   |Yellow wins|
@@ -870,7 +870,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert fg is yellow (SGR 33), not red (SGR 31) or green (SGR 32).
 
-- [ ] **`combo_dim_then_bold.teseq`** — Setting dim then bold: both flags set, DIM takes priority for color:
+- [x] **`combo_dim_then_bold.teseq`** — Setting dim then bold: both flags set, DIM takes priority for color:
   ```
   : Esc [ 2 ; 1 ; 31 m
   |DimBold|
@@ -878,7 +878,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: BOLD and DIM flags both set. fg resolves to dim red (not bright red).
 
-- [ ] **`combo_empty_sgr_resets.teseq`** — `CSI m` (no parameters) is equivalent to SGR 0:
+- [x] **`combo_empty_sgr_resets.teseq`** — `CSI m` (no parameters) is equivalent to SGR 0:
   ```
   : Esc [ 1 ; 3 ; 31 m
   |Styled|
@@ -887,7 +887,7 @@ These scenarios test the color resolution pipeline in `term/renderable/mod.rs` �
   ```
   Assert: "Styled" has BOLD+ITALIC+red fg. "Plain" has no SGR flags and default fg/bg. This validates that parameterless SGR dispatches as `Attr::Reset` (VTE csi.rs:284 — `[0]` matches, and the missing param defaults to 0 per ECMA-48). Matches existing handler test `sgr_empty_params_resets`.
 
-- [ ] **`combo_sgr_persists_cursor_move.teseq`** — SGR attributes survive cursor movement:
+- [x] **`combo_sgr_persists_cursor_move.teseq`** — SGR attributes survive cursor movement:
   ```
   : Esc [ 1 ; 31 m
   |A|

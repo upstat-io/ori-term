@@ -1,0 +1,10 @@
+[terminal]
+rows = 24
+cols = 80
+scrollback = 0
+
+[setup]
+pre_feed = ["\\x1b[?5h"]
+
+[expect]
+grid_snapshot = true

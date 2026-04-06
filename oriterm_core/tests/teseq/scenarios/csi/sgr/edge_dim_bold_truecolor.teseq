@@ -1,0 +1,4 @@
+: Esc [ 1 ; 2 m
+: Esc [ 38 ; 2 ; 150 ; 120 ; 90 m
+|DimBoldTC|
+: Esc [ 0 m
