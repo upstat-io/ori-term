@@ -53,7 +53,7 @@ sections:
 
 # Section 04: Mode Interaction Scenarios
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Test multi-mode combinations where individual handler tests fall short. The existing handler tests validate each mode in isolation. These scenarios test the *interaction* between modes — the edge cases that only manifest when multiple modes are active simultaneously. Also exercises negative controls (DECCOLM without Mode 40) and state dimensions invisible to grid-only assertions (mode flags surviving alt-screen swap).
 
 **Success Criteria:**
