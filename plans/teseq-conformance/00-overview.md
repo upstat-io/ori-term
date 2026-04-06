@@ -39,7 +39,7 @@ Build a teseq-powered escape sequence test framework for ori_term that uses GNU 
 - [ ] ESC sequence scenarios cover: DECSC/DECRC, RIS, character set designation (SCS G0/G1)
 - [ ] OSC scenarios cover: title+icon (0), icon name (1), title (2), clipboard (52), color query (4/10/11)
 - [ ] OSC 7 (CWD) tested at mux layer via `RawInterceptor`, not teseq harness (documented limitation: `Term<T>` does not implement `set_working_directory`)
-- [ ] Workflow scenarios cover: scroll region + origin mode combo, alt screen enter/exit roundtrip, DECCOLM transition, DA handshake sequence
+- [ ] Workflow scenarios cover: scroll region + origin mode combo, alt screen enter/exit roundtrip, DECCOLM transition, DA handshake sequence, DECSC attribute save/restore (SGR + charset + origin flag), charset switching (G0/G1 + SO/SI)
 - [ ] All scenarios run at 80x24 minimum; cursor clamping, mode interaction, and workflow scenarios also at 97x33 and 120x40
 - [ ] `timeout 150 cargo test -p oriterm_core --test teseq` passes with zero failures
 - [ ] `timeout 150 ./test-all.sh` green — no regressions in existing test suites
@@ -147,7 +147,7 @@ Phase 4 - Verification
 | Crate | Production LOC | Test LOC | Total |
 |-------|---------------|----------|-------|
 | `oriterm_core` | ~15,000 | ~10,500 | ~25,500 |
-| **New (teseq tests)** | **0** | **~3,420 est.** | **~3,420 est.** |
+| **New (teseq tests)** | **0** | **~3,500 est.** | **~3,500 est.** |
 
 Existing escape sequence test coverage:
 - Handler unit tests: 5,860 lines (individual sequences)
@@ -169,9 +169,9 @@ Existing escape sequence test coverage:
 | 03 Reports & Response Validation | ~300 | Medium | 01, 02 |
 | 04 Mode Interaction Scenarios | ~620 | High | 01, 02 |
 | 05 SGR & Color Scenarios | ~800 | Medium-High | 01, 02 |
-| 06 Complex Workflow Scenarios | ~400 | High | 01-05 |
+| 06 Complex Workflow Scenarios | ~600 | High | 01-05 |
 | 07 Verification & CI Integration | ~250 | Low | 01-06 |
-| **Total new** | **~3,420** | | |
+| **Total new** | **~3,620** | | |
 | **Total deleted** | **~0** | | |
 
 ## Known Bugs (Pre-existing)

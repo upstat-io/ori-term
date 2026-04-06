@@ -9,7 +9,7 @@ success_criteria:
   - "Coverage gap analysis identifies sequences not yet covered and prioritizes future additions"
   - "CI integration: Linux CI installs teseq and runs tests; macOS/Windows gracefully skip"
   - "CLAUDE.md updated with teseq test commands and scenario authoring instructions"
-  - "All 106+ scenarios pass at their designated sizes"
+  - "All 171 test functions pass at their designated sizes (168 .teseq scenarios + 3 pure-Rust tests)"
   - "Satisfies mission criteria: CI green, test-all.sh passes, platform graceful skip"
 inspired_by:
   - "ori_term vttest-conformance section-07-verification — conformance metric tracking"
@@ -65,19 +65,19 @@ Build a comprehensive test matrix documenting every scenario.
 
 - [ ] **Scenario inventory by family:**
 
-  | Family | Scenarios | Sizes | Key Coverage |
-  |--------|-----------|-------|-------------|
-  | C0 (`c0/`) | 8+ | 80x24 | CR, LF, BS, TAB, BEL, FF, VT, SO/SI |
-  | CSI Cursor (`csi/cursor/`) | 8+ | 80x24, 97x33, 120x40 | CUP, CUU, CUD, CUF, CUB, VPA, HPA, CHA |
-  | CSI Erase (`csi/erase/`) | 7 | 80x24 | ED 0-3, EL 0-2 |
-  | CSI Insert/Delete (`csi/insert_delete/`) | 4 | 80x24 | ICH, DCH, IL, DL |
-  | CSI Reports (`csi/reports/`) | 10+ | 80x24 | DA1/2/3, DSR, DECRQM |
-  | CSI Modes (`csi/modes/`) | 34+ | 80x24, 97x33, 120x40 | DECOM, DECCOLM, alt screen, IRM, wrap, cross-cutting |
-  | CSI SGR (`csi/sgr/`) | 15+ | 80x24 | Attributes, 16/256/TrueColor, combos |
-  | ESC (`esc/`) | 4+ | 80x24 | DECSC/RC, RIS, SCS, IND/RI |
-  | OSC (`osc/`) | 4+ | 80x24 | Title (0/2), icon name (1), clipboard (52), color query (4/10/11) |
-  | Workflows (`workflows/`) | 12+ | 80x24, 97x33, 120x40 | Mode combos, handshakes, real-world |
-  | **Total** | **106+** | | |
+  | Family | Scenarios (.teseq) | Pure-Rust tests | Sizes | Key Coverage |
+  |--------|--------------------|-----------------|-------|-------------|
+  | C0 (`c0/`) | 8 | 0 | 80x24 | CR, LF, BS, TAB, BEL, FF, VT, SO/SI |
+  | CSI Cursor (`csi/cursor/`) | 10 | 0 | 80x24, 97x33, 120x40 | CUP, CUU, CUD, CUF, CUB, VPA, HPA, CHA |
+  | CSI Erase (`csi/erase/`) | 7 | 0 | 80x24 | ED 0-3, EL 0-2 |
+  | CSI Insert/Delete (`csi/insert_delete/`) | 4 | 0 | 80x24 | ICH, DCH, IL, DL |
+  | CSI Reports (`csi/reports/`) | 15 | 0 | 80x24 | DA1/2/3, DSR, DECRQM |
+  | CSI Modes (`csi/modes/`) | 34 | 0 | 80x24, 97x33, 120x40 | DECOM, DECCOLM, alt screen, IRM, wrap, cross-cutting |
+  | CSI SGR (`csi/sgr/`) | 54 | 0 | 80x24 | Attributes, 16/256/TrueColor, combos, resets, underlines |
+  | ESC (`esc/`) | 5 | 0 | 80x24 | DECSC/RC, RIS, SCS G0, IND, RI |
+  | OSC (`osc/`) | 4 | 0 | 80x24 | Title (0/2), icon name (1), clipboard (52), color query (4/10/11) |
+  | Workflows (`workflows/`) | 27 | 3 | 80x24, 97x33, 120x40 | Mode combos, DECSC attrs, handshakes, real-world, charset, edge cases |
+  | **Total** | **168** | **3** | | **171 test functions** |
 
 - [ ] **Coverage gap analysis** — identify sequences NOT yet covered:
   - OSC 7 (CWD) — handled by `RawInterceptor` in `oriterm_mux`, not `Term<T>`; tested at mux layer (`oriterm_mux/src/shell_integration/tests.rs::interceptor_osc7_sets_cwd`), not teseq harness
@@ -152,7 +152,7 @@ Build a comprehensive test matrix documenting every scenario.
 
 ## 07.N Completion Checklist
 
-- [ ] Test matrix documented with scenario counts per family (106+ total)
+- [ ] Test matrix documented with scenario counts per family (171 total test functions)
 - [ ] Coverage gap analysis completed with priority ranking
 - [ ] Graceful skip verified on platform without reseq
 - [ ] CI integration documented
@@ -169,4 +169,4 @@ Build a comprehensive test matrix documenting every scenario.
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** Complete test matrix showing 106+ scenarios across 10 protocol families, all passing. Coverage gaps documented and prioritized. CI graceful degradation verified. CLAUDE.md updated. `timeout 150 ./test-all.sh` green with zero regressions across all existing test suites. The teseq framework is production-ready for ongoing scenario additions.
+**Exit Criteria:** Complete test matrix showing 171 test functions across 10 protocol families, all passing. Coverage gaps documented and prioritized. CI graceful degradation verified. CLAUDE.md updated. `timeout 150 ./test-all.sh` green with zero regressions across all existing test suites. The teseq framework is production-ready for ongoing scenario additions.
