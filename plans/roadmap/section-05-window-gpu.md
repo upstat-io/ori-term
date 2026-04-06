@@ -1,7 +1,7 @@
 ---
 section: 5
 title: Window + GPU Rendering
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-03-31"
 tier: 2

@@ -1,7 +1,7 @@
 ---
 section: 3
 title: Cross-Platform
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-03-31"
 tier: 0

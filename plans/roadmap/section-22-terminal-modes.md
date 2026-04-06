@@ -1,7 +1,7 @@
 ---
 section: 22
 title: Terminal Modes
-status: complete
+status: in-progress
 reviewed: false
 last_verified: "2026-04-01"
 tier: 5
