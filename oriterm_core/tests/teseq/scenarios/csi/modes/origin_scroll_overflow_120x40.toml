@@ -1,0 +1,4 @@
+[terminal]
+cols = 120
+rows = 40
+scrollback = 10

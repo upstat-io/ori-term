@@ -1,0 +1,8 @@
+: Esc [ ? 1049 h
+|First visit|
+. CR/^M LF/^J
+: Esc [ ? 1049 l
+|Primary restored|
+. CR/^M LF/^J
+: Esc [ ? 1049 h
+|Second visit|

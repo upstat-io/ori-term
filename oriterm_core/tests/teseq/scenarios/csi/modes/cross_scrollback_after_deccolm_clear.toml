@@ -1,0 +1,5 @@
+[setup]
+pre_feed = ["\\x1b[?40h"]
+
+[terminal]
+scrollback = 10

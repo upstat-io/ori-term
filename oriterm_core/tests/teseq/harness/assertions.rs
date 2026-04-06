@@ -3,6 +3,8 @@
 //! Integrates with insta for golden snapshot comparison and provides
 //! convenience methods for cursor, event, and scrollback assertions.
 
+use oriterm_core::TermMode;
+
 use super::events::RecordedEvent;
 use super::loader::ScenarioSpec;
 use super::reseq::teseq_available;
@@ -117,6 +119,33 @@ pub fn assert_response_snapshot(outcome: &ScenarioOutcome, name: &str) {
         })
         .collect();
     insta::assert_snapshot!(format!("{name}_responses"), pty_writes.join("\n"));
+}
+
+/// Assert that specific `TermMode` flags are set.
+pub fn assert_mode_contains(outcome: &ScenarioOutcome, expected: TermMode) {
+    assert!(
+        outcome.mode.contains(expected),
+        "expected mode flags {expected:?} to be set, but mode is {:?}",
+        outcome.mode
+    );
+}
+
+/// Assert that specific `TermMode` flags are NOT set.
+pub fn assert_mode_not_contains(outcome: &ScenarioOutcome, unexpected: TermMode) {
+    assert!(
+        !outcome.mode.contains(unexpected),
+        "expected mode flags {unexpected:?} to NOT be set, but mode is {:?}",
+        outcome.mode
+    );
+}
+
+/// Assert grid column count (for DECCOLM resize validation).
+pub fn assert_grid_cols(outcome: &ScenarioOutcome, expected_cols: usize) {
+    assert_eq!(
+        outcome.cols, expected_cols,
+        "expected {expected_cols} columns, got {}",
+        outcome.cols
+    );
 }
 
 /// Pipe response bytes through teseq for human-readable debug output.

@@ -1,0 +1,6 @@
+: Esc [ 10 ; 35 r
+: Esc [ ? 6 h
+: Esc [ 1 ; 1 H
+|Origin top|.
+: Esc [ 26 ; 1 H
+|Origin bottom|

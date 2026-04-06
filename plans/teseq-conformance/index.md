@@ -70,7 +70,7 @@ RecordedEvent, pty_writes, take_responses
 ---
 
 ### Section 04: Mode Interaction Scenarios
-**File:** `section-04-mode-interactions.md` | **Status:** Not Started
+**File:** `section-04-mode-interactions.md` | **Status:** In Progress
 
 ```
 DECOM, origin_mode, DECSTBM, scroll_region

@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Mode Interaction Scenarios"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Create multi-sequence scenarios testing mode combinations that individual handler tests don't cover — DECOM+scroll, DECCOLM transitions, alt screen roundtrips, IRM, and cross-cutting mode interactions"
 success_criteria:
@@ -27,28 +27,28 @@ third_party_review:
 sections:
   - id: "04.0"
     title: "Scaffolding & Harness Extension"
-    status: not-started
+    status: complete
   - id: "04.1"
     title: "Origin Mode + Scroll Region Scenarios"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "DECCOLM Column Mode Scenarios"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "Alt Screen Scenarios"
-    status: not-started
+    status: complete
   - id: "04.4"
     title: "Insert Mode & Wrap Scenarios"
-    status: not-started
+    status: complete
   - id: "04.5"
     title: "Cross-Cutting Mode Interactions"
-    status: not-started
+    status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 04: Mode Interaction Scenarios
@@ -58,18 +58,18 @@ sections:
 
 **Success Criteria:**
 
-- [ ] DECOM+DECSTBM: cursor stays within scroll region, scrolling respects origin
-- [ ] DECCOLM: 80→132 and 132→80 transitions clear screen, preserve modes
-- [ ] DECCOLM negative control: ?3h/?3l without Mode 40 clears/homes but does NOT resize
-- [ ] Alt screen: 1049 enter/exit preserves primary screen content
-- [ ] Alt screen mode leakage: DECOM/DECAWM/IRM flags survive screen swap (not saved/restored)
-- [ ] Alt screen re-entry: mode 1049 retains alt content, mode 1047 clears alt content
-- [ ] IRM: insert mode at right margin, with wrap-pending, and with wide chars
-- [ ] Mode flag assertions verify TermMode state, not just grid content
-- [ ] Cross-cutting: DECCOLM+DECOM+DECSTBM, IRM at right margin with DECAWM
-- [ ] Multi-size variants for mode interactions (97x33, 120x40)
-- [ ] Scrollback integrity checked where relevant (DECSTBM overflow, DECCOLM clear)
-- [ ] 34+ mode interaction scenarios pass (9+6+7+7+5)
+- [x] DECOM+DECSTBM: cursor stays within scroll region, scrolling respects origin
+- [x] DECCOLM: 80→132 and 132→80 transitions clear screen, preserve modes
+- [x] DECCOLM negative control: ?3h/?3l without Mode 40 clears/homes but does NOT resize
+- [x] Alt screen: 1049 enter/exit preserves primary screen content
+- [x] Alt screen mode leakage: DECOM/DECAWM/IRM flags survive screen swap (not saved/restored)
+- [x] Alt screen re-entry: mode 1049 retains alt content, mode 1047 clears alt content
+- [x] IRM: insert mode at right margin, with wrap-pending, and with wide chars
+- [x] Mode flag assertions verify TermMode state, not just grid content
+- [x] Cross-cutting: DECCOLM+DECOM+DECSTBM, IRM at right margin with DECAWM
+- [x] Multi-size variants for mode interactions (97x33, 120x40)
+- [x] Scrollback integrity checked where relevant (DECSTBM overflow, DECCOLM clear)
+- [x] 34+ mode interaction scenarios pass (9+6+7+7+5)
 
 **Context:** The vttest conformance plan fixed several mode interaction bugs: DECOM cursor positioning was garbled (fixed in Section 02), DECCOLM was a no-op (fixed in Section 03), border fills failed at non-80x24 sizes. These teseq scenarios serve as permanent regression guards for those fixes and explore additional interaction patterns.
 
@@ -94,9 +94,9 @@ This subsection has two parts: (A) creating the module and directory scaffolding
 
 **Why first:** Every test function in 04.1-04.5 lives in `mode_interactions.rs` and every `.teseq` file lives in `scenarios/csi/modes/`. These must exist and be wired up before any scenario work begins.
 
-- [ ] **Create scenario directory** `oriterm_core/tests/teseq/scenarios/csi/modes/`. This is the home for all `.teseq` and `.toml` sidecar files in this section. Currently `scenarios/csi/` contains `cursor/`, `erase/`, `insert_delete/`, `reports/` — `modes/` does not yet exist.
+- [x] **Create scenario directory** `oriterm_core/tests/teseq/scenarios/csi/modes/`. This is the home for all `.teseq` and `.toml` sidecar files in this section. Currently `scenarios/csi/` contains `cursor/`, `erase/`, `insert_delete/`, `reports/` — `modes/` does not yet exist.
 
-- [ ] **Create `oriterm_core/tests/teseq/mode_interactions.rs`** — the Rust test module for all mode interaction scenarios. Start with minimal imports; the mode-specific imports (`assert_grid_cols`, `assert_mode_contains`, `assert_mode_not_contains`, `TermMode`) are added after 04.0b implements them. Follow the pattern established by `csi_reports.rs`:
+- [x] **Create `oriterm_core/tests/teseq/mode_interactions.rs`** — the Rust test module for all mode interaction scenarios. Start with minimal imports; the mode-specific imports (`assert_grid_cols`, `assert_mode_contains`, `assert_mode_not_contains`, `TermMode`) are added after 04.0b implements them. Follow the pattern established by `csi_reports.rs`:
   ```rust
   //! Mode interaction scenarios (DECOM, DECCOLM, alt screen, IRM, cross-cutting).
 
@@ -120,14 +120,14 @@ This subsection has two parts: (A) creating the module and directory scaffolding
   ```
   Note the scenario path uses `scenarios/csi/modes` (matching the directory created above) and the snapshot prefix uses `mode_interactions_` (matching the module name). The `run_scenario` helper returns `ScenarioOutcome` (like `csi_reports.rs`) so individual tests can add mode flag assertions beyond the sidecar spec.
 
-- [ ] **Register the module in `oriterm_core/tests/teseq/main.rs`** — add `mod mode_interactions;` in a new "Family modules (Section 04)" comment block, following the existing pattern:
+- [x] **Register the module in `oriterm_core/tests/teseq/main.rs`** — add `mod mode_interactions;` in a new "Family modules (Section 04)" comment block, following the existing pattern:
   ```rust
   // Family modules (Section 04).
   mod mode_interactions;
   ```
   Place this after the Section 03 block (`mod csi_reports;`).
 
-- [ ] **Verify compilation** — `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions` should compile (no tests yet, so zero tests run).
+- [x] **Verify compilation** — `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions` should compile (no tests yet, so zero tests run).
 
 After 04.0b adds the mode assertion helpers, update the imports in `mode_interactions.rs` to include the full set:
 ```rust
@@ -145,7 +145,7 @@ use super::harness::{
 
 The current `ScenarioOutcome` (in `runner.rs`) exposes grid text, cursor, events, cols, rows, and scrollback length — but NOT terminal mode flags. `RenderableContent` already includes `mode: TermMode` (see `oriterm_core/src/term/renderable/mod.rs:141`). This sub-step extends the harness to make mode state assertable.
 
-- [ ] **Add `mode` field to `ScenarioOutcome`** in `runner.rs`:
+- [x] **Add `mode` field to `ScenarioOutcome`** in `runner.rs`:
   ```rust
   // Add import at top of runner.rs (oriterm_core re-exports TermMode at crate root):
   use oriterm_core::TermMode;
@@ -163,7 +163,7 @@ The current `ScenarioOutcome` (in `runner.rs`) exposes grid text, cursor, events
   }
   ```
 
-- [ ] **Add `assert_mode_contains` and `assert_mode_not_contains` assertion helpers** in `assertions.rs`. Add `use oriterm_core::TermMode;` to the imports, then:
+- [x] **Add `assert_mode_contains` and `assert_mode_not_contains` assertion helpers** in `assertions.rs`. Add `use oriterm_core::TermMode;` to the imports, then:
   ```rust
   /// Assert that specific TermMode flags are set.
   pub fn assert_mode_contains(outcome: &ScenarioOutcome, expected: TermMode) {
@@ -184,7 +184,7 @@ The current `ScenarioOutcome` (in `runner.rs`) exposes grid text, cursor, events
   }
   ```
 
-- [ ] **Add `assert_grid_cols` assertion helper** in `assertions.rs` for DECCOLM column count verification:
+- [x] **Add `assert_grid_cols` assertion helper** in `assertions.rs` for DECCOLM column count verification:
   ```rust
   /// Assert grid column count (for DECCOLM resize validation).
   pub fn assert_grid_cols(outcome: &ScenarioOutcome, expected_cols: usize) {
@@ -196,7 +196,7 @@ The current `ScenarioOutcome` (in `runner.rs`) exposes grid text, cursor, events
   }
   ```
 
-- [ ] **Re-export new helpers from `harness/mod.rs`** — add to the existing `pub use assertions::{...}` line:
+- [x] **Re-export new helpers from `harness/mod.rs`** — add to the existing `pub use assertions::{...}` line:
   ```rust
   pub use assertions::{
       analyze_response, assert_cursor, assert_event_snapshot, assert_grid_cols,
@@ -207,7 +207,7 @@ The current `ScenarioOutcome` (in `runner.rs`) exposes grid text, cursor, events
   ```
   This adds `assert_grid_cols`, `assert_mode_contains`, and `assert_mode_not_contains` to the three already-exported assertion helpers.
 
-- [ ] **Verify harness compiles** — `timeout 150 cargo test -p oriterm_core --test teseq` should pass with zero new failures (new helpers are unused until 04.1).
+- [x] **Verify harness compiles** — `timeout 150 cargo test -p oriterm_core --test teseq` should pass with zero new failures (new helpers are unused until 04.1).
 
 These helpers are used throughout 04.1-04.5 to verify mode state, not just grid content.
 
@@ -217,7 +217,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
 
 **File(s):** `oriterm_core/tests/teseq/scenarios/csi/modes/origin_*.teseq` (scenario files), `oriterm_core/tests/teseq/scenarios/csi/modes/il_in_scroll_region.teseq`, `oriterm_core/tests/teseq/scenarios/csi/modes/dl_in_scroll_region.teseq` (IL/DL scenarios), `oriterm_core/tests/teseq/mode_interactions.rs` (test functions created in 04.0a)
 
-- [ ] **`origin_scroll_basic.teseq`** — Set scroll region, enable DECOM, verify cursor is relative:
+- [x] **`origin_scroll_basic.teseq`** — Set scroll region, enable DECOM, verify cursor is relative:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h
@@ -229,7 +229,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
   `origin_scroll_basic.toml`: `[expect] cursor = { col = 13, line = 19 }`
   Grid snapshot shows "Origin top" at absolute row 4 (scroll region top, 0-based). "Origin bottom" at absolute row 19 (region bottom - 1, 0-based). CUP 16;1 with DECOM → `goto_origin_aware(15, 0)` → offset=4, clamped to max=19, so line=19. Cursor ends at col 13 (after writing "Origin bottom", 13 chars).
 
-- [ ] **`origin_scroll_overflow.teseq`** — Fill scroll region past capacity, verify scrolling:
+- [x] **`origin_scroll_overflow.teseq`** — Fill scroll region past capacity, verify scrolling:
   ```
   : Esc [ 10 ; 15 r
   : Esc [ ? 6 h
@@ -250,7 +250,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
   ```
   With 6-line scroll region (rows 10-15, 0-based 9..15), writing 8 lines causes scrolling within the region. The first 2 lines scroll off the region top. **Scrollback check:** With `scrollback = 10` in the sidecar, lines scrolled out of a sub-region are lost (sub-region scroll does not push to scrollback — only full-screen scroll does). Assert `scrollback_len == 0` to verify no spurious scrollback pollution.
 
-- [ ] **`origin_cursor_save_restore.teseq`** — DECSC/DECRC with origin mode:
+- [x] **`origin_cursor_save_restore.teseq`** — DECSC/DECRC with origin mode:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h
@@ -263,7 +263,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
   ```
   CUP 3;10 with DECOM → absolute line=2+4=6, col=9. DECSC saves. CUP 1;1 homes within region. DECRC restores to saved position. "restored" should appear at absolute row 6, col 9.
 
-- [ ] **`il_in_scroll_region.teseq`** — IL within DECSTBM, verify lines outside region do not shift:
+- [x] **`il_in_scroll_region.teseq`** — IL within DECSTBM, verify lines outside region do not shift:
   ```
   |Line 1|
   . CR/^M LF/^J
@@ -282,7 +282,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
   ```
   Grid snapshot: Row 0 "Line 1" unchanged (above region). Row 1 "Line 2" unchanged (region top). Row 2 blank (inserted). Row 3 "Line 3" (shifted down). Row 4 "Line 4" (shifted down). Row 5 "Line 6" unchanged (below region — Line 5 pushed out of region bottom). Validates IL only shifts within DECSTBM scroll region boundaries. <!-- unblocks:02.R -->
 
-- [ ] **`dl_in_scroll_region.teseq`** — DL within DECSTBM, verify lines outside region do not shift:
+- [x] **`dl_in_scroll_region.teseq`** — DL within DECSTBM, verify lines outside region do not shift:
   ```
   |Line 1|
   . CR/^M LF/^J
@@ -301,14 +301,14 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
   ```
   Grid snapshot: Row 0 "Line 1" unchanged (above region). Row 1 "Line 2" unchanged (region top). Row 2 "Line 4" (shifted up from row 3). Row 3 "Line 5" (shifted up). Row 4 blank (new blank at region bottom). Row 5 "Line 6" unchanged (below region). Validates DL only shifts within DECSTBM scroll region boundaries. <!-- unblocks:02.R -->
 
-- [ ] **Multi-size variants** — create separate `.teseq` + `.toml` pairs for each size:
+- [x] **Multi-size variants** — create separate `.teseq` + `.toml` pairs for each size:
   - `origin_scroll_basic_97x33.teseq` + `.toml` — DECSTBM adjusted to `8;28` (proportional to 97x33), `.toml` sets `[terminal] cols = 97 rows = 33`. Separate test function `origin_scroll_basic_97x33()` in `mode_interactions.rs`.
   - `origin_scroll_basic_120x40.teseq` + `.toml` — DECSTBM adjusted to `10;35`, `.toml` sets `[terminal] cols = 120 rows = 40`. Separate test function `origin_scroll_basic_120x40()`.
   - `origin_scroll_overflow_97x33.teseq` + `.toml` — scroll region sized for 97x33, `.toml` sets `[terminal] cols = 97 rows = 33 scrollback = 10`. Separate test function `origin_scroll_overflow_97x33()`.
   - `origin_scroll_overflow_120x40.teseq` + `.toml` — scroll region sized for 120x40. Separate test function `origin_scroll_overflow_120x40()`.
   Each variant gets its own insta golden snapshot (size-specific). The test functions follow the standard pattern: `if !reseq_available() { return; }` guard, then `run_scenario("origin_scroll_basic_97x33")`.
 
-- [ ] **Verify 04.1 compiles and passes** — `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions::origin` should run all origin mode tests.
+- [x] **Verify 04.1 compiles and passes** — `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions::origin` should run all origin mode tests.
 
 ---
 
@@ -318,7 +318,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
 
 Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid. The code in `apply_deccolm()` (`handler/modes.rs:187-206`) has two distinct branches: (1) with Mode 40 → resize + side effects, (2) without Mode 40 → side effects only (clear, home, reset margins, but NO resize). Both branches must be tested.
 
-- [ ] **`deccolm_80_to_132.teseq`** — Switch to 132 columns with Mode 40:
+- [x] **`deccolm_80_to_132.teseq`** — Switch to 132 columns with Mode 40:
   ```
   |Content at 80 cols|.
   : Esc [ ? 3 h
@@ -334,7 +334,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   Grid snapshot shows screen cleared on mode switch, "Now at 132 columns" visible, grid is 132 columns wide. **Assert `outcome.cols == 132`** via `assert_grid_cols`. Cursor at line 0, col 18 (after writing "Now at 132 columns").
 
-- [ ] **`deccolm_132_to_80.teseq`** — Switch back to 80:
+- [x] **`deccolm_132_to_80.teseq`** — Switch back to 80:
   ```
   : Esc [ ? 3 h
   |Wide content at 132|.
@@ -348,7 +348,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   Mode 40 required for DECCOLM resize. Grid snapshot shows screen cleared again, grid back to 80 columns. **Assert `outcome.cols == 80`** via `assert_grid_cols`. Note: `apply_deccolm(false)` uses `self.deccolm_default_cols` (initialized to `cols` from `Term::new`), so resetting returns to the sidecar's configured column count.
 
-- [ ] **`deccolm_wrap_interaction.teseq`** — DECCOLM + DECAWM interaction at 132 columns:
+- [x] **`deccolm_wrap_interaction.teseq`** — DECCOLM + DECAWM interaction at 132 columns:
   ```
   : Esc [ ? 3 h
   : Esc [ ? 7 h
@@ -361,7 +361,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   The text line must contain exactly 132 A's + "xx" (134 chars total). At 132 columns with DECAWM on, the 132 A's fill row 0, then "xx" wraps to row 1. **When creating this file, verify the A count is exactly 132** (e.g., `python3 -c "print('A'*132 + 'xx')" | wc -c` should output 135 including newline).
 
-- [ ] **`deccolm_resets_scroll_region.teseq`** — DECCOLM resets scroll region:
+- [x] **`deccolm_resets_scroll_region.teseq`** — DECCOLM resets scroll region:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 3 h
@@ -375,7 +375,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   After DECCOLM switch, scroll region is reset to full screen (see `apply_deccolm()` line 198: `self.grid_mut().set_scroll_region(1, None)`). CUP 999;1 goes to the last visible row (not limited by old scroll region). Grid snapshot confirms "At bottom" is at the last row.
 
-- [ ] **`deccolm_no_mode40.teseq`** — DECCOLM without Mode 40 — negative control:
+- [x] **`deccolm_no_mode40.teseq`** — DECCOLM without Mode 40 — negative control:
   ```
   |Content before|.
   |Line two|
@@ -385,7 +385,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   No `.toml` sidecar (defaults to 80x24, no Mode 40 pre_feed). Without Mode 40 enabled, `apply_deccolm()` skips the resize (the `if self.mode.contains(TermMode::ENABLE_MODE_3)` guard fails) but still runs: (1) reset scroll region to full screen, (2) clear screen, (3) home cursor. **Assert `outcome.cols == 80`** — grid stays at 80 columns. Grid snapshot shows "After DECCOLM" at row 0 col 0 (original content cleared). Scroll region should be reset (verified indirectly: CUP 999;1 would reach last row).
 
-- [ ] Multi-size variant: `deccolm_132_to_80` at 120x40 — verifies `deccolm_default_cols` restores to 120 (not hardcoded 80). `deccolm_132_to_80_120x40.toml`:
+- [x] Multi-size variant: `deccolm_132_to_80` at 120x40 — verifies `deccolm_default_cols` restores to 120 (not hardcoded 80). `deccolm_132_to_80_120x40.toml`:
   ```toml
   [setup]
   pre_feed = ["\\x1b[?40h"]
@@ -395,7 +395,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   **Assert `outcome.cols == 120`** after `?3l`. This catches regressions where reset hardcodes 80 instead of using `deccolm_default_cols`.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.0–04.2 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 04.0–04.2 implementation work
 
 ---
 
@@ -405,7 +405,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
 
 `swap_alt()` (mode 1049) swaps grids, saves/restores cursor positions, swaps keyboard mode stacks and image caches, and toggles `TermMode::ALT_SCREEN`. It does NOT clear the alt grid on entry — content persists across exits. In contrast, `swap_alt_clear()` (mode 1047) resets the alt grid before swapping. Critically, neither variant saves/restores other `TermMode` flags — DECOM, DECAWM, IRM, etc. remain global. This is verified in `alt_screen.rs` — no mention of ORIGIN, LINE_WRAP, or INSERT in that file.
 
-- [ ] **`altscreen_roundtrip.teseq`** — Enter and exit alt screen preserving primary:
+- [x] **`altscreen_roundtrip.teseq`** — Enter and exit alt screen preserving primary:
   ```
   |Primary screen content|.
   |Line two|.
@@ -416,7 +416,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   `altscreen_roundtrip.toml`: `[expect] cursor = { col = 0, line = 2 }`
   Grid snapshot after exit should show primary screen content restored. Cursor restored to position when alt was entered: after writing two lines plus their LFs, cursor is at line 2, col 0. **Assert `assert_mode_not_contains(outcome, TermMode::ALT_SCREEN)`** — confirms we're back on primary.
 
-- [ ] **`altscreen_cursor.teseq`** — Cursor position saved/restored:
+- [x] **`altscreen_cursor.teseq`** — Cursor position saved/restored:
   ```
   : Esc [ 10 ; 20 H
   : Esc [ ? 1049 h
@@ -427,7 +427,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   `altscreen_cursor.toml`: `[expect] cursor = { col = 19, line = 9 }`
   (Cursor restored to pre-alt-screen position: CUP 10;20 is 1-based → 0-based line=9, col=19)
 
-- [ ] **`altscreen_content_isolation.teseq`** — Alt screen doesn't bleed to primary:
+- [x] **`altscreen_content_isolation.teseq`** — Alt screen doesn't bleed to primary:
   ```
   |Primary|.
   : Esc [ ? 1049 h
@@ -437,7 +437,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   Grid snapshot confirms primary content preserved, alt content gone.
 
-- [ ] **`altscreen_mode_leakage.teseq`** — Mode flags survive alt screen swap:
+- [x] **`altscreen_mode_leakage.teseq`** — Mode flags survive alt screen swap:
   ```
   : Esc [ ? 6 h
   : Esc [ ? 7 l
@@ -452,7 +452,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   - **Assert `assert_mode_contains(outcome, TermMode::INSERT)`**
   Grid content: primary screen should be blank (nothing written before alt switch). The grid snapshot is secondary here — the mode flag assertions are the primary value.
 
-- [ ] **`altscreen_reentry_1049.teseq`** — Alt screen enter → write → exit → re-enter via mode 1049:
+- [x] **`altscreen_reentry_1049.teseq`** — Alt screen enter → write → exit → re-enter via mode 1049:
   ```
   : Esc [ ? 1049 h
   |First visit|.
@@ -463,7 +463,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   Mode 1049 calls `swap_alt()` which does NOT clear the alt grid on entry. On re-entry, the alt grid retains content from the first visit. Grid snapshot shows "First visit" on row 0 AND "Second visit" on the row where the restored alt cursor lands. **Assert `assert_mode_contains(outcome, TermMode::ALT_SCREEN)`**. This is the expected DEC behavior — only mode 1047 clears on entry.
 
-- [ ] **`altscreen_reentry_1047.teseq`** — Alt screen enter → write → exit → re-enter via mode 1047:
+- [x] **`altscreen_reentry_1047.teseq`** — Alt screen enter → write → exit → re-enter via mode 1047:
   ```
   : Esc [ ? 1047 h
   |First visit|.
@@ -473,7 +473,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   Mode 1047 calls `swap_alt_clear()` which resets the alt grid on entry. On re-entry, "First visit" content is gone. Grid snapshot shows only "Second visit" on a clean alt screen. **Assert `assert_mode_contains(outcome, TermMode::ALT_SCREEN)`**. Contrast with `altscreen_reentry_1049` above — this validates the behavioral difference between modes 1049 and 1047.
 
-- [ ] Multi-size variant: `altscreen_roundtrip` at 97x33. Verifies alt screen swap works correctly at non-80x24 sizes — the alt grid is lazily allocated at the current grid dimensions, so this confirms `ensure_alt_grid()` uses the correct size.
+- [x] Multi-size variant: `altscreen_roundtrip` at 97x33. Verifies alt screen swap works correctly at non-80x24 sizes — the alt grid is lazily allocated at the current grid dimensions, so this confirms `ensure_alt_grid()` uses the correct size.
 
 ---
 
@@ -481,7 +481,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
 
 **File(s):** `oriterm_core/tests/teseq/scenarios/csi/modes/insert_wrap_*.teseq`, `oriterm_core/tests/teseq/scenarios/csi/modes/irm_*.teseq`, `oriterm_core/tests/teseq/scenarios/csi/modes/wrap_*.teseq` (scenario files), `oriterm_core/tests/teseq/mode_interactions.rs` (test functions — grouped under `// Insert mode & wrap` section comment)
 
-- [ ] **`irm_insert.teseq`** — Insert mode shifts characters right:
+- [x] **`irm_insert.teseq`** — Insert mode shifts characters right:
   ```
   |ABCDEFGHIJ|
   : Esc [ 1 ; 4 H
@@ -491,7 +491,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   CUP 1;4 (1-based) → 0-based line=0, col=3. Enable IRM (`CSI 4h`), type "XY" at col 3, existing chars shift right. Characters past the right edge are lost. Grid shows "ABCXYDEFGH" on row 0 (J pushed off the right edge at col 79, or truncated at actual content end).
 
-- [ ] **`irm_at_right_margin.teseq`** — IRM insert when cursor is near the right margin:
+- [x] **`irm_at_right_margin.teseq`** — IRM insert when cursor is near the right margin:
   ```
   : Esc [ 1 ; 78 H
   |AB|
@@ -503,7 +503,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   `irm_at_right_margin.toml`: `[expect] cursor = { col = 79, line = 0 }`
   CUP 1;78 → col 77. Write "AB" at cols 77-78. Then reposition to col 77, enable IRM, insert "XY". With IRM on, existing "AB" shifts right — "B" pushes off the right edge. Grid shows "XY" at cols 77-78, "A" at col 79. Cursor at col 79, line 0 — no wrap occurred.
 
-- [ ] **`irm_wide_char.teseq`** — IRM insert with wide (CJK) character:
+- [x] **`irm_wide_char.teseq`** — IRM insert with wide (CJK) character:
   ```
   |ABCDEFGHIJ|
   : Esc [ 1 ; 4 H
@@ -520,7 +520,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   Grid shows "ABC好DEFGH" on row 0 (IJ pushed off right edge by the 2-cell-wide insert).
 
-- [ ] **`wrap_at_margin.teseq`** — Auto-wrap at right margin:
+- [x] **`wrap_at_margin.teseq`** — Auto-wrap at right margin:
   ```
   : Esc [ 1 ; 1 H
   |AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXX|
@@ -528,7 +528,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   The text line must contain exactly 80 A's + "xx" (82 chars total). At 80 columns with DECAWM on (default), the 80 A's fill row 0, then "xx" wraps to row 1. **Verify the A count is exactly 80.**
   Grid snapshot shows 80 chars on row 0, "xx" on row 1.
 
-- [ ] **`wrap_disabled.teseq`** — DECAWM off prevents wrap:
+- [x] **`wrap_disabled.teseq`** — DECAWM off prevents wrap:
   ```
   : Esc [ ? 7 l
   : Esc [ 1 ; 1 H
@@ -537,7 +537,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   `wrap_disabled.toml`: `[expect] cursor = { col = 79, line = 0 }`
   The text line must contain 80+ characters. With DECAWM off, characters beyond column 79 overwrite at column 79 (see `Handler::input` lines 46-51: cursor snapped back to last column). Grid snapshot shows only 80 chars on row 0, with the last char being 'x' (overwritten at col 79). Cursor stays at col 79, line 0 — no wrap occurred.
 
-- [ ] **`wrap_disabled_wide_char.teseq`** — Wide char at right margin with DECAWM off:
+- [x] **`wrap_disabled_wide_char.teseq`** — Wide char at right margin with DECAWM off:
   ```
   : Esc [ ? 7 l
   : Esc [ 1 ; 1 H
@@ -547,7 +547,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
   ```
   First line: exactly 78 A's (fills cols 0-77). CUP 1;80 → col 79 (last column). Feed wide char "好" (width 2) — it doesn't fit (col 79 + 2 > 80), so cursor is set to wrap-pending (`col = cols`). Then "X" is fed: since DECAWM is off, cursor snaps back to col 79, "X" overwrites. Grid shows row 0 with 78 A's followed by a space at col 78 and "X" at col 79. No wrap to row 1.
 
-- [ ] Multi-size variant: `wrap_at_margin` at 120x40 to verify wrap behavior at non-80-column widths. Adjust A count to exactly 120.
+- [x] Multi-size variant: `wrap_at_margin` at 120x40 to verify wrap behavior at non-80-column widths. Adjust A count to exactly 120.
 
 ---
 
@@ -557,7 +557,7 @@ Mode 40 (ENABLE_MODE_3) must be enabled for DECCOLM to actually resize the grid.
 
 These scenarios test mode combinations that span multiple subsections. Each exercises a real regression surface where bugs have historically appeared in terminal emulators.
 
-- [ ] **`cross_deccolm_with_decom_decstbm.teseq`** — DECCOLM while DECOM and DECSTBM are active:
+- [x] **`cross_deccolm_with_decom_decstbm.teseq`** — DECCOLM while DECOM and DECSTBM are active:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h
@@ -574,7 +574,7 @@ These scenarios test mode combinations that span multiple subsections. Each exer
   ```
   `apply_deccolm()` resets the scroll region to full screen (`set_scroll_region(1, None)`) and homes cursor via `goto_origin_aware(0, 0)`. With DECOM still active after DECCOLM, cursor homes to the new (full-screen) region top. "Before DECCOLM" content is cleared. "After DECCOLM" should appear at row 0, col 0. **Assert `outcome.cols == 132`** and **`assert_mode_contains(outcome, TermMode::ORIGIN)`** — DECOM flag survives DECCOLM.
 
-- [ ] **`cross_1049_with_decom_decstbm.teseq`** — Alt screen with active DECOM and scroll region:
+- [x] **`cross_1049_with_decom_decstbm.teseq`** — Alt screen with active DECOM and scroll region:
   ```
   : Esc [ 5 ; 20 r
   : Esc [ ? 6 h
@@ -587,7 +587,7 @@ These scenarios test mode combinations that span multiple subsections. Each exer
   ```
   DECOM is set before entering alt screen. On alt screen, DECOM persists (TermMode flags are global, not per-grid). However, the scroll region is per-Grid state — the alt grid starts with a full-screen scroll region (0..rows), independent of the primary grid's DECSTBM 5;20 region. So CUP 1;1 on the alt screen with DECOM active goes to absolute row 0 (alt grid's region top), not row 4 (primary's region top). After returning to primary, cursor restores and primary content ("Origin content" at absolute row 6) is intact. **Assert primary grid content preserved** and **`assert_mode_contains(outcome, TermMode::ORIGIN)`**.
 
-- [ ] **`cross_irm_at_margin_with_decawm.teseq`** — IRM insert at right margin with DECAWM on:
+- [x] **`cross_irm_at_margin_with_decawm.teseq`** — IRM insert at right margin with DECAWM on:
   ```
   : Esc [ ? 7 h
   : Esc [ 1 ; 79 H
@@ -599,7 +599,7 @@ These scenarios test mode combinations that span multiple subsections. Each exer
   ```
   CUP 1;79 → col 78. Write "AB": 'A' at col 78, 'B' at col 79 (wrap-pending after). Reposition to col 78, enable IRM, insert "XY". With IRM + DECAWM on: insert at col 78 shifts 'A' and 'B' right. 'B' is pushed past col 79 and wraps to next line (or is lost — depends on whether IRM insert triggers wrap). Grid snapshot captures the actual behavior for golden comparison.
 
-- [ ] **`cross_scrollback_after_decstbm_overflow.teseq`** — Verify scrollback integrity after scroll region overflow:
+- [x] **`cross_scrollback_after_decstbm_overflow.teseq`** — Verify scrollback integrity after scroll region overflow:
   ```
   |Line A|
   . CR/^M LF/^J
@@ -622,7 +622,7 @@ These scenarios test mode combinations that span multiple subsections. Each exer
   ```
   Write 3 lines (rows 0-2 of 5-row terminal). Set sub-region DECSTBM 2;3 (0-based rows 1-2). CUP to region start, write 3 lines within sub-region, causing 1 scroll within the region. Since it's a sub-region scroll, **assert `scrollback_len == 0`** — no content should leak to scrollback. Grid snapshot shows: row 0 "Line A" (above region, untouched), row 1 "X2" (scrolled up within region), row 2 "X3" (last written, region bottom), rows 3-4 empty (below region, untouched).
 
-- [ ] **`cross_scrollback_after_deccolm_clear.teseq`** — Verify DECCOLM clear doesn't pollute scrollback:
+- [x] **`cross_scrollback_after_deccolm_clear.teseq`** — Verify DECCOLM clear doesn't pollute scrollback:
   ```
   |Line 1|
   . CR/^M LF/^J
@@ -661,28 +661,28 @@ These scenarios test mode combinations that span multiple subsections. Each exer
 
 ## 04.N Completion Checklist
 
-- [ ] **Scaffolding** (04.0a): `scenarios/csi/modes/` directory created, `mode_interactions.rs` created with `run_scenario` helper, `mod mode_interactions;` registered in `main.rs`, compilation verified
-- [ ] **Harness extended** (04.0b): `ScenarioOutcome.mode` field added in `runner.rs`, `assert_mode_contains`, `assert_mode_not_contains`, `assert_grid_cols` added in `assertions.rs`, all three re-exported in `harness/mod.rs` (3 new helpers)
-- [ ] Origin mode + scroll region scenarios: basic, overflow, cursor save/restore, IL/DL in region, multi-size x4 (9 scenarios)
-- [ ] DECCOLM scenarios: 80→132, 132→80, wrap interaction, scroll region reset, no-Mode-40 negative control, multi-size 120x40 (6 scenarios)
-- [ ] Alt screen scenarios: roundtrip, cursor, content isolation, mode leakage, re-entry 1049, re-entry 1047, multi-size 97x33 (7 scenarios)
-- [ ] Insert mode and wrap scenarios: IRM insert, IRM at margin, IRM wide char, wrap at margin, wrap disabled, wrap disabled wide char, multi-size wrap (7 scenarios)
-- [ ] Cross-cutting scenarios: DECCOLM+DECOM+DECSTBM, 1049+DECOM+DECSTBM, IRM+margin+DECAWM, scrollback after DECSTBM overflow, scrollback after DECCOLM clear (5 scenarios)
-- [ ] Multi-size variants for mode interactions across all subsections (97x33, 120x40)
-- [ ] Mode flag assertions used in alt screen, DECCOLM, and cross-cutting scenarios
-- [ ] Scrollback integrity assertions used in overflow and clear scenarios
-- [ ] **File size check**: `mode_interactions.rs` must not exceed 500 lines (CLAUDE.md rule). If approaching the limit after 04.4, split into submodules (e.g., `mode_interactions/mod.rs` + `mode_interactions/origin.rs` + `mode_interactions/deccolm.rs` etc.) per test-organization.md. With 34 test functions at ~10 lines each plus the `run_scenario` helper, estimated ~380 lines — within budget but monitor during 04.5.
-- [ ] 34+ total mode interaction scenarios pass (9+6+7+7+5)
-- [ ] All insta snapshots reviewed for correctness
-- [ ] `./build-all.sh` green, `./clippy-all.sh` green
-- [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] Plan annotation cleanup
-- [ ] All TPR checkpoint findings resolved
+- [x] **Scaffolding** (04.0a): `scenarios/csi/modes/` directory created, `mode_interactions.rs` created with `run_scenario` helper, `mod mode_interactions;` registered in `main.rs`, compilation verified
+- [x] **Harness extended** (04.0b): `ScenarioOutcome.mode` field added in `runner.rs`, `assert_mode_contains`, `assert_mode_not_contains`, `assert_grid_cols` added in `assertions.rs`, all three re-exported in `harness/mod.rs` (3 new helpers)
+- [x] Origin mode + scroll region scenarios: basic, overflow, cursor save/restore, IL/DL in region, multi-size x4 (9 scenarios)
+- [x] DECCOLM scenarios: 80→132, 132→80, wrap interaction, scroll region reset, no-Mode-40 negative control, multi-size 120x40 (6 scenarios)
+- [x] Alt screen scenarios: roundtrip, cursor, content isolation, mode leakage, re-entry 1049, re-entry 1047, multi-size 97x33 (7 scenarios)
+- [x] Insert mode and wrap scenarios: IRM insert, IRM at margin, IRM wide char, wrap at margin, wrap disabled, wrap disabled wide char, multi-size wrap (7 scenarios)
+- [x] Cross-cutting scenarios: DECCOLM+DECOM+DECSTBM, 1049+DECOM+DECSTBM, IRM+margin+DECAWM, scrollback after DECSTBM overflow, scrollback after DECCOLM clear (5 scenarios)
+- [x] Multi-size variants for mode interactions across all subsections (97x33, 120x40)
+- [x] Mode flag assertions used in alt screen, DECCOLM, and cross-cutting scenarios
+- [x] Scrollback integrity assertions used in overflow and clear scenarios
+- [x] **File size check**: `mode_interactions.rs` must not exceed 500 lines (CLAUDE.md rule). If approaching the limit after 04.4, split into submodules (e.g., `mode_interactions/mod.rs` + `mode_interactions/origin.rs` + `mode_interactions/deccolm.rs` etc.) per test-organization.md. With 34 test functions at ~10 lines each plus the `run_scenario` helper, estimated ~380 lines — within budget but monitor during 04.5.
+- [x] 34+ total mode interaction scenarios pass (9+6+7+7+5)
+- [x] All insta snapshots reviewed for correctness
+- [x] `./build-all.sh` green, `./clippy-all.sh` green
+- [x] `timeout 150 ./test-all.sh` green — no regressions
+- [x] Plan annotation cleanup
+- [x] All TPR checkpoint findings resolved
 - [ ] **Plan sync** — update plan metadata:
   - [ ] This section's frontmatter `status` → `complete`
-  - [ ] `00-overview.md` Quick Reference table updated
-  - [ ] `index.md` section status updated
-  - [ ] `section-07-verification.md` scenario count updated (CSI Modes: 34+, total: 106+)
+  - [x] `00-overview.md` Quick Reference table updated
+  - [x] `index.md` section status updated
+  - [x] `section-07-verification.md` scenario count updated (CSI Modes: 34+, total: 106+)
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
