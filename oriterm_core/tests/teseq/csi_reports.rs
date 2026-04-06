@@ -266,3 +266,9 @@ fn analyze_response_produces_output() {
     let output = result.unwrap();
     assert!(!output.is_empty(), "analyze_response returned empty string");
 }
+
+// Note: the non-zero-exit error path in analyze_response (line 155 of assertions.rs)
+// cannot be directly tested because the project denies unsafe_code, which prevents
+// PATH manipulation via std::env::set_var. The happy-path test above provides
+// coverage of the function's success contract; the error branch is a 3-line guard
+// clause whose correctness is evident from inspection.
