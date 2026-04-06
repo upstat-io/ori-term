@@ -244,31 +244,17 @@ impl ImageCache {
 
     /// Remove all placements at a specific cell position.
     ///
-    /// After removing placements, prunes any images that no longer have
-    /// any placements (prevents orphaned image data from accumulating).
+    /// Only removes placements — does NOT prune orphaned image data.
+    /// Callers that want orphan cleanup (e.g., sixel overwrite, Kitty
+    /// uppercase delete) must call `remove_orphans()` separately.
+    /// This preserves the Kitty lowercase/uppercase semantic split:
+    /// lowercase deletes placements only, uppercase also removes image data.
     pub(crate) fn remove_by_position(&mut self, col: usize, row: StableRowIndex) {
-        // Collect image IDs of removed placements for orphan pruning.
-        let removed_ids: Vec<ImageId> = self
-            .placements
-            .iter()
-            .filter(|p| p.cell_col == col && p.cell_row == row)
-            .map(|p| p.image_id)
-            .collect();
-
-        if removed_ids.is_empty() {
-            return;
-        }
-
+        let before = self.placements.len();
         self.placements
             .retain(|p| !(p.cell_col == col && p.cell_row == row));
-        self.dirty = true;
-
-        // Prune orphaned images (no remaining placements).
-        for id in removed_ids {
-            let has_placement = self.placements.iter().any(|p| p.image_id == id);
-            if !has_placement {
-                self.remove_image(id);
-            }
+        if self.placements.len() != before {
+            self.dirty = true;
         }
     }
 

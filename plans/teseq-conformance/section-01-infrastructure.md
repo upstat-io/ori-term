@@ -610,6 +610,8 @@ Wire everything together with a smoke test that proves the full pipeline works.
   Resolved: Fixed on 2026-04-05. Extracted `snapshot_has_prompt()` helper recognizing `$`, `#`, `%`, `>`, `❯`. All three inline prompt checks replaced.
 - [x] `[TPR-01-012][medium]` `oriterm_core/src/image/cache/mod.rs:154` / `oriterm_core/src/image/tests.rs:173` — Image cache leak fixes missing semantic regression pins.
   Resolved: Fixed on 2026-04-05. Added 3 regression tests: `store_replace_reclaims_old_image_memory`, `remove_by_position_prunes_orphaned_image`, `remove_placements_in_region_prunes_orphaned_image`. All verify `image_count()` and `memory_used()` drop to zero when last placement is removed.
+- [x] `[TPR-01-013][major]` `oriterm_core/src/image/cache/mod.rs:249` / `oriterm_core/src/term/handler/image/kitty.rs:183` / `oriterm_core/src/image/tests.rs:255` — The `TPR-01-002` fix over-broadened `remove_by_position()`: it now destroys image payloads whenever the removed placement was the last one, but Kitty lowercase delete specifiers are explicitly "delete placements only". `kitty_delete()` routes both `d=r` and `d=R` through `remove_by_position()`, so lowercase `d=r` now collapses into uppercase behavior whenever the targeted placement is the image's final placement.
+  Resolved: Fixed on 2026-04-05. Removed auto-pruning from `remove_by_position()` — it now only removes placements. Sixel overwrite (`sixel.rs`) and Kitty uppercase delete callers explicitly call `remove_orphans()` after. Split regression test into `remove_by_position_preserves_image_data` (lowercase semantic) and `remove_by_position_then_orphan_prune` (uppercase/sixel semantic).
 
 ---
 

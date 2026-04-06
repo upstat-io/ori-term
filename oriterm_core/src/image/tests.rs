@@ -249,20 +249,42 @@ fn store_replace_reclaims_old_image_memory() {
     assert_eq!(cache.placement_count(), 0);
 }
 
-/// Regression: `remove_by_position()` must prune orphaned image payloads
-/// when the last placement is removed (TPR-01-002).
+/// `remove_by_position()` removes placements but preserves image data.
+/// This is the Kitty lowercase delete semantic: `d=r` deletes placements
+/// only, image payloads are retained (TPR-01-013).
 #[test]
-fn remove_by_position_prunes_orphaned_image() {
+fn remove_by_position_preserves_image_data() {
     let mut cache = ImageCache::new();
     let img = make_image(1, 512);
     cache.store(img).unwrap();
-    // Single placement — removing it should orphan the image.
     cache.place(make_placement(1, 5, 10));
 
     assert_eq!(cache.image_count(), 1);
     assert_eq!(cache.memory_used(), 512);
 
     cache.remove_by_position(5, StableRowIndex(10));
+
+    assert_eq!(cache.placement_count(), 0);
+    assert_eq!(cache.image_count(), 1, "image data must be preserved");
+    assert_eq!(cache.memory_used(), 512, "image memory must be retained");
+}
+
+/// `remove_by_position()` + `remove_orphans()` prunes orphaned image data.
+/// This is the sixel overwrite and Kitty uppercase delete semantic: remove
+/// placements, then clean up images with zero remaining placements
+/// (TPR-01-002, TPR-01-013).
+#[test]
+fn remove_by_position_then_orphan_prune() {
+    let mut cache = ImageCache::new();
+    let img = make_image(1, 512);
+    cache.store(img).unwrap();
+    cache.place(make_placement(1, 5, 10));
+
+    assert_eq!(cache.image_count(), 1);
+    assert_eq!(cache.memory_used(), 512);
+
+    cache.remove_by_position(5, StableRowIndex(10));
+    cache.remove_orphans();
 
     assert_eq!(cache.placement_count(), 0);
     assert_eq!(cache.image_count(), 0, "orphaned image must be pruned");
