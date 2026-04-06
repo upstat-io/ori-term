@@ -44,7 +44,7 @@ sections:
     status: complete
   - id: "05.4"
     title: "256-Color & TrueColor Scenarios"
-    status: not-started
+    status: complete
   - id: "05.5a"
     title: "Selective Attribute Resets (SGR 21-29)"
     status: not-started
@@ -76,8 +76,8 @@ sections:
 - [x] All 5 underline styles tested (single, double, curly, dotted, dashed) with mutual exclusion + 4:0 cancel sub-param
 - [x] Underline colors tested (SGR 58 set, SGR 59 reset) via `cell_underline_color_at`
 - [x] 16-color foreground/background tested with correct Rgb resolution
-- [ ] 256-color indexed colors tested
-- [ ] TrueColor RGB colors tested
+- [x] 256-color indexed colors tested
+- [x] TrueColor RGB colors tested
 - [x] Bold-as-bright color promotion validated
 - [ ] DIM + bold interaction validated (DIM takes priority, no bright promotion)
 - [ ] All selective resets tested (SGR 21/22/23/24/25/27/28/29/39/49/59)
@@ -539,7 +539,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
 
 **File(s):** `oriterm_core/tests/teseq/scenarios/csi/sgr/color_256_*.teseq`, `color_rgb_*.teseq`
 
-- [ ] **`color_256_fg.teseq`** — 256-color foreground:
+- [x] **`color_256_fg.teseq`** — 256-color foreground:
   ```
   : Esc [ 38 ; 5 ; 196 m
   |Red 256|
@@ -551,7 +551,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert each cell has correct indexed color resolved to Rgb via `Palette::default().resolve(Color::Indexed(N))`.
 
-- [ ] **`color_256_bg.teseq`** — 256-color background (SGR 48;5;N):
+- [x] **`color_256_bg.teseq`** — 256-color background (SGR 48;5;N):
   ```
   : Esc [ 48 ; 5 ; 196 m
   |Red bg|
@@ -563,7 +563,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert each cell has correct indexed color background resolved to Rgb via `Palette::default().resolve(Color::Indexed(N))`.
 
-- [ ] **`color_rgb_fg.teseq`** — TrueColor foreground:
+- [x] **`color_rgb_fg.teseq`** — TrueColor foreground:
   ```
   : Esc [ 38 ; 2 ; 255 ; 128 ; 0 m
   |Orange|
@@ -573,7 +573,7 @@ The codebase supports 5 underline styles that are mutually exclusive (setting on
   ```
   Assert each cell's fg Rgb matches the specified values exactly (TrueColor is passthrough — `Color::Spec(rgb)` resolves to `rgb` without palette lookup).
 
-- [ ] **`color_rgb_bg.teseq`** — TrueColor background (SGR 48;2;R;G;B):
+- [x] **`color_rgb_bg.teseq`** — TrueColor background (SGR 48;2;R;G;B):
   ```
   : Esc [ 48 ; 2 ; 255 ; 128 ; 0 m
   |Orange bg|
