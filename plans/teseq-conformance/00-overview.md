@@ -24,26 +24,26 @@ Build a teseq-powered escape sequence test framework for ori_term that uses GNU 
 
 ## Mission Success Criteria
 
-- [ ] `TeseqHarness` exists in `oriterm_core/tests/teseq/` with loader, runner, assertions, and reseq subprocess adapter
-- [ ] `RecordedEvent` enum provides structured event capture (not `Debug` format strings)
-- [ ] Scenario sidecar TOML format supports terminal config (size, scrollback, modes), pre-feed sequences, and expected assertions
-- [ ] `reseq` subprocess converts `.teseq` scenario files to raw bytes; graceful skip when `reseq` unavailable
-- [ ] C0 control character scenarios cover: CR, LF, BS, TAB, BEL, FF, VT, SO, SI
-- [ ] CSI cursor movement scenarios cover: CUP, CUU, CUD, CUF, CUB, VPA, HPA, CHA with edge cases
-- [ ] CSI erase scenarios cover: ED (modes 0-3), EL (modes 0-2)
-- [ ] Erase-with-attributes workflow validates erased cells inherit cursor template background (SGR + ED/EL cross-cutting concern, tested in workflows)
-- [ ] CSI insert/delete scenarios cover: ICH, DCH, IL, DL with scroll region interactions
+- [x] `TeseqHarness` exists in `oriterm_core/tests/teseq/` with loader, runner, assertions, and reseq subprocess adapter
+- [x] `RecordedEvent` enum provides structured event capture (not `Debug` format strings)
+- [x] Scenario sidecar TOML format supports terminal config (size, scrollback, modes), pre-feed sequences, and expected assertions
+- [x] `reseq` subprocess converts `.teseq` scenario files to raw bytes; graceful skip when `reseq` unavailable
+- [x] C0 control character scenarios cover: CR, LF, BS, TAB, BEL, FF, VT, SO, SI
+- [x] CSI cursor movement scenarios cover: CUP, CUU, CUD, CUF, CUB, VPA, HPA, CHA with edge cases
+- [x] CSI erase scenarios cover: ED (modes 0-3), EL (modes 0-2)
+- [x] Erase-with-attributes workflow validates erased cells inherit cursor template background (SGR + ED/EL cross-cutting concern, tested in workflows)
+- [x] CSI insert/delete scenarios cover: ICH, DCH, IL, DL with scroll region interactions
 - [x] Mode interaction scenarios cover: DECOM+DECSTBM, DECCOLM+DECAWM, DECCOLM negative control (no Mode 40), alt screen (1049/1047) with mode leakage and re-entry semantics, IRM edge cases (margin, wide chars), cross-cutting mode combinations, scrollback integrity
-- [ ] SGR scenarios cover: 16-color, 256-color, TrueColor, bold-as-bright (default + disabled), DIM+bold priority, inverse, DECSCNM cross-cutting, all 5 underline styles, underline cancel via sub-param (SGR 4:0), underline colors (SGR 58/59), all selective resets (SGR 21-29/39/49/59), BlinkFast=BlinkSlow equivalence, parameterless SGR reset
+- [x] SGR scenarios cover: 16-color, 256-color, TrueColor, bold-as-bright (default + disabled), DIM+bold priority, inverse, DECSCNM cross-cutting, all 5 underline styles, underline cancel via sub-param (SGR 4:0), underline colors (SGR 58/59), all selective resets (SGR 21-29/39/49/59), BlinkFast=BlinkSlow equivalence, parameterless SGR reset
 - [x] Report/response scenarios cover: DA1, DA2, DA3, DSR cursor position, DECRQM with raw PtyWrite byte assertions (teseq analysis as optional debug aid, not oracle)
-- [ ] ESC sequence scenarios cover: DECSC/DECRC, RIS, character set designation (SCS G0/G1)
-- [ ] OSC scenarios cover: title+icon (0), icon name (1), title (2), clipboard (52), color query (4/10/11)
-- [ ] OSC 7 (CWD) tested at mux layer via `RawInterceptor`, not teseq harness (documented limitation: `Term<T>` does not implement `set_working_directory`)
-- [ ] Workflow scenarios cover: scroll region + origin mode combo, alt screen enter/exit roundtrip, DECCOLM transition, DA handshake sequence, DECSC attribute save/restore (SGR + charset + origin flag), charset switching (G0/G1 + SO/SI)
-- [ ] All scenarios run at 80x24 minimum; cursor clamping, mode interaction, and workflow scenarios also at 97x33 and 120x40
-- [ ] `timeout 150 cargo test -p oriterm_core --test teseq` passes with zero failures
-- [ ] `timeout 150 ./test-all.sh` green — no regressions in existing test suites
-- [ ] CI gracefully skips teseq tests when `reseq` is unavailable (Windows, macOS without GNU tools)
+- [x] ESC sequence scenarios cover: DECSC/DECRC, RIS, character set designation (SCS G0/G1)
+- [x] OSC scenarios cover: title+icon (0), icon name (1), title (2), clipboard (52), color query (4/10/11)
+- [x] OSC 7 (CWD) tested at mux layer via `RawInterceptor`, not teseq harness (documented limitation: `Term<T>` does not implement `set_working_directory`)
+- [x] Workflow scenarios cover: scroll region + origin mode combo, alt screen enter/exit roundtrip, DECCOLM transition, DA handshake sequence, DECSC attribute save/restore (SGR + charset + origin flag), charset switching (G0/G1 + SO/SI)
+- [x] All scenarios run at 80x24 minimum; cursor clamping, mode interaction, and workflow scenarios also at 97x33 and 120x40
+- [x] `timeout 150 cargo test -p oriterm_core --test teseq` passes with zero failures
+- [x] `timeout 150 ./test-all.sh` green — no regressions in existing test suites
+- [x] CI gracefully skips teseq tests when `reseq` is unavailable (Windows, macOS without GNU tools)
 
 ## Architecture
 

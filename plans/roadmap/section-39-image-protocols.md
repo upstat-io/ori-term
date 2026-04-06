@@ -31,6 +31,9 @@ sections:
   - id: "39.9"
     title: "Kitty Image Animation Memory Safety"
     status: not-started
+  - id: "39.10"
+    title: "XTSMGRAPHICS Sixel Size Negotiation"
+    status: not-started
   - id: "39.6"
     title: Section Completion
     status: in-progress
@@ -670,6 +673,26 @@ Render cached images as GPU textures composited into the terminal frame.
 - [ ] Test: display animated GIF with 1000+ frames, verify memory stays bounded
 
 **Priority:** Medium — affects any user displaying animated images in the terminal.
+
+---
+
+## 39.10 XTSMGRAPHICS Sixel Size Negotiation
+
+<!-- WezTerm audit (batch 4): #609 (XTSMGRAPHICS ought be supported if supporting Sixel) -->
+
+**Source:** WezTerm #609 — When a terminal advertises Sixel support via DA1 (attribute 4), applications expect XTSMGRAPHICS (`CSI ? Pi ; Pa ; Pv S`) to negotiate graphics area size and color count. Without this, apps can't determine the available rendering area and default to conservative sizes.
+
+**Required work:**
+
+- [ ] Implement XTSMGRAPHICS query: `CSI ? 1 ; 1 ; 0 S` → report max graphics dimensions in pixels
+- [ ] Implement XTSMGRAPHICS query: `CSI ? 2 ; 1 ; 0 S` → report max color register count
+- [ ] Response format: `CSI ? Pi ; 0 ; Pv S` (success) with pixel width/height or color count
+- [ ] Values should reflect actual terminal grid size × cell dimensions
+- [ ] Test: send XTSMGRAPHICS query, verify response matches window pixel dimensions
+
+**Priority:** Low — required for Sixel compliance, but Sixel itself is already in Section 39.3.
+
+**Reference:** xterm XTSMGRAPHICS documentation, VT340 spec.
 
 ---
 

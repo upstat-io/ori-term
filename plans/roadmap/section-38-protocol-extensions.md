@@ -52,6 +52,9 @@ sections:
   - id: "38.15"
     title: "iTerm2 Feature Reporting (OSC 1337 Capabilities)"
     status: not-started
+  - id: "38.16"
+    title: "Mode 2027 Grapheme Cluster Width"
+    status: not-started
   - id: "38.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -538,6 +541,26 @@ Support DCS passthrough for applications running inside nested terminals or mult
 **Priority:** Low — progressive enhancement, helps applications detect image protocol support.
 
 **Reference:** [iTerm2 Feature Reporting spec](https://iterm2.com/feature-reporting/), `it2caps` test script.
+
+---
+
+## 38.16 Mode 2027 Grapheme Cluster Width
+
+<!-- WezTerm audit (batch 4): #4320 (Support DECRQM 2027 - grapheme cluster processing) -->
+
+**Source:** WezTerm #4320 — Mode 2027 signals that the terminal processes Unicode grapheme clusters for cursor width (rather than individual codepoints). Applications query via DECRQM (`CSI ? 2027 $ p`) and if set, can rely on the terminal to correctly advance the cursor by the cluster's display width (e.g., ZWJ emoji = width 2, not width N).
+
+**Required work:**
+
+- [ ] Add mode 2027 to `NamedPrivateMode` enum — default to SET (ori_term already uses grapheme-cluster-aware width via `unicode-width`)
+- [ ] Respond correctly to DECRQM query: `CSI ? 2027 ; 1 $ y` (mode is set)
+- [ ] Ensure all grapheme cluster width calculations use `unicode-width` consistently (grid put_char, selection boundaries, reflow)
+- [ ] Document that ori_term always processes grapheme clusters — mode 2027 is permanently set
+- [ ] Test: query DECRQM 2027 → verify response indicates set; print ZWJ emoji → verify cursor advances by 2 columns
+
+**Priority:** Medium — enables apps like Helix, WezTerm's terminal, and libvaxis to detect proper Unicode width support.
+
+**Reference:** [Contour terminal mode 2027 proposal](https://github.com/contour-terminal/contour/discussions/504), WezTerm and Foot implementations.
 
 ---
 
