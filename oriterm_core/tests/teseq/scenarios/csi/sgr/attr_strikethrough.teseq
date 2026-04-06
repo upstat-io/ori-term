@@ -1,0 +1,4 @@
+: Esc [ 9 m
+|Strike text|
+: Esc [ 0 m
+|Normal|
