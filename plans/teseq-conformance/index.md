@@ -74,12 +74,15 @@ RecordedEvent, pty_writes, take_responses
 
 ```
 DECOM, origin_mode, DECSTBM, scroll_region
-DECCOLM, column_mode, 132, 80
-DECAWM, auto_wrap, wrap, line_wrap
+DECCOLM, column_mode, 132, 80, deccolm_default_cols
+DECAWM, auto_wrap, wrap, line_wrap, wide_char_margin
 DECTCEM, cursor_visibility, show_cursor
-IRM, insert_mode, insert_replace
-alt_screen, 1049, alternate, screen_swap
-mode_combination, interaction, multi_mode
+IRM, insert_mode, insert_replace, insert_blank, wide_char
+alt_screen, 1049, 1047, alternate, screen_swap, mode_leakage, reentry, swap_alt_clear
+mode_combination, interaction, multi_mode, cross_cutting
+TermMode, mode_flags, assert_mode_contains, assert_mode_not_contains
+scrollback_integrity, scrollback_len, sub_region_scroll
+negative_control, no_mode40, deccolm_no_resize
 scenarios/csi/modes/, scenarios/workflows/
 ```
 
