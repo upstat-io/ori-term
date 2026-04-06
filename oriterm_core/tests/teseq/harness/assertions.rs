@@ -128,7 +128,7 @@ pub fn analyze_response(response_bytes: &str) -> Result<String, String> {
     if !teseq_available() {
         return Ok(format!("hex: {:02x?}", response_bytes.as_bytes()));
     }
-    pipe_through_command("teseq", response_bytes)
+    pipe_through_command("teseq", &[], response_bytes)
 }
 
 /// Pipe bytes through a subprocess and return its stdout.
@@ -137,10 +137,11 @@ pub fn analyze_response(response_bytes: &str) -> Result<String, String> {
 /// Extracted from `analyze_response` for testability (the teseq binary
 /// cannot be faked in tests because `deny(unsafe_code)` prevents
 /// `std::env::set_var` for PATH manipulation).
-pub fn pipe_through_command(command: &str, input: &str) -> Result<String, String> {
+pub fn pipe_through_command(command: &str, args: &[&str], input: &str) -> Result<String, String> {
     use std::io::Write as _;
 
     let mut child = std::process::Command::new(command)
+        .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
