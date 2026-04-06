@@ -25,6 +25,9 @@ sections:
   - id: "34.6"
     title: "PDU Size Limits & Memory Safety"
     status: not-started
+  - id: "34.7"
+    title: "tmux Control Mode Integration"
+    status: not-started
   - id: "34.5"
     title: Section Completion
     status: not-started
@@ -321,6 +324,31 @@ IPC integration tests (in `server/tests.rs`, Unix-gated, require live daemon):
 - [ ] Test: send a PDU header claiming 1 GB payload → verify rejection without allocation spike
 
 **Priority:** Medium — security & stability (must be in place when daemon mode ships).
+
+---
+
+## 34.7 tmux Control Mode Integration
+
+<!-- Ghostty audit: #1935 (support for tmux Control Mode) -->
+
+**Source:** Ghostty #1935 — tmux's [Control Mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`) allows a terminal emulator to manage tmux panes natively — using the terminal's own tab bar, split system, and OS integration instead of tmux's built-in rendering. iTerm2 is the primary implementation.
+
+**Problem:** tmux control mode replaces the VT stream with a structured notification protocol. The terminal must parse tmux notifications, map tmux windows/panes to native tabs/splits, and forward input back through the tmux protocol. This is a significant integration effort.
+
+**Required work:**
+
+- [ ] Parse tmux control mode output stream (line-based protocol with `%begin`/`%end` framing)
+- [ ] Map tmux windows → ori_term tabs, tmux panes → ori_term splits
+- [ ] Forward keystrokes back to tmux via the control mode input protocol
+- [ ] Handle tmux notifications: `%output`, `%window-add`, `%window-close`, `%layout-change`, `%exit`, etc.
+- [ ] Implement as a `TmuxDomain` in the domain system (Section 30) — conceptually similar to SshDomain
+- [ ] Connect/disconnect from tmux sessions: `tmux -CC attach -t session_name`
+- [ ] Must coexist with local panes (some tabs local, some tabs tmux-controlled)
+- [ ] Test: connect to tmux session, create window in tmux → verify tab appears in ori_term; type in ori_term → verify input arrives in tmux pane
+
+**Priority:** Low — significant feature, but complex and niche. iTerm2 is the main prior art.
+
+**Reference:** [tmux Control Mode wiki](https://github.com/tmux/tmux/wiki/Control-Mode), iTerm2 tmux integration, WezTerm tmux CC domain.
 
 ---
 

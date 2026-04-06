@@ -2,7 +2,7 @@
 section: 9
 title: Selection & Clipboard
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 3
 goal: Windows Terminal-style 3-point selection, all selection modes, clipboard with paste filtering
@@ -28,6 +28,9 @@ sections:
   - id: "9.7"
     title: Selection Rendering
     status: complete
+  - id: "9.9"
+    title: "Pause Viewport During Selection"
+    status: not-started
   - id: "9.8"
     title: Section Completion
     status: complete
@@ -460,6 +463,25 @@ Visual highlighting of selected text during GPU rendering.
   - [x] HIDDEN cell stays invisible when selected
   - [x] Underline cursor does not block selection inversion
   - [x] Explicit `selection_fg`/`selection_bg` colors override fg/bg swap when both are set
+
+---
+
+## 9.9 Pause Viewport During Selection
+
+<!-- Ghostty audit: #2001 (pause outputting lines when user is selecting text) -->
+
+**Source:** Ghostty #2001 — When selecting text while a process is producing output, new lines push the selected text up, making it impossible to complete the selection. The viewport should freeze during mouse-down selection and resume on mouse-up.
+
+**Required work:**
+
+- [ ] When mouse-down starts a selection: freeze the viewport's `display_offset` — new output still enters the grid and scrollback, but the viewport doesn't auto-scroll
+- [ ] Show a visual indicator that output is being buffered (e.g., subtle badge or scrollbar flash)
+- [ ] On mouse-up (selection complete): if user was at the bottom (display_offset=0), snap back to live output; otherwise keep the scroll position
+- [ ] Auto-resume scrolling if user manually scrolls to the bottom
+- [ ] Must not interfere with synchronized output (Mode 2026) — sync frames still apply to the frozen viewport
+- [ ] Test: start selection, write 100 lines to PTY during selection, verify viewport doesn't scroll; release mouse, verify snap to bottom
+
+**Priority:** Medium — significant usability improvement for users who select text while processes are running.
 
 ---
 
