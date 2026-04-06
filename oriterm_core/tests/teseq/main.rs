@@ -30,3 +30,6 @@ mod csi_reports;
 
 // Family modules (Section 04).
 mod mode_interactions;
+
+// Family modules (Section 05).
+mod sgr;

@@ -9,9 +9,10 @@ pub mod reseq;
 pub mod runner;
 
 pub use assertions::{
-    analyze_response, assert_cursor, assert_event_snapshot, assert_grid_cols, assert_grid_snapshot,
-    assert_mode_contains, assert_mode_not_contains, assert_pty_writes, assert_response_snapshot,
-    assert_scrollback_empty, assert_spec, pipe_through_command,
+    analyze_response, assert_cell_flags_contain, assert_cell_flags_not_contain, assert_cursor,
+    assert_event_snapshot, assert_grid_cols, assert_grid_snapshot, assert_mode_contains,
+    assert_mode_not_contains, assert_pty_writes, assert_response_snapshot, assert_scrollback_empty,
+    assert_spec, cell_bg_at, cell_fg_at, cell_underline_color_at, pipe_through_command,
 };
 pub use events::{RecordedEvent, RecordedListener};
 pub use loader::ScenarioSpec;

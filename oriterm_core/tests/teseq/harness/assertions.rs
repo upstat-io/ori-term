@@ -4,6 +4,9 @@
 //! convenience methods for cursor, event, and scrollback assertions.
 
 use oriterm_core::TermMode;
+use oriterm_core::cell::CellFlags;
+use oriterm_core::color::Rgb;
+use oriterm_core::term::renderable::RenderableCell;
 
 use super::events::RecordedEvent;
 use super::loader::ScenarioSpec;
@@ -146,6 +149,70 @@ pub fn assert_grid_cols(outcome: &ScenarioOutcome, expected_cols: usize) {
         "expected {expected_cols} columns, got {}",
         outcome.cols
     );
+}
+
+/// Find the `RenderableCell` at (line, col) in the outcome's cell list.
+///
+/// Linear scan is fine — test grids are small (80x24 = 1920 cells max).
+fn find_cell(outcome: &ScenarioOutcome, line: usize, col: usize) -> &RenderableCell {
+    outcome
+        .cells
+        .iter()
+        .find(|c| c.line == line && c.column.0 == col)
+        .unwrap_or_else(|| panic!("no cell at line={line}, col={col}"))
+}
+
+/// Assert a cell's `CellFlags` contain the expected flags.
+///
+/// Uses `contains()` — never exact equality — because `CellFlags`
+/// includes non-SGR flags (WIDE_CHAR, WRAP, etc.) that may be set.
+pub fn assert_cell_flags_contain(
+    outcome: &ScenarioOutcome,
+    line: usize,
+    col: usize,
+    expected: CellFlags,
+) {
+    let cell = find_cell(outcome, line, col);
+    assert!(
+        cell.flags.contains(expected),
+        "cell ({line},{col}) flags {:?} missing expected {:?}",
+        cell.flags,
+        expected
+    );
+}
+
+/// Assert a cell's `CellFlags` do NOT contain the specified flags.
+pub fn assert_cell_flags_not_contain(
+    outcome: &ScenarioOutcome,
+    line: usize,
+    col: usize,
+    unexpected: CellFlags,
+) {
+    let cell = find_cell(outcome, line, col);
+    assert!(
+        !cell.flags.intersects(unexpected),
+        "cell ({line},{col}) flags {:?} unexpectedly contain {:?}",
+        cell.flags,
+        unexpected
+    );
+}
+
+/// Get the foreground `Rgb` for a specific cell.
+pub fn cell_fg_at(outcome: &ScenarioOutcome, line: usize, col: usize) -> Rgb {
+    find_cell(outcome, line, col).fg
+}
+
+/// Get the background `Rgb` for a specific cell.
+pub fn cell_bg_at(outcome: &ScenarioOutcome, line: usize, col: usize) -> Rgb {
+    find_cell(outcome, line, col).bg
+}
+
+/// Get the underline color for a specific cell.
+///
+/// Returns `None` when no custom underline color is set (SGR 59 or default).
+/// Returns `Some(Rgb)` when SGR 58 has set a custom underline color.
+pub fn cell_underline_color_at(outcome: &ScenarioOutcome, line: usize, col: usize) -> Option<Rgb> {
+    find_cell(outcome, line, col).underline_color
 }
 
 /// Pipe response bytes through teseq for human-readable debug output.

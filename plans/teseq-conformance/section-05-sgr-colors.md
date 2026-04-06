@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "SGR & Color Scenarios"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Create comprehensive SGR scenarios covering text attributes, underline styles, underline colors, all color modes (16, 256, TrueColor), color resolution edge cases (bold-as-bright, DIM priority, inverse, DECSCNM), and selective resets — with rendered cell attribute validation"
 success_criteria:
@@ -32,7 +32,7 @@ third_party_review:
 sections:
   - id: "05.0"
     title: "Scaffolding & Harness Extension"
-    status: not-started
+    status: complete
   - id: "05.1"
     title: "Text Attribute Scenarios"
     status: not-started
@@ -114,9 +114,9 @@ This subsection has two parts: (A) creating the module and directory scaffolding
 
 **Why first:** Every test function in 05.1-05.7 lives in `sgr.rs` and every `.teseq` file lives in `scenarios/csi/sgr/`. These must exist and be wired up before any scenario work begins.
 
-- [ ] **Create scenario directory** `oriterm_core/tests/teseq/scenarios/csi/sgr/`. This is the home for all `.teseq` and `.toml` sidecar files in this section. Currently `scenarios/csi/` contains `cursor/`, `erase/`, `insert_delete/`, `reports/`, `modes/` — `sgr/` does not yet exist.
+- [x] **Create scenario directory** `oriterm_core/tests/teseq/scenarios/csi/sgr/`. This is the home for all `.teseq` and `.toml` sidecar files in this section. Currently `scenarios/csi/` contains `cursor/`, `erase/`, `insert_delete/`, `reports/`, `modes/` — `sgr/` does not yet exist.
 
-- [ ] **Create `oriterm_core/tests/teseq/sgr.rs`** — the Rust test module for all SGR scenarios. Follow the `Option<ScenarioOutcome>` pattern established by `mode_interactions.rs` and `csi_reports.rs`, since every SGR test needs to perform cell-level assertions beyond the sidecar spec:
+- [x] **Create `oriterm_core/tests/teseq/sgr.rs`** — the Rust test module for all SGR scenarios. Follow the `Option<ScenarioOutcome>` pattern established by `mode_interactions.rs` and `csi_reports.rs`, since every SGR test needs to perform cell-level assertions beyond the sidecar spec:
   ```rust
   //! SGR & color scenarios (attributes, underline styles, colors, selective resets).
 
@@ -154,14 +154,14 @@ This subsection has two parts: (A) creating the module and directory scaffolding
   Note: imports include `vte::ansi::Color` and `oriterm_core::color::Palette` — needed by 05.3+ color tests to construct expected Rgb values via `Palette::default().resolve(Color::Indexed(N))`. The import grouping follows code-hygiene.md: std, external (`vte`), internal (`oriterm_core`, `super`).
   Note the scenario path uses `scenarios/csi/sgr` (matching the directory created above) and the snapshot prefix uses `sgr_` (matching the module name). The `run_scenario` helper centralizes the `reseq_available()` guard and returns `Option<ScenarioOutcome>` — callers use `let Some(outcome) = run_scenario(...) else { return; };` for cell attribute assertions.
 
-- [ ] **Register the module in `oriterm_core/tests/teseq/main.rs`** — add `mod sgr;` in a new "Family modules (Section 05)" comment block:
+- [x] **Register the module in `oriterm_core/tests/teseq/main.rs`** — add `mod sgr;` in a new "Family modules (Section 05)" comment block:
   ```rust
   // Family modules (Section 05).
   mod sgr;
   ```
   Place this after the Section 04 block (`mod mode_interactions;`).
 
-- [ ] **Verify compilation** — `timeout 150 cargo test -p oriterm_core --test teseq -- sgr` should compile (no tests yet, so zero tests run).
+- [x] **Verify compilation** — `timeout 150 cargo test -p oriterm_core --test teseq -- sgr` should compile (no tests yet, so zero tests run).
 
 ### 05.0b Harness Extension: Cell Attribute Inspection Helpers
 
@@ -169,7 +169,7 @@ This subsection has two parts: (A) creating the module and directory scaffolding
 
 The current assertion helpers inspect grid text, cursor position, mode flags, and scrollback — but NOT cell attributes (flags, fg, bg, underline_color). `ScenarioOutcome` already stores `cells: Vec<RenderableCell>` (populated in `runner.rs:106`). This sub-step adds helpers to query individual cells.
 
-- [ ] **Add cell attribute inspection helpers to `assertions.rs`** — add these after the existing `assert_grid_cols` function. Add `use oriterm_core::cell::CellFlags;`, `use oriterm_core::color::Rgb;`, and `use oriterm_core::term::renderable::RenderableCell;` to the imports:
+- [x] **Add cell attribute inspection helpers to `assertions.rs`** — add these after the existing `assert_grid_cols` function. Add `use oriterm_core::cell::CellFlags;`, `use oriterm_core::color::Rgb;`, and `use oriterm_core::term::renderable::RenderableCell;` to the imports:
   ```rust
   /// Find the RenderableCell at (line, col) in the outcome's cell list.
   ///
@@ -240,7 +240,7 @@ The current assertion helpers inspect grid text, cursor position, mode flags, an
   ```
   Note: `find_cell` is private (not `pub`) — only the `pub` helpers are exported. Flag assertions use `contains()` and `intersects()` instead of exact equality. This is critical because `CellFlags` includes non-SGR flags (WIDE_CHAR=0x100, WIDE_CHAR_SPACER=0x200, WRAP=0x400, LEADING_WIDE_CHAR_SPACER=0x8000) that could be set on cells for reasons unrelated to SGR.
 
-- [ ] **Re-export new helpers from `harness/mod.rs`** — add to the existing `pub use assertions::{...}` line:
+- [x] **Re-export new helpers from `harness/mod.rs`** — add to the existing `pub use assertions::{...}` line:
   ```rust
   pub use assertions::{
       analyze_response, assert_cell_flags_contain, assert_cell_flags_not_contain,
@@ -257,7 +257,7 @@ The current assertion helpers inspect grid text, cursor position, mode flags, an
 
 The `TeseqHarness` constructor always creates `Term` with the default `bold_is_bright: true` (set in `term/mod.rs:233`). Section 05.3 needs to test the `bold_is_bright: false` code path in `resolve_fg()`. This adds a setter.
 
-- [ ] **Add `set_bold_is_bright` method to `TeseqHarness`** in `runner.rs`, after the existing `spec()` method:
+- [x] **Add `set_bold_is_bright` method to `TeseqHarness`** in `runner.rs`, after the existing `spec()` method:
   ```rust
   /// Toggle bold-as-bright color promotion.
   ///
@@ -268,7 +268,7 @@ The `TeseqHarness` constructor always creates `Term` with the default `bold_is_b
   }
   ```
 
-- [ ] **Verify harness compiles** — `timeout 150 cargo test -p oriterm_core --test teseq` should pass with zero new failures (new helpers are unused until 05.1).
+- [x] **Verify harness compiles** — `timeout 150 cargo test -p oriterm_core --test teseq` should pass with zero new failures (new helpers are unused until 05.1).
 
 ---
 
