@@ -16,10 +16,13 @@ use std::sync::mpsc;
 use oriterm_core::Theme;
 
 use crate::DomainId;
+use crate::backend::AdoptPaneRequest;
+use crate::domain::handoff::{AdoptConfig, adopt_pane};
 use crate::domain::{Domain, LocalDomain, SpawnConfig};
 use crate::id::{IdAllocator, PaneId};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
+use crate::pty::AdoptedPtyHandle;
 use crate::registry::{PaneEntry, PaneRegistry};
 
 /// Result of closing a single pane.
@@ -100,6 +103,48 @@ impl InProcessMux {
         let pane = self
             .local_domain
             .spawn_pane(pane_id, config, theme, &self.event_tx, wakeup)?;
+
+        self.pane_registry.register(PaneEntry {
+            pane: pane_id,
+            domain: domain_id,
+        });
+
+        Ok((pane_id, pane))
+    }
+
+    /// Adopt a pane from a Windows console handoff.
+    ///
+    /// Mirrors [`spawn_standalone_pane`] but uses
+    /// [`adopt_pane`](crate::domain::handoff::adopt_pane) instead of
+    /// `LocalDomain::spawn_pane`. The caller supplies a fully constructed
+    /// [`AdoptedPtyHandle`] (typically built by the COM `EstablishPtyHandoff`
+    /// callback) along with the terminal dimensions and theme. The mux
+    /// allocates a fresh `PaneId` and registers the resulting pane in the
+    /// pane registry, mirroring the spawned-pane semantics.
+    ///
+    /// Used by [`EmbeddedMux::adopt_pane`](crate::backend::EmbeddedMux::adopt_pane)
+    /// for Section 03.9 Windows Default Terminal handoff. Cross-platform —
+    /// the `AdoptedPtyHandle` is the only Windows-specific input and it
+    /// accepts trait-object reader/writer plus a stub `AdoptedSignal` on
+    /// non-Windows targets.
+    pub fn adopt_standalone_pane(
+        &mut self,
+        adopted: AdoptedPtyHandle,
+        request: AdoptPaneRequest,
+        wakeup: &Arc<dyn Fn() + Send + Sync>,
+    ) -> io::Result<(PaneId, Pane)> {
+        let pane_id = self.pane_alloc.alloc();
+        let domain_id = self.local_domain.id();
+        let config = AdoptConfig {
+            pane_id,
+            domain_id,
+            adopted,
+            rows: request.rows,
+            cols: request.cols,
+            scrollback: request.scrollback,
+            theme: request.theme,
+        };
+        let pane = adopt_pane(config, &self.event_tx, wakeup)?;
 
         self.pane_registry.register(PaneEntry {
             pane: pane_id,

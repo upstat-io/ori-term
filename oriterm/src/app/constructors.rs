@@ -105,6 +105,31 @@ impl App {
         )
     }
 
+    /// Create a new application instance from a Windows console handoff
+    /// payload (Section 03.9 Phase 4 — `-Embedding` startup path).
+    ///
+    /// Identical to [`App::new`] except the resulting `App` carries a
+    /// pending [`HandoffData`](crate::platform::default_terminal::handoff::HandoffData)
+    /// that [`try_init`](super::App::try_init) consumes by calling
+    /// `EmbeddedMux::adopt_pane` for the initial pane instead of
+    /// `spawn_pane`. The adopted pane uses the pre-existing pipe handles
+    /// from `conhost.exe` rather than spawning a fresh shell.
+    ///
+    /// Windows-only — the entire COM handoff path has no analogue on
+    /// other platforms.
+    #[cfg(target_os = "windows")]
+    pub(crate) fn new_handoff(
+        event_proxy: EventLoopProxy<TermEvent>,
+        config: Config,
+        handoff: crate::platform::default_terminal::handoff::HandoffData,
+        profiling: bool,
+        latency_log: bool,
+    ) -> Self {
+        let mut app = Self::new(event_proxy, config, profiling, latency_log);
+        app.handoff_pending = Some(handoff);
+        app
+    }
+
     /// Shared constructor logic: build bindings, config monitor, UI theme,
     /// and the common struct fields.
     fn build_common(
@@ -170,6 +195,8 @@ impl App {
             perf: PerfStats::new(profiling, latency_log),
             debug_overlay_enabled: false,
             debug_fps: 0.0,
+            #[cfg(target_os = "windows")]
+            handoff_pending: None,
         }
     }
 }
