@@ -1,0 +1,6 @@
+: Esc [ ? 6 h
+: Esc [ ? 6 l
+: Esc [ ? 6 h
+: Esc [ ? 6 l
+: Esc [ 5 ; 10 H
+|After toggles|

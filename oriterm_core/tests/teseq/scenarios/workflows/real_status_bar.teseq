@@ -1,0 +1,6 @@
+: Esc [ 24 ; 1 H
+: Esc [ 7 m
+| Status: OK                                                                     |
+: Esc [ 0 m
+: Esc [ 1 ; 1 H
+|Main content area|

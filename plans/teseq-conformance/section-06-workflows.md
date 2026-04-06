@@ -30,16 +30,16 @@ sections:
     status: complete
   - id: "06.2"
     title: "Query-Response Workflows"
-    status: not-started
+    status: complete
   - id: "06.3"
     title: "Real-World Pattern Workflows"
-    status: not-started
+    status: complete
   - id: "06.4"
     title: "OSC Scenarios"
-    status: not-started
+    status: complete
   - id: "06.5"
     title: "Edge Case Scenarios"
-    status: not-started
+    status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -213,7 +213,7 @@ sections:
 
 Multi-step query/response sequences that simulate real terminal handshakes.
 
-- [ ] **`query_da_handshake.teseq`** — Full DA negotiation:
+- [x] **`query_da_handshake.teseq`** — Full DA negotiation:
   ```
   : Esc [ c
   : Esc [ > c
@@ -225,7 +225,7 @@ Multi-step query/response sequences that simulate real terminal handshakes.
   - DA3: `"\x1bP!|00000000\x1b\\"` (unit ID, 8 zero digits)
   Optional: pipe responses through `analyze_response()` for human-readable debug output in test failure messages, but never use teseq output as assertion target.
 
-- [ ] **`query_cursor_tracking.teseq`** — DSR after each cursor movement:
+- [x] **`query_cursor_tracking.teseq`** — DSR after each cursor movement:
   ```
   : Esc [ 5 ; 10 H
   : Esc [ 6 n
@@ -246,7 +246,7 @@ Multi-step query/response sequences that simulate real terminal handshakes.
 
 Scenarios that mimic common terminal application patterns.
 
-- [ ] **`real_shell_prompt.teseq`** — Typical shell prompt escape sequence pattern:
+- [x] **`real_shell_prompt.teseq`** — Typical shell prompt escape sequence pattern:
   ```
   : Esc ]
   |0;user@host:~|
@@ -263,7 +263,7 @@ Scenarios that mimic common terminal application patterns.
   Note: OSC content uses `|...|` text lines, not inline on `: Esc` control lines (spaces on `: Esc` lines are stripped by reseq). OSC 7 (CWD) is intentionally omitted — it is handled by `RawInterceptor` in `oriterm_mux`, not `Term<T>`, so it would be a silent no-op here.
   Validates: OSC title set, colored prompt with bold+color attributes rendered correctly.
 
-- [ ] **`real_clear_and_redraw.teseq`** — Application clears screen and redraws:
+- [x] **`real_clear_and_redraw.teseq`** — Application clears screen and redraws:
   ```
   |Old content line 1|.
   |Old content line 2|.
@@ -274,7 +274,7 @@ Scenarios that mimic common terminal application patterns.
   ```
   Validates: ED 2 clears, CUP homes, new content replaces old.
 
-- [ ] **`real_charset_switching.teseq`** — G0/G1 charset designation and locking shift in realistic sequence:
+- [x] **`real_charset_switching.teseq`** — G0/G1 charset designation and locking shift in realistic sequence:
   ```
   : Esc ( 0
   |lqqqqk|
@@ -294,7 +294,7 @@ Scenarios that mimic common terminal application patterns.
   ```
   Validates: Draws a simple box border using DEC Special Graphics for lines and corners, with "Text" in ASCII inside. Tests G0 designation (`ESC ( 0` / `ESC ( B`), G1 designation (`ESC ) 0`), and locking shifts (SO shifts to G1, SI shifts back to G0). Grid snapshot shows line-drawing characters for box border with ASCII text content. This is a realistic pattern used by TUI applications (ncurses, dialog, etc.). **Semantic pin:** This test ONLY passes if G0/G1 designation, SO/SI locking shifts, and charset restoration all work correctly in combination. A bug in any one (e.g., SO not switching to G1, or G1 not designated as DEC Special Graphics) would produce ASCII instead of line-drawing characters in the grid snapshot, failing the golden comparison.
 
-- [ ] **`real_status_bar.teseq`** — Application draws a status bar at bottom:
+- [x] **`real_status_bar.teseq`** — Application draws a status bar at bottom:
   ```
   : Esc [ 24 ; 1 H
   : Esc [ 7 m
@@ -313,7 +313,7 @@ Scenarios that mimic common terminal application patterns.
 
 Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (OSC 52), and color queries (OSC 4/10/11). OSC 7 (CWD) is tested at the mux layer, not here (see note below).
 
-- [ ] **`osc_title.teseq`** — Set window title via OSC 0 and OSC 2:
+- [x] **`osc_title.teseq`** — Set window title via OSC 0 and OSC 2:
   ```
   : Esc ]
   |0;My Terminal Title|
@@ -325,7 +325,7 @@ Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (
   Note: OSC text content MUST be in `|...|` delimiters (teseq text lines), not on `: Esc` control lines. The `: Esc` lines strip spaces between tokens.
   Assert: OSC 0 emits BOTH `RecordedEvent::Title("My Terminal Title")` AND `RecordedEvent::IconName("My Terminal Title")` (per VTE dispatch at `crates/vte/src/ansi/dispatch/osc.rs:53-55`: OSC 0 calls `set_title` then `set_icon_name`). OSC 2 emits only `RecordedEvent::Title("Window Title Only")`. The event stream will also contain `Wakeup` events; assertions should filter for Title/IconName variants or use insta snapshot (which captures the full event list including Wakeup).
 
-- [ ] **`osc_icon_name.teseq`** — Set icon name via OSC 1:
+- [x] **`osc_icon_name.teseq`** — Set icon name via OSC 1:
   ```
   : Esc ]
   |1;My Icon Name|
@@ -335,7 +335,7 @@ Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (
 
   **OSC 7 (CWD) is NOT tested here.** OSC 7 is handled by `RawInterceptor` in `oriterm_mux`, not by `Term<T>`. The VTE trait method `set_working_directory` is a default no-op on `Term<T>` — the teseq harness feeds bytes only through `vte::ansi::Processor`, so `Event::Cwd` will never be emitted. CWD is already tested at the mux layer (`oriterm_mux/src/shell_integration/tests.rs::interceptor_osc7_sets_cwd`). Implementing `set_working_directory` on `Term<T>` solely for this test would be a workaround that duplicates the mux's CWD responsibility, violating the crate boundary contract.
 
-- [ ] **`osc_clipboard.teseq`** — Clipboard store via OSC 52:
+- [x] **`osc_clipboard.teseq`** — Clipboard store via OSC 52:
   ```
   : Esc ]
   |52;c;SGVsbG8=|
@@ -343,7 +343,7 @@ Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (
   ```
   Assert: `RecordedEvent::ClipboardStore(ClipboardType::Clipboard, "Hello")` (base64-decoded by `osc_clipboard_store` before event emission).
 
-- [ ] **`osc_color_query.teseq`** — Query foreground/background/palette colors via OSC 4/10/11:
+- [x] **`osc_color_query.teseq`** — Query foreground/background/palette colors via OSC 4/10/11:
   ```
   : Esc ]
   |4;1;?|
@@ -357,8 +357,8 @@ Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (
   ```
   Assert: `RecordedEvent::ColorRequest(1)` for palette index 1 (red, OSC 4), `RecordedEvent::ColorRequest(256)` for foreground (OSC 10, `NamedColor::Foreground as usize = 256`), and `RecordedEvent::ColorRequest(257)` for background (OSC 11, `NamedColor::Background as usize = 257`). The closure is stripped by `RecordedEvent`.
 
-- [ ] Create `oriterm_core/tests/teseq/osc.rs` family module with `run_scenario` helper (path = `scenarios/osc/{name}.teseq`, prefix = `osc_{name}`). Pattern: copy the `run_scenario` from `sgr/mod.rs` but change the path to `scenarios/osc`.
-- [ ] Register `mod osc;` in `oriterm_core/tests/teseq/main.rs` under a `// Family modules (Section 06).` comment.
+- [x] Create `oriterm_core/tests/teseq/osc.rs` family module with `run_scenario` helper (path = `scenarios/osc/{name}.teseq`, prefix = `osc_{name}`). Pattern: copy the `run_scenario` from `sgr/mod.rs` but change the path to `scenarios/osc`.
+- [x] Register `mod osc;` in `oriterm_core/tests/teseq/main.rs` under a `// Family modules (Section 06).` comment.
 
 ---
 
@@ -368,7 +368,7 @@ Dedicated OSC scenarios covering title (OSC 0/2), icon name (OSC 1), clipboard (
 
 Boundary conditions and unusual sequences.
 
-- [ ] **`edge_rapid_mode_toggle.teseq`** — Rapidly toggle origin mode:
+- [x] **`edge_rapid_mode_toggle.teseq`** — Rapidly toggle origin mode:
   ```
   : Esc [ ? 6 h
   : Esc [ ? 6 l
@@ -379,7 +379,7 @@ Boundary conditions and unusual sequences.
   ```
   Validates: Rapid mode toggling doesn't corrupt state. Cursor at correct position.
 
-- [ ] **`edge_zero_params.teseq`** — CSI with zero/missing parameters:
+- [x] **`edge_zero_params.teseq`** — CSI with zero/missing parameters:
   ```
   : Esc [ 0 ; 0 H
   |At origin via zeros|.
@@ -390,7 +390,7 @@ Boundary conditions and unusual sequences.
   ```
   Validates: Zero and omitted params treated as 1 (per ECMA-48).
 
-- [ ] **`edge_large_params.teseq`** — CSI with very large parameters:
+- [x] **`edge_large_params.teseq`** — CSI with very large parameters:
   ```
   : Esc [ 99999 ; 99999 H
   |Clamped|
@@ -399,7 +399,7 @@ Boundary conditions and unusual sequences.
   ```
   Validates: Large params clamped to grid boundaries without panic.
 
-- [ ] **`edge_chunked_osc`** (pure Rust, no `.teseq` file) — Adversarial chunked feed of split OSC sequence:
+- [x] **`edge_chunked_osc`** (pure Rust, no `.teseq` file) — Adversarial chunked feed of split OSC sequence:
   The standard `TeseqHarness::run()` feeds all bytes in one `Processor::advance()` call, which doesn't exercise the VTE parser's state machine across chunk boundaries. This test is a pure Rust test function (no `.teseq` file) that manually constructs `Term<RecordedListener>` + `Processor` and splits an OSC title sequence across two `advance()` calls to verify correct reassembly. **No `reseq_available()` guard needed** — constructs bytes directly.
   ```rust
   // In workflows.rs — direct Processor usage, no TeseqHarness:
@@ -417,7 +417,7 @@ Boundary conditions and unusual sequences.
   ```
   Validates: VTE parser correctly reassembles OSC payload split across PTY read boundaries.
 
-- [ ] **`edge_chunked_csi`** (pure Rust, no `.teseq` file) — Adversarial chunked feed of split CSI sequence:
+- [x] **`edge_chunked_csi`** (pure Rust, no `.teseq` file) — Adversarial chunked feed of split CSI sequence:
   Same pattern as above but splitting a CSI sequence (e.g., `\x1b[5;10H` split as `\x1b[5;` and `10H`). **No `reseq_available()` guard needed** — constructs bytes directly.
   ```rust
   // chunk1: ESC [ 5 ;    chunk2: 1 0 H
@@ -431,7 +431,7 @@ Boundary conditions and unusual sequences.
   ```
   Validates: CSI parameters are not lost or corrupted across chunk boundaries.
 
-- [ ] **`edge_erase_with_attrs.teseq`** — Erase inherits cursor template background:
+- [x] **`edge_erase_with_attrs.teseq`** — Erase inherits cursor template background:
   ```
   |AAAAAAAAAA|
   : Esc [ 1 ; 5 H
