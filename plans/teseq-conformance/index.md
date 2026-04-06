@@ -122,12 +122,14 @@ workflow, multi_sequence, interaction, combination
 scroll_origin, scroll_region_with_origin_mode
 alt_screen_roundtrip, 1049_enter_exit
 deccolm_transition, 132_to_80
+DECSC, DECRC, save_cursor_attrs, restore_cursor_attrs, SGR_save, charset_save, origin_flag_save
 da_handshake, query_response
 shell_startup, editor, multi_step
+charset_switching, G0, G1, SCS, SO, SI, locking_shift, DEC_Special_Graphics, box_drawing
 OSC, osc_title, osc_icon_name, osc_clipboard, osc_color_query
 title, icon_name, clipboard, OSC_52, OSC_0, OSC_1, OSC_2, OSC_4, OSC_10, OSC_11
 edge_case, malformed, partial, interleaved, erase_with_attrs, rapid_mode_toggle
-zero_params, large_params, boundary
+zero_params, large_params, boundary, chunked_feed, split_sequence, adversarial
 scenarios/workflows/, scenarios/osc/
 ```
 
