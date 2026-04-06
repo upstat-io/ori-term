@@ -4,6 +4,7 @@
 //! double-visit detection, lifecycle ordering, registered-widget checks,
 //! cross-phase consistency, and `register_widget` idempotency.
 
+#[cfg(debug_assertions)]
 use std::collections::HashSet;
 use std::time::Instant;
 
@@ -15,10 +16,9 @@ use crate::widget_id::WidgetId;
 use crate::widgets::Widget;
 use crate::widgets::contexts::{DrawCtx, LayoutCtx};
 
-use super::{
-    check_cross_phase_consistency, collect_layout_widget_ids, prepare_widget_frame,
-    prepare_widget_tree,
-};
+#[cfg(debug_assertions)]
+use super::{check_cross_phase_consistency, collect_layout_widget_ids};
+use super::{prepare_widget_frame, prepare_widget_tree};
 
 // -- Test helpers --
 
@@ -199,6 +199,7 @@ fn lifecycle_to_unregistered_widget_panics() {
 
 // -- Cross-phase consistency --
 
+#[cfg(debug_assertions)]
 #[test]
 fn cross_phase_superset_does_not_panic() {
     // Dispatch visiting extra children beyond layout is valid.
@@ -218,6 +219,7 @@ fn cross_phase_superset_does_not_panic() {
     check_cross_phase_consistency(&layout_ids, &dispatch_ids);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "Cross-phase mismatch")]
 fn cross_phase_missing_dispatch_child_panics() {
@@ -235,6 +237,7 @@ fn cross_phase_missing_dispatch_child_panics() {
     check_cross_phase_consistency(&layout_ids, &dispatch_ids);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn collect_layout_widget_ids_walks_tree() {
     let root_id = WidgetId::next();
