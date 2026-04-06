@@ -106,6 +106,7 @@ URL opening, ShellExecuteW, xdg-open, open
 signal handling, SIGCHLD, SetConsoleCtrlHandler
 shell detection, $SHELL, cmd.exe, TERM, COLORTERM
 #[cfg(target_os)], conditional compilation, platform-specific
+default terminal, IConsoleHandOff, ITerminalHandoff, COM interface, conhost handoff
 ```
 
 ---
@@ -159,6 +160,7 @@ input forwarding, keyboard, basic input, Enter, Backspace
 cell_width, cell_height, baseline, font metrics
 testing, unit test, headless GPU, visual regression, reference PNG
 determinism, pixel readback, decode_instance, assert_instance_count
+device lost, GPU recovery, sleep resume, SurfaceError::Lost, recreate
 ```
 
 ---
@@ -224,6 +226,8 @@ UI text, UiShapedGlyph, measure_text, ellipsis truncation, tab bar text
 pre-cache, ASCII pre-cache, scratch buffer, face creation, perf
 swash, rasterize, glyph, RasterizedGlyph, GlyphStyle, zeno
 dwrote, DirectWrite, Windows font, system fonts
+block glyph gamma, medium shade, U+2592, sRGB, alpha correction
+selective ligature, disable ligature, per-sequence, ligature filter
 ```
 
 ---
@@ -326,6 +330,8 @@ click count, double-click, triple-click, Alt+click block selection
 Ctrl+click URL, Shift override, mouse reporting bypass
 mouse selection state machine, SelectionState
 auto-scroll, drag above/below viewport
+horizontal scroll, WheelLeft, WheelRight, button 6, button 7, x-axis
+TUI scroll magnitude, trackpad scroll, precision scroll, scroll forwarding
 ```
 
 ---
@@ -412,6 +418,7 @@ tab bar hit testing, TabBarHit, CloseTab, NewTab, DropdownButton, DragArea
 close button inset, platform-specific controls, Windows rectangular, macOS circular
 tab hover preview, terminal preview, thumbnail, TerminalPreviewWidget, offscreen render
 tab icon, emoji, TabIcon, process icon, OSC 1, icon name, color emoji in tab
+tab activity, background tab output, unseen output, activity indicator, activity badge
 ```
 
 ---
@@ -426,6 +433,7 @@ mouse_offset_in_tab, cursor center insertion, Chrome-style snap
 tear-off, tear_off_tab, OS drag, WM_MOVING, merge detection
 seamless drag, synthesize mouse-down, merge_drag_suppress_release
 compute_drop_index, DWM invisible borders, screen to local
+URL drag-and-drop, text/uri-list, browser drop, http URL paste
 ```
 
 ---
@@ -557,6 +565,7 @@ overline, SGR 53, SGR 55
 CSI t, window manipulation, window size, cell size, report, resize, iconify
 DCS passthrough, tmux passthrough, nested terminal
 capability reporting, progressive enhancement, feature discovery
+VT52, DECANM, private mode 2, ESC <, VT52 cursor addressing
 ```
 
 ---
@@ -594,6 +603,7 @@ y, yank, copy, vi copy, keyboard copy
 /, ?, n, N, vi search, search forward, search backward
 zz, center view, auto-scroll, scrollback navigation
 Ctrl+Shift+Space, toggle vi mode, vi mode cursor
+viewport scroll, Ctrl+U, Ctrl+D, half page scroll, Ctrl+B, Ctrl+F, display_offset
 ```
 
 ---
@@ -678,6 +688,8 @@ close button icon, minimize icon, maximize icon, restore icon, chevron icon, plu
 jagged lines, staircase, pixel stepping, smooth icons, Chrome-style icons
 background image, PNG, JPEG, texture, opacity, position
 window shadow, padding, margin, GRID_PADDING
+partial line clip, max_line_clip_pixels, last line, extra row, pixel waste
+resize overlay, dimensions overlay, cols x rows, resize indicator
 ```
 
 ---
@@ -720,6 +732,7 @@ quick terminal, drop-down, global hotkey, Quake-style, F12
 desktop notifications, OSC 9, OSC 777, OSC 99, toast
 progress indicators, OSC 9;4, taskbar progress, ITaskbarList3
 terminal inspector, Ctrl+Shift+I, debug overlay, escape sequence log
+frecency, command ranking, usage frequency, MRU, most recently used
 ```
 
 ---
@@ -871,6 +884,7 @@ float-tile toggle, Ctrl+Shift+G, ToggleFloatTile
 floating drag, floating resize, snap-to-edge, minimum size
 render_frame_scissored, drop shadow, floating z-order, raise, lower
 undo split, redo split, Ctrl+Shift+U, Ctrl+Shift+Y, SplitHistory
+split rotation, rotate direction, H to V, RotateSplitDirection, focus-following rotate
 ```
 
 ---
@@ -893,6 +907,7 @@ auto-start daemon, fallback InProcessMux, reconnection
 Unix domain socket, named pipe, IPC transport
 shadow grid, reconnect snapshot, PaneContent
 PID file, daemon lifecycle, --daemon, --stop, --persist
+PDU size limit, MAX_PDU_PAYLOAD_SIZE, bounded allocation, OOM, memory safety
 ```
 
 ---

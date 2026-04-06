@@ -2,7 +2,7 @@
 section: 3
 title: Cross-Platform
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-31"
 tier: 0
 goal: Day-one first-class support for Windows, Linux, and macOS — all three platforms are equal targets from the start, with native PTY, fonts, clipboard, and GPU on each
@@ -31,6 +31,9 @@ sections:
   - id: "03.7"
     title: System Theme Detection
     status: complete
+  - id: "03.9"
+    title: "Windows Default Terminal Registration"
+    status: not-started
   - id: "03.8"
     title: Section Completion
     status: complete
@@ -463,6 +466,33 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] `system_theme()` returns a valid `Theme` variant on the current platform
   - [x] Config override `"dark"` / `"light"` ignores system detection — tested in `config/tests.rs::theme_override_dark_ignores_system_detection` and `theme_override_light_ignores_system_detection` (override logic lives in `config/color_config.rs`, not theme module)
   - [x] `"auto"` uses system detection result — tested in `config/tests.rs::theme_override_auto_uses_system_detection`
+---
+
+## 03.9 Windows Default Terminal Registration
+
+<!-- WezTerm audit: #7534 (support being set as the default terminal app on Windows) -->
+
+**Source:** WezTerm #7534 — Windows 11 allows third-party terminals to register as the default terminal handler via `IConsoleHandOff` and `ITerminalHandoff` COM interfaces. When registered, console windows created by other programs (launching PowerShell scripts from Explorer, `AllocConsole()` apps) open in the registered terminal instead of conhost.exe.
+
+**Problem:** ori_term has no mechanism to register as the default terminal on Windows. This is a significant differentiator — Windows Terminal is currently the only third-party terminal that supports this.
+
+**Required work:**
+
+- [ ] Implement `IConsoleHandOff` COM interface (receives console handle from conhost)
+- [ ] Implement `ITerminalHandoff` COM interface (receives PTY handles for new console allocations)
+- [ ] Register COM GUIDs in `HKEY_CURRENT_USER\Console\%%Startup`
+- [ ] Handle the handoff: when conhost delegates to ori_term, receive the pseudo-console handles and create a new pane/tab with them
+- [ ] Settings UI: "Set as default terminal" toggle (writes/removes registry keys)
+- [ ] CLI: `oriterm --register-default` / `--unregister-default`
+- [ ] Guard with `#[cfg(target_os = "windows")]` — no-op on other platforms
+- [ ] Test: register, launch powershell.exe from Explorer, verify it opens in ori_term
+
+**Priority:** Medium — strong differentiator on Windows, puts ori_term on par with Windows Terminal.
+
+**Reference:** Windows Terminal `IConsoleHandOff` implementation (`src/host/proxy/`), spec at `doc/specs/#492`.
+
+**Note:** This is Windows-only by design (Linux/macOS don't have an equivalent "default terminal" concept). Degrades gracefully — feature simply doesn't exist on other platforms.
+
 ---
 
 ## 03.8 Section Completion

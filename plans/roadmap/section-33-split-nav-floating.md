@@ -2,7 +2,7 @@
 section: 33
 title: Split Navigation + Floating Panes
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-04-01"
 tier: 4M
 goal: Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation and management, scissored rendering, float-tile toggle, undo/redo split operations
@@ -22,6 +22,9 @@ sections:
   - id: "33.5"
     title: Undo + Redo Split Operations
     status: complete
+  - id: "33.7"
+    title: "Split Rotation + Focus-Following Rotate"
+    status: not-started
   - id: "33.6"
     title: Section Completion
     status: complete
@@ -286,6 +289,31 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 - [x] Keybinding tests: `undo_split_default_binding`, `redo_split_default_binding`, `undo_redo_actions_roundtrip_through_parse` (verified 2026-03-29)
 
 **NOTE (verified 2026-03-29):** Plan previously claimed InProcessMux undo/redo tests (`undo_split_restores_previous_tree`, `redo_split_restores_undone_tree`, `split_undo_redo_undo_cycle`, `undo_past_closed_pane_skips_entry`). These DO NOT EXIST. Undo/redo lives entirely in session Tab (`oriterm/src/session/tab/mod.rs`), not in oriterm_mux. The mux crate has no undo/redo concept.
+
+---
+
+## 33.7 Split Rotation + Focus-Following Rotate
+
+<!-- WezTerm audit: #7530 (rotate panels H↔V), #7475 (RotatePane including focus) -->
+
+**Source:** WezTerm #7530 — Users want to rotate split direction (horizontal ↔ vertical) without moving pane content. WezTerm #7475 — When rotating panes, focus should follow the active pane content to its new position, not stay at the original position.
+
+**Required work:**
+
+- [ ] **RotateSplitDirection** action: toggle `SplitDirection` between `Horizontal` and `Vertical` for the current subtree node in the `SplitTree`
+  - Pane order stays the same (left/top becomes left/top in the new direction)
+  - All pane content is preserved, only the split axis changes
+  - Triggers re-layout and PTY resize for all affected panes
+  - Keybinding default: `Ctrl+Shift+R` or similar
+- [ ] **RotatePaneWithFocus** action variant: existing `RotatePanes` rotates pane positions, but the new variant tracks which pane was focused before rotation and sets focus to that pane's new position after rotation
+  - Current behavior (keep focus at position) preserved as `RotatePaneKeepFocus`
+  - New behavior (focus follows content) as `RotatePaneFollowFocus`
+- [ ] Both actions push to undo stack (Section 33.5)
+- [ ] Test: create H-split with panes A|B, rotate to V-split → verify A is above B, content unchanged; rotate pane with focus on A → verify A moves and focus follows
+
+**Priority:** Medium — common workflow for users who frequently switch between horizontal and vertical layouts.
+
+**Reference:** GNOME Terminator split rotation, tmux `select-layout` toggle.
 
 ---
 

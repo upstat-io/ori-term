@@ -2,7 +2,7 @@
 section: 10
 title: Mouse Input & Reporting
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 3
 goal: Mouse reporting for terminal apps + mouse selection state machine
@@ -13,6 +13,12 @@ sections:
   - id: "10.2"
     title: Mouse Reporting
     status: complete
+  - id: "10.4"
+    title: "Horizontal Scroll Support"
+    status: not-started
+  - id: "10.5"
+    title: "TUI Scroll Magnitude Forwarding"
+    status: not-started
   - id: "10.3"
     title: Section Completion
     status: complete
@@ -101,6 +107,48 @@ Encode mouse events and send to PTY when terminal applications request mouse tra
   - [x] apply_modifiers (5+ tests): none, shift, alt, ctrl, combined, exhaustive 8x4 matrix (verified 2026-03-29)
   - [x] Dispatch (6+ tests): SGR/UTF-8/Normal selection, SGR priority, release codes, boundary dispatch (verified 2026-03-29)
   - [x] Mutual exclusion (10 tests): tracking mode clear, encoding mode clear, DECRST behavior, RIS clear (verified 2026-03-29)
+
+---
+
+## 10.4 Horizontal Scroll Support
+
+<!-- WezTerm audit: #7665 (horizontal scroll wheel buttons 6/7 not recognized on X11) -->
+
+**Source:** WezTerm #7665 — Horizontal scroll wheel (X11 buttons 6/7, trackpad horizontal swipe) not recognized. The hardware works in Chrome, VSCode, and Kitty, but WezTerm ignores it.
+
+**Problem:** `parse_wheel_delta()` in `oriterm/src/app/mouse_report/mod.rs` discards x-axis scroll data entirely. The widget framework (`ScrollWidget`) already supports horizontal scrolling via `scroll_by_x()`, but the application input handler only processes `y` delta.
+
+**Required work:**
+
+- [ ] Extend `parse_wheel_delta()` to return both x and y deltas (currently returns `Option<(usize, bool)>` for vertical only)
+- [ ] Forward horizontal scroll to TUI apps via mouse protocol: X11 buttons 6 (WheelLeft) and 7 (WheelRight) in SGR mouse encoding
+- [ ] Wire horizontal scroll to UI framework for widgets that support it (ScrollWidget with `ScrollDirection::Horizontal` or `Both`)
+- [ ] Handle winit `MouseScrollDelta::LineDelta(x, _)` where x != 0 (currently only `(_, y)` is used)
+- [ ] Test: generate horizontal scroll event, verify SGR mouse report with button 66/67 encoding
+
+**Priority:** Medium — affects users with trackpads and horizontal scroll wheels (Logitech MX Master, etc.).
+
+---
+
+## 10.5 TUI Scroll Magnitude Forwarding
+
+<!-- WezTerm audit: #7645 (scrolling in TUIs sluggish with precision pointing devices) -->
+
+**Source:** WezTerm #7645 — When a TUI app (tmux, vim, emacs) has mouse reporting enabled, scroll gestures from trackpads are collapsed to a single line regardless of swipe speed. Fast trackpad swipes should generate multiple scroll events proportional to the gesture magnitude.
+
+**Problem:** When mouse reporting is active, ori_term converts the scroll delta to a line count but then sends only ONE mouse scroll event to the PTY. A fast trackpad swipe producing delta=5.0 lines should send 5 scroll events, not 1.
+
+**Required work:**
+
+- [ ] When mouse reporting is active: send N scroll events where N = `delta.abs().ceil() as usize` (clamped to a reasonable max like 20)
+- [ ] Each event is a separate SGR mouse report with the scroll button code
+- [ ] Works for both `PixelDelta` (trackpad → divide by cell height → N events) and `LineDelta` (mouse wheel → already in lines)
+- [ ] Configurable scroll multiplier for mouse-reporting apps (e.g., `tui_scroll_multiplier = 1.0`)
+- [ ] Test: with mouse reporting enabled, simulate trackpad swipe with delta=5 lines → verify 5 SGR scroll events sent to PTY
+
+**Priority:** Medium — affects all trackpad users running tmux/vim/neovim.
+
+**Reference:** Kitty scroll multiplier, Ghostty scroll sensitivity config.
 
 ---
 
