@@ -2,7 +2,7 @@
 section: "08B"
 title: "Input Event Normalization + Keyboard Encoding Pipeline"
 status: not-started
-reviewed: true
+reviewed: false
 tier: 3
 goal: "Normalized keyboard event pipeline that decouples platform capture, app routing, and PTY encoding — fixing numpad, Shift+letter, and key repeat bugs across legacy and Kitty modes."
 success_criteria:

@@ -73,6 +73,9 @@ sections:
   - id: "6.23"
     title: "Selective Ligature Disable"
     status: not-started
+  - id: "6.24"
+    title: "Indic/Complex Script Shaping"
+    status: not-started
   - id: "6.21"
     title: Section Completion
     status: complete
@@ -1004,6 +1007,31 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 - [ ] Test: configure `disabled_ligatures = ["***"]`, shape `***` → verify 3 individual `*` glyphs, not one ligature glyph; shape `!=` → verify ligature still works
 
 **Priority:** Low — niche but well-motivated (password field visual distraction).
+
+---
+
+## 6.24 Indic/Complex Script Shaping
+
+<!-- Ghostty audit: #5637 (Incorrect font shaping/layouting for Indic-derived scripts) -->
+
+**Source:** Ghostty #5637 — Indic scripts (Devanagari, Bengali, Thai, Tamil) render with overlapping characters, incorrect vowel mark placement, incorrect diacritic positioning, and broken cursor placement. This is a known-hard problem that affects most terminal emulators.
+
+**Problem:** ori_term uses rustybuzz for shaping, which handles Indic scripts correctly at the shaping level. However, the terminal grid model (fixed-width cells) conflicts with complex script shaping where glyphs have varying widths, reordering (vowel signs before consonants), and contextual forms.
+
+**Required work:**
+
+- [ ] Audit current Devanagari, Bengali, Thai, and Tamil rendering with appropriate fonts
+- [ ] Identify specific failure modes: overlapping glyphs, misplaced vowel marks, incorrect width calculation
+- [ ] Determine approach:
+  - **(a)** Multi-cell glyph spans for complex clusters (like CJK wide chars but for Indic clusters)
+  - **(b)** Sub-cell positioning within fixed-width grid (render shaped glyphs with offsets)
+  - **(c)** Accept imperfect rendering with best-effort positioning (most terminals' approach)
+- [ ] Ensure cursor positioning is correct for complex clusters
+- [ ] Test with: हिन्दी (Hindi), বাংলা (Bengali), ไทย (Thai), தமிழ் (Tamil)
+
+**Priority:** Low — affects non-Latin script users, complex to implement correctly in a fixed-width grid.
+
+**Reference:** Ghostty #2603 (Devanagari), #3912 (Bengali), #3753 (Thai), #5085 (Tamil). Kitty's approach to complex scripts.
 
 ---
 

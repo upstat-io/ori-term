@@ -228,6 +228,7 @@ swash, rasterize, glyph, RasterizedGlyph, GlyphStyle, zeno
 dwrote, DirectWrite, Windows font, system fonts
 block glyph gamma, medium shade, U+2592, sRGB, alpha correction
 selective ligature, disable ligature, per-sequence, ligature filter
+Indic script, Devanagari, Bengali, Thai, Tamil, complex script, vowel mark
 ```
 
 ---
@@ -292,6 +293,7 @@ Lua hook, Lua key event, Lua integration, UserData
 platform diagnostic, key event logging, winit key event
 Ghostty KeyEvent, Alacritty SequenceBuilder, WezTerm normalize_shift
 encode_numpad_app, try_encode_numpad, try_encode_named, try_encode_control, try_encode_text
+Alt+non-ASCII, Alt+é, AZERTY, ESC+character, non-US keyboard layout
 ```
 
 ---
@@ -523,6 +525,8 @@ application keypad, DECKPAM, DECKPNM
 origin mode, DECOM, scroll region
 reverse wraparound, DECAWM
 save/restore modes, XTSAVE, XTRESTORE
+titeInhibit, alt screen inhibit, alternate screen prevent
+scroll bindings, alt screen suppression, performable, passthrough
 ```
 
 ---
@@ -566,6 +570,8 @@ CSI t, window manipulation, window size, cell size, report, resize, iconify
 DCS passthrough, tmux passthrough, nested terminal
 capability reporting, progressive enhancement, feature discovery
 VT52, DECANM, private mode 2, ESC <, VT52 cursor addressing
+OSC 5522, Kitty clipboard protocol, rich clipboard, MIME type
+OSC 66, text sizing protocol, explicit width, scale factor
 ```
 
 ---
@@ -583,6 +589,7 @@ image rendering, GPU compositing, image texture, image atlas
 image animation, frame, animated GIF, animation control
 image memory, image eviction, LRU, memory limit, 256 MB
 viu, timg, hologram, ranger preview, Jupyter inline plot
+image scroll, CSI T, scroll down, image placement follow text
 ```
 
 ---
@@ -690,6 +697,7 @@ background image, PNG, JPEG, texture, opacity, position
 window shadow, padding, margin, GRID_PADDING
 partial line clip, max_line_clip_pixels, last line, extra row, pixel waste
 resize overlay, dimensions overlay, cols x rows, resize indicator
+toggle background opacity, ToggleBackgroundOpacity, transparency toggle
 ```
 
 ---
@@ -794,6 +802,8 @@ escape sequence sandboxing, file access restriction, path traversal
 resource limits, image count limit, payload size limit
 window title sanitize, OSC 0 sanitize, OSC 7 validate
 clipboard_max_size, primary_write, primary_read, ask policy, deny policy
+homograph attack, mixed-script URL, Cyrillic lookalike, paste detection
+password paste, concealed field, mask paste content, password-aware
 ```
 
 ---
@@ -864,6 +874,7 @@ ConPTY-safe shutdown, exit-before-drop, background thread cleanup
 cross-window tab movement, move_tab_to_window, move_tab_to_new_window
 tear-off, multi-pane tab move, fullscreen toggle
 handle_resize, handle_scale_factor_changed, resize ALL panes
+window naming, rename window, RenameWindow, custom window title
 ```
 
 ---
@@ -1011,6 +1022,8 @@ has_semantic_prompts, fast path, optimization flag
 click-to-move cursor, mouse prompt reposition, cursor placement
 smart selection, command output extraction, prompt region
 Vec<PromptMarker> replacement, cell stamping, grid-level tracking
+OSC 133 click_events, click_events=2, relative Y coordinate, prompt click
+click-to-move delay, multi-click, double-click cancel, cursor reposition
 ```
 
 ---
@@ -1041,6 +1054,8 @@ catch-all key, CatchAll, match unbound, ignore action, passthrough
 key remapping, key-remap, modifier remap, ctrl=super, caps_lock=escape
 visual indicator, active key table, key table name
 zellij modes, tmux key table, wezterm key_tables
+modifier-only keybinding, ctrl=action, release trigger, modifier press
+side modifier, left_shift, right_shift, left_ctrl, right_ctrl, KeyLocation
 ```
 
 ### Section 50: Runtime Efficiency — CPU & Memory Tuning
