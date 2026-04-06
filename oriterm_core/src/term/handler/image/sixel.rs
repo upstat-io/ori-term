@@ -96,7 +96,26 @@ impl<T: EventListener> Term<T> {
             },
         };
 
+        // Remove any existing placement at this position (prevents
+        // stale placements from accumulating during sixel animation).
+        // Prune only the specific images made orphaned by this removal —
+        // a global sweep would destroy unrelated Kitty deferred-placement
+        // images that are intentionally stored without placements.
+        let orphaned = self.image_cache_mut().remove_by_position(col, stable_row);
+        self.image_cache_mut().prune_if_orphaned(&orphaned);
+
         self.image_cache_mut().place(placement);
+
+        log::info!(
+            "sixel: placed id={} at col={} row={} ({}x{} px, {}x{} cells)",
+            id.0,
+            col,
+            stable_row.0,
+            w,
+            h,
+            cols,
+            rows,
+        );
 
         // Advance cursor based on sixel modes.
         let sixel_scrolling = self.mode.contains(TermMode::SIXEL_SCROLLING);

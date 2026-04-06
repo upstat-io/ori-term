@@ -69,9 +69,14 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 anyhow = "1"
+criterion = "0.5"
 image = { version = "0.25", default-features = false, features = ["png"] }
 oriterm_ui = { path = "../oriterm_ui", features = ["testing"] }
 tempfile = "3"
+
+[[bench]]
+name = "rendering"
+harness = false
 
 [lints]
 workspace = true

@@ -10,7 +10,7 @@ use wgpu::RenderPass;
 
 use super::super::pipeline::IMAGE_INSTANCE_STRIDE;
 use super::WindowRenderer;
-use super::helpers::{record_draw, record_draw_range, upload_buffer};
+use super::helpers::{record_draw, record_draw_range, upload_buffer, upload_buffer_partial};
 use crate::gpu::pipelines::GpuPipelines;
 
 impl WindowRenderer {
@@ -18,12 +18,61 @@ impl WindowRenderer {
 
     /// Upload all instance buffers to the GPU.
     ///
+    /// When the prepare phase used the incremental path, terminal-tier buffers
+    /// (backgrounds, glyphs, subpixel, color) use partial uploads — only the
+    /// bytes from the first dirty row onward are written to the GPU. Clean rows
+    /// before that point already have correct data in the GPU buffer from the
+    /// previous frame. Cursor, UI, and overlay tiers always do full uploads.
+    ///
     /// Logs total bytes and wall time at `debug!` level for performance
     /// profiling (Section 23.4).
     pub(super) fn upload_instance_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let start = Instant::now();
         let mut total_bytes: usize = 0;
 
+        // Terminal tier: use partial upload when the incremental path ran.
+        let partial = self.first_dirty_byte_offsets();
+        if let Some((bg_off, fg_off, sub_off, col_off)) = partial {
+            macro_rules! upload_partial {
+                ($buf:ident, $writer:ident, $offset:expr, $label:literal) => {
+                    let data = self.prepared.$writer.as_bytes();
+                    total_bytes += data.len() - $offset;
+                    upload_buffer_partial(device, queue, &mut self.$buf, data, $offset, $label);
+                };
+            }
+            upload_partial!(bg_buffer, backgrounds, bg_off, "bg_instance_buffer");
+            upload_partial!(fg_buffer, glyphs, fg_off, "fg_instance_buffer");
+            upload_partial!(
+                subpixel_fg_buffer,
+                subpixel_glyphs,
+                sub_off,
+                "subpixel_fg_instance_buffer"
+            );
+            upload_partial!(
+                color_fg_buffer,
+                color_glyphs,
+                col_off,
+                "color_fg_instance_buffer"
+            );
+        } else {
+            macro_rules! upload_full {
+                ($buf:ident, $writer:ident, $label:literal) => {
+                    let data = self.prepared.$writer.as_bytes();
+                    total_bytes += data.len();
+                    upload_buffer(device, queue, &mut self.$buf, data, $label);
+                };
+            }
+            upload_full!(bg_buffer, backgrounds, "bg_instance_buffer");
+            upload_full!(fg_buffer, glyphs, "fg_instance_buffer");
+            upload_full!(
+                subpixel_fg_buffer,
+                subpixel_glyphs,
+                "subpixel_fg_instance_buffer"
+            );
+            upload_full!(color_fg_buffer, color_glyphs, "color_fg_instance_buffer");
+        }
+
+        // Cursor, UI, and overlay tiers: always full upload.
         macro_rules! upload {
             ($buf:ident, $writer:ident, $label:literal) => {
                 let data = self.prepared.$writer.as_bytes();
@@ -31,14 +80,6 @@ impl WindowRenderer {
                 upload_buffer(device, queue, &mut self.$buf, data, $label);
             };
         }
-        upload!(bg_buffer, backgrounds, "bg_instance_buffer");
-        upload!(fg_buffer, glyphs, "fg_instance_buffer");
-        upload!(
-            subpixel_fg_buffer,
-            subpixel_glyphs,
-            "subpixel_fg_instance_buffer"
-        );
-        upload!(color_fg_buffer, color_glyphs, "color_fg_instance_buffer");
         upload!(cursor_buffer, cursors, "cursor_instance_buffer");
         upload!(ui_rect_buffer, ui_rects, "ui_rect_instance_buffer");
         upload!(ui_fg_buffer, ui_glyphs, "ui_fg_instance_buffer");
@@ -75,10 +116,43 @@ impl WindowRenderer {
 
         let elapsed = start.elapsed();
         log::debug!(
-            "upload_instance_buffers: {total_bytes} bytes ({:.1} KB) in {:.3}ms",
+            "upload_instance_buffers: {total_bytes} bytes ({:.1} KB) in {:.3}ms{}",
             total_bytes as f64 / 1024.0,
             elapsed.as_secs_f64() * 1000.0,
+            if partial.is_some() { " [partial]" } else { "" },
         );
+    }
+
+    /// Compute per-buffer byte offsets for partial terminal-tier upload.
+    ///
+    /// Returns `(bg_offset, glyph_offset, subpixel_offset, color_offset)` —
+    /// the byte offset in each buffer from which the GPU data diverges from
+    /// the previous frame. Returns `None` if partial upload is not possible
+    /// (full rebuild, no dirty info, or row count mismatch).
+    fn first_dirty_byte_offsets(&self) -> Option<(usize, usize, usize, usize)> {
+        let frame = &self.prepared;
+        if !frame.was_incremental {
+            return None;
+        }
+        let dirty = &frame.scratch_dirty;
+        let ranges = &frame.row_ranges;
+        if dirty.is_empty() || ranges.is_empty() {
+            return None;
+        }
+
+        // Find the first dirty row.
+        let first = dirty.iter().position(|&d| d)?;
+        if first >= ranges.len() {
+            return None;
+        }
+
+        let r = &ranges[first];
+        Some((
+            r.backgrounds.start,
+            r.glyphs.start,
+            r.subpixel_glyphs.start,
+            r.color_glyphs.start,
+        ))
     }
 
     /// Upload only the transient overlay and cursor buffers.

@@ -1,0 +1,5 @@
+[setup]
+pre_feed = ["\\x1b)0"]
+
+[expect]
+cursor = { col = 13, line = 0 }

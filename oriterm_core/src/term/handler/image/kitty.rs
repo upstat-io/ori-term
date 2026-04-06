@@ -41,6 +41,14 @@ impl<T: EventListener> Term<T> {
             }
         };
 
+        log::info!(
+            "kitty: action={:?} id={:?} pid={:?} payload={}B",
+            cmd.action,
+            cmd.image_id,
+            cmd.placement_id,
+            cmd.payload.len(),
+        );
+
         match cmd.action {
             KittyAction::Query => self.kitty_query(&cmd),
             KittyAction::Transmit => self.kitty_transmit(cmd),
@@ -158,6 +166,7 @@ impl<T: EventListener> Term<T> {
     /// Delete images/placements based on the delete specifier.
     fn kitty_delete(&mut self, cmd: &KittyCommand) {
         let spec = cmd.delete_specifier.unwrap_or(b'a');
+        let before_pls = self.image_cache().placement_count();
 
         // Extract positions before borrowing cache mutably.
         let grid = self.grid();
@@ -200,44 +209,46 @@ impl<T: EventListener> Term<T> {
                     }
                 }
             }
-            b'c' => cache.remove_placements_at_column(cursor_col),
+            b'c' => drop(cache.remove_placements_at_column(cursor_col)),
             b'C' => {
-                cache.remove_placements_at_column(cursor_col);
-                cache.remove_orphans();
+                let ids = cache.remove_placements_at_column(cursor_col);
+                cache.prune_if_orphaned(&ids);
             }
-            b'x' => {
-                let col = cmd.source_x as usize;
-                cache.remove_placements_at_column(col);
-            }
+            b'x' => drop(cache.remove_placements_at_column(cmd.source_x as usize)),
             b'X' => {
                 let col = cmd.source_x as usize;
-                cache.remove_placements_at_column(col);
-                cache.remove_orphans();
+                let ids = cache.remove_placements_at_column(col);
+                cache.prune_if_orphaned(&ids);
             }
-            b'y' => cache.remove_placements_at_row(protocol_row),
+            b'y' => drop(cache.remove_placements_at_row(protocol_row)),
             b'Y' => {
-                cache.remove_placements_at_row(protocol_row);
-                cache.remove_orphans();
+                let ids = cache.remove_placements_at_row(protocol_row);
+                cache.prune_if_orphaned(&ids);
             }
-            b'z' => {
-                let z = cmd.z_index;
-                cache.remove_placements_by_z_index(z);
-            }
+            b'z' => drop(cache.remove_placements_by_z_index(cmd.z_index)),
             b'Z' => {
                 let z = cmd.z_index;
-                cache.remove_placements_by_z_index(z);
-                cache.remove_orphans();
+                let ids = cache.remove_placements_by_z_index(z);
+                cache.prune_if_orphaned(&ids);
             }
             b'r' | b'R' => {
-                cache.remove_by_position(cursor_col, cursor_row);
+                let ids = cache.remove_by_position(cursor_col, cursor_row);
                 if spec == b'R' {
-                    cache.remove_orphans();
+                    cache.prune_if_orphaned(&ids);
                 }
             }
             b'n' => debug!("kitty delete d=n not yet implemented"),
             b'N' => debug!("kitty delete d=N not yet implemented"),
             _ => debug!("kitty delete specifier {:?} not implemented", spec as char),
         }
+
+        let after_pls = self.image_cache().placement_count();
+        log::info!(
+            "kitty delete: d={} — placements {}->{}",
+            spec as char,
+            before_pls,
+            after_pls,
+        );
     }
 
     /// Accumulate a chunk for multi-part transmission.

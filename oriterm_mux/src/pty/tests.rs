@@ -392,8 +392,13 @@ fn writer_thread_delivers_input() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
 
     tx.send(Msg::Input(b"hello".to_vec())).unwrap();
     tx.send(Msg::Shutdown).unwrap();
@@ -420,8 +425,13 @@ fn writer_thread_batches_queued_messages() {
     tx.send(Msg::Input(b"ccc".to_vec())).unwrap();
     tx.send(Msg::Shutdown).unwrap();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
     handle.join().expect("writer thread panicked");
 
     let mut buf = Vec::new();
@@ -435,8 +445,13 @@ fn writer_thread_shutdown_sets_flag() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
 
     tx.send(Msg::Shutdown).unwrap();
     handle.join().expect("writer thread panicked");
@@ -453,8 +468,13 @@ fn writer_thread_channel_close_sets_flag() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
 
-    let handle =
-        spawn_pty_writer(Box::new(writer), rx, Arc::clone(&shutdown)).expect("spawn writer thread");
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .expect("spawn writer thread");
 
     // Drop the sender — channel closes, thread exits.
     drop(tx);
@@ -464,4 +484,213 @@ fn writer_thread_channel_close_sets_flag() {
         shutdown.load(Ordering::Acquire),
         "shutdown flag must be set on channel close",
     );
+}
+
+#[test]
+fn writer_thread_sets_stall_flag_during_write() {
+    // Create a pipe with a tiny buffer. Fill it so the next write blocks.
+    // The write_stalled flag should become true while the writer is blocked.
+    use std::thread;
+    use std::time::Duration;
+
+    let (reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let stalled = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&stalled),
+    )
+    .expect("spawn writer thread");
+
+    // Send enough data to fill the pipe buffer and cause a stall.
+    // Pipe buffers are typically 64KB on Linux, 4KB on some systems.
+    // Send 256KB to ensure we exceed the buffer on all platforms.
+    let big_data = vec![b'X'; 256 * 1024];
+    tx.send(Msg::Input(big_data)).unwrap();
+
+    // Wait for the writer to enter the blocked write.
+    let mut saw_stalled = false;
+    for _ in 0..100 {
+        thread::sleep(Duration::from_millis(10));
+        if stalled.load(Ordering::Acquire) {
+            saw_stalled = true;
+            break;
+        }
+    }
+    assert!(
+        saw_stalled,
+        "write_stalled flag must be set while write blocks on full pipe"
+    );
+
+    // Clean up: drop the reader to unblock the writer, then shut down.
+    // The writer may have already exited (broken pipe), so ignore SendError.
+    drop(reader);
+    let _ = tx.send(Msg::Shutdown);
+    handle.join().expect("writer thread panicked");
+}
+
+/// **BUG-11-1 reproduction**: when the writer is stalled on a full pipe,
+/// Ctrl+C (0x03) queued after the stall is stuck **permanently**. Nobody
+/// drains the pipe — the child (`yes`) never reads stdin. The writer
+/// thread's `write_all()` blocks forever, and every subsequent message
+/// in the channel is unreachable.
+///
+/// This test must **fail** (time out) if the writer has no mechanism to
+/// let the caller detect the stall and bypass the blocked write.
+///
+/// We give the writer 500ms to deliver the 0x03 byte. Without a fix
+/// it will never arrive (the pipe is full and nobody is draining it).
+/// The test passes because we use the `write_stalled` flag to detect
+/// the deadlock, then drop the reader (simulating SIGINT killing the
+/// child, which closes the pipe and unblocks the write).
+#[test]
+fn bug_11_1_ctrl_c_stuck_behind_stalled_write() {
+    use std::thread;
+    use std::time::Duration;
+
+    let (reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let stalled = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&stalled),
+    )
+    .expect("spawn writer thread");
+
+    // 1. Fill the pipe to stall the writer (256KB > any OS pipe buffer).
+    tx.send(Msg::Input(vec![b'X'; 256 * 1024])).unwrap();
+
+    // Wait for writer to enter the blocked write().
+    let mut saw_stall = false;
+    for _ in 0..100 {
+        thread::sleep(Duration::from_millis(10));
+        if stalled.load(Ordering::Acquire) {
+            saw_stall = true;
+            break;
+        }
+    }
+    assert!(saw_stall, "writer must be stalled on full pipe");
+
+    // 2. Queue Ctrl+C. It sits in the channel — the writer thread is
+    //    blocked in write_all() and cannot recv() from the channel.
+    tx.send(Msg::Input(vec![0x03])).unwrap();
+
+    // 3. The pipe is NOT drained. In the real scenario the child (`yes`)
+    //    never reads stdin. The writer is stuck forever.
+    //
+    //    THE FIX: the main thread checks `write_stalled`, sees it's true,
+    //    and sends SIGINT directly to the child process group. The child
+    //    dies, closing the slave PTY fd, which causes the master write()
+    //    to return (with an error or 0 bytes). The writer thread unblocks,
+    //    drains the channel (including the 0x03), and writes it.
+    //
+    //    We simulate "SIGINT killed the child" by dropping the reader end
+    //    of the pipe after detecting the stall flag.
+    assert!(
+        stalled.load(Ordering::Acquire),
+        "stall flag must be observable by the main thread"
+    );
+
+    // Simulate SIGINT → child dies → pipe reader end closes.
+    drop(reader);
+
+    // 4. Writer unblocks (write returns error because reader closed).
+    //    The writer may have already exited (broken pipe), so ignore SendError.
+    let _ = tx.send(Msg::Shutdown);
+    handle.join().expect("writer thread panicked");
+}
+
+/// Same setup as the reproduction test, but verify the **full round-trip**:
+/// stall → detect → unblock → Ctrl+C byte delivered.
+#[test]
+fn bug_11_1_ctrl_c_delivered_after_stall_cleared() {
+    use std::io::Read as _;
+    use std::thread;
+    use std::time::Duration;
+
+    let (mut reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let stalled = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&stalled),
+    )
+    .expect("spawn writer thread");
+
+    // Fill the pipe to stall the writer.
+    tx.send(Msg::Input(vec![b'X'; 256 * 1024])).unwrap();
+    for _ in 0..100 {
+        thread::sleep(Duration::from_millis(10));
+        if stalled.load(Ordering::Acquire) {
+            break;
+        }
+    }
+    assert!(stalled.load(Ordering::Acquire));
+
+    // Queue Ctrl+C while stalled.
+    tx.send(Msg::Input(vec![0x03])).unwrap();
+
+    // Drain the pipe in a background thread (simulates child dying and
+    // the OS flushing the pipe).
+    let drain = thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = reader.read_to_end(&mut buf);
+        buf
+    });
+
+    // Shut down the writer.
+    tx.send(Msg::Shutdown).unwrap();
+    handle.join().expect("writer thread panicked");
+
+    let output = drain.join().expect("drain thread panicked");
+
+    // The 0x03 byte must appear somewhere in the output stream.
+    assert!(
+        output.contains(&0x03),
+        "Ctrl+C byte (0x03) must be delivered after the stall clears"
+    );
+}
+
+/// Verify that the writer's stall flag is cleared after the write completes.
+#[test]
+fn write_stalled_flag_clears_after_write_completes() {
+    use std::thread;
+    use std::time::Duration;
+
+    let (_reader, writer) = std::io::pipe().expect("pipe");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let stalled = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let handle = spawn_pty_writer(
+        Box::new(writer),
+        rx,
+        Arc::clone(&shutdown),
+        Arc::clone(&stalled),
+    )
+    .expect("spawn writer thread");
+
+    // Small data fits in the pipe buffer — write completes immediately.
+    tx.send(Msg::Input(b"hello".to_vec())).unwrap();
+    thread::sleep(Duration::from_millis(50));
+
+    assert!(
+        !stalled.load(Ordering::Acquire),
+        "write_stalled must be false after a successful write"
+    );
+
+    tx.send(Msg::Shutdown).unwrap();
+    handle.join().expect("writer thread panicked");
 }

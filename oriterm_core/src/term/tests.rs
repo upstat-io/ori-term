@@ -2005,6 +2005,7 @@ fn alt_screen_reentry_correct() {
 // grid/cache via `unwrap_or` so the terminal never crashes.
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "ALT_SCREEN set but alt_grid not allocated")]
 fn grid_debug_asserts_on_missing_alt_grid() {
     let mut term = make_term();
@@ -2014,6 +2015,7 @@ fn grid_debug_asserts_on_missing_alt_grid() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "ALT_SCREEN set but alt_grid not allocated")]
 fn grid_mut_debug_asserts_on_missing_alt_grid() {
     let mut term = make_term();
@@ -2022,6 +2024,7 @@ fn grid_mut_debug_asserts_on_missing_alt_grid() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "ALT_SCREEN set but alt_image_cache not allocated")]
 fn image_cache_debug_asserts_on_missing_alt_cache() {
     let mut term = make_term();
@@ -2030,6 +2033,7 @@ fn image_cache_debug_asserts_on_missing_alt_cache() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "ALT_SCREEN set but alt_image_cache not allocated")]
 fn image_cache_mut_debug_asserts_on_missing_alt_cache() {
     let mut term = make_term();

@@ -13,7 +13,7 @@ use oriterm_ui::text::ShapedGlyph;
 /// renderer builds this by shaping each row and calling [`push_row`](Self::push_row);
 /// the prepare phase reads it via [`row_glyphs`](Self::row_glyphs) and
 /// [`col_map`](Self::col_map).
-pub(crate) struct ShapedFrame {
+pub struct ShapedFrame {
     /// Flat buffer of all shaped glyphs, rows concatenated.
     glyphs: Vec<ShapedGlyph>,
     /// Parallel array: `col_starts[i]` is the grid column for `glyphs[i]`.

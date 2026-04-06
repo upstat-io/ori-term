@@ -1,0 +1,3 @@
+[expect]
+cursor = { col = 11, line = 0 }
+events = ["Bell"]

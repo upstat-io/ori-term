@@ -11,7 +11,6 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use super::App;
 use super::event_loop_helpers::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 use crate::event::TermEvent;
-use crate::gpu::GpuState;
 
 impl ApplicationHandler<TermEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -392,7 +391,7 @@ impl ApplicationHandler<TermEvent> for App {
         self.pump_mux_events();
         self.perf.last_pump_time = pump_start.elapsed();
 
-        let blink_animating = self.drive_blink_timers();
+        self.drive_blink_timers();
 
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
@@ -436,12 +435,14 @@ impl ApplicationHandler<TermEvent> for App {
         let urgent_redraw = self.is_any_urgent_redraw();
         let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
 
-        // Render when dirty. PresentMode::Mailbox/Fifo provide hardware
-        // pacing — render immediately to minimize input-to-display latency.
-        // On Immediate mode (no hardware pacing), apply a client-side budget
-        // gate to prevent uncapped redraws during sustained PTY output.
-        let needs_budget = self.gpu.as_ref().is_some_and(GpuState::needs_frame_budget);
-        if any_dirty && (!needs_budget || budget_elapsed || urgent_redraw || blink_animating) {
+        // Render when dirty, strictly gated by the 16ms frame budget.
+        // Blink animations naturally hit the budget window (they run at
+        // 60fps = 16ms intervals) so they don't need a bypass. The strict
+        // gate prevents event loop starvation during sustained PTY output
+        // flooding where about_to_wait() is called continuously — without
+        // it, blink_animating=true causes uncapped rendering that starves
+        // winit's keyboard dispatch (BUG-11-1).
+        if any_dirty && (budget_elapsed || urgent_redraw) {
             self.render_dirty_windows();
         }
 
@@ -452,17 +453,14 @@ impl ApplicationHandler<TermEvent> for App {
         // Decide ControlFlow via pure function (testable without winit).
         let still_dirty = self.is_any_window_dirty();
         let has_animations = self.has_active_animations();
-        let remaining = super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
 
         let input = ControlFlowInput {
             still_dirty,
-            needs_budget,
             budget_elapsed,
             has_animations,
             blinking_active: self.blinking_active,
             next_blink_change: self.cursor_blink.next_change(),
             next_text_blink_change: self.text_blink.next_change(),
-            budget_remaining: remaining,
             now,
             scheduler_wake: None,
         };

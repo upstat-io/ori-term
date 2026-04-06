@@ -283,6 +283,7 @@ impl App {
                 }
             }
             self.write_pane_input(pane_id, &bytes);
+
             self.reset_cursor_blink();
 
             // Hide the mouse cursor while the user types.

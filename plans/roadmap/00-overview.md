@@ -119,7 +119,7 @@ oriterm      → oriterm_core, oriterm_ui, oriterm_mux
 oriterm (GUI binary)
      ├── oriterm_core, oriterm_ui, oriterm_mux
      ├── winit, wgpu, swash, rustybuzz
-     ├── portable-pty, serde, toml, notify
+     ├── serde, toml, notify
      ├── window-vibrancy, tiny-skia
      └── clipboard-win / arboard
 
@@ -130,7 +130,7 @@ oriterm_ui (UI framework)
 
 oriterm_mux (pane server)
      ├── oriterm_core, oriterm_ipc
-     ├── portable-pty, serde, bincode
+     ├── libc (Unix PTY), windows-sys (ConPTY), serde, bincode
      └── (no GUI, no fonts, no windows, no session model)
 
 oriterm_ipc (IPC transport)
@@ -196,6 +196,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | Section | Title | What |
 |---------|-------|------|
 | 08 | Keyboard Input | Legacy + Kitty encoding, keyboard dispatch, IME |
+| 08B | Input Event Normalization | Normalized key event pipeline, text resolution, numpad/Shift/repeat fixes, action repeat policy, Lua-ready |
 | 09 | Selection & Clipboard | 3-point selection, word/line/block modes, clipboard, paste filtering |
 | 10 | Mouse Input & Reporting | Mouse reporting modes, selection state machine, auto-scroll |
 | 11 | Search | Plain text + regex search, search UI overlay, match highlighting |
@@ -238,6 +239,8 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 47 | Semantic Prompt State | Cell/row-level OSC 133 content tracking, prompt-aware resize, prompt navigation |
 | 48 | Native OS Scrollbars | Overlay scrollbars, thumb drag, fade animation, platform-native look and feel |
 | 49 | Advanced Keybinding System | Key tables (modal bindings), chained keybinds, catch-all keys, key remapping |
+| 52 | Native PTY Layer | Replace portable-pty with direct libc/windows-sys syscalls, overlapped pipes, ConPTY passthrough flag, sideloaded conpty.dll |
+| 53 | Raw Pipe Bypass | Bypass ConPTY for VT-native shells (WSL) — zero-overhead VT passthrough, image protocols just work (SSH deferred to Section 35) |
 
 ### Tier 6 — Polish
 | Section | Title | What |
@@ -251,7 +254,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 |---------|-------|------|
 | ~~26~~ | ~~Split Panes~~ | *Superseded → Sections 29, 31, 33* |
 | 27 | Command Palette & Quick Terminal | Fuzzy search palette, global hotkey dropdown, notifications |
-| 28 | Extensibility | Lua scripting, custom shaders, smart paste, undo close tab, session recording, workspaces |
+| 28 | Extensibility | **Lua 5.4 runtime** (canonical policy/routing layer — tab title, notifications, shell events, keybinding interception all in Lua), custom shaders, smart paste, undo close tab, session recording, workspaces |
 
 ### Tier 7A — Server + Persistence + Remote (NEW)
 | Section | Title | What |
@@ -271,11 +274,11 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | **M4: Terminal renders** | 05 complete | Window opens, staged render pipeline, terminal grid visible, shell works |
 | **M5: Full font pipeline** | 06 complete | Ligatures, emoji, fallback chains, box drawing, text decorations |
 | **M6: UI framework** | 07 complete | Drawing primitives, layout engine, widgets, overlay system |
-| **M7: Interactive** | 08-14, 40-41 complete | Keyboard, mouse, selection, clipboard, search, config, resize, URLs, vi mode, hints |
+| **M7: Interactive** | 08-14, 08B, 40-41 complete | Keyboard, mouse, selection, clipboard, search, config, resize, URLs, vi mode, hints, input normalization |
 | **M8: Multiplexing** | 29-33 complete | Split panes, floating panes, multi-tab, multi-window — all through mux layer |
 | **M8b: Chrome** | 16-17, 19-21 complete | Tab bar, drag/drop, event routing, shell integration, menus |
 | **M9: Hardened** | 22-23, 38-39 complete | All terminal modes, protocol extensions, image protocols, performance optimized, damage tracking |
-| | _Tier 5 also includes: 42, 43, 45, 47-49_ | _Expose, compositor (done), security, semantic prompts, scrollbars, advanced keybindings — no milestone assignment yet_ |
+| | _Tier 5 also includes: 42, 43, 45, 47-53_ | _Expose, compositor (done), security, semantic prompts, scrollbars, advanced keybindings, native PTY, raw pipe bypass — no milestone assignment yet_ |
 | **M10: Polished** | 24-25 complete | Cursor blink, 100+ themes, light/dark auto |
 | | _Tier 6 also includes: 46_ | _macOS app bundle + platform packaging — no milestone assignment yet_ |
 | **M11: Advanced** | 27-28 complete | Command palette, Lua scripting |

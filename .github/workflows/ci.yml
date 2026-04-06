@@ -183,10 +183,34 @@ jobs:
           key: windows-cross
       - run: cargo build --workspace --target x86_64-pc-windows-gnu
 
+  bench-compile:
+    name: Benchmark Compile Check
+    if: "!startsWith(github.event.head_commit.message, 'chore: release v')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libegl-dev \
+            libvulkan-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+      - name: Compile benchmarks (no run)
+        run: cargo bench --workspace --no-run
+
   # Single status check for branch protection
   ci-success:
     name: CI Success
-    needs: [version-check, format, clippy, clippy-windows-cross, test-linux, cross-platform, build-windows-cross]
+    needs: [version-check, format, clippy, clippy-windows-cross, test-linux, cross-platform, build-windows-cross, bench-compile]
     runs-on: ubuntu-latest
     if: "always() && !startsWith(github.event.head_commit.message, 'chore: release v')"
     steps:
@@ -198,7 +222,8 @@ jobs:
              [[ "${{ needs.clippy-windows-cross.result }}" != "success" ]] || \
              [[ "${{ needs.test-linux.result }}" != "success" ]] || \
              [[ "${{ needs.cross-platform.result }}" != "success" ]] || \
-             [[ "${{ needs.build-windows-cross.result }}" != "success" ]]; then
+             [[ "${{ needs.build-windows-cross.result }}" != "success" ]] || \
+             [[ "${{ needs.bench-compile.result }}" != "success" ]]; then
             echo "One or more required jobs failed"
             exit 1
           fi

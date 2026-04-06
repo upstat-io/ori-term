@@ -480,13 +480,13 @@ Floating UI that renders above the main widget tree.
 
 - [x] Rich overlay content — overlays can contain any widget (Box<dyn Widget>)
 
-- [ ] Overlay consumers (wiring deferred to their respective sections): <!-- blocked-by:21 --><!-- blocked-by:27 --><!-- blocked-by:24 --><!-- blocked-by:11 --><!-- blocked-by:16 -->
+- [ ] Overlay consumers (wiring deferred to their respective sections): <!-- blocked-by:21 --><!-- blocked-by:27 --><!-- blocked-by:24 --><!-- blocked-by:16 -->
   - [ ] Context menus — right-click popup (Section 21) <!-- blocked-by:21 -->
   - [ ] Dropdown lists — popup on `OpenDropdown` action (Section 21) <!-- blocked-by:21 -->
   - [ ] Command palette — fuzzy search overlay (Section 27) <!-- blocked-by:27 -->
   - [ ] Settings panel — modal dialog (Section 21) <!-- blocked-by:21 -->
   - [ ] Tooltips — hover-triggered overlay (Section 24) <!-- blocked-by:24 -->
-  - [ ] Search bar — overlay anchored to top of terminal (Section 11) <!-- blocked-by:11 -->
+  - [x] Search bar — overlay anchored to top of terminal (Section 11) (verified 2026-04-04 — implemented in `oriterm/src/app/redraw/search_bar.rs`)
   - [ ] Tab hover previews — Chrome/Windows-style terminal thumbnail overlay (Section 16) <!-- blocked-by:16 -->
 
 ---
@@ -615,7 +615,7 @@ The terminal grid itself is a widget within the UI framework. Uses a **hybrid ap
 
 ## 07.12 Section Completion (verified 2026-03-29)
 
-- [ ] All 07.1-07.11 unchecked items complete (remaining: 07.8 overlay consumers, 07.11 preview widget + layout engine wiring) <!-- blocked-by:11 --><!-- blocked-by:16 --><!-- blocked-by:21 --><!-- blocked-by:24 --><!-- blocked-by:27 --><!-- blocked-by:39 -->
+- [ ] All 07.1-07.11 unchecked items complete (remaining: 07.8 overlay consumers, 07.11 preview widget + layout engine wiring) <!-- blocked-by:16 --><!-- blocked-by:21 --><!-- blocked-by:24 --><!-- blocked-by:27 --><!-- blocked-by:39 -->
 - [x] Layout caching in `compute_layout` — skip recomputation when layout is not dirty (deferred from 07.3) (verified 2026-03-29)
 - [x] Drawing primitives render correctly: rects, rounded rects, shadows, text, lines (verified 2026-03-29 -- 24 draw tests)
 - [x] Layout engine computes correct positions for nested flex containers (verified 2026-03-29 -- 71 layout tests)

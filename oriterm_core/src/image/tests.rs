@@ -226,6 +226,134 @@ fn remove_placements_in_region() {
     );
 }
 
+/// Regression: replacing an existing image via `store()` must fully reclaim
+/// old memory including animation state (TPR-01-001).
+#[test]
+fn store_replace_reclaims_old_image_memory() {
+    let mut cache = ImageCache::new();
+    let img = make_image(1, 1024);
+    cache.store(img).unwrap();
+    cache.place(make_placement(1, 0, 0));
+
+    let mem_before = cache.memory_used();
+
+    // Replace with a smaller image using the same ID.
+    let replacement = make_image(1, 256);
+    cache.store(replacement).unwrap();
+
+    // Old 1024 bytes reclaimed, new 256 bytes stored.
+    assert_eq!(cache.memory_used(), 256);
+    assert!(cache.memory_used() < mem_before);
+    assert_eq!(cache.image_count(), 1);
+    // Old placements removed during replacement.
+    assert_eq!(cache.placement_count(), 0);
+}
+
+/// `remove_by_position()` removes placements but preserves image data.
+/// This is the Kitty lowercase delete semantic: `d=r` deletes placements
+/// only, image payloads are retained (TPR-01-013).
+#[test]
+fn remove_by_position_preserves_image_data() {
+    let mut cache = ImageCache::new();
+    let img = make_image(1, 512);
+    cache.store(img).unwrap();
+    cache.place(make_placement(1, 5, 10));
+
+    assert_eq!(cache.image_count(), 1);
+    assert_eq!(cache.memory_used(), 512);
+
+    cache.remove_by_position(5, StableRowIndex(10));
+
+    assert_eq!(cache.placement_count(), 0);
+    assert_eq!(cache.image_count(), 1, "image data must be preserved");
+    assert_eq!(cache.memory_used(), 512, "image memory must be retained");
+}
+
+/// `remove_by_position()` + `prune_if_orphaned()` prunes only the specific
+/// images made orphaned by the targeted removal. This is the sixel overwrite
+/// and Kitty uppercase delete semantic (TPR-01-002, TPR-01-013, TPR-01-014).
+#[test]
+fn remove_by_position_then_targeted_prune() {
+    let mut cache = ImageCache::new();
+    let img = make_image(1, 512);
+    cache.store(img).unwrap();
+    cache.place(make_placement(1, 5, 10));
+
+    assert_eq!(cache.image_count(), 1);
+    assert_eq!(cache.memory_used(), 512);
+
+    let ids = cache.remove_by_position(5, StableRowIndex(10));
+    cache.prune_if_orphaned(&ids);
+
+    assert_eq!(cache.placement_count(), 0);
+    assert_eq!(cache.image_count(), 0, "orphaned image must be pruned");
+    assert_eq!(
+        cache.memory_used(),
+        0,
+        "orphaned image memory must be reclaimed"
+    );
+}
+
+/// Targeted orphan pruning must NOT affect unrelated images stored without
+/// placements (Kitty deferred-placement pattern). TPR-01-014 regression.
+#[test]
+fn targeted_prune_preserves_unrelated_deferred_images() {
+    let mut cache = ImageCache::new();
+
+    // Image 1: has a placement that will be removed.
+    let img1 = make_image(1, 512);
+    cache.store(img1).unwrap();
+    cache.place(make_placement(1, 5, 10));
+
+    // Image 2: intentionally stored without placements (Kitty deferred).
+    let img2 = make_image(2, 256);
+    cache.store(img2).unwrap();
+
+    assert_eq!(cache.image_count(), 2);
+
+    // Remove image 1's placement and prune targeted orphans.
+    let ids = cache.remove_by_position(5, StableRowIndex(10));
+    cache.prune_if_orphaned(&ids);
+
+    // Image 1 was orphaned and should be pruned.
+    // Image 2 was never targeted and must survive.
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "unrelated deferred image must survive"
+    );
+    assert_eq!(
+        cache.memory_used(),
+        256,
+        "only targeted image memory reclaimed"
+    );
+}
+
+/// Regression: `remove_placements_in_region()` must prune orphaned image
+/// payloads when the last placement is erased (TPR-01-004).
+#[test]
+fn remove_placements_in_region_prunes_orphaned_image() {
+    let mut cache = ImageCache::new();
+    let img = make_image(1, 768);
+    cache.store(img).unwrap();
+    // Single placement in the erase region.
+    cache.place(make_placement(1, 5, 10));
+
+    assert_eq!(cache.image_count(), 1);
+    assert_eq!(cache.memory_used(), 768);
+
+    // Erase region covering the placement.
+    cache.remove_placements_in_region(StableRowIndex(8), StableRowIndex(16), Some(0), Some(15));
+
+    assert_eq!(cache.placement_count(), 0);
+    assert_eq!(cache.image_count(), 0, "orphaned image must be pruned");
+    assert_eq!(
+        cache.memory_used(),
+        0,
+        "orphaned image memory must be reclaimed"
+    );
+}
+
 #[test]
 fn clear_removes_everything() {
     let mut cache = ImageCache::new();
