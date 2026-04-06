@@ -269,12 +269,11 @@ fn remove_by_position_preserves_image_data() {
     assert_eq!(cache.memory_used(), 512, "image memory must be retained");
 }
 
-/// `remove_by_position()` + `remove_orphans()` prunes orphaned image data.
-/// This is the sixel overwrite and Kitty uppercase delete semantic: remove
-/// placements, then clean up images with zero remaining placements
-/// (TPR-01-002, TPR-01-013).
+/// `remove_by_position()` + `prune_if_orphaned()` prunes only the specific
+/// images made orphaned by the targeted removal. This is the sixel overwrite
+/// and Kitty uppercase delete semantic (TPR-01-002, TPR-01-013, TPR-01-014).
 #[test]
-fn remove_by_position_then_orphan_prune() {
+fn remove_by_position_then_targeted_prune() {
     let mut cache = ImageCache::new();
     let img = make_image(1, 512);
     cache.store(img).unwrap();
@@ -283,8 +282,8 @@ fn remove_by_position_then_orphan_prune() {
     assert_eq!(cache.image_count(), 1);
     assert_eq!(cache.memory_used(), 512);
 
-    cache.remove_by_position(5, StableRowIndex(10));
-    cache.remove_orphans();
+    let ids = cache.remove_by_position(5, StableRowIndex(10));
+    cache.prune_if_orphaned(&ids);
 
     assert_eq!(cache.placement_count(), 0);
     assert_eq!(cache.image_count(), 0, "orphaned image must be pruned");
@@ -292,6 +291,41 @@ fn remove_by_position_then_orphan_prune() {
         cache.memory_used(),
         0,
         "orphaned image memory must be reclaimed"
+    );
+}
+
+/// Targeted orphan pruning must NOT affect unrelated images stored without
+/// placements (Kitty deferred-placement pattern). TPR-01-014 regression.
+#[test]
+fn targeted_prune_preserves_unrelated_deferred_images() {
+    let mut cache = ImageCache::new();
+
+    // Image 1: has a placement that will be removed.
+    let img1 = make_image(1, 512);
+    cache.store(img1).unwrap();
+    cache.place(make_placement(1, 5, 10));
+
+    // Image 2: intentionally stored without placements (Kitty deferred).
+    let img2 = make_image(2, 256);
+    cache.store(img2).unwrap();
+
+    assert_eq!(cache.image_count(), 2);
+
+    // Remove image 1's placement and prune targeted orphans.
+    let ids = cache.remove_by_position(5, StableRowIndex(10));
+    cache.prune_if_orphaned(&ids);
+
+    // Image 1 was orphaned and should be pruned.
+    // Image 2 was never targeted and must survive.
+    assert_eq!(
+        cache.image_count(),
+        1,
+        "unrelated deferred image must survive"
+    );
+    assert_eq!(
+        cache.memory_used(),
+        256,
+        "only targeted image memory reclaimed"
     );
 }
 
