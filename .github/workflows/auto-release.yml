@@ -339,8 +339,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ORI_TERM_PAT }}
         run: |
-          gh api repos/upstat-io/ori-term-website/dispatches \
-            -f event_type=oriterm-release-published
+          # Only send the release event when binaries were actually published.
+          if [ "${{ needs.publish.result }}" = "success" ]; then
+            gh api repos/upstat-io/ori-term-website/dispatches \
+              -f event_type=oriterm-release-published
+          fi
 
           # Also notify for roadmap changes so the website picks up roadmap content.
           # Use the full push range so multi-commit pushes are covered.
