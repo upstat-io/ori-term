@@ -40,6 +40,9 @@ sections:
   - id: "24.12"
     title: "Resize Dimensions Overlay"
     status: not-started
+  - id: "24.13"
+    title: "Toggle Background Opacity Keybind"
+    status: not-started
   - id: "24.10"
     title: Section Completion
     status: not-started
@@ -599,6 +602,26 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 **Priority:** Low — nice visual polish, commonly expected in modern terminals.
 
 **Reference:** iTerm2 resize indicator, Kitty resize overlay, Ghostty resize display.
+
+---
+
+## 24.13 Toggle Background Opacity Keybind
+
+<!-- Ghostty audit: #5047 (toggle_background_opacity keybind action) -->
+
+**Source:** Ghostty #5047 — Users with transparent backgrounds want a keybind to toggle between transparent and opaque for screen sharing. iTerm2 has `Cmd+U` for this.
+
+**Required work:**
+
+- [ ] New action: `ToggleBackgroundOpacity` — toggles between configured `background_opacity` and 1.0
+- [ ] Track toggle state per-window (not global — user may want some windows transparent and others opaque)
+- [ ] When `background_opacity` is already 1.0: action is a no-op
+- [ ] Config reload resets to configured value
+- [ ] Default keybind: none (user must configure)
+- [ ] Cross-platform: update vibrancy/transparency on macOS (NSVisualEffectView), DWM on Windows, compositor hints on Wayland
+- [ ] Test: set background_opacity=0.8, trigger toggle → verify opacity becomes 1.0; trigger again → verify opacity returns to 0.8
+
+**Priority:** Low — polish feature for transparency users.
 
 ---
 

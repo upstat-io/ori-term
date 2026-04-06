@@ -342,3 +342,57 @@ fn deccolm_lifecycle_intermediate_assertions() {
         grid_text.trim()
     );
 }
+
+/// Regression test: DECSC sidecar state must not leak across alt screen switches.
+///
+/// Saves DEC Special Graphics charset + origin mode on primary, switches to alt,
+/// does a different DECSC, switches back to primary, and verifies DECRC restores
+/// the primary's saved state — not the alt's.
+#[test]
+fn decsc_sidecar_isolation_across_alt_screen() {
+    use super::RecordedListener;
+    use oriterm_core::{Term, TermMode, Theme};
+
+    let listener = RecordedListener::new();
+    let mut term = Term::new(24, 80, 0, Theme::default(), listener);
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+
+    // On primary: set DEC Special Graphics + origin mode, then DECSC.
+    proc.advance(&mut term, b"\x1b(0"); // G0 = DEC Special Graphics
+    proc.advance(&mut term, b"\x1b[?6h"); // Enable origin mode
+    proc.advance(&mut term, b"\x1b7"); // DECSC — saves charset + origin
+
+    // Switch to alt screen (1049).
+    proc.advance(&mut term, b"\x1b[?1049h");
+
+    // On alt: reset to ASCII, disable origin, then DECSC with different state.
+    proc.advance(&mut term, b"\x1b(B"); // G0 = ASCII
+    proc.advance(&mut term, b"\x1b[?6l"); // Disable origin mode
+    proc.advance(&mut term, b"\x1b7"); // DECSC on alt — saves ASCII + no origin
+
+    // Switch back to primary (1049 off).
+    proc.advance(&mut term, b"\x1b[?1049l");
+
+    // DECRC on primary should restore primary's saved state, not alt's.
+    proc.advance(&mut term, b"\x1b8"); // DECRC
+
+    // Origin mode should be restored (was on when primary DECSC was issued).
+    let content = term.renderable_content();
+    assert!(
+        content.mode.contains(TermMode::ORIGIN),
+        "DECRC should restore origin mode from primary screen's DECSC, not alt's"
+    );
+
+    // Charset should be DEC Special Graphics (not ASCII from alt).
+    // Write 'q' — should render as U+2500 (horizontal line) in DEC Special Graphics.
+    proc.advance(&mut term, b"q");
+    let content = term.renderable_content();
+    // After the DECRC restore + writing 'q', the character should be at the cursor position.
+    // Find the DEC Special Graphics mapping in the grid.
+    let has_line_char = content.cells.iter().any(|c| c.ch == '\u{2500}');
+    assert!(
+        has_line_char,
+        "expected DEC Special Graphics horizontal line after DECRC on primary, \
+         charset leaked from alt screen"
+    );
+}

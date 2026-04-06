@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "Verification & CI Integration"
-status: not-started
+status: in-progress
 reviewed: false
 goal: "Verify the complete teseq test framework, document coverage gaps, integrate with CI, and ensure graceful degradation on all platforms"
 success_criteria:
@@ -9,15 +9,15 @@ success_criteria:
   - "Coverage gap analysis identifies sequences not yet covered and prioritizes future additions"
   - "CI integration: Linux CI installs teseq and runs tests; macOS/Windows gracefully skip"
   - "CLAUDE.md updated with teseq test commands and scenario authoring instructions"
-  - "All 175 test functions pass at their designated sizes (168 .teseq scenarios + 3 pure-Rust tests)"
+  - "All 176 test functions pass at their designated sizes (171 .teseq scenarios + 4 pure-Rust tests)"
   - "Satisfies mission criteria: CI green, test-all.sh passes, platform graceful skip"
 inspired_by:
   - "ori_term vttest-conformance section-07-verification — conformance metric tracking"
   - "ori_term vttest session.rs:232-239 — vttest_available() graceful skip pattern"
 depends_on: ["01", "02", "03", "04", "05", "06"]
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-04-06
 sections:
   - id: "07.1"
     title: "Test Matrix & Coverage Analysis"
@@ -33,7 +33,7 @@ sections:
     status: not-started
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
   - id: "07.N"
     title: "Completion Checklist"
     status: not-started
@@ -76,8 +76,8 @@ Build a comprehensive test matrix documenting every scenario.
   | CSI SGR (`csi/sgr/`) | 55 | 0 | 80x24 | Attributes, 16/256/TrueColor, combos, resets, underlines |
   | ESC (`esc/`) | 5 | 0 | 80x24 | DECSC/RC, RIS, SCS G0, IND, RI |
   | OSC (`osc/`) | 4 | 0 | 80x24 | Title (0/2), icon name (1), clipboard (52), color query (4/10/11) |
-  | Workflows (`workflows/`) | 26 | 4 | 80x24, 97x33, 120x40 | Mode combos, DECSC attrs, handshakes, real-world, charset, edge cases |
-  | **Total** | **171** | **4** | | **175 test functions** |
+  | Workflows (`workflows/`) | 26 | 5 | 80x24, 97x33, 120x40 | Mode combos, DECSC attrs, handshakes, real-world, charset, edge cases |
+  | **Total** | **171** | **5** | | **176 test functions** |
 
 - [ ] **Coverage gap analysis** — identify sequences NOT yet covered:
   - OSC 7 (CWD) — handled by `RawInterceptor` in `oriterm_mux`, not `Term<T>`; tested at mux layer (`oriterm_mux/src/shell_integration/tests.rs::interceptor_osc7_sets_cwd`), not teseq harness
@@ -146,7 +146,10 @@ Build a comprehensive test matrix documenting every scenario.
 
 ## 07.R Third Party Review Findings
 
-- None.
+- [x] `[TPR-07-001][low]` [plans/teseq-conformance/section-07-verification.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-07-verification.md#L12) — Section 07’s headline success criteria still carry the old `168 .teseq + 3 pure-Rust` breakdown even though the matrix and the current test list are `171 .teseq + 4 pure-Rust = 175`.
+  Evidence: the success-criteria bullet still says `168 .teseq scenarios + 3 pure-Rust tests`, but the table later in the same file says `171` scenario tests and `4` pure-Rust tests, and `cargo test -p oriterm_core --test teseq -- --list` currently reports `175 tests`.
+  Impact: the verification section still misstates the current inventory in the first summary readers see, which undermines the plan’s role as the canonical accounting for teseq coverage.
+  Required plan update: Change the success-criteria breakdown to `171 .teseq scenarios + 4 pure-Rust tests` so it matches the matrix and the live suite.
 
 ---
 
@@ -169,4 +172,4 @@ Build a comprehensive test matrix documenting every scenario.
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed
 
-**Exit Criteria:** Complete test matrix showing 175 test functions across 10 protocol families, all passing. Coverage gaps documented and prioritized. CI graceful degradation verified. CLAUDE.md updated. `timeout 150 ./test-all.sh` green with zero regressions across all existing test suites. The teseq framework is production-ready for ongoing scenario additions.
+**Exit Criteria:** Complete test matrix showing 176 test functions across 10 protocol families, all passing. Coverage gaps documented and prioritized. CI graceful degradation verified. CLAUDE.md updated. `timeout 150 ./test-all.sh` green with zero regressions across all existing test suites. The teseq framework is production-ready for ongoing scenario additions.

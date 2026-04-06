@@ -22,7 +22,7 @@ inspired_by:
   - "Ghostty fuzz corpus (test/fuzz-libghostty/corpus/) — edge case byte sequences"
 depends_on: ["01", "02", "03", "04", "05"]
 third_party_review:
-  status: resolved
+  status: findings
   updated: 2026-04-06
 sections:
   - id: "06.1"
@@ -42,7 +42,7 @@ sections:
     status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "06.N"
     title: "Completion Checklist"
     status: not-started
@@ -459,6 +459,11 @@ Boundary conditions and unusual sequences.
   Evidence: `wc -l oriterm_core/tests/teseq/workflows.rs` reports 509 lines. The section reminder says to split once the file grows past roughly 400 lines, and the repo rules cap non-`tests.rs` source files at 500 lines.
   Impact: this is a direct hygiene-rule violation in the new test surface and makes further Section 06 follow-up work harder to review and maintain.
   Resolved: Fixed on 2026-04-06. Split workflows.rs into workflows/mod.rs + 4 submodules (mode.rs, query.rs, real_world.rs, edge.rs). All under 500 lines.
+
+- [ ] `[TPR-06-004][medium]` [oriterm_core/src/term/alt_screen.rs](/home/eric/projects/ori_term/oriterm_core/src/term/alt_screen.rs#L79) / [plans/teseq-conformance/section-06-workflows.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-06-workflows.md#L106) — The new per-screen DECSC sidecar swap has no regression test, even though Section 06 requires targeted handler coverage after each DECSC fix.
+  Evidence: `toggle_alt_common()` now swaps `saved_charset` and `saved_origin_mode` between primary and alternate screens, but the current test surface only covers plain DECSC restore and ordinary alt-screen cursor/content behavior. A repo-wide search over `oriterm_core/src/term/handler/tests.rs`, `oriterm_core/src/term/tests.rs`, and `oriterm_core/tests/teseq/` finds no case that saves DECSC state on one screen, switches with `1047`/`1049`, and then verifies `DECRC` restores the correct per-screen charset/origin pair.
+  Impact: the exact cross-screen contamination bug fixed in `a3bcedf6` can regress without tripping either the handler tests or the teseq workflows, which violates the repo rule that bug fixes ship with tests and leaves a shared terminal-state path without a semantic pin.
+  Required plan update: Add a focused handler test that saves distinct charset/origin combinations on primary and alt screens, toggles between them, and proves `DECRC` restores the matching per-screen sidecar state.
 
 ---
 
