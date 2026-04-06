@@ -125,36 +125,48 @@ pub fn assert_response_snapshot(outcome: &ScenarioOutcome, name: &str) {
 /// content when tests fail. Never use the return value as a golden
 /// assertion target. Falls back to hex dump if teseq is unavailable.
 pub fn analyze_response(response_bytes: &str) -> Result<String, String> {
-    use std::io::Write as _;
-
     if !teseq_available() {
         return Ok(format!("hex: {:02x?}", response_bytes.as_bytes()));
     }
+    pipe_through_command("teseq", response_bytes)
+}
 
-    let mut child = std::process::Command::new("teseq")
+/// Pipe bytes through a subprocess and return its stdout.
+///
+/// Returns `Err` if the subprocess exits non-zero or fails to spawn.
+/// Extracted from `analyze_response` for testability (the teseq binary
+/// cannot be faked in tests because `deny(unsafe_code)` prevents
+/// `std::env::set_var` for PATH manipulation).
+pub fn pipe_through_command(command: &str, input: &str) -> Result<String, String> {
+    use std::io::Write as _;
+
+    let mut child = std::process::Command::new(command)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("failed to spawn teseq: {e}"))?;
+        .map_err(|e| format!("failed to spawn {command}: {e}"))?;
 
     // take() returns Option<ChildStdin>; safe to unwrap because we set piped().
     // The temporary ChildStdin is dropped at statement end, closing the pipe
-    // and signaling EOF to teseq.
+    // and signaling EOF to the subprocess.
     child
         .stdin
         .take()
         .unwrap()
-        .write_all(response_bytes.as_bytes())
-        .map_err(|e| format!("failed to write to teseq: {e}"))?;
+        .write_all(input.as_bytes())
+        .map_err(|e| format!("failed to write to {command}: {e}"))?;
 
     let output = child
         .wait_with_output()
-        .map_err(|e| format!("teseq failed: {e}"))?;
+        .map_err(|e| format!("{command} failed: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("teseq exited with {}: {}", output.status, stderr));
+        return Err(format!(
+            "{command} exited with {}: {}",
+            output.status, stderr
+        ));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
