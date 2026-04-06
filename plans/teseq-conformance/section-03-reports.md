@@ -705,6 +705,8 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
   Evidence: the helper waits for the child process and returns `Ok(stdout)` without checking `output.status.success()`.
   Impact: when `teseq` exits non-zero, the debug helper can silently return partial or empty output instead of surfacing the failure, which makes response-analysis debugging misleading.
   Required plan update: return an `Err` on non-zero exit status and add coverage for the failing-subprocess path.
+- [x] `[TPR-03-004][medium]` `.github/workflows/auto-release.yml:342` — roadmap-only pushes still dispatch the `oriterm-release-published` website event.
+  Resolved: Fixed on 2026-04-05. Gated `oriterm-release-published` dispatch on `needs.publish.result == 'success'`; roadmap event remains unconditional within the job.
 
 ---
 
@@ -730,7 +732,7 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green — no regressions
 - [x] Plan annotation cleanup
-- [x] All TPR checkpoint findings resolved
+- [ ] All TPR checkpoint findings resolved
 - [x] **Plan sync** — update plan metadata:
   - [ ] This section's frontmatter `status` → `complete`, subsection statuses updated (currently `in-progress` — pending final TPR clean pass)
   - [x] `00-overview.md` Quick Reference table status updated for this section
