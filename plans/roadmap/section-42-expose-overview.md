@@ -33,8 +33,8 @@ sections:
 **Goal:** A macOS Mission Control-style Expose mode that shows a live GPU-rendered thumbnail grid of ALL panes across ALL windows, tabs, and panes. Users press one keybind to see everything, navigate with keyboard or mouse, type to filter by title/CWD, and confirm to jump directly to any pane. No existing terminal emulator does live thumbnails — tmux/WezTerm/Kitty all use text lists or label overlays. This is a differentiating feature.
 
 **Crate:** `oriterm` (state machine, rendering, input dispatch)
-**Dependencies:** Section 31 (In-Process Mux — pane enumeration, `prepare_pane_into()`), Section 32 (Tab & Window Management — cross-window pane access), Section 07 (2D UI Framework — label rendering, layout), Section 05 (GPU pipeline — offscreen `RenderTarget`, texture sampling)
-**Prerequisite:** Sections 31, 32, 07, 05 complete.
+**Dependencies:** Section 31 (In-Process Mux — pane enumeration, `prepare_pane_into()`), Section 32 (Tab & Window Management — cross-window pane access), Section 07 (2D UI Framework — label rendering, layout), Section 05 (GPU pipeline — offscreen `RenderTarget`, texture sampling), Section 54 (Render Capture & Texture Pipeline — `FrameCapture` for downscaling rendered pane content to thumbnail resolution)
+**Prerequisite:** Sections 31, 32, 07, 05, 54 complete.
 
 **Reference:**
 - macOS Mission Control / Expose: full-screen thumbnail grid of all windows with live updates
@@ -116,12 +116,13 @@ Offscreen rendering of pane content into thumbnail-sized textures, plus a new GP
 
 **File:** `oriterm/src/gpu/renderer/thumbnails.rs`, `oriterm/src/gpu/pipeline/image_pipeline.rs`
 
-- [ ] `ThumbnailCache` struct:
-  - [ ] Pool of offscreen `RenderTarget`s at fixed 320×200 resolution
-  - [ ] `targets: HashMap<PaneId, RenderTarget>` — one per visible pane
-  - [ ] `last_updated: HashMap<PaneId, Instant>` — track freshness
-  - [ ] Pool size grows on demand, shrinks on pane close (LRU eviction)
-  - [ ] Targets created via existing `GpuState::create_render_target(320, 200)`
+> **Section 54 integration:** Use `PersistentTextureCache` from Section 54 for pane-keyed thumbnail storage (unified GPU memory budget, LRU eviction). Use `FrameCapture` from Section 54 to downscale rendered frames to thumbnail resolution. This replaces the custom `ThumbnailCache` design below — Section 54 provides the same functionality with proper global budgeting.
+
+- [ ] Thumbnail storage via `PersistentTextureCache` (Section 54):
+  - [ ] Thumbnail targets at fixed 320×200 resolution stored per-pane in the shared texture cache
+  - [ ] `last_updated` freshness tracked by `PersistentTextureCache::frame_counter`
+  - [ ] LRU eviction handled by global GPU memory budget (Section 54)
+  - [ ] Render to `RenderTargetPool` target, then `FrameCapture::capture()` to downscale to 320×200
 - [ ] Thumbnail rendering:
   - [ ] Reuse existing 3-phase pipeline: Extract → Prepare → Render
   - [ ] `extract_frame()` with the pane's `Term` lock (same as normal rendering)

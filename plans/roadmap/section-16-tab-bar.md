@@ -29,7 +29,7 @@ sections:
 
 # Section 16: Tab Bar & Chrome
 
-**Status:** In Progress (16.1, 16.2, 16.5 complete; 16.3 mostly complete -- hover preview blocked on Section 39 image pipeline via 07.11 offscreen texture)
+**Status:** In Progress (16.1, 16.2, 16.5 complete; 16.3 mostly complete -- hover preview blocked on Section 54 Render Capture & Texture Pipeline for FrameCapture downscale) <!-- reviewed: cohesion fix — corrected blocker reference from Section 39 to Section 54 -->
 **Goal:** Tab bar layout, rendering, and hit testing with DPI awareness. Deterministic layout computation, GPU-rendered tab bar with bell pulse animation and drag overlay, and priority-based hit testing for click/hover dispatch.
 
 **Crate:** `oriterm_ui` (tab bar widget, layout, hit testing, colors) + `oriterm` (input dispatch, session wiring)
@@ -212,11 +212,11 @@ Map mouse coordinates to tab bar actions. Hit testing determines whether a click
   - [x] Hover leaving tab bar: release `tab_width_lock` (skipped when tab drag is active to avoid premature release during tear-off)
   - [x] `clear_tab_bar_hover()` — resets hover state + control button hover when cursor leaves window entirely
   - [x] `update_control_hover_animation()` — drives `VisualStateAnimator` on each `WindowControlButton` based on hit result (not on macOS)
-- [ ] Tab hover preview (Chrome/Windows-style): <!-- blocked-by: 07.11 (offscreen texture rendering, which itself is blocked on Section 39 image pipeline) -->
+- [ ] Tab hover preview (Chrome/Windows-style): <!-- blocked-by: Section 54 (Render Capture & Texture Pipeline — FrameCapture for downscaling rendered pane content to thumbnail resolution) --> <!-- reviewed: cohesion fix — blocker clarified: was partially referencing Section 39, but the true dependency is Section 54's FrameCapture pipeline -->
   - [ ] When hovering an inactive tab for > 300ms, show a `TerminalPreviewWidget` overlay
   - [ ] Preview appears below the tab bar, anchored to the hovered tab
   - [ ] Preview shows a live scaled-down render of that tab's terminal content
-  - [ ] `TerminalPreviewWidget` scaffold exists at `oriterm/src/widgets/terminal_preview/mod.rs` — currently draws a placeholder rounded rect. Needs offscreen texture rendering wired to `push_image` (07.1 DrawCommand).
+  - [ ] Uses `FrameCapture` from Section 54 to downscale the pane's rendered frame to thumbnail resolution. `TerminalPreviewWidget` scaffold exists at `oriterm/src/widgets/terminal_preview/mod.rs` — currently draws a placeholder rounded rect.
   - [ ] Fade-in animation (07.9 complete), dismiss on hover leave
   - [ ] Preview updates if the terminal content changes while hovering
   - [ ] No preview for the active tab (it's already visible)

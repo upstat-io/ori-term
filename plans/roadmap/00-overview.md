@@ -241,6 +241,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 49 | Advanced Keybinding System | Key tables (modal bindings), chained keybinds, catch-all keys, key remapping |
 | 52 | Native PTY Layer | Replace portable-pty with direct libc/windows-sys syscalls, overlapped pipes, ConPTY passthrough flag, sideloaded conpty.dll |
 | 53 | Raw Pipe Bypass | Bypass ConPTY for VT-native shells (WSL) — zero-overhead VT passthrough, image protocols just work (SSH deferred to Section 35) |
+| 54 | Render Capture & Texture Pipeline | Shared GPU infrastructure: persistent texture cache with incremental sub-region updates, frame capture/downscale. Serves minimap (55), expose (42), tab previews (16) |
 
 ### Tier 6 — Polish
 | Section | Title | What |
@@ -264,6 +265,11 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | 36 | Remote Attach + Network Transport | TCP+TLS transport, SSH tunnel mode, authentication, MuxDomain for remote daemon, `oriterm connect` CLI, bandwidth-aware rendering |
 | 37 | TUI Client | `oriterm-tui` binary — terminal-in-terminal client, attach/detach, prefix key, split/float rendering via crossterm, tmux replacement |
 
+### Tier 8 — Content Navigation
+| Section | Title | What |
+|---------|-------|------|
+| 55 | Minimap Scrollbar | VS Code-style full-content minimap: zoomed-out scrollback overview, viewport highlight, click/drag navigation, incremental GPU texture updates |
+
 ## Milestones
 
 | Milestone | Section | What You See |
@@ -278,13 +284,14 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 | **M8: Multiplexing** | 29-33 complete | Split panes, floating panes, multi-tab, multi-window — all through mux layer |
 | **M8b: Chrome** | 16-17, 19-21 complete | Tab bar, drag/drop, event routing, shell integration, menus |
 | **M9: Hardened** | 22-23, 38-39 complete | All terminal modes, protocol extensions, image protocols, performance optimized, damage tracking |
-| | _Tier 5 also includes: 42, 43, 45, 47-53_ | _Expose, compositor (done), security, semantic prompts, scrollbars, advanced keybindings, native PTY, raw pipe bypass — no milestone assignment yet_ |
+| | _Tier 5 also includes: 42, 43, 45, 47-54_ | _Expose, compositor (done), security, semantic prompts, scrollbars, advanced keybindings, native PTY, raw pipe bypass, render capture — no milestone assignment yet_ |
 | **M10: Polished** | 24-25 complete | Cursor blink, 100+ themes, light/dark auto |
 | | _Tier 6 also includes: 46_ | _macOS app bundle + platform packaging — no milestone assignment yet_ |
 | **M11: Advanced** | 27-28 complete | Command palette, Lua scripting |
 | **M12: Server mode** | 34-35 complete | Daemon keeps sessions alive, session persistence, SSH/WSL domains |
 | **M13: Remote attach** | 36 complete | Connect GUI to remote daemon, SSH tunnel or TLS, bandwidth-aware rendering |
 | **M14: TUI client** | 37 complete | `oriterm-tui` — headless attach/detach, terminal-in-terminal rendering, tmux replacement |
+| **M15: Content navigation** | 54, 55 complete | VS Code-style minimap scrollbar with full-content overview and click/drag navigation (requires Section 54 render capture infrastructure) | <!-- reviewed: cohesion fix — M15 implicitly required Section 54 but did not list it -->
 
 ## Key References
 
