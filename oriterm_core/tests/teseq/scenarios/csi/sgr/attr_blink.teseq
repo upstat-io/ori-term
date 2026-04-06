@@ -1,0 +1,4 @@
+: Esc [ 5 m
+|Blink text|
+: Esc [ 0 m
+|Normal|

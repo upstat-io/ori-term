@@ -35,7 +35,7 @@ sections:
     status: complete
   - id: "05.1"
     title: "Text Attribute Scenarios"
-    status: not-started
+    status: complete
   - id: "05.2"
     title: "Underline Style & Color Scenarios"
     status: not-started
@@ -278,7 +278,7 @@ The `TeseqHarness` constructor always creates `Term` with the default `bold_is_b
 
 Create scenarios for all 8 basic SGR attributes plus the BlinkFast equivalence.
 
-- [ ] Create attribute scenarios:
+- [x] Create attribute scenarios:
 
   **`attr_bold.teseq`**:
   ```
@@ -296,7 +296,7 @@ Create scenarios for all 8 basic SGR attributes plus the BlinkFast equivalence.
 
   **`attr_italic.teseq`**, **`attr_underline.teseq`**, **`attr_blink.teseq`**, **`attr_inverse.teseq`**, **`attr_hidden.teseq`**, **`attr_strikethrough.teseq`** — same pattern with SGR codes 3, 4, 5, 7, 8, 9 respectively.
 
-- [ ] **`attr_blink_fast.teseq`** — SGR 6 (BlinkFast) maps to the same `BLINK` flag as SGR 5 (BlinkSlow):
+- [x] **`attr_blink_fast.teseq`** — SGR 6 (BlinkFast) maps to the same `BLINK` flag as SGR 5 (BlinkSlow):
   ```
   : Esc [ 6 m
   |Fast blink|
@@ -304,7 +304,7 @@ Create scenarios for all 8 basic SGR attributes plus the BlinkFast equivalence.
   ```
   Assert: `BLINK` flag set (both SGR 5 and 6 set the same flag, per `sgr.rs:46`). This validates the `BlinkSlow | BlinkFast` match arm.
 
-- [ ] Each scenario test in `sgr.rs` asserts:
+- [x] Each scenario test in `sgr.rs` asserts:
   1. Text cells have the correct flag set (via `assert_cell_flags_contain`)
   2. After SGR 0 reset, cells written after reset have the flag cleared (via `assert_cell_flags_not_contain`)
   3. Grid text matches expected content (via insta snapshot)

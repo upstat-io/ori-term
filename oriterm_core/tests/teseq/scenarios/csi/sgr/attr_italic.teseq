@@ -1,0 +1,4 @@
+: Esc [ 3 m
+|Italic text|
+: Esc [ 0 m
+|Normal|
