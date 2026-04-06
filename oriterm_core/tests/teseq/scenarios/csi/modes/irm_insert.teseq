@@ -1,0 +1,5 @@
+|ABCDEFGHIJ|
+: Esc [ 1 ; 4 H
+: Esc [ 4 h
+|XY|
+: Esc [ 4 l

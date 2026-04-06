@@ -1,0 +1,8 @@
+|Primary|
+. CR/^M LF/^J
+: Esc [ ? 1049 h
+|AAAAAAAAAA|
+. CR/^M LF/^J
+|BBBBBBBBBB|
+. CR/^M LF/^J
+: Esc [ ? 1049 l

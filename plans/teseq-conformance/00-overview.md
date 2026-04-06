@@ -33,7 +33,7 @@ Build a teseq-powered escape sequence test framework for ori_term that uses GNU 
 - [ ] CSI erase scenarios cover: ED (modes 0-3), EL (modes 0-2)
 - [ ] Erase-with-attributes workflow validates erased cells inherit cursor template background (SGR + ED/EL cross-cutting concern, tested in workflows)
 - [ ] CSI insert/delete scenarios cover: ICH, DCH, IL, DL with scroll region interactions
-- [ ] Mode interaction scenarios cover: DECOM+DECSTBM, DECCOLM+DECAWM, DECCOLM negative control (no Mode 40), alt screen (1049/1047) with mode leakage and re-entry semantics, IRM edge cases (margin, wide chars), cross-cutting mode combinations, scrollback integrity
+- [x] Mode interaction scenarios cover: DECOM+DECSTBM, DECCOLM+DECAWM, DECCOLM negative control (no Mode 40), alt screen (1049/1047) with mode leakage and re-entry semantics, IRM edge cases (margin, wide chars), cross-cutting mode combinations, scrollback integrity
 - [ ] SGR scenarios cover: 16-color, 256-color, TrueColor, bold-as-bright, dim, inverse, underline styles
 - [x] Report/response scenarios cover: DA1, DA2, DA3, DSR cursor position, DECRQM with raw PtyWrite byte assertions (teseq analysis as optional debug aid, not oracle)
 - [ ] ESC sequence scenarios cover: DECSC/DECRC, RIS, character set designation (SCS G0/G1)
@@ -185,7 +185,7 @@ None discovered during research that directly affect this plan. Existing test in
 | 01 | TeseqHarness & Infrastructure | `section-01-infrastructure.md` | Complete |
 | 02 | Basic Scenario Suite | `section-02-basic-scenarios.md` | Complete |
 | 03 | Reports & Response Validation | `section-03-reports.md` | Complete |
-| 04 | Mode Interaction Scenarios | `section-04-mode-interactions.md` | Not Started |
+| 04 | Mode Interaction Scenarios | `section-04-mode-interactions.md` | In Progress |
 | 05 | SGR & Color Scenarios | `section-05-sgr-colors.md` | Not Started |
 | 06 | Complex Workflow Scenarios | `section-06-workflows.md` | Not Started |
 | 07 | Verification & CI Integration | `section-07-verification.md` | Not Started |

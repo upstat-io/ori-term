@@ -27,3 +27,6 @@ mod esc;
 
 // Family modules (Section 03).
 mod csi_reports;
+
+// Family modules (Section 04).
+mod mode_interactions;

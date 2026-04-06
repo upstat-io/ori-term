@@ -1,0 +1,7 @@
+|Line 1|
+. CR/^M LF/^J
+|Line 2|
+. CR/^M LF/^J
+|Line 3|
+: Esc [ ? 3 h
+|After DECCOLM|

@@ -1,0 +1,7 @@
+: Esc [ ? 7 h
+: Esc [ 1 ; 79 H
+|AB|
+: Esc [ 1 ; 79 H
+: Esc [ 4 h
+|XY|
+: Esc [ 4 l

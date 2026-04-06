@@ -1,0 +1,8 @@
+|Primary screen content|
+. CR/^M LF/^J
+|Line two|
+. CR/^M LF/^J
+: Esc [ ? 1049 h
+|Alt screen content|
+. CR/^M LF/^J
+: Esc [ ? 1049 l

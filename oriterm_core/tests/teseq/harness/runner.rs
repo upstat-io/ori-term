@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use oriterm_core::term::renderable::RenderableCell;
-use oriterm_core::{Term, Theme};
+use oriterm_core::{Term, TermMode, Theme};
 
 use super::events::RecordedListener;
 use super::loader::ScenarioSpec;
@@ -32,6 +32,8 @@ pub struct ScenarioOutcome {
     pub rows: usize,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: usize,
+    /// Terminal mode flags at snapshot time.
+    pub mode: TermMode,
 }
 
 /// Integration test harness for teseq-based escape sequence scenarios.
@@ -108,6 +110,7 @@ impl TeseqHarness {
             cols: content.cols,
             rows: content.lines,
             scrollback_len: content.scrollback_len,
+            mode: content.mode,
         }
     }
 }

@@ -1,0 +1,3 @@
+|Content at 80 cols|.
+: Esc [ ? 3 h
+|Now at 132 columns|
