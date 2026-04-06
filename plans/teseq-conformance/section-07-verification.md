@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "Verification & CI Integration"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Verify the complete teseq test framework, document coverage gaps, integrate with CI, and ensure graceful degradation on all platforms"
 success_criteria:
@@ -45,7 +45,7 @@ sections:
 
 # Section 07: Verification & CI Integration
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Prove the framework works as a cohesive whole. Document what's covered, what's not, and ensure it runs correctly across all platforms and CI environments.
 
 **Success Criteria:**
@@ -248,12 +248,12 @@ Collate evidence from 07.1-07.4 against every mission success criterion in `00-o
 - [x] No regressions in vttest or oriterm_core unit tests
 - [x] Plan annotation cleanup: all temporary scaffolding removed from `.rs` files
 - [x] **Mission success criteria** — every checkbox in `00-overview.md` verified and checked off
-- [ ] **Plan sync** — update plan metadata:
-  - [ ] This section's frontmatter `status` → `complete`
-  - [ ] `00-overview.md` status → `complete`, all Quick Reference statuses updated
-  - [ ] `00-overview.md` mission success criteria checkboxes — all checked
-  - [ ] `index.md` all section statuses updated
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed
+- [x] **Plan sync** — update plan metadata:
+  - [x] This section's frontmatter `status` → `complete`
+  - [x] `00-overview.md` status → `complete`, all Quick Reference statuses updated
+  - [x] `00-overview.md` mission success criteria checkboxes — all checked
+  - [x] `index.md` all section statuses updated
+- [x] `/tpr-review` passed (final, full-section — 3 iterations, all findings resolved)
+- [x] `/impl-hygiene-review last commit` passed (DA2 dedup was the only code change; verified clean)
 
 **Exit Criteria:** Complete test matrix showing 176 test functions (168 .teseq + 7 pure-Rust + 1 scenario-variant) across 10 protocol families, all passing in both debug and release profiles. Skip path correctness audited across all family modules. Coverage gaps documented and prioritized. CI updated to install teseq on Linux (macOS/Windows skip gracefully). Every mission success criterion from 00-overview.md explicitly verified and checked off. CLAUDE.md updated. `timeout 150 ./test-all.sh` green with zero regressions across all existing test suites. The teseq conformance plan is fully closed out — no open criteria, no deferred items.
