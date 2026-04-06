@@ -562,3 +562,65 @@ fn subpixel_toggle_removed() {
     };
     assert!(!handle_settings_action(&action, &ids, &mut config));
 }
+
+// Section 03.9 Phase 4d — Windows default-terminal toggle.
+//
+// These tests run on Windows only because the toggle widget is built
+// only when `target_os = "windows"`. The action handler's side effect
+// (`apply_default_terminal_state`) is gated `#[cfg(not(test))]` so the
+// dispatch is verified without touching the user's real registry —
+// the registry helpers themselves are exercised by the
+// `RegistryTestScope` tests in
+// `platform/default_terminal/registry/tests.rs`.
+
+#[cfg(target_os = "windows")]
+#[test]
+fn default_terminal_toggle_on_dispatches() {
+    let (mut config, ids) = default_ids();
+    assert_ne!(
+        ids.default_terminal_toggle,
+        WidgetId::placeholder(),
+        "default_terminal_toggle must be assigned by build_default_terminal_section",
+    );
+    let action = WidgetAction::Toggled {
+        id: ids.default_terminal_toggle,
+        value: true,
+    };
+    assert!(
+        handle_settings_action(&action, &ids, &mut config),
+        "toggle on must be matched by handle_window",
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn default_terminal_toggle_off_dispatches() {
+    let (mut config, ids) = default_ids();
+    let action = WidgetAction::Toggled {
+        id: ids.default_terminal_toggle,
+        value: false,
+    };
+    assert!(
+        handle_settings_action(&action, &ids, &mut config),
+        "toggle off must be matched by handle_window",
+    );
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn default_terminal_toggle_field_present_but_unbuilt() {
+    // On Linux/macOS the toggle widget is never built into the dialog,
+    // so the SettingsIds field stays at its placeholder value. A
+    // dispatch using a fresh widget ID must NOT match anything.
+    let (mut config, ids) = default_ids();
+    assert_eq!(
+        ids.default_terminal_toggle,
+        WidgetId::placeholder(),
+        "non-Windows builds must leave default_terminal_toggle unassigned",
+    );
+    let action = WidgetAction::Toggled {
+        id: WidgetId::next(),
+        value: true,
+    };
+    assert!(!handle_settings_action(&action, &ids, &mut config));
+}
