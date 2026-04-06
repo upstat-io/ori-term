@@ -1,0 +1,4 @@
+: Esc [ 1 m
+: Esc [ 38 ; 5 ; 100 m
+|No promote|
+: Esc [ 0 m
