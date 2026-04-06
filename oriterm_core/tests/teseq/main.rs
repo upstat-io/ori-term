@@ -24,3 +24,6 @@ mod csi_cursor;
 mod csi_erase;
 mod csi_insert_delete;
 mod esc;
+
+// Family modules (Section 03).
+mod csi_reports;

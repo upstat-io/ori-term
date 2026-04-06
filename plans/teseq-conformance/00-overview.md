@@ -35,7 +35,7 @@ Build a teseq-powered escape sequence test framework for ori_term that uses GNU 
 - [ ] CSI insert/delete scenarios cover: ICH, DCH, IL, DL with scroll region interactions
 - [ ] Mode interaction scenarios cover: DECOM+DECSTBM, DECCOLM+DECAWM, alt screen (1049), IRM
 - [ ] SGR scenarios cover: 16-color, 256-color, TrueColor, bold-as-bright, dim, inverse, underline styles
-- [ ] Report/response scenarios cover: DA1, DA2, DA3, DSR cursor position, DECRQM with raw PtyWrite byte assertions (teseq analysis as optional debug aid, not oracle)
+- [x] Report/response scenarios cover: DA1, DA2, DA3, DSR cursor position, DECRQM with raw PtyWrite byte assertions (teseq analysis as optional debug aid, not oracle)
 - [ ] ESC sequence scenarios cover: DECSC/DECRC, RIS, character set designation (SCS G0/G1)
 - [ ] OSC scenarios cover: title+icon (0), icon name (1), title (2), clipboard (52), color query (4/10/11)
 - [ ] OSC 7 (CWD) tested at mux layer via `RawInterceptor`, not teseq harness (documented limitation: `Term<T>` does not implement `set_working_directory`)
@@ -184,7 +184,7 @@ None discovered during research that directly affect this plan. Existing test in
 |----|-------|------|--------|
 | 01 | TeseqHarness & Infrastructure | `section-01-infrastructure.md` | Complete |
 | 02 | Basic Scenario Suite | `section-02-basic-scenarios.md` | Complete |
-| 03 | Reports & Response Validation | `section-03-reports.md` | Not Started |
+| 03 | Reports & Response Validation | `section-03-reports.md` | In Progress |
 | 04 | Mode Interaction Scenarios | `section-04-mode-interactions.md` | Not Started |
 | 05 | SGR & Color Scenarios | `section-05-sgr-colors.md` | Not Started |
 | 06 | Complex Workflow Scenarios | `section-06-workflows.md` | Not Started |
