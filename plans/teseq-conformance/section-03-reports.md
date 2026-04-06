@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Reports & Response Validation"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create scenarios that validate outbound terminal responses (DA, DSR, DECRQM private, DECRQM ANSI) with raw PtyWrite byte assertions as the canonical oracle and optional teseq debug analysis"
 success_criteria:
@@ -29,24 +29,24 @@ sections:
     status: complete
   - id: "03.3"
     title: "Device Status Report Scenarios (DSR)"
-    status: in-progress
+    status: complete
   - id: "03.4"
     title: "Private Mode Report Scenarios (DECRQM Private)"
     status: complete
   - id: "03.5"
     title: "ANSI Mode Report Scenarios (DECRQM ANSI)"
-    status: in-progress
+    status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
     status: in-progress
   - id: "03.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 03: Reports & Response Validation
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Validate that ori_term generates correct outbound responses to terminal queries (DA, DSR, DECRQM private, DECRQM ANSI). This section uses the `RecordedEvent::PtyWrite` payloads from Section 01's harness with raw byte assertions as the canonical oracle (`assert_pty_writes`). Teseq analysis is available as an optional debug aid for human-readable output when tests fail, but is never the golden oracle.
 
 **Success Criteria:**
@@ -442,7 +442,7 @@ Add response assertion helpers. **Design principle:** Raw PtyWrite bytes are the
 
 - [x] Run: `timeout 150 cargo test -p oriterm_core --test teseq -- csi_reports::dsr` — all 4 DSR tests pass. Accept insta snapshots with `INSTA_UPDATE=1` on first run.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 03.1-03.3 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 03.1-03.3 implementation work
 
 ---
 
@@ -684,7 +684,7 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
 
 - [x] Run: `timeout 150 cargo test -p oriterm_core --test teseq -- csi_reports::ansi_mode` — all 4 ANSI mode tests pass. Accept insta snapshots with `INSTA_UPDATE=1` on first run.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 03.4-03.5 implementation work
+- [x] **TPR checkpoint** — `/tpr-review` covering 03.4-03.5 implementation work
 
 ---
 
@@ -740,14 +740,14 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
 - [x] `./build-all.sh` green, `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green — no regressions
 - [x] Plan annotation cleanup
-- [ ] All TPR checkpoint findings resolved
+- [x] All TPR checkpoint findings resolved
 - [x] **Plan sync** — update plan metadata:
-  - [ ] This section's frontmatter `status` → `complete`, subsection statuses updated (currently `in-progress` — pending final TPR clean pass)
+  - [x] This section's frontmatter `status` → `complete`, subsection statuses updated
   - [x] `00-overview.md` Quick Reference table status updated for this section
   - [x] `00-overview.md` mission success criteria checkboxes updated (check off any now satisfied)
   - [x] `index.md` section status updated
   - [x] Next section's `depends_on` verified — no stale assumptions from this section's work
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed
+- [x] `/tpr-review` passed (final, full-section) — clean on iteration 3 (2026-04-05)
+- [x] `/impl-hygiene-review last commit` passed — clean (2026-04-05)
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm_core --test teseq -- csi_reports` passes with 16 report tests (15 teseq-based scenarios + 1 DA2 drift-check unit test). Each teseq scenario validates PtyWrite response bytes via `assert_pty_writes` (canonical raw byte comparison) and `assert_response_snapshot` (hex golden). DA1/DA2/DA3 responses match ori_term's actual response strings in `handler/status.rs`. DSR device status reports OK. DSR cursor position responses encode correct coordinates (including origin mode relative reporting). DECRQM private mode responses report correct DEC private mode states. DECRQM ANSI mode responses report correct ANSI mode states (IRM, LNM, unknown). Teseq analysis is available as a debug aid but is not the oracle. Zero regressions.
