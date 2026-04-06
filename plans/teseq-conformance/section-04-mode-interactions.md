@@ -23,7 +23,7 @@ inspired_by:
 depends_on: ["01", "02"]
 third_party_review:
   status: resolved
-  updated: 2026-04-05
+  updated: 2026-04-06
 sections:
   - id: "04.0"
     title: "Scaffolding & Harness Extension"
@@ -45,7 +45,7 @@ sections:
     status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "04.N"
     title: "Completion Checklist"
     status: in-progress
@@ -102,23 +102,32 @@ This subsection has two parts: (A) creating the module and directory scaffolding
 
   use std::path::Path;
 
-  use super::harness::{self, ScenarioOutcome, TeseqHarness, reseq_available};
+  use oriterm_core::TermMode;
+
+  use super::harness::{
+      self, ScenarioOutcome, TeseqHarness, assert_grid_cols, assert_mode_contains,
+      assert_mode_not_contains, assert_scrollback_empty, reseq_available,
+  };
 
   /// Run a mode interaction scenario and apply spec assertions.
   ///
+  /// Returns `None` when `reseq` is unavailable (graceful skip with visible message).
   /// Returns the outcome for callers to perform additional mode/grid assertions.
-  /// Callers must guard with `if !reseq_available() { return; }` before calling.
-  fn run_scenario(name: &str) -> ScenarioOutcome {
+  fn run_scenario(name: &str) -> Option<ScenarioOutcome> {
+      if !reseq_available() {
+          eprintln!("reseq not installed, skipping");
+          return None;
+      }
       let path = Path::new(env!("CARGO_MANIFEST_DIR"))
           .join("tests/teseq/scenarios/csi/modes")
           .join(format!("{name}.teseq"));
       let mut h = TeseqHarness::from_scenario(&path);
       let outcome = h.run(&path);
       harness::assert_spec(&outcome, h.spec(), &format!("mode_interactions_{name}"));
-      outcome
+      Some(outcome)
   }
   ```
-  Note the scenario path uses `scenarios/csi/modes` (matching the directory created above) and the snapshot prefix uses `mode_interactions_` (matching the module name). The `run_scenario` helper returns `ScenarioOutcome` (like `csi_reports.rs`) so individual tests can add mode flag assertions beyond the sidecar spec.
+  Note the scenario path uses `scenarios/csi/modes` (matching the directory created above) and the snapshot prefix uses `mode_interactions_` (matching the module name). The `run_scenario` helper centralizes the `reseq_available()` guard (with `eprintln!` skip message) and returns `Option<ScenarioOutcome>` — callers use `let Some(outcome) = run_scenario(...) else { return; };` for mode/grid assertions beyond the sidecar spec.
 
 - [x] **Register the module in `oriterm_core/tests/teseq/main.rs`** — add `mod mode_interactions;` in a new "Family modules (Section 04)" comment block, following the existing pattern:
   ```rust
@@ -129,15 +138,7 @@ This subsection has two parts: (A) creating the module and directory scaffolding
 
 - [x] **Verify compilation** — `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions` should compile (no tests yet, so zero tests run).
 
-After 04.0b adds the mode assertion helpers, update the imports in `mode_interactions.rs` to include the full set:
-```rust
-use oriterm_core::TermMode;
-
-use super::harness::{
-    self, ScenarioOutcome, TeseqHarness, assert_grid_cols, assert_mode_contains,
-    assert_mode_not_contains, reseq_available,
-};
-```
+After 04.0b adds the mode assertion helpers, the imports in `mode_interactions.rs` should include the full set (already present in the scaffold above).
 
 ### 04.0b Harness Extension: Mode Flag Assertions
 
@@ -306,7 +307,7 @@ These helpers are used throughout 04.1-04.5 to verify mode state, not just grid 
   - `origin_scroll_basic_120x40.teseq` + `.toml` — DECSTBM adjusted to `10;35`, `.toml` sets `[terminal] cols = 120 rows = 40`. Separate test function `origin_scroll_basic_120x40()`.
   - `origin_scroll_overflow_97x33.teseq` + `.toml` — scroll region sized for 97x33, `.toml` sets `[terminal] cols = 97 rows = 33 scrollback = 10`. Separate test function `origin_scroll_overflow_97x33()`.
   - `origin_scroll_overflow_120x40.teseq` + `.toml` — scroll region sized for 120x40. Separate test function `origin_scroll_overflow_120x40()`.
-  Each variant gets its own insta golden snapshot (size-specific). The test functions follow the standard pattern: `if !reseq_available() { return; }` guard, then `run_scenario("origin_scroll_basic_97x33")`.
+  Each variant gets its own insta golden snapshot (size-specific). The test functions use the centralized guard pattern: `let Some(outcome) = run_scenario("origin_scroll_basic_97x33") else { return; };` (or just `run_scenario(...)` when no additional assertions are needed).
 
 - [x] **Verify 04.1 compiles and passes** — `timeout 150 cargo test -p oriterm_core --test teseq -- mode_interactions::origin` should run all origin mode tests.
 
@@ -656,6 +657,9 @@ These scenarios test mode combinations that span multiple subsections. Each exer
 - [x] `[TPR-04-003][low]` `plans/teseq-conformance/section-04-mode-interactions.md:72`, `plans/teseq-conformance/section-04-mode-interactions.md:627`, `plans/teseq-conformance/section-07-verification.md:75` — Downstream verification counts are stale after the Section 04 expansion.
   Validation: Section 04 now targets 34+ mode scenarios, but Section 07 still budgets the entire `csi/modes/` family as `12+`. If Section 04 scope is accepted as written, Section 07’s coverage matrix and total-scenario accounting will under-report the planned test surface.
   **Resolution:** (1) Section-04 counts updated to 34+ (9+6+7+7+5 with expanded multi-size variants), (2) section-07 updated to CSI Modes: 34+ and total: 106+, (3) completion checklist includes plan sync step to verify section-07 counts.
+
+- [x] `[TPR-04-004][low]` `plans/teseq-conformance/section-04-mode-interactions.md:105`, `plans/teseq-conformance/section-04-mode-interactions.md:110`, `plans/teseq-conformance/section-04-mode-interactions.md:121`, `plans/teseq-conformance/section-04-mode-interactions.md:309`, `oriterm_core/tests/teseq/mode_interactions.rs:14`, `oriterm_core/tests/teseq/mode_interactions.rs:16`, `oriterm_core/tests/teseq/mode_interactions.rs:34` — Section 04 still documents the pre-refactor `run_scenario() -> ScenarioOutcome` helper and per-test `reseq_available()` guards, but the committed implementation now centralizes graceful skip handling inside `run_scenario()` and returns `Option<ScenarioOutcome>`.
+  Resolved: Fixed on 2026-04-06. Updated 04.0a scaffold snippet to show `Option<ScenarioOutcome>` return with centralized `reseq_available()` guard and `eprintln!` skip message. Updated 04.1 multi-size guidance to document `let Some(outcome) = ... else { return; }` pattern. Removed stale import snippet after 04.0b.
 
 ---
 
