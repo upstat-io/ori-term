@@ -91,8 +91,8 @@ sections:
   Fix: (1) update each violation site, and (2) add `--all-targets` to `./clippy-all.sh` so test-target lints are gated by CI going forward. None caused by tack-conformance section 01.3 PtySession migration — verified by reading the diffs against violation lines.
   Note: Active work in tack-conformance section 01 touches `oriterm_core/tests/vttest/session.rs` and the menu*.rs imports, but does not modify the lines flagged above.
 
-- [ ] `[BUG-07-008][medium]` **`oriterm_test_support` PtySession test uses `#[cfg(unix)]` instead of a runtime gate** — found by /tp-help pre-check (Codex) during /review-plan on tack-conformance section 02.
-  <!-- resolved-by: plans/tack-conformance/section-02-terminfo-provisioning.md#02.3 — Section 02 owns the canonical fix because 02.3 codifies the runtime-gate-only convention. Check the box and append a "Fixed YYYY-MM-DD" line when 02.3 lands. -->
+- [x] `[BUG-07-008][medium]` **`oriterm_test_support` PtySession test uses `#[cfg(unix)]` instead of a runtime gate** — found by /tp-help pre-check (Codex) during /review-plan on tack-conformance section 02.
+  **Fixed 2026-04-07.** Resolved by tack-conformance section 02.3. `crates/oriterm_test_support/src/session/tests.rs::pty_session_drains_simple_output` no longer carries `#[cfg(unix)]` — replaced with a portable two-arm test (`/bin/sh -c "printf hello"` on Unix, `cmd.exe /C "echo hello"` on Windows) wrapped in `#[cfg(unix)] / #[cfg(windows)]` blocks INSIDE the `#[test] fn`, restoring Windows ConPTY drain coverage. Verified by `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` and the host `cargo test -p oriterm_test_support` (12 tests pass).
   Repro: open `crates/oriterm_test_support/src/session/tests.rs:16` — `pty_session_drains_simple_output` is wrapped in `#[cfg(unix)]` so the test source does not even compile on Windows. The test spawns `/bin/sh -c "printf hello"` and asserts the PTY drain contains `hello`.
   Subsystem: `crates/oriterm_test_support/src/session/tests.rs`
   Found: 2026-04-07 | Source: /tp-help pre-check (Codex)

@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "02.3"
     title: "tic_available, infocmp_available, and skip discipline"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "Verify pinned terminfo round-trips through infocmp"
     status: not-started
@@ -742,7 +742,7 @@ The terminfo source is the canonical declaration of "what ori_term claims to be"
 
 The runtime check helpers go alongside `vttest_available()` from Section 01. They follow the same pattern.
 
-- [ ] Add to `crates/oriterm_test_support/src/session/mod.rs` (after the existing `vttest_available()` function):
+- [x] Add to `crates/oriterm_test_support/src/session/mod.rs` (after the existing `vttest_available()` function): **landed in commit `19f9cefb` (02.2 cross-cut)** — `tic_available()` and `infocmp_available()` were a hard prereq for 02.2 tests.
   ```rust
   /// Check if `tic` (terminfo compiler) is installed.
   ///
@@ -768,7 +768,7 @@ The runtime check helpers go alongside `vttest_available()` from Section 01. The
 
   **On `tic_available()` as a presence-only probe:** ncurses 5.9 ships a `tic` binary that lacks `-x` extension support, so a `tic_available() == true` doesn't guarantee compilation will succeed. The compile path handles this via the panic-on-stderr contract: if `tic` rejects an extension cap, the test panics with the stderr output, the user upgrades, and the test re-runs. We do NOT add a `tic_supports_ext_caps()` probe — the failure is loud and the message is actionable.
 
-- [ ] Re-export from `lib.rs`:
+- [x] Re-export from `lib.rs`: **landed in commit `19f9cefb` (02.2 cross-cut)** — `tic_available`, `infocmp_available`, `TerminfoEnv`, and `TerminfoVariant` are all re-exported at the crate root.
   ```rust
   pub mod session;
   pub mod terminfo;
@@ -781,7 +781,7 @@ The runtime check helpers go alongside `vttest_available()` from Section 01. The
   ```
   Section 03 will add `tack_available` to the `session::` re-export list. `TerminfoVariant` is exported alongside `TerminfoEnv` so callers (Section 03's `spawn_tack`, future tests) can name the truecolor variant without reaching into the module path.
 
-- [ ] Add unit tests in the existing `session/tests.rs`:
+- [x] Add unit tests in the existing `session/tests.rs`:
   ```rust
   #[test]
   fn tic_available_matches_tool_available() {
@@ -794,7 +794,7 @@ The runtime check helpers go alongside `vttest_available()` from Section 01. The
   }
   ```
 
-- [ ] **Cross-platform skip discipline** (this rule applies to every test in Sections 03-08 too — codify it here):
+- [x] **Cross-platform skip discipline** (this rule applies to every test in Sections 03-08 too — codify it here):
 
   Every test that constructs a `TerminfoEnv` MUST gate on `tic_available()` first:
   ```rust
@@ -815,12 +815,12 @@ The runtime check helpers go alongside `vttest_available()` from Section 01. The
 
   **What about `#[ignore]`?** No. `#[ignore]` requires `cargo test -- --ignored` to run, which means CI matrices need a special invocation per platform. Runtime gating via `tic_available()` keeps the default `cargo test` invocation correct on every platform.
 
-- [ ] **Hygiene sweep on existing `oriterm_test_support` source files** — Section 02 is the first plan after Section 01 to touch this crate, so it owns one bug-tracker pass on what Section 01 left behind. Three concrete findings to address (every reference is verified against the current source on disk):
-  1. `crates/oriterm_test_support/src/session/mod.rs:43` and `:50` — two `Mutex::lock().unwrap()` calls inside `PtyResponder::take_responses` and `<PtyResponder as EventListener>::send_event`. CLAUDE.md "Coding Standards: Error Handling" says "No `unwrap()` in library code." These are test-support code, but the rule applies to any Rust crate that ships compiled artifacts. The correct fix is `lock().expect("PtyResponder mutex poisoned")` — replaces a silent unwrap with a documented expect, and the panic message tells the test author what went wrong. Fix as part of 02.3 (the same edit window already touches `session/mod.rs`).
-  2. `crates/oriterm_test_support/src/session/mod.rs` is currently 335 lines. After 02.3 adds `tic_available` + `infocmp_available` (~30 lines) and Section 03 adds `tack_available` + `spawn_tack` + `wait_for_child_exit` (~60 lines), the file projects to ~425 lines — within the 500-line limit but in the proactive-split zone (>~450). Section 02 does NOT need to split it yet, but the 02.N completion checklist must record the post-section line count so Section 03 knows whether to split during its work. If 02.3's edits push the file past 450 lines, split now via `session/availability.rs` (`tic_available`/`infocmp_available`/`vttest_available`) — that's the natural seam.
-  3. The existing `crates/oriterm_test_support/src/session/tests.rs:1` import line `use super::{tool_available, vttest_available};` and the in-function `use super::PtySession;` at `:21` should consolidate to a single top-of-file import block per `.claude/rules/test-organization.md` "Import Style in Test Files." Fix as part of 02.3's BUG-07-008 edit (the test body is being rewritten anyway).
+- [x] **Hygiene sweep on existing `oriterm_test_support` source files** — Section 02 is the first plan after Section 01 to touch this crate, so it owns one bug-tracker pass on what Section 01 left behind. Three concrete findings to address (every reference is verified against the current source on disk):
+  1. `crates/oriterm_test_support/src/session/mod.rs:43` and `:50` — two `Mutex::lock().unwrap()` calls inside `PtyResponder::take_responses` and `<PtyResponder as EventListener>::send_event`. CLAUDE.md "Coding Standards: Error Handling" says "No `unwrap()` in library code." These are test-support code, but the rule applies to any Rust crate that ships compiled artifacts. The correct fix is `lock().expect("PtyResponder mutex poisoned")` — replaces a silent unwrap with a documented expect, and the panic message tells the test author what went wrong. Fix as part of 02.3 (the same edit window already touches `session/mod.rs`). **Fixed 02.3** — both call sites now read `.expect("PtyResponder mutex poisoned")`.
+  2. `crates/oriterm_test_support/src/session/mod.rs` is currently 335 lines. After 02.3 adds `tic_available` + `infocmp_available` (~30 lines) and Section 03 adds `tack_available` + `spawn_tack` + `wait_for_child_exit` (~60 lines), the file projects to ~425 lines — within the 500-line limit but in the proactive-split zone (>~450). Section 02 does NOT need to split it yet, but the 02.N completion checklist must record the post-section line count so Section 03 knows whether to split during its work. If 02.3's edits push the file past 450 lines, split now via `session/availability.rs` (`tic_available`/`infocmp_available`/`vttest_available`) — that's the natural seam. **Recorded 02.3** — post-section line count of `session/mod.rs` is **362 lines** (well under the 450 proactive-split threshold). Section 03 has ~88 lines of headroom before the threshold; if its `tack_available + spawn_tack + wait_for_child_exit` additions exceed that, Section 03 should split via `session/availability.rs`.
+  3. The existing `crates/oriterm_test_support/src/session/tests.rs:1` import line `use super::{tool_available, vttest_available};` and the in-function `use super::PtySession;` at `:21` should consolidate to a single top-of-file import block per `.claude/rules/test-organization.md` "Import Style in Test Files." Fix as part of 02.3's BUG-07-008 edit (the test body is being rewritten anyway). **Fixed 02.3** — `session/tests.rs` now has a single top-of-file import block: `use super::{PtySession, infocmp_available, tic_available, tool_available, vttest_available};` plus an external `use portable_pty::CommandBuilder;` group above it.
 
-- [ ] **Resolve BUG-07-008 in this subsection** — Section 01 left an existing `#[cfg(unix)]` antipattern at `crates/oriterm_test_support/src/session/tests.rs:16` (`pty_session_drains_simple_output`). That gate violates the runtime-skip rule this subsection codifies. Section 02 owns the canonical fix because 02.3 is the convention's home.
+- [x] **Resolve BUG-07-008 in this subsection** — Section 01 left an existing `#[cfg(unix)]` antipattern at `crates/oriterm_test_support/src/session/tests.rs:16` (`pty_session_drains_simple_output`). That gate violates the runtime-skip rule this subsection codifies. Section 02 owns the canonical fix because 02.3 is the convention's home. **Fixed 2026-04-07** — `pty_session_drains_simple_output` no longer carries `#[cfg(unix)]`; the body now uses a portable `#[cfg(unix)] / #[cfg(windows)]` two-arm shell selection (`/bin/sh -c "printf hello"` / `cmd.exe /C "echo hello"`). Bug tracker entry checked off with a `Fixed 2026-04-07` line; cross-compile gate `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` confirms the test source compiles for Windows.
 
   Required edits:
   1. Open `crates/oriterm_test_support/src/session/tests.rs` and remove the `#[cfg(unix)]` attribute on `pty_session_drains_simple_output`.

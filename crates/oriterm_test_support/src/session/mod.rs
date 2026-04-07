@@ -40,14 +40,17 @@ impl PtyResponder {
     /// Drain all buffered `PtyWrite` payloads, returning them in arrival
     /// order. The internal buffer is reset to empty.
     pub(crate) fn take_responses(&self) -> Vec<String> {
-        std::mem::take(&mut *self.responses.lock().unwrap())
+        std::mem::take(&mut *self.responses.lock().expect("PtyResponder mutex poisoned"))
     }
 }
 
 impl EventListener for PtyResponder {
     fn send_event(&self, event: Event) {
         if let Event::PtyWrite(data) = event {
-            self.responses.lock().unwrap().push(data);
+            self.responses
+                .lock()
+                .expect("PtyResponder mutex poisoned")
+                .push(data);
         }
     }
 }
