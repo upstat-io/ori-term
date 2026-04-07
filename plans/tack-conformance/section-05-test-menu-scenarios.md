@@ -3,6 +3,8 @@ section: "05"
 title: "Tack Scenarios: Test Menu (begin testing)"
 status: not-started
 reviewed: false
+needs_re_review_after: "04"
+re_review_reason: "Section 04 (post-Agent-1 expansion) defines the framework API that Section 05 consumes. Section 05's existing code samples reference the OLDER pre-expansion API: `MenuStep { send, wait_for }` (missing `or_wait_for`), `ScenarioSpec { id, menu_path, ready_anchor, parser }` (missing `screen_id` and `quit_path`), `outcome.id` for snapshot naming (must be `outcome.snapshot_name()`), parsers/consts defined inline in the test target (must live in `oriterm_test_support::tack_framework::scenarios::*`), blind `grid.contains` for short labels (must use `grid_has_token`). Section 05 MUST NOT be implemented until its code samples are rewritten against Section 04 final and a fresh `/review-plan` pass flips this `reviewed` flag back to `true`. The blocker note in Section 04 (cross-section consumer status) and the 04.N checklist item enforce this gate."
 goal: "Populate the scenario catalog with every navigable screen under tack's `n) begin testing` submenu: modes/glitches, ACS/graphic rendition, color, and cursor movement. Const `ScenarioSpec` values and per-scenario parsers live in `oriterm_test_support::tack_framework::scenarios::*` so both text tests in `oriterm_core/tests/tack/` and GPU goldens in `oriterm/src/gpu/visual_regression/tack/` (Section 07) reference the same const. Test wrapper functions live in `oriterm_core/tests/tack/test_menu/*.rs`. Each scenario has an insta snapshot and a programmatic semantic assertion. Color/cursor scenarios run at three sizes (80x24, 97x33, 120x40)."
 success_criteria:
   - "`crates/oriterm_test_support/src/tack_framework/scenarios/` contains const ScenarioSpec values for every test menu screen: modes, acs, graphic_rendition, color, cursor_movement (one submodule per screen family)"
@@ -50,7 +52,19 @@ sections:
 
 # Section 05: Tack Scenarios — Test Menu (begin testing)
 
-**Status:** Not Started
+**Status:** Not Started — `reviewed: false`, BLOCKED on re-review after Section 04 lands.
+
+**API drift warning (BLOCKING — DO NOT IMPLEMENT FROM THIS SECTION'S CODE SAMPLES VERBATIM).** This section was authored before Agent 1's expansion of Section 04 and references an OBSOLETE framework API. Every code sample below uses the pre-expansion shapes:
+
+- `MenuStep { send, wait_for }` literal struct construction — the new shape is `MenuStep::new(send, wait_for)` (which fills in `or_wait_for: &[]`) or the full `MenuStep { send, wait_for, or_wait_for }` struct literal. Bare two-field literals will fail to compile.
+- `ScenarioSpec { id, menu_path, ready_anchor, parser }` literal — the new shape requires `screen_id` and `quit_path: Option<...>` fields. Bare four-field literals will fail to compile.
+- `outcome.id` for snapshot naming — the new shape is `outcome.snapshot_name()` which returns `<screen_id>_<cols>x<rows>` so size-matrix runs share `.snap` files when navigation produces the same screen.
+- `parse_modes_screen` defined inline in `oriterm_core/tests/tack/test_menu/modes.rs` — the new layout puts ALL `pub const TACK_*: ScenarioSpec` values AND their parser fns in `crates/oriterm_test_support/src/tack_framework/scenarios/<family>.rs` (workspace crate). The test target file holds ONLY `#[test] fn` wrappers and a `use oriterm_test_support::tack_framework::scenarios::<family>::*;` import. This is the SSOT principle from Section 04 — both text tests and Section 07 GPU goldens reference the same const, so the const lives in the shared crate.
+- `grid.contains("am")` for short capability labels — the new shape uses `crate::tack_framework::parser::tokens::grid_has_token` (whitespace-bounded), which is the M3 Codex finding fix from Section 04. Blind contains for short labels false-matches `am` on `name`, `xenl` on `xenlabel`, etc.
+- Sibling-tests file for parsers — sits next to the parser in the WORKSPACE CRATE (`tack_framework/scenarios/modes/tests.rs` if `modes.rs` is restructured into a directory module), NOT in the test target (`test_menu/modes/tests.rs`). The parser is what's being tested; the test wrapper is just plumbing.
+
+The rewrite contract for Section 05 is fixed: keep the SCENARIO LIST and the assertion intent, replace every code sample with the new API shapes, move every const + parser fn into the workspace crate, and re-run `/review-plan` against this section to flip `reviewed: true`. Until that rewrite happens, treat the code blocks below as PSEUDOCODE — they describe what to build (which screens, which assertions, which sizes), not literally what to type. The 04.N checklist item in Section 04 enforces the cross-section sync.
+
 **Goal:** Build out the catalog of scenarios accessible from tack's `n) begin testing` submenu. Const `ScenarioSpec` values + per-scenario parsers live in `crates/oriterm_test_support/src/tack_framework/scenarios/` (one submodule per screen family). Test wrapper `#[test] fn` files live in `oriterm_core/tests/tack/test_menu/` and import the consts. Section 07's GPU goldens reference the SAME consts — single source of truth for "how do you reach the modes screen" and "what does the parser extract".
 
 The catalog covers modes/glitches (am, bce, bw, km, mir, msgr, xenl), ACS/graphic rendition (line-drawing chars, SGR styles), color (named colors, 256-color block), and cursor movement (cup, csr, hpa, vpa, scroll regions). Color and cursor scenarios run at three sizes — 80x24, 97x33, 120x40 — using `ScenarioRunner::run_at` to catch size-dependent regressions.

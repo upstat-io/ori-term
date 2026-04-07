@@ -3,6 +3,8 @@ section: "06"
 title: "Tack Scenarios: Tools Menu"
 status: not-started
 reviewed: false
+needs_re_review_after: "04"
+re_review_reason: "Section 04 (post-Agent-1 expansion) defines the framework API that Section 06 consumes. Section 06's existing code samples reference the OLDER pre-expansion API: `MenuStep { send, wait_for }` (missing `or_wait_for`), `ScenarioSpec { id, menu_path, ready_anchor, parser }` (missing `screen_id` and `quit_path`), `outcome.id` for snapshot naming (must be `outcome.snapshot_name()`), parsers/consts defined inline in the test target (must live in `oriterm_test_support::tack_framework::scenarios::*`), blind `grid.contains` for short escape-prefix markers (must use `grid_has_token`/`grid_line_starts_with`/`grid_find_field`). Section 06 MUST NOT be implemented until its code samples are rewritten against Section 04 final and a fresh `/review-plan` pass flips this `reviewed` flag back to `true`."
 goal: "Populate the scenario catalog with tack's `t) tools` submenu screens: ANSI status reports (DA/DSR/DECRQM), SGR mode display (SGR 0-79), and character set tools (G0/G1/GL/GR banks). Same dual-file layout as Section 05: const ScenarioSpec values + per-scenario parsers in `crates/oriterm_test_support/src/tack_framework/scenarios/{status_reports,sgr_modes,character_sets}.rs`, test wrapper `#[test] fn`s in `oriterm_core/tests/tack/tools_menu/*.rs`. The tools menu is where tack INSPECTS what the terminal advertises rather than testing fixed protocols, so the parsers focus on extracting the inspected report contents."
 success_criteria:
   - "`oriterm_core/tests/tack/tools_menu/` contains modules: status_reports (DA/DSR/DECRQM responses), sgr_modes (SGR 0-79 sweep), character_sets (G0/G1/GL/GR banks)"
@@ -45,7 +47,19 @@ sections:
 
 # Section 06: Tack Scenarios — Tools Menu
 
-**Status:** Not Started
+**Status:** Not Started — `reviewed: false`, BLOCKED on re-review after Section 04 lands.
+
+**API drift warning (BLOCKING — DO NOT IMPLEMENT FROM THIS SECTION'S CODE SAMPLES VERBATIM).** This section was authored before Agent 1's expansion of Section 04 and references an OBSOLETE framework API. Every code sample below uses the pre-expansion shapes:
+
+- `MenuStep { send, wait_for }` literal struct construction — the new shape is `MenuStep::new(send, wait_for)` or the full three-field literal `MenuStep { send, wait_for, or_wait_for }`. Tools-menu screens are a particularly strong fit for `or_wait_for` because the tools sub-screens often expose pager prompts and "press any key" continuations that the navigator must handle.
+- `ScenarioSpec { id, menu_path, ready_anchor, parser }` literal — the new shape requires `screen_id` and `quit_path: Option<...>` fields.
+- `outcome.id` for snapshot naming — the new shape is `outcome.snapshot_name()` so DA1/DA2/DSR scenarios that share the same status-reports screen can share a snapshot file.
+- `parse_status_reports`, `parse_sgr_modes`, `parse_character_sets`, `parse_enq_ack`, `parse_osc_queries` defined inline in `oriterm_core/tests/tack/tools_menu/*.rs` — the new layout puts ALL `pub const TACK_TOOLS_*: ScenarioSpec` values AND their parser fns in `crates/oriterm_test_support/src/tack_framework/scenarios/<family>.rs` (workspace crate). The test target file holds ONLY `#[test] fn` wrappers and a `use oriterm_test_support::tack_framework::scenarios::<family>::*;` import. This is the SSOT principle from Section 04 — Section 07 GPU goldens reference the same const, so the const lives in the shared crate.
+- `grid.contains("[?")`, `grid.contains("c")`, `grid.contains("$y")` for response-marker detection — the new shape uses `crate::tack_framework::parser::tokens::{grid_has_token, grid_line_starts_with, grid_find_field}`. Bare `grid.contains("c")` matches every lowercase `c` in the screen including the literal English word "color" — the M3 Codex finding fix from Section 04 exists exactly for this antipattern. The status-reports parser has the strongest motivation for switching: a one-character contains check is the textbook false-positive case.
+- The IMPORTANT "dual-file layout" call-out in this section's preamble was authored against the OLD assumption that consts lived in the test target. Re-read it as: const ScenarioSpec values + parser fns ALWAYS live in `oriterm_test_support::tack_framework::scenarios::*`. The test target file is a thin `#[test] fn` wrapper with one `use` line.
+
+The rewrite contract for Section 06 is fixed: keep the SCENARIO LIST and the assertion intent, replace every code sample with the new API shapes, move every const + parser fn into the workspace crate, and re-run `/review-plan` against this section to flip `reviewed: true`. Treat the code blocks below as PSEUDOCODE — they describe what to build, not literally what to type.
+
 **Goal:** Cover tack's `t) tools` submenu with structured scenarios. Tools differ from the test menu in that they INSPECT what the terminal reports (DA/DSR/DECRQM responses, SGR mode names, character set bank state) instead of testing fixed protocols. The scenario parsers focus on extracting the report contents from the screen and asserting they match what ori_term should advertise.
 
 **Layout reminder (same as Section 05):** const ScenarioSpec values and parser functions go in `crates/oriterm_test_support/src/tack_framework/scenarios/`. Test wrapper `#[test] fn`s go in `oriterm_core/tests/tack/tools_menu/`. The two files share nothing except the import line `use oriterm_test_support::tack_framework::scenarios::{status_reports,sgr_modes,character_sets}::*;` in the test wrapper. The const layout makes Section 07's GPU goldens reference the SAME consts.
