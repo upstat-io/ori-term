@@ -823,43 +823,59 @@ terminal "renderer unavailable" state with manual retry.
 
 #### 5.16.1 Detection — distinguish surface vs device loss
 
-- [ ] Split `oriterm/src/gpu/window_renderer/error.rs::SurfaceError` into a wider enum that
+- [x] Split `oriterm/src/gpu/window_renderer/error.rs::SurfaceError` into a wider enum that
       preserves wgpu's actual variants:
       `Outdated` (benign reconfigure), `Lost` (device-or-swapchain epoch reset),
       `Timeout` (pass through, retry next frame), `OutOfMemory` (terminal — see 5.16.10),
       `Other(String)` (carry the wgpu detail string for logging). Update the conversion in
       `WindowRenderer::render_to_surface` (`gpu/window_renderer/render.rs:207`).
-- [ ] Add a global `DeviceHealth` enum on `App` (or on a new `GpuEpoch` type owned by `App`):
+- [x] Add a global `DeviceHealth` enum on `App` (or on a new `GpuEpoch` type owned by `App`):
       `Healthy { epoch: u64 }`, `Recovering { epoch: u64, attempt: u8, since: Instant }`,
       `Unavailable { last_error: String, since: Instant }`. The `epoch` counter monotonically
       increments on every successful recreate so other state can detect stale epochs without
       pointer comparison.
       WHERE: new file `oriterm/src/gpu/recovery/mod.rs`, owned by `App` as `gpu_health: GpuHealth`.
-- [ ] Register a `device_lost_callback` immediately after every successful
+- [x] Register a `device_lost_callback` immediately after every successful
       `Adapter::request_device(...)` in `oriterm/src/gpu/state/helpers.rs::request_device`.
       The callback signals recovery via `EventSender::send(TermEvent::GpuDeviceLost { reason,
       message })`. Add the new `TermEvent` variant in `oriterm/src/event.rs` and wire its
       handler in `oriterm/src/app/event_loop.rs`.
-- [ ] In `WindowRenderer::render_to_surface` map `wgpu::SurfaceError::Outdated` to the new
+      Implementation: registration site is `App::try_init` (`oriterm/src/app/init/mod.rs`)
+      via the new `GpuState::register_device_lost_callback` SSOT method, called immediately
+      after `GpuState::new` succeeds. The handler `App::handle_gpu_device_lost`
+      (`oriterm/src/app/gpu_recovery.rs`) delegates the state transition to the pure
+      `GpuHealth::next_after_loss` function.
+- [x] In `WindowRenderer::render_to_surface` map `wgpu::SurfaceError::Outdated` to the new
       `SurfaceError::Outdated` arm (currently collapsed into `Lost`). Update
       `app/redraw/post_render.rs::finish_render`: `Outdated` triggers
       `resize_surface + apply_pending_surface_resize` (the existing path); `Lost` and any
       device-lost callback signal trigger the full recovery state machine in 5.16.2.
-- [ ] Treat `Other` from `get_current_texture` as **soft device loss**: log the detail
+      Both `finish_render` (terminal windows) and `dialog_rendering.rs` (dialog windows)
+      route Lost → `TermEvent::GpuDeviceLost` via the event proxy.
+- [x] Treat `Other` from `get_current_texture` as **soft device loss**: log the detail
       string from wgpu, then escalate to the recovery state machine. Real-world WSLg / DX12
       driver bugs surface here when a device-lost detail is reported via error scopes
-      instead of `SurfaceError::Lost`.
-- [ ] **Wrap submit failure detection too.** `wgpu::Queue::submit` does not return an
+      instead of `SurfaceError::Lost`. Routed via `GpuLossReason::SurfaceOther`.
+- [x] **Wrap submit failure detection too.** `wgpu::Queue::submit` does not return an
       error in wgpu 28, but a device-lost callback may have fired *between* submit and
       present. After every `output.present()`, check whether the device-lost callback fired
       since the last frame (compare a `Cell<u64>` epoch against `App::gpu_health.epoch()`)
       — if so, that frame's pixels are garbage and the next frame will see the recovery
       gate. Drop the `SurfaceTexture` *before* updating the gate so `Surface::configure`
       in 5.16.6 does not panic.
-- [ ] **Synthetic loss for testing**: introduce `App::trigger_test_device_loss(reason)`
+      Implementation: `App::device_lost_signal: Arc<AtomicU64>` is bumped by the device-lost
+      closure on a wgpu thread. `finish_render` samples the counter and compares against
+      `last_seen_device_lost_signal`; a delta logs that the callback fired since the last
+      frame. 5.16.2's render gate consumes the same signal to short-circuit before
+      re-entering submit.
+- [x] **Synthetic loss for testing**: introduce `App::trigger_test_device_loss(reason)`
       gated behind `#[cfg(any(test, feature = "gpu-tests"))]` that posts the same
       `TermEvent::GpuDeviceLost` the callback would. Required by 5.16.13 to exercise the
       full state machine without a real GPU crash.
+      Helper landed; carries `#[expect(dead_code, ...)]` until 5.16.13's state-machine
+      integration test (which lands with 5.16.2's render gate) becomes the one true caller.
+      The pure `GpuHealth::next_after_loss` transition table is exercised by 9 unit tests
+      in `oriterm/src/gpu/recovery/tests.rs` (Healthy/Recovering/Unavailable × OOM/Other/Unknown).
 
 #### 5.16.2 Recovery state machine — App-level, serialized across windows
 
