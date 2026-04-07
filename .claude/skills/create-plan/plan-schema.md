@@ -654,6 +654,63 @@ Mid-section TPR checkpoints do **not** replace the final `/tpr-review` in the `{
 
 ---
 
+## Bug Fix Section Template
+
+Bug fixes use a lighter-weight section file that lives in the bug tracker (`plans/bug-tracker/fix-BUG-XX-NNN.md`). Created by the `/fix-bug` command, these follow the same rigor as plan sections but are scoped to a single bug or cluster of related bugs.
+
+The full template lives in `.claude/skills/fix-bug/fix-section-template.md`. The structure is:
+
+```markdown
+---
+bug: "BUG-{section}-{ordinal}"
+title: "{Bug title}"
+severity: "{critical|high|medium|low}"
+status: not-started
+goal: "{One-line measurable goal}"
+success_criteria:
+  - "{Criterion 1 — specific, testable}"
+  - "{Criterion 2 — with verification command}"
+subsystem: "{crate/file path}"
+found: "{YYYY-MM-DD}"
+source: "{tpr-review|manual|continue-roadmap|review-work}"
+third_party_review:
+  status: none
+  updated: null
+---
+
+# Fix: BUG-{section}-{ordinal} — {Title}
+
+## 1. Root Cause Analysis
+## 2. TDD — Test Matrix
+## 3. Implementation
+## 4. Completion Checklist
+```
+
+### Key Differences from Plan Sections
+
+| Aspect | Plan Section | Bug Fix Section |
+|--------|-------------|-----------------|
+| Location | `plans/{plan}/section-NN-*.md` | `plans/bug-tracker/fix-BUG-XX-NNN.md` |
+| Scope | Feature/subsystem | Single bug or cluster |
+| Subsections | Multiple ({NN}.1, {NN}.2, ...) | Four fixed sections (RCA, TDD, Impl, Checklist) |
+| Research | Multi-pass | Focused investigation |
+| TPR checkpoints | After every 2-3 subsections | Final only (unless complex) |
+| {NN}.R section | Reserved for TPR findings | TPR findings go in completion checklist |
+| Overview sync | Mission criteria, dependency graph | Bug count in overview, entry marked resolved |
+
+### When to Escalate from `/fix-bug` to `/create-plan`
+
+If during `/fix-bug` investigation (Phase 1.5 — Scope Assessment) you discover the bug requires:
+- Changes to 4+ files across multiple crates/subsystems
+- Architectural change or redesigning an existing system (e.g., reworking the render pipeline, replacing the snapshot transport, restructuring widget propagation)
+- New abstractions, new pipeline passes, or new data structures
+- Work that naturally decomposes into 3+ distinct subsections
+- A TDD matrix you can't write because the fix approach itself is unclear
+
+...then escalate to `/create-plan` instead. The fix-bug Phase 1 investigation becomes the research input for the plan, and the bug entry gets a `Escalated to plan: plans/{plan-name}/` note. See `/fix-bug` for the full escalation protocol.
+
+---
+
 ## Reference
 
 See the roadmap (`plans/roadmap/`) as a working example of this schema in use.
