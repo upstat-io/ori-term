@@ -136,6 +136,7 @@ impl InProcessMux {
         let pane_id = self.pane_alloc.alloc();
         let domain_id = self.local_domain.id();
         let initial_title = request.initial_title;
+        let initial_icon = request.initial_icon;
         let config = AdoptConfig {
             pane_id,
             domain_id,
@@ -153,6 +154,14 @@ impl InProcessMux {
         // sticks until OSC 0/2 explicitly overrides it.
         if !initial_title.is_empty() {
             pane.set_title(initial_title);
+        }
+
+        // Apply the handoff icon (typically from
+        // `TERMINAL_STARTUP_INFO.pszIconPath` — a `.ico` path embedded
+        // in a `.lnk` shortcut). The tab bar consumes this via
+        // `Pane::icon_name` to render a per-pane icon.
+        if let Some(icon) = initial_icon {
+            pane.set_icon_name(icon);
         }
 
         self.pane_registry.register(PaneEntry {

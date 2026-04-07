@@ -62,6 +62,12 @@ pub struct AdoptPaneRequest {
     /// "no explicit title" — the pane will fall back to its CWD-derived
     /// or shell-set title via the standard `Pane::effective_title` chain.
     pub initial_title: String,
+    /// Initial pane icon name/path (typically from
+    /// `TERMINAL_STARTUP_INFO.pszIconPath`, e.g. the icon embedded in a
+    /// `.lnk` shortcut). `None` if the COM caller did not supply one.
+    /// Stored on the pane via `Pane::set_icon_name` and consumed by the
+    /// tab bar to render a per-pane icon.
+    pub initial_icon: Option<String>,
 }
 
 /// Abstraction over in-process and daemon-mode multiplexer access.
