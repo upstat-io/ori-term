@@ -35,7 +35,7 @@ dev-dependency, workspace member, crates/
 ---
 
 ### Section 02: Terminfo Provisioning
-**File:** `section-02-terminfo-provisioning.md` | **Status:** Not Started
+**File:** `section-02-terminfo-provisioning.md` | **Status:** Complete
 
 ```
 terminfo, termcap, TERM, TERMINFO, TERMINFO_DIRS, xterm-256color

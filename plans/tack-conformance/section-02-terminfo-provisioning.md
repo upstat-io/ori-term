@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Terminfo Provisioning"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create extra/ori_term.info (a pinned terminfo source derived from xterm-256color), then add a runtime TerminfoEnv helper in oriterm_test_support that compiles ori_term.info via tic into a temp directory and exposes (TERM=ori_term, TERMINFO=..., TERMINFO_DIRS=...) for child processes. Tack-driven tests in Sections 03+ get a controlled, reproducible terminfo entry instead of validating whatever the host's ncurses database happens to say."
 success_criteria:
@@ -13,7 +13,7 @@ success_criteria:
   - "`tic_available()` and `infocmp_available()` runtime checks exist alongside `tack_available()` (Section 03). `tic_available()` gates `TerminfoEnv::compile()` and Section 03's `spawn_tack`. `infocmp_available()` ONLY gates the 02.4 round-trip tests — it is NOT a prerequisite for `compile()`."
   - "`TerminfoVariant` enum (`OriTerm` / `OriTermDirect`) is the only valid input to `TerminfoEnv::compile_with_variant`. Adding a third variant requires updating the exhaustive match in `compile_with_variant` — the compiler enforces the sync point. No `&'static str` parameter exists; callers cannot typo a name."
   - "Unit test `terminfo_env_compiles_ori_term` constructs a `TerminfoEnv` and verifies compilation via `infocmp -A <dir> ori_term` (NOT via hardcoded `<tempdir>/o/ori_term` path check), asserting the output contains `am` and `colors#256`. This test gates on BOTH `tic_available()` AND `infocmp_available()` since it exercises the round-trip. Companion unit tests in 02.2: `terminfo_env_drop_cleans_temp_dir` (pure-tic gate, proves Drop), `apply_env_sets_three_vars` (asserts the `env_pairs` SSOT triple — names distinct, values pinned to the compiled tempdir), `terminfo_variant_entry_names_are_distinct` (catches variant typo collisions), `embedded_terminfo_source_is_nonempty` (proves `include_str!` resolved), `terminfo_env_repeated_compile_stress` (5x compile, no leaks)."
-  - "All Section 02 tests skip cleanly when `tic` is unavailable (Windows native, restricted CI environments). Round-trip tests additionally skip when `infocmp` is unavailable. The `infocmp_unavailable_skips_round_trip_test` pin proves the gate works even when `tic` is present but `infocmp` is not."
+  - "All Section 02 tests skip cleanly when `tic` is unavailable (Windows native, restricted CI environments). Round-trip tests additionally skip when `infocmp` is unavailable. All gated tests route through the SSOT `round_trip_gate_closed()` helper, and the `round_trip_gate_semantics_pinned` test pins the full 2x2 truth table of `round_trip_gate_closed_for(tic_ok, infocmp_ok)` so gate inversions or relaxations fail immediately. (This replaces an earlier draft that proposed an `infocmp_unavailable_skips_round_trip_test` no-op pin — see 02.R/TPR-02-002 for the rationale.)"
   - "Parallel/repeated compile stress: `terminfo_env_repeated_compile_stress` calls `TerminfoEnv::compile()` 5 times in succession in a single test, asserts all 5 succeed and all 5 tempdirs are cleaned up cleanly after Drop. Catches tempdir collisions, stale-fd leaks, and tic state leakage."
   - "Performance budget release-vs-debug discipline: BOTH debug and release builds must meet the per-call 1000 ms ceiling for `TerminfoEnv::compile()`. The `terminfo_env_compile_under_perf_budget` test runs in whichever profile `cargo test` uses; the section completion notes record warm-time numbers under both profiles (`cargo test --release -p oriterm_test_support terminfo_env_compile_under_perf_budget` is the second measurement)."
   - "Satisfies the two pinned-terminfo mission criteria in `00-overview.md` (the `extra/ori_term.info` source criterion and the `tic`-compiles + `TERM=ori_term` + `TERMINFO`/`TERMINFO_DIRS` criterion): `extra/ori_term.info` is a hand-authored, fully-pinned terminfo source with a private `ori_term+common` base fragment (NO `use=xterm-256color,` inheritance — capability vocabulary derived from xterm conventions but every cap declared explicitly); `tic` compiles it successfully; tests consume the compiled entry via pinned `TERM=ori_term` + `TERMINFO` + `TERMINFO_DIRS` env vars."
@@ -29,8 +29,8 @@ inspired_by:
   - "ncurses tic(1) and term(5) man pages — TERMINFO_DIRS resolution order, -x flag for extension capabilities"
 depends_on: ["01"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-07
 sections:
   - id: "02.1"
     title: "Author extra/ori_term.info"
@@ -43,10 +43,10 @@ sections:
     status: complete
   - id: "02.4"
     title: "Verify pinned terminfo round-trips through infocmp"
-    status: not-started
+    status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "02.N"
     title: "Completion Checklist"
     status: not-started
@@ -56,7 +56,7 @@ sections:
 
 <!-- resolves: plans/bug-tracker/section-07-ci-build.md#BUG-07-008 — fixed as part of 02.3 skip-discipline subsection -->
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Stop letting tack tests validate whatever `xterm-256color` happens to declare on the host. Create a pinned `extra/ori_term.info` (hand-authored — no `use=xterm-256color,` inheritance) that documents EXACTLY which capabilities ori_term implements, then compile it at test runtime via `tic` into a temp directory, then expose `(TERM=ori_term, TERMINFO=<tempdir>, TERMINFO_DIRS=<tempdir>)` env-vars for `tack` (and any other terminfo-aware tool) to consume. After this section, every tack scenario in Sections 03-08 runs against ori_term's documented terminfo, not the host's xterm-256color guess.
 
 **Success Criteria:**
@@ -74,7 +74,7 @@ sections:
 - [ ] Performance: `TerminfoEnv::compile()` micro-benchmark recorded under BOTH debug and release profiles. Single-call ceiling 1000 ms. Section 02 also projects 50-call cost (×50) and files `/add-bug` if the projection exceeds 30 s.
 - [ ] Child-process integrity test landed: `infocmp` spawned as a child with `apply_env()` applied, NO `-A` flag, returns the pinned ori_term entry (proves env-var precedence path actually works)
 - [ ] Parallel/repeated compile stress test (`terminfo_env_repeated_compile_stress`) calls `compile()` 5 times in succession in one test, asserts all 5 succeed AND all 5 tempdirs clean up after Drop
-- [ ] `infocmp_unavailable_skips_round_trip_test` proves the `infocmp_available()` gate works (round-trip test skips cleanly when `infocmp` is missing even though `tic` is present)
+- [ ] `round_trip_gate_semantics_pinned` proves the SSOT `round_trip_gate_closed` / `round_trip_gate_closed_for` gate fires correctly for every combination of `tic_available()` and `infocmp_available()` (the landed replacement for the originally-proposed `infocmp_unavailable_skips_round_trip_test` pin — see 02.R/TPR-02-002)
 - [ ] Failing-test-first sequencing enforced: every TDD entry in 02.2 explicitly says "write the test FIRST, watch it fail, THEN implement"
 - [ ] Satisfies the two pinned-terminfo mission criteria in `00-overview.md` (the `extra/ori_term.info` hand-authored source criterion AND the `tic`-compiles + pinned `TERM=ori_term`/`TERMINFO`/`TERMINFO_DIRS` criterion — see overview for the reconciled wording). Section 02 also indirectly contributes to the cross-platform skip-discipline mission criterion via the BUG-07-008 fix landed in 02.3 (`pty_session_drains_simple_output` becomes the second portable test in `oriterm_test_support`).
 
@@ -863,7 +863,22 @@ The runtime check helpers go alongside `vttest_available()` from Section 01. The
 
 The terminfo source is correct only if `tic` round-trips it through `infocmp` cleanly. This subsection is the gate.
 
-- [ ] Add `tic -c -x` warning-gate test. This is the gate that catches cap syntax errors at CI time — `tic` would otherwise silently drop bad caps during the real compile:
+**Implementation history (02.4 sitting):** All six unchecked items landed in one sweep in `crates/oriterm_test_support/src/terminfo/tests.rs`. Three deviations from the plan example code, all rigorous and all documented in comments on the landed tests:
+
+1. **`infocmp -x` flag required on the round-trip tests.** The plan example code at lines 923 and 995 omitted the `-x` flag on the `infocmp -A` invocations, even though line 241 of 02.1 explicitly noted the omission and required the fix here. Without `-x`, extension caps (`Tc`, `RGB`, `BD=`, `BE=`, `PS=`, `PE=`, `kxIN=`, `kxOUT=`, `Smulx=`, `Setulc=`, `Sync=`, `Ms=`, `Ss=`, `Se=`, `Cr=`, `Cs=`, `XF`) are hidden from infocmp's default output and the assertions panic even though the caps are correctly compiled. Fixed by adding `.arg("-x")` to both `ori_term_terminfo_round_trips_via_infocmp` and `ori_term_direct_declares_truecolor`.
+2. **Child-process integrity test pins on the reconstruction-source file path.** The plan example at lines 1070-1074 proposed matching on `kf63=` as a uniqueness marker, on the assumption that "host xterm-256color usually stops at kf48." That assumption is false on ncurses 6.x — `xterm-256color` on Linux now ships `kf1` through `kf63` (verified locally: `infocmp -x xterm-256color | grep kf63` returns `kf63=\E[1;4R`). An interim fix tried `hs,` as a content marker (the OSC-2-backed status-line boolean, absent from host `xterm-256color`), but TPR-02-001 flagged that as still host-state dependent: a future packaging release that installs `ori_term` into `/usr/share/terminfo/o/ori_term` could easily declare `hs` too, masking regressions in `env_pairs()` / `apply_env()`. Final fix: `child_process_with_apply_env_reads_pinned_terminfo` now parses `infocmp`'s first output line — `# Reconstructed via infocmp from file: <path>` — and asserts `<path>` lives INSIDE `env.terminfo_dir()`. ncurses prints `$TERMINFO`'s value as-is (verified with a symlinked-tempdir probe on Linux), so the path pin is immune to any system-installed `ori_term` entry — if env-precedence silently fails and the child falls through to `/usr/share/terminfo/o/ori_term`, the reconstruction header names the wrong path and the assertion fires. The earlier `hs,` content marker was removed because the path pin is strictly stronger.
+3. **SSOT round-trip gate helper.** The plan example code at line 1010 provided an `infocmp_unavailable_skips_round_trip_test` that recomputed the `!tic_available() || !infocmp_available()` gate locally and either returned or called `TerminfoEnv::compile()`. TPR-02-002 flagged that the test never exercised the round-trip path, never invoked `infocmp`, and was not coupled to the other round-trip tests — so those tests could drop their `infocmp_available()` guard without tripping this pin. Final fix: extracted `round_trip_gate_closed()` and its pure form `round_trip_gate_closed_for(tic_ok, infocmp_ok)` at the top of `tests.rs` as the single canonical home for the gate. The four round-trip/compile tests that need to skip when tools are missing (`terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`) now route their skip decision through this helper. The no-op `infocmp_unavailable_skips_round_trip_test` was replaced with `round_trip_gate_semantics_pinned`, which pins the full 2x2 truth table of `round_trip_gate_closed_for` AND asserts `round_trip_gate_closed` delegates to the pure form — so inverting the gate to `!tic_ok && !infocmp_ok` (or any other relaxation) fails immediately. `round_trip_gate_semantics_pinned` itself does NOT skip through the helper (it would short-circuit the very assertions it is trying to pin); it is a pure-function test that runs on every platform with or without `tic`/`infocmp` installed, and it calls `round_trip_gate_closed()` only in its final delegation check.
+
+All three deviations are documented in comments on the relevant tests so future maintainers understand the reasoning without having to re-read this history block.
+
+**Performance numbers (measured 2026-04-07):**
+
+- `cargo test -p oriterm_test_support terminfo_env_compile_under_perf_budget -- --nocapture` (debug): warm = 2 ms; 50-call projection = 100 ms.
+- `cargo test --release -p oriterm_test_support terminfo_env_compile_under_perf_budget -- --nocapture` (release): warm = 2 ms; 50-call projection = 100 ms.
+
+Both well under the 1000 ms per-call ceiling and 30 s 50-call projection ceiling.
+
+- [x] Add `tic -c -x` warning-gate test. This is the gate that catches cap syntax errors at CI time — `tic` would otherwise silently drop bad caps during the real compile:
   ```rust
   #[test]
   fn tic_validate_source_has_zero_unexpected_warnings() {
@@ -905,7 +920,7 @@ The terminfo source is correct only if `tic` round-trips it through `infocmp` cl
   }
   ```
 
-- [ ] Add round-trip integrity test. This is the canonical home of the `infocmp -A` portable check — keeping it here (rather than inside `TerminfoEnv::compile()`) is what lets the constructor stay pure-`tic` and gate only on `tic_available()`. The 02.4 round-trip suite gates on BOTH `tic_available()` AND `infocmp_available()`:
+- [x] Add round-trip integrity test. This is the canonical home of the `infocmp -A` portable check — keeping it here (rather than inside `TerminfoEnv::compile()`) is what lets the constructor stay pure-`tic` and gate only on `tic_available()`. The 02.4 round-trip suite gates on BOTH `tic_available()` AND `infocmp_available()`. **Implementation deviation:** the example code below omits `-x`; the landed test adds `.arg("-x")` because extension caps (`BD=`, `BE=`, `PS=`, `PE=`, `kxIN=`, `kxOUT=`) only appear under `infocmp -x`. See the implementation history block at the top of 02.4.
   ```rust
   #[test]
   fn ori_term_terminfo_round_trips_via_infocmp() {
@@ -968,7 +983,7 @@ The terminfo source is correct only if `tic` round-trips it through `infocmp` cl
   }
   ```
 
-- [ ] Add direct-entry round-trip test (uses the typo-safe `TerminfoVariant` enum, not a `&'static str`):
+- [x] Add direct-entry round-trip test (uses the typo-safe `TerminfoVariant` enum, not a `&'static str`). **Implementation deviation:** `-x` added for the same reason as the main round-trip — `RGB` and `Tc` are both extension caps.
   ```rust
   #[test]
   fn ori_term_direct_declares_truecolor() {
@@ -992,90 +1007,102 @@ The terminfo source is correct only if `tic` round-trips it through `infocmp` cl
       );
   }
 
+  // SSOT gate helpers at the top of tests.rs — the four
+  // round-trip/compile tests that need to skip when tools are
+  // missing route their skip decision through
+  // `round_trip_gate_closed()`. `round_trip_gate_semantics_pinned`
+  // below does NOT skip through the helper (it is a pure-function
+  // test that pins the gate itself):
+  fn round_trip_gate_closed() -> bool {
+      round_trip_gate_closed_for(tic_available(), infocmp_available())
+  }
+  fn round_trip_gate_closed_for(tic_ok: bool, infocmp_ok: bool) -> bool {
+      !tic_ok || !infocmp_ok
+  }
+
   #[test]
-  fn infocmp_unavailable_skips_round_trip_test() {
-      // Proves the infocmp_available() gate is the actual condition
-      // that skips round-trip tests, NOT just an "or" with tic_available().
-      // This test documents the gate semantics: if infocmp goes missing
-      // tomorrow but tic stays, all 02.4 round-trip tests must skip
-      // cleanly without panicking. We exercise the gate logic directly
-      // here so a regression in the gate placement (e.g., a future test
-      // forgetting `|| !infocmp_available()`) is caught immediately.
-      //
-      // The test passes in EVERY environment:
-      // - infocmp present + tic present:  gate returns false, body runs harmlessly
-      // - infocmp absent + tic present:   gate returns true, body short-circuits cleanly
-      // - infocmp absent + tic absent:    gate returns true, body short-circuits cleanly
-      // - infocmp present + tic absent:   gate returns true, body short-circuits cleanly
-      let should_skip = !tic_available() || !crate::infocmp_available();
-      if should_skip {
-          // We "skipped" — assert we're returning, not panicking.
-          eprintln!(
-              "infocmp_unavailable_skips_round_trip_test: gate triggered \
-               (tic={}, infocmp={}); returning cleanly",
-              tic_available(),
-              crate::infocmp_available()
-          );
-          return;
-      }
-      // Both tools available — sanity-check that we can call compile()
-      // and the gate semantic test runs end-to-end.
-      let _env = TerminfoEnv::compile();
+  fn round_trip_gate_semantics_pinned() {
+      // Pin the 2x2 truth table of `round_trip_gate_closed_for` so
+      // a future edit cannot silently invert, relax, or drop a
+      // branch of the gate. Inverting `!tic_ok || !infocmp_ok` to
+      // `!tic_ok && !infocmp_ok` (so round-trip tests would run
+      // when only ONE tool is present) fails immediately.
+      assert!(!round_trip_gate_closed_for(true, true));
+      assert!(round_trip_gate_closed_for(true, false));
+      assert!(round_trip_gate_closed_for(false, true));
+      assert!(round_trip_gate_closed_for(false, false));
+      // Also assert the live helper delegates to the pure form.
+      assert_eq!(
+          round_trip_gate_closed(),
+          round_trip_gate_closed_for(tic_available(), infocmp_available())
+      );
   }
   ```
 
-- [ ] **Child-process integrity test** — proves `TerminfoEnv`'s env-var SSOT actually steers a real child process to the pinned terminfo (NOT just to the on-disk dir). This is the only test that exercises the same code path Sections 03-08 will rely on. We use `std::process::Command` directly here (rather than `portable_pty::CommandBuilder`) because the test doesn't need a PTY — it just needs a child whose env-var precedence we can inspect via stdout. The behavioral contract being tested is the same: the SSOT must set `TERM`/`TERMINFO`/`TERMINFO_DIRS` such that ncurses lookup finds the pinned entry.
+  > **Landed form** — this example was rewritten during 02.4 to replace
+  > an earlier `infocmp_unavailable_skips_round_trip_test` draft that
+  > was flagged as a no-op pin by TPR-02-002. The landed tests at
+  > `crates/oriterm_test_support/src/terminfo/tests.rs` route
+  > `terminfo_env_compiles_ori_term`,
+  > `ori_term_terminfo_round_trips_via_infocmp`,
+  > `ori_term_direct_declares_truecolor`, and
+  > `child_process_with_apply_env_reads_pinned_terminfo` through
+  > `round_trip_gate_closed()` as well, so a single helper is the
+  > one place the gate is defined.
+
+- [x] **Child-process integrity test** — proves `TerminfoEnv`'s env-var SSOT actually steers a real child process to the pinned terminfo (NOT just to the on-disk dir). **Implementation deviation (final):** the landed test pins on `infocmp`'s `# Reconstructed via infocmp from file: <path>` header, asserting `<path>` lives inside `env.terminfo_dir()`. This is immune to any system-installed `ori_term` entry — including future packaging releases. The earlier interim marker was `hs,`, which TPR-02-001 correctly flagged as still host-state dependent; and the plan's original `kf63=` marker was already known-stale because ncurses 6.x xterm-256color ships kf1-kf63. See the implementation history block at the top of 02.4 for the full reasoning. This is the only test that exercises the same code path Sections 03-08 will rely on. We use `std::process::Command` directly here (rather than `portable_pty::CommandBuilder`) because the test doesn't need a PTY — it just needs a child whose env-var precedence we can inspect via stdout. The behavioral contract being tested is the same: the SSOT must set `TERM`/`TERMINFO`/`TERMINFO_DIRS` such that ncurses lookup finds the pinned entry.
 
   Critically, the test consumes `TerminfoEnv::env_pairs()` directly — the SAME `pub(crate)` SSOT that `apply_env(&mut CommandBuilder)` calls. There is NO duplicate hand-rolled `cmd.env("TERM", ...)` triple. If `env_pairs` grows a fourth entry tomorrow, BOTH `apply_env` AND this test pick it up automatically with zero edits. This is the SSOT enforcement that turns the test into a real contract check, not a parallel implementation.
   ```rust
   #[test]
   fn child_process_with_apply_env_reads_pinned_terminfo() {
-      if !tic_available() || !crate::infocmp_available() {
+      if round_trip_gate_closed() {
           return;
       }
       let env = TerminfoEnv::compile();
-
-      // Spawn `infocmp` as a CHILD with TerminfoEnv's env-var triple
-      // applied via the SAME SSOT (`env_pairs`) that `apply_env`
-      // consumes. CRITICALLY do NOT pass `-A <dir>` — that would make
-      // infocmp look up the entry by directory regardless of env vars.
-      // With no `-A`, infocmp consults `$TERM` / `$TERMINFO` /
-      // `$TERMINFO_DIRS` exactly the way tack will. If the child returns
-      // the pinned ori_term entry, the env-var precedence path works
-      // end-to-end.
-      //
-      // We use `std::process::Command` (not `portable_pty::CommandBuilder`)
-      // because the test needs stdout capture, which CommandBuilder does
-      // not expose. Both APIs accept (name, value) env pairs, so the
-      // SSOT iteration pattern is identical — only the receiver changes.
       let mut cmd = std::process::Command::new("infocmp");
       cmd.arg(env.term());
+      // Consume the env_pairs() SSOT — the SAME (name, value)
+      // triple that apply_env(&mut CommandBuilder) uses. If
+      // env_pairs grows a fourth entry tomorrow, this loop picks
+      // it up automatically.
       for (name, value) in env.env_pairs() {
           cmd.env(name, value);
       }
-      // Strip any inherited TERMCAP from the parent process so we're
-      // only testing what the env_pairs SSOT sets.
       cmd.env_remove("TERMCAP");
       let out = cmd.output().expect("invoke infocmp");
-      assert!(
-          out.status.success(),
-          "child infocmp failed (apply_env triple should have steered it to the pinned dir): stderr={}",
-          String::from_utf8_lossy(&out.stderr),
-      );
+      assert!(out.status.success(), "child infocmp failed");
+
+      // Pin on `infocmp`'s reconstruction-source header:
+      //   `# Reconstructed via infocmp from file: <path>`
+      // `<path>` is the actual file ncurses loaded. If env-
+      // precedence steered the child to our tempdir, `<path>`
+      // lives inside env.terminfo_dir(). A system-installed
+      // ori_term (/usr/share/terminfo/o/ori_term) would show a
+      // different path — this pin is immune to content
+      // collisions AND future packaging releases.
       let stdout = String::from_utf8_lossy(&out.stdout);
-      // The pinned entry must report colors#256 — the host
-      // xterm-256color also reports colors#256, so this alone
-      // doesn't prove we hit the pinned entry. Pin on a unique
-      // marker that ONLY ori_term declares: the kf63 cap (the host
-      // xterm-256color usually stops at kf48).
+      let header = stdout.lines().next().expect("empty stdout");
+      let tempdir_str = env.terminfo_dir().to_string_lossy();
       assert!(
-          stdout.contains("kf63="),
-          "child infocmp returned a terminfo entry WITHOUT kf63 — env precedence did not steer the child to the pinned ori_term entry. stdout:\n{stdout}",
+          header.contains("Reconstructed") && header.contains(tempdir_str.as_ref()),
+          "infocmp header `{header}` does not name the pinned tempdir `{tempdir_str}`"
       );
   }
   ```
 
-- [ ] **Self-contained per-call performance benchmark with 50-call projection.** Section 02 must measure tic overhead WITHOUT depending on Sections 03-08 existing yet — those sections do not exist at 02's sitting, so a `time ./test-all.sh` measurement is non-executable inside this section's window. Instead, project the 50-call cost from a single in-test measurement and file a bug immediately if the projection exceeds 30 s.
+  > **Landed form** — this example was rewritten during 02.4 after
+  > TPR-02-001 flagged that the original `stdout.contains("kf63=")`
+  > marker (and an interim `stdout.contains("hs,")` marker) were
+  > both host-state dependent: modern ncurses ships `kf63` in
+  > `xterm-256color`, and any future packaging release that
+  > installs `ori_term` into `/usr/share/terminfo/o/ori_term` could
+  > coincidentally declare `hs` too. The reconstruction-source
+  > header path pin shown above is strictly stronger — it proves
+  > `infocmp` loaded the file inside OUR compiled tempdir, not
+  > any other file named `ori_term` on disk.
+
+- [x] **Self-contained per-call performance benchmark with 50-call projection.** Section 02 must measure tic overhead WITHOUT depending on Sections 03-08 existing yet — those sections do not exist at 02's sitting, so a `time ./test-all.sh` measurement is non-executable inside this section's window. Instead, project the 50-call cost from a single in-test measurement and file a bug immediately if the projection exceeds 30 s. **Measured 2026-04-07:** debug warm = 2 ms, release warm = 2 ms; 50-call projection = 100 ms in both profiles — both well under the 1000 ms per-call and 30 s projection ceilings, so no follow-up bug is needed.
   ```rust
   #[test]
   fn terminfo_env_compile_under_perf_budget() {
@@ -1120,7 +1147,7 @@ The terminfo source is correct only if `tic` round-trips it through `infocmp` cl
   ```
   Section 02's perf gate is fully self-contained: it measures one warm call, asserts the per-call ceiling (1000 ms), and asserts the 50-call projection (30 s). Section 09 (Verification) — NOT Section 02 — owns the post-Sections-03-08 `time ./test-all.sh` aggregate measurement; that item belongs in 09's checklist, not 02's. The dependency is one-way: 09 reads 02's per-call number when projecting; 02 cannot wait for 09.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 02.1–02.4 implementation work. Catches: missing required capabilities, wrong escape sequence syntax in `extra/ori_term.info`, unexpected `tic` warnings (anything beyond the known `Setulc` false positive), `TerminfoEnv` resource leaks (failing to clean up tempdirs on panic paths), `include_str!` path mis-resolution (if the `extra/` file moves, the build fails — but a TPR can confirm the path is correctly relative to `CARGO_MANIFEST_DIR`), AND verifies the BUG-07-008 fix (portable two-arm `pty_session_drains_simple_output` test) is sound on Windows.
+- [x] **TPR checkpoint** — `/tpr-review` covering 02.1–02.4 implementation work. First pass (2026-04-07) surfaced TPR-02-001 (child-process integrity test was host-state dependent) and TPR-02-002 (gate-pin test was a no-op). Both resolved via code fixes; see `02.R` block below for details. Re-run pending after /commit-push to confirm clean. Catches: missing required capabilities, wrong escape sequence syntax in `extra/ori_term.info`, unexpected `tic` warnings (anything beyond the known `Setulc` false positive), `TerminfoEnv` resource leaks (failing to clean up tempdirs on panic paths), `include_str!` path mis-resolution (if the `extra/` file moves, the build fails — but a TPR can confirm the path is correctly relative to `CARGO_MANIFEST_DIR`), AND verifies the BUG-07-008 fix (portable two-arm `pty_session_drains_simple_output` test) is sound on Windows.
 
 ---
 
@@ -1128,56 +1155,78 @@ The terminfo source is correct only if `tic` round-trips it through `infocmp` cl
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-02-001][medium]` `crates/oriterm_test_support/src/terminfo/tests.rs` → `child_process_with_apply_env_reads_pinned_terminfo` — host-state dependent; can falsely pass once `ori_term` exists in the default terminfo database. (Original file-line reference `tests.rs:445` at finding-file time is now stale after the fix expanded the test body.)
+  Evidence: the test proves precedence with `status.success()` plus `stdout.contains("hs,")`. That distinguishes the pinned entry from host `xterm-256color`, but not from a system-installed `ori_term` entry. The test comments already rely on the host-specific fact that `/usr/share/terminfo/o/ori_term` does not exist "on this host", which will stop being true once packaging or a local install lands.
+  Impact: this is the only Section 02 test meant to prove `TERMINFO` / `TERMINFO_DIRS` actually steer a real child process. On machines with a preinstalled `ori_term`, regressions in `env_pairs()` / `apply_env()` can slip through unnoticed because `infocmp ori_term` would still succeed and still contain `hs,`.
+  Resolved: Fixed on 2026-04-07. The test now pins on `infocmp`'s reconstruction-source header (`# Reconstructed via infocmp from file: <path>`), asserting `<path>` lives inside `env.terminfo_dir()`. ncurses prints the exact `$TERMINFO` path as-is (verified with a symlinked tempdir probe), so the assertion is immune to any system-installed `ori_term` entry — if env-precedence fails and the child falls through to `/usr/share/terminfo/o/ori_term`, the header path points there and the assert fires. The weaker `stdout.contains("hs,")` content-marker assertion was removed; the reconstruction-source path check fully supersedes it.
+- [x] `[TPR-02-002][low]` `crates/oriterm_test_support/src/terminfo/tests.rs` → `infocmp_unavailable_skips_round_trip_test` (since removed, replaced by `round_trip_gate_semantics_pinned`) — does not verify the round-trip gate it claims to pin. (Original file-line reference `tests.rs:415` at finding-file time is now stale — the test was renamed and rewritten.)
+  Evidence: the test recomputes `!tic_available() || !infocmp_available()` locally and then either returns or calls `TerminfoEnv::compile()`. It never executes the round-trip path, never invokes `infocmp`, and has no coupling to `ori_term_terminfo_round_trips_via_infocmp` or `ori_term_direct_declares_truecolor`, so those tests could drop their `infocmp_available()` guard and this pin would still pass.
+  Impact: Section 02's "skip cleanly when infocmp is unavailable" contract is effectively untested, leaving future skip-discipline regressions silent until they hit a tool-missing environment.
+  Resolved: Fixed on 2026-04-07. Extracted `round_trip_gate_closed()` as the SSOT helper and its pure form `round_trip_gate_closed_for(tic_ok, infocmp_ok)`. The four round-trip/compile tests that need to skip when tools are missing (`terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`) now route their skip decision through this single helper. The no-op `infocmp_unavailable_skips_round_trip_test` was replaced with `round_trip_gate_semantics_pinned`, which pins the full 2x2 truth table of `round_trip_gate_closed_for` — so inverting `!tic_ok || !infocmp_ok` to `!tic_ok && !infocmp_ok` (or any other relaxation) fails immediately. The final assertion also pins that `round_trip_gate_closed` delegates to `round_trip_gate_closed_for`, catching regressions where the live helper drifts from its pure form. `round_trip_gate_semantics_pinned` itself does NOT skip through the helper (a gate test that skipped via its own gate would be useless); it is a pure-function test that runs in every environment.
+- [x] `[TPR-02-003][low]` `plans/tack-conformance/section-02-terminfo-provisioning.md:866-869`, `plans/tack-conformance/section-02-terminfo-provisioning.md:1041-1089`, `plans/tack-conformance/section-02-terminfo-provisioning.md:1189` — the 02.4 prose is out of sync with the landed TPR-02-001 fix and now contradicts the section's own `02.R` record.
+  Evidence: the current 02.4 "Implementation history" still says the child-process integrity test's live deviation is the interim `hs,` marker replacement for `kf63=`, and the embedded example block still shows the pre-TPR `stdout.contains("kf63=")` assertion. Later in the same file, `02.R` correctly records that TPR-02-001 was resolved by switching to the `infocmp` reconstruction-source header path pin, and the completion checklist now claims all TPR findings are resolved.
+  Impact: the code fix itself is sound, but the plan now tells two incompatible stories about what Section 02 actually shipped. That undermines the review trail this section is explicitly trying to preserve, and future maintainers reading 02.4 can be sent back toward the obsolete host-state-dependent approach.
+  Resolved: Fixed on 2026-04-07. The 02.4 "Implementation history" block was rewritten to list THREE deviations (infocmp `-x` flag, reconstruction-source path pin on the child-process test, and the SSOT round-trip gate helper), each with a paragraph describing the full evolution from the plan's original example to the final landed form — including the interim `hs,` marker and why it was abandoned. The "Child-process integrity test" checklist item at what was line 1041 now describes the final reconstruction-source path pin as the live deviation (with `hs,` and `kf63=` called out as superseded historical markers). The Exit Criteria paragraph's reference to the obsolete test name `infocmp_unavailable_skips_round_trip_test` was updated to `round_trip_gate_semantics_pinned` to match the landed code. Verified by re-reading the entire 02.4 block after edits: every mention of `hs,` / `kf63=` now appears only in the historical-context narrative (explaining why earlier approaches were rejected), never as a description of live test behavior.
+- [x] `[TPR-02-004][low]` `crates/oriterm_test_support/src/terminfo/tests.rs` (`round_trip_gate_semantics_pinned` body comment), `plans/tack-conformance/section-02-terminfo-provisioning.md` (Exit Criteria paragraph) — gate-routing prose still overstates which tests route through `round_trip_gate_closed()`.
+  Evidence: `round_trip_gate_semantics_pinned` does not skip via `round_trip_gate_closed()`; it only calls the live helper in its final delegation assertion. The test comment still said "All five round-trip/compile tests ... and this test itself — route through `round_trip_gate_closed()`". The Exit Criteria likewise said the 02.4 round-trip suite (`ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `round_trip_gate_semantics_pinned`) gates on both tools via the helper, which was false for `round_trip_gate_semantics_pinned` and also omitted `terminfo_env_compiles_ori_term` plus `child_process_with_apply_env_reads_pinned_terminfo`, the other two tests that do route through the helper.
+  Impact: the section was still not internally consistent on the exact gate-routing claim this iteration was meant to settle. Future maintainers reading either the live test comment or the Exit Criteria could be sent back toward the already-fixed misunderstanding that the pure gate test is itself helper-gated.
+  Resolved: Fixed on 2026-04-07. The `round_trip_gate_semantics_pinned` test body comment now lists exactly the four helper-routed tests (`terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`) and explicitly says "This test itself does NOT skip through `round_trip_gate_closed()` — a gate test that short-circuits via its own gate would be self-defeating. It runs in every environment ... and asserts the gate's pure form is correct, then asserts the live helper delegates to that pure form." The Exit Criteria paragraph was rewritten to list the same four helper-routed tests and describe `round_trip_gate_semantics_pinned` as a separate pure-function test that pins the 2x2 truth table AND the delegation without itself routing through the helper.
+- [x] `[TPR-02-005][low]` `plans/tack-conformance/section-02-terminfo-provisioning.md` (`02.N` checklist gate-routing summary) — the section still is not fully self-consistent on the final gate-routing story.
+  Evidence: the `02.N` checklist bullet "All tests skip cleanly when `tic`/`infocmp` are unavailable..." still says "All gated tests route through the SSOT `round_trip_gate_closed()` helper" and lists only five pure-`tic` exceptions. That summary omits `tic_validate_source_has_zero_unexpected_warnings`, which also gates only on `tic_available()`, and it does not call out that `round_trip_gate_semantics_pinned` is a separate ungated pure-function test. The landed code in `crates/oriterm_test_support/src/terminfo/tests.rs` is unambiguous: only four tests call `round_trip_gate_closed()` (`terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`), `tic_validate_source_has_zero_unexpected_warnings` returns early on `!tic_available()`, and `round_trip_gate_semantics_pinned` explicitly says "This test itself does NOT skip through `round_trip_gate_closed()`".
+  Impact: the plan still has one remaining prose contradiction in the exact area this review pass was meant to settle, so the current frontmatter claim `third_party_review.status: resolved` and the completion-checklist claim that all TPR findings are resolved were premature.
+  Resolved: Fixed on 2026-04-07. The `02.N` bullet was rewritten to describe the full three-bucket gate taxonomy: (1) **Helper-routed (4 tests)** that need both `tic` and `infocmp` and skip via `round_trip_gate_closed()` — `terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`; (2) **Pure-`tic` gated (6 tests)** that need `tic` only and skip via inline `if !tic_available() { return; }` — `terminfo_env_drop_cleans_temp_dir`, `terminfo_env_repeated_compile_stress`, `apply_env_sets_three_vars`, `terminfo_env_compile_under_perf_budget`, `terminfo_env_compile_fails_loudly_on_corrupted_source`, `tic_validate_source_has_zero_unexpected_warnings`; (3) **Ungated pure-function (3 tests)** that run in every environment — `embedded_terminfo_source_is_nonempty`, `terminfo_variant_entry_names_are_distinct`, `round_trip_gate_semantics_pinned`. The taxonomy totals exactly the 13 tests in the suite with no omissions.
 
 ---
 
 ## 02.N Completion Checklist
 
-- [ ] `extra/` directory exists (created in 02.1 — verify with `ls extra/`)
-- [ ] `extra/ori_term.info` is a committed file with three entries: `ori_term` (256-color), `ori_term-direct` (truecolor), and the private `ori_term+common` base fragment. No `use=xterm-256color,` inheritance.
-- [ ] Every modern extension capability declared in `extra/ori_term.info` has a comment line referencing the implementation site (file:line in `oriterm_core/src/term/handler/`, `oriterm_core/src/paste/`, `oriterm_core/src/term/charset/`, `oriterm/src/app/event_loop_helpers/`, or `crates/vte/src/ansi/`)
-- [ ] `tic -c -x extra/ori_term.info` exits with status 0 AND stderr is either empty OR contains only the known false-positive `%; without %? in Setulc` line. Any other `tic:` stderr line is a gate failure.
-- [ ] `tic -x -o /tmp/test_terminfo extra/ori_term.info` exits 0 and `infocmp -A /tmp/test_terminfo ori_term` also exits 0 (portable check — do NOT assert filesystem layout like `/tmp/test_terminfo/o/ori_term`)
-- [ ] `infocmp -A /tmp/test_terminfo ori_term` output contains `am`, `bce`, `colors#256`, `cup=`, `sgr=`, `setaf=`, `smkx=`, `acsc=`, `smacs=`, `rmacs=`, `rep=`, `BD=`, `BE=`, `kxIN=`, `kxOUT=`, and `kf1=` through `kf63=`
-- [ ] `crates/oriterm_test_support/src/terminfo/mod.rs` exists (directory module — `terminfo.rs` as a single file is NOT acceptable because the sibling `tests.rs` convention requires a directory module)
-- [ ] `crates/oriterm_test_support/src/terminfo/mod.rs` is below the 500-line file limit per `.claude/rules/code-hygiene.md`. If implementation pushes it past ~450 lines, proactively split (e.g., `terminfo/variant.rs` for the enum, `terminfo/compile.rs` for the tic invocation logic) BEFORE the limit; do not write a 500-line file and split later.
-- [ ] `crates/oriterm_test_support/src/terminfo/tests.rs` exists and contains the test suite described in 02.2 and 02.4
-- [ ] `TerminfoVariant` enum (`OriTerm`, `OriTermDirect`) is the only valid input to `compile_with_variant`. `compile_with_variant(TerminfoVariant)`, `compile()`, `term()`, `variant()`, `terminfo_dir()`, and `apply_env(&mut CommandBuilder)` are the entire **public** API. `pub(crate) fn env_pairs(&self) -> [(&'static str, String); 3]` is the **internal SSOT** consumed by `apply_env` AND the 02.4 `child_process_with_apply_env_reads_pinned_terminfo` integrity test — there is no other place that lists the env-var triple.
-- [ ] `TerminfoEnv::compile()` is **pure-tic** — it does NOT shell out to `infocmp` at any point. The post-tic check is a `Path::exists` probe on `<tempdir>/<bucket>/<entry_name>` (directory backend). The portable `infocmp -A` round-trip lives in 02.4 tests, never in the constructor.
-- [ ] `TerminfoEnv::compile()` uses `include_str!` to embed the terminfo source — NOT a `find_source()` walk. The `include_str!` path is `concat!(env!("CARGO_MANIFEST_DIR"), "/../../extra/ori_term.info")`. Missing file = build failure, not runtime panic.
-- [ ] `TerminfoEnv` cleans up temp dir via `tempfile::TempDir` Drop
-- [ ] `const _: fn() = || { fn assert_send<T: Send>() {} assert_send::<TerminfoEnv>(); };` present at the bottom of `terminfo/mod.rs` (compile-time `Send` assertion)
-- [ ] `tic_available()` and `infocmp_available()` exist next to `vttest_available()` in `crates/oriterm_test_support/src/session/mod.rs` (note: `session` is already a directory module at completion of Section 01 — add the functions to `session/mod.rs`, not a nonexistent `session.rs`)
-- [ ] **Crate-boundary check**: `oriterm_test_support` depends ONLY on `oriterm_core`, `portable-pty`, `tempfile`, and `vte` (the four entries in `Cargo.toml [dependencies]`). It MUST NOT depend on `oriterm_ui`, `oriterm_mux`, `oriterm`, or `oriterm_ipc`. Verify with `cargo tree -p oriterm_test_support --no-default-features` after the section lands. (See `.claude/rules/crate-boundaries.md` for the dependency direction matrix.)
-- [ ] All tests in `crates/oriterm_test_support/src/terminfo/tests.rs` pass on Linux (`cargo test -p oriterm_test_support terminfo`). The full set: `embedded_terminfo_source_is_nonempty`, `terminfo_variant_entry_names_are_distinct`, `terminfo_env_compiles_ori_term`, `terminfo_env_drop_cleans_temp_dir`, `apply_env_sets_three_vars`, `terminfo_env_repeated_compile_stress`, `terminfo_env_compile_fails_loudly_on_corrupted_source`, `tic_validate_source_has_zero_unexpected_warnings`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `infocmp_unavailable_skips_round_trip_test`, `child_process_with_apply_env_reads_pinned_terminfo`, `terminfo_env_compile_under_perf_budget`. The "unknown term name" negative pin from earlier drafts is REMOVED — `TerminfoVariant` makes the typo case a compile error, not a runtime panic, so a negative pin would not even compile.
-- [ ] `terminfo_env_repeated_compile_stress` passes (5 successive `compile()` calls each create + clean up their tempdir, no collisions)
-- [ ] `infocmp_unavailable_skips_round_trip_test` passes (proves the `infocmp_available()` gate logic works regardless of which combinations of `tic`/`infocmp` are present)
-- [ ] **Child-process integrity test passes** — `child_process_with_apply_env_reads_pinned_terminfo` proves that applying `TerminfoEnv` env vars to a child via the same code path `apply_env` uses actually steers a real child to the pinned entry (no `-A` flag, child consults `$TERMINFO`/`$TERMINFO_DIRS`, returned entry contains `kf63=` which the host xterm-256color does not). This is the contract Sections 03-08 rely on.
-- [ ] **Performance budget gates pass** — `terminfo_env_compile_under_perf_budget` confirms a single warm `TerminfoEnv::compile()` finishes in <1000 ms AND its 50-call projection stays below 30 s. Run the test under BOTH debug AND release profiles; record both `eprintln!`-emitted warm-time numbers in section completion notes.
-- [ ] **BUG-07-008 cross-link resolved** — `crates/oriterm_test_support/src/session/tests.rs` `pty_session_drains_simple_output` no longer carries `#[cfg(unix)]`; replaced with the portable two-arm shell test from 02.3. Box checked in `plans/bug-tracker/section-07-ci-build.md` BUG-07-008 with a "Fixed YYYY-MM-DD" line.
-- [ ] **Hygiene sweep landed** — `PtyResponder` `Mutex::lock().unwrap()` calls at `session/mod.rs:43` and `:50` replaced with `.expect("PtyResponder mutex poisoned")`; `session/tests.rs` imports consolidated to a single top-of-file block per `.claude/rules/test-organization.md`; post-section line count for `session/mod.rs` recorded in completion notes (target: under 450 — split now if higher)
-- [ ] All tests skip cleanly when `tic`/`infocmp` are unavailable (no panics, returns Ok)
-- [ ] `cargo build -p oriterm_test_support` for `x86_64-pc-windows-gnu` succeeds (cross-compile gate)
-- [ ] `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` succeeds (proves the BUG-07-008 portable test source compiles for Windows, not just lib code)
-- [ ] `tempfile = "3"` added to `crates/oriterm_test_support/Cargo.toml` `[dependencies]`
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green — no new warnings
-- [ ] `timeout 150 ./test-all.sh` green
-- [ ] Plan annotation cleanup: no temporary scaffolding in any `.rs` or `.info` file
-- [ ] All TPR checkpoint findings resolved (see `02.R`)
-- [ ] **Plan sync**:
-  - [ ] This section's frontmatter `status` → `complete`
-  - [ ] `00-overview.md` Quick Reference table: Section 02 marked Complete
-  - [ ] `00-overview.md` Mission Success Criteria: tick the `extra/ori_term.info` hand-authored source criterion (the one starting with "`extra/ori_term.info` terminfo source exists as a hand-authored, fully-pinned entry…") AND the `tic`-compiles criterion (the one starting with "`tic` compiles `ori_term.info` successfully…"). Cross-check the BUG-07-008 fix against the cross-platform skip-discipline criterion ("All tests skip cleanly when tack/tic unavailable…") — Section 02 contributes the second portable test in `oriterm_test_support` toward that criterion but does NOT close it on its own.
-  - [ ] `index.md` Section 02 status updated
-  - [ ] Section 03's `depends_on: ["01", "02"]` confirmed (Section 03 spawns tack with TerminfoEnv)
-  - [ ] Section 04's `depends_on: ["03"]` confirmed (Section 04 builds on Section 03's spawn_tack helper)
-  - [ ] Section 08's `depends_on: ["01", "02"]` confirmed (Section 08 reads sequences from the compiled terminfo via `infocmp`)
-  - [ ] Section 09's `depends_on` includes `"02"` (verification gate consumes everything)
-- [ ] `/tpr-review` final pass clean
+- [x] `extra/` directory exists (created in 02.1 — verify with `ls extra/`)
+- [x] `extra/ori_term.info` is a committed file with three entries: `ori_term` (256-color), `ori_term-direct` (truecolor), and the private `ori_term+common` base fragment. No `use=xterm-256color,` inheritance.
+- [x] Every modern extension capability declared in `extra/ori_term.info` has a comment line referencing the implementation site (file:line in `oriterm_core/src/term/handler/`, `oriterm_core/src/paste/`, `oriterm_core/src/term/charset/`, `oriterm/src/app/event_loop_helpers/`, or `crates/vte/src/ansi/`)
+- [x] `tic -c -x extra/ori_term.info` exits with status 0 AND stderr is either empty OR contains only the known false-positive `%; without %? in Setulc` line. Any other `tic:` stderr line is a gate failure.
+- [x] `tic -x -o /tmp/test_terminfo extra/ori_term.info` exits 0 and `infocmp -A /tmp/test_terminfo ori_term` also exits 0 (portable check — do NOT assert filesystem layout like `/tmp/test_terminfo/o/ori_term`)
+- [x] `infocmp -x -A /tmp/test_terminfo ori_term` output contains `am`, `bce`, `colors#256`, `cup=`, `sgr=`, `setaf=`, `smkx=`, `acsc=`, `smacs=`, `rmacs=`, `rep=`, `BD=`, `BE=`, `kxIN=`, `kxOUT=`, and `kf1=` through `kf63=`. (The `-x` flag is required so extension caps `BD=`, `BE=`, `kxIN=`, `kxOUT=` show up — the 02.4 round-trip test passes `-x` for this reason.)
+- [x] `crates/oriterm_test_support/src/terminfo/mod.rs` exists (directory module — `terminfo.rs` as a single file is NOT acceptable because the sibling `tests.rs` convention requires a directory module)
+- [x] `crates/oriterm_test_support/src/terminfo/mod.rs` is below the 500-line file limit per `.claude/rules/code-hygiene.md`. Post-02.4 line count: 257 lines — well under the ~450-line proactive-split threshold, no split needed.
+- [x] `crates/oriterm_test_support/src/terminfo/tests.rs` exists and contains the test suite described in 02.2 and 02.4
+- [x] `TerminfoVariant` enum (`OriTerm`, `OriTermDirect`) is the only valid input to `compile_with_variant`. `compile_with_variant(TerminfoVariant)`, `compile()`, `term()`, `variant()`, `terminfo_dir()`, and `apply_env(&mut CommandBuilder)` are the entire **public** API. `pub(crate) fn env_pairs(&self) -> [(&'static str, String); 3]` is the **internal SSOT** consumed by `apply_env` AND the 02.4 `child_process_with_apply_env_reads_pinned_terminfo` integrity test — there is no other place that lists the env-var triple.
+- [x] `TerminfoEnv::compile()` is **pure-tic** — it does NOT shell out to `infocmp` at any point. The post-tic check is a `Path::exists` probe on `<tempdir>/<bucket>/<entry_name>` (directory backend). The portable `infocmp -A` round-trip lives in 02.4 tests, never in the constructor.
+- [x] `TerminfoEnv::compile()` uses `include_str!` to embed the terminfo source — NOT a `find_source()` walk. The `include_str!` path is `concat!(env!("CARGO_MANIFEST_DIR"), "/../../extra/ori_term.info")`. Missing file = build failure, not runtime panic.
+- [x] `TerminfoEnv` cleans up temp dir via `tempfile::TempDir` Drop
+- [x] `const _: fn() = || { fn assert_send<T: Send>() {} assert_send::<TerminfoEnv>(); };` present at the bottom of `terminfo/mod.rs` (compile-time `Send` assertion)
+- [x] `tic_available()` and `infocmp_available()` exist next to `vttest_available()` in `crates/oriterm_test_support/src/session/mod.rs` (note: `session` is already a directory module at completion of Section 01 — add the functions to `session/mod.rs`, not a nonexistent `session.rs`)
+- [x] **Crate-boundary check**: `oriterm_test_support` depends ONLY on `oriterm_core`, `portable-pty`, `tempfile`, and `vte` (the four entries in `Cargo.toml [dependencies]`). Verified 2026-04-07 via `cargo tree -p oriterm_test_support --no-default-features | grep -E 'oriterm_ui|oriterm_mux|oriterm_ipc|^oriterm v|oriterm v0'` — zero forbidden dependencies. (See `.claude/rules/crate-boundaries.md` for the dependency direction matrix.)
+- [x] All tests in `crates/oriterm_test_support/src/terminfo/tests.rs` pass on Linux (`cargo test -p oriterm_test_support terminfo`). The full set: `embedded_terminfo_source_is_nonempty`, `terminfo_variant_entry_names_are_distinct`, `terminfo_env_compiles_ori_term`, `terminfo_env_drop_cleans_temp_dir`, `apply_env_sets_three_vars`, `terminfo_env_repeated_compile_stress`, `terminfo_env_compile_fails_loudly_on_corrupted_source`, `tic_validate_source_has_zero_unexpected_warnings`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `round_trip_gate_semantics_pinned` (renamed from the earlier `infocmp_unavailable_skips_round_trip_test` after TPR-02-002 replaced the no-op gate pin with a proper 2x2 truth-table check on the SSOT gate helper), `child_process_with_apply_env_reads_pinned_terminfo`, `terminfo_env_compile_under_perf_budget`. The "unknown term name" negative pin from earlier drafts is REMOVED — `TerminfoVariant` makes the typo case a compile error, not a runtime panic, so a negative pin would not even compile.
+- [x] `terminfo_env_repeated_compile_stress` passes (5 successive `compile()` calls each create + clean up their tempdir, no collisions)
+- [x] `round_trip_gate_semantics_pinned` passes (pins the 2x2 truth table of `round_trip_gate_closed_for`, proving the gate fires correctly for every combination of `tic_available()` and `infocmp_available()` AND that `round_trip_gate_closed` delegates to the pure form — the TPR-02-002 replacement for the earlier no-op `infocmp_unavailable_skips_round_trip_test`)
+- [x] **Child-process integrity test passes** — `child_process_with_apply_env_reads_pinned_terminfo` proves that applying `TerminfoEnv` env vars to a child via the same code path `apply_env` uses actually steers a real child to the pinned entry (no `-A` flag, child consults `$TERMINFO`/`$TERMINFO_DIRS`, returned entry's reconstruction-source path lives inside `env.terminfo_dir()` — the TPR-02-001 upgrade from a content marker to a file-path pin immune to any future system-installed `ori_term`). This is the contract Sections 03-08 rely on.
+- [x] **Performance budget gates pass** — `terminfo_env_compile_under_perf_budget` confirms a single warm `TerminfoEnv::compile()` finishes in <1000 ms AND its 50-call projection stays below 30 s. Measured 2026-04-07: debug warm = 2 ms, release warm = 2 ms, 50-call projection = 100 ms in both profiles (well under both ceilings).
+- [x] **BUG-07-008 cross-link resolved** — `crates/oriterm_test_support/src/session/tests.rs` `pty_session_drains_simple_output` no longer carries `#[cfg(unix)]`; replaced with the portable two-arm shell test from 02.3. Box checked in `plans/bug-tracker/section-07-ci-build.md` BUG-07-008 with a "Fixed 2026-04-07" line.
+- [x] **Hygiene sweep landed** — `PtyResponder` `Mutex::lock().unwrap()` calls at `session/mod.rs:43` and `:50` replaced with `.expect("PtyResponder mutex poisoned")`; `session/tests.rs` imports consolidated to a single top-of-file block per `.claude/rules/test-organization.md`; post-section line count for `session/mod.rs` = 362 lines (well under the 450-line proactive-split threshold, ~88 lines of headroom for Section 03's `tack_available` + `spawn_tack` + `wait_for_child_exit` additions).
+- [x] All tests skip cleanly when `tic`/`infocmp` are unavailable (no panics, returns Ok). The suite splits into three buckets by gate need:
+  1. **Helper-routed (4 tests)** — need BOTH `tic` AND `infocmp`; skip via `round_trip_gate_closed()`: `terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`.
+  2. **Pure-`tic` gated (6 tests)** — need `tic` only; skip via inline `if !tic_available() { return; }`: `terminfo_env_drop_cleans_temp_dir`, `terminfo_env_repeated_compile_stress`, `apply_env_sets_three_vars`, `terminfo_env_compile_under_perf_budget`, `terminfo_env_compile_fails_loudly_on_corrupted_source`, `tic_validate_source_has_zero_unexpected_warnings`.
+  3. **Ungated pure-function (3 tests)** — run in every environment regardless of which tools are installed: `embedded_terminfo_source_is_nonempty` (asserts the `include_str!` embed is non-empty), `terminfo_variant_entry_names_are_distinct` (constant comparison on the `TerminfoVariant` enum), and `round_trip_gate_semantics_pinned` (pins the pure-function 2x2 truth table of `round_trip_gate_closed_for` and the delegation from `round_trip_gate_closed` — a gate test that skipped via its own gate would be self-defeating).
+- [x] `cargo build -p oriterm_test_support` for `x86_64-pc-windows-gnu` succeeds (cross-compile gate)
+- [x] `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` succeeds (proves the BUG-07-008 portable test source compiles for Windows, not just lib code)
+- [x] `tempfile = "3"` added to `crates/oriterm_test_support/Cargo.toml` `[dependencies]`
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green — no new warnings
+- [x] `timeout 150 ./test-all.sh` green
+- [x] Plan annotation cleanup: no temporary scaffolding in any `.rs` or `.info` file
+- [x] All TPR checkpoint findings resolved (see `02.R`) — TPR-02-001, TPR-02-002, TPR-02-003, TPR-02-004, and TPR-02-005 all fixed on 2026-04-07. TPR-02-001 and TPR-02-002 were code fixes (reconstruction-source path pin and SSOT gate helper); TPR-02-003, TPR-02-004, and TPR-02-005 were prose-sync cleanups of the gate-routing taxonomy across the 02.4 implementation history, the Exit Criteria, the `round_trip_gate_semantics_pinned` test body comment, and the 02.N completion checklist. `third_party_review.status: resolved` in frontmatter.
+- [x] **Plan sync**:
+  - [x] This section's frontmatter `status` → `complete`
+  - [x] `00-overview.md` Quick Reference table: Section 02 marked Complete
+  - [x] `00-overview.md` Mission Success Criteria: ticked the `extra/ori_term.info` hand-authored source criterion AND the `tic`-compiles criterion. The cross-platform skip-discipline criterion is left open — Section 02 contributes the second portable test in `oriterm_test_support` toward it but does NOT close it on its own (Section 03 onward will).
+  - [x] `index.md` Section 02 status updated to Complete.
+  - [x] Section 03's `depends_on: ["01", "02"]` confirmed (Section 03 spawns tack with TerminfoEnv).
+  - [x] Section 04's `depends_on: ["03"]` confirmed (Section 04 builds on Section 03's spawn_tack helper).
+  - [x] Section 08's `depends_on: ["01", "02"]` confirmed (Section 08 reads sequences from the compiled terminfo via `infocmp`).
+  - [x] Section 09's `depends_on` includes `"02"` (verification gate consumes everything).
+- [x] `/tpr-review` final pass clean — Five iterations were run on 2026-04-07: iter 1 surfaced TPR-02-001 + TPR-02-002 (both code fixes), iters 2-5 each surfaced one cosmetic prose-drift finding (TPR-02-003 → -005, all sync issues across the dense 02.4/02.R/02.N/Exit Criteria text — every test name and gate-routing claim has 6+ places to keep in sync). All five resolved with code or prose fixes; user accepted "current state, commit, move on" rather than chase a 6th iteration on the prose-drift treadmill. Code is verified clean (13/13 tests pass, cross-compile gate green, crate-boundary clean).
 - [ ] `/impl-hygiene-review last commit` final pass clean (after TPR) — verifies the new `terminfo` module sits cleanly in `oriterm_test_support`'s crate-boundary envelope (depends only on `oriterm_core` + `tempfile`, NOT on `oriterm_ui`/`oriterm_mux`/`oriterm`), and that `mod.rs` and `tests.rs` both stay under the 500-line limit
 
-**Exit Criteria:** `extra/ori_term.info` is committed as a hand-authored, fully-pinned entry (`ori_term+common` private fragment + `ori_term` 256-color + `ori_term-direct` truecolor, NO `use=xterm-256color,` inheritance) and passes `tic -c -x` with exit 0 and stderr containing at most the known `Setulc` false-positive. `oriterm_test_support::TerminfoEnv::compile()` embeds the source via `include_str!`, writes it to a scratch file in a fresh tempdir, invokes `tic -x -o <tempdir>` (pure-tic, no `infocmp`), and sanity-checks the directory-backend entry path. The `TerminfoVariant` enum (`OriTerm`/`OriTermDirect`) is the only valid `compile_with_variant` input — the compiler enforces exhaustivity. `TerminfoEnv::apply_env(&mut CommandBuilder)` sets `TERM` + `TERMINFO` + `TERMINFO_DIRS` in one call; the 02.4 `child_process_with_apply_env_reads_pinned_terminfo` integrity test proves the env-var precedence path actually steers a real child to the pinned entry. The 02.4 round-trip suite (`ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `infocmp_unavailable_skips_round_trip_test`) gates on BOTH `tic_available()` AND `infocmp_available()` — proving the gate semantics are wired correctly. `terminfo_env_repeated_compile_stress` proves 5 successive compile() calls collide-free. `terminfo_env_compile_under_perf_budget` confirms per-call cost stays under 1000 ms and 50-call projection under 30 s under BOTH debug and release profiles. BUG-07-008 (the existing `#[cfg(unix)]` antipattern in `oriterm_test_support`'s session test) is fixed in 02.3 with a portable two-arm shell test, restoring Windows ConPTY drain coverage. `cargo test -p oriterm_test_support terminfo` and `cargo test -p oriterm_test_support session` run successfully on Linux/macOS and skip cleanly on Windows; cross-compile gate `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` succeeds. `cargo tree -p oriterm_test_support` confirms zero `oriterm_ui` / `oriterm_mux` / `oriterm` / `oriterm_ipc` dependencies (crate-boundary discipline). Zero new clippy warnings. The pinned terminfo is ready for tack to consume in Section 03 via `TerminfoEnv::apply_env` and the documented `spawn_tack` helper.
+**Exit Criteria:** `extra/ori_term.info` is committed as a hand-authored, fully-pinned entry (`ori_term+common` private fragment + `ori_term` 256-color + `ori_term-direct` truecolor, NO `use=xterm-256color,` inheritance) and passes `tic -c -x` with exit 0 and stderr containing at most the known `Setulc` false-positive. `oriterm_test_support::TerminfoEnv::compile()` embeds the source via `include_str!`, writes it to a scratch file in a fresh tempdir, invokes `tic -x -o <tempdir>` (pure-tic, no `infocmp`), and sanity-checks the directory-backend entry path. The `TerminfoVariant` enum (`OriTerm`/`OriTermDirect`) is the only valid `compile_with_variant` input — the compiler enforces exhaustivity. `TerminfoEnv::apply_env(&mut CommandBuilder)` sets `TERM` + `TERMINFO` + `TERMINFO_DIRS` in one call; the 02.4 `child_process_with_apply_env_reads_pinned_terminfo` integrity test proves the env-var precedence path actually steers a real child to the pinned entry. The four round-trip/compile tests that need to short-circuit when tools are missing (`terminfo_env_compiles_ori_term`, `ori_term_terminfo_round_trips_via_infocmp`, `ori_term_direct_declares_truecolor`, `child_process_with_apply_env_reads_pinned_terminfo`) route their skip decision through the SSOT `round_trip_gate_closed()` helper, which gates on BOTH `tic_available()` AND `infocmp_available()`. The separate `round_trip_gate_semantics_pinned` test pins the 2x2 truth table of the helper's pure form `round_trip_gate_closed_for(tic_ok, infocmp_ok)` and its delegation to `round_trip_gate_closed` — it does NOT itself route through the helper (a gate test that skipped via its own gate would be self-defeating) and runs in every environment, so a gate inversion like `!tic_ok && !infocmp_ok` fails immediately. `terminfo_env_repeated_compile_stress` proves 5 successive compile() calls collide-free. `terminfo_env_compile_under_perf_budget` confirms per-call cost stays under 1000 ms and 50-call projection under 30 s under BOTH debug and release profiles. BUG-07-008 (the existing `#[cfg(unix)]` antipattern in `oriterm_test_support`'s session test) is fixed in 02.3 with a portable two-arm shell test, restoring Windows ConPTY drain coverage. `cargo test -p oriterm_test_support terminfo` and `cargo test -p oriterm_test_support session` run successfully on Linux/macOS and skip cleanly on Windows; cross-compile gate `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` succeeds. `cargo tree -p oriterm_test_support` confirms zero `oriterm_ui` / `oriterm_mux` / `oriterm` / `oriterm_ipc` dependencies (crate-boundary discipline). Zero new clippy warnings. The pinned terminfo is ready for tack to consume in Section 03 via `TerminfoEnv::apply_env` and the documented `spawn_tack` helper.
 
 **Section 02 self-contained scope reminder:** Items that depend on Sections 03-08 existing (e.g., `time ./test-all.sh` aggregate measurement, end-to-end integration with `spawn_tack`) belong in Section 09 (Verification), not here. Section 02's checklist contains ONLY items executable within its own sitting.
