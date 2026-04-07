@@ -45,6 +45,29 @@ pub fn grid_has_token(grid: &str, token: &str) -> bool {
     false
 }
 
+/// True iff the parenthesized cap label `(cap)` appears anywhere in
+/// `grid`.
+///
+/// Tack's modes / glitches / SGR test output tags each capability
+/// result with a parenthesized prefix like `(am) auto-margins is
+/// true`. Plain [`grid_has_token`] correctly rejects bare `am`
+/// matches inside `(am)` because the surrounding `(` and `)` are not
+/// whitespace, so per-scenario parsers that look for tack's
+/// parenthesized cap reports must use this helper instead.
+///
+/// Substring collisions are impossible: `(am)` is a 4-character
+/// pattern that cannot appear inside any English word, and tack's
+/// parenthesized form is the canonical cap-label syntax. We do
+/// however still demand that `cap` itself is non-empty.
+#[must_use]
+pub fn grid_has_paren_token(grid: &str, cap: &str) -> bool {
+    if cap.is_empty() {
+        return false;
+    }
+    let needle = format!("({cap})");
+    grid.contains(&needle)
+}
+
 /// True iff any line in `grid` starts with `prefix` (after trimming
 /// leading whitespace from the line). Used for prompt markers like
 /// `tack [m] >` that always begin their line.
@@ -56,27 +79,55 @@ pub fn grid_line_starts_with(grid: &str, prefix: &str) -> bool {
 
 /// Locate a labeled field on the grid and return the trailing value.
 ///
-/// Searches each line for `label` as a whitespace-bounded token,
-/// then returns the text after `label` (trimmed, up to the next
-/// whitespace run or end of line). Returns `None` if the label is
-/// not present as a token. Used for cap-value extraction like
+/// Searches each line for `label` as a whitespace-bounded token
+/// (BOTH sides — left and right — must be ASCII whitespace, line
+/// start, or line end), then returns the text after `label`
+/// (trimmed, up to the next whitespace run or end of line). Returns
+/// `None` if `label` is not present as a token on any line.
+///
+/// **Both-boundary check.** Earlier drafts only verified the left
+/// boundary, which let `grid_find_field("setaf", "setaforeground X")`
+/// false-match and return `"oreground"`. The fix is to confirm the
+/// byte AT the end of the match is also a whitespace-style boundary
+/// before treating the hit as a token.
+///
+/// **All-hits scan per line.** Earlier drafts only inspected the
+/// FIRST `find()` result on each line, so a leading substring miss
+/// (e.g., `"xsetaf setaf X"` where the leading `setaf` fails the
+/// boundary check) hid the real token that came later on the same
+/// line. The fix is to walk every occurrence of `label` on each
+/// line, accepting the first one that satisfies BOTH boundaries.
+///
+/// Used for cap-value extraction like
 /// `grid_find_field(grid, "setaf")` returning `\E[3%dm`.
 #[must_use]
 pub fn grid_find_field<'a>(grid: &'a str, label: &str) -> Option<&'a str> {
+    if label.is_empty() {
+        return None;
+    }
+    let needle_len = label.len();
     for line in grid.lines() {
-        if let Some(idx) = line.find(label) {
-            // Confirm it's a token, not a substring.
-            let left_ok = idx == 0 || line.as_bytes()[idx - 1].is_ascii_whitespace();
-            if !left_ok {
-                continue;
+        let bytes = line.as_bytes();
+        let mut search_from = 0;
+        while let Some(slice) = line.get(search_from..) {
+            let Some(rel) = slice.find(label) else {
+                break;
+            };
+            let idx = search_from + rel;
+            let left_ok = idx == 0 || bytes[idx - 1].is_ascii_whitespace();
+            let right_end = idx + needle_len;
+            let right_ok = right_end == bytes.len() || bytes[right_end].is_ascii_whitespace();
+            if left_ok && right_ok {
+                let rest = line.get(right_end..)?.trim_start();
+                if rest.is_empty() {
+                    return None;
+                }
+                let value = rest.split_whitespace().next().unwrap_or("");
+                return Some(value);
             }
-            let after = idx + label.len();
-            let rest = line.get(after..)?.trim_start();
-            if rest.is_empty() {
-                return None;
-            }
-            let value = rest.split_whitespace().next().unwrap_or("");
-            return Some(value);
+            // Advance past this hit so the next iteration searches
+            // for a later occurrence on the same line.
+            search_from = idx + 1;
         }
     }
     None

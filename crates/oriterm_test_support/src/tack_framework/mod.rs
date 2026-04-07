@@ -34,7 +34,9 @@ pub mod scenarios;
 pub mod spec;
 
 pub use navigator::TackNavigator;
-pub use parser::tokens::{grid_find_field, grid_has_token, grid_line_starts_with};
+pub use parser::tokens::{
+    grid_find_field, grid_has_paren_token, grid_has_token, grid_line_starts_with,
+};
 pub use parser::{ScreenFacts, ScreenParserFn, default_parser};
 pub use runner::{LiveSession, ScenarioOutcome, ScenarioRunner};
 pub use spec::{MenuStep, ScenarioSpec};

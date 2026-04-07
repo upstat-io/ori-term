@@ -1,5 +1,5 @@
 use super::default_parser;
-use super::tokens::{grid_find_field, grid_has_token, grid_line_starts_with};
+use super::tokens::{grid_find_field, grid_has_paren_token, grid_has_token, grid_line_starts_with};
 
 #[test]
 fn default_parser_extracts_first_non_blank_line_as_header() {
@@ -62,4 +62,53 @@ fn grid_find_field_returns_trailing_value() {
     assert_eq!(grid_find_field(grid, "setaf"), Some("\\E[3%dm"));
     assert_eq!(grid_find_field(grid, "setab"), Some("\\E[4%dm"));
     assert_eq!(grid_find_field(grid, "missing"), None);
+}
+
+#[test]
+fn grid_find_field_rejects_substring_collision_on_right_boundary() {
+    // SEMANTIC PIN for the TPR-04-001 right-boundary fix. The
+    // earlier draft only checked the LEFT boundary, so this would
+    // false-positive and return "oreground". With both boundaries
+    // enforced, the helper correctly returns None.
+    let grid = "setaforeground \\E[3%dm\n";
+    assert_eq!(grid_find_field(grid, "setaf"), None);
+}
+
+#[test]
+fn grid_find_field_finds_real_token_after_substring_collision_on_same_line() {
+    // SEMANTIC PIN for the TPR-04-001 all-hits-per-line fix. The
+    // earlier draft only inspected the FIRST find() hit per line,
+    // so the leading substring `xsetaf` (which fails the left
+    // boundary) hid the real `setaf` token later on the same line.
+    // With the all-hits scan, the helper finds the second
+    // occurrence and returns its value.
+    let grid = "xsetaf setaf \\E[3%dm\n";
+    assert_eq!(grid_find_field(grid, "setaf"), Some("\\E[3%dm"));
+}
+
+#[test]
+fn grid_find_field_rejects_empty_label() {
+    assert_eq!(grid_find_field("anything", ""), None);
+}
+
+#[test]
+fn grid_has_paren_token_finds_parenthesized_cap_label() {
+    // Tack tags every modes-test result with `(cap_name)`.
+    let grid = "(am) auto-margins is true\n(os) over-strike is false\n";
+    assert!(grid_has_paren_token(grid, "am"));
+    assert!(grid_has_paren_token(grid, "os"));
+}
+
+#[test]
+fn grid_has_paren_token_rejects_bare_cap_without_parens() {
+    // The whole point of the helper is that bare `am` (matched by
+    // raw `contains`) collides with `name`, while `(am)` does not.
+    let grid = "name is am\nover-strike is os\n";
+    assert!(!grid_has_paren_token(grid, "am"));
+    assert!(!grid_has_paren_token(grid, "os"));
+}
+
+#[test]
+fn grid_has_paren_token_rejects_empty_cap() {
+    assert!(!grid_has_paren_token("anything", ""));
 }
