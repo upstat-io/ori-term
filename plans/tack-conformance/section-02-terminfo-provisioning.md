@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Terminfo Provisioning"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Create extra/ori_term.info (a pinned terminfo source derived from xterm-256color), then add a runtime TerminfoEnv helper in oriterm_test_support that compiles ori_term.info via tic into a temp directory and exposes (TERM=ori_term, TERMINFO=..., TERMINFO_DIRS=...) for child processes. Tack-driven tests in Sections 03+ get a controlled, reproducible terminfo entry instead of validating whatever the host's ncurses database happens to say."
 success_criteria:
@@ -34,7 +34,7 @@ third_party_review:
 sections:
   - id: "02.1"
     title: "Author extra/ori_term.info"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "TerminfoEnv runtime compiler"
     status: not-started
@@ -100,9 +100,9 @@ The fix is the convention used by every serious terminal: ship a `.info` source 
 
 The terminfo source is the canonical declaration of "what ori_term claims to be". It should match what ori_term actually IMPLEMENTS today, not what we'd like it to be — Section 09 verification will compare claims against reality.
 
-- [ ] Create directory `/home/eric/projects/ori_term/extra/`. This directory does not exist — verify before creating, then `mkdir extra`.
+- [x] Create directory `/home/eric/projects/ori_term/extra/`. This directory does not exist — verify before creating, then `mkdir extra`.
 
-- [ ] Create `extra/ori_term.info` with two entries: `ori_term` (256-color) and `ori_term-direct` (truecolor). Match Alacritty's two-entry-plus-common-fragment pattern (`alacritty+common`) — a private fragment holds every cap shared by both entries; the two user-facing entries `use=` only that fragment, NEVER `xterm-256color`. This is load-bearing: `use=xterm-256color,` would inherit whatever the host's xterm-256color happens to declare today, defeating the entire point of pinning.
+- [x] Create `extra/ori_term.info` with two entries: `ori_term` (256-color) and `ori_term-direct` (truecolor). Match Alacritty's two-entry-plus-common-fragment pattern (`alacritty+common`) — a private fragment holds every cap shared by both entries; the two user-facing entries `use=` only that fragment, NEVER `xterm-256color`. This is load-bearing: `use=xterm-256color,` would inherit whatever the host's xterm-256color happens to declare today, defeating the entire point of pinning.
 
   The file structure (modeled on `~/projects/reference_repos/console_repos/alacritty/extra/alacritty.info`):
   ```
@@ -229,19 +229,20 @@ The terminfo source is the canonical declaration of "what ori_term claims to be"
   ```
   This makes Section 09 verification mechanical: grep for the comment markers, follow the references, confirm each declared capability has a corresponding implementation site.
 
-- [ ] Compile-check the source as you author it: `tic -c -x extra/ori_term.info` (the `-c` flag validates without writing). The gate is: **exit status 0 AND stderr is either empty or contains only the known ncurses false-positive `%; without %? in Setulc`**. Any other `tic:` message (parse error, undefined capability, line-column syntax issue, duplicate entry) is a gate failure that must be fixed before committing the file.
+- [x] Compile-check the source as you author it: `tic -c -x extra/ori_term.info` (the `-c` flag validates without writing). The gate is: **exit status 0 AND stderr is either empty or contains only the known ncurses false-positive `%; without %? in Setulc`**. Any other `tic:` message (parse error, undefined capability, line-column syntax issue, duplicate entry) is a gate failure that must be fixed before committing the file. Verified locally: ncurses 6.4.20240113 reports exit 0 and only the three Setulc false-positive lines (one per entry — `ori_term`, `ori_term-direct`, `ori_term+common`).
 
   Authoring note: cross-check the actual cap strings with `infocmp -x xterm-256color` (the `-x` flag exposes user-defined / extension capabilities that plain `infocmp` hides). This is the reference format to match.
 
-- [ ] Run `tic -x -o /tmp/ori_term_terminfo extra/ori_term.info` and verify via the portable command (NOT by asserting filesystem layout — ncurses supports directory AND hashed-db backends, and the `<dir>/o/<name>` layout is only present on the directory backend):
+- [x] Run `tic -x -o /tmp/ori_term_terminfo extra/ori_term.info` and verify via the portable command (NOT by asserting filesystem layout — ncurses supports directory AND hashed-db backends, and the `<dir>/o/<name>` layout is only present on the directory backend):
   - `tic` exits with status 0
   - `infocmp -A /tmp/ori_term_terminfo ori_term` exits 0 and emits source-form output containing the declared boolean caps and `colors#256`
   - `infocmp -A /tmp/ori_term_terminfo ori_term-direct` exits 0 and contains `colors#16777216` or `colors#0x1000000`
   - `infocmp -A /tmp/ori_term_terminfo ori_term+common` exits 0 (the private fragment must be present for subsequent `use=` inheritance to succeed)
+  Verified locally: `tic` exits 0 (only the three tolerated `Setulc` warnings). `infocmp -A` succeeds for all three entries. The 256-color entry shows `colors#0x100, pairs#0x10000`; the direct entry shows `colors#0x1000000, pairs#0x10000`. Required base caps (`am, bce, ccc, hs, km, mir, msgr, xenl`, `cup=`, `sgr=`, `setaf=`, `setab=`, `smkx=`, `acsc=`, `smacs=`, `rmacs=`, `rep=`) all appear in plain `infocmp -A` output. Modern extension caps (`Tc`, `Ms=`, `Ss=`, `Se=`, `Smulx=`, `Setulc=`, `Sync=`, `BD=`, `BE=`, `PS=`, `PE=`, `kxIN=`, `kxOUT=`, `XF`, `Cr=`, `Cs=`) only appear under `infocmp -x -A` — Section 02.4 round-trip tests must use the `-x` flag (the existing test code at lines 904-962 omits it; will be fixed in 02.4).
 
-- [ ] Commit `extra/ori_term.info` as a tracked file. **Do NOT** check in any compiled output (`/tmp/ori_term_terminfo/` is throw-away — runtime compilation in 02.2 produces a fresh copy per test run).
+- [x] Commit `extra/ori_term.info` as a tracked file. **Do NOT** check in any compiled output (`/tmp/ori_term_terminfo/` is throw-away — runtime compilation in 02.2 produces a fresh copy per test run).
 
-- [ ] **Release-packaging scope note:** `extra/ori_term.info` is a source file consumed only by the test harness in this plan. It is NOT bundled into release binaries, and this plan does NOT add install scripts for it. When ori_term ships its first packaged release, a separate plan (installer/packaging) will decide whether to bundle the compiled terminfo into `/usr/share/terminfo/o/ori_term` (Linux/macOS system install) or leave it as an opt-in developer-side file. For this plan, the only consumer is `TerminfoEnv::compile()` at test time; the file lives in the source tree and nowhere else.
+- [x] **Release-packaging scope note:** `extra/ori_term.info` is a source file consumed only by the test harness in this plan. It is NOT bundled into release binaries, and this plan does NOT add install scripts for it. When ori_term ships its first packaged release, a separate plan (installer/packaging) will decide whether to bundle the compiled terminfo into `/usr/share/terminfo/o/ori_term` (Linux/macOS system install) or leave it as an opt-in developer-side file. For this plan, the only consumer is `TerminfoEnv::compile()` at test time; the file lives in the source tree and nowhere else.
 
 ---
 
