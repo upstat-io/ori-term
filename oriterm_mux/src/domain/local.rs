@@ -167,6 +167,9 @@ impl LocalDomain {
             wakeup: Arc::clone(wakeup),
             grid_dirty: io_grid_dirty,
             pty_control: Some(control),
+            // Spawned panes use pty_control above; the adopted_signal
+            // path is for Section 03.9 Windows Default Terminal handoff.
+            adopted_signal: None,
             initial_rows: config.rows,
             initial_cols: config.cols,
             selection_dirty: Arc::clone(&io_selection_dirty),

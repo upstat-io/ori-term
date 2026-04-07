@@ -473,11 +473,18 @@ impl App {
         // supported" for daemon mode; only EmbeddedMux overrides it.
         // The handoff path is exclusive to embedded mode because the
         // COM server runs as a `REGCLS_SINGLEUSE` standalone process.
+        // The title travels through `AdoptPaneRequest.initial_title`
+        // so `InProcessMux::adopt_standalone_pane` can apply it via
+        // `Pane::set_title` before the pane is registered — that flips
+        // `has_explicit_title` so OSC 0/2 from the shell can later
+        // override but the .lnk-derived title is what users see first.
+        let title_for_log = title.clone();
         let request = oriterm_mux::backend::AdoptPaneRequest {
             rows: initial_rows,
             cols: initial_cols,
             scrollback: self.config.terminal.scrollback,
             theme,
+            initial_title: title,
         };
         let mux = self.mux.as_mut().ok_or("mux backend missing")?;
         let pane_id = mux.adopt_pane(adopted, request)?;
@@ -495,10 +502,9 @@ impl App {
             win.add_tab(tab_id);
         }
 
-        // Apply the handoff title to the window/tab if non-empty.
-        if !title.is_empty() {
-            log::info!("default-terminal handoff: title={title:?} pid={client_pid:?}");
-        }
+        log::info!(
+            "default-terminal handoff: pane={pane_id} pid={client_pid:?} title={title_for_log:?}"
+        );
 
         Ok(())
     }

@@ -23,6 +23,7 @@ fn make_pair() -> (PaneIoThread<VoidListener>, PaneIoHandle) {
         wakeup: Arc::new(|| {}),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         initial_rows: 24,
         initial_cols: 80,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -39,6 +40,7 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
         wakeup: Arc::new(|| {}),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         initial_rows: 24,
         initial_cols: 80,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -72,6 +74,7 @@ fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidList
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         last_pty_size: (rows as u32) << 16 | cols as u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -100,6 +103,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>
         snapshot_buf: Default::default(),
         grid_dirty,
         pty_control: None,
+        adopted_signal: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -146,6 +150,7 @@ fn shutdown_via_channel_disconnect() {
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -176,6 +181,7 @@ fn command_delivery_ordering() {
         wakeup: Arc::new(|| {}),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         initial_rows: 24,
         initial_cols: 80,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -218,6 +224,7 @@ fn byte_delivery_parses_vte() {
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -361,6 +368,7 @@ fn handle_bytes_chunked_drains_commands() {
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -589,6 +597,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoC
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
         pty_control: None,
+        adopted_signal: None,
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
@@ -699,6 +708,48 @@ fn test_spawn_size_resize_is_deduped() {
         t.last_pty_size, initial_packed,
         "same-size resize should not change last_pty_size"
     );
+}
+
+/// Section 03.9 Phase 4 / TPR-4: process_resize routes to
+/// `adopted_signal.resize()` when `pty_control` is `None`.
+///
+/// Semantic pin: install a stub `AdoptedSignal` (which always errors on
+/// resize) and verify that process_resize:
+/// 1. Calls the grid reflow path (terminal dimensions update).
+/// 2. Calls the signal resize path (we can't observe the call directly,
+///    but we can verify last_pty_size advances — proving the dedup
+///    guard saw the call).
+/// 3. Does NOT panic on the signal error path.
+#[cfg(test)]
+#[test]
+fn process_resize_routes_through_adopted_signal_when_pty_control_none() {
+    use crate::pty::adopt::AdoptedSignal;
+
+    let mut t = make_sync_thread();
+    // Replace pty_control (already None) with an adopted_signal stub.
+    // The stub returns an error from resize() but process_resize must
+    // log + continue, not panic.
+    t.adopted_signal = Some(AdoptedSignal::stub_for_tests());
+
+    let initial_packed = (24u32 << 16) | 80u32;
+    t.last_pty_size = initial_packed;
+
+    // Resize to a new size — should call adopted_signal.resize() and
+    // update last_pty_size.
+    t.process_resize(30, 100);
+
+    let new_packed = (30u32 << 16) | 100u32;
+    assert_eq!(
+        t.last_pty_size, new_packed,
+        "process_resize must update last_pty_size even when both \
+         pty_control is None and adopted_signal returns an error",
+    );
+    assert_eq!(
+        t.terminal.grid().lines(),
+        30,
+        "grid reflow must run before the signal pipe write",
+    );
+    assert_eq!(t.terminal.grid().cols(), 100, "grid cols must be updated");
 }
 
 /// Display offset resets to 0 after resize (Grid::resize calls finalize_resize).

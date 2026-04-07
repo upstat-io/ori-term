@@ -173,7 +173,18 @@ mod windows_signal {
         reason = "wraps Win32 HANDLE FFI for handoff signal/reference/server/client handles"
     )]
 
+    use std::io;
+
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Storage::FileSystem::WriteFile;
+
+    /// Conhost signal pipe message type for window resize, mirroring
+    /// `PTY_SIGNAL_RESIZE_WINDOW` from
+    /// `terminal/src/winconpty/winconpty.h:49`. The packet layout is
+    /// three little-endian `u16`s: `[message_type, cols, rows]` (X then
+    /// Y), per `_ResizePseudoConsole` in
+    /// `terminal/src/winconpty/winconpty.cpp:266`.
+    const PTY_SIGNAL_RESIZE_WINDOW: u16 = 8;
 
     /// Owned conhost handoff handles. All four are duplicated copies — the
     /// originals are owned by the COM caller and freed when the handoff
@@ -210,7 +221,9 @@ mod windows_signal {
         /// Test-only constructor producing a stub with null handles.
         ///
         /// `Drop` skips `CloseHandle` for null handles, so this is safe to
-        /// drop without leaking or double-freeing.
+        /// drop without leaking or double-freeing. `resize` returns an
+        /// error for stubs because the null signal pipe cannot be
+        /// written to.
         #[cfg(test)]
         pub fn stub_for_tests() -> Self {
             Self {
@@ -218,6 +231,47 @@ mod windows_signal {
                 reference: std::ptr::null_mut(),
                 server: std::ptr::null_mut(),
                 client: std::ptr::null_mut(),
+            }
+        }
+
+        /// Send a resize message through the conhost signal pipe so the
+        /// adopted console session updates its window dimensions.
+        ///
+        /// Mirrors `_ResizePseudoConsole` from Windows Terminal's
+        /// `winconpty.cpp`: writes a 6-byte packet of three `u16`s
+        /// (`[PTY_SIGNAL_RESIZE_WINDOW, cols, rows]`) to the signal
+        /// pipe handle. Returns an error if the signal handle is null
+        /// (e.g. a test stub) or `WriteFile` fails.
+        pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
+            if self.signal.is_null() {
+                return Err(io::Error::other(
+                    "AdoptedSignal::resize called on a null signal handle",
+                ));
+            }
+            let packet: [u16; 3] = [PTY_SIGNAL_RESIZE_WINDOW, cols, rows];
+            // SAFETY: as_ptr() yields a valid pointer to a stack array;
+            // size_of_val gives the exact byte length. The transmute to
+            // *const u8 is safe because [u16; 3] has well-defined layout
+            // and is repr(Rust) which has consistent size.
+            let bytes_ptr: *const u8 = packet.as_ptr().cast();
+            let mut written: u32 = 0;
+            // SAFETY: signal is a valid duplicated handle owned by this
+            // struct. WriteFile takes a HANDLE, a pointer to bytes, the
+            // length in bytes, an out-pointer for bytes-written, and an
+            // optional OVERLAPPED (we pass null for synchronous write).
+            let success = unsafe {
+                WriteFile(
+                    self.signal,
+                    bytes_ptr,
+                    size_of_val(&packet) as u32,
+                    &raw mut written,
+                    std::ptr::null_mut(),
+                )
+            };
+            if success != 0 && written as usize == size_of_val(&packet) {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
             }
         }
     }
@@ -255,6 +309,8 @@ mod stub_signal {
     //! on other platforms `AdoptedPtyHandle` still compiles so the adopt
     //! path is unit-testable cross-platform.
 
+    use std::io;
+
     /// Empty stub. Constructing one is a logic error on non-Windows
     /// production paths, but `stub_for_tests` exists so cross-platform
     /// unit tests can exercise `AdoptedPtyHandle` without Windows
@@ -268,6 +324,24 @@ mod stub_signal {
         #[cfg(test)]
         pub fn stub_for_tests() -> Self {
             Self { _private: () }
+        }
+
+        /// Resize stub — there is no signal pipe on non-Windows targets,
+        /// so the IO thread treats this as "no resize sink available"
+        /// and skips the call. Returns an error so the caller can log.
+        ///
+        /// Takes `&self` to mirror the Windows signature even though the
+        /// stub does not read any state — this keeps the IO thread's
+        /// fallback chain (`pty_control` → `adopted_signal`) shape
+        /// consistent across platforms.
+        #[allow(
+            clippy::unused_self,
+            reason = "mirrors Windows signature for cross-platform call sites"
+        )]
+        pub fn resize(&self, _rows: u16, _cols: u16) -> io::Result<()> {
+            Err(io::Error::other(
+                "AdoptedSignal::resize is not supported on this platform",
+            ))
         }
     }
 }

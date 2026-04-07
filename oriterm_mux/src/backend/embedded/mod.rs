@@ -429,11 +429,19 @@ impl MuxBackend for EmbeddedMux {
         // Step 1: send the IO thread barrier and wait for it to drain
         // any earlier commands and publish a fresh snapshot. The 500ms
         // ceiling is generous — under normal load this completes in
-        // sub-millisecond time.
+        // sub-millisecond time. If the IO thread is hung or never
+        // produces a snapshot before the timeout, return None so the
+        // caller knows the result would have been stale rather than
+        // silently degrading to a possibly-out-of-date snapshot. The
+        // contract documented on `MuxBackend::sync_pane_snapshot` is
+        // "guaranteed-fresh or None".
         let pane = self.panes.get(&pane_id)?;
         let (tx, rx) = crossbeam_channel::bounded(1);
         pane.send_io_command(PaneIoCommand::SnapshotNow { reply: tx });
-        let _ = rx.recv_timeout(Duration::from_millis(500));
+        if rx.recv_timeout(Duration::from_millis(500)).is_err() {
+            log::warn!("sync_pane_snapshot({pane_id}) timed out waiting for IO thread barrier");
+            return None;
+        }
 
         // Step 2: refresh and clone — refresh_pane_snapshot mutably
         // borrows self, so we can't return its &PaneSnapshot directly.

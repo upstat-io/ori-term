@@ -26,6 +26,7 @@ pub use commands::PaneIoCommand;
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
 use crate::pty::PtyControl;
+use crate::pty::adopt::AdoptedSignal;
 use crate::shell_integration::interceptor::RawInterceptor;
 
 /// Maximum bytes parsed before re-checking for commands.
@@ -67,6 +68,11 @@ pub struct PaneIoThread<T: EventListener> {
     /// PTY control handle for resize (SIGWINCH). Owned by the IO thread so
     /// reflow and PTY resize happen atomically on the same thread.
     pty_control: Option<PtyControl>,
+    /// Adopted conhost signal pipe for resize on Windows Default Terminal
+    /// handoff panes. `None` for spawned panes (which use `pty_control`
+    /// above) and for non-Windows targets where the signal is a stub.
+    /// `process_resize` falls back to this when `pty_control` is `None`.
+    adopted_signal: Option<AdoptedSignal>,
     /// Last PTY size sent, packed as `(rows << 16) | cols`. Guards against
     /// redundant syscalls (`ConPTY` `WINDOW_BUFFER_SIZE_EVENT` interference).
     last_pty_size: u32,
@@ -400,8 +406,14 @@ pub struct IoThreadConfig<T: EventListener> {
     pub wakeup: Arc<dyn Fn() + Send + Sync>,
     /// Grid dirty flag (shared with `IoThreadEventProxy`).
     pub grid_dirty: Arc<AtomicBool>,
-    /// PTY control handle for resize (SIGWINCH). `None` in tests.
+    /// PTY control handle for resize (SIGWINCH). `None` in tests and
+    /// for adopted (default-terminal handoff) panes.
     pub pty_control: Option<PtyControl>,
+    /// Adopted conhost signal handle for resize on Windows Default
+    /// Terminal handoff panes. `None` for spawned panes (which use
+    /// `pty_control`) and tests. The IO thread's `process_resize`
+    /// falls back to this when `pty_control` is `None`.
+    pub adopted_signal: Option<AdoptedSignal>,
     /// Initial PTY dimensions (rows, cols) — seeds the dedup guard so the
     /// first resize at spawn size skips the redundant syscall.
     pub initial_rows: u16,
@@ -440,6 +452,7 @@ pub fn new_with_handle<T: EventListener>(
         snapshot_buf: RenderableContent::default(),
         grid_dirty: config.grid_dirty,
         pty_control: config.pty_control,
+        adopted_signal: config.adopted_signal,
         last_pty_size: (config.initial_rows as u32) << 16 | config.initial_cols as u32,
         search: None,
         selection_dirty: config.selection_dirty,
