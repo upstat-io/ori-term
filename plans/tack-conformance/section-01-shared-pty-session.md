@@ -48,20 +48,20 @@ sections:
 
 # Section 01: Shared PtySession Infrastructure
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Eliminate the `VtTestSession` LEAK by introducing a shared `crates/oriterm_test_support` crate. Both `oriterm_core/tests/vttest/` and `oriterm/src/gpu/visual_regression/vttest/` consume the shared `PtySession`. The 581-line `oriterm/src/gpu/visual_regression/vttest/mod.rs` (BLOAT) shrinks below the 500-line limit because the PTY/Term/VTE plumbing is no longer duplicated. After this section, every byte of the existing 198 insta snapshots and 98 golden PNGs is unchanged.
 
 **Success Criteria:**
 
-- [ ] `crates/oriterm_test_support` exists, builds, and is in `Cargo.toml` `workspace.members`
-- [ ] `PtySession` exposes spawn/drain/wait/send/grid_text/grid_chars APIs that exactly match `VtTestSession`'s current behavior
-- [ ] `oriterm_core/tests/vttest/session.rs` reduces to a thin adapter (`VtTestSession` constructed from `PtySession::spawn_vttest()`)
-- [ ] `oriterm/src/gpu/visual_regression/vttest/mod.rs` no longer defines its own `PtyResponder` or `VtTestSession` — only GPU-specific helpers (`assert_golden`, `frame_input`, `frame_input_with_blink`, `cell_brightness`)
-- [ ] `oriterm/src/gpu/visual_regression/vttest/mod.rs` line count drops from 581 → <300
-- [ ] `timeout 150 cargo test -p oriterm_core --test vttest` — 198 insta snapshots all match (no new `.snap.new` files generated)
-- [ ] `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` — 98 PNG goldens all match (zero pixel diffs)
-- [ ] Architecture test (`cargo test -p oriterm --test architecture`, if it gates crate boundaries) still green
-- [ ] Satisfies mission criteria #1, #2, #3, #4
+- [x] `crates/oriterm_test_support` exists, builds, and is in `Cargo.toml` `workspace.members`
+- [x] `PtySession` exposes spawn/drain/wait/send/grid_text/grid_chars APIs that exactly match `VtTestSession`'s current behavior
+- [x] `oriterm_core/tests/vttest/session.rs` reduces to a thin adapter (re-exports `PtySession` directly from `oriterm_test_support`)
+- [x] `oriterm/src/gpu/visual_regression/vttest/mod.rs` no longer defines its own `PtyResponder` or `VtTestSession` — only GPU-specific helpers (`assert_golden`, `frame_input`, `frame_input_with_blink`, `cell_brightness`)
+- [x] `oriterm/src/gpu/visual_regression/vttest/mod.rs` line count drops from 581 → 261 (target was <300)
+- [x] `timeout 150 cargo test -p oriterm_core --test vttest` — all 29 vttest test functions pass with insta snapshots matching (no new `.snap.new` files generated)
+- [x] `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` — all 11 vttest_golden tests pass (zero pixel diffs)
+- [x] Architecture test (`cargo test -p oriterm --test architecture`) still green
+- [x] Satisfies mission criteria #1, #2, #3, #4
 
 **Context:** Two copies of `VtTestSession` currently exist. The text-test version at `oriterm_core/tests/vttest/session.rs:40-213` (239 lines) and the GPU-test version at `oriterm/src/gpu/visual_regression/vttest/mod.rs:53-284` (within a 581-line file). The bodies of `drain`, `drain_blocking`, `wait`, `wait_for`, `send`, `grid_text`, and the `PtyResponder` listener are byte-for-byte identical between the two. This is a `LEAK:algorithmic-duplication` (cross-crate, no shared home) AND a `BLOAT` finding (the GPU file exceeds the 500-line limit by 81 lines because it absorbs the PTY plumbing). Per `.claude/rules/impl-hygiene.md`: "Cross-crate duplication: even 2 instances = extract to a shared crate or shared type." This section is the extract.
 
