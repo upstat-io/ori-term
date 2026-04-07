@@ -1,0 +1,8 @@
+: Esc [ 5 ; 20 r
+: Esc [ ? 6 h
+: Esc [ 3 ; 1 H
+|Origin content|
+: Esc [ ? 1049 h
+: Esc [ 1 ; 1 H
+|Alt in origin mode|
+: Esc [ ? 1049 l

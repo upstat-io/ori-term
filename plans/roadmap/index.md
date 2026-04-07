@@ -106,6 +106,7 @@ URL opening, ShellExecuteW, xdg-open, open
 signal handling, SIGCHLD, SetConsoleCtrlHandler
 shell detection, $SHELL, cmd.exe, TERM, COLORTERM
 #[cfg(target_os)], conditional compilation, platform-specific
+default terminal, IConsoleHandOff, ITerminalHandoff, COM interface, conhost handoff
 ```
 
 ---
@@ -159,6 +160,7 @@ input forwarding, keyboard, basic input, Enter, Backspace
 cell_width, cell_height, baseline, font metrics
 testing, unit test, headless GPU, visual regression, reference PNG
 determinism, pixel readback, decode_instance, assert_instance_count
+device lost, GPU recovery, sleep resume, SurfaceError::Lost, recreate
 ```
 
 ---
@@ -224,6 +226,11 @@ UI text, UiShapedGlyph, measure_text, ellipsis truncation, tab bar text
 pre-cache, ASCII pre-cache, scratch buffer, face creation, perf
 swash, rasterize, glyph, RasterizedGlyph, GlyphStyle, zeno
 dwrote, DirectWrite, Windows font, system fonts
+block glyph gamma, medium shade, U+2592, sRGB, alpha correction
+selective ligature, disable ligature, per-sequence, ligature filter
+Indic script, Devanagari, Bengali, Thai, Tamil, complex script, vowel mark
+underline glyph-break, undercurl beneath, text-decoration-skip-ink, descender
+RTL, BiDi, right-to-left, Arabic, Hebrew, Persian, UAX#9, unicode-bidi
 ```
 
 ---
@@ -288,12 +295,13 @@ Lua hook, Lua key event, Lua integration, UserData
 platform diagnostic, key event logging, winit key event
 Ghostty KeyEvent, Alacritty SequenceBuilder, WezTerm normalize_shift
 encode_numpad_app, try_encode_numpad, try_encode_named, try_encode_control, try_encode_text
+Alt+non-ASCII, Alt+é, AZERTY, ESC+character, non-US keyboard layout
 ```
 
 ---
 
 ### Section 09: Selection & Clipboard
-**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-09-selection-clipboard.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 selection, Selection, SelectionRange, SelectionPoint, SelectionMode
@@ -311,12 +319,14 @@ HTML Format, RTF, CF_UNICODETEXT, formatted copy
 keyboard selection, mark mode, Shift+arrows
 file drag-and-drop, auto-quote paths
 selection rendering, invert colors, highlight
+pause viewport, freeze scroll, selection in progress, mouseDown buffer
+copy as HTML, CopyAsHtml, CopyWithAnsi, CF_HTML, formatted copy, styled clipboard
 ```
 
 ---
 
 ### Section 10: Mouse Input & Reporting
-**File:** `section-10-mouse-input.md` | **Tier:** 3 | **Status:** Complete
+**File:** `section-10-mouse-input.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 mouse reporting, mouse mode, 1000, 1002, 1003, 1006
@@ -326,6 +336,10 @@ click count, double-click, triple-click, Alt+click block selection
 Ctrl+click URL, Shift override, mouse reporting bypass
 mouse selection state machine, SelectionState
 auto-scroll, drag above/below viewport
+horizontal scroll, WheelLeft, WheelRight, button 6, button 7, x-axis
+TUI scroll magnitude, trackpad scroll, precision scroll, scroll forwarding
+inertial scroll cancel, momentum scroll, screen switch, alt screen scroll cancel
+click-through unfocused, acceptsFirstMouse, focus click passthrough
 ```
 
 ---
@@ -343,7 +357,7 @@ row_text, text extraction, byte offset mapping
 ---
 
 ### Section 12: Resize & Reflow
-**File:** `section-12-resize-reflow.md` | **Tier:** 3 | **Status:** Not Started
+**File:** `section-12-resize-reflow.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 reflow, resize, Grid::resize, logical line, re-wrap
@@ -353,12 +367,13 @@ LEADING_WIDE_CHAR_SPACER, split point
 PTY resize, TIOCSWINSZ, ConPTY, PtySize
 window resize, grid_dims_for_size, SIGWINCH
 zero dimension guard, alternate screen resize
+window step resize, grid-aligned, WM_NORMAL_HINTS, resize increment, snap to cell
 ```
 
 ---
 
 ### Section 13: Configuration & Keybindings
-**File:** `section-13-config-keybindings.md` | **Tier:** 3 | **Status:** Not Started
+**File:** `section-13-config-keybindings.md` | **Tier:** 3 | **Status:** In Progress
 
 ```
 config, Config, TOML, config.toml, hot reload
@@ -367,6 +382,7 @@ file watcher, notify, config monitor
 keybindings, KeyBinding, Action, shortcut
 Ctrl+Shift+C, Ctrl+Shift+V, Ctrl+Tab, Ctrl+T
 zoom, font size, Ctrl+=, Ctrl+-
+font size step, IncreaseFontSize, DecreaseFontSize, configurable zoom factor
 ```
 
 ---
@@ -412,6 +428,7 @@ tab bar hit testing, TabBarHit, CloseTab, NewTab, DropdownButton, DragArea
 close button inset, platform-specific controls, Windows rectangular, macOS circular
 tab hover preview, terminal preview, thumbnail, TerminalPreviewWidget, offscreen render
 tab icon, emoji, TabIcon, process icon, OSC 1, icon name, color emoji in tab
+tab activity, background tab output, unseen output, activity indicator, activity badge
 ```
 
 ---
@@ -426,6 +443,7 @@ mouse_offset_in_tab, cursor center insertion, Chrome-style snap
 tear-off, tear_off_tab, OS drag, WM_MOVING, merge detection
 seamless drag, synthesize mouse-down, merge_drag_suppress_release
 compute_drop_index, DWM invisible borders, screen to local
+URL drag-and-drop, text/uri-list, browser drop, http URL paste
 ```
 
 ---
@@ -515,6 +533,8 @@ application keypad, DECKPAM, DECKPNM
 origin mode, DECOM, scroll region
 reverse wraparound, DECAWM
 save/restore modes, XTSAVE, XTRESTORE
+titeInhibit, alt screen inhibit, alternate screen prevent
+scroll bindings, alt screen suppression, performable, passthrough
 ```
 
 ---
@@ -536,6 +556,7 @@ benchmarks, criterion, throughput, latency, FPS, regression, vte_throughput
 selection damage, selection_dirty, symmetric difference, incremental damage
 synchronized output, Mode 2026, sync_bytes_count, MuxWakeup coalescing
 debug overlay, FPS counter, atlas utilization, dirty row percentage
+SIMD parser, vector instructions, SSE2, NEON, fast ASCII scan, bulk parse
 ```
 
 ---
@@ -557,6 +578,11 @@ overline, SGR 53, SGR 55
 CSI t, window manipulation, window size, cell size, report, resize, iconify
 DCS passthrough, tmux passthrough, nested terminal
 capability reporting, progressive enhancement, feature discovery
+VT52, DECANM, private mode 2, ESC <, VT52 cursor addressing
+OSC 5522, Kitty clipboard protocol, rich clipboard, MIME type
+OSC 66, text sizing protocol, explicit width, scale factor
+OSC 1337, iTerm2 capabilities, Terminal Feature Reporting, feature detection
+mode 2027, grapheme cluster width, DECRQM 2027, unicode width detection
 ```
 
 ---
@@ -574,6 +600,10 @@ image rendering, GPU compositing, image texture, image atlas
 image animation, frame, animated GIF, animation control
 image memory, image eviction, LRU, memory limit, 256 MB
 viu, timg, hologram, ranger preview, Jupyter inline plot
+image scroll, CSI T, scroll down, image placement follow text
+SIXEL color default, omitted parameter, color definition, Pu Px Py Pz
+XTSMGRAPHICS, CSI ? Pi, graphics size negotiation, Sixel area, color registers
+Kitty animation memory, GIF memory leak, animation frame eviction, max_image_memory
 ```
 
 ---
@@ -594,6 +624,7 @@ y, yank, copy, vi copy, keyboard copy
 /, ?, n, N, vi search, search forward, search backward
 zz, center view, auto-scroll, scrollback navigation
 Ctrl+Shift+Space, toggle vi mode, vi mode cursor
+viewport scroll, Ctrl+U, Ctrl+D, half page scroll, Ctrl+B, Ctrl+F, display_offset
 ```
 
 ---
@@ -678,6 +709,15 @@ close button icon, minimize icon, maximize icon, restore icon, chevron icon, plu
 jagged lines, staircase, pixel stepping, smooth icons, Chrome-style icons
 background image, PNG, JPEG, texture, opacity, position
 window shadow, padding, margin, GRID_PADDING
+partial line clip, max_line_clip_pixels, last line, extra row, pixel waste
+resize overlay, dimensions overlay, cols x rows, resize indicator
+toggle background opacity, ToggleBackgroundOpacity, transparency toggle
+minimum contrast, WCAG, luminance, contrast ratio, accessibility
+cursor trail, cursor smear, motion blur, cursor animation, Neovide
+window-padding-color, extend, nearest cell bg, padding color match
+padding opacity, transparent padding, background_opacity padding
+unified background image, single image across splits, composite
+swap fg bg, ToggleInvertedColors, invert colors keybind
 ```
 
 ---
@@ -720,6 +760,7 @@ quick terminal, drop-down, global hotkey, Quake-style, F12
 desktop notifications, OSC 9, OSC 777, OSC 99, toast
 progress indicators, OSC 9;4, taskbar progress, ITaskbarList3
 terminal inspector, Ctrl+Shift+I, debug overlay, escape sequence log
+frecency, command ranking, usage frequency, MRU, most recently used
 ```
 
 ---
@@ -781,6 +822,9 @@ escape sequence sandboxing, file access restriction, path traversal
 resource limits, image count limit, payload size limit
 window title sanitize, OSC 0 sanitize, OSC 7 validate
 clipboard_max_size, primary_write, primary_read, ask policy, deny policy
+homograph attack, mixed-script URL, Cyrillic lookalike, paste detection
+password paste, concealed field, mask paste content, password-aware
+read-only pane, ToggleReadOnly, input suppression, monitoring mode
 ```
 
 ---
@@ -851,12 +895,13 @@ ConPTY-safe shutdown, exit-before-drop, background thread cleanup
 cross-window tab movement, move_tab_to_window, move_tab_to_new_window
 tear-off, multi-pane tab move, fullscreen toggle
 handle_resize, handle_scale_factor_changed, resize ALL panes
+window naming, rename window, RenameWindow, custom window title
 ```
 
 ---
 
 ### Section 33: Split Navigation + Floating Panes
-**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** Complete
+**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** In Progress
 
 ```
 spatial navigation, Alt+Arrow, focus pane direction, cycle pane
@@ -871,6 +916,8 @@ float-tile toggle, Ctrl+Shift+G, ToggleFloatTile
 floating drag, floating resize, snap-to-edge, minimum size
 render_frame_scissored, drop shadow, floating z-order, raise, lower
 undo split, redo split, Ctrl+Shift+U, Ctrl+Shift+Y, SplitHistory
+split rotation, rotate direction, H to V, RotateSplitDirection, focus-following rotate
+per-pane title, pane label, split title bar, pane identity indicator
 ```
 
 ---
@@ -893,6 +940,8 @@ auto-start daemon, fallback InProcessMux, reconnection
 Unix domain socket, named pipe, IPC transport
 shadow grid, reconnect snapshot, PaneContent
 PID file, daemon lifecycle, --daemon, --stop, --persist
+PDU size limit, MAX_PDU_PAYLOAD_SIZE, bounded allocation, OOM, memory safety
+tmux control mode, tmux -CC, TmuxDomain, %output, %window-add, %layout-change
 ```
 
 ---
@@ -996,6 +1045,9 @@ has_semantic_prompts, fast path, optimization flag
 click-to-move cursor, mouse prompt reposition, cursor placement
 smart selection, command output extraction, prompt region
 Vec<PromptMarker> replacement, cell stamping, grid-level tracking
+OSC 133 click_events, click_events=2, relative Y coordinate, prompt click
+click-to-move delay, multi-click, double-click cancel, cursor reposition
+copy last command output, CopyLastCommandOutput, semantic zone extract
 ```
 
 ---
@@ -1026,6 +1078,9 @@ catch-all key, CatchAll, match unbound, ignore action, passthrough
 key remapping, key-remap, modifier remap, ctrl=super, caps_lock=escape
 visual indicator, active key table, key table name
 zellij modes, tmux key table, wezterm key_tables
+modifier-only keybinding, ctrl=action, release trigger, modifier press
+side modifier, left_shift, right_shift, left_ctrl, right_ctrl, KeyLocation
+ANY modifier wildcard, any+click, ignore modifiers, modifier-agnostic binding
 ```
 
 ### Section 50: Runtime Efficiency — CPU & Memory Tuning
@@ -1101,6 +1156,45 @@ OSC 133 shell integration, OSC 7 CWD reporting, raw pipe passthrough
 
 ---
 
+### Section 54: Render Capture & Texture Pipeline
+**File:** `section-54-render-capture.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+render capture, texture pipeline, persistent texture, texture cache
+PersistentTextureCache, TextureCacheEntry, write_region, sub-region update
+queue.write_texture, incremental texture, surgical upload, RGBA texture
+frame capture, FrameCapture, downscale, thumbnail, render-to-texture
+linear filtering, sampled texture, fullscreen triangle, capture.wgsl
+GPU memory budget, LRU eviction, global budget, pane-keyed
+staging buffer, zero allocation, capture pipeline
+minimap texture, expose thumbnail, tab preview, shared infrastructure
+RenderTargetPool, ImageTextureCache, image_render, render_target
+```
+
+---
+
+### Section 55: Minimap Scrollbar
+**File:** `section-55-minimap-scrollbar.md` | **Tier:** 8 | **Status:** Not Started
+
+```
+minimap, minimap scrollbar, VS Code minimap, content overview
+MinimapRowProducer, row sampling, IO thread, prebaked pixel
+MinimapSnapshot, MinimapDirtyBand, dirty band, incremental update
+MinimapModel, sampling state, sampling ratio, MinimapSamplingState
+viewport highlight, highlight rectangle, scroll position indicator
+click-to-scroll, drag viewport, minimap input, minimap interaction
+scrollbar_mode, none, scrollbar, minimap, both, config
+alt-screen, hide minimap, full rebuild, resize invalidation
+history damage, scrollback damage, separate dirty tracking
+capture-phase, mouse capture, ScrollbarCaptureController
+GPU minimap renderer, minimap texture, overlay quad, composition
+PersistentTextureCache, write_region, event-driven, zero idle work
+daemon mode, PaneSnapshot, wire protocol, minimap data
+display_offset, scrollback, total_rows, visible_rows
+```
+
+---
+
 ### Ghostty 1.3.0 Parity — Items in Completed Sections
 
 These features from Ghostty 1.3.0 belong in sections already marked complete. They should be addressed when those sections are revisited or as standalone follow-up work.
@@ -1127,7 +1221,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 |----|-------|------|------|--------|
 | 01 | Cell + Grid | `section-01-cell-grid.md` | 0 | Not Started |
 | 02 | Terminal State Machine + VTE | `section-02-term-vte.md` | 0 | Not Started |
-| 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Not Started |
+| 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Complete |
 | 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
 | 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
 | 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Not Started (blocks 06) |
@@ -1181,6 +1275,8 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 51 | Rich Status Bar — Shell, CWD, Git, Process | `section-51-rich-status-bar.md` | 5 | Not Started |
 | **52** | **Native PTY Layer** | **`section-52-native-pty.md`** | **5** | **Not Started** |
 | **53** | **Raw Pipe Bypass for VT-Native Shells** | **`section-53-raw-pipe-bypass.md`** | **5** | **Not Started** |
+| **54** | **Render Capture & Texture Pipeline** | **`section-54-render-capture.md`** | **5** | **Not Started** |
+| **55** | **Minimap Scrollbar** | **`section-55-minimap-scrollbar.md`** | **8** | **Not Started** |
 
 ## Tier Summary
 
@@ -1192,10 +1288,11 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39, 42-43, 45, 47-53 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings, rich status bar, native PTY, raw pipe bypass) |
+| 5 | 22-23, 38-39, 42-43, 45, 47-54 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security, semantic prompts, scrollbars, advanced keybindings, rich status bar, native PTY, raw pipe bypass, render capture) |
 | 6 | 24-25, 46 | Polish (visual refinements, themes, macOS app bundle) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |
+| **8** | **55** | **Content navigation (minimap scrollbar)** |
 
 ## Dependency DAG
 

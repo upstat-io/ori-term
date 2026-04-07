@@ -1,0 +1,5 @@
+: Esc [ 48 ; 2 ; 255 ; 128 ; 0 m
+|Orange bg|
+: Esc [ 48 ; 2 ; 0 ; 255 ; 128 m
+|Spring bg|
+: Esc [ 0 m

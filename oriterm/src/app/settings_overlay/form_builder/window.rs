@@ -20,15 +20,57 @@ pub(super) fn build_page(
     ids: &mut SettingsIds,
     theme: &UiTheme,
 ) -> Box<dyn Widget> {
+    // Allow `unused_mut` on non-Windows because the `push` below is
+    // gated `#[cfg(target_os = "windows")]` and disappears entirely
+    // on Linux/macOS, leaving `sections` immutable.
+    #[allow(unused_mut, reason = "default_terminal section is windows-only")]
+    let mut sections = vec![
+        build_chrome_section(config, ids, theme),
+        build_padding_section(config, ids, theme),
+        build_startup_section(config, ids, theme),
+    ];
+
+    // Section 03.9 Phase 4d — Windows-only default terminal toggle.
+    // Hidden on Linux/macOS where the underlying registry helpers
+    // don't compile.
+    #[cfg(target_os = "windows")]
+    sections.push(build_default_terminal_section(ids, theme));
+
     build_settings_page(
         "Window",
         "Window chrome, padding, and startup behavior",
-        vec![
-            build_chrome_section(config, ids, theme),
-            build_padding_section(config, ids, theme),
-            build_startup_section(config, ids, theme),
-        ],
+        sections,
         theme,
+    )
+}
+
+/// Default-terminal section: toggle that reflects and modifies the
+/// Windows default terminal registration via
+/// [`crate::platform::default_terminal::registry`].
+///
+/// The toggle's initial state is fetched from `is_registered()` at
+/// dialog open time. Toggling fires the action handler in
+/// [`super::super::action_handler`] which calls `register_all` /
+/// `unregister_all`. Registry side-effects are skipped under `cfg(test)`
+/// so the action handler tests can run without touching the user's hive.
+#[cfg(target_os = "windows")]
+fn build_default_terminal_section(ids: &mut SettingsIds, theme: &UiTheme) -> Box<dyn Widget> {
+    let initial = crate::platform::default_terminal::registry::is_registered();
+    let toggle = ToggleWidget::new().with_on(initial);
+    ids.default_terminal_toggle = toggle.id();
+
+    let row = SettingRowWidget::new(
+        "Set as default terminal",
+        "Open cmd.exe / powershell.exe sessions from Explorer in oriterm",
+        Box::new(toggle),
+        theme,
+    );
+
+    Box::new(
+        ContainerWidget::column()
+            .with_width(SizeSpec::Fill)
+            .with_child(build_section_header("Default Terminal", theme))
+            .with_child(Box::new(row)),
     )
 }
 

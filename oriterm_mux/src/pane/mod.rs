@@ -27,7 +27,7 @@ use oriterm_core::{RenderableContent, SearchState, Selection};
 pub use mark_cursor::MarkCursor;
 
 use crate::pane::io_thread::{PaneIoCommand, PaneIoHandle};
-use crate::pty::{Msg, PtyHandle};
+use crate::pty::{Msg, PtyLifecycle};
 
 /// Sends input to the PTY and commands to the reader thread.
 ///
@@ -80,7 +80,12 @@ pub struct PaneParts {
     /// Writer thread join handle.
     pub writer_thread: JoinHandle<()>,
     /// PTY handle (child lifecycle).
-    pub pty: PtyHandle,
+    ///
+    /// Boxed as a trait object so the same `Pane` type can hold either a
+    /// spawned [`PtyHandle`](crate::pty::PtyHandle) or an adopted handle
+    /// (Phase 1B introduces `AdoptedPtyHandle` for the Windows default
+    /// terminal handoff path in Section 03.9).
+    pub pty: Box<dyn PtyLifecycle + Send>,
     /// Lock-free mode bits cache (shared with IO thread).
     pub mode_cache: Arc<AtomicU32>,
     /// Terminal IO thread handle (owns command + byte channels).
@@ -125,8 +130,9 @@ pub struct Pane {
     io_handle: PaneIoHandle,
     /// Lock-free selection-dirty flag (set by IO thread, read/cleared by main thread).
     io_selection_dirty: Arc<AtomicBool>,
-    /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
-    pty: PtyHandle,
+    /// Spawned or adopted PTY (reader/writer/control taken; child lifecycle
+    /// dispatched through [`PtyLifecycle`]).
+    pty: Box<dyn PtyLifecycle + Send>,
     /// Lock-free cache of `TermMode::bits()` for hot-path queries.
     ///
     /// Shared with the IO thread — the IO thread writes after each VTE parse,
@@ -230,6 +236,20 @@ impl Pane {
     #[allow(dead_code, reason = "used when multi-domain routing is wired to App")]
     pub fn domain_id(&self) -> DomainId {
         self.domain_id
+    }
+
+    /// Child process ID, if known.
+    ///
+    /// For spawned panes, this is the shell's PID. For adopted panes
+    /// (Section 03.9 Windows handoff), this is the client process ID
+    /// reported by the console host. Used for direct signal delivery
+    /// when the PTY writer is stalled.
+    #[allow(
+        dead_code,
+        reason = "used when stall-recovery wires direct signal delivery"
+    )]
+    pub fn process_id(&self) -> Option<u32> {
+        self.child_pid
     }
 
     // -- Lock-free accessors --

@@ -14,12 +14,13 @@ use std::sync::mpsc;
 use oriterm_core::Selection;
 use oriterm_core::{RenderableContent, Theme};
 
-use super::{ImageConfig, MuxBackend};
+use super::{AdoptPaneRequest, ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::{ClosePaneResult, InProcessMux};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::io_thread::PaneIoCommand;
 use crate::pane::{MarkCursor, Pane};
+use crate::pty::AdoptedPtyHandle;
 use crate::registry::PaneEntry;
 use crate::server::snapshot::fill_snapshot_from_renderable;
 use crate::{DomainId, PaneId, PaneSnapshot};
@@ -113,6 +114,18 @@ impl MuxBackend for EmbeddedMux {
         let (pane_id, pane) =
             self.mux
                 .spawn_standalone_pane(config, theme, &self.guarded_wakeup)?;
+        self.panes.insert(pane_id, pane);
+        Ok(pane_id)
+    }
+
+    fn adopt_pane(
+        &mut self,
+        adopted: AdoptedPtyHandle,
+        request: AdoptPaneRequest,
+    ) -> io::Result<PaneId> {
+        let (pane_id, pane) =
+            self.mux
+                .adopt_standalone_pane(adopted, request, &self.guarded_wakeup)?;
         self.panes.insert(pane_id, pane);
         Ok(pane_id)
     }
@@ -408,6 +421,32 @@ impl MuxBackend for EmbeddedMux {
 
         self.snapshot_dirty.remove(&pane_id);
         self.snapshot_cache.get(&pane_id)
+    }
+
+    fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot> {
+        use std::time::Duration;
+
+        // Step 1: send the IO thread barrier and wait for it to drain
+        // any earlier commands and publish a fresh snapshot. The 500ms
+        // ceiling is generous — under normal load this completes in
+        // sub-millisecond time. If the IO thread is hung or never
+        // produces a snapshot before the timeout, return None so the
+        // caller knows the result would have been stale rather than
+        // silently degrading to a possibly-out-of-date snapshot. The
+        // contract documented on `MuxBackend::sync_pane_snapshot` is
+        // "guaranteed-fresh or None".
+        let pane = self.panes.get(&pane_id)?;
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        pane.send_io_command(PaneIoCommand::SnapshotNow { reply: tx });
+        if rx.recv_timeout(Duration::from_millis(500)).is_err() {
+            log::warn!("sync_pane_snapshot({pane_id}) timed out waiting for IO thread barrier");
+            return None;
+        }
+
+        // Step 2: refresh and clone — refresh_pane_snapshot mutably
+        // borrows self, so we can't return its &PaneSnapshot directly.
+        let snapshot = self.refresh_pane_snapshot(pane_id)?.clone();
+        Some(snapshot)
     }
 
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {

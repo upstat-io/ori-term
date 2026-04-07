@@ -1,0 +1,5 @@
+|AAAAAAAAAA|
+: Esc [ 1 ; 5 H
+: Esc [ 42 m
+: Esc [ 0 K
+: Esc [ 0 m

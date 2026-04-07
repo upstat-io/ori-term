@@ -22,6 +22,18 @@ sections:
   - id: "39.5"
     title: Image Rendering + GPU Compositing
     status: in-progress
+  - id: "39.7"
+    title: "Kitty Images Scroll with Text"
+    status: not-started
+  - id: "39.8"
+    title: "SIXEL Color Parameter Default Fix"
+    status: not-started
+  - id: "39.9"
+    title: "Kitty Image Animation Memory Safety"
+    status: not-started
+  - id: "39.10"
+    title: "XTSMGRAPHICS Sixel Size Negotiation"
+    status: not-started
   - id: "39.6"
     title: Section Completion
     status: in-progress
@@ -605,6 +617,82 @@ Render cached images as GPU textures composited into the terminal frame.
   - [x] GPU memory limit evicts oldest textures
   - [x] Config `image_protocol = false` produces no image quads (handler early-return)
   - [x] Resize recalculates cell-count-based placement pixel dimensions (in `image/tests.rs`)
+
+---
+
+## 39.7 Kitty Images Scroll with Text
+
+<!-- Ghostty audit: #4323 (Kitty images aren't scrolled with text) -->
+
+**Source:** Ghostty #4323 — Images placed via Kitty graphics protocol don't follow text when scrolled with CSI sequences. When `CSI T` (scroll down) is used, the text moves but images stay in their original position, creating a visual disconnect.
+
+**Problem:** Kitty images are placed at absolute screen positions. When terminal content scrolls (via CSI scroll sequences, not user viewport scroll), image placements must be updated to follow their associated text rows.
+
+**Required work:**
+
+- [ ] Track image placement row association: when an image is placed, record which row it's attached to
+- [ ] When CSI scroll sequences (SU/SD/IL/DL) move rows, update image placement positions accordingly
+- [ ] Handle scrollback: when the image's associated row scrolls into scrollback, the image should be visible when scrolling back to that position
+- [ ] Handle image deletion: images scrolled off the bottom of scrollback should be garbage collected
+- [ ] Test: place image via Kitty protocol, scroll text with CSI 4T, verify image moves with its row
+
+**Priority:** Medium — affects any application using Kitty graphics with scrolling content (terminals-in-terminals, TUI image viewers).
+
+**Reference:** Kitty graphics protocol spec — placement behavior during scroll operations.
+
+---
+
+## 39.8 SIXEL Color Parameter Default Fix
+
+<!-- WezTerm audit: #7344 (SIXEL omitted color params not treated as 0 but as 100) -->
+
+**Source:** WezTerm #7344 — Per VT330/VT340 spec, omitted parameters in SIXEL color definitions (`#Pc;Pu;Px;Py;Pz`) should default to 0, not 100. When a color parameter is omitted between semicolons (e.g., `#1;2;;50;50`), WezTerm treats the missing value as 100 (max) instead of 0 (min), producing wrong colors.
+
+**Required work:**
+
+- [ ] In SIXEL color parsing: treat omitted parameters (empty between semicolons) as 0 per DCS spec
+- [ ] Verify against xterm and Alacritty reference behavior
+- [ ] Test: `#;2;;;` (all omitted) should produce black (HSL 0,0,0), not white
+
+**Priority:** Low — affects SIXEL color accuracy.
+
+---
+
+## 39.9 Kitty Image Animation Memory Safety
+
+<!-- WezTerm audit: #7400 (memory leak with kitty + gif) -->
+
+**Source:** WezTerm #7400 — Displaying animated GIFs via Kitty graphics protocol causes unbounded memory growth and eventual freeze. Each animation frame accumulates in the image cache without eviction, pinning a CPU core at 100%.
+
+**Required work:**
+
+- [ ] Implement frame-count limit for Kitty image animations (e.g., max 256 frames in memory)
+- [ ] Evict oldest frames when limit exceeded (ring buffer for animation frames)
+- [ ] Bound total image memory: enforce `max_image_memory` budget across all images, evict LRU when exceeded
+- [ ] Ensure animation frame disposal modes are respected (replace, keep, combine)
+- [ ] Test: display animated GIF with 1000+ frames, verify memory stays bounded
+
+**Priority:** Medium — affects any user displaying animated images in the terminal.
+
+---
+
+## 39.10 XTSMGRAPHICS Sixel Size Negotiation
+
+<!-- WezTerm audit (batch 4): #609 (XTSMGRAPHICS ought be supported if supporting Sixel) -->
+
+**Source:** WezTerm #609 — When a terminal advertises Sixel support via DA1 (attribute 4), applications expect XTSMGRAPHICS (`CSI ? Pi ; Pa ; Pv S`) to negotiate graphics area size and color count. Without this, apps can't determine the available rendering area and default to conservative sizes.
+
+**Required work:**
+
+- [ ] Implement XTSMGRAPHICS query: `CSI ? 1 ; 1 ; 0 S` → report max graphics dimensions in pixels
+- [ ] Implement XTSMGRAPHICS query: `CSI ? 2 ; 1 ; 0 S` → report max color register count
+- [ ] Response format: `CSI ? Pi ; 0 ; Pv S` (success) with pixel width/height or color count
+- [ ] Values should reflect actual terminal grid size × cell dimensions
+- [ ] Test: send XTSMGRAPHICS query, verify response matches window pixel dimensions
+
+**Priority:** Low — required for Sixel compliance, but Sixel itself is already in Section 39.3.
+
+**Reference:** xterm XTSMGRAPHICS documentation, VT340 spec.
 
 ---
 

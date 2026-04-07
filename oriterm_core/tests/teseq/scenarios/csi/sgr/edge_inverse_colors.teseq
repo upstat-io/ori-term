@@ -1,0 +1,5 @@
+: Esc [ 31 ; 42 m
+|Red on green|
+: Esc [ 7 m
+|Inverted|
+: Esc [ 0 m

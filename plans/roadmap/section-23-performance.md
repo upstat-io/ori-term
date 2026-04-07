@@ -2,7 +2,7 @@
 section: 23
 title: Performance & Damage Tracking
 status: in-progress
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 5
 goal: Optimize rendering, parsing, and memory for heavy terminal workloads
@@ -25,6 +25,9 @@ sections:
   - id: "23.5"
     title: Benchmarks
     status: in-progress
+  - id: "23.7"
+    title: "SIMD-Accelerated VT Parser"
+    status: not-started
   - id: "23.6"
     title: Section Completion
     status: not-started
@@ -596,6 +599,30 @@ Measure RSS using `/proc/self/status` (Linux) or `mach_task_info` (macOS) or `Ge
   - [x] `bench_dirty_drain`: `DirtyTracker::drain()` for 50 and 80 lines (oriterm_core/benches/grid.rs). Baseline: 384ns/608ns
 - [x] Add `cargo bench --no-run` to CI pipeline — compile-only check in `bench-compile` job ensures benchmarks don't bitrot. Full regression detection with baseline comparison deferred to a later CI enhancement
 - [x] Verify all benchmarks compile and complete within 60 seconds total (`cargo bench -p oriterm_core --no-run` compiles both `grid` and `vte_throughput` benches)
+
+---
+
+## 23.7 SIMD-Accelerated VT Parser
+
+<!-- Kitty audit (closed): #7005 (new 2x faster escape code parser using vector CPU instructions) -->
+
+**Source:** Kitty #7005 — Kitty shipped a SIMD-accelerated escape code parser that achieves 2x throughput improvement by using vector CPU instructions to scan for escape sequence boundaries in bulk rather than byte-by-byte.
+
+**Problem:** ori_term's VTE parser (`crates/vte/`) processes bytes sequentially. For sustained high-throughput output (compiler output, large file cat, benchmarks), the parser becomes the bottleneck.
+
+**Required work:**
+
+- [ ] Study Kitty's SIMD parser implementation (src/vt-parser.zig)
+- [ ] Identify the hot path: scanning for ESC (0x1B), CSI introducer (0x9B), and printable ASCII runs
+- [ ] Implement SIMD fast path: use `std::simd` (nightly) or manual SSE2/NEON intrinsics to scan 16/32 bytes at once for control characters
+- [ ] Fast ASCII run detection: if a 16-byte chunk contains no control chars, process entire chunk as printable text (skip state machine per-byte)
+- [ ] Fallback: scalar path for platforms without SIMD or for partial chunks
+- [ ] Benchmark: compare throughput (bytes/sec) before and after on `cat large_file` workload
+- [ ] Test: all existing teseq conformance tests must pass with SIMD path
+
+**Priority:** Medium — performance feature, significant throughput improvement for heavy workloads.
+
+**Reference:** Kitty SIMD parser, Ghostty's comptime SIMD parser, Alacritty's `vte` crate (scalar).
 
 ---
 

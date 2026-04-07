@@ -332,9 +332,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Trigger website rebuild
         env:
           GH_TOKEN: ${{ secrets.ORI_TERM_PAT }}
         run: |
-          gh api repos/upstat-io/ori_term_website/dispatches \
-            -f event_type=oriterm-release-published
+          # Only send the release event when binaries were actually published.
+          if [ "${{ needs.publish.result }}" = "success" ]; then
+            gh api repos/upstat-io/ori-term-website/dispatches \
+              -f event_type=oriterm-release-published
+          fi
+
+          # Also notify for roadmap changes so the website picks up roadmap content.
+          # Use the full push range so multi-commit pushes are covered.
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # Initial or recreated branch — diff against the empty tree so
+            # every file in the push is visible, not just the tip commit.
+            BEFORE="$(git hash-object -t tree /dev/null)"
+          fi
+          if git diff --name-only "$BEFORE"..HEAD | grep -q '^plans/roadmap/'; then
+            gh api repos/upstat-io/ori-term-website/dispatches \
+              -f event_type=oriterm-roadmap-updated
+          fi

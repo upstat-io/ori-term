@@ -1,0 +1,5 @@
+: Esc [ 1 ; 31 m
+|Red bold|
+: Esc [ 39 m
+|Default fg bold|
+: Esc [ 0 m

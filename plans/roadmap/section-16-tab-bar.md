@@ -2,7 +2,7 @@
 section: 16
 title: Tab Bar & Chrome
 status: in-progress
-reviewed: true
+reviewed: false
 last_verified: "2026-04-03"
 tier: 4
 goal: Tab bar layout, rendering, and hit testing with DPI awareness
@@ -22,6 +22,12 @@ sections:
   - id: "16.5"
     title: Tab Icons & Emoji
     status: complete
+  - id: "16.6"
+    title: "Tab Activity Indicator"
+    status: not-started
+  - id: "16.7"
+    title: "Hyperlinks in Tab Bar Status"
+    status: not-started
   - id: "16.4"
     title: Section Completion
     status: in-progress
@@ -29,7 +35,7 @@ sections:
 
 # Section 16: Tab Bar & Chrome
 
-**Status:** In Progress (16.1, 16.2, 16.5 complete; 16.3 mostly complete -- hover preview blocked on Section 39 image pipeline via 07.11 offscreen texture)
+**Status:** In Progress (16.1, 16.2, 16.5 complete; 16.3 mostly complete -- hover preview blocked on Section 54 Render Capture & Texture Pipeline for FrameCapture downscale) <!-- reviewed: cohesion fix — corrected blocker reference from Section 39 to Section 54 -->
 **Goal:** Tab bar layout, rendering, and hit testing with DPI awareness. Deterministic layout computation, GPU-rendered tab bar with bell pulse animation and drag overlay, and priority-based hit testing for click/hover dispatch.
 
 **Crate:** `oriterm_ui` (tab bar widget, layout, hit testing, colors) + `oriterm` (input dispatch, session wiring)
@@ -212,11 +218,11 @@ Map mouse coordinates to tab bar actions. Hit testing determines whether a click
   - [x] Hover leaving tab bar: release `tab_width_lock` (skipped when tab drag is active to avoid premature release during tear-off)
   - [x] `clear_tab_bar_hover()` — resets hover state + control button hover when cursor leaves window entirely
   - [x] `update_control_hover_animation()` — drives `VisualStateAnimator` on each `WindowControlButton` based on hit result (not on macOS)
-- [ ] Tab hover preview (Chrome/Windows-style): <!-- blocked-by: 07.11 (offscreen texture rendering, which itself is blocked on Section 39 image pipeline) -->
+- [ ] Tab hover preview (Chrome/Windows-style): <!-- blocked-by: Section 54 (Render Capture & Texture Pipeline — FrameCapture for downscaling rendered pane content to thumbnail resolution) --> <!-- reviewed: cohesion fix — blocker clarified: was partially referencing Section 39, but the true dependency is Section 54's FrameCapture pipeline -->
   - [ ] When hovering an inactive tab for > 300ms, show a `TerminalPreviewWidget` overlay
   - [ ] Preview appears below the tab bar, anchored to the hovered tab
   - [ ] Preview shows a live scaled-down render of that tab's terminal content
-  - [ ] `TerminalPreviewWidget` scaffold exists at `oriterm/src/widgets/terminal_preview/mod.rs` — currently draws a placeholder rounded rect. Needs offscreen texture rendering wired to `push_image` (07.1 DrawCommand).
+  - [ ] Uses `FrameCapture` from Section 54 to downscale the pane's rendered frame to thumbnail resolution. `TerminalPreviewWidget` scaffold exists at `oriterm/src/widgets/terminal_preview/mod.rs` — currently draws a placeholder rounded rect.
   - [ ] Fade-in animation (07.9 complete), dismiss on hover leave
   - [ ] Preview updates if the terminal content changes while hovering
   - [ ] No preview for the active tab (it's already visible)
@@ -274,6 +280,49 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] Emoji detection: plain text, empty, flags, ZWJ sequences
 - [x] Event pipeline: `IconName`/`ResetIconName` events + `PaneIconChanged` mux event
 - [x] `MuxNotification::PaneTitleChanged` debug format
+
+---
+
+## 16.6 Tab Activity Indicator
+
+<!-- WezTerm audit: #7671 (highlight background tab titles when text changes) -->
+
+**Source:** WezTerm #7671 — When a background tab has new output, users have no visual indicator. This is a commonly requested feature across all terminal emulators (Roxterm, iTerm2, Kitty all have it).
+
+**Problem:** ori_term has bell pulse animation in the tab bar, but no general "activity in background tab" indicator. Users running long commands in background tabs have no way to know when output appears without switching to that tab.
+
+**Required work:**
+
+- [ ] Add `has_unseen_output: bool` flag to pane state (set by IO thread when new output arrives while tab is not active, cleared when tab becomes the active tab)
+- [ ] Add visual indicator in `TabBarWidget` rendering:
+  - Different title color or subtle highlight for tabs with unseen output
+  - Dot badge or colored accent indicator
+  - Distinct from bell pulse (which is transient)
+- [ ] Config options: `tab_activity_indicator = true/false`, configurable color
+- [ ] Optional silence detection: only show activity after N seconds of no output (prevents constant flickering during sustained output)
+- [ ] Tests: write output to background pane, verify indicator appears in tab bar rendering; switch to tab, verify indicator clears
+
+**Priority:** Medium — commonly requested feature, strong quality-of-life improvement.
+
+**Reference:** Roxterm activity notification, iTerm2 tab activity badge, Kitty `tab_activity_symbol`.
+
+---
+
+## 16.7 Hyperlinks in Tab Bar Status
+
+<!-- WezTerm audit (open scan): #7347 (allow hyperlinks in tab bar status) -->
+
+**Source:** WezTerm #7347 — Tab bar status areas (left/right status) should support OSC 8 hyperlinks so that clickable URLs and interactive elements can be embedded in the status line.
+
+**Required work:**
+
+- [ ] Parse OSC 8 hyperlinks within tab bar status text (from Lua `set_left_status`/`set_right_status` or shell integration)
+- [ ] Render hyperlinks with underline in the tab bar text
+- [ ] Hit testing: when clicking a hyperlinked region in the status bar, open the URL
+- [ ] Hover: show URL tooltip and underline on hover (same as grid hyperlinks)
+- [ ] Test: set status text containing OSC 8 URL, click → verify URL opens
+
+**Priority:** Low — enables interactive tab bar widgets (e.g., clickable branch names, build status links).
 
 ---
 

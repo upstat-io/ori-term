@@ -1,0 +1,6 @@
+[terminal]
+cols = 80
+rows = 24
+
+[setup]
+pre_feed = ["\\x1b[?40h"]

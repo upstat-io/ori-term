@@ -1,8 +1,8 @@
 ---
 section: 12
 title: Resize & Reflow
-status: complete
-reviewed: true
+status: in-progress
+reviewed: false
 last_verified: "2026-03-29"
 tier: 3
 goal: Dynamic grid resize with PTY notification and text reflow on column change
@@ -22,6 +22,9 @@ sections:
   - id: "12.5"
     title: Alternate Screen Resize
     status: complete
+  - id: "12.7"
+    title: "Window Step Resize (Grid-Aligned)"
+    status: not-started
   - id: "12.6"
     title: Section Completion
     status: complete
@@ -196,6 +199,28 @@ Resize the alternate screen buffer without reflow (full-screen apps manage their
 - [x] Both primary and alternate grids resized on every window resize (verified 2026-03-29)
   - [x] Primary: with reflow (verified 2026-03-29)
   - [x] Alternate: without reflow (verified 2026-03-29)
+
+---
+
+## 12.7 Window Step Resize (Grid-Aligned)
+
+<!-- Ghostty audit (closed): #2942, #5299 (window-step-resize grid-aligned) -->
+
+**Source:** Ghostty `window-step-resize` — Window resize snaps to cell grid boundaries so there's never a partial row or column visible. The window size always equals an exact number of cells × cell dimensions + padding + chrome. Most tiling window managers benefit from this since they can resize in discrete grid steps.
+
+**Required work:**
+
+- [ ] Config option: `window_step_resize = false` (default: allow fractional cells; true: snap to grid)
+- [ ] When enabled: constrain window resize to multiples of cell width/height
+- [ ] On resize: round to nearest cell count, then set window size = cells × cell_size + padding + chrome
+- [ ] Handle DPI changes: recompute after scale factor change
+- [ ] Interact with partial line clipping (24.11): when step resize is on, clipping is not needed
+- [ ] Platform: set WM size hints on X11 (`WM_NORMAL_HINTS` resize increment), let Wayland/Windows handle at app level
+- [ ] Test: enable step resize, drag to resize → verify grid always has complete rows and columns
+
+**Priority:** Low — important for tiling WM users who want pixel-perfect grid alignment.
+
+**Reference:** Ghostty `window-step-resize`, xterm `xterm.VT100.resizeGravity`, Alacritty resize behavior.
 
 ---
 

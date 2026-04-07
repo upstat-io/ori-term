@@ -362,6 +362,32 @@ impl MuxBackend for MuxClient {
         self.dirty_panes.contains(&pane_id)
     }
 
+    fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot> {
+        // The daemon's GetPaneSnapshot dispatcher sends a SnapshotNow IO
+        // barrier and waits for the IO thread to drain in-flight commands
+        // before building the response. So a single round-trip RPC is
+        // enough to get a guaranteed-fresh snapshot.
+        let pdu = MuxPdu::GetPaneSnapshot { pane_id };
+        match self.rpc(pdu) {
+            Ok(MuxPdu::PaneSnapshotResp { snapshot }) => {
+                // Cache the fresh snapshot so subsequent pane_snapshot()
+                // calls see it. Also drop any pending refresh marker —
+                // we just got a fresher value than any in-flight push.
+                self.pane_snapshots.insert(pane_id, snapshot.clone());
+                self.pending_refresh.remove(&pane_id);
+                Some(snapshot)
+            }
+            Ok(other) => {
+                log::error!("sync_pane_snapshot: unexpected response: {other:?}");
+                None
+            }
+            Err(e) => {
+                log::error!("sync_pane_snapshot: RPC failed: {e}");
+                None
+            }
+        }
+    }
+
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
         // Fast path: server-pushed snapshot available.
         let pushed = self

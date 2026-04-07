@@ -1,8 +1,8 @@
 ---
 section: 6
 title: Font Pipeline + Best-in-Class Glyph Rendering
-status: complete
-reviewed: true
+status: in-progress
+reviewed: false
 last_verified: "2026-03-29"
 tier: 2
 goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
@@ -67,6 +67,36 @@ sections:
   - id: "6.20"
     title: Font Codepoint Mapping
     status: complete
+  - id: "6.22"
+    title: Block Glyph Gamma Correction
+    status: not-started
+  - id: "6.23"
+    title: Selective Ligature Disable
+    status: not-started
+  - id: "6.24"
+    title: "Indic/Complex Script Shaping"
+    status: not-started
+  - id: "6.25"
+    title: Underline Glyph-Break Rendering
+    status: not-started
+  - id: "6.26"
+    title: "Minimal RTL/BiDi Support"
+    status: not-started
+  - id: "6.22"
+    title: "Block Glyph Gamma Correction"
+    status: not-started
+  - id: "6.23"
+    title: "Selective Ligature Disable"
+    status: not-started
+  - id: "6.24"
+    title: "Indic/Complex Script Shaping"
+    status: not-started
+  - id: "6.25"
+    title: "Underline Glyph-Break Rendering"
+    status: not-started
+  - id: "6.26"
+    title: "Minimal RTL/BiDi Support"
+    status: not-started
   - id: "6.21"
     title: Section Completion
     status: complete
@@ -953,6 +983,120 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
   - [x] Range parsing: hex range, single codepoint
   - [x] Multiple maps: first matching range wins
   - [x] Invalid font family: warning logged, fallback to normal chain
+
+---
+
+## 6.22 Block Glyph Gamma Correction
+
+<!-- WezTerm audit: #7462 (custom "Medium shade" block glyphs very dark) -->
+
+**Source:** WezTerm #7462 — Built-in medium shade glyphs (U+2592, U+1FB90, etc.) appear much darker than expected on dark backgrounds. The root cause is that alpha values (e.g., alpha=128 for medium shade) are applied in sRGB space rather than linear, making perceptually "50% shade" appear as ~22% brightness due to gamma.
+
+**Problem:** ori_term's built-in glyph rasterization in `oriterm/src/gpu/builtin_glyphs/` uses `canvas.fill_rect(..., 128)` for medium shade. When the GPU blends this alpha value in sRGB space, the result is perceptually too dark.
+
+**Required work:**
+
+- [ ] Audit all shade alpha values in `legacy_computing/mod.rs` `draw_shade_block()`:
+  - Light shade (U+2591): alpha ~64 in sRGB → should be ~105 for perceptual 25%
+  - Medium shade (U+2592, U+1FB90): alpha ~128 → should be ~186 for perceptual 50%
+  - Dark shade (U+2593): alpha ~192 → should be ~227 for perceptual 75%
+- [ ] Either: adjust alpha values to compensate for sRGB gamma (pre-correct), OR: ensure the shader does sRGB-correct blending
+- [ ] Visual comparison against xterm and Alacritty for reference brightness
+- [ ] Test: visual regression test comparing shade glyphs at multiple alpha levels
+
+**Priority:** Low — cosmetic, but noticeable on dark themes.
+
+**Reference:** WezTerm PR `d3e49e6` (set_color fix), sRGB transfer function (gamma ~2.2).
+
+---
+
+## 6.23 Selective Ligature Disable
+
+<!-- WezTerm audit: #7708 (ability to disable specific ligatures) -->
+
+**Source:** WezTerm #7708 — Users want to disable individual ligature combinations (e.g., `***` triggers an unwanted ligature in password fields) while keeping other ligatures like `!=`, `=>`, `->`.
+
+**Problem:** ori_term supports OpenType feature flags globally (Section 6.7 — `liga`, `calt` on/off per font) but not per-glyph-sequence filtering. There's no way to say "disable the `***` ligature but keep everything else."
+
+**Required work:**
+
+- [ ] Config option: `disabled_ligatures = ["***", "//"]` — list of character sequences whose ligature substitutions should be suppressed
+- [ ] Implementation approach (choose one):
+  - **(a)** Post-shaping filter: after rustybuzz shapes a run, detect when a ligature glyph corresponds to a disabled sequence and split it back into individual glyphs
+  - **(b)** Pre-shaping split: before shaping, scan the run text for disabled sequences and insert shaping boundaries that prevent the ligature substitution
+  - **(c)** Harfbuzz feature scoping: use per-range feature overrides in rustybuzz to disable `liga`/`calt` for specific character positions
+- [ ] Test: configure `disabled_ligatures = ["***"]`, shape `***` → verify 3 individual `*` glyphs, not one ligature glyph; shape `!=` → verify ligature still works
+
+**Priority:** Low — niche but well-motivated (password field visual distraction).
+
+---
+
+## 6.24 Indic/Complex Script Shaping
+
+<!-- Ghostty audit: #5637 (Incorrect font shaping/layouting for Indic-derived scripts) -->
+
+**Source:** Ghostty #5637 — Indic scripts (Devanagari, Bengali, Thai, Tamil) render with overlapping characters, incorrect vowel mark placement, incorrect diacritic positioning, and broken cursor placement. This is a known-hard problem that affects most terminal emulators.
+
+**Problem:** ori_term uses rustybuzz for shaping, which handles Indic scripts correctly at the shaping level. However, the terminal grid model (fixed-width cells) conflicts with complex script shaping where glyphs have varying widths, reordering (vowel signs before consonants), and contextual forms.
+
+**Required work:**
+
+- [ ] Audit current Devanagari, Bengali, Thai, and Tamil rendering with appropriate fonts
+- [ ] Identify specific failure modes: overlapping glyphs, misplaced vowel marks, incorrect width calculation
+- [ ] Determine approach:
+  - **(a)** Multi-cell glyph spans for complex clusters (like CJK wide chars but for Indic clusters)
+  - **(b)** Sub-cell positioning within fixed-width grid (render shaped glyphs with offsets)
+  - **(c)** Accept imperfect rendering with best-effort positioning (most terminals' approach)
+- [ ] Ensure cursor positioning is correct for complex clusters
+- [ ] Test with: हिन्दी (Hindi), বাংলা (Bengali), ไทย (Thai), தமிழ் (Tamil)
+
+**Priority:** Low — affects non-Latin script users, complex to implement correctly in a fixed-width grid.
+
+**Reference:** Ghostty #2603 (Devanagari), #3912 (Bengali), #3753 (Thai), #5085 (Tamil). Kitty's approach to complex scripts.
+
+---
+
+## 6.25 Underline Glyph-Break Rendering
+
+<!-- Ghostty audit: #2061 (draw underlines beneath glyphs and break around glyphs) -->
+
+**Source:** Ghostty #2061 — Modern rendering systems (macOS, Chromium) draw underlines *beneath* descenders and interrupt them around glyph strokes. This prevents underlines from obscuring characters like `_`, `g`, `p`, `y` and undercurls from hiding error indicators.
+
+**Required work:**
+
+- [ ] Detect glyph descender regions per cell (from rasterized glyph alpha mask)
+- [ ] When drawing underline/undercurl: skip segments that overlap with glyph ink
+- [ ] Approach: rasterize underline to a separate layer, mask out pixels where glyph alpha > threshold
+- [ ] Apply to all decoration styles: straight underline, double, dotted, dashed, curly (undercurl)
+- [ ] Config option: `underline_glyph_break = true` (default: true, matching modern expectations)
+- [ ] Test: visual regression comparing `_foo` with undercurl — decoration should break around the underscore
+
+**Priority:** Medium — significant readability improvement, especially for LSP error highlighting.
+
+**Reference:** macOS CoreText underline rendering, Chromium text-decoration-skip-ink, CSS `text-decoration-skip-ink: auto`.
+
+---
+
+## 6.26 Minimal RTL/BiDi Support
+
+<!-- Ghostty audit: #1442 (minimal RTL support for single lines) -->
+
+**Source:** Ghostty #1442 — Arabic, Hebrew, and Persian text renders incorrectly: wrong glyph shaping (isolated forms instead of connected), wrong character order within words, wrong word order on line. Three distinct problems: (1) contextual shaping, (2) intra-word character order, (3) inter-word (bidi) order.
+
+**Problem:** ori_term has no BiDi support. Arabic/Hebrew text appears left-to-right with disconnected glyphs. This is a known-hard problem — the Unicode BiDi algorithm (UAX#9) is complex, and terminal grids add constraints.
+
+**Required work:**
+
+- [ ] Level 1 (shaping): Ensure rustybuzz applies Arabic/Hebrew contextual forms (initial/medial/final/isolated) — this may already work if the correct font is used and shaping runs are segmented by script
+- [ ] Level 2 (character order): Reverse character order within RTL runs so characters display right-to-left within the fixed LTR grid
+- [ ] Level 3 (word order — optional): Apply Unicode BiDi Algorithm (UAX#9) to reorder words on a line. Most terminals skip this and just handle Levels 1-2.
+- [ ] Scope: single-line BiDi only (no cross-line reordering, no mixed-direction paragraphs)
+- [ ] Cursor movement must respect logical order (not visual order) for editing
+- [ ] Test: render `بسم الله` — verify connected glyphs in correct right-to-left order
+
+**Priority:** Low — affects Arabic/Hebrew/Persian users, complex to implement in a terminal grid.
+
+**Reference:** Konsole BiDi implementation, unicode-bidi crate, UAX#9 spec. Most terminal emulators punt on this entirely.
 
 ---
 

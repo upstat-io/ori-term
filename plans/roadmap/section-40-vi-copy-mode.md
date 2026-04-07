@@ -20,6 +20,9 @@ sections:
     title: Vi Search Integration
     status: not-started
   - id: "40.5"
+    title: "Viewport Scroll (Ctrl+U/D/B/F)"
+    status: not-started
+  - id: "40.6"
     title: Section Completion
     status: not-started
 ---
@@ -223,7 +226,29 @@ Search from within vi mode using `/` and `?` motions.
 
 ---
 
-## 40.5 Section Completion
+## 40.5 Viewport Scroll (Ctrl+U/D/B/F)
+
+<!-- WezTerm audit: #7452 (copy mode scroll by half page doesn't scroll screen) -->
+
+**Source:** WezTerm #7452 — In WezTerm's copy mode, Ctrl+U and Ctrl+D move the cursor but don't scroll the viewport. Users expect tmux/vim behavior where these keys scroll the viewport by half a page.
+
+**Required work:**
+
+- [ ] `Ctrl+U`: scroll viewport UP by half page, cursor stays at same screen row (or repositions to keep in view)
+- [ ] `Ctrl+D`: scroll viewport DOWN by half page, same cursor behavior
+- [ ] `Ctrl+B`: scroll viewport UP by full page
+- [ ] `Ctrl+F`: scroll viewport DOWN by full page
+- [ ] `zz`: center viewport on current vi cursor position
+- [ ] When viewport scrolls, cursor repositions relative to viewport (stays at same screen row when possible; clamps to visible area if it would go off-screen)
+- [ ] Test: enter vi mode, Ctrl+D, verify `display_offset` changes by half the viewport height and cursor stays visible
+
+**Priority:** Low — vi mode not yet implemented, but this should be designed in from the start.
+
+**Reference:** tmux copy-mode `C-u`/`C-d`, Alacritty vi mode scroll, vim `CTRL-U`/`CTRL-D`.
+
+---
+
+## 40.6 Section Completion
 
 - [ ] All 40.1–40.4 items complete
 - [ ] Vi mode toggles with configured keybinding

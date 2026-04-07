@@ -1,0 +1,16 @@
+: Esc ( 0
+|lqqqqk|
+: Esc ( B
+. CR/^M LF/^J
+: Esc ) 0
+. SO/^N
+|x|
+. SI/^O
+|Text |
+. SO/^N
+|x|
+. SI/^O
+. CR/^M LF/^J
+: Esc ( 0
+|mqqqqj|
+: Esc ( B

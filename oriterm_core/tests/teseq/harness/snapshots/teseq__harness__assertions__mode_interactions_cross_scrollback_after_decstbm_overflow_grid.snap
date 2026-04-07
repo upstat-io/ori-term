@@ -1,0 +1,7 @@
+---
+source: oriterm_core/tests/teseq/harness/assertions.rs
+expression: outcome.grid_text
+---
+Line A                                                                          
+X2ne C                                                                          
+X3

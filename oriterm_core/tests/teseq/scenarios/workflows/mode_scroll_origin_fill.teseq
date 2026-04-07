@@ -1,0 +1,42 @@
+: Esc [ 5 ; 20 r
+: Esc [ ? 6 h
+: Esc [ 1 ; 1 H
+|Row 01|
+. CR/^M LF/^J
+|Row 02|
+. CR/^M LF/^J
+|Row 03|
+. CR/^M LF/^J
+|Row 04|
+. CR/^M LF/^J
+|Row 05|
+. CR/^M LF/^J
+|Row 06|
+. CR/^M LF/^J
+|Row 07|
+. CR/^M LF/^J
+|Row 08|
+. CR/^M LF/^J
+|Row 09|
+. CR/^M LF/^J
+|Row 10|
+. CR/^M LF/^J
+|Row 11|
+. CR/^M LF/^J
+|Row 12|
+. CR/^M LF/^J
+|Row 13|
+. CR/^M LF/^J
+|Row 14|
+. CR/^M LF/^J
+|Row 15|
+. CR/^M LF/^J
+|Row 16|
+. CR/^M LF/^J
+|Row 17|
+. CR/^M LF/^J
+|Row 18|
+. CR/^M LF/^J
+: Esc [ ? 6 l
+: Esc [ 1 ; 1 H
+|After origin off|

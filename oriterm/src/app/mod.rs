@@ -253,6 +253,15 @@ pub(crate) struct App {
     debug_overlay_enabled: bool,
     // EWMA-smoothed FPS for the debug overlay display.
     debug_fps: f32,
+
+    // Pending Windows console handoff payload (Section 03.9 Phase 3).
+    //
+    // Set by `App::new_handoff` when entered via the `-Embedding` COM
+    // server path. Consumed by `try_init` to construct the initial pane
+    // via `EmbeddedMux::adopt_pane` instead of `spawn_pane`. Always
+    // `None` on Linux/macOS and on the normal Windows startup path.
+    #[cfg(target_os = "windows")]
+    handoff_pending: Option<crate::platform::default_terminal::handoff::HandoffData>,
 }
 
 impl App {

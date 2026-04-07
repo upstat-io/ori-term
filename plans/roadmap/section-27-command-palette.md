@@ -24,10 +24,13 @@ sections:
   - id: "27.5"
     title: Terminal Inspector
     status: not-started
+  - id: "27.6"
+    title: "Command Palette Frecency Ranking"
+    status: not-started
   - id: "27.R"
     title: "Third Party Review Findings"
     status: not-started
-  - id: "27.6"
+  - id: "27.7"
     title: Section Completion
     status: not-started
 ---
@@ -281,6 +284,27 @@ Real-time debugging overlay for terminal developers. Only Ghostty has this -- it
 
 ---
 
+## 27.6 Command Palette Frecency Ranking
+
+<!-- WezTerm audit: #7496 (command palette frecency ranking not working) -->
+
+**Source:** WezTerm #7496 — WezTerm documents frecency ranking for command palette items but it's broken — items never reorder based on usage. ori_term should implement this correctly from the start.
+
+**Required work:**
+
+- [ ] Frecency data structure: track `(action_id, last_used_timestamp, use_count)` per command
+- [ ] Frecency scoring algorithm: `score = use_count * decay(now - last_used)` with exponential time decay
+- [ ] Sort command palette results: frecency score as primary rank, fuzzy match score as tiebreaker
+- [ ] Persist frecency data: save to `{config_dir}/frecency.json` on each use, load on startup
+- [ ] Merge frecency with fuzzy search: high-frecency items that match the query bubble to the top
+- [ ] Test: use same command 5 times, verify it rises to position 1; wait (simulated), verify it decays
+
+**Priority:** Low — polish feature, but gets it right from the start unlike WezTerm.
+
+**Reference:** Firefox URL bar frecency algorithm, VS Code command palette MRU.
+
+---
+
 ## 27.R Third Party Review Findings
 
 <!-- Reserved for Codex or other external reviewers. -->
@@ -289,7 +313,7 @@ Real-time debugging overlay for terminal developers. Only Ghostty has this -- it
 
 ---
 
-## 27.6 Section Completion
+## 27.7 Section Completion
 
 - [ ] All 27.1-27.5 items complete
 - [ ] Command palette opens with Ctrl+Shift+P

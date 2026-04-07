@@ -1,0 +1,14 @@
+|Line 1|
+. CR/^M LF/^J
+|Line 2|
+. CR/^M LF/^J
+|Line 3|
+. CR/^M LF/^J
+|Line 4|
+. CR/^M LF/^J
+|Line 5|
+. CR/^M LF/^J
+|Line 6|
+: Esc [ 2 ; 5 r
+: Esc [ 3 ; 1 H
+: Esc [ 1 L

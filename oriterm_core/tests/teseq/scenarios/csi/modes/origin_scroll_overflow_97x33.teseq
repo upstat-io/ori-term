@@ -1,0 +1,11 @@
+: Esc [ 15 ; 20 r
+: Esc [ ? 6 h
+: Esc [ 1 ; 1 H
+|Line 01|.
+|Line 02|.
+|Line 03|.
+|Line 04|.
+|Line 05|.
+|Line 06|.
+|Line 07|.
+|Line 08|

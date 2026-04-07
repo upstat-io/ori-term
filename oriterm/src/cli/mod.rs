@@ -99,6 +99,20 @@ pub(crate) enum SubCommand {
     ShowConfig,
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
+    /// Register `oriterm` as the default terminal on Windows.
+    ///
+    /// Writes the conhost delegation selectors and the COM
+    /// `LocalServer32` registration so launching `cmd.exe` /
+    /// `powershell.exe` from Explorer or the Run dialog opens in
+    /// `oriterm`. Windows-only — prints "not supported" + exits 1
+    /// on Linux/macOS.
+    RegisterDefault,
+    /// Remove `oriterm`'s default-terminal registration on Windows.
+    ///
+    /// Idempotent — runs to completion even if `oriterm` was never
+    /// registered. Windows-only — prints "not supported" + exits 1
+    /// on Linux/macOS.
+    UnregisterDefault,
 }
 
 /// Arguments for the `ls-fonts` subcommand.
@@ -162,6 +176,8 @@ pub(crate) fn dispatch(cmd: SubCommand) -> ! {
         SubCommand::ValidateConfig => run_validate_config(),
         SubCommand::ShowConfig => run_show_config(),
         SubCommand::Completions(args) => run_completions(&args),
+        SubCommand::RegisterDefault => run_register_default(),
+        SubCommand::UnregisterDefault => run_unregister_default(),
     }
 }
 
@@ -364,6 +380,66 @@ fn run_show_config() -> ! {
             eprintln!("error: failed to serialize config: {e}");
             process::exit(1);
         }
+    }
+}
+
+/// `register-default` — register `oriterm` as the Windows default
+/// terminal handler. Windows-only — prints "not supported" + exit 1
+/// elsewhere so the cross-platform binary still parses + dispatches
+/// without panicking.
+fn run_register_default() -> ! {
+    #[cfg(windows)]
+    {
+        let exit_code = match register_default_inner() {
+            Ok(()) => {
+                println!("oriterm: registered as the default Windows terminal");
+                0
+            }
+            Err(e) => {
+                eprintln!("oriterm: failed to register as default terminal: {e}");
+                1
+            }
+        };
+        process::exit(exit_code);
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("oriterm: --register-default is only supported on Windows");
+        process::exit(1);
+    }
+}
+
+/// Resolve the current executable path and call into the registry
+/// helpers. Extracted for testability — tests can call the helper
+/// without running the dispatcher's `process::exit`.
+#[cfg(windows)]
+fn register_default_inner() -> std::io::Result<()> {
+    let exe_path = std::env::current_exe()?;
+    crate::platform::default_terminal::registry::register_all(&exe_path)
+}
+
+/// `unregister-default` — remove the Windows default-terminal
+/// registration. Idempotent — succeeds even when no registration is
+/// present.
+fn run_unregister_default() -> ! {
+    #[cfg(windows)]
+    {
+        let exit_code = match crate::platform::default_terminal::registry::unregister_all() {
+            Ok(()) => {
+                println!("oriterm: removed default-terminal registration");
+                0
+            }
+            Err(e) => {
+                eprintln!("oriterm: failed to unregister default terminal: {e}");
+                1
+            }
+        };
+        process::exit(exit_code);
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("oriterm: --unregister-default is only supported on Windows");
+        process::exit(1);
     }
 }
 

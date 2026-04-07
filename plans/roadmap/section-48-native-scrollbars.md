@@ -42,6 +42,8 @@ sections:
 
 **Why this matters:** Mouse-wheel scrolling is fine for small distances, but for navigating large scrollback (thousands of lines), a scrollbar is essential. It also provides visual feedback about position within the buffer. Ghostty's implementation proves users want this — it was one of the most requested features.
 
+**Coexistence with Section 55 (Minimap Scrollbar):** This section provides a traditional thin overlay scrollbar. Section 55 provides a VS Code-style minimap. They coexist via a shared `scrollbar_mode` config: `none | scrollbar | minimap | both`. When `both`, the scrollbar renders on the minimap's left edge. Section 55 owns the `scrollbar_mode` config definition; this section implements the `scrollbar` mode behavior.
+
 > **Verification Notes (2026-03-29):** Confirmed not started for the terminal-level scrollbar. However, a **complete UI-widget-level scrollbar already exists** in `oriterm_ui/src/widgets/scroll/`: `ScrollWidget` (443 lines, vertical/horizontal scrolling, mouse wheel, keyboard nav), `scrollbar.rs` (152 lines with track/thumb rendering, drag interaction, track click-to-jump, hover state, `ScrollbarPolicy` enum: Auto/Always/Hidden, `ScrollbarStyle` struct: width/thumb_color/track_color/thumb_radius/min_thumb_height, `ScrollbarState`: dragging/drag_start_y/drag_start_offset/track_hovered). The UI scroll widget operates on pixel-based `scroll_offset` for widget children, while the terminal scrollbar needs row-based `display_offset` from the grid -- fundamentally different data models. The `ScrollbarStyle` and `ScrollbarState` structs provide a reusable pattern reference. Key decisions needed: (1) rendering approach (GPU overlay vs. widget overlay -- GPU is more natural since scrollbar must overlay terminal grid without consuming columns), (2) config section placement (no `AppearanceConfig` exists; could go in `window` or new `appearance`), (3) mouse event ordering relative to PTY mouse reporting, (4) fade animation mechanism (existing scrollbar has none; animation system exists in `oriterm_ui` but terminal scrollbar sits in GPU layer). The title says "Native OS" but implementation is a custom-drawn overlay (same as Ghostty).
 
 ---
@@ -135,20 +137,21 @@ Handle mouse interaction with the scrollbar: click-to-scroll, thumb dragging, an
 
 ## 48.4 Configuration
 
-User-configurable scrollbar behavior.
+User-configurable scrollbar behavior. **Section 55 (Minimap Scrollbar) owns the `scrollbar_mode` config.** This section implements the scrollbar rendering and interaction for `scrollbar_mode = "scrollbar"` and `scrollbar_mode = "both"` (where the scrollbar overlays the minimap's left edge). When `scrollbar_mode = "none"`, no scrollbar is rendered.
 
 **File:** `oriterm/src/config/mod.rs`
 
-- [ ] `[appearance] scrollbar` enum:
-  - [ ] `overlay` — show overlay scrollbar on scroll, fade after inactivity (default)
-  - [ ] `always` — always show scrollbar (visible track and thumb)
-  - [ ] `never` — no scrollbar
+- [ ] Define `ScrollbarMode` enum in config module with all four variants from day one: `none`, `scrollbar`, `minimap`, `both`. Even though `minimap` and `both` are no-ops until Section 55, the enum is complete from the start to avoid breaking config changes later. <!-- reviewed: cohesion fix — implementation ordering: Section 48 (Tier 5) likely ships before Section 55 (Tier 8). Define the full enum early; Section 55 activates the minimap variants. -->
+- [ ] Scrollbar behavior governed by `scrollbar_mode` config (Section 55 activates minimap variants):
+  - [ ] `scrollbar_mode = "scrollbar"` — overlay scrollbar on scroll, fade after inactivity (this section's primary mode)
+  - [ ] `scrollbar_mode = "both"` — scrollbar renders on the minimap's left edge (no-op for the minimap side until Section 55)
+  - [ ] `scrollbar_mode = "none"` or `"minimap"` — no scrollbar rendered
 - [ ] `[appearance] scrollbar_width` — thumb width in pixels (default: 8)
 - [ ] Config hot-reload: scrollbar visibility updates immediately on config change
 - [ ] **Tests:**
-  - [ ] `never` mode: scrollbar never rendered
-  - [ ] `always` mode: scrollbar always visible
-  - [ ] `overlay` mode: scrollbar fades after inactivity
+  - [ ] `scrollbar_mode = "none"`: scrollbar never rendered
+  - [ ] `scrollbar_mode = "scrollbar"`: scrollbar visible, fades after inactivity
+  - [ ] `scrollbar_mode = "both"`: scrollbar renders alongside minimap
 
 ---
 
@@ -159,7 +162,7 @@ User-configurable scrollbar behavior.
 - [ ] Thumb drag scrolls proportionally through scrollback
 - [ ] Track click page-scrolls
 - [ ] Scrollbar hover expands width and darkens
-- [ ] Three modes: `overlay`, `always`, `never`
+- [ ] Scrollbar renders when `scrollbar_mode = scrollbar` or `scrollbar_mode = both` (Section 55 owns `scrollbar_mode` config) <!-- reviewed: cohesion fix — stale reference: was "overlay/always/never" which conflicts with Section 55's scrollbar_mode enum -->
 - [ ] Scrollbar does not consume grid columns
 - [ ] Scrollbar clicks not forwarded to PTY mouse reporting
 - [ ] Works at all DPI/scale factors

@@ -1,0 +1,4 @@
+: Esc [ ? 6 h
+: Esc [ 5 ; 20 r
+: Esc [ 3 ; 10 H
+: Esc [ 6 n

@@ -1,0 +1,6 @@
+[terminal]
+cols = 120
+rows = 40
+
+[expect]
+cursor = { col = 13, line = 34 }

@@ -80,6 +80,8 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 **Primary**: `./fmt-all.sh`, `./clippy-all.sh`, `./build-all.sh`, `./test-all.sh`
 **Build**: `cargo build --target x86_64-pc-windows-gnu` (debug), `cargo build --target x86_64-pc-windows-gnu --release` (release)
+**Teseq scenarios**: `cargo test -p oriterm_core --test teseq` (requires `reseq` — `sudo apt install teseq` on Linux; tests skip gracefully on macOS/Windows where teseq is unavailable)
+**Update teseq snapshots**: `INSTA_UPDATE=1 cargo test -p oriterm_core --test teseq`
 **After EVERY change, run `./build-all.sh`, `./clippy-all.sh`, and `./test-all.sh`. No exceptions. Do not skip any of these.**
 
 ---
@@ -92,7 +94,7 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 **oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (IO thread handle, lock-free atomics) | `oriterm_mux/src/pane/io_thread/` — PaneIoThread (owns Term exclusively, VTE parsing, snapshot production, command processing) | `oriterm_mux/src/pane/io_thread/snapshot/` — SnapshotDoubleBuffer (lock-free snapshot transfer IO→main) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
 
-**oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex)
+**oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex) | `oriterm_core/tests/teseq/` — Teseq scenario-based escape sequence tests (176 tests across 10 protocol families)
 
 **oriterm_gpu (rendering):** `oriterm_gpu/src/renderer.rs` — GPU rendering (wgpu, draw_frame) | `oriterm_gpu/src/atlas.rs` — Glyph atlas | `oriterm_gpu/src/pipeline.rs` — WGSL shader pipelines
 

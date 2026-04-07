@@ -1,0 +1,6 @@
+: Esc [ 4 m
+: Esc [ 58 ; 2 ; 255 ; 0 ; 0 m
+|Red UL|
+: Esc [ 59 m
+|Default UL|
+: Esc [ 0 m

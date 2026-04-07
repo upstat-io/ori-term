@@ -3,7 +3,9 @@
 use clap::Parser;
 use clap_complete::Shell;
 
-use super::{Cli, format_action, format_binding, format_binding_key, generate_completions};
+use super::{
+    Cli, SubCommand, format_action, format_binding, format_binding_key, generate_completions,
+};
 use crate::config::{self, Config};
 use crate::key_encoding::Modifiers;
 use crate::keybindings::{Action, BindingKey, KeyBinding};
@@ -626,4 +628,71 @@ fn completions_contain_embedded_flag() {
         text.contains("embedded"),
         "bash completions should mention --embedded flag"
     );
+}
+
+// Default-terminal subcommands (Section 03.9 Phase 4)
+
+#[test]
+fn parses_register_default_subcommand() {
+    let cli = Cli::try_parse_from(["oriterm", "register-default"])
+        .expect("register-default must parse on all platforms");
+    assert!(
+        matches!(cli.command, Some(SubCommand::RegisterDefault)),
+        "expected RegisterDefault subcommand variant"
+    );
+}
+
+#[test]
+fn parses_unregister_default_subcommand() {
+    let cli = Cli::try_parse_from(["oriterm", "unregister-default"])
+        .expect("unregister-default must parse on all platforms");
+    assert!(
+        matches!(cli.command, Some(SubCommand::UnregisterDefault)),
+        "expected UnregisterDefault subcommand variant"
+    );
+}
+
+#[test]
+fn register_default_subcommand_in_help() {
+    // Smoke test: clap exposes the subcommand in --help output, so users
+    // can discover it without reading source. Both register and
+    // unregister should be present even on non-Windows targets — they
+    // just exit 1 when invoked.
+    let mut cmd = <Cli as clap::CommandFactory>::command();
+    let help = cmd.render_long_help().to_string();
+    assert!(
+        help.contains("register-default"),
+        "help should list register-default subcommand"
+    );
+    assert!(
+        help.contains("unregister-default"),
+        "help should list unregister-default subcommand"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn register_default_inner_succeeds_in_test_scope() {
+    use std::path::PathBuf;
+
+    use crate::platform::default_terminal::registry::{
+        RegistryPaths, register_all_at, unregister_all_at,
+    };
+
+    // Use a unique scoped registry subtree so the test does not pollute
+    // the user's hive (mirrors the registry/tests.rs pattern).
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let suffix = format!("oriterm_cli_test_{pid}_{nanos}");
+    let paths = RegistryPaths {
+        startup_subkey: format!(r"Software\Classes\{suffix}\Startup"),
+        clsid_subkey: format!(r"Software\Classes\{suffix}\CLSID"),
+    };
+    let exe = PathBuf::from(r"C:\test\fake-oriterm.exe");
+
+    register_all_at(&paths, &exe).expect("scoped register_all_at must succeed");
+    unregister_all_at(&paths).expect("scoped unregister_all_at must succeed");
 }

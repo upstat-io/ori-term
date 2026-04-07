@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+use super::PtyLifecycle;
+
 /// Convert a `portable_pty` error into `io::Error`.
 fn pty_err(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(e.to_string())
@@ -41,6 +43,21 @@ impl ExitStatus {
     /// Returns the signal name if the process was killed by a signal.
     pub fn signal(&self) -> Option<&str> {
         self.signal.as_deref()
+    }
+
+    /// Synthesize a "successful EOF" status for adopted PTYs.
+    ///
+    /// `ori_term` does not own the child process behind an adopted PTY —
+    /// the console host that handed the session off owns it. When the
+    /// reader thread observes EOF on the adopted reader, it signals
+    /// `AdoptedPtyHandle::wait` to wake using this synthesized status.
+    /// The actual exit code is unknown to `ori_term`; reporting `0`/no
+    /// signal is the closest fit because the I/O stream closed cleanly.
+    pub(crate) fn synthesized_eof() -> Self {
+        Self {
+            code: 0,
+            signal: None,
+        }
     }
 }
 
@@ -190,6 +207,24 @@ impl PtyHandle {
     #[allow(dead_code, reason = "used when pane reports child exit to UI")]
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         self.child.try_wait().map(|opt| opt.map(ExitStatus::from))
+    }
+}
+
+impl PtyLifecycle for PtyHandle {
+    fn kill(&mut self) -> io::Result<()> {
+        Self::kill(self)
+    }
+
+    fn wait(&mut self) -> io::Result<ExitStatus> {
+        Self::wait(self)
+    }
+
+    fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        Self::try_wait(self)
+    }
+
+    fn process_id(&self) -> Option<u32> {
+        Self::process_id(self)
     }
 }
 

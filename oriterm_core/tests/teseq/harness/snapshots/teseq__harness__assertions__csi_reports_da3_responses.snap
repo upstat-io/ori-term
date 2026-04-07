@@ -1,0 +1,5 @@
+---
+source: oriterm_core/tests/teseq/harness/assertions.rs
+expression: "pty_writes.join(\"\\n\")"
+---
+[1b, 50, 21, 7c, 30, 30, 30, 30, 30, 30, 30, 30, 1b, 5c]

@@ -1,0 +1,4 @@
+: Esc [ 2 m
+|Dim text|
+: Esc [ 0 m
+|Normal|

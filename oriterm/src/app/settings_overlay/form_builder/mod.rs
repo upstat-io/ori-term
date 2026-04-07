@@ -64,6 +64,11 @@ pub(crate) struct SettingsIds {
     pub restore_session_toggle: WidgetId,
     pub initial_columns_input: WidgetId,
     pub initial_rows_input: WidgetId,
+    /// Windows default-terminal registration toggle (Section 03.9 Phase 4d).
+    /// Always present in `SettingsIds` for cross-platform field count;
+    /// only built into the dialog on Windows where the toggle widget
+    /// reflects the current `registry::is_registered()` state.
+    pub default_terminal_toggle: WidgetId,
     // Bell page.
     pub bell_animation_dropdown: WidgetId,
     pub bell_duration_dropdown: WidgetId,
@@ -178,6 +183,7 @@ impl SettingsIds {
             restore_session_toggle: WidgetId::placeholder(),
             initial_columns_input: WidgetId::placeholder(),
             initial_rows_input: WidgetId::placeholder(),
+            default_terminal_toggle: WidgetId::placeholder(),
             bell_animation_dropdown: WidgetId::placeholder(),
             bell_duration_dropdown: WidgetId::placeholder(),
             hinting_dropdown: WidgetId::placeholder(),
