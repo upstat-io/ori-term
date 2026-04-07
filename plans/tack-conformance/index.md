@@ -72,7 +72,7 @@ Drop guard prerequisite, panic-on-timeout cleanup
 mission tracing, Section 04 handoff, ScenarioSpec prerequisite
 03.4 skip+compile, 03.5 exit+cleanup, 03.T TPR checkpoint
 platform-gated diagnostics (strace Linux, lsof macOS, Get-Process Windows)
-Section 04 hard handoff: ScenarioRunner::run_at must call wait_for_child_exit
+Section 04 hard handoff: ScenarioRunner::run_at must call quit_tack(5) — strict superset of wait_for_child_exit(2_000)
 ```
 
 ---
@@ -81,11 +81,23 @@ Section 04 hard handoff: ScenarioRunner::run_at must call wait_for_child_exit
 **File:** `section-04-scenario-framework.md` | **Status:** Not Started
 
 ```
-ScenarioSpec, TackNavigator, scenario catalog
-semantic ID, menu_path, ready_anchor, screen_parser
-tack_modes_am, tack_color_setf, tack_cursor_cup
+ScenarioSpec, MenuStep, TackNavigator, ScenarioRunner, ScenarioOutcome
+semantic ID, screen_id, menu_path, ready_anchor, quit_path, parser
+or_wait_for, MenuStep::new, snapshot_name, golden_name
+LiveSession, LiveSession::finish, LiveSession::golden_name, M5 cleanup contract
+PtySession::wait_for_with_context, PtySession::wait_for_any, PtySession::send_raw, PtySession::quit_tack
+poll_until canonical bounded-poll helper, LEAK:algorithmic-duplication fix
+bounded-poll invariant per-consumer pin (wait_for_with_context, wait_for_any, wait_for_child_exit_inner)
+failing-test-first TDD discipline, debug+release parity
+session/sync module, session/teardown module, 500-line split, BLOAT prevention
+pre-existing-anchor guard (C1), state-aware quit (C2), exit-status assertion (C3)
+catch_unwind antipattern banned, wait_for_any non-panicking primitive (M4b)
+tokenized parser helpers, grid_has_token, grid_line_starts_with, grid_find_field
+tack_framework::scenarios::*, single source of truth for catalog
+tack_modes_am, modes screen, parse_modes_screen
 insta, snapshot naming, assert_snapshot, grid_text
-per-scenario parser, test assertions, Done marker
+per-scenario parser, test assertions, Section 03 handoff reconciliation
+cross-section consumer re-review gate for 05/06/07, Section 07 depends_on extends to 06
 ```
 
 ---

@@ -3,11 +3,14 @@ section: "07"
 title: "GPU Golden Images for Tack Visual Subset"
 status: not-started
 reviewed: false
+needs_re_review_after: "04"
+re_review_reason: "Section 04 (post-Agent-1 expansion) defines the `LiveSession::finish(self) -> ExitStatus` cleanup contract that Section 07 MUST consume. The original Section 07 draft just dropped `LiveSession`, which loses the exit-status assertion (the M5 Codex finding fix). Section 07 also references `tack_framework::scenarios::{color, graphic_rendition, character_sets, modes}::*` consts that Sections 05/06 currently define inline in test targets — those sections are also blocked on re-review. Section 07 MUST be re-reviewed after Sections 04/05/06 land to: (a) call `live.finish()` after `render_to_pixels`, (b) use `outcome.golden_name()` from `LiveSession`'s sibling `ScenarioOutcome` instead of hand-passed strings, (c) confirm the const paths match where Sections 05/06 actually put them."
 goal: "Add GPU golden image tests for a curated subset of tack scenarios where the visual rendering matters: color screen (named colors must render with the right RGB), graphic rendition screen (bold/dim/italic/underline must render with the right pixel patterns), and character set screen (DEC line-drawing chars must render at the right glyphs). Reuse Section 04's ScenarioRunner pattern but plug in the GPU pipeline instead of `grid_text`. Each scenario produces a PNG golden under `oriterm/tests/references/tack_*.png` and asserts pixel-equality against it via `compare_with_reference`."
 success_criteria:
   - "`oriterm/src/gpu/visual_regression/tack/` directory exists with `mod.rs` orchestrating GPU tack tests"
   - "`oriterm/src/gpu/visual_regression/tack/mod.rs` is below 500 lines (BLOAT gate per code-hygiene rules)"
-  - "`run_tack_scenario_golden(spec, gpu, pipelines, renderer, snapshot_name)` helper takes a `&ScenarioSpec`, drives the same `ScenarioRunner` pipeline as Section 04, then renders the captured PtySession through the GPU and asserts via `compare_with_reference`"
+  - "`run_tack_scenario_golden(spec, cols, rows, gpu, pipelines, renderer)` helper takes a `&ScenarioSpec`, drives the same `ScenarioRunner` pipeline as Section 04, renders the captured PtySession through the GPU, asserts via `compare_with_reference`, AND calls `live.finish()` before returning so the M5 cleanup contract is honored"
+  - "The golden file name comes from `live.golden_name()` (the `LiveSession` method defined in Section 04 that delegates to the same `'<screen_id>_<cols>x<rows>'` format literal as `ScenarioOutcome::golden_name()`) — NOT a hand-passed string parameter and NOT a rebuilt `format!` at the call site. Single source of truth for naming lives in Section 04's `LiveSession::golden_name()` / `ScenarioOutcome::golden_name()` pair"
   - "Four tack scenarios produce golden images: color, graphic_rendition, character_sets, modes — gated behind the `gpu-tests` feature like vttest goldens are"
   - "Each golden PNG is committed under `oriterm/tests/references/tack_color_80x24.png`, `tack_graphic_rendition_80x24.png`, `tack_character_sets_80x24.png`, `tack_modes_80x24.png` (and at the larger sizes 97x33, 120x40 for color). Six PNG goldens total."
   - "Tests skip cleanly when GPU adapter is unavailable (`headless_env()` returns `None`), when `tack` is unavailable, OR when `tic` is unavailable"
@@ -19,7 +22,7 @@ inspired_by:
   - "ori_term Section 01 dedup (plans/tack-conformance/section-01-shared-pty-session.md — assert_golden becomes a free function taking &PtySession)"
   - "ori_term Section 04 scenario framework (plans/tack-conformance/section-04-scenario-framework.md — ScenarioRunner pattern plugged into GPU here)"
   - "Alacritty visual regression test patterns (alacritty/extra/alacritty.info compiled, then alacritty's screenshots-for-comparison flow)"
-depends_on: ["01", "02", "04", "05"]
+depends_on: ["01", "02", "04", "05", "06"]
 third_party_review:
   status: none
   updated: null
@@ -49,7 +52,17 @@ sections:
 
 # Section 07: GPU Golden Images for Tack Visual Subset
 
-**Status:** Not Started
+**Status:** Not Started — `reviewed: false`, BLOCKED on re-review after Section 04 lands.
+
+**API drift warning + cleanup contract enforcement (BLOCKING).** This section was authored before Agent 1's expansion of Section 04 and reflects an OBSOLETE cleanup model. The pre-expansion draft just `let live = ScenarioRunner::run_with_session_at(...)` and let `live` drop after `compare_with_reference`, relying on `Drop` for FD cleanup. That LOSES the exit-status assertion: tack could exit with an error code mid-render and the test would silently report "golden matches!" because `Drop` doesn't call `assert!(exit.success(), ...)`. The Codex blind-spot review for Section 04 caught this as the M5 finding and added `LiveSession::finish(self) -> ExitStatus` as the explicit cleanup contract. Section 07 callers MUST call `live.finish()` after `render_to_pixels` and BEFORE returning from `run_tack_scenario_golden`. The sample below is FIXED in this review pass to call `finish` — implementers must not revert to the drop-based cleanup.
+
+Other API drift to fix during Section 07's re-review:
+- `live.golden_name()` (AND `outcome.golden_name()`) are the canonical PNG filename getters — both delegate to the same `"<screen_id>_<cols>x<rows>"` format literal defined in Section 04. The current `golden_name: &str` parameter on `run_tack_scenario_golden` MUST be removed in favor of `live.golden_name()` (Section 04 Mod1 finding). Hand-passing magic strings OR rebuilding `format!("{}_{}x{}", live.screen_id, cols, rows)` at the call site duplicates the naming convention defined in Section 04 — that's exactly the SSOT violation the M1 Codex finding fix and the Mod1 Agent 3 finding exist to prevent. The Section 07 code sample below consumes `live.golden_name()` directly; implementers must not revert to the format-literal rebuild.
+- The const paths `scenarios::color::TACK_COLOR`, `scenarios::graphic_rendition::TACK_GRAPHIC_RENDITION_SGR`, `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS`, `scenarios::modes::TACK_MODES_AM` MUST exist in `crates/oriterm_test_support/src/tack_framework/scenarios/` (Section 04 introduces only `modes::TACK_MODES_AM`; Sections 05/06 add the rest). All four are currently authored inline in Section 05/06's test target files — those sections are also blocked on re-review and must move the consts into the workspace crate before Section 07 can compile.
+- The `mod tack;` declaration goes under `oriterm/src/gpu/visual_regression/mod.rs`, which is itself gated under `cfg(all(test, feature = "gpu-tests"))`. This is correct in the current draft and does not need a fix.
+
+The rewrite contract for Section 07 is fixed: keep the SCENARIO LIST (color x3 + graphic_rendition + character_sets + modes = 6 PNG goldens), keep the FrameInput palette constants matching vttest, but rewrite the `run_tack_scenario_golden` body to call `live.finish()`, use `live.cols`/`live.rows` for naming, and consume the const paths from wherever Sections 05/06 finally land them. The 04.N completion checklist in Section 04 enforces this cross-section sync.
+
 **Goal:** Add GPU golden image regression tests for tack scenarios where the rendered pixels matter — color (named-color rows must produce the right RGB), graphic rendition (SGR styles must produce the right pixel patterns: bold strokes, italic slant, underline pixels at the right baseline), and character sets (DEC line-drawing chars must produce the right glyphs at the right cell offsets). The tests reuse the Section 04 `ScenarioRunner` pipeline (spawn tack with pinned terminfo, navigate, capture) but plug in the GPU rendering pipeline at the end instead of just calling `grid_text`. Pixel comparison uses the existing `compare_with_reference` from `oriterm/src/gpu/visual_regression/`.
 
 **Success Criteria:**
@@ -133,9 +146,19 @@ The framework already lives in `crates/oriterm_test_support/src/tack_framework/`
   ///   2. We pull the live PtySession from the LiveSession wrapper
   ///   3. Build a FrameInput from session.term().renderable_content()
   ///   4. render_to_pixels(...) produces a framebuffer
-  ///   5. compare_with_reference(name, &pixels, w, h) does the diff
-  ///   6. Drop the LiveSession wrapper — Drop reaps tack and the temp
-  ///      terminfo dir
+  ///   5. Build the golden file name from `live.screen_id`+`cols`x`rows`
+  ///      (mirrors `ScenarioOutcome::golden_name()` from Section 04)
+  ///   6. compare_with_reference(name, &pixels, w, h) does the diff
+  ///   7. **`live.finish()` is called BEFORE the function returns** —
+  ///      consumes `live`, calls `quit_tack(5)`, and asserts the child
+  ///      exited with `success()`. This is the M5 cleanup contract from
+  ///      Section 04 — relying on `Drop` reaps the FD but loses the
+  ///      exit-status assertion that catches tack regressions.
+  ///
+  /// The visual diff happens BEFORE `finish` so a panic in `finish`
+  /// (tack failed to exit cleanly) does not lose the visual-diff
+  /// information — both panics surface to the test runner if both
+  /// fail, but the visual diff failure is logged first.
   pub(super) fn run_tack_scenario_golden(
       spec: &ScenarioSpec,
       cols: u16,
@@ -143,7 +166,6 @@ The framework already lives in `crates/oriterm_test_support/src/tack_framework/`
       gpu: &GpuState,
       pipelines: &GpuPipelines,
       renderer: &mut WindowRenderer,
-      golden_name: &str,
   ) {
       let live = ScenarioRunner::run_with_session_at(spec, cols, rows);
       let cell = renderer.cell_metrics();
@@ -151,10 +173,33 @@ The framework already lives in `crates/oriterm_test_support/src/tack_framework/`
       let w = input.viewport.width;
       let h = input.viewport.height;
       let pixels = super::render_to_pixels(gpu, pipelines, renderer, &input);
-      if let Err(msg) = compare_with_reference(golden_name, &pixels, w, h) {
+
+      // Golden name: single source of truth via LiveSession::golden_name()
+      // which delegates to the same `"<screen_id>_<cols>x<rows>"` format
+      // literal as ScenarioOutcome::golden_name(). NEVER rebuild the
+      // format string at this call site — rebuilding it is
+      // LEAK:scattered-knowledge (Section 04 Mod1 finding). If the
+      // naming convention ever changes (e.g., adding a theme suffix),
+      // the change propagates automatically through LiveSession.
+      let golden_name = live.golden_name();
+
+      let visual_result = compare_with_reference(&golden_name, &pixels, w, h);
+
+      // M5 cleanup contract: ALWAYS call `finish` before returning so
+      // the exit-status assertion runs even if visual_result is Err.
+      // `finish` consumes `live`, calls `PtySession::quit_tack(5)`, and
+      // asserts `exit.success()`. If finish panics, the visual_result
+      // panic below is suppressed by Rust's "panic during panic"
+      // semantics — accept that trade-off; cleanup is more important
+      // than diagnostic completeness on the (rare) double-failure path.
+      let exit = live.finish();
+      // Visible at default RUST_LOG level so CI shows the exit
+      // status of every tack child the GPU goldens spawn.
+      log::info!("tack scenario {} clean exit: {exit:?}", spec.id);
+
+      if let Err(msg) = visual_result {
           panic!("tack visual regression ({golden_name}): {msg}");
       }
-      // live drops here — temp terminfo cleaned up + tack child reaped
   }
 
   /// Build a FrameInput from a live PtySession running tack.
@@ -247,31 +292,34 @@ The color screen is the highest-value GPU test: it directly validates `setaf`/`s
   // screen and what does the parser extract".
   use oriterm_test_support::tack_framework::scenarios::color::TACK_COLOR;
 
-  fn run_tack_color_golden(cols: u16, rows: u16, golden_name: &str) {
+  fn run_tack_color_golden(cols: u16, rows: u16) {
       if !tack_gpu_available() { return; }
       let Some((gpu, pipelines, mut renderer)) = headless_env() else {
           eprintln!("skipped: no GPU adapter available");
           return;
       };
+      // Golden name is derived from `live.screen_id`+cols+rows inside
+      // `run_tack_scenario_golden` — TACK_COLOR's `screen_id` is
+      // `"tack_color"` so the PNG is `tack_color_80x24.png` etc.
       run_tack_scenario_golden(
           &TACK_COLOR, cols, rows,
-          &gpu, &pipelines, &mut renderer, golden_name,
+          &gpu, &pipelines, &mut renderer,
       );
   }
 
   #[test]
   fn tack_golden_color_80x24() {
-      run_tack_color_golden(80, 24, "tack_color_80x24");
+      run_tack_color_golden(80, 24);
   }
 
   #[test]
   fn tack_golden_color_97x33() {
-      run_tack_color_golden(97, 33, "tack_color_97x33");
+      run_tack_color_golden(97, 33);
   }
 
   #[test]
   fn tack_golden_color_120x40() {
-      run_tack_color_golden(120, 40, "tack_color_120x40");
+      run_tack_color_golden(120, 40);
   }
   ```
 
@@ -312,10 +360,12 @@ The graphic rendition screen is the second-highest GPU test value: bold/dim/ital
           eprintln!("skipped: no GPU adapter available");
           return;
       };
+      // Golden name derived from TACK_GRAPHIC_RENDITION_SGR.screen_id
+      // ("tack_graphic_rendition") + 80x24 — produces
+      // `tack_graphic_rendition_80x24.png`.
       run_tack_scenario_golden(
           &TACK_GRAPHIC_RENDITION_SGR, 80, 24,
           &gpu, &pipelines, &mut renderer,
-          "tack_graphic_rendition_80x24",
       );
   }
   ```
@@ -341,10 +391,16 @@ DEC line-drawing characters are a GPU-test specialty: text snapshots can verify 
           eprintln!("skipped: no GPU adapter available");
           return;
       };
+      // Golden name derived from TACK_TOOLS_G0_DEC_GRAPHICS.screen_id
+      // ("tack_character_sets") + 80x24 — produces
+      // `tack_character_sets_80x24.png`. The const lives in
+      // tack_framework::scenarios::character_sets, defined by Section
+      // 06; Section 06 is blocked on re-review against Section 04 and
+      // MUST move the const out of the test target before this file
+      // can compile.
       run_tack_scenario_golden(
           &TACK_TOOLS_G0_DEC_GRAPHICS, 80, 24,
           &gpu, &pipelines, &mut renderer,
-          "tack_character_sets_80x24",
       );
   }
   ```
@@ -374,12 +430,16 @@ The modes screen in tack draws each supported capability LABEL in a styled cell 
       };
       // Reuse TACK_MODES_AM — it navigates to the same modes screen
       // the Section 05 text scenarios snapshot. The golden name is
-      // distinct from the text snapshot's (`tack_modes_am` insta vs.
-      // `tack_modes_80x24` PNG), so there's no collision.
+      // derived from `screen_id` ("tack_modes") + 80x24 →
+      // `tack_modes_80x24.png`. The text snapshot uses the SAME
+      // `screen_id`+size convention via `outcome.snapshot_name()`
+      // (insta `.snap` file is `tack_modes_80x24.snap`), so the two
+      // share the dedupable identity but live in different artifact
+      // trees (`oriterm_core/tests/tack/snapshots/` for insta vs.
+      // `oriterm/tests/references/` for PNG goldens) — no collision.
       run_tack_scenario_golden(
           &TACK_MODES_AM, 80, 24,
           &gpu, &pipelines, &mut renderer,
-          "tack_modes_80x24",
       );
   }
   ```
@@ -422,8 +482,10 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
 ## 07.N Completion Checklist
 
 - [ ] `oriterm/src/gpu/visual_regression/tack/mod.rs` exists, <500 lines
-- [ ] `LiveSession` wrapper holds the `TerminfoEnv` to keep it alive for tack's lifetime
+- [ ] `LiveSession` wrapper holds the `TerminfoEnv` to keep it alive for tack's lifetime (defined by Section 04 — Section 07 just consumes it)
 - [ ] `run_tack_scenario_golden(...)` is the single canonical entry point
+- [ ] `run_tack_scenario_golden(...)` calls `live.finish()` BEFORE returning (M5 cleanup contract from Section 04). The `finish` call is positioned AFTER the `compare_with_reference` capture so the visual diff is recorded before the exit-status assertion runs
+- [ ] `run_tack_scenario_golden(...)` derives the golden file name from `live.screen_id`+`cols`x`rows` (same convention as `ScenarioOutcome::golden_name()`), NOT a hand-passed `&str` parameter
 - [ ] `build_frame_input(...)` mirrors the post-Section-01 vttest helper exactly (same palette, same constants)
 - [ ] `mod tack;` added to `oriterm/src/gpu/visual_regression/mod.rs` as a plain sibling of `mod vttest;` — NO per-submodule `#[cfg]`. The parent `visual_regression` module itself is gated at `oriterm/src/gpu/mod.rs:79` under `#[cfg(all(test, feature = "gpu-tests"))]`, so the new submodule inherits that gate automatically. This matches `mod vttest;` on line 34 exactly.
 - [ ] 6 PNG goldens committed under `oriterm/tests/references/`:
