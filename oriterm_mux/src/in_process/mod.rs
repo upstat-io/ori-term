@@ -135,6 +135,7 @@ impl InProcessMux {
     ) -> io::Result<(PaneId, Pane)> {
         let pane_id = self.pane_alloc.alloc();
         let domain_id = self.local_domain.id();
+        let initial_title = request.initial_title;
         let config = AdoptConfig {
             pane_id,
             domain_id,
@@ -144,7 +145,15 @@ impl InProcessMux {
             scrollback: request.scrollback,
             theme: request.theme,
         };
-        let pane = adopt_pane(config, &self.event_tx, wakeup)?;
+        let mut pane = adopt_pane(config, &self.event_tx, wakeup)?;
+
+        // Apply the handoff title (typically from
+        // `TERMINAL_STARTUP_INFO.pszTitle` for `.lnk`-launched programs).
+        // `Pane::set_title` flips `has_explicit_title` so the title
+        // sticks until OSC 0/2 explicitly overrides it.
+        if !initial_title.is_empty() {
+            pane.set_title(initial_title);
+        }
 
         self.pane_registry.register(PaneEntry {
             pane: pane_id,

@@ -43,11 +43,11 @@ pub struct ImageConfig {
 
 /// Per-pane parameters for [`MuxBackend::adopt_pane`].
 ///
-/// Bundles the terminal dimensions, scrollback size, and theme so the
-/// trait method stays under the hygiene rule's argument limit. The
-/// `AdoptedPtyHandle` is passed separately because callers typically
-/// own it via move semantics already.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Bundles the terminal dimensions, scrollback size, theme, and any
+/// startup metadata so the trait method stays under the hygiene rule's
+/// argument limit. The `AdoptedPtyHandle` is passed separately because
+/// callers typically own it via move semantics already.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdoptPaneRequest {
     /// Initial terminal rows (typically from `TERMINAL_STARTUP_INFO.dwYCountChars`).
     pub rows: u16,
@@ -57,6 +57,11 @@ pub struct AdoptPaneRequest {
     pub scrollback: usize,
     /// Color theme for the new pane.
     pub theme: Theme,
+    /// Initial pane title (typically from `TERMINAL_STARTUP_INFO.pszTitle`,
+    /// e.g. the title embedded in a `.lnk` shortcut). Empty string means
+    /// "no explicit title" — the pane will fall back to its CWD-derived
+    /// or shell-set title via the standard `Pane::effective_title` chain.
+    pub initial_title: String,
 }
 
 /// Abstraction over in-process and daemon-mode multiplexer access.

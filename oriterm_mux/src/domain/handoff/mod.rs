@@ -73,9 +73,14 @@ pub fn adopt_pane(
     mux_tx: &mpsc::Sender<MuxEvent>,
     wakeup: &Arc<dyn Fn() + Send + Sync>,
 ) -> io::Result<Pane> {
-    // 1. Take reader and writer out of the adopted handle. The signal
-    //    stays inside the handle so its `Drop` closes the conhost
-    //    handles when the pane is dropped.
+    // 1. Take reader, writer, AND signal out of the adopted handle. The
+    //    signal moves to the IO thread (via IoThreadConfig.adopted_signal)
+    //    so process_resize can write the conhost signal pipe protocol on
+    //    SIGWINCH-equivalent events. The boxed AdoptedPtyHandle in
+    //    PaneParts.pty no longer owns the signal — that's fine because
+    //    PaneIoHandle::Drop joins the IO thread before Pane::Drop runs,
+    //    and the signal is dropped at that point (closing the duplicated
+    //    HANDLEs via AdoptedSignal::Drop).
     let reader = config
         .adopted
         .take_reader()
@@ -84,6 +89,10 @@ pub fn adopt_pane(
         .adopted
         .take_writer()
         .ok_or_else(|| io::Error::other("AdoptedPtyHandle writer already taken"))?;
+    let signal = config
+        .adopted
+        .take_signal()
+        .ok_or_else(|| io::Error::other("AdoptedPtyHandle signal already taken"))?;
     let exit_signal = config.adopted.clone_exit_signal();
 
     // 2. Shared atomics — same shape as LocalDomain::spawn_pane.
@@ -122,10 +131,11 @@ pub fn adopt_pane(
     )?;
 
     // 5. Terminal IO thread. `pty_control = None` because adopted PTYs
-    //    have no portable_pty::MasterPty — resize for adopted panes will
-    //    travel through the conhost signal pipe in a future phase
-    //    (Phase 3 wires AdoptedSignal::resize through a new IO thread
-    //    command).
+    //    have no portable_pty::MasterPty. Resize travels through
+    //    `adopted_signal.resize()` which writes the conhost signal pipe
+    //    protocol (`PTY_SIGNAL_RESIZE_WINDOW`); see
+    //    `process_resize` in `pane/io_thread/handler.rs` for the
+    //    fallback chain (pty_control -> adopted_signal -> nothing).
     let (io_thread, mut io_handle) =
         pane::io_thread::new_with_handle(pane::io_thread::IoThreadConfig {
             terminal: io_term,
@@ -134,6 +144,7 @@ pub fn adopt_pane(
             wakeup: Arc::clone(wakeup),
             grid_dirty: io_grid_dirty,
             pty_control: None,
+            adopted_signal: Some(signal),
             initial_rows: config.rows,
             initial_cols: config.cols,
             selection_dirty: Arc::clone(&io_selection_dirty),

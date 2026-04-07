@@ -71,6 +71,54 @@ pub(crate) struct TERMINAL_STARTUP_INFO {
     pub wShowWindow: u16,
 }
 
+/// `ITerminalHandoff` — the original (v1) handoff interface, deprecated
+/// but kept for COM proxy-stub compatibility.
+///
+/// IID `{59D55CCE-FC8A-48B4-ACE8-0A9286C6557F}` matches the canonical
+/// definition in `terminal/src/host/proxy/ITerminalHandoff.idl`. The
+/// IDL header explicitly says: "There is only ever one
+/// `OpenConsoleProxy.dll` loaded by COM for ALL terminal instances,
+/// across Dev, Preview, Stable, whatever. So we have to keep all old
+/// versions of interfaces in the file here, even if the old version is
+/// no longer in use." We mirror that constraint in Rust by declaring
+/// all three versions even though [`HandoffServer`](super::HandoffServer)
+/// only implements v3.
+///
+/// **DEPRECATED** — v1 lacks `TERMINAL_STARTUP_INFO`, so it cannot
+/// receive title/icon metadata for `.lnk`-launched programs.
+#[interface("59D55CCE-FC8A-48B4-ACE8-0A9286C6557F")]
+pub unsafe trait ITerminalHandoff: IUnknown {
+    unsafe fn EstablishPtyHandoff(
+        &self,
+        in_handle: HANDLE,
+        out_handle: HANDLE,
+        signal: HANDLE,
+        reference: HANDLE,
+        server: HANDLE,
+        client: HANDLE,
+    ) -> HRESULT;
+}
+
+/// `ITerminalHandoff2` — short-lived second interface that added
+/// `TERMINAL_STARTUP_INFO` (by value), but kept the in/out pipe handles
+/// as `[in]`. Deprecated in favour of v3 which fixed both flaws.
+///
+/// IID `{AA6B364F-4A50-4176-9002-0AE755E7B5EF}` from the canonical IDL.
+/// Kept for the same proxy-stub compatibility reason as v1.
+#[interface("AA6B364F-4A50-4176-9002-0AE755E7B5EF")]
+pub unsafe trait ITerminalHandoff2: IUnknown {
+    unsafe fn EstablishPtyHandoff(
+        &self,
+        in_handle: HANDLE,
+        out_handle: HANDLE,
+        signal: HANDLE,
+        reference: HANDLE,
+        server: HANDLE,
+        client: HANDLE,
+        startup_info: TERMINAL_STARTUP_INFO,
+    ) -> HRESULT;
+}
+
 /// `ITerminalHandoff3` — current (v3) interface used by `conhost.exe` to
 /// hand a console session off to a registered terminal application.
 ///

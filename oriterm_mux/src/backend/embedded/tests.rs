@@ -252,3 +252,22 @@ fn cleanup_closed_pane_with_io_thread() {
     let mut buf = oriterm_core::RenderableContent::default();
     assert!(!mux.swap_renderable_content(pane_id, &mut buf));
 }
+
+/// TPR-6 semantic pin: `sync_pane_snapshot` returns `None` for an
+/// unknown pane id rather than blocking on a non-existent IO thread.
+///
+/// We can't easily simulate the timeout case (the IO thread always
+/// responds quickly under test load) but we CAN verify that the
+/// missing-pane fast path returns None instead of producing a stale
+/// snapshot from a different pane. This locks in the "guaranteed-fresh
+/// or None" contract documented on the trait method.
+#[test]
+fn sync_pane_snapshot_returns_none_for_missing_pane() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(99_999);
+    assert!(
+        mux.sync_pane_snapshot(bogus).is_none(),
+        "sync_pane_snapshot must return None for an unknown pane id, \
+         not silently fall back to refresh_pane_snapshot's cached value",
+    );
+}

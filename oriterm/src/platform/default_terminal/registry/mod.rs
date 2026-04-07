@@ -43,10 +43,11 @@ use std::io;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
-use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ,
-    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegGetValueW, RegSetValueExW,
+    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegDeleteValueW, RegGetValueW, RegOpenKeyExW,
+    RegSetValueExW,
 };
 
 /// Stable CLSID for `ori_term`'s `ITerminalHandoff3` COM server.
@@ -67,9 +68,13 @@ pub(crate) const ORITERM_TERMINAL_CLSID: &str = "{86A2D6B1-7A4C-4F37-9C5E-9E0F0B
 /// pairing Windows Terminal uses, so installing `oriterm` does not
 /// require shipping a separate console host.
 ///
-/// Reference: Windows Terminal `src/cascadia/CascadiaPackage/Resources/`
-/// `AppExtension` catalog.
-const OPENCONSOLE_DELEGATION_CONSOLE_CLSID: &str = "{2EACA947-7F5F-4CF2-97EA-C9E8AED6FC68}";
+/// Reference: `CLSID_WindowsTerminalConsole` in
+/// `terminal/src/propslib/DelegationConfig.hpp` (line 106 of the
+/// canonical Windows Terminal source). Verified during the Section 03.9
+/// TPR review against `Package.appxmanifest` and `CConsoleHandoff.h` —
+/// the previous value (`-4CF2-97EA-...`) was a transcription error and
+/// would have pointed conhost at a non-existent console host.
+const OPENCONSOLE_DELEGATION_CONSOLE_CLSID: &str = "{2EACA947-7F5F-4CFA-BA87-8F7FBEEFBE69}";
 
 /// Subkey under `HKCU` containing the conhost delegation selectors.
 const PRODUCTION_STARTUP_SUBKEY: &str = r"Console\%%Startup";
@@ -146,8 +151,16 @@ pub(crate) fn register_all_at(paths: &RegistryPaths, exe_path: &Path) -> io::Res
 }
 
 /// Path-parameterized unregistration — see [`unregister_all`].
+///
+/// Deletes the two `DelegationConsole` and `DelegationTerminal` values
+/// from the startup subkey individually (NOT the whole subkey — that
+/// would wipe unrelated user-controlled console startup settings),
+/// then deletes the entire CLSID subtree because we own it exclusively.
+/// Mirrors the WT pattern in `terminal/src/propslib/DelegationConfig.cpp`
+/// + `RegistrySerialization.cpp::DeleteValue`.
 pub(crate) fn unregister_all_at(paths: &RegistryPaths) -> io::Result<()> {
-    delete_subkey_tree(&paths.startup_subkey)?;
+    delete_value_if_present(&paths.startup_subkey, "DelegationConsole")?;
+    delete_value_if_present(&paths.startup_subkey, "DelegationTerminal")?;
     delete_subkey_tree(&paths.clsid_subkey)?;
     Ok(())
 }
@@ -244,6 +257,48 @@ fn read_delegation_value(paths: &RegistryPaths, name: &str) -> Option<String> {
     Some(String::from_utf16_lossy(&buf[..trimmed_end]))
 }
 
+/// Delete a single named value under a subkey. Idempotent — missing
+/// keys and missing values are both treated as success.
+///
+/// Used by [`unregister_all_at`] to remove only the two delegation
+/// values from `HKCU\Console\%%Startup` without touching the rest of
+/// the user's startup-console settings.
+fn delete_value_if_present(subkey: &str, value_name: &str) -> io::Result<()> {
+    let subkey_w = wide(subkey);
+    let mut key: HKEY = std::ptr::null_mut();
+    // SAFETY: HKEY_CURRENT_USER is a constant predefined hive handle.
+    // subkey_w is a valid null-terminated UTF-16 string. key is a
+    // valid out-pointer.
+    let open_status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            subkey_w.as_ptr(),
+            0,
+            KEY_WRITE,
+            &raw mut key,
+        )
+    };
+    if open_status == ERROR_FILE_NOT_FOUND {
+        return Ok(());
+    }
+    if open_status != ERROR_SUCCESS {
+        return Err(io::Error::from_raw_os_error(open_status as i32));
+    }
+    let owned = OpenedKey(key);
+    let value_w = wide(value_name);
+    // SAFETY: owned.0 is a valid HKEY just opened with KEY_WRITE.
+    // value_w is a valid null-terminated UTF-16 string. RegDeleteValueW
+    // returns ERROR_FILE_NOT_FOUND for absent values which we treat as
+    // success for idempotency.
+    let delete_status = unsafe { RegDeleteValueW(owned.handle(), value_w.as_ptr()) };
+    drop(owned);
+    if delete_status == ERROR_SUCCESS || delete_status == ERROR_FILE_NOT_FOUND {
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(delete_status as i32))
+    }
+}
+
 /// Recursively delete a subkey under `HKCU`. Idempotent.
 fn delete_subkey_tree(subkey: &str) -> io::Result<()> {
     let subkey_w = wide(subkey);
@@ -252,7 +307,7 @@ fn delete_subkey_tree(subkey: &str) -> io::Result<()> {
     // ERROR_FILE_NOT_FOUND for missing keys, which we treat as success
     // for idempotency.
     let status = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, subkey_w.as_ptr()) };
-    if status == ERROR_SUCCESS || status == windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND {
+    if status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND {
         Ok(())
     } else {
         Err(io::Error::from_raw_os_error(status as i32))

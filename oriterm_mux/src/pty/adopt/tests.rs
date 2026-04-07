@@ -179,6 +179,23 @@ fn taken_writer_accepts_writes() {
     writer.flush().expect("flush");
 }
 
+#[test]
+fn adopted_signal_resize_with_null_handle_errors() {
+    // Semantic pin: AdoptedSignal::resize must reject the test stub
+    // (null signal handle) so a misconfigured production wiring fails
+    // loudly instead of silently no-op'ing every resize. The real
+    // signal pipe wiring is tested via the IO thread integration in
+    // pane/io_thread/tests.rs after process_resize routes through
+    // AdoptedSignal — we can't write to a real conhost signal pipe
+    // without conhost on the other end.
+    let signal = AdoptedSignal::stub_for_tests();
+    let result = signal.resize(24, 80);
+    assert!(
+        result.is_err(),
+        "resize must error on a null signal handle, got {result:?}",
+    );
+}
+
 /// Mutex-wrapped writer used in cross-thread tests where the test body
 /// needs to inspect what was written. Implements `io::Write` by appending
 /// under the mutex; the inner buffer can be cloned out via the `Arc`.

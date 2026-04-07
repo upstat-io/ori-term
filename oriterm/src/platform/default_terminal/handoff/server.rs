@@ -131,6 +131,16 @@ unsafe fn establish_handoff(
         return Err(E_FAIL);
     }
 
+    // TPR-3 ordering rule: never publish the [out] pipe handles to the
+    // caller until ALL fallible work has succeeded. Steps 1-9 build up
+    // the full HandoffData payload (pipes, duplicated handles, parsed
+    // startup info) without writing to *in_handle / *out_handle. Only
+    // after the channel send succeeds do we hand the console-side ends
+    // to the caller via the out-params (step 10). On any earlier
+    // failure, the cleanup ladder closes pipes/handles and the caller
+    // never observes a partially populated state — exactly the WT
+    // pattern from `ConptyConnection.cpp`.
+
     // 1. Create the input pipe (console reads its stdin from `in_read`,
     //    we write keystrokes into `in_write`).
     let (in_read, in_write) = create_pipe()?;
@@ -146,54 +156,87 @@ unsafe fn establish_handoff(
         }
     })?;
 
-    // 3. Return the console-side ends to the caller via the out-params.
-    //    After we write here, COM marshalling owns these handles.
-    // SAFETY: in_handle and out_handle are valid out-pointers per the
-    // function contract; we are writing initialized HANDLE values.
-    unsafe {
-        *in_handle = in_read;
-        *out_handle = out_write;
-    }
-
-    // 4. Wrap our ends as std::fs::File trait objects. File takes
+    // 3. Wrap our ends as std::fs::File trait objects. File takes
     //    ownership of the raw handle and closes it on Drop, which
-    //    matches the lifetime of the resulting Pane.
+    //    matches the lifetime of the resulting Pane. NOTE: in_read and
+    //    out_write are still raw HANDLEs at this point — they remain
+    //    closeable via close_handle on the cleanup paths until we
+    //    publish them to the caller in step 10.
     // SAFETY: in_write and out_read are valid handles created by
     // CreatePipe and not yet wrapped or closed. From this point on,
     // the File instances exclusively own them.
     let writer = unsafe { File::from_raw_handle(in_write.0.cast()) };
     let reader = unsafe { File::from_raw_handle(out_read.0.cast()) };
 
-    // 5. Duplicate the [in] handles so they outlive this COM call.
-    //    On any failure, drop the wrapped pipe ends (which closes them
-    //    via File::Drop) and return E_FAIL.
-    // Manual cleanup ladder: each duplication failure must close the
-    // previously duplicated handles. We can't use `?` directly without
-    // dropping cleanly, so each step has an explicit cleanup closure.
+    // 4. Duplicate the [in] handles so they outlive this COM call. On
+    //    any failure, drop the wrapped File ends (which closes them
+    //    via File::Drop) AND close the still-raw console-side ends so
+    //    the caller never sees them.
     let dup_signal = match unsafe { duplicate_handle(signal) } {
         Ok(handle) => handle,
         Err(hr) => {
             drop(writer);
             drop(reader);
+            // SAFETY: in_read and out_write are valid handles created
+            // by CreatePipe and never wrapped or published.
+            unsafe {
+                close_handle(in_read);
+                close_handle(out_write);
+            }
             return Err(hr);
         }
     };
-    // We can't easily reuse `?` for the rest of the duplications without
-    // dropping the previously-duplicated handles on failure, so do them
-    // sequentially with explicit cleanup helpers.
-    let dup_reference = unsafe { duplicate_handle(reference) }
-        .inspect_err(|_| unsafe { close_handle(dup_signal) })?;
-    let dup_server = unsafe { duplicate_handle(server) }.inspect_err(|_| unsafe {
-        close_handle(dup_signal);
-        close_handle(dup_reference);
-    })?;
-    let dup_client = unsafe { duplicate_handle(client) }.inspect_err(|_| unsafe {
-        close_handle(dup_signal);
-        close_handle(dup_reference);
-        close_handle(dup_server);
-    })?;
+    let dup_reference = match unsafe { duplicate_handle(reference) } {
+        Ok(handle) => handle,
+        Err(hr) => {
+            drop(writer);
+            drop(reader);
+            // SAFETY: dup_signal is a duplicated copy we own; in_read /
+            // out_write are still owned by us — neither has been
+            // published to the caller.
+            unsafe {
+                close_handle(dup_signal);
+                close_handle(in_read);
+                close_handle(out_write);
+            }
+            return Err(hr);
+        }
+    };
+    let dup_server = match unsafe { duplicate_handle(server) } {
+        Ok(handle) => handle,
+        Err(hr) => {
+            drop(writer);
+            drop(reader);
+            // SAFETY: dup_signal/dup_reference are duplicated copies we
+            // own; in_read / out_write are still raw and unpublished.
+            unsafe {
+                close_handle(dup_signal);
+                close_handle(dup_reference);
+                close_handle(in_read);
+                close_handle(out_write);
+            }
+            return Err(hr);
+        }
+    };
+    let dup_client = match unsafe { duplicate_handle(client) } {
+        Ok(handle) => handle,
+        Err(hr) => {
+            drop(writer);
+            drop(reader);
+            // SAFETY: as above — close every duplicated copy and the
+            // still-raw console-side ends before propagating.
+            unsafe {
+                close_handle(dup_signal);
+                close_handle(dup_reference);
+                close_handle(dup_server);
+                close_handle(in_read);
+                close_handle(out_write);
+            }
+            return Err(hr);
+        }
+    };
 
-    // 6. Wrap the duplicated handles in AdoptedSignal (RAII close on
+    // 5. Wrap the duplicated handles in AdoptedSignal (RAII close on
     //    Drop). After this point, the AdoptedSignal owns all four
     //    handles and we MUST NOT manually close them.
     //
@@ -213,7 +256,7 @@ unsafe fn establish_handoff(
         )
     };
 
-    // 7. Read the client PID from the duplicated client handle. The
+    // 6. Read the client PID from the duplicated client handle. The
     //    handle is now owned by AdoptedSignal, so we query before the
     //    next step (which moves it).
     // SAFETY: GetProcessId is a standard Win32 query that takes any
@@ -225,12 +268,12 @@ unsafe fn establish_handoff(
         Some(client_pid_raw)
     };
 
-    // 8. Parse the startup info into owned strings + dimensions.
+    // 7. Parse the startup info into owned strings + dimensions.
     // SAFETY: caller contract — startup_info is valid for the duration
     // of this call (or null, which from_startup_info handles).
     let parsed = unsafe { from_startup_info(startup_info) };
 
-    // 9. Send the payload through the channel.
+    // 8. Build the payload (no allocations beyond String fields).
     let payload = HandoffData {
         reader: Box::new(reader),
         writer: Box::new(writer),
@@ -242,24 +285,75 @@ unsafe fn establish_handoff(
         initial_cols: parsed.initial_cols,
     };
 
-    let mut guard = server_impl.handoff_tx.lock().map_err(handoff_tx_poisoned)?;
-    let tx = guard.take().ok_or(E_UNEXPECTED)?;
-    tx.send(payload).map_err(handoff_send_failed)?;
+    // 9. Send the payload through the channel. Failures here drop the
+    //    payload (which closes the wrapped File ends) and we still need
+    //    to close in_read / out_write because they were never published
+    //    to the caller.
+    // SAFETY: in_read / out_write are still raw handles that have not
+    // been published to the caller, so deliver_handoff is allowed to
+    // close them on every failure path.
+    unsafe { deliver_handoff(server_impl, payload, in_read, out_write) }?;
+
+    // 10. Only NOW that the entire pipeline succeeded do we publish the
+    //     console-side pipe ends to the caller. From this point on, COM
+    //     marshalling owns these handles. If we had hit any failure
+    //     above, the caller would never have observed a partially
+    //     populated state — matching the WT pattern in
+    //     `ConptyConnection.cpp::_initiateConnection`.
+    // SAFETY: in_handle and out_handle are valid out-pointers per the
+    // function contract; we are writing initialized HANDLE values that
+    // we just successfully created via CreatePipe.
+    unsafe {
+        *in_handle = in_read;
+        *out_handle = out_write;
+    }
     Ok(())
 }
 
-/// `cold` factory mapping a `PoisonError` to `E_UNEXPECTED` so the call
-/// site can use `map_err(handoff_tx_poisoned)` instead of a wildcard
-/// `|_|` closure (`clippy::map-err-ignore`).
-#[cold]
-fn handoff_tx_poisoned<T>(_err: std::sync::PoisonError<T>) -> HRESULT {
-    E_UNEXPECTED
-}
-
-/// `cold` factory mapping a `mpsc::SendError` to `E_FAIL`.
-#[cold]
-fn handoff_send_failed<T>(_err: std::sync::mpsc::SendError<T>) -> HRESULT {
-    E_FAIL
+/// Send the constructed [`HandoffData`] payload through the one-shot
+/// channel, closing the still-raw console-side pipe ends on every
+/// failure path. Extracted from [`establish_handoff`] to keep that
+/// function under the clippy line limit and to colocate the four
+/// failure-cleanup branches in one place.
+///
+/// # Safety
+///
+/// `in_read` and `out_write` must be valid handles never yet published
+/// to the caller. On error, they are closed via `close_handle`.
+unsafe fn deliver_handoff(
+    server_impl: &HandoffServer_Impl,
+    payload: HandoffData,
+    in_read: HANDLE,
+    out_write: HANDLE,
+) -> Result<(), HRESULT> {
+    let Ok(mut guard) = server_impl.handoff_tx.lock() else {
+        drop(payload);
+        // SAFETY: in_read and out_write are still raw handles never
+        // published to the caller per the function contract.
+        unsafe {
+            close_handle(in_read);
+            close_handle(out_write);
+        }
+        return Err(E_UNEXPECTED);
+    };
+    let Some(tx) = guard.take() else {
+        drop(payload);
+        // SAFETY: see above.
+        unsafe {
+            close_handle(in_read);
+            close_handle(out_write);
+        }
+        return Err(E_UNEXPECTED);
+    };
+    if tx.send(payload).is_err() {
+        // SAFETY: see above. Receiver dropped before consuming payload.
+        unsafe {
+            close_handle(in_read);
+            close_handle(out_write);
+        }
+        return Err(E_FAIL);
+    }
+    Ok(())
 }
 
 /// Create an anonymous pipe and return `(read, write)` handles.

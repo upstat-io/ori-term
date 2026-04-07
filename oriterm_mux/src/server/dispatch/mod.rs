@@ -325,11 +325,28 @@ pub fn dispatch_request(
                 // `scroll_display` + `GetPaneSnapshot` could read a stale
                 // snapshot because IO command processing and snapshot
                 // pushes are decoupled from the wire response path.
+                //
+                // If the IO thread fails to acknowledge within 500ms,
+                // return an explicit error rather than silently
+                // returning a stale snapshot — the wire contract is
+                // "guaranteed-fresh or error" so clients can decide
+                // whether to retry, propagate, or fall back to the
+                // pushed-snapshot fast path.
                 let (tx, rx) = crossbeam_channel::bounded(1);
                 pane.send_io_command(PaneIoCommand::SnapshotNow { reply: tx });
-                let _ = rx.recv_timeout(Duration::from_millis(500));
-                let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
-                Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
+                if rx.recv_timeout(Duration::from_millis(500)).is_err() {
+                    log::warn!(
+                        "GetPaneSnapshot({pane_id}) timed out waiting for IO thread barrier"
+                    );
+                    Some(MuxPdu::Error {
+                        message: format!(
+                            "pane {pane_id} IO thread did not acknowledge SnapshotNow within 500ms"
+                        ),
+                    })
+                } else {
+                    let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
+                    Some(MuxPdu::PaneSnapshotResp { snapshot: snap })
+                }
             }
             None => Some(MuxPdu::Error {
                 message: format!("pane not found: {pane_id}"),
