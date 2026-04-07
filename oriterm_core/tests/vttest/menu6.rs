@@ -5,11 +5,11 @@
 //! and capture their output with structural assertions verifying DA/DSR
 //! responses appear in the terminal output.
 
-use super::session::{VtTestSession, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// Walk screens for a menu 6 sub-item until returning to the sub-menu.
 /// Returns (screen_count, all_screen_text) for structural assertions.
-fn walk_menu6_subscreens(s: &mut VtTestSession, label: &str, tag: &str) -> (usize, String) {
+fn walk_menu6_subscreens(s: &mut PtySession, label: &str, tag: &str) -> (usize, String) {
     let mut screen = 1;
     let mut all_text = String::new();
     loop {
@@ -46,7 +46,7 @@ fn walk_menu6_subscreens(s: &mut VtTestSession, label: &str, tag: &str) -> (usiz
 /// responses. vttest sends queries and displays the terminal's responses.
 /// Structural assertions verify that DA and DSR responses appear in the output.
 fn run_menu6_reports(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     s.wait_for("Enter choice number", 5000);

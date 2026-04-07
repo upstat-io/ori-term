@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Shared PtySession Infrastructure"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Create crates/oriterm_test_support with a shared PtySession (PTY+Term+VTE driver), then migrate both vttest text tests and vttest GPU golden tests onto it. Eliminate the VtTestSession LEAK between oriterm_core/tests/vttest/session.rs and oriterm/src/gpu/visual_regression/vttest/mod.rs (581 lines, ~240 lines duplicated byte-for-byte). Zero behavioral change to existing 198 insta snapshots and 98 golden PNGs."
 success_criteria:
@@ -20,18 +20,18 @@ inspired_by:
   - "WezTerm shared termwiz crate (wezterm/termwiz/) — workspace-internal test/util crate pattern"
 depends_on: []
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-07
 sections:
   - id: "01.1"
     title: "Create crates/oriterm_test_support workspace member"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "PtySession core: spawn, drain, wait, send, grid_text"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Migrate oriterm_core vttest text tests onto PtySession"
-    status: not-started
+    status: complete
   - id: "01.4"
     title: "Migrate oriterm vttest GPU golden tests onto PtySession"
     status: not-started
@@ -83,10 +83,10 @@ The shared crate cannot live inside `oriterm_core` because the GPU tests in `ori
 
 This subsection creates the workspace member with no logic in it — pure scaffolding so subsection 01.2 can land code into a buildable target.
 
-- [ ] Create directory `crates/oriterm_test_support/` and `crates/oriterm_test_support/src/`.
+- [x] Create directory `crates/oriterm_test_support/` and `crates/oriterm_test_support/src/`.
   Verify before creating: the existing `crates/` already contains `portable-pty/`, `vte/`, `wgpu-hal/` (vendored externals). The new directory sits alongside them as the FIRST workspace-internal crate under `crates/`.
 
-- [ ] Create `crates/oriterm_test_support/Cargo.toml`:
+- [x] Create `crates/oriterm_test_support/Cargo.toml`:
   ```toml
   [package]
   name = "oriterm_test_support"
@@ -111,7 +111,7 @@ This subsection creates the workspace member with no logic in it — pure scaffo
   - Depends on `portable-pty` and `vte` directly because the shared session OWNS the PTY pair, the writer, the receiver thread, the `Term`, and the `vte::ansi::Processor`.
   - Allowed dependency direction (per `.claude/rules/crate-boundaries.md`): `oriterm_test_support → oriterm_core`. The new crate must NOT depend on `oriterm_ui`, `oriterm_mux`, or `oriterm` — it stays at the same architectural layer as `oriterm_core` (lower than UI/GPU).
 
-- [ ] Update workspace `Cargo.toml` (root `/home/eric/projects/ori_term/Cargo.toml`):
+- [x] Update workspace `Cargo.toml` (root `/home/eric/projects/ori_term/Cargo.toml`):
   ```toml
   [workspace]
   members = [
@@ -125,7 +125,7 @@ This subsection creates the workspace member with no logic in it — pure scaffo
   ```
   The new entry uses the `crates/<name>` path explicitly because the existing 5 members are top-level directories — adding a `crates/`-rooted member is intentional to keep test infrastructure visually grouped under `crates/`.
 
-- [ ] Create `crates/oriterm_test_support/src/lib.rs` as an empty index file with module declarations placeholder (the actual modules land in 01.2):
+- [x] Create `crates/oriterm_test_support/src/lib.rs` as an empty index file with module declarations placeholder (the actual modules land in 01.2):
   ```rust
   //! Shared PTY/Term/VTE test driver for oriterm conformance suites.
   //!
@@ -145,7 +145,7 @@ This subsection creates the workspace member with no logic in it — pure scaffo
   pub use session::{PtyResponder, PtySession};
   ```
 
-- [ ] Stub `crates/oriterm_test_support/src/session.rs` with empty re-exports so the crate compiles cleanly before 01.2:
+- [x] Stub `crates/oriterm_test_support/src/session.rs` with empty re-exports so the crate compiles cleanly before 01.2:
   ```rust
   //! Cross-suite PTY+Term+VTE driver. See [`PtySession`].
 
@@ -155,10 +155,12 @@ This subsection creates the workspace member with no logic in it — pure scaffo
   ```
   This keeps the build green between 01.1 and 01.2 while allowing 01.1 to be reviewed and committed independently if needed.
 
-- [ ] Verify: `cargo build -p oriterm_test_support` succeeds with no warnings.
-- [ ] Verify: `cargo metadata --format-version 1` shows the new member.
-- [ ] Verify: `./build-all.sh` still green (the new crate must not break workspace compilation).
-- [ ] Verify: `./clippy-all.sh` still green (no new warnings from the empty crate).
+  **Deviation note:** Created as a directory module (`session/mod.rs`) instead of a file module (`session.rs`). The test-organization rule requires directory modules whenever a sibling `tests.rs` is involved, and 01.2 will add `session/tests.rs`. Stubbing as a directory module from the start avoids a no-op file→directory rename in 01.2.
+
+- [x] Verify: `cargo build -p oriterm_test_support` succeeds with no warnings.
+- [x] Verify: `cargo metadata --format-version 1` shows the new member.
+- [x] Verify: `./build-all.sh` still green (the new crate must not break workspace compilation).
+- [x] Verify: `./clippy-all.sh` still green (no new warnings from the empty crate).
 
 ---
 
@@ -172,7 +174,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
 1. The constructor is generalized: `new(cmd: CommandBuilder, cols: u16, rows: u16) -> Self` instead of hardcoding `vttest`. Helper constructors `spawn_vttest(...)`, `spawn_tack(...)` (Section 03), `spawn_command(...)` etc. wrap it.
 2. `Term<PtyResponder>` is exposed via `pub fn term(&self) -> &Term<PtyResponder>` and `pub fn term_mut(&mut self) -> &mut Term<PtyResponder>` so adapters in `oriterm_core` and `oriterm` can both reach the underlying terminal without taking ownership.
 
-- [ ] Define `PtyResponder` (verbatim port from `session.rs:13-37`):
+- [x] Define `PtyResponder` (verbatim port from `session.rs:13-37`):
   ```rust
   use std::io::{Read, Write};
   use std::sync::{Arc, Mutex};
@@ -214,7 +216,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
   }
   ```
 
-- [ ] Define `PtySession` struct (verbatim port from `session.rs:39-48`):
+- [x] Define `PtySession` struct (verbatim port from `session.rs:39-48`):
   ```rust
   /// PTY-driven test session: child process, byte channel, writer, Term, VTE.
   ///
@@ -234,7 +236,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
 
 
 
-- [ ] **BLOCKER — explicit `impl Drop` to reap the child.** The `portable_pty::Child` trait is implemented on `std::process::Child` (see `crates/portable-pty/src/lib.rs:271`), and `std::process::Child` **does not kill the child on drop** (documented Rust std lib behavior — the child becomes an orphan). The current `VtTestSession::_child: Box<dyn Child + Send + Sync>` in `oriterm_core/tests/vttest/session.rs:47` has this bug today — every vttest test currently leaks a process. Section 01 MUST NOT replicate this bug in `PtySession`. Add an explicit `impl Drop`:
+- [x] **BLOCKER — explicit `impl Drop` to reap the child.** The `portable_pty::Child` trait is implemented on `std::process::Child` (see `crates/portable-pty/src/lib.rs:271`), and `std::process::Child` **does not kill the child on drop** (documented Rust std lib behavior — the child becomes an orphan). The current `VtTestSession::_child: Box<dyn Child + Send + Sync>` in `oriterm_core/tests/vttest/session.rs:47` has this bug today — every vttest test currently leaks a process. Section 01 MUST NOT replicate this bug in `PtySession`. Add an explicit `impl Drop`:
   ```rust
   impl Drop for PtySession {
       fn drop(&mut self) {
@@ -255,9 +257,9 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
   ```
 
 
-- [ ] **Pre-existing bug cleanup gate:** the current `oriterm_core/tests/vttest/session.rs` VtTestSession (239 lines) has the same reaping bug, and the plan adapts that file to the new shared type. After Section 01.3's rewrite, the new adapter inherits the `impl Drop` from `PtySession` automatically (because the adapter type-aliases `VtTestSession = PtySession`). Verify after 01.5: no zombie `vttest` or `tack` processes remain after the test suite runs. File via `/add-bug` as `pre-existing reaped here` ONLY if the verification shows any remaining leaks — but the Drop impl should close the issue outright.
+- [ ] **Pre-existing bug cleanup gate:** <!-- verified in 01.5 --> the current `oriterm_core/tests/vttest/session.rs` VtTestSession (239 lines) has the same reaping bug, and the plan adapts that file to the new shared type. After Section 01.3's rewrite, the new adapter inherits the `impl Drop` from `PtySession` automatically (because the adapter type-aliases `VtTestSession = PtySession`). Verify after 01.5: no zombie `vttest` or `tack` processes remain after the test suite runs. File via `/add-bug` as `pre-existing reaped here` ONLY if the verification shows any remaining leaks — but the Drop impl should close the issue outright.
 
-- [ ] Implement the general constructor and the vttest helper:
+- [x] Implement the general constructor and the vttest helper:
   ```rust
   impl PtySession {
       /// Spawn `cmd` under a PTY of the given size.
@@ -329,7 +331,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
 
   **Cross-section reuse note:** Section 03 adds `spawn_tack(cols, rows)` as a sibling helper. Section 02's `TerminfoEnv` provides the env var pair (`TERM`, `TERMINFO_DIRS`) that tack-spawning helpers will set. Document this as a `// See: Section 03 spawn_tack helper` comment above `spawn_vttest` so the next implementer knows where the family of constructors lives.
 
-- [ ] Port the four PTY-pump methods verbatim from `session.rs:114-184`:
+- [x] Port the four PTY-pump methods verbatim from `session.rs:114-184`:
   ```rust
   impl PtySession {
       /// Drain all currently-buffered PTY output into Term, writing
@@ -408,7 +410,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
 
   These bodies are LITERAL copies from `session.rs:114-184`. Do not "improve" them as part of this section — that would defeat the zero-behavioral-change goal. Improvements (e.g., async-aware drain, better cancellation) belong in a follow-up section if needed.
 
-- [ ] Implement grid serialization (`grid_text` and the free-function `grid_chars`), porting from `session.rs:187-229`:
+- [x] Implement grid serialization (`grid_text` and the free-function `grid_chars`), porting from `session.rs:187-229`:
   ```rust
   impl PtySession {
       /// Serialize the visible grid to text, preserving full width.
@@ -467,7 +469,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
 
   Note: the existing free function `grid_chars(term: &Term<PtyResponder>) -> Vec<Vec<char>>` in `session.rs:216-229` is folded into a method on `PtySession`. Adapter code in 01.3 updates call sites accordingly.
 
-- [ ] Add accessor methods so adapters can reach the inner `Term` without taking ownership:
+- [x] Add accessor methods so adapters can reach the inner `Term` without taking ownership:
   ```rust
   impl PtySession {
       #[must_use]
@@ -482,7 +484,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
   ```
   No `term_mut()` accessor — exposing `&mut Term` would let callers bypass the VTE processor and mutate state behind the protocol parser's back. If a future test legitimately needs to mutate `Term` outside of byte-feeding, add a narrow operation method then.
 
-- [ ] Add the cross-suite tool-availability checker:
+- [x] Add the cross-suite tool-availability checker:
   ```rust
   /// Check if `name` is installed and runnable on PATH.
   ///
@@ -508,16 +510,25 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
   ```
   Both go in `crates/oriterm_test_support/src/session.rs` (or a sibling `availability.rs` submodule if `session.rs` exceeds 400 lines after porting). Per `.claude/rules/code-hygiene.md` 500-line cap: if `session.rs` is approaching 450 lines, split at the natural seam (`session.rs` for `PtySession`/`PtyResponder`, `availability.rs` for `tool_available`/`*_available` helpers).
 
-- [ ] Add unit tests in `crates/oriterm_test_support/src/session/tests.rs` (per `.claude/rules/test-organization.md`: sibling `tests.rs` file, NOT inline `mod tests { ... }`):
-  - [ ] `tool_available_returns_false_for_nonexistent_binary` — call `tool_available("definitely_not_a_real_program_xyz", "--version")`, assert `false`.
-  - [ ] `vttest_available_matches_tool_available` — both should return the same boolean.
-  - [ ] `pty_session_drains_simple_output` — spawn `printf hello` (or `echo hello`) under PTY, drain, assert `grid_text().contains("hello")`. Skip on Windows (no `printf`/`echo` standalone). Matrix: 80x24 only is sufficient — this test exists to prove the spawn/drain pipeline works, not to cover every size.
+- [x] Add unit tests in `crates/oriterm_test_support/src/session/tests.rs` (per `.claude/rules/test-organization.md`: sibling `tests.rs` file, NOT inline `mod tests { ... }`):
+  - [x] `tool_available_returns_false_for_nonexistent_binary` — call `tool_available("definitely_not_a_real_program_xyz", "--version")`, assert `false`.
+  - [x] `vttest_available_matches_tool_available` — both should return the same boolean.
+  - [x] `pty_session_drains_simple_output` — spawn `printf hello` (or `echo hello`) under PTY, drain, assert `grid_text().contains("hello")`. Skip on Windows (no `printf`/`echo` standalone). Matrix: 80x24 only is sufficient — this test exists to prove the spawn/drain pipeline works, not to cover every size.
 
   Add `#[cfg(test)] mod tests;` (semicolon, no body) at the bottom of `session.rs`.
 
-- [ ] Verify: `cargo test -p oriterm_test_support` passes.
-- [ ] Verify: `./clippy-all.sh` green — pedantic + nursery clean for the new crate.
-- [ ] Verify: `./build-all.sh` green for `x86_64-pc-windows-gnu` — the Windows-skipped tests should compile via `#[cfg(unix)]` gating.
+- [x] Verify: `cargo test -p oriterm_test_support` passes.
+- [x] Verify: `./clippy-all.sh` green — pedantic + nursery clean for the new crate.
+- [x] Verify: `./build-all.sh` green for `x86_64-pc-windows-gnu` — the Windows-skipped tests should compile via `#[cfg(unix)]` gating.
+
+**Deviations from the spec text in 01.2:**
+
+1. **No `term_mut()` accessor exposed.** The bullet at line 175 mentions `term_mut()`, but the later bullet at line 485 explicitly forbids it ("exposing `&mut Term` would let callers bypass the VTE processor"). Followed the explicit prohibition, not the earlier paragraph. Section 01.3 / 01.4 adapters reach the inner Term via the immutable `term()` accessor only.
+2. **Two clippy fixes vs verbatim port.** The plan calls for "literal copies" of the upstream session.rs bodies, but the new crate's pedantic + nursery lint surface caught two issues that were previously hidden because the `oriterm_core/tests/vttest/session.rs` integration target is not built by default `cargo clippy --workspace`:
+   - `wait_for` panic-on-`if` → `assert!` (clippy::manual_assert).
+   - `PtyResponder` doc comment first paragraph shortened (clippy::too_long_first_doc_paragraph).
+   Both are semantic-preserving — `assert!` panics when the condition is false, identical behavior to the original `if … panic!()`. Documented here so the 01.3 migration doesn't accidentally re-introduce the originals.
+3. **`tests.rs` uses `/bin/sh -c "printf hello"` instead of bare `printf`.** Bare `printf` is a shell builtin on some shells (zsh) and an external binary on others (bash); routing through `/bin/sh -c` is portable across both and matches the spirit of the plan's "spawn `printf hello` under PTY" instruction. Skipped on Windows via `#[cfg(unix)]`.
 
 ---
 
@@ -531,10 +542,10 @@ This subsection collapses `oriterm_core/tests/vttest/session.rs` from 239 lines 
 
 The "test matrix" for this subsection is the 198-snapshot regression check itself. Run it BEFORE migration to capture a known-good baseline (it should pass — establishing the baseline), then run it AFTER migration and assert exact byte equality.
 
-- [ ] **Baseline capture:** `timeout 150 cargo test -p oriterm_core --test vttest 2>&1 | tee /tmp/vttest_pre.log` — record pass/fail of all menu tests.
-- [ ] Confirm: zero `.snap.new` files exist under `oriterm_core/tests/vttest/snapshots/` after the baseline run. If any exist, the baseline is dirty and must be resolved first (this is a `/add-bug` candidate per CLAUDE.md, but should not be — the suite is currently passing per the overview's "198 snapshots" claim).
+- [x] **Baseline capture:** `timeout 150 cargo test -p oriterm_core --test vttest 2>&1 | tee /tmp/vttest_pre.log` — record pass/fail of all menu tests. Pre: 29/29 pass, 198 .snap files, 0 .snap.new.
+- [x] Confirm: zero `.snap.new` files exist under `oriterm_core/tests/vttest/snapshots/` after the baseline run. If any exist, the baseline is dirty and must be resolved first (this is a `/add-bug` candidate per CLAUDE.md, but should not be — the suite is currently passing per the overview's "198 snapshots" claim). Confirmed clean.
 
-- [ ] Add `oriterm_test_support` to `oriterm_core`'s dev-dependencies in `oriterm_core/Cargo.toml`:
+- [x] Add `oriterm_test_support` to `oriterm_core`'s dev-dependencies in `oriterm_core/Cargo.toml`:
   ```toml
   [dev-dependencies]
   criterion = { version = "0.5", features = ["html_reports"] }
@@ -546,9 +557,9 @@ The "test matrix" for this subsection is the 198-snapshot regression check itsel
   ```
   Maintain alphabetical order. Note: `portable-pty` stays here as a direct dev-dep because `pty_size.rs` (see below) uses it directly without going through `PtySession`.
 
-- [ ] **Delete the pre-existing `vttest_available()` in `oriterm_core/tests/vttest/session.rs:232-239`** before rewriting the file. The new adapter re-exports the shared crate's `vttest_available()` instead — two definitions in two crates would shadow each other depending on import order. Mention this explicitly so the implementer doesn't accidentally keep a second copy.
+- [x] **Delete the pre-existing `vttest_available()` in `oriterm_core/tests/vttest/session.rs:232-239`** before rewriting the file. The new adapter re-exports the shared crate's `vttest_available()` instead — two definitions in two crates would shadow each other depending on import order. Mention this explicitly so the implementer doesn't accidentally keep a second copy. Deleted as part of the rewrite below.
 
-- [ ] Rewrite `oriterm_core/tests/vttest/session.rs` as a thin adapter (target: <60 lines including doc comments):
+- [x] Rewrite `oriterm_core/tests/vttest/session.rs` as a thin adapter (target: <60 lines including doc comments):
   ```rust
   //! Adapter that re-exports the shared `PtySession` infrastructure so
   //! existing vttest menu tests don't have to change their import paths
@@ -593,30 +604,40 @@ The "test matrix" for this subsection is the 198-snapshot regression check itsel
 
   **Important:** the `VtTestSession::new(cols, rows)` constructor cannot be exposed as a method on the type alias (Rust doesn't let you add inherent methods to a re-exported type from another crate). Replace `VtTestSession::new(cols, rows)` call sites with `new_vttest(cols, rows)` OR with `PtySession::spawn_vttest(cols, rows)` — use the latter (clearer at call site, no extra indirection). The per-menu checklist below enumerates exactly which lines change.
 
-  After this rewrite, `oriterm_core/tests/vttest/session.rs` is ~50 lines (down from 239) and contains zero PTY plumbing.
+  After this rewrite, `oriterm_core/tests/vttest/session.rs` is ~50 lines (down from 239) and contains zero PTY plumbing. **Actual: 12 lines** (no `VtTestSession` alias, no `new_vttest`/`grid_chars` shims — see deviation note below).
 
-- [ ] Update `oriterm_core/tests/vttest/menu1.rs` call sites:
-  - [ ] Line 4: `use super::session::{VtTestSession, grid_chars, vttest_available};` → `use super::session::{PtySession, vttest_available}; use super::session::grid_chars;`
-  - [ ] Every `VtTestSession::new(cols, rows)` → `PtySession::spawn_vttest(cols, rows)` (count: per the research, ~6 sites)
-  - [ ] Every `grid_chars(&s.term)` (or similar) → `s.grid_chars()` (count: depends on usage)
-  - [ ] Every `s.term.renderable_content()` → `s.term().renderable_content()` (field-to-accessor migration; the new `PtySession` exposes `term` as a method, not a public field).
-  - [ ] Every `s.cols`/`s.rows` public field access → `s.cols()`/`s.rows()` accessor call. Run `grep -n '\.cols\|\.rows' oriterm_core/tests/vttest/menu1.rs` to enumerate.
-  - [ ] Verify: `cargo test -p oriterm_core --test vttest -- vttest_menu1 vttest_border_fills_80x24` passes locally (one menu at a time keeps the failure surface small).
+- [x] Update `oriterm_core/tests/vttest/menu1.rs` call sites:
+  - [x] Line 4: `use super::session::{VtTestSession, grid_chars, vttest_available};` → `use super::session::{PtySession, vttest_available};`
+  - [x] Every `VtTestSession::new(cols, rows)` → `PtySession::spawn_vttest(cols, rows)` (3 sites in menu1.rs)
+  - [x] Every `grid_chars(&s.term)` (or similar) → `s.grid_chars()` (2 sites in menu1.rs)
+  - [x] Every `s.term.renderable_content()` → `s.term().renderable_content()` — none in menu1.rs
+  - [x] Every `s.cols`/`s.rows` public field access → `s.cols()`/`s.rows()` accessor call — none in menu1.rs (verified by grep)
+  - [x] Verify: full vttest run below covers menu1 (`vttest_menu1_*`, `vttest_border_fills_*`, `vttest_deccolm_resizes_to_132_with_mode_40`)
 
-- [ ] Update `oriterm_core/tests/vttest/menu2.rs` call sites — same pattern. Verify menu2 tests pass.
+- [x] Update `oriterm_core/tests/vttest/menu2.rs` call sites — same pattern. Verify menu2 tests pass.
 
-- [ ] Update `oriterm_core/tests/vttest/menu3.rs` call sites — same pattern. Verify menu3 tests pass. Note: menu3 imports `grid_chars` directly; update to `s.grid_chars()` method calls.
+- [x] Update `oriterm_core/tests/vttest/menu3.rs` call sites — same pattern. Verify menu3 tests pass. Note: menu3 imports `grid_chars` directly; update to `s.grid_chars()` method calls. Also renamed `walk_menu3_subscreens(s: &mut VtTestSession, ...)` → `&mut PtySession`.
 
-- [ ] Update `oriterm_core/tests/vttest/menu4.rs` through `menu8.rs` call sites — same pattern, one file per checkbox row:
-  - [ ] menu4.rs migrated, tests pass
-  - [ ] menu5.rs migrated, tests pass
-  - [ ] menu6.rs migrated, tests pass
-  - [ ] menu7.rs migrated, tests pass
-  - [ ] menu8.rs migrated, tests pass
+- [x] Update `oriterm_core/tests/vttest/menu4.rs` through `menu8.rs` call sites — same pattern, one file per checkbox row:
+  - [x] menu4.rs migrated, tests pass
+  - [x] menu5.rs migrated, tests pass
+  - [x] menu6.rs migrated, tests pass (also renamed `walk_menu6_subscreens(s: &mut VtTestSession, ...)` → `&mut PtySession`)
+  - [x] menu7.rs migrated, tests pass
+  - [x] menu8.rs migrated, tests pass
 
-- [ ] `oriterm_core/tests/vttest/pty_size.rs` does NOT use `VtTestSession` — it uses `portable_pty` directly to verify PTY size propagation. Leave it untouched. The dev-dep on `portable-pty` stays in `oriterm_core/Cargo.toml` for this file.
+- [x] `oriterm_core/tests/vttest/pty_size.rs` does NOT use `VtTestSession` — it uses `portable_pty` directly to verify PTY size propagation. Leave it untouched. The dev-dep on `portable-pty` stays in `oriterm_core/Cargo.toml` for this file. Confirmed untouched.
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 01.1 + 01.2 + 01.3 (the foundation: shared crate creation, PtySession implementation, and the lower-risk text-test migration). Catches any LEAK that survives the extraction, any field/visibility mistakes in `PtySession`, and any subtle behavioral drift in the menu tests before the harder GPU migration in 01.4 lands on top of it.
+- [x] **TPR checkpoint** — `/tpr-review` covering 01.1 + 01.2 + 01.3 (the foundation: shared crate creation, PtySession implementation, and the lower-risk text-test migration). Catches any LEAK that survives the extraction, any field/visibility mistakes in `PtySession`, and any subtle behavioral drift in the menu tests before the harder GPU migration in 01.4 lands on top of it.
+  - Iteration 1 (2026-04-07): 1 medium finding `[TPR-01-001]` — `PtyResponder::take_responses()` reachable via `session.term().event_listener().take_responses()`. Recorded in 01.R.
+  - Fix: narrowed `PtyResponder::new()` and `take_responses()` to `pub(crate)`, removed unused `impl Default for PtyResponder`. Verified clean: `cargo test -p oriterm_test_support` (3/3), `cargo test -p oriterm_core --test vttest` (29/29), `./clippy-all.sh`, `./build-all.sh`.
+  - Iteration 2 (2026-04-07): clean — zero actionable findings. Codex explicitly confirmed "Iteration 2 is clean, and the TPR loop can exit." `third_party_review.status` flipped to `resolved`.
+
+**Deviations from the spec text in 01.3:**
+
+1. **Dropped `VtTestSession` type alias entirely** instead of keeping it as a backwards-compat shim. The plan called for `pub type VtTestSession = PtySession;` so menu helper signatures (`fn(s: &mut VtTestSession, ...)` in menu3.rs and menu6.rs) wouldn't need changes. Instead, I renamed the helper signatures to `&mut PtySession`, which means the alias has zero callers and `dead_code = "deny"` rejects it. Net effect: `oriterm_core/tests/vttest/session.rs` is 12 lines (vs the planned ~50). The planned "follow-up cleanup pass" the spec mentioned is folded into this section. Reasoning: the cleaner end-state was achievable in the same blast radius without extra churn.
+2. **Dropped `grid_chars(&PtySession)` and `new_vttest(...)` adapter wrappers entirely.** With all call sites migrated to `s.grid_chars()` and `PtySession::spawn_vttest(...)`, both wrappers had zero callers and would also have been rejected by `dead_code = "deny"`.
+3. **`oriterm_test_support` dev-dep is alphabetized** between `insta` and `portable-pty` in `oriterm_core/Cargo.toml` (matches the plan listing exactly).
+4. **Filed [BUG-07-005] (medium)** during this subsection: `cargo clippy -p oriterm_core --test vttest -- -D warnings` surfaces 11 pre-existing clippy violations across `menu1.rs` through `menu8.rs` that are NOT caught by `./clippy-all.sh` (which omits `--all-targets`). None caused by this migration — verified by reading my diffs against the violation lines. Tracked in `plans/bug-tracker/section-07-ci-build.md`.
 
 ---
 
@@ -752,7 +773,8 @@ When all findings are triaged:
 - `third_party_review.status` becomes `resolved` or `none`
 -->
 
-- None.
+- [x] `[TPR-01-001][medium]` `crates/oriterm_test_support/src/session/mod.rs:18-50` — `PtySession::term()` exposes `&Term<PtyResponder>`, and because `Term::event_listener()` is public in `oriterm_core`, an external caller can reach `session.term().event_listener().take_responses()` and steal the DA/DSR reply queue that `drain()` / `drain_blocking()` own. Violates the subsection's field/visibility invariant and creates a footgun before the GPU migration in 01.4.
+  Resolved: Fixed on 2026-04-07. Narrowed `PtyResponder::new()` and `PtyResponder::take_responses()` from `pub` to `pub(crate)` so the response-buffer drain is callable only from inside `oriterm_test_support`. Removed the `impl Default for PtyResponder` block (no longer needed since `new` is `pub(crate)` and clippy's `new_without_default` only fires on `pub` constructors). Verified: `cargo test -p oriterm_test_support` (3/3) ✓, `cargo test -p oriterm_core --test vttest` (29/29) ✓, `./clippy-all.sh` ✓, `./build-all.sh` ✓. The `PtyResponder` struct itself stays `pub` because it parametrizes `Term<PtyResponder>` in `PtySession::term()`'s return type — but with no callable methods on the public surface, holding `&PtyResponder` from outside `oriterm_test_support` is now useless.
 
 ---
 

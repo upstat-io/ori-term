@@ -22,6 +22,7 @@ vte = { version = "0.15.0", features = ["ansi"] }
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = "1"
+oriterm_test_support = { path = "../crates/oriterm_test_support" }
 portable-pty = "0.9.0"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

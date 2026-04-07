@@ -1,11 +1,11 @@
 //! vttest menu 1: Cursor movement tests, border fill assertions, and
 //! DECCOLM column mode verification.
 
-use super::session::{VtTestSession, grid_chars, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// Run vttest menu 1 (cursor movement) at a given size, capturing all screens.
 fn run_menu1_cursor_movement(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     // Wait for main menu to fully render.
@@ -160,7 +160,7 @@ fn assert_border_fills_terminal(grid: &[Vec<char>], cols: usize, rows: usize) {
 
 /// Navigate vttest to screen 01 (the border test) and return the grid.
 fn capture_border_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
 
     // Wait for main menu to fully render.
     s.wait_for("Enter choice number", 5000);
@@ -168,7 +168,7 @@ fn capture_border_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
     // Select menu 1, wait for first sub-screen.
     s.send(b"1\r");
 
-    grid_chars(&s.term)
+    s.grid_chars()
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn vttest_border_fills_120x40() {
 
 /// Capture screen 02 (132-col pass) from menu 1 and verify side effects.
 fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     s.wait_for("Enter choice number", 5000);
     s.send(b"1\r");
 
@@ -218,7 +218,7 @@ fn capture_deccolm_screen(cols: u16, rows: u16) -> Vec<Vec<char>> {
     s.send(b"\r");
 
     // Screen 02 (max_cols=132 border after DECCOLM set).
-    grid_chars(&s.term)
+    s.grid_chars()
 }
 
 #[test]

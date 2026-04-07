@@ -1,7 +1,7 @@
 ---
 plan: "tack-conformance"
 title: "Tack Conformance: Automated Terminfo Capability Validation Suite"
-status: not-started
+status: in-progress
 references:
   - "plans/completed/vttest-conformance/"
   - "plans/completed/golden-image-audit/"
