@@ -62,6 +62,17 @@ tack, smoke test, menu navigation, PTY spawn
 tack_available, tic_available, runtime skip
 main menu, "Enter choice number", "tack [n] >"
 basic information, terminal capabilities
+wait_for_child_exit, bounded poll, try_wait, GetExitCodeProcess
+ExitStatus, exit code surfacing, reader EOF, hot-spin mitigation
+grid_text fidelity scope, snapshot canary
+PATH override skip verification, no temporary scaffolding
+snapshot stage before flake loop, git-add ordering
+BUG-07-004 adjacent (Windows ConPTY child-lifecycle, not size)
+Drop guard prerequisite, panic-on-timeout cleanup
+mission tracing, Section 04 handoff, ScenarioSpec prerequisite
+03.4 skip+compile, 03.5 exit+cleanup, 03.T TPR checkpoint
+platform-gated diagnostics (strace Linux, lsof macOS, Get-Process Windows)
+Section 04 hard handoff: ScenarioRunner::run_at must call wait_for_child_exit
 ```
 
 ---
