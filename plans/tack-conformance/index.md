@@ -21,7 +21,7 @@ order: 1
 ## Keyword Clusters by Section
 
 ### Section 01: Shared PtySession Infrastructure
-**File:** `section-01-shared-pty-session.md` | **Status:** Not Started
+**File:** `section-01-shared-pty-session.md` | **Status:** Complete
 
 ```
 PtySession, PtyResponseCollector, oriterm_test_support, test-support crate

@@ -175,12 +175,7 @@ impl PtySession {
     pub fn drain(&mut self) -> usize {
         let mut total = 0;
         while let Ok(data) = self.rx.try_recv() {
-            self.proc.advance(&mut self.term, &data);
-            total += data.len();
-            for resp in self.term.event_listener().take_responses() {
-                let _ = self.writer.write_all(resp.as_bytes());
-            }
-            let _ = self.writer.flush();
+            total += self.feed_and_flush(&data);
         }
         total
     }
@@ -190,14 +185,23 @@ impl PtySession {
     pub fn drain_blocking(&mut self, timeout_ms: u64) -> usize {
         let mut total = 0;
         if let Ok(data) = self.rx.recv_timeout(Duration::from_millis(timeout_ms)) {
-            self.proc.advance(&mut self.term, &data);
-            total += data.len();
-            for resp in self.term.event_listener().take_responses() {
-                let _ = self.writer.write_all(resp.as_bytes());
-            }
-            let _ = self.writer.flush();
+            total += self.feed_and_flush(&data);
         }
         total + self.drain()
+    }
+
+    /// Feed `data` through the VTE processor, then write any captured
+    /// `PtyWrite` responses back to the PTY. Shared core of `drain()`
+    /// and `drain_blocking()`.
+    fn feed_and_flush(&mut self, data: &[u8]) -> usize {
+        self.proc.advance(&mut self.term, data);
+        for resp in self.term.event_listener().take_responses() {
+            // Best-effort: writer errors close the test session naturally
+            // via Drop, so swallowing here is correct for test setup.
+            let _ = self.writer.write_all(resp.as_bytes());
+        }
+        let _ = self.writer.flush();
+        data.len()
     }
 
     /// Wait until no new PTY output arrives for `quiet_ms`.
@@ -250,18 +254,7 @@ impl PtySession {
     /// snapshots).
     #[must_use]
     pub fn grid_text(&self) -> String {
-        let content = self.term.renderable_content();
-        let lines = content.lines;
-        let cols = content.cols;
-
-        let mut grid = vec![vec![' '; cols]; lines];
-        for cell in &content.cells {
-            if cell.line < lines && cell.column.0 < cols {
-                let ch = if cell.ch == '\0' { ' ' } else { cell.ch };
-                grid[cell.line][cell.column.0] = ch;
-            }
-        }
-
+        let grid = self.grid_chars();
         let mut out = String::new();
         for row in &grid {
             let line: String = row.iter().collect();
@@ -272,6 +265,11 @@ impl PtySession {
     }
 
     /// 2D grid of characters at the current viewport.
+    ///
+    /// Empty cells are spaces; `\0` cells are normalized to ` ` (matches
+    /// the historical behavior expected by the existing 198 insta
+    /// snapshots). This is the canonical character extraction; both
+    /// `grid_text` and consumers that need a 2D Vec call into here.
     #[must_use]
     pub fn grid_chars(&self) -> Vec<Vec<char>> {
         let content = self.term.renderable_content();

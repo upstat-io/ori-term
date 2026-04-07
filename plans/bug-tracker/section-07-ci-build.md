@@ -34,6 +34,32 @@ sections:
   Found: 2026-04-02 | Source: tpr-review
   Fix: Add a Windows-specific PTY size test using ConPTY (not `stty`), or use a cross-platform approach that works on both Unix and Windows.
 
+- [ ] `[BUG-07-007][medium]` **vttest screen-walker scaffold duplicated across 13+ functions in two crates** — found by impl-hygiene-review (tack-conformance section 01.N).
+  Repro: read `oriterm/src/gpu/visual_regression/vttest/mod.rs:23-121` (run_menu1_golden + run_menu2_golden), `oriterm/src/gpu/visual_regression/vttest/menus_3_8.rs` (run_menu3/4/6/7/8_golden, 5 functions), and `oriterm_core/tests/vttest/menu1.rs` through `menu8.rs` (run_menuN_X functions, 8+ functions). Each function shares the SAME control-flow skeleton: `headless_env()` (GPU side only) → `PtySession::spawn_vttest(cols, rows)` → `wait_for("Enter choice number", 5000)` → optional snapshot of menu screen → `send(b"<digit>\r")` → loop walking screens with per-screen snapshot/golden assertion until `text.contains("Enter choice number")` → break on `screen > 20`. ~25 lines of identical scaffolding × 13+ instances. The only thing that varies is the per-screen action (insta::assert_snapshot! on the text side, assert_golden on the GPU side) and the menu digit/label.
+  Subsystem: `oriterm_test_support` (canonical home for the helper) + `oriterm_core/tests/vttest/` + `oriterm/src/gpu/visual_regression/vttest/`
+  Found: 2026-04-07 | Source: impl-hygiene-review (tack-conformance section 01.N)
+  Severity: medium — pre-existing duplication that the section 01 deduplication faithfully preserved (zero behavioral change was the section mandate). Per impl-hygiene.md "cross-crate duplication: even 2 instances = extract to a shared crate" rule, this 13+ instance pattern is overdue for extraction.
+  Fix: add a higher-order helper to `oriterm_test_support`:
+  ```rust
+  pub fn walk_vttest_screens(
+      session: &mut PtySession,
+      max_screens: usize,
+      mut on_screen: impl FnMut(&mut PtySession, usize),
+  ) {
+      let mut screen = 1;
+      loop {
+          let text = session.grid_text();
+          if text.contains("Enter choice number") { break; }
+          on_screen(session, screen);
+          session.send(b"\r");
+          screen += 1;
+          if screen > max_screens { break; }
+      }
+  }
+  ```
+  Each `run_menuN_*` function then collapses to ~5 lines that pass a closure for the per-screen snapshot/golden call. Eliminates ~250 lines of duplication across 13 functions in two crates.
+  Note: discovered during the section 01 final hygiene pass. NOT introduced by section 01 — it's pre-deduplication code that the migration correctly preserved verbatim. Section 01 is closing out clean; this is a follow-up for `/fix-bug` (or rolled into a future section's "test infrastructure cleanup" subsection).
+
 - [ ] `[BUG-07-006][medium]` **`./clippy-all.sh` does not enable feature flags — 9 pre-existing clippy violations in `oriterm_ui/src/testing/`** — found by continue-roadmap.
   Repro: `cargo clippy -p oriterm --features gpu-tests --tests -- -D warnings` produces 9 errors. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which uses the default feature set. The `oriterm_ui::testing` module is gated behind `#[cfg(feature = "testing")]`, so it's never linted by CI. Same root cause family as `[BUG-07-005]` (clippy-all scope is too narrow), different surface area (feature-gated lib code vs unconditional test target code).
   Subsystem: `clippy-all.sh` + `oriterm_ui/src/testing/`

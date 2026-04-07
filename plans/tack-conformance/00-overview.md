@@ -19,12 +19,12 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 
 ## Mission Success Criteria
 
-- [ ] `crates/oriterm_test_support` crate exists with shared `PtySession` infrastructure
-- [ ] `PtySession` has explicit `impl Drop` that kills+reaps the child process (fixes pre-existing zombie-leak bug in current `VtTestSession`)
-- [ ] vttest text tests (`oriterm_core/tests/vttest/`) migrated to use shared `PtySession` — all 198 existing snapshots unchanged
-- [ ] vttest GPU golden tests (`oriterm/src/gpu/visual_regression/vttest/`) migrated to use shared `PtySession` — all golden images unchanged
-- [ ] VtTestSession duplication eliminated (LEAK fixed)
-- [ ] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
+- [x] `crates/oriterm_test_support` crate exists with shared `PtySession` infrastructure
+- [x] `PtySession` has explicit `impl Drop` that kills+reaps the child process (fixes pre-existing zombie-leak bug in current `VtTestSession`)
+- [x] vttest text tests (`oriterm_core/tests/vttest/`) migrated to use shared `PtySession` — all 198 existing snapshots unchanged
+- [x] vttest GPU golden tests (`oriterm/src/gpu/visual_regression/vttest/`) migrated to use shared `PtySession` — all golden images unchanged
+- [x] VtTestSession duplication eliminated (LEAK fixed)
+- [x] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
 - [ ] `extra/ori_term.info` terminfo source exists, derived from xterm-256color with explicit capability declarations
 - [ ] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + `TERMINFO_DIRS` pointing to compiled entry
 - [ ] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
@@ -193,7 +193,7 @@ Phase 4 - Verification
 
 | ID | Title | File | Status |
 |----|-------|------|--------|
-| 01 | Shared PtySession Infrastructure | `section-01-shared-pty-session.md` | Not Started |
+| 01 | Shared PtySession Infrastructure | `section-01-shared-pty-session.md` | Complete |
 | 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Not Started |
 | 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Not Started |
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Not Started |
