@@ -20,16 +20,18 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 ## Mission Success Criteria
 
 - [ ] `crates/oriterm_test_support` crate exists with shared `PtySession` infrastructure
+- [ ] `PtySession` has explicit `impl Drop` that kills+reaps the child process (fixes pre-existing zombie-leak bug in current `VtTestSession`)
 - [ ] vttest text tests (`oriterm_core/tests/vttest/`) migrated to use shared `PtySession` — all 198 existing snapshots unchanged
 - [ ] vttest GPU golden tests (`oriterm/src/gpu/visual_regression/vttest/`) migrated to use shared `PtySession` — all golden images unchanged
 - [ ] VtTestSession duplication eliminated (LEAK fixed)
+- [ ] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
 - [ ] `extra/ori_term.info` terminfo source exists, derived from xterm-256color with explicit capability declarations
 - [ ] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + `TERMINFO_DIRS` pointing to compiled entry
-- [ ] Tack test scenarios cover: modes/glitches, ACS/graphic rendition, color, cursor movement (test menu categories)
-- [ ] Tack tool scenarios cover: ANSI status reports, SGR modes, character sets (tools menu categories)
-- [ ] Text snapshots (insta) exist for all navigable tack test screens at 80x24
-- [ ] GPU golden images exist for curated visual tack test subset (color, SGR, character sets)
-- [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline
+- [ ] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
+- [ ] Tack tool scenarios cover EVERY automatable tools screen: ANSI status reports (DA/DSR), SGR modes, character sets, ENQ/ACK, OSC queries. Interactive/overlap tools (scan codes, decompile terminfo) have in-code stubs.
+- [ ] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
+- [ ] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
+- [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys
 - [ ] All tests skip cleanly when tack/tic unavailable (cross-platform: compile everywhere, runtime skip)
 - [ ] `./test-all.sh` green, `./build-all.sh` green, `./clippy-all.sh` green — no regressions
 
@@ -76,6 +78,8 @@ tack binary (PTY) → PtySession → VTE parser → Term → grid state
 ### 1. Single Source of Truth for PTY Test Infrastructure
 
 The VtTestSession duplication between `oriterm_core/tests/vttest/session.rs` and `oriterm/src/gpu/visual_regression/vttest/mod.rs` (95% identical code, 581-line file exceeding 500-line limit) is a LEAK finding. A shared `PtySession` in `crates/oriterm_test_support` eliminates this. The GPU-specific methods (`frame_input`, `assert_golden`) remain in `oriterm` as standalone functions that adapt `PtySession` — the shared crate stays GPU-free.
+
+The same single-source rule applies to the **scenario catalog**: `ScenarioSpec` const values, per-scenario parsers, the `TackNavigator`, and the `ScenarioRunner` all live in `crates/oriterm_test_support::tack_framework`. Both `oriterm_core/tests/tack/` (text scenarios in Sections 05-06) and `oriterm/src/gpu/visual_regression/tack/` (GPU goldens in Section 07) consume the same const ScenarioSpec values via `use oriterm_test_support::tack_framework::scenarios::*`. Test wrapper `#[test] fn`s live near the test target (`oriterm_core/tests/tack/test_menu/*.rs`, `oriterm_core/tests/tack/tools_menu/*.rs`, `oriterm/src/gpu/visual_regression/tack/mod.rs`) — they're thin wrappers calling `ScenarioRunner::run(&scenarios::FOO)`.
 
 ### 2. Pinned Terminfo Entry
 
@@ -162,16 +166,16 @@ Phase 4 - Verification
 
 | Section | Est. Lines | Complexity | Depends On |
 |---------|-----------|------------|------------|
-| 01 Shared PtySession | ~300 new, ~480 deleted | Medium | — |
+| 01 Shared PtySession | ~320 new (incl. Drop), ~480 deleted | Medium | — |
 | 02 Terminfo Provisioning | ~200 | Medium | 01 |
 | 03 Tack Smoke Test | ~100 | Low | 02 |
-| 04 Scenario Framework | ~250 | Medium | 03 |
-| 05 Test Menu Scenarios | ~400 | Medium | 04 |
-| 06 Tools Menu Scenarios | ~300 | Medium | 04 |
-| 07 GPU Golden Images | ~200 | Low | 04 |
-| 08 Keyboard Tests | ~200 | Medium | 01, 02 |
+| 04 Scenario Framework | ~260 (incl. snapshot policy doc) | Medium | 03 |
+| 05 Test Menu Scenarios | ~550 (18 scenarios + 3 stubs) | Medium | 04 |
+| 06 Tools Menu Scenarios | ~420 (7 scenarios + 2 stubs) | Medium | 04 |
+| 07 GPU Golden Images | ~240 (6 goldens) | Low | 01, 02, 04, 05 |
+| 08 Keyboard Tests | ~320 (kf1-kf63) | Medium | 01, 02 |
 | 09 Verification | ~100 | Low | All |
-| **Total new** | **~2,050** | | |
+| **Total new** | **~2,510** | | |
 | **Total deleted** | **~480** | | |
 
 ## Known Bugs (Pre-existing)
@@ -180,7 +184,10 @@ Phase 4 - Verification
 |-----|-----------|-------------|--------|
 | VtTestSession duplicated (LEAK) | No shared test-support crate | Section 01 | Not Started |
 | `vttest/mod.rs` 581 lines (BLOAT) | Mixed concerns: PTY + GPU rendering | Section 01 | Not Started |
+| `VtTestSession::_child` never killed or reaped on Drop — every test leaks a zombie vttest child (std::process::Child does NOT kill on drop) | Missing `impl Drop` that calls `child.kill()` + `child.wait()` | Section 01 (new `impl Drop` on PtySession) | Not Started |
+| `vttest_available()` defined twice: `oriterm_core/tests/vttest/session.rs:232` and `oriterm/src/gpu/visual_regression/vttest/mod.rs:297` (scattered knowledge) | No shared test-support crate | Section 01 (delete both, re-export from shared crate) | Not Started |
 | TERM hardcoded as scattered constant | No canonical terminfo provisioning | Section 02 | Not Started |
+| `oriterm::key_encoding` is `pub(crate)` — not reachable from an integration test target | Over-restricted visibility on a stable, well-tested module | Section 08 adopts the PREFERRED in-crate sibling test approach at `oriterm/src/key_encoding/terminfo_xcheck.rs` so NO visibility change is required. The `pub(crate)` scope stays as-is. | Not Started |
 
 ## Quick Reference
 

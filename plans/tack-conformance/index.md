@@ -1,3 +1,11 @@
+---
+reroute: true
+name: "Tack Conformance"
+full_name: "Tack Conformance: Automated Terminfo Capability Validation Suite"
+status: active
+order: 1
+---
+
 # Tack Conformance Index
 
 > **Maintenance Notice:** Update this index when adding/modifying sections.
@@ -70,6 +78,7 @@ per-scenario parser, test assertions, Done marker
 
 ```
 tack/test, modes, glitches, ACS, graphic rendition, color, cursor movement
+pad_timing, send_strings, labels, function_key_test (stub), edit_terminfo (stub)
 am, os, rmam, smam, bw, xenl, tabs
 bel, flash, civis, cvvis, cnorm, sgr
 colors, pairs, setf, setb, scp, op, ncv, bce
@@ -87,6 +96,8 @@ tack/tools, ANSI status reports, SGR modes, character sets
 DA, DSR, primary device attributes, cursor position
 SGR 0-79, bold, dim, underline, reverse, blink
 G0, G1, GL, GR, character set banks, ACS
+ENQ/ACK, u8, u9, OSC 10, OSC 11, OSC queries
+scan_codes (stub), decompile_terminfo (stub)
 oriterm_core/tests/tack/, text snapshots
 ```
 
@@ -98,10 +109,11 @@ oriterm_core/tests/tack/, text snapshots
 ```
 GPU, golden images, visual regression, render_to_pixels
 headless_env, compare_with_reference, PIXEL_TOLERANCE
-tack color, tack SGR, tack character sets
+tack color, tack SGR, tack character sets, tack modes
 FrameInput, frame_input, assert_golden
 oriterm/src/gpu/visual_regression/tack/
 oriterm/tests/references/tack_*.png
+6 goldens: color x3 + graphic_rendition + character_sets + modes
 ```
 
 ---
@@ -111,9 +123,13 @@ oriterm/tests/references/tack_*.png
 
 ```
 keyboard, function keys, smkx, rmkx, key encoding
-kf1-kf63, kcub1, kcud1, kcuf1, kcuu1
-oriterm, key_encoding, KeyEncoder
-tack/test/fkey, ENQ/ACK, u8, u9
+kf1-kf12 (unmodified), kf13-kf24 (shift), kf25-kf36 (ctrl)
+kf37-kf48 (ctrl+shift), kf49-kf60 (alt), kf61-kf63 (alt+shift)
+kcub1, kcud1, kcuf1, kcuu1 (cursor, app + normal mode)
+kbs, khome, kend, kpp, knp, kdch1, kich1 (editing)
+oriterm, key_encoding, KeyEncoder, in-crate sibling test
+infocmp_query, decode_terminfo_string, CapMapping
+oriterm/src/key_encoding/terminfo_xcheck.rs (preferred)
 ```
 
 ---
