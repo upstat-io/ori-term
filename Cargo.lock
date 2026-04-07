@@ -1935,6 +1935,7 @@ dependencies = [
  "open",
  "oriterm_core",
  "oriterm_mux",
+ "oriterm_test_support",
  "oriterm_ui",
  "parking_lot",
  "pollster",

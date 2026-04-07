@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "01.4"
     title: "Migrate oriterm vttest GPU golden tests onto PtySession"
-    status: not-started
+    status: complete
   - id: "01.5"
     title: "Verify zero behavioral change (snapshot + PNG byte-equality)"
     status: not-started
@@ -647,7 +647,7 @@ The "test matrix" for this subsection is the 198-snapshot regression check itsel
 
 This is the higher-risk half of the migration. The GPU file is 581 lines today and exceeds the 500-line limit (BLOAT). After this subsection, it shrinks to <300 lines and contains only GPU-specific helpers — no PTY/Term/VTE plumbing at all.
 
-- [ ] Add `oriterm_test_support` to `oriterm`'s dev-dependencies in `oriterm/Cargo.toml`:
+- [x] Add `oriterm_test_support` to `oriterm`'s dev-dependencies in `oriterm/Cargo.toml`:
   ```toml
   [dev-dependencies]
   anyhow = "1"
@@ -659,15 +659,15 @@ This is the higher-risk half of the migration. The GPU file is 581 lines today a
   ```
   Note: `portable-pty` is currently a NORMAL dependency in `oriterm` (line 19 of `oriterm/Cargo.toml`) because mux integration uses it at runtime. Leave it as-is — the new dev-dep does not change normal dep wiring.
 
-- [ ] **Delete the pre-existing `vttest_available()` in `oriterm/src/gpu/visual_regression/vttest/mod.rs:297`** as part of the cleanup below. The shared crate's re-export replaces it. Two definitions in two crates would shadow each other depending on import order.
+- [x] **Delete the pre-existing `vttest_available()` in `oriterm/src/gpu/visual_regression/vttest/mod.rs:297`** as part of the cleanup below. The shared crate's re-export replaces it. Two definitions in two crates would shadow each other depending on import order.
 
-- [ ] Delete the duplicate `PtyResponder` from `oriterm/src/gpu/visual_regression/vttest/mod.rs:27-50` (lines 27-50 in the current file).
+- [x] Delete the duplicate `PtyResponder` from `oriterm/src/gpu/visual_regression/vttest/mod.rs:27-50` (lines 27-50 in the current file).
 
-- [ ] Delete the duplicate `VtTestSession` struct definition from `oriterm/src/gpu/visual_regression/vttest/mod.rs:52-121` (lines 52-121).
+- [x] Delete the duplicate `VtTestSession` struct definition from `oriterm/src/gpu/visual_regression/vttest/mod.rs:52-121` (lines 52-121).
 
-- [ ] Delete the duplicate `drain`, `drain_blocking`, `wait`, `wait_for`, `send`, `grid_text` method implementations on `VtTestSession` from `mod.rs:122-284` (the methods that mirror `oriterm_core/tests/vttest/session.rs:114-207`).
+- [x] Delete the duplicate `drain`, `drain_blocking`, `wait`, `wait_for`, `send`, `grid_text` method implementations on `VtTestSession` from `mod.rs:122-284` (the methods that mirror `oriterm_core/tests/vttest/session.rs:114-207`).
 
-- [ ] Replace the deleted block with a thin adapter at the top of the file:
+- [x] Replace the deleted block with a thin adapter at the top of the file:
   ```rust
   use oriterm_test_support::{PtyResponder, PtySession, vttest_available};
 
@@ -677,7 +677,7 @@ This is the higher-risk half of the migration. The GPU file is 581 lines today a
   ```
   Drop the `mod.rs`-local `use std::io::{Read, Write}`, `use std::sync::{Arc, Mutex}`, `use std::thread`, `use std::time::Duration`, and `use portable_pty::{...}` lines that are no longer needed (those imports lived in the deleted code).
 
-- [ ] Move the GPU-specific helpers (`assert_golden`, `frame_input`, `frame_input_with_blink`, `cell_brightness`) into a free-function or trait-extension form so they take `&PtySession` (or `&mut PtySession`) instead of being methods on the deleted `VtTestSession`:
+- [x] Move the GPU-specific helpers (`assert_golden`, `frame_input`, `frame_input_with_blink`, `cell_brightness`) into a free-function or trait-extension form so they take `&PtySession` (or `&mut PtySession`) instead of being methods on the deleted `VtTestSession`. **Extracted into a sibling `render.rs` submodule** to hit the `<300` line target on `mod.rs`. See deviation note below.
   ```rust
   /// Render the current `PtySession` grid through the GPU and compare
   /// against a golden reference PNG. Mirrors the pre-deduplication
@@ -711,24 +711,32 @@ This is the higher-risk half of the migration. The GPU file is 581 lines today a
   ```
   All four helpers are GPU-specific and stay in `oriterm/` (per `.claude/rules/crate-boundaries.md`: GPU types must not leak into `oriterm_core`, `oriterm_ui`, or `oriterm_test_support`).
 
-- [ ] Update the call sites inside `mod.rs` (the `run_menu1_golden`, `run_menu2_golden`, `vttest_blink_multi_frame` test functions) to construct `PtySession::spawn_vttest(cols, rows)` and pass the session to `assert_golden(&session, ...)` instead of calling `session.assert_golden(...)`.
+- [x] Update the call sites inside `mod.rs` (the `run_menu1_golden`, `run_menu2_golden`, `vttest_blink_multi_frame` test functions) to construct `PtySession::spawn_vttest(cols, rows)` and pass the session to `assert_golden(&session, ...)` instead of calling `session.assert_golden(...)`. Also updated `s.term.renderable_content()` → `s.term().renderable_content()` (3 sites).
 
-- [ ] Update any field access sites for `pub cols: u16` and `pub rows: u16` — the current `VtTestSession` exposes these as public fields (see `oriterm/src/gpu/visual_regression/vttest/mod.rs:207-208`: `self.cols as usize`, `self.rows as usize`). The new `PtySession` exposes them as accessor methods (`cols()`, `rows()`). Change `self.cols`/`self.rows` to `session.cols()`/`session.rows()` inside the free-function `frame_input(session, cell)` body.
+- [x] Update any field access sites for `pub cols: u16` and `pub rows: u16` — the current `VtTestSession` exposes these as public fields (see `oriterm/src/gpu/visual_regression/vttest/mod.rs:207-208`: `self.cols as usize`, `self.rows as usize`). The new `PtySession` exposes them as accessor methods (`cols()`, `rows()`). Change `self.cols`/`self.rows` to `session.cols()`/`session.rows()` inside the free-function `frame_input(session, cell)` body.
 
-- [ ] Update `oriterm/src/gpu/visual_regression/vttest/menus_3_8.rs`:
-  - [ ] Line 3: `use super::{VtTestSession, vttest_available};` → `use super::{assert_golden, PtySession, vttest_available};`
-  - [ ] Every `VtTestSession::new(cols, rows)` (5 sites per the research) → `PtySession::spawn_vttest(cols, rows)`
-  - [ ] Every `s.assert_golden(name, ...)` → `assert_golden(&s, name, ...)`
-  - [ ] Verify: `cargo test -p oriterm --features gpu-tests -- vttest_golden_menu3 vttest_golden_menu4` passes locally (one menu at a time).
+- [x] Update `oriterm/src/gpu/visual_regression/vttest/menus_3_8.rs`:
+  - [x] Line 3: `use super::{VtTestSession, vttest_available};` → `use oriterm_test_support::{PtySession, vttest_available}; use super::render::assert_golden;`
+  - [x] Every `VtTestSession::new(cols, rows)` (5 sites per the research) → `PtySession::spawn_vttest(cols, rows)`
+  - [x] Every `s.assert_golden(name, ...)` → `assert_golden(&s, name, ...)`
+  - [x] Verify: full `vttest_golden` filter run (`cargo test -p oriterm --features gpu-tests -- vttest_golden`) passed all 11 tests; `vttest_blink_multi_frame` also passed in a separate filter.
 
-- [ ] Verify line count of the rewritten `oriterm/src/gpu/visual_regression/vttest/mod.rs`:
-  - [ ] Target: <300 lines (was 581)
-  - [ ] Hard gate: <500 lines (the file MUST be under the BLOAT threshold from `.claude/rules/code-hygiene.md` after this subsection, no exceptions)
-  - [ ] If still over 500, split: extract `frame_input` / `frame_input_with_blink` / `cell_brightness` into a sibling `frame_input.rs` submodule.
+- [x] Verify line count of the rewritten `oriterm/src/gpu/visual_regression/vttest/mod.rs`:
+  - [x] Target: <300 lines (was 581) — **achieved: 275 lines** (after splitting render helpers into `render.rs`)
+  - [x] Hard gate: <500 lines (the file MUST be under the BLOAT threshold from `.claude/rules/code-hygiene.md` after this subsection, no exceptions) — passed
+  - [x] If still over 500, split: extract `frame_input` / `frame_input_with_blink` / `cell_brightness` into a sibling `frame_input.rs` submodule. — Done preemptively (extracted to `render.rs`) since the simple deletion alone would have landed at ~365 lines, missing the <300 target.
 
-- [ ] Verify: `cargo build -p oriterm --features gpu-tests` succeeds with no warnings.
-- [ ] Verify: `cargo test -p oriterm --features gpu-tests -- vttest_golden` passes — all 98 PNG goldens still match.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 01.4 specifically (the GPU migration is the higher-risk half — separate checkpoint from 01.1-01.3 to keep findings narrowly scoped).
+- [x] Verify: `cargo build -p oriterm --features gpu-tests` succeeds with no warnings.
+- [x] Verify: `cargo test -p oriterm --features gpu-tests -- vttest_golden` passes — all 98 PNG goldens still match (12/12 GPU vttest tests including `vttest_blink_multi_frame`).
+- [x] **TPR checkpoint** — `/tpr-review` covering 01.4 specifically (the GPU migration is the higher-risk half — separate checkpoint from 01.1-01.3 to keep findings narrowly scoped).
+  - Iteration 1 (2026-04-07): clean — zero actionable findings. Codex independently verified the crate boundary, the immutable `&PtySession` render path, the absence of deleted-symbol stragglers, the `vttest_blink_multi_frame` test logic preservation, file-size compliance, and re-ran the suite (`vttest_golden` 11/11, `vttest_blink_multi_frame`, architecture 10/10, `oriterm_test_support` 3/3) on its own machine. No fixes required. TPR loop exits.
+
+**Deviations from the spec text in 01.4:**
+
+1. **GPU helpers extracted into sibling `render.rs` submodule**, not kept as free functions in `mod.rs`. The plan suggested keeping them in `mod.rs` and only splitting if the file exceeded 500 lines. Simple deletion alone would have landed `mod.rs` at ~365 lines — under the 500-line BLOAT gate but over the <300 target. Splitting `frame_input` / `frame_input_with_blink` / `assert_golden` / `cell_brightness` into `render.rs` got `mod.rs` to 275 lines and `render.rs` to 147 lines. Both files single-responsibility, both under 500.
+2. **Re-exports from `oriterm_test_support` only include what's used.** The plan suggested `use oriterm_test_support::{PtyResponder, PtySession, vttest_available};` but `PtyResponder` is no longer needed at any call site in `oriterm/` (it's only reachable via `Term<PtyResponder>` in the type system). Dropping the unused import keeps the surface minimal per impl-hygiene.
+3. **`menus_3_8.rs` imports `oriterm_test_support` directly** (`use oriterm_test_support::{PtySession, vttest_available};`) rather than via `super::` re-export, plus `use super::render::assert_golden;` for the GPU helper. The plan called for `use super::{assert_golden, PtySession, vttest_available};` — direct imports avoid an unnecessary re-export shim in `mod.rs`.
+4. **Filed [BUG-07-006] (medium)** during this subsection: `cargo clippy -p oriterm --features gpu-tests --tests -- -D warnings` surfaces 9 pre-existing clippy violations in `oriterm_ui/src/testing/` (5 files). Same root cause family as `[BUG-07-005]` — `./clippy-all.sh` doesn't enable feature flags, so the `oriterm_ui::testing` cfg-gated module is never linted by CI. None caused by 01.4. Tracked in `plans/bug-tracker/section-07-ci-build.md`.
 
 ---
 
