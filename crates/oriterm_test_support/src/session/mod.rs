@@ -331,5 +331,29 @@ pub fn vttest_available() -> bool {
     tool_available("vttest", "--help")
 }
 
+/// Check if `tic` (terminfo compiler) is installed.
+///
+/// Probe is `tic -V`, which is the version flag every ncurses build
+/// (BSD and GNU) supports. A too-old `tic` (ncurses < 6.0) may exist
+/// and still fail to compile modern extension caps; in that case
+/// `TerminfoEnv::compile()` panics with the tic stderr output, which
+/// IS the failure contract — the user sees the message and upgrades
+/// their ncurses package.
+#[must_use]
+pub fn tic_available() -> bool {
+    tool_available("tic", "-V")
+}
+
+/// Check if `infocmp` (terminfo decompiler / inspector) is installed.
+///
+/// Probe is `infocmp -V`. Used by `terminfo` round-trip tests to
+/// gate cleanly when `infocmp` is missing. `TerminfoEnv::compile()`
+/// itself never depends on `infocmp` — that gate is enforced by
+/// keeping the `compile()` constructor pure-`tic`.
+#[must_use]
+pub fn infocmp_available() -> bool {
+    tool_available("infocmp", "-V")
+}
+
 #[cfg(test)]
 mod tests;

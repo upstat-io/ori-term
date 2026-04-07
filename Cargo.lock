@@ -2023,6 +2023,7 @@ version = "0.2.0-alpha.20260406"
 dependencies = [
  "oriterm_core",
  "portable-pty",
+ "tempfile",
  "vte",
 ]
 
