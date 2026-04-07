@@ -420,20 +420,28 @@ The types are pure data — no I/O, no PtySession. They describe scenarios, not 
           let grid_text = session.grid_text();
           let parsed = (spec.parser)(&grid_text);
 
-          // Quit tack cleanly so the child reaps quickly.
-          // 'q' may need to be sent multiple times to back out of
-          // submenus — three q's covers any nesting depth tack uses.
+          // Quit tack cleanly. The 'q' keystroke sequence navigates
+          // back out of any submenu nesting — tack accepts multiple
+          // 'q's to back out of nested menus.
           session.send(b"q\n");
           session.send(b"q\n");
           session.send(b"q\n");
-          session.wait(500);
+
+          // HARD CONTRACT from Section 03: observe actual child
+          // termination via try_wait(), not a 500 ms wall-clock wait.
+          // The bare `session.wait(500)` antipattern this replaces
+          // does NOT see child exit — it only waits for PTY output
+          // to quiesce. Section 03 exists to prevent exactly that
+          // regression. See section-03-tack-smoke-test.md "Section 04
+          // handoff contract" at the end of 03.3.
+          let _exit = session.wait_for_child_exit(2_000);
 
           ScenarioOutcome { id: spec.id, grid_text, parsed }
       }
   }
   ```
 
-  **Quitting depth:** the comment says "three q's covers any nesting depth." This is a guess based on tack's main-menu / submenu / sub-submenu structure. If observed runs leave zombies because `q\n` doesn't exit cleanly, raise it or check the exit status. Section 05 will exercise this — fix on first observed flake.
+  **Quitting depth:** the comment says "three q's covers any nesting depth." This is a guess based on tack's main-menu / submenu / sub-submenu structure. If observed runs leave zombies because `q\n` doesn't exit cleanly, raise it or check the exit status. Section 05 will exercise this — fix on first observed flake. The `wait_for_child_exit(2_000)` guard is the safety net: if three `q\n`s are insufficient, the 2-second deadline trips and the panic message surfaces the current grid so the scenario author sees exactly where tack got stuck.
 
 - [ ] Add `LiveSession` wrapper and `run_with_session_at` for Section 07's GPU goldens (defined here so the framework is feature-complete in one place):
   ```rust
@@ -651,6 +659,8 @@ The first real scenario. It validates the entire framework from top to bottom: s
 - [ ] `crates/oriterm_test_support/src/tack_framework/navigator/mod.rs` defines `TackNavigator` with rich panic messages on timeout
 - [ ] `crates/oriterm_test_support/src/tack_framework/navigator/tests.rs` includes the `should_panic` test for the timeout error format
 - [ ] `crates/oriterm_test_support/src/tack_framework/runner.rs` defines `ScenarioRunner::run()`, `run_at(cols, rows)`, `run_with_session_at(cols, rows)`, `available()`, `ScenarioOutcome`, and `LiveSession`
+- [ ] `ScenarioRunner::run_at` uses `session.wait_for_child_exit(2_000)` after the `send(b"q\n")` sequence — NOT `session.wait(500)`. The `wait(500)` antipattern does not observe child termination and re-introduces the zombie/FD-leak risk Section 03 exists to prevent. This is enforced by the Section 03 "Section 04 handoff contract" at the end of 03.3.
+- [ ] No `MenuStep::wait_for` / `ScenarioSpec::ready_anchor` value in Section 04 hard-codes menu text that is not empirically present in Section 03's committed smoke-test snapshot OR a Section 04-generated sibling snapshot produced via `INSTA_UPDATE=1`. Inventing prompt strings (e.g., `"Press any key"`, `"— more —"`) without first observing them in a committed snapshot is a LEAK of scattered knowledge.
 - [ ] `crates/oriterm_test_support/src/lib.rs` declares `pub mod tack_framework;` and re-exports the framework types at crate root
 - [ ] `oriterm_core/tests/tack/main.rs` does NOT contain `mod framework;` — it imports from `oriterm_test_support::tack_framework::*`
 - [ ] `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` defines `pub const TACK_MODES_AM: ScenarioSpec` and `pub fn parse_modes_screen` parser
