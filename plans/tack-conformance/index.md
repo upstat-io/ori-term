@@ -55,7 +55,7 @@ kf1-kf63, BUG-07-008, child-process integrity test
 ---
 
 ### Section 03: Tack Smoke Test
-**File:** `section-03-tack-smoke-test.md` | **Status:** Not Started
+**File:** `section-03-tack-smoke-test.md` | **Status:** Complete
 
 ```
 tack, smoke test, menu navigation, PTY spawn

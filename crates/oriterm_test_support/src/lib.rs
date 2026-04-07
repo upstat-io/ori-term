@@ -20,6 +20,7 @@ pub mod session;
 pub mod terminfo;
 
 pub use session::{
-    PtyResponder, PtySession, infocmp_available, tic_available, tool_available, vttest_available,
+    PtyResponder, PtySession, infocmp_available, tack_available, tic_available, tool_available,
+    vttest_available,
 };
 pub use terminfo::{TerminfoEnv, TerminfoVariant};

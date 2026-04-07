@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use oriterm_core::event::{Event, EventListener};
 use oriterm_core::{Term, Theme};
-use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, ExitStatus, PtySize, native_pty_system};
+
+use crate::terminfo::TerminfoEnv;
 
 /// Captures `PtyWrite` responses so the test driver can write them back.
 ///
@@ -137,7 +139,7 @@ impl PtySession {
     /// is preset so DECCOLM (mode 3) actually resizes the grid to
     /// 80/132 columns — vttest's 132-column iteration relies on this.
     ///
-    /// See: Section 03 `spawn_tack` helper for the analogous tack constructor.
+    /// See: [`Self::spawn_tack`] for the analogous tack constructor.
     #[must_use]
     pub fn spawn_vttest(cols: u16, rows: u16) -> Self {
         let mut cmd = CommandBuilder::new("vttest");
@@ -147,6 +149,31 @@ impl PtySession {
         let mut session = Self::spawn(cmd, cols, rows);
         session.proc.advance(&mut session.term, b"\x1b[?40h");
         session
+    }
+
+    /// Spawn `tack` at the given grid size, using the supplied
+    /// [`TerminfoEnv`] to pin `TERM`, `TERMINFO`, and `TERMINFO_DIRS`.
+    ///
+    /// `tack` reads the terminfo entry named by `$TERM` from the
+    /// directories listed in `$TERMINFO_DIRS` (or `$TERMINFO` — some
+    /// ncurses consumers honor only one of the two).
+    /// [`TerminfoEnv::apply_env`] sets all three at once, hiding the
+    /// env-var details from this call site. Tests in Sections 03-06 of
+    /// the tack-conformance plan share this single canonical tack
+    /// invocation site so any future change to terminfo plumbing happens
+    /// in exactly one place.
+    ///
+    /// We do NOT pass `-i` — tack's init sequences are part of what we
+    /// want to test.
+    #[must_use]
+    pub fn spawn_tack(env: &TerminfoEnv, cols: u16, rows: u16) -> Self {
+        let mut cmd = CommandBuilder::new("tack");
+        // Pass the term name as a positional arg so tack picks it up
+        // under both ncurses and BSD curses, regardless of which env var
+        // the implementation consults first.
+        cmd.arg(env.term());
+        env.apply_env(&mut cmd);
+        Self::spawn(cmd, cols, rows)
     }
 
     /// Borrow the inner [`Term`] for grid inspection.
@@ -238,6 +265,75 @@ impl PtySession {
                 "timed out waiting for {needle:?} after {timeout_ms}ms.\nGrid:\n{}",
                 self.grid_text()
             );
+        }
+    }
+
+    /// Wait until the child process exits, with a hard timeout.
+    ///
+    /// Returns the [`ExitStatus`] on clean exit. Panics with the
+    /// current grid contents on timeout — the panic message tells the
+    /// test author exactly what was on screen when the child failed
+    /// to exit.
+    ///
+    /// Used by tack/vttest tests after sending `q\n` (or whatever the
+    /// tool's quit key is) to assert the child actually terminated,
+    /// not just that the parent stopped reading bytes.
+    ///
+    /// Implementation note: this polls
+    /// [`portable_pty::Child::try_wait`] (Unix: `waitpid(WNOHANG)`;
+    /// Windows: `GetExitCodeProcess` — NOT `WaitForSingleObject`,
+    /// see `crates/portable-pty/src/win/mod.rs` `WinChild::is_complete`).
+    /// On the `Ok(None)` branch the method calls
+    /// [`Self::drain_blocking`] to forward any late output, then
+    /// sleeps 10 ms if nothing was drained — this bounds the poll
+    /// rate to ~100 Hz so the loop never hot-spins between reader EOF
+    /// and `try_wait` observing termination.
+    ///
+    /// Delegates to [`Self::wait_for_child_exit_inner`] so the test
+    /// suite can pin the bounded-poll invariant via a deterministic
+    /// iteration counter (see
+    /// `pty_session_wait_for_child_exit_bounded_poll_invariant`).
+    pub fn wait_for_child_exit(&mut self, timeout_ms: u64) -> ExitStatus {
+        self.wait_for_child_exit_inner(timeout_ms, || {})
+    }
+
+    /// Inner body of [`Self::wait_for_child_exit`] — see that method
+    /// for the bounded-poll contract (this helper implements it
+    /// verbatim). The only reason this exists as a separate function
+    /// is the `on_iter` callback: the public wrapper passes a no-op
+    /// (zero cost), and the test suite passes an iteration counter to
+    /// pin the invariant via
+    /// `pty_session_wait_for_child_exit_bounded_poll_invariant` in
+    /// [`tests`].
+    fn wait_for_child_exit_inner<F: FnMut()>(
+        &mut self,
+        timeout_ms: u64,
+        mut on_iter: F,
+    ) -> ExitStatus {
+        const POLL_SLEEP: Duration = Duration::from_millis(10);
+        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+        loop {
+            on_iter();
+            match self.child.try_wait() {
+                Ok(Some(status)) => return status,
+                Ok(None) => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "child did not exit within {timeout_ms}ms.\nGrid:\n{}",
+                        self.grid_text()
+                    );
+                    // Drain any final output while we wait. If the
+                    // reader thread has already closed its channel
+                    // (EOF after child exit), `drain_blocking` returns
+                    // 0 immediately — bound the poll rate so we don't
+                    // burn CPU between reader EOF and try_wait()
+                    // observing exit.
+                    if self.drain_blocking(50) == 0 {
+                        thread::sleep(POLL_SLEEP);
+                    }
+                }
+                Err(e) => panic!("PtySession::wait_for_child_exit: try_wait error: {e}"),
+            }
         }
     }
 
@@ -345,6 +441,16 @@ pub fn vttest_available() -> bool {
 #[must_use]
 pub fn tic_available() -> bool {
     tool_available("tic", "-V")
+}
+
+/// Check if `tack` (terminfo action checker, ncurses) is installed.
+///
+/// Tack ships with ncurses on Linux/macOS, not on native Windows.
+/// Use this gate at the top of every test that spawns tack so the
+/// suite skips cleanly on platforms missing the tool.
+#[must_use]
+pub fn tack_available() -> bool {
+    tool_available("tack", "-V")
 }
 
 /// Check if `infocmp` (terminfo decompiler / inspector) is installed.
