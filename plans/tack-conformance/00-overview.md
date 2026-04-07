@@ -196,7 +196,7 @@ Phase 4 - Verification
 |----|-------|------|--------|
 | 01 | Shared PtySession Infrastructure | `section-01-shared-pty-session.md` | Complete |
 | 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Complete |
-| 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Not Started |
+| 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Complete |
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Not Started |
 | 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Not Started |
 | 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Not Started |

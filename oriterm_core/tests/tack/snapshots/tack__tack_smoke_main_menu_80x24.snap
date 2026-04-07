@@ -1,0 +1,28 @@
+---
+source: oriterm_core/tests/tack/main.rs
+expression: grid
+---
+                                                                                
+Name: ori_term|ori_term terminal emulator                                       
+\r ^M (cr)    = ^M                                                              
+\n ^J (ind)   = ^J                                                              
+\b ^H (cub1)  = ^H                                                              
+\t ^I (ht)    = ^I                                                              
+      (nel)   = ^[E                                                             
+      (clear) = ^[[H^[[2J                                                       
+      (home)  = ^[[H                                                            
+ENQ   (u9)    = ^[[c                                                            
+ACK   (u8)    = ^[[?%[;0123456789]c                                             
+                                                                                
+Terminal size: 80 x 24.  Baud rate: 38400.  Frame size: 10.0                    
+                                                                                
+Main Menu                                                                       
+ b) display basic information                                                   
+ m) change modes                                                                
+ t) tools                                                                       
+ n) begin testing                                                               
+ l) start logging                                                               
+ q) quit                                                                        
+ ?) help                                                                        
+                                                                                
+tack [n] >
