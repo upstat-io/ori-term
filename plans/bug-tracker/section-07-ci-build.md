@@ -34,6 +34,21 @@ sections:
   Found: 2026-04-02 | Source: tpr-review
   Fix: Add a Windows-specific PTY size test using ConPTY (not `stty`), or use a cross-platform approach that works on both Unix and Windows.
 
+- [ ] `[BUG-07-006][medium]` **`./clippy-all.sh` does not enable feature flags — 9 pre-existing clippy violations in `oriterm_ui/src/testing/`** — found by continue-roadmap.
+  Repro: `cargo clippy -p oriterm --features gpu-tests --tests -- -D warnings` produces 9 errors. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which uses the default feature set. The `oriterm_ui::testing` module is gated behind `#[cfg(feature = "testing")]`, so it's never linted by CI. Same root cause family as `[BUG-07-005]` (clippy-all scope is too narrow), different surface area (feature-gated lib code vs unconditional test target code).
+  Subsystem: `clippy-all.sh` + `oriterm_ui/src/testing/`
+  Found: 2026-04-07 | Source: continue-roadmap
+  Locations:
+  - `oriterm_ui/src/testing/scene_snapshot/mod.rs:101:12,28,44` — `float_cmp` (3×)
+  - `oriterm_ui/src/testing/scene_snapshot/mod.rs:123:5` — `if_not_else`
+  - `oriterm_ui/src/testing/scene_snapshot/mod.rs:176:14` — clippy lint (TBD)
+  - `oriterm_ui/src/testing/harness.rs:46:37` — clippy lint (TBD)
+  - `oriterm_ui/src/testing/harness_dispatch.rs:56:13` — clippy lint (TBD)
+  - `oriterm_ui/src/testing/mock_measurer/mod.rs:28:5` — clippy lint (TBD)
+  - `oriterm_ui/src/testing/query.rs:19:25` — clippy lint (TBD)
+  Fix: (1) update each violation site, and (2) add `--features testing` to `./clippy-all.sh` (or add `cargo clippy --workspace --all-features` as a sibling step) so feature-gated code is gated by CI going forward. None caused by tack-conformance section 01.4 GPU migration — verified by reading my diffs against violation lines (none of the modified files are oriterm_ui).
+  Note: Active work in tack-conformance section 01.4 (GPU vttest migration) does not modify the lines flagged above. Discovered when running `cargo clippy --features gpu-tests --tests` to verify my changes were clean; my changes WERE clean — these errors come from the feature-gated `oriterm_ui::testing` module which my new dev-dep on `oriterm_test_support` had nothing to do with.
+
 - [ ] `[BUG-07-005][medium]` **`./clippy-all.sh` does not lint test targets — 11 pre-existing clippy violations in `oriterm_core/tests/vttest/`** — found by continue-roadmap.
   Repro: `cargo clippy -p oriterm_core --test vttest -- -D warnings` produces 11 errors. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which only checks lib + bin targets, so test-target violations have been silently passing CI.
   Subsystem: `clippy-all.sh` + `oriterm_core/tests/vttest/menu*.rs`
