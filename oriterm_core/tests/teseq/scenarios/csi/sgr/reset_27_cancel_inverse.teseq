@@ -1,0 +1,5 @@
+: Esc [ 7 ; 3 m
+|InvItalic|
+: Esc [ 27 m
+|Italic|
+: Esc [ 0 m

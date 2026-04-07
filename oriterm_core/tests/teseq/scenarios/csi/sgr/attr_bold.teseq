@@ -1,0 +1,4 @@
+: Esc [ 1 m
+|Bold text|
+: Esc [ 0 m
+|Normal|

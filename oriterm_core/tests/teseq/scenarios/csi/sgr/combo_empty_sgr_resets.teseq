@@ -1,0 +1,4 @@
+: Esc [ 1 ; 3 ; 31 m
+|Styled|
+: Esc [ m
+|Plain|

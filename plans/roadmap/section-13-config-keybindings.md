@@ -1,8 +1,8 @@
 ---
 section: 13
 title: Configuration & Keybindings
-status: complete
-reviewed: true
+status: in-progress
+reviewed: false
 last_verified: "2026-03-29"
 tier: 3
 goal: TOML configuration with file watching and hot reload, user-configurable keybindings with defaults
@@ -34,6 +34,9 @@ sections:
   - id: "13.9"
     title: Shell Completion Scripts
     status: complete
+  - id: "13.11"
+    title: "Configurable Font Size Step"
+    status: not-started
   - id: "13.10"
     title: Section Completion
     status: complete
@@ -414,6 +417,44 @@ Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 - [x] **Tests:** (verified 2026-03-29 — 5 completion tests pass)
   - [x] Each shell variant produces non-empty output (verified 2026-03-29)
   - [x] Output contains expected subcommand names (verified 2026-03-29)
+
+---
+
+## 13.11 Configurable Font Size Step
+
+<!-- WezTerm audit: #7325 (increase/decrease font size by amount other than 10%) -->
+
+**Source:** WezTerm #7325 — Font zoom uses a fixed 10% step. Bitmap font users need exact 2x scaling; other users want finer or coarser steps. The zoom action should accept a configurable factor.
+
+**Required work:**
+
+- [ ] Config option: `font_size_step = 1.0` (absolute points; default 1.0pt, matching current behavior approximately)
+- [ ] Alternative: `font_size_factor = 1.1` (multiplicative; default 10% increase)
+- [ ] Action variants: `IncreaseFontSize(amount)` / `DecreaseFontSize(amount)` where amount overrides the config default
+- [ ] Ensure font size snaps to whole points when using integer steps (avoids sub-pixel drift)
+- [ ] Keybinding supports parameterized actions: `Ctrl+= = IncreaseFontSize(2.0)` for 2pt steps
+- [ ] Test: set step to 2.0, zoom 3 times from 12pt → verify 14pt, 16pt, 18pt
+
+**Priority:** Low — quality-of-life for bitmap font users and users with specific scaling needs.
+
+---
+
+## 13.12 Ambiguous Width Character Config
+
+<!-- WezTerm audit (batch 4-closed): #1888 (treat ambiguous width chars as fullwidth) -->
+
+**Source:** WezTerm #1888 — Some CJK users need "ambiguous width" Unicode characters (e.g., Greek letters, certain symbols) to be treated as fullwidth (width 2) instead of the default halfwidth (width 1). This is a common need for East Asian users whose locale expects these characters to be double-width.
+
+**Required work:**
+
+- [ ] Config option: `ambiguous_width = 1` (default: 1 = halfwidth, 2 = fullwidth)
+- [ ] Affects `unicode-width` calculations in the grid: when a character has `EastAsianWidth::Ambiguous`, use the configured width instead of the default
+- [ ] Must propagate to: cell placement (`put_char`), selection boundaries, reflow, cursor movement
+- [ ] Test: with `ambiguous_width = 2`, print Greek α → verify cursor advances 2 columns
+
+**Priority:** Low — affects East Asian locale users with specific Unicode display preferences.
+
+**Reference:** WezTerm `treat_east_asian_ambiguous_as_wide`, xterm `cjkWidth` resource, locale `LANG=ja_JP` expectations.
 
 ---
 

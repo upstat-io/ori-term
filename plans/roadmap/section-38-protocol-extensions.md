@@ -40,10 +40,28 @@ sections:
   - id: "38.10"
     title: DCS Passthrough
     status: not-started
+  - id: "38.11"
+    title: "VT52 Compatibility Mode (DECANM)"
+    status: not-started
+  - id: "38.13"
+    title: "Kitty Clipboard Protocol (OSC 5522)"
+    status: not-started
+  - id: "38.14"
+    title: "Text Sizing Protocol (OSC 66)"
+    status: not-started
+  - id: "38.15"
+    title: "iTerm2 Feature Reporting (OSC 1337 Capabilities)"
+    status: not-started
+  - id: "38.16"
+    title: "Mode 2027 Grapheme Cluster Width"
+    status: not-started
+  - id: "38.17"
+    title: "OSC 22 Cursor Style Stack"
+    status: not-started
   - id: "38.R"
     title: "Third Party Review Findings"
     status: not-started
-  - id: "38.11"
+  - id: "38.12"
     title: Section Completion
     status: not-started
 ---
@@ -439,7 +457,137 @@ Support DCS passthrough for applications running inside nested terminals or mult
 
 ---
 
-## 38.11 Section Completion
+## 38.11 VT52 Compatibility Mode (DECANM)
+
+<!-- WezTerm audit: #7460 (DECANM vt52 default state backwards) -->
+
+**Source:** WezTerm #7460 — DECANM (private mode 2) defaults to reset state (VT52) instead of set state (ANSI). Multiple terminal emulators get this wrong.
+
+**Problem:** ori_term does not implement private mode 2 (DECANM) at all. The `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs` skips from mode 1 (CursorKeys) to mode 3 (ColumnMode). VT52 mode is completely absent.
+
+**Required work:**
+
+- [ ] Add `Decanm = 2` to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs`
+- [ ] Default DECANM to SET (ANSI mode) per VT100 spec — reset = VT52, set = ANSI
+- [ ] Implement VT52 parser state in `crates/vte/`:
+  - VT52 cursor addressing (ESC Y row col)
+  - VT52 direct cursor positioning
+  - ESC < to return from VT52 to ANSI mode
+- [ ] Support DECRQM query for mode 2 (reports 1=set for ANSI mode)
+- [ ] Add teseq scenario for VT52 mode entry/exit
+
+**Priority:** Low — niche compatibility, few modern apps use VT52 sequences.
+
+**Reference:** VT100 User Guide Chapter 3 (vt100.net), xterm VT52 support.
+
+---
+
+## 38.13 Kitty Clipboard Protocol (OSC 5522)
+
+<!-- Ghostty audit: #10549 (Implement the Kitty Clipboard Protocol) -->
+
+**Source:** Ghostty #10549 — The Kitty Clipboard Protocol (OSC 5522) allows applications to copy/paste rich content (not just plain text) from the terminal. Supports MIME types, multiple clipboard targets, and chunked transfer.
+
+**Problem:** ori_term only supports OSC 52 (standard xterm clipboard — plain text, base64 encoded). OSC 5522 is a newer protocol that enables rich clipboard operations.
+
+**Required work:**
+
+- [ ] Parse OSC 5522 sequences in VTE handler (separate from OSC 52)
+- [ ] Support MIME type negotiation (text/plain, text/html, image/png, etc.)
+- [ ] Support chunked clipboard data transfer for large payloads
+- [ ] Implement clipboard read/write with type metadata via platform clipboard APIs
+- [ ] Security: respect clipboard policy settings (Section 45) for OSC 5522 same as OSC 52
+- [ ] Test: send OSC 5522 with text/html content, verify clipboard contains HTML data
+
+**Priority:** Low — emerging protocol, not widely adopted yet. Kitty and (soon) Ghostty support it.
+
+**Reference:** [Kitty Clipboard Protocol spec](https://sw.kovidgoyal.net/kitty/clipboard/)
+
+---
+
+## 38.14 Text Sizing Protocol (OSC 66)
+
+<!-- Ghostty audit: #10333 (Implement the Text Sizing Protocol) -->
+
+**Source:** Ghostty #10333 — The Text Sizing Protocol (OSC 66) lets applications specify scale factors and explicit widths for text. An alternative to mode 2027 (Unicode width override) — applications can explicitly tell the terminal how wide a given grapheme should be.
+
+**Problem:** ori_term relies on `unicode-width` crate for cell width calculation. Some graphemes (emoji, CJK variants, new Unicode additions) have ambiguous width. OSC 66 lets applications override width explicitly, eliminating width disagreements between app and terminal.
+
+**Required work:**
+
+- [ ] Parse OSC 66 sequences (parser already exists in Ghostty; spec from Kitty)
+- [ ] Associate OSC 66 metadata with cells in the grid (scale factor, explicit width)
+- [ ] Render cells with explicit width: when OSC 66 specifies width=2 for a normally-width-1 char, render it spanning 2 cells
+- [ ] Start with width specification only (like Foot), defer scaling for later
+- [ ] Test: application sends OSC 66 specifying width=2 for ASCII char → verify it occupies 2 cells
+
+**Priority:** Low — new protocol, Kitty and Foot implement it, Ghostty in progress.
+
+**Reference:** [Kitty Text Sizing Protocol spec](https://github.com/kovidgoyal/kitty/blob/master/docs/text-sizing-protocol.rst)
+
+---
+
+## 38.15 iTerm2 Feature Reporting (OSC 1337 Capabilities)
+
+<!-- WezTerm audit: #7369 (iTerm2 Terminal Feature Reporting OSC 1337 Capabilities) -->
+
+**Source:** WezTerm #7369 — iTerm2 published a standard way to query terminal capabilities via `OSC 1337;Capabilities`. Applications send the query; the terminal responds with a feature string (e.g., `T1CwMUBSxF` — each letter indicates a supported feature: `F` = inline files, `Sx` = Sixel, etc.).
+
+**Required work:**
+
+- [ ] Parse `OSC 1337;Capabilities` query
+- [ ] Respond with `OSC 1337;Capabilities=FEATURES` where FEATURES encodes ori_term's supported features
+- [ ] Feature flags to report: `F` (inline files/images), `Sx` (Sixel), `C` (cursor shape), `U` (underline styles), etc.
+- [ ] This replaces checking `TERM_PROGRAM` for feature detection — applications can query directly
+- [ ] Test: send capabilities query, verify response contains correct feature flags
+
+**Priority:** Low — progressive enhancement, helps applications detect image protocol support.
+
+**Reference:** [iTerm2 Feature Reporting spec](https://iterm2.com/feature-reporting/), `it2caps` test script.
+
+---
+
+## 38.16 Mode 2027 Grapheme Cluster Width
+
+<!-- WezTerm audit (batch 4): #4320 (Support DECRQM 2027 - grapheme cluster processing) -->
+
+**Source:** WezTerm #4320 — Mode 2027 signals that the terminal processes Unicode grapheme clusters for cursor width (rather than individual codepoints). Applications query via DECRQM (`CSI ? 2027 $ p`) and if set, can rely on the terminal to correctly advance the cursor by the cluster's display width (e.g., ZWJ emoji = width 2, not width N).
+
+**Required work:**
+
+- [ ] Add mode 2027 to `NamedPrivateMode` enum — default to SET (ori_term already uses grapheme-cluster-aware width via `unicode-width`)
+- [ ] Respond correctly to DECRQM query: `CSI ? 2027 ; 1 $ y` (mode is set)
+- [ ] Ensure all grapheme cluster width calculations use `unicode-width` consistently (grid put_char, selection boundaries, reflow)
+- [ ] Document that ori_term always processes grapheme clusters — mode 2027 is permanently set
+- [ ] Test: query DECRQM 2027 → verify response indicates set; print ZWJ emoji → verify cursor advances by 2 columns
+
+**Priority:** Medium — enables apps like Helix, WezTerm's terminal, and libvaxis to detect proper Unicode width support.
+
+**Reference:** [Contour terminal mode 2027 proposal](https://github.com/contour-terminal/contour/discussions/504), WezTerm and Foot implementations.
+
+---
+
+## 38.17 OSC 22 Cursor Style Stack
+
+<!-- Kitty audit (batch 4-closed): #6711 (OSC 22 support - cursor style push/pop) -->
+
+**Source:** Kitty #6711 — OSC 22 provides a push/pop stack for cursor style, similar to CSI 22/23 for window title. Applications push the current cursor style before changing it, then pop to restore. Supported by xterm and Foot.
+
+**Required work:**
+
+- [ ] Parse OSC 22: push current cursor style (shape, blink, color) onto a stack
+- [ ] Parse OSC 23 (for cursor context): pop and restore cursor style from stack
+- [ ] Stack depth limit (match title stack: 4096)
+- [ ] Separate from the window title stack — cursor style is independent
+- [ ] Test: push cursor style, change to underline, pop → verify original block style restored
+
+**Priority:** Low — xterm/Foot support this, useful for TUI apps that temporarily change cursor style.
+
+**Reference:** xterm OSC 22 documentation, Foot cursor stack implementation.
+
+---
+
+## 38.12 Section Completion
 
 **Already complete (verified 2026-03-29):**
 - [x] DA1/DA2 responses are correct and fast (verified 2026-03-29)

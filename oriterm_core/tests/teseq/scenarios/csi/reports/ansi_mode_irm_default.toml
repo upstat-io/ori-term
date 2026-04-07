@@ -1,0 +1,4 @@
+[expect]
+grid_snapshot = false
+event_snapshot = false
+events = ["PtyWrite"]

@@ -19,6 +19,15 @@ sections:
   - id: "49.4"
     title: Key Remapping
     status: not-started
+  - id: "49.6"
+    title: "Modifier-Only Keybindings"
+    status: not-started
+  - id: "49.7"
+    title: "Side Modifier Binding"
+    status: not-started
+  - id: "49.8"
+    title: "ANY Modifier Wildcard"
+    status: not-started
   - id: "49.5"
     title: Section Completion
     status: not-started
@@ -175,6 +184,61 @@ Remap key/modifier combinations at the terminal level before any binding lookup 
   - [ ] Original key no longer triggers its old binding
   - [ ] Remap chain: A→B, B→C (should work, not infinite loop)
   - [ ] Identity remap: no-op
+
+---
+
+## 49.6 Modifier-Only Keybindings
+
+<!-- Ghostty audit: #4335 (Modifier-only triggers) -->
+
+**Source:** Ghostty #4335 — Allow binding actions to modifier key press/release events. E.g., `ctrl = toggle_quick_terminal`, `shift+ctrl = text:goodbye`. Modifier-only triggers should fire on **release** (not press) to avoid conflicting with `ctrl+a` style bindings.
+
+**Required work:**
+
+- [ ] Extend keybinding system to accept modifier-only triggers: `Key::Modifier(Ctrl)`, `Key::Modifier(Shift)`, etc.
+- [ ] Fire modifier-only bindings on key **release**, not press — prevents false triggers when modifier is held for a chord
+- [ ] Cancel the modifier-only trigger if any non-modifier key was pressed while the modifier was held
+- [ ] Support multi-modifier triggers: `shift+ctrl` fires only when both are held then released without pressing other keys
+- [ ] Test: bind ctrl to action, press ctrl+a → action does NOT fire; press and release ctrl alone → action fires
+
+**Priority:** Low — power-user feature, useful for quick terminal toggle.
+
+**Reference:** Ghostty's proposed implementation, tmux prefix key pattern.
+
+---
+
+## 49.7 Side Modifier Binding
+
+<!-- Ghostty audit: #3364 (Allow binding side modifier keys) -->
+
+**Source:** Ghostty #3364 — Users want to bind `left_shift+a` separately from `right_shift+a`. winit provides `KeyLocation::Left`/`Right` for modifier keys, but most terminals don't expose this in keybinding config.
+
+**Required work:**
+
+- [ ] Extend Keystroke to optionally specify modifier side: `Modifiers::LEFT_CTRL`, `Modifiers::RIGHT_CTRL`, etc.
+- [ ] Config syntax: `left_ctrl+a = action`, `right_alt+b = action` (unqualified `ctrl` matches either side)
+- [ ] Map winit's `KeyLocation::Left`/`Right` to the side-qualified modifiers during key normalization
+- [ ] Test: bind left_ctrl+a and right_ctrl+a to different actions, verify correct dispatch
+
+**Priority:** Low — niche but commonly requested by power users.
+
+---
+
+## 49.8 ANY Modifier Wildcard
+
+<!-- WezTerm audit (closed): #288 (add ANY mod choice to effectively ignore mods) -->
+
+**Source:** WezTerm #288 — Allow `ANY` as a modifier in keybindings to match regardless of held modifiers. `ANY+Click = action` fires whether Ctrl, Shift, Alt, or no modifier is held. Useful for mouse bindings where you want the action to work regardless of modifier state.
+
+**Required work:**
+
+- [ ] Add `Modifiers::ANY` variant that matches any modifier combination
+- [ ] In keybinding lookup: when a binding specifies `ANY`, skip modifier comparison
+- [ ] Syntax: `any+button_left = action` or `any+a = action`
+- [ ] Priority: specific modifier bindings take precedence over ANY bindings
+- [ ] Test: bind `any+left_click = SelectWord`, verify it fires with and without Ctrl/Shift/Alt held
+
+**Priority:** Low — convenience for mouse binding configuration.
 
 ---
 

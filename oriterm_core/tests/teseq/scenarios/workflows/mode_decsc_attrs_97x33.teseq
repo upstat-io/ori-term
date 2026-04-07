@@ -1,0 +1,10 @@
+: Esc [ 1 ; 31 m
+: Esc ( 0
+: Esc [ 10 ; 20 H
+: Esc 7
+: Esc [ 0 m
+: Esc ( B
+: Esc [ 1 ; 1 H
+|plain text|
+: Esc 8
+|q after restore|

@@ -41,6 +41,35 @@ pub struct ImageConfig {
     pub animation_enabled: bool,
 }
 
+/// Per-pane parameters for [`MuxBackend::adopt_pane`].
+///
+/// Bundles the terminal dimensions, scrollback size, theme, and any
+/// startup metadata so the trait method stays under the hygiene rule's
+/// argument limit. The `AdoptedPtyHandle` is passed separately because
+/// callers typically own it via move semantics already.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdoptPaneRequest {
+    /// Initial terminal rows (typically from `TERMINAL_STARTUP_INFO.dwYCountChars`).
+    pub rows: u16,
+    /// Initial terminal columns (typically from `TERMINAL_STARTUP_INFO.dwXCountChars`).
+    pub cols: u16,
+    /// Scrollback buffer size in lines (from the user's config).
+    pub scrollback: usize,
+    /// Color theme for the new pane.
+    pub theme: Theme,
+    /// Initial pane title (typically from `TERMINAL_STARTUP_INFO.pszTitle`,
+    /// e.g. the title embedded in a `.lnk` shortcut). Empty string means
+    /// "no explicit title" — the pane will fall back to its CWD-derived
+    /// or shell-set title via the standard `Pane::effective_title` chain.
+    pub initial_title: String,
+    /// Initial pane icon name/path (typically from
+    /// `TERMINAL_STARTUP_INFO.pszIconPath`, e.g. the icon embedded in a
+    /// `.lnk` shortcut). `None` if the COM caller did not supply one.
+    /// Stored on the pane via `Pane::set_icon_name` and consumed by the
+    /// tab bar to render a per-pane icon.
+    pub initial_icon: Option<String>,
+}
+
 /// Abstraction over in-process and daemon-mode multiplexer access.
 ///
 /// The App calls trait methods identically regardless of whether
@@ -80,6 +109,28 @@ pub trait MuxBackend {
     /// The client owns tab/window grouping — the mux creates the pane
     /// and manages its PTY lifecycle. Returns `PaneId` for the new pane.
     fn spawn_pane(&mut self, config: &SpawnConfig, theme: Theme) -> io::Result<PaneId>;
+
+    /// Adopt a pane from a Windows console handoff.
+    ///
+    /// Wraps the pre-existing PTY handles delivered by `conhost.exe`'s
+    /// `ITerminalHandoff3::EstablishPtyHandoff` callback (Section 03.9
+    /// Phase 3) into a [`Pane`](crate::pane::Pane). Embedded mux uses
+    /// [`InProcessMux::adopt_standalone_pane`](crate::in_process::InProcessMux::adopt_standalone_pane);
+    /// daemon mode rejects the call because the COM server is a
+    /// `REGCLS_SINGLEUSE` standalone process that cannot relay handoffs
+    /// over IPC.
+    ///
+    /// Default impl returns `Err(io::Error::other("not supported"))`
+    /// so non-handoff backends compile without changes.
+    fn adopt_pane(
+        &mut self,
+        _adopted: crate::pty::AdoptedPtyHandle,
+        _request: AdoptPaneRequest,
+    ) -> io::Result<PaneId> {
+        Err(io::Error::other(
+            "default-terminal handoff requires embedded mux mode",
+        ))
+    }
 
     /// Close a single pane.
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult;
@@ -324,6 +375,23 @@ pub trait MuxBackend {
 
     /// Build (embedded) or fetch (daemon) a fresh snapshot and cache it.
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot>;
+
+    /// Synchronously fetch a fresh snapshot, draining any in-flight IO
+    /// commands first.
+    ///
+    /// Unlike [`refresh_pane_snapshot`](Self::refresh_pane_snapshot),
+    /// which is fast-path push-driven and may return stale data, this
+    /// method:
+    /// 1. Sends a `SnapshotNow` IO command to the pane's IO thread.
+    /// 2. Waits for the IO thread to process all earlier commands (FIFO)
+    ///    and publish a fresh snapshot to the double buffer.
+    /// 3. Returns the fresh snapshot, owned (no shared borrow).
+    ///
+    /// Used by tests and any caller that needs deterministic
+    /// "scroll then read" semantics. Production render code should
+    /// continue to use the async push pipeline via
+    /// `refresh_pane_snapshot`.
+    fn sync_pane_snapshot(&mut self, pane_id: PaneId) -> Option<PaneSnapshot>;
 
     /// Clear the dirty flag for a pane's cached snapshot.
     fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId);

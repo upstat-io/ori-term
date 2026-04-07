@@ -1,0 +1,9 @@
+: Esc [ 5 ; 35 r
+: Esc [ ? 6 h
+: Esc [ 1 ; 1 H
+: Esc 7
+: Esc [ ? 6 l
+: Esc [ 1 ; 1 H
+|absolute|
+: Esc 8
+|relative|

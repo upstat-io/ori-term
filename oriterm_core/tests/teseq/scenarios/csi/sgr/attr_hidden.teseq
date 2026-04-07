@@ -1,0 +1,4 @@
+: Esc [ 8 m
+|Hidden text|
+: Esc [ 0 m
+|Normal|

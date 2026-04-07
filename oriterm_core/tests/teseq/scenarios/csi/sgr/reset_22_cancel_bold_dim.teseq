@@ -1,0 +1,5 @@
+: Esc [ 1 ; 2 m
+|BD|
+: Esc [ 22 m
+|Neither|
+: Esc [ 0 m

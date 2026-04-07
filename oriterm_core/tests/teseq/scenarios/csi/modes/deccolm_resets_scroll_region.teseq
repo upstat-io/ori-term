@@ -1,0 +1,4 @@
+: Esc [ 5 ; 20 r
+: Esc [ ? 3 h
+: Esc [ 999 ; 1 H
+|At bottom|

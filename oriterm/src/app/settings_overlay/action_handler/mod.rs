@@ -264,9 +264,48 @@ fn handle_window(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) 
             config.window.rows = (*value as usize).clamp(10, 100);
             true
         }
+        WidgetAction::Toggled { id, value } if *id == ids.default_terminal_toggle => {
+            // Section 03.9 Phase 4d — side effect, not a config update.
+            // The dispatcher returns `true` so the caller knows the
+            // event was handled, but `config` is left unchanged because
+            // the registration state lives in the Windows registry, not
+            // in the user's config file.
+            apply_default_terminal_state(*value);
+            true
+        }
         _ => false,
     }
 }
+
+/// Apply the default-terminal toggle's new state.
+///
+/// On Windows: calls `register_all(current_exe)` or `unregister_all()`.
+/// On Linux/macOS: no-op (the toggle is never built into the dialog).
+/// Skipped entirely under `cfg(test)` so the action handler tests can
+/// dispatch the toggle without touching the user's real registry — the
+/// registry helpers themselves are exercised separately by the
+/// `RegistryTestScope` tests in `platform/default_terminal/registry/tests.rs`.
+#[cfg(all(target_os = "windows", not(test)))]
+fn apply_default_terminal_state(enabled: bool) {
+    let result = if enabled {
+        std::env::current_exe()
+            .and_then(|exe| crate::platform::default_terminal::registry::register_all(&exe))
+    } else {
+        crate::platform::default_terminal::registry::unregister_all()
+    };
+    if let Err(e) = result {
+        log::warn!("default-terminal toggle failed: {e}");
+    }
+}
+
+/// No-op stub for non-Windows targets and test builds.
+///
+/// The `_enabled` parameter is intentionally ignored — the registry
+/// helpers it would have called either don't compile here (Linux/macOS)
+/// or would touch the user's real registry (test builds, where
+/// dispatch is verified without side effects).
+#[cfg(any(not(target_os = "windows"), test))]
+fn apply_default_terminal_state(_enabled: bool) {}
 
 /// Bell page: animation, duration.
 fn handle_bell(action: &WidgetAction, ids: &SettingsIds, config: &mut Config) -> bool {

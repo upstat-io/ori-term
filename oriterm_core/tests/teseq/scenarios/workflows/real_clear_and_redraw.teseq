@@ -1,0 +1,10 @@
+|Old content line 1|
+. CR/^M LF/^J
+|Old content line 2|
+. CR/^M LF/^J
+: Esc [ 2 J
+: Esc [ 1 ; 1 H
+|New content line 1|
+. CR/^M LF/^J
+|New content line 2|
+. CR/^M LF/^J

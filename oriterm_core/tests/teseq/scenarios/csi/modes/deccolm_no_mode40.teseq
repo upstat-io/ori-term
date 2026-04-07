@@ -1,0 +1,5 @@
+|Content before|.
+|Line two|
+: Esc [ 5 ; 10 r
+: Esc [ ? 3 h
+|After DECCOLM|

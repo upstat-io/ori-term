@@ -2,7 +2,7 @@
 section: 32
 title: Tab & Window Management (Mux-Aware)
 status: complete
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 4M
 goal: Multi-tab with mux integration, multi-window with shared GPU, tab CRUD, window lifecycle, cross-window tab movement, ConPTY-safe shutdown

@@ -1,8 +1,8 @@
 ---
 section: 10
 title: Mouse Input & Reporting
-status: complete
-reviewed: true
+status: in-progress
+reviewed: false
 last_verified: "2026-03-29"
 tier: 3
 goal: Mouse reporting for terminal apps + mouse selection state machine
@@ -13,6 +13,18 @@ sections:
   - id: "10.2"
     title: Mouse Reporting
     status: complete
+  - id: "10.4"
+    title: "Horizontal Scroll Support"
+    status: not-started
+  - id: "10.5"
+    title: "TUI Scroll Magnitude Forwarding"
+    status: not-started
+  - id: "10.6"
+    title: "Cancel Inertial Scroll on Screen Switch"
+    status: not-started
+  - id: "10.7"
+    title: "Click-Through on Unfocused Window"
+    status: not-started
   - id: "10.3"
     title: Section Completion
     status: complete
@@ -101,6 +113,87 @@ Encode mouse events and send to PTY when terminal applications request mouse tra
   - [x] apply_modifiers (5+ tests): none, shift, alt, ctrl, combined, exhaustive 8x4 matrix (verified 2026-03-29)
   - [x] Dispatch (6+ tests): SGR/UTF-8/Normal selection, SGR priority, release codes, boundary dispatch (verified 2026-03-29)
   - [x] Mutual exclusion (10 tests): tracking mode clear, encoding mode clear, DECRST behavior, RIS clear (verified 2026-03-29)
+
+---
+
+## 10.4 Horizontal Scroll Support
+
+<!-- WezTerm audit: #7665 (horizontal scroll wheel buttons 6/7 not recognized on X11) -->
+
+**Source:** WezTerm #7665 — Horizontal scroll wheel (X11 buttons 6/7, trackpad horizontal swipe) not recognized. The hardware works in Chrome, VSCode, and Kitty, but WezTerm ignores it.
+
+**Problem:** `parse_wheel_delta()` in `oriterm/src/app/mouse_report/mod.rs` discards x-axis scroll data entirely. The widget framework (`ScrollWidget`) already supports horizontal scrolling via `scroll_by_x()`, but the application input handler only processes `y` delta.
+
+**Required work:**
+
+- [ ] Extend `parse_wheel_delta()` to return both x and y deltas (currently returns `Option<(usize, bool)>` for vertical only)
+- [ ] Forward horizontal scroll to TUI apps via mouse protocol: X11 buttons 6 (WheelLeft) and 7 (WheelRight) in SGR mouse encoding
+- [ ] Wire horizontal scroll to UI framework for widgets that support it (ScrollWidget with `ScrollDirection::Horizontal` or `Both`)
+- [ ] Handle winit `MouseScrollDelta::LineDelta(x, _)` where x != 0 (currently only `(_, y)` is used)
+- [ ] Test: generate horizontal scroll event, verify SGR mouse report with button 66/67 encoding
+
+**Priority:** Medium — affects users with trackpads and horizontal scroll wheels (Logitech MX Master, etc.).
+
+---
+
+## 10.5 TUI Scroll Magnitude Forwarding
+
+<!-- WezTerm audit: #7645 (scrolling in TUIs sluggish with precision pointing devices) -->
+
+**Source:** WezTerm #7645 — When a TUI app (tmux, vim, emacs) has mouse reporting enabled, scroll gestures from trackpads are collapsed to a single line regardless of swipe speed. Fast trackpad swipes should generate multiple scroll events proportional to the gesture magnitude.
+
+**Problem:** When mouse reporting is active, ori_term converts the scroll delta to a line count but then sends only ONE mouse scroll event to the PTY. A fast trackpad swipe producing delta=5.0 lines should send 5 scroll events, not 1.
+
+**Required work:**
+
+- [ ] When mouse reporting is active: send N scroll events where N = `delta.abs().ceil() as usize` (clamped to a reasonable max like 20)
+- [ ] Each event is a separate SGR mouse report with the scroll button code
+- [ ] Works for both `PixelDelta` (trackpad → divide by cell height → N events) and `LineDelta` (mouse wheel → already in lines)
+- [ ] Configurable scroll multiplier for mouse-reporting apps (e.g., `tui_scroll_multiplier = 1.0`)
+- [ ] Test: with mouse reporting enabled, simulate trackpad swipe with delta=5 lines → verify 5 SGR scroll events sent to PTY
+
+**Priority:** Medium — affects all trackpad users running tmux/vim/neovim.
+
+**Reference:** Kitty scroll multiplier, Ghostty scroll sensitivity config.
+
+---
+
+## 10.6 Cancel Inertial Scroll on Screen Switch
+
+<!-- Ghostty audit: #3845 (cancel inertial scroll when changing between primary/alt screen) -->
+
+**Source:** Ghostty #3845 — When a user is scrolling with a trackpad (inertial/momentum scroll) and an application switches between primary and alt screen (e.g., opening vim, less, or hitting Ctrl+C in a TUI), the remaining momentum scroll events continue to arrive and get forwarded to the new screen. This causes unexpected scrolling in the newly-switched screen.
+
+**Required work:**
+
+- [ ] Detect screen switch events (mode 1049/1047 set/reset) in the VTE handler
+- [ ] On screen switch: set a "cancel inertial scroll" flag
+- [ ] In the scroll handler: when flag is set, discard incoming scroll events until a brief cooldown (200-300ms) expires or a new deliberate scroll gesture starts
+- [ ] Only apply to `PixelDelta` (trackpad) events, not `LineDelta` (mouse wheel) — mouse wheels don't have inertia
+- [ ] Test: simulate rapid scroll events, trigger alt screen switch, verify scroll events after switch are discarded
+
+**Priority:** Low — affects trackpad users switching between terminal apps and shell.
+
+---
+
+## 10.7 Click-Through on Unfocused Window
+
+<!-- Alacritty audit (closed): #2929 (allow first click on unfocused window to pass through) -->
+
+**Source:** Alacritty #2929 — On macOS (and optionally other platforms), the first click on an unfocused terminal window should pass through to the terminal instead of just focusing the window. This matches native macOS app behavior and avoids a "wasted click" when switching to the terminal to click a URL or position the cursor.
+
+**Required work:**
+
+- [ ] Config option: `click_through_unfocused = true` (default: true on macOS, false on other platforms — matching platform conventions)
+- [ ] When enabled: on window focus event triggered by mouse click, forward the click event to the terminal after focusing
+- [ ] When disabled: first click only focuses the window, no click event forwarded
+- [ ] Must interact correctly with: URL click (Ctrl+click), selection start, mouse reporting
+- [ ] Platform-specific: macOS `acceptsFirstMouse` returns YES; Windows/Linux handle via focus event + synthetic click
+- [ ] Test: unfocused window, click on URL → verify window focuses AND URL opens in one click
+
+**Priority:** Low — UX polish, especially important on macOS where this is the expected behavior.
+
+**Reference:** Alacritty `acceptsFirstMouse`, macOS HIG (click-through behavior).
 
 ---
 

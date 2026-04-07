@@ -29,7 +29,7 @@ pub mod server;
 pub mod shell_integration;
 
 pub use backend::{EmbeddedMux, ImageConfig, MuxBackend, MuxClient};
-pub use domain::SpawnConfig;
+pub use domain::{AdoptConfig, SpawnConfig, adopt_pane};
 pub use id::{ClientId, DomainId, PaneId};
 pub use mux_event::MuxNotification;
 pub use pane::{MarkCursor, Signal};
@@ -37,3 +37,4 @@ pub use protocol::{
     MuxPdu, PaneSnapshot, ProtocolCodec, WireCell, WireCellFlags, WireCursor, WireCursorShape,
     WireRgb,
 };
+pub use pty::adopt::{AdoptedPtyHandle, AdoptedSignal};

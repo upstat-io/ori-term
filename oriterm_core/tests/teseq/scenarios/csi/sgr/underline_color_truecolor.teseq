@@ -1,0 +1,4 @@
+: Esc [ 4 m
+: Esc [ 58 ; 2 ; 255 ; 0 ; 128 m
+|Colored underline|
+: Esc [ 0 m

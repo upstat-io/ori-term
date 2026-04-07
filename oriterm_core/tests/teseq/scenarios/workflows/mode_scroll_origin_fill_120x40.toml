@@ -1,0 +1,7 @@
+[terminal]
+cols = 120
+rows = 40
+
+[expect]
+cursor_col = 16
+cursor_line = 0

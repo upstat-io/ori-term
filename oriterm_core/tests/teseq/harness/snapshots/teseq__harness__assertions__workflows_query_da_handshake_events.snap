@@ -1,0 +1,7 @@
+---
+source: oriterm_core/tests/teseq/harness/assertions.rs
+expression: event_text
+---
+PtyWrite("\u{1b}[?64;6;4c")
+PtyWrite("\u{1b}[>0;200;1c")
+PtyWrite("\u{1b}P!|00000000\u{1b}\\")

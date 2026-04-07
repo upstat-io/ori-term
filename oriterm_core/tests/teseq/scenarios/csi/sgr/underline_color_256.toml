@@ -1,0 +1,7 @@
+[terminal]
+rows = 24
+cols = 80
+scrollback = 0
+
+[expect]
+grid_snapshot = true

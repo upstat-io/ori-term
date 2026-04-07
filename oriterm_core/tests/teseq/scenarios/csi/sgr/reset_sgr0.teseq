@@ -1,0 +1,4 @@
+: Esc [ 1 ; 3 ; 4 ; 31 ; 42 m
+|All on|
+: Esc [ 0 m
+|Clean|

@@ -1,0 +1,6 @@
+---
+source: oriterm_core/tests/teseq/harness/assertions.rs
+expression: outcome.grid_text
+---
+New content line 1                                                              
+New content line 2

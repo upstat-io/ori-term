@@ -17,19 +17,37 @@ impl<T: EventListener> PaneIoThread<T> {
     /// is critical: reflow first so the shell sees the correct dimensions
     /// when it handles SIGWINCH. Uses `Term::resize()` (not
     /// `Grid::resize()`) to also resize the alt grid and prune image caches.
+    ///
+    /// Resize routing:
+    /// - Spawned panes have `pty_control: Some(_)` and use the
+    ///   `portable_pty::MasterPty::resize` path.
+    /// - Adopted panes (Section 03.9 Windows Default Terminal handoff)
+    ///   have `pty_control: None` and `adopted_signal: Some(_)` — they
+    ///   write the conhost signal pipe protocol via
+    ///   `AdoptedSignal::resize` (`PTY_SIGNAL_RESIZE_WINDOW`).
+    /// - Tests typically have both `None` and skip the syscall.
     pub(super) fn process_resize(&mut self, rows: u16, cols: u16) {
         self.terminal.resize(rows as usize, cols as usize, true);
         self.grid_dirty.store(true, Ordering::Release);
 
         // PTY resize with dedup — skip syscall if dimensions unchanged.
         let packed = (rows as u32) << 16 | cols as u32;
-        if self.last_pty_size != packed {
-            self.last_pty_size = packed;
-            if let Some(ref ctl) = self.pty_control {
-                if let Err(e) = ctl.resize(rows, cols) {
-                    log::warn!("PTY resize failed: {e}");
-                }
+        if self.last_pty_size == packed {
+            return;
+        }
+        self.last_pty_size = packed;
+        if let Some(ref ctl) = self.pty_control {
+            if let Err(e) = ctl.resize(rows, cols) {
+                log::warn!("PTY resize failed: {e}");
             }
+        } else if let Some(ref signal) = self.adopted_signal {
+            if let Err(e) = signal.resize(rows, cols) {
+                log::warn!("adopted PTY resize via conhost signal pipe failed: {e}");
+            }
+        } else {
+            // Both `None` only happens in unit tests that construct a
+            // PaneIoThread without either backend — production paths
+            // always set one. Nothing to do.
         }
     }
 
@@ -199,6 +217,13 @@ impl<T: EventListener> PaneIoThread<T> {
             PaneIoCommand::SelectCommandInput { reply } => {
                 let sel = self.build_zone_selection(Term::command_input_range);
                 let _ = reply.send(sel);
+            }
+            PaneIoCommand::SnapshotNow { reply } => {
+                // Force grid_dirty so produce_snapshot doesn't no-op when
+                // the caller chained SnapshotNow after non-mutating commands.
+                self.grid_dirty.store(true, Ordering::Release);
+                self.produce_snapshot();
+                let _ = reply.send(());
             }
             _ => {} // All other variants handled in handle_command.
         }

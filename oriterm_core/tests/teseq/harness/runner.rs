@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use oriterm_core::term::renderable::RenderableCell;
-use oriterm_core::{Term, Theme};
+use oriterm_core::{Term, TermMode, Theme};
 
 use super::events::RecordedListener;
 use super::loader::ScenarioSpec;
@@ -32,6 +32,8 @@ pub struct ScenarioOutcome {
     pub rows: usize,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: usize,
+    /// Terminal mode flags at snapshot time.
+    pub mode: TermMode,
 }
 
 /// Integration test harness for teseq-based escape sequence scenarios.
@@ -92,6 +94,14 @@ impl TeseqHarness {
         &self.spec
     }
 
+    /// Toggle bold-as-bright color promotion.
+    ///
+    /// Default is `true` (set in `Term::new`). Call with `false` to test
+    /// the code path where bold does not promote ANSI colors 0-7 to 8-15.
+    pub fn set_bold_is_bright(&mut self, enabled: bool) {
+        self.term.set_bold_is_bright(enabled);
+    }
+
     /// Extract current terminal state as `ScenarioOutcome`.
     fn outcome(&self) -> ScenarioOutcome {
         let content = self.term.renderable_content();
@@ -108,6 +118,7 @@ impl TeseqHarness {
             cols: content.cols,
             rows: content.lines,
             scrollback_len: content.scrollback_len,
+            mode: content.mode,
         }
     }
 }

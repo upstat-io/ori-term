@@ -1,0 +1,7 @@
+: Esc [ 5 ; 20 r
+: Esc [ ? 6 h
+: Esc [ 3 ; 10 H
+|Before DECCOLM|
+: Esc [ ? 3 h
+: Esc [ 1 ; 1 H
+|After DECCOLM|

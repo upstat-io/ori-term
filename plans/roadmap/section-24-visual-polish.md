@@ -34,6 +34,33 @@ sections:
   - id: "24.9"
     title: Scrollable Menus
     status: in-progress
+  - id: "24.11"
+    title: "Partial Last Line Clipping"
+    status: not-started
+  - id: "24.12"
+    title: "Resize Dimensions Overlay"
+    status: not-started
+  - id: "24.13"
+    title: "Toggle Background Opacity Keybind"
+    status: not-started
+  - id: "24.14"
+    title: "Minimum Contrast Enforcement"
+    status: not-started
+  - id: "24.15"
+    title: "Cursor Trail/Smear Effect"
+    status: not-started
+  - id: "24.16"
+    title: "Swap Foreground/Background Colors"
+    status: not-started
+  - id: "24.17"
+    title: "Window Padding Color Extend"
+    status: not-started
+  - id: "24.18"
+    title: "Padding Respects Background Opacity"
+    status: not-started
+  - id: "24.19"
+    title: "Unified Background Image Across Splits"
+    status: not-started
   - id: "24.10"
     title: Section Completion
     status: not-started
@@ -555,6 +582,178 @@ Add max-height constraint and scroll support to `MenuWidget` so long menus (e.g.
 - [ ] `Home` key scrolls to top and hovers first clickable entry (blocked: Home key not implemented)
 - [ ] `End` key scrolls to bottom and hovers last clickable entry (blocked: End key not implemented)
 - [ ] Scroll position resets on menu rebuild (new entries)
+
+---
+
+## 24.11 Partial Last Line Clipping
+
+<!-- WezTerm audit: #7568 (clip last few pixels to fit extra line) -->
+
+**Source:** WezTerm #7568 — When screen height doesn't evenly divide by cell height, up to `cell_height - 1` pixels are wasted at the bottom, leaving an ugly blank strip. Users want the option to clip a few pixels from the last line to fit an extra row.
+
+**Required work:**
+
+- [ ] Config option: `max_line_clip_pixels = 0` (default: no clipping; e.g., `4` clips up to 4 pixels)
+- [ ] In grid dimension calculation (`compute_window_layout` / `grid_dims_for_size`), if remaining pixels < threshold, add one more row to the grid dimensions
+- [ ] Clip the bottom of that last row during rendering (scissor rect on the grid render area)
+- [ ] Ensure cursor, selection, and scroll all work correctly with the clipped row
+- [ ] Test: set clip threshold to cell_height-1, verify the maximum extra row gain
+
+**Priority:** Low — cosmetic improvement for fullscreen users.
+
+---
+
+## 24.12 Resize Dimensions Overlay
+
+<!-- WezTerm audit: #7672 (action for showing information in modal popup) -->
+
+**Source:** WezTerm #7672 — Many terminals (iTerm2, Kitty, Ghostty) show a centered `80×24` overlay during window resize. ori_term doesn't have this visual feedback.
+
+**Required work:**
+
+- [ ] Centered, semi-transparent overlay showing `{cols}×{rows}` text during window resize
+- [ ] Auto-dismiss after resize stops (500ms debounce timer)
+- [ ] Use existing overlay/compositor layer system from Section 43
+- [ ] Config option: `show_resize_overlay = true/false`
+- [ ] Test: resize window in WidgetTestHarness, verify overlay appears with correct dimensions and auto-dismisses
+
+**Priority:** Low — nice visual polish, commonly expected in modern terminals.
+
+**Reference:** iTerm2 resize indicator, Kitty resize overlay, Ghostty resize display.
+
+---
+
+## 24.13 Toggle Background Opacity Keybind
+
+<!-- Ghostty audit: #5047 (toggle_background_opacity keybind action) -->
+
+**Source:** Ghostty #5047 — Users with transparent backgrounds want a keybind to toggle between transparent and opaque for screen sharing. iTerm2 has `Cmd+U` for this.
+
+**Required work:**
+
+- [ ] New action: `ToggleBackgroundOpacity` — toggles between configured `background_opacity` and 1.0
+- [ ] Track toggle state per-window (not global — user may want some windows transparent and others opaque)
+- [ ] When `background_opacity` is already 1.0: action is a no-op
+- [ ] Config reload resets to configured value
+- [ ] Default keybind: none (user must configure)
+- [ ] Cross-platform: update vibrancy/transparency on macOS (NSVisualEffectView), DWM on Windows, compositor hints on Wayland
+- [ ] Test: set background_opacity=0.8, trigger toggle → verify opacity becomes 1.0; trigger again → verify opacity returns to 0.8
+
+**Priority:** Low — polish feature for transparency users.
+
+---
+
+## 24.14 Minimum Contrast Enforcement
+
+<!-- Ghostty audit: #1524 (enhance minimum-contrast enforcement) -->
+
+**Source:** Ghostty #1524 — Basic minimum-contrast falls back to black/white for foreground, which is too aggressive. Better approach: find the closest shade of grey that meets the WCAG contrast ratio threshold against the background, preserving the original color's intent.
+
+**Required work:**
+
+- [ ] Config option: `minimum_contrast = 4.5` (WCAG AA ratio; 0 = disabled, 1 = any visible difference)
+- [ ] Implement in the color resolution path (per-cell, during prepare phase): compute contrast ratio between resolved fg and bg
+- [ ] If below threshold: adjust fg luminance toward the nearest shade that meets the ratio, not a hard flip to black/white
+- [ ] Use relative luminance formula: `L = 0.2126*R + 0.7152*G + 0.0722*B` (linearized sRGB)
+- [ ] Handle edge cases: dim text, inverse video, selection highlighting
+- [ ] Shader-based or CPU-based: can be done in prepare phase (CPU) since it's per-cell, not per-pixel
+- [ ] Test: set minimum_contrast=4.5, use a dark grey fg on dark bg → verify fg is brightened just enough to meet ratio
+
+**Priority:** Medium — important for accessibility and readability on low-contrast themes.
+
+**Reference:** Ghostty `minimum-contrast`, iTerm2 minimum contrast, WCAG 2.0 contrast ratio formula.
+
+---
+
+## 24.15 Cursor Trail/Smear Effect
+
+<!-- WezTerm audit: #7387 (cursor trail / smear effect); Ghostty discussions -->
+
+**Source:** WezTerm #7387 — Animated cursor trail that shows the cursor's movement path. A frequently requested feature that Kitty and Neovide implement. Creates a "smear" or "trail" effect when the cursor moves between positions.
+
+**Required work:**
+
+- [ ] Config options: `cursor_trail = false`, `cursor_trail_duration = 0.3s`, `cursor_trail_opacity = 0.5`
+- [ ] Track cursor position changes: when cursor moves, record (old_pos, new_pos, timestamp)
+- [ ] Render a fading trail from old to new position:
+  - Option A: render a semi-transparent cursor shape at each intermediate position (simple, like Kitty)
+  - Option B: render a motion blur/smear between positions (more complex, like Neovide)
+- [ ] Trail fades over `cursor_trail_duration` seconds
+- [ ] Use existing animation infrastructure (Section 43 compositor layers + opacity animation)
+- [ ] Must not impact idle CPU — trail only renders during cursor movement frames
+
+**Priority:** Low — cosmetic/aesthetic feature, but highly requested across terminal emulators.
+
+---
+
+## 24.16 Swap Foreground/Background Colors
+
+<!-- WezTerm audit (batch 4-closed): #706 (swap fg/bg colors keybind) -->
+
+**Source:** WezTerm #706 — Keybind to toggle inverted colors (swap foreground and background for the entire terminal). Useful for quickly switching between dark and light appearance without changing the theme.
+
+**Required work:**
+
+- [ ] Action: `ToggleInvertedColors` — swaps the default fg and bg colors in the active palette
+- [ ] When inverted: all cells render with swapped fg/bg (including the palette's default colors)
+- [ ] Does NOT affect cells with explicit SGR colors — only affects default fg/bg
+- [ ] Toggle state per-pane (not global)
+- [ ] Config reload resets to normal
+- [ ] Test: toggle inverted, verify default text renders with swapped colors; explicit SGR colors unchanged
+
+**Priority:** Low — quick visual accessibility toggle.
+
+---
+
+## 24.17 Window Padding Color Extend
+
+<!-- Ghostty audit (closed): #2099, #3661 (window-padding-color = extend) -->
+
+**Source:** Ghostty `window-padding-color = extend` — Padding area uses the nearest cell's background color instead of the terminal's default bg. Prevents ugly color mismatch borders around the grid (e.g., tmux status bar color vs padding color).
+
+**Required work:**
+
+- [ ] Config option: `padding_color = "default" | "extend"` (default: use terminal bg; extend: sample edge cells)
+- [ ] When `extend`: for each padding region (top/bottom/left/right), sample the bg color of the nearest grid row/column
+- [ ] Top padding: use row 0's bg; bottom padding: use last row's bg; left/right: use respective column's bg
+- [ ] Must update when grid content changes (damage-tracked, not per-frame)
+- [ ] Test: set extend mode with tmux (colored status bar) → verify bottom padding matches status bar color
+
+**Priority:** Low — cosmetic but highly requested. Ghostty, Kitty, and WezTerm all support this.
+
+---
+
+## 24.18 Padding Respects Background Opacity
+
+<!-- Kitty audit (closed): #7895, #7921 (padding solid when background_opacity < 1) -->
+
+**Source:** Kitty #7895 — When `background_opacity < 1`, padding area remains solid/opaque. Should be transparent like the rest of the terminal.
+
+**Required work:**
+
+- [ ] Apply `background_opacity` to padding fill as well as grid cells
+- [ ] Ensure vibrancy/blur effects extend through padding area (platform-specific)
+- [ ] Test: set opacity=0.8, verify padding area is semi-transparent matching the grid
+
+**Priority:** Low — affects transparency users. Simple fix if padding is rendered as a rect with the same opacity.
+
+---
+
+## 24.19 Unified Background Image Across Splits
+
+<!-- Ghostty audit (closed): #10052 (unified background image across splits) -->
+
+**Source:** Ghostty #10052 — When using a background image with split panes, the image is duplicated per pane. A unified mode would render one background image spanning the entire window, with splits overlaid on top.
+
+**Required work:**
+
+- [ ] Config option: `background_image_mode = "per_pane" | "unified"` (default: per_pane)
+- [ ] When unified: render background image to window-sized texture, then composite grid panes on top
+- [ ] Image position is relative to the window, not the pane — panes are transparent overlays
+- [ ] Must handle window resize (re-scale/re-position the image)
+- [ ] Test: set unified mode with 2 splits → verify single continuous image beneath both panes
+
+**Priority:** Low — cosmetic feature for background image users.
 
 ---
 

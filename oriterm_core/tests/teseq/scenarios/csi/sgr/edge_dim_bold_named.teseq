@@ -1,0 +1,3 @@
+: Esc [ 1 ; 2 ; 31 m
+|DimBoldRed|
+: Esc [ 0 m

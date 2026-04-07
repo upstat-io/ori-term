@@ -1,0 +1,6 @@
+: Esc [ ? 1047 h
+|First visit|
+. CR/^M LF/^J
+: Esc [ ? 1047 l
+: Esc [ ? 1047 h
+|Second visit|

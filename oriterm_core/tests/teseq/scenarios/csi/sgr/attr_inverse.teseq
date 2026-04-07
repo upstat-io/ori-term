@@ -1,0 +1,4 @@
+: Esc [ 7 m
+|Inverse text|
+: Esc [ 0 m
+|Normal|

@@ -1,0 +1,4 @@
+: Esc [ 1 ; 3 ; 4 ; 31 m
+|Bold italic underline red|
+: Esc [ 0 m
+|Normal|

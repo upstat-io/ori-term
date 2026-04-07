@@ -1,0 +1,7 @@
+---
+source: oriterm_core/tests/teseq/harness/assertions.rs
+expression: event_text
+---
+ColorRequest(1)
+ColorRequest(256)
+ColorRequest(257)

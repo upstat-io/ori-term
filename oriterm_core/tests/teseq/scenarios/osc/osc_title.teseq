@@ -1,0 +1,6 @@
+: Esc ]
+|0;My Terminal Title|
+: Esc \
+: Esc ]
+|2;Window Title Only|
+: Esc \

@@ -31,6 +31,15 @@ sections:
   - id: "47.8"
     title: Upgrade Existing Consumers
     status: not-started
+  - id: "47.10"
+    title: "OSC 133 Click Events (click_events=2)"
+    status: not-started
+  - id: "47.11"
+    title: "Click-to-Move Multi-Click Delay"
+    status: not-started
+  - id: "47.12"
+    title: "Copy Last Command Output"
+    status: not-started
   - id: "47.9"
     title: Section Completion
     status: not-started
@@ -278,6 +287,64 @@ Migrate all existing prompt consumers from `Vec<PromptMarker>` to the new cell/r
   - [ ] Prompt navigation produces same results as before
   - [ ] Select command output produces same results as before
   - [ ] `prompt_markers` field is gone (compile-time verification)
+
+---
+
+## 47.10 OSC 133 Click Events (click_events=2)
+
+<!-- Ghostty audit: #10865 (shell-integration: support OSC 133;A;click_events=2) -->
+
+**Source:** Ghostty #10865 — Kitty recently added support for sending relative Y coordinates when clicking in a command prompt via `OSC 133;A;click_events=2`. This lets the shell integration script know exactly where in the multi-line prompt the user clicked, enabling accurate cursor repositioning.
+
+**Required work:**
+
+- [ ] Parse `click_events=N` parameter from `OSC 133;A` prompt start markers
+- [ ] When `click_events=2`: on mouse click within the prompt region, calculate row offset relative to prompt start
+- [ ] Send the click coordinate to the shell via the shell integration protocol
+- [ ] Requires Section 47.7 (Click to Move Cursor in Prompt) as prerequisite
+
+**Priority:** Low — depends on shell integration and semantic prompt infrastructure.
+
+**Reference:** [Kitty issue #9500](https://github.com/kovidgoyal/kitty/issues/9500)
+
+---
+
+## 47.11 Click-to-Move Multi-Click Delay
+
+<!-- Ghostty audit: #11394 (cursor-click-to-move should delay for double/triple clicks) -->
+
+**Source:** Ghostty #11394 — The cursor-click-to-move feature triggers immediately on single click, which interferes with double-click (word select) and triple-click (line select). The feature should delay briefly (~200ms) to distinguish single click from multi-click gestures.
+
+**Required work:**
+
+- [ ] When click-to-move is enabled: delay cursor repositioning by the double-click timeout (~200-300ms)
+- [ ] If a second click arrives within the timeout → cancel the move, handle as double-click (word selection)
+- [ ] If no second click → execute the cursor move
+- [ ] Must integrate with existing click-count state machine in mouse selection
+
+**Priority:** Low — requires click-to-move feature (Section 47.7) first.
+
+---
+
+## 47.12 Copy Last Command Output
+
+<!-- Ghostty audit (batch 4): #11747 (copy_last_command_output action) -->
+
+**Source:** Ghostty #11747 — Users want a single keybind to copy the output of the last command to the clipboard. This requires OSC 133 semantic zones to identify where command output starts and ends.
+
+**Required work:**
+
+- [ ] Action: `CopyLastCommandOutput` — uses OSC 133 prompt markers to find the output region between the last command's prompt-end (OSC 133;C) and the next prompt-start (OSC 133;A)
+- [ ] Extract text from that region using `selection_to_string()` equivalent
+- [ ] Copy to clipboard (respect clipboard policy from Section 45)
+- [ ] If no semantic zones available: fall back to copying everything from the last line that looks like a prompt to cursor position
+- [ ] Keybinding: `Ctrl+Shift+C` (with no selection active) could trigger this, or a dedicated binding
+- [ ] Requires Section 47.1-47.3 (semantic content type + prompt iterator) as prerequisite
+- [ ] Test: run a command, invoke CopyLastCommandOutput → verify clipboard contains only the command's output, not the prompt or next prompt
+
+**Priority:** Low — depends on semantic prompt infrastructure, but high value when available.
+
+**Reference:** Kitty's `scroll_to_prompt`, iTerm2 "Select Output of Last Command".
 
 ---
 

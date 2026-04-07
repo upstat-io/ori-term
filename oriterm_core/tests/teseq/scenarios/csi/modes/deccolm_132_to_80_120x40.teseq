@@ -1,0 +1,4 @@
+: Esc [ ? 3 h
+|Wide content at 132|.
+: Esc [ ? 3 l
+|Back to default|
