@@ -82,7 +82,7 @@ damage, DamageLine, dirty, damage tracking, incremental
 ---
 
 ### Section 03: Cross-Platform
-**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** In Progress
+**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Complete
 ```
 cross-platform, day one, Windows, Linux, macOS, platform abstraction
 ConPTY, portable-pty, openpty, forkpty, SIGCHLD
@@ -1221,7 +1221,7 @@ These features from Ghostty 1.3.0 belong in sections already marked complete. Th
 |----|-------|------|------|--------|
 | 01 | Cell + Grid | `section-01-cell-grid.md` | 0 | Not Started |
 | 02 | Terminal State Machine + VTE | `section-02-term-vte.md` | 0 | Not Started |
-| 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | In Progress |
+| 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Complete |
 | 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
 | 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
 | 05B | Startup Performance | `section-05b-startup-perf.md` | 2 | Not Started (blocks 06) |
