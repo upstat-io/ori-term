@@ -1,7 +1,7 @@
 //! vttest menu 8: VT102 features — ICH (insert character), DCH (delete
 //! character), IL (insert line), DL (delete line).
 
-use super::session::{VtTestSession, grid_chars, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// Structural assertions for VT102 menu 8 screens.
 ///
@@ -158,7 +158,7 @@ fn assert_vt102_screen_structure(grid: &[Vec<char>], _text: &str, screen: usize,
 /// Menu 8 tests ICH (insert character), DCH (delete character),
 /// IL (insert line), and DL (delete line).
 fn run_menu8_vt102(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     // Wait for main menu.
@@ -177,7 +177,7 @@ fn run_menu8_vt102(cols: u16, rows: u16) {
         }
 
         // Structural assertions for ICH/DCH/IL/DL screens.
-        let grid = grid_chars(&s.term);
+        let grid = s.grid_chars();
         assert_vt102_screen_structure(&grid, &text, screen, &label);
 
         insta::assert_snapshot!(format!("{label}_08_vt102_{screen:02}"), text);

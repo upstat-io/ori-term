@@ -1,0 +1,15 @@
+[package]
+name = "oriterm_test_support"
+version.workspace = true
+edition.workspace = true
+description = "Shared PTY/Term/VTE test driver for oriterm conformance suites (vttest, tack, teseq)"
+license.workspace = true
+publish = false
+
+[dependencies]
+oriterm_core = { path = "../../oriterm_core" }
+portable-pty = "0.9.0"
+vte = { version = "0.15.0", features = ["ansi"] }
+
+[lints]
+workspace = true

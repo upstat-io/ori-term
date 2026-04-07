@@ -1,10 +1,10 @@
 //! vttest menu 2: Screen features (ED, EL, scroll regions, SGR attributes).
 
-use super::session::{VtTestSession, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// Run vttest menu 2 (screen features) at a given size, capturing all screens.
 fn run_menu2_screen_features(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     // Wait for main menu to fully render.

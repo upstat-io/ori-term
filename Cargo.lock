@@ -1973,6 +1973,7 @@ dependencies = [
  "insta",
  "libc",
  "log",
+ "oriterm_test_support",
  "parking_lot",
  "portable-pty",
  "regex",
@@ -2013,6 +2014,15 @@ dependencies = [
  "vte",
  "windows-sys 0.59.0",
  "zstd",
+]
+
+[[package]]
+name = "oriterm_test_support"
+version = "0.2.0-alpha.20260406"
+dependencies = [
+ "oriterm_core",
+ "portable-pty",
+ "vte",
 ]
 
 [[package]]

@@ -5,14 +5,14 @@
 //! normal size. Snapshots are captured as a baseline — when DECDHL/DECDWL
 //! support is added, the snapshots will change to reflect correct rendering.
 
-use super::session::{VtTestSession, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// Run vttest menu 4 (double-size characters) at a given size.
 ///
 /// Menu 4 tests DECDHL and DECDWL. Since these are unimplemented,
 /// text renders at normal size. Snapshot-only — no structural assertions.
 fn run_menu4_double_size(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     s.wait_for("Enter choice number", 5000);
