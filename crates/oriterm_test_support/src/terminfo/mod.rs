@@ -116,58 +116,9 @@ impl TerminfoEnv {
     #[must_use]
     pub fn compile_with_variant(variant: TerminfoVariant) -> Self {
         let tempdir = TempDir::new().expect("create terminfo tempdir");
-        let source_path = tempdir.path().join("ori_term.info");
-        {
-            let mut f =
-                std::fs::File::create(&source_path).expect("create embedded terminfo source file");
-            f.write_all(ORI_TERM_INFO.as_bytes())
-                .expect("write embedded terminfo source");
-        }
-
-        let tic_out = Command::new("tic")
-            .arg("-x")
-            .arg("-o")
-            .arg(tempdir.path())
-            .arg(&source_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .expect("invoke tic");
-
-        assert!(
-            tic_out.status.success(),
-            "tic failed (exit {}):\nstdout: {}\nstderr: {}",
-            tic_out.status,
-            String::from_utf8_lossy(&tic_out.stdout),
-            String::from_utf8_lossy(&tic_out.stderr),
-        );
-
-        // Sanity check: directory-backend file exists. We are NOT
-        // using this as the portable success check — that lives in
-        // 02.4 via `infocmp -A` round-trip tests. We use a
-        // filesystem probe here because we know exactly which entry
-        // we asked `tic` to write (it's the variant we passed in),
-        // so the path is determined. If the host has the hashed-db
-        // backend instead of the directory backend, this probe
-        // would fail — but every Linux/macOS ncurses build that
-        // ships `tic` also defaults to the directory backend when
-        // given `-o <dir>` (see `man tic`). Hashed-db is opt-in via
-        // `--with-hashed-db` at ncurses build time and is rare.
-        let entry_name = variant.entry_name();
-        let bucket = entry_name
-            .chars()
-            .next()
-            .expect("variant entry name is non-empty");
-        let entry_path = tempdir.path().join(bucket.to_string()).join(entry_name);
-        assert!(
-            entry_path.exists(),
-            "tic claimed success but entry file {} is missing — \
-             the host may use a hashed-db terminfo backend; the 02.4 \
-             infocmp round-trip will catch the same case via a different \
-             error message",
-            entry_path.display()
-        );
-
+        let source_path = write_embedded_source(tempdir.path());
+        run_tic(&source_path, tempdir.path());
+        assert_entry_written(tempdir.path(), variant);
         Self { tempdir, variant }
     }
 
@@ -238,6 +189,67 @@ impl TerminfoEnv {
             cmd.env(name, value);
         }
     }
+}
+
+/// Write the embedded terminfo source to a scratch file inside
+/// `tempdir` and return its path. Panics on I/O failure (test-only
+/// code; the surrounding `compile_with_variant` is documented to
+/// panic on every error path).
+fn write_embedded_source(tempdir: &std::path::Path) -> std::path::PathBuf {
+    let source_path = tempdir.join("ori_term.info");
+    let mut f = std::fs::File::create(&source_path).expect("create embedded terminfo source file");
+    f.write_all(ORI_TERM_INFO.as_bytes())
+        .expect("write embedded terminfo source");
+    source_path
+}
+
+/// Invoke `tic -x -o <dest> <source>` and panic on non-zero exit,
+/// emitting captured stdout and stderr in the panic message so the
+/// failing test points directly at the broken terminfo source.
+fn run_tic(source: &std::path::Path, dest: &std::path::Path) {
+    let tic_out = Command::new("tic")
+        .arg("-x")
+        .arg("-o")
+        .arg(dest)
+        .arg(source)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("invoke tic");
+    assert!(
+        tic_out.status.success(),
+        "tic failed (exit {}):\nstdout: {}\nstderr: {}",
+        tic_out.status,
+        String::from_utf8_lossy(&tic_out.stdout),
+        String::from_utf8_lossy(&tic_out.stderr),
+    );
+}
+
+/// Sanity-check that `tic` actually wrote the variant's directory-
+/// backend entry file. This is the deterministic post-tic probe —
+/// we know exactly which entry we asked `tic` to write, so the path
+/// is fixed: `<dir>/<first-letter>/<entry-name>`. If the host has
+/// the hashed-db backend instead of the directory backend, this
+/// probe fails — but every Linux/macOS ncurses build that ships
+/// `tic` defaults to the directory backend when given `-o <dir>`
+/// (see `man tic`); hashed-db is opt-in via `--with-hashed-db` at
+/// ncurses build time and is rare. The portable round-trip via
+/// `infocmp -A` lives in the 02.4 test suite, not here.
+fn assert_entry_written(tempdir: &std::path::Path, variant: TerminfoVariant) {
+    let entry_name = variant.entry_name();
+    let bucket = entry_name
+        .chars()
+        .next()
+        .expect("variant entry name is non-empty");
+    let entry_path = tempdir.join(bucket.to_string()).join(entry_name);
+    assert!(
+        entry_path.exists(),
+        "tic claimed success but entry file {} is missing — \
+         the host may use a hashed-db terminfo backend; the 02.4 \
+         infocmp round-trip will catch the same case via a different \
+         error message",
+        entry_path.display()
+    );
 }
 
 // Compile-time `Send` assertion. The success criterion in the

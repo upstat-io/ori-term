@@ -1,4 +1,6 @@
 use std::io::Write;
+use std::process::{Command, Stdio};
+use std::time::Instant;
 
 use portable_pty::CommandBuilder;
 
@@ -74,7 +76,7 @@ fn terminfo_env_compiles_ori_term() {
     // layout. This works across ncurses directory and hashed-db
     // backends; asserting `<tempdir>/o/ori_term` would only work on
     // the directory backend.
-    let infocmp = std::process::Command::new("infocmp")
+    let infocmp = Command::new("infocmp")
         .arg("-A")
         .arg(env.terminfo_dir())
         .arg("ori_term")
@@ -241,12 +243,12 @@ fn terminfo_env_compile_fails_loudly_on_corrupted_source() {
     // Entry body with no header — guaranteed fatal under tic.
     writeln!(f, "    am, bce,").expect("write");
     let path = f.path();
-    let out = std::process::Command::new("tic")
+    let out = Command::new("tic")
         .arg("-c")
         .arg("-x")
         .arg(path)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .expect("invoke tic");
     assert!(
@@ -277,12 +279,12 @@ fn tic_validate_source_has_zero_unexpected_warnings() {
     }
     let mut f = tempfile::NamedTempFile::new().expect("tempfile");
     f.write_all(ORI_TERM_INFO.as_bytes()).expect("write");
-    let out = std::process::Command::new("tic")
+    let out = Command::new("tic")
         .arg("-c")
         .arg("-x")
         .arg(f.path())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .expect("invoke tic");
     assert!(
@@ -325,7 +327,7 @@ fn ori_term_terminfo_round_trips_via_infocmp() {
     // `infocmp -x`. Without `-x`, the assertions below for
     // `BD=`, `BE=`, `PS=`, `PE=`, `kxIN=`, `kxOUT=` would fail
     // even though the caps are correctly compiled into the entry.
-    let infocmp = std::process::Command::new("infocmp")
+    let infocmp = Command::new("infocmp")
         .arg("-x")
         .arg("-A")
         .arg(env.terminfo_dir())
@@ -410,7 +412,7 @@ fn ori_term_direct_declares_truecolor() {
     let env = TerminfoEnv::compile_with_variant(TerminfoVariant::OriTermDirect);
     // `-x` is REQUIRED — `RGB` and `Tc` are both extension caps
     // and only appear under `infocmp -x`.
-    let infocmp = std::process::Command::new("infocmp")
+    let infocmp = Command::new("infocmp")
         .arg("-x")
         .arg("-A")
         .arg(env.terminfo_dir())
@@ -539,7 +541,7 @@ fn child_process_with_apply_env_reads_pinned_terminfo() {
         return;
     }
     let env = TerminfoEnv::compile();
-    let mut cmd = std::process::Command::new("infocmp");
+    let mut cmd = Command::new("infocmp");
     cmd.arg(env.term());
     for (name, value) in env.env_pairs() {
         cmd.env(name, value);
@@ -580,7 +582,6 @@ fn terminfo_env_compile_under_perf_budget() {
     if !tic_available() {
         return;
     }
-    use std::time::Instant;
     // Warm-up call so we measure steady-state cost, not first-run
     // overhead (filesystem cache, dynamic linker resolution).
     let _warmup = TerminfoEnv::compile();
