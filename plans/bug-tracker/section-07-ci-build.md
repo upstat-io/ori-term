@@ -92,12 +92,12 @@ sections:
   Note: Active work in tack-conformance section 01 touches `oriterm_core/tests/vttest/session.rs` and the menu*.rs imports, but does not modify the lines flagged above.
 
 - [ ] `[BUG-07-008][medium]` **`oriterm_test_support` PtySession test uses `#[cfg(unix)]` instead of a runtime gate** — found by /tp-help pre-check (Codex) during /review-plan on tack-conformance section 02.
+  <!-- resolved-by: plans/tack-conformance/section-02-terminfo-provisioning.md#02.3 — Section 02 owns the canonical fix because 02.3 codifies the runtime-gate-only convention. Check the box and append a "Fixed YYYY-MM-DD" line when 02.3 lands. -->
   Repro: open `crates/oriterm_test_support/src/session/tests.rs:16` — `pty_session_drains_simple_output` is wrapped in `#[cfg(unix)]` so the test source does not even compile on Windows. The test spawns `/bin/sh -c "printf hello"` and asserts the PTY drain contains `hello`.
   Subsystem: `crates/oriterm_test_support/src/session/tests.rs`
   Found: 2026-04-07 | Source: /tp-help pre-check (Codex)
   Severity: medium — same antipattern family as `[BUG-07-004]` (Windows PTY size test removed by `#[cfg(unix)]`). CLAUDE.md cross-platform rule: "All code must compile and run correctly on all three platforms… Every `#[cfg(target_os = "...")]` block must have counterparts for all supported targets — no platform left behind." Section 02 of `tack-conformance` explicitly bans this exact pattern in its skip-discipline subsection — Section 01 contradicts the very rule Section 02 articulates.
-  Fix: remove the `#[cfg(unix)]` attribute. Replace the body with either (a) a runtime `cfg!(unix)` early-return + `eprintln!` skip on Windows, or (b) a portable two-arm test — `/bin/sh -c "printf hello"` on Unix and `cmd.exe /C "echo hello"` on Windows. Both shells drain through `PtySession` because `portable-pty` is the whole point of cross-platform PTY abstraction (it owns ConPTY on Windows). Option (b) is preferred — it gives Windows real PTY drain coverage.
-  Note: Active work in `tack-conformance` will land Section 02 right after this; coordinating the fix with Section 02's skip-discipline conventions makes sense (run `/fix-bug BUG-07-008` before starting Section 02 work).
+  Fix: **Owned by tack-conformance Section 02.3.** The fix is a portable two-arm test (`/bin/sh -c "printf hello"` on Unix, `cmd.exe /C "echo hello"` on Windows) so Windows gets real ConPTY drain coverage. Implementation steps and full code listing live in `plans/tack-conformance/section-02-terminfo-provisioning.md` under 02.3. When that section lands, check this box, add a "Fixed YYYY-MM-DD" line, and the bug closes automatically. Do NOT run a separate `/fix-bug BUG-07-008` — Section 02's skip-discipline subsection IS the fix.
 
 ---
 

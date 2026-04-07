@@ -38,12 +38,18 @@ dev-dependency, workspace member, crates/
 **File:** `section-02-terminfo-provisioning.md` | **Status:** Not Started
 
 ```
-terminfo, termcap, TERM, TERMINFO_DIRS, xterm-256color
-ori_term.info, tic, infocmp, extra/, terminfo source
-TerminfoEnv, compile, temp directory, OnceLock
+terminfo, termcap, TERM, TERMINFO, TERMINFO_DIRS, xterm-256color
+ori_term.info, ori_term-direct, ori_term+common, tic, infocmp
+extra/, terminfo source, hand-authored, no host inheritance
+TerminfoEnv, TerminfoVariant, compile, compile_with_variant
+apply_env, env_pairs SSOT, include_str!, tempfile::TempDir
+tic_available, infocmp_available, runtime gate, skip discipline
 alacritty.info, wezterm.terminfo, ghostty.zig
-am, bce, km, mir, msgr, xenl, colors, pairs
-setaf, setab, sgr, cup, csr, smcup, rmcup
+am, bce, ccc, km, mir, msgr, xenl, colors, pairs
+setaf, setab, sgr, cup, csr, smcup, rmcup, smkx, rmkx
+acsc, smacs, rmacs, rep, BD, BE, PS, PE, kxIN, kxOUT, XF
+Tc, Ms, Ss, Se, Smulx, Setulc, Sync, hs, dsl, tsl, fsl
+kf1-kf63, BUG-07-008, child-process integrity test
 ```
 
 ---
