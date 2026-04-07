@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Terminfo Provisioning
@@ -61,22 +61,22 @@ sections:
 
 **Success Criteria:**
 
-- [ ] `extra/ori_term.info` exists, parseable by `tic -c -x` with exit 0 and stderr empty (sole tolerated exception: the known ncurses `Setulc` false positive — see Success Criteria frontmatter for exact text)
-- [ ] `extra/ori_term.info` is an Alacritty-style hand-authored entry (no `use=xterm-256color,` inheritance — the full cap list is declared explicitly so terminfo drift on the host doesn't silently change what ori_term claims). It mirrors Alacritty's `alacritty+common` base + per-entry overrides, with the cap list scoped to what ori_term ACTUALLY implements today
-- [ ] `oriterm_test_support::terminfo::TerminfoEnv::compile()` produces a working terminfo directory consumable by `tack`, `infocmp`, and any ncurses-linked tool. **`compile()` shells out only to `tic`** — the `infocmp -A` round-trip lives in 02.4 tests, NOT in the constructor (so callers gate on `tic_available()` only).
-- [ ] `TerminfoVariant` enum (`OriTerm`, `OriTermDirect`) is the only valid `compile_with_variant` parameter — the compiler enforces exhaustivity, no `&'static str` typo surface
-- [ ] `TerminfoEnv` implements `Drop` cleanly via `tempfile::TempDir`
-- [ ] `TerminfoEnv::apply_env(&mut CommandBuilder)` sets `TERM`, `TERMINFO`, AND `TERMINFO_DIRS` on the child in one call — consumers do NOT iterate an env-var array. Adding/removing env vars is internal to `TerminfoEnv`, never a downstream-edit storm.
-- [ ] `tic_available()` and `infocmp_available()` helper functions exist in `oriterm_test_support` next to `tack_available()` (Section 03). `tic_available()` gates `compile()` and `spawn_tack`; `infocmp_available()` ONLY gates 02.4 round-trip tests.
-- [ ] `cargo test -p oriterm_test_support terminfo` — internal unit tests pass on Linux/macOS, skip cleanly on Windows
-- [ ] `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green
-- [ ] BUG-07-008 fix landed (preferred two-arm portable test for `pty_session_drains_simple_output`) — see 02.3 checklist
-- [ ] Performance: `TerminfoEnv::compile()` micro-benchmark recorded under BOTH debug and release profiles. Single-call ceiling 1000 ms. Section 02 also projects 50-call cost (×50) and files `/add-bug` if the projection exceeds 30 s.
-- [ ] Child-process integrity test landed: `infocmp` spawned as a child with `apply_env()` applied, NO `-A` flag, returns the pinned ori_term entry (proves env-var precedence path actually works)
-- [ ] Parallel/repeated compile stress test (`terminfo_env_repeated_compile_stress`) calls `compile()` 5 times in succession in one test, asserts all 5 succeed AND all 5 tempdirs clean up after Drop
-- [ ] `round_trip_gate_semantics_pinned` proves the SSOT `round_trip_gate_closed` / `round_trip_gate_closed_for` gate fires correctly for every combination of `tic_available()` and `infocmp_available()` (the landed replacement for the originally-proposed `infocmp_unavailable_skips_round_trip_test` pin — see 02.R/TPR-02-002)
-- [ ] Failing-test-first sequencing enforced: every TDD entry in 02.2 explicitly says "write the test FIRST, watch it fail, THEN implement"
-- [ ] Satisfies the two pinned-terminfo mission criteria in `00-overview.md` (the `extra/ori_term.info` hand-authored source criterion AND the `tic`-compiles + pinned `TERM=ori_term`/`TERMINFO`/`TERMINFO_DIRS` criterion — see overview for the reconciled wording). Section 02 also indirectly contributes to the cross-platform skip-discipline mission criterion via the BUG-07-008 fix landed in 02.3 (`pty_session_drains_simple_output` becomes the second portable test in `oriterm_test_support`).
+- [x] `extra/ori_term.info` exists, parseable by `tic -c -x` with exit 0 and stderr empty (sole tolerated exception: the known ncurses `Setulc` false positive — see Success Criteria frontmatter for exact text)
+- [x] `extra/ori_term.info` is an Alacritty-style hand-authored entry (no `use=xterm-256color,` inheritance — the full cap list is declared explicitly so terminfo drift on the host doesn't silently change what ori_term claims). It mirrors Alacritty's `alacritty+common` base + per-entry overrides, with the cap list scoped to what ori_term ACTUALLY implements today
+- [x] `oriterm_test_support::terminfo::TerminfoEnv::compile()` produces a working terminfo directory consumable by `tack`, `infocmp`, and any ncurses-linked tool. **`compile()` shells out only to `tic`** — the `infocmp -A` round-trip lives in 02.4 tests, NOT in the constructor (so callers gate on `tic_available()` only).
+- [x] `TerminfoVariant` enum (`OriTerm`, `OriTermDirect`) is the only valid `compile_with_variant` parameter — the compiler enforces exhaustivity, no `&'static str` typo surface
+- [x] `TerminfoEnv` implements `Drop` cleanly via `tempfile::TempDir`
+- [x] `TerminfoEnv::apply_env(&mut CommandBuilder)` sets `TERM`, `TERMINFO`, AND `TERMINFO_DIRS` on the child in one call — consumers do NOT iterate an env-var array. Adding/removing env vars is internal to `TerminfoEnv`, never a downstream-edit storm.
+- [x] `tic_available()` and `infocmp_available()` helper functions exist in `oriterm_test_support` next to `tack_available()` (Section 03). `tic_available()` gates `compile()` and `spawn_tack`; `infocmp_available()` ONLY gates 02.4 round-trip tests.
+- [x] `cargo test -p oriterm_test_support terminfo` — internal unit tests pass on Linux/macOS, skip cleanly on Windows
+- [x] `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green
+- [x] BUG-07-008 fix landed (preferred two-arm portable test for `pty_session_drains_simple_output`) — see 02.3 checklist
+- [x] Performance: `TerminfoEnv::compile()` micro-benchmark recorded under BOTH debug and release profiles. Single-call ceiling 1000 ms. Section 02 also projects 50-call cost (×50) and files `/add-bug` if the projection exceeds 30 s.
+- [x] Child-process integrity test landed: `infocmp` spawned as a child with `apply_env()` applied, NO `-A` flag, returns the pinned ori_term entry (proves env-var precedence path actually works)
+- [x] Parallel/repeated compile stress test (`terminfo_env_repeated_compile_stress`) calls `compile()` 5 times in succession in one test, asserts all 5 succeed AND all 5 tempdirs clean up after Drop
+- [x] `round_trip_gate_semantics_pinned` proves the SSOT `round_trip_gate_closed` / `round_trip_gate_closed_for` gate fires correctly for every combination of `tic_available()` and `infocmp_available()` (the landed replacement for the originally-proposed `infocmp_unavailable_skips_round_trip_test` pin — see 02.R/TPR-02-002)
+- [x] Failing-test-first sequencing enforced: every TDD entry in 02.2 explicitly says "write the test FIRST, watch it fail, THEN implement"
+- [x] Satisfies the two pinned-terminfo mission criteria in `00-overview.md` (the `extra/ori_term.info` hand-authored source criterion AND the `tic`-compiles + pinned `TERM=ori_term`/`TERMINFO`/`TERMINFO_DIRS` criterion — see overview for the reconciled wording). Section 02 also indirectly contributes to the cross-platform skip-discipline mission criterion via the BUG-07-008 fix landed in 02.3 (`pty_session_drains_simple_output` becomes the second portable test in `oriterm_test_support`).
 
 **Context:** Without a controlled terminfo entry, tack reads `$TERM=xterm-256color` from the host system terminfo database (`/usr/share/terminfo/x/xterm-256color` on Linux). That entry was authored by someone else, drifts over time, and doesn't reflect ori_term's actual capabilities. Tests built on the host entry validate the host's idea of "xterm-256color", not ori_term's implementation. The result: ori_term might claim to implement a capability the host terminfo says exists, or fail a test because the host terminfo declares a feature ori_term doesn't yet support.
 
