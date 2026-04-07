@@ -45,14 +45,7 @@ fn run_menu1_golden(cols: u16, rows: u16) {
 
     let mut screen = 1;
     loop {
-        let text = {
-            let c = s.term().renderable_content();
-            let mut t = String::new();
-            for cell in &c.cells {
-                t.push(cell.ch);
-            }
-            t
-        };
+        let text = s.grid_text();
 
         if text.contains("Enter choice number") {
             break;
@@ -90,14 +83,7 @@ fn run_menu2_golden(cols: u16, rows: u16) {
 
     let mut screen = 1;
     loop {
-        let text = {
-            let c = s.term().renderable_content();
-            let mut t = String::new();
-            for cell in &c.cells {
-                t.push(cell.ch);
-            }
-            t
-        };
+        let text = s.grid_text();
 
         if text.contains("Enter choice number") {
             break;

@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Shared PtySession Infrastructure"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Create crates/oriterm_test_support with a shared PtySession (PTY+Term+VTE driver), then migrate both vttest text tests and vttest GPU golden tests onto it. Eliminate the VtTestSession LEAK between oriterm_core/tests/vttest/session.rs and oriterm/src/gpu/visual_regression/vttest/mod.rs (581 lines, ~240 lines duplicated byte-for-byte). Zero behavioral change to existing 198 insta snapshots and 98 golden PNGs."
 success_criteria:
@@ -37,13 +37,13 @@ sections:
     status: complete
   - id: "01.5"
     title: "Verify zero behavioral change (snapshot + PNG byte-equality)"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "01.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 01: Shared PtySession Infrastructure
@@ -257,7 +257,7 @@ This is the heart of the deduplication. `PtySession` becomes the SINGLE canonica
   ```
 
 
-- [ ] **Pre-existing bug cleanup gate:** <!-- verified in 01.5 --> the current `oriterm_core/tests/vttest/session.rs` VtTestSession (239 lines) has the same reaping bug, and the plan adapts that file to the new shared type. After Section 01.3's rewrite, the new adapter inherits the `impl Drop` from `PtySession` automatically (because the adapter type-aliases `VtTestSession = PtySession`). Verify after 01.5: no zombie `vttest` or `tack` processes remain after the test suite runs. File via `/add-bug` as `pre-existing reaped here` ONLY if the verification shows any remaining leaks — but the Drop impl should close the issue outright.
+- [x] **Pre-existing bug cleanup gate:** verified post-01.5 — `pgrep -af 'vttest'` after the full suite shows zero stray vttest processes. The shared `impl Drop for PtySession` reaps children cleanly on Linux. Original `VtTestSession::_child` zombie-leak bug closed. the current `oriterm_core/tests/vttest/session.rs` VtTestSession (239 lines) has the same reaping bug, and the plan adapts that file to the new shared type. After Section 01.3's rewrite, the new adapter inherits the `impl Drop` from `PtySession` automatically (because the adapter type-aliases `VtTestSession = PtySession`). Verify after 01.5: no zombie `vttest` or `tack` processes remain after the test suite runs. File via `/add-bug` as `pre-existing reaped here` ONLY if the verification shows any remaining leaks — but the Drop impl should close the issue outright.
 
 - [x] Implement the general constructor and the vttest helper:
   ```rust
@@ -746,24 +746,24 @@ This is the higher-risk half of the migration. The GPU file is 581 lines today a
 
 The whole point of Section 01 is **zero behavioral change**. This subsection is the proof.
 
-- [ ] Run `timeout 150 cargo test -p oriterm_core --test vttest` to completion. Expect: all menu tests pass.
-- [ ] Confirm: zero `.snap.new` files generated under `oriterm_core/tests/vttest/snapshots/`. Use `find oriterm_core/tests/vttest/snapshots -name '*.snap.new'` — empty output is the gate.
-- [ ] Snapshot count check: the count of `.snap` files under `oriterm_core/tests/vttest/snapshots/` is unchanged from the baseline. Compare against the overview's claimed 198. (Document the actual number found if it differs from 198 — the overview will be corrected during section 09.)
+- [x] Run `timeout 150 cargo test -p oriterm_core --test vttest` to completion. Expect: all menu tests pass. → 29/29 in 7.35s.
+- [x] Confirm: zero `.snap.new` files generated under `oriterm_core/tests/vttest/snapshots/`. Use `find oriterm_core/tests/vttest/snapshots -name '*.snap.new'` — empty output is the gate. → 0.
+- [x] Snapshot count check: the count of `.snap` files under `oriterm_core/tests/vttest/snapshots/` is unchanged from the baseline. Compare against the overview's claimed 198. → 198 (matches baseline).
 
-- [ ] Run `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` to completion. Expect: all golden tests pass.
-- [ ] Golden PNG count check: the count of `vttest_*.png` files under `oriterm/tests/references/` is unchanged from the baseline (research found 98). Use `find oriterm/tests/references -name 'vttest_*.png' | wc -l` — must equal pre-migration count.
-- [ ] Pixel diff check: the GPU test framework already enforces zero pixel diffs against golden references (any test that fails would surface it). Re-run twice to make sure the migrated code is deterministic — flaky golden image tests are bugs (per CLAUDE.md "Flaky tests ARE bugs"); if any flakes, file via `/add-bug` immediately and treat as a blocker for closing this section.
+- [x] Run `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` to completion. Expect: all golden tests pass. → 11/11 (run 1), 12/12 with the blink test included (run 2).
+- [x] Golden PNG count check: the count of `vttest_*.png` files under `oriterm/tests/references/` is unchanged from the baseline (research found 98). Use `find oriterm/tests/references -name 'vttest_*.png' | wc -l` — must equal pre-migration count. → 98.
+- [x] Pixel diff check: the GPU test framework already enforces zero pixel diffs against golden references (any test that fails would surface it). Re-run twice to make sure the migrated code is deterministic — flaky golden image tests are bugs (per CLAUDE.md "Flaky tests ARE bugs"); if any flakes, file via `/add-bug` immediately and treat as a blocker for closing this section. → Two consecutive clean runs (11/11 then 12/12). Codex's TPR re-run was a third independent clean run on a separate invocation. Determinism confirmed.
 
-- [ ] Architecture / hygiene gate:
-  - [ ] `find oriterm/src/gpu/visual_regression/vttest -name '*.rs' -exec wc -l {} \;` — every file under 500 lines. The new `mod.rs` MUST be under 500.
-  - [ ] No file in `crates/oriterm_test_support/src/` exceeds 500 lines.
-  - [ ] No new `#[allow(clippy::...)]` introduced.
-  - [ ] No new `unsafe` blocks introduced.
+- [x] Architecture / hygiene gate:
+  - [x] `find oriterm/src/gpu/visual_regression/vttest -name '*.rs' -exec wc -l {} \;` — every file under 500 lines. The new `mod.rs` MUST be under 500. → menus_3_8.rs 264, mod.rs 275, render.rs 148. All under 500.
+  - [x] No file in `crates/oriterm_test_support/src/` exceeds 500 lines. → lib.rs 16, session/mod.rs 337, session/tests.rs 40. All under 500.
+  - [x] No new `#[allow(clippy::...)]` introduced. → grep verified zero matches in `crates/oriterm_test_support/src/` and `oriterm/src/gpu/visual_regression/vttest/`.
+  - [x] No new `unsafe` blocks introduced. → grep verified zero matches.
 
-- [ ] Cross-platform build gate:
-  - [ ] `./build-all.sh` (cross-compiles to `x86_64-pc-windows-gnu`) — green
-  - [ ] `./clippy-all.sh` — green, no new warnings
-  - [ ] `timeout 150 ./test-all.sh` — green, no regressions in non-vttest tests either
+- [x] Cross-platform build gate:
+  - [x] `./build-all.sh` (cross-compiles to `x86_64-pc-windows-gnu`) — green (debug + release).
+  - [x] `./clippy-all.sh` — green, no new warnings (host + windows-gnu).
+  - [x] `timeout 150 ./test-all.sh` — green, no regressions in non-vttest tests either.
 
 ---
 
@@ -788,29 +788,33 @@ When all findings are triaged:
 
 ## 01.N Completion Checklist
 
-- [ ] `crates/oriterm_test_support/Cargo.toml` exists and the crate is in `workspace.members`
-- [ ] `crates/oriterm_test_support/src/session.rs` defines `PtySession`, `PtyResponder`, `tool_available`, `vttest_available`
-- [ ] `crates/oriterm_test_support/src/session/tests.rs` (sibling tests file) covers `tool_available`, `vttest_available`, and a basic `pty_session_drains_simple_output` smoke test
-- [ ] `oriterm_core/tests/vttest/session.rs` is reduced to a thin adapter (<60 lines), exports `VtTestSession` as a type alias for `PtySession`
-- [ ] All 8 menu test files in `oriterm_core/tests/vttest/` import `PtySession` from the adapter — no direct PTY plumbing remains in this directory
-- [ ] `oriterm/src/gpu/visual_regression/vttest/mod.rs` is below 500 lines (target: <300) — no `PtyResponder` or `VtTestSession` definition remains here
-- [ ] `oriterm/src/gpu/visual_regression/vttest/menus_3_8.rs` imports `PtySession` and `assert_golden` from the new layout
-- [ ] `oriterm_test_support` is in `oriterm_core/Cargo.toml` `[dev-dependencies]` and `oriterm/Cargo.toml` `[dev-dependencies]`
-- [ ] `timeout 150 cargo test -p oriterm_core --test vttest` — all menu tests pass; zero `.snap.new` files
-- [ ] `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` — all golden tests pass; zero pixel diffs
-- [ ] `cargo test -p oriterm_test_support` — internal unit tests pass
-- [ ] `./build-all.sh` green (host + `x86_64-pc-windows-gnu`)
-- [ ] `./clippy-all.sh` green — no new warnings, no `#[allow(clippy::...)]` added
-- [ ] `timeout 150 ./test-all.sh` green
-- [ ] Plan annotation cleanup: no temporary scaffolding (`§`, `Phase`, `section-`, `BUG`, `TPR` markers) left in any `.rs` file
-- [ ] All intermediate TPR checkpoint findings (from 01.3 and 01.4 checkpoints) resolved — see `01.R`
-- [ ] **Plan sync**:
-  - [ ] This section's frontmatter `status` → `complete`, all subsection statuses → `complete`
-  - [ ] `00-overview.md` Quick Reference table: Section 01 marked Complete
-  - [ ] `00-overview.md` Mission Success Criteria: criteria #1, #2, #3, #4 checkboxes ticked
-  - [ ] `index.md` Section 01 status updated
-  - [ ] Section 02's `depends_on: ["01"]` confirmed accurate; no stale assumptions
-- [ ] `/tpr-review` final pass — Codex review finds zero critical or major findings (or all triaged through `01.R`)
-- [ ] `/impl-hygiene-review last commit` final pass — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
+- [x] `crates/oriterm_test_support/Cargo.toml` exists and the crate is in `workspace.members`
+- [x] `crates/oriterm_test_support/src/session.rs` defines `PtySession`, `PtyResponder`, `tool_available`, `vttest_available` — note: laid out as `session/mod.rs` (directory module) per `.claude/rules/test-organization.md`, not `session.rs`
+- [x] `crates/oriterm_test_support/src/session/tests.rs` (sibling tests file) covers `tool_available`, `vttest_available`, and a basic `pty_session_drains_simple_output` smoke test
+- [x] `oriterm_core/tests/vttest/session.rs` is reduced to a thin adapter (<60 lines) — actual: 12 lines. Deviation: `VtTestSession` type alias was DROPPED entirely (helper signatures in menu3/menu6 renamed to `&mut PtySession`); see 01.3 deviation note.
+- [x] All 8 menu test files in `oriterm_core/tests/vttest/` import `PtySession` from the adapter — no direct PTY plumbing remains in this directory
+- [x] `oriterm/src/gpu/visual_regression/vttest/mod.rs` is below 500 lines (target: <300) — no `PtyResponder` or `VtTestSession` definition remains here. Actual: 275 lines.
+- [x] `oriterm/src/gpu/visual_regression/vttest/menus_3_8.rs` imports `PtySession` and `assert_golden` from the new layout (`oriterm_test_support::PtySession` + `super::render::assert_golden`).
+- [x] `oriterm_test_support` is in `oriterm_core/Cargo.toml` `[dev-dependencies]` and `oriterm/Cargo.toml` `[dev-dependencies]`
+- [x] `timeout 150 cargo test -p oriterm_core --test vttest` — all menu tests pass; zero `.snap.new` files (29/29, verified twice)
+- [x] `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` — all golden tests pass; zero pixel diffs (11/11 + blink test)
+- [x] `cargo test -p oriterm_test_support` — internal unit tests pass (3/3)
+- [x] `./build-all.sh` green (host + `x86_64-pc-windows-gnu`)
+- [x] `./clippy-all.sh` green — no new warnings, no `#[allow(clippy::...)]` added
+- [x] `timeout 150 ./test-all.sh` green
+- [x] Plan annotation cleanup: no temporary scaffolding (`§`, `Phase`, `section-`, `BUG`, `TPR` markers) left in any `.rs` file (verified via grep on `crates/oriterm_test_support/src`, `oriterm/src/gpu/visual_regression/vttest`, `oriterm_core/tests/vttest`; also no `TODO`/`FIXME`/`HACK`/`XXX`)
+- [x] All intermediate TPR checkpoint findings (from 01.3 and 01.4 checkpoints) resolved — see `01.R` (1 finding fixed: `[TPR-01-001]`; 01.4 TPR clean iter 1)
+- [x] `/tpr-review` final pass — clean on iteration 1 (2026-04-07). Re-verified the full Section 01 scope end-to-end: `cargo test -p oriterm_test_support` (3/3), `timeout 150 cargo test -p oriterm_core --test vttest` (29/29), `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` (11/11), `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_blink_multi_frame` (1/1), zero `.snap.new` / `.png.new` artifacts, and no stray `vttest` / `tack` children after the run. Cross-subsection grep checks confirmed the PTY/Term/VTE session plumbing now lives only in `crates/oriterm_test_support/src/session/mod.rs`; the one remaining direct PTY opener under `oriterm_core/tests/vttest/pty_size.rs` is the standalone PTY-size propagation test, not shared session/helper duplication.
+- [x] **Plan sync**:
+  - [x] This section's frontmatter `status` → `complete`, all subsection statuses → `complete`
+  - [x] `00-overview.md` Quick Reference table: Section 01 marked Complete
+  - [x] `00-overview.md` Mission Success Criteria: criteria #1, #2, #3, #4 checkboxes ticked
+  - [x] `index.md` Section 01 status updated
+  - [x] Section 02's `depends_on: ["01"]` confirmed accurate; no stale assumptions
+- [x] `/impl-hygiene-review last commit` final pass — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
+  - Multi-pass review (LEAK/SSOT, Algorithmic DRY, Boundary/Flow, Surface Hygiene) on the entire section 01 scope. Result: ZERO new LEAKs introduced by section 01. The section faithfully preserved 5 pre-existing algorithmic-duplication patterns (the migration mandate was "zero behavioral change", which precluded touching the per-screen-walker scaffolds).
+  - Inline cleanups landed during this pass: (1) extracted `feed_and_flush` private helper to dedupe the response-pump block in `drain()`/`drain_blocking()`; (2) `grid_text()` now delegates to `grid_chars()` instead of duplicating the cell-iteration loop (single canonical character extractor); (3) replaced two inline `RenderableContent.cells` text-build blocks in `oriterm/src/gpu/visual_regression/vttest/mod.rs:run_menu1/2_golden` with calls to the canonical `s.grid_text()` (eliminates a parallel grid serializer).
+  - Filed `[BUG-07-007][medium]` for the cross-crate vttest screen-walker scaffold (13+ instances). Pre-existing, not blocking — fix is a higher-order helper in `oriterm_test_support` that both crates consume.
+  - Verification: `cargo test -p oriterm_test_support` (3/3), `cargo test -p oriterm_core --test vttest` (29/29, zero `.snap.new`), `cargo test -p oriterm --features gpu-tests -- vttest_golden vttest_blink_multi_frame` (12/12), `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` — all green.
 
 **Exit Criteria:** `crates/oriterm_test_support` exists with `PtySession` providing the canonical PTY+Term+VTE driver. `oriterm_core/tests/vttest/session.rs` is a <60-line adapter. `oriterm/src/gpu/visual_regression/vttest/mod.rs` is <300 lines and contains no PTY plumbing. `timeout 150 cargo test -p oriterm_core --test vttest` runs to completion with all 198 insta snapshots matching byte-for-byte. `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden` runs to completion with all 98 PNG goldens matching pixel-for-pixel. Zero new clippy warnings, zero new `#[allow]` annotations, zero new `unsafe` blocks. The VtTestSession LEAK is closed; the BLOAT in `vttest/mod.rs` is closed.
