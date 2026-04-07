@@ -22,6 +22,15 @@ use crate::font::CachedTextMeasurer;
 impl App {
     /// Render a dialog window's content to its GPU surface.
     pub(super) fn render_dialog(&mut self, winit_id: WindowId) {
+        // I1 render gate (5.16.2). Direct callers (`dialog_management`,
+        // `dialog_context::event_handling`) bypass `render_dirty_windows`'s
+        // gate, so this is one of the canonical call sites of
+        // `gate_outcome`. Both sites read the same `GpuHealth` SSOT.
+        if let Some(gated) = crate::gpu::recovery::gate_outcome(&self.gpu_health) {
+            log::trace!("render_dialog gate: {gated:?}");
+            return;
+        }
+
         let Some(gpu) = self.gpu.as_ref() else { return };
         let Some(pipelines) = self.pipelines.as_ref() else {
             return;

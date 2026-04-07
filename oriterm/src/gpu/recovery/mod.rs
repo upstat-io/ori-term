@@ -29,6 +29,12 @@
 //! callback registration, and the `SurfaceError::{Outdated, Lost, Other}`
 //! split. The actual `App::recover_gpu()` state machine lands in 5.16.2.
 
+mod outcome;
+mod wakeup;
+
+pub(crate) use outcome::{RenderOutcome, gate_outcome};
+pub(crate) use wakeup::{WakeupSource, should_post_wakeup};
+
 use std::time::Instant;
 
 /// Reason a GPU device was lost.

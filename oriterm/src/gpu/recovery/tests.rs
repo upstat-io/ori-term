@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use super::{GpuHealth, GpuLossReason};
+use super::{GpuHealth, GpuLossReason, RenderOutcome, gate_outcome};
 
 #[test]
 fn gpu_health_default_is_healthy_epoch_zero() {
@@ -196,4 +196,40 @@ fn healthy_accessors_all_none() {
     assert_eq!(h.recovering_since(), None);
     assert_eq!(h.unavailable_since(), None);
     assert_eq!(h.unavailable_message(), None);
+}
+
+// --- 5.16.2 render gate (the TDD-first failing test from 5.16.13) ---
+
+#[test]
+fn recovery_state_machine_blocks_render_when_recovering() {
+    let h = GpuHealth::Recovering {
+        epoch: 0,
+        attempt: 0,
+        since: Instant::now(),
+    };
+    assert!(
+        matches!(gate_outcome(&h), Some(RenderOutcome::GatedRecovering)),
+        "Recovering must gate render with GatedRecovering",
+    );
+}
+
+#[test]
+fn recovery_state_machine_blocks_render_when_unavailable() {
+    let h = GpuHealth::Unavailable {
+        last_error: "no adapter".to_string(),
+        since: Instant::now(),
+    };
+    assert!(
+        matches!(gate_outcome(&h), Some(RenderOutcome::GatedUnavailable)),
+        "Unavailable must gate render with GatedUnavailable",
+    );
+}
+
+#[test]
+fn render_gate_passes_when_healthy() {
+    let h = GpuHealth::Healthy { epoch: 7 };
+    assert!(
+        gate_outcome(&h).is_none(),
+        "Healthy must allow render — gate_outcome returns None",
+    );
 }

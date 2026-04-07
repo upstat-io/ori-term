@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use super::{ControlFlowDecision, ControlFlowInput, compute_control_flow};
 
-/// Helper to build a default input (all false / idle).
+/// Helper to build a default input (all false / idle, GPU healthy).
 fn idle_input() -> ControlFlowInput {
     let now = Instant::now();
     ControlFlowInput {
@@ -10,6 +10,7 @@ fn idle_input() -> ControlFlowInput {
         budget_elapsed: false,
         has_animations: false,
         blinking_active: false,
+        gpu_healthy: true,
         next_blink_change: now + Duration::from_secs(1),
         next_text_blink_change: now + Duration::from_secs(1),
         now,
@@ -179,4 +180,59 @@ fn compute_control_flow_plateau_blink_wakeup() {
         result,
         ControlFlowDecision::WaitUntil(input.now + Duration::from_millis(530)),
     );
+}
+
+// 5.16.2 wakeup gate — gpu_healthy = false silences every periodic source.
+
+#[test]
+fn control_flow_during_recovering_returns_wait() {
+    // Performance Invariant 1: zero idle CPU during recovery.
+    // When the GPU is not healthy, every wakeup source is silenced and
+    // compute_control_flow returns Wait — the event loop sleeps until the
+    // next external event arrives. This is the I3 (bounded cost) pin
+    // referenced from 5.16.13's "Idle CPU during Recovering" pin.
+    let mut input = idle_input();
+    input.gpu_healthy = false;
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::Wait);
+}
+
+#[test]
+fn control_flow_recovering_overrides_blink_wakeup() {
+    // Even with cursor blink and text blink active, the recovery gate
+    // takes precedence so the event loop does not spin against a dead
+    // device.
+    let mut input = idle_input();
+    input.gpu_healthy = false;
+    input.blinking_active = true;
+    input.next_blink_change = input.now + Duration::from_millis(16);
+    input.next_text_blink_change = input.now + Duration::from_millis(16);
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::Wait);
+}
+
+#[test]
+fn control_flow_recovering_overrides_animations() {
+    // Animations also yield to the recovery gate.
+    let mut input = idle_input();
+    input.gpu_healthy = false;
+    input.has_animations = true;
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::Wait);
+}
+
+#[test]
+fn control_flow_recovering_overrides_dirty() {
+    // Even when windows are dirty, recovery means we cannot render —
+    // sleep until recovery completes.
+    let mut input = idle_input();
+    input.gpu_healthy = false;
+    input.still_dirty = true;
+    input.budget_elapsed = true;
+
+    let result = compute_control_flow(&input);
+    assert_eq!(result, ControlFlowDecision::Wait);
 }

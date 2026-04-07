@@ -114,6 +114,16 @@ impl PaneRenderCache {
     }
 
     /// Invalidate all cached panes (e.g. atlas rebuild, font change).
+    ///
+    /// **5.16.2 recovery discipline:** during `GpuHealth::Recovering`, callers
+    /// must NOT loop this on every mux notification. The 5.16.3 teardown
+    /// drops the entire cache wholesale, so any per-notification invalidation
+    /// is wasted CPU. Callers in hot paths should consult
+    /// `gpu_health.is_healthy()` before invalidating; rare user-action sites
+    /// (theme change, font reload, tab switch) need no gate because they are
+    /// not reachable during recovery in practice — the gate at
+    /// `App::render_dirty_windows` and `compute_control_flow` ensures the
+    /// event loop sleeps through recovery.
     pub(crate) fn invalidate_all(&mut self) {
         self.entries.clear();
     }
