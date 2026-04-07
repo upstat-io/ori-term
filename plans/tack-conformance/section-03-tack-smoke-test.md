@@ -112,7 +112,7 @@ The smoke test (and every later tack test) needs:
 
 All three go in `oriterm_test_support` next to the equivalents from Sections 01 and 02.
 
-- [ ] Add `tack_available()` to `crates/oriterm_test_support/src/session/mod.rs`:
+- [x] Add `tack_available()` to `crates/oriterm_test_support/src/session/mod.rs`:
   ```rust
   /// Check if `tack` (terminfo action checker, ncurses) is installed.
   ///
@@ -126,7 +126,7 @@ All three go in `oriterm_test_support` next to the equivalents from Sections 01 
   ```
   Add the `pub use` line to `lib.rs` re-exports next to `tic_available`.
 
-- [ ] Add `PtySession::spawn_tack(...)` helper. Decide carefully where to put it: it needs `TerminfoEnv` (from `crates/oriterm_test_support/src/terminfo/mod.rs`) and is therefore aware of terminfo provisioning. Put it on `PtySession` as an inherent method that takes `&TerminfoEnv` and uses the documented `apply_env` wrapper from Section 02:
+- [x] Add `PtySession::spawn_tack(...)` helper. Decide carefully where to put it: it needs `TerminfoEnv` (from `crates/oriterm_test_support/src/terminfo/mod.rs`) and is therefore aware of terminfo provisioning. Put it on `PtySession` as an inherent method that takes `&TerminfoEnv` and uses the documented `apply_env` wrapper from Section 02:
 
   ```rust
   use crate::terminfo::TerminfoEnv;
@@ -163,7 +163,7 @@ All three go in `oriterm_test_support` next to the equivalents from Sections 01 
   }
   ```
 
-- [ ] Add `PtySession::wait_for_child_exit(timeout_ms)` so the smoke test can assert child termination. The method polls the existing `child: Box<dyn portable_pty::Child + Send + Sync>` field via `try_wait()` until the child exits or the deadline expires. On timeout, panics with the current grid for diagnostic value (same panic-on-failure idiom as `wait_for`).
+- [x] Add `PtySession::wait_for_child_exit(timeout_ms)` so the smoke test can assert child termination. The method polls the existing `child: Box<dyn portable_pty::Child + Send + Sync>` field via `try_wait()` until the child exits or the deadline expires. On timeout, panics with the current grid for diagnostic value (same panic-on-failure idiom as `wait_for`).
 
   **Bounded-poll contract (must not hot-spin).** Once the child exits, the reader thread hits EOF, drops the channel, and `drain_blocking(50)` returns `0` **immediately** (the `recv_timeout` inside `drain_blocking` sees a closed channel and returns `Err` without sleeping — see `session/mod.rs` lines 188-194). Between the moment the child's reader-side closes and the moment `portable_pty::Child::try_wait()` observes termination (Unix: `waitpid(WNOHANG)`; Windows: `GetExitCodeProcess` — NOT `WaitForSingleObject(handle, 0)`, see `crates/portable-pty/src/win/mod.rs` `WinChild::is_complete`), the loop could hot-spin on `try_wait` → `drain_blocking(50)` returning 0 → `try_wait` → ... up to the full `timeout_ms` deadline, burning 100% CPU. **Mitigation:** on the `Ok(None)` path, call `self.drain_blocking(50)` first (forward progress on any late output), then if it returned 0, `std::thread::sleep(Duration::from_millis(10))` to bound the poll rate to ~100 Hz. 10 ms is large enough that busy-wait is impossible, small enough that a 2-second test deadline still has 200 poll attempts of headroom.
 
@@ -225,7 +225,7 @@ All three go in `oriterm_test_support` next to the equivalents from Sections 01 
 
   **Open question for the implementer:** if tack's init sequences are noisy in the snapshot (cursor positioning, mode setting, alt-screen enter), the smoke test in 03.3 may need to call `session.wait(500)` BEFORE asserting on the grid to let init settle. The right answer is data-driven — capture once, look at the snapshot, decide. Do not pre-emptively pass `-i` unless the snapshot shows it's needed.
 
-- [ ] Add unit test for `tack_available` in `crates/oriterm_test_support/src/session/tests.rs`:
+- [x] Add unit test for `tack_available` in `crates/oriterm_test_support/src/session/tests.rs`:
   ```rust
   #[test]
   fn tack_available_matches_tool_available() {
@@ -233,7 +233,7 @@ All three go in `oriterm_test_support` next to the equivalents from Sections 01 
   }
   ```
 
-- [ ] **Add unit test for `wait_for_child_exit`** in the same `session/tests.rs`. `wait_for_child_exit` is a new core `PtySession` primitive — per impl-hygiene testing discipline every core primitive needs its own unit test, not just coverage through the tack smoke test. Use the same two-arm `#[cfg(unix)]` / `#[cfg(windows)]` pattern as the existing `pty_session_drains_simple_output` test so Windows gets real ConPTY coverage of `GetExitCodeProcess`:
+- [x] **Add unit test for `wait_for_child_exit`** in the same `session/tests.rs`. `wait_for_child_exit` is a new core `PtySession` primitive — per impl-hygiene testing discipline every core primitive needs its own unit test, not just coverage through the tack smoke test. Use the same two-arm `#[cfg(unix)]` / `#[cfg(windows)]` pattern as the existing `pty_session_drains_simple_output` test so Windows gets real ConPTY coverage of `GetExitCodeProcess`:
   ```rust
   #[test]
   fn pty_session_wait_for_child_exit_returns_on_clean_exit() {
@@ -269,7 +269,7 @@ All three go in `oriterm_test_support` next to the equivalents from Sections 01 
 
 The tack tests live alongside `oriterm_core/tests/vttest/` — they follow the same convention: a single integration test target (`main.rs`) declaring the scenario sub-modules.
 
-- [ ] Create `oriterm_core/tests/tack/main.rs`:
+- [x] Create `oriterm_core/tests/tack/main.rs`:
   ```rust
   //! Tack-driven terminfo conformance tests.
   //!
@@ -386,9 +386,9 @@ The test body is fully written in 03.2. This subsection is the iterative loop to
 
 The subsection is a strict linear sequence: generate → visually verify → re-run against the generated golden → **git-add the .snap file** → flake loop → remediation. Do not reorder. The snapshot must land in the working tree **and be staged** before the 10x flake loop runs, otherwise a flake on iteration N leaves a modified `.snap` file that the developer can't distinguish from "the snapshot I just generated".
 
-- [ ] **Step 1 — Generate the golden.** Run: `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24`
+- [x] **Step 1 — Generate the golden.** Run: `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24`
   - First run creates the golden under `oriterm_core/tests/tack/snapshots/tack__tack_smoke_main_menu_80x24.snap` (or similar — insta's filename convention).
-- [ ] **Step 2 — Visual sanity check.** Open the generated `.snap` file. Verify the captured grid contains the expected main menu structure visually:
+- [x] **Step 2 — Visual sanity check.** Open the generated `.snap` file. Verify the captured grid contains the expected main menu structure visually:
   ```
   Main Menu
    b) display basic information
@@ -402,17 +402,17 @@ The subsection is a strict linear sequence: generate → visually verify → re-
   tack [n] >
   ```
   Whitespace exact match isn't required — insta diffs the full text. Only verify the menu items are present.
-- [ ] **Step 3 — Re-run against the golden.** Run: `timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24` (without `INSTA_UPDATE`). The test must PASS — the snapshot is now in the working tree and re-runs match it byte-for-byte.
-- [ ] **Step 4 — Stage the snapshot in git.** `git add oriterm_core/tests/tack/snapshots/` so the golden is part of the in-progress commit. This MUST happen before Step 6's flake loop — otherwise a flake mid-loop would leave a modified `.snap` file with no baseline to diff against. Do NOT commit yet; the commit lands at the end of Section 03 after the whole checklist passes.
-- [ ] **Step 5 — Non-determinism triage.** If the snapshot is non-deterministic (e.g., contains a timestamp, contains `Terminal size: 80 x 24.  Baud rate: 38400.  Frame size: 10.0` where the baud rate or frame size varies), the snapshot is flaky. Per CLAUDE.md "Flaky tests ARE bugs", treat this as a blocker:
+- [x] **Step 3 — Re-run against the golden.** Run: `timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24` (without `INSTA_UPDATE`). The test must PASS — the snapshot is now in the working tree and re-runs match it byte-for-byte.
+- [x] **Step 4 — Stage the snapshot in git.** `git add oriterm_core/tests/tack/snapshots/` so the golden is part of the in-progress commit. This MUST happen before Step 6's flake loop — otherwise a flake mid-loop would leave a modified `.snap` file with no baseline to diff against. Do NOT commit yet; the commit lands at the end of Section 03 after the whole checklist passes.
+- [x] **Step 5 — Non-determinism triage.** If the snapshot is non-deterministic (e.g., contains a timestamp, contains `Terminal size: 80 x 24.  Baud rate: 38400.  Frame size: 10.0` where the baud rate or frame size varies), the snapshot is flaky. Per CLAUDE.md "Flaky tests ARE bugs", treat this as a blocker:
   - Identify the source of variation in the captured grid
   - Either: (a) wait longer with `session.wait_for("tack [n] >", ...)` so the screen reaches a steady state, or (b) post-process the grid before snapshotting to redact non-deterministic regions, or (c) shrink the snapshot to a stable region only (e.g., just the main menu lines, not the diagnostic header)
   - File via `/add-bug` if the root cause is in oriterm itself (e.g., grid serialization is non-deterministic)
   - If triage lands on a fix, go back to Step 1 and regenerate. The flake loop only runs on a suspected-stable snapshot.
 
-- [ ] **Step 5a — Wait-timeout sanity check.** Validate the `wait_for` deadline is reasonable: 5 seconds is generous for a local PTY. CI may need 10s if the runner is slow — but do not pre-emptively raise it; only raise on observed CI flakiness.
+- [x] **Step 5a — Wait-timeout sanity check.** Validate the `wait_for` deadline is reasonable: 5 seconds is generous for a local PTY. CI may need 10s if the runner is slow — but do not pre-emptively raise it; only raise on observed CI flakiness.
 
-- [ ] **Step 6 — Determinism loop (AFTER Step 4 git-add).** Run the test 10 times in a row against the now-staged snapshot:
+- [x] **Step 6 — Determinism loop (AFTER Step 4 git-add).** Run the test 10 times in a row against the now-staged snapshot:
   ```
   for i in $(seq 1 10); do
       timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24 || { echo "flake on iteration $i"; break; }
@@ -443,7 +443,7 @@ Once Step 4 stages the snapshot, it becomes the empirical record Section 04 cons
 
 Skip-when-unavailable and cross-platform compile are non-negotiable per CLAUDE.md cross-platform rules and per the conformance suite's "compile everywhere, runtime skip" contract from `00-overview.md`. This subsection covers the skip gate, tack version drift, and the Windows cross-compile. Exit semantics and cleanup verification are in 03.5.
 
-- [ ] Verify skip discipline **without modifying source code**. CLAUDE.md's "no temporary scaffolding" rule bans the `if false { /* body */ }` pattern previously documented here — hand-editing the test source to force a branch is exactly the "temporary" scaffolding the rule forbids. Use the PATH-override method:
+- [x] Verify skip discipline **without modifying source code**. CLAUDE.md's "no temporary scaffolding" rule bans the `if false { /* body */ }` pattern previously documented here — hand-editing the test source to force a branch is exactly the "temporary" scaffolding the rule forbids. Use the PATH-override method:
 
   On a system where tack IS installed, run the test with a PATH that hides tack. `env -i PATH=/nonexistent` scrubs `cargo` and `timeout` along with the ncurses tools, so resolve their absolute paths from the current environment BEFORE switching to the empty one:
   ```sh
@@ -456,9 +456,9 @@ Skip-when-unavailable and cross-platform compile are non-negotiable per CLAUDE.m
 
   Belt-and-braces fallback: Section 09's cross-platform matrix runs the test on Windows (native, no ncurses), which exercises the same skip gate at runtime with zero source edits. That is additional verification, not a substitute for the PATH-override run on Linux.
 
-- [ ] **Tack version drift handling (distro variance).** Different ncurses releases ship slightly different tack main-menu wording. The plan was authored against the ncurses v6.x tack. If the test fails on a distro with an older (or newer) tack whose main-menu wording differs, update the programmatic assertions to match the actual wording (verified by re-running `tack -V` and then `printf 'q\n' | tack` on the affected system). The insta snapshot will also need `INSTA_UPDATE=1` to refresh. Document the tested tack version in a comment next to the first assertion: `// Verified against tack v1.08 (ncurses 6.4).`
+- [x] **Tack version drift handling (distro variance).** Different ncurses releases ship slightly different tack main-menu wording. The plan was authored against the ncurses v6.x tack. If the test fails on a distro with an older (or newer) tack whose main-menu wording differs, update the programmatic assertions to match the actual wording (verified by re-running `tack -V` and then `printf 'q\n' | tack` on the affected system). The insta snapshot will also need `INSTA_UPDATE=1` to refresh. Document the tested tack version in a comment next to the first assertion: `// Verified against tack v1.08 (ncurses 6.4).`
 
-- [ ] Cross-compile for `x86_64-pc-windows-gnu`:
+- [x] Cross-compile for `x86_64-pc-windows-gnu`:
   ```
   cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests
   ```
@@ -472,19 +472,19 @@ Skip-when-unavailable and cross-platform compile are non-negotiable per CLAUDE.m
 
 This subsection covers the exit-code investigation (to upgrade `eprintln!` to `assert!(exit.success(), ...)`), the zombie-process check, and the FD-leak loop. These are all "does the child actually exit and clean up?" concerns — distinct from 03.4's "does the test even compile and skip correctly?" concerns.
 
-- [ ] **Investigate tack's clean-quit exit code** and upgrade the `eprintln!` to a firm assertion. The smoke test currently logs `exit` via `eprintln!` as a CI-visibility measure, but the success criterion ultimately wants `assert!(exit.success(), ...)`. Steps:
+- [x] **Investigate tack's clean-quit exit code** and upgrade the `eprintln!` to a firm assertion. The smoke test currently logs `exit` via `eprintln!` as a CI-visibility measure, but the success criterion ultimately wants `assert!(exit.success(), ...)`. Steps:
   1. Run the smoke test on Linux under an unmodified ncurses v6.x tack. Observe the logged exit status across 10 runs — must be identical every time.
   2. If it's consistently `ExitStatus { success: true, exit_code: Some(0) }`, upgrade the `eprintln!` line to `assert!(exit.success(), "tack exited non-zero: {exit:?}\nGrid:\n{}", session.grid_text());` and keep the `eprintln!` as a supplementary line for log readability.
   3. If it's consistently non-zero or varies (this would be surprising — ncurses tack is documented to exit 0 on `q`), file `/add-bug` against tack version drift and keep the `eprintln!`-only posture until Section 09 verification cross-checks on macOS.
   4. Document the observed exit code in the test comment next to the assertion: `// Verified exit 0 on ncurses v6.4 tack v1.08 clean quit (Linux x86_64).`
 
-- [ ] **Verify child cleanup (platform-gated diagnostic).** The `wait_for_child_exit(2_000)` assertion in 03.3 is the *authoritative* check — if it passes, the child was reaped by `try_wait()` returning `Ok(Some(_))` and there is no zombie. The host-side checks below are optional diagnostic hints, useful only when `wait_for_child_exit` times out and you need to see what the OS thinks happened:
+- [x] **Verify child cleanup (platform-gated diagnostic).** The `wait_for_child_exit(2_000)` assertion in 03.3 is the *authoritative* check — if it passes, the child was reaped by `try_wait()` returning `Ok(Some(_))` and there is no zombie. The host-side checks below are optional diagnostic hints, useful only when `wait_for_child_exit` times out and you need to see what the OS thinks happened:
   - **Linux only**: `strace -f -e trace=clone,wait4 cargo test ...` to trace the child lifecycle, OR `ps -ef | grep tack` in a second terminal window right after the test exits (before the shell prompt returns). Neither command is portable.
   - **macOS**: use `ps -p <pid>` or `lsof -p <pid>` against the cargo test process; the Linux `strace`/`/proc` paths do not exist.
   - **Windows**: use `Get-Process tack* | Format-List` in PowerShell, or let Section 09's cross-platform CI matrix exercise the ConPTY reap path — there is no `strace` equivalent on Windows, and `wait_for_child_exit` on Windows goes through `GetExitCodeProcess` (NOT `WaitForSingleObject`, see `crates/portable-pty/src/win/mod.rs`).
   - If a zombie remains after `wait_for_child_exit(2_000)` returned `Ok`, the Drop impl on `PtySession` is broken — file against Section 01 and fix there. This is not an expected failure mode; the check exists to diagnose it if it happens, not as a gating step.
 
-- [ ] **Verify PTY file descriptor cleanup (platform-gated diagnostic).** Run the smoke test 50 times in a tight loop. After the loop ends, check that the FD count is stable:
+- [x] **Verify PTY file descriptor cleanup (platform-gated diagnostic).** Run the smoke test 50 times in a tight loop. After the loop ends, check that the FD count is stable:
   ```sh
   for i in $(seq 1 50); do
       timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24 --quiet || { echo "failed on iteration $i"; break; }
@@ -495,13 +495,13 @@ This subsection covers the exit-code investigation (to upgrade `eprintln!` to `a
   - **Windows**: use `handle.exe` from Sysinternals or let Section 09's CI matrix surface a leak via OOM — there is no `/proc` and no `lsof` in standard Windows installs.
   - If the FD count grows, the reader thread or the PTY pair is not being dropped — file as a bug against Section 01's `PtySession::Drop`.
 
-- [ ] **Minimal-environment sanity check is deferred to Section 09** — Section 09's `09.4 Cross-platform build + skip verification` subsection is where minimal-container and no-host-terminfo matrices live. Do NOT add one here; Section 03's cross-compile check + 03.3 determinism loop proves the happy path on the dev box, and that is the correct scope for this section.
+- [x] **Minimal-environment sanity check is deferred to Section 09** — Section 09's `09.4 Cross-platform build + skip verification` subsection is where minimal-container and no-host-terminfo matrices live. Do NOT add one here; Section 03's cross-compile check + 03.3 determinism loop proves the happy path on the dev box, and that is the correct scope for this section.
 
 ---
 
 ## 03.T TPR Checkpoint
 
-- [ ] **`/tpr-review` covering 03.1–03.5.** Run before `03.R` findings are collected. Must catch: misuse of `TerminfoEnv` env vars (wrong `TERM` name), incorrect `tack` arguments (`-V` vs `--version`), races between `wait_for` and `tack`'s alt-screen entry, leaked child processes, snapshot non-determinism, bounded-poll regression in `wait_for_child_exit` (did a refactor drop the 10 ms sleep on `Ok(None)`?), Section 04 handoff contract consistency (does `spawn_tack` signature match what `ScenarioRunner::run_at` will consume?).
+- [x] **`/tpr-review` covering 03.1–03.5.** Run before `03.R` findings are collected. Must catch: misuse of `TerminfoEnv` env vars (wrong `TERM` name), incorrect `tack` arguments (`-V` vs `--version`), races between `wait_for` and `tack`'s alt-screen entry, leaked child processes, snapshot non-determinism, bounded-poll regression in `wait_for_child_exit` (did a refactor drop the 10 ms sleep on `Ok(None)`?), Section 04 handoff contract consistency (does `spawn_tack` signature match what `ScenarioRunner::run_at` will consume?).
 
 ---
 
