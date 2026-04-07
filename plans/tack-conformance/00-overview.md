@@ -25,8 +25,8 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 - [x] vttest GPU golden tests (`oriterm/src/gpu/visual_regression/vttest/`) migrated to use shared `PtySession` — all golden images unchanged
 - [x] VtTestSession duplication eliminated (LEAK fixed)
 - [x] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
-- [ ] `extra/ori_term.info` terminfo source exists as a hand-authored, fully-pinned entry: a private `ori_term+common` base fragment plus two user-facing entries (`ori_term` and `ori_term-direct`) that consume only the private fragment via `use=ori_term+common,`. The capability vocabulary is derived from xterm-256color conventions, but there is NO `use=xterm-256color,` inheritance — every cap is declared explicitly so host terminfo drift never silently changes what ori_term claims. (Matches Alacritty's `alacritty+common` pattern.)
-- [ ] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + BOTH `TERMINFO` and `TERMINFO_DIRS` pointing at the compiled entry (some ncurses consumers honor only one of the two — set both). Verified end-to-end by a child-process integrity test that spawns `infocmp` with the env triple set and confirms the child reaches the pinned entry (NOT the host xterm-256color).
+- [x] `extra/ori_term.info` terminfo source exists as a hand-authored, fully-pinned entry: a private `ori_term+common` base fragment plus two user-facing entries (`ori_term` and `ori_term-direct`) that consume only the private fragment via `use=ori_term+common,`. The capability vocabulary is derived from xterm-256color conventions, but there is NO `use=xterm-256color,` inheritance — every cap is declared explicitly so host terminfo drift never silently changes what ori_term claims. (Matches Alacritty's `alacritty+common` pattern.)
+- [x] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + BOTH `TERMINFO` and `TERMINFO_DIRS` pointing at the compiled entry (some ncurses consumers honor only one of the two — set both). Verified end-to-end by `child_process_with_apply_env_reads_pinned_terminfo`, which spawns `infocmp` with the env triple set and asserts `infocmp`'s reconstruction-source header points inside `env.terminfo_dir()` — proving env-precedence steered the child to OUR compiled entry, not any system-installed `ori_term`. The test is immune to future packaging releases that might install `ori_term` system-wide.
 - [ ] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
 - [ ] Tack tool scenarios cover EVERY automatable tools screen: ANSI status reports (DA/DSR), SGR modes, character sets, ENQ/ACK, OSC queries. Interactive/overlap tools (scan codes, decompile terminfo) have in-code stubs.
 - [ ] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
@@ -187,7 +187,7 @@ Phase 4 - Verification
 | `vttest/mod.rs` 581 lines (BLOAT) | Mixed concerns: PTY + GPU rendering | Section 01 | Not Started |
 | `VtTestSession::_child` never killed or reaped on Drop — every test leaks a zombie vttest child (std::process::Child does NOT kill on drop) | Missing `impl Drop` that calls `child.kill()` + `child.wait()` | Section 01 (new `impl Drop` on PtySession) | Not Started |
 | `vttest_available()` defined twice: `oriterm_core/tests/vttest/session.rs:232` and `oriterm/src/gpu/visual_regression/vttest/mod.rs:297` (scattered knowledge) | No shared test-support crate | Section 01 (delete both, re-export from shared crate) | Not Started |
-| TERM hardcoded as scattered constant | No canonical terminfo provisioning | Section 02 | Not Started |
+| TERM hardcoded as scattered constant | No canonical terminfo provisioning | Section 02 | Complete |
 | `oriterm::key_encoding` is `pub(crate)` — not reachable from an integration test target | Over-restricted visibility on a stable, well-tested module | Section 08 adopts the PREFERRED in-crate sibling test approach at `oriterm/src/key_encoding/terminfo_xcheck.rs` so NO visibility change is required. The `pub(crate)` scope stays as-is. | Not Started |
 
 ## Quick Reference
@@ -195,7 +195,7 @@ Phase 4 - Verification
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Shared PtySession Infrastructure | `section-01-shared-pty-session.md` | Complete |
-| 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Not Started |
+| 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Complete |
 | 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Not Started |
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Not Started |
 | 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Not Started |

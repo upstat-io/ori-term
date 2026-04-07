@@ -5,6 +5,29 @@ use portable_pty::CommandBuilder;
 use super::{ORI_TERM_INFO, TerminfoEnv, TerminfoVariant};
 use crate::{infocmp_available, tic_available};
 
+/// SSOT for the 02.4 round-trip-suite skip gate.
+///
+/// Every round-trip test — `ori_term_terminfo_round_trips_via_infocmp`,
+/// `ori_term_direct_declares_truecolor`,
+/// `child_process_with_apply_env_reads_pinned_terminfo`, and
+/// `terminfo_env_compiles_ori_term` — short-circuits via `if
+/// round_trip_gate_closed() { return; }`. The gate is closed when
+/// either `tic` or `infocmp` is missing: the suite needs both.
+/// Having one helper means a cap regression touches one line, not
+/// four sprinkled `if !tic_available() || !infocmp_available()`
+/// copies.
+fn round_trip_gate_closed() -> bool {
+    round_trip_gate_closed_for(tic_available(), infocmp_available())
+}
+
+/// Pure form of [`round_trip_gate_closed`] — exposed so
+/// `round_trip_gate_semantics_pinned` can pin the 2x2 truth table
+/// without depending on whether the real tools are installed on
+/// the host.
+fn round_trip_gate_closed_for(tic_ok: bool, infocmp_ok: bool) -> bool {
+    !tic_ok || !infocmp_ok
+}
+
 #[test]
 fn embedded_terminfo_source_is_nonempty() {
     // The committed extra/ori_term.info is embedded at compile time
@@ -40,8 +63,7 @@ fn terminfo_env_compiles_ori_term() {
     // the round-trip in addition to the compile. The bare compile
     // path is exercised by `terminfo_env_drop_cleans_temp_dir`
     // below, which gates only on tic.
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping terminfo_env_compiles_ori_term");
+    if round_trip_gate_closed() {
         return;
     }
     let env = TerminfoEnv::compile();
@@ -232,5 +254,358 @@ fn terminfo_env_compile_fails_loudly_on_corrupted_source() {
         "tic must report failure on corrupted source; stdout={} stderr={}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// 02.4 round-trip suite — gates on BOTH tic AND infocmp.
+//
+// These tests exercise the infocmp round-trip over the committed
+// `extra/ori_term.info`, proving that what `tic` compiles round-
+// trips cleanly back through `infocmp -A`. Keeping the round-trip
+// here (not inside `TerminfoEnv::compile`) is what lets the
+// constructor stay pure-`tic` and gate only on `tic_available()`.
+
+#[test]
+fn tic_validate_source_has_zero_unexpected_warnings() {
+    // tic -c -x gate: compile-check the embedded source without
+    // writing output and assert stderr is either empty OR contains
+    // only the known ncurses 6.x `%; without %? in Setulc` false
+    // positive (one line per entry — ori_term, ori_term-direct,
+    // ori_term+common). Any other `tic:` message is a gate failure.
+    if !tic_available() {
+        return;
+    }
+    let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+    f.write_all(ORI_TERM_INFO.as_bytes()).expect("write");
+    let out = std::process::Command::new("tic")
+        .arg("-c")
+        .arg("-x")
+        .arg(f.path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("invoke tic");
+    assert!(
+        out.status.success(),
+        "tic -c -x failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    for line in stderr.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Known ncurses 6.x false positive: the %;/%? balance
+        // checker nags about `Setulc` even though the cap compiles
+        // correctly. Tolerate this specific line only.
+        if trimmed.contains("%; without %? in Setulc") {
+            continue;
+        }
+        panic!("unexpected tic -c -x stderr line: {line}\nfull stderr:\n{stderr}");
+    }
+}
+
+#[test]
+fn ori_term_terminfo_round_trips_via_infocmp() {
+    // Canonical round-trip: compile via TerminfoEnv::compile, then
+    // decompile via `infocmp -A <dir> -1 ori_term` and assert every
+    // capability class ori_term is supposed to declare is present.
+    // Using `-1` (one cap per line) gives stable output regardless
+    // of terminal width.
+    if round_trip_gate_closed() {
+        return;
+    }
+    let env = TerminfoEnv::compile();
+
+    // `-x` is REQUIRED here — extension caps (`Tc`, `Smulx`,
+    // `Setulc`, `Sync`, `BD`, `BE`, `PS`, `PE`, `kxIN`, `kxOUT`,
+    // `Cr`, `Cs`, `Ms`, `Ss`, `Se`) only appear under
+    // `infocmp -x`. Without `-x`, the assertions below for
+    // `BD=`, `BE=`, `PS=`, `PE=`, `kxIN=`, `kxOUT=` would fail
+    // even though the caps are correctly compiled into the entry.
+    let infocmp = std::process::Command::new("infocmp")
+        .arg("-x")
+        .arg("-A")
+        .arg(env.terminfo_dir())
+        .arg("-1")
+        .arg("ori_term")
+        .output()
+        .expect("invoke infocmp");
+    assert!(
+        infocmp.status.success(),
+        "infocmp -x -A failed: {}",
+        String::from_utf8_lossy(&infocmp.stderr)
+    );
+    let out = String::from_utf8_lossy(&infocmp.stdout);
+
+    // Required boolean caps — `-1` output places each boolean on
+    // its own line as `\t<name>,`. Match on the tab-prefixed form
+    // to avoid false positives like `am` matching inside a string
+    // cap parameter.
+    for cap in ["am", "bce", "ccc", "km", "mir", "msgr", "xenl"] {
+        let needle = format!("\t{cap},");
+        assert!(
+            out.contains(&needle),
+            "expected boolean cap {cap:?} in ori_term terminfo, got:\n{out}"
+        );
+    }
+
+    // Required numeric cap.
+    assert!(
+        out.contains("colors#256") || out.contains("colors#0x100"),
+        "expected colors#256 in ori_term terminfo, got:\n{out}"
+    );
+
+    // Required string caps (just check the names appear; values
+    // are long parameterized strings).
+    for cap in ["cup=", "sgr=", "setaf=", "setab=", "smkx=", "rmkx="] {
+        assert!(
+            out.contains(cap),
+            "expected string cap {cap:?} in ori_term terminfo"
+        );
+    }
+
+    // Charset capabilities — verify smacs/rmacs/acsc are declared
+    // (backs the DEC special graphics handling in
+    // oriterm_core/src/term/charset/mod.rs).
+    for cap in ["acsc=", "smacs=", "rmacs="] {
+        assert!(
+            out.contains(cap),
+            "expected charset cap {cap:?} in ori_term terminfo"
+        );
+    }
+
+    // Bracketed paste and focus-event extension caps.
+    for cap in ["BD=", "BE=", "PS=", "PE=", "kxIN=", "kxOUT="] {
+        assert!(
+            out.contains(cap),
+            "expected extension cap {cap:?} in ori_term terminfo"
+        );
+    }
+
+    // Function keys kf1 through kf63 — legacy xterm modifier
+    // convention; kf13-kf63 are the modified F1-F12 variants.
+    for n in 1..=63 {
+        let cap = format!("kf{n}=");
+        assert!(
+            out.contains(&cap),
+            "expected {cap} in ori_term terminfo, got:\n{out}"
+        );
+    }
+
+    // REP capability — verifies the CSI b dispatch at
+    // crates/vte/src/ansi/dispatch/csi.rs:60 is advertised.
+    assert!(out.contains("rep="), "expected rep= in ori_term terminfo");
+}
+
+#[test]
+fn ori_term_direct_declares_truecolor() {
+    // Direct-entry round-trip: the truecolor variant must declare
+    // either `RGB` or `Tc` plus `colors#16777216` (0x1000000).
+    if round_trip_gate_closed() {
+        return;
+    }
+    let env = TerminfoEnv::compile_with_variant(TerminfoVariant::OriTermDirect);
+    // `-x` is REQUIRED — `RGB` and `Tc` are both extension caps
+    // and only appear under `infocmp -x`.
+    let infocmp = std::process::Command::new("infocmp")
+        .arg("-x")
+        .arg("-A")
+        .arg(env.terminfo_dir())
+        .arg("ori_term-direct")
+        .output()
+        .expect("invoke infocmp");
+    assert!(
+        infocmp.status.success(),
+        "infocmp -x -A on ori_term-direct failed: {}",
+        String::from_utf8_lossy(&infocmp.stderr)
+    );
+    let out = String::from_utf8_lossy(&infocmp.stdout);
+    assert!(
+        out.contains("RGB") || out.contains("Tc"),
+        "expected RGB or Tc in ori_term-direct, got:\n{out}"
+    );
+    assert!(
+        out.contains("colors#16777216") || out.contains("colors#0x1000000"),
+        "expected colors#16777216 in ori_term-direct, got:\n{out}"
+    );
+}
+
+#[test]
+fn round_trip_gate_semantics_pinned() {
+    // Pin the 2x2 truth table of `round_trip_gate_closed_for` so
+    // that a future edit cannot silently invert, relax, or drop a
+    // branch of the round-trip gate — the suite's contract is
+    // that BOTH `tic` AND `infocmp` must be present for any
+    // round-trip test to execute. If either is missing, every
+    // round-trip test must short-circuit cleanly.
+    //
+    // The four round-trip/compile tests that need to skip when
+    // tools are missing —
+    // `terminfo_env_compiles_ori_term`,
+    // `ori_term_terminfo_round_trips_via_infocmp`,
+    // `ori_term_direct_declares_truecolor`, and
+    // `child_process_with_apply_env_reads_pinned_terminfo` —
+    // route their skip decision through `round_trip_gate_closed()`,
+    // which in turn delegates to the pure
+    // `round_trip_gate_closed_for(tic_ok, infocmp_ok)` form pinned
+    // below. This is the SSOT for the gate; pinning the pure form
+    // here is how a TPR-02-002-style "the gate test tests nothing"
+    // regression gets caught — if someone flips
+    // `!tic_ok || !infocmp_ok` to `!tic_ok && !infocmp_ok` (so
+    // round-trip tests would run when only ONE tool is present),
+    // one of the asserts below fails immediately.
+    //
+    // This test itself does NOT skip through `round_trip_gate_closed()`
+    // — a gate test that short-circuits via its own gate would be
+    // self-defeating. It runs in every environment (with or
+    // without `tic`/`infocmp` installed) and asserts the gate's
+    // pure form is correct, then asserts the live helper
+    // delegates to that pure form.
+    assert!(
+        !round_trip_gate_closed_for(true, true),
+        "gate must be OPEN when both tic and infocmp are present"
+    );
+    assert!(
+        round_trip_gate_closed_for(true, false),
+        "gate must be CLOSED when infocmp is missing even if tic is present"
+    );
+    assert!(
+        round_trip_gate_closed_for(false, true),
+        "gate must be CLOSED when tic is missing even if infocmp is present"
+    );
+    assert!(
+        round_trip_gate_closed_for(false, false),
+        "gate must be CLOSED when both tic and infocmp are missing"
+    );
+
+    // Also assert the live helper agrees with the pure form — if
+    // someone forgets to route `round_trip_gate_closed` through
+    // `round_trip_gate_closed_for`, this check fires.
+    assert_eq!(
+        round_trip_gate_closed(),
+        round_trip_gate_closed_for(tic_available(), infocmp_available()),
+        "round_trip_gate_closed must delegate to round_trip_gate_closed_for"
+    );
+}
+
+#[test]
+fn child_process_with_apply_env_reads_pinned_terminfo() {
+    // Env-var precedence contract check — the only test in 02.4
+    // that exercises the code path Sections 03-08 will rely on.
+    //
+    // Spawn `infocmp` as a child with TerminfoEnv's env-var triple
+    // applied via the SAME SSOT (`env_pairs`) that `apply_env`
+    // consumes. CRITICALLY do NOT pass `-A <dir>` — that would
+    // make infocmp look up the entry by directory regardless of
+    // env vars. With no `-A`, infocmp consults `$TERM` /
+    // `$TERMINFO` / `$TERMINFO_DIRS` exactly the way tack will.
+    //
+    // Behavioral proof #1: `status.success()`. If env precedence
+    // fails, the child falls back to `$HOME/.terminfo`,
+    // `/etc/terminfo`, `/usr/share/terminfo` — and if none of
+    // them ship `ori_term`, infocmp exits non-zero.
+    //
+    // Behavioral proof #2 (primary pin): `infocmp` prints
+    // `# Reconstructed via infocmp from file: <path>` as its
+    // first output line, where `<path>` is the actual file
+    // ncurses opened. If env-precedence steered the child to our
+    // tempdir, `<path>` will live INSIDE `env.terminfo_dir()`. A
+    // system-installed `ori_term` (e.g., `/usr/share/terminfo/o/
+    // ori_term` from a future packaging release) would show a
+    // different path — this pin catches a regression in
+    // `env_pairs()` / `apply_env()` even after ori_term gets
+    // added to the default terminfo database. This addresses
+    // TPR-02-001.
+    //
+    // Historical deviation from 02.4 plan text: the plan
+    // originally proposed matching on `kf63=` as a uniqueness
+    // marker on the assumption that host xterm-256color "usually
+    // stops at kf48"; that is false on ncurses 6.x (which ships
+    // kf1-kf63). An interim fix used `hs,` as a content marker,
+    // but that was still host-state dependent (any future
+    // system-installed `ori_term` could also declare `hs`). The
+    // final fix pins on the actual file path infocmp loaded
+    // from, which is immune to content collisions.
+    //
+    // We use `std::process::Command` (not
+    // `portable_pty::CommandBuilder`) because the test needs
+    // stdout capture, which CommandBuilder does not expose. Both
+    // APIs accept (name, value) env pairs, so the SSOT iteration
+    // pattern is identical — only the receiver changes.
+    if round_trip_gate_closed() {
+        return;
+    }
+    let env = TerminfoEnv::compile();
+    let mut cmd = std::process::Command::new("infocmp");
+    cmd.arg(env.term());
+    for (name, value) in env.env_pairs() {
+        cmd.env(name, value);
+    }
+    // Strip any inherited TERMCAP from the parent process so
+    // we're only testing what the env_pairs SSOT sets.
+    cmd.env_remove("TERMCAP");
+    let out = cmd.output().expect("invoke infocmp");
+    assert!(
+        out.status.success(),
+        "child infocmp failed (apply_env triple should have steered it to the pinned dir): stderr={}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let header = stdout
+        .lines()
+        .next()
+        .expect("infocmp produced empty stdout");
+    let tempdir_str = env.terminfo_dir().to_string_lossy();
+    assert!(
+        header.contains("Reconstructed") && header.contains(tempdir_str.as_ref()),
+        "infocmp reconstruction-source header `{header}` does not name the \
+         pinned tempdir `{tempdir_str}` — env precedence did not steer the \
+         child to OUR compiled `ori_term` entry. A system-installed ori_term \
+         entry can mask a regression in env_pairs() / apply_env() without \
+         this pin. full stdout:\n{stdout}",
+    );
+}
+
+#[test]
+fn terminfo_env_compile_under_perf_budget() {
+    // Self-contained per-call performance benchmark. Section 02
+    // owns ONLY the per-call ceiling and the 50-call projection;
+    // Section 09 owns the post-Sections-03-08 aggregate
+    // measurement. This test runs under whatever profile
+    // `cargo test` uses; the completion notes record both debug
+    // and release numbers via the `eprintln!` below.
+    if !tic_available() {
+        return;
+    }
+    use std::time::Instant;
+    // Warm-up call so we measure steady-state cost, not first-run
+    // overhead (filesystem cache, dynamic linker resolution).
+    let _warmup = TerminfoEnv::compile();
+    let t0 = Instant::now();
+    let _env = TerminfoEnv::compile();
+    let elapsed = t0.elapsed();
+    // Per-call ceiling: 1000 ms. Captures a ~5x regression vs.
+    // observed local debug timings (~150 ms) and ~10x vs. release.
+    // BOTH debug AND release must meet this ceiling.
+    assert!(
+        elapsed.as_millis() < 1000,
+        "TerminfoEnv::compile() took {}ms (>1000ms ceiling) — investigate before deferring",
+        elapsed.as_millis(),
+    );
+    // 50-call projection (Sections 03-08 will spawn ~50 TerminfoEnv
+    // instances). If the projection exceeds 30 s, file a shared-
+    // cache follow-up bug via /add-bug — filing is NOT deferral.
+    let projected_50 = elapsed.as_millis() * 50;
+    eprintln!(
+        "TerminfoEnv::compile() warm = {}ms; 50-call projection = {}ms",
+        elapsed.as_millis(),
+        projected_50
+    );
+    assert!(
+        projected_50 < 30_000,
+        "50-call projection {projected_50}ms > 30s ceiling — file /add-bug for shared-cache follow-up",
     );
 }
