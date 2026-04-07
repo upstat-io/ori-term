@@ -351,6 +351,9 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::OpenConfirmation(request) => {
                 self.open_confirmation_dialog(event_loop, request);
             }
+            TermEvent::GpuDeviceLost { reason, message } => {
+                self.handle_gpu_device_lost(reason, &message);
+            }
         }
     }
 

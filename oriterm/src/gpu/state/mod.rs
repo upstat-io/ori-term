@@ -290,6 +290,24 @@ impl GpuState {
         }
     }
 
+    /// Register a device-lost callback on the underlying `wgpu::Device`.
+    ///
+    /// The callback fires exactly once per device. It must be re-registered
+    /// after every `GpuState::recreate(...)` call (added in 5.16.4) — the
+    /// recovery dispatcher in `App::recover_gpu()` is the SSOT for that
+    /// re-registration.
+    ///
+    /// The callback runs on whichever thread wgpu chooses; it must be `Send`
+    /// and own all state it touches. In `oriterm`, the closure captures a
+    /// clone of the `EventSender` and forwards into the main event loop via
+    /// `TermEvent::GpuDeviceLost`.
+    pub fn register_device_lost_callback<F>(&self, callback: F)
+    where
+        F: Fn(wgpu::DeviceLostReason, String) + Send + 'static,
+    {
+        self.device.set_device_lost_callback(callback);
+    }
+
     pub fn save_pipeline_cache_async(&self) {
         let (Some(cache), Some(path)) = (&self.pipeline_cache, &self.pipeline_cache_path) else {
             return;
