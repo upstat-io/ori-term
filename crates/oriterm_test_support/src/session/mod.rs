@@ -4,18 +4,29 @@
 //! used to be duplicated between `oriterm_core/tests/vttest/session.rs`
 //! and `oriterm/src/gpu/visual_regression/vttest/mod.rs`. Both consumers
 //! adapt this same type. The vttest constructor lives below; the tack
-//! constructor lands in Section 03 of the tack-conformance plan.
+//! constructor lands alongside it.
+//!
+//! `mod.rs` is the dispatch hub holding type definitions, constructors,
+//! accessors, the [`PtySession::send`] write primitive, the [`Drop`]
+//! impl, and the `tool_available` family of free functions. The polling
+//! helpers (`drain`, `drain_blocking`, `wait`, `wait_for`) live in the
+//! [`sync`] submodule together with the private `poll_until` SSOT
+//! helper. The child-exit and quit helpers (`wait_for_child_exit`) live
+//! in the [`teardown`] submodule. Each leaf module owns its own sibling
+//! `tests.rs` per `.claude/rules/test-organization.md`.
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use oriterm_core::event::{Event, EventListener};
 use oriterm_core::{Term, Theme};
-use portable_pty::{Child, CommandBuilder, ExitStatus, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
 
 use crate::terminfo::TerminfoEnv;
+
+mod sync;
+mod teardown;
 
 /// Captures `PtyWrite` responses so the test driver can write them back.
 ///
@@ -200,149 +211,37 @@ impl PtySession {
         self.rows
     }
 
-    /// Drain all currently-buffered PTY output into Term, writing
-    /// captured `PtyWrite` responses back to the PTY.
-    pub fn drain(&mut self) -> usize {
-        let mut total = 0;
-        while let Ok(data) = self.rx.try_recv() {
-            total += self.feed_and_flush(&data);
-        }
-        total
-    }
-
-    /// Block until data arrives or `timeout_ms` expires, then drain
-    /// everything else still in the channel.
-    pub fn drain_blocking(&mut self, timeout_ms: u64) -> usize {
-        let mut total = 0;
-        if let Ok(data) = self.rx.recv_timeout(Duration::from_millis(timeout_ms)) {
-            total += self.feed_and_flush(&data);
-        }
-        total + self.drain()
-    }
-
-    /// Feed `data` through the VTE processor, then write any captured
-    /// `PtyWrite` responses back to the PTY. Shared core of `drain()`
-    /// and `drain_blocking()`.
-    fn feed_and_flush(&mut self, data: &[u8]) -> usize {
-        self.proc.advance(&mut self.term, data);
-        for resp in self.term.event_listener().take_responses() {
-            // Best-effort: writer errors close the test session naturally
-            // via Drop, so swallowing here is correct for test setup.
-            let _ = self.writer.write_all(resp.as_bytes());
-        }
-        let _ = self.writer.flush();
-        data.len()
-    }
-
-    /// Wait until no new PTY output arrives for `quiet_ms`.
-    ///
-    /// Uses blocking recv to avoid missing data that arrives between
-    /// drain and sleep — important for multi-step DA/DSR handshakes
-    /// where the queryer sends a follow-up after receiving a response.
-    pub fn wait(&mut self, quiet_ms: u64) {
-        loop {
-            if self.drain_blocking(quiet_ms) == 0 {
-                break;
-            }
-        }
-    }
-
-    /// Wait until `needle` appears anywhere in `grid_text()`, with a
-    /// hard timeout. Panics with the current grid on timeout — the
-    /// panic message tells the test author exactly what was on screen
-    /// when the wait failed.
-    pub fn wait_for(&mut self, needle: &str, timeout_ms: u64) {
-        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
-        loop {
-            self.drain_blocking(100);
-            let text = self.grid_text();
-            if text.contains(needle) {
-                self.wait(200);
-                return;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "timed out waiting for {needle:?} after {timeout_ms}ms.\nGrid:\n{}",
-                self.grid_text()
-            );
-        }
-    }
-
-    /// Wait until the child process exits, with a hard timeout.
-    ///
-    /// Returns the [`ExitStatus`] on clean exit. Panics with the
-    /// current grid contents on timeout — the panic message tells the
-    /// test author exactly what was on screen when the child failed
-    /// to exit.
-    ///
-    /// Used by tack/vttest tests after sending `q\n` (or whatever the
-    /// tool's quit key is) to assert the child actually terminated,
-    /// not just that the parent stopped reading bytes.
-    ///
-    /// Implementation note: this polls
-    /// [`portable_pty::Child::try_wait`] (Unix: `waitpid(WNOHANG)`;
-    /// Windows: `GetExitCodeProcess` — NOT `WaitForSingleObject`,
-    /// see `crates/portable-pty/src/win/mod.rs` `WinChild::is_complete`).
-    /// On the `Ok(None)` branch the method calls
-    /// [`Self::drain_blocking`] to forward any late output, then
-    /// sleeps 10 ms if nothing was drained — this bounds the poll
-    /// rate to ~100 Hz so the loop never hot-spins between reader EOF
-    /// and `try_wait` observing termination.
-    ///
-    /// Delegates to [`Self::wait_for_child_exit_inner`] so the test
-    /// suite can pin the bounded-poll invariant via a deterministic
-    /// iteration counter (see
-    /// `pty_session_wait_for_child_exit_bounded_poll_invariant`).
-    pub fn wait_for_child_exit(&mut self, timeout_ms: u64) -> ExitStatus {
-        self.wait_for_child_exit_inner(timeout_ms, || {})
-    }
-
-    /// Inner body of [`Self::wait_for_child_exit`] — see that method
-    /// for the bounded-poll contract (this helper implements it
-    /// verbatim). The only reason this exists as a separate function
-    /// is the `on_iter` callback: the public wrapper passes a no-op
-    /// (zero cost), and the test suite passes an iteration counter to
-    /// pin the invariant via
-    /// `pty_session_wait_for_child_exit_bounded_poll_invariant` in
-    /// [`tests`].
-    fn wait_for_child_exit_inner<F: FnMut()>(
-        &mut self,
-        timeout_ms: u64,
-        mut on_iter: F,
-    ) -> ExitStatus {
-        const POLL_SLEEP: Duration = Duration::from_millis(10);
-        let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
-        loop {
-            on_iter();
-            match self.child.try_wait() {
-                Ok(Some(status)) => return status,
-                Ok(None) => {
-                    assert!(
-                        std::time::Instant::now() < deadline,
-                        "child did not exit within {timeout_ms}ms.\nGrid:\n{}",
-                        self.grid_text()
-                    );
-                    // Drain any final output while we wait. If the
-                    // reader thread has already closed its channel
-                    // (EOF after child exit), `drain_blocking` returns
-                    // 0 immediately — bound the poll rate so we don't
-                    // burn CPU between reader EOF and try_wait()
-                    // observing exit.
-                    if self.drain_blocking(50) == 0 {
-                        thread::sleep(POLL_SLEEP);
-                    }
-                }
-                Err(e) => panic!("PtySession::wait_for_child_exit: try_wait error: {e}"),
-            }
-        }
-    }
-
     /// Send bytes to the child via the PTY writer, then wait for the
     /// screen to settle (300ms quiet period).
+    ///
+    /// This is the default send primitive for interactive navigation
+    /// tests where the caller expects the terminal to repaint before
+    /// the next assertion. For teardown loops or rapid-fire sends
+    /// where `try_wait()` polling replaces the settle check, use
+    /// [`Self::send_raw`] instead.
     pub fn send(&mut self, key: &[u8]) {
         self.writer.write_all(key).expect("write key");
         self.writer.flush().expect("flush");
         self.wait(300);
+    }
+
+    /// Write bytes to the child's PTY and flush, WITHOUT the 300ms
+    /// quiesce that [`Self::send`] does internally.
+    ///
+    /// Use this when the caller has its own synchronization strategy
+    /// that makes the quiesce unnecessary or actively harmful — e.g.
+    /// `quit_tack` polls `try_wait()` between sends and wants to
+    /// observe child exit as soon as possible, not 300ms later.
+    ///
+    /// Error swallow policy: writer errors are silently dropped (same
+    /// as `quit_tack`'s teardown context, where a `q\n` after tack
+    /// has already exited produces EPIPE/`ERROR_BROKEN_PIPE` that we
+    /// do NOT want to crash on). Callers that need error propagation
+    /// should use the canonical [`Self::send`] and tolerate the
+    /// quiesce.
+    pub fn send_raw(&mut self, key: &[u8]) {
+        let _ = self.writer.write_all(key);
+        let _ = self.writer.flush();
     }
 
     /// Serialize the visible grid to text, preserving full width.

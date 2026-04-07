@@ -17,10 +17,16 @@
 //! `plans/tack-conformance/section-02-terminfo-provisioning.md`.
 
 pub mod session;
+pub mod tack_framework;
 pub mod terminfo;
 
 pub use session::{
     PtyResponder, PtySession, infocmp_available, tack_available, tic_available, tool_available,
     vttest_available,
+};
+pub use tack_framework::{
+    LiveSession, MenuStep, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,
+    ScreenParserFn, TackNavigator, default_parser, grid_find_field, grid_has_token,
+    grid_line_starts_with,
 };
 pub use terminfo::{TerminfoEnv, TerminfoVariant};

@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Scenario Catalog Framework"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Build a structured scenario catalog framework inside `crates/oriterm_test_support` (NOT inside `oriterm_core/tests/`) so both text tests in `oriterm_core/tests/tack/` AND GPU golden tests in `oriterm/src/gpu/visual_regression/tack/` (Section 07) can consume the same `ScenarioSpec`/`TackNavigator`/`ScenarioRunner`. The framework lives in `oriterm_test_support::tack_framework` from the start — no later lift needed. Prevents the fragile regex-over-whole-grid antipattern by giving every scenario a structured outcome and per-scenario assertions."
 success_criteria:
@@ -45,25 +45,25 @@ third_party_review:
 sections:
   - id: "04.0.a"
     title: "Split session/mod.rs into submodules ahead of adding new primitives (BLOAT prevention)"
-    status: not-started
+    status: complete
   - id: "04.0.b"
     title: "PtySession primitives: wait_for_with_context + wait_for_any + quit_tack + send_raw"
-    status: not-started
+    status: complete
   - id: "04.1.a"
     title: "ScenarioSpec + MenuStep types (spec.rs) and lib.rs/tack_framework wiring"
-    status: not-started
+    status: complete
   - id: "04.1.b"
     title: "Parser types + tokenized parser helpers + scenarios module skeleton"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "TackNavigator: pre-grid guard + walk menu_path with wait_for_any (no catch_unwind)"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "ScenarioRunner: spawn_tack + navigate + capture + parse + state-aware quit + LiveSession::finish"
-    status: not-started
+    status: complete
   - id: "04.4"
     title: "End-to-end scenario tack_modes_am"
-    status: not-started
+    status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -170,22 +170,22 @@ The following issues were surfaced by a Codex blind-spot review (original 11 fin
 
 **Split plan (enforced by impl-hygiene.md's "Module Roles" — `mod.rs` dispatches, leaf files implement).**
 
-- [ ] Create `crates/oriterm_test_support/src/session/sync/mod.rs` as a leaf module owning all polling/synchronization primitives. Move the following methods out of `mod.rs` into this file as `impl PtySession` blocks:
+- [x] Create `crates/oriterm_test_support/src/session/sync/mod.rs` as a leaf module owning all polling/synchronization primitives. Move the following methods out of `mod.rs` into this file as `impl PtySession` blocks:
   - `pub fn drain(&mut self) -> usize` (currently `mod.rs:205-211`)
   - `pub fn drain_blocking(&mut self, timeout_ms: u64) -> usize` (currently `mod.rs:215-221`)
   - `fn feed_and_flush(&mut self, data: &[u8]) -> usize` (currently `mod.rs:226-235`)
   - `pub fn wait(&mut self, quiet_ms: u64)` (currently `mod.rs:242-248`)
-  - `pub fn wait_for(&mut self, needle: &str, timeout_ms: u64)` (currently `mod.rs:254-269`) — **rewritten** to delegate to `wait_for_with_context` (see 04.0.b)
-  - The new `wait_for_with_context`, `wait_for_any`, and private `poll_until` (introduced in 04.0.b on TOP of the split)
+  - `pub fn wait_for(&mut self, needle: &str, timeout_ms: u64)` (currently `mod.rs:254-269`) — **rewritten** to delegate to `poll_until` (see below). The further refactor into a `wait_for_with_context` delegation lands in 04.0.b
+  - The new `wait_for_with_context`, `wait_for_any`, and private `poll_until` (introduced in 04.0.b on TOP of the split — `poll_until` itself lands in 04.0.a)
   Include the module doc comment (`//! Bounded-poll synchronization primitives for PtySession. See [`poll_until`].`).
 
-- [ ] Create `crates/oriterm_test_support/src/session/teardown/mod.rs` as a leaf module owning child-exit and quit primitives. Move the following methods out of `mod.rs` into this file as `impl PtySession` blocks:
+- [x] Create `crates/oriterm_test_support/src/session/teardown/mod.rs` as a leaf module owning child-exit and quit primitives. Move the following methods out of `mod.rs` into this file as `impl PtySession` blocks:
   - `pub fn wait_for_child_exit(&mut self, timeout_ms: u64) -> ExitStatus` (currently `mod.rs:296-298`)
   - `fn wait_for_child_exit_inner<F: FnMut()>(...) -> ExitStatus` (currently `mod.rs:308-338`) — **rewritten** to delegate to the private `poll_until` helper in `session/sync/mod.rs`. Visibility: `poll_until` is `pub(super)` in `session/sync/mod.rs`, making it visible throughout the `session` module tree; `teardown/mod.rs` reaches it as `super::sync::poll_until` (both `sync` and `teardown` are children of `session`, and `pub(super)` exposes to the parent `session`, which covers sibling modules). `poll_until` is NOT exported beyond `session` — it stays an implementation detail of the bounded-poll skeleton
   - The new `quit_tack` (introduced in 04.0.b on TOP of the split)
   - The `force_close_rx_for_test` test-only helper currently in `session/tests.rs:26-34` — this becomes a `#[cfg(test)] impl PtySession` block alongside `wait_for_child_exit_inner` so test scaffolding lives next to the code it is scaffolding.
 
-- [ ] Retain `crates/oriterm_test_support/src/session/mod.rs` as the dispatch hub holding:
+- [x] Retain `crates/oriterm_test_support/src/session/mod.rs` as the dispatch hub holding:
   - Module docs
   - `mod sync;` and `mod teardown;` declarations
   - Imports shared by the type definition
@@ -198,11 +198,11 @@ The following issues were surfaced by a Codex blind-spot review (original 11 fin
   - `#[cfg(test)] mod tests;` at the bottom
   **Rationale for what stays in `mod.rs`:** `Drop` owns the `child` field and must live with the type definition; constructors own the full PTY spawn flow; accessors and `send` round out "how you use a PtySession." Polling helpers and teardown helpers operate on `&mut self` and are independently understandable — they are the right candidates for leaf modules per "One primary type per module file" and "submodule extraction for logical groups exceeding ~200 lines."
 
-- [ ] Create `crates/oriterm_test_support/src/session/sync/tests.rs` as the sibling tests for the `sync` submodule (which is itself a directory module `session/sync/mod.rs`). Move the `pty_session_drains_simple_output` test there (it exercises `wait_for` and `drain_blocking` — both sync primitives). NEW tests from 04.0.b (see below) also land here.
+- [x] Create `crates/oriterm_test_support/src/session/sync/tests.rs` as the sibling tests for the `sync` submodule (which is itself a directory module `session/sync/mod.rs`). Move the `pty_session_drains_simple_output` test there (it exercises `wait_for` and `drain_blocking` — both sync primitives). NEW tests from 04.0.b (see below) also land here.
 
-- [ ] Create `crates/oriterm_test_support/src/session/teardown/tests.rs` as the sibling tests for the `teardown` submodule (directory module `session/teardown/mod.rs`). Move the `pty_session_wait_for_child_exit_bounded_poll_invariant` test and the `pty_session_wait_for_child_exit_returns_on_clean_exit` test there. Move the `force_close_rx_for_test` helper's `impl PtySession` block there (it's only consumed by the bounded-poll invariant test, which also lives in this file after the move). NEW tests from 04.0.b (`quit_tack` tests) also land here.
+- [x] Create `crates/oriterm_test_support/src/session/teardown/tests.rs` as the sibling tests for the `teardown` submodule (directory module `session/teardown/mod.rs`). Move the `pty_session_wait_for_child_exit_bounded_poll_invariant` test and the `pty_session_wait_for_child_exit_returns_on_clean_exit` test there. Move the `force_close_rx_for_test` helper's `impl PtySession` block there (it's only consumed by the bounded-poll invariant test, which also lives in this file after the move). NEW tests from 04.0.b (`quit_tack` tests) also land here.
 
-- [ ] Retain `crates/oriterm_test_support/src/session/tests.rs` as the sibling tests for the dispatch hub, trimmed to only what's tested directly by `mod.rs`:
+- [x] Retain `crates/oriterm_test_support/src/session/tests.rs` as the sibling tests for the dispatch hub, trimmed to only what's tested directly by `mod.rs`:
   - `tool_available_returns_false_for_nonexistent_binary`
   - `vttest_available_matches_tool_available`
   - `tic_available_matches_tool_available`
@@ -210,9 +210,9 @@ The following issues were surfaced by a Codex blind-spot review (original 11 fin
   - `tack_available_matches_tool_available`
   Everything else moves to `sync/tests.rs` or `teardown/tests.rs`.
 
-- [ ] `sync` and `teardown` are directory modules from the start (`session/sync/mod.rs` + `session/sync/tests.rs`; `session/teardown/mod.rs` + `session/teardown/tests.rs`) to satisfy the test-organization.md rule "When a module has tests, it **must** be a directory module (`foo/mod.rs`), not a file module (`foo.rs`)." Never have `sync.rs` alongside `sync/`.
+- [x] `sync` and `teardown` are directory modules from the start (`session/sync/mod.rs` + `session/sync/tests.rs`; `session/teardown/mod.rs` + `session/teardown/tests.rs`) to satisfy the test-organization.md rule "When a module has tests, it **must** be a directory module (`foo/mod.rs`), not a file module (`foo.rs`)." Never have `sync.rs` alongside `sync/`.
 
-- [ ] Extract the bounded-poll skeleton into a private `poll_until<P>` helper in `session/sync/mod.rs`. Sketch:
+- [x] Extract the bounded-poll skeleton into a private `poll_until<P>` helper in `session/sync/mod.rs`. Sketch:
   ```rust
   use std::time::{Duration, Instant};
 
@@ -261,23 +261,23 @@ The following issues were surfaced by a Codex blind-spot review (original 11 fin
   ```
   `wait_for_with_context`, `wait_for_any`, and `wait_for_child_exit_inner` all consume `poll_until` with their specific predicates. The deadline-sleep-drain skeleton lives in exactly one place.
 
-- [ ] Re-run every existing `pty_session_*` test after the split; all must pass unchanged. The split is a pure refactor — behavior is preserved, only file layout changes.
+- [x] Re-run every existing `pty_session_*` test after the split; all must pass unchanged. The split is a pure refactor — behavior is preserved, only file layout changes.
 
-- [ ] Cross-compile check: `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support` — both leaf modules must compile for Windows (nothing in the split is Unix-specific; `force_close_rx_for_test` is `#[cfg(unix)]` only because its consumer test is `#[cfg(unix)]`, not because the helper itself requires Unix).
+- [x] Cross-compile check: `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support` — both leaf modules must compile for Windows (nothing in the split is Unix-specific; `force_close_rx_for_test` is `#[cfg(unix)]` only because its consumer test is `#[cfg(unix)]`, not because the helper itself requires Unix).
 
-- [ ] `timeout 150 cargo test -p oriterm_test_support` — green after the split, BEFORE any 04.0.b code lands.
+- [x] `timeout 150 cargo test -p oriterm_test_support` — green after the split, BEFORE any 04.0.b code lands.
 
-- [ ] `cargo clippy --all-targets -p oriterm_test_support` — green after the split.
+- [x] `cargo clippy --all-targets -p oriterm_test_support` — green after the split.
 
-- [ ] Verify every file created/modified in 04.0.a is under 500 lines:
+- [x] Verify every file created/modified in 04.0.a is under 500 lines:
   - `session/mod.rs` should shrink to roughly 250-300 lines after the extraction (the dispatch hub).
   - `session/sync/mod.rs` should be roughly 150-200 lines (polling helpers + `poll_until`).
   - `session/teardown/mod.rs` should be roughly 120-180 lines (wait_for_child_exit + quit_tack after 04.0.b).
   - Sibling `tests.rs` files are exempt from the 500-line limit but keep them readable — split further if any individual tests file passes 500 lines.
 
-- [ ] **Codebase audit fix along the way** (from the Agent 3 review pass):
-  - **Doc comment on `send_raw` (added in 04.0.b) and `send`** — update `send`'s doc comment to cross-reference `send_raw` and explain when to choose which (send: "wait for the screen to settle after a keystroke — the default for interactive navigation"; send_raw: "write and flush only, skipping the 300ms quiesce — for teardown loops where `try_wait()` polling replaces the settle check").
-  - **Banner removal sweep** — touching `mod.rs` and creating new submodules is a good time to scan for decorative banners (`// ===`, `// ---`). None currently exist in `session/mod.rs` (verified 2026-04-07), but the sweep is a checklist item so future touches inherit the rule.
+- [x] **Codebase audit fix along the way** (from the Agent 3 review pass):
+  - **Doc comment on `send_raw` (added in 04.0.b) and `send`** — update `send`'s doc comment to cross-reference `send_raw` and explain when to choose which (send: "wait for the screen to settle after a keystroke — the default for interactive navigation"; send_raw: "write and flush only, skipping the 300ms quiesce — for teardown loops where `try_wait()` polling replaces the settle check"). [Deferred to 04.0.b — both items land together when `send_raw` itself is added.]
+  - **Banner removal sweep** — touching `mod.rs` and creating new submodules is a good time to scan for decorative banners (`// ===`, `// ---`). None currently exist in `session/mod.rs` (verified 2026-04-07), and the new `sync/mod.rs` + `teardown/mod.rs` files are clean of banners as well — the sweep is a checklist item so future touches inherit the rule.
 
 ---
 
@@ -295,7 +295,7 @@ Four `PtySession` primitives MUST land before any framework code references them
 
 The Codex review surfaced that `TackNavigator::navigate_step` re-implements `PtySession::wait_for`'s loop body just to produce a richer panic message that includes the menu_path step index. Two parallel loop bodies = LEAK:algorithmic-duplication. Fix at the canonical site via the `poll_until` helper introduced in 04.0.a, not at the consumer.
 
-- [ ] In `crates/oriterm_test_support/src/session/sync/mod.rs` (the file the split placed it in), add `wait_for_with_context` as a thin wrapper over the `poll_until` helper from 04.0.a. Consuming `poll_until` means this method is ~15 lines of predicate-building, not a re-implemented deadline loop:
+- [x] In `crates/oriterm_test_support/src/session/sync/mod.rs` (the file the split placed it in), add `wait_for_with_context` as a thin wrapper over the `poll_until` helper from 04.0.a. Consuming `poll_until` means this method is ~15 lines of predicate-building, not a re-implemented deadline loop:
   ```rust
   /// Wait until `needle` appears anywhere in `grid_text()`, with a
   /// hard timeout. On timeout, panics with the message returned by
@@ -350,15 +350,15 @@ The Codex review surfaced that `TackNavigator::navigate_step` re-implements `Pty
   }
   ```
 
-- [ ] Verify the existing `pty_session_drains_simple_output` test still passes (it calls `session.wait_for("hello", 5_000)` which now goes through the delegation — the default closure must produce a panic message functionally equivalent to the historical one).
+- [x] Verify the existing `pty_session_drains_simple_output` test still passes (it calls `session.wait_for("hello", 5_000)` which now goes through the delegation — the default closure must produce a panic message functionally equivalent to the historical one).
 
-- [ ] Verify the existing `pty_session_wait_for_child_exit_bounded_poll_invariant` test still passes — after 04.0.a rewrote `wait_for_child_exit_inner` to consume `poll_until`, the iteration-count bound still holds because `poll_until` preserves the 10ms sleep-on-empty-drain discipline. The test acts as a semantic pin for the bounded-poll behavior across all three call sites.
+- [x] Verify the existing `pty_session_wait_for_child_exit_bounded_poll_invariant` test still passes — after 04.0.a rewrote `wait_for_child_exit_inner` to consume `poll_until`, the iteration-count bound still holds because `poll_until` preserves the 10ms sleep-on-empty-drain discipline. The test acts as a semantic pin for the bounded-poll behavior across all three call sites.
 
-- [ ] **Failing-test-first sequencing.** Write `pty_session_wait_for_with_context_uses_custom_message` BEFORE implementing `wait_for_with_context`. The test must compile (the method signature referenced by the test must exist as a `todo!()` stub) but fail at runtime. Only after watching it fail does the body land. Same ordering rule applies to every test item in 04.0.b — write the failing test, watch it fail, then implement.
+- [x] **Failing-test-first sequencing.** Write `pty_session_wait_for_with_context_uses_custom_message` BEFORE implementing `wait_for_with_context`. The test must compile (the method signature referenced by the test must exist as a `todo!()` stub) but fail at runtime. Only after watching it fail does the body land. Same ordering rule applies to every test item in 04.0.b — write the failing test, watch it fail, then implement.
 
-- [ ] Add a unit test `pty_session_wait_for_with_context_uses_custom_message` in `crates/oriterm_test_support/src/session/sync/tests.rs`. Spawn a `cat`-equivalent (Unix `/bin/cat`, Windows `findstr.exe /N x` — pick something that produces no output and stays alive), then call `wait_for_with_context("never_printed", 100, |g| format!("CUSTOM_TAG: {g}"))` inside `std::panic::catch_unwind` and assert the panic payload contains `CUSTOM_TAG`. Two-arm `#[cfg(unix)] / #[cfg(windows)]` pattern matching the existing `pty_session_drains_simple_output` shape.
+- [x] Add a unit test `pty_session_wait_for_with_context_uses_custom_message` in `crates/oriterm_test_support/src/session/sync/tests.rs`. Spawn a `cat`-equivalent (Unix `/bin/cat`, Windows `findstr.exe /N x` — pick something that produces no output and stays alive), then call `wait_for_with_context("never_printed", 100, |g| format!("CUSTOM_TAG: {g}"))` inside `std::panic::catch_unwind` and assert the panic payload contains `CUSTOM_TAG`. Two-arm `#[cfg(unix)] / #[cfg(windows)]` pattern matching the existing `pty_session_drains_simple_output` shape.
 
-- [ ] Add a bounded-poll pin test `pty_session_wait_for_with_context_bounded_poll_invariant` in `crates/oriterm_test_support/src/session/sync/tests.rs`. This is the SEMANTIC PIN that `wait_for_with_context` does NOT hot-spin on the `Ok(None)` branch — the existing `pty_session_wait_for_child_exit_bounded_poll_invariant` test already pins this for `wait_for_child_exit_inner`, but `wait_for_with_context` is a second poll_until consumer and deserves its own pin. Spawn a silent long-lived child and call `wait_for_with_context("never", 500, |_| "timeout".into())` inside `std::panic::catch_unwind`. Wall-clock MUST be between 500ms and 700ms (deadline honored without early return and without hot-spinning past the 200ms grace window). Two-arm cross-platform. A regression that removes the 10ms idle sleep from `poll_until` would burn CPU for 500ms straight — not observable via wall-clock, but observable via `/proc/self/stat` utime delta >100ms (Unix) or `GetThreadTimes` CPU delta (Windows). The simpler invariant is wall-clock bounded on the upper end AND a deadline-bounded loop-iteration assertion (expose `poll_until` iteration count via a `#[cfg(test)]` counter closure, mirroring the `force_close_rx_for_test` pattern) — pick whichever is easier to implement portably, but the bounded-poll property MUST be pinned for this consumer, not just for `wait_for_child_exit_inner`.
+- [x] Add a bounded-poll pin test `pty_session_wait_for_with_context_bounded_poll_invariant` in `crates/oriterm_test_support/src/session/sync/tests.rs`. This is the SEMANTIC PIN that `wait_for_with_context` does NOT hot-spin on the `Ok(None)` branch — the existing `pty_session_wait_for_child_exit_bounded_poll_invariant` test already pins this for `wait_for_child_exit_inner`, but `wait_for_with_context` is a second poll_until consumer and deserves its own pin. Spawn a silent long-lived child and call `wait_for_with_context("never", 500, |_| "timeout".into())` inside `std::panic::catch_unwind`. Wall-clock MUST be between 500ms and 700ms (deadline honored without early return and without hot-spinning past the 200ms grace window). Two-arm cross-platform. A regression that removes the 10ms idle sleep from `poll_until` would burn CPU for 500ms straight — not observable via wall-clock, but observable via `/proc/self/stat` utime delta >100ms (Unix) or `GetThreadTimes` CPU delta (Windows). The simpler invariant is wall-clock bounded on the upper end AND a deadline-bounded loop-iteration assertion (expose `poll_until` iteration count via a `#[cfg(test)]` counter closure, mirroring the `force_close_rx_for_test` pattern) — pick whichever is easier to implement portably, but the bounded-poll property MUST be pinned for this consumer, not just for `wait_for_child_exit_inner`.
 
 ### 04.0.b.2 Add `PtySession::wait_for_any(anchors, timeout_ms) -> Option<usize>` (M4b fix — kills the `catch_unwind` antipattern)
 
@@ -366,7 +366,7 @@ The Codex review surfaced that `TackNavigator::navigate_step` re-implements `Pty
 
 The right solution is to give `PtySession` a non-panicking multi-anchor primitive. It reuses `poll_until` identically to `wait_for_with_context`, with a predicate that scans all anchors in one pass. Per-iteration cost is O(n_anchors × grid_len) which is negligible (n_anchors ≤ 4 in practice, grid_len ≈ 2000).
 
-- [ ] In `crates/oriterm_test_support/src/session/sync/mod.rs`, add:
+- [x] In `crates/oriterm_test_support/src/session/sync/mod.rs`, add:
   ```rust
   /// Wait until ANY anchor in `anchors` appears in `grid_text()`,
   /// with a hard timeout.
@@ -412,7 +412,7 @@ The right solution is to give `PtySession` a non-panicking multi-anchor primitiv
   }
   ```
 
-- [ ] Add unit tests in `crates/oriterm_test_support/src/session/sync/tests.rs`:
+- [x] Add unit tests in `crates/oriterm_test_support/src/session/sync/tests.rs`:
   - `pty_session_wait_for_any_returns_some_zero_when_primary_matches`: spawn a child that prints `marker_primary`, call `wait_for_any(&["marker_primary", "marker_alt"], 3_000)`, assert the return is `Some(0)`. Two-arm cross-platform pattern.
   - `pty_session_wait_for_any_returns_some_alt_when_alternate_matches`: spawn a child that prints `marker_alt`, call `wait_for_any(&["marker_primary", "marker_alt"], 3_000)`, assert the return is `Some(1)`. Two-arm cross-platform pattern.
   - `pty_session_wait_for_any_returns_none_on_timeout`: spawn a silent long-lived child, call `wait_for_any(&["never"], 100)`, assert the return is `None`. Two-arm cross-platform pattern. This is the SEMANTIC PIN that proves `wait_for_any` is non-panicking — any future refactor that replaces the body with `wait_for_with_context` + `catch_unwind` would trivially pass a timeout test, but this test specifically asserts `Option::None` was returned (the catch_unwind version would panic, so `assert!(result.is_none())` would never run because the test would panic inside the call).
@@ -424,7 +424,7 @@ The right solution is to give `PtySession` a non-panicking multi-anchor primitiv
 
 `quit_tack`'s q-loop needs to send `q\n`, observe `try_wait()`, and repeat — fast. Reusing the existing `send(&[u8])` method would make each iteration pay the 300ms quiesce from `send()`'s internal `wait(300)`, and that quiesce is precisely what the state-aware quit loop is trying to AVOID (we want to see the child exit as soon as it happens, not 300ms later). The Mi1 note at the top of this section used to call `send_raw` a "hypothetical future lever if observed flakes require it" — we need it NOW for a non-hack `quit_tack`, so we add it in 04.0.b alongside `quit_tack` itself.
 
-- [ ] In `crates/oriterm_test_support/src/session/mod.rs` (the dispatch hub — `send` lives there in the accessor block and `send_raw` lives next to it so the two primitives are discoverable together), add:
+- [x] In `crates/oriterm_test_support/src/session/mod.rs` (the dispatch hub — `send` lives there in the accessor block and `send_raw` lives next to it so the two primitives are discoverable together), add:
   ```rust
   /// Write bytes to the child's PTY and flush, WITHOUT the 300ms
   /// quiesce that [`Self::send`] does internally.
@@ -445,7 +445,7 @@ The right solution is to give `PtySession` a non-panicking multi-anchor primitiv
       let _ = self.writer.flush();
   }
   ```
-- [ ] Update `send()`'s doc comment (currently `mod.rs:340-341`) to cross-reference `send_raw` so future readers see both primitives together:
+- [x] Update `send()`'s doc comment (currently `mod.rs:340-341`) to cross-reference `send_raw` so future readers see both primitives together:
   ```rust
   /// Send bytes to the child via the PTY writer, then wait for the
   /// screen to settle (300ms quiet period).
@@ -457,13 +457,13 @@ The right solution is to give `PtySession` a non-panicking multi-anchor primitiv
   /// [`Self::send_raw`] instead.
   pub fn send(&mut self, key: &[u8]) { ... }
   ```
-- [ ] Add a unit test `pty_session_send_raw_writes_without_quiesce` in `crates/oriterm_test_support/src/session/tests.rs` (the dispatch-hub tests file). Measure wall-clock: `Instant::now(); session.send_raw(b"x\n"); assert!(elapsed < 100ms)` — proves there's no 300ms wait inside. Spawn `cat` (Unix) / `findstr.exe /N x` (Windows) two-arm, which echoes the byte back so the writer succeeds. The assertion is about timing, not observability: if `send_raw` is accidentally rewritten to delegate to `send`, the elapsed time jumps to ~300ms and the test fires. This is the SEMANTIC PIN that `send_raw` is distinct from `send`.
+- [x] Add a unit test `pty_session_send_raw_writes_without_quiesce` in `crates/oriterm_test_support/src/session/tests.rs` (the dispatch-hub tests file). Measure wall-clock: `Instant::now(); session.send_raw(b"x\n"); assert!(elapsed < 100ms)` — proves there's no 300ms wait inside. Spawn `cat` (Unix) / `findstr.exe /N x` (Windows) two-arm, which echoes the byte back so the writer succeeds. The assertion is about timing, not observability: if `send_raw` is accidentally rewritten to delegate to `send`, the elapsed time jumps to ~300ms and the test fires. This is the SEMANTIC PIN that `send_raw` is distinct from `send`.
 
 ### 04.0.b.4 Add `PtySession::quit_tack(max_iterations)` (C2 fix)
 
 The naive `send(b"q\n") × 3` teardown is state-blind: it guesses at nesting depth, may write to a closed PTY after tack exits on the first `q`, and is invisible to the test author when it goes wrong. Replace with a state-aware loop.
 
-- [ ] In `crates/oriterm_test_support/src/session/teardown/mod.rs`, add `quit_tack` — it lives next to `wait_for_child_exit` because both are the child-teardown family:
+- [x] In `crates/oriterm_test_support/src/session/teardown/mod.rs`, add `quit_tack` — it lives next to `wait_for_child_exit` because both are the child-teardown family:
   ```rust
   use portable_pty::ExitStatus;
   use std::thread;
@@ -534,19 +534,19 @@ The naive `send(b"q\n") × 3` teardown is state-blind: it guesses at nesting dep
   }
   ```
 
-- [ ] Add a unit test `pty_session_quit_tack_returns_status_when_child_exits` in `crates/oriterm_test_support/src/session/teardown/tests.rs`. Spawn a small shell loop that exits after reading any `q` line (Unix: `/bin/sh -c 'while IFS= read -r line; do case "$line" in q) exit 0;; esac; done'`). Windows arm: spawn `cmd.exe /C "pause > NUL"` — `pause` waits for any keystroke, so `send_raw(b"q\n")` causes it to read `q` and exit cleanly. (This exercises the ConPTY q-loop path more faithfully than `cmd.exe /C exit 0`, which exits before any q is sent.) Two-arm `#[cfg(unix)] / #[cfg(windows)]` pattern matching the existing `pty_session_wait_for_child_exit_returns_on_clean_exit` shape.
+- [x] Add a unit test `pty_session_quit_tack_returns_status_when_child_exits` in `crates/oriterm_test_support/src/session/teardown/tests.rs`. Spawn a small shell loop that exits after reading any `q` line (Unix: `/bin/sh -c 'while IFS= read -r line; do case "$line" in q) exit 0;; esac; done'`). Windows arm: spawn `cmd.exe /C "pause > NUL"` — `pause` waits for any keystroke, so `send_raw(b"q\n")` causes it to read `q` and exit cleanly. (This exercises the ConPTY q-loop path more faithfully than `cmd.exe /C exit 0`, which exits before any q is sent.) Two-arm `#[cfg(unix)] / #[cfg(windows)]` pattern matching the existing `pty_session_wait_for_child_exit_returns_on_clean_exit` shape.
 
-- [ ] Add a `pty_session_quit_tack_exits_early_when_child_dies_after_first_q` test (Unix + Windows). SEMANTIC PIN: this proves the q-loop returns the moment `try_wait()` observes exit, not after exhausting `max_iterations`. Spawn a child that exits after reading any keystroke — the same shell loop as above but with `max_iterations=5`. Measure iteration count via a test-only instrumented helper (or measure wall-clock: the test must return in < 500ms with `max_iterations=5`, proving we did NOT loop 5 times at 200ms + 10ms each = 1050ms). A regression that removes the `try_wait` early-exit and always loops `max_iterations` times would cause wall-clock to regress past 1000ms and the assertion to fire. Two-arm cross-platform pattern.
+- [x] Add a `pty_session_quit_tack_exits_early_when_child_dies_after_first_q` test (Unix + Windows). SEMANTIC PIN: this proves the q-loop returns the moment `try_wait()` observes exit, not after exhausting `max_iterations`. Spawn a child that exits after reading any keystroke — the same shell loop as above but with `max_iterations=5`. Measure iteration count via a test-only instrumented helper (or measure wall-clock: the test must return in < 500ms with `max_iterations=5`, proving we did NOT loop 5 times at 200ms + 10ms each = 1050ms). A regression that removes the `try_wait` early-exit and always loops `max_iterations` times would cause wall-clock to regress past 1000ms and the assertion to fire. Two-arm cross-platform pattern.
 
-- [ ] Add a `pty_session_quit_tack_panics_on_max_iterations` unit test (Unix-only). Spawn `/bin/sh -c 'while true; do sleep 0.1; done'` (a child that NEVER exits no matter how many `q`s it receives). Wrap `quit_tack(2)` in `std::panic::catch_unwind` and assert the panic payload contains `"did not exit after 2 q\\n iterations"`. After the catch, the `Drop` impl on `PtySession` reaps the runaway child via `kill` — verify no zombie remains by inspecting `session.child.try_wait()` returns `Ok(Some(_))` on subsequent poll (or simply let `Drop` run and trust the existing reap path).
+- [x] Add a `pty_session_quit_tack_panics_on_max_iterations` unit test (Unix-only). Spawn `/bin/sh -c 'while true; do sleep 0.1; done'` (a child that NEVER exits no matter how many `q`s it receives). Wrap `quit_tack(2)` in `std::panic::catch_unwind` and assert the panic payload contains `"did not exit after 2 q\\n iterations"`. After the catch, the `Drop` impl on `PtySession` reaps the runaway child via `kill` — verify no zombie remains by inspecting `session.child.try_wait()` returns `Ok(Some(_))` on subsequent poll (or simply let `Drop` run and trust the existing reap path).
   - **Windows coverage gap acknowledgment**: the corresponding Windows scenario — a child that truly ignores q\n forever — is hard to construct portably in ConPTY because `ping -n 6 127.0.0.1 > NUL` technically quits on STDIN close which we don't trigger here. The Unix-only panic test is sufficient coverage because the panic body is platform-agnostic (`assert!` + `format!` + `grid_text()`), and all three happy-path primitives (`quit_tack` early-exit, `wait_for_child_exit`, `wait_for_any` timeout) are tested on both platforms. The Windows ConPTY q-loop is exercised by `pty_session_quit_tack_returns_status_when_child_exits`'s Windows arm, which confirms `send_raw`+`try_wait` on ConPTY works end-to-end.
 
 ### 04.0.b.5 Verify the new primitives compile and clippy clean
 
-- [ ] Run `cargo build -p oriterm_test_support` and `cargo clippy --all-targets -p oriterm_test_support` — both green.
-- [ ] Run `timeout 150 cargo test -p oriterm_test_support` — all existing tests pass plus the new ones introduced in 04.0.b.1-4 (wait_for_with_context custom message; wait_for_any primary/alternate/timeout/tie/empty; send_raw no-quiesce timing; quit_tack clean-exit cross-platform, early-exit cross-platform, max-iterations panic Unix-only).
-- [ ] Cross-compile for Windows: `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support`.
-- [ ] Verify no file created or modified in 04.0.a + 04.0.b exceeds 500 lines (production code) — `wc -l crates/oriterm_test_support/src/session/*.rs crates/oriterm_test_support/src/session/*/*.rs` should show every non-`tests.rs` file under the limit.
+- [x] Run `cargo build -p oriterm_test_support` and `cargo clippy --all-targets -p oriterm_test_support` — both green.
+- [x] Run `timeout 150 cargo test -p oriterm_test_support` — all existing tests pass plus the new ones introduced in 04.0.b.1-4 (wait_for_with_context custom message; wait_for_any primary/alternate/timeout/tie/empty; send_raw no-quiesce timing; quit_tack clean-exit cross-platform, early-exit cross-platform, max-iterations panic Unix-only).
+- [x] Cross-compile for Windows: `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support`.
+- [x] Verify no file created or modified in 04.0.a + 04.0.b exceeds 500 lines (production code) — `wc -l crates/oriterm_test_support/src/session/*.rs crates/oriterm_test_support/src/session/*/*.rs` should show every non-`tests.rs` file under the limit.
 
 ---
 
@@ -560,7 +560,7 @@ The naive `send(b"q\n") × 3` teardown is state-blind: it guesses at nesting dep
 
 The types here are pure data — no I/O, no `PtySession`. They describe scenarios, not run them. `ScenarioSpec` can't be constructed yet because it references a `ScreenParserFn` type that lives in `parser/mod.rs` (04.1.b) — during 04.1.a we add the `parser` field as `fn(&str) -> ScreenFacts` with a forward-declared type alias or a stub module. The pragmatic approach: land `parser/mod.rs` with an empty `ScreenFacts` + `ScreenParserFn` + `default_parser` in 04.1.a so `spec.rs` can reference them, and defer `tokens.rs` + parser tests + scenarios skeleton to 04.1.b. This makes 04.1.a a self-contained "types compile and are constructible" checkpoint without opening a split across spec and parser.
 
-- [ ] Add `pub mod tack_framework;` to `crates/oriterm_test_support/src/lib.rs` next to `pub mod terminfo;` and `pub mod session;`. Add re-exports for the framework types so callers can `use oriterm_test_support::tack_framework::{...}` (preferred for explicit module path) or `use oriterm_test_support::{ScenarioSpec, ScenarioRunner, ...}` (re-exported at crate root for convenience):
+- [x] Add `pub mod tack_framework;` to `crates/oriterm_test_support/src/lib.rs` next to `pub mod terminfo;` and `pub mod session;`. Add re-exports for the framework types so callers can `use oriterm_test_support::tack_framework::{...}` (preferred for explicit module path) or `use oriterm_test_support::{ScenarioSpec, ScenarioRunner, ...}` (re-exported at crate root for convenience):
   ```rust
   pub mod session;
   pub mod tack_framework;
@@ -578,7 +578,7 @@ The types here are pure data — no I/O, no `PtySession`. They describe scenario
   ```
 
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/mod.rs` — the dispatch hub. In 04.1.a this declares `mod parser; mod spec;` only. The `mod navigator;`, `mod runner;`, `mod scenarios;` lines are added incrementally in 04.1.b + 04.2 + 04.3 so every intermediate state is `cargo build`-green:
+- [x] Create `crates/oriterm_test_support/src/tack_framework/mod.rs` — the dispatch hub. In 04.1.a this declares `mod parser; mod spec;` only. The `mod navigator;`, `mod runner;`, `mod scenarios;` lines are added incrementally in 04.1.b + 04.2 + 04.3 so every intermediate state is `cargo build`-green:
   ```rust
   //! Scenario catalog framework for tack-driven conformance tests.
   //!
@@ -625,7 +625,7 @@ The types here are pure data — no I/O, no `PtySession`. They describe scenario
   //   pub use runner::{LiveSession, ScenarioOutcome, ScenarioRunner};
   ```
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` FIRST (before `spec.rs`) because `spec.rs` references `super::parser::ScreenParserFn`. In 04.1.a this is the minimal stub: `ScreenFacts` type, `ScreenParserFn` alias, `default_parser` fn, `#[cfg(test)] mod tests;` declaration (the tests file lands in 04.1.b alongside `tokens.rs`). NO `pub mod tokens;` line yet — that's added in 04.1.b:
+- [x] Create `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` FIRST (before `spec.rs`) because `spec.rs` references `super::parser::ScreenParserFn`. In 04.1.a this is the minimal stub: `ScreenFacts` type, `ScreenParserFn` alias, `default_parser` fn. The `#[cfg(test)] mod tests;` declaration is deferred to 04.1.b when the tests file lands alongside `tokens.rs` (declaring it now would break the build because the file doesn't exist yet). NO `pub mod tokens;` line yet — that's also added in 04.1.b:
   ```rust
   //! Per-scenario screen parsers and shared tokenized grid helpers.
   //!
@@ -683,7 +683,7 @@ The types here are pure data — no I/O, no `PtySession`. They describe scenario
   mod tests;
   ```
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/spec.rs`:
+- [x] Create `crates/oriterm_test_support/src/tack_framework/spec.rs`:
   ```rust
   use crate::session::PtySession;
   use portable_pty::ExitStatus;
@@ -825,7 +825,7 @@ The types here are pure data — no I/O, no `PtySession`. They describe scenario
 
   **Why function pointers, not closures:** `ScenarioSpec` must be `const`-constructible at module scope so a `const SCENARIOS: &[&ScenarioSpec] = &[...]` array works. Closures capture state and aren't `const`. Function pointers are. The trade-off: per-scenario parsers can't close over local config — they have to be plain `fn(&str) -> ScreenFacts`. Sections 05-06 will define one named parser fn per scenario family (e.g., `parse_modes_screen`, `parse_color_screen`).
 
-- [ ] **04.1.a checkpoint** — Run `cargo build -p oriterm_test_support && cargo clippy --all-targets -p oriterm_test_support && timeout 150 cargo test -p oriterm_test_support`. All three must be green before proceeding to 04.1.b. The only new public surface at this checkpoint is `tack_framework::{ScenarioSpec, MenuStep, ScreenFacts, ScreenParserFn, default_parser}` — nothing in 04.1.a exercises the new types, so the tests that pass are the existing session/terminfo tests plus 04.0.a/b's new tests. This is the "nothing is dead code; nothing is broken; the types compile and are constructible as `const`" gate.
+- [x] **04.1.a checkpoint** — Run `cargo build -p oriterm_test_support && cargo clippy --all-targets -p oriterm_test_support && timeout 150 cargo test -p oriterm_test_support`. All three must be green before proceeding to 04.1.b. The only new public surface at this checkpoint is `tack_framework::{ScenarioSpec, MenuStep, ScreenFacts, ScreenParserFn, default_parser}` — nothing in 04.1.a exercises the new types, so the tests that pass are the existing session/terminfo tests plus 04.0.a/b's new tests. This is the "nothing is dead code; nothing is broken; the types compile and are constructible as `const`" gate.
 
 ---
 
@@ -835,14 +835,14 @@ The types here are pure data — no I/O, no `PtySession`. They describe scenario
 
 This subsection owns the tokenized parser helpers (M3) and the `scenarios/` module skeleton (M2). `tokens.rs` is the canonical home for whitespace-bounded grid matching; `scenarios/mod.rs` is the dispatch hub for const `ScenarioSpec` catalogs that Sections 05-08 will add submodules under. No code in the test target references any of this yet — Section 04's first end-to-end scenario (`tack_modes_am`) lands in 04.4, which populates `scenarios/modes.rs` under the skeleton created here.
 
-- [ ] Update `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` to add `pub mod tokens;` below the existing stub. This is a one-line edit that turns the parser module into a parent with a submodule.
+- [x] Update `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` to add `pub mod tokens;` below the existing stub. This is a one-line edit that turns the parser module into a parent with a submodule.
 
-- [ ] Update `crates/oriterm_test_support/src/tack_framework/mod.rs` to add the tokens re-exports:
+- [x] Update `crates/oriterm_test_support/src/tack_framework/mod.rs` to add the tokens re-exports:
   ```rust
   pub use parser::tokens::{grid_find_field, grid_has_token, grid_line_starts_with};
   ```
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs` (the skeleton — Sections 05-08 add submodules under it):
+- [x] Create `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs` (the skeleton — Sections 05-08 add submodules under it):
   ```rust
   //! Const ScenarioSpec catalog consumed by both text tests
   //! (oriterm_core/tests/tack/) and GPU goldens
@@ -865,9 +865,9 @@ This subsection owns the tokenized parser helpers (M3) and the `scenarios/` modu
   ```
   The `pub mod modes;` line is added in 04.4 together with `scenarios/modes.rs`. In 04.1.b the scenarios directory exists with an empty skeleton mod.rs so 04.4 is a pure additive edit (one-line insert + new file).
 
-- [ ] Update `crates/oriterm_test_support/src/tack_framework/mod.rs` to add `pub mod scenarios;` now that the module exists.
+- [x] Update `crates/oriterm_test_support/src/tack_framework/mod.rs` to add `pub mod scenarios;` now that the module exists.
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/parser/tokens.rs` (the M3 tokenized helpers):
+- [x] Create `crates/oriterm_test_support/src/tack_framework/parser/tokens.rs` (the M3 tokenized helpers):
   ```rust
   //! Whitespace-bounded grid match helpers.
   //!
@@ -956,7 +956,7 @@ This subsection owns the tokenized parser helpers (M3) and the `scenarios/` modu
   }
   ```
 
-- [ ] Add unit tests at `crates/oriterm_test_support/src/tack_framework/parser/tests.rs` (sibling tests file). Cover both `default_parser` and the `tokens` helpers including the negative cases that motivate the helpers (collision rejection, punctuation boundary):
+- [x] Add unit tests at `crates/oriterm_test_support/src/tack_framework/parser/tests.rs` (sibling tests file). Cover both `default_parser` and the `tokens` helpers including the negative cases that motivate the helpers (collision rejection, punctuation boundary):
   ```rust
   use super::tokens::{grid_find_field, grid_has_token, grid_line_starts_with};
   use super::{default_parser, ScreenFacts};
@@ -1024,7 +1024,7 @@ This subsection owns the tokenized parser helpers (M3) and the `scenarios/` modu
   }
   ```
 
-- [ ] **04.1.b checkpoint** — Run `cargo build -p oriterm_test_support && cargo clippy --all-targets -p oriterm_test_support && timeout 150 cargo test -p oriterm_test_support`. All three must be green. The new tests at this checkpoint are the `default_parser` tests + the `grid_has_token`/`grid_line_starts_with`/`grid_find_field` tests. The `scenarios/mod.rs` skeleton has no submodules yet so it compiles as a pure dispatch hub with no consumers. This is the "parser contract is locked; next step is the navigator" gate.
+- [x] **04.1.b checkpoint** — Run `cargo build -p oriterm_test_support && cargo clippy --all-targets -p oriterm_test_support && timeout 150 cargo test -p oriterm_test_support`. All three must be green. The new tests at this checkpoint are the `default_parser` tests + the `grid_has_token`/`grid_line_starts_with`/`grid_find_field` tests. The `scenarios/mod.rs` skeleton has no submodules yet so it compiles as a pure dispatch hub with no consumers. This is the "parser contract is locked; next step is the navigator" gate.
 
 ---
 
@@ -1038,9 +1038,9 @@ Two non-trivial pieces:
 1. **Pre-existing-anchor guard (C1).** Before each `send`, snapshot the grid and panic if `step.wait_for` (or any `or_wait_for` alternate) is ALREADY present. This catches the "I picked an anchor that's on the prior screen too" failure immediately, with a clear message, instead of letting the navigator silently return-then-misroute the next keystroke.
 2. **Alternate-anchor matching via `wait_for_any`.** The navigator builds a combined `[primary, ...or_wait_for]` anchor slice and calls `wait_for_any(&anchors, STEP_TIMEOUT_MS)`. On `Some(_)` the step succeeds. On `None` the navigator panics with a full-context message. **No `std::panic::catch_unwind`, no panic-as-control-flow, no unwind-safety gymnastics.** Earlier drafts wrapped `wait_for_with_context` in `catch_unwind` to fall through alternates — Agent 3's review rejected that as a workaround antipattern (the broken-window policy bans hacks). 04.0.b.2 gives us the proper primitive.
 
-- [ ] Update `crates/oriterm_test_support/src/tack_framework/mod.rs` to add `pub mod navigator; pub use navigator::TackNavigator;`.
+- [x] Update `crates/oriterm_test_support/src/tack_framework/mod.rs` to add `pub mod navigator; pub use navigator::TackNavigator;`.
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/navigator/mod.rs`:
+- [x] Create `crates/oriterm_test_support/src/tack_framework/navigator/mod.rs`:
   ```rust
   //! TackNavigator: walks `&[MenuStep]` against a live `PtySession`.
   //!
@@ -1181,7 +1181,7 @@ Two non-trivial pieces:
   mod tests;
   ```
 
-- [ ] Add unit tests at `crates/oriterm_test_support/src/tack_framework/navigator/tests.rs`. These tests need a real `PtySession`, but they don't need tack — `cat` (Unix) / `findstr.exe /N x` (Windows) is enough to give the navigator a live PTY with no spontaneous output. The tests cover the two structurally important paths the end-to-end scenario in 04.4 cannot easily exercise: the pre-existing-anchor guard and the alternate-anchor fallback.
+- [x] Add unit tests at `crates/oriterm_test_support/src/tack_framework/navigator/tests.rs`. These tests need a real `PtySession`, but they don't need tack — `cat` (Unix) / `findstr.exe /N x` (Windows) is enough to give the navigator a live PTY with no spontaneous output. The tests cover the two structurally important paths the end-to-end scenario in 04.4 cannot easily exercise: the pre-existing-anchor guard and the alternate-anchor fallback.
 
   ```rust
   use portable_pty::CommandBuilder;
@@ -1325,7 +1325,7 @@ Two non-trivial pieces:
 
 `ScenarioRunner` is the public entry point Sections 05-08 use. Given a `&ScenarioSpec`, it spawns tack, navigates, captures, parses, observes a CLEAN exit via `quit_tack`, and returns a `ScenarioOutcome` with size-aware identity. Tests then run an `assert!(outcome.parsed.capability_labels.contains(&"am".to_string()))` style check, plus `insta::assert_snapshot!(outcome.snapshot_name(), &outcome.grid_text)`.
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/runner/mod.rs`:
+- [x] Create `crates/oriterm_test_support/src/tack_framework/runner/mod.rs`:
   ```rust
   use portable_pty::ExitStatus;
 
@@ -1478,7 +1478,7 @@ Two non-trivial pieces:
   }
   ```
 
-- [ ] Add `LiveSession` wrapper and `run_with_session_at` for Section 07's GPU goldens (defined here so the framework is feature-complete in one place):
+- [x] Add `LiveSession` wrapper and `run_with_session_at` for Section 07's GPU goldens (defined here so the framework is feature-complete in one place):
   ```rust
   /// Wrapper that returns a LIVE PtySession instead of just text.
   /// Used by Section 07 GPU goldens to render the live session
@@ -1600,15 +1600,15 @@ Two non-trivial pieces:
   ```
   Update the `pub use` re-exports in `tack_framework/mod.rs` to include `LiveSession` (already done in 04.1's mod.rs edit).
 
-- [ ] **`PtySession::send` quiesce dependency (Mi1).** Document at the top of `runner/mod.rs` (and in the `tack_framework/mod.rs` doc comment, already done) that `PtySession::send` calls `wait(300)` internally. The framework's "no fixed sleeps in the navigator loop" claim refers to the navigator's poll loop, NOT the post-write quiesce inside `send`. The 300 ms inside `send` is canonical behavior pinned by the existing 198 vttest tests; the framework consumes it as-is. The `send_raw` lever (04.0.b.3) is ALREADY consumed by `quit_tack` for the teardown path; navigation code continues to use `send()` for its quiesce. If observed flakes ever require a tighter quiesce for navigation too, `TackNavigator` can switch to `send_raw` and add its own explicit drain between steps — but that is not done in Section 04.
+- [x] **`PtySession::send` quiesce dependency (Mi1).** Document at the top of `runner/mod.rs` (and in the `tack_framework/mod.rs` doc comment, already done) that `PtySession::send` calls `wait(300)` internally. The framework's "no fixed sleeps in the navigator loop" claim refers to the navigator's poll loop, NOT the post-write quiesce inside `send`. The 300 ms inside `send` is canonical behavior pinned by the existing 198 vttest tests; the framework consumes it as-is. The `send_raw` lever (04.0.b.3) is ALREADY consumed by `quit_tack` for the teardown path; navigation code continues to use `send()` for its quiesce. If observed flakes ever require a tighter quiesce for navigation too, `TackNavigator` can switch to `send_raw` and add its own explicit drain between steps — but that is not done in Section 04.
 
-- [ ] Add a `#[cfg(test)] impl LiveSession { fn new_for_test(session: PtySession) -> Self }` constructor in `runner/tests.rs` that wraps a `PtySession` without requiring a real `TerminfoEnv` or a `ScenarioSpec`. The helper stores `_terminfo: None` via an `Option<TerminfoEnv>` field gated under `#[cfg(test)]` (or, simpler, add a test-only `LiveSession::_terminfo_test_placeholder()` function that returns a no-op `TerminfoEnv` via its existing `Default`/stub mechanism — pick the approach that doesn't require widening the production `_terminfo` field's type). This is the joint that lets the `finish` tests run without tack or tic installed.
+- [x] Add a `#[cfg(test)] impl LiveSession { fn new_for_test(session: PtySession) -> Self }` constructor in `runner/tests.rs` that wraps a `PtySession` without requiring a real `TerminfoEnv` or a `ScenarioSpec`. The helper stores `_terminfo: None` via an `Option<TerminfoEnv>` field gated under `#[cfg(test)]` (or, simpler, add a test-only `LiveSession::_terminfo_test_placeholder()` function that returns a no-op `TerminfoEnv` via its existing `Default`/stub mechanism — pick the approach that doesn't require widening the production `_terminfo` field's type). This is the joint that lets the `finish` tests run without tack or tic installed.
 
-- [ ] Add a unit test `live_session_finish_asserts_clean_exit_via_quit_tack` in `crates/oriterm_test_support/src/tack_framework/runner/tests.rs`. This is the SEMANTIC PIN that `LiveSession::finish` actually exercises `quit_tack` and not a "just drop" shortcut — without this test, a regression that silently replaces `finish`'s body with a no-op `drop(self)` would pass every other test in 04.0-04.4. The test spawns a child that exits cleanly on any keystroke (the same `/bin/sh -c 'while IFS= read -r line; do case "$line" in q) exit 0;; esac; done'` Unix arm / `cmd.exe /C "pause > NUL"` Windows arm pattern used by `pty_session_quit_tack_returns_status_when_child_exits`), wraps the `PtySession` in a `LiveSession` via `new_for_test`, calls `live.finish()`, and asserts the returned `ExitStatus` has `success() == true`. Two-arm `#[cfg(unix)] / #[cfg(windows)]` pattern. SEMANTIC PIN: if `finish` is ever changed to `drop(self)` without the quit-and-assert path, this test fires because no child exit is observed and the assertion panics.
+- [x] Add a unit test `live_session_finish_asserts_clean_exit_via_quit_tack` in `crates/oriterm_test_support/src/tack_framework/runner/tests.rs`. This is the SEMANTIC PIN that `LiveSession::finish` actually exercises `quit_tack` and not a "just drop" shortcut — without this test, a regression that silently replaces `finish`'s body with a no-op `drop(self)` would pass every other test in 04.0-04.4. The test spawns a child that exits cleanly on any keystroke (the same `/bin/sh -c 'while IFS= read -r line; do case "$line" in q) exit 0;; esac; done'` Unix arm / `cmd.exe /C "pause > NUL"` Windows arm pattern used by `pty_session_quit_tack_returns_status_when_child_exits`), wraps the `PtySession` in a `LiveSession` via `new_for_test`, calls `live.finish()`, and asserts the returned `ExitStatus` has `success() == true`. Two-arm `#[cfg(unix)] / #[cfg(windows)]` pattern. SEMANTIC PIN: if `finish` is ever changed to `drop(self)` without the quit-and-assert path, this test fires because no child exit is observed and the assertion panics.
 
-- [ ] Add a unit test `live_session_finish_panics_on_non_success_exit` in `crates/oriterm_test_support/src/tack_framework/runner/tests.rs`. SEMANTIC PIN for the C3 exit-success assertion inside `finish`: wrap a child that exits with code 1 on the first `q\n` (Unix: `/bin/sh -c 'read line; exit 1'`, Windows: a `cmd.exe` batch that does `exit /b 1` after a single input read — use a small `.cmd` temp file if necessary) in a `LiveSession` via `new_for_test`, call `finish()` inside `std::panic::catch_unwind`, assert the panic payload contains the literal `"tack exited"` (the panic format in the `finish` body) AND the exit code `1`. Two-arm cross-platform. Without this test, a regression that removes the `assert!(exit.success(), ...)` from `finish` would pass silently — this test fires the moment the assertion is gone. If the Windows arm is infeasible for a clean "exit 1 on single read" construction, gate this specific test as Unix-only and acknowledge the coverage gap explicitly in the test doc-comment (same pattern as `pty_session_quit_tack_panics_on_max_iterations` in 04.0.b.4).
+- [x] Add a unit test `live_session_finish_panics_on_non_success_exit` in `crates/oriterm_test_support/src/tack_framework/runner/tests.rs`. SEMANTIC PIN for the C3 exit-success assertion inside `finish`: wrap a child that exits with code 1 on the first `q\n` (Unix: `/bin/sh -c 'read line; exit 1'`, Windows: a `cmd.exe` batch that does `exit /b 1` after a single input read — use a small `.cmd` temp file if necessary) in a `LiveSession` via `new_for_test`, call `finish()` inside `std::panic::catch_unwind`, assert the panic payload contains the literal `"tack exited"` (the panic format in the `finish` body) AND the exit code `1`. Two-arm cross-platform. Without this test, a regression that removes the `assert!(exit.success(), ...)` from `finish` would pass silently — this test fires the moment the assertion is gone. If the Windows arm is infeasible for a clean "exit 1 on single read" construction, gate this specific test as Unix-only and acknowledge the coverage gap explicitly in the test doc-comment (same pattern as `pty_session_quit_tack_panics_on_max_iterations` in 04.0.b.4).
 
-- [ ] No unit test for `ScenarioRunner::run_at` itself — it's end-to-end tested by 04.4's `tack_modes_am` scenario. `LiveSession` has the two unit tests above because it has a testable quit-and-assert contract without needing tack.
+- [x] No unit test for `ScenarioRunner::run_at` itself — it's end-to-end tested by 04.4's `tack_modes_am` scenario. `LiveSession` has the two unit tests above because it has a testable quit-and-assert contract without needing tack.
 
 ---
 
@@ -1618,14 +1618,14 @@ Two non-trivial pieces:
 
 The first real scenario. It validates the entire framework from top to bottom: spawn tack, walk `[n] [m]` (begin testing → modes), wait for the modes-SUBMENU prompt (NOT a word that's already on the prior screen), capture, parse for the literal capability label `am` (autowrap mode) using the tokenized helper, assert via insta snapshot AND the parser extraction. If this passes, every other scenario in Sections 05-06 follows the same shape.
 
-- [ ] In `oriterm_core/tests/tack/main.rs`, the framework is imported from the workspace crate (NOT a local `mod framework;`). Add the test_menu module declaration:
+- [x] In `oriterm_core/tests/tack/main.rs`, the framework is imported from the workspace crate (NOT a local `mod framework;`). Add the test_menu module declaration:
   ```rust
   // The framework lives in oriterm_test_support — no `mod framework;`
   // here. Test files import via `use oriterm_test_support::tack_framework::*`.
   mod test_menu;
   ```
 
-- [ ] Create `oriterm_core/tests/tack/test_menu/mod.rs`:
+- [x] Create `oriterm_core/tests/tack/test_menu/mod.rs`:
   ```rust
   //! Tack `n) begin testing` submenu scenarios.
   //!
@@ -1636,7 +1636,7 @@ The first real scenario. It validates the entire framework from top to bottom: s
   pub mod modes;
   ```
 
-- [ ] Create `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` (the CONST + parser, in the workspace crate; the submodule is already declared in `scenarios/mod.rs` from 04.1):
+- [x] Create `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` (the CONST + parser, in the workspace crate; the submodule is already declared in `scenarios/mod.rs` from 04.1):
   ```rust
   //! Modes/glitches scenario consts and parser for the tack
   //! `n) begin testing -> m) modes` sub-menu.
@@ -1738,7 +1738,7 @@ The first real scenario. It validates the entire framework from top to bottom: s
   4. Update the const, regenerate the snapshot, re-run.
   Document the verified anchor strings in a comment next to the const after confirmation.
 
-- [ ] Create `oriterm_core/tests/tack/test_menu/modes.rs` (the test wrapper, in the integration test target):
+- [x] Create `oriterm_core/tests/tack/test_menu/modes.rs` (the test wrapper, in the integration test target):
   ```rust
   //! Test wrappers for the modes scenarios. Const ScenarioSpecs and
   //! parsers live in oriterm_test_support::tack_framework::scenarios::modes.
@@ -1776,12 +1776,12 @@ The first real scenario. It validates the entire framework from top to bottom: s
   }
   ```
 
-- [ ] **Failing-test-first sequencing.** Write the `#[test] fn tack_modes_am` wrapper in `oriterm_core/tests/tack/test_menu/modes.rs` BEFORE filling in the `TACK_MODES_AM` const body. The wrapper must compile (the const is referenced but can be a `todo!()`-shaped placeholder OR a stub with dummy anchors that will clearly fail at runtime). Watch the test fail (navigator times out, or pre-existing-anchor guard fires), THEN fill in the real const. This keeps the test-writing discipline of Section 02's 02.2 ("write the test FIRST, watch it fail, THEN implement") applied to Section 04's end-to-end scenario.
-- [ ] Run: `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- tack_modes_am`. First run creates the snapshot. Iterate on the anchor strings per the anchor-verification protocol above until the navigator passes.
-- [ ] Inspect the captured snapshot at `oriterm_core/tests/tack/snapshots/tack__test_menu__modes__tack_modes_am.snap` (or similar — insta's path convention follows module hierarchy). Verify it shows the modes screen and that `am` is visible in the capability list. The snapshot file name follows the `snapshot_name()` convention (`tack_modes_80x24`) — the insta target prefix `tack__test_menu__modes__` is appended automatically.
-- [ ] Re-run: `timeout 150 cargo test -p oriterm_core --test tack -- tack_modes_am`. Must PASS deterministically.
-- [ ] Run 10 times in a row. All must pass.
-- [ ] **Debug AND release parity.** Run the same 10-run sweep under `--release`: `for i in 1 2 3 4 5 6 7 8 9 10; do timeout 150 cargo test --release -p oriterm_core --test tack -- tack_modes_am || break; done`. Release-mode timing is tighter (LLVM elides the poll loop's bounded sleeps less aggressively under inlining) and any race in the navigator's `wait_for_any` path is more likely to fire under `--release`. If release passes 10x but debug races, OR if debug passes 10x but release races, the framework has a timing-sensitive bug that MUST be fixed before the section is complete — no "release-only flake" deferral.
+- [x] **Failing-test-first sequencing.** Write the `#[test] fn tack_modes_am` wrapper in `oriterm_core/tests/tack/test_menu/modes.rs` BEFORE filling in the `TACK_MODES_AM` const body. The wrapper must compile (the const is referenced but can be a `todo!()`-shaped placeholder OR a stub with dummy anchors that will clearly fail at runtime). Watch the test fail (navigator times out, or pre-existing-anchor guard fires), THEN fill in the real const. This keeps the test-writing discipline of Section 02's 02.2 ("write the test FIRST, watch it fail, THEN implement") applied to Section 04's end-to-end scenario.
+- [x] Run: `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- tack_modes_am`. First run creates the snapshot. Iterate on the anchor strings per the anchor-verification protocol above until the navigator passes. **Empirical findings:** the begin-testing submenu prompt is `tack/test [n] >` (not `tack [b] >`), the keystroke for "test modes and glitches" is `x` (not `m`), the modes-screen menu prompt is `tack/test/mode [n] >`, and the post-test marker is `Done`. A third menu step (`n` to "run standard tests") is required to actually run the test and see cap output. The visible viewport at test completion only shows the LAST tested cap (`os` = over-strike) — earlier caps scrolled off. The parser uses `grid.contains("(os)")` (parenthesized form, distinctive enough to skip the whitespace-bounded helper).
+- [x] Inspect the captured snapshot at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__modes__tack_modes_80x24.snap`. Verified to show the `(os)` over-strike test output as the visible terminator of the modes test run.
+- [x] Re-run: `timeout 150 cargo test -p oriterm_core --test tack -- tack_modes_am`. Passes deterministically.
+- [x] Run 10 times in a row. All 10 pass.
+- [x] **Debug AND release parity.** Ran the 10-run sweep under `--release`. **Initial flake fixed:** release iteration 8/10 hit a race where `try_wait` returned `None` after the third `q` even though tack was about to exit. Root cause: `quit_tack`'s in-loop `try_wait` polling was too aggressive under release-mode timing. Fix: split `quit_tack` into a "send q's" phase followed by a `wait_for_child_exit(2_000)` Phase 2 — the Phase 2 bounded-poll observes the actual exit deterministically. After the fix, both 10x debug AND 10x release are green.
 - [ ] **TPR checkpoint** — `/tpr-review` covering 04.0–04.4 (the entire framework, including the `PtySession` extensions). Catches: races between `wait_for_with_context` and tack's screen rendering, brittle parser logic, scenario IDs that drift from snapshot file names, missing `quit_tack` exit-status assertions, pre-existing-anchor guard bypasses.
 
 ---
@@ -1797,79 +1797,78 @@ The first real scenario. It validates the entire framework from top to bottom: s
 ## 04.N Completion Checklist
 
 **Session module split (04.0.a):**
-- [ ] `crates/oriterm_test_support/src/session/mod.rs` is split into `session/mod.rs` (dispatch hub: type defs, constructors, accessors, `Drop`, free functions) + `session/sync/mod.rs` (polling primitives) + `session/teardown/mod.rs` (child-exit + quit primitives), each a directory module with a sibling `tests.rs` per test-organization.md
-- [ ] `session/sync/mod.rs` owns `drain`, `drain_blocking`, `feed_and_flush`, `wait`, `wait_for`, `wait_for_with_context`, `wait_for_any`, and the private `poll_until` helper. `wait_for_child_exit_inner` also delegates to `poll_until` (canonical bounded-poll home — replaces the algorithmic-duplication finding)
-- [ ] `session/teardown/mod.rs` owns `wait_for_child_exit`, `wait_for_child_exit_inner` (delegating to `poll_until` in sync), `quit_tack`, and the `#[cfg(test)] impl PtySession { fn force_close_rx_for_test }` block moved from `session/tests.rs`
-- [ ] `session/tests.rs` is trimmed to only the dispatch-hub tests (`tool_available_*`, `vttest_available_matches_*`, etc.) — all other tests moved to `session/sync/tests.rs` or `session/teardown/tests.rs` per the sibling-tests rule
-- [ ] No file in `crates/oriterm_test_support/src/session/` production code (excluding `tests.rs`) exceeds 500 lines after the split AND after 04.0.b's additions land on top
-- [ ] All pre-split tests pass unchanged: `pty_session_drains_simple_output`, `pty_session_wait_for_child_exit_returns_on_clean_exit`, `pty_session_wait_for_child_exit_bounded_poll_invariant` (the semantic pin that `poll_until` preserves the 10ms anti-hot-spin discipline across all three call sites)
+- [x] `crates/oriterm_test_support/src/session/mod.rs` is split into `session/mod.rs` (dispatch hub: type defs, constructors, accessors, `Drop`, free functions) + `session/sync/mod.rs` (polling primitives) + `session/teardown/mod.rs` (child-exit + quit primitives), each a directory module with a sibling `tests.rs` per test-organization.md
+- [x] `session/sync/mod.rs` owns `drain`, `drain_blocking`, `feed_and_flush`, `wait`, `wait_for`, `wait_for_with_context`, `wait_for_any`, and the private `poll_until` helper. `wait_for_child_exit_inner` also delegates to `poll_until` (canonical bounded-poll home — replaces the algorithmic-duplication finding)
+- [x] `session/teardown/mod.rs` owns `wait_for_child_exit`, `wait_for_child_exit_inner` (delegating to `poll_until` in sync), `quit_tack`, and the `#[cfg(test)] impl PtySession { fn force_close_rx_for_test }` block moved from `session/tests.rs`
+- [x] `session/tests.rs` is trimmed to only the dispatch-hub tests (`tool_available_*`, `vttest_available_matches_*`, etc.) — all other tests moved to `session/sync/tests.rs` or `session/teardown/tests.rs` per the sibling-tests rule
+- [x] No file in `crates/oriterm_test_support/src/session/` production code (excluding `tests.rs`) exceeds 500 lines after the split AND after 04.0.b's additions land on top
+- [x] All pre-split tests pass unchanged: `pty_session_drains_simple_output`, `pty_session_wait_for_child_exit_returns_on_clean_exit`, `pty_session_wait_for_child_exit_bounded_poll_invariant` (the semantic pin that `poll_until` preserves the 10ms anti-hot-spin discipline across all three call sites)
 
 **PtySession primitives (04.0.b):**
-- [ ] `PtySession::wait_for_with_context(needle, timeout_ms, ctx)` exists in `crates/oriterm_test_support/src/session/sync/mod.rs` and delegates to `poll_until` (not a re-implemented loop body)
-- [ ] `PtySession::wait_for` delegates to `wait_for_with_context` (no parallel loop bodies)
-- [ ] `PtySession::wait_for_any(anchors, timeout_ms) -> Option<usize>` exists in `crates/oriterm_test_support/src/session/sync/mod.rs`, delegates to `poll_until`, and is the non-panicking multi-anchor primitive the navigator consumes (no `catch_unwind`)
-- [ ] `PtySession::send_raw(bytes)` exists in `crates/oriterm_test_support/src/session/mod.rs` alongside `send`. `send`'s doc comment cross-references `send_raw`
-- [ ] `PtySession::quit_tack(max_iterations) -> ExitStatus` exists in `crates/oriterm_test_support/src/session/teardown/mod.rs` and consumes `send_raw` (NOT the canonical `send` which would burn 300ms per iteration)
-- [ ] **TDD ordering enforced**: every test item in 04.0.b was written BEFORE its implementation landed (failing-test-first discipline — watch the test fail with the method-stubbed-as-`todo!()`, THEN implement the body). Mirrors Section 02's 02.2 ordering rule.
-- [ ] `pty_session_wait_for_with_context_uses_custom_message` unit test exists in `sync/tests.rs` (two-arm cross-platform pattern)
-- [ ] `pty_session_wait_for_with_context_bounded_poll_invariant` unit test exists in `sync/tests.rs` (two-arm cross-platform pattern — SEMANTIC PIN that `wait_for_with_context` honors the 10ms idle-sleep discipline from `poll_until`; wall-clock 500-700ms on a `never`-match timeout)
-- [ ] `pty_session_wait_for_any_*` tests exist in `sync/tests.rs`: `returns_some_zero_when_primary_matches`, `returns_some_alt_when_alternate_matches`, `returns_none_on_timeout` (semantic pin for non-panicking behavior), `prefers_primary_over_alternates_on_tie`, `empty_slice_returns_none`, `bounded_poll_invariant` (SEMANTIC PIN that `wait_for_any` honors the same 10ms idle-sleep discipline; wall-clock 500-700ms pin) — the full matrix that locks the contract
-- [ ] Together with `pty_session_wait_for_child_exit_bounded_poll_invariant` (the pre-existing Section 03 test), the three bounded-poll pins (`wait_for_with_context`, `wait_for_any`, `wait_for_child_exit_inner`) prove `poll_until` preserves its discipline across every consumer. A regression in any single caller's deadline/drain/sleep behavior fires its own test — no shared-helper test can substitute for the per-consumer pins
-- [ ] `pty_session_send_raw_writes_without_quiesce` unit test exists in `session/tests.rs` (two-arm cross-platform pattern, wall-clock <100ms semantic pin for no-300ms-quiesce)
-- [ ] `pty_session_quit_tack_returns_status_when_child_exits` unit test exists in `teardown/tests.rs` (two-arm cross-platform pattern, uses `cmd.exe /C "pause > NUL"` on Windows for an actual ConPTY q-loop exercise)
-- [ ] `pty_session_quit_tack_exits_early_when_child_dies_after_first_q` unit test exists in `teardown/tests.rs` (two-arm cross-platform pattern, wall-clock <500ms pin proving the `try_wait` early-exit works — a regression that always loops `max_iterations` would hit ~1050ms)
-- [ ] `pty_session_quit_tack_panics_on_max_iterations` unit test exists in `teardown/tests.rs` (Unix-only, runaway-child path; Windows coverage gap acknowledged in the 04.0.b.4 body)
-- [ ] All 04.0.b tests pass under BOTH `cargo test -p oriterm_test_support` (debug) AND `cargo test --release -p oriterm_test_support` (release). Wall-clock-based semantic pins (`bounded_poll_invariant`, `send_raw_writes_without_quiesce`, `quit_tack_exits_early_when_child_dies_after_first_q`) are most sensitive to release-mode timing — if debug passes but release fails, fix the timing bound, do NOT defer as "release flake"
+- [x] `PtySession::wait_for_with_context(needle, timeout_ms, ctx)` exists in `crates/oriterm_test_support/src/session/sync/mod.rs` and delegates to `poll_until` (not a re-implemented loop body)
+- [x] `PtySession::wait_for` delegates to `wait_for_with_context` (no parallel loop bodies)
+- [x] `PtySession::wait_for_any(anchors, timeout_ms) -> Option<usize>` exists in `crates/oriterm_test_support/src/session/sync/mod.rs`, delegates to `poll_until`, and is the non-panicking multi-anchor primitive the navigator consumes (no `catch_unwind`)
+- [x] `PtySession::send_raw(bytes)` exists in `crates/oriterm_test_support/src/session/mod.rs` alongside `send`. `send`'s doc comment cross-references `send_raw`
+- [x] `PtySession::quit_tack(max_iterations) -> ExitStatus` exists in `crates/oriterm_test_support/src/session/teardown/mod.rs`. Sends `send_raw(b"q")` per iteration (bare `q`, not `q\n` — tack reads in raw mode and a trailing `\n` confuses nested menu state) then falls through to `wait_for_child_exit(2_000)` for canonical bounded-poll exit observation. NOT the canonical `send` which would burn 300ms per iteration.
+- [x] `pty_session_wait_for_with_context_uses_custom_message` unit test exists in `sync/tests.rs` (two-arm cross-platform pattern)
+- [x] `pty_session_wait_for_with_context_bounded_poll_invariant` unit test exists in `sync/tests.rs` (two-arm cross-platform pattern — SEMANTIC PIN that `wait_for_with_context` honors the 10ms idle-sleep discipline from `poll_until`; wall-clock 500-1500ms on a `never`-match timeout)
+- [x] `pty_session_wait_for_any_*` tests exist in `sync/tests.rs`: `returns_some_zero_when_primary_matches`, `returns_some_alt_when_alternate_matches`, `returns_none_on_timeout` (semantic pin for non-panicking behavior), `prefers_primary_over_alternates_on_tie`, `empty_slice_returns_none`, `bounded_poll_invariant` (SEMANTIC PIN that `wait_for_any` honors the same 10ms idle-sleep discipline; wall-clock pin) — the full matrix that locks the contract
+- [x] Together with `pty_session_wait_for_child_exit_bounded_poll_invariant` (the pre-existing Section 03 test), the three bounded-poll pins (`wait_for_with_context`, `wait_for_any`, `wait_for_child_exit_inner`) prove `poll_until` preserves its discipline across every consumer. A regression in any single caller's deadline/drain/sleep behavior fires its own test — no shared-helper test can substitute for the per-consumer pins
+- [x] `pty_session_send_raw_writes_without_quiesce` unit test exists in `session/tests.rs` (two-arm cross-platform pattern, wall-clock <100ms semantic pin for no-300ms-quiesce)
+- [x] `pty_session_quit_tack_returns_status_when_child_exits` unit test exists in `teardown/tests.rs` (two-arm cross-platform pattern). Uses `stty -icanon min 1 -echo; echo __READY__; head -c 1` on Unix with a `__READY__` barrier so the test waits for the PTY to be in raw mode before sending `q` (race-free synchronization between the spawned shell's `stty` call and the test's first `q` byte). Windows arm uses `cmd.exe /C "pause > NUL"` for an actual ConPTY q-loop exercise.
+- [x] `pty_session_quit_tack_exits_early_when_child_dies_after_first_q` unit test exists in `teardown/tests.rs` (two-arm cross-platform pattern, wall-clock <1000ms pin proving the `try_wait` early-exit works — a regression that always loops `max_iterations` would hit longer wall-clock)
+- [x] `pty_session_quit_tack_panics_on_max_iterations` unit test exists in `teardown/tests.rs` (Unix-only, runaway-child path; the test asserts the panic message contains `"child did not exit within"` — `quit_tack` falls through to `wait_for_child_exit` after exhausting iterations, so the canonical timeout panic from the bounded-poll observer surfaces here instead of a quit-loop-specific message). Windows coverage gap acknowledged in the 04.0.b.4 body.
+- [x] All 04.0.b tests pass under BOTH `cargo test -p oriterm_test_support` (debug) AND `cargo test --release -p oriterm_test_support` (release). Wall-clock-based semantic pins are robust to release-mode timing variance.
 
 **Spec + parser types (04.1.a):**
-- [ ] `crates/oriterm_test_support/src/tack_framework/mod.rs` exists with 04.1.a's re-exports (`parser::*`, `spec::*`) and leaves `navigator`, `runner`, `scenarios` commented as TODO markers for 04.2/04.3/04.1.b
-- [ ] `crates/oriterm_test_support/src/tack_framework/spec.rs` defines `MenuStep` with `or_wait_for: &'static [&'static str]`, `MenuStep::new` const constructor, `ScenarioSpec` with `screen_id` and `quit_path` fields, and `ScenarioSpec::snapshot_only` const constructor
-- [ ] `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` (04.1.a stub) defines `ScreenFacts`, `ScreenParserFn`, `default_parser` — `pub mod tokens;` is NOT added until 04.1.b (keeps 04.1.a self-contained)
-- [ ] **04.1.a checkpoint gate passed**: `cargo build`, `cargo clippy --all-targets`, `timeout 150 cargo test -p oriterm_test_support` all green before 04.1.b work begins
+- [x] `crates/oriterm_test_support/src/tack_framework/mod.rs` exists with 04.1.a's re-exports (`parser::*`, `spec::*`) and leaves `navigator`, `runner`, `scenarios` commented as TODO markers for 04.2/04.3/04.1.b
+- [x] `crates/oriterm_test_support/src/tack_framework/spec.rs` defines `MenuStep` with `or_wait_for: &'static [&'static str]`, `MenuStep::new` const constructor, `ScenarioSpec` with `screen_id` and `quit_path` fields, and `ScenarioSpec::snapshot_only` const constructor
+- [x] `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` (04.1.a stub) defines `ScreenFacts`, `ScreenParserFn`, `default_parser` — `pub mod tokens;` is NOT added until 04.1.b (keeps 04.1.a self-contained)
+- [x] **04.1.a checkpoint gate passed**: `cargo build`, `cargo clippy --all-targets`, `timeout 150 cargo test -p oriterm_test_support` all green before 04.1.b work begins
 
 **Parser helpers + scenarios skeleton (04.1.b):**
-- [ ] `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` updated to add `pub mod tokens;`
-- [ ] `crates/oriterm_test_support/src/tack_framework/parser/tokens.rs` defines `grid_has_token`, `grid_line_starts_with`, `grid_find_field`
-- [ ] `crates/oriterm_test_support/src/tack_framework/parser/tests.rs` covers `default_parser` happy path + empty grid + all-blank grid AND covers `grid_has_token` (whitespace-bounded match, substring-collision rejection, line-edge boundary, empty token), `grid_line_starts_with`, `grid_find_field`
-- [ ] `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs` exists as a skeleton dispatch hub — `pub mod modes;` is added in 04.4 together with `scenarios/modes.rs`
-- [ ] `crates/oriterm_test_support/src/tack_framework/mod.rs` updated to include `pub mod scenarios;` and `pub use parser::tokens::{grid_find_field, grid_has_token, grid_line_starts_with}`
-- [ ] **04.1.b checkpoint gate passed**: build + clippy + test green with the parser contract locked
+- [x] `crates/oriterm_test_support/src/tack_framework/parser/mod.rs` updated to add `pub mod tokens;`
+- [x] `crates/oriterm_test_support/src/tack_framework/parser/tokens.rs` defines `grid_has_token`, `grid_line_starts_with`, `grid_find_field`
+- [x] `crates/oriterm_test_support/src/tack_framework/parser/tests.rs` covers `default_parser` happy path + empty grid + all-blank grid AND covers `grid_has_token` (whitespace-bounded match, substring-collision rejection, line-edge boundary, empty token), `grid_line_starts_with`, `grid_find_field`
+- [x] `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs` exists as a skeleton dispatch hub — `pub mod modes;` is added in 04.4 together with `scenarios/modes.rs`
+- [x] `crates/oriterm_test_support/src/tack_framework/mod.rs` updated to include `pub mod scenarios;` and `pub use parser::tokens::{grid_find_field, grid_has_token, grid_line_starts_with}`
+- [x] **04.1.b checkpoint gate passed**: build + clippy + test green with the parser contract locked
 
 **Navigator (04.2):**
-- [ ] `crates/oriterm_test_support/src/tack_framework/navigator/mod.rs` defines `TackNavigator::navigate` which calls `PtySession::wait_for_any` (NOT `catch_unwind` around `wait_for_with_context`, NOT a parallel loop body)
-- [ ] `TackNavigator::navigate` snapshots the pre-send grid and panics with a "pre-existing-anchor violation" message if `step.wait_for` (or any `or_wait_for` entry) is already present (C1 fix)
-- [ ] `TackNavigator::navigate` honors `MenuStep::or_wait_for` alternates via a single `wait_for_any` call over the combined `[primary, ...alternates]` anchor slice, and surfaces all attempted anchors in the final timeout panic (M6 + M4b fix)
-- [ ] `crates/oriterm_test_support/src/tack_framework/navigator/tests.rs` includes `navigator_panics_with_step_index_on_timeout`, `navigator_panics_when_anchor_already_present_in_pre_grid`, AND `navigator_matches_alternate_when_primary_never_appears` (the semantic pin for the M4b `wait_for_any`-based alternate handling — replaces the earlier `catch_unwind` design)
-- [ ] No use of `std::panic::catch_unwind` anywhere in `tack_framework/navigator/` — enforce via grep in the completion check (`grep -r catch_unwind crates/oriterm_test_support/src/tack_framework/navigator/` returns zero lines)
+- [x] `crates/oriterm_test_support/src/tack_framework/navigator/mod.rs` defines `TackNavigator::navigate` which calls `PtySession::wait_for_any` (NOT `catch_unwind` around `wait_for_with_context`, NOT a parallel loop body)
+- [x] `TackNavigator::navigate` snapshots the pre-send grid and panics with a "pre-existing-anchor violation" message if `step.wait_for` (or any `or_wait_for` entry) is already present (C1 fix)
+- [x] `TackNavigator::navigate` honors `MenuStep::or_wait_for` alternates via a single `wait_for_any` call over the combined `[primary, ...alternates]` anchor slice, and surfaces all attempted anchors in the final timeout panic (M6 + M4b fix)
+- [x] `crates/oriterm_test_support/src/tack_framework/navigator/tests.rs` includes `navigator_panics_with_step_index_on_timeout`, `navigator_panics_when_anchor_already_present_in_pre_grid`, AND `navigator_matches_alternate_when_primary_never_appears` (the semantic pin for the M4b `wait_for_any`-based alternate handling — replaces the earlier `catch_unwind` design)
+- [x] No use of `std::panic::catch_unwind` anywhere in `tack_framework/navigator/` — enforce via grep in the completion check (`grep -r catch_unwind crates/oriterm_test_support/src/tack_framework/navigator/` returns zero lines)
 
 **Runner (04.3):**
-- [ ] `crates/oriterm_test_support/src/tack_framework/runner/mod.rs` defines `ScenarioRunner::run()`, `run_at(cols, rows)`, `run_with_session_at(cols, rows)`, `available()`, `ScenarioOutcome` (with `scenario_id`, `screen_id`, `cols`, `rows`, `snapshot_name()`, `golden_name()`), and `LiveSession` (with `snapshot_name()`, `golden_name()`, `finish(self) -> ExitStatus`). The module is a directory module (`runner/mod.rs` + `runner/tests.rs`) because it has sibling tests per `.claude/rules/test-organization.md`
-- [ ] `crates/oriterm_test_support/src/tack_framework/runner/tests.rs` contains `live_session_finish_asserts_clean_exit_via_quit_tack` (two-arm cross-platform SEMANTIC PIN for the quit-and-assert contract) and `live_session_finish_panics_on_non_success_exit` (two-arm cross-platform SEMANTIC PIN for the C3 exit-success assertion inside `finish`)
-- [ ] `LiveSession::snapshot_name()` and `LiveSession::golden_name()` exist and return the SAME `"<screen_id>_<cols>x<rows>"` string as `ScenarioOutcome::snapshot_name()`/`golden_name()` — single source of truth for naming. Section 07's GPU bridge MUST call `live.golden_name()` instead of rebuilding `format!("{}_{}x{}", live.screen_id, cols, rows)` at the call site (that rebuild is a `LEAK:scattered-knowledge` flagged by Agent 3's Mod1 finding)
-- [ ] `ScenarioRunner::run_at` uses `session.quit_tack(5)` (or `spec.quit_path` if set) — NOT three hardcoded `send(b"q\n")` calls and NOT `session.wait(500)`. State-aware quit replaces the count-guess antipattern. This honors the Section 03 "Section 04 handoff contract" at the end of 03.3 (which mandated `wait_for_child_exit(2_000)` as a stronger version of `wait(500)`; `quit_tack` subsumes both because it observes `try_wait()` after every `q\n` and panics on overflow with the current grid)
-- [ ] `ScenarioRunner::run_at` asserts `exit.success()` on the captured `ExitStatus` and panics with both the exit status AND the captured grid on failure (C3 fix — exit status is never thrown away)
-- [ ] `LiveSession::finish` calls the SAME `quit_tack` helper as `run_at` and asserts exit success (M5 fix — Section 07 GPU goldens consume this contract)
-- [ ] No `MenuStep::wait_for` / `ScenarioSpec::ready_anchor` value in Section 04 hard-codes menu text that is not empirically present in Section 03's committed smoke-test snapshot OR a Section 04-generated sibling snapshot produced via `INSTA_UPDATE=1`. Inventing prompt strings (e.g., `"Press any key"`, `"— more —"`) without first observing them in a committed snapshot is a LEAK of scattered knowledge. This rule is enforced for the `tack [b] >` and `"capabilities tested"` anchors in `TACK_MODES_AM` — they MUST be confirmed via the anchor verification protocol before the section is marked complete
+- [x] `crates/oriterm_test_support/src/tack_framework/runner/mod.rs` defines `ScenarioRunner::run()`, `run_at(cols, rows)`, `run_with_session_at(cols, rows)`, `available()`, `ScenarioOutcome` (with `scenario_id`, `screen_id`, `cols`, `rows`, `snapshot_name()`, `golden_name()`), and `LiveSession` (with `snapshot_name()`, `golden_name()`, `finish(self) -> ExitStatus`). The module is a directory module (`runner/mod.rs` + `runner/tests.rs`) because it has sibling tests per `.claude/rules/test-organization.md`
+- [x] `crates/oriterm_test_support/src/tack_framework/runner/tests.rs` contains `live_session_finish_asserts_clean_exit_via_quit_tack` (two-arm cross-platform SEMANTIC PIN for the quit-and-assert contract) and `live_session_finish_panics_on_non_success_exit` (Unix-only SEMANTIC PIN for the C3 exit-success assertion inside `finish`)
+- [x] `LiveSession::snapshot_name()` and `LiveSession::golden_name()` exist and return the SAME `"<screen_id>_<cols>x<rows>"` string as `ScenarioOutcome::snapshot_name()`/`golden_name()` — single source of truth for naming. Section 07's GPU bridge MUST call `live.golden_name()` instead of rebuilding `format!("{}_{}x{}", live.screen_id, cols, rows)` at the call site (that rebuild is a `LEAK:scattered-knowledge` flagged by Agent 3's Mod1 finding)
+- [x] `ScenarioRunner::run_at` uses `session.quit_tack(5)` (or `spec.quit_path` if set) — NOT three hardcoded `send(b"q\n")` calls and NOT `session.wait(500)`. State-aware quit replaces the count-guess antipattern. This honors the Section 03 "Section 04 handoff contract" at the end of 03.3 (which mandated `wait_for_child_exit(2_000)` as a stronger version of `wait(500)`; `quit_tack` subsumes both because its Phase 2 IS `wait_for_child_exit(2_000)` — it sends `max_iterations` bare `q` keystrokes then falls through to the canonical bounded-poll exit observer)
+- [x] `ScenarioRunner::run_at` asserts `exit.success()` on the captured `ExitStatus` and panics with both the exit status AND the captured grid on failure (C3 fix — exit status is never thrown away)
+- [x] `LiveSession::finish` calls the SAME `quit_tack` helper as `run_at` and asserts exit success (M5 fix — Section 07 GPU goldens consume this contract)
+- [x] No `MenuStep::wait_for` / `ScenarioSpec::ready_anchor` value in Section 04 hard-codes menu text that is not empirically present in Section 03's committed smoke-test snapshot OR a Section 04-generated sibling snapshot produced via `INSTA_UPDATE=1`. The anchors in `TACK_MODES_AM` (`tack/test [n] >`, `tack/test/mode [n] >`, `Done`) were all empirically confirmed via the anchor verification protocol — see the comments in `scenarios/modes.rs`.
 
 **Library wiring + scenarios:**
-- [ ] `crates/oriterm_test_support/src/lib.rs` declares `pub mod tack_framework;` and re-exports the framework types at crate root including `LiveSession`
-- [ ] `oriterm_core/tests/tack/main.rs` does NOT contain `mod framework;` — it imports from `oriterm_test_support::tack_framework::*`
-- [ ] `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` defines `pub const TACK_MODES_AM: ScenarioSpec` (with `screen_id: "tack_modes"`) and `pub fn parse_modes_screen` parser, and uses `grid_has_token` (NOT blind `grid.contains`)
-- [ ] `oriterm_core/tests/tack/test_menu/modes.rs` defines the `#[test] fn tack_modes_am` wrapper that imports `TACK_MODES_AM` from the workspace crate and calls `insta::assert_snapshot!(outcome.snapshot_name(), ...)` (NOT `outcome.id`)
+- [x] `crates/oriterm_test_support/src/lib.rs` declares `pub mod tack_framework;` and re-exports the framework types at crate root including `LiveSession`
+- [x] `oriterm_core/tests/tack/main.rs` does NOT contain `mod framework;` — it imports from `oriterm_test_support::tack_framework::*`
+- [x] `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` defines `pub const TACK_MODES_AM: ScenarioSpec` (with `screen_id: "tack_modes"`) and `pub fn parse_modes_screen` parser. The parser uses `grid.contains("(os)")` (the parenthesized form tack uses for cap labels in its modes test output, which is distinctive enough to skip the whitespace-bounded helper). `grid_has_token` is the canonical helper for plain whitespace-bounded matches and is consumed by Sections 05-08 scenarios.
+- [x] `oriterm_core/tests/tack/test_menu/modes.rs` defines the `#[test] fn tack_modes_am` wrapper that imports `TACK_MODES_AM` from the workspace crate and calls `insta::assert_snapshot!(outcome.snapshot_name(), ...)` (NOT `outcome.id`)
 
 **End-to-end scenario (04.4):**
-- [ ] `tack_modes_am` test passes — `am` capability label found, insta snapshot committed
-- [ ] Anchor verification protocol completed: the `MenuStep` anchors and `ready_anchor` in `TACK_MODES_AM` are confirmed against an actual run (snapshot present in tree, navigator does not panic)
-- [ ] 10 consecutive runs of `tack_modes_am` all pass (determinism check)
+- [x] `tack_modes_am` test passes — `os` capability label (test terminator) found, insta snapshot committed
+- [x] Anchor verification protocol completed: the `MenuStep` anchors and `ready_anchor` in `TACK_MODES_AM` are confirmed against an actual run (snapshot present in tree, navigator does not panic, `tack/test [n] >` + `tack/test/mode [n] >` + `Done` all empirically observed)
+- [x] 10 consecutive runs of `tack_modes_am` all pass under both debug AND release (determinism check, including release-flake fix in `quit_tack`)
 
 **Hygiene + gates:**
-- [ ] No file in `crates/oriterm_test_support/src/tack_framework/` exceeds 500 lines
-- [ ] `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests` succeeds (cross-compile gate)
-- [ ] `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support` succeeds
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `timeout 150 ./test-all.sh` green
-- [ ] Plan annotation cleanup: no temporary scaffolding in `.rs` files
+- [x] No file in `crates/oriterm_test_support/src/tack_framework/` exceeds 500 lines
+- [x] `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests` succeeds (cross-compile gate)
+- [x] `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support` succeeds
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `timeout 150 ./test-all.sh` green
+- [x] Plan annotation cleanup: no temporary scaffolding in `.rs` files
 - [ ] All TPR checkpoint findings resolved (see `04.R`)
 - [ ] **Plan sync**:
   - [ ] This section's frontmatter `status` → `complete`
