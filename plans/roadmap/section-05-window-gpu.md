@@ -60,7 +60,7 @@ sections:
     status: not-started
   - id: "5.18"
     title: "Recovery Integrations & Deferred Contracts"
-    status: not-started
+    status: in-progress
   - id: "5.15"
     title: Section Completion
     status: in-progress
