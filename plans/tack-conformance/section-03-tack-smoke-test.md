@@ -3,11 +3,11 @@ section: "03"
 title: "Tack Smoke Test"
 status: not-started
 reviewed: false
-goal: "Prove the full pipeline works end-to-end with the simplest possible scenario: spawn `tack` under PtySession with TerminfoEnv-pinned (TERM=ori_term, TERMINFO_DIRS=...), wait for the main menu, capture the grid as an insta snapshot, send 'q' to quit cleanly. This is the empirical discovery point for tack's actual prompt format and menu wording — Section 04 builds the scenario framework on top of whatever Section 03 captures."
+goal: "Prove the full pipeline works end-to-end with the simplest possible scenario: spawn `tack` under PtySession with TerminfoEnv-pinned (TERM=ori_term, TERMINFO=..., TERMINFO_DIRS=...), wait for the main menu, capture the grid as an insta snapshot, send 'q' to quit cleanly. This is the empirical discovery point for tack's actual prompt format and menu wording — Section 04 builds the scenario framework on top of whatever Section 03 captures."
 success_criteria:
   - "`tack_available()` helper exists in `oriterm_test_support` next to `vttest_available()`/`tic_available()`"
   - "`PtySession::spawn_tack(env: &TerminfoEnv, cols, rows)` helper constructs a tack session with the pinned terminfo env vars"
-  - "Smoke test `tack_smoke_main_menu_at_80x24` spawns tack, waits for the main menu prompt (`tack [n] >`), captures `grid_text()`, asserts via insta snapshot, sends `q\\n` to quit, verifies child exits"
+  - "Smoke test `tack_smoke_main_menu_at_80x24` spawns tack, waits for the main menu prompt (`tack [n] >`), captures `grid_text()`, asserts via insta snapshot, sends `q\\n` to quit, AND asserts the child exited within 2 seconds via `PtySession::wait_for_child_exit(timeout_ms) -> ExitStatus`. The exit-status assertion is what makes 'verifies child exits' executable — without it, the test only proves the parent stopped reading bytes, not that tack actually terminated."
   - "The captured insta snapshot contains the literal substrings `Main Menu`, `begin testing`, `tools`, `quit`, and `tack [n] >` (verified at test time, not just visually inspected)"
   - "Test skips cleanly when tack OR tic is unavailable — both tools are required, both gated"
   - "Test discovers and documents the actual sub-menu prompt format used by tack (the captured snapshot IS the documentation that Section 04 consumes)"
@@ -45,16 +45,17 @@ sections:
 # Section 03: Tack Smoke Test
 
 **Status:** Not Started
-**Goal:** Spawn `tack` under `PtySession` with `(TERM=ori_term, TERMINFO_DIRS=<TerminfoEnv tempdir>)` env vars, wait until tack prints the main menu and the `tack [n] > ` prompt, capture the grid as an insta golden snapshot, then send `q\n` to quit cleanly. The captured snapshot is the empirical record of tack's actual main menu format that Section 04's scenario framework will consume — no part of Section 04 should hard-code menu text that isn't first verified by Section 03.
+**Goal:** Spawn `tack` under `PtySession` with `TERM=ori_term`, `TERMINFO=<TerminfoEnv tempdir>`, and `TERMINFO_DIRS=<TerminfoEnv tempdir>` set via `TerminfoEnv::apply_env(&mut cmd)`, wait until tack prints the main menu and the `tack [n] > ` prompt, capture the grid as an insta golden snapshot, send `q\n` to quit, then assert the child exits within 2 s via `wait_for_child_exit`. The captured snapshot is the empirical record of tack's actual main menu format that Section 04's scenario framework will consume — no part of Section 04 should hard-code menu text that isn't first verified by Section 03.
 
 **Success Criteria:**
 
 - [ ] `tack_available()` exists in `oriterm_test_support` and matches `tool_available("tack", "-V")`
-- [ ] `PtySession::spawn_tack(&TerminfoEnv, cols, rows)` helper exists alongside `spawn_vttest`
+- [ ] `PtySession::spawn_tack(&TerminfoEnv, cols, rows)` helper exists alongside `spawn_vttest` and uses `TerminfoEnv::apply_env`
+- [ ] `PtySession::wait_for_child_exit(timeout_ms) -> ExitStatus` exists alongside `wait_for` and `wait`
 - [ ] `oriterm_core/tests/tack/main.rs` exists with `tack_smoke_main_menu_at_80x24` test
 - [ ] The smoke test captures an insta snapshot at `oriterm_core/tests/tack/snapshots/tack_smoke_main_menu_80x24.snap`
 - [ ] The captured snapshot, asserted programmatically via `assert!(grid.contains("..."))`, includes: `"Main Menu"`, `"begin testing"`, `"tools"`, `"quit"`, `"tack [n] >"`
-- [ ] The smoke test sends `q\n` and the child process exits cleanly within 5 seconds — no zombie processes, no leaked PTY file descriptors
+- [ ] The smoke test sends `q\n`, then calls `session.wait_for_child_exit(2_000)` which observes the child terminating within 2 s — no zombie processes, no leaked PTY file descriptors
 - [ ] The test skips when `tack` OR `tic` is unavailable, with a clear `eprintln!` message
 - [ ] `timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24` passes on Linux
 - [ ] Satisfies mission criteria: foundation for tack scenarios; cross-platform skip discipline
@@ -75,15 +76,16 @@ The smoke test also serves as the **empirical discovery mechanism** for tack's e
 
 ## 03.1 tack_available helper and PtySession::spawn_tack
 
-**File(s):** `crates/oriterm_test_support/src/session.rs`
+**File(s):** `crates/oriterm_test_support/src/session/mod.rs` (Section 01 already promoted `session` to a directory module — extend `mod.rs` directly; do NOT create a sibling `session.rs`)
 
 The smoke test (and every later tack test) needs:
 1. A runtime check: is `tack` installed?
 2. A spawn helper: how do we construct a `PtySession` running tack under the pinned terminfo?
+3. A child-exit observation method on `PtySession` so the smoke test can assert tack actually terminated, not just that the parent stopped reading.
 
-Both go in `oriterm_test_support` next to the equivalents from Sections 01 and 02.
+All three go in `oriterm_test_support` next to the equivalents from Sections 01 and 02.
 
-- [ ] Add `tack_available()` to `crates/oriterm_test_support/src/session.rs`:
+- [ ] Add `tack_available()` to `crates/oriterm_test_support/src/session/mod.rs`:
   ```rust
   /// Check if `tack` (terminfo action checker, ncurses) is installed.
   ///
@@ -97,34 +99,35 @@ Both go in `oriterm_test_support` next to the equivalents from Sections 01 and 0
   ```
   Add the `pub use` line to `lib.rs` re-exports next to `tic_available`.
 
-- [ ] Add `PtySession::spawn_tack(...)` helper. Decide carefully where to put it: it needs `TerminfoEnv` (from `crates/oriterm_test_support/src/terminfo/mod.rs`) and is therefore aware of terminfo provisioning. Put it on `PtySession` as an inherent method that takes `&TerminfoEnv`:
+- [ ] Add `PtySession::spawn_tack(...)` helper. Decide carefully where to put it: it needs `TerminfoEnv` (from `crates/oriterm_test_support/src/terminfo/mod.rs`) and is therefore aware of terminfo provisioning. Put it on `PtySession` as an inherent method that takes `&TerminfoEnv` and uses the documented `apply_env` wrapper from Section 02:
 
   ```rust
   use crate::terminfo::TerminfoEnv;
 
   impl PtySession {
       /// Spawn `tack` at the given grid size, using the supplied
-      /// `TerminfoEnv` to pin `TERM` and `TERMINFO_DIRS`.
+      /// `TerminfoEnv` to pin `TERM`, `TERMINFO`, and `TERMINFO_DIRS`.
       ///
       /// `tack` reads the terminfo entry named by `$TERM` from the
-      /// directories listed in `$TERMINFO_DIRS`. `TerminfoEnv::compile()`
-      /// produces both — pass it here unchanged.
+      /// directories listed in `$TERMINFO_DIRS` (or `$TERMINFO` —
+      /// some ncurses consumers honor only one of the two). The
+      /// `TerminfoEnv::apply_env` wrapper sets all three at once,
+      /// hiding the env-var details from this call site.
       ///
       /// Mirrors `spawn_vttest(cols, rows)`. The split helper exists so
       /// the smoke test (Section 03) and the scenario catalog
       /// (Section 04+) share a single canonical tack invocation site.
       #[must_use]
       pub fn spawn_tack(env: &TerminfoEnv, cols: u16, rows: u16) -> Self {
-          let (term, dirs) = env.env_vars();
           let mut cmd = CommandBuilder::new("tack");
-          // Pass the term name as positional arg AND env so tack picks
-          // it up under both ncurses and BSD curses environments.
-          cmd.arg(term);
-          cmd.env("TERM", term);
-          cmd.env("TERMINFO_DIRS", dirs);
-          // -i = inhibit init strings (don't reset the terminal at start;
-          //      we want to drive a fresh PTY anyway, not reset whatever
-          //      vttest-style state would otherwise be sent).
+          // Pass the term name as positional arg so tack picks it up
+          // under both ncurses and BSD curses, regardless of which
+          // env var the implementation consults first.
+          cmd.arg(env.term());
+          // Apply TERM/TERMINFO/TERMINFO_DIRS via the canonical wrapper.
+          // No raw env-var iteration here — if TerminfoEnv learns about
+          // a fourth env var tomorrow, this call site is unchanged.
+          env.apply_env(&mut cmd);
           // We do NOT pass -i — tack's init sequences are part of what
           // we want to test. Comment kept here so future readers know
           // the omission is deliberate.
@@ -132,6 +135,46 @@ Both go in `oriterm_test_support` next to the equivalents from Sections 01 and 0
       }
   }
   ```
+
+- [ ] Add `PtySession::wait_for_child_exit(timeout_ms)` so the smoke test can assert child termination. The method polls the existing `child: Box<dyn portable_pty::Child + Send + Sync>` field via `try_wait()` until the child exits or the deadline expires. On timeout, panics with the current grid for diagnostic value (same panic-on-failure idiom as `wait_for`).
+
+  ```rust
+  use std::time::{Duration, Instant};
+  use portable_pty::ExitStatus;
+
+  impl PtySession {
+      /// Wait until the child process exits, with a hard timeout.
+      ///
+      /// Returns the [`ExitStatus`] on clean exit. Panics with the
+      /// current grid contents on timeout — the panic message tells
+      /// the test author exactly what was on screen when the child
+      /// failed to exit.
+      ///
+      /// Used by tack/vttest tests after sending `q\n` (or whatever
+      /// the tool's quit key is) to assert the child actually
+      /// terminated, not just that the parent stopped reading bytes.
+      pub fn wait_for_child_exit(&mut self, timeout_ms: u64) -> ExitStatus {
+          let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+          loop {
+              match self.child.try_wait() {
+                  Ok(Some(status)) => return status,
+                  Ok(None) => {
+                      assert!(
+                          Instant::now() < deadline,
+                          "child did not exit within {timeout_ms}ms.\nGrid:\n{}",
+                          self.grid_text()
+                      );
+                      // Drain any final output while we wait.
+                      self.drain_blocking(50);
+                  }
+                  Err(e) => panic!("PtySession::wait_for_child_exit: try_wait error: {e}"),
+              }
+          }
+      }
+  }
+  ```
+
+  This method must be added IN Section 03 (it's a Section 03 dependency for the smoke test's exit-status assertion). It is NOT a Section 01 backfill — Section 01's `PtySession` API is finalized for the existing 198 vttest tests; new methods can land in any later section that needs them, owned by that section.
 
   **Open question for the implementer:** if tack's init sequences are noisy in the snapshot (cursor positioning, mode setting, alt-screen enter), the smoke test in 03.3 may need to call `session.wait(500)` BEFORE asserting on the grid to let init settle. The right answer is data-driven — capture once, look at the snapshot, decide. Do not pre-emptively pass `-i` unless the snapshot shows it's needed.
 
@@ -236,12 +279,19 @@ The tack tests live alongside `oriterm_core/tests/vttest/` — they follow the s
       // Send 'q' + newline to quit tack cleanly.
       session.send(b"q\n");
 
-      // Give tack up to 1 second to actually exit. Drain any final
-      // output (the alt-screen exit sequence, cursor restore, etc.).
-      session.wait(1_000);
-
-      // No assertion on exit code yet — tack doesn't return non-zero
-      // on clean quit. The Drop on PtySession will reap the child.
+      // Assert tack actually exited within 2 seconds. wait_for_child_exit
+      // polls portable_pty::Child::try_wait() and panics with the current
+      // grid on timeout. Without this assertion the test would silently
+      // pass even if tack hung after receiving 'q\n' — the parent simply
+      // stops reading bytes during the implicit `wait(300)` inside
+      // `send`, but the child stays alive.
+      //
+      // We do NOT inspect the exit status's success() flag — tack's
+      // exit code on clean quit is documented as 0 in ncurses tack(1),
+      // but exit status semantics drift across distros and the
+      // important assertion is that the child terminated, not its
+      // particular code. Drop will still reap the child either way.
+      let _exit = session.wait_for_child_exit(2_000);
   }
   ```
 
@@ -334,8 +384,9 @@ Skip-when-unavailable and clean-process-cleanup are non-negotiable per CLAUDE.md
 
 ## 03.N Completion Checklist
 
-- [ ] `tack_available()` exists in `crates/oriterm_test_support/src/session.rs` and is re-exported from `lib.rs`
-- [ ] `PtySession::spawn_tack(env, cols, rows)` exists and uses `TerminfoEnv::env_vars()` to set `TERM` and `TERMINFO_DIRS` on the child
+- [ ] `tack_available()` exists in `crates/oriterm_test_support/src/session/mod.rs` and is re-exported from `lib.rs`
+- [ ] `PtySession::spawn_tack(env, cols, rows)` exists and uses `TerminfoEnv::apply_env(&mut cmd)` (NOT raw env iteration) to set `TERM`, `TERMINFO`, and `TERMINFO_DIRS` on the child
+- [ ] `PtySession::wait_for_child_exit(timeout_ms) -> ExitStatus` exists in `crates/oriterm_test_support/src/session/mod.rs` and is the primitive the smoke test calls after sending `q\n`
 - [ ] `oriterm_core/tests/tack/main.rs` exists and declares the smoke test
 - [ ] `tack_smoke_main_menu_at_80x24` test passes on Linux (`timeout 150 cargo test -p oriterm_core --test tack`)
 - [ ] Insta snapshot `oriterm_core/tests/tack/snapshots/tack__tack_smoke_main_menu_80x24.snap` exists and is committed

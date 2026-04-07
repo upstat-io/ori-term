@@ -25,8 +25,8 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 - [x] vttest GPU golden tests (`oriterm/src/gpu/visual_regression/vttest/`) migrated to use shared `PtySession` — all golden images unchanged
 - [x] VtTestSession duplication eliminated (LEAK fixed)
 - [x] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
-- [ ] `extra/ori_term.info` terminfo source exists, derived from xterm-256color with explicit capability declarations
-- [ ] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + `TERMINFO_DIRS` pointing to compiled entry
+- [ ] `extra/ori_term.info` terminfo source exists as a hand-authored, fully-pinned entry: a private `ori_term+common` base fragment plus two user-facing entries (`ori_term` and `ori_term-direct`) that consume only the private fragment via `use=ori_term+common,`. The capability vocabulary is derived from xterm-256color conventions, but there is NO `use=xterm-256color,` inheritance — every cap is declared explicitly so host terminfo drift never silently changes what ori_term claims. (Matches Alacritty's `alacritty+common` pattern.)
+- [ ] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + BOTH `TERMINFO` and `TERMINFO_DIRS` pointing at the compiled entry (some ncurses consumers honor only one of the two — set both). Verified end-to-end by a child-process integrity test that spawns `infocmp` with the env triple set and confirms the child reaches the pinned entry (NOT the host xterm-256color).
 - [ ] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
 - [ ] Tack tool scenarios cover EVERY automatable tools screen: ANSI status reports (DA/DSR), SGR modes, character sets, ENQ/ACK, OSC queries. Interactive/overlap tools (scan codes, decompile terminfo) have in-code stubs.
 - [ ] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
@@ -49,8 +49,9 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
                          │    (captures Event::PtyWrite)  │
                          │                               │
                          │  TerminfoEnv                   │
-                         │    compile(info) -> temp dir   │
-                         │    env_vars() -> (TERM, DIRS)  │
+                         │    compile() -> temp dir        │
+                         │    apply_env(&mut cmd)          │
+                         │      sets TERM/TERMINFO/DIRS    │
                          │                               │
                          │  tool_available(name) -> bool  │
                          └───────────┬──────────┬────────┘
