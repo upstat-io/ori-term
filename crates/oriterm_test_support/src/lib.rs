@@ -26,7 +26,7 @@ pub use session::{
 };
 pub use tack_framework::{
     LiveSession, MenuStep, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,
-    ScreenParserFn, TackNavigator, default_parser, grid_find_field, grid_has_token,
-    grid_line_starts_with,
+    ScreenParserFn, TackNavigator, default_parser, grid_find_field, grid_has_paren_token,
+    grid_has_token, grid_line_starts_with,
 };
 pub use terminfo::{TerminfoEnv, TerminfoVariant};

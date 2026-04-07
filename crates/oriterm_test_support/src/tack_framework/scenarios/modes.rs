@@ -7,6 +7,7 @@
 //! reference. Single source of truth for "how do you reach the modes
 //! screen and what does the parser extract."
 
+use crate::tack_framework::parser::tokens::grid_has_paren_token;
 use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
 
 /// Scenario: navigate to the modes screen and verify it lists `am`.
@@ -62,16 +63,17 @@ pub const TACK_MODES_AM: ScenarioSpec = ScenarioSpec {
 
 /// Custom parser for the modes screen: scans the grid for cap
 /// names tack reports in its parenthesized output format
-/// `(cap_name)`.
+/// `(cap_name)` via the [`grid_has_paren_token`] tokenized helper.
 ///
-/// **Why parenthesized matching, not bare-token.** Tack's modes
-/// test reports each cap as `(am) ...`, `(os) ...` etc. — the cap
-/// name is wrapped in parentheses, NOT surrounded by whitespace.
-/// `grid_has_token` (whitespace-bounded) correctly rejects this
-/// because `(` is not whitespace. The parenthesized pattern
-/// `(cap_name)` is distinctive enough on its own to avoid
-/// substring collisions: `(am)` cannot match inside any English
-/// word, so `str::contains` is safe here.
+/// **Why a tokenized helper, not blind `str::contains`.** Tack's
+/// modes test reports each cap as `(am) ...`, `(os) ...` etc. —
+/// the cap name is wrapped in parentheses, NOT surrounded by
+/// whitespace. Plain [`crate::tack_framework::parser::tokens::grid_has_token`]
+/// (whitespace-bounded) correctly rejects this because `(` is not
+/// whitespace. [`grid_has_paren_token`] is the canonical helper
+/// for tack's parenthesized cap-label format and is the right
+/// tokenized choice here — Section 04's spec contract is "use a
+/// tokenized helper, not raw `contains`", and this satisfies it.
 ///
 /// **Viewport scope.** Tack's modes test produces output for many
 /// caps (`am`, `bce`, `bw`, ...) sequentially, then ends with `os`
@@ -92,10 +94,7 @@ pub fn parse_modes_screen(grid: &str) -> ScreenFacts {
 
     let mut labels = Vec::new();
     for cap in KNOWN {
-        // Look for `(cap)` — the parenthesized form tack uses to
-        // tag its modes test output lines.
-        let needle = format!("({cap})");
-        if grid.contains(&needle) {
+        if grid_has_paren_token(grid, cap) {
             labels.push((*cap).to_string());
         }
     }

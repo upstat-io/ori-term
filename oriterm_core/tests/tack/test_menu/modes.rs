@@ -23,9 +23,10 @@ fn tack_modes_am() {
     // the 24-row viewport at the moment the test reports "Done"
     // (earlier caps like `am`, `bce` scrolled off — Section 05
     // adds per-cap scenarios that capture the right viewport for
-    // each). Uses the tokenized `grid_has_token` helper indirectly
-    // via `parse_modes_screen` so substring collisions cannot
-    // false-pass.
+    // each). Uses the tokenized `grid_has_paren_token` helper
+    // indirectly via `parse_modes_screen` — tack tags every modes
+    // result with `(cap_name)` and `grid_has_paren_token` matches
+    // exactly that form, so substring collisions cannot false-pass.
     assert!(
         outcome.parsed.capability_labels.iter().any(|c| c == "os"),
         "expected `os` in capability_labels, got {:?}\nGrid:\n{}",
