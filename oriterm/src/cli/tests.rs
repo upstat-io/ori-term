@@ -689,7 +689,7 @@ fn register_default_inner_succeeds_in_test_scope() {
     let suffix = format!("oriterm_cli_test_{pid}_{nanos}");
     let paths = RegistryPaths {
         startup_subkey: format!(r"Software\Classes\{suffix}\Startup"),
-        clsid_subkey: format!(r"Software\Classes\{suffix}\CLSID\LocalServer32"),
+        clsid_subkey: format!(r"Software\Classes\{suffix}\CLSID"),
     };
     let exe = PathBuf::from(r"C:\test\fake-oriterm.exe");
 

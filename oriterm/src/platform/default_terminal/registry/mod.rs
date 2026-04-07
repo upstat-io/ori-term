@@ -88,7 +88,11 @@ const PRODUCTION_STARTUP_SUBKEY: &str = r"Console\%%Startup";
 pub(crate) struct RegistryPaths {
     /// Subkey holding `DelegationConsole` and `DelegationTerminal` values.
     pub(crate) startup_subkey: String,
-    /// Subkey holding the `LocalServer32` default value (the exe path).
+    /// Parent CLSID subkey for `ori_term`'s COM server registration. The
+    /// `LocalServer32` default-value child is created underneath this
+    /// path during register, and `unregister_all_at` deletes the entire
+    /// parent tree (`LocalServer32` child + any other artifacts COM may
+    /// have written) because we own this CLSID exclusively.
     pub(crate) clsid_subkey: String,
 }
 
@@ -97,7 +101,7 @@ impl RegistryPaths {
     pub(crate) fn production() -> Self {
         Self {
             startup_subkey: PRODUCTION_STARTUP_SUBKEY.to_string(),
-            clsid_subkey: format!(r"Software\Classes\CLSID\{ORITERM_TERMINAL_CLSID}\LocalServer32"),
+            clsid_subkey: format!(r"Software\Classes\CLSID\{ORITERM_TERMINAL_CLSID}"),
         }
     }
 }
@@ -190,8 +194,13 @@ pub(crate) fn write_delegation_value(
 }
 
 /// Write the `LocalServer32` default value (= the exe path).
+///
+/// Creates the `<clsid_subkey>\LocalServer32` child under the parent
+/// CLSID key. `unregister_all_at` deletes the parent tree which
+/// transitively removes this child.
 fn write_local_server32(paths: &RegistryPaths, exe_path: &Path) -> io::Result<()> {
-    let key = create_subkey(&paths.clsid_subkey)?;
+    let local_server_path = format!(r"{}\LocalServer32", paths.clsid_subkey);
+    let key = create_subkey(&local_server_path)?;
     // Default value is named with the empty string.
     let exe_str = exe_path.to_string_lossy();
     let result = set_string_value(key.handle(), "", &exe_str);

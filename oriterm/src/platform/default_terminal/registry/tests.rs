@@ -43,9 +43,12 @@ impl RegistryTestScope {
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
         let suffix = format!("oriterm_test_{pid}_{counter}_{nanos}");
+        // clsid_subkey is the PARENT CLSID key — register_all_at will
+        // create a `LocalServer32` child under it, and unregister_all_at
+        // deletes the entire parent tree (which removes the child).
         let paths = RegistryPaths {
             startup_subkey: format!(r"Software\Classes\{suffix}\Startup"),
-            clsid_subkey: format!(r"Software\Classes\{suffix}\CLSID\LocalServer32"),
+            clsid_subkey: format!(r"Software\Classes\{suffix}\CLSID"),
         };
         Self { suffix, paths }
     }
