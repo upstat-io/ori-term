@@ -25,6 +25,10 @@
 
 use oriterm_test_support::{PtySession, TerminfoEnv, tack_available, tic_available};
 
+// The framework lives in oriterm_test_support — no `mod framework;`
+// here. Test files import via `use oriterm_test_support::tack_framework::*`.
+mod test_menu;
+
 /// Smoke test: spawn tack under the pinned terminfo, wait for the
 /// main menu, capture as snapshot, quit cleanly.
 ///
