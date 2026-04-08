@@ -41,30 +41,54 @@
 //! [`super::ScenarioRunner`] and does not regress the stable-screen
 //! path.
 //!
-//! # Algorithmic-DRY contract
+//! # Algorithmic distinction from `poll_until`
 //!
-//! [`phase_capture_loop`] consumes
-//! [`crate::session::sync::poll_until`] DIRECTLY. It does NOT
-//! re-implement the deadline / drain / idle-sleep skeleton — that
-//! lives in exactly one place (`session::sync::mod.rs`). If a
-//! future refactor inlines a parallel deadline loop here, it
-//! becomes the fourth consumer of the bounded-poll algorithm
-//! (`wait_for_with_context`, `wait_for_any`,
-//! `wait_for_child_exit_inner` are the existing three) and triggers
-//! impl-hygiene.md's "3+ instances = always extract" rule. The
-//! 05.0.b feat commit widened `poll_until` from `pub(super)` to
-//! `pub(crate)` specifically so this file can call it without that
-//! violation.
+//! The first cut of [`phase_capture_loop`] (05.0.b) consumed
+//! [`crate::session::poll_until`] directly to share the
+//! bounded-poll skeleton with the four existing waiters
+//! (`wait_for_with_context`, `wait_for_any`, `wait_for_child_exit_inner`,
+//! and the original phase loop). Empirical probing during 05.1
+//! showed this approach is fundamentally incompatible with how
+//! tack writes the modes-test sweep on a fast Linux host:
+//!
+//! - Tack runs the entire am/bce/bw/km/mir/msgr/xenl sweep in
+//!   under 1 ms total wall-clock.
+//! - The OS PTY buffer + reader-thread channel batch the entire
+//!   ~500-byte output into ONE `Vec<u8>` chunk.
+//! - `poll_until` calls `drain_blocking` which feeds the whole
+//!   chunk to `vte::Processor::advance` in ONE call.
+//! - VTE processes the chunk atomically — by the time `poll_until`
+//!   re-checks the grid, every cap except the last (`(os) Done`)
+//!   has scrolled off the 24-row viewport. There is no observable
+//!   intermediate state.
+//!
+//! The `poll_until` skeleton is the right primitive for ANCHOR-based
+//! synchronization (wait until tack draws the next prompt). It is
+//! the WRONG primitive for MID-FLOW capture where the consumer
+//! needs to observe a transient state between two PTY writes that
+//! happen in the same kernel buffer.
+//!
+//! [`phase_capture_loop`] now uses
+//! [`crate::session::PtySession::drain_until`] — a byte-by-byte
+//! drain that feeds the VTE processor ONE byte at a time and
+//! checks the grid after each byte, stopping at the first match
+//! and discarding any unread bytes in the chunk. This is a
+//! DIFFERENT algorithm from `poll_until` (incremental feed +
+//! per-byte check vs. chunk-at-a-time + per-iteration check), so
+//! the impl-hygiene.md "3+ instances of the same skeleton" rule
+//! does not apply: the two algorithms serve different purposes
+//! and live in two distinct canonical homes (`session::poll_until`
+//! for chunk-based polling, `session::PtySession::drain_until` for
+//! byte-by-byte phase capture).
 //!
 //! # No post-match quiesce
 //!
-//! The 200 ms `self.wait(200)` quiet period that
-//! `wait_for_with_context` applies after a successful match lives
-//! at the `wait_for_with_context` call site, AFTER `poll_until`
-//! returns. [`phase_capture_loop`] returns the captured grid the
-//! instant the anchor appears — no `wait(200)` call follows. This
-//! is the entire point of the phase primitive: catch mid-flow
-//! content before the next tack `printf` scrolls it off.
+//! [`drain_until`] returns the captured grid the instant the
+//! needle appears — no `wait(200)` call follows. The byte-by-byte
+//! feed and the immediate-return-on-first-match are both essential
+//! to phase capture: the consumer wanted the moment `needle`
+//! appeared, and any later bytes would scroll the captured content
+//! out of view.
 //!
 //! # Sentinel detection
 //!
@@ -83,7 +107,7 @@ use super::{
     MAIN_MENU_READY_TIMEOUT_MS, READY_ANCHOR_TIMEOUT_MS, ScenarioOutcome, ScenarioRunner,
     TACK_MAIN_MENU_PROMPT, assert_no_unverified_sentinels, finish_and_assert,
 };
-use crate::session::{PollStep, PtySession, poll_until};
+use crate::session::PtySession;
 use crate::terminfo::TerminfoEnv;
 
 /// CI-safe default phase capture timeout. 5 s matches the existing
@@ -91,34 +115,40 @@ use crate::terminfo::TerminfoEnv;
 /// budget set [`PhaseSpec::phase_timeout_ms`] directly.
 pub(super) const PHASE_DEFAULT_TIMEOUT_MS: u64 = 5_000;
 
-/// Tight phase-capture loop. Polls `session.grid_text()` for
-/// `phase_anchor` via the canonical [`poll_until`] bounded-poll
-/// skeleton. Returns the captured grid the instant the anchor
-/// appears, or `None` on deadline expiry.
+/// Hard upper bound on bytes [`phase_capture_loop`] will feed
+/// before giving up. 64 KiB is well above tack's full modes-test
+/// output (~500 bytes) but bounded enough that a runaway tack that
+/// never produces the anchor cannot consume unbounded memory.
+const PHASE_MAX_BYTES: usize = 64 * 1024;
+
+/// Tight phase-capture loop. Drains the PTY byte-by-byte through
+/// [`PtySession::drain_until`] and returns the captured grid the
+/// instant `phase_anchor` first appears.
 ///
-/// **No post-match quiesce.** Returns immediately on first match.
-/// This is the only difference from
-/// [`PtySession::wait_for_with_context`], which calls `self.wait(200)`
-/// after a successful match. Phase capture cannot afford that
-/// quiesce because the next tack `printf` would scroll the captured
-/// line off the viewport.
+/// **Why byte-by-byte (not [`crate::session::poll_until`]).** See
+/// the module-level rustdoc above. The short version: tack writes
+/// the entire modes-test sweep into one PTY buffer chunk on a fast
+/// host; chunk-at-a-time drain processes it atomically and the
+/// grid jumps from "no output" to "post-test (os) Done" in one
+/// step. Byte-by-byte drain stops feeding the moment the anchor
+/// appears so the captured grid reflects the intermediate state
+/// BEFORE later cap lines scroll the anchor off the viewport.
 ///
-/// **No fixed sleeps.** The 10 ms idle sleep on empty drain that
-/// prevents hot-spinning lives inside [`poll_until`] — this
-/// function adds zero additional sleeps of its own.
+/// **No post-match quiesce.** [`PtySession::drain_until`] returns
+/// the moment the needle appears. There is NO `wait(200)` call
+/// after — that would defeat the entire point of phase capture.
+///
+/// **Bounded by [`PHASE_MAX_BYTES`].** A runaway tack that never
+/// produces the anchor cannot consume unbounded memory: the loop
+/// caps at 64 KiB before returning `None`. The bound is well above
+/// tack's actual output (~500 bytes for the full modes sweep) but
+/// catches infinite loops cleanly.
 pub(crate) fn phase_capture_loop(
     session: &mut PtySession,
     phase_anchor: &str,
     timeout_ms: u64,
 ) -> Option<String> {
-    poll_until::<String, _>(session, timeout_ms, |s| {
-        let grid = s.grid_text();
-        if grid.contains(phase_anchor) {
-            PollStep::Done(grid)
-        } else {
-            PollStep::NotYet
-        }
-    })
+    session.drain_until(phase_anchor, PHASE_MAX_BYTES, timeout_ms)
 }
 
 impl ScenarioRunner {

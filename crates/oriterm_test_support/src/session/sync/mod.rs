@@ -20,16 +20,7 @@ use std::time::{Duration, Instant};
 use super::PtySession;
 
 /// Outcome of a single [`poll_until`] check pass.
-///
-/// `pub(crate)` so consumers in sibling modules
-/// (`tack_framework::runner::phase`) can build their own predicates
-/// against the canonical bounded-poll skeleton instead of inlining
-/// a parallel deadline loop. Visibility was widened from
-/// `pub(super)` in 05.0.b's feat commit so `runner/phase.rs` can
-/// implement the phase-capture loop without duplicating the
-/// drain + idle-sleep + deadline machinery (which would be
-/// `LEAK:algorithmic-duplication` per impl-hygiene.md).
-pub(crate) enum PollStep<T> {
+pub(super) enum PollStep<T> {
     /// Predicate not yet satisfied — keep polling.
     NotYet,
     /// Predicate satisfied — return this payload.
@@ -43,28 +34,25 @@ pub(crate) enum PollStep<T> {
 /// the deadline. Returns `None` when the deadline passes without a
 /// successful check.
 ///
-/// This is the SINGLE canonical home for the bounded-poll pattern shared
-/// by every `PtySession` waiter. The 10 ms idle sleep on empty drain is
-/// what prevents hot-spinning when the reader thread has closed its
-/// channel but the predicate is still false. Every consumer (`wait_for`,
-/// `wait_for_child_exit_inner`, and the Section 04
-/// `wait_for_with_context` / `wait_for_any` primitives) delegates here.
+/// This is the SINGLE canonical home for the chunk-at-a-time
+/// bounded-poll pattern shared by every `PtySession` ANCHOR-based
+/// waiter (`wait_for_with_context`, `wait_for_any`,
+/// `wait_for_child_exit_inner`). The 10 ms idle sleep on empty
+/// drain is what prevents hot-spinning when the reader thread has
+/// closed its channel but the predicate is still false.
 ///
-/// **`pub(crate)` since 05.0.b.** Widened from `pub(super)` so the
-/// new `tack_framework::runner::phase::phase_capture_loop` (added in
-/// 05.0.b's feat commit) can call this directly. Inlining a parallel
-/// deadline loop in phase.rs would push the bounded-poll pattern past
-/// the impl-hygiene.md "3+ instances = always extract" threshold (the
-/// existing consumers are `wait_for_with_context`, `wait_for_any`, and
-/// `wait_for_child_exit_inner`; phase capture would be the fourth).
-/// Crucially, `poll_until` does NOT call any post-match quiesce —
-/// the `self.wait(200)` quiet period that
-/// [`PtySession::wait_for_with_context`] applies lives at the call
-/// site AFTER `poll_until` returns. Phase capture skips that call
-/// site entirely, so the same loop body powers both the
-/// stable-screen 200 ms quiesce and the phase-capture zero-quiesce
-/// paths without any branching here.
-pub(crate) fn poll_until<T, P>(session: &mut PtySession, timeout_ms: u64, mut check: P) -> Option<T>
+/// **NOT used by phase capture.** 05.1's empirical investigation
+/// found that chunk-at-a-time drain processes tack's modes-test
+/// output atomically (the OS PTY buffer batches the entire ~500-byte
+/// sweep into one chunk on a fast Linux host), so by the time the
+/// next `poll_until` iteration runs the grid has already jumped
+/// past every transient cap label. Phase capture lives in
+/// [`super::PtySession::drain_until`] which feeds the VTE processor
+/// byte-by-byte and stops at the first match. The two are
+/// fundamentally different algorithms (chunk-at-a-time anchor poll
+/// vs. byte-at-a-time mid-flow capture) so the impl-hygiene.md
+/// "3+ instances = always extract" rule does not apply.
+pub(super) fn poll_until<T, P>(session: &mut PtySession, timeout_ms: u64, mut check: P) -> Option<T>
 where
     P: FnMut(&mut PtySession) -> PollStep<T>,
 {
@@ -212,6 +200,109 @@ impl PtySession {
             self.wait(200);
         }
         matched
+    }
+
+    /// Drain bytes from the PTY incrementally — feeding the VTE
+    /// processor ONE byte at a time and checking `grid_text()` after
+    /// each byte — until `needle` appears in the grid OR the deadline
+    /// expires OR `max_bytes` is consumed without a match.
+    ///
+    /// Returns `Some(grid_text)` captured the instant the needle
+    /// first appears. Returns `None` on deadline / max-bytes
+    /// exhaustion / channel closure.
+    ///
+    /// **Why byte-by-byte (not chunk-at-a-time).** The default drain
+    /// methods ([`Self::drain`], [`Self::drain_blocking`]) feed
+    /// whole `Vec<u8>` chunks to the VTE processor in one
+    /// `proc.advance` call. On a fast host, the OS PTY buffer
+    /// batches all of tack's modes-test output (~500 bytes, 7+
+    /// cap-result lines) into a single chunk. The chunk-at-a-time
+    /// drain processes it atomically: the grid jumps from "no
+    /// output" to "everything except the last few lines has scrolled
+    /// off" in one step. By the time the consumer's poll loop runs,
+    /// the only visible cap is the LAST one printed (`(os) Done`).
+    ///
+    /// The byte-by-byte feed processes each tack-emitted byte
+    /// independently. After the closing `)` of `(am)` is fed, the
+    /// grid contains `(am)` on a stable line; the next byte (newline,
+    /// then the next cap's bytes) hasn't been processed yet. Checking
+    /// `grid_text().contains("(am)")` at that moment captures the
+    /// intermediate state BEFORE the next cap line scrolls
+    /// `(am)` off. This is the only way to catch mid-flow tack
+    /// content on a fast host.
+    ///
+    /// **Lost bytes are intentional.** When the needle is found
+    /// mid-chunk, the remaining bytes in the chunk are NOT fed to
+    /// the VTE processor — they're discarded. The kernel back-
+    /// pressures tack on subsequent writes, and `quit_tack` flushes
+    /// any remaining output during teardown. This is correct for
+    /// phase capture: the consumer wanted the moment `needle`
+    /// appeared, and any later bytes would only scroll the captured
+    /// content out of view.
+    ///
+    /// **Performance note.** Each byte triggers a `grid_text()` call
+    /// (~80×24 char build = ~2 KB allocation per byte). For 500
+    /// bytes that's ~1 MB of test-only allocation. Acceptable for a
+    /// dev-time test framework; not appropriate for production code.
+    pub fn drain_until(
+        &mut self,
+        needle: &str,
+        max_bytes: usize,
+        timeout_ms: u64,
+    ) -> Option<String> {
+        if needle.is_empty() {
+            return None;
+        }
+        // Fast path: needle may already be in the grid from earlier
+        // drain calls (e.g., the navigator's pre-existing-anchor
+        // guard ran a drain that pulled in pre-trigger content).
+        if self.grid_text().contains(needle) {
+            return Some(self.grid_text());
+        }
+
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut bytes_consumed = 0usize;
+        loop {
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            if bytes_consumed >= max_bytes {
+                return None;
+            }
+
+            // Block briefly for the next chunk. Capping at 50 ms
+            // matches the existing drain_blocking blocking budget so
+            // CI hosts under load aren't woken too aggressively.
+            let remaining = deadline.saturating_duration_since(now);
+            let block_ms = remaining.as_millis().min(50) as u64;
+            let Ok(chunk) = self.rx.recv_timeout(Duration::from_millis(block_ms)) else {
+                continue;
+            };
+
+            // Feed each byte through the VTE processor
+            // independently and check the grid after each one.
+            for byte in &chunk {
+                self.proc
+                    .advance(&mut self.term, std::slice::from_ref(byte));
+                bytes_consumed += 1;
+                // Flush any captured PTY responses promptly so
+                // tack's DA/DSR handshakes complete in lockstep.
+                for resp in self.term.event_listener().take_responses() {
+                    let _ = self.writer.write_all(resp.as_bytes());
+                }
+                let grid = self.grid_text();
+                if grid.contains(needle) {
+                    let _ = self.writer.flush();
+                    return Some(grid);
+                }
+                if bytes_consumed >= max_bytes {
+                    let _ = self.writer.flush();
+                    return None;
+                }
+            }
+            let _ = self.writer.flush();
+        }
     }
 }
 
