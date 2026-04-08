@@ -36,11 +36,18 @@
 //! 05.4b empirical probe (2026-04-08) discovered that pressing
 //! `?` from the begin-testing menu does NOT navigate to a
 //! separate help screen — it simply re-displays the same
-//! begin-testing menu inline. The captured grid after `?` is
-//! byte-identical to the captured grid before `?`. A separate
-//! `tack_help` `Scenario` would therefore add no incremental
-//! signal beyond what this test (which IS a Duplicate-class
-//! pin: it verifies the duplication claim itself).
+//! begin-testing menu inline. NOTE: the post-`?` grid is NOT
+//! byte-identical to the pre-`?` grid (the post-`?` viewport
+//! contains additional scroll history above the re-rendered
+//! menu — that's why this test asserts "all 16 menu entries
+//! still visible" rather than asserting byte equality with the
+//! 05.0 inventory snapshot). The semantic claim is that `?`
+//! does not navigate to a distinct screen, NOT that the buffers
+//! match exactly. A separate `tack_help` `Scenario` would still
+//! add no incremental signal — the per-entry assertions plus
+//! the post-`?` insta snapshot are stronger than a structural
+//! `Scenario` would be. (TPR-05-023 fix: previous version of
+//! this rustdoc incorrectly said the grids were "byte-identical".)
 //!
 //! # Promotion history (TPR-05-017 -> TPR-05-022)
 //!

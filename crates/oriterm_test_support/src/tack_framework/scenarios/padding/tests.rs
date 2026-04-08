@@ -129,10 +129,14 @@ fn parse_padding_screen_handles_realistic_tack_v108_output() {
     // SEMANTIC PIN: against the actual tack v1.08 padding test
     // output (verified empirically — see module rustdoc), the
     // parser returns ["rs1"] because tack v1.08 emits the
-    // `(rs1) reset_1string, not present.  (rs1) Done` line. Other
-    // caps are absent from the captured grid because tack only
-    // probes caps actually declared in extra/ori_term.info — and
-    // ori_term.info currently declares rs2 but not rs1.
+    // `(rs1) reset_1string, not present.  (rs1) Done` line. The
+    // "not present" part of tack's output reflects the current
+    // state of extra/ori_term.info, which declares NO reset-string
+    // capabilities at all (neither rs1, rs2, nor rs3) — see
+    // TPR-05-021 for the empirical correction. Other caps in
+    // STRING_CAPS are absent from the captured grid because tack
+    // only probes caps that exist in the terminfo entry, and
+    // none of them are declared.
     let grid = "(rs1) reset_1string, not present.  (rs1) Done\n";
     let facts = parse_padding_screen(grid);
     assert_eq!(facts.capability_labels, vec!["rs1".to_string()]);
