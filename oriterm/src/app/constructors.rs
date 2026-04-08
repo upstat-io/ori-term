@@ -154,6 +154,9 @@ impl App {
         Self {
             gpu: None,
             pipelines: None,
+            gpu_health: crate::gpu::recovery::GpuHealth::new(),
+            device_lost_signal: Arc::new(AtomicU64::new(0)),
+            last_seen_device_lost_signal: 0,
             font_set: None,
             user_fallback_map: Vec::new(),
             window_manager: WindowManager::new(),

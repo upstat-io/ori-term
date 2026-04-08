@@ -13,6 +13,7 @@ use std::time::Instant;
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 use super::perf_stats::FramePhases;
+use crate::gpu::recovery::gate_outcome;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
     extract_frame_from_snapshot_into, snapshot_palette,
@@ -28,6 +29,16 @@ impl App {
     pub(super) fn handle_redraw(&mut self) -> FramePhases {
         log::trace!("RedrawRequested");
         let mut phases = FramePhases::default();
+
+        // I1 render gate (5.16.2). Direct callers (`WindowEvent::RedrawRequested`
+        // in `event_loop.rs`, `tab_drag::tear_off`, the Windows modal-loop
+        // path) bypass `render_dirty_windows`'s gate, so this is the second
+        // canonical call site of `gate_outcome`. Both sites read from the
+        // same `GpuHealth` SSOT — no parallel state.
+        if let Some(gated) = gate_outcome(&self.gpu_health) {
+            log::trace!("handle_redraw gate: {gated:?}");
+            return phases;
+        }
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.root.set_urgent_redraw(false);

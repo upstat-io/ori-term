@@ -1,5 +1,12 @@
 [workspace]
-members = ["oriterm_core", "oriterm", "oriterm_ui", "oriterm_ipc", "oriterm_mux"]
+members = [
+    "oriterm_core",
+    "oriterm",
+    "oriterm_ui",
+    "oriterm_ipc",
+    "oriterm_mux",
+    "crates/oriterm_test_support",
+]
 resolver = "2"
 
 [workspace.package]

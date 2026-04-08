@@ -61,6 +61,27 @@ impl App {
             window_config.transparent,
             self.config.rendering.gpu_backend,
         )?;
+
+        // Register the device-lost callback so wgpu signals back into the
+        // event loop when the underlying device dies. The callback fires
+        // exactly once per device — `App::recover_gpu()` (5.16.4) will
+        // re-register on the new device after every recreate. This is the
+        // SSOT for the registration call site for the *initial* device.
+        //
+        // The closure also bumps `device_lost_signal` so the post-present
+        // check in `finish_render` can detect a loss that occurred between
+        // submit and present, before the queued `TermEvent::GpuDeviceLost`
+        // has been dispatched by the event loop.
+        let proxy = self.event_proxy.clone();
+        let signal = std::sync::Arc::clone(&self.device_lost_signal);
+        gpu.register_device_lost_callback(move |reason, message| {
+            signal.fetch_add(1, std::sync::atomic::Ordering::Release);
+            proxy.send(crate::event::TermEvent::GpuDeviceLost {
+                reason: crate::gpu::recovery::GpuLossReason::from_wgpu(reason),
+                message,
+            });
+        });
+
         let t_gpu = t_gpu_start.elapsed();
 
         // If the window was created for DComp but the GPU fell back to a

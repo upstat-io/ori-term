@@ -351,6 +351,9 @@ impl ApplicationHandler<TermEvent> for App {
             TermEvent::OpenConfirmation(request) => {
                 self.open_confirmation_dialog(event_loop, request);
             }
+            TermEvent::GpuDeviceLost { reason, message } => {
+                self.handle_gpu_device_lost(reason, &message);
+            }
         }
     }
 
@@ -393,6 +396,13 @@ impl ApplicationHandler<TermEvent> for App {
 
         self.drive_blink_timers();
 
+        // 5.16.2: animation-tier wakeup sources collapse to a single gate.
+        // The exhaustive per-source check lives in `allow_animation_wakeups`
+        // — every variant of `WakeupSource` for the animation tier flows
+        // through that helper so adding a new variant forces an explicit
+        // policy choice there.
+        let allow_animation_redraw = self.allow_animation_wakeups();
+
         // Tick compositor animations and clean up fully-faded overlays.
         // Iterate all windows so unfocused windows with active animations
         // (e.g., a fade started just before a focus switch) continue to
@@ -414,7 +424,7 @@ impl ApplicationHandler<TermEvent> for App {
                         .sync_to_widget(count, ctx.root.layer_tree(), &mut ctx.tab_bar);
                 }
 
-                if animating {
+                if animating && allow_animation_redraw {
                     ctx.root.mark_dirty();
                     ctx.ui_stale = true;
                 }
@@ -422,7 +432,11 @@ impl ApplicationHandler<TermEvent> for App {
         }
 
         // Tick dialog overlay animations (dropdown fade-in/fade-out).
-        self.tick_dialog_animations();
+        // Same gate decision applies; the per-source booleans were already
+        // computed above so the gate stays SSOT.
+        if allow_animation_redraw {
+            self.tick_dialog_animations();
+        }
 
         // Lifecycle: show Primed dialogs (first frame committed) and
         // destroy Closing dialogs (deferred from close_dialog()).
@@ -459,6 +473,7 @@ impl ApplicationHandler<TermEvent> for App {
             budget_elapsed,
             has_animations,
             blinking_active: self.blinking_active,
+            gpu_healthy: self.gpu_health.is_healthy(),
             next_blink_change: self.cursor_blink.next_change(),
             next_text_blink_change: self.text_blink.next_change(),
             now,

@@ -60,7 +60,7 @@ sections:
     status: not-started
   - id: "5.18"
     title: "Recovery Integrations & Deferred Contracts"
-    status: not-started
+    status: in-progress
   - id: "5.15"
     title: Section Completion
     status: in-progress
@@ -823,47 +823,63 @@ terminal "renderer unavailable" state with manual retry.
 
 #### 5.16.1 Detection — distinguish surface vs device loss
 
-- [ ] Split `oriterm/src/gpu/window_renderer/error.rs::SurfaceError` into a wider enum that
+- [x] Split `oriterm/src/gpu/window_renderer/error.rs::SurfaceError` into a wider enum that
       preserves wgpu's actual variants:
       `Outdated` (benign reconfigure), `Lost` (device-or-swapchain epoch reset),
       `Timeout` (pass through, retry next frame), `OutOfMemory` (terminal — see 5.16.10),
       `Other(String)` (carry the wgpu detail string for logging). Update the conversion in
       `WindowRenderer::render_to_surface` (`gpu/window_renderer/render.rs:207`).
-- [ ] Add a global `DeviceHealth` enum on `App` (or on a new `GpuEpoch` type owned by `App`):
+- [x] Add a global `DeviceHealth` enum on `App` (or on a new `GpuEpoch` type owned by `App`):
       `Healthy { epoch: u64 }`, `Recovering { epoch: u64, attempt: u8, since: Instant }`,
       `Unavailable { last_error: String, since: Instant }`. The `epoch` counter monotonically
       increments on every successful recreate so other state can detect stale epochs without
       pointer comparison.
       WHERE: new file `oriterm/src/gpu/recovery/mod.rs`, owned by `App` as `gpu_health: GpuHealth`.
-- [ ] Register a `device_lost_callback` immediately after every successful
+- [x] Register a `device_lost_callback` immediately after every successful
       `Adapter::request_device(...)` in `oriterm/src/gpu/state/helpers.rs::request_device`.
       The callback signals recovery via `EventSender::send(TermEvent::GpuDeviceLost { reason,
       message })`. Add the new `TermEvent` variant in `oriterm/src/event.rs` and wire its
       handler in `oriterm/src/app/event_loop.rs`.
-- [ ] In `WindowRenderer::render_to_surface` map `wgpu::SurfaceError::Outdated` to the new
+      Implementation: registration site is `App::try_init` (`oriterm/src/app/init/mod.rs`)
+      via the new `GpuState::register_device_lost_callback` SSOT method, called immediately
+      after `GpuState::new` succeeds. The handler `App::handle_gpu_device_lost`
+      (`oriterm/src/app/gpu_recovery.rs`) delegates the state transition to the pure
+      `GpuHealth::next_after_loss` function.
+- [x] In `WindowRenderer::render_to_surface` map `wgpu::SurfaceError::Outdated` to the new
       `SurfaceError::Outdated` arm (currently collapsed into `Lost`). Update
       `app/redraw/post_render.rs::finish_render`: `Outdated` triggers
       `resize_surface + apply_pending_surface_resize` (the existing path); `Lost` and any
       device-lost callback signal trigger the full recovery state machine in 5.16.2.
-- [ ] Treat `Other` from `get_current_texture` as **soft device loss**: log the detail
+      Both `finish_render` (terminal windows) and `dialog_rendering.rs` (dialog windows)
+      route Lost → `TermEvent::GpuDeviceLost` via the event proxy.
+- [x] Treat `Other` from `get_current_texture` as **soft device loss**: log the detail
       string from wgpu, then escalate to the recovery state machine. Real-world WSLg / DX12
       driver bugs surface here when a device-lost detail is reported via error scopes
-      instead of `SurfaceError::Lost`.
-- [ ] **Wrap submit failure detection too.** `wgpu::Queue::submit` does not return an
+      instead of `SurfaceError::Lost`. Routed via `GpuLossReason::SurfaceOther`.
+- [x] **Wrap submit failure detection too.** `wgpu::Queue::submit` does not return an
       error in wgpu 28, but a device-lost callback may have fired *between* submit and
       present. After every `output.present()`, check whether the device-lost callback fired
       since the last frame (compare a `Cell<u64>` epoch against `App::gpu_health.epoch()`)
       — if so, that frame's pixels are garbage and the next frame will see the recovery
       gate. Drop the `SurfaceTexture` *before* updating the gate so `Surface::configure`
       in 5.16.6 does not panic.
-- [ ] **Synthetic loss for testing**: introduce `App::trigger_test_device_loss(reason)`
+      Implementation: `App::device_lost_signal: Arc<AtomicU64>` is bumped by the device-lost
+      closure on a wgpu thread. `finish_render` samples the counter and compares against
+      `last_seen_device_lost_signal`; a delta logs that the callback fired since the last
+      frame. 5.16.2's render gate consumes the same signal to short-circuit before
+      re-entering submit.
+- [x] **Synthetic loss for testing**: introduce `App::trigger_test_device_loss(reason)`
       gated behind `#[cfg(any(test, feature = "gpu-tests"))]` that posts the same
       `TermEvent::GpuDeviceLost` the callback would. Required by 5.16.13 to exercise the
       full state machine without a real GPU crash.
+      Helper landed; carries `#[expect(dead_code, ...)]` until 5.16.13's state-machine
+      integration test (which lands with 5.16.2's render gate) becomes the one true caller.
+      The pure `GpuHealth::next_after_loss` transition table is exercised by 9 unit tests
+      in `oriterm/src/gpu/recovery/tests.rs` (Healthy/Recovering/Unavailable × OOM/Other/Unknown).
 
 #### 5.16.2 Recovery state machine — App-level, serialized across windows
 
-- [ ] **Render-gating must be exhaustive.** The gate lives at the *single canonical
+- [x] **Render-gating must be exhaustive.** The gate lives at the *single canonical
       dispatch point* `App::render_dirty_windows` in `oriterm/src/app/render_dispatch.rs`
       (verified — already the only place that walks `windows` + `dialogs` and calls
       `handle_redraw` / `render_dialog`). Before either loop, consult `App::gpu_health`:
@@ -871,76 +887,96 @@ terminal "renderer unavailable" state with manual retry.
       and without invoking any `WindowRenderer` method. Windows stay dirty so the next
       successful frame after recovery is a full repaint. Enumerated guarded entry points
       that the gate must cover (audited from the codebase 2026-04-06):
-  - [ ] `App::handle_redraw` (single-window terminal redraw)
-  - [ ] `App::render_dialog` (dialog windows)
-  - [ ] Multi-pane redraw (`oriterm/src/app/redraw/multi_pane/`) — gates via the same
-        single-source dispatcher; do NOT add a duplicate guard inside the multi-pane
-        helper (algorithmic-DRY: one canonical gate, not two).
-  - [ ] Chrome scene refresh (`oriterm/src/app/redraw/chrome.rs`) — pure CPU but it
-        writes into `WindowContext.chrome_scene` which is consumed by render. Allowed to
-        run during recovery (no GPU touch); the gate fires *after* prepare, before submit.
-  - [ ] Debug overlay (`debug_overlay.rs`) — same: CPU only, allowed during recovery.
-  - [ ] Search bar redraw (`search_bar.rs`) — CPU only, allowed.
-  - [ ] Pre-edit overlay (`preedit.rs`) — CPU only, allowed.
-- [ ] **Add a `RenderOutcome` enum** to make the gate testable without GPU:
+  - [x] `App::handle_redraw` (single-window terminal redraw) — gated via second
+        canonical `gate_outcome` call (catches `WindowEvent::RedrawRequested`,
+        tab-drag tear-off, modal-loop direct call sites).
+  - [x] `App::render_dialog` (dialog windows) — same pattern as `handle_redraw`;
+        gated at function entry to catch dialog event handling and management
+        callers.
+  - [x] Multi-pane redraw (`oriterm/src/app/redraw/multi_pane/`) — gates via the
+        same single-source dispatcher; the multi-pane helper is reached only via
+        `handle_redraw`, which is itself gated. No duplicate guard added.
+  - [x] Chrome scene refresh (`oriterm/src/app/redraw/chrome.rs`) — pure CPU,
+        reached via `handle_redraw`'s gated path.
+  - [x] Debug overlay (`debug_overlay.rs`) — pure CPU, reached via the gated
+        `handle_redraw` path.
+  - [x] Search bar redraw (`search_bar.rs`) — same: gated via `handle_redraw`.
+  - [x] Pre-edit overlay (`preedit.rs`) — same: gated via `handle_redraw`.
+- [x] **Add a `RenderOutcome` enum** to make the gate testable without GPU:
       `RenderOutcome { Submitted, GatedRecovering, GatedUnavailable, Skipped }`. Pure
       tests assert that calling the dispatcher with an injected `gpu_health` returns the
       expected outcome. SSOT: this enum lives in `oriterm/src/gpu/recovery/outcome.rs`
-      next to `GpuHealth`.
-- [ ] Recovery is **single-flight**: only one recovery attempt may be running across the
+      next to `GpuHealth`. Three render-gate tests in `recovery/tests.rs`
+      (`recovery_state_machine_blocks_render_when_recovering`,
+      `recovery_state_machine_blocks_render_when_unavailable`,
+      `render_gate_passes_when_healthy`) cover the full state matrix.
+- [x] Recovery is **single-flight**: only one recovery attempt may be running across the
       entire `App` at any time. Subsequent `GpuDeviceLost` notifications while
       `Recovering` are coalesced — they don't restart the attempt.
-- [ ] Ordering invariant for `App::recover_gpu()` (must be enforced by the function body
+      Enforced at the state-transition layer: `GpuHealth::next_after_loss` returns
+      `None` for `Recovering` (non-OOM) and `Unavailable` (any reason); the
+      handler delegates the call to `App::recover_gpu` only when the transition
+      actually fires. Coalescing test:
+      `next_after_loss_recovering_unknown_coalesces`.
+- [x] Ordering invariant for `App::recover_gpu()` (must be enforced by the function body
       and asserted with `debug_assert!` at each step):
-      1. Set `gpu_health = Recovering { attempt }` and broadcast a "block render" flag.
-      2. For every window in `self.windows` and `self.dialogs`: drop any in-flight
-         `wgpu::SurfaceTexture` (none should exist outside `render_to_surface`, but assert).
-         Drop the window's `wgpu::Surface<'static>` field on `TermWindow`
-         (`oriterm/src/window/mod.rs:49`).
-      3. For every window's `WindowContext.renderer: Option<WindowRenderer>`, take
-         `Option::take()` to drop all per-window GPU state (atlases, bind groups, instance
-         buffers, content cache, image cache, uniform buffer). Hold the bare
-         `FontCollection` and `Option<UiFontSizes>` aside on the stack so they survive.
-      4. Drop `self.pipelines: Option<GpuPipelines>` (every `RenderPipeline` and
-         `BindGroupLayout`).
-      5. Drop `self.gpu: Option<GpuState>` (`Device`, `Queue`, `Instance`, pipeline cache).
-      6. Construct a new `GpuState` (5.16.4), recreate per-window surfaces (5.16.6), rebuild
-         `GpuPipelines` (5.16.7), rebuild every `WindowRenderer` (5.16.8).
-      7. Bump `epoch`, set `gpu_health = Healthy { epoch }`, queue a redraw on every window.
-- [ ] **Do NOT** call `Device::poll(PollType::Wait)` on the lost device — `wgpu::PollError`
+      1. ✅ Set `gpu_health = Recovering { attempt }` and broadcast a "block render" flag
+         (asserted via `debug_assert!(!self.gpu_health.is_healthy(), ...)`).
+      2. ⏳ Drop in-flight `SurfaceTexture` + `wgpu::Surface<'static>` per window — **5.16.3**.
+      3. ⏳ Drop per-window `WindowRenderer` — **5.16.3**.
+      4. ⏳ Drop `self.pipelines` — **5.16.3**.
+      5. ⏳ Drop `self.gpu` — **5.16.3**.
+      6. ⏳ Construct new `GpuState` + per-window surfaces + pipelines + renderers —
+         **5.16.4–5.16.8**.
+      7. ✅ Bump epoch, set `gpu_health = Healthy { epoch }`, queue redraw on every
+         window. Stub immediately returns to Healthy in 5.16.2 so the rest of the
+         system can be exercised; real teardown lands in 5.16.3.
+- [x] **Do NOT** call `Device::poll(PollType::Wait)` on the lost device — `wgpu::PollError`
       cannot signal loss and a `Wait` against a destroyed device blocks indefinitely on some
       backends. Drop instead.
-- [ ] **Gate every wakeup source.** Audit of timers/animators that pull a frame
+      The 5.16.2 stub already obeys this contract by not poll-waiting anywhere on the
+      recovery path. Real teardown in 5.16.3 will explicitly forbid the Wait.
+- [x] **Gate every wakeup source.** Audit of timers/animators that pull a frame
       (verified against the codebase 2026-04-06) — every one must be quiesced while
       `gpu_health != Healthy`:
-  - [ ] **Cursor blink** (`App::cursor_blink`, `App::blink_wakeup_gen`) — the wakeup
+  - [x] **Cursor blink** (`App::cursor_blink`, `App::blink_wakeup_gen`) — the wakeup
         thread must check `gpu_health.is_healthy()` before posting `MuxWakeup`. Failed
         check → exit silently (the recovery state-change wake-up will resume blinking).
-  - [ ] **Text blink** (`App::text_blink`, SGR 5/6) — same gate as cursor blink.
-  - [ ] **Tab slide animation** (`WindowContext.tab_slide`) — already CPU-only, but
-        `request_redraw()` must consult the gate. Animation *progress* may continue (CPU
-        time updates) so the visible state matches reality after recovery.
-  - [ ] **Layer animator** (`oriterm_ui::compositor::LayerAnimator` via
-        `WindowRoot::layer_animator`) — already CPU-only, but the wakeup that drives
-        `is_any_animating()` → `WaitUntil` must respect the gate.
-  - [ ] **Render scheduler** (`oriterm_ui::animation::RenderScheduler` on `WindowRoot`)
-        — same: CPU-only state survives, but the wakeup is gated.
-  - [ ] **Visual state animator** for hover/press transitions — same.
-  - [ ] **Auto-scroll timer** (mark-mode and selection-drag scroll) — gated.
-  - [ ] **Cursor hover hold timer** (URL hover, tooltip) — gated.
-  - [ ] **Mux pump** (`App::mux_pump`) — **NOT gated**: PTY output must continue to be
-        absorbed into `Term`/`Grid` so terminal state stays current. Only the *render
-        wakeup* the pump would post is suppressed; the snapshot still flows to the dirty
-        flag and the dirty flag is consumed on the first post-recovery frame.
-- [ ] **Pure helper for the gate decision.** Add a free function
+        Gated in `schedule_blink_wakeup` and `drive_blink_timers`.
+  - [x] **Text blink** (`App::text_blink`, SGR 5/6) — same gate as cursor blink.
+  - [x] **Tab slide animation** (`WindowContext.tab_slide`) — gated via
+        `App::allow_animation_wakeups()` consulted in `about_to_wait`'s animation block.
+        Animation progress (`tick_overlay_animations`) still ticks on the CPU side.
+  - [x] **Layer animator** (`oriterm_ui::compositor::LayerAnimator` via
+        `WindowRoot::layer_animator`) — same: gated via `allow_animation_wakeups`.
+  - [x] **Render scheduler** (`oriterm_ui::animation::RenderScheduler` on `WindowRoot`)
+        — same.
+  - [x] **Visual state animator** for hover/press transitions — same.
+  - [x] **Auto-scroll timer** (mark-mode and selection-drag scroll) — same.
+  - [x] **Cursor hover hold timer** (URL hover, tooltip) — same.
+  - [x] **Mux pump** (`App::mux_pump`) — **NOT gated** (verified in code). PTY output
+        continues to be absorbed into `Term`/`Grid`; only the render wakeup the pump
+        would post is suppressed via the render gate at `render_dirty_windows`.
+        Additionally, `compute_control_flow` reads `gpu_healthy` and returns
+        `ControlFlowDecision::Wait` when not Healthy, suppressing all timer-driven
+        wakeups uniformly (4 new pin tests cover this — the I3 pin from 5.16.13).
+- [x] **Pure helper for the gate decision.** Add a free function
       `oriterm::gpu::recovery::should_post_wakeup(gpu_health: &GpuHealth, source:
       WakeupSource) -> bool` so tests can assert each (state, source) combination
       exhaustively. `WakeupSource` is an enum mirroring the bullets above (single source
       of truth — adding a new wakeup source forces an exhaustive match arm here).
-- [ ] **Pane render-cache invalidation:** while `Recovering`, do NOT call
+      Lives at `oriterm/src/gpu/recovery/wakeup.rs`. The animation-tier collapses to a
+      single helper `App::allow_animation_wakeups()` that explicitly iterates every
+      animation-tier variant — adding a new variant forces a per-source policy choice.
+- [x] **Pane render-cache invalidation:** while `Recovering`, do NOT call
       `pane_cache.invalidate_all()` per pane on every notification. The teardown in
       5.16.3 will drop the cache wholesale. Repeatedly invalidating during recovery is
       wasted CPU.
+      Audited: no current code path invalidates `pane_cache` per mux notification.
+      Discipline documented at `PaneRenderCache::invalidate_all` so future hot-path
+      callers must consult `gpu_health.is_healthy()` first. The render gate +
+      `compute_control_flow` Wait already prevent the event loop from spinning, so the
+      sparse user-action call sites need no explicit gate today.
 
 #### 5.16.3 Resource teardown — ordered drop list
 
