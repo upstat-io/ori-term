@@ -43,7 +43,7 @@ third_party_review:
 sections:
   - id: "05.0"
     title: "Discovery & Inventory: pin the begin-testing menu graph"
-    status: not-started
+    status: complete
   - id: "05.0.b"
     title: "Phase-Capture Framework Extension (PhaseSpec + run_phase)"
     status: not-started
@@ -210,7 +210,7 @@ Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key i
 
 **Tasks:**
 
-- [ ] **Capture the begin-testing menu.** Write `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs`:
+- [x] **Capture the begin-testing menu.** Write `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs`:
   ```rust
   //! Discovery test: spawns tack, navigates to the begin-testing
   //! submenu, captures the screen via insta, and asserts every key
@@ -277,7 +277,7 @@ Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key i
   }
   ```
 
-- [ ] **Pin the inventory table.** Write `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory.rs`:
+- [x] **Pin the inventory table.** Write `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory.rs`:
   ```rust
   //! Pinned classification of every key on tack's begin-testing
   //! submenu. The discovery test in `oriterm_core/tests/tack/test_menu/
@@ -349,23 +349,33 @@ Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key i
   ];
   ```
 
-- [ ] **Capture the snapshot once.** Run `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- test_menu::begin_testing_inventory`.
+- [x] **Capture the snapshot once.** Run `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- test_menu::begin_testing_inventory`.
 
-  **Expected first-run behavior (NOT a bug):** insta captures the snapshot, then the drift-gate `assert_eq!` panics because `BEGIN_TESTING_INVENTORY` has only `m` and `x` while the actual menu has more keys. The test panics with a `Discovered: {...}, Pinned: {m, x}` diff and the full grid. THIS IS THE FORCING FUNCTION — read the diff, read the captured snapshot, fill in the missing entries.
+  **Expected first-run behavior (NOT a bug):** insta captures the snapshot, then the drift-gate `assert_eq!` panics because `BEGIN_TESTING_INVENTORY` is empty while the actual menu has 16 keys. The test panics with a `Discovered: {...}, Pinned: {}` symmetric-difference diff and the full grid. THIS IS THE FORCING FUNCTION — read the diff, read the captured snapshot, fill in the missing entries.
 
   Read the captured snapshot under `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__begin_testing_inventory__tack_begin_testing_menu_80x24.snap`. Update `BEGIN_TESTING_INVENTORY` to list every key the snapshot shows, with a `BeginTestingStatus` for each. Re-run without `INSTA_UPDATE` and confirm the test passes.
 
-- [ ] **Cross-check the verified keys.** After the inventory is pinned, confirm `m` is "test cursor movement" and `x` is "test modes and glitches" as `scenarios/modes.rs` claims. If reality disagrees, update `scenarios/modes.rs` (and file `/add-bug` for the discrepancy — broken window policy).
+  **Live capture against tack v1.08:** the discovery surfaced 16 keys (`/ ? P a c e f i m n p q r s t x`). The captured snapshot revealed three real plan/reality mismatches now recorded in the inventory module's rustdoc: (a) `a)` is a COMBINED ACS+SGR entry (the plan envisioned them separate); (b) `p)` is a COMBINED padding+send-strings entry (the plan envisioned them separate); (c) tack v1.08 has NO `l) test labels` entry (the plan's "labels" mission item does not exist in tack — 05.4b must reconcile by either dropping labels from the criterion or verifying labels are part of `a)`/`p)` coverage). Also surfaced: case-sensitivity matters (`p` test padding vs `P` test printer are distinct keys) and tack uses punctuation menu keys (`/`, `?`) — both required updates to `collect_menu_keys()` in the integration test before the snapshot could be promoted.
 
-- [ ] **Wire 05.0's snapshot into Section 03's existing snapshot directory layout.** The new snapshot lives at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__begin_testing_inventory__tack_begin_testing_menu_80x24.snap`. Verify with `ls`. The path matches the existing `tack__test_menu__modes__tack_modes_80x24.snap` produced by Section 04 — insta uses the module path to namespace `.snap` files, NOT a flat `tack/snapshots/` directory.
+- [x] **Cross-check the verified keys.** After the inventory is pinned, confirm `m` is "test cursor movement" and `x` is "test modes and glitches" as `scenarios/modes.rs` claims. If reality disagrees, update `scenarios/modes.rs` (and file `/add-bug` for the discrepancy — broken window policy).
 
-- [ ] **TDD ordering (failing-first).** Write `tack_begin_testing_inventory` BEFORE creating `BEGIN_TESTING_INVENTORY` — the first compile fails on the missing import, the second compile succeeds with a stub `BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[]`, and the test panics with the symmetric-difference message. The forced first failure is the design — it prevents authoring the table from imagination. Capture the snapshot (`INSTA_UPDATE=1`) only after the test has been observed failing in the intended way (drift mismatch, not parse error / not import error / not panic in unrelated code).
+  **Cross-check result:** both keys match `scenarios/modes.rs:25-28` and `scenarios/modes.rs:43-49` exactly. No `/add-bug` filing needed.
 
-- [ ] **Semantic pin: drift gate cannot be silently disabled.** Add a unit test `begin_testing_inventory_drift_gate_pin` in `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory.rs::tests` that constructs a synthetic `discovered: BTreeSet<char>` containing one extra char not in `BEGIN_TESTING_INVENTORY`, then asserts the same `assert_eq!` (extracted into a `pub(crate) fn assert_inventory_drift(discovered: &BTreeSet<char>) -> Result<(), String>` helper) returns the expected mismatch error. Without this pin, a future refactor that silently weakens the assertion to `assert!(true)` would pass every test. The helper must be reused by the integration test in `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs` so there is exactly one drift-gate algorithm (algorithmic-DRY).
+- [x] **Wire 05.0's snapshot into Section 03's existing snapshot directory layout.** The new snapshot lives at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__begin_testing_inventory__tack_begin_testing_menu_80x24.snap`. Verify with `ls`. The path matches the existing `tack__test_menu__modes__tack_modes_80x24.snap` produced by Section 04 — insta uses the module path to namespace `.snap` files, NOT a flat `tack/snapshots/` directory.
 
-- [ ] **Debug + release parity.** Run the discovery test in BOTH debug and release: `timeout 150 cargo test -p oriterm_core --test tack -- test_menu::begin_testing_inventory` and `timeout 150 cargo test -p oriterm_core --test tack --release -- test_menu::begin_testing_inventory`. Any release-only failure is a timing bug (e.g., insta read-after-write race) — fix in 05.0, never defer.
+- [x] **TDD ordering (failing-first).** Write `tack_begin_testing_inventory` BEFORE creating `BEGIN_TESTING_INVENTORY` — the first compile fails on the missing import, the second compile succeeds with a stub `BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[]`, and the test panics with the symmetric-difference message. The forced first failure is the design — it prevents authoring the table from imagination. Capture the snapshot (`INSTA_UPDATE=1`) only after the test has been observed failing in the intended way (drift mismatch, not parse error / not import error / not panic in unrelated code).
 
-- [ ] **Output of 05.0:** the inventory test passes, the inventory table is the SSOT for keys used by 05.1–05.4b, and every later subsection cites a row from `BEGIN_TESTING_INVENTORY` instead of inventing a key.
+  **TDD trace:** Phase A — wrote integration test against missing module → `error[E0432]: unresolved import` at `begin_testing_inventory.rs:17:54`. Phase B — added stub inventory module with empty `BEGIN_TESTING_INVENTORY = &[]` and stub `tests.rs` → compiles. Phase C — `INSTA_UPDATE=1` writes snapshot, drift gate panics with `Discovered: {16 keys}, Pinned: {}` symmetric-diff (intended failure mode, not parse/import error). Phase D — filled in inventory from captured snapshot, re-ran without `INSTA_UPDATE` → both green.
+
+- [x] **Semantic pin: drift gate cannot be silently disabled.** Add a unit test `begin_testing_inventory_drift_gate_pin` in `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory.rs::tests` that constructs a synthetic `discovered: BTreeSet<char>` containing one extra char not in `BEGIN_TESTING_INVENTORY`, then asserts the same `assert_eq!` (extracted into a `pub fn assert_inventory_drift(discovered: &BTreeSet<char>) -> Result<(), String>` helper) returns the expected mismatch error. Without this pin, a future refactor that silently weakens the assertion to `assert!(true)` would pass every test. The helper must be reused by the integration test in `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs` so there is exactly one drift-gate algorithm (algorithmic-DRY).
+
+  **Note:** the helper is `pub` (not `pub(crate)` as the plan originally specified). `pub(crate)` is wrong here because the integration test lives in `oriterm_core` (a different crate from `oriterm_test_support` where the helper is defined); a `pub(crate)` helper would not be visible across the crate boundary, forcing the integration test to inline a parallel drift-gate algorithm — exactly the algorithmic-DRY violation the helper exists to prevent. `pub` keeps the SSOT honest. Sibling tests added: `assert_inventory_drift_passes_on_exact_match`, `begin_testing_inventory_drift_gate_pin`, `drift_gate_detects_missing_pinned_key`, `drift_gate_detects_empty_discovered_set`, `pinned_inventory_is_non_empty` (the last one prevents accidental regression to the failing-first empty-array start state).
+
+- [x] **Debug + release parity.** Run the discovery test in BOTH debug and release: `timeout 150 cargo test -p oriterm_core --test tack -- test_menu::begin_testing_inventory` and `timeout 150 cargo test -p oriterm_core --test tack --release -- test_menu::begin_testing_inventory`. Any release-only failure is a timing bug (e.g., insta read-after-write race) — fix in 05.0, never defer.
+
+  **Result:** both debug and release pass. Sibling unit tests in `oriterm_test_support` also pass in both profiles (5 passed in each).
+
+- [x] **Output of 05.0:** the inventory test passes, the inventory table is the SSOT for keys used by 05.1–05.4b, and every later subsection cites a row from `BEGIN_TESTING_INVENTORY` instead of inventing a key.
 
 ---
 

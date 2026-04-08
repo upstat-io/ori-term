@@ -5,6 +5,8 @@
 //! Section 04 introduces the first submodule (`modes`) in 04.4 which
 //! contains `TACK_MODES_AM` and `parse_modes_screen`. Sections 05-08
 //! add:
+//!   - 05.0: `begin_testing_inventory` (drift gate / SSOT for the
+//!     begin-testing menu graph)
 //!   - 05: `acs`, `graphic_rendition`, `color`, `cursor_movement`
 //!   - 06: `tools_menu` submodules
 //!   - 08: keyboard / function key consts
@@ -15,4 +17,5 @@
 //! forms `pub const ALL_*: &[&ScenarioSpec]` arrays for
 //! exhaustiveness tests.
 
+pub mod begin_testing_inventory;
 pub mod modes;
