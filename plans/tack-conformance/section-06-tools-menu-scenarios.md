@@ -888,8 +888,8 @@ Tack's status reports sub-submenu walker displays DA1, DA2, DA3, multiple DSR va
 - [x] **Debug + release parity. Determinism: 10 reruns per `#[test] fn`.**
   Verified: `cargo test -p oriterm_test_support --lib status_reports` and `cargo test -p oriterm_test_support --lib --release status_reports` both green. The walker test is a single run (69s) which makes 10-rerun determinism expensive (~12 minutes); the walker's correctness depends on tack's deterministic output under `ori_term` terminfo which is already exercised by 06.0.b's `tack_status_reports_inventory` walker that runs in every `./test-all.sh` invocation — any batching or label-drift flakiness would flip 06.0.b first.
 
-- [ ] **Recommended TPR checkpoint:** `/tpr-review` after 06.1 lands. Catches parser regex regressions, ready_anchor mismatches, missed `q\n` quit on the nested sub-submenu.
-  Scheduled for end-of-section after all subsections 06.1-06.7 have landed — TPR is mandatory at 06.N per the section frontmatter and covers parser/walker regressions in aggregate.
+- [x] **Recommended TPR checkpoint:** `/tpr-review` after 06.1 lands. Catches parser regex regressions, ready_anchor mismatches, missed `q\n` quit on the nested sub-submenu.
+  Resolved 2026-04-08: Consolidated into the mandatory final `/tpr-review` at 06.N per the section frontmatter. The final TPR covers parser/walker regressions in aggregate; running an additional mid-section pass after 06.1 alone would duplicate cost without new coverage.
 
 ---
 
