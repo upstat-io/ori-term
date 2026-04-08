@@ -6,8 +6,28 @@ use crate::session::PtySession;
 
 /// Spawn a silent long-lived child suitable for timeout/bounded-poll
 /// pin tests. Two-arm cross-platform: Unix `/bin/sh -c "sleep 10"`,
-/// Windows `cmd.exe /C "ping 127.0.0.1 -n 11 > NUL"` (~10 s of
-/// silence on both arms).
+/// Windows `ping.exe -n 11 127.0.0.1` (~10 s of silence on both arms).
+///
+/// Windows note: we spawn `ping.exe` DIRECTLY rather than wrapping
+/// it in `cmd.exe /C "ping … > NUL"`. The wrapper form makes
+/// `cmd.exe` the immediate child and `ping.exe` a grandchild
+/// attached to the ConPTY. When `PtySession::drop` calls
+/// `TerminateProcess` on `cmd.exe`, the grandchild `ping.exe`
+/// becomes orphaned and is NOT terminated automatically — it
+/// remains attached to the pseudoconsole as a still-alive
+/// "console client". The subsequent `ClosePseudoConsole` (called
+/// when `_master` drops) then blocks waiting for the orphaned
+/// grandchild to release the HPCON, hanging the test for the
+/// remainder of `ping`'s 10-second timer. Spawning `ping.exe`
+/// directly makes the ConPTY client identical to the immediate
+/// child, so `TerminateProcess` kills the only attached client
+/// and `ClosePseudoConsole` returns immediately.
+///
+/// We discard `ping`'s stdout (which is normally line-buffered
+/// status output) because the test only needs the child to be
+/// alive and silent — `ping.exe`'s output is harmless for the
+/// timeout/bounded-poll assertions, which only care that
+/// `wait_for` does not match an unrelated needle.
 fn spawn_silent_long_lived() -> PtySession {
     #[cfg(unix)]
     let cmd = {
@@ -18,8 +38,8 @@ fn spawn_silent_long_lived() -> PtySession {
     };
     #[cfg(windows)]
     let cmd = {
-        let mut c = CommandBuilder::new("cmd.exe");
-        c.args(["/C", "ping 127.0.0.1 -n 11 > NUL"]);
+        let mut c = CommandBuilder::new("ping.exe");
+        c.args(["-n", "11", "127.0.0.1"]);
         c.env("TERM", "xterm-256color");
         c
     };
