@@ -42,12 +42,21 @@
 //! because that vec is always empty against tack v1.08.
 //!
 //! Section 05.5's cap-coverage matrix should record ONLY `clear`
-//! as covered by 05.4 (plus `cup` transitively, since the test
-//! demonstrably uses it to home the cursor — but only `clear`
-//! is pinned on the captured grid). `csr`, `hpa`, `vpa`, `cuu`,
-//! `cud`, `cub`, `cuf` must come from a different source —
-//! Section 07's GPU goldens for actual cursor movement, vttest
-//! menus that DO emit per-cap labels, or a future tack release.
+//! as covered by 05.4. The earlier draft of this rustdoc claimed
+//! `cup` was transitively covered "since the test demonstrably
+//! uses it to home the cursor" — but TPR-05-016 (Codex
+//! /review-work) correctly rejected that claim. `clear` in
+//! `extra/ori_term.info` is defined as `\E[H\E[2J`, which
+//! already homes the cursor via a LITERAL escape sequence (not
+//! via the parameterized `cup` capability). The observed "home
+//! position" behavior is therefore explained entirely by
+//! `clear`'s definition; `cup` itself is never invoked by tack's
+//! cursor movement test on tack v1.08, so claiming it as
+//! transitively covered would mask a real `cup` regression.
+//! `cup`, `csr`, `hpa`, `vpa`, `cuu`, `cud`, `cub`, `cuf` all
+//! must come from a different source — Section 07's GPU goldens
+//! for actual cursor movement, vttest menus that DO emit per-cap
+//! labels, or a future tack release.
 //!
 //! Note: tack's submenu prompt is `tack/test/move [n] >` (NOT
 //! `tack/test/cursor` or `tack/test/cursor_movement`). The
