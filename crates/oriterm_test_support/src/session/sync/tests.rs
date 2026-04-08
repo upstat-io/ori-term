@@ -220,6 +220,68 @@ fn pty_session_wait_for_any_empty_slice_returns_none() {
 }
 
 #[test]
+fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() {
+    // Regression pin for the Windows ConPTY HPCON premature-close
+    // failure mode. Spawns 5 sequential `PtySession`s with the
+    // silent-long-lived child (cmd.exe + ping on Windows, /bin/sh +
+    // sleep on Unix), drops each, then spawns a fresh
+    // cmd.exe /C exit 0 (or /bin/sh -c "exit 0" on Unix) and asserts
+    // the 6th child exits cleanly.
+    //
+    // Before the fix, the 6th spawn on Windows hangs inside
+    // `WaitForSingleObject` (or returns `STATUS_DLL_INIT_FAILED` /
+    // 0xC0000142, depending on the host) because the prior 5 spawns
+    // prematurely closed their HPCONs while children were still
+    // running, leaking console-subsystem DLL state. Per Microsoft's
+    // `ClosePseudoConsole` contract: "you should never call
+    // ClosePseudoConsole until after the client has exited or the
+    // call may hang." `PtySession::spawn` previously dropped
+    // `pair.master` at function exit, before the child was reaped;
+    // the fix is to hold `pair.master` inside `PtySession` so it
+    // outlives the child.
+    //
+    // Cross-platform: the test exercises the same `PtySession` code
+    // path on every platform. On Unix the 6th spawn always succeeds
+    // even without the fix (no HPCON contract to violate), but the
+    // test still pins the structural invariant that the master is
+    // held — a future refactor that removes the `_master` field on
+    // the assumption "Unix doesn't need it" would not regress on
+    // Unix but would regress on Windows CI. Running this test on
+    // Unix gives non-Windows contributors a local sanity check that
+    // nothing structural broke.
+    for _ in 0..5 {
+        let mut s = spawn_silent_long_lived();
+        // Touch the session so the IO thread has actually started
+        // and the master is fully wired up before drop.
+        let _ = s.drain();
+        // Drop reaps the child synchronously via PtySession::drop,
+        // and then drops the held master so ClosePseudoConsole runs
+        // strictly after child exit.
+    }
+
+    #[cfg(unix)]
+    let cmd = {
+        let mut c = CommandBuilder::new("/bin/sh");
+        c.args(["-c", "exit 0"]);
+        c.env("TERM", "xterm-256color");
+        c
+    };
+    #[cfg(windows)]
+    let cmd = {
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.args(["/C", "exit 0"]);
+        c.env("TERM", "xterm-256color");
+        c
+    };
+    let mut session = PtySession::spawn(cmd, 80, 24);
+    let status = session.wait_for_child_exit(5_000);
+    assert!(
+        status.success(),
+        "expected clean exit on 6th spawn after 5 prior spawn/drop cycles, got {status:?}"
+    );
+}
+
+#[test]
 fn pty_session_wait_for_any_bounded_poll_invariant() {
     // Bounded-poll SEMANTIC PIN for the third poll_until consumer.
     // Mirror of the wait_for_with_context bounded-poll test — pins
