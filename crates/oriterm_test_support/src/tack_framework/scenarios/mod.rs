@@ -9,8 +9,11 @@
 //!     begin-testing menu graph)
 //!   - 05.2: `acs`, `graphic_rendition` (combined screen on tack
 //!     v1.08; see each module's rustdoc)
-//!   - 05: `color`, `cursor_movement`, etc.
-//!   - 06: `tools_menu` submodules
+//!   - 05: `color`, `cursor_movement`, `padding`
+//!   - 06: `menu_inventory` (shared drift-gate helper for Section 06),
+//!     `tools_menu_inventory` (06.0), `status_reports_inventory`
+//!     (06.0.b), `status_reports` (06.1), `sgr_modes` (06.2),
+//!     `character_sets` (06.3), `enq_ack` (06.4)
 //!   - 08: keyboard / function key consts
 //!
 //! Each submodule defines `pub const SCENARIO_*: ScenarioSpec` values
@@ -24,5 +27,7 @@ pub mod begin_testing_inventory;
 pub mod color;
 pub mod cursor_movement;
 pub mod graphic_rendition;
+pub mod menu_inventory;
 pub mod modes;
 pub mod padding;
+pub mod tools_menu_inventory;
