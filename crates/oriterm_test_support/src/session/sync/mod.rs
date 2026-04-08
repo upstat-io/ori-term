@@ -20,7 +20,16 @@ use std::time::{Duration, Instant};
 use super::PtySession;
 
 /// Outcome of a single [`poll_until`] check pass.
-pub(super) enum PollStep<T> {
+///
+/// `pub(crate)` so consumers in sibling modules
+/// (`tack_framework::runner::phase`) can build their own predicates
+/// against the canonical bounded-poll skeleton instead of inlining
+/// a parallel deadline loop. Visibility was widened from
+/// `pub(super)` in 05.0.b's feat commit so `runner/phase.rs` can
+/// implement the phase-capture loop without duplicating the
+/// drain + idle-sleep + deadline machinery (which would be
+/// `LEAK:algorithmic-duplication` per impl-hygiene.md).
+pub(crate) enum PollStep<T> {
     /// Predicate not yet satisfied — keep polling.
     NotYet,
     /// Predicate satisfied — return this payload.
@@ -38,9 +47,24 @@ pub(super) enum PollStep<T> {
 /// by every `PtySession` waiter. The 10 ms idle sleep on empty drain is
 /// what prevents hot-spinning when the reader thread has closed its
 /// channel but the predicate is still false. Every consumer (`wait_for`,
-/// `wait_for_child_exit_inner`, and the future Section 04
+/// `wait_for_child_exit_inner`, and the Section 04
 /// `wait_for_with_context` / `wait_for_any` primitives) delegates here.
-pub(super) fn poll_until<T, P>(session: &mut PtySession, timeout_ms: u64, mut check: P) -> Option<T>
+///
+/// **`pub(crate)` since 05.0.b.** Widened from `pub(super)` so the
+/// new `tack_framework::runner::phase::phase_capture_loop` (added in
+/// 05.0.b's feat commit) can call this directly. Inlining a parallel
+/// deadline loop in phase.rs would push the bounded-poll pattern past
+/// the impl-hygiene.md "3+ instances = always extract" threshold (the
+/// existing consumers are `wait_for_with_context`, `wait_for_any`, and
+/// `wait_for_child_exit_inner`; phase capture would be the fourth).
+/// Crucially, `poll_until` does NOT call any post-match quiesce —
+/// the `self.wait(200)` quiet period that
+/// [`PtySession::wait_for_with_context`] applies lives at the call
+/// site AFTER `poll_until` returns. Phase capture skips that call
+/// site entirely, so the same loop body powers both the
+/// stable-screen 200 ms quiesce and the phase-capture zero-quiesce
+/// paths without any branching here.
+pub(crate) fn poll_until<T, P>(session: &mut PtySession, timeout_ms: u64, mut check: P) -> Option<T>
 where
     P: FnMut(&mut PtySession) -> PollStep<T>,
 {

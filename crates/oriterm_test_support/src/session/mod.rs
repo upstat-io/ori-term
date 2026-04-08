@@ -28,6 +28,14 @@ use crate::terminfo::TerminfoEnv;
 mod sync;
 mod teardown;
 
+// Re-export the canonical bounded-poll skeleton for sibling
+// `tack_framework::runner::phase` (added in 05.0.b). The
+// `sync` module itself stays private — only the two items the
+// phase-capture loop needs are surfaced. This keeps the rest of
+// the polling implementation (PtySession waiter methods, etc.)
+// private as before.
+pub(crate) use sync::{PollStep, poll_until};
+
 /// Process-wide mutex used to serialize Windows `ConPTY` sessions
 /// for the entire `PtySession` lifetime.
 ///

@@ -25,8 +25,9 @@ pub use session::{
     vttest_available,
 };
 pub use tack_framework::{
-    LiveSession, MenuStep, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,
+    LiveSession, MenuStep, PhaseSpec, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,
     ScreenParserFn, TackNavigator, default_parser, grid_find_field, grid_has_paren_token,
-    grid_has_token, grid_line_starts_with,
+    grid_has_token, grid_line_starts_with, is_unverified_anchor, is_unverified_menu_key,
+    unverified_anchor, unverified_menu_key,
 };
 pub use terminfo::{TerminfoEnv, TerminfoVariant, infocmp_respects_terminfo_env};

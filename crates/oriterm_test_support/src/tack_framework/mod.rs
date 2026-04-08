@@ -39,4 +39,7 @@ pub use parser::tokens::{
 };
 pub use parser::{ScreenFacts, ScreenParserFn, default_parser};
 pub use runner::{LiveSession, ScenarioOutcome, ScenarioRunner};
-pub use spec::{MenuStep, ScenarioSpec};
+pub use spec::{
+    MenuStep, PhaseSpec, ScenarioSpec, is_unverified_anchor, is_unverified_menu_key,
+    unverified_anchor, unverified_menu_key,
+};

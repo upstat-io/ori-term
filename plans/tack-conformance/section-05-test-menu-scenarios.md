@@ -46,7 +46,7 @@ sections:
     status: complete
   - id: "05.0.b"
     title: "Phase-Capture Framework Extension (PhaseSpec + run_phase)"
-    status: not-started
+    status: complete
   - id: "05.0.c"
     title: "Tack version gate (tack_version_supported)"
     status: not-started
@@ -434,7 +434,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
 **Tasks:**
 
-- [ ] **Add `PhaseSpec` to `tack_framework/spec.rs`:**
+- [x] **Add `PhaseSpec` to `tack_framework/spec.rs`:**
   ```rust
   use portable_pty::ExitStatus;
   use crate::session::PtySession;
@@ -516,9 +516,11 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   }
   ```
 
-- [ ] **Widen `poll_until` visibility from `pub(super)` to `pub(crate)`** in `crates/oriterm_test_support/src/session/sync/mod.rs`. Currently `pub(super)` — only `session::teardown` can see it. `runner/phase.rs` (the new file added by the runner split below) needs to consume it directly so the bounded-poll skeleton stays in ONE place; without the visibility widening, `run_phase_at` would have to inline a parallel deadline loop, which is `LEAK:algorithmic-duplication` per impl-hygiene.md. Also widen `PollStep<T>` to `pub(crate)` since `poll_until`'s return type leaks it. After the change, `cargo clippy --target x86_64-pc-windows-gnu -p oriterm_test_support` MUST still be clean — `pub(crate)` does not affect external API surface.
+- [x] **Widen `poll_until` visibility from `pub(super)` to `pub(crate)`** in `crates/oriterm_test_support/src/session/sync/mod.rs`. Currently `pub(super)` — only `session::teardown` can see it. `runner/phase.rs` (the new file added by the runner split below) needs to consume it directly so the bounded-poll skeleton stays in ONE place; without the visibility widening, `run_phase_at` would have to inline a parallel deadline loop, which is `LEAK:algorithmic-duplication` per impl-hygiene.md. Also widen `PollStep<T>` to `pub(crate)` since `poll_until`'s return type leaks it. After the change, `cargo clippy --target x86_64-pc-windows-gnu -p oriterm_test_support` MUST still be clean — `pub(crate)` does not affect external API surface.
 
-- [ ] **Add the `unverified_menu_key()` sentinel helper to `spec.rs`** (replaces the original `compile_error!` forcing-function design — see Pivot 3 rationale below):
+  **Implemented:** widened `poll_until` and `PollStep` to `pub(crate)` in `session/sync/mod.rs`. Rather than widening the entire `mod sync;` to `pub(crate)` (which would expose all of sync's helpers to the crate), `session/mod.rs` now has a surgical re-export `pub(crate) use sync::{PollStep, poll_until};` so consumers in sibling modules import via `crate::session::{poll_until, PollStep}`. The rest of the polling implementation (`PtySession::wait_for_*`, internal helpers) stays private. Cross-compile to `x86_64-pc-windows-gnu` is clean.
+
+- [x] **Add the `unverified_menu_key()` sentinel helper to `spec.rs`** (replaces the original `compile_error!` forcing-function design — see Pivot 3 rationale below):
   ```rust
   /// Sentinel byte sequence used by 05.2 / 05.3 / 05.4 / 05.4b
   /// `MenuStep::send` placeholders for menu keys that 05.0's
@@ -584,7 +586,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   }
   ```
 
-- [ ] **Add sentinel detection to `prepare_and_navigate` and the new `run_phase_at`** so a const that still uses `unverified_menu_key()` panics LOUDLY at the first test invocation, NOT silently writes garbage to tack. The detection lives in the runner, not in `MenuStep::new`, because `MenuStep` is `const`-constructible and the sentinel itself MUST be const-constructible too. Pseudocode for the helper (place in `runner/phase.rs` or `runner/mod.rs`):
+- [x] **Add sentinel detection to `prepare_and_navigate` and the new `run_phase_at`** so a const that still uses `unverified_menu_key()` panics LOUDLY at the first test invocation, NOT silently writes garbage to tack. The detection lives in the runner, not in `MenuStep::new`, because `MenuStep` is `const`-constructible and the sentinel itself MUST be const-constructible too. Pseudocode for the helper (place in `runner/phase.rs` or `runner/mod.rs`):
   ```rust
   /// Scan a `&[MenuStep]` (and optional `phase_trigger` / anchors)
   /// for unverified-key sentinels. Panics on the FIRST hit with a
@@ -639,7 +641,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   ```
   Call this from BOTH `prepare_and_navigate` (covers `run` / `run_at` / `run_with_session_at`) AND `run_phase_at` (covers phase-trigger + phase anchors). The pre-call placement matters: the assertion fires BEFORE any PTY interaction, so a misconfigured const cannot leak bytes to tack and corrupt subsequent tests in the same process.
 
-- [ ] **Add `ScenarioRunner::run_phase` and `run_phase_at` to `runner/mod.rs`:**
+- [x] **Add `ScenarioRunner::run_phase` and `run_phase_at` to `runner/mod.rs`:**
   ```rust
   /// CI-safe default phase capture timeout. 5 s matches the existing
   /// `READY_ANCHOR_TIMEOUT_MS`. Phase scenarios that need a larger
@@ -776,9 +778,11 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   }
   ```
 
-- [ ] **Re-export `PhaseSpec` and the sentinel helpers from `tack_framework/mod.rs`:** extend the existing `pub use spec::{...};` line to `pub use spec::{MenuStep, PhaseSpec, ScenarioSpec, unverified_anchor, unverified_menu_key};`. Also re-export from `crates/oriterm_test_support/src/lib.rs` next to the existing `tack_framework::*` re-exports so 05.2/05.3/05.4 consts can `use oriterm_test_support::{unverified_anchor, unverified_menu_key};` without a deep path.
+- [x] **Re-export `PhaseSpec` and the sentinel helpers from `tack_framework/mod.rs`:** extend the existing `pub use spec::{...};` line to `pub use spec::{MenuStep, PhaseSpec, ScenarioSpec, unverified_anchor, unverified_menu_key};`. Also re-export from `crates/oriterm_test_support/src/lib.rs` next to the existing `tack_framework::*` re-exports so 05.2/05.3/05.4 consts can `use oriterm_test_support::{unverified_anchor, unverified_menu_key};` without a deep path.
 
-- [ ] **Add unit tests for the phase loop in `runner/tests.rs`** (matrix dimensions explicit; failing-first; debug+release parity):
+  **Implemented:** also re-exported the `is_unverified_menu_key` / `is_unverified_anchor` predicates from both `tack_framework/mod.rs` and `lib.rs` so external sentinel checks (e.g., the 05.2 belt-and-braces `no_sentinel_left_in_05_2_consts` test) don't need to import from `tack_framework::spec` directly.
+
+- [x] **Add unit tests for the phase loop in `runner/tests.rs`** (matrix dimensions explicit; failing-first; debug+release parity):
 
   **Matrix axis 1 — phase-loop timing.** Each test exercises a different point in the deadline-loop state machine so a regression in any single arm fires its own dedicated test:
   - `run_phase_at_anchor_present_on_first_poll` — synthetic in-process fake `PtySession` where `grid_text()` returns `"(am)"` immediately. Asserts `run_phase_at` returns within one poll iteration (no spurious second drain) and the captured `grid_text` contains the anchor.
@@ -805,11 +809,17 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   - The phase capture path does NOT regress the stable-screen `run_at` path — `tack_modes_am` (the only existing scenario, from Section 04) still passes unchanged.
   - **Test ordering**: each test is written FAILING FIRST, then the implementation lands, then it passes. Run in BOTH debug and release: `timeout 150 cargo test -p oriterm_test_support --test runner` and `timeout 150 cargo test -p oriterm_test_support --test runner --release`. Any release-only failure is a timing bug fixed in 05.0.b — never deferred.
 
-- [ ] **Re-verify the existing 198 vttest tests + Section 04's `tack_modes_am`.** Run `timeout 150 cargo test -p oriterm_core --test vttest` and `timeout 150 cargo test -p oriterm_core --test tack` after the framework extension lands. Both must pass UNCHANGED — the phase-capture extension is purely additive, not a refactor of existing primitives. Any regression = revert and rethink before continuing.
+- [x] **Re-verify the existing 198 vttest tests + Section 04's `tack_modes_am`.** Run `timeout 150 cargo test -p oriterm_core --test vttest` and `timeout 150 cargo test -p oriterm_core --test tack` after the framework extension lands. Both must pass UNCHANGED — the phase-capture extension is purely additive, not a refactor of existing primitives. Any regression = revert and rethink before continuing.
 
-- [ ] **Cross-platform compile gate (M1 invariant).** Run `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` AND `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests`. The new `PhaseSpec`, `run_phase[_at]`, sentinel helpers, and version gate MUST compile on Windows even though tack/tic are unavailable there — runtime skip via `tack_available()` / `tack_version_supported()` is the correct gate, NOT a `#[cfg(unix)]` block. Per CLAUDE.md cross-platform rule: "every `#[cfg(target_os = "...")]` block must have counterparts for all supported targets — no platform left behind".
+  **Result:** vttest 29/29 pass (the "198" in the plan refers to the historical insta snapshot count; the actual test target count is 29 menu walkers, each spawning vttest). Section 04 `tack_modes_am` passes unchanged. tack_smoke + tack_begin_testing_inventory also pass. Phase-capture extension is purely additive — no regressions across the workspace.
 
-- [ ] **TPR checkpoint (recommended, not mandatory):** `/tpr-review` covering 05.0.b after the framework extension compiles and the existing tests pass. Catches: shared-state bugs in the phase loop, missing `pre_grid` capture before `send_raw`, deadline arithmetic off-by-one, accidental quiesce reintroduction.
+- [x] **Cross-platform compile gate (M1 invariant).** Run `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` AND `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests`. The new `PhaseSpec`, `run_phase[_at]`, sentinel helpers, and version gate MUST compile on Windows even though tack/tic are unavailable there — runtime skip via `tack_available()` / `tack_version_supported()` is the correct gate, NOT a `#[cfg(unix)]` block. Per CLAUDE.md cross-platform rule: "every `#[cfg(target_os = "...")]` block must have counterparts for all supported targets — no platform left behind".
+
+  **Result:** both cross-compile commands succeed. The `spawn_marker_then_pause` and `spawn_silent_pause` test helpers carry both `#[cfg(unix)]` and `#[cfg(windows)]` arms (sh script vs cmd.exe `pause > NUL`), so the phase-loop behavior tests run on Windows too — just serialized via the Windows `CONPTY_LIFETIME_LOCK`. The sentinel-detection tests do not spawn any process and are platform-agnostic.
+
+- [x] **TPR checkpoint (recommended, not mandatory):** `/tpr-review` covering 05.0.b after the framework extension compiles and the existing tests pass. Catches: shared-state bugs in the phase loop, missing `pre_grid` capture before `send_raw`, deadline arithmetic off-by-one, accidental quiesce reintroduction.
+
+  **Deferred to the M1 milestone TPR checkpoint (after 05.1 lands).** This is a recommended-not-mandatory checkpoint per the plan. Running `/tpr-review` after every M1 subsection would multiply review costs without much added value, so we batch the TPR pass at the M1 milestone gate covering 05.0 + 05.0.b + 05.0.c + 05.1 together. The mandatory final TPR at 05.N still applies.
 
 ---
 
