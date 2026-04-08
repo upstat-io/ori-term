@@ -28,6 +28,39 @@ use crate::terminfo::TerminfoEnv;
 mod sync;
 mod teardown;
 
+/// Process-wide mutex used to serialize Windows `ConPTY` sessions
+/// for the entire `PtySession` lifetime.
+///
+/// **Windows-only contention point.** Empirical testing on
+/// Windows 11 shows that running more than ~4 simultaneous
+/// active `PtySession`s causes per-test wall-clock to balloon
+/// by an order of magnitude (a <1 s test takes 50+ s when run
+/// alongside 7 other `ConPTY` tests). The contention surfaces
+/// across the entire `ConPTY` lifetime — pseudoconsole
+/// allocation, child-process console attachment, PTY I/O, and
+/// teardown — not just at the spawn step. Serializing only
+/// `openpty + spawn_command` does not eliminate the slowdown.
+///
+/// Holding this mutex from `PtySession::spawn` until
+/// `PtySession::drop` serializes the entire `ConPTY` lifetime on
+/// Windows. Non-PTY tests (parser, terminfo, parallel-safe
+/// helpers) still run in parallel — only `PtySession`-using
+/// tests are forced into serial execution. Total Windows test
+/// runtime stays bounded by the sum of individual test costs,
+/// rather than collapsing into the contention quagmire.
+///
+/// Linux and macOS PTYs do not exhibit this contention —
+/// `openpty` is a thin libc call that does not contend across
+/// threads — so the mutex is `cfg(windows)`-only.
+///
+/// **Poison recovery.** Tests that intentionally `catch_unwind`
+/// inside the session body would poison this mutex if the
+/// guard's drop ran during unwind. We recover from poisoning
+/// via `PoisonError::into_inner` so a panicked test does not
+/// permanently break the next test's spawn.
+#[cfg(windows)]
+static CONPTY_LIFETIME_LOCK: Mutex<()> = Mutex::new(());
+
 /// Captures `PtyWrite` responses so the test driver can write them back.
 ///
 /// Used to complete DA/DSR query/response handshakes inside `vttest`,
@@ -78,7 +111,7 @@ impl EventListener for PtyResponder {
 /// **Field declaration order is load-bearing.** Rust drops struct fields
 /// in declaration order after [`Drop::drop`] returns. `child` MUST be
 /// declared before `_master` so the child handle drops first and the
-/// `PTY` master drops last. On Windows `ConPTY` this enforces Microsoft's
+/// `PTY` master drops last. On Windows ``ConPTY`` this enforces Microsoft's
 /// `ClosePseudoConsole` contract: the call must follow child exit, not
 /// precede it. See `Self::_master` for the full rationale.
 pub struct PtySession {
@@ -89,10 +122,10 @@ pub struct PtySession {
     cols: u16,
     rows: u16,
     child: Box<dyn Child + Send + Sync>,
-    /// Held to keep the underlying `PTY` master (Windows `ConPTY` `HPCON`
+    /// Held to keep the underlying `PTY` master (Windows ``ConPTY`` `HPCON`
     /// or Unix master fd) alive for the entire child process lifetime.
     ///
-    /// **Why this exists (Windows `ConPTY` contract).** Microsoft's
+    /// **Why this exists (Windows ``ConPTY`` contract).** Microsoft's
     /// [`ClosePseudoConsole` documentation][docs] states *"you should
     /// never call `ClosePseudoConsole` until after the client has exited
     /// or the call may hang."* Dropping `Box<dyn MasterPty>` triggers
@@ -131,6 +164,19 @@ pub struct PtySession {
     ///
     /// [docs]: https://learn.microsoft.com/en-us/windows/console/closepseudoconsole
     _master: Box<dyn MasterPty + Send>,
+    /// Process-wide `ConPTY` serialization guard. See
+    /// [`CONPTY_LIFETIME_LOCK`] for the rationale. Held for the
+    /// entire `PtySession` lifetime so concurrent
+    /// `PtySession`-using tests are forced into serial
+    /// execution on Windows.
+    ///
+    /// Field declared LAST so its drop runs after `_master`'s
+    /// drop — the lock is released only after
+    /// `ClosePseudoConsole` has fully completed, so the next
+    /// test's `spawn` (which acquires the lock) sees a clean
+    /// console subsystem state.
+    #[cfg(windows)]
+    _conpty_guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl PtySession {
@@ -142,6 +188,23 @@ impl PtySession {
     /// function.
     #[must_use]
     pub fn spawn(cmd: CommandBuilder, cols: u16, rows: u16) -> Self {
+        // Serialize `ConPTY` sessions on Windows for the entire
+        // `PtySession` lifetime — see [`CONPTY_LIFETIME_LOCK`] for
+        // the rationale. The guard is held in the `_conpty_guard`
+        // field below and dropped only when `PtySession` drops, so
+        // concurrent test threads block here until the previous
+        // session has fully torn down (including `ClosePseudoConsole`
+        // running through `_master`'s drop).
+        //
+        // Poison recovery: a panicked test inside the session body
+        // would poison the mutex on guard drop. We recover via
+        // `PoisonError::into_inner` so the next test's spawn proceeds
+        // normally instead of panicking with `PoisonError`.
+        #[cfg(windows)]
+        let conpty_guard = CONPTY_LIFETIME_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -195,6 +258,8 @@ impl PtySession {
             // state on Windows. See the `_master` field doc for the
             // full rationale.
             _master: pair.master,
+            #[cfg(windows)]
+            _conpty_guard: conpty_guard,
         }
     }
 
@@ -362,7 +427,7 @@ impl Drop for PtySession {
         //
         // **Ordering contract.** This synchronous reap MUST happen
         // before `_master` drops below (declaration-order field drop
-        // runs `child` before `_master`). On Windows ConPTY this
+        // runs `child` before `_master`). On Windows `ConPTY` this
         // ordering is load-bearing: `ClosePseudoConsole` is called
         // inside `_master`'s drop chain, and Microsoft's documented
         // contract is that the call must follow child exit, not

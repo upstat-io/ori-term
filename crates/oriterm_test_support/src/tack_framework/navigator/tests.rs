@@ -57,8 +57,15 @@ fn navigator_panics_when_anchor_already_present_in_pre_grid() {
     };
     #[cfg(windows)]
     let cmd = {
+        // Use the in-process `pause` builtin instead of wrapping a
+        // grandchild like `ping`. A `cmd.exe /C "echo marker & ping…"`
+        // wrapper makes ping a grandchild attached to the ConPTY; when
+        // `PtySession::drop` terminates cmd.exe, ping orphans and
+        // `ClosePseudoConsole` blocks waiting for it to release the
+        // HPCON. `pause` runs in cmd.exe's own process so killing
+        // cmd.exe reaps the only attached console client.
         let mut c = CommandBuilder::new("cmd.exe");
-        c.args(["/C", "echo marker && ping -n 6 127.0.0.1 > NUL"]);
+        c.args(["/C", "echo marker & pause > NUL"]);
         c.env("TERM", "xterm-256color");
         c
     };
@@ -93,14 +100,25 @@ fn navigator_matches_alternate_when_primary_never_appears() {
     };
     #[cfg(windows)]
     let cmd = {
-        // ping -n 2 127.0.0.1 > NUL produces ~1 s of delay; the
-        // navigator's wait_for_any has a 5 s budget so the alternate
-        // appears well before the deadline.
+        // Use cmd.exe with the in-process `pause` builtin instead of
+        // wrapping a `ping` grandchild — see
+        // `navigator_panics_when_anchor_already_present_in_pre_grid`
+        // above for the orphan-grandchild rationale.
+        //
+        // The original Unix arm uses `sleep 0.5 && printf alt_anchor`
+        // to delay the alternate anchor. The Windows arm prints
+        // `alt_anchor` immediately because `cmd.exe` lacks a
+        // sub-second sleep builtin and the only multi-process
+        // approaches re-introduce the grandchild orphan we just
+        // eliminated. The test still validates the alternate-anchor
+        // path: the navigator's `wait_for_any` poll loop matches
+        // `alt_anchor` on its first iteration (instead of after a
+        // 500 ms delay), which is a strict subset of the behavior
+        // pinned on Unix. The < 3 s wall-clock assertion below
+        // still catches a sequential-budget regression because a
+        // sequential implementation would consume budget per anchor.
         let mut c = CommandBuilder::new("cmd.exe");
-        c.args([
-            "/C",
-            "ping -n 2 127.0.0.1 > NUL && echo alt_anchor && ping -n 6 127.0.0.1 > NUL",
-        ]);
+        c.args(["/C", "echo alt_anchor & pause > NUL"]);
         c.env("TERM", "xterm-256color");
         c
     };
