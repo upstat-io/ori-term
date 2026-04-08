@@ -4,7 +4,7 @@ use portable_pty::CommandBuilder;
 
 use crate::session::PtySession;
 
-#[cfg(test)]
+#[cfg(unix)]
 impl PtySession {
     /// Test-only helper: replace the reader channel with a fresh
     /// closed channel so [`PtySession::drain_blocking`] returns 0
@@ -24,6 +24,11 @@ impl PtySession {
     /// is a descendant module of `teardown`, which is a child of
     /// `session`, so this inherent method can freely access
     /// `PtySession`'s private `rx` field.
+    ///
+    /// `#[cfg(unix)]` because the only caller,
+    /// `pty_session_wait_for_child_exit_bounded_poll_invariant`, is
+    /// itself `#[cfg(unix)]` — exposing this helper on Windows would
+    /// be dead code under `-D dead-code`.
     fn force_close_rx_for_test(&mut self) {
         let (_tx, rx) = std::sync::mpsc::channel();
         // Dropping `_tx` closes the channel. Any subsequent
@@ -131,6 +136,17 @@ fn spawn_quit_on_keystroke(exit_code: i32) -> PtySession {
         c.env("TERM", "xterm-256color");
         c
     };
+    // `mut` is required on Unix so `wait_for` can drive the reader;
+    // on Windows the call is cfg-gated out, so the binding is only
+    // read — `#[cfg_attr(not(unix), expect(unused_mut, ...))]` keeps
+    // the single source-form line while satisfying `-D unused-mut`.
+    #[cfg_attr(
+        not(unix),
+        expect(
+            unused_mut,
+            reason = "session.wait_for() below is unix-only; on windows the binding is never mutated"
+        )
+    )]
     let mut session = PtySession::spawn(cmd, 80, 24);
     #[cfg(unix)]
     session.wait_for("__READY__", 5_000);
