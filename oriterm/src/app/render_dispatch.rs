@@ -3,16 +3,46 @@
 //! Extracted from `event_loop.rs` to keep that file under the 500-line limit.
 //! Called once per frame from `about_to_wait` when at least one window is dirty
 //! and the frame budget has elapsed.
+//!
+//! This is the canonical SSOT dispatch point — the render gate (5.16.2)
+//! consults [`gate_outcome`] *before* walking `windows` + `dialogs`. Both
+//! single-pane and multi-pane render paths flow through this function, so the
+//! gate covers every entry point with a single guard (no duplicate guards
+//! inside multi-pane helpers — algorithmic-DRY per
+//! `.claude/rules/impl-hygiene.md`).
 
 use super::App;
 use super::perf_stats::FramePhases;
+use crate::gpu::recovery::{RenderOutcome, gate_outcome};
 
 impl App {
     /// Render all dirty terminal and dialog windows.
     ///
     /// Temporarily swaps `focused_window_id`/`active_window` to target each
-    /// dirty window, then restores the original focus.
-    pub(super) fn render_dirty_windows(&mut self) {
+    /// dirty window, then restores the original focus. Returns a
+    /// [`RenderOutcome`] so the gate decision is observable in tests and the
+    /// caller (the event loop's `about_to_wait`) can record perf counters
+    /// for gated frames.
+    pub(super) fn render_dirty_windows(&mut self) -> RenderOutcome {
+        // I1 — render gate. Consult `gpu_health` first; when `Recovering`
+        // or `Unavailable`, return early WITHOUT clearing dirty flags and
+        // WITHOUT invoking any `WindowRenderer` method. Windows stay dirty
+        // so the next successful frame after recovery is a full repaint.
+        if let Some(gated) = gate_outcome(&self.gpu_health) {
+            log::trace!(
+                "render gate: {gated:?} (gpu_health.epoch={:?})",
+                self.gpu_health.epoch(),
+            );
+            return gated;
+        }
+
+        // No dirty windows — nothing to render. Distinct from `Submitted`
+        // so the caller can record "frame ran but produced no GPU work"
+        // separately from "frame ran and submitted commands".
+        if !self.is_any_window_dirty() {
+            return RenderOutcome::Skipped;
+        }
+
         let frame_start = std::time::Instant::now();
         let mut phases = FramePhases::default();
 
@@ -93,6 +123,8 @@ impl App {
         if let Some(mux) = self.mux.as_mut() {
             mux.maybe_shrink_renderable_caches();
         }
+
+        RenderOutcome::Submitted
     }
 
     /// Returns `true` if any terminal or dialog window needs rendering.

@@ -195,8 +195,10 @@ impl WindowRenderer {
     /// UI-only dialog windows skip the offscreen cache entirely and render
     /// directly to the surface every frame.
     ///
-    /// Handles surface errors: `Lost`/`Outdated` → caller should reconfigure,
-    /// `OutOfMemory` → propagated, `Timeout` → propagated.
+    /// Handles surface errors with the variants the recovery state machine
+    /// requires: `Outdated` is a benign reconfigure, `Lost` triggers the full
+    /// recovery flow, `Other` carries the wgpu detail string and escalates as
+    /// soft device loss, `OutOfMemory` is terminal, `Timeout` is retryable.
     pub fn render_to_surface(
         &mut self,
         gpu: &GpuState,
@@ -205,10 +207,11 @@ impl WindowRenderer {
         content_changed: bool,
     ) -> Result<(), SurfaceError> {
         let output = surface.get_current_texture().map_err(|e| match e {
-            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => SurfaceError::Lost,
+            wgpu::SurfaceError::Outdated => SurfaceError::Outdated,
+            wgpu::SurfaceError::Lost => SurfaceError::Lost,
             wgpu::SurfaceError::OutOfMemory => SurfaceError::OutOfMemory,
             wgpu::SurfaceError::Timeout => SurfaceError::Timeout,
-            wgpu::SurfaceError::Other => SurfaceError::Other,
+            wgpu::SurfaceError::Other => SurfaceError::Other(format!("{e}")),
         })?;
 
         let device = &gpu.device;

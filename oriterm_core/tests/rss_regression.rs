@@ -106,13 +106,28 @@ fn rss_plateaus_under_sustained_output() {
 
     let rss_after_sustained = rss_bytes();
 
-    // RSS growth should be minimal. The scrollback is bounded (1000 rows),
-    // so old rows are recycled. Any significant growth indicates a leak.
-    // macOS threshold is higher (8 MB) because its zone allocator retains
-    // freed pages more aggressively than Linux's mmap/munmap.
+    // RSS growth should be bounded. The scrollback is bounded (1000 rows),
+    // so old rows are recycled. Any growth proportional to the number of
+    // lines fed (i.e., N × per-line cost) indicates a leak.
+    //
+    // The threshold has to account for allocator caching behavior, which
+    // is platform-specific:
+    // - Linux: glibc malloc + mmap/munmap returns pages to the kernel
+    //   relatively quickly. 2 MB headroom is enough.
+    // - macOS: the zone allocator retains freed pages in per-thread caches
+    //   for fast reallocation. RSS can grow several megabytes during
+    //   sustained churn even with no leak. Observed: 6-8.3 MB on CI
+    //   runners under load. 16 MB gives 2× headroom over the highest
+    //   observed non-leak growth and stays well below any real-leak
+    //   signal (a leak proportional to 100k × per-line cost would be
+    //   tens to hundreds of MB).
+    //
+    // The plateau property is verified more reliably by `rss_series_plateaus`
+    // (trend-based, multiple measurements) — this test is a coarse safety
+    // net for catastrophic regressions.
     let growth = rss_after_sustained.saturating_sub(rss_after_warmup);
     let threshold = if cfg!(target_os = "macos") {
-        8 * MB
+        16 * MB
     } else {
         2 * MB
     };

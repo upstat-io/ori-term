@@ -20,6 +20,7 @@ mod divider_drag;
 mod event_loop;
 mod event_loop_helpers;
 mod floating_drag;
+mod gpu_recovery;
 mod init;
 mod keyboard_input;
 mod mark_mode;
@@ -127,6 +128,31 @@ pub(crate) struct App {
     gpu: Option<GpuState>,
     /// Shared stateless GPU pipelines and bind group layouts.
     pipelines: Option<GpuPipelines>,
+    /// Global GPU device health.
+    ///
+    /// The render gate (5.16.2) consults this before submitting any draw
+    /// work — `Recovering` and `Unavailable` block rendering. The
+    /// `App::recover_gpu()` state machine (5.16.2) is the only mutator;
+    /// 5.16.1 only adds the field with the default `Healthy { epoch: 0 }`
+    /// and routes detection events into a logging stub.
+    gpu_health: crate::gpu::recovery::GpuHealth,
+    /// Cross-thread "device-lost callback fired" counter.
+    ///
+    /// Bumped by the closure registered with
+    /// `wgpu::Device::set_device_lost_callback` whenever the underlying
+    /// device dies. The render path samples this in `finish_render` and
+    /// compares against `last_seen_device_lost_signal` to detect a loss
+    /// that occurred *between* submit and present — the case where the
+    /// callback ran on a wgpu thread mid-frame and the event has not yet
+    /// reached `user_event`. 5.16.2's render gate uses the same signal to
+    /// short-circuit before re-entering submit.
+    device_lost_signal: Arc<AtomicU64>,
+    /// Last value of `device_lost_signal` observed on the main thread.
+    ///
+    /// Updated by `finish_render` after each frame so the next frame can
+    /// detect any new increments. A delta means the device-lost callback
+    /// fired since the last frame.
+    last_seen_device_lost_signal: u64,
     /// Cached font set with user fallbacks pre-applied (cloned per new window).
     font_set: Option<FontSet>,
     /// Maps loaded fallback index → config index (for `apply_font_config`).

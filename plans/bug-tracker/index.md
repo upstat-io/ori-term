@@ -78,7 +78,8 @@ floating-pane, transparent, opacity, background, blur
 
 ```
 ci, build, release, workflow, github-actions, auto-release, tag, version,
-bump-build, sync-version, cargo-lock, lockfile, nightly, deploy, publish
+bump-build, sync-version, cargo-lock, lockfile, nightly, deploy, publish,
+clippy-all, all-targets, test-target lints, conpty, pty-size
 ```
 
 ### Section 08: Core Terminal

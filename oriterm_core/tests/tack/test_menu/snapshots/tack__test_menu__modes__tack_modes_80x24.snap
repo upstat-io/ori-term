@@ -1,0 +1,6 @@
+---
+source: oriterm_core/tests/tack/test_menu/modes.rs
+expression: outcome.grid_text
+---
+(os) should be           false.                                                 
+(os) over-strike is false in the data base.  (os) Done

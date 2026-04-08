@@ -7,14 +7,14 @@
 //! VT52 escape sequences are not processed, leading to timing-dependent
 //! rendering artifacts.
 
-use super::session::{VtTestSession, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// Run vttest menu 7 (VT52 mode) at a given size.
 ///
 /// VT52 mode is unimplemented — no content assertions. Tests verify
 /// that vttest navigation works without crashing.
 fn run_menu7_vt52(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     s.wait_for("Enter choice number", 5000);

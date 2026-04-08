@@ -261,6 +261,18 @@ impl App {
     /// At most one pending wakeup thread at a time: a generation counter
     /// prevents stale threads from clearing the guard after a reset+respawn.
     pub(super) fn schedule_blink_wakeup(&mut self) {
+        // 5.16.2 wakeup gate (`CursorBlink`/`TextBlink`): silently exit
+        // when the GPU is not healthy. The recovery state-change wakeup
+        // resumes blinking naturally when `gpu_health` returns to
+        // `Healthy`. This prevents spinning the wakeup thread against a
+        // dead device during recovery.
+        if !crate::gpu::recovery::should_post_wakeup(
+            &self.gpu_health,
+            crate::gpu::recovery::WakeupSource::CursorBlink,
+        ) {
+            return;
+        }
+
         // A nonzero generation means a thread is already pending.
         if self.blink_wakeup_gen.load(Ordering::Acquire) != 0 {
             return;
@@ -312,25 +324,46 @@ impl App {
     /// in progress). The caller uses this to bypass the frame budget gate
     /// which would otherwise block animation redraws.
     pub(super) fn drive_blink_timers(&mut self) -> bool {
+        // 5.16.2 wakeup gate. Animation *progress* (`update()`,
+        // `is_animating()`) keeps ticking on the CPU side so visual state
+        // matches reality after recovery; only `mark_dirty` +
+        // `request_redraw` are gated. Returns `false` (no animation) when
+        // gated so the caller's frame-budget bypass is suppressed.
+        let cursor_allowed = crate::gpu::recovery::should_post_wakeup(
+            &self.gpu_health,
+            crate::gpu::recovery::WakeupSource::CursorBlink,
+        );
+        let text_allowed = crate::gpu::recovery::should_post_wakeup(
+            &self.gpu_health,
+            crate::gpu::recovery::WakeupSource::TextBlink,
+        );
+
         let mut animating = false;
 
         if self.blinking_active && (self.cursor_blink.update() || self.cursor_blink.is_animating())
         {
             animating = true;
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.root.mark_dirty();
-                ctx.window.window().request_redraw();
+            if cursor_allowed {
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.root.mark_dirty();
+                    ctx.window.window().request_redraw();
+                }
             }
         }
 
         if self.text_blink.update() || self.text_blink.is_animating() {
             animating = true;
-            for ctx in self.windows.values_mut() {
-                ctx.root.mark_dirty();
-                ctx.window.window().request_redraw();
+            if text_allowed {
+                for ctx in self.windows.values_mut() {
+                    ctx.root.mark_dirty();
+                    ctx.window.window().request_redraw();
+                }
             }
         }
 
+        if !cursor_allowed && !text_allowed {
+            return false;
+        }
         animating
     }
 
@@ -388,6 +421,14 @@ pub(super) struct ControlFlowInput {
     pub has_animations: bool,
     /// Whether cursor blink is active.
     pub blinking_active: bool,
+    /// Whether the GPU is healthy (`GpuHealth::Healthy`).
+    ///
+    /// When `false`, every periodic-wakeup source is gated per 5.16.2 —
+    /// `compute_control_flow` returns `Wait` so the event loop sleeps until
+    /// an external event arrives. The recovery state-change event itself
+    /// (delivered via `TermEvent::GpuDeviceLost` or the eventual recovery
+    /// completion) provides the wake-up that resumes normal scheduling.
+    pub gpu_healthy: bool,
     /// Next cursor blink change time (only meaningful if `blinking_active`).
     ///
     /// During fade transitions this is ~16ms (animation frame rate); during
@@ -425,6 +466,16 @@ pub(super) enum ControlFlowDecision {
 /// No winit types — testable without a display server. Mirrors the
 /// decision tree in `about_to_wait`.
 pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecision {
+    // 5.16.2 wakeup gate. When the GPU is not healthy, every periodic
+    // wakeup source is silenced — return `Wait` so the event loop sleeps
+    // until an external event (the recovery completion notification, a
+    // mux PTY notification, or a user input event) arrives. This is the
+    // canonical SSOT for "all gated wakeups": every variant of
+    // `WakeupSource` flows through this single decision.
+    if !input.gpu_healthy {
+        return ControlFlowDecision::Wait;
+    }
+
     // Still dirty after render attempt — sleep until the next event
     // if the frame budget hasn't elapsed yet. Using `Wait` instead of
     // `WaitUntil` because WaitUntil doesn't reliably sleep on

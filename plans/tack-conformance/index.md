@@ -1,3 +1,11 @@
+---
+reroute: true
+name: "Tack Conformance"
+full_name: "Tack Conformance: Automated Terminfo Capability Validation Suite"
+status: active
+order: 1
+---
+
 # Tack Conformance Index
 
 > **Maintenance Notice:** Update this index when adding/modifying sections.
@@ -13,7 +21,7 @@
 ## Keyword Clusters by Section
 
 ### Section 01: Shared PtySession Infrastructure
-**File:** `section-01-shared-pty-session.md` | **Status:** Not Started
+**File:** `section-01-shared-pty-session.md` | **Status:** Complete
 
 ```
 PtySession, PtyResponseCollector, oriterm_test_support, test-support crate
@@ -27,40 +35,69 @@ dev-dependency, workspace member, crates/
 ---
 
 ### Section 02: Terminfo Provisioning
-**File:** `section-02-terminfo-provisioning.md` | **Status:** Not Started
+**File:** `section-02-terminfo-provisioning.md` | **Status:** Complete
 
 ```
-terminfo, termcap, TERM, TERMINFO_DIRS, xterm-256color
-ori_term.info, tic, infocmp, extra/, terminfo source
-TerminfoEnv, compile, temp directory, OnceLock
+terminfo, termcap, TERM, TERMINFO, TERMINFO_DIRS, xterm-256color
+ori_term.info, ori_term-direct, ori_term+common, tic, infocmp
+extra/, terminfo source, hand-authored, no host inheritance
+TerminfoEnv, TerminfoVariant, compile, compile_with_variant
+apply_env, env_pairs SSOT, include_str!, tempfile::TempDir
+tic_available, infocmp_available, runtime gate, skip discipline
 alacritty.info, wezterm.terminfo, ghostty.zig
-am, bce, km, mir, msgr, xenl, colors, pairs
-setaf, setab, sgr, cup, csr, smcup, rmcup
+am, bce, ccc, km, mir, msgr, xenl, colors, pairs
+setaf, setab, sgr, cup, csr, smcup, rmcup, smkx, rmkx
+acsc, smacs, rmacs, rep, BD, BE, PS, PE, kxIN, kxOUT, XF
+Tc, Ms, Ss, Se, Smulx, Setulc, Sync, hs, dsl, tsl, fsl
+kf1-kf63, BUG-07-008, child-process integrity test
 ```
 
 ---
 
 ### Section 03: Tack Smoke Test
-**File:** `section-03-tack-smoke-test.md` | **Status:** Not Started
+**File:** `section-03-tack-smoke-test.md` | **Status:** Complete
 
 ```
 tack, smoke test, menu navigation, PTY spawn
 tack_available, tic_available, runtime skip
 main menu, "Enter choice number", "tack [n] >"
 basic information, terminal capabilities
+wait_for_child_exit, bounded poll, try_wait, GetExitCodeProcess
+ExitStatus, exit code surfacing, reader EOF, hot-spin mitigation
+grid_text fidelity scope, snapshot canary
+PATH override skip verification, no temporary scaffolding
+snapshot stage before flake loop, git-add ordering
+BUG-07-004 adjacent (Windows ConPTY child-lifecycle, not size)
+Drop guard prerequisite, panic-on-timeout cleanup
+mission tracing, Section 04 handoff, ScenarioSpec prerequisite
+03.4 skip+compile, 03.5 exit+cleanup, 03.T TPR checkpoint
+platform-gated diagnostics (strace Linux, lsof macOS, Get-Process Windows)
+Section 04 hard handoff: ScenarioRunner::run_at must call quit_tack(5) — strict superset of wait_for_child_exit(2_000)
 ```
 
 ---
 
 ### Section 04: Scenario Catalog Framework
-**File:** `section-04-scenario-framework.md` | **Status:** Not Started
+**File:** `section-04-scenario-framework.md` | **Status:** Complete
 
 ```
-ScenarioSpec, TackNavigator, scenario catalog
-semantic ID, menu_path, ready_anchor, screen_parser
-tack_modes_am, tack_color_setf, tack_cursor_cup
+ScenarioSpec, MenuStep, TackNavigator, ScenarioRunner, ScenarioOutcome
+semantic ID, screen_id, menu_path, ready_anchor, quit_path, parser
+or_wait_for, MenuStep::new, snapshot_name, golden_name
+LiveSession, LiveSession::finish, LiveSession::golden_name, M5 cleanup contract
+PtySession::wait_for_with_context, PtySession::wait_for_any, PtySession::send_raw, PtySession::quit_tack
+poll_until canonical bounded-poll helper, LEAK:algorithmic-duplication fix
+bounded-poll invariant per-consumer pin (wait_for_with_context, wait_for_any, wait_for_child_exit_inner)
+failing-test-first TDD discipline, debug+release parity
+session/sync module, session/teardown module, 500-line split, BLOAT prevention
+pre-existing-anchor guard (C1), state-aware quit (C2), exit-status assertion (C3)
+catch_unwind antipattern banned, wait_for_any non-panicking primitive (M4b)
+tokenized parser helpers, grid_has_token, grid_line_starts_with, grid_find_field
+tack_framework::scenarios::*, single source of truth for catalog
+tack_modes_am, modes screen, parse_modes_screen
 insta, snapshot naming, assert_snapshot, grid_text
-per-scenario parser, test assertions, Done marker
+per-scenario parser, test assertions, Section 03 handoff reconciliation
+cross-section consumer re-review gate for 05/06/07, Section 07 depends_on extends to 06
 ```
 
 ---
@@ -70,6 +107,7 @@ per-scenario parser, test assertions, Done marker
 
 ```
 tack/test, modes, glitches, ACS, graphic rendition, color, cursor movement
+pad_timing, send_strings, labels, function_key_test (stub), edit_terminfo (stub)
 am, os, rmam, smam, bw, xenl, tabs
 bel, flash, civis, cvvis, cnorm, sgr
 colors, pairs, setf, setb, scp, op, ncv, bce
@@ -87,6 +125,8 @@ tack/tools, ANSI status reports, SGR modes, character sets
 DA, DSR, primary device attributes, cursor position
 SGR 0-79, bold, dim, underline, reverse, blink
 G0, G1, GL, GR, character set banks, ACS
+ENQ/ACK, u8, u9, OSC 10, OSC 11, OSC queries
+scan_codes (stub), decompile_terminfo (stub)
 oriterm_core/tests/tack/, text snapshots
 ```
 
@@ -98,10 +138,11 @@ oriterm_core/tests/tack/, text snapshots
 ```
 GPU, golden images, visual regression, render_to_pixels
 headless_env, compare_with_reference, PIXEL_TOLERANCE
-tack color, tack SGR, tack character sets
+tack color, tack SGR, tack character sets, tack modes
 FrameInput, frame_input, assert_golden
 oriterm/src/gpu/visual_regression/tack/
 oriterm/tests/references/tack_*.png
+6 goldens: color x3 + graphic_rendition + character_sets + modes
 ```
 
 ---
@@ -111,9 +152,13 @@ oriterm/tests/references/tack_*.png
 
 ```
 keyboard, function keys, smkx, rmkx, key encoding
-kf1-kf63, kcub1, kcud1, kcuf1, kcuu1
-oriterm, key_encoding, KeyEncoder
-tack/test/fkey, ENQ/ACK, u8, u9
+kf1-kf12 (unmodified), kf13-kf24 (shift), kf25-kf36 (ctrl)
+kf37-kf48 (ctrl+shift), kf49-kf60 (alt), kf61-kf63 (alt+shift)
+kcub1, kcud1, kcuf1, kcuu1 (cursor, app + normal mode)
+kbs, khome, kend, kpp, knp, kdch1, kich1 (editing)
+oriterm, key_encoding, KeyEncoder, in-crate sibling test
+infocmp_query, decode_terminfo_string, CapMapping
+oriterm/src/key_encoding/terminfo_xcheck.rs (preferred)
 ```
 
 ---

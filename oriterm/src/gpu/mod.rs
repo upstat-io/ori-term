@@ -14,6 +14,7 @@ pub(crate) mod pipeline;
 pub(crate) mod pipelines;
 pub(crate) mod prepare;
 pub(crate) mod prepared_frame;
+pub(crate) mod recovery;
 pub(crate) mod render_target;
 pub(crate) mod scene_convert;
 pub(crate) mod state;

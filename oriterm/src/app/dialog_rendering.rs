@@ -22,6 +22,15 @@ use crate::font::CachedTextMeasurer;
 impl App {
     /// Render a dialog window's content to its GPU surface.
     pub(super) fn render_dialog(&mut self, winit_id: WindowId) {
+        // I1 render gate (5.16.2). Direct callers (`dialog_management`,
+        // `dialog_context::event_handling`) bypass `render_dirty_windows`'s
+        // gate, so this is one of the canonical call sites of
+        // `gate_outcome`. Both sites read the same `GpuHealth` SSOT.
+        if let Some(gated) = crate::gpu::recovery::gate_outcome(&self.gpu_health) {
+            log::trace!("render_dialog gate: {gated:?}");
+            return;
+        }
+
         let Some(gpu) = self.gpu.as_ref() else { return };
         let Some(pipelines) = self.pipelines.as_ref() else {
             return;
@@ -67,11 +76,37 @@ impl App {
         let result = renderer.render_to_surface(gpu, pipelines, &ctx.surface, true);
         match result {
             Ok(()) => {}
-            Err(crate::gpu::SurfaceError::Lost) => {
-                log::warn!("dialog surface lost, reconfiguring");
+            Err(crate::gpu::SurfaceError::Outdated) => {
+                log::warn!("dialog surface outdated, reconfiguring");
                 ctx.resize_surface(w, h, gpu);
             }
-            Err(e) => log::error!("dialog render error: {e}"),
+            Err(crate::gpu::SurfaceError::Lost) => {
+                log::error!("dialog surface lost, dispatching GPU recovery");
+                self.event_proxy
+                    .send(crate::event::TermEvent::GpuDeviceLost {
+                        reason: crate::gpu::recovery::GpuLossReason::Unknown,
+                        message: "SurfaceError::Lost from dialog render".to_string(),
+                    });
+            }
+            Err(crate::gpu::SurfaceError::Other(detail)) => {
+                log::error!("dialog surface other error (soft device loss): {detail}");
+                self.event_proxy
+                    .send(crate::event::TermEvent::GpuDeviceLost {
+                        reason: crate::gpu::recovery::GpuLossReason::SurfaceOther,
+                        message: format!("dialog SurfaceError::Other: {detail}"),
+                    });
+            }
+            Err(crate::gpu::SurfaceError::OutOfMemory) => {
+                log::error!("dialog GPU out of memory, dispatching to Unavailable");
+                self.event_proxy
+                    .send(crate::event::TermEvent::GpuDeviceLost {
+                        reason: crate::gpu::recovery::GpuLossReason::OutOfMemory,
+                        message: "dialog SurfaceError::OutOfMemory".to_string(),
+                    });
+            }
+            Err(crate::gpu::SurfaceError::Timeout) => {
+                log::warn!("dialog surface acquisition timed out, retrying next frame");
+            }
         }
 
         // Track animation state for phase gating on the next frame.

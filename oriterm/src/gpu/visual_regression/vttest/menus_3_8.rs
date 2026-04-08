@@ -1,6 +1,8 @@
 //! vttest golden image tests for menus 3-8.
 
-use super::{VtTestSession, vttest_available};
+use oriterm_test_support::{PtySession, vttest_available};
+
+use super::render::assert_golden;
 use crate::gpu::visual_regression::headless_env;
 
 /// Run vttest menu 3 (character sets) and capture golden images.
@@ -13,8 +15,8 @@ fn run_menu3_golden(cols: u16, rows: u16) {
         return;
     };
 
-    let mut s = VtTestSession::new(cols, rows);
-    let label = format!("{}x{}", cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
+    let label = format!("{cols}x{rows}");
 
     s.wait_for("Enter choice number", 5000);
 
@@ -32,7 +34,8 @@ fn run_menu3_golden(cols: u16, rows: u16) {
             break;
         }
 
-        s.assert_golden(
+        assert_golden(
+            &s,
             &format!("vttest_{label}_03_cs_{screen:02}"),
             &gpu,
             &pipelines,
@@ -67,8 +70,8 @@ fn run_menu4_golden(cols: u16, rows: u16) {
         return;
     };
 
-    let mut s = VtTestSession::new(cols, rows);
-    let label = format!("{}x{}", cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
+    let label = format!("{cols}x{rows}");
 
     s.wait_for("Enter choice number", 5000);
     s.send(b"4\r");
@@ -80,7 +83,8 @@ fn run_menu4_golden(cols: u16, rows: u16) {
             break;
         }
 
-        s.assert_golden(
+        assert_golden(
+            &s,
             &format!("vttest_{label}_04_dblsize_{screen:02}"),
             &gpu,
             &pipelines,
@@ -114,8 +118,8 @@ fn run_menu6_golden(cols: u16, rows: u16) {
         return;
     };
 
-    let mut s = VtTestSession::new(cols, rows);
-    let label = format!("{}x{}", cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
+    let label = format!("{cols}x{rows}");
 
     s.wait_for("Enter choice number", 5000);
     s.send(b"6\r");
@@ -123,7 +127,8 @@ fn run_menu6_golden(cols: u16, rows: u16) {
     // Check for sub-menu.
     let text = s.grid_text();
     if text.contains("Menu 6") || text.contains("menu 6") {
-        s.assert_golden(
+        assert_golden(
+            &s,
             &format!("vttest_{label}_06_menu"),
             &gpu,
             &pipelines,
@@ -144,7 +149,8 @@ fn run_menu6_golden(cols: u16, rows: u16) {
                 if t.contains("Enter choice number") {
                     break;
                 }
-                s.assert_golden(
+                assert_golden(
+                    &s,
                     &format!("vttest_{label}_06_sub{item}_{screen:02}"),
                     &gpu,
                     &pipelines,
@@ -181,7 +187,7 @@ fn vttest_golden_menu6_80x24() {
 ///
 /// No golden image assertions — VT52 output is non-deterministic.
 fn run_menu7_golden(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
 
     s.wait_for("Enter choice number", 5000);
     s.send(b"7\r");
@@ -218,8 +224,8 @@ fn run_menu8_golden(cols: u16, rows: u16) {
         return;
     };
 
-    let mut s = VtTestSession::new(cols, rows);
-    let label = format!("{}x{}", cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
+    let label = format!("{cols}x{rows}");
 
     s.wait_for("Enter choice number", 5000);
 
@@ -233,7 +239,8 @@ fn run_menu8_golden(cols: u16, rows: u16) {
             break;
         }
 
-        s.assert_golden(
+        assert_golden(
+            &s,
             &format!("vttest_{label}_08_vt102_{screen:02}"),
             &gpu,
             &pipelines,

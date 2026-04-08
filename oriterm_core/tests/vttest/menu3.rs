@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use super::session::{VtTestSession, grid_chars, vttest_available};
+use super::session::{PtySession, vttest_available};
 
 /// DEC Special Graphics box-drawing characters used by vttest.
 const LINE_DRAWING_CHARS: &[char] = &[
@@ -42,7 +42,7 @@ pub fn assert_has_line_drawing_chars(grid: &[Vec<char>], min_count: usize, conte
 /// Walk sub-screens of a vttest menu-3 sub-item, returning the number
 /// of screens captured. Applies line-drawing structural assertions.
 fn walk_menu3_subscreens(
-    s: &mut VtTestSession,
+    s: &mut PtySession,
     label: &str,
     sub_item: &str,
     tag: &str,
@@ -59,7 +59,7 @@ fn walk_menu3_subscreens(
         }
 
         if check_line_drawing {
-            let grid = grid_chars(&s.term);
+            let grid = s.grid_chars();
             let has_drawing = grid
                 .iter()
                 .any(|row| row.iter().any(|ch| LINE_DRAWING_CHARS.contains(ch)));
@@ -90,7 +90,7 @@ fn walk_menu3_subscreens(
 /// Menu 3 has a sub-menu. We test sub-items 8 (VT100 character sets)
 /// and 9 (Shift In/Shift Out).
 fn run_menu3_character_sets(cols: u16, rows: u16) {
-    let mut s = VtTestSession::new(cols, rows);
+    let mut s = PtySession::spawn_vttest(cols, rows);
     let label = s.size_label();
 
     // Wait for main menu.

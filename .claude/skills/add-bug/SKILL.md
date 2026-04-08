@@ -173,3 +173,19 @@ When `/continue-roadmap` detects this parallel plan and presents options:
 - Bug tracker items are NEVER the **recommended** option
 - The option text should read: `Work on bug fixes (Bug Tracker — N open bugs)`
 - Only present this option if there are unchecked (`[ ]`) bug items
+
+---
+
+## Fix Workflow — What Happens Next
+
+Filing a bug is capture only. When a bug is picked up for fixing (via `/fix-next-bug`, `/continue-roadmap`, or direct request), the **`/fix-bug`** command enforces plan-section rigor:
+
+1. **Investigation** — root cause analysis, reference repo review
+2. **Fix section file** — `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` created with full plan-section structure
+3. **TDD matrix** — all tests written and verified failing BEFORE implementation
+4. **Implementation** — fix applied, tests pass unchanged
+5. **Completion checklist** — test-all, clippy-all, build-all, TPR review, impl-hygiene review
+
+**Every bug fix gets this rigor.** No ad-hoc fixes. The fix section file is the permanent record of investigation, approach, and verification — it stays in the bug tracker alongside the section files.
+
+See `/fix-bug` for the full workflow and fix section template. See `/fix-next-bug` for the autopilot loop that drains the bug queue end-to-end.
