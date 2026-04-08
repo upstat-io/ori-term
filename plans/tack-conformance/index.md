@@ -103,7 +103,7 @@ cross-section consumer re-review gate for 05/06/07, Section 07 depends_on extend
 ---
 
 ### Section 05: Tack Scenarios: Test Menu
-**File:** `section-05-test-menu-scenarios.md` | **Status:** In Progress (M1 complete)
+**File:** `section-05-test-menu-scenarios.md` | **Status:** Complete
 
 ```
 tack/test, modes, glitches, ACS, graphic rendition, color, cursor movement
