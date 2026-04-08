@@ -93,8 +93,8 @@ impl PtySession {
     }
 
     /// Feed `data` through the VTE processor, then write any captured
-    /// `PtyWrite` responses back to the PTY. Shared core of [`Self::drain`]
-    /// and [`Self::drain_blocking`].
+    /// `PtyWrite` and OSC responses back to the PTY. Shared core of
+    /// [`Self::drain`] and [`Self::drain_blocking`].
     fn feed_and_flush(&mut self, data: &[u8]) -> usize {
         self.proc.advance(&mut self.term, data);
         for resp in self.term.event_listener().take_responses() {
@@ -102,8 +102,25 @@ impl PtySession {
             // via Drop, so swallowing here is correct for test setup.
             let _ = self.writer.write_all(resp.as_bytes());
         }
+        self.write_osc_responses_back();
         let _ = self.writer.flush();
         data.len()
+    }
+
+    /// Drain every OSC response (color + clipboard load) captured by the
+    /// listener since the last flush and write each one back through the
+    /// PTY master. Kept private because Section 06.0.c callers reach it
+    /// through [`Self::feed_and_flush`] / [`Self::drain_until`] — no
+    /// direct public API.
+    ///
+    /// Best-effort writes: errors are silently dropped (same policy as
+    /// the `take_responses` write-back in `feed_and_flush`) because the
+    /// test session's lifecycle is driven by `Drop`, not by fallible
+    /// write surfaces inside drain.
+    fn write_osc_responses_back(&mut self) {
+        for resp in self.term.event_listener().take_osc_responses() {
+            let _ = self.writer.write_all(resp.as_bytes());
+        }
     }
 
     /// Wait until no new PTY output arrives for `quiet_ms`.
@@ -303,6 +320,10 @@ impl PtySession {
                 for resp in self.term.event_listener().take_responses() {
                     let _ = self.writer.write_all(resp.as_bytes());
                 }
+                // Mirror the OSC response flush — a query that fires
+                // in the middle of a phase must complete its round-trip
+                // before the next tack byte advances the menu state.
+                self.write_osc_responses_back();
                 let grid = self.grid_text();
                 if grid.contains(needle) {
                     let _ = self.writer.flush();

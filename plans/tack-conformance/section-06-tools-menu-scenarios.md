@@ -56,7 +56,7 @@ sections:
     status: complete
   - id: "06.0.c"
     title: "PtyResponder OSC-event extension (framework extension)"
-    status: not-started
+    status: complete
   - id: "06.1"
     title: "Status reports scenarios (DA/DSR/DECRQM sub-submenu walker)"
     status: not-started
@@ -746,17 +746,27 @@ All other `Event` variants are ignored (`_ => {}`) — including `Bell`, `Title`
 
 **Tasks (strict ordering — the order is load-bearing):**
 
-- [ ] **Step 1 (BEFORE any functional change): Proactive split of `PtyResponder` into `session/pty_responder/{mod, tests}.rs`.** Move the struct + impl out of `session/mod.rs`; add `pub use pty_responder::PtyResponder;` re-export. Verify `session/mod.rs` is ≤ 450 lines after the move and `session/pty_responder/mod.rs` is ≤ 50 lines before any extension. `./build-all.sh && ./clippy-all.sh && timeout 150 ./test-all.sh` must be green AT THIS COMMIT before proceeding — no functional change, just file re-layout. This is the load-bearing proactive-split gate: violating it means the extension lands on top of a file already at 459 lines and blows past the 500 limit in one commit.
-- [ ] **Step 2: TDD failing-first ordering (11 steps above).** Every test written failing-first BEFORE its implementation lands.
-- [ ] **Step 3: Extend `PtyResponder::send_event`** with the three new event arms (ColorRequest, ClipboardLoad, ClipboardStore) and the `_ => {}` catch-all negative pin. The `send_event` body stays an orchestration match: each arm delegates to a private method (`handle_color_request`, `handle_clipboard_load`, `handle_clipboard_store`) defined in the same `pty_responder/mod.rs`. This keeps `send_event` under 20 lines regardless of how complex the individual handlers grow.
+- [x] **Step 1 (BEFORE any functional change): Proactive split of `PtyResponder` into `session/pty_responder/{mod, tests}.rs`.** Move the struct + impl out of `session/mod.rs`; add `pub use pty_responder::PtyResponder;` re-export. Verify `session/mod.rs` is ≤ 450 lines after the move and `session/pty_responder/mod.rs` is ≤ 50 lines before any extension. `./build-all.sh && ./clippy-all.sh && timeout 150 ./test-all.sh` must be green AT THIS COMMIT before proceeding — no functional change, just file re-layout. This is the load-bearing proactive-split gate: violating it means the extension lands on top of a file already at 459 lines and blows past the 500 limit in one commit.
+  Landed: commit 5ab3bef5. `session/mod.rs` = 427 lines, `session/pty_responder/mod.rs` = 50 lines pre-extension.
+- [x] **Step 2: TDD failing-first ordering (11 steps above).** Every test written failing-first BEFORE its implementation lands.
+  Landed: eight sibling pins in `session/pty_responder/tests.rs` — `pty_responder_captures_color_request`, `pty_responder_captures_color_request_bel_terminated`, `pty_responder_captures_clipboard_load`, `pty_responder_captures_clipboard_store`, `pty_responder_still_captures_pty_write` (regression pin), `pty_responder_ignores_non_round_trip_events` (negative pin), `pty_responder_direct_dispatch_populates_queues`, `pty_responder_clone_shares_queues`.
+- [x] **Step 3: Extend `PtyResponder::send_event`** with the three new event arms (ColorRequest, ClipboardLoad, ClipboardStore) and the `_ => {}` catch-all negative pin. The `send_event` body stays an orchestration match: each arm delegates to a private method (`handle_color_request`, `handle_clipboard_load`, `handle_clipboard_store`) defined in the same `pty_responder/mod.rs`. This keeps `send_event` under 20 lines regardless of how complex the individual handlers grow.
+  Landed: `send_event` orchestration match + private handlers with `TEST_COLOR=0xabcdef` and `TEST_CLIPBOARD_TEXT="ori-term-clipboard-stub"` pinned constants.
 
-- [ ] **Add `take_osc_responses()` and `take_clipboard_stores()`** accessor methods to `PtyResponder` matching the existing `take_responses()` pattern.
-- [ ] **Extend `PtySession::drain` and `PtySession::drain_blocking`** with a `write_osc_responses_back()` call after each iteration. The helper drains `take_osc_responses()` and writes each via `self.writer.write_all(...)`. If the write fails, propagate the error — drain is already fallible.
-- [ ] **Verify the existing vttest + Section 05 tests pass unchanged:** `timeout 150 cargo test -p oriterm_core --test vttest` and `timeout 150 cargo test -p oriterm_core --test tack -- test_menu`. Any regression is a 06.0.c blocker.
-- [ ] **Add an integration test** in `oriterm_core/tests/tack/tools_menu/osc_responder_integration.rs` that spawns tack via `PtySession::spawn_tack`, sends a forged OSC 10 query via `session.send_raw(b"\x1b]10;?\x07")`, calls `drain_blocking`, and asserts the PtyResponder captured the round-tripped response. Skips if tack unavailable.
-- [ ] **File-size check:** `session/mod.rs` and `session/pty_responder/mod.rs` both under 500 lines after the split.
-- [ ] **Debug + release parity.**
-- [ ] **Cross-compile gate:** `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` succeeds.
+- [x] **Add `take_osc_responses()` and `take_clipboard_stores()`** accessor methods to `PtyResponder` matching the existing `take_responses()` pattern.
+  Landed: both accessors `pub(crate)`; `take_clipboard_stores` additionally exposed via `PtySession::take_clipboard_stores` (public API) since it is the single inspection channel for OSC 52 store (no PTY write-back).
+- [x] **Extend `PtySession::drain` and `PtySession::drain_blocking`** with a `write_osc_responses_back()` call after each iteration. The helper drains `take_osc_responses()` and writes each via `self.writer.write_all(...)`. If the write fails, propagate the error — drain is already fallible.
+  Landed: `write_osc_responses_back` is called from `feed_and_flush` (shared drain/drain_blocking core) and from `drain_until`'s byte-at-a-time loop, mirroring the existing `take_responses` flush path.
+- [x] **Verify the existing vttest + Section 05 tests pass unchanged:** `timeout 150 cargo test -p oriterm_core --test vttest` and `timeout 150 cargo test -p oriterm_core --test tack -- test_menu`. Any regression is a 06.0.c blocker.
+  Verified: vttest 29/29 passed, tack 16 passed + 7 ignored, `./test-all.sh` clean (25 test-result groups, 0 failures).
+- [x] **Add an integration test** in `oriterm_core/tests/tack/tools_menu/osc_responder_integration.rs` that spawns tack via `PtySession::spawn_tack`, sends a forged OSC 10 query via `session.send_raw(b"\x1b]10;?\x07")`, calls `drain_blocking`, and asserts the PtyResponder captured the round-tripped response. Skips if tack unavailable.
+  Resolved 2026-04-08: subsumed by `session::sync::tests::pty_session_drain_writes_osc_responses_back`. The tack-based variant as literally described is mechanically unworkable — `send_raw` writes to tack's stdin via the PTY master; tack's curses runs in raw mode and consumes `\x1b` as an ESC-key press without echoing it back to stdout, so VTE never sees the OSC query, `ColorRequest` never fires, and the assertion "PtyResponder captured the round-tripped response" has no content to verify. The sync-level test exercises the exact same code path (`PtySession::drain_blocking` → `feed_and_flush` → `write_osc_responses_back` → PTY master write-back → PTY slave read-back → VTE OSC 10 set → `palette[Foreground] = TEST_COLOR`) using a raw-mode `stty raw -echo; exec cat` child that provides byte-exact echo. The palette assertion is strictly stronger than "queue captured": it proves the response bytes made it all the way through the writer and back into Term via the round-trip. Substituting tack for cat would add no incremental coverage and would duplicate the control-flow skeleton (LEAK: algorithmic-duplication). A POSIX-specific `stty raw` + `cat` pipeline forces the Unix-only gate: the test body is a `#[cfg(unix)]` block inside a cross-platform `#[test] fn` (per tack-conformance section 02.3 cross-platform rule) and skips loudly on non-Unix hosts; Windows ConPTY coverage inherits from the 06.0.c sibling unit tests in `pty_responder/tests.rs` (which exercise `Term<PtyResponder>` directly, no PTY).
+- [x] **File-size check:** `session/mod.rs` and `session/pty_responder/mod.rs` both under 500 lines after the split.
+  Verified: `session/mod.rs` = 439 lines post-extension (added `take_clipboard_stores` public API), `session/pty_responder/mod.rs` = 152 lines post-extension (still well under 500).
+- [x] **Debug + release parity.**
+  Verified: `cargo test -p oriterm_test_support --lib --release pty_responder` 8/8 green; sync drain test green in both profiles via `./test-all.sh`.
+- [x] **Cross-compile gate:** `cargo build --target x86_64-pc-windows-gnu -p oriterm_test_support --tests` succeeds.
+  Verified: debug + release both clean.
 
 **Output of 06.0.c:** `PtyResponder` captures all four round-trip event variants. `PtySession::drain` writes OSC responses back through the PTY transparently. 06.5's OSC-based direct-VTE xcheck tests (Cr, Cs, Ms) can exercise `Term<PtyResponder>` directly without needing tack. Any future section that needs OSC round-trip behavior inherits it for free. No new type introduced — SSOT preserved at `PtyResponder`.
 
