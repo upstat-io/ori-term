@@ -85,22 +85,23 @@ fn tack_smoke_main_menu_at_80x24() {
     // later runs compare against it byte-for-byte.
     insta::assert_snapshot!("tack_smoke_main_menu_80x24", grid);
 
-    // Send 'q' + newline to quit tack cleanly.
-    session.send(b"q\n");
-
-    // Assert tack actually exited within 2 seconds. wait_for_child_exit
-    // polls portable_pty::Child::try_wait() and panics with the
-    // current grid on timeout. Without this assertion the test would
-    // silently pass even if tack hung after receiving 'q\n' — the
-    // parent simply stops reading bytes during the implicit
-    // `wait(300)` inside `send`, but the child stays alive.
+    // Quit tack via the canonical state-aware helper. `quit_tack(5)`
+    // is the strict superset of `wait_for_child_exit(2_000)` from
+    // Section 03's handoff contract item 3: Phase 1 sends a bare
+    // `q` per iteration via `send_raw` (raw mode, no newline) and
+    // observes `try_wait()` between sends; Phase 2 IS exactly
+    // `wait_for_child_exit(2_000)`. The previous
+    // `send(b"q\n") + wait_for_child_exit(2_000)` antipattern is
+    // banned project-wide — see plans/tack-conformance/section-04
+    // -scenario-framework.md, runner/mod.rs, and quit_tack's
+    // rustdoc for the rationale.
     //
     // Exit-status assertion: verified exit 0 across 10 consecutive
-    // runs on ncurses 6.4 / tack v1.08 (Linux x86_64) during 03.5.
-    // The supplementary `eprintln!` keeps the exact code in CI logs
-    // so a future distro upgrade surfaces a breadcrumb before the
+    // runs on ncurses 6.4 / tack v1.08 (Linux x86_64). The
+    // supplementary `eprintln!` keeps the exact code in CI logs so
+    // a future distro upgrade surfaces a breadcrumb before the
     // `assert!` flips the test red.
-    let exit = session.wait_for_child_exit(2_000);
+    let exit = session.quit_tack(5);
     eprintln!("tack_smoke_main_menu_at_80x24: tack exit status = {exit:?}");
     assert!(
         exit.success(),
