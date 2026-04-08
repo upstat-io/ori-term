@@ -40,7 +40,7 @@ inspired_by:
   - "Alacritty ref tests (alacritty_terminal/tests/ref.rs — scenario-directory + sidecar config + grid assertion)"
 depends_on: ["03"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-07
 sections:
   - id: "04.0.a"
@@ -66,7 +66,7 @@ sections:
     status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "04.N"
     title: "Completion Checklist"
     status: not-started
@@ -1809,13 +1809,17 @@ The first real scenario. It validates the entire framework from top to bottom: s
   Impact: the review trail is no longer authoritative on one of Section 04's central behavior changes. A future maintainer reading only the success criteria or runner comments could "correct" the code back toward `q\n` sends or expect an immediate overflow panic, reintroducing the state-machine issue the implementation is explicitly avoiding.
   Resolved: Fixed on 2026-04-07. Frontmatter success criteria for `quit_tack` (line 21) and the Section 03 handoff reconciliation (line 30) both rewritten to describe the actual behavior: Phase 1 sends a bare `q` per iteration via `send_raw` (no newline — tack reads in raw mode and `\n` confuses nested menu state), observes `try_wait()` between sends, and Phase 2 falls through to `wait_for_child_exit(2_000)` for canonical bounded-poll exit observation. The runner/mod.rs:160 doc comment was also updated to match. The Section 03 handoff reconciliation now explicitly says "Phase 2 IS exactly `wait_for_child_exit(2_000)`" so the strict-superset relationship is unambiguous.
 
-- [ ] `[TPR-04-005][medium]` [plans/tack-conformance/section-04-scenario-framework.md](/home/eric/projects/ori_term/plans/tack-conformance/section-04-scenario-framework.md#L1), [plans/tack-conformance/00-overview.md](/home/eric/projects/ori_term/plans/tack-conformance/00-overview.md#L193), [CLAUDE.md](/home/eric/projects/ori_term/CLAUDE.md#L165) — Section 04 is still not actually plan-synced, so the latest docs pass closed the prior TPR items too early.
-  Evidence: the section frontmatter still says `status: in-progress`, `00-overview.md` still lists Section 04 as `Not Started`, and the section's own 04.N checklist still leaves the plan-sync items unchecked (`frontmatter status`, `00-overview`, `All TPR checkpoint findings resolved`). That directly conflicts with the same file's `third_party_review.status: resolved`, the body/header status text, and `index.md` claiming Section 04 is complete. Per [CLAUDE.md](/home/eric/projects/ori_term/CLAUDE.md#L165), `/continue plan` resumes the first section whose YAML status is `not-started` or `in-progress`, so the stale frontmatter is not cosmetic: it keeps automation pointed at Section 04 instead of moving on to Section 05.
-  Impact: the repository now has two incompatible sources of truth for Section 04 completion. Human readers of `index.md` will think the section is done, but plan-driven workflows that follow YAML status and `00-overview.md` will still treat it as the active section. That is concrete plan drift, and it blocks the normal "finish 04, then resume 05" workflow the repo rules require.
+- [x] `[TPR-04-005][medium]` Section 04 plan-sync workflow blocker.
+  Evidence (as recorded by Codex iter 3): the section frontmatter said `status: in-progress`, `00-overview.md` still listed Section 04 as `Not Started`, and the section's own 04.N checklist still left the plan-sync items unchecked. Per CLAUDE.md, `/continue plan` resumes the first section whose YAML status is `not-started` or `in-progress`, so this was a real workflow blocker.
+  Resolved: Fixed on 2026-04-07 in commit `d4b7a787` (and re-applied here after Codex iter 4 reverted the metadata while recording TPR-04-007). Section 04 frontmatter is `status: complete`, `00-overview.md` Quick Reference shows `Complete`, `index.md` Section 04 status is `Complete`, the in-body Success Criteria block is fully `[x]`, and every plan-sync sub-item in 04.N is checked.
 
-- [ ] `[TPR-04-006][low]` [crates/oriterm_test_support/src/session/teardown/mod.rs](/home/eric/projects/ori_term/crates/oriterm_test_support/src/session/teardown/mod.rs#L72) — `quit_tack()`'s rustdoc still describes the obsolete pre-fix algorithm even though the implementation and tests now follow a different two-phase contract.
-  Evidence: the doc comment still says each iteration sends `b"q\n"`, drains for 200 ms, applies a 10 ms idle sleep, and panics immediately after `max_iterations`. The code below it now sends a bare `b"q"`, drains for 150 ms, does not perform a per-iteration idle sleep, and then hands off to `wait_for_child_exit(2_000)` after exhausting the send budget. That means the source-level documentation in the implementation file still tells the exact story TPR-04-004 said had been synced away.
-  Impact: this is source-doc drift rather than a runtime defect, but it matters because `session/teardown/mod.rs` is the canonical implementation site for `quit_tack`. A future maintainer reading the rustdoc can still "fix" the code back toward the old newline-based loop or expect the wrong timeout behavior.
+- [x] `[TPR-04-006][low]` `quit_tack()`'s rustdoc described the obsolete pre-fix algorithm.
+  Evidence (as recorded by Codex iter 3): the doc comment said each iteration sends `b"q\n"`, drains for 200 ms, applies a 10 ms idle sleep, and panics immediately after `max_iterations`. The code below it sent bare `b"q"`, drained for 150 ms, no per-iteration idle sleep, and handed off to `wait_for_child_exit(2_000)` after exhausting the send budget.
+  Resolved: Fixed on 2026-04-07 in commit `d4b7a787`. Rewrote `quit_tack`'s rustdoc in `session/teardown/mod.rs:72` to describe the actual two-phase implementation: Phase 1 (in-loop, max_iterations send budget) sends bare `q` via `send_raw`, drains 150 ms, and observes `try_wait()`; Phase 2 (after the loop) falls through to `wait_for_child_exit(2_000)` for canonical bounded-poll exit observation. Codex iter 4's spurious recording of this same finding under TPR-04-006 was based on a stale read; the rustdoc has been the new version since `d4b7a787` and remains so.
+
+- [x] `[TPR-04-007][low]` Navigator `catch_unwind` grep gate was over-broad.
+  Evidence (recorded by Codex iter 4): the 04.N completion checklist marked the gate complete with the concrete command `grep -r catch_unwind crates/oriterm_test_support/src/tack_framework/navigator/` returning zero lines. The literal grep still returns 4 hits — all in comments/doc references to the rejected `catch_unwind` design (`navigator/mod.rs:6`, `navigator/mod.rs:15`, `navigator/tests.rs:80`, `navigator/tests.rs:119`), not executable code. The intent of the gate was "no executable `catch_unwind` calls", but the literal grep matches the word in comments too.
+  Resolved: Fixed on 2026-04-07. Tightened the 04.N gate language to use a regex that targets actual function calls and `use` imports, not the bare word in comments: `rg -n '\b(use\s+[^;]*catch_unwind|catch_unwind\s*\()' crates/oriterm_test_support/src/tack_framework/navigator/`. Verified this returns zero lines. The doc comments and test fixture comments that document the M4b banned pattern stay (stripping them would lose the design history); the gate now matches the invariant it was supposed to enforce.
 
 ---
 
@@ -1864,7 +1868,7 @@ The first real scenario. It validates the entire framework from top to bottom: s
 - [x] `TackNavigator::navigate` snapshots the pre-send grid and panics with a "pre-existing-anchor violation" message if `step.wait_for` (or any `or_wait_for` entry) is already present (C1 fix)
 - [x] `TackNavigator::navigate` honors `MenuStep::or_wait_for` alternates via a single `wait_for_any` call over the combined `[primary, ...alternates]` anchor slice, and surfaces all attempted anchors in the final timeout panic (M6 + M4b fix)
 - [x] `crates/oriterm_test_support/src/tack_framework/navigator/tests.rs` includes `navigator_panics_with_step_index_on_timeout`, `navigator_panics_when_anchor_already_present_in_pre_grid`, AND `navigator_matches_alternate_when_primary_never_appears` (the semantic pin for the M4b `wait_for_any`-based alternate handling — replaces the earlier `catch_unwind` design)
-- [x] No use of `std::panic::catch_unwind` anywhere in `tack_framework/navigator/` — enforce via grep in the completion check (`grep -r catch_unwind crates/oriterm_test_support/src/tack_framework/navigator/` returns zero lines)
+- [x] No use of `std::panic::catch_unwind` as control flow anywhere in `tack_framework/navigator/`. The verification grep targets actual function calls and `use` imports, not the word in comments (the navigator's doc comments and test fixture comments legitimately reference `catch_unwind` to document the M4b banned pattern, and stripping that text would lose the design history). Enforced via: `rg -n '\b(use\s+[^;]*catch_unwind|catch_unwind\s*\()' crates/oriterm_test_support/src/tack_framework/navigator/` returns zero lines. Verified 2026-04-07.
 
 **Runner (04.3):**
 - [x] `crates/oriterm_test_support/src/tack_framework/runner/mod.rs` defines `ScenarioRunner::run()`, `run_at(cols, rows)`, `run_with_session_at(cols, rows)`, `available()`, `ScenarioOutcome` (with `scenario_id`, `screen_id`, `cols`, `rows`, `snapshot_name()`, `golden_name()`), and `LiveSession` (with `snapshot_name()`, `golden_name()`, `finish(self) -> ExitStatus`). The module is a directory module (`runner/mod.rs` + `runner/tests.rs`) because it has sibling tests per `.claude/rules/test-organization.md`
@@ -1894,7 +1898,7 @@ The first real scenario. It validates the entire framework from top to bottom: s
 - [x] `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green
 - [x] Plan annotation cleanup: no temporary scaffolding in `.rs` files
-- [x] All TPR checkpoint findings resolved (see `04.R`)
+- [ ] All TPR checkpoint findings resolved (see `04.R`)
 - [x] **Plan sync**:
   - [x] This section's frontmatter `status` → `complete`
   - [x] `00-overview.md` Quick Reference table: Section 04 marked Complete
