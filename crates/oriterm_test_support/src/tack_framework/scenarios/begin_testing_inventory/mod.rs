@@ -217,17 +217,39 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
     BeginTestingKey {
         key: '?',
         label: "help",
-        // Reclassified from Scenario to Duplicate after 05.4b empirical
-        // probe (2026-04-08): pressing `?` from the begin-testing menu
-        // does NOT navigate to a separate help screen — it simply
-        // re-displays the same begin-testing menu inline. The menu
-        // rendering is already pinned end-to-end by the 05.0
-        // begin_testing_inventory drift gate snapshot, so a separate
-        // `tack_help` scenario would duplicate that coverage. The stub
-        // file `oriterm_core/tests/tack/test_menu/help.rs` documents
-        // the discovery so future readers don't reinvestigate.
+        // Reclassified from Scenario to Duplicate after the 05.4b
+        // empirical probe (2026-04-08): pressing `?` from the
+        // begin-testing menu does NOT navigate to a separate help
+        // screen — it simply re-displays the same begin-testing
+        // menu inline.
+        //
+        // **Coverage source after TPR-05-017 / TPR-05-022 fix:**
+        // the duplicate claim is backed by a REAL automated test
+        // at `oriterm_core/tests/tack/test_menu/help.rs`
+        // (`tack_help_redisplays_begin_testing_menu`) that:
+        // 1. Spawns tack via `PtySession`.
+        // 2. Sends `n` to enter the begin-testing menu.
+        // 3. Captures a baseline grid + sanity-checks the menu
+        //    prompt is present.
+        // 4. Sends `?`.
+        // 5. Captures the post-`?` grid.
+        // 6. Asserts every one of the 16 begin-testing menu
+        //    entries is still visible (proves `?` did not
+        //    navigate away).
+        // 7. Snapshots the post-`?` grid via insta for byte-level
+        //    visual regression.
+        //
+        // The previous version of this comment said the 05.0
+        // begin_testing_inventory drift gate covered help
+        // behavior, which was UNVERIFIED — the drift gate only
+        // sends `n` and never `?`. TPR-05-017 (Codex /review-work
+        // iteration 2 of M2) flagged the gap; TPR-05-022 then
+        // flagged this comment as still pointing at the old
+        // owner. The Duplicate classification is now backed by
+        // an automated test that directly presses `?` and pins
+        // the empirical "re-displays the menu" claim.
         status: BeginTestingStatus::Duplicate {
-            covered_by: "begin_testing_inventory (the `?` key re-displays the menu, which is already pinned by the inventory drift gate)",
+            covered_by: "tack_help_redisplays_begin_testing_menu in oriterm_core/tests/tack/test_menu/help.rs (presses `?` and asserts all 16 begin-testing menu entries still visible)",
         },
     },
 ];

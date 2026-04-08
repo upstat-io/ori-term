@@ -23,9 +23,17 @@
 //! (rs1) reset_1string, not present.  (rs1) Done
 //! ```
 //!
-//! Tack only probes `rs1` (and reports it as `not present` because
-//! ori_term.info declares `rs2` instead). See
-//! `crates/oriterm_test_support/src/tack_framework/scenarios/padding/mod.rs`
+//! Tack only probes `rs1` and reports it as `not present` because
+//! `extra/ori_term.info` declares NO reset-string capabilities at
+//! all (neither `rs1`, `rs2`, nor `rs3`). The previous version of
+//! this comment incorrectly said "ori_term.info declares `rs2`
+//! instead" — TPR-05-021 (Codex /review-work iteration 4 of M2)
+//! correctly noted that this was a factual error against the
+//! pinned terminfo source. Whether `extra/ori_term.info` should
+//! declare any reset string is a Section 05.5 cap-coverage matrix
+//! decision; this wrapper does NOT pin the `not present` substring
+//! because that depends on the terminfo state, not on tack itself.
+//! See `crates/oriterm_test_support/src/tack_framework/scenarios/padding/mod.rs`
 //! rustdoc for the full empirical evidence and the hybrid coverage
 //! strategy.
 
@@ -64,9 +72,11 @@ fn tack_padding() {
     //
     // The `not present` part of tack's output is NOT pinned
     // because that's a property of the current ori_term.info
-    // (which declares rs2 but not rs1), not of the padding test
-    // itself. If a future ori_term.info adds rs1, the wrapper
-    // should still pass.
+    // (which declares NO reset-string caps at all — neither rs1,
+    // rs2, nor rs3), not of the padding test itself. If a future
+    // ori_term.info adds rs1, the wrapper should still pass.
+    // (TPR-05-021 fix: previous version incorrectly said
+    // "declares rs2 but not rs1".)
     assert!(
         outcome.grid_text.contains("(rs1)"),
         "expected captured grid to contain '(rs1)' parenthesized cap, got:\n{}",
