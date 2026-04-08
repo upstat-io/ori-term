@@ -74,7 +74,7 @@ fn navigator_panics_when_anchor_already_present_in_pre_grid() {
 /// that delays for ~500 ms and then prints `alt_anchor`. The
 /// navigator sends an empty step whose primary anchor is impossible
 /// and whose only alternate is `alt_anchor`. After `send(b"")` (which
-/// includes a 300 ms quiesce) the wait_for_step poll loop observes
+/// includes a 300 ms quiesce) the `wait_for_step` poll loop observes
 /// `alt_anchor` arriving and matches it.
 ///
 /// A regression that reverted to `catch_unwind`-based alternate

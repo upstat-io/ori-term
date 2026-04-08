@@ -104,7 +104,7 @@ fn live_session_finish_asserts_clean_exit_via_quit_tack() {
 ///
 /// Unix-only: a clean "exit 1 on single read" child is hard to
 /// construct portably in `cmd.exe` without spawning a temp `.cmd`
-/// file. The Windows ConPTY exit-success path is exercised by
+/// file. The Windows `ConPTY` exit-success path is exercised by
 /// `live_session_finish_asserts_clean_exit_via_quit_tack`'s Windows
 /// arm above (the happy path), and the panic body is
 /// platform-agnostic (`assert!` + `format!` + `grid_text()`), so the
