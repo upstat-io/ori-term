@@ -22,12 +22,14 @@ inspired_by:
   - "ori_term Section 01 dedup (plans/tack-conformance/section-01-shared-pty-session.md — assert_golden becomes a free function taking &PtySession)"
   - "ori_term Section 04 scenario framework (plans/tack-conformance/section-04-scenario-framework.md — ScenarioRunner pattern plugged into GPU here)"
   - "Alacritty visual regression test patterns (alacritty/extra/alacritty.info compiled, then alacritty's screenshots-for-comparison flow)"
-depends_on: ["01", "02", "04"]
+depends_on: ["01", "02", "04", "06"]
 depends_on_contract:
   - section: "05"
     contract: "cap_coverage CONTRACT only — Section 07 does NOT need Section 05's body. The 05.5 cap-coverage matrix establishes a per-section CapCoverageContribution pattern; Section 07 inherits the existing Section 04 LiveSession::finish contract and uses TACK_MODES_AM (stable-screen) for its modes golden, NOT a phase-captured per-cap golden. Per the 05.5b open architectural decision, the default verdict is NO `run_phase_with_session_at` GPU bridge — Section 07 stays with stable-screen LiveSession. Section 07 can therefore start as soon as Section 04 lands; the 05 dependency is only the cap_coverage contract, which Sections 06/08 own and Section 07 does not contribute to (Section 07 has zero cap-coverage extension)."
   - section: "06"
-    contract: "scenario const paths only — Section 07 references `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS` which Section 06 introduces. Section 07 does not need Section 06's full body, only the const path locked into `oriterm_test_support::tack_framework::scenarios::character_sets`."
+    contract: "scenario const paths only — Section 07 references `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS` which Section 06 introduces. Section 07 does not need Section 06's full body, only the const path locked into `crates/oriterm_test_support/src/tack_framework/scenarios/character_sets/mod.rs` (single-word module name, NOT `tools_character_sets` — Section 06's Agent-2 review pass pinned this naming convention to match the existing Sections 04/05 scenarios). If Section 06 ships without this exact path, Section 07 is blocked — the 06.N completion checklist MUST verify the const is at the pinned path before Section 06 closes."
+<!-- reviewed: cohesion fix (Agent 2, Section 06 review) — Section 07's depends_on was extended to include "06" per Section 04's 04.N checklist note, and the depends_on_contract path pinning was tightened to guarantee the module path Section 06 lands matches what Section 07 imports. -->
+
 third_party_review:
   status: none
   updated: null

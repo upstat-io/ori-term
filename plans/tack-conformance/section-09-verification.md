@@ -7,7 +7,7 @@ goal: "Final verification gate for the entire tack-conformance plan. Cross-valid
 success_criteria:
   - "Cross-validation matrix: every DA/DSR response captured by tack scenarios in Section 06 matches the same response asserted by vttest menu6 (oriterm_core/tests/vttest/menu6.rs). Document the diff (should be empty)."
   - "Cross-platform skip matrix: documented for Linux, macOS, Windows. Each row shows: tic available?, tack available?, infocmp available?, GPU adapter available?, expected pass/skip behavior."
-  - "All Section 01-08 deliverables verified: shared PtySession, terminfo provisioning, scenario framework, 25+ catalog scenarios (18 test_menu + 7 tools_menu), 6 GPU goldens, full kf1-kf63 keyboard cross-check"
+  - "All Section 01-08 deliverables verified: shared PtySession, terminfo provisioning, scenario framework, 50+ catalog scenarios (18 test_menu + ~12 tools_menu active + ~23 direct-VTE cap xcheck from Section 06 Track B), 6 GPU goldens, full kf1-kf63 keyboard cross-check"
   - "Bounded-poll invariants verified for the new Section 04 primitives: `PtySession::wait_for_with_context` (delegates to the same loop body as `wait_for`, no parallel poll loop) and `PtySession::quit_tack` (state-aware loop that observes `try_wait()` after every `q\\n`, panics on max-iteration overflow). Section 09 runs the unit tests added by 04.0 (`pty_session_wait_for_with_context_uses_custom_message`, `pty_session_quit_tack_returns_status_when_child_exits`, `pty_session_quit_tack_panics_on_max_iterations`) and confirms they assert the contract end-to-end"
   - "Per-scenario `tic` compile cost decision (Mi2): after Sections 05/06/07 land, measure `./test-all.sh` wall-clock and decide whether to add the `OnceLock` `tic` cache called out in Section 04's `runner.rs` Mi2 lever. If the regression vs. pre-tack-conformance baseline exceeds 10s wall-clock, file `/add-bug` and fix in Section 09 — do NOT defer to a follow-up plan (the lever exists in Section 04's docs precisely so Section 09 can pull it without scope creep)"
   - "`./test-all.sh` green: vttest text + vttest GPU goldens + tack text + tack GPU goldens + keyboard terminfo_xcheck all pass"
@@ -82,7 +82,9 @@ Run every scenario added by the plan and tabulate the results. Build the matrix 
 
 - [ ] Run vttest text tests (post-Section-01 dedup): `timeout 150 cargo test -p oriterm_core --test vttest`. Expected: 198 scenarios all pass, zero `.snap.new` files, zero pixel diffs.
 - [ ] Run vttest GPU goldens: `timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden`. Expected: 98 PNG goldens all match.
-- [ ] Run tack text scenarios: `timeout 150 cargo test -p oriterm_core --test tack`. Expected: smoke (1) + test_menu 18 scenarios (modes x7, acs, gr, color x3, cursor x3, pad_timing, send_strings, labels) + tools_menu 7 scenarios (DA1, DA2, DSR, SGR, character_sets, enq_ack, osc_queries) = **26 scenarios** all pass.
+- [ ] Run tack text scenarios: `timeout 150 cargo test -p oriterm_core --test tack`. Expected: smoke (1) + test_menu 18 scenarios (modes x7, acs, gr, color x3, cursor x3, pad_timing, send_strings, labels) + tools_menu ~12 active `#[test] fn`s (tools_menu_inventory discovery + status_reports_inventory discovery + ~8 status_reports per-sub-test scenarios covering DA1/DA2/DA3/DSR status/DSR CPR/DECRQM + sgr_modes + character_sets G0 DEC graphics + enq_ack) + 6 doc-only exclusion stubs (no #[test] fn bodies) = **~31 active scenarios + 6 stubs** all pass. Plus direct-VTE cap xcheck: `timeout 150 cargo test -p oriterm_core -- term::handler::tack_cap_xcheck` runs **~23 cap tests + meta-test** deterministically (Section 06 direct-VTE Track B).
+<!-- reviewed: cohesion fix (Agent 2 Section 06 review) — updated Section 09 scenario counts to match Section 06's final M2 catalog (old "7 tools_menu scenarios" was based on the pre-rewrite draft). -->
+
 - [ ] Run tack GPU goldens: `timeout 150 cargo test -p oriterm --features gpu-tests -- tack_golden`. Expected: **6 PNG goldens** all match (color x3, graphic_rendition, character_sets, modes).
 - [ ] Run keyboard cross-check: `timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck` (preferred in-crate path; fallback `--test keyboard_terminfo` only if Section 08's integration-test fallback was taken). Expected test functions: `function_keys_match_terminfo` (kf1-kf12), `function_keys_shift_match_terminfo` (kf13-kf24), `function_keys_ctrl_match_terminfo` (kf25-kf36), `function_keys_ctrl_shift_match_terminfo` (kf37-kf48), `function_keys_alt_match_terminfo` (kf49-kf60), `function_keys_alt_shift_match_terminfo` (kf61-kf63), `cursor_keys_app_mode_match_terminfo`, `cursor_keys_normal_mode_emit_csi`, `editing_keys_match_terminfo`, `infocmp_query_returns_none_for_cap_not_in_ori_term` = **10 test functions, ~80+ individual assertions**.
 - [ ] Run tack smoke test: `timeout 150 cargo test -p oriterm_core --test tack -- tack_smoke_main_menu_at_80x24`. Expected: passes deterministically.
@@ -112,7 +114,8 @@ Run every scenario added by the plan and tabulate the results. Build the matrix 
   | vttest GPU goldens | ~98 frames | 80x24 (mostly) | ✓ | ? | gpu-skip |
   | tack smoke | 1 | 80x24 | ✓ | ? | tools-skip |
   | tack test_menu | 18 | 80x24 + 97x33 + 120x40 (color/cursor) | ✓ | ? | tools-skip |
-  | tack tools_menu | 7 | 80x24 | ✓ | ? | tools-skip |
+  | tack tools_menu | ~12 active + 6 stubs | 80x24 | ✓ | ? | tools-skip |
+  | tack direct-VTE cap xcheck (Section 06 Track B) | 23 caps + meta-test | n/a | ✓ | ✓ | ✓ |
   | tack GPU goldens | 6 | 80x24 + 97x33 + 120x40 (color) | ✓ | ? | tools-skip OR gpu-skip |
   | keyboard terminfo_xcheck | kf1-kf63 + cursor (app+normal) + editing | n/a | ✓ | ? | tools-skip |
 
