@@ -146,6 +146,18 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
     BeginTestingKey {
         key: 'f',
         label: "test function keys",
+        // DelegatedToSection { section: "08" } classification is
+        // CORRECT (function-key coverage belongs in Section 08's
+        // keyboard-encoding crate, not in Section 05's tack
+        // catalog), but per TPR-05-018 (Codex /review-work
+        // iteration 2 of M2): Section 08 is currently
+        // `status: not-started` and the planned cross-check file
+        // `oriterm/src/key_encoding/terminfo_xcheck.rs` does NOT
+        // exist yet. Until Section 08 lands, function-key
+        // correctness for the `kf0..kf63` capability set is NOT
+        // under automated test. The doc-only stub at
+        // `oriterm_core/tests/tack/test_menu/function_key_test.rs`
+        // records this gap honestly.
         status: BeginTestingStatus::DelegatedToSection { section: "08" },
     },
     BeginTestingKey {

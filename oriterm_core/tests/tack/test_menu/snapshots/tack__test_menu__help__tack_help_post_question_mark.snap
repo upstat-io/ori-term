@@ -1,0 +1,28 @@
+---
+source: oriterm_core/tests/tack/test_menu/help.rs
+expression: post_help
+---
+ q) quit                                                                        
+ ?) help                                                                        
+                                                                                
+tack/test [n] >                                                                 
+                                                                                
+Main test menu                                                                  
+ e) edit terminfo                                                               
+ i) send reset and init                                                         
+ x) test modes and glitches                                                     
+ a) test alternate character set and graphic rendition                          
+ c) test color                                                                  
+ m) test cursor movement                                                        
+ f) test function keys                                                          
+ p) test padding and string capabilities                                        
+ P) test printer                                                                
+ /) test a specific capability                                                  
+ t) auto generate pad delays                                                    
+ n) run standard tests                                                          
+ r) repeat test                                                                 
+ s) skip to next test                                                           
+ q) quit                                                                        
+ ?) help                                                                        
+                                                                                
+tack/test [n] >
