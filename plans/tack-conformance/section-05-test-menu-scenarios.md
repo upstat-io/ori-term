@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Tack Scenarios: Test Menu (begin testing)"
-status: not-started
+status: in-progress
 reviewed: true
 needs_re_review_after: "04"
 re_review_reason: "REWRITTEN by Agent 1 of /review-plan against the final Section 04 API and validated end-to-end by Agents 2/3/4. The pre-rewrite version referenced obsolete API shapes (`MenuStep { send, wait_for }`, `outcome.id`, `grid.contains` for short labels), guessed tack v6.x menu keys (`a/c/u/p/l/k/e/f/o`) that do not match verified tack v1.08, and tried to use stable-screen capture for modes-family caps that scroll off the 24-row viewport before tack reports `Done`. The rewrite (a) adds an empirical Discovery & Inventory subsection (05.0) that pins the begin-testing menu graph, (b) adds a Phase-Capture Framework Extension subsection (05.0.b) that introduces `ScenarioRunner::run_phase` so mid-flow content can be captured before it scrolls, (c) adds a tack version gate (05.0.c), (d) gives every per-cap modes scenario a unique `screen_id` so snapshots/goldens do not collide, (e) replaces every `grid.contains(short)` with `grid_has_token` / `grid_has_paren_token`, (f) adds a cap-coverage matrix subsection (05.5) with the owner-partitioned `CapCoverageContribution` design (Pivot 5), (g) replaces the rejected `compile_error!` forcing-function with runtime `unverified_menu_key()` / `unverified_anchor()` sentinels (Pivot 3), (h) splits implementation into M1/M2 milestones with explicit gates (Pivot 1), (i) refines Sections 06/07/08 dependency granularity via `depends_on_contract` (Pivot 2), and (j) adds Mission Criterion Traceability + cross-section sync (05.5b). Agent 4's final pass added explicit testing-rigor checklist items (matrix dimensions, semantic pins, debug+release parity, sentinel-detection-before-spawn, failing-test-first ordering, parser edge cases, partition-test injection pin, real-terminfo count pin, helper-expansion boundary pins) across 05.0 / 05.0.b / 05.0.c / 05.1 / 05.2 / 05.3 / 05.4 / 05.5, ratified the open architectural decision in 05.5b (NO `run_phase_with_session_at` GPU bridge — `TACK_MODES_AM` stable-screen is the modes golden source), stripped all 91 `<!-- reviewed: ... -->` annotation markers, and flipped `reviewed: true`. The section is now ready for implementation by `/continue-roadmap` or a manual implementer."
@@ -79,7 +79,7 @@ sections:
     status: not-started
   - id: "05.N"
     title: "Completion Checklist (final TPR mandatory)"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 05: Tack Scenarios — Test Menu (begin testing)
