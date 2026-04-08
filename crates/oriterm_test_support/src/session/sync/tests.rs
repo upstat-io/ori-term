@@ -332,6 +332,128 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
 }
 
 #[test]
+fn pty_session_drain_writes_osc_responses_back() {
+    // SEMANTIC PIN for Section 06.0.c: `drain_blocking` must flush the
+    // `PtyResponder::osc_responses` queue back through `self.writer`
+    // after each VTE advance, exactly the same way it already flushes
+    // `take_responses` (DA/DSR path). Proof-of-work: spawn a stdin-echo
+    // child in raw mode, forge an OSC 10 query into the child's stdin,
+    // and observe that after `drain_blocking` finishes,
+    // `palette().color(10)` equals `PtyResponder`'s pinned TEST_COLOR
+    // (0xabcdef).
+    //
+    // Why palette-inspection proves the round-trip. The only path that
+    // sets palette[10] to 0xabcdef is: (1) child echoes query bytes back
+    // through PTY read → (2) VTE parses OSC 10 query → (3) Term fires
+    // `Event::ColorRequest(10, formatter)` → (4) PtyResponder calls
+    // `formatter(TEST_COLOR)` and buffers the canonical response into
+    // `osc_responses` → (5) `drain_blocking`'s `write_osc_responses_back`
+    // writes that response through `self.writer` → (6) child echoes
+    // response bytes back → (7) VTE parses the response as an OSC 10
+    // *set* and calls `palette.set_indexed(10, TEST_COLOR)`. Any broken
+    // link in that chain leaves palette[10] at its default.
+    //
+    // **Raw mode is load-bearing.** The PTY line discipline defaults
+    // to ICANON + ECHOCTL, which echoes `\x1b` as the visible two-byte
+    // sequence `^[` — that is NOT a valid OSC query for VTE, so the
+    // round-trip silently fails. `stty raw -echo` disables canonical
+    // mode and terminal-driver echo; `cat` then provides byte-exact
+    // echo from stdin to stdout.
+    //
+    // **Platform scope.** The raw-mode `stty` + `cat` pipeline is
+    // POSIX-specific. Windows ``ConPTY`` has a different
+    // line-discipline model with no direct `stty raw` equivalent, and
+    // the responder's OSC dispatch is platform-independent Rust, so
+    // the Windows path is covered by the sibling unit tests in
+    // `pty_responder/tests.rs` (which exercise `Term<PtyResponder>`
+    // directly, no PTY). The test function itself exists on every
+    // platform — the cross-platform `#[test] fn` existence rule from
+    // tack-conformance section 02.3 is preserved; only the body skips
+    // on non-Unix hosts with a loud `eprintln!`.
+    #[cfg(not(unix))]
+    {
+        eprintln!(
+            "pty_session_drain_writes_osc_responses_back: skipping on \
+             non-unix host — raw-mode PTY echo pipeline is POSIX-specific; \
+             Windows coverage lives in pty_responder sibling unit tests"
+        );
+        return;
+    }
+
+    #[cfg(unix)]
+    {
+        // `stty raw -echo` disables ICANON + ECHO + ECHOCTL so the PTY
+        // driver no longer echoes control bytes as `^X` sequences; the
+        // subsequent `cat` then echoes every input byte byte-exact.
+        // `echo STTY-READY` after `stty` is the synchronisation marker
+        // — the test blocks on that marker before sending the OSC
+        // query, eliminating the race between `stty` applying and
+        // `send_raw` firing.
+        let mut c = CommandBuilder::new("/bin/sh");
+        c.args(["-c", "stty raw -echo; printf 'STTY-READY\\n'; exec cat"]);
+        c.env("TERM", "xterm-256color");
+        let mut session = PtySession::spawn(c, 80, 24);
+
+        // Wait until `stty` has applied and `printf` has fired. Any
+        // content arriving after the marker is guaranteed raw-echo
+        // territory.
+        session.wait_for("STTY-READY", 5_000);
+
+        // OSC 10 query/set targets the foreground color entry in the
+        // palette, which lives at `NamedColor::Foreground as usize`
+        // (= 256). Checking ANSI index 10 (bright green) would always
+        // succeed trivially because OSC 10 never touches it.
+        const FG_INDEX: usize = 256;
+
+        // Baseline sanity: palette[FG] must NOT be TEST_COLOR before
+        // the round-trip fires. Defends against a future change to
+        // Theme::default that accidentally picks 0xabcdef as the
+        // default — the test would otherwise pass trivially with no
+        // OSC handling at all.
+        let baseline = session.term().palette().color(FG_INDEX);
+        assert_ne!(
+            (baseline.r, baseline.g, baseline.b),
+            (0xab, 0xcd, 0xef),
+            "theme default collided with the pinned TEST_COLOR — the \
+             round-trip assertion would be vacuous"
+        );
+
+        // Forge the OSC 10 query into the child's stdin. Raw-mode `cat`
+        // echoes it back byte-exact through the PTY reader channel; the
+        // drain loop picks it up, feeds it through VTE, and fires
+        // ColorRequest. We terminate with `\x1b\\` (ST) rather than BEL
+        // so the VTE parser's OSC state machine transitions via the
+        // canonical String-Terminator path.
+        session.send_raw(b"\x1b]10;?\x1b\\");
+
+        // Drive the round-trip. Each drain_blocking budget is a
+        // generous 500 ms upper bound (typical round-trip is <10 ms on
+        // a local PTY loop) so a CI runner under load still completes.
+        // Four iterations are enough for: (1) query echo arrives →
+        // ColorRequest → osc_resp flushed to writer; (2) response echo
+        // arrives → palette update; plus slack for kernel pipe
+        // scheduling.
+        for _ in 0..4 {
+            session.drain_blocking(500);
+        }
+
+        let captured = session.term().palette().color(FG_INDEX);
+        assert_eq!(
+            (captured.r, captured.g, captured.b),
+            (0xab, 0xcd, 0xef),
+            "palette[Foreground] must be TEST_COLOR (0xabcdef) after \
+             the OSC 10 query/response round-trip — drain_blocking \
+             failed to flush PtyResponder::osc_responses back through \
+             the PTY writer. Observed palette[Foreground]: \
+             ({:#04x}, {:#04x}, {:#04x})",
+            captured.r,
+            captured.g,
+            captured.b,
+        );
+    }
+}
+
+#[test]
 fn drain_until_returns_none_immediately_on_channel_disconnect() {
     // SEMANTIC PIN for TPR-05-003: drain_until's contract is that
     // channel closure (the reader thread has hung up because the

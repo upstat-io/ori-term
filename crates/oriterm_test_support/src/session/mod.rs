@@ -23,6 +23,7 @@ use std::io::{Read, Write};
 use std::sync::Mutex;
 use std::thread;
 
+use oriterm_core::event::ClipboardType;
 use oriterm_core::{Term, Theme};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
@@ -302,6 +303,19 @@ impl PtySession {
     #[must_use]
     pub fn term(&self) -> &Term<PtyResponder> {
         &self.term
+    }
+
+    /// Drain every `ClipboardStore` event captured since the last call.
+    ///
+    /// OSC 52 store is a one-way write from the terminal client to the
+    /// host clipboard — there is no PTY response to flush back, so
+    /// scenarios inspect this side channel directly to verify that a
+    /// copy sequence reached `Term` with the expected clipboard target
+    /// and decoded payload. Section 06.5 direct-VTE cap xcheck tests
+    /// consume this for OSC 52 coverage.
+    #[must_use]
+    pub fn take_clipboard_stores(&self) -> Vec<(ClipboardType, String)> {
+        self.term.event_listener().take_clipboard_stores()
     }
 
     /// Number of columns the PTY was opened with.
