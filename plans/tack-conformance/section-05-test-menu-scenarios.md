@@ -1122,8 +1122,8 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 ## 05.2 ACS / graphic rendition scenarios (driven by 05.0 inventory)
 
 **File(s):**
-- `crates/oriterm_test_support/src/tack_framework/scenarios/acs.rs` (NEW)
-- `crates/oriterm_test_support/src/tack_framework/scenarios/graphic_rendition.rs` (NEW)
+- `crates/oriterm_test_support/src/tack_framework/scenarios/acs/mod.rs` + `acs/tests.rs` (NEW — directory module per `.claude/rules/test-organization.md`'s "tests in sibling `tests.rs`" rule)
+- `crates/oriterm_test_support/src/tack_framework/scenarios/graphic_rendition/mod.rs` + `graphic_rendition/tests.rs` (NEW — same directory-module layout)
 - `oriterm_core/tests/tack/test_menu/acs.rs` (NEW — `#[test] fn` wrapper)
 - `oriterm_core/tests/tack/test_menu/graphic_rendition.rs` (NEW — `#[test] fn` wrapper)
 
@@ -1150,7 +1150,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
   **Done.** Inventory entry: `BeginTestingKey { key: 'a', label: "test alternate character set and graphic rendition", status: BeginTestingStatus::Scenario }`. Verified key is `a`. Empirical probe via `expect` confirmed the sub-menu prompt is `tack/test/acs [n] >` and the run trigger is `n` (same pattern as modes-controls).
 
-- [x] **Create `scenarios/acs.rs`:**
+- [x] **Create `scenarios/acs/{mod, tests}.rs`:** (originally drafted as flat `scenarios/acs.rs`; landed as directory module — see Done note)
 
   **Done.** Implemented as a directory module (`scenarios/acs/{mod, tests}.rs`) per `.claude/rules/test-organization.md`'s "tests in sibling `tests.rs`" rule. The `mod.rs` contains `parse_acs_screen` (counts DEC line-drawing chars in U+2500..=U+257F via a `BTreeSet<char>`, returns the count via `notes`) and `TACK_ACS_GRAPHIC_CHARS` with the verified `n -> a -> n` menu path and `Done` ready anchor. Sentinel placeholders skipped per the empirical-finding block above — the const went directly from verified values to working tests because 05.0's inventory had the `a` key pinned and the empirical `expect` probe captured the `tack/test/acs [n] >` sub-menu prompt before 05.2 began.
 
@@ -1230,7 +1230,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   ```
   Runtime sentinels keep the workspace compilable while still preventing any silently-passing test. The build is green; the FIRST test invocation panics with `"scenario tack_acs_graphic_chars: menu_path[0].send is the unverified-menu-key sentinel"` and a referral to `BEGIN_TESTING_INVENTORY`. The implementer replaces the sentinels with the verified key + anchors looked up from 05.0's discovery snapshot. The Codex midpoint review (Pivot 3) rejected `compile_error!` because it blocked `cargo check` for the entire `oriterm_test_support` crate while 05.0 was in flight — incompatible with concurrent impl-hygiene work in adjacent files.
 
-- [x] **Create `scenarios/graphic_rendition.rs`** with the same shape, using `grid_has_token` for SGR-style label detection:
+- [x] **Create `scenarios/graphic_rendition/{mod, tests}.rs`** with the same shape, using `grid_has_token` for SGR-style label detection: (originally drafted as flat `scenarios/graphic_rendition.rs`; landed as directory module — see Done note)
 
   **Done.** Implemented as a directory module (`scenarios/graphic_rendition/{mod, tests}.rs`). The `mod.rs` contains `parse_graphic_rendition_screen` (scans for `bold`, `dim`, `underline`, `blink`, `reverse`, `invis` via `grid_has_token` to avoid `bolder`/`dimmer`/`blinking`/`underlined` substring collisions) and `TACK_GRAPHIC_RENDITION_SGR` with the same `n -> a -> n` navigation as the ACS scenario but a distinct `screen_id: "tack_graphic_rendition_sgr"` so snapshots do not collide. Module rustdoc records the empirical caveat that tack v1.08 emits no SGR labels — parser is preserved as forward-compatible infrastructure.
   ```rust
@@ -1292,9 +1292,14 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   };
   ```
 
-- [x] **Add `#[test] fn` wrappers** (`oriterm_core/tests/tack/test_menu/acs.rs` + `graphic_rendition.rs`) that call `ScenarioRunner::run`, assert on the parser output, and `insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text)`.
+- [x] **Add `#[test] fn` wrappers** (`oriterm_core/tests/tack/test_menu/acs.rs` + `graphic_rendition.rs`) that call `ScenarioRunner::run`, pin the testable semantic facts, and `insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text)`. (The original draft said "assert on the parser output," but per the empirical-finding block above, the parsers return empty against tack v1.08; the actual hybrid-coverage strategy that landed pins `Done` plus the `Testing bell` header plus the `(bel)` parenthesized cap — see Done note and TPR-05-013 resolution.)
 
-  **Done.** Both wrappers use `ScenarioRunner::run` with hybrid coverage: assert the captured grid contains `Done` (proves end-to-end PTY → menu navigation → trigger → capture pipeline), then `insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text)`. They do NOT assert on parser output because both parsers return empty against tack v1.08 (asserting on emptiness would always-pass and add no value; asserting on non-emptiness would always-fail and require `#[ignore]`). Captured snapshots show `Testing bell (bel) ... (bel) Done` for both screens — the empirically-verified content from the 05.2 finding block.
+  **Done.** Both wrappers use `ScenarioRunner::run` with hybrid coverage:
+  1. Assert the captured grid contains `Done` (proves end-to-end PTY → menu navigation → trigger → capture pipeline).
+  2. Assert the captured grid contains `Testing bell` (proves tack entered the bell test code path — added in TPR-05-013 fix).
+  3. Assert the captured grid contains `(bel)` (proves tack referenced the cap by its terminfo short name — added in TPR-05-013 fix; this is the only cap tack v1.08 actually surfaces from this screen and it is now the canonical semantic pin for `bel` in 05.5's cap-coverage matrix).
+  4. `insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text)` for visual regression.
+  They do NOT assert on parser output because both parsers return empty against tack v1.08 (asserting on emptiness would always-pass and add no value; asserting on non-emptiness would always-fail and require `#[ignore]`). Captured snapshots show `Testing bell (bel) ... (bel) Done` for both screens — the empirically-verified content from the 05.2 finding block.
 
 - [x] **Sentinel verification (post-05.0 gate).** After 05.0 completes and the implementer fills in the verified key + anchors, run `grep -RnE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/{acs,graphic_rendition}.rs` and assert ZERO matches in the new files. Add a `#[test] fn no_sentinel_left_in_05_2_consts` in a workspace-level cargo test (or as a sibling test in `tack_framework/scenarios/tests.rs`) that imports `TACK_ACS_GRAPHIC_CHARS` and `TACK_GRAPHIC_RENDITION_SGR` and runs `assert_no_unverified_sentinels(...)` from `runner/phase.rs` against each — failing the test (compile-time + test-time) if either const still references a sentinel. The 05.0.b sentinel detection panics on first invocation, so this test is BELT-AND-BRACES: catches the case where the const has a sentinel but the implementer never ran the per-scenario test.
 
@@ -1327,7 +1332,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
 - [x] **Run:** `timeout 150 cargo test -p oriterm_core --test tack -- test_menu::acs test_menu::graphic_rendition`. Both must pass.
 
-  **Done.** Both wrappers pass green; snapshots captured via `INSTA_UPDATE=1` and pinned at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__acs__tack_acs_graphic_chars_80x24.snap` and `tack__test_menu__graphic_rendition__tack_graphic_rendition_sgr_80x24.snap`. Both contain the empirically-verified `Testing bell (bel) ... (bel) Done` content with distinct `screen_id`s preventing any snapshot collision. Full project gates green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`, plus cross-compile to `x86_64-pc-windows-gnu` clean. The 16 sibling parser tests + 2 wrapper tests + the existing tack-version-gated 5 tack tests all pass; 7 modes tests remain `#[ignore]` per the 05.1 empirical finding.
+  **Done.** Both wrappers pass green; snapshots captured via `INSTA_UPDATE=1` and pinned at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__acs__tack_acs_graphic_chars_80x24.snap` and `tack__test_menu__graphic_rendition__tack_graphic_rendition_sgr_80x24.snap`. Both contain the empirically-verified `Testing bell (bel) ... (bel) Done` content with distinct `screen_id`s preventing any snapshot collision. Full project gates green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`, plus cross-compile to `x86_64-pc-windows-gnu` clean. The 20 sibling parser tests (10 ACS + 10 graphic_rendition; grew from 16 → 20 in the TPR-05-014 fix) + 2 wrapper tests + the existing tack-version-gated 5 tack tests all pass; 7 modes tests remain `#[ignore]` per the 05.1 empirical finding.
 
 ---
 
@@ -2198,6 +2203,18 @@ The scenarios are non-trivial — each spawns a real tack child, navigates menus
   Total parser tests: 10 ACS + 10 graphic_rendition (was 8 + 8). The plan body's "Done" annotation for the parser-tests task already matches reality after the additions; the test counts in the annotation prose (`8 ACS + 8 graphic_rendition = 16 parser tests`) are now stale and the next sentence below this resolution updates them.
 
   Stale-count fixup: the annotation on the "Sibling parser tests" task now reads "10 ACS + 10 graphic_rendition = 20 parser tests" instead of "8 ACS + 8 graphic_rendition = 16 parser tests" (TPR-05-014).
+
+- [x] `[TPR-05-015][low]` `plans/tack-conformance/section-05-test-menu-scenarios.md` — the 05.2 plan prose is still partially out of sync with the live tree even after TPR-05-009 and TPR-05-014 were marked resolved.
+  Evidence: the current 05.2 file list still points at flat files `crates/oriterm_test_support/src/tack_framework/scenarios/acs.rs` and `.../graphic_rendition.rs` (`section-05-test-menu-scenarios.md:1125-1126`) even though the implementation lives in directory modules `scenarios/acs/mod.rs` and `scenarios/graphic_rendition/mod.rs` (`crates/oriterm_test_support/src/tack_framework/scenarios/acs/mod.rs:1-115`, `crates/oriterm_test_support/src/tack_framework/scenarios/graphic_rendition/mod.rs:1-95`). The completed task list still says "Create `scenarios/acs.rs`" and "Create `scenarios/graphic_rendition.rs`" (`section-05-test-menu-scenarios.md:1153`, `section-05-test-menu-scenarios.md:1233`) even though the accompanying "Done." notes already describe the directory-module layout. The wrapper task text still says the tests "assert on the parser output" (`section-05-test-menu-scenarios.md:1295`), but the very next paragraph says the wrappers explicitly do NOT assert on parser output and instead use the hybrid `Done`/snapshot strategy (`section-05-test-menu-scenarios.md:1297`). Finally, the run-summary annotation still says "The 16 sibling parser tests + 2 wrapper tests ..." (`section-05-test-menu-scenarios.md:1330`) even though the same subsection now documents 10 ACS + 10 graphic_rendition parser tests (`section-05-test-menu-scenarios.md:1308-1311`).
+  Impact: Section 05 remains a partially unreliable coordination artifact in exactly the area this review slice just changed. A follow-on implementer or reviewer reading 05.2 still sees contradictory instructions about file ownership, wrapper semantics, and test inventory, so the plan can no longer be trusted as a precise audit trail for the ACS / graphic-rendition work.
+  Required plan update: sweep the remaining 05.2 prose to match the live tree and current verification packet. At minimum: (1) change the file list / task titles from flat `scenarios/*.rs` paths to the live directory-module paths, (2) rewrite the wrapper-task sentence so it matches the shipped hybrid-coverage assertions, and (3) update the run-summary count from 16 parser tests to 20. If any line is intentionally historical, mark it as such explicitly instead of leaving it in current-state task wording.
+  Resolved: Fixed on 2026-04-08 by sweeping all 4 drift sites in 05.2 to match the live tree:
+  1. **File list (line 1125-1128)** — replaced flat `scenarios/acs.rs` / `scenarios/graphic_rendition.rs` paths with `scenarios/acs/{mod, tests}.rs` and `scenarios/graphic_rendition/{mod, tests}.rs`, with an inline note explaining the directory-module layout follows `.claude/rules/test-organization.md`.
+  2. **Task title for ACS (line 1153)** — renamed `Create scenarios/acs.rs` → `Create scenarios/acs/{mod, tests}.rs` with parenthetical historical note.
+  3. **Task title for graphic_rendition (line 1233)** — renamed `Create scenarios/graphic_rendition.rs` → `Create scenarios/graphic_rendition/{mod, tests}.rs` with parenthetical historical note.
+  4. **Wrapper task semantic contradiction (line 1295)** — rewrote "assert on the parser output" to "pin the testable semantic facts" with parenthetical pointer to the empirical-finding block + TPR-05-013 resolution; the immediately-following Done note now enumerates the 4 hybrid-coverage assertions explicitly (Done + Testing bell + (bel) + insta snapshot).
+  5. **Run-summary stale count (line 1335)** — updated "16 sibling parser tests" → "20 sibling parser tests (10 ACS + 10 graphic_rendition; grew from 16 → 20 in the TPR-05-014 fix)".
+  Section 05 plan body now matches the live tree exactly across the 05.2 subsection.
 
 ---
 
