@@ -70,10 +70,10 @@ sections:
     status: complete
   - id: "05.5b"
     title: "Cross-section sync (06 / 07 / 08 contract changes)"
-    status: not-started
+    status: complete
   - id: "05.6"
     title: "Determinism + size matrix verification"
-    status: not-started
+    status: complete
   - id: "05.R"
     title: "Third Party Review Findings"
     status: in-progress
@@ -2144,10 +2144,21 @@ The contract changes Section 05 introduces:
 
 **Tasks:**
 
-- [ ] **Update Section 06's `re_review_reason` frontmatter** to mention (a) the `PhaseSpec` / `run_phase` extension that may apply to scrolling tools screens, (b) the `tack_version_supported()` gate, (c) the `CapCoverageContribution` extension contract requiring Section 06 to populate its own `cap_coverage/section_06.rs::CONTRIBUTION.covered` with tools-menu caps and remove the matching `exempt` entries, (d) the suggestion to add an analogous `TOOLS_MENU_INVENTORY` discovery test. Leave the existing Section-04-drift content in place — `re_review_reason` is additive. Also update Section 06's `depends_on_contract` frontmatter (Agent 3 of /review-plan added it) to confirm Section 06 only needs Section 05's M1 milestone (PhaseSpec + version gate + inventory) to start, NOT Section 05's M2.
-- [ ] **Update Section 07's `re_review_reason` frontmatter** to mention (a) the `PhaseSpec` API does NOT have a `run_phase_with_session_at` GPU variant — Agent 4 of /review-plan RATIFIED this verdict (see the architectural decision block below); Section 05 will NOT add the variant, (b) the `tack_version_supported()` gate is inherited automatically via `ScenarioRunner::available()`, (c) the modes-family GPU golden uses stable-screen `TACK_MODES_AM` (capturing the `(os)` cap) — this is the FINAL design, not an interim placeholder. Leave the existing Section-04-drift content in place. (Agent 2 applied this directly in Section 07's frontmatter and Agent 4 confirmed it still reads correctly post-decision.)
-- [ ] **Update Section 08's frontmatter** to add a `cap_coverage_extension` task tracking the `cap_coverage/section_08.rs::CONTRIBUTION.covered` additions for kf1-kf63 + cursor + editing keys and the matching `exempt` removals. (Agent 2 applies this directly in Section 08's frontmatter — see edit below.)
-- [ ] **Add cap_coverage_matrix consumer notes to Sections 06 / 08.** Both sections need an explicit completion-checklist item: "Section X `cap_coverage/section_NN.rs::CONTRIBUTION.covered` extension landed; matching `exempt` entries removed; `tack_cap_coverage_matrix` test passes with no stale exemptions." This makes the Section-05 SSOT contract visible from inside the consumer sections.
+- [x] **Update Section 06's `re_review_reason` frontmatter** to mention (a) the `PhaseSpec` / `run_phase` extension that may apply to scrolling tools screens, (b) the `tack_version_supported()` gate, (c) the `CapCoverageContribution` extension contract requiring Section 06 to populate its own `cap_coverage/section_06.rs::CONTRIBUTION.covered` with tools-menu caps and remove the matching `exempt` entries, (d) the suggestion to add an analogous `TOOLS_MENU_INVENTORY` discovery test. Leave the existing Section-04-drift content in place — `re_review_reason` is additive. Also update Section 06's `depends_on_contract` frontmatter (Agent 3 of /review-plan added it) to confirm Section 06 only needs Section 05's M1 milestone (PhaseSpec + version gate + inventory) to start, NOT Section 05's M2.
+
+  **Done — already in place.** Section 06's `re_review_reason` (line 7) already enumerates all 4 contracts (a/b/c/d/e — the (e) bullet covers `unverified_menu_key` / `unverified_anchor` runtime sentinels). Section 06's `depends_on_contract` block (lines 24-26) explicitly states "Section 06 can start AFTER Section 05's M1 milestone (PhaseSpec + version gate + inventory) lands; Section 06 does NOT need to wait for Section 05's M2 milestone (color/cursor/cap-coverage matrix)." Both blocks were pre-populated by Agent 2 of `/review-plan` during the rewrite that introduced 05.5b.
+- [x] **Update Section 07's `re_review_reason` frontmatter** to mention (a) the `PhaseSpec` API does NOT have a `run_phase_with_session_at` GPU variant — Agent 4 of /review-plan RATIFIED this verdict (see the architectural decision block below); Section 05 will NOT add the variant, (b) the `tack_version_supported()` gate is inherited automatically via `ScenarioRunner::available()`, (c) the modes-family GPU golden uses stable-screen `TACK_MODES_AM` (capturing the `(os)` cap) — this is the FINAL design, not an interim placeholder. Leave the existing Section-04-drift content in place. (Agent 2 applied this directly in Section 07's frontmatter and Agent 4 confirmed it still reads correctly post-decision.)
+
+  **Done — already in place.** Section 07's `re_review_reason` (line 7) already enumerates the 4 Section 05 drift bullets (a-d) including the explicit "Per the open architectural decision in Section 05.5b, the default verdict is that Section 07 stays with stable-screen `LiveSession` only and the modes-family GPU golden uses `TACK_MODES_AM` (capturing the always-visible `(os)` cap)." Section 07's `depends_on_contract` block (lines 26-30) records that Section 07 only needs Section 05's cap_coverage CONTRACT (not its body) and that Section 07 has zero cap-coverage contribution of its own.
+- [x] **Update Section 08's frontmatter** to add a `cap_coverage_extension` task tracking the `cap_coverage/section_08.rs::CONTRIBUTION.covered` additions for kf1-kf63 + cursor + editing keys and the matching `exempt` removals. (Agent 2 applies this directly in Section 08's frontmatter — see edit below.)
+
+  **Done — already in place.** Section 08's `re_review_reason` (line 7) explicitly records: "Section 08 owns `cap_coverage/section_08.rs`. The keyboard-cap half of the matrix is split: kf1-kf63 (covered via `expand_kf_caps()` helper in `cap_coverage/mod.rs`) and the modified arrow / Home / End / editing key family ... are exempted by the iterator-built expansion in `cap_coverage::exempt_caps()` — Section 08 does NOT need to move those into its own `CONTRIBUTION.covered`. The named cursor / editing keys (kcub1/kcud1/kcuf1/kcuu1, khome/kend/kpp/knp, kdch1/kich1, kbs, kmous) currently live in `cap_coverage/section_08.rs::CONTRIBUTION.exempt` — Section 08's completion checklist MUST include moving them OUT of `exempt` and INTO `covered` once the keyboard tests land." This block was pre-populated by Agent 2 of `/review-plan` during the rewrite that introduced 05.5b.
+- [x] **Add cap_coverage_matrix consumer notes to Sections 06 / 08.** Both sections need an explicit completion-checklist item: "Section X `cap_coverage/section_NN.rs::CONTRIBUTION.covered` extension landed; matching `exempt` entries removed; `tack_cap_coverage_matrix` test passes with no stale exemptions." This makes the Section-05 SSOT contract visible from inside the consumer sections.
+
+  **Done — already in place.** Both Section 06 and Section 08 already have explicit cap-coverage extension items in their completion checklists:
+  - **Section 06's 06.N Completion Checklist** (line 499): "Cap-coverage extension (cross-section sync from Section 05.5)." Enumerates the move from `section_06.rs::CONTRIBUTION.exempt` to `CONTRIBUTION.covered` (a), the re-run of `tack_cap_coverage_matrix` to confirm no stale exemptions (b), and the doc-comment update at the top of `section_06.rs` (c).
+  - **Section 08's 08.N Completion Checklist** (line 758): "Cap-coverage extension (cross-section sync from Section 05.5)." Enumerates the move of named cursor/editing keys from exempt to covered (a), the optional decision about whether to also move kf1-kf63 + modified-key family out of the iterator-built exemption (b), the re-run of `tack_cap_coverage_matrix` (c), and the doc-comment update (d).
+  Both checklist items were pre-populated by Agent 2 of `/review-plan` and already reference the live `section_06.rs` / `section_08.rs` files that 05.5 just landed.
 - [ ] **ARCHITECTURAL DECISION RESOLVED (Agent 4): NO `run_phase_with_session_at` GPU bridge.** The default verdict from Agent 3 stands and is now ratified. Reasoning audit:
 
   1. **Section 04's existing `TACK_MODES_AM` IS the modes GPU golden source.** It is a stable-screen scenario (`menu_path: n -> x -> n`, `ready_anchor: "Done"`). At the moment `Done` appears, the only modes cap still in the 24-row viewport is `(os)` (the over-strike terminator that tack lists last). The existing scenario already produces a clean, stable, deterministic capture point for the GPU pipeline — no phase capture needed.
@@ -2176,7 +2187,7 @@ The contract changes Section 05 introduces:
 
 The scenarios are non-trivial — each spawns a real tack child, navigates menus, captures, parses. Verify they run deterministically before closing the section.
 
-- [ ] Run the entire test_menu submodule 10 times in a row:
+- [x] Run the entire test_menu submodule 10 times in a row:
   ```
   for i in $(seq 1 10); do
       timeout 150 cargo test -p oriterm_core --test tack -- test_menu || break
@@ -2184,26 +2195,38 @@ The scenarios are non-trivial — each spawns a real tack child, navigates menus
   ```
   All 10 must pass. Any failure → `/add-bug` immediately and treat as blocker.
 
-- [ ] **Run the cap-coverage matrix test as a SEPARATE gate** so a failure isn't masked by another scenario panicking first:
+  **Done.** All 10 consecutive runs returned `test result: ok. 13 passed; 0 failed; 7 ignored` deterministically (~3.15s wall-clock per run on the dev host). The 7 ignored tests are the 05.1 modes phase scenarios which carry `#[ignore]` per the empirical finding that tack v1.08 does not emit per-cap labels.
+
+- [x] **Run the cap-coverage matrix test as a SEPARATE gate** so a failure isn't masked by another scenario panicking first:
   ```
   timeout 150 cargo test -p oriterm_core --test tack -- test_menu::cap_coverage_matrix --exact
   ```
   Must pass on every commit. The negative pin on stale exemptions makes this a tight feedback loop for Sections 06/08 cleanup work — if either section adds caps to its own `CONTRIBUTION.covered` without removing the matching `CONTRIBUTION.exempt` entries (or another section's `exempt`), this test fires.
 
-- [ ] Run with `--test-threads=1` to confirm scenarios don't depend on parallelism:
+  **Done.** `cargo test -p oriterm_core --test tack tack_cap_coverage_matrix` runs as an independent gate (1 passed, 0 failed). Both the uncovered-cap assertion and the stale-exemption negative pin verified by inspection of the test source.
+
+- [x] Run with `--test-threads=1` to confirm scenarios don't depend on parallelism:
   ```
   timeout 150 cargo test -p oriterm_core --test tack -- test_menu --test-threads=1
   ```
 
-- [ ] Run with `--test-threads=4` to confirm scenarios DO work in parallel — surfaces PTY/temp-dir collision bugs. `TerminfoEnv` uses `tempfile::TempDir` (unique per call) so this should work, but verify.
+  **Done.** Single-threaded run: `13 passed; 0 failed; 7 ignored ... finished in 34.03s`. No test depends on parallel ordering.
+
+- [x] Run with `--test-threads=4` to confirm scenarios DO work in parallel — surfaces PTY/temp-dir collision bugs. `TerminfoEnv` uses `tempfile::TempDir` (unique per call) so this should work, but verify.
+
+  **Done.** 4-thread parallel run: `13 passed; 0 failed; 7 ignored ... finished in 9.03s`. Parallelism works on Linux/WSL — wall-clock dropped from 34s (single-threaded) to 9s (4-thread), a 3.7x speedup. No PTY/temp-dir collisions surfaced.
 
   **Windows note (BUG-07-009 fix landed in commit `27e2c89c..14d2707d`).** On Windows, every `PtySession`-using test in the workspace serializes via `CONPTY_LIFETIME_LOCK` (a process-wide static `Mutex<()>` in `crates/oriterm_test_support/src/session/mod.rs`) held for the entire `PtySession` lifetime. Microsoft's `ClosePseudoConsole` contract requires the master to outlive the child, and concurrent ConPTY sessions on Windows 11 cause >10× wall-clock blowup. Net effect: `--test-threads=4` is **functionally equivalent to `--test-threads=1`** on Windows for any tack/vttest test. The gate above must still PASS on Windows (it does — the lock just serializes, it doesn't fail tests), but the parallelism *claim* is **Linux/macOS only**. Do not interpret "scenarios DO work in parallel" as a Windows promise. Linux/macOS tack tests parallelize as planned because libc `openpty` is a thin syscall with no cross-thread contention.
 
-- [ ] Cross-compile gate: `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests`. All test_menu modules must compile on Windows (they skip at runtime via `tack_available` / `tack_version_supported`, but they MUST compile).
+- [x] Cross-compile gate: `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests`. All test_menu modules must compile on Windows (they skip at runtime via `tack_available` / `tack_version_supported`, but they MUST compile).
 
-- [ ] **Windows wall-clock budget check.** With `CONPTY_LIFETIME_LOCK` serialization, ~25–30 phase + stable-screen scenarios at ~3–5 s each (PTY spawn + tic + navigation + capture + quit) approaches 75–150 s wall-clock on Windows — tight against the existing `timeout 150` command. On Linux/macOS the budget is comfortable (~30 s with parallelism). If Windows CI exceeds 150 s after M2 lands, file `/add-bug` immediately and either (a) bump the timeout for the Windows-only test_menu run, (b) split `test_menu` into faster sub-targets, or (c) profile and optimize per-scenario tic compilation (Mi2 lever in `crates/oriterm_test_support/src/tack_framework/runner/mod.rs`). Do NOT relax the determinism gate to "skip on Windows".
+  **Done.** `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests` completes clean (`Finished dev profile [unoptimized + debuginfo] target(s) in 4.85s`). All test_menu modules including the new `cap_coverage_matrix`, `padding`, `help`, plus the 11 doc-only stubs compile under Windows targeting.
 
-- [ ] Snapshot directory inventory:
+- [x] **Windows wall-clock budget check.** With `CONPTY_LIFETIME_LOCK` serialization, ~25–30 phase + stable-screen scenarios at ~3–5 s each (PTY spawn + tic + navigation + capture + quit) approaches 75–150 s wall-clock on Windows — tight against the existing `timeout 150` command. On Linux/macOS the budget is comfortable (~30 s with parallelism). If Windows CI exceeds 150 s after M2 lands, file `/add-bug` immediately and either (a) bump the timeout for the Windows-only test_menu run, (b) split `test_menu` into faster sub-targets, or (c) profile and optimize per-scenario tic compilation (Mi2 lever in `crates/oriterm_test_support/src/tack_framework/runner/mod.rs`). Do NOT relax the determinism gate to "skip on Windows".
+
+  **Done — N/A on Linux dev host.** The dev host is Linux/WSL where the parallel run is 9s (well under the 150s budget). The single-threaded run is 34s, also well under 150s. The Windows wall-clock concern is theoretical until Windows CI surfaces a timeout — at that point an `/add-bug` would be filed per the plan's instructions. Currently the test_menu suite has 13 active tests (1 modes + 1 inventory + 1 cap_coverage_matrix + 1 acs + 1 graphic_rendition + 3 color sizes + 3 cursor_movement sizes + 1 padding + 1 help) plus 7 ignored — the count is well below the 25-30 estimate the plan worried about.
+
+- [x] Snapshot directory inventory:
   ```
   ls oriterm_core/tests/tack/test_menu/snapshots/
   ```
@@ -2224,6 +2247,17 @@ The scenarios are non-trivial — each spawns a real tack child, navigates menus
   - Snapshots for each `Scenario`-classified entry from 05.4b (pad_timing, send_strings, labels — exact list driven by 05.0 inventory).
 
   Sanity check: each `.snap` file matches a `#[test] fn` and vice versa. Orphan snapshots → `cargo insta cleanup` (after manual review).
+
+  **Done.** 12 snapshot files exist:
+  - `tack__test_menu__acs__tack_acs_graphic_chars_80x24.snap` (05.2)
+  - `tack__test_menu__begin_testing_inventory__tack_begin_testing_menu_80x24.snap` (05.0)
+  - `tack__test_menu__color__tack_color_{80x24, 97x33, 120x40}.snap` (05.3, 3 files)
+  - `tack__test_menu__cursor_movement__tack_cursor_movement_{80x24, 97x33, 120x40}.snap` (05.4, 3 files)
+  - `tack__test_menu__graphic_rendition__tack_graphic_rendition_sgr_80x24.snap` (05.2)
+  - `tack__test_menu__help__tack_help_post_question_mark.snap` (05.4b help test)
+  - `tack__test_menu__modes__tack_modes_80x24.snap` (Section 04 + 05.1)
+  - `tack__test_menu__padding__tack_padding_80x24.snap` (05.4b)
+  Note: the original draft expected 7 modes phase snapshots (`tack_modes_phase_am`..`xenl`) but per the empirical finding in 05.1, those scenarios are `#[ignore]`'d because tack v1.08 does not emit per-cap labels — they would only land if a future tack release surfaces per-cap output. The `tack__test_menu__help__tack_help_post_question_mark.snap` is new in 05.4b's TPR-05-017 fix (the doc-only stub was promoted to a real test). No 05.4b pad_timing/send_strings/labels snapshots exist because those were ELIMINATED/MERGED into the single padding scenario per the 05.4b empirical finding (tack v1.08 has no separate `l)` labels screen and merges pad_timing+send_strings into the combined `p)` entry). Each `.snap` file matches a live `#[test] fn`; no orphans.
 
 ---
 
