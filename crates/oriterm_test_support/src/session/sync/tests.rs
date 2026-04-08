@@ -330,3 +330,66 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
         "bounded-poll wall-clock: expected <1500 ms, got {elapsed:?}"
     );
 }
+
+#[test]
+fn drain_until_returns_none_immediately_on_channel_disconnect() {
+    // SEMANTIC PIN for TPR-05-003: drain_until's contract is that
+    // channel closure (the reader thread has hung up because the
+    // child exited or the PTY closed) returns None IMMEDIATELY,
+    // not after burning the full timeout budget.
+    //
+    // The earlier draft used `let Ok(chunk) = ... else { continue; }`
+    // which collapsed both Timeout and Disconnected into "loop
+    // again," so a child that exited before the phase anchor
+    // appeared would burn the full 5 s deadline before reporting
+    // a (misleading) timeout. The fix distinguishes the two
+    // RecvTimeoutError variants and returns None on Disconnected.
+    //
+    // Two-arm cross-platform: spawn a child that prints something
+    // (so the PTY isn't immediately empty) then exits cleanly.
+    // The reader thread observes EOF, closes the channel; the
+    // next drain_until recv hits Disconnected.
+    #[cfg(unix)]
+    let cmd = {
+        let mut c = CommandBuilder::new("/bin/sh");
+        c.args(["-c", "echo HELLO; exit 0"]);
+        c.env("TERM", "xterm-256color");
+        c
+    };
+    #[cfg(windows)]
+    let cmd = {
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.args(["/C", "echo HELLO"]);
+        c.env("TERM", "xterm-256color");
+        c
+    };
+    let mut session = PtySession::spawn(cmd, 80, 24);
+
+    // Wait briefly so the child exits and the reader thread closes
+    // the channel before drain_until starts. 200 ms is plenty for
+    // an `echo + exit 0` to complete on any host.
+    std::thread::sleep(Duration::from_millis(200));
+
+    let started = Instant::now();
+    let captured = session.drain_until("__NEVER_APPEARS__", 64 * 1024, 5_000);
+    let elapsed = started.elapsed();
+
+    assert!(
+        captured.is_none(),
+        "drain_until must return None when the needle never appears \
+         and the channel disconnects"
+    );
+    // The disconnect-fast-return is a 1 s upper bound (very
+    // generous — the actual return should be sub-100 ms). The
+    // important property is "well below the 5 s timeout budget"
+    // so a regression to the old `continue` semantics is caught
+    // unambiguously.
+    assert!(
+        elapsed < Duration::from_millis(1_000),
+        "drain_until must return immediately on channel disconnect, \
+         not burn the full 5 s timeout: elapsed {elapsed:?} \
+         (TPR-05-003 regression — recv_timeout's Disconnected \
+         variant is being treated like Timeout instead of returning \
+         None)"
+    );
+}

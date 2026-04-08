@@ -216,7 +216,7 @@ Phase 5 - Verification
 | 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Complete |
 | 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Complete |
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Complete |
-| 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Not Started |
+| 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | In Progress (M1 complete) |
 | 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Not Started |
 | 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Not Started |
 | 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Not Started |
