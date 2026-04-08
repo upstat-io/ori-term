@@ -3,6 +3,8 @@ section: "08"
 title: "Keyboard / Function Key Tests"
 status: not-started
 reviewed: false
+needs_re_review_after: "05"
+re_review_reason: "Section 05's Agent-1 / Agent-2 / Agent-3 review pass introduces a `cap_coverage_matrix` test (Section 05.5) that asserts every cap declared in `extra/ori_term.info` is exercised by at least one Section 05 / 06 / 08 scenario. Per Pivot 5 of /review-plan, the matrix uses an OWNER-PARTITIONED design: each consuming section owns its own `cap_coverage/section_NN.rs::CONTRIBUTION` with `covered` and `exempt` slices. Section 08 owns `cap_coverage/section_08.rs`. The keyboard-cap half of the matrix is split: kf1-kf63 (covered via `expand_kf_caps()` helper in `cap_coverage/mod.rs`) and the modified arrow / Home / End / editing key family kLFT/kRIT/kUP/kDN/kEND/kHOM/kIC/kDC/kNXT/kPRV with mod-param suffixes (covered via `expand_modified_key_caps()` helper) are exempted by the iterator-built expansion in `cap_coverage::exempt_caps()` — Section 08 does NOT need to move those into its own `CONTRIBUTION.covered`. The named cursor / editing keys (kcub1/kcud1/kcuf1/kcuu1, khome/kend/kpp/knp, kdch1/kich1, kbs, kmous) currently live in `cap_coverage/section_08.rs::CONTRIBUTION.exempt` — Section 08's completion checklist MUST include moving them OUT of `exempt` and INTO `covered` once the keyboard tests land. Section 05.5's stale-exemption negative pin (caps appearing in BOTH any section's `covered` AND any section's `exempt`) fires loudly if a cap appears in both, forcing the cleanup. Section 08 MUST be re-reviewed after Section 05 lands to add the cap_coverage extension subsection — including the optional decision of whether to also move kf1-kf63 out of the iterator-built exemption and into a per-cap `CONTRIBUTION.covered` extension."
 goal: "Add keyboard capability tests in the `oriterm` crate that exercise the real `key_encoding::encode_key` pipeline against the function-key sequences declared in extra/ori_term.info. For each terminfo cap (kf1-kf63, kcub1, kcud1, kcuf1, kcuu1, khome, kend, kpp, knp, kdch1, kich1, kbs), the test (a) reads the expected sequence from the compiled terminfo via infocmp, (b) constructs a KeyInput for the corresponding key+modifier combo, (c) calls encode_key, and (d) asserts the produced bytes match the terminfo declaration. This is the only section in oriterm rather than oriterm_core because it tests the application-layer key encoder."
 success_criteria:
   - "`oriterm/src/key_encoding/terminfo_xcheck.rs` in-crate sibling test module exists (preferred path, no visibility change). Fallback `oriterm/tests/keyboard_terminfo.rs` integration test target only if the preferred path is blocked and documented in 08.R."
@@ -20,7 +22,7 @@ inspired_by:
   - "ori_term key_encoding tests (oriterm/src/key_encoding/tests.rs — existing per-key encoding tests, expanded here to validate against terminfo)"
   - "Section 02 TerminfoEnv (plans/tack-conformance/section-02-terminfo-provisioning.md — provides the compiled ori_term terminfo to read sequences from)"
   - "ncurses infocmp(1) man page — capability extraction syntax"
-depends_on: ["01", "02"]
+depends_on: ["01", "02", "05"]
 third_party_review:
   status: none
   updated: null
@@ -81,7 +83,7 @@ The fix is mechanical: for every key cap in the terminfo, assert that encode_key
 - **Section 02** `plans/tack-conformance/section-02-terminfo-provisioning.md`: `TerminfoEnv::compile()` is the source of the pinned terminfo we read from.
 - **ncurses infocmp(1) man page**: capability extraction syntax.
 
-**Depends on:** Section 01 (PtySession framework — actually only `oriterm_test_support` is needed; PtySession itself is not used here), Section 02 (TerminfoEnv).
+**Depends on:** Section 01 (PtySession framework — actually only `oriterm_test_support` is needed; PtySession itself is not used here), Section 02 (TerminfoEnv), **Section 05** (cap_coverage_matrix extension contract + `expand_kf_caps` / `expand_modified_key_caps` SSOT helpers — see Section 05.5b for the contract details). <!-- reviewed: cohesion fix -->
 
 **PREFERRED APPROACH — In-crate sibling tests (no visibility change):** `oriterm/src/key_encoding/tests.rs` already exists as a 1801-line sibling test module with full access to the module's items via `super::`. New keyboard-terminfo cross-check tests belong inside that existing sibling file (or a new submodule under it), NOT in a separate `tests/` integration target. Benefits:
 
@@ -753,6 +755,7 @@ Cursor keys differ between normal mode (rmkx, sequences like `\E[A`) and applica
 - [ ] `cursor_keys_normal_mode_emit_csi` test verifies normal-mode CSI encoding
 - [ ] `editing_keys_match_terminfo` test covers kbs, khome, kend, kpp, knp, kdch1, kich1
 - [ ] `infocmp_query_returns_none_for_cap_not_in_ori_term` negative pin test passes — asserts that querying an undeclared cap (`kf64`) returns `None`
+- [ ] **Cap-coverage extension (cross-section sync from Section 05.5).** Section 08 owns `crates/oriterm_test_support/src/tack_framework/cap_coverage/section_08.rs`. Per Pivot 5 of Agent 3 of /review-plan, the cap-coverage matrix uses owner-partitioned `CapCoverageContribution` per section instead of a flat `EXEMPT_CAPS` constant. Section 08's task is: (a) move the named cursor + editing keys (kcub1/kcud1/kcuf1/kcuu1, khome/kend/kpp/knp, kdch1/kich1, kbs, kmous) FROM `section_08.rs::CONTRIBUTION.exempt` INTO `section_08.rs::CONTRIBUTION.covered` in lockstep with the scenario landing, (b) decide whether to ALSO move the kf1-kf63 + modified-key family OUT of the iterator-built exemption (`cap_coverage::exempt_caps()` builds them via `expand_kf_caps()` + `expand_modified_key_caps()`) and INTO `section_08.rs::CONTRIBUTION.covered` — the iterator-built exemption is acceptable as long as Section 08's tests cover the SAME range, but moving them into `covered` makes the SSOT relationship explicit. The `expand_*()` helpers in `cap_coverage/mod.rs` remain the SSOT for the cap lists — Section 08 must reference them, not hand-write 60+ entries, (c) re-run `tack_cap_coverage_matrix` and confirm no stale exemptions (the negative pin fires on caps in both lists), (d) update the doc comment at the top of `section_08.rs` to reflect that Section 08 has landed. <!-- reviewed: executability/hygiene fix -->
 - [ ] All tests pass deterministically (10 consecutive runs of `cargo test -p oriterm key_encoding::terminfo_xcheck`)
 - [ ] Both `--test-threads=1` and `--test-threads=4` runs pass (surfaces `TerminfoEnv` tempdir collision bugs)
 - [ ] All tests skip cleanly when `tic`/`infocmp` are unavailable
