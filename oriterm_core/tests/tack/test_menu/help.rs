@@ -1,8 +1,8 @@
-//! Doc-only stub for tack's `?) help` begin-testing entry.
+//! Test for tack's `?) help` begin-testing entry.
 //!
-//! Classification: `BeginTestingStatus::Duplicate` per
+//! Classification: `BeginTestingStatus::Duplicate { covered_by:
+//! "begin_testing_inventory ..." }` per
 //! `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs`.
-//! Covered by: the begin_testing_inventory drift gate.
 //!
 //! # Why this is a duplicate, not a separate scenario
 //!
@@ -10,25 +10,122 @@
 //! 05.4b empirical probe (2026-04-08) discovered that pressing
 //! `?` from the begin-testing menu does NOT navigate to a
 //! separate help screen — it simply re-displays the same
-//! begin-testing menu inline. The captured grid after pressing
-//! `?` is byte-identical to the captured grid after pressing
-//! the menu's prior key (or any other no-op key that doesn't
-//! advance state).
+//! begin-testing menu inline.
 //!
-//! # Where the equivalent coverage lives
+//! # Why a real test, not just a doc-only stub
 //!
-//! The `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs`
-//! drift-gate test snapshots the entire begin-testing menu
-//! rendering at 80x24 and asserts that:
-//! - The set of single-character menu keys matches the
-//!   `BEGIN_TESTING_INVENTORY` constant exactly (no drift in
-//!   either direction).
-//! - The captured grid_text matches the pinned insta snapshot
-//!   byte-for-byte (any tack version bump that changes the menu
-//!   labels fails the snapshot).
+//! TPR-05-017 (Codex /review-work iteration 2 of M2) correctly
+//! identified that the previous doc-only stub overstated
+//! coverage: the `Duplicate` claim cited the begin-testing
+//! inventory drift gate as the test that covers help behavior,
+//! but the drift gate only sends `n` (to enter the menu) and
+//! never sends `?`. If a future tack build changes `?` to show
+//! a distinct help screen while leaving the initial begin-testing
+//! menu unchanged, the suite would stay green and Section 05
+//! would over-report coverage.
 //!
-//! That coverage IS the help screen test — adding a separate
-//! `tack_help` scenario would re-snapshot the same menu rendering
-//! with no incremental signal. Reclassifying `?` as Duplicate
-//! makes the deduplication explicit in the inventory and avoids
-//! the false claim that 05.4b adds a fresh "help screen" test.
+//! The fix below converts this from a doc-only stub to a real
+//! `#[test] fn` that:
+//! 1. Spawns tack via `PtySession`.
+//! 2. Sends `n` to enter the begin-testing menu.
+//! 3. Captures the grid as a baseline (proves we're in the menu).
+//! 4. Sends `?`.
+//! 5. Captures the post-`?` grid.
+//! 6. Asserts the post-`?` grid still contains every key entry
+//!    from the menu (proves `?` did not navigate away).
+//! 7. Snapshots the post-`?` grid via insta for visual regression.
+//!
+//! If a future tack release makes `?` a distinct help screen,
+//! the per-entry assertions will fail (the menu key labels won't
+//! be in the post-`?` grid) and the insta snapshot will diff.
+//! That signals an inventory reclassification is needed.
+
+use oriterm_test_support::session::{PtySession, tack_available, tic_available};
+use oriterm_test_support::terminfo::TerminfoEnv;
+
+#[test]
+fn tack_help_redisplays_begin_testing_menu() {
+    if !tack_available() || !tic_available() {
+        eprintln!("tack or tic unavailable, skipping tack_help_redisplays_begin_testing_menu");
+        return;
+    }
+
+    let env = TerminfoEnv::compile();
+    let mut session = PtySession::spawn_tack(&env, 80, 24);
+    session.wait(500);
+
+    // Step 1: enter the begin-testing menu via `n`. Same first
+    // step as every Section 05 scenario.
+    session.send(b"n");
+    session.wait(500);
+
+    // Sanity baseline: confirm we're in the begin-testing menu
+    // before pressing `?`. If this fails, the tack invocation
+    // shape itself drifted and the test is not measuring what
+    // we think it's measuring.
+    let baseline = session.grid_text();
+    assert!(
+        baseline.contains("tack/test [n] >"),
+        "expected to be in the begin-testing menu prompt before pressing ?, got:\n{baseline}"
+    );
+    assert!(
+        baseline.contains("x) test modes and glitches"),
+        "begin-testing menu sanity check failed (no `x) test modes` entry), got:\n{baseline}"
+    );
+
+    // Step 2: press `?` and let tack respond.
+    session.send(b"?");
+    session.wait(500);
+
+    // Step 3: capture the post-`?` grid and assert that EVERY
+    // begin-testing menu entry is still visible. The empirical
+    // claim from the 05.4b probe is that `?` re-displays the
+    // same menu inline; if any of these per-entry assertions
+    // fails, that claim is wrong and tack actually navigated
+    // to a distinct screen — which means `?` should be
+    // reclassified from Duplicate back to Scenario in
+    // BEGIN_TESTING_INVENTORY.
+    let post_help = session.grid_text();
+    assert!(
+        post_help.contains("tack/test [n] >"),
+        "expected `?` to leave us at the begin-testing menu prompt, got:\n{post_help}"
+    );
+
+    // Pin every key inventory entry from the begin-testing
+    // menu. These are all single-line `<key>) <label>` entries
+    // verified by the begin_testing_inventory drift gate test.
+    // If `?` ever navigates to a distinct screen, the post-`?`
+    // grid would not contain these entries and at least one
+    // assertion would fire.
+    for entry in [
+        "e) edit terminfo",
+        "i) send reset and init",
+        "x) test modes and glitches",
+        "a) test alternate character set and graphic rendition",
+        "c) test color",
+        "m) test cursor movement",
+        "f) test function keys",
+        "p) test padding and string capabilities",
+        "P) test printer",
+        "/) test a specific capability",
+        "t) auto generate pad delays",
+        "n) run standard tests",
+        "r) repeat test",
+        "s) skip to next test",
+        "q) quit",
+        "?) help",
+    ] {
+        assert!(
+            post_help.contains(entry),
+            "post-`?` grid missing menu entry {entry:?} — `?` may have navigated to a distinct \
+             screen, in which case BEGIN_TESTING_INVENTORY should reclassify `?` from Duplicate \
+             back to Scenario. Got:\n{post_help}"
+        );
+    }
+
+    // Snapshot the full post-`?` grid for visual regression.
+    // This pins the byte-level state so any tack version drift
+    // (changed wording, reordered entries, ANY divergence) shows
+    // up as a snapshot diff alongside the per-entry assertions.
+    insta::assert_snapshot!("tack_help_post_question_mark", post_help);
+}
