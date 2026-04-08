@@ -12,24 +12,32 @@
 //! helpers (`drain`, `drain_blocking`, `wait`, `wait_for`) live in the
 //! [`sync`] submodule together with the private `poll_until` SSOT
 //! helper. The child-exit and quit helpers (`wait_for_child_exit`) live
-//! in the [`teardown`] submodule. Each leaf module owns its own sibling
-//! `tests.rs` per `.claude/rules/test-organization.md`.
+//! in the [`teardown`] submodule. The test-side [`EventListener`]
+//! ([`PtyResponder`]) lives in the [`pty_responder`] submodule so its
+//! dispatch + sibling tests can grow without pushing `session/mod.rs`
+//! over the 500-line hygiene limit. Each leaf module owns its own
+//! sibling `tests.rs` per `.claude/rules/test-organization.md`.
 
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+#[cfg(windows)]
+use std::sync::Mutex;
 use std::thread;
 
-use oriterm_core::event::{Event, EventListener};
 use oriterm_core::{Term, Theme};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::terminfo::TerminfoEnv;
 
+mod pty_responder;
 mod sync;
 mod teardown;
 mod tools;
 mod version_gate;
 
+// Re-export [`PtyResponder`] so the historical import path
+// `crate::session::PtyResponder` keeps working after the 06.0.c
+// proactive split moved the type into its own sibling module.
+pub use pty_responder::PtyResponder;
 // Re-export the runtime tool-availability probes and the tack
 // version-gate API so external callers continue to see
 // `crate::session::tack_available()`, `tack_version_supported()`,
@@ -76,46 +84,6 @@ pub use version_gate::{
 /// permanently break the next test's spawn.
 #[cfg(windows)]
 static CONPTY_LIFETIME_LOCK: Mutex<()> = Mutex::new(());
-
-/// Captures `PtyWrite` responses so the test driver can write them back.
-///
-/// Used to complete DA/DSR query/response handshakes inside `vttest`,
-/// `tack`, and similar protocol-driven tools. The struct is `pub` only
-/// because it appears in `Term<PtyResponder>` — the type parameter that
-/// `PtySession::term()` exposes through its return type. Both the
-/// constructor and the response-buffer drain are `pub(crate)` so that
-/// external callers cannot reach `session.term().event_listener()
-/// .take_responses()` and steal the DA/DSR reply queue that
-/// `PtySession::drain()` / `drain_blocking()` exclusively own.
-pub struct PtyResponder {
-    responses: Arc<Mutex<Vec<String>>>,
-}
-
-impl PtyResponder {
-    /// Construct an empty responder with no buffered responses.
-    pub(crate) fn new() -> Self {
-        Self {
-            responses: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    /// Drain all buffered `PtyWrite` payloads, returning them in arrival
-    /// order. The internal buffer is reset to empty.
-    pub(crate) fn take_responses(&self) -> Vec<String> {
-        std::mem::take(&mut *self.responses.lock().expect("PtyResponder mutex poisoned"))
-    }
-}
-
-impl EventListener for PtyResponder {
-    fn send_event(&self, event: Event) {
-        if let Event::PtyWrite(data) = event {
-            self.responses
-                .lock()
-                .expect("PtyResponder mutex poisoned")
-                .push(data);
-        }
-    }
-}
 
 /// PTY-driven test session: child process, byte channel, writer, Term, VTE.
 ///
