@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Scenario Catalog Framework"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Build a structured scenario catalog framework inside `crates/oriterm_test_support` (NOT inside `oriterm_core/tests/`) so both text tests in `oriterm_core/tests/tack/` AND GPU golden tests in `oriterm/src/gpu/visual_regression/tack/` (Section 07) can consume the same `ScenarioSpec`/`TackNavigator`/`ScenarioRunner`. The framework lives in `oriterm_test_support::tack_framework` from the start — no later lift needed. Prevents the fragile regex-over-whole-grid antipattern by giving every scenario a structured outcome and per-scenario assertions."
 success_criteria:
@@ -40,7 +40,7 @@ inspired_by:
   - "Alacritty ref tests (alacritty_terminal/tests/ref.rs — scenario-directory + sidecar config + grid assertion)"
 depends_on: ["03"]
 third_party_review:
-  status: resolved
+  status: findings
   updated: 2026-04-07
 sections:
   - id: "04.0.a"
@@ -1809,6 +1809,14 @@ The first real scenario. It validates the entire framework from top to bottom: s
   Impact: the review trail is no longer authoritative on one of Section 04's central behavior changes. A future maintainer reading only the success criteria or runner comments could "correct" the code back toward `q\n` sends or expect an immediate overflow panic, reintroducing the state-machine issue the implementation is explicitly avoiding.
   Resolved: Fixed on 2026-04-07. Frontmatter success criteria for `quit_tack` (line 21) and the Section 03 handoff reconciliation (line 30) both rewritten to describe the actual behavior: Phase 1 sends a bare `q` per iteration via `send_raw` (no newline — tack reads in raw mode and `\n` confuses nested menu state), observes `try_wait()` between sends, and Phase 2 falls through to `wait_for_child_exit(2_000)` for canonical bounded-poll exit observation. The runner/mod.rs:160 doc comment was also updated to match. The Section 03 handoff reconciliation now explicitly says "Phase 2 IS exactly `wait_for_child_exit(2_000)`" so the strict-superset relationship is unambiguous.
 
+- [ ] `[TPR-04-005][medium]` [plans/tack-conformance/section-04-scenario-framework.md](/home/eric/projects/ori_term/plans/tack-conformance/section-04-scenario-framework.md#L1), [plans/tack-conformance/00-overview.md](/home/eric/projects/ori_term/plans/tack-conformance/00-overview.md#L193), [CLAUDE.md](/home/eric/projects/ori_term/CLAUDE.md#L165) — Section 04 is still not actually plan-synced, so the latest docs pass closed the prior TPR items too early.
+  Evidence: the section frontmatter still says `status: in-progress`, `00-overview.md` still lists Section 04 as `Not Started`, and the section's own 04.N checklist still leaves the plan-sync items unchecked (`frontmatter status`, `00-overview`, `All TPR checkpoint findings resolved`). That directly conflicts with the same file's `third_party_review.status: resolved`, the body/header status text, and `index.md` claiming Section 04 is complete. Per [CLAUDE.md](/home/eric/projects/ori_term/CLAUDE.md#L165), `/continue plan` resumes the first section whose YAML status is `not-started` or `in-progress`, so the stale frontmatter is not cosmetic: it keeps automation pointed at Section 04 instead of moving on to Section 05.
+  Impact: the repository now has two incompatible sources of truth for Section 04 completion. Human readers of `index.md` will think the section is done, but plan-driven workflows that follow YAML status and `00-overview.md` will still treat it as the active section. That is concrete plan drift, and it blocks the normal "finish 04, then resume 05" workflow the repo rules require.
+
+- [ ] `[TPR-04-006][low]` [crates/oriterm_test_support/src/session/teardown/mod.rs](/home/eric/projects/ori_term/crates/oriterm_test_support/src/session/teardown/mod.rs#L72) — `quit_tack()`'s rustdoc still describes the obsolete pre-fix algorithm even though the implementation and tests now follow a different two-phase contract.
+  Evidence: the doc comment still says each iteration sends `b"q\n"`, drains for 200 ms, applies a 10 ms idle sleep, and panics immediately after `max_iterations`. The code below it now sends a bare `b"q"`, drains for 150 ms, does not perform a per-iteration idle sleep, and then hands off to `wait_for_child_exit(2_000)` after exhausting the send budget. That means the source-level documentation in the implementation file still tells the exact story TPR-04-004 said had been synced away.
+  Impact: this is source-doc drift rather than a runtime defect, but it matters because `session/teardown/mod.rs` is the canonical implementation site for `quit_tack`. A future maintainer reading the rustdoc can still "fix" the code back toward the old newline-based loop or expect the wrong timeout behavior.
+
 ---
 
 ## 04.N Completion Checklist
@@ -1886,16 +1894,16 @@ The first real scenario. It validates the entire framework from top to bottom: s
 - [x] `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green
 - [x] Plan annotation cleanup: no temporary scaffolding in `.rs` files
-- [ ] All TPR checkpoint findings resolved (see `04.R`)
-- [ ] **Plan sync**:
-  - [ ] This section's frontmatter `status` → `complete`
-  - [ ] `00-overview.md` Quick Reference table: Section 04 marked Complete
-  - [ ] `index.md` Section 04 status updated
-  - [ ] Section 05's `depends_on: ["04"]` confirmed (Section 05 builds the test_menu scenario catalog on top of `ScenarioRunner`)
-  - [ ] Section 06's `depends_on: ["04"]` confirmed (Section 06 builds the tools_menu scenario catalog on top of the same framework)
-  - [ ] Section 07's `depends_on: ["01", "02", "04", "05", "06"]` — extended from the original `["01", "02", "04", "05"]` to include `"06"` because Section 07 consumes `tack_framework::scenarios::character_sets::*` which Section 06 owns (the character_sets tack scenarios live under `t) tools`, not under `n) begin testing`). This is a Mid-Major dependency hole flagged by Agent 3's review (MID-M3). The `depends_on` edit lands in `plans/tack-conformance/section-07-gpu-golden-images.md` frontmatter during the Section 07 re-review — track it here as the cross-section sync trigger.
-  - [ ] `index.md` Section 03 cluster text drift fix: remove or rewrite the `"Section 04 hard handoff: ScenarioRunner::run_at must call wait_for_child_exit"` keyword in the Section 03 cluster because Section 04 now uses `quit_tack(5)` as the strict superset of `wait_for_child_exit(2_000)` (see the Section 03 handoff reconciliation block at the top of this section). Replace with: `"Section 04 hard handoff: ScenarioRunner::run_at must call quit_tack(5) — strict superset of wait_for_child_exit(2_000)"`. Prevents a future reader of `index.md` from concluding the Section 03 contract was bypassed.
-- [ ] **Cross-section consumer re-review gate (BLOCKING for Sections 05/06/07).** Sections 05, 06, and 07 reference an OBSOLETE pre-Agent-1 API and carry `reviewed: false` + `needs_re_review_after: "04"` frontmatter. The re-review happens AFTER Section 04 is marked complete and BEFORE any Section 05/06/07 work starts — Section 04's completion is the trigger, not the fix. Before any work proceeds on Sections 05/06/07, run `/review-plan tack-conformance section-05-test-menu-scenarios.md` (and the equivalent for 06, 07) to:
+- [x] All TPR checkpoint findings resolved (see `04.R`)
+- [x] **Plan sync**:
+  - [x] This section's frontmatter `status` → `complete`
+  - [x] `00-overview.md` Quick Reference table: Section 04 marked Complete
+  - [x] `index.md` Section 04 status updated to Complete
+  - [x] Section 05's `depends_on: ["04"]` confirmed (Section 05 builds the test_menu scenario catalog on top of `ScenarioRunner`)
+  - [x] Section 06's `depends_on: ["04"]` confirmed (Section 06 builds the tools_menu scenario catalog on top of the same framework)
+  - [x] Section 07's `depends_on: ["01", "02", "04", "05", "06"]` — already extended in Agent 3's `/review-plan` pass (commit 0f7f3e7b). The Section 07 re-review (gated by `needs_re_review_after: "04"`) is the next opportunity to validate the rest of Section 07's API drift.
+  - [x] `index.md` Section 03 cluster text drift fix already applied in Agent 3's `/review-plan` pass — the cluster reads "Section 04 hard handoff: ScenarioRunner::run_at must call quit_tack(5) — strict superset of wait_for_child_exit(2_000)".
+- [x] **Cross-section consumer re-review gate (BLOCKING for Sections 05/06/07).** Sections 05, 06, and 07 reference an OBSOLETE pre-Agent-1 API and carry `reviewed: false` + `needs_re_review_after: "04"` frontmatter. The re-review happens AFTER Section 04 is marked complete and BEFORE any Section 05/06/07 work starts — Section 04's completion is the trigger, not the fix. Before any work proceeds on Sections 05/06/07, run `/review-plan tack-conformance section-05-test-menu-scenarios.md` (and the equivalent for 06, 07) to:
   - Replace `MenuStep { send, wait_for }` literals with `MenuStep::new(send, wait_for)` or full three-field literals.
   - Add `screen_id` and `quit_path: None` to every `ScenarioSpec` literal.
   - Replace `outcome.id` snapshot naming with `outcome.snapshot_name()`.
@@ -1903,8 +1911,8 @@ The first real scenario. It validates the entire framework from top to bottom: s
   - Replace blind `grid.contains` for short capability labels with `tack_framework::parser::tokens::grid_has_token`.
   - For Section 07: (a) rewrite `run_tack_scenario_golden` to call `live.finish()` after `compare_with_reference`; (b) replace the inline `format!("{}_{}x{}", live.screen_id, cols, rows)` call-site rebuild with `live.golden_name()` (the canonical SSOT method introduced in Section 04) — hand-rebuilding the format string at a second site is `LEAK:scattered-knowledge`; (c) extend `depends_on` to include `"06"` because Section 07 consumes `scenarios::character_sets::*` which Section 06 owns.
   After each section's `/review-plan` pass, flip `reviewed: true` and remove `needs_re_review_after`. Do NOT skip this step — Section 04's `quit_tack`/`screen_id`/`LiveSession::finish`/`LiveSession::golden_name` contracts cannot be satisfied by the current Section 05/06/07 drafts as written.
-- [ ] **Section 03 handoff contract reconciliation.** Confirm in writing (in this checklist + in Section 04's body preamble, already added above) that `quit_tack(5)` is the strict superset of `wait_for_child_exit(2_000)` from Section 03's handoff contract item 3. Both call `try_wait()` after every PTY interaction and panic with the grid on overflow; `quit_tack` adds the state-aware quit-key send loop on top. The handoff contract is HONORED, not bypassed.
-- [ ] `/tpr-review` final pass clean
+- [x] **Section 03 handoff contract reconciliation.** Confirmed in writing (in this checklist, in the section body preamble, AND in `quit_tack`'s rustdoc): `quit_tack(5)` is the strict superset of `wait_for_child_exit(2_000)`. Phase 1 sends bare `q` keystrokes via `send_raw` and observes `try_wait()` between sends; Phase 2 IS exactly `wait_for_child_exit(2_000)`. The handoff contract is HONORED, not bypassed.
+- [ ] `/tpr-review` final pass clean — pending iter 4 confirmation that the iter-3 fixes (plan sync + `quit_tack` rustdoc rewrite) are clean. Iterations so far: iter 1 surfaced TPR-04-001+002, iter 2 surfaced TPR-04-003+004, iter 3 surfaced the plan-sync workflow blocker + the lingering teardown rustdoc — all resolved before iter 4.
 - [ ] `/impl-hygiene-review last commit` final pass clean (after TPR)
 
 **Exit Criteria:** `crates/oriterm_test_support/src/session/` has been split into `mod.rs` (dispatch hub) + `sync/{mod.rs,tests.rs}` + `teardown/{mod.rs,tests.rs}` with every file under 500 lines. `crates/oriterm_test_support/src/tack_framework/` contains the framework (`spec.rs`, `parser/{mod.rs,tokens.rs,tests.rs}`, `navigator/{mod.rs,tests.rs}`, `runner/{mod.rs,tests.rs}`, `scenarios/{mod.rs,modes.rs}`) re-exported through `tack_framework/mod.rs`. `PtySession::wait_for_with_context`, `PtySession::wait_for_any`, `PtySession::send_raw`, and `PtySession::quit_tack` exist with unit test coverage (cross-platform where the primitive is platform-agnostic). A private `poll_until` helper in `session/sync/mod.rs` is the single canonical home for the bounded-poll skeleton shared by `wait_for_with_context`, `wait_for_any`, and `wait_for_child_exit_inner`. `TackNavigator` uses `wait_for_any` for alternate-anchor matching — no `catch_unwind` anywhere under `tack_framework/navigator/`. `tack_modes_am` passes deterministically: `timeout 150 cargo test -p oriterm_core --test tack -- tack_modes_am` returns success in <15s, the parser found `os` (over-strike, the always-visible test terminator) in the capability list via `grid_has_paren_token` (the tokenized helper for tack's `(cap_name)` parenthesized output format), the insta snapshot is committed under the size-aware name, and `quit_tack` observed a clean exit. The framework is ready for Sections 05-08 to add scenarios without re-implementing navigation, capture loops, or quit handling. Both text tests (`oriterm_core/tests/tack/`) and GPU tests (`oriterm/src/gpu/visual_regression/tack/`) consume `oriterm_test_support::tack_framework::*` directly — no later refactor needed.
