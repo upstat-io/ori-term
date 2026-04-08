@@ -45,5 +45,19 @@ pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
             "kich1",
             "deferred to Section 08 keyboard terminfo_xcheck (Insert)",
         ),
+        // ----- TPR-05-029 fix: kbs and kmous belong to Section 08's
+        // keyboard family per Section 08's frontmatter and 08.4
+        // editing/navigation key scenario. Section 05's tests
+        // exercise them indirectly (tack reads input) but do not
+        // surface them as (cap) shortnames. Section 08 will pin
+        // both via terminfo_xcheck when it lands.
+        (
+            "kbs",
+            "deferred to Section 08 keyboard terminfo_xcheck (Backspace) — Section 08.4 editing-key scenario",
+        ),
+        (
+            "kmous",
+            "deferred to Section 08 keyboard terminfo_xcheck (mouse prefix \\E[M) — Section 08 owns mouse-input encoding",
+        ),
     ],
 };
