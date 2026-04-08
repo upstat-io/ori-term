@@ -27,9 +27,9 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 - [x] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
 - [x] `extra/ori_term.info` terminfo source exists as a hand-authored, fully-pinned entry: a private `ori_term+common` base fragment plus two user-facing entries (`ori_term` and `ori_term-direct`) that consume only the private fragment via `use=ori_term+common,`. The capability vocabulary is derived from xterm-256color conventions, but there is NO `use=xterm-256color,` inheritance — every cap is declared explicitly so host terminfo drift never silently changes what ori_term claims. (Matches Alacritty's `alacritty+common` pattern.)
 - [x] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + BOTH `TERMINFO` and `TERMINFO_DIRS` pointing at the compiled entry (some ncurses consumers honor only one of the two — set both). Verified end-to-end by `child_process_with_apply_env_reads_pinned_terminfo`, which spawns `infocmp` with the env triple set and asserts `infocmp`'s reconstruction-source header points inside `env.terminfo_dir()` — proving env-precedence steered the child to OUR compiled entry, not any system-installed `ori_term`. The test is immune to future packaging releases that might install `ori_term` system-wide.
-- [ ] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
+- [x] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
 - [ ] Tack tool scenarios cover EVERY automatable tools screen: ANSI status reports (DA/DSR), SGR modes, character sets, ENQ/ACK, OSC queries. Interactive/overlap tools (scan codes, decompile terminfo) have in-code stubs.
-- [ ] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
+- [x] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
 - [ ] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
 - [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys
 - [ ] All tests skip cleanly when tack/tic unavailable (cross-platform: compile everywhere, runtime skip)
@@ -216,7 +216,7 @@ Phase 5 - Verification
 | 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Complete |
 | 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Complete |
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Complete |
-| 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | In Progress (M1 complete) |
+| 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Complete |
 | 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Not Started |
 | 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Not Started |
 | 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Not Started |
