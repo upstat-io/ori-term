@@ -134,5 +134,19 @@ pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
             "RGB",
             "deferred to Section 06 sgr_modes scenario (direct-color marker)",
         ),
+        // ----- OSC title support markers (TPR-05-029 fix). Both
+        // are exercised via OSC 0/1/2 title-set in
+        // oriterm_core/src/term/handler/osc.rs:22 (osc_set_title)
+        // which Section 06's tools-menu work will pin via OSC
+        // round-trip scenarios. Section 05's modes/color/cursor
+        // scenarios do not exercise OSC title-set paths.
+        (
+            "AX",
+            "deferred to Section 06 osc_queries scenario (xterm BCE behavior advertisement, paired with title support)",
+        ),
+        (
+            "XT",
+            "deferred to Section 06 osc_queries scenario (xterm extension marker, paired with title support)",
+        ),
     ],
 };
