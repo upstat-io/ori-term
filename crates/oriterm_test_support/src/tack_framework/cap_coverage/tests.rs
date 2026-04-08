@@ -236,12 +236,21 @@ fn expand_modified_key_caps_matches_terminfo() {
     // leave it uncovered. If the expansion includes a cap not
     // in the terminfo, the kf-family exemption set would
     // include phantom entries.
+    //
+    // TPR-05-027 fix: this test originally only checked
+    // `declared - expanded`, not `expanded - declared`. The
+    // "and vice versa" claim was therefore unverified — a
+    // phantom helper entry could slip through. The fix below
+    // adds the symmetric check and pins both directions.
     let declared = parse_declared_caps();
     let expanded: BTreeSet<String> = expand_modified_key_caps().into_iter().collect();
-    let in_declared_only: BTreeSet<&String> = declared
+
+    // Extract the modified-key cap names from the declared set
+    // for both halves of the symmetric check.
+    let declared_modkey: BTreeSet<&String> = declared
         .iter()
         .filter(|c| {
-            (c.starts_with("kLFT")
+            c.starts_with("kLFT")
                 || c.starts_with("kRIT")
                 || c.starts_with("kUP")
                 || c.starts_with("kDN")
@@ -252,14 +261,38 @@ fn expand_modified_key_caps_matches_terminfo() {
                 || c.starts_with("kNXT")
                 || c.starts_with("kPRV")
                 || c.as_str() == "kind"
-                || c.as_str() == "kri")
-                && !expanded.contains(*c)
+                || c.as_str() == "kri"
         })
+        .collect();
+
+    // Direction 1: declared - expanded. Catches "added kHOM7
+    // to terminfo but didn't update the helper".
+    let in_declared_only: BTreeSet<&String> = declared_modkey
+        .iter()
+        .filter(|c| !expanded.contains(c.as_str()))
+        .copied()
         .collect();
     assert!(
         in_declared_only.is_empty(),
         "modified-key caps declared in terminfo but missing from \
          expand_modified_key_caps(): {in_declared_only:?}"
+    );
+
+    // Direction 2: expanded - declared. Catches "helper produces
+    // a phantom cap that isn't in terminfo" (e.g. a typo in the
+    // base list, an off-by-one in the suffix range, or a
+    // bogus addition like 'kFOO').
+    let in_expanded_only: BTreeSet<&String> = expanded
+        .iter()
+        .filter(|c| !declared_modkey.contains(c))
+        .collect();
+    assert!(
+        in_expanded_only.is_empty(),
+        "phantom modified-key caps produced by expand_modified_key_caps() \
+         that are not declared in extra/ori_term.info: {in_expanded_only:?} — \
+         either the helper has drifted from terminfo (typo / off-by-one / \
+         spurious addition), or extra/ori_term.info dropped a cap that the \
+         helper still produces (TPR-05-027 fix)"
     );
 }
 
@@ -352,6 +385,45 @@ fn stale_exemption_negative_pin() {
         vec!["am".to_string()],
         "stale-exemption check failed to catch the overlap; the \
          matrix's negative-pin invariant is broken"
+    );
+
+    // TPR-05-025 SEMANTIC PIN: the integration test must ALSO scan
+    // the iterator-built keyboard exemptions (`expand_kf_caps()`
+    // and `expand_modified_key_caps()`), not just `contrib.exempt`.
+    // Otherwise Section 08 could move `kf1` into `covered` and the
+    // matrix would silently allow `expand_kf_caps()` to keep
+    // producing it. Re-implement the iterator-vs-covered check
+    // here to pin the contract: building a synthetic covered set
+    // containing `kf1` MUST trigger a stale match against
+    // expand_kf_caps().
+    let synthetic_covered: BTreeSet<String> = ["kf1".to_string()].into_iter().collect();
+    let mut iterator_stale: Vec<String> = Vec::new();
+    for cap in expand_kf_caps() {
+        if synthetic_covered.contains(&cap) {
+            iterator_stale.push(cap);
+        }
+    }
+    assert_eq!(
+        iterator_stale,
+        vec!["kf1".to_string()],
+        "expand_kf_caps() iterator stale-exemption check failed; \
+         the integration test's iterator-scan path is broken \
+         (TPR-05-025 regression)"
+    );
+
+    let synthetic_covered_modkey: BTreeSet<String> = ["kLFT".to_string()].into_iter().collect();
+    let mut modkey_stale: Vec<String> = Vec::new();
+    for cap in expand_modified_key_caps() {
+        if synthetic_covered_modkey.contains(&cap) {
+            modkey_stale.push(cap);
+        }
+    }
+    assert_eq!(
+        modkey_stale,
+        vec!["kLFT".to_string()],
+        "expand_modified_key_caps() iterator stale-exemption check \
+         failed; the integration test's iterator-scan path is broken \
+         (TPR-05-025 regression)"
     );
 }
 
