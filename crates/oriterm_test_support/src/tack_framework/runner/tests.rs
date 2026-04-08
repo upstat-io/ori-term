@@ -567,3 +567,153 @@ fn phase_default_timeout_ms_matches_documented_value() {
     use super::phase::PHASE_DEFAULT_TIMEOUT_MS;
     assert_eq!(PHASE_DEFAULT_TIMEOUT_MS, 5_000);
 }
+
+// ============================================================
+// 05.0.b run_phase_at orchestration tests against real tack
+// (TPR-05-011 fix).
+//
+// These tests pin the orchestration BEHAVIOR of `run_phase_at`
+// itself — not the lower-level `phase_capture_loop` (already
+// covered above) and not the sentinel detection (already
+// covered above). The covered orchestration properties:
+//
+// 1. Happy path: full spawn → navigate → trigger → capture →
+//    finish_and_assert pipeline returns a `ScenarioOutcome` whose
+//    `grid_text` contains the phase anchor.
+// 2. Pre-existing-anchor guard: when the phase anchor is already
+//    in the pre-trigger grid, run_phase_at PANICS (not silently
+//    captures the pre-existing match) and the panic message
+//    names the anchor + the "already present BEFORE
+//    phase_trigger fires" diagnostic.
+//
+// The plan's 05.0.b success criteria envisioned 5 timing tests
+// against a synthetic in-process fake `PtySession`. The current
+// `PtySession` is a concrete struct that owns a real PTY; faking
+// it would require deep refactoring (trait abstraction or enum
+// variants). The 3 timing tests not landed here are
+// transitively covered by `phase_capture_loop_returns_when_anchor_present`
+// and `phase_capture_loop_returns_none_on_timeout` above —
+// `run_phase_at` delegates to `phase_capture_loop` for the
+// timing matrix, so a regression in the deadline / drain / idle-
+// sleep loop fires those existing tests. The "no post-match
+// quiesce" property is structural: read `phase.rs` and verify
+// no `wait(...)` call follows the `phase_capture_loop` return.
+// ============================================================
+
+/// Happy-path PhaseSpec used by `run_phase_at_returns_grid_containing_anchor`.
+///
+/// Navigates `n -> x` to the modes-controls screen (same path as
+/// `TACK_MODES_AM`), triggers the modes test sweep with `n`, and
+/// waits for `Done` — the always-emitted modes-test terminator
+/// (verified empirically against tack v1.08; see
+/// `oriterm_core/tests/tack/test_menu/modes.rs` rustdoc).
+const TACK_PHASE_HAPPY_PATH: PhaseSpec = PhaseSpec {
+    id: "test_run_phase_at_happy_path",
+    screen_id: "test_run_phase_at_happy_path",
+    menu_path: &[
+        MenuStep::new(b"n", "tack/test [n] >"),
+        MenuStep::new(b"x", "tack/test/mode [n] >"),
+    ],
+    phase_setup_anchor: "tack/test/mode [n] >",
+    phase_trigger: b"n",
+    phase_anchor: "Done",
+    phase_timeout_ms: 5_000,
+    quit_path: None,
+    parser: default_parser,
+};
+
+/// Pre-existing-anchor PhaseSpec used by
+/// `run_phase_at_pre_existing_anchor_panics`. The `phase_anchor`
+/// `"modes and glitches"` is part of the modes-controls screen's
+/// header text ("Test modes and glitches:") that the navigator
+/// has already drained into the grid before the trigger fires —
+/// so the pre-existing-anchor guard MUST panic.
+const TACK_PHASE_PRE_EXISTING: PhaseSpec = PhaseSpec {
+    id: "test_run_phase_at_pre_existing",
+    screen_id: "test_run_phase_at_pre_existing",
+    menu_path: &[
+        MenuStep::new(b"n", "tack/test [n] >"),
+        MenuStep::new(b"x", "tack/test/mode [n] >"),
+    ],
+    phase_setup_anchor: "tack/test/mode [n] >",
+    phase_trigger: b"n",
+    phase_anchor: "modes and glitches",
+    phase_timeout_ms: 5_000,
+    quit_path: None,
+    parser: default_parser,
+};
+
+#[test]
+fn run_phase_at_returns_grid_containing_anchor() {
+    // SEMANTIC PIN for the run_phase_at happy-path orchestration:
+    // spawn tack, navigate to modes-controls, trigger the modes
+    // sweep via send_raw, capture via phase_capture_loop, return
+    // a ScenarioOutcome whose grid_text contains the phase anchor.
+    //
+    // The "Done" anchor is the always-emitted modes-test
+    // terminator on tack v1.08 (verified empirically — see
+    // oriterm_core/tests/tack/test_menu/modes.rs rustdoc and
+    // tack__test_menu__modes__tack_modes_80x24.snap which
+    // captures the same ending state). This test is the
+    // run_phase_at-level analog of `tack_modes_am` (which uses
+    // run_at via the stable-screen path).
+    //
+    // Skips on hosts without tack/tic installed.
+    if !ScenarioRunner::available() {
+        eprintln!("tack or tic unavailable, skipping run_phase_at_returns_grid_containing_anchor");
+        return;
+    }
+    let outcome = ScenarioRunner::run_phase(&TACK_PHASE_HAPPY_PATH);
+    assert!(
+        outcome.grid_text.contains("Done"),
+        "expected captured grid to contain phase anchor 'Done', got:\n{}",
+        outcome.grid_text
+    );
+    // Identity propagation: the outcome must carry the spec's
+    // semantic id and screen id, NOT the underlying tack screen
+    // identity.
+    assert_eq!(outcome.scenario_id, "test_run_phase_at_happy_path");
+    assert_eq!(outcome.screen_id, "test_run_phase_at_happy_path");
+    assert_eq!(outcome.cols, 80);
+    assert_eq!(outcome.rows, 24);
+}
+
+#[test]
+fn run_phase_at_pre_existing_anchor_panics() {
+    // SEMANTIC PIN for the pre-existing-anchor guard at the
+    // run_phase_at orchestration level. The plan's most subtle
+    // correctness invariant is that the guard fires BEFORE
+    // `send_raw(spec.phase_trigger)` writes any byte to the PTY.
+    // If the anchor is already on the screen — meaning the test
+    // author picked a non-discriminating anchor — the framework
+    // would otherwise silently "capture" the pre-existing match
+    // and report success without actually exercising the phase.
+    //
+    // The phase_anchor "modes and glitches" is in the modes-
+    // controls screen's header text ("Test modes and glitches:")
+    // which the navigator drains into the grid before the
+    // pre-existing-anchor guard runs. The guard MUST panic.
+    //
+    // Skips on hosts without tack/tic.
+    if !ScenarioRunner::available() {
+        eprintln!("tack or tic unavailable, skipping run_phase_at_pre_existing_anchor_panics");
+        return;
+    }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = ScenarioRunner::run_phase(&TACK_PHASE_PRE_EXISTING);
+    }));
+    let payload = result.expect_err("expected pre-existing-anchor panic");
+    let msg = panic_message(payload);
+    assert!(
+        msg.contains("modes and glitches"),
+        "expected panic to name the offending anchor, got: {msg}"
+    );
+    assert!(
+        msg.contains("already present BEFORE phase_trigger fires"),
+        "expected panic to use the pre-existing-anchor diagnostic, got: {msg}"
+    );
+    assert!(
+        msg.contains("test_run_phase_at_pre_existing"),
+        "expected panic to name the scenario id, got: {msg}"
+    );
+}

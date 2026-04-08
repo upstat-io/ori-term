@@ -62,9 +62,19 @@ pub fn tic_available() -> bool {
 /// Tack ships with ncurses on Linux/macOS, not on native Windows.
 /// Use this gate at the top of every test that spawns tack so the
 /// suite skips cleanly on platforms missing the tool.
+///
+/// **Probe is `tack -h`, NOT `tack -V`.** Tack v1.08 prints its
+/// version banner to stdout when invoked with `-V`, but the binary
+/// then EXITS with status 1 (not 0). Other ncurses tools like
+/// `tic` and `infocmp` exit 0 from `-V` — tack is the odd one out.
+/// Switching the probe to `-h` (which prints usage to stderr and
+/// exits 0) fixes the false-negative that the TPR-05-005
+/// `tool_available` tighten introduced (`tool_available` now
+/// requires `status.success()`, so `tack -V`'s exit-1 was
+/// misreporting tack as unavailable on every dev/CI host).
 #[must_use]
 pub fn tack_available() -> bool {
-    tool_available("tack", "-V")
+    tool_available("tack", "-h")
 }
 
 /// Check if `infocmp` (terminfo decompiler / inspector) is installed.
