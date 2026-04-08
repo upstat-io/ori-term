@@ -161,8 +161,8 @@ pub fn expand_modified_key_caps() -> Vec<String> {
     out
 }
 
-/// Parse `extra/ori_term.info` and return the set of declared cap
-/// names (boolean caps + numeric caps + string caps).
+/// Parse a terminfo source string and return the set of declared
+/// cap names (boolean caps + numeric caps + string caps).
 ///
 /// The parser handles tic format quirks:
 /// - Comment lines (`# ...`) are skipped.
@@ -179,11 +179,17 @@ pub fn expand_modified_key_caps() -> Vec<String> {
 /// - Numeric caps (`name#256`) and string caps (`name=value`) are
 ///   both included; only the leading identifier (everything before
 ///   `=`/`#`/`@`/whitespace) is extracted as the cap name.
-#[must_use]
-pub fn parse_declared_caps() -> BTreeSet<String> {
+///
+/// Pure function over the input string — no embedded source coupling.
+/// The public [`parse_declared_caps`] wrapper calls this with
+/// [`TERMINFO_SRC`]; the sibling tests in `tests.rs` call it with
+/// synthetic terminfo strings to exercise each tic format quirk in
+/// isolation. Single canonical home for the parser body — no
+/// algorithmic duplication between production and test code.
+pub(super) fn parse_terminfo_source(src: &str) -> BTreeSet<String> {
     let mut caps = BTreeSet::new();
     let mut in_continuation = false;
-    for raw_line in TERMINFO_SRC.lines() {
+    for raw_line in src.lines() {
         let trimmed = raw_line.trim_start();
         if trimmed.starts_with('#') || trimmed.is_empty() {
             in_continuation = false;
@@ -225,6 +231,14 @@ pub fn parse_declared_caps() -> BTreeSet<String> {
         }
     }
     caps
+}
+
+/// Parse the embedded `extra/ori_term.info` and return the set of
+/// declared cap names. Thin wrapper over [`parse_terminfo_source`]
+/// that fixes the source to [`TERMINFO_SRC`] (the embedded file).
+#[must_use]
+pub fn parse_declared_caps() -> BTreeSet<String> {
+    parse_terminfo_source(TERMINFO_SRC)
 }
 
 #[cfg(test)]
