@@ -15,6 +15,28 @@
 //! MUST call [`LiveSession::finish`] after rendering so the
 //! exit-success assertion still runs (M5 cleanup contract).
 //!
+//! # Module layout (split in 05.0.b)
+//!
+//! Section 04 had `runner/mod.rs` as a single 375-line file. 05.0.b
+//! adds `ScenarioRunner::run_phase[_at]` and a sentinel-detection
+//! helper, which would push the file past the 500-line code-hygiene
+//! limit. The mandatory split (per 05.0.b's "first commit" task):
+//!
+//! - `runner/mod.rs` (this file) — type defs ([`ScenarioRunner`],
+//!   [`ScenarioOutcome`], [`LiveSession`]), shared private helpers
+//!   ([`prepare_and_navigate`], [`finish_and_assert`],
+//!   [`scenario_name`]), and the canonical timing constants
+//!   ([`MAIN_MENU_READY_TIMEOUT_MS`], [`READY_ANCHOR_TIMEOUT_MS`],
+//!   [`TACK_MAIN_MENU_PROMPT`], [`TACK_QUIT_MAX_ITERATIONS`]).
+//! - `runner/stable.rs` — the stable-screen API
+//!   (`ScenarioRunner::run`, `run_at`, `run_with_session_at`). All
+//!   pre-05.0.b methods live here so the diff for the phase-capture
+//!   feat commit is reviewable on its own.
+//!
+//! 05.0.b's feat commit adds `runner/phase.rs` with `run_phase[_at]`
+//! plus the sentinel-detection helper they share with the stable
+//! path through `assert_no_unverified_sentinels`.
+//!
 //! # `PtySession::send` quiesce dependency (Mi1)
 //!
 //! [`PtySession::send`] calls `wait(300)` internally to drain output
@@ -50,6 +72,8 @@ use super::navigator::TackNavigator;
 use super::parser::ScreenFacts;
 use super::spec::ScenarioSpec;
 
+pub mod stable;
+
 /// Canonical name format for snapshot/golden files: `<screen_id>_<cols>x<rows>`.
 ///
 /// SINGLE SOURCE OF TRUTH for snapshot/golden naming. Both
@@ -72,24 +96,24 @@ fn scenario_name(screen_id: &str, cols: u16, rows: u16) -> String {
 /// practice; 5 s is the conservative budget for slow hosts. The
 /// constant lives at module scope so all spawn paths use the same
 /// value (`run_at`, `run_with_session_at`, and any future variants).
-const MAIN_MENU_READY_TIMEOUT_MS: u64 = 5_000;
+pub(super) const MAIN_MENU_READY_TIMEOUT_MS: u64 = 5_000;
 
 /// CI-safe wait for the post-navigation `ready_anchor` to land in
 /// the grid. Tack's screen redraws are usually instant after the
 /// last navigation keystroke, but tests for slow caps may need
 /// headroom; 5 s is the conservative shared budget.
-const READY_ANCHOR_TIMEOUT_MS: u64 = 5_000;
+pub(super) const READY_ANCHOR_TIMEOUT_MS: u64 = 5_000;
 
 /// Tack's canonical main-menu prompt. Pinned by Section 03's smoke
 /// test snapshot — see section-03-tack-smoke-test.md "Section 04
 /// handoff contract" item 2. Centralized here so a tack version
 /// upgrade that changes the prompt only requires editing one site.
-const TACK_MAIN_MENU_PROMPT: &str = "tack [n] >";
+pub(super) const TACK_MAIN_MENU_PROMPT: &str = "tack [n] >";
 
 /// Default `quit_tack` send budget for tack's submenu nesting:
 /// main-menu → submenu → sub-submenu plus one extra for safety.
 /// See [`PtySession::quit_tack`] for the two-phase contract.
-const TACK_QUIT_MAX_ITERATIONS: u32 = 5;
+pub(super) const TACK_QUIT_MAX_ITERATIONS: u32 = 5;
 
 /// Spawn tack, wait for the main menu, walk the `menu_path`, wait
 /// for the ready anchor, capture the grid, and run the parser. The
@@ -99,7 +123,7 @@ const TACK_QUIT_MAX_ITERATIONS: u32 = 5;
 /// Returns the live `(session, env, grid_text, parsed)` tuple. The
 /// `env` MUST be held by the caller (see `LiveSession::_terminfo`
 /// and the `tic` lazy-read race rationale).
-fn prepare_and_navigate(
+pub(super) fn prepare_and_navigate(
     spec: &ScenarioSpec,
     cols: u16,
     rows: u16,
@@ -123,7 +147,7 @@ fn prepare_and_navigate(
 /// post-quit assertion semantics so the C2/C3 fixes (state-aware
 /// quit + exit-status assertion) cannot drift between the two
 /// public entry points.
-fn finish_and_assert(
+pub(super) fn finish_and_assert(
     session: &mut PtySession,
     quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
     scenario_id: &str,
@@ -213,79 +237,6 @@ impl ScenarioRunner {
     pub fn available() -> bool {
         tack_available() && tic_available()
     }
-
-    /// Run a single scenario at the standard 80x24 size.
-    ///
-    /// Spawns tack via [`PtySession::spawn_tack`] against a fresh
-    /// [`TerminfoEnv`], navigates the `menu_path`, calls the parser,
-    /// quits tack cleanly via [`PtySession::quit_tack`] (or
-    /// `spec.quit_path` if set), and asserts the child exited with
-    /// `success()`.
-    ///
-    /// Panics on navigation timeout (via
-    /// [`super::navigator::TackNavigator::navigate`],
-    /// pre-existing-anchor guard, or step timeout) and on
-    /// non-success exit. The panic message includes the captured
-    /// grid AND the exit status.
-    #[must_use]
-    pub fn run(spec: &ScenarioSpec) -> ScenarioOutcome {
-        Self::run_at(spec, 80, 24)
-    }
-
-    /// Run a scenario at a specific grid size. Used by Sections
-    /// 05-08 for size-matrix tests.
-    ///
-    /// Delegates the spawn → navigate → capture → parse pipeline to
-    /// [`prepare_and_navigate`] and the quit + assert tail to
-    /// [`finish_and_assert`] so this method and
-    /// [`Self::run_with_session_at`] cannot drift, and so the C2
-    /// (state-aware quit) and C3 (exit-success assertion) fixes
-    /// have a single canonical home.
-    ///
-    /// Panics on navigation timeout (via the
-    /// [`super::navigator::TackNavigator::navigate`]
-    /// pre-existing-anchor guard or step timeout) and on
-    /// non-success exit. The panic message includes the captured
-    /// grid AND the exit status.
-    #[must_use]
-    pub fn run_at(spec: &ScenarioSpec, cols: u16, rows: u16) -> ScenarioOutcome {
-        let (mut session, _env, grid_text, parsed) = prepare_and_navigate(spec, cols, rows);
-        let _exit = finish_and_assert(&mut session, spec.quit_path, spec.id, cols, rows);
-        // _env held until end-of-scope so tack's lazy terminfo
-        // reads always see a live temp dir.
-        ScenarioOutcome {
-            scenario_id: spec.id,
-            screen_id: spec.screen_id,
-            cols,
-            rows,
-            grid_text,
-            parsed,
-        }
-    }
-
-    /// Like [`Self::run_at`] but returns the live [`PtySession`] so
-    /// GPU callers can render it through the pipeline before
-    /// quitting.
-    ///
-    /// Caller MUST call [`LiveSession::finish`] after rendering.
-    /// Dropping `LiveSession` without calling `finish` reaps the
-    /// child via `Drop` (see [`PtySession::drop`]) but loses the
-    /// exit-status assertion — that's a regression risk Section 07's
-    /// checklist guards against.
-    #[must_use]
-    pub fn run_with_session_at(spec: &ScenarioSpec, cols: u16, rows: u16) -> LiveSession {
-        let (session, env, _grid_text, facts) = prepare_and_navigate(spec, cols, rows);
-        LiveSession {
-            session,
-            facts,
-            scenario_id: spec.id,
-            screen_id: spec.screen_id,
-            cols,
-            rows,
-            _terminfo: env,
-            quit_path: spec.quit_path,
-        }
-    }
 }
 
 /// Wrapper that returns a LIVE [`PtySession`] instead of just text.
@@ -318,9 +269,9 @@ pub struct LiveSession {
     /// Grid rows the session was opened at.
     pub rows: u16,
     /// Held to keep the temp terminfo dir alive for tack's lazy reads.
-    _terminfo: TerminfoEnv,
+    pub(super) _terminfo: TerminfoEnv,
     /// Per-scenario quit override propagated from `ScenarioSpec`.
-    quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
+    pub(super) quit_path: Option<fn(&mut PtySession) -> ExitStatus>,
 }
 
 impl LiveSession {
