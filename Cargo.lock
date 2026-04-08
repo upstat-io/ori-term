@@ -2019,7 +2019,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_test_support"
-version = "0.2.0-alpha.20260406"
+version = "0.2.0-alpha.20260407"
 dependencies = [
  "oriterm_core",
  "portable-pty",
