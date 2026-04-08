@@ -41,5 +41,28 @@ fn tack_graphic_rendition_sgr() {
         outcome.grid_text
     );
 
+    // SEMANTIC PIN for TPR-05-013: same as the ACS wrapper. Tack
+    // v1.08 combines the ACS and graphic-rendition tests under one
+    // menu key (`a`) and the test only probes (bel). No SGR labels
+    // (bold/dim/underline/blink/reverse/invis) appear on the screen
+    // — verified empirically. The only honest semantic claim is
+    // that (bel) was invoked. This wrapper has a distinct screen_id
+    // from the ACS wrapper so snapshots do not collide and the
+    // parser path differs (SGR-label scan vs. line-drawing-char
+    // count), but the asserted facts on tack v1.08 are the same.
+    // SGR cap coverage will come from a different source (Section
+    // 07's GPU goldens for actual SGR rendering, or vttest menu
+    // entries that DO emit SGR sample text).
+    assert!(
+        outcome.grid_text.contains("Testing bell"),
+        "expected captured grid to contain 'Testing bell' header (bel cap pin), got:\n{}",
+        outcome.grid_text
+    );
+    assert!(
+        outcome.grid_text.contains("(bel)"),
+        "expected captured grid to contain '(bel)' parenthesized cap (bel cap pin), got:\n{}",
+        outcome.grid_text
+    );
+
     insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text);
 }

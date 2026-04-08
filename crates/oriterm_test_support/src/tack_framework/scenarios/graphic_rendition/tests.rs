@@ -103,3 +103,48 @@ fn parse_graphic_rendition_screen_handles_label_at_end_of_line() {
     let facts = parse_graphic_rendition_screen(grid);
     assert_eq!(facts.capability_labels, vec!["bold".to_string()]);
 }
+
+#[test]
+fn parse_graphic_rendition_screen_returns_labels_in_canonical_order() {
+    // SEMANTIC PIN for TPR-05-014: the parser walks SGR_LABELS in
+    // declaration order and pushes matches in that order, so the
+    // returned `capability_labels` vec MUST appear in the canonical
+    // [bold, dim, underline, blink, reverse, invis] order REGARDLESS
+    // of the order they appear in the grid. A regression that
+    // returned labels in grid-discovery order would fire here
+    // because we deliberately scramble the input.
+    let grid = "invis reverse blink underline dim bold\n";
+    let facts = parse_graphic_rendition_screen(grid);
+    assert_eq!(
+        facts.capability_labels,
+        vec![
+            "bold".to_string(),
+            "dim".to_string(),
+            "underline".to_string(),
+            "blink".to_string(),
+            "reverse".to_string(),
+            "invis".to_string(),
+        ],
+        "labels must be returned in canonical SGR_LABELS order, not grid order"
+    );
+}
+
+#[test]
+fn parse_graphic_rendition_screen_returns_partial_subset_in_canonical_order() {
+    // SEMANTIC PIN for TPR-05-014: when only a subset of SGR labels
+    // is present, the parser returns just those labels — still in
+    // canonical order, with no padding/empty entries for missing
+    // labels. Pin 3 of 6 (bold, underline, reverse) to catch a
+    // regression that always returned all 6 with empty placeholders.
+    let grid = "header\nbold and underline and reverse\n";
+    let facts = parse_graphic_rendition_screen(grid);
+    assert_eq!(
+        facts.capability_labels,
+        vec![
+            "bold".to_string(),
+            "underline".to_string(),
+            "reverse".to_string(),
+        ],
+        "partial subset must contain only matched labels in canonical order"
+    );
+}

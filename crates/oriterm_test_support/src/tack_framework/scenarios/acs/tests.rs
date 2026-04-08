@@ -103,3 +103,40 @@ fn parse_acs_screen_extracts_first_non_blank_line_as_header() {
     let facts = parse_acs_screen(grid);
     assert_eq!(facts.header_text, "Real Header Line");
 }
+
+#[test]
+fn parse_acs_screen_full_block_sweep_counts_all_128_codepoints() {
+    // SEMANTIC PIN for TPR-05-014: the parser must count EVERY
+    // codepoint in the inclusive U+2500..=U+257F block as a distinct
+    // line-drawing char. The block is 128 codepoints (0x2500 through
+    // 0x257F). A regression that off-by-one-clips the upper bound
+    // (e.g., `..` instead of `..=`) or that uses a narrower range
+    // (e.g., U+2500..=U+254F for box-drawing only) would surface as
+    // a count below 128.
+    let mut grid = String::new();
+    for code in 0x2500u32..=0x257Fu32 {
+        if let Some(ch) = char::from_u32(code) {
+            grid.push(ch);
+        }
+    }
+    let facts = parse_acs_screen(&grid);
+    assert_eq!(
+        facts.notes,
+        vec!["distinct_line_drawing_chars=128".to_string()],
+        "full sweep over U+2500..=U+257F must count all 128 distinct codepoints"
+    );
+}
+
+#[test]
+fn parse_acs_screen_preserves_count_across_multiple_lines() {
+    // SEMANTIC PIN for TPR-05-014: line breaks must NOT affect the
+    // distinct-char count. A regression that processes only the
+    // first line, or that resets per-line, would fire here.
+    let grid = "─\n│\n┌\n┐\n└\n┘\n";
+    let facts = parse_acs_screen(grid);
+    assert_eq!(
+        facts.notes,
+        vec!["distinct_line_drawing_chars=6".to_string()],
+        "multi-line input must preserve cumulative distinct count"
+    );
+}
