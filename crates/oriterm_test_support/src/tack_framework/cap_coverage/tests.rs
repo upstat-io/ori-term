@@ -6,50 +6,20 @@
 
 use std::collections::BTreeSet;
 
-use super::{ALL_CONTRIBUTIONS, expand_kf_caps, expand_modified_key_caps, parse_declared_caps};
+use super::{
+    ALL_CONTRIBUTIONS, expand_kf_caps, expand_modified_key_caps, parse_declared_caps,
+    parse_terminfo_source,
+};
 
 // ----- Parser dimension: synthetic-input pins for each tic format quirk.
 
-/// Test helper: parse a synthetic terminfo string. We can't pass
-/// arbitrary text to `parse_declared_caps()` (which is hardcoded to
-/// the embedded `extra/ori_term.info`), so this helper duplicates
-/// the parser body against an injected source. The duplication is
-/// 12 lines and is intentionally test-local — production code
-/// should not need to parse arbitrary terminfo strings.
+/// Test helper: parse a synthetic terminfo string via the canonical
+/// `parse_terminfo_source` helper from `mod.rs`. The parser body
+/// lives in exactly one place — the public `parse_declared_caps()`
+/// wrapper calls it with the embedded `extra/ori_term.info`, and
+/// these tests call it with synthetic strings.
 fn parse_synthetic(src: &str) -> BTreeSet<String> {
-    let mut caps = BTreeSet::new();
-    let mut in_continuation = false;
-    for raw_line in src.lines() {
-        let trimmed = raw_line.trim_start();
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            in_continuation = false;
-            continue;
-        }
-        if !raw_line.starts_with(char::is_whitespace) {
-            in_continuation = false;
-            continue;
-        }
-        let line_ended_with_comma = raw_line.trim_end().ends_with(',');
-        if in_continuation {
-            in_continuation = !line_ended_with_comma;
-            continue;
-        }
-        in_continuation = !line_ended_with_comma;
-        for token in trimmed.split(',') {
-            let t = token.trim();
-            if t.is_empty() || t.starts_with("use=") {
-                continue;
-            }
-            let name: String = t
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
-            if !name.is_empty() {
-                caps.insert(name);
-            }
-        }
-    }
-    caps
+    parse_terminfo_source(src)
 }
 
 #[test]
