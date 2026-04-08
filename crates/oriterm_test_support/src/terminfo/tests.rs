@@ -405,7 +405,10 @@ fn ori_term_terminfo_round_trips_via_infocmp() {
 #[test]
 fn ori_term_direct_declares_truecolor() {
     // Direct-entry round-trip: the truecolor variant must declare
-    // either `RGB` or `Tc` plus `colors#16777216` (0x1000000).
+    // either `RGB` or `Tc` (these are the actual capability markers
+    // ncurses consumers query at runtime to decide whether to emit
+    // 24-bit SGR sequences) and a colors count consistent with the
+    // host ncurses backend.
     if round_trip_gate_closed() {
         return;
     }
@@ -425,13 +428,30 @@ fn ori_term_direct_declares_truecolor() {
         String::from_utf8_lossy(&infocmp.stderr)
     );
     let out = String::from_utf8_lossy(&infocmp.stdout);
+    // Capability marker is the truecolor contract: ncurses
+    // applications check `RGB`/`Tc`, not the colors count, to
+    // decide whether to emit 24-bit SGR. This assertion is the
+    // load-bearing one — colors# is informational.
     assert!(
         out.contains("RGB") || out.contains("Tc"),
         "expected RGB or Tc in ori_term-direct, got:\n{out}"
     );
+    // Modern ncurses (≥6.x) stores colors as int and reconstructs
+    // `colors#16777216` (or `colors#0x1000000`). Legacy ncurses 5.x —
+    // notably Apple's `/usr/bin/infocmp` on the macOS CI runner — uses
+    // a 16-bit signed `short` for colors and clamps the reconstructed
+    // value to `32767` (`SHRT_MAX`). The compiled entry IS still a
+    // truecolor entry (RGB/Tc above are present); the count is purely
+    // a backend-storage artifact, not a semantic difference. Accept
+    // both representations so the test runs cleanly across the
+    // ncurses-version split between Linux/Windows (modern) and
+    // macOS's bundled `tic`/`infocmp` (legacy).
     assert!(
-        out.contains("colors#16777216") || out.contains("colors#0x1000000"),
-        "expected colors#16777216 in ori_term-direct, got:\n{out}"
+        out.contains("colors#16777216")
+            || out.contains("colors#0x1000000")
+            || out.contains("colors#32767"),
+        "expected truecolor count (modern: colors#16777216 / colors#0x1000000; \
+         legacy ncurses 5.x clamp: colors#32767) in ori_term-direct, got:\n{out}"
     );
 }
 

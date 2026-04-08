@@ -28,6 +28,34 @@ sections:
 
 ## 07.1 Active Bugs
 
+- [ ] `[BUG-07-009][high]` **10 Windows ConPTY runtime test failures in `oriterm_test_support`, first surfaces as `STATUS_DLL_INIT_FAILED` (`0xC0000142`) on cmd.exe spawn after several silent-long-lived ping spawns** — found by nightly CI 2026-04-08 after fixing the Windows compile errors that previously masked these tests.
+  Repro:
+  1. Cross-compile + run the test suite on a Windows runner: `cargo test -p oriterm_test_support --target x86_64-pc-windows-msvc` (or trigger a nightly CI run).
+  2. Observe that 10 tests fail in this exact set:
+     - `session::sync::tests::pty_session_wait_for_any_returns_some_zero_when_primary_matches`
+     - `session::sync::tests::pty_session_wait_for_any_returns_some_alt_when_alternate_matches`
+     - `session::sync::tests::pty_session_wait_for_any_prefers_primary_over_alternates_on_tie`
+     - `session::teardown::tests::pty_session_wait_for_child_exit_returns_on_clean_exit`
+     - `session::teardown::tests::pty_session_quit_tack_returns_status_when_child_exits`
+     - `session::teardown::tests::pty_session_quit_tack_exits_early_when_child_dies_after_first_q`
+     - `tack_framework::navigator::tests::navigator_panics_when_anchor_already_present_in_pre_grid`
+     - `tack_framework::navigator::tests::navigator_matches_alternate_when_primary_never_appears`
+     - `tack_framework::runner::tests::live_session_finish_asserts_clean_exit_via_quit_tack`
+     - `terminfo::tests::child_process_with_apply_env_reads_pinned_terminfo`
+  3. The first chronological failure is `pty_session_wait_for_child_exit_returns_on_clean_exit`, which spawns `cmd.exe /C exit 0` and observes `ExitStatus { code: 3221225794, signal: None }`. `0xC0000142` = `STATUS_DLL_INIT_FAILED` — cmd.exe is failing during DLL initialization, not during `exit 0`.
+  4. The earlier-running tests `pty_session_drains_simple_output` (cmd.exe echo) and the wait-for-with-context tests (cmd.exe-free, silent ping child) PASS. The pattern is: every test that spawns a fresh `cmd.exe` AFTER the four `spawn_silent_long_lived` tests (`ping 127.0.0.1 -n 11 > NUL`) gets `STATUS_DLL_INIT_FAILED`. Each silent-ping test ends with `PtySession::drop`, which calls `child.kill() + child.wait()` — but the ConPTY HPCON / handle pool may still be retained until the master `Arc<Mutex<Inner>>` count drops to zero (`crates/portable-pty/src/win/conpty.rs`).
+  5. The `child_process_with_apply_env_reads_pinned_terminfo` failure is a separate root cause: on the Windows CI runner, `infocmp` runs but cannot find `ori_term` via `$TERMINFO`/`$TERMINFO_DIRS` (likely an MSYS infocmp that doesn't honor ncurses env-var precedence).
+  Subsystem: `crates/oriterm_test_support/src/session/{sync,teardown}/`, `crates/oriterm_test_support/src/tack_framework/{navigator,runner}/`, `crates/oriterm_test_support/src/terminfo/tests.rs`, possibly `crates/portable-pty/src/win/conpty.rs` (HPCON drop ordering)
+  Found: 2026-04-08 | Source: nightly CI failure analysis after fixing the Windows compile errors that masked these tests
+  Severity: **high** — these tests have NEVER run successfully on Windows (they were latent under the compile error fixed by `b6e99416`). Per CLAUDE.md cross-platform rule, every test must work on all three platforms. The tests landed across tack-conformance Sections 01-04 (commits between `f338bfc1` and `efec3818`) and the Windows path was never exercised.
+  Hypothesis (needs Windows-side verification): the four `spawn_silent_long_lived` tests leak HPCON resources because the master `ConPtyMasterPty` Arc may be retained beyond `PtySession::Drop` via portable-pty internals, or the ConPTY pseudo-console is released before the spawned child has fully detached. After 4 leaked handles the Windows console subsystem can't init a new cmd.exe.
+  Fix:
+  1. Investigate on a real Windows host (or in a Windows VM with ConPTY) — reproduce and instrument the HPCON handle count after each `PtySession::Drop`.
+  2. Audit `PtySession::spawn` (`crates/oriterm_test_support/src/session/mod.rs:95-143`) for master/slave drop ordering. The current code does `drop(pair.slave)` before `try_clone_reader`/`take_writer`, then drops `pair.master` implicitly at the end of `spawn()`. Verify that this ordering is sound under ConPTY — the reader's `try_clone()` of `readable` may not be enough to keep the underlying file descriptor alive after the master is dropped.
+  3. If portable-pty's ConPTY backend has a leak, file an upstream fix (vendored at `crates/portable-pty/`).
+  4. For `child_process_with_apply_env_reads_pinned_terminfo`: gate the test on a Windows-specific check that `infocmp` is the ncurses-style binary (or skip cleanly when an MSYS variant is detected). Alternatively, replace it with a Windows-equivalent integration test that uses a tool that DOES respect `$TERMINFO`.
+  Note: this bug was uncovered by `b6e99416`'s Windows compile fix (`fix(test-support): nightly CI macOS hashed-db panic + Windows -D warnings`). That commit fixed the legitimate Windows -D warnings errors so the test crate would compile cross-platform; the runtime failures it surfaced are pre-existing latent bugs in the recent (Apr 7-8) tack-conformance test additions, not regressions introduced by the compile fix. Filing — not deferral — per CLAUDE.md `/add-bug` discipline.
+
 - [ ] `[BUG-07-004][medium]` **Windows PTY size propagation test removed** — found by tpr-review.
   Repro: `#[cfg(unix)]` gate on `pty_size_is_propagated` test means Windows CI has zero PTY size coverage. ConPTY-size regressions can now slip through unchecked.
   Subsystem: `oriterm_core/tests/vttest.rs:226`
