@@ -132,3 +132,6 @@ pub fn grid_find_field<'a>(grid: &'a str, label: &str) -> Option<&'a str> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests;
