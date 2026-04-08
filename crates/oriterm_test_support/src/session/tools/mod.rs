@@ -17,6 +17,16 @@
 /// (`vttest`, `tack`, `tic`, `reseq`, ...) is not available. The
 /// `--version` argument is the convention every well-behaved CLI
 /// supports; some (`vttest`) prefer `--help` — pass that explicitly.
+///
+/// **Returns true iff the probe BOTH spawns successfully AND exits
+/// with success status.** A binary that spawns but exits non-zero
+/// (e.g., wrong flag, missing terminfo path, broken install) is
+/// NOT treated as available — that flow would slip past the skip
+/// gate and fail downstream as a panic instead of a clean skip.
+/// Pre-TPR-05-005, this function only checked
+/// `Command::status().is_ok()` which is `true` whenever the spawn
+/// syscall succeeded regardless of exit code; the fix tightens it
+/// to also require `status.success()`.
 #[must_use]
 pub fn tool_available(name: &str, version_arg: &str) -> bool {
     std::process::Command::new(name)
@@ -24,7 +34,8 @@ pub fn tool_available(name: &str, version_arg: &str) -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .is_ok()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 /// Convenience: vttest specifically uses `--help` (it has no `--version`).
@@ -66,3 +77,6 @@ pub fn tack_available() -> bool {
 pub fn infocmp_available() -> bool {
     tool_available("infocmp", "-V")
 }
+
+#[cfg(test)]
+mod tests;

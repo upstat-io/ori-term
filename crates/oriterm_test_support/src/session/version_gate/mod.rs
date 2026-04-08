@@ -180,3 +180,6 @@ pub fn tack_version_supported() -> bool {
 pub fn tack_runner_available_combine(tack: bool, tic: bool, version_supported: bool) -> bool {
     tack && tic && version_supported
 }
+
+#[cfg(test)]
+mod tests;
