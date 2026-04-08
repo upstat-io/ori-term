@@ -6,28 +6,34 @@ use crate::session::PtySession;
 
 /// Spawn a silent long-lived child suitable for timeout/bounded-poll
 /// pin tests. Two-arm cross-platform: Unix `/bin/sh -c "sleep 10"`,
-/// Windows `ping.exe -n 11 127.0.0.1` (~10 s of silence on both arms).
+/// Windows `cmd.exe /C "pause > NUL"` (blocks until killed on both
+/// arms).
 ///
-/// Windows note: we spawn `ping.exe` DIRECTLY rather than wrapping
-/// it in `cmd.exe /C "ping … > NUL"`. The wrapper form makes
-/// `cmd.exe` the immediate child and `ping.exe` a grandchild
-/// attached to the ConPTY. When `PtySession::drop` calls
-/// `TerminateProcess` on `cmd.exe`, the grandchild `ping.exe`
-/// becomes orphaned and is NOT terminated automatically — it
-/// remains attached to the pseudoconsole as a still-alive
-/// "console client". The subsequent `ClosePseudoConsole` (called
-/// when `_master` drops) then blocks waiting for the orphaned
-/// grandchild to release the HPCON, hanging the test for the
-/// remainder of `ping`'s 10-second timer. Spawning `ping.exe`
-/// directly makes the ConPTY client identical to the immediate
-/// child, so `TerminateProcess` kills the only attached client
-/// and `ClosePseudoConsole` returns immediately.
+/// Windows note: we use `pause`, an in-process `cmd.exe` builtin,
+/// rather than spawning a real subprocess like `ping.exe`. Two
+/// reasons:
 ///
-/// We discard `ping`'s stdout (which is normally line-buffered
-/// status output) because the test only needs the child to be
-/// alive and silent — `ping.exe`'s output is harmless for the
-/// timeout/bounded-poll assertions, which only care that
-/// `wait_for` does not match an unrelated needle.
+/// 1. **Grandchild orphan avoidance.** Wrapping a real subprocess
+///    in `cmd.exe /C "child …"` makes the wrapper the immediate
+///    child and the real subprocess a grandchild attached to the
+///    `ConPTY`. When `PtySession::drop` terminates `cmd.exe`, the
+///    grandchild becomes orphaned and remains attached to the
+///    pseudoconsole as a still-alive console client.
+///    `ClosePseudoConsole` (called when `_master` drops) then
+///    blocks waiting for the orphaned grandchild to release the
+///    HPCON.
+/// 2. **No shared kernel resources.** `ping.exe` (and similar
+///    network-touching helpers) contend on Windows ICMP loopback
+///    rate limits when many tests run in parallel, ballooning
+///    per-test wall-clock from <1 s to 10+ s. `pause` is a pure
+///    user-mode busy-loop on console input — no network, no file
+///    I/O, no inherited resource contention.
+///
+/// `pause` consumes one byte from stdin and exits. None of the
+/// silent-long-lived consumers write to the child after spawn,
+/// so `pause` blocks for the full test duration; the
+/// `Drop`-driven `TerminateProcess` is the only termination
+/// path.
 fn spawn_silent_long_lived() -> PtySession {
     #[cfg(unix)]
     let cmd = {
@@ -38,8 +44,8 @@ fn spawn_silent_long_lived() -> PtySession {
     };
     #[cfg(windows)]
     let cmd = {
-        let mut c = CommandBuilder::new("ping.exe");
-        c.args(["-n", "11", "127.0.0.1"]);
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.args(["/C", "pause > NUL"]);
         c.env("TERM", "xterm-256color");
         c
     };
@@ -48,13 +54,13 @@ fn spawn_silent_long_lived() -> PtySession {
 
 #[test]
 fn pty_session_drains_simple_output() {
-    // Portable PTY drain smoke test. portable-pty owns ConPTY on
+    // Portable PTY drain smoke test. portable-pty owns `ConPTY` on
     // Windows, so the same `PtySession` spawn path works on every
     // platform. Two-arm shell selection — `/bin/sh` on Unix and
     // `cmd.exe` on Windows — is the cross-platform idiom for "run a
     // one-liner in the platform shell." This replaces the previous
     // `#[cfg(unix)]`-gated test (BUG-07-008) so Windows gets real
-    // ConPTY drain coverage instead of a no-op skip. The
+    // `ConPTY` drain coverage instead of a no-op skip. The
     // `#[cfg(unix)] / #[cfg(windows)]` block INSIDE the `#[test] fn`
     // is the cross-platform idiom this codebase uses; the OUTER
     // `#[cfg(unix)] #[test]` form is the antipattern banned by
@@ -241,7 +247,7 @@ fn pty_session_wait_for_any_empty_slice_returns_none() {
 
 #[test]
 fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() {
-    // Regression pin for the Windows ConPTY HPCON premature-close
+    // Regression pin for the Windows `ConPTY` HPCON premature-close
     // failure mode. Spawns 5 sequential `PtySession`s with the
     // silent-long-lived child (cmd.exe + ping on Windows, /bin/sh +
     // sleep on Unix), drops each, then spawns a fresh
