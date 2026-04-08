@@ -13,6 +13,7 @@
 pub mod acs;
 pub mod auto_pad_delays;
 pub mod begin_testing_inventory;
+pub mod cap_coverage_matrix;
 pub mod color;
 pub mod cursor_movement;
 pub mod edit_terminfo;

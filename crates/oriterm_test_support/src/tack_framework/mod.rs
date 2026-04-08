@@ -27,12 +27,16 @@
 //! primary+alternate anchor matching, NOT `catch_unwind` on
 //! `wait_for_with_context` — panic-as-control-flow is banned.
 
+pub mod cap_coverage;
 pub mod navigator;
 pub mod parser;
 pub mod runner;
 pub mod scenarios;
 pub mod spec;
 
+pub use cap_coverage::{
+    ALL_CONTRIBUTIONS, CapCoverageContribution, covered_caps, exempt_caps, parse_declared_caps,
+};
 pub use navigator::TackNavigator;
 pub use parser::tokens::{
     grid_find_field, grid_has_paren_token, grid_has_token, grid_line_starts_with,

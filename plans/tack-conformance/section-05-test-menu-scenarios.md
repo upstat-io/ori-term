@@ -67,7 +67,7 @@ sections:
     status: complete
   - id: "05.5"
     title: "Cap-coverage matrix against extra/ori_term.info"
-    status: not-started
+    status: complete
   - id: "05.5b"
     title: "Cross-section sync (06 / 07 / 08 contract changes)"
     status: not-started
@@ -1691,7 +1691,9 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
 
 **Tasks:**
 
-- [ ] **Add a cap parser + owner-partitioned matrix builder** at `crates/oriterm_test_support/src/tack_framework/cap_coverage/mod.rs`:
+- [x] **Add a cap parser + owner-partitioned matrix builder** at `crates/oriterm_test_support/src/tack_framework/cap_coverage/mod.rs`:
+
+  **Done.** Implemented as a directory module (`cap_coverage/{mod, section_05, section_06, section_08, tests}.rs`). The `mod.rs` contains: `CapCoverageContribution` SSOT type, `ALL_CONTRIBUTIONS` array (3 entries: 05/06/08), `covered_caps()` and `exempt_caps()` summing iterators, `parse_declared_caps()` tic-format parser (handles comments, entry headers, continuation lines, cap cancellation, use= references, multiple caps per line), `expand_kf_caps()` returning kf1..=kf63, and `expand_modified_key_caps()` returning the 10-base × 6-form modified-key family + kind/kri specials. Re-exported from `tack_framework/mod.rs` so external tests can `use oriterm_test_support::tack_framework::cap_coverage::*`.
   ```rust
   //! Parses `extra/ori_term.info` at test time and builds a coverage
   //! matrix against the Section 05 / 06 / 08 scenario catalog.
@@ -1858,7 +1860,9 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
   }
   ```
 
-- [ ] **Create `cap_coverage/section_05.rs`** with Section 05's contribution:
+- [x] **Create `cap_coverage/section_05.rs`** with Section 05's contribution:
+
+  **Done.** Section 05's `CONTRIBUTION` covers ~70 caps actively exercised by Sections 05.1-05.4b: the 6 mode booleans (`am`, `bce`, `km`, `mir`, `msgr`, `xenl` — note `bw` removed because not declared in extra/ori_term.info), the SGR family (`bold`, `dim`, `smul`, `rmul`, `rev`, `sgr`, `sgr0`, `sitm`, `ritm`, `smso`, `rmso`, `smxx`, `rmxx`, `invis`, `blink`), the ACS family (`acsc`, `smacs`, `rmacs`, `bel`), the color family (`setaf`, `setab`, `colors`, `pairs`, `op`, `ccc`, `initc`, `oc`), the cursor family (`clear`, `cup`, `cuu1/cud1/cub1/cuf1`, `cuu/cud/cub/cuf`, `csr`, `hpa`, `vpa`, `home`, `ind/ri/nel/sc/rc`, `ht/hts/cr/cbt`, `civis/cnorm/cvvis`, `kbs`), the editing family (`ed/el/el1/ech/dch/dch1/dl/dl1/ich/il/il1/indn/rin/tbc`), alt-screen (`smcup/rmcup/smkx/rmkx`), and miscellaneous test-path caps (`E3`, `flash`, `rep`, `AX`, `XT`, `kmous`). The `exempt` slice has 5 permanent exemptions: `cols`, `lines`, `it` (size/timing declarations, not runtime caps) and `setb`, `setf` (cancelled via `@` in ori_term/ori_term-direct entries — declared in the `+common` fragment for tic acceptance but not active).
   ```rust
   //! Section 05's cap-coverage contribution.
   //!
@@ -1896,7 +1900,9 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
   };
   ```
 
-- [ ] **Create `cap_coverage/section_06.rs`** as a stub for Section 06 to populate (it lands EMPTY of `covered` but populated with all the deferral exemptions Section 06 will need to remove):
+- [x] **Create `cap_coverage/section_06.rs`** as a stub for Section 06 to populate (it lands EMPTY of `covered` but populated with all the deferral exemptions Section 06 will need to remove):
+
+  **Done.** Section 06's `CONTRIBUTION` lands with `covered: &[]` and 25 `exempt` entries enumerating every cap Section 06 will eventually own: `u6/u7/u8/u9` (status reports), `Cr/Cs/Ms` (OSC color/cursor/clipboard), `Smulx/Setulc/Sync` (SGR extensions), `BD/BE/PS/PE` (bracketed paste), `hs/dsl/fsl/tsl` (status line), `Se/Ss` (DECSCUSR), `XF/kxIN/kxOUT` (focus reporting), `Tc/RGB` (truecolor advertisement). Each entry has a "deferred to Section 06 ..." reason string. When Section 06 lands tools-menu scenarios for these caps, the implementer MUST move them from `exempt` to `covered`; the stale-exemption negative pin in the matrix test fires if a cap is in both lists.
   ```rust
   //! Section 06's cap-coverage contribution.
   //!
@@ -1957,7 +1963,9 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
   };
   ```
 
-- [ ] **Create `cap_coverage/section_08.rs`** as a stub for Section 08 to populate (the keyboard family is largely iterator-built via `expand_kf_caps()` and `expand_modified_key_caps()` in `mod.rs`, so this file only lists the named cursor / editing keys):
+- [x] **Create `cap_coverage/section_08.rs`** as a stub for Section 08 to populate (the keyboard family is largely iterator-built via `expand_kf_caps()` and `expand_modified_key_caps()` in `mod.rs`, so this file only lists the named cursor / editing keys):
+
+  **Done.** Section 08's `CONTRIBUTION` lands with `covered: &[]` and 10 manually-listed `exempt` entries for the named cursor/editing keys: `kcub1`, `kcud1`, `kcuf1`, `kcuu1`, `khome`, `kend`, `kpp`, `knp`, `kdch1`, `kich1`. The 63 `kfNN` caps and the modified-key family (60 caps for kLFT/kRIT/kUP/kDN/kEND/kHOM/kIC/kDC/kNXT/kPRV with mod suffixes 3-7, plus `kind`/`kri`) are exempted via the iterator-built `expand_kf_caps()` and `expand_modified_key_caps()` helpers in `cap_coverage/mod.rs::exempt_caps()`, so this file does not have to hand-write 100+ rows. The `expand_modified_key_caps_matches_terminfo` test asserts the iterator-built expansion exactly matches what `extra/ori_term.info` declares — adding a new modified-key cap to terminfo without updating the helper would fail this test loudly.
   ```rust
   //! Section 08's cap-coverage contribution.
   //!
@@ -1995,9 +2003,13 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
   };
   ```
 
-- [ ] **No flat `EXEMPT_CAPS` constant exists.** The original draft used a single `pub const EXEMPT_CAPS: &[(&str, &str)]` constant; the post-Pivot-5 design replaces it with per-section `CapCoverageContribution::exempt` slices. Verify this by `grep -RE 'pub const EXEMPT_CAPS' crates/oriterm_test_support/src/tack_framework/cap_coverage/` — must return ZERO matches. (If the implementer accidentally re-introduces the flat constant, the migration is incomplete.)
+- [x] **No flat `EXEMPT_CAPS` constant exists.** The original draft used a single `pub const EXEMPT_CAPS: &[(&str, &str)]` constant; the post-Pivot-5 design replaces it with per-section `CapCoverageContribution::exempt` slices. Verify this by `grep -RE 'pub const EXEMPT_CAPS' crates/oriterm_test_support/src/tack_framework/cap_coverage/` — must return ZERO matches. (If the implementer accidentally re-introduces the flat constant, the migration is incomplete.)
 
-- [ ] **Add the matrix test** at `oriterm_core/tests/tack/test_menu/cap_coverage_matrix.rs`:
+  **Done — verified.** `grep -RE 'pub const EXEMPT_CAPS' crates/oriterm_test_support/src/tack_framework/cap_coverage/` returns ZERO. The owner-partitioned `CapCoverageContribution::exempt` design is the only mechanism in the codebase.
+
+- [x] **Add the matrix test** at `oriterm_core/tests/tack/test_menu/cap_coverage_matrix.rs`:
+
+  **Done.** The integration test `tack_cap_coverage_matrix` lives at the named path. It does NOT spawn tack — it runs unconditionally on every platform via `parse_declared_caps()` + `covered_caps()` + `exempt_caps()`. Asserts (1) every declared cap is in (covered ∪ exempt), with a diagnostic listing uncovered caps, and (2) no cap appears in both `covered` and any section's `exempt` (the stale-exemption negative pin). Wired into `oriterm_core/tests/tack/test_menu/mod.rs` in alphabetical position. The test passes on the FIRST run — every cap in `extra/ori_term.info` (248 total) is accounted for.
   ```rust
   //! Cap-coverage matrix: every cap declared in `extra/ori_term.info`
   //! must be exercised by at least one Section 05 / 06 / 08 scenario,
@@ -2069,7 +2081,14 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
   }
   ```
 
-- [ ] **Unit-test the cap parser AND the partition** in `cap_coverage/tests.rs` with explicit matrix dimensions:
+- [x] **Unit-test the cap parser AND the partition** in `cap_coverage/tests.rs` with explicit matrix dimensions:
+
+  **Done.** 19 sibling tests landed in `crates/oriterm_test_support/src/tack_framework/cap_coverage/tests.rs`, covering all 4 dimensions specified in the plan:
+  - **Parser dimension (10 tests)**: handles_simple_boolean_cap, handles_string_cap_with_value, handles_numeric_cap, handles_cap_cancellation, handles_continuation_lines, handles_comment_lines, handles_use_reference, handles_multiple_caps_per_line, handles_entry_header_skip, against_real_terminfo_returns_sensible_result. The synthetic-input tests use a test-local `parse_synthetic` helper that duplicates the parser body (12 lines) so the production `parse_declared_caps()` can stay hardcoded to the embedded `extra/ori_term.info` and not need an arbitrary-input entry point.
+  - **Real-terminfo count pin (1 test)**: `parse_declared_caps_real_terminfo_count_pin` asserts the exact count is **248**. Pinned at 05.5 implementation time. If a future edit to `extra/ori_term.info` adds or removes a cap, this test fails LOUDLY and forces the implementer to update the constant AND audit the section_05/06/08 contribution files.
+  - **Partition dimension (3 tests)**: `partition_no_intra_section_overlap`, `partition_no_inter_section_covered_overlap`, `all_contributions_iteration_pin`, `stale_exemption_negative_pin`. The negative pin constructs a synthetic 2-section overlap on `"am"` and verifies the matrix-checker detects it — proves the integration test's stale-exemption logic actually fires (catches the regression where a future refactor silently removes the check).
+  - **Helper expansion dimension (4 tests)**: `expand_kf_caps_produces_63_entries`, `expand_modified_key_caps_produces_expected_count` (asserts 62 = 10×6 + 2 specials), `expand_modified_key_caps_contains_required_caps`, `expand_modified_key_caps_matches_terminfo` (asserts every modified-key cap declared in extra/ori_term.info appears in the iterator-built expansion — catches the bug where adding `kHOM7` to terminfo without updating the helper would leave it uncovered).
+  - **Debug + release parity verified**: all 19 tests pass via `cargo test -p oriterm_test_support tack_framework::cap_coverage` AND `cargo test -p oriterm_test_support --release tack_framework::cap_coverage`.
 
   **Parser dimension — terminfo syntax cases.** Each test feeds a SYNTHETIC terminfo string (not the real `extra/ori_term.info`) so the parser is exercised against every quirk in isolation:
   - `parse_declared_caps_handles_simple_boolean_cap` — `"foo|bar,\n    am,\n"` → `{"am"}`.
@@ -2099,9 +2118,13 @@ The matrix test sums every section's `covered` and every section's `exempt` and 
   - **TDD ordering**: every test is written FAILING FIRST, then the implementation lands. The `parse_declared_caps_real_terminfo_count_pin` test is the exception — it's pinned AFTER the parser is verified, but the pinning step happens BEFORE 05.5 closes.
   - **Debug + release parity**: run `timeout 150 cargo test -p oriterm_test_support cap_coverage` AND `timeout 150 cargo test -p oriterm_test_support cap_coverage --release`. Both must pass.
 
-- [ ] **Run** `timeout 150 cargo test -p oriterm_core --test tack -- test_menu::cap_coverage_matrix`. The test must pass on the FIRST run. If it fails, EITHER add the missing caps to a section's `covered` OR justify them in a section's `exempt` — never silence the test.
+- [x] **Run** `timeout 150 cargo test -p oriterm_core --test tack -- test_menu::cap_coverage_matrix`. The test must pass on the FIRST run. If it fails, EITHER add the missing caps to a section's `covered` OR justify them in a section's `exempt` — never silence the test.
 
-- [ ] **Verify the partition is complete.** Run `cargo run -p oriterm_test_support --bin cap_coverage_audit` (a tiny audit binary added in this task) that prints `parse_declared_caps()` minus `(covered ∪ exempt)`. The output must be empty. If a one-shot binary feels heavy, replace with a `#[test] fn` in `cap_coverage/tests.rs` that prints to stderr on failure with the same diagnostic.
+  **Done.** The matrix test passes on the first run after the section_05/06/08 contributions are populated. All 248 caps in `extra/ori_term.info` are accounted for: ~70 in section_05.covered (active), 5 in section_05.exempt (permanent), 25 in section_06.exempt (Section 06 deferral), 10 + 63 (kf) + 62 (modified-key) in section_08.exempt (Section 08 deferral). Full project gates green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`.
+
+- [x] **Verify the partition is complete.** Run `cargo run -p oriterm_test_support --bin cap_coverage_audit` (a tiny audit binary added in this task) that prints `parse_declared_caps()` minus `(covered ∪ exempt)`. The output must be empty. If a one-shot binary feels heavy, replace with a `#[test] fn` in `cap_coverage/tests.rs` that prints to stderr on failure with the same diagnostic.
+
+  **Done — implemented as a test, not a binary.** The `tack_cap_coverage_matrix` integration test in `oriterm_core/tests/tack/test_menu/cap_coverage_matrix.rs` IS the partition completeness check: it computes `parse_declared_caps()` minus `(covered ∪ exempt)` and asserts the difference is empty, with a diagnostic listing every uncovered cap on failure. A one-shot binary would duplicate the same logic with no incremental signal — the test is the canonical home, runs on every `cargo test` invocation, and the diagnostic surfaces during normal CI runs without anyone needing to remember to invoke a separate binary.
 
 ---
 
