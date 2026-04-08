@@ -1,0 +1,9 @@
+---
+source: oriterm_core/tests/tack/tools_menu/status_reports.rs
+expression: "&responded_labels.join(\"\\n\")"
+---
+Cursor position
+Primary device attributes
+Secondary device attributes
+Terminal status
+Tertiary device attributes
