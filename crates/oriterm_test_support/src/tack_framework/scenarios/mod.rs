@@ -22,5 +22,6 @@
 pub mod acs;
 pub mod begin_testing_inventory;
 pub mod color;
+pub mod cursor_movement;
 pub mod graphic_rendition;
 pub mod modes;

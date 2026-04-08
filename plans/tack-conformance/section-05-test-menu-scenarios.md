@@ -61,7 +61,7 @@ sections:
     status: complete
   - id: "05.4"
     title: "Cursor movement scenarios (size matrix, stable-screen)"
-    status: not-started
+    status: complete
   - id: "05.4b"
     title: "Remaining navigable screens (driven by 05.0 inventory)"
     status: not-started
@@ -1468,16 +1468,31 @@ Color is the highest-value tack screen for ori_term: it tests `setaf`/`setab` fo
 ## 05.4 Cursor movement scenarios (size matrix, stable-screen)
 
 **File(s):**
-- `crates/oriterm_test_support/src/tack_framework/scenarios/cursor_movement.rs` (NEW)
+- `crates/oriterm_test_support/src/tack_framework/scenarios/cursor_movement/mod.rs` + `cursor_movement/tests.rs` (NEW — directory module per `.claude/rules/test-organization.md`'s "tests in sibling `tests.rs`" rule; originally drafted as flat `scenarios/cursor_movement.rs`)
 - `oriterm_core/tests/tack/test_menu/cursor_movement.rs` (NEW — `#[test] fn` wrappers at 80x24, 97x33, 120x40)
 
 **Prerequisite:** Per the inventory comment in `scenarios/modes/mod.rs:25-28`, the cursor movement screen is reached via the `m` key on the begin-testing submenu. Verify this against the 05.0 inventory snapshot — the comment is the only existing evidence and must be cross-checked.
 
 Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. Same size matrix as color.
 
+> **Empirical finding (05.4 implementation, 2026-04-08):** Tack v1.08's cursor movement test (key `m)` from the begin-testing menu, navigated via `n -> m -> n`) does NOT emit any of the 8 cursor cap labels (`cup`, `hpa`, `vpa`, `csr`, `cuu`, `cud`, `cub`, `cuf`). Note that tack uses the literal sub-menu prompt `tack/test/move [n] >` (not `tack/test/cursor`). The captured grid only contains:
+> ```
+> \x1B[H\x1B[2JThis line should start in the home position.
+> The rest of the screen should be clear.  (clear) Done
+> ```
+> Tack DOES exercise `cup`/`hpa`/`vpa`/`csr` INTERNALLY — the test fills the screen with `garbage` lines, then uses cursor home + clear to wipe it, so `cup` and `clear` are demonstrably both being exercised end-to-end. But only `(clear)` is surfaced as a parenthesized cap name on the captured grid. Same pattern as 05.1 modes (only `(os)`), 05.2 ACS/SGR (only `(bel)`), 05.3 color (only `(colors)`/`(pairs)`).
+>
+> **Resolution: hybrid coverage.** `TACK_CURSOR_MOVEMENT` is coded to spec with the verified menu_path (`n -> m -> n`) and ready_anchor (`Done`). The parser `parse_cursor_screen` is also coded to spec — it scans for the 8 cursor caps but returns empty against tack v1.08; it is preserved as forward-compatible infrastructure for a future tack release that emits per-cap labels. The 3 size-matrix `#[test] fn` wrappers in `oriterm_core/tests/tack/test_menu/cursor_movement.rs` use the hybrid strategy: they assert `Done` (proves end-to-end pipeline at this size) plus the testable semantic facts (`This line should start in the home position`, `(clear)`) and snapshot the captured grid for visual regression. They do NOT assert on `parsed.capability_labels` because that vec is always empty against tack v1.08.
+>
+> **Sentinel placeholders skipped.** Same pattern as 05.2 / 05.3 — by the time 05.4 implementation began, 05.0 had pinned `m` in `BEGIN_TESTING_INVENTORY` and the empirical `expect` probe had captured the verified sub-menu prompt and `Done` terminator. The implementation went directly from real values to working tests.
+>
+> **Cross-section impact:** Section 05.5's cap-coverage matrix should record `clear` and (transitively) `cup` as covered by 05.4 — `clear` is pinned by the wrapper assertion `(clear)`, and `cup` is exercised by tack's internal home-then-clear sequence (the test only succeeds if `cup` works correctly to home the cursor before drawing the post-clear content at row 0). Per the same TPR-05-013 rationale that limited 05.2's claim, the earlier draft assumption that `csr`, `hpa`, `vpa`, `cuu`, `cud`, `cub`, `cuf` could be claimed transitively is rejected: tack v1.08 does NOT surface those caps to the captured grid in any observable way. Coverage for those caps must come from Section 07's GPU goldens or vttest.
+
 **Tasks:**
 
-- [ ] **Create `scenarios/cursor_movement.rs`** with `parse_cursor_screen` using `grid_has_token` for the cursor cap labels (`cup`, `hpa`, `vpa`, `csr`, `cuu`, `cud`, `cub`, `cuf`). The same false-positive risk applies — `cup` would match inside `cupboard`, `vpa` inside arbitrary letter pairs. Tokenized helper is mandatory.
+- [x] **Create `scenarios/cursor_movement/{mod, tests}.rs`** with `parse_cursor_screen` using `grid_has_token` for the cursor cap labels (`cup`, `hpa`, `vpa`, `csr`, `cuu`, `cud`, `cub`, `cuf`). The same false-positive risk applies — `cup` would match inside `cupboard`, `vpa` inside arbitrary letter pairs. Tokenized helper is mandatory. (Originally drafted as flat `scenarios/cursor_movement.rs`; landed as directory module per the test-organization rule — see Done note.)
+
+  **Done.** Implemented as a directory module (`scenarios/cursor_movement/{mod, tests}.rs`). The `mod.rs` contains `parse_cursor_screen` (scans for the 8 cursor caps via `grid_has_token`, returns matches in canonical order via `capability_labels`) and `TACK_CURSOR_MOVEMENT` with the verified `n -> m -> n` menu path and `Done` ready anchor. The verified post-`m` sub-menu prompt is `tack/test/move [n] >` (tack uses the short form `move`, not `cursor` or `cursor_movement`). Sentinel placeholders skipped per the empirical-finding block above — the const went directly from verified values to working tests because 05.0's inventory had the `m` key pinned and the empirical `expect` probe captured the verified anchors before 05.4 began.
   ```rust
   use crate::tack_framework::parser::tokens::grid_has_token;
   use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
@@ -1529,16 +1544,40 @@ Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. S
   ```
   Note that the begin-testing-submenu navigation step (`b"n"`, `"tack/test [n] >"`) is verified and could be filled in here too. The split (`m` verified, sub-menu prompt unverified) reflects exactly what 05.0 will resolve.
 
-- [ ] **Create the `#[test] fn` wrappers** at 80x24, 97x33, 120x40, asserting at minimum that `cup` is present (the universal cursor positioning cap). Snapshot via `outcome.snapshot_name()`.
+- [x] **Create the `#[test] fn` wrappers** at 80x24, 97x33, 120x40 with hybrid-coverage assertions matching the empirical-finding block above (the original draft assumed `cup` would be a parser-detected label; tack v1.08 emits no cursor cap labels, so the wrapper instead pins `Done` plus the testable semantic facts `This line should start in the home position` and `(clear)`). Snapshot via `outcome.snapshot_name()`.
 
-- [ ] **Sentinel verification.** `grep -nE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/cursor_movement.rs` must return ZERO after 05.0 fills in the post-`m` sub-menu prompt + ready anchor. The belt-and-braces test extends to include `TACK_CURSOR_MOVEMENT`.
+  **Done.** All 3 size wrappers (`tack_cursor_movement_80x24`, `tack_cursor_movement_97x33`, `tack_cursor_movement_120x40`) call `ScenarioRunner::run_at(&TACK_CURSOR_MOVEMENT, cols, rows)`. Each wrapper:
+  1. Skip-gracefully if `ScenarioRunner::available()` is false.
+  2. Assert the captured grid contains `Done` (proves end-to-end pipeline at this size).
+  3. Assert the captured grid contains `This line should start in the home position` (proves tack entered the cursor movement test code path AND proves `cup` was exercised end-to-end — the test description appears at row 0 col 0, which only happens if tack successfully homed the cursor before drawing the post-clear content).
+  4. Assert the captured grid contains `(clear)` (proves tack referenced the clear cap by its terminfo short name; cap-coverage pin for `clear` in 05.5).
+  5. `insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text)` for visual regression at this size.
 
-- [ ] **Sibling parser tests** for `parse_cursor_screen`:
+- [x] **Sentinel verification.** `grep -nE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/cursor_movement/` must return ZERO after 05.0 fills in the post-`m` sub-menu prompt + ready anchor. The belt-and-braces test extends to include `TACK_CURSOR_MOVEMENT`.
+
+  **Done — N/A by construction.** Same pattern as 05.2 / 05.3: by the time 05.4 implementation began, 05.0 had pinned the `m` key and the empirical `expect` probe had captured the verified anchors, so the const went directly from real values to working tests. `grep -RnE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/cursor_movement/` returns ZERO. The runner's `assert_no_unverified_sentinels` still runs on every invocation (added in 05.0.b) so any future regression that introduces a sentinel into `TACK_CURSOR_MOVEMENT` will panic at test time.
+
+- [x] **Sibling parser tests** for `parse_cursor_screen`:
   - `parse_cursor_screen_finds_all_cursor_caps` — synthetic grid containing every cap in `CURSOR_CAPS`, all returned.
   - `parse_cursor_screen_rejects_substring_collisions` — semantic pin: feed `cupboard hpattern vparams` and assert NONE of `cup`/`hpa`/`vpa` false-positive.
   - `parse_cursor_screen_handles_empty_grid` — empty input → empty labels.
 
-- [ ] **Wire in** at both ends. Run all 3.
+  **Done.** 10 parser tests landed in `scenarios/cursor_movement/tests.rs` (the 3 listed above plus 7 additional pins matching the 05.2 / 05.3 pattern):
+  - `parse_cursor_screen_handles_empty_grid` — empty input pin.
+  - `parse_cursor_screen_finds_all_eight_cursor_caps` — all 8 caps at once.
+  - `parse_cursor_screen_finds_each_cap_in_isolation` — per-cap isolation pin (one assertion per cap, 8 sub-assertions).
+  - `parse_cursor_screen_rejects_substring_collisions` — substring-collision pin: feeds `cupboard occupied hpattern vparams cuummulus cudgel cubitus cuffed csrubble` and asserts ZERO matches (proves the parser uses `grid_has_token`, not raw `str::contains`).
+  - `parse_cursor_screen_handles_partial_caps` — 3-of-8 partial subset pin.
+  - `parse_cursor_screen_returns_caps_in_canonical_order` — scrambled input must return labels in canonical `CURSOR_CAPS` order, not grid-discovery order.
+  - `parse_cursor_screen_handles_realistic_tack_v108_output` — pins that the parser returns empty against the actual tack v1.08 output (`This line should start in the home position. The rest of the screen should be clear. (clear) Done`) and does NOT panic or false-flag.
+  - `parse_cursor_screen_extracts_first_non_blank_line_as_header` — header-extraction pin.
+  - `parse_cursor_screen_handles_cap_at_start_of_line` — start-of-line tokenization pin.
+  - `parse_cursor_screen_handles_cap_at_end_of_line` — end-of-line tokenization pin.
+  - All 10 run in debug AND release. All 10 pass green.
+
+- [x] **Wire in** at both ends. Run all 3.
+
+  **Done.** Added `pub mod cursor_movement;` in alphabetical position to both `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs` (after `color`, before `graphic_rendition`) and `oriterm_core/tests/tack/test_menu/mod.rs` (same alphabetical position). All 3 wrappers (`tack_cursor_movement_80x24`, `tack_cursor_movement_97x33`, `tack_cursor_movement_120x40`) pass green; snapshots captured via `INSTA_UPDATE=always` and pinned at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__cursor_movement__tack_cursor_movement_{80x24, 97x33, 120x40}.snap`. Full project gates green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`, plus cross-compile to `x86_64-pc-windows-gnu` clean.
 
 ---
 
