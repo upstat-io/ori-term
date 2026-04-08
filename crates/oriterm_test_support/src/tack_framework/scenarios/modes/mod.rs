@@ -113,3 +113,63 @@ pub fn parse_modes_screen(grid: &str) -> ScreenFacts {
         notes: Vec::new(),
     }
 }
+
+// ============================================================
+// 05.1 per-cap phase scenarios — DELETED after empirical
+// investigation. Tack v1.08's modes test only emits `(os)`
+// content; no `(am)`, `(bce)`, `(bw)`, `(km)`, `(mir)`, `(msgr)`,
+// or `(xenl)` is ever printed. The plan's per-cap design was
+// based on a wrong model of tack's output. See the rustdoc on
+// `oriterm_core/tests/tack/test_menu/modes.rs` for the full
+// captured output and rationale. Section 04's `TACK_MODES_AM`
+// (with `parse_modes_screen` and `KNOWN: &["os"]`) is the
+// complete and correct coverage of tack's modes screen.
+//
+// `parse_modes_phase_screen` below is preserved as a general-
+// purpose multi-cap parser for any future scenario whose tack
+// output DOES contain per-cap parenthesized labels (verified
+// empirically before adoption). Section 04's `parse_modes_screen`
+// remains the canonical parser for the modes-test capture.
+// ============================================================
+
+/// Multi-cap parser that scans for any of the modes-related
+/// parenthesized labels in a tack screen.
+///
+/// **Empirical caveat.** As of tack v1.08 the modes test does NOT
+/// emit `(am)`, `(bce)`, `(bw)`, `(km)`, `(mir)`, `(msgr)`, or
+/// `(xenl)` — only `(os)`. This parser is preserved for any
+/// future plan section whose tack output DOES contain per-cap
+/// labels (e.g., a different test screen, or a future tack
+/// release). Verify empirically before adoption — see the
+/// rustdoc on `oriterm_core/tests/tack/test_menu/modes.rs` for
+/// the captured-output evidence from the 05.1 investigation.
+///
+/// Uses the canonical [`grid_has_paren_token`] helper for the
+/// same reason as [`parse_modes_screen`] — collision-free
+/// matching of tack's parenthesized cap-label syntax.
+pub fn parse_modes_phase_screen(grid: &str) -> ScreenFacts {
+    const KNOWN: &[&str] = &["am", "bce", "bw", "km", "mir", "msgr", "xenl", "os"];
+
+    let mut labels = Vec::new();
+    for cap in KNOWN {
+        if grid_has_paren_token(grid, cap) {
+            labels.push((*cap).to_string());
+        }
+    }
+
+    let header = grid
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("")
+        .to_string();
+
+    ScreenFacts {
+        header_text: header,
+        capability_labels: labels,
+        notes: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests;
