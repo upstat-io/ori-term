@@ -57,5 +57,13 @@ fn infocmp_available_matches_tool_available() {
 
 #[test]
 fn tack_available_matches_tool_available() {
-    assert_eq!(tack_available(), tool_available("tack", "-V"));
+    // NOTE: tack uses `-h` (not `-V`) because tack v1.08's `-V` flag
+    // exits with status 1 (it prints the version banner to stdout
+    // but the binary then exits non-zero). After TPR-05-005 tightened
+    // tool_available to require `status.success()`, the `-V` probe
+    // would always report tack as unavailable on every dev/CI host.
+    // tack -h prints usage to stderr and exits 0 (verified empirically).
+    // Other tools (tic, infocmp, vttest) exit 0 from their canonical
+    // version flag and use the same probe pattern unchanged.
+    assert_eq!(tack_available(), tool_available("tack", "-h"));
 }
