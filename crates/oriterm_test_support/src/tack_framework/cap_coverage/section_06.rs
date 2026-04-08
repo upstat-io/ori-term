@@ -14,28 +14,21 @@ use super::CapCoverageContribution;
 pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
     section: "06",
     covered: &[
-        // EMPTY until Section 06 lands. Section 06's completion
-        // checklist will populate this.
+        // ----- Status-report CPR cap pair — covered by Section 06.1
+        // status_reports walker: the `(DSR) Cursor position (CSI 6 n)`
+        // sub-test exercises the `u7` query form and the round-trip
+        // response exercises the `u6` response template. Assertion
+        // enforced by `is_dsr_cursor_position_response` in
+        // `scenarios::status_reports::mod.rs` and the walker test in
+        // `oriterm_core/tests/tack/tools_menu/status_reports.rs`.
+        "u6", "u7",
     ],
     exempt: &[
-        // ----- Status-report u-cap family — covered by Section 06
-        // status_reports scenarios (DA / DSR / ENQ-ACK).
-        (
-            "u6",
-            "deferred to Section 06 status_reports DSR/DA scenario",
-        ),
-        (
-            "u7",
-            "deferred to Section 06 status_reports DSR/DA scenario",
-        ),
-        (
-            "u8",
-            "deferred to Section 06 status_reports DSR/DA scenario",
-        ),
-        (
-            "u9",
-            "deferred to Section 06 status_reports + ENQ/ACK scenario",
-        ),
+        // ----- Remaining u-cap family — covered by Section 06.4
+        // ENQ/ACK handshake (u8/u9 are NOT exercised by status
+        // reports; they're a separate tool in tack's tools menu).
+        ("u8", "deferred to Section 06.4 ENQ/ACK handshake scenario"),
+        ("u9", "deferred to Section 06.4 ENQ/ACK handshake scenario"),
         // ----- OSC color/cursor/clipboard caps — covered by Section
         // 06 osc_queries scenario.
         (

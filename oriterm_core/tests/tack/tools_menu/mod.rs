@@ -16,5 +16,6 @@
 //!   doc-only stubs for the interactive tools (echo/reply/hex/debug/
 //!   perf/reset).
 
+pub mod status_reports;
 pub mod status_reports_inventory;
 pub mod tools_menu_inventory;

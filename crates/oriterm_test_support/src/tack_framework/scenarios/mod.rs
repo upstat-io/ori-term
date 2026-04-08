@@ -30,5 +30,6 @@ pub mod graphic_rendition;
 pub mod menu_inventory;
 pub mod modes;
 pub mod padding;
+pub mod status_reports;
 pub mod status_reports_inventory;
 pub mod tools_menu_inventory;
