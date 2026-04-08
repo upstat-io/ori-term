@@ -59,6 +59,17 @@ fn spawn_quit_on_keystroke(exit_code: i32) -> PtySession {
         c.env("TERM", "xterm-256color");
         c
     };
+    // `mut` is required on Unix so `wait_for` can drive the reader;
+    // on Windows the call is cfg-gated out, so the binding is only
+    // read — `#[cfg_attr(not(unix), expect(unused_mut, ...))]` keeps
+    // the single source-form line while satisfying `-D unused-mut`.
+    #[cfg_attr(
+        not(unix),
+        expect(
+            unused_mut,
+            reason = "session.wait_for() below is unix-only; on windows the binding is never mutated"
+        )
+    )]
     let mut session = PtySession::spawn(cmd, 80, 24);
     #[cfg(unix)]
     session.wait_for("__READY__", 5_000);

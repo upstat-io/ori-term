@@ -12,14 +12,19 @@
 //! committed source file is enforced at build time, not runtime. There
 //! is no filesystem discovery, no repo-root walk, no env-var lookup.
 //!
-//! [`TerminfoEnv::compile`] is pure-`tic`. It does NOT shell out to
-//! `infocmp`. The `infocmp -A` round-trip lives in the 02.4 test
-//! suite — running it inside the constructor would force every caller
-//! (including Section 03's `spawn_tack`) to gate on
-//! [`crate::infocmp_available`], which is a second tool dependency
-//! for no constructor-side gain. The post-tic sanity check is a
-//! `Path::exists` probe on the directory-backend entry file, since
-//! we know what name we asked tic to write.
+//! [`TerminfoEnv::compile`] requires `tic` and never forces callers
+//! to gate on [`crate::infocmp_available`] — the constructor still
+//! runs when only `tic` is present. The post-tic sanity check is a
+//! best-effort `infocmp -A <tempdir> <entry>` probe that is skipped
+//! when `infocmp` is not installed, so the hard dependency stays
+//! tic-only. `infocmp` (via ncurses) is the only portable probe that
+//! works across both the directory and hashed-db backends; a
+//! `Path::exists` probe on `<tempdir>/<bucket>/<entry>` would panic
+//! spuriously on hosts whose ncurses was built with `--with-hashed-db`
+//! (e.g. macOS's default `tic`). The full `infocmp -A` round-trip
+//! with content assertions lives in the 02.4 test suite — this
+//! probe only asks "can infocmp see the entry we asked tic to
+//! write?" and leaves structural assertions to 02.4.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -73,11 +78,14 @@ impl TerminfoVariant {
 ///   2. Writes the embedded [`ORI_TERM_INFO`] source to a scratch
 ///      file inside the tempdir.
 ///   3. Invokes `tic -x -o <tempdir> <scratch>` as a subprocess.
-///   4. Sanity-checks that `<tempdir>/<bucket>/<entry>` exists on
-///      disk (directory backend; the entry name is what we just
-///      told tic to write so we know what to look for). The
-///      portable round-trip via `infocmp -A` lives in the 02.4 test
-///      suite, not here.
+///   4. Best-effort sanity check via `infocmp -A <tempdir> <entry>`
+///      that the entry we asked `tic` to write is visible through
+///      ncurses. Skipped when `infocmp` is not installed so the
+///      hard dependency remains `tic` only. This replaces the
+///      previous `Path::exists` probe on `<tempdir>/<bucket>/<entry>`,
+///      which only worked on the directory backend and panicked on
+///      hashed-db hosts (e.g. macOS). The full `infocmp -A` content
+///      round-trip lives in the 02.4 test suite, not here.
 ///
 /// Drop cleans up the temp directory automatically (RAII via
 /// [`TempDir`]).
@@ -88,9 +96,11 @@ impl TerminfoVariant {
 ///   [`crate::tic_available`] first).
 /// - Panics if `tic` exits non-zero (compilation failure — prints
 ///   stderr).
-/// - Panics if the post-tic sanity check fails to locate the
-///   directory-backend entry file (proves the compile actually
-///   wrote the entry, not just exited 0 silently).
+/// - Panics if `infocmp` is installed AND the post-tic sanity probe
+///   fails to locate the entry (proves the compile actually wrote
+///   a readable entry, not just exited 0 silently). If `infocmp` is
+///   not installed the probe is skipped and we trust `tic`'s exit
+///   code alone.
 pub struct TerminfoEnv {
     tempdir: TempDir,
     variant: TerminfoVariant,
@@ -225,30 +235,52 @@ fn run_tic(source: &std::path::Path, dest: &std::path::Path) {
     );
 }
 
-/// Sanity-check that `tic` actually wrote the variant's directory-
-/// backend entry file. This is the deterministic post-tic probe —
-/// we know exactly which entry we asked `tic` to write, so the path
-/// is fixed: `<dir>/<first-letter>/<entry-name>`. If the host has
-/// the hashed-db backend instead of the directory backend, this
-/// probe fails — but every Linux/macOS ncurses build that ships
-/// `tic` defaults to the directory backend when given `-o <dir>`
-/// (see `man tic`); hashed-db is opt-in via `--with-hashed-db` at
-/// ncurses build time and is rare. The portable round-trip via
-/// `infocmp -A` lives in the 02.4 test suite, not here.
+/// Sanity-check that `tic` actually wrote the variant's entry to
+/// `tempdir` by asking ncurses via `infocmp -A <tempdir> <entry>`.
+///
+/// This replaces the previous directory-backend `Path::exists` probe
+/// on `<tempdir>/<first-letter>/<entry-name>`, which panicked on
+/// hosts whose ncurses was built with `--with-hashed-db` (macOS's
+/// default `tic` in CI). `infocmp -A` consults the database through
+/// ncurses, which handles both the directory and hashed-db backends
+/// transparently — it is the only portable "did tic actually write
+/// the entry?" probe.
+///
+/// The probe is gated on [`crate::infocmp_available`] and silently
+/// returns when `infocmp` is not installed, so the constructor's
+/// hard tool dependency stays `tic` only (callers still gate on
+/// [`crate::tic_available`], not on `infocmp_available`). In that
+/// degraded case we trust `tic`'s exit code alone — downstream
+/// tests that actually consume the compiled entry (Section 02.4
+/// and later) will catch a silent-success bug through their own
+/// assertions.
+///
+/// The full structural round-trip (asserting specific caps, colors,
+/// extension caps) lives in the 02.4 test suite, not here. This
+/// probe only asks "is the entry readable?", not "is its content
+/// correct?".
 fn assert_entry_written(tempdir: &std::path::Path, variant: TerminfoVariant) {
+    if !crate::infocmp_available() {
+        return;
+    }
     let entry_name = variant.entry_name();
-    let bucket = entry_name
-        .chars()
-        .next()
-        .expect("variant entry name is non-empty");
-    let entry_path = tempdir.join(bucket.to_string()).join(entry_name);
+    let out = Command::new("infocmp")
+        .arg("-A")
+        .arg(tempdir)
+        .arg(entry_name)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("invoke infocmp");
     assert!(
-        entry_path.exists(),
-        "tic claimed success but entry file {} is missing — \
-         the host may use a hashed-db terminfo backend; the 02.4 \
-         infocmp round-trip will catch the same case via a different \
-         error message",
-        entry_path.display()
+        out.status.success(),
+        "tic claimed success but infocmp -A {} {} cannot locate the entry — \
+         tic may have silently produced an empty database or written to an \
+         unexpected location:\nstdout: {}\nstderr: {}",
+        tempdir.display(),
+        entry_name,
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
     );
 }
 
