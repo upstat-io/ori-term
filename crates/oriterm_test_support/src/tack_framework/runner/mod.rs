@@ -70,8 +70,9 @@ use crate::terminfo::TerminfoEnv;
 
 use super::navigator::TackNavigator;
 use super::parser::ScreenFacts;
-use super::spec::ScenarioSpec;
+use super::spec::{MenuStep, ScenarioSpec, is_unverified_anchor, is_unverified_menu_key};
 
+pub mod phase;
 pub mod stable;
 
 /// Canonical name format for snapshot/golden files: `<screen_id>_<cols>x<rows>`.
@@ -123,11 +124,22 @@ pub(super) const TACK_QUIT_MAX_ITERATIONS: u32 = 5;
 /// Returns the live `(session, env, grid_text, parsed)` tuple. The
 /// `env` MUST be held by the caller (see `LiveSession::_terminfo`
 /// and the `tic` lazy-read race rationale).
+///
+/// **Sentinel detection runs FIRST.** Before any I/O, we scan the
+/// scenario's `menu_path` and `ready_anchor` for the
+/// `unverified_menu_key()` / `unverified_anchor()` sentinels added
+/// in 05.0.b. The check fires BEFORE [`TerminfoEnv::compile`] and
+/// [`PtySession::spawn_tack`] so a misconfigured const cannot leak
+/// bytes to tack and corrupt subsequent tests in the same process —
+/// AND so the gate works on hosts where tack is not even installed
+/// (the panic message references the missing 05.0 work, not a
+/// downstream tack failure).
 pub(super) fn prepare_and_navigate(
     spec: &ScenarioSpec,
     cols: u16,
     rows: u16,
 ) -> (PtySession, TerminfoEnv, String, ScreenFacts) {
+    assert_no_unverified_sentinels(spec.id, spec.menu_path, None, &[spec.ready_anchor]);
     let env = TerminfoEnv::compile();
     let mut session = PtySession::spawn_tack(&env, cols, rows);
     session.wait_for(TACK_MAIN_MENU_PROMPT, MAIN_MENU_READY_TIMEOUT_MS);
@@ -136,6 +148,70 @@ pub(super) fn prepare_and_navigate(
     let grid_text = session.grid_text();
     let parsed = (spec.parser)(&grid_text);
     (session, env, grid_text, parsed)
+}
+
+/// Scan a `&[MenuStep]` (and optional `phase_trigger` / extra
+/// anchors) for [`crate::tack_framework::spec::unverified_menu_key`]
+/// / [`crate::tack_framework::spec::unverified_anchor`] sentinels.
+/// Panics on the FIRST hit with a referral to 05.0's
+/// `BEGIN_TESTING_INVENTORY`.
+///
+/// SHARED gate between
+/// [`ScenarioRunner::run_at`] (via [`prepare_and_navigate`]) and
+/// `ScenarioRunner::run_phase_at` (via
+/// [`phase::run_phase_at_inner`]). Both code paths route through
+/// this single helper so a regression that weakens the gate fires
+/// in BOTH the stable and phase test matrices simultaneously.
+///
+/// Both consumers call this BEFORE any PTY I/O. The detection is a
+/// pure data scan: it does not touch [`PtySession`],
+/// [`TerminfoEnv`], or any external resource. Therefore the gate
+/// works identically on hosts WITHOUT tack — exactly the
+/// "sentinel detection runs before PTY spawn" semantic the unit
+/// tests pin.
+pub(super) fn assert_no_unverified_sentinels(
+    scenario_id: &str,
+    menu_path: &[MenuStep],
+    phase_trigger: Option<&[u8]>,
+    anchors: &[&str],
+) {
+    for (idx, step) in menu_path.iter().enumerate() {
+        assert!(
+            !is_unverified_menu_key(step.send),
+            "scenario {scenario_id}: menu_path[{idx}].send is the \
+             unverified-menu-key sentinel. Look up the verified \
+             key in BEGIN_TESTING_INVENTORY (see 05.0) and replace \
+             `unverified_menu_key()` with the real key bytes."
+        );
+        assert!(
+            !is_unverified_anchor(step.wait_for),
+            "scenario {scenario_id}: menu_path[{idx}].wait_for is \
+             the unverified-anchor sentinel. Look up the verified \
+             sub-menu prompt in the 05.0 discovery snapshot and \
+             replace `unverified_anchor()` with the real string."
+        );
+        for (alt_idx, alt) in step.or_wait_for.iter().enumerate() {
+            assert!(
+                !is_unverified_anchor(alt),
+                "scenario {scenario_id}: menu_path[{idx}].or_wait_for[{alt_idx}] \
+                 is the unverified-anchor sentinel."
+            );
+        }
+    }
+    if let Some(trigger) = phase_trigger {
+        assert!(
+            !is_unverified_menu_key(trigger),
+            "scenario {scenario_id}: phase_trigger is the \
+             unverified-menu-key sentinel."
+        );
+    }
+    for anchor in anchors {
+        assert!(
+            !is_unverified_anchor(anchor),
+            "scenario {scenario_id}: anchor is the \
+             unverified-anchor sentinel."
+        );
+    }
 }
 
 /// Quit tack via `quit_tack` (or `quit_path` override) and assert
