@@ -1,0 +1,16 @@
+---
+source: oriterm_core/tests/tack/test_menu/color.rs
+expression: outcome.grid_text
+---
+                                                                                                 
+Test color:                                                                                      
+ e) edit terminfo                                                                                
+ n) run standard tests                                                                           
+ r) repeat test                                                                                  
+ s) skip to next test                                                                            
+ q) quit                                                                                         
+ ?) help                                                                                         
+                                                                                                 
+tack/test/color [n] >                                                                            
+This terminal can display 256 colors and 32767 color pairs.  (colors) (pairs)                    
+(colors) (pairs) Done
