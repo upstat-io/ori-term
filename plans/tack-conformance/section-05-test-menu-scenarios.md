@@ -2159,7 +2159,7 @@ The contract changes Section 05 introduces:
   - **Section 06's 06.N Completion Checklist** (line 499): "Cap-coverage extension (cross-section sync from Section 05.5)." Enumerates the move from `section_06.rs::CONTRIBUTION.exempt` to `CONTRIBUTION.covered` (a), the re-run of `tack_cap_coverage_matrix` to confirm no stale exemptions (b), and the doc-comment update at the top of `section_06.rs` (c).
   - **Section 08's 08.N Completion Checklist** (line 758): "Cap-coverage extension (cross-section sync from Section 05.5)." Enumerates the move of named cursor/editing keys from exempt to covered (a), the optional decision about whether to also move kf1-kf63 + modified-key family out of the iterator-built exemption (b), the re-run of `tack_cap_coverage_matrix` (c), and the doc-comment update (d).
   Both checklist items were pre-populated by Agent 2 of `/review-plan` and already reference the live `section_06.rs` / `section_08.rs` files that 05.5 just landed.
-- [ ] **ARCHITECTURAL DECISION RESOLVED (Agent 4): NO `run_phase_with_session_at` GPU bridge.** The default verdict from Agent 3 stands and is now ratified. Reasoning audit:
+- [x] **ARCHITECTURAL DECISION RESOLVED (Agent 4): NO `run_phase_with_session_at` GPU bridge.** The default verdict from Agent 3 stands and is now ratified. Reasoning audit:
 
   1. **Section 04's existing `TACK_MODES_AM` IS the modes GPU golden source.** It is a stable-screen scenario (`menu_path: n -> x -> n`, `ready_anchor: "Done"`). At the moment `Done` appears, the only modes cap still in the 24-row viewport is `(os)` (the over-strike terminator that tack lists last). The existing scenario already produces a clean, stable, deterministic capture point for the GPU pipeline — no phase capture needed.
 
