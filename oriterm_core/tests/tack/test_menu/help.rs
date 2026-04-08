@@ -40,13 +40,28 @@
 //! be in the post-`?` grid) and the insta snapshot will diff.
 //! That signals an inventory reclassification is needed.
 
-use oriterm_test_support::session::{PtySession, tack_available, tic_available};
+use oriterm_test_support::session::PtySession;
+use oriterm_test_support::tack_framework::ScenarioRunner;
 use oriterm_test_support::terminfo::TerminfoEnv;
 
 #[test]
 fn tack_help_redisplays_begin_testing_menu() {
-    if !tack_available() || !tic_available() {
-        eprintln!("tack or tic unavailable, skipping tack_help_redisplays_begin_testing_menu");
+    // SEMANTIC PIN for TPR-05-019: gate on the canonical
+    // `ScenarioRunner::available()` AND-combine (tack_available
+    // + tic_available + tack_version_supported), NOT on the
+    // bare `tack_available() && tic_available()` pair. The
+    // version gate is part of Section 05's contract: every
+    // tack-spawning test in this submodule must skip cleanly
+    // on unsupported tack versions, not just on hosts missing
+    // the binary entirely. The previous version of this test
+    // bypassed the version gate by spawning tack directly via
+    // PtySession, which would have caused snapshot churn or
+    // hard failures when tack upgrades.
+    if !ScenarioRunner::available() {
+        eprintln!(
+            "tack/tic unavailable or tack version unsupported, skipping \
+             tack_help_redisplays_begin_testing_menu"
+        );
         return;
     }
 
