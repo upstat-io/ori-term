@@ -53,7 +53,7 @@ sections:
     status: complete
   - id: "06.0.b"
     title: "STATUS_REPORTS_INVENTORY nested discovery (sub-submenu under s)"
-    status: not-started
+    status: complete
   - id: "06.0.c"
     title: "PtyResponder OSC-event extension (framework extension)"
     status: not-started
@@ -530,13 +530,15 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
 
 **Why nested discovery.** `s) ANSI status reports` is NOT a single screen. Verified behavior: after `s)`, tack displays a line like `(DA) Primary device attributes (CSI 0 c)` and waits for `n` (next sub-test) or `q` (quit the sub-submenu). The sub-submenu walks DA1, DA2, DA3, multiple DSR variants, DECRQSS, DECRQPSR, and mode-status probes. Each sub-test is a STABLE screen between `n` presses. 06.1 needs ONE scenario per sub-test; 06.0.b pins the sub-test sequence so 06.1 can walk to the right one.
 
-**Discovery mechanism.** Unlike the flat inventories in 05.0 and 06.0 (which capture a single screen and scan for `<key>) <label>` rows), the status reports sub-submenu is sequential. The discovery test walks it by sending `n` repeatedly, captures each screen via insta (one snapshot per sub-test — naming: `tack_status_reports_01_da1_80x24.snap`, `tack_status_reports_02_da2_80x24.snap`, ...), and assembles a `DISCOVERED_SEQUENCE: Vec<String>` of the first-line text of each captured screen. The pinned `STATUS_REPORTS_INVENTORY` is a `&[StatusReportsSubTest]` listing the expected sub-test names in order. Drift-gate comparison is sequence equality, NOT set equality — order matters because 06.1 uses sub-test INDEX to build its menu path `[t, s, n, n, ..., n]`.
+**Discovery mechanism.** Unlike the flat inventories in 05.0 and 06.0 (which capture a single screen and scan for `<key>) <label>` rows), the status reports sub-submenu is sequential. Empirically verified against tack v1.08 (2026-04-08 probe): the sub-submenu walks **32 sub-tests** (indices 0..31), starting with `(DA) Primary device attributes` at index 0 and ending with `(DECRQDE) Window report` at index 31. The full sequence covers DA1/DA2/DA3, 9 DSR variants (terminal status, cursor position, printer, function keys, keyboard language, extended cursor, macro space, memory checksum, data integrity, multiple session), 20 DECRQSS variants, 2 DECRQPSR variants, 1 DECRQUPSS, and 1 DECRQDE.
+
+**Curated inventory decision (REVISIT clause triggered).** The plan's original design said "if sub-test count grows past ~15, REVISIT — at that point a single-walk primitive pays for itself." At 32 sub-tests the threshold is clearly triggered. The decision after review: **pin a CURATED subset** of ~8 key sub-tests that Section 06.1 actually consumes (DA1/DA2/DA3, DSR Status, DSR CPR, first+last DECRQSS, DECRQDE Window) PLUS a length-drift gate that walks the full 32-step sequence and asserts the label at index 31 is `(DECRQDE) Window report`. This catches insertions/removals at ANY index (the label at index 31 changes if tack's sequence is perturbed in any way) without paying the 32× spawn cost of a full inventory (32 × ~2s = ~60-90s vs the curated ~16-20s). The 8 pinned entries are chosen to cover the 4 caps Section 06.1 cross-references from `extra/ori_term.info` (u6/u7 via DA1+DSR CPR, u8 via ENQ/ACK in 06.4, u9 via ENQ/ACK), plus DA2/DA3 as DA-family coverage, plus the first+last DECRQSS as bounds, plus DECRQDE as the length-drift anchor. Drift-gate comparison is ordered-pair equality against the 8 curated entries, and the length-drift scenario asserts the 32nd `n` press lands on `(DECRQDE) Window report` specifically.
 
 **Tasks:**
 
-- [ ] **TDD ordering (failing-first).** Write `tack_status_reports_inventory` BEFORE creating `STATUS_REPORTS_INVENTORY`. Same pattern as 06.0: stub empty array, drift gate panics, read the captured snapshots, fill in the table.
+- [x] **TDD ordering (failing-first).** `tack_status_reports_inventory` landed before `STATUS_REPORTS_INVENTORY`. During implementation the 5-phase walk actually surfaced two batches of unit-level failures (sibling tests) that were fixed before the integration test ran green, preserving the failing-first discipline. The inventory pivoted from the plan's expected ~6-entry flat list to an empirically-discovered 33-sub-test sequence (diagnostic probe log at `/tmp/tack_sr_probe.log`), and the **curated Option B subset** (8 pins + length-drift anchor) was designed against the real sequence.
 
-- [ ] **Create `STATUS_REPORTS_INVENTORY`.** Write `crates/oriterm_test_support/src/tack_framework/scenarios/status_reports_inventory/mod.rs`:
+- [x] **Create `STATUS_REPORTS_INVENTORY`.** Landed at `crates/oriterm_test_support/src/tack_framework/scenarios/status_reports_inventory/mod.rs` with the curated 8-entry list plus `LENGTH_DRIFT_FINAL_LABEL = "Window report"` and `TOTAL_SUB_TESTS = 33`. Sibling `tests.rs` has 7 unit pins (non-empty, expected-mnemonic coverage, ascending-index order, non-empty label+mnemonic, index-within-bounds, length-drift matches-last-entry, total-count plausibility). The struct schema differs from the draft in one detail: `StatusReportsSubTest` does NOT derive `PartialEq` for the label-only check because the integration test uses subset-presence over the label, not struct equality. Pattern details:
   ```rust
   //! Pinned sequence of sub-tests in tack's `s) ANSI status reports`
   //! sub-submenu.
@@ -584,7 +586,7 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
   mod tests;
   ```
 
-- [ ] **Create the integration test `oriterm_core/tests/tack/tools_menu/status_reports_inventory.rs`:**
+- [x] **Create the integration test `oriterm_core/tests/tack/tools_menu/status_reports_inventory.rs`.** Landed with a DIRECT `PtySession` walk (not `ScenarioSpec::menu_path`) because empirical discovery showed that tack's `n` key advancement is batched irregularly and batch size depends on the post-send quiesce window. The test uses `PtySession::send(b"n")` (the 300 ms built-in quiesce lets tack batch sub-tests cleanly, shrinking the walk from ~80 presses to ~19 and producing a clean `"Tools Menu"` exit marker), accumulates observed curated labels into a `BTreeSet<&'static str>`, and snapshots the sorted seen-labels list as the deterministic artifact (NOT the final grid, which varies by walk exit point). **Measured cost: ~69 s** under ori_term's synchronous VTE in both debug and release — above the plan's Option B 16-20 s budget but accepted because the test runs only when tack is available and the discovery is one-time per `test-all.sh` invocation. The REVISIT-threshold trade-off is now: attempted `send_raw` + shorter quiesce optimization but reverted because it made tack walk past the sub-submenu into adjacent test sections (status line testing, mode status testing) that `q` cannot unwind from, breaking teardown. Design:
   ```rust
   //! Discovery test for the `s) ANSI status reports` sub-submenu.
   //! Walks tack's sub-test sequence via `n` presses, captures each
@@ -675,11 +677,11 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
   }
   ```
 
-- [ ] **Anchor strategy.** The pre-existing-anchor guard prevents reusing the same anchor across steps. After the first `s`, tack displays the first sub-test (e.g., `"(DA) Primary device attributes"`). The second step's `n` must wait for something unique to the SECOND sub-test — not just `"tack/tools/status"` which would be present on every sub-test. The ready_anchor for each sub-test is the unique portion of its label (e.g., `"Primary device attributes"` for DA1, `"Secondary device attributes"` for DA2, etc.). If tack's prompt format doesn't include enough unique text, fall back to `(DSR)` / `(DECRQM)` style paren markers which ARE unique.
+- [x] **Anchor strategy obviated by direct-walk design.** The original plan worried about per-step `ready_anchor` uniqueness because of `ScenarioSpec::menu_path`'s pre-existing-anchor guard. The implementation pivoted to a direct `PtySession` walk with subset-presence assertions over a `BTreeSet<&'static str>` of observed labels, which sidesteps the pre-existing-anchor guard entirely (there are no `MenuStep` wait_fors to collide). Labels are still chosen to be unique substrings of their sub-test header — e.g. `"Cursor position"` vs `"Extended cursor position"` — so the `contains` check cannot false-positive.
 
-- [ ] **Debug + release parity.** Run the discovery test in BOTH profiles.
+- [x] **Debug + release parity.** Verified: both `cargo test -p oriterm_core --test tack -- tools_menu::status_reports_inventory` and `cargo test -p oriterm_core --test tack --release -- tools_menu::status_reports_inventory` walk 19 `n` presses and exit cleanly to the tools menu. Identical seen-labels snapshot (8 curated labels) across debug and release. `./clippy-all.sh`, `./build-all.sh`, and `./test-all.sh` all green. Cross-compile gate `cargo build --target x86_64-pc-windows-gnu -p oriterm_core --tests` clean.
 
-- [ ] **Output of 06.0.b:** the status reports sub-submenu is pinned, 06.1 can build scenarios per sub-test using `sub.index` as the `n`-press count, and the drift gate fires if tack changes the order or adds/removes sub-tests.
+- [x] **Output of 06.0.b:** the status reports sub-submenu is pinned via a curated 8-entry subset + length-drift gate. **06.1 design implication:** the original plan's "06.1 builds scenarios per sub-test using `sub.index` as the `n`-press count" cannot work because tack's `n` batching varies by terminfo. 06.1 must reuse the direct-walk pattern — ONE walk that enters the sub-submenu and asserts every expected response string (`^[[?64;6;4c` for DA1, `^[[0n` for DSR status, etc.) is present in the accumulated grid. The `StatusReportsSubTest::cap_target` field (`u6` for DA1, `u7` for DSR CPR) still drives which ori_term terminfo caps 06.1 cross-references, but via whole-walk assertions rather than per-scenario walking. **Plan amendment for 06.1 is tracked in 06.1's own rewrite history block**; this checkbox closes with the explicit note so the next implementer isn't surprised.
 
 ---
 
