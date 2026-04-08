@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Tack Scenarios: Tools Menu"
-status: not-started
+status: in-progress
 reviewed: true
 needs_re_review_after: "04"
 re_review_reason: "REWRITTEN by Agent 1 of /review-plan against the final Section 04/05 API and against LIVE empirical inspection of tack v1.08's tools submenu (NOT the guessed tack v6.x menu from the original draft). The pre-rewrite version had FOUR blocking defects: (1) it guessed wrong sub-menu keys for every tool (`d`/`D`/`s`/`r`/`c`/`e`/`g`/`m`/`x`) — none of them match tack v1.08; the real tools menu is `s) ANSI status reports`, `g) ANSI SGR modes`, `c) ANSI character sets`, `h) enable hex output on echo tool`, `e) echo tool`, `r) reply tool`, `p) performance testing`, `i) send reset and init`, `u) test ENQ/ACK handshake`, `d) change debug level`, `q) quit`, `?) help`. (2) It treated `s) ANSI status reports` as a single screen; in reality it's a SEQUENTIAL walker with its own sub-submenu containing DA1/DA2/DA3, multiple DSR variants, DECRQSS, DECRQPSR, mode-status. (3) It tried to test OSC queries via tack, but tack v1.08 has NO OSC query tool — and even if it did, the `PtySession` infrastructure only captures `Event::PtyWrite` and ignores `Event::ColorRequest` / `Event::ClipboardLoad`, so a responder extension to `oriterm_test_support::session` is a prerequisite. (4) Its cap-coverage claim was incomplete: ~19 modern caps (Smulx, Setulc, Sync, BD, BE, PS, PE, Se, Ss, XF, kxIN, kxOUT, Tc, RGB, Cr, Cs, Ms, hs, dsl, fsl, tsl, AX, XT) are declared in `extra/ori_term.info` but tack v1.08 has no tool to probe them. Per CLAUDE.md 'never scope down', the correct response is to EXPAND Section 06 to cover those caps via direct-VTE round-trip tests in `oriterm_core`, not to shrink mission criterion #9. The rewrite (a) adds 06.0 TOOLS_MENU_INVENTORY discovery subsection (parallel to Section 05.0), (b) adds 06.0.b STATUS_REPORTS_INVENTORY nested discovery for the `s) status reports` sub-submenu, (c) adds 06.0.c PtySession OSC-responder framework extension, (d) rewrites 06.1–06.4 against the verified tools menu, (e) adds 06.5 direct-VTE cap xcheck for the ~19 non-tack-reachable caps, (f) replaces the scan-codes / decompile-terminfo stubs with the real tack v1.08 exclusions (echo / reply / hex-output / change-debug-level / performance-testing / send-reset-init), (g) adds 06.6 Mission Criterion Traceability + 06.7 determinism/size/cross-compile verification subsection, (h) adds an Implementation Milestones split (M1 discovery + framework / M2 catalog + direct-VTE xcheck), (i) updates `cap_coverage/section_06.rs` CONTRIBUTION to reflect the two-track coverage. Agent 4 factual correction: PS/PE live in `oriterm_core/src/paste/mod.rs` (not `oriterm`), so only kxIN/kxOUT are genuinely cross-crate; the 06.5 cross-crate stubs are reduced to kxIN/kxOUT only. Section 06 MUST re-run `/review-plan` to flip `reviewed: true` after Agents 2-4 of this pass complete."
@@ -50,7 +50,7 @@ third_party_review:
 sections:
   - id: "06.0"
     title: "TOOLS_MENU_INVENTORY discovery (pin the tools submenu graph)"
-    status: not-started
+    status: complete
   - id: "06.0.b"
     title: "STATUS_REPORTS_INVENTORY nested discovery (sub-submenu under s)"
     status: not-started
@@ -270,9 +270,9 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
 
 **Tasks:**
 
-- [ ] **TDD ordering (failing-first).** Write `tack_tools_menu_inventory` BEFORE creating `TOOLS_MENU_INVENTORY`. Phase A: integration test fails on unresolved import. Phase B: stub inventory module with `pub const TOOLS_MENU_INVENTORY: &[ToolsMenuKey] = &[]`, tests compile, drift-gate panics with the symmetric-difference message. Phase C: `INSTA_UPDATE=1` captures the real snapshot. Phase D: read the snapshot, fill in the inventory, re-run without `INSTA_UPDATE`, confirm green.
+- [x] **TDD ordering (failing-first).** Write `tack_tools_menu_inventory` BEFORE creating `TOOLS_MENU_INVENTORY`. Phase A: integration test fails on unresolved import. Phase B: stub inventory module with `pub const TOOLS_MENU_INVENTORY: &[ToolsMenuKey] = &[]`, tests compile, drift-gate panics with the symmetric-difference message. Phase C: `INSTA_UPDATE=1` captures the real snapshot. Phase D: read the snapshot, fill in the inventory, re-run without `INSTA_UPDATE`, confirm green.
 
-- [ ] **Create the new shared drift-gate helper for Section 06 only.** Create `crates/oriterm_test_support/src/tack_framework/scenarios/menu_inventory/mod.rs` with:
+- [x] **Create the new shared drift-gate helper for Section 06 only.** Create `crates/oriterm_test_support/src/tack_framework/scenarios/menu_inventory/mod.rs` with:
   ```rust
   //! Shared drift-gate algorithm for Section 06's menu inventories.
   //!
@@ -325,9 +325,9 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
   ```
   Add a sibling `tests.rs` with pins: exact-match returns Ok, drift returns Err with the source label, empty discovered set returns Err naming the missing keys, empty pinned set returns Err naming the discovered keys.
 
-- [ ] **Do NOT touch `begin_testing_inventory::assert_inventory_drift`.** Section 05's helper stays unchanged. Section 05's integration test at `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs` is NOT modified by Section 06. The ~15-line duplication between the two helpers is documented in the module doc of `menu_inventory/mod.rs` above and is acceptable per the stability-over-DRY rationale. This also means Section 05's frontmatter does NOT need a `re_review_reason` bump — Section 06 does not touch Section 05 code.
+- [x] **Do NOT touch `begin_testing_inventory::assert_inventory_drift`.** Section 05's helper stays unchanged. Section 05's integration test at `oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs` is NOT modified by Section 06. The ~15-line duplication between the two helpers is documented in the module doc of `menu_inventory/mod.rs` above and is acceptable per the stability-over-DRY rationale. This also means Section 05's frontmatter does NOT need a `re_review_reason` bump — Section 06 does not touch Section 05 code.
 
-- [ ] **Create `TOOLS_MENU_INVENTORY`.** Write `crates/oriterm_test_support/src/tack_framework/scenarios/tools_menu_inventory/mod.rs`:
+- [x] **Create `TOOLS_MENU_INVENTORY`.** Write `crates/oriterm_test_support/src/tack_framework/scenarios/tools_menu_inventory/mod.rs`:
   ```rust
   //! Pinned classification of every key on tack's `t) tools` submenu.
   //!
@@ -441,7 +441,7 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
   ```
   The initial commit uses the table above; the discovery test's first run (before `TOOLS_MENU_INVENTORY` is populated) will force the implementer to look at the real captured snapshot and verify the table matches reality. All 12 keys (`s`, `g`, `c`, `h`, `e`, `r`, `p`, `i`, `u`, `d`, `q`, `?`) are pre-classified — no variant additions should be needed during implementation. If live tack v1.08 emits a key NOT in this inventory, the drift gate fires with the unknown key and the implementer adds a classified entry (per broken-window policy, never skip).
 
-- [ ] **Create the integration test `oriterm_core/tests/tack/tools_menu/tools_menu_inventory.rs`:**
+- [x] **Create the integration test `oriterm_core/tests/tack/tools_menu/tools_menu_inventory.rs`:**
   ```rust
   //! Discovery test: spawns tack, navigates to the tools submenu,
   //! captures the screen via insta, and asserts every key shown
@@ -506,17 +506,17 @@ M1 proves the framework extensions work (tools inventory drift gate, status repo
   }
   ```
 
-- [ ] **Scoped `collect_menu_keys` extraction for Section 06 only.** Section 06's two new inventories (tools_menu_inventory + status_reports_inventory) both need the `<key>) <label>` scanner. Extract `collect_menu_keys` to `scenarios::menu_inventory::collect_menu_keys` alongside `assert_menu_drift` — consumed ONLY by the two Section 06 inventories. Section 05's `begin_testing_inventory.rs::collect_menu_keys` (if it exists as a private helper in the integration test) stays unchanged — DO NOT update Section 05's integration test to call the new canonical. Rationale: Codex's midpoint review flagged refactoring Section 05 mid-Section-06-landing as needless blast radius. The ~15 lines of duplication between Section 05's and Section 06's scanners are accepted under the stability-over-DRY rule. The `menu_inventory/mod.rs` module doc cross-references Section 05's helper and documents the intentional non-consumer.
+- [x] **Scoped `collect_menu_keys` extraction for Section 06 only.** Section 06's two new inventories (tools_menu_inventory + status_reports_inventory) both need the `<key>) <label>` scanner. Extract `collect_menu_keys` to `scenarios::menu_inventory::collect_menu_keys` alongside `assert_menu_drift` — consumed ONLY by the two Section 06 inventories. Section 05's `begin_testing_inventory.rs::collect_menu_keys` (if it exists as a private helper in the integration test) stays unchanged — DO NOT update Section 05's integration test to call the new canonical. Rationale: Codex's midpoint review flagged refactoring Section 05 mid-Section-06-landing as needless blast radius. The ~15 lines of duplication between Section 05's and Section 06's scanners are accepted under the stability-over-DRY rule. The `menu_inventory/mod.rs` module doc cross-references Section 05's helper and documents the intentional non-consumer.
 
-- [ ] **Semantic pin: drift gate cannot be silently disabled.** Add a unit test in `scenarios::tools_menu_inventory::tests` that constructs a synthetic `discovered` with an extra key not in `TOOLS_MENU_INVENTORY`, calls `assert_menu_drift`, and asserts the error message names both sets. Mirror the pattern from `begin_testing_inventory::tests::begin_testing_inventory_drift_gate_pin`. Add a positive pin too (`pinned_inventory_is_non_empty` — catches regression to the empty-array start state).
+- [x] **Semantic pin: drift gate cannot be silently disabled.** Add a unit test in `scenarios::tools_menu_inventory::tests` that constructs a synthetic `discovered` with an extra key not in `TOOLS_MENU_INVENTORY`, calls `assert_menu_drift`, and asserts the error message names both sets. Mirror the pattern from `begin_testing_inventory::tests::begin_testing_inventory_drift_gate_pin`. Add a positive pin too (`pinned_inventory_is_non_empty` — catches regression to the empty-array start state).
 
-- [ ] **Capture the snapshot via `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- tools_menu::tools_menu_inventory`.** Read the captured grid at `oriterm_core/tests/tack/tools_menu/snapshots/tack__tools_menu__tools_menu_inventory__tack_tools_menu_80x24.snap`. Confirm every ToolsMenuKey entry matches the real menu. `q` and `?` are pre-classified as `MenuMeta`; if any OTHER key surfaces that isn't in the pinned inventory, the drift gate fires with a diagnostic naming the new key — add a classified entry and re-run (broken-window policy: never skip an unknown key).
+- [x] **Capture the snapshot via `INSTA_UPDATE=1 timeout 150 cargo test -p oriterm_core --test tack -- tools_menu::tools_menu_inventory`.** Read the captured grid at `oriterm_core/tests/tack/tools_menu/snapshots/tack__tools_menu__tools_menu_inventory__tack_tools_menu_80x24.snap`. Confirm every ToolsMenuKey entry matches the real menu. `q` and `?` are pre-classified as `MenuMeta`; if any OTHER key surfaces that isn't in the pinned inventory, the drift gate fires with a diagnostic naming the new key — add a classified entry and re-run (broken-window policy: never skip an unknown key).
 
-- [ ] **Debug + release parity.** Run the discovery test in BOTH profiles: `timeout 150 cargo test -p oriterm_core --test tack -- tools_menu::tools_menu_inventory` and `timeout 150 cargo test -p oriterm_core --test tack --release -- tools_menu::tools_menu_inventory`. Any release-only failure is a timing bug — fix in 06.0, never defer.
+- [x] **Debug + release parity.** Run the discovery test in BOTH profiles: `timeout 150 cargo test -p oriterm_core --test tack -- tools_menu::tools_menu_inventory` and `timeout 150 cargo test -p oriterm_core --test tack --release -- tools_menu::tools_menu_inventory`. Any release-only failure is a timing bug — fix in 06.0, never defer.
 
-- [ ] **Output of 06.0:** the tools menu discovery test passes, `TOOLS_MENU_INVENTORY` is the SSOT for keys used by 06.1–06.4, every later subsection cites a row from the inventory instead of inventing a key, and `scenarios::menu_inventory::{assert_menu_drift, collect_menu_keys}` is the drift-gate + key-scanner home for Section 06's two new inventories. Section 05's helpers remain unchanged; a future refactor may consolidate if a fourth consumer appears.
+- [x] **Output of 06.0:** the tools menu discovery test passes, `TOOLS_MENU_INVENTORY` is the SSOT for keys used by 06.1–06.4, every later subsection cites a row from the inventory instead of inventing a key, and `scenarios::menu_inventory::{assert_menu_drift, collect_menu_keys}` is the drift-gate + key-scanner home for Section 06's two new inventories. Section 05's helpers remain unchanged; a future refactor may consolidate if a fourth consumer appears.
 
-- [ ] **[STYLE] Update `scenarios/mod.rs` module doc to match reality.** `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs:13` currently predicts `"06: tools_menu submodules"` as a single unit. The final Section 06 design uses six distinct submodules (`tools_menu_inventory`, `status_reports_inventory`, `status_reports`, `sgr_modes`, `character_sets`, `enq_ack`) plus the new shared helper (`menu_inventory`). Rewrite the module-doc bullet for Section 06 to enumerate the six submodules and the shared helper so a reader who follows the doc lands on the actual names, not a placeholder. Add `pub mod` declarations in the same commit: `pub mod menu_inventory;`, `pub mod tools_menu_inventory;`, `pub mod status_reports_inventory;`, `pub mod status_reports;`, `pub mod sgr_modes;`, `pub mod character_sets;`, `pub mod enq_ack;`. Verify via `cargo check -p oriterm_test_support`.
+- [x] **[STYLE] Update `scenarios/mod.rs` module doc to match reality.** Doc bullet for Section 06 rewritten to enumerate the final submodules (`menu_inventory` shared helper + `tools_menu_inventory` landed in 06.0; `status_reports_inventory`, `status_reports`, `sgr_modes`, `character_sets`, `enq_ack` land in their respective later subsections). `pub mod menu_inventory;` and `pub mod tools_menu_inventory;` declarations added in 06.0. The remaining `pub mod` declarations are added by their owning subsections (one `pub mod` line per module, landed with its body) to keep commits bisectable. `cargo check -p oriterm_test_support` clean.
 
 ---
 
