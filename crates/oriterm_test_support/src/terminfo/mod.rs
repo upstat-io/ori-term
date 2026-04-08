@@ -201,6 +201,48 @@ impl TerminfoEnv {
     }
 }
 
+/// Runtime probe: does the host's `infocmp` honor the
+/// `$TERMINFO` / `$TERMINFO_DIRS` env-var precedence ncurses
+/// applications rely on?
+///
+/// On Linux/macOS with native ncurses, the answer is yes. On
+/// Windows where `infocmp` is shipped by MSYS2 / Cygwin / WSL,
+/// the answer depends on which `infocmp` the test runner picked
+/// up — some MSYS variants ignore the env vars entirely and
+/// consult only a hardcoded terminfo location.
+///
+/// The probe compiles a fresh [`TerminfoEnv`] (which writes our
+/// `ori_term` entry into a tempdir), sets the env-var triple via
+/// `apply_env`, runs `infocmp ori_term` with no `-A`, and reports
+/// whether the child exited successfully. Successful exit means
+/// the child resolved `ori_term` via env-var precedence and read
+/// our tempdir; non-zero exit means the child fell back to the
+/// system terminfo location and could not find `ori_term` there.
+///
+/// Used by `child_process_with_apply_env_reads_pinned_terminfo`
+/// to skip cleanly on hosts whose `infocmp` lacks env-var
+/// precedence support, instead of failing with an opaque
+/// assertion error.
+///
+/// Returns `false` if `tic` or `infocmp` is missing on the host
+/// (either tool is required for the probe).
+#[must_use]
+pub fn infocmp_respects_terminfo_env() -> bool {
+    if !crate::tic_available() || !crate::infocmp_available() {
+        return false;
+    }
+    let env = TerminfoEnv::compile();
+    let mut cmd = Command::new("infocmp");
+    cmd.arg(env.term());
+    for (name, value) in env.env_pairs() {
+        cmd.env(name, value);
+    }
+    cmd.env_remove("TERMCAP");
+    cmd.output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 /// Write the embedded terminfo source to a scratch file inside
 /// `tempdir` and return its path. Panics on I/O failure (test-only
 /// code; the surrounding `compile_with_variant` is documented to

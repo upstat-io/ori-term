@@ -21,7 +21,7 @@ use std::thread;
 
 use oriterm_core::event::{Event, EventListener};
 use oriterm_core::{Term, Theme};
-use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::terminfo::TerminfoEnv;
 
@@ -74,6 +74,13 @@ impl EventListener for PtyResponder {
 /// [`PtySession::drop`]) and tears the reader thread down by closing the
 /// channel. Adapter code reaches the inner [`Term`] via [`PtySession::term`]
 /// without taking ownership.
+///
+/// **Field declaration order is load-bearing.** Rust drops struct fields
+/// in declaration order after [`Drop::drop`] returns. `child` MUST be
+/// declared before `_master` so the child handle drops first and the
+/// `PTY` master drops last. On Windows `ConPTY` this enforces Microsoft's
+/// `ClosePseudoConsole` contract: the call must follow child exit, not
+/// precede it. See `Self::_master` for the full rationale.
 pub struct PtySession {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     writer: Box<dyn Write + Send>,
@@ -82,6 +89,48 @@ pub struct PtySession {
     cols: u16,
     rows: u16,
     child: Box<dyn Child + Send + Sync>,
+    /// Held to keep the underlying `PTY` master (Windows `ConPTY` `HPCON`
+    /// or Unix master fd) alive for the entire child process lifetime.
+    ///
+    /// **Why this exists (Windows `ConPTY` contract).** Microsoft's
+    /// [`ClosePseudoConsole` documentation][docs] states *"you should
+    /// never call `ClosePseudoConsole` until after the client has exited
+    /// or the call may hang."* Dropping `Box<dyn MasterPty>` triggers
+    /// `ConPtyMasterPty::drop` → `Inner::drop` → `PsuedoCon::drop` →
+    /// `ClosePseudoConsole(self.con)`. If the master is NOT held here,
+    /// `pair.master` falls out of scope at the end of [`Self::spawn`]
+    /// and `ClosePseudoConsole` runs while the child is still alive.
+    /// This leaks console-subsystem DLL state and eventually causes
+    /// new `cmd.exe` spawns to fail with `STATUS_DLL_INIT_FAILED`
+    /// (`0xC0000142`) or hang inside `WaitForSingleObject`.
+    ///
+    /// **Field order matters (see struct doc above).** This field is
+    /// declared AFTER `child` so Rust's declaration-order field-drop
+    /// sequence runs `child` first (the [`Child`] handle drops, the
+    /// process slot is reaped) and THEN drops `_master` (which calls
+    /// `ClosePseudoConsole` on a child that has already exited — the
+    /// Microsoft-sanctioned ordering). The synchronous
+    /// `kill()` + `wait()` inside [`Drop::drop`] ensures the child has
+    /// already terminated before any field drops run; the field-drop
+    /// order then ensures `ClosePseudoConsole` runs after the handle
+    /// to the dead process is released.
+    ///
+    /// **Production parallel.** `oriterm_mux::pty::spawn::spawn_pty`
+    /// (production PTY path) holds `pair.master` inside
+    /// `PtyControl(pair.master)` for the same reason. This field is
+    /// the test-path equivalent.
+    ///
+    /// **Reference implementations.** wezterm's `mux/src/domain.rs`
+    /// stores `Box<dyn MasterPty + Send>` inside `Mutex<...>` for the
+    /// pane lifetime; wezterm's `wezterm/src/asciicast.rs` keeps
+    /// `pair.master` alive at function scope through the entire
+    /// child-output loop; wezterm's `pty/examples/whoami.rs:81`
+    /// explicitly drops `pair.master` AFTER `child.wait()`. The
+    /// "master must outlive child" pattern is the documented contract,
+    /// not coincidence.
+    ///
+    /// [docs]: https://learn.microsoft.com/en-us/windows/console/closepseudoconsole
+    _master: Box<dyn MasterPty + Send>,
 }
 
 impl PtySession {
@@ -139,6 +188,13 @@ impl PtySession {
             cols,
             rows,
             child,
+            // Hold the master alive for the child's full lifetime.
+            // Dropping `pair.master` at function exit would call
+            // `ClosePseudoConsole` on a still-running child, violating
+            // Microsoft's contract and corrupting the console subsystem
+            // state on Windows. See the `_master` field doc for the
+            // full rationale.
+            _master: pair.master,
         }
     }
 
@@ -303,6 +359,17 @@ impl Drop for PtySession {
         // Without this, each test run leaves a zombie until the test
         // binary itself exits. wait() consumes the exit status — we
         // discard it (test teardown doesn't inspect it).
+        //
+        // **Ordering contract.** This synchronous reap MUST happen
+        // before `_master` drops below (declaration-order field drop
+        // runs `child` before `_master`). On Windows ConPTY this
+        // ordering is load-bearing: `ClosePseudoConsole` is called
+        // inside `_master`'s drop chain, and Microsoft's documented
+        // contract is that the call must follow child exit, not
+        // precede it. Dropping `_master` while a child is still alive
+        // leaks console-subsystem DLL state and eventually causes new
+        // `cmd.exe` spawns to fail with `STATUS_DLL_INIT_FAILED` or
+        // hang inside `WaitForSingleObject`.
         let _ = self.child.wait();
     }
 }

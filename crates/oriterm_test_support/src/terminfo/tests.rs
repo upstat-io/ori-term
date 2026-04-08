@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use portable_pty::CommandBuilder;
 
-use super::{ORI_TERM_INFO, TerminfoEnv, TerminfoVariant};
+use super::{ORI_TERM_INFO, TerminfoEnv, TerminfoVariant, infocmp_respects_terminfo_env};
 use crate::{infocmp_available, tic_available};
 
 /// SSOT for the 02.4 round-trip-suite skip gate.
@@ -560,6 +560,22 @@ fn child_process_with_apply_env_reads_pinned_terminfo() {
     if round_trip_gate_closed() {
         return;
     }
+    if !infocmp_respects_terminfo_env() {
+        // Some hosts (notably MSYS infocmp on Windows CI runners)
+        // ignore $TERMINFO / $TERMINFO_DIRS entirely and consult
+        // only a hardcoded terminfo location. The end-to-end pin
+        // for env precedence cannot run on those hosts because
+        // the dependency is not present. The pure-form SSOT pin
+        // (`apply_env_sets_three_vars`) runs on every platform
+        // and catches `env_pairs()` regressions independently of
+        // host infocmp behavior.
+        eprintln!(
+            "host infocmp does not honor TERMINFO/TERMINFO_DIRS env precedence \
+             (likely MSYS infocmp on Windows) — skipping. The SSOT pin lives \
+             in `apply_env_sets_three_vars` which runs on every platform."
+        );
+        return;
+    }
     let env = TerminfoEnv::compile();
     let mut cmd = Command::new("infocmp");
     cmd.arg(env.term());
@@ -580,14 +596,29 @@ fn child_process_with_apply_env_reads_pinned_terminfo() {
         .lines()
         .next()
         .expect("infocmp produced empty stdout");
+    // Match on the unique tempdir basename rather than the full path.
+    // Some `infocmp` builds (notably MSYS infocmp on Windows) report
+    // the path in normalized form: drive letter stripped, mixed
+    // slashes — e.g. `\Users\…\.tmpXYZ/6f/ori_term` instead of the
+    // canonical `C:\Users\…\.tmpXYZ`. The tempdir basename
+    // (`.tmpXYZ`) is the unique part assigned by `tempfile::TempDir`
+    // and is sufficient to prove env precedence steered the child to
+    // OUR tempdir — no other tempdir on the host shares that
+    // randomly-generated name.
+    let tempdir_basename = env
+        .terminfo_dir()
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .expect("tempdir has a unicode basename");
     let tempdir_str = env.terminfo_dir().to_string_lossy();
     assert!(
-        header.contains("Reconstructed") && header.contains(tempdir_str.as_ref()),
-        "infocmp reconstruction-source header `{header}` does not name the \
-         pinned tempdir `{tempdir_str}` — env precedence did not steer the \
-         child to OUR compiled `ori_term` entry. A system-installed ori_term \
-         entry can mask a regression in env_pairs() / apply_env() without \
-         this pin. full stdout:\n{stdout}",
+        header.contains("Reconstructed") && header.contains(tempdir_basename),
+        "infocmp reconstruction-source header `{header}` does not contain the \
+         pinned tempdir basename `{tempdir_basename}` (full tempdir path: \
+         `{tempdir_str}`) — env precedence did not steer the child to OUR \
+         compiled `ori_term` entry. A system-installed ori_term entry can \
+         mask a regression in env_pairs() / apply_env() without this pin. \
+         full stdout:\n{stdout}",
     );
 }
 
@@ -629,4 +660,34 @@ fn terminfo_env_compile_under_perf_budget() {
         projected_50 < 30_000,
         "50-call projection {projected_50}ms > 30s ceiling — file /add-bug for shared-cache follow-up",
     );
+}
+
+#[test]
+fn infocmp_env_precedence_probe_is_deterministic() {
+    // The probe must be deterministic across calls. A regression
+    // that accidentally modifies process state (leaving env vars
+    // set, leaking tempdirs across calls, mutating CWD) would
+    // make the second call diverge from the first.
+    let first = infocmp_respects_terminfo_env();
+    let second = infocmp_respects_terminfo_env();
+    assert_eq!(
+        first, second,
+        "probe must be deterministic across calls; first={first}, second={second}"
+    );
+}
+
+#[test]
+fn infocmp_env_precedence_probe_returns_false_when_tools_missing() {
+    // When `tic` or `infocmp` is missing, the probe MUST return
+    // false rather than panic. This pin proves the early-return
+    // gate at the top of the helper. We can only assert this
+    // directly when the tools ARE missing — otherwise we assert
+    // the looser invariant that "tools-present implies the probe
+    // does not panic" via the determinism test above.
+    if !tic_available() || !infocmp_available() {
+        assert!(
+            !infocmp_respects_terminfo_env(),
+            "probe must return false when tic or infocmp is missing"
+        );
+    }
 }

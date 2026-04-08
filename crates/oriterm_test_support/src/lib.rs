@@ -29,4 +29,4 @@ pub use tack_framework::{
     ScreenParserFn, TackNavigator, default_parser, grid_find_field, grid_has_paren_token,
     grid_has_token, grid_line_starts_with,
 };
-pub use terminfo::{TerminfoEnv, TerminfoVariant};
+pub use terminfo::{TerminfoEnv, TerminfoVariant, infocmp_respects_terminfo_env};

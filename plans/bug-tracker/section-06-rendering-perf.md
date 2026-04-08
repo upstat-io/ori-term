@@ -84,6 +84,14 @@ sections:
   - **Found**: 2026-03-31 — manual, user report.
   - **Note**: Roadmap section 33 (split-nav-floating) touches this area.
 
+- [ ] **BUG-06.10**: `rss_plateaus_under_sustained_output` is flaky on Windows — reports 3.0 MB growth instead of <2 MB ceiling
+  - **Severity**: medium
+  - **File(s)**: `oriterm_core/tests/rss_regression.rs:134`
+  - **Repro**: `cargo test -p oriterm_core --test rss_regression rss_plateaus_under_sustained_output` — fails when run as part of the full workspace test serial pass (`cargo test --workspace -- --test-threads=1`); passes in isolation. Observed value `RSS grew 3.0 MB after 100k lines (warmup: 7.6 MB, after: 10.6 MB)` vs the 2 MB ceiling. The 1 MB excess is small enough to be Windows heap/scheduler noise from prior tests in the same process group inflating the warmup baseline lower than steady state.
+  - **Found**: 2026-04-08 — surfaced during `/fix-bug` BUG-07-009 verification
+  - **Source**: `/fix-bug` test-all sweep
+  - **Fix**: Either (1) re-baseline the warmup measurement to be more representative (run a longer warmup loop, or take min-of-N samples), or (2) raise the ceiling to ~5 MB on Windows where heap fragmentation produces a larger noise floor than on Linux. The semantic invariant — RSS plateaus under sustained output — is correct; only the threshold is too tight.
+
 - [ ] **BUG-06.8**: Floating pane (Ctrl+Shift+P) is completely transparent — no background fill
   - **Severity**: high
   - **File(s)**: `oriterm/src/gpu/window_renderer/multi_pane.rs` (`append_floating_decoration`), `oriterm/src/app/redraw/multi_pane/mod.rs`
