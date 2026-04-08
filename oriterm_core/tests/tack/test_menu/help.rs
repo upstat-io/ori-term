@@ -15,15 +15,20 @@
 //!    AND-combine of `tack_available`, `tic_available`, and
 //!    `tack_version_supported`) per TPR-05-019.
 //! 2. Spawns tack via `PtySession`.
-//! 3. Sends `n` to enter the begin-testing menu.
-//! 4. Captures the baseline grid + sanity-checks the menu
-//!    prompt is present.
-//! 5. Sends `?`.
-//! 6. Captures the post-`?` grid.
-//! 7. Asserts every one of the 16 begin-testing menu entries
-//!    is still visible (proves `?` did not navigate away).
-//! 8. Snapshots the post-`?` grid via insta for byte-level
+//! 3. Sends `n` and waits for the begin-testing menu prompt
+//!    (`tack/test [n] >`) via the framework's `wait_for(...)`
+//!    contract — NO fixed sleeps, per TPR-05-031.
+//! 4. Sends `?` and waits for the menu prompt to re-appear via
+//!    `wait_for(...)`.
+//! 5. Asserts every entry from `BEGIN_TESTING_INVENTORY` (the
+//!    SSOT — NOT a hardcoded copy, per TPR-05-032) is still
+//!    visible (proves `?` did not navigate away).
+//! 6. Snapshots the post-`?` grid via insta for byte-level
 //!    visual regression.
+//! 7. Quits tack via the framework's `quit_tack(5)` contract
+//!    and asserts the child exits cleanly via `success()` —
+//!    matches every other Section 05 scenario teardown path,
+//!    per TPR-05-031.
 //!
 //! If a future tack release makes `?` a distinct help screen,
 //! the per-entry assertions will fail and the insta snapshot
@@ -39,7 +44,7 @@
 //! begin-testing menu inline. NOTE: the post-`?` grid is NOT
 //! byte-identical to the pre-`?` grid (the post-`?` viewport
 //! contains additional scroll history above the re-rendered
-//! menu — that's why this test asserts "all 16 menu entries
+//! menu — that's why this test asserts "all menu entries
 //! still visible" rather than asserting byte equality with the
 //! 05.0 inventory snapshot). The semantic claim is that `?`
 //! does not navigate to a distinct screen, NOT that the buffers
@@ -49,7 +54,7 @@
 //! `Scenario` would be. (TPR-05-023 fix: previous version of
 //! this rustdoc incorrectly said the grids were "byte-identical".)
 //!
-//! # Promotion history (TPR-05-017 -> TPR-05-022)
+//! # Promotion history (TPR-05-017 -> TPR-05-031/032)
 //!
 //! Originally drafted as a doc-only stub citing the 05.0
 //! `begin_testing_inventory` drift gate as covering help
@@ -61,10 +66,21 @@
 //! `ScenarioRunner::available()` route. TPR-05-022 then
 //! cleaned up the doc-only-stub language in this rustdoc and
 //! the inventory comment so the canonical owner is the real
-//! test, not the (no-op) drift gate.
+//! test, not the (no-op) drift gate. TPR-05-031 (final TPR
+//! iter 4) noted the test was hand-driving tack with fixed
+//! `wait(500)` sleeps and never asserting clean exit, bypassing
+//! the Section 04 framework contract — fix uses `wait_for(...)`
+//! for synchronization and `quit_tack(5).success()` for the
+//! teardown gate. TPR-05-032 (same iter) noted the test
+//! hardcoded the 16 menu entries — fix iterates
+//! `BEGIN_TESTING_INVENTORY` directly, eliminating the second
+//! source of truth.
 
 use oriterm_test_support::session::PtySession;
 use oriterm_test_support::tack_framework::ScenarioRunner;
+use oriterm_test_support::tack_framework::scenarios::begin_testing_inventory::{
+    BEGIN_TESTING_INVENTORY, BeginTestingStatus,
+};
 use oriterm_test_support::terminfo::TerminfoEnv;
 
 #[test]
@@ -76,10 +92,7 @@ fn tack_help_redisplays_begin_testing_menu() {
     // version gate is part of Section 05's contract: every
     // tack-spawning test in this submodule must skip cleanly
     // on unsupported tack versions, not just on hosts missing
-    // the binary entirely. The previous version of this test
-    // bypassed the version gate by spawning tack directly via
-    // PtySession, which would have caused snapshot churn or
-    // hard failures when tack upgrades.
+    // the binary entirely.
     if !ScenarioRunner::available() {
         eprintln!(
             "tack/tic unavailable or tack version unsupported, skipping \
@@ -90,17 +103,25 @@ fn tack_help_redisplays_begin_testing_menu() {
 
     let env = TerminfoEnv::compile();
     let mut session = PtySession::spawn_tack(&env, 80, 24);
-    session.wait(500);
 
-    // Step 1: enter the begin-testing menu via `n`. Same first
-    // step as every Section 05 scenario.
-    session.send(b"n");
-    session.wait(500);
+    // Step 0: wait for tack's initial main-menu prompt
+    // (`tack [n] >`) before sending any input. tack prints the
+    // terminfo header banner + main menu listing on startup;
+    // synchronizing on the prompt ensures we don't race the
+    // banner output. 5 s timeout matches the standard Section
+    // 05 navigation budget.
+    session.wait_for("tack [n] >", 5_000);
 
-    // Sanity baseline: confirm we're in the begin-testing menu
-    // before pressing `?`. If this fails, the tack invocation
-    // shape itself drifted and the test is not measuring what
-    // we think it's measuring.
+    // Step 1: enter the begin-testing menu via `n`. Wait for
+    // the begin-testing menu prompt via the framework's
+    // wait_for contract (TPR-05-031: NO fixed sleeps).
+    session.send_raw(b"n");
+    session.wait_for("tack/test [n] >", 5_000);
+
+    // Sanity baseline: confirm the begin-testing menu is
+    // visible. If this fails, the tack invocation shape itself
+    // drifted and the test is not measuring what we think it
+    // is measuring.
     let baseline = session.grid_text();
     assert!(
         baseline.contains("tack/test [n] >"),
@@ -111,53 +132,45 @@ fn tack_help_redisplays_begin_testing_menu() {
         "begin-testing menu sanity check failed (no `x) test modes` entry), got:\n{baseline}"
     );
 
-    // Step 2: press `?` and let tack respond.
-    session.send(b"?");
-    session.wait(500);
+    // Step 2: press `?` and wait for the menu prompt to
+    // re-appear (the empirical claim is that `?` re-displays
+    // the same menu inline). The wait_for contract drives the
+    // synchronization without a fixed sleep.
+    session.send_raw(b"?");
+    session.wait_for("tack/test [n] >", 5_000);
 
     // Step 3: capture the post-`?` grid and assert that EVERY
-    // begin-testing menu entry is still visible. The empirical
-    // claim from the 05.4b probe is that `?` re-displays the
-    // same menu inline; if any of these per-entry assertions
-    // fails, that claim is wrong and tack actually navigated
-    // to a distinct screen — which means `?` should be
-    // reclassified from Duplicate back to Scenario in
-    // BEGIN_TESTING_INVENTORY.
+    // begin-testing menu entry is still visible. Per TPR-05-032,
+    // we iterate `BEGIN_TESTING_INVENTORY` directly instead of
+    // hardcoding the 16 entries — the inventory IS the SSOT for
+    // the menu content, and the per-entry-format string here
+    // (`<key>) <label>`) matches tack's menu output convention
+    // (verified by 05.0's drift-gate snapshot).
     let post_help = session.grid_text();
     assert!(
         post_help.contains("tack/test [n] >"),
         "expected `?` to leave us at the begin-testing menu prompt, got:\n{post_help}"
     );
 
-    // Pin every key inventory entry from the begin-testing
-    // menu. These are all single-line `<key>) <label>` entries
-    // verified by the begin_testing_inventory drift gate test.
-    // If `?` ever navigates to a distinct screen, the post-`?`
-    // grid would not contain these entries and at least one
-    // assertion would fire.
-    for entry in [
-        "e) edit terminfo",
-        "i) send reset and init",
-        "x) test modes and glitches",
-        "a) test alternate character set and graphic rendition",
-        "c) test color",
-        "m) test cursor movement",
-        "f) test function keys",
-        "p) test padding and string capabilities",
-        "P) test printer",
-        "/) test a specific capability",
-        "t) auto generate pad delays",
-        "n) run standard tests",
-        "r) repeat test",
-        "s) skip to next test",
-        "q) quit",
-        "?) help",
-    ] {
+    for entry in BEGIN_TESTING_INVENTORY {
+        // Skip the synthetic `os` and similar entries that
+        // aren't real menu rows. The current inventory has no
+        // such entries, but the filter future-proofs the test:
+        // if a future inventory adds a Synthetic-class entry
+        // for documentation purposes, it shouldn't break this
+        // assertion.
+        match entry.status {
+            BeginTestingStatus::Scenario
+            | BeginTestingStatus::DelegatedToSection { .. }
+            | BeginTestingStatus::ExcludedInteractive { .. }
+            | BeginTestingStatus::Duplicate { .. } => {}
+        }
+        let formatted = format!("{}) {}", entry.key, entry.label);
         assert!(
-            post_help.contains(entry),
-            "post-`?` grid missing menu entry {entry:?} — `?` may have navigated to a distinct \
-             screen, in which case BEGIN_TESTING_INVENTORY should reclassify `?` from Duplicate \
-             back to Scenario. Got:\n{post_help}"
+            post_help.contains(&formatted),
+            "post-`?` grid missing menu entry {formatted:?} — `?` may have navigated to a \
+             distinct screen, in which case BEGIN_TESTING_INVENTORY should reclassify `?` from \
+             Duplicate back to Scenario. Got:\n{post_help}"
         );
     }
 
@@ -166,4 +179,19 @@ fn tack_help_redisplays_begin_testing_menu() {
     // (changed wording, reordered entries, ANY divergence) shows
     // up as a snapshot diff alongside the per-entry assertions.
     insta::assert_snapshot!("tack_help_post_question_mark", post_help);
+
+    // TEARDOWN: quit tack cleanly via the framework's
+    // `quit_tack` contract and assert the child exits with
+    // success status (TPR-05-031). This matches every other
+    // Section 05 scenario's teardown path — `ScenarioRunner::run`
+    // calls the same `quit_tack(TACK_QUIT_MAX_ITERATIONS)` and
+    // asserts the result via `assert_quit_status_success`.
+    // Hand-driving the test through `PtySession` directly means
+    // we have to call this ourselves; doing so closes the loop
+    // on the Section 04 LiveSession::finish contract.
+    let exit_status = session.quit_tack(5);
+    assert!(
+        exit_status.success(),
+        "tack child exited non-zero after quit_tack: {exit_status:?}"
+    );
 }
