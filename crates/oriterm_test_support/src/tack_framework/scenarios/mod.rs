@@ -7,7 +7,9 @@
 //! add:
 //!   - 05.0: `begin_testing_inventory` (drift gate / SSOT for the
 //!     begin-testing menu graph)
-//!   - 05: `acs`, `graphic_rendition`, `color`, `cursor_movement`
+//!   - 05.2: `acs`, `graphic_rendition` (combined screen on tack
+//!     v1.08; see each module's rustdoc)
+//!   - 05: `color`, `cursor_movement`, etc.
 //!   - 06: `tools_menu` submodules
 //!   - 08: keyboard / function key consts
 //!
@@ -17,5 +19,7 @@
 //! forms `pub const ALL_*: &[&ScenarioSpec]` arrays for
 //! exhaustiveness tests.
 
+pub mod acs;
 pub mod begin_testing_inventory;
+pub mod graphic_rendition;
 pub mod modes;
