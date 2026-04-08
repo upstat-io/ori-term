@@ -66,10 +66,10 @@ sections:
     status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 04: Scenario Catalog Framework
@@ -1781,7 +1781,7 @@ The first real scenario. It validates the entire framework from top to bottom: s
 - [x] Re-run: `timeout 150 cargo test -p oriterm_core --test tack -- tack_modes_am`. Passes deterministically.
 - [x] Run 10 times in a row. All 10 pass.
 - [x] **Debug AND release parity.** Ran the 10-run sweep under `--release`. **Initial flake fixed:** release iteration 8/10 hit a race where `try_wait` returned `None` after the third `q` even though tack was about to exit. Root cause: `quit_tack`'s in-loop `try_wait` polling was too aggressive under release-mode timing. Fix: split `quit_tack` into a "send q's" phase followed by a `wait_for_child_exit(2_000)` Phase 2 — the Phase 2 bounded-poll observes the actual exit deterministically. After the fix, both 10x debug AND 10x release are green.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.0–04.4 (the entire framework, including the `PtySession` extensions). Catches: races between `wait_for_with_context` and tack's screen rendering, brittle parser logic, scenario IDs that drift from snapshot file names, missing `quit_tack` exit-status assertions, pre-existing-anchor guard bypasses.
+- [x] **TPR checkpoint** — `/tpr-review` covering 04.0–04.4 (the entire framework, including the `PtySession` extensions). Ran across 6 iterations: TPR-04-001 + 002 (iter 1, real bugs in `grid_find_field` + spec drift), TPR-04-003 + 004 (iter 2, prose drift), TPR-04-005 + 006 (iter 3, plan-sync workflow blocker + rustdoc drift), TPR-04-007 (iter 4, navigator catch_unwind grep gate over-broad), TPR-04-008 (iter 5, clippy doc_markdown via --all-targets), iter 6 — zero findings, loop closed clean. The follow-up impl-hygiene review surfaced 4 Critical SSOT/algorithmic LEAKs in the runner module which were fixed inline in commit `0b0806f2`. Audit trail in `04.R`.
 
 ---
 
@@ -1903,7 +1903,7 @@ The first real scenario. It validates the entire framework from top to bottom: s
 - [x] `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green
 - [x] Plan annotation cleanup: no temporary scaffolding in `.rs` files
-- [ ] All TPR checkpoint findings resolved (see `04.R`)
+- [x] All TPR checkpoint findings resolved (see `04.R`)
 - [x] **Plan sync**:
   - [x] This section's frontmatter `status` → `complete`
   - [x] `00-overview.md` Quick Reference table: Section 04 marked Complete
