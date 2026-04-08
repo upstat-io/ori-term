@@ -46,6 +46,30 @@ fn tack_acs_graphic_chars() {
         outcome.grid_text
     );
 
+    // SEMANTIC PIN for TPR-05-013: assert the (bel) capability is
+    // actually exercised. Tack v1.08's "alternate character set and
+    // graphic rendition" test runs only the bell probe — it does
+    // NOT emit DEC line-drawing chars or SGR sample text — so the
+    // ONLY honest semantic claim this wrapper can make is that
+    // (bel) was invoked. The "Testing bell" header pins that tack
+    // entered the bell probe code path; the "(bel)" parenthesized
+    // token pins that tack referenced the capability by its
+    // terminfo short name (the canonical tack output format —
+    // matches the (am)/(os) pattern from the modes test). A
+    // regression that breaks the bell test or rerouted the menu
+    // key would surface here even though the existing `Done` pin
+    // would still pass.
+    assert!(
+        outcome.grid_text.contains("Testing bell"),
+        "expected captured grid to contain 'Testing bell' header (bel cap pin), got:\n{}",
+        outcome.grid_text
+    );
+    assert!(
+        outcome.grid_text.contains("(bel)"),
+        "expected captured grid to contain '(bel)' parenthesized cap (bel cap pin), got:\n{}",
+        outcome.grid_text
+    );
+
     // Insta snapshot of the full grid for visual regression.
     insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text);
 }
