@@ -58,7 +58,7 @@ sections:
     status: complete
   - id: "05.3"
     title: "Color scenarios (size matrix, stable-screen)"
-    status: not-started
+    status: complete
   - id: "05.4"
     title: "Cursor movement scenarios (size matrix, stable-screen)"
     status: not-started
@@ -1339,16 +1339,32 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 ## 05.3 Color scenarios (size matrix, stable-screen)
 
 **File(s):**
-- `crates/oriterm_test_support/src/tack_framework/scenarios/color.rs` (NEW)
+- `crates/oriterm_test_support/src/tack_framework/scenarios/color/mod.rs` + `color/tests.rs` (NEW — directory module per `.claude/rules/test-organization.md`'s "tests in sibling `tests.rs`" rule; originally drafted as flat `scenarios/color.rs`)
 - `oriterm_core/tests/tack/test_menu/color.rs` (NEW — `#[test] fn` wrappers at 80x24, 97x33, 120x40)
 
 **Prerequisite:** 05.0 inventory pin must include the color screen key and prompt. The `unverified_menu_key()` / `unverified_anchor()` runtime-sentinel placeholders below MUST be replaced with the real verified key + post-key sub-menu prompt + ready anchor from `BEGIN_TESTING_INVENTORY` before any test in `oriterm_core/tests/tack/test_menu/color.rs` can pass — the runner panics on first invocation otherwise. The const compiles cleanly so unrelated work in the same crate is not blocked while 05.0 is in flight (Pivot 3 of /review-plan).
 
 Color is the highest-value tack screen for ori_term: it tests `setaf`/`setab` for both ANSI 16 and 256-color, plus the named-color list. We run it at three sizes (80x24, 97x33, 120x40) to catch cell-loop or palette regressions that only manifest at non-default sizes.
 
+> **Empirical finding (05.3 implementation, 2026-04-08):** Tack v1.08's color test (key `c)` from the begin-testing menu, navigated via `n -> c -> n`) does NOT emit any of the 8 ANSI named colors (`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`). The captured grid only contains the test description plus two parenthesized cap names:
+> ```
+> \x1B[H\x1B[2JThis terminal can display 256 colors and 32767 color pairs.  (colors) (pairs)
+> (colors) (pairs) Done
+> ```
+> Tack tests `setaf`/`setab` INTERNALLY but does not surface visible color samples or named-color labels — same pattern as 05.1 modes (only `(os)`), 05.2 ACS/SGR (only `(bel)`).
+>
+> **Resolution: hybrid coverage.** `TACK_COLOR` is coded to spec with the verified menu_path (`n -> c -> n`) and ready_anchor (`Done`). The parser `parse_color_screen` is also coded to spec — it scans for the 8 ANSI color names but returns empty against tack v1.08; it is preserved as forward-compatible infrastructure for a future tack release that emits richer color sample text. The 3 size-matrix `#[test] fn` wrappers in `oriterm_core/tests/tack/test_menu/color.rs` use the hybrid strategy: they assert `Done` (proves end-to-end spawn → navigate → trigger → capture pipeline at this size) plus the testable semantic facts (`This terminal can display`, `(colors)`, `(pairs)`) and snapshot the captured grid for visual regression. They do NOT assert on `parsed.capability_labels` because that vec is always empty against tack v1.08. The size matrix preserves coverage of the spawn/navigate/capture pipeline at non-default sizes, even though the test output content is identical at all three sizes.
+>
+> **Sentinel placeholders skipped.** Same pattern as 05.2 — by the time 05.3 implementation began, 05.0 had pinned `c` in `BEGIN_TESTING_INVENTORY` and the empirical `expect` probe had captured the full sub-menu prompt and the `Done` terminator. The implementation went directly from verified-real-values to working tests, bypassing the sentinel-placeholder intermediate state.
+>
+> **Cross-section impact:** Section 05.5's cap-coverage matrix should record ONLY `colors` and `pairs` as covered by 05.3 — these are the only caps tack v1.08 actually surfaces from this screen, and they are now pinned by the wrappers (`(colors)` + `(pairs)` parenthesized caps, both asserted on the captured grid at all 3 sizes). Per the same TPR-05-013 rationale that limited 05.2's claim to `bel`, the earlier draft assumption that `setaf`/`setab`/`op` and the 8 named-color caps could be claimed transitively is rejected: tack v1.08 does NOT surface those caps to the captured grid in any observable way. Coverage for `setaf`/`setab`/`op` and the named colors must come from a different source — Section 07's GPU goldens (for actual color pixel rendering), vttest menus that emit visible color samples, or a future tack release.
+
 **Tasks:**
 
-- [ ] **Create `scenarios/color.rs`:**
+- [x] **Create `scenarios/color/{mod, tests}.rs`:** (originally drafted as flat `scenarios/color.rs`; landed as directory module per the test-organization rule — see Done note)
+
+  **Done.** Implemented as a directory module (`scenarios/color/{mod, tests}.rs`). The `mod.rs` contains `parse_color_screen` (scans for 8 ANSI named colors via `grid_has_token`, returns matches in canonical order via `capability_labels`) and `TACK_COLOR` with the verified `n -> c -> n` menu path and `Done` ready anchor. Sentinel placeholders skipped per the empirical-finding block above — the const went directly from verified values to working tests because 05.0's inventory had the `c` key pinned and the empirical `expect` probe captured the `tack/test/color [n] >` sub-menu prompt before 05.3 began.
+
   ```rust
   use crate::tack_framework::parser::tokens::grid_has_token;
   use crate::tack_framework::{MenuStep, ScenarioSpec, ScreenFacts};
@@ -1406,49 +1422,46 @@ Color is the highest-value tack screen for ori_term: it tests `setaf`/`setab` fo
   };
   ```
 
-- [ ] **Create `oriterm_core/tests/tack/test_menu/color.rs`:**
-  ```rust
-  use oriterm_test_support::tack_framework::ScenarioRunner;
-  use oriterm_test_support::tack_framework::scenarios::color::TACK_COLOR;
+- [x] **Create `oriterm_core/tests/tack/test_menu/color.rs`** with hybrid-coverage assertions matching the empirical-finding block above (the original draft below assumed `parsed.capability_labels` would contain all 8 ANSI named colors; that vec is always empty against tack v1.08, so the wrapper instead pins `Done` plus the testable semantic facts `This terminal can display`, `(colors)`, `(pairs)`):
 
-  fn run_color_at(cols: u16, rows: u16) {
-      if !ScenarioRunner::available() {
-          eprintln!("tack/tic unavailable or wrong version, skipping");
-          return;
-      }
-      let outcome = ScenarioRunner::run_at(&TACK_COLOR, cols, rows);
-      // Programmatic assertion: every ANSI 16-color name is present.
-      for color in &[
-          "black", "red", "green", "yellow",
-          "blue", "magenta", "cyan", "white",
-      ] {
-          assert!(
-              outcome.parsed.capability_labels.iter().any(|c| c == color),
-              "missing color {color:?} at {cols}x{rows}\nlabels: {:?}\nGrid:\n{}",
-              outcome.parsed.capability_labels, outcome.grid_text,
-          );
-      }
-      // Snapshot via the SSOT helper — name will be
-      // `tack_color_<cols>x<rows>`.
-      insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text);
-  }
+  **Done.** All 3 size wrappers (`tack_color_80x24`, `tack_color_97x33`, `tack_color_120x40`) call `ScenarioRunner::run_at(&TACK_COLOR, cols, rows)`. Each wrapper:
+  1. Skip-gracefully if `ScenarioRunner::available()` is false (mirrors 05.2 wrappers).
+  2. Assert the captured grid contains `Done` (proves end-to-end pipeline at this size).
+  3. Assert the captured grid contains `This terminal can display` (proves tack entered the color test code path — the test description header).
+  4. Assert the captured grid contains `(colors)` (proves tack referenced the colors cap by its terminfo short name — canonical tack output format matching the `(am)`/`(os)`/`(bel)` pattern; this is the cap-coverage pin for `colors` in 05.5).
+  5. Assert the captured grid contains `(pairs)` (same for the `pairs` cap).
+  6. `insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text)` for visual regression at this size.
 
-  #[test] fn tack_color_80x24()  { run_color_at(80, 24); }
-  #[test] fn tack_color_97x33()  { run_color_at(97, 33); }
-  #[test] fn tack_color_120x40() { run_color_at(120, 40); }
-  ```
+- [x] **Wire into `mod.rs`** at both ends (test target + workspace crate).
 
-- [ ] **Wire into `mod.rs`** at both ends (test target + workspace crate).
+  **Done.** Added `pub mod color;` in alphabetical position to both `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs` (after `begin_testing_inventory`, before `graphic_rendition`) and `oriterm_core/tests/tack/test_menu/mod.rs` (same alphabetical position).
 
-- [ ] **Sentinel verification.** After filling in verified key + anchors from 05.0, run `grep -nE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/color.rs` — must return ZERO. The 05.2 belt-and-braces test (`no_sentinel_left_in_05_2_consts`) extends to include `TACK_COLOR`.
+- [x] **Sentinel verification.** After filling in verified key + anchors from 05.0, run `grep -nE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/color/` — must return ZERO. The 05.2 belt-and-braces test (`no_sentinel_left_in_05_2_consts`) extends to include `TACK_COLOR`.
 
-- [ ] **Sibling parser tests** for `parse_color_screen` (failing-first, debug+release). `crates/oriterm_test_support/src/tack_framework/scenarios/color/tests.rs`:
+  **Done — N/A by construction.** Same pattern as 05.2: by the time 05.3 implementation began, 05.0 had pinned the `c` key and the empirical `expect` probe had captured the verified anchors, so the const went directly from real values to working tests. `grep -RnE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/color/` returns ZERO. The runner's `assert_no_unverified_sentinels` still runs on every invocation (added in 05.0.b) so any future regression that introduces a sentinel into `TACK_COLOR` will panic at test time.
+
+- [x] **Sibling parser tests** for `parse_color_screen` (failing-first, debug+release). `crates/oriterm_test_support/src/tack_framework/scenarios/color/tests.rs`:
   - `parse_color_screen_finds_all_eight_named_colors` — feed a grid containing all 8 ANSI color names (whitespace-separated) and assert all 8 returned in order.
   - `parse_color_screen_rejects_substring_collisions` — semantic pin: feed `redirect rendered yellowish bluefoot` and assert NONE of `red`/`yellow`/`blue` false-positive. The whole point of `grid_has_token` (M3 fix from Section 04) — without this pin a regression that switched to `str::contains` would be invisible.
   - `parse_color_screen_handles_partial_palette` — feed `red green blue` and assert exactly `["red", "green", "blue"]`.
   - `parse_color_screen_handles_empty_grid` — empty input → empty labels.
 
-- [ ] **Run** all 3 color scenarios. Each must pass on first run after `INSTA_UPDATE=1` capture.
+  **Done.** 10 parser tests landed in `scenarios/color/tests.rs` (the 4 listed above plus 6 additional pins matching the 05.2 pattern):
+  - `parse_color_screen_handles_empty_grid` — empty input pin.
+  - `parse_color_screen_finds_all_eight_named_colors` — all 8 colors at once.
+  - `parse_color_screen_finds_each_color_in_isolation` — per-color isolation pin (one assertion per color, 8 sub-assertions).
+  - `parse_color_screen_rejects_substring_collisions` — substring-collision pin: feeds `redirect rendered yellowish bluefoot greener blacksmith magentastyle cyanide whitewash redneck` and asserts ZERO matches (proves the parser uses `grid_has_token`, not raw `str::contains`).
+  - `parse_color_screen_handles_partial_palette` — 3-of-8 partial subset pin.
+  - `parse_color_screen_returns_colors_in_canonical_order` — scrambled input must return labels in canonical `NAMED_COLORS` order, not grid-discovery order.
+  - `parse_color_screen_handles_realistic_tack_v108_output` — pins that the parser returns empty against the actual tack v1.08 output (`This terminal can display 256 colors and 32767 color pairs. (colors) (pairs) Done`) and does NOT panic or false-flag.
+  - `parse_color_screen_extracts_first_non_blank_line_as_header` — header-extraction pin.
+  - `parse_color_screen_handles_color_at_start_of_line` — start-of-line tokenization pin.
+  - `parse_color_screen_handles_color_at_end_of_line` — end-of-line tokenization pin.
+  - All 10 run in debug AND release via the standard `cargo test -p oriterm_test_support` invocation. All 10 pass green.
+
+- [x] **Run** all 3 color scenarios. Each must pass on first run after `INSTA_UPDATE=1` capture.
+
+  **Done.** All 3 wrappers (`tack_color_80x24`, `tack_color_97x33`, `tack_color_120x40`) pass green; snapshots captured via `INSTA_UPDATE=always` and pinned at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__color__tack_color_{80x24, 97x33, 120x40}.snap`. The 80x24 snapshot contains just the test output line; the larger sizes (97x33, 120x40) also retain the `Test color:` submenu prompt before the test output (because the larger viewports preserve more scroll history before tack's `\x1B[H\x1B[2J` cleared it). All 3 contain the asserted semantic pins (`Done`, `This terminal can display`, `(colors)`, `(pairs)`). Full project gates green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`, plus cross-compile to `x86_64-pc-windows-gnu` clean.
 
 ---
 
