@@ -113,6 +113,23 @@ bel, flash, civis, cvvis, cnorm, sgr
 colors, pairs, setf, setb, scp, op, ncv, bce
 clear, home, cr, nel, cub1, cup, vpa, hpa
 oriterm_core/tests/tack/, text snapshots, insta
+PhaseSpec, ScenarioRunner::run_phase, run_phase_at, phase_anchor
+BEGIN_TESTING_INVENTORY, BeginTestingKey, BeginTestingStatus
+tack_begin_testing_inventory discovery test, drift gate
+tack_version_supported, TACK_PINNED_MAJOR/MINOR, version gate, loud-skip diagnostic
+cap_coverage_matrix, parse_declared_caps, CapCoverageContribution
+section_05.rs, section_06.rs, section_08.rs, owner-partitioned exemptions (Pivot 5)
+expand_kf_caps, expand_modified_key_caps, stale-exemption negative pin
+tack_modes_phase_am/bce/bw/km/mir/msgr/xenl, unique screen_id per phase
+grid_has_token, grid_has_paren_token, grid_find_field (M3 fix consumers)
+mission criterion traceability table, cap-coverage contribution target
+05.5b cross-section sync (06/07/08 contract changes)
+unverified_menu_key, unverified_anchor runtime sentinels (Pivot 3)
+phase-capture timeout panic includes setup_anchor + trigger + step count
+Implementation Milestones M1 (foundation) / M2 (catalog) (Pivot 1)
+poll_until reuse mandate (algorithmic-DRY skeleton, runner/phase.rs)
+runner/mod.rs split into stable.rs + phase.rs (BLOAT prevention)
+parser/tokens.rs sibling-tests restructure (Broken Window fix)
 ```
 
 ---
@@ -128,6 +145,12 @@ G0, G1, GL, GR, character set banks, ACS
 ENQ/ACK, u8, u9, OSC 10, OSC 11, OSC queries
 scan_codes (stub), decompile_terminfo (stub)
 oriterm_core/tests/tack/, text snapshots
+cap_coverage extension contract from Section 05.5
+PhaseSpec consumer for scrolling tools-menu screens (e.g. SGR sweep)
+tack_version_supported gate inherited via ScenarioRunner::available()
+TOOLS_MENU_INVENTORY drift gate (parallel to Section 05's BEGIN_TESTING_INVENTORY)
+covered_caps tools-menu extension: u6/u7/u8/u9, Cr/Cs, Ms, Smulx/Setulc/Sync,
+BD/BE/PS/PE, AX/XT, hs/dsl/fsl/tsl, Se/Ss, XF/kxIN/kxOUT, Tc, RGB
 ```
 
 ---
@@ -143,6 +166,10 @@ FrameInput, frame_input, assert_golden
 oriterm/src/gpu/visual_regression/tack/
 oriterm/tests/references/tack_*.png
 6 goldens: color x3 + graphic_rendition + character_sets + modes
+LiveSession::finish M5 cleanup contract
+LiveSession::golden_name SSOT (no rebuilt format strings)
+no run_phase_with_session_at — modes golden uses TACK_MODES_AM (os cap)
+tack_version_supported gate inherited via ScenarioRunner::available()
 ```
 
 ---
@@ -159,6 +186,9 @@ kbs, khome, kend, kpp, knp, kdch1, kich1 (editing)
 oriterm, key_encoding, KeyEncoder, in-crate sibling test
 infocmp_query, decode_terminfo_string, CapMapping
 oriterm/src/key_encoding/terminfo_xcheck.rs (preferred)
+cap_coverage extension contract from Section 05.5
+expand_kf_caps + expand_modified_key_caps SSOT helpers
+covered_caps keyboard extension: kf1-kf63 + cursor + editing + modified-key family
 ```
 
 ---
