@@ -12,18 +12,25 @@
 //! fix path: pin the new version, re-run discovery, update
 //! inventory.
 //!
-//! # Module split rationale (TPR-05-002)
+//! # Module split rationale (TPR-05-002, TPR-05-006)
 //!
 //! The version gate originally landed in `session/mod.rs` as part
 //! of 05.0.c. Codex M1 TPR flagged this as a hygiene violation
 //! because `session/mod.rs` exceeded the 500-line limit after the
-//! addition. The version gate is logically a separate concern
-//! from the rest of `session/mod.rs` (which owns `PtySession`
-//! spawning, drop, and `tool_available` helpers), so it was
-//! extracted into this leaf module per the file-size rule. The
-//! public API surface is unchanged — `session/mod.rs` re-exports
-//! every item via `pub use version_gate::*;` so external callers
-//! still see `crate::session::tack_version_supported()` etc.
+//! addition (TPR-05-002), so it was extracted into a flat
+//! `session/version_gate.rs` leaf. A subsequent iter (TPR-05-006)
+//! converted the leaf to a directory module: `version_gate/mod.rs`
+//! plus its sibling `version_gate/tests.rs`, per the
+//! `.claude/rules/test-organization.md` "one tests.rs per source
+//! file" rule. The runtime tool-availability probes
+//! (`tool_available`, `tack_available`, etc.) were extracted in
+//! the same TPR-05-002 wave into `session/tools/mod.rs` (also a
+//! directory module post-TPR-05-006).
+//!
+//! The public API surface is unchanged — `session/mod.rs`
+//! re-exports every item via `pub use version_gate::*;` so
+//! external callers still see `crate::session::tack_version_supported()`
+//! etc.
 
 /// Lowest tack major version Section 05's catalog has been pinned
 /// against. Bump in lockstep with [`TACK_PINNED_MINOR`] when the
@@ -80,10 +87,11 @@ pub fn unsupported_tack_diagnostic(observed_maj: u32, observed_min: u32) -> Stri
     format!(
         "tack {observed_maj}.{observed_min:02} installed but Section 05's catalog is pinned to \
          tack {pmaj}.{pmin:02}. Tack scenarios will SKIP. To re-pin: \
-         (1) update TACK_PINNED_MAJOR/MINOR in session/version_gate.rs, \
+         (1) update TACK_PINNED_MAJOR/MINOR in session/version_gate/mod.rs, \
          (2) run `INSTA_UPDATE=1 cargo test -p oriterm_core --test tack -- \
          test_menu::begin_testing_inventory` to capture the new menu, \
-         (3) update BEGIN_TESTING_INVENTORY in scenarios/begin_testing_inventory.rs, \
+         (3) update BEGIN_TESTING_INVENTORY in \
+         tack_framework/scenarios/begin_testing_inventory/mod.rs, \
          (4) re-run the full test_menu suite to update affected snapshots.",
         pmaj = TACK_PINNED_MAJOR,
         pmin = TACK_PINNED_MINOR,
@@ -147,13 +155,13 @@ pub fn check_tack_version_with_emit(
 ///
 /// **Upgrade path.** When a CI host upgrades tack:
 /// 1. Update [`TACK_PINNED_MAJOR`] / [`TACK_PINNED_MINOR`] in
-///    `session/version_gate.rs`.
+///    `crates/oriterm_test_support/src/session/version_gate/mod.rs`.
 /// 2. Run `INSTA_UPDATE=1 cargo test -p oriterm_core --test tack
 ///    -- test_menu::begin_testing_inventory` to capture the new
 ///    menu graph.
 /// 3. Update `BEGIN_TESTING_INVENTORY` in
-///    `scenarios/begin_testing_inventory.rs` to match the new
-///    inventory.
+///    `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs`
+///    to match the new inventory.
 /// 4. Re-run the full `test_menu` suite to update any snapshots
 ///    affected by changed menu wording.
 #[must_use]

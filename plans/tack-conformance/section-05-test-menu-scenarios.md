@@ -10,7 +10,7 @@ success_criteria:
   - "`crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory.rs` exists with the empirically pinned begin-testing menu graph: every key + classification (`scenario` / `delegated` / `excluded` / `duplicate`)"
   - "`oriterm_core/tests/tack/test_menu/begin_testing_inventory.rs` exists with `tack_begin_testing_inventory` test that captures the begin-testing menu via insta + asserts the discovered keys match the pinned table (drift = test fail)"
   - "`crates/oriterm_test_support/src/tack_framework/spec.rs` exposes `PhaseSpec` and `crates/oriterm_test_support/src/tack_framework/runner/mod.rs` exposes `ScenarioRunner::run_phase` (and `run_phase_at`) — additive, no regression to the 198 existing vttest tests or Section 04's stable-screen path"
-  - "`crates/oriterm_test_support/src/session/mod.rs` exposes `tack_version_supported()` returning false on incompatible tack versions; `ScenarioRunner::available()` AND-combines it"
+  - "`crates/oriterm_test_support/src/session/version_gate/mod.rs` exposes `tack_version_supported()` (re-exported through `session/mod.rs`) returning false on incompatible tack versions; `ScenarioRunner::available()` AND-combines it"
   - "`crates/oriterm_test_support/src/tack_framework/scenarios/` contains const `PhaseSpec` values for every per-cap modes scenario (`am`, `bce`, `bw`, `km`, `mir`, `msgr`, `xenl`) — each with its own UNIQUE `screen_id` (`tack_modes_phase_am`, `tack_modes_phase_bce`, ...) so snapshots and goldens cannot silently overwrite"
   - "`crates/oriterm_test_support/src/tack_framework/scenarios/` contains const `ScenarioSpec` values for the stable-screen test menu families discovered in 05.0 (color, cursor_movement, ACS-or-equivalent, graphic-rendition-or-equivalent — exact list driven by 05.0 inventory, not pre-guessed)"
   - "Per-scenario parser fns live next to their consts in `tack_framework::scenarios::{family}::parse_*` and use `grid_has_token` / `grid_has_paren_token` / `grid_find_field` (NEVER blind `grid.contains` for short labels)"
@@ -89,7 +89,7 @@ sections:
 
 - The original code samples used the obsolete `MenuStep { send, wait_for }` and `ScenarioSpec { id, menu_path, ready_anchor, parser }` shapes; the rewrite uses `MenuStep::new` (or full three-field literals) and `ScenarioSpec::snapshot_only` (or full struct literals with `screen_id` + `quit_path`).
 - The original used `outcome.id` for snapshot naming; the rewrite uses `outcome.snapshot_name()` which delegates to the SSOT helper in `runner/mod.rs::scenario_name`.
-- The original used `MenuStep { send: b"m", wait_for: "modes" }` for the modes screen — `m` is the WRONG key (it's "change modes" on tack's main menu, which changes tack itself, not the test screen) and `"modes"` would fail the pre-existing-anchor guard. The verified key is `x` (from the empirically captured `scenarios/modes.rs` const) and the verified anchor sequence is `tack/test [n] >` then `tack/test/mode [n] >` then `Done`.
+- The original used `MenuStep { send: b"m", wait_for: "modes" }` for the modes screen — `m` is the WRONG key (it's "change modes" on tack's main menu, which changes tack itself, not the test screen) and `"modes"` would fail the pre-existing-anchor guard. The verified key is `x` (from the empirically captured `scenarios/modes/mod.rs` const) and the verified anchor sequence is `tack/test [n] >` then `tack/test/mode [n] >` then `Done`.
 - The original guessed tack v6.x menu keys (`a/c/u/p/l/k/e/f/o`) for ACS / color / cursor / pad / labels / send-strings / edit-terminfo / function-keys / output. None of these were verified against tack v1.08. The rewrite REPLACES every guess with a discovery step (05.0) that captures the begin-testing menu under the pinned terminfo and pins the result as a snapshot — the rest of Section 05 is then driven from the discovered key map.
 - The original used `grid.contains("red")`, `grid.contains("bold")`, `grid.contains("cup")` etc. for short-label assertions. The rewrite uses `grid_has_token` (whitespace-bounded) and `grid_has_paren_token` (for tack's `(cap)` format) — the M3 Codex finding fix from Section 04 is the canonical rule, no exceptions.
 - The original tried to capture the modes screen with `wait_for: "Done"` and assert per-cap labels from a single grid_text. Verified reality: tack's modes test scrolls so by the time `Done` is reported, only the LAST tested cap (`os`) is visible. The rewrite splits modes into PHASE-CAPTURE scenarios — one per cap, each waits for a per-cap anchor like `(am)` and captures IMMEDIATELY before the screen scrolls. This requires a new framework primitive (`ScenarioRunner::run_phase`), introduced in 05.0.b.
@@ -100,7 +100,7 @@ sections:
 - The original `function_key_test.rs` / `edit_terminfo.rs` doc-only stubs declared `pub mod ...;` for empty modules. The rewrite confirms this is fine — Rust accepts a module file containing only `//!` doc comments without dead-code warnings — but adds an explicit verification step in 05.4b that runs `cargo clippy` after creating the stubs.
 - The original placed a `/tpr-review` checkpoint at the END of 05.4 and called it the "TPR checkpoint." The rewrite keeps the mid-section checkpoint as a recommended early signal but moves the MANDATORY final TPR to 05.N. Per CLAUDE.md, the section cannot close without a clean final TPR, and TPR findings must be FIXED, never reasoned out of.
 
-**No assumptions remain in code samples.** Every menu key, anchor, parser predicate, and snapshot path in this section is either (a) cited to a verified source — `scenarios/modes.rs`, the smoke-test snapshot, the live tack v1.08 inspection — or (b) explicitly marked as a placeholder that 05.0 must resolve before downstream subsections execute. Anything that survives both checks is a bug; file via `/add-bug` and fix immediately per the broken-window policy.
+**No assumptions remain in code samples.** Every menu key, anchor, parser predicate, and snapshot path in this section is either (a) cited to a verified source — `scenarios/modes/mod.rs`, the smoke-test snapshot, the live tack v1.08 inspection — or (b) explicitly marked as a placeholder that 05.0 must resolve before downstream subsections execute. Anything that survives both checks is a bug; file via `/add-bug` and fix immediately per the broken-window policy.
 
 **Goal:** Build out the catalog of scenarios accessible from tack's `n) begin testing` submenu, in a way that survives both the modes-family scrolling problem AND the unknown-key problem. The work order is:
 
@@ -119,7 +119,7 @@ The catalog covers modes/glitches (am, bce, bw, km, mir, msgr, xenl), ACS / grap
 
 **Reference implementations:**
 - **Section 04** `plans/tack-conformance/section-04-scenario-framework.md` — framework consumed and EXTENDED here (not just consumed).
-- **Section 04 modes scenario** `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` — the verified menu path `n -> x -> n` and the parenthesized-cap parser pattern. Treat this file as the canonical example of "this is what an empirically verified scenario looks like."
+- **Section 04 modes scenario** `crates/oriterm_test_support/src/tack_framework/scenarios/modes/mod.rs` — the verified menu path `n -> x -> n` and the parenthesized-cap parser pattern. Treat this file as the canonical example of "this is what an empirically verified scenario looks like."
 - **ori_term vttest menu1** `oriterm_core/tests/vttest/menu1.rs:vttest_menu1_80x24/97x33/120x40` — existing size-matrix pattern this section adopts for color/cursor (stable-screen) scenarios.
 - **ori_term vttest menu3** `oriterm_core/tests/vttest/menu3.rs:assert_has_line_drawing_chars` — existing parser pattern (extract typed facts from grid_chars).
 - **`extra/ori_term.info`** — the SSOT for what caps ori_term claims; consumed by the 05.5 cap-coverage matrix.
@@ -203,8 +203,8 @@ A natural temptation is to split M2 further (e.g., cap-coverage matrix as its ow
 **Why this is the FIRST work item.** Every other subsection in this section currently guesses or half-knows tack's menu keys. Section 03's smoke test only captured the MAIN menu (`b/m/t/n/l/q/?`); the begin-testing submenu has never been pinned under the pinned terminfo. The verified evidence we DO have:
 
 - Main menu (smoke-test snapshot, captured): `b)` basic info, `m)` change modes (CHANGES TACK ITSELF — not a test screen), `t)` tools, `n)` begin testing, `l)` logging, `q)` quit, `?)` help.
-- Begin-testing submenu, modes path (verified empirically by `scenarios/modes.rs:43-57`): `n` enters begin-testing (prompt becomes `tack/test [n] >`), then `x` enters "test modes and glitches" (prompt `tack/test/mode [n] >`), then `n` runs the standard tests.
-- The `m` key on the begin-testing submenu is "test cursor movement" (per the comment in `scenarios/modes.rs:25-28`). It is NOT the modes test, and it does NOT match the original Section 05 draft's claim that `m` was the modes test key.
+- Begin-testing submenu, modes path (verified empirically by `scenarios/modes/mod.rs:43-57`): `n` enters begin-testing (prompt becomes `tack/test [n] >`), then `x` enters "test modes and glitches" (prompt `tack/test/mode [n] >`), then `n` runs the standard tests.
+- The `m` key on the begin-testing submenu is "test cursor movement" (per the comment in `scenarios/modes/mod.rs:25-28`). It is NOT the modes test, and it does NOT match the original Section 05 draft's claim that `m` was the modes test key.
 
 Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key is unverified. The original draft listed `a/c/u/p/l/k/e/f/o/s/b` as if those were known — they are not. They came from a tack v6.x manual that does not match tack v1.08. The discovery step pins the truth.
 
@@ -229,7 +229,7 @@ Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key i
 
   /// Snapshot-only scenario that lands on the begin-testing menu.
   /// The anchor is the unique sub-menu prompt produced after sending
-  /// `n` from the main menu — verified by `scenarios/modes.rs:43`.
+  /// `n` from the main menu — verified by `scenarios/modes/mod.rs:43`.
   const TACK_BEGIN_TESTING_MENU: ScenarioSpec = ScenarioSpec::snapshot_only(
       "tack_begin_testing_menu",
       "tack_begin_testing_menu",
@@ -323,8 +323,8 @@ Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key i
   /// `discovered_keys == this_table`'s key set.
   ///
   /// **Verified entries (DO NOT remove):**
-  /// - `m`: cursor movement test (per scenarios/modes.rs:25-28).
-  /// - `x`: modes/glitches test (per scenarios/modes.rs:43-49).
+  /// - `m`: cursor movement test (per scenarios/modes/mod.rs:25-28).
+  /// - `x`: modes/glitches test (per scenarios/modes/mod.rs:43-49).
   ///
   /// **Placeholder entries (filled in by the FIRST discovery run):**
   /// every other key on the begin-testing menu. The discovery test
@@ -357,9 +357,9 @@ Beyond those three keys (`n`, `x`, `m`), every other begin-testing submenu key i
 
   **Live capture against tack v1.08:** the discovery surfaced 16 keys (`/ ? P a c e f i m n p q r s t x`). The captured snapshot revealed three real plan/reality mismatches now recorded in the inventory module's rustdoc: (a) `a)` is a COMBINED ACS+SGR entry (the plan envisioned them separate); (b) `p)` is a COMBINED padding+send-strings entry (the plan envisioned them separate); (c) tack v1.08 has NO `l) test labels` entry (the plan's "labels" mission item does not exist in tack — 05.4b must reconcile by either dropping labels from the criterion or verifying labels are part of `a)`/`p)` coverage). Also surfaced: case-sensitivity matters (`p` test padding vs `P` test printer are distinct keys) and tack uses punctuation menu keys (`/`, `?`) — both required updates to `collect_menu_keys()` in the integration test before the snapshot could be promoted.
 
-- [x] **Cross-check the verified keys.** After the inventory is pinned, confirm `m` is "test cursor movement" and `x` is "test modes and glitches" as `scenarios/modes.rs` claims. If reality disagrees, update `scenarios/modes.rs` (and file `/add-bug` for the discrepancy — broken window policy).
+- [x] **Cross-check the verified keys.** After the inventory is pinned, confirm `m` is "test cursor movement" and `x` is "test modes and glitches" as `scenarios/modes/mod.rs` claims. If reality disagrees, update `scenarios/modes/mod.rs` (and file `/add-bug` for the discrepancy — broken window policy).
 
-  **Cross-check result:** both keys match `scenarios/modes.rs:25-28` and `scenarios/modes.rs:43-49` exactly. No `/add-bug` filing needed.
+  **Cross-check result:** both keys match `scenarios/modes/mod.rs:25-28` and `scenarios/modes/mod.rs:43-49` exactly. No `/add-bug` filing needed.
 
 - [x] **Wire 05.0's snapshot into Section 03's existing snapshot directory layout.** The new snapshot lives at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__begin_testing_inventory__tack_begin_testing_menu_80x24.snap`. Verify with `ls`. The path matches the existing `tack__test_menu__modes__tack_modes_80x24.snap` produced by Section 04 — insta uses the module path to namespace `.snap` files, NOT a flat `tack/snapshots/` directory.
 
@@ -415,7 +415,7 @@ The split MUST be done as the FIRST commit of 05.0.b, BEFORE adding `run_phase`,
 2. After the last `MenuStep`, `prepare_and_navigate` calls `session.wait_for(spec.ready_anchor, 5_000)` which delegates to `wait_for_with_context`. On a successful match, `wait_for_with_context` calls `self.wait(200)` — another 200 ms quiet period before returning.
 3. `wait_for_any` (used by the navigator's alternate-anchor path) ALSO calls `self.wait(200)` post-match.
 
-So between sending the final navigation key and the test reading `grid_text()`, there is a minimum of 500 ms of post-write quiesce. Tack's modes test scrolls a new cap line every few hundred milliseconds; by the time the runner returns control, an earlier cap line has scrolled off the 24-row viewport. This is exactly why `scenarios/modes.rs:78-87` documents that the `(os)` cap is the only one captured — it's the LAST cap and the only one still on screen when `Done` appears and the 500 ms quiesce elapses.
+So between sending the final navigation key and the test reading `grid_text()`, there is a minimum of 500 ms of post-write quiesce. Tack's modes test scrolls a new cap line every few hundred milliseconds; by the time the runner returns control, an earlier cap line has scrolled off the 24-row viewport. This is exactly why `scenarios/modes/mod.rs:78-87` documents that the `(os)` cap is the only one captured — it's the LAST cap and the only one still on screen when `Done` appears and the 500 ms quiesce elapses.
 
 The fix is NOT to weaken the quiesce inside `send` / `wait_for_*` — those are pinned by the existing 198 vttest tests and Section 04's stable-screen contract. The fix is an ADDITIVE new primitive that:
 
@@ -518,7 +518,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
 - [x] **Widen `poll_until` visibility from `pub(super)` to `pub(crate)`** in `crates/oriterm_test_support/src/session/sync/mod.rs`. Currently `pub(super)` — only `session::teardown` can see it. `runner/phase.rs` (the new file added by the runner split below) needs to consume it directly so the bounded-poll skeleton stays in ONE place; without the visibility widening, `run_phase_at` would have to inline a parallel deadline loop, which is `LEAK:algorithmic-duplication` per impl-hygiene.md. Also widen `PollStep<T>` to `pub(crate)` since `poll_until`'s return type leaks it. After the change, `cargo clippy --target x86_64-pc-windows-gnu -p oriterm_test_support` MUST still be clean — `pub(crate)` does not affect external API surface.
 
-  **Implemented:** widened `poll_until` and `PollStep` to `pub(crate)` in `session/sync/mod.rs`. Rather than widening the entire `mod sync;` to `pub(crate)` (which would expose all of sync's helpers to the crate), `session/mod.rs` now has a surgical re-export `pub(crate) use sync::{PollStep, poll_until};` so consumers in sibling modules import via `crate::session::{poll_until, PollStep}`. The rest of the polling implementation (`PtySession::wait_for_*`, internal helpers) stays private. Cross-compile to `x86_64-pc-windows-gnu` is clean.
+  **Implemented (and subsequently reverted in 05.1).** During 05.0.b, `poll_until` and `PollStep` were widened from `pub(super)` to `pub(crate)` in `session/sync/mod.rs` and surfaced via a `pub(crate) use sync::{PollStep, poll_until};` re-export in `session/mod.rs` so the original `phase_capture_loop` could share the bounded-poll skeleton. 05.1 then introduced the byte-by-byte `PtySession::drain_until` primitive (commit `7c048917`) and switched `phase_capture_loop` to use it directly — the chunk-at-a-time `poll_until` is the wrong primitive for mid-flow phase capture (see `phase.rs` module rustdoc for the empirical rationale). Once `phase_capture_loop` no longer consumed `poll_until`, the visibility was tightened back to `pub(super)` and the `pub(crate) use` re-export was removed from `session/mod.rs`. Final state: `poll_until` and `PollStep` are `pub(super)` again; `tack_framework::runner::phase` consumes `PtySession::drain_until` instead. Cross-compile to `x86_64-pc-windows-gnu` is clean throughout.
 
 - [x] **Add the `unverified_menu_key()` sentinel helper to `spec.rs`** (replaces the original `compile_error!` forcing-function design — see Pivot 3 rationale below):
   ```rust
@@ -826,15 +826,15 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 ## 05.0.c Tack version gate (`tack_version_supported`)
 
 **File(s):**
-- `crates/oriterm_test_support/src/session/mod.rs` (add `tack_version_supported`)
+- `crates/oriterm_test_support/src/session/version_gate/mod.rs` (add `tack_version_supported`; re-exported from `session/mod.rs`)
 - `crates/oriterm_test_support/src/tack_framework/runner/mod.rs` (extend `ScenarioRunner::available` to AND-combine the version gate)
-- `crates/oriterm_test_support/src/session/tests.rs` (unit-test the version-string parser)
+- `crates/oriterm_test_support/src/session/version_gate/tests.rs` (unit-test the version-string parser)
 
 **Why this exists.** The verified tack on the dev host is `tack version 1.08 (20170726)`. Every menu key, prompt string, and screen layout in this section is pinned against that exact build. A future system upgrade to tack v6.x or v2.0 could change the menu structure entirely (different keys, different prompts, renumbered screens). Without a version gate, the discovery test would fail loudly — but the dozens of downstream scenarios would also fail in a way that pollutes CI noise. The gate skips them cleanly with a concrete "tack version not supported, skipping" message and a single fix path: pin the new version, re-run discovery, update inventory.
 
 **Tasks:**
 
-- [x] **Add `tack_version_supported` to `session/mod.rs`:**
+- [x] **Add `tack_version_supported` to `session/version_gate/mod.rs`** (live path; the original plan placed it directly in `session/mod.rs`, but TPR-05-002 + TPR-05-006 split it out into a directory module to satisfy the 500-line and one-tests.rs-per-source rules):
   ```rust
   /// Lowest tack version Section 05's catalog has been pinned against.
   /// Bump this constant when the catalog is re-verified against a
@@ -902,7 +902,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
           eprintln!(
               "tack {maj}.{min:02} installed but Section 05's catalog is pinned to \
                tack {pmaj}.{pmin:02}. Tack scenarios will SKIP. To re-pin: \
-               (1) update TACK_PINNED_MAJOR/MINOR in session/mod.rs, \
+               (1) update TACK_PINNED_MAJOR/MINOR in session/version_gate/mod.rs, \
                (2) run `INSTA_UPDATE=1 cargo test -p oriterm_core --test tack -- \
                test_menu::begin_testing_inventory` to capture the new menu, \
                (3) update BEGIN_TESTING_INVENTORY in scenarios/begin_testing_inventory.rs, \
@@ -932,7 +932,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
   **Implemented as a 4-tier split:** (1) `parse_tack_version` is the pure version-string parser. (2) `unsupported_tack_diagnostic(maj, min)` is a pure helper that builds the loud-skip message text. (3) `check_tack_version_with_emit(stdout, stderr, &mut emit)` is a pure version check that takes pre-captured stdout/stderr and an injected emit closure — used by tests with a `String` accumulator. (4) `tack_version_supported()` is the only impure function; it shells out to `tack -V` and calls `check_tack_version_with_emit` with `eprintln!` as the closure. The 4-tier split lets the loud-skip emit pin AND the silent-on-match pin run without `gag` or subprocess spawning. Also extracted `tack_runner_available_combine(tack, tic, version)` as a pure boolean for the AND-combine pin.
 
-- [x] **Unit-test the version-string parser** (`session/tests.rs`) with explicit matrix dimensions:
+- [x] **Unit-test the version-string parser** (`session/version_gate/tests.rs` — live path; original plan named `session/tests.rs`, see TPR-05-006) with explicit matrix dimensions:
 
   **Matrix axis — version string variants** (each is a `#[test] fn`, all calling the pure `parse_tack_version` helper, none calling the OS):
   - `parses_pinned_tack_1_08` — exact `"tack version 1.08 (20170726)\n"` → `Some((1, 8))`. Semantic pin: this is the EXACT version on the dev host; if this test fails, the parser is broken at the only working baseline.
@@ -985,7 +985,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 > **Cross-section impact:** Section 05.5's cap-coverage matrix should record `am, bce, bw, km, mir, msgr, xenl` as covered by the modes test (since tack DOES exercise them internally even though it doesn't emit per-cap labels), citing `tack_modes_am` as the proof. The "every cap exercised" mission criterion is satisfied even though only `os` produces visible output.
 
 **File(s):**
-- `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` (extend with `TACK_MODES_PHASE_AM`, `TACK_MODES_PHASE_BCE`, `TACK_MODES_PHASE_BW`, `TACK_MODES_PHASE_KM`, `TACK_MODES_PHASE_MIR`, `TACK_MODES_PHASE_MSGR`, `TACK_MODES_PHASE_XENL` + `parse_modes_phase_screen`)
+- `crates/oriterm_test_support/src/tack_framework/scenarios/modes/mod.rs` (extend with `TACK_MODES_PHASE_AM`, `TACK_MODES_PHASE_BCE`, `TACK_MODES_PHASE_BW`, `TACK_MODES_PHASE_KM`, `TACK_MODES_PHASE_MIR`, `TACK_MODES_PHASE_MSGR`, `TACK_MODES_PHASE_XENL` + `parse_modes_phase_screen`)
 - `oriterm_core/tests/tack/test_menu/modes.rs` (add `#[test] fn` wrappers for each phase scenario; keep the existing `tack_modes_am` stable-screen test unchanged so the framework migration is purely additive)
 
 **Architecture.** The existing `TACK_MODES_AM` scenario captures the FINAL `(os)` cap because it's the only one still on screen when the modes test reports `Done`. To capture earlier caps, each per-cap scenario uses the new `PhaseSpec` API:
@@ -998,7 +998,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
 **Tasks:**
 
-- [x] **Add the phase-capture parser to `scenarios/modes.rs`** (alongside the existing `parse_modes_screen`):
+- [x] **Add the phase-capture parser to `scenarios/modes/mod.rs`** (alongside the existing `parse_modes_screen`):
 
   **Done.** `parse_modes_phase_screen` lives in `crates/oriterm_test_support/src/tack_framework/scenarios/modes/mod.rs` and is preserved as a general-purpose multi-cap parser for any future scenario whose tack output DOES contain per-cap parenthesized labels (verified empirically before adoption). The parser has 8 sibling unit tests that pin substring-collision rejection, isolation per cap, and the tokenized-helper enforcement.
   ```rust
@@ -1418,7 +1418,7 @@ Color is the highest-value tack screen for ori_term: it tests `setaf`/`setab` fo
 - `crates/oriterm_test_support/src/tack_framework/scenarios/cursor_movement.rs` (NEW)
 - `oriterm_core/tests/tack/test_menu/cursor_movement.rs` (NEW — `#[test] fn` wrappers at 80x24, 97x33, 120x40)
 
-**Prerequisite:** Per the inventory comment in `scenarios/modes.rs:25-28`, the cursor movement screen is reached via the `m` key on the begin-testing submenu. Verify this against the 05.0 inventory snapshot — the comment is the only existing evidence and must be cross-checked.
+**Prerequisite:** Per the inventory comment in `scenarios/modes/mod.rs:25-28`, the cursor movement screen is reached via the `m` key on the begin-testing submenu. Verify this against the 05.0 inventory snapshot — the comment is the only existing evidence and must be cross-checked.
 
 Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. Same size matrix as color.
 
@@ -1453,7 +1453,7 @@ Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. S
   }
 
   // Runtime-sentinel forcing-function gate. The `m` key for cursor
-  // movement is ALREADY documented in `scenarios/modes.rs:25-28`,
+  // movement is ALREADY documented in `scenarios/modes/mod.rs:25-28`,
   // so we encode the verified key directly. The post-key sub-menu
   // prompt and ready anchor are NOT yet verified — only 05.0's
   // discovery snapshot supplies them. Both anchors use the
@@ -1465,7 +1465,7 @@ Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. S
       id: "tack_cursor_movement",
       screen_id: "tack_cursor_movement",
       menu_path: &[
-          // `m` is verified by scenarios/modes.rs:25-28; the post-`m`
+          // `m` is verified by scenarios/modes/mod.rs:25-28; the post-`m`
           // sub-menu prompt is the unverified piece.
           MenuStep::new(b"m", unverified_anchor()),
       ],
@@ -2116,6 +2116,16 @@ The scenarios are non-trivial — each spawns a real tack child, navigates menus
   Impact: later reviewers following the plan are sent to dead paths and can no longer trust the TPR ledger as an accurate map of what changed. That weakens the plan's role as a coordination artifact and makes future audits slower than they need to be.
   Resolved: Fixed on 2026-04-08 by updating every TPR ledger reference to point at the live directory-module paths. Specifically: (1) TPR-05-002's resolved note now cites `session/version_gate/mod.rs` and `session/tools/mod.rs` and notes the iter-3 conversion from flat files to directory modules; (2) TPR-05-005's finding header and evidence path now cite `session/tools/mod.rs` with a parenthetical "originally extracted as the flat file `session/tools.rs` in TPR-05-002, then promoted to a directory module in TPR-05-006" so the historical extraction context is still readable; (3) TPR-05-006's finding header now cites both directory-module paths with "(was `tools.rs` at filing time)" / "(was `version_gate.rs` at filing time)" parentheticals so reviewers see both the live path and the historical filename; (4) `third_party_review.status` flipped back from `findings` to `resolved`. Reviewers following any TPR-05-* link from the plan now land on a live file in the current tree.
 
+- [x] `[TPR-05-008][low]` `crates/oriterm_test_support/src/session/version_gate/mod.rs` — the version-mismatch upgrade guidance still points at the pre-refactor flat module path.
+  Evidence: `unsupported_tack_diagnostic()` tells operators to update `TACK_PINNED_MAJOR/MINOR in session/version_gate.rs`, and the rustdoc for `tack_version_supported()` repeats the same file path. The live tree no longer contains `session/version_gate.rs`; the version gate now lives in `crates/oriterm_test_support/src/session/version_gate/mod.rs`.
+  Impact: when a CI host upgrades tack and this loud-skip path fires, the diagnostic sends the operator to a dead file right at the moment the guidance is supposed to be actionable. That weakens the point of the loud-skip contract and makes the upgrade path slower than necessary.
+  Resolved: Fixed on 2026-04-08. Three updates to `version_gate/mod.rs`: (1) `unsupported_tack_diagnostic()` now emits "update TACK_PINNED_MAJOR/MINOR in session/version_gate/mod.rs" and "BEGIN_TESTING_INVENTORY in tack_framework/scenarios/begin_testing_inventory/mod.rs" — both directory-module paths. (2) `tack_version_supported()`'s rustdoc upgrade-path block now cites the same directory-module paths. (3) The module-level rustdoc was extended to record both TPR-05-002 (initial flat-file extraction) and TPR-05-006 (subsequent directory-module promotion), and to note that the `tool_available` family also moved out into `session/tools/mod.rs` in the same wave. The existing `check_tack_version_emits_loud_skip_on_mismatch` test in `version_gate/tests.rs` still asserts the diagnostic contains `INSTA_UPDATE=1`, `BEGIN_TESTING_INVENTORY`, `TACK_PINNED_MAJOR`, and the observed version — all four substring checks still pass against the new diagnostic string, so the test continues to pin the actionable path text.
+
+- [x] `[TPR-05-009][low]` `plans/tack-conformance/section-05-test-menu-scenarios.md` — the main Section 05 body still contains multiple dead file references and pre-refactor ownership claims outside the already-fixed TPR ledger.
+  Evidence: the current section still names removed paths such as `crates/oriterm_test_support/src/tack_framework/scenarios/modes.rs` (for example in the rewrite-history/reference blocks and the 05.1 file/task lists) and still describes the version gate as being added in `crates/oriterm_test_support/src/session/mod.rs` / `session/tests.rs` even though the live implementation moved to `session/version_gate/mod.rs` and `session/version_gate/tests.rs`. Examples are visible in the current tree at the frontmatter success criteria, the rewrite-history/reference block, the 05.0.c file list/tasks, the 05.1 file list/tasks, and the 05.N checklist.
+  Impact: Section 05 is the owning coordination artifact for this work, but a reviewer or follow-on implementer who follows those references now lands on moved or wrong files. That recreates the same discoverability problem TPR-05-007 fixed, just outside the reserved ledger block, and leaves the section partially out of sync with the code it claims to describe.
+  Resolved: Fixed on 2026-04-08 by sweeping the Section 05 body for stale post-TPR module-move references. Updates: (1) every `scenarios/modes.rs:<line>` code-cite in the rewrite-history block, the 05.0 task body, the 05.0.b discussion, and the 05.4 prereq prose now cites `scenarios/modes/mod.rs:<line>` (line numbers verified preserved across the iter-1 git mv); (2) every bare `scenarios/modes.rs` mention in the rewrite history, references-implementations block, 05.0 cross-check task, 05.1 file list, and 05.1 phase-capture parser task now cites `scenarios/modes/mod.rs`; (3) the success-criteria line about `tack_version_supported()` now cites `session/version_gate/mod.rs` (re-exported through `session/mod.rs`); (4) the 05.0.c file list now points at `session/version_gate/mod.rs` and `session/version_gate/tests.rs`; (5) the 05.0.c task headers and the embedded diagnostic-message sample inside the 05.0.c task body now use `session/version_gate/mod.rs`; (6) the 05.0.c unit-test task now cites `session/version_gate/tests.rs` (with a parenthetical pointing at the original `session/tests.rs` for historical context, see TPR-05-006); (7) the 05.0.b implementation note about `poll_until` was rewritten to reflect the iter-1 widening + 05.1 revert that tightened it back to `pub(super)` after `phase_capture_loop` switched to `drain_until` (the original annotation was stale because the re-export was removed in commit `7c048917`). The two intentionally-historical references — line 1099 ("Restructure scenarios/modes.rs -> scenarios/modes/mod.rs") and line 1101 ("Done. Moved via git mv ... scenarios/modes.rs ... → ... scenarios/modes/mod.rs") — were left untouched because they describe the rename operation itself, where the OLD path is correct in past-tense narration. The CONPTY_LIFETIME_LOCK references to `session/mod.rs` are also untouched because the lock IS still in `session/mod.rs` (it was never extracted). Reviewers following ANY current-state reference from the Section 05 body now land on a live file in the tree.
+
 ---
 
 ## 05.N Completion Checklist (final TPR mandatory)
@@ -2125,7 +2135,7 @@ The scenarios are non-trivial — each spawns a real tack child, navigates menus
 - [ ] **Modes phase scenarios (05.1).** 7 per-cap PhaseSpec consts (`am/bce/bw/km/mir/msgr/xenl`) coded to spec in `crates/oriterm_test_support/src/tack_framework/scenarios/modes/mod.rs`, each with a unique `screen_id`; 7 corresponding `#[test] fn` wrappers in `oriterm_core/tests/tack/test_menu/modes.rs` carry `#[ignore = "tack v1.08 does not emit per-cap modes labels — run with --ignored to attempt"]` against tack v1.08 (verified empirically — see file rustdoc on `modes.rs` for the captured tack output). The 8 sibling parser tests for `parse_modes_phase_screen` cover happy path, missing caps, substring-collision rejection, and the tokenized-helper enforcement. Section 04's `tack_modes_am` is the always-active end-to-end coverage and runs on every test invocation. To activate the 7 phase scenarios against a future tack release: remove the `#[ignore]` attributes and run `INSTA_UPDATE=1` to capture the per-cap snapshots.
 - [ ] **ACS / graphic rendition (05.2).** Both consts use the verified key from `BEGIN_TESTING_INVENTORY` (no `?KEY?` placeholders remain). Both tests pass.
 - [ ] **Color (05.3).** `TACK_COLOR` const + 3 size-matrix tests pass. Parser uses `grid_has_token` exclusively.
-- [ ] **Cursor movement (05.4).** `TACK_CURSOR_MOVEMENT` const + 3 size-matrix tests pass. Parser uses `grid_has_token` exclusively. The `m`-key claim from `scenarios/modes.rs:25-28` cross-checked against the 05.0 inventory.
+- [ ] **Cursor movement (05.4).** `TACK_CURSOR_MOVEMENT` const + 3 size-matrix tests pass. Parser uses `grid_has_token` exclusively. The `m`-key claim from `scenarios/modes/mod.rs:25-28` cross-checked against the 05.0 inventory.
 - [ ] **Remaining navigable screens (05.4b).** Every key from `BEGIN_TESTING_INVENTORY` classified as `Scenario` has a `.rs` + scenario + test. Every `ExcludedInteractive` has a doc-only stub. Every `Duplicate` has a stub citing the duplicating entry. `cargo clippy -p oriterm_core --tests` produces no warnings on the doc-only stubs.
 - [ ] **Cap-coverage matrix (05.5).** `tack_cap_coverage_matrix` test passes. Each `cap_coverage/section_NN.rs::CONTRIBUTION.exempt` slice has comments justifying every entry. Section 05's `CONTRIBUTION.covered` lists every cap exercised by Section 05; Sections 06/08 will populate their own contribution files in their own work. The stale-exemption negative pin fires correctly — verified by the synthetic-injection unit test `tack_cap_coverage_matrix_stale_exemption_negative_pin` (NOT a one-shot edit-and-revert, which is non-reproducible). `expand_kf_caps()` returns 63 entries (kf1..kf63) and `expand_modified_key_caps()` returns 62 entries (10 bases × (1 base + 5 numeric suffixes 3..=7) + `kind` + `kri` = 62). Counts pinned by `expand_kf_caps_produces_63_entries` and `expand_modified_key_caps_produces_expected_count`. The unit tests `partition_no_intra_section_overlap` and `partition_no_inter_section_covered_overlap` both pass. The `parse_declared_caps_real_terminfo_count_pin` test fixes the cap count for `extra/ori_term.info` so any future edit to the terminfo file fails this section's tests until the count is re-pinned.
 - [ ] **Cross-section sync (05.5b).** Section 06's `re_review_reason` frontmatter mentions the `PhaseSpec` extension, the `tack_version_supported()` gate, and the `CapCoverageContribution` extension contract; Section 06's `depends_on_contract` reflects the M1-vs-M2 granularity (Section 06 starts after Section 05's M1, not M2). Section 07's `re_review_reason` mentions the open architectural decision (no `run_phase_with_session_at` by default) and the inherited version gate; Section 07's `depends_on` is refined per Pivot 2 (Section 07 only needs Section 04 + Section 05's cap_coverage CONTRACT, not body — captured in `depends_on_contract`). Section 08's `re_review_reason` mentions the `cap_coverage/section_08.rs` extension contract. Sections 06 and 08 both have completion-checklist items moving their cap lists from `CONTRIBUTION.exempt` into `CONTRIBUTION.covered`.
