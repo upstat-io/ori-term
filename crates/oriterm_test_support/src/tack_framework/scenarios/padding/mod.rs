@@ -37,12 +37,14 @@
 //! 05.4 cursor movement (only `(clear)`).
 //!
 //! The `not present` part is also a finding — `extra/ori_term.info`
-//! does not declare `rs1`. Whether that is a deliberate omission
-//! (rs1 is the `\x1Bc` full reset, which most modern terminfos
-//! delegate to `rs2`) or an oversight is for Section 05.5's
-//! cap-coverage matrix to settle. The wrapper does NOT assert on
-//! the `not present` substring because that is a property of the
-//! current `extra/ori_term.info`, not of the padding test itself.
+//! declares NO reset-string capabilities at all (neither `rs1`,
+//! `rs2`, nor `rs3`). Whether that is a deliberate omission or an
+//! oversight is for Section 05.5's cap-coverage matrix to settle.
+//! The wrapper does NOT assert on the `not present` substring
+//! because that is a property of the current `extra/ori_term.info`,
+//! not of the padding test itself. (Earlier draft of this rustdoc
+//! incorrectly said "delegate to `rs2`" — TPR-05-021 corrected the
+//! factual error against the pinned terminfo source.)
 //!
 //! # Hybrid coverage strategy
 //!

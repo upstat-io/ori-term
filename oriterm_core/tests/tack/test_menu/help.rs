@@ -1,44 +1,60 @@
-//! Test for tack's `?) help` begin-testing entry.
+//! Real automated test for tack's `?) help` begin-testing entry.
 //!
 //! Classification: `BeginTestingStatus::Duplicate { covered_by:
-//! "begin_testing_inventory ..." }` per
-//! `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs`.
+//! "tack_help_redisplays_begin_testing_menu in oriterm_core/tests/tack/test_menu/help.rs ..." }`
+//! per `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs`.
 //!
-//! # Why this is a duplicate, not a separate scenario
+//! # What this test does
+//!
+//! `tack_help_redisplays_begin_testing_menu` (the `#[test] fn`
+//! below) is the canonical home for verifying the empirical
+//! claim that pressing `?` from tack's begin-testing menu
+//! re-displays the same menu inline. The test:
+//!
+//! 1. Gates on `ScenarioRunner::available()` (the canonical
+//!    AND-combine of `tack_available`, `tic_available`, and
+//!    `tack_version_supported`) per TPR-05-019.
+//! 2. Spawns tack via `PtySession`.
+//! 3. Sends `n` to enter the begin-testing menu.
+//! 4. Captures the baseline grid + sanity-checks the menu
+//!    prompt is present.
+//! 5. Sends `?`.
+//! 6. Captures the post-`?` grid.
+//! 7. Asserts every one of the 16 begin-testing menu entries
+//!    is still visible (proves `?` did not navigate away).
+//! 8. Snapshots the post-`?` grid via insta for byte-level
+//!    visual regression.
+//!
+//! If a future tack release makes `?` a distinct help screen,
+//! the per-entry assertions will fail and the insta snapshot
+//! will diff — that signals an inventory reclassification is
+//! needed (revert `?` from `Duplicate` back to `Scenario`).
+//!
+//! # Why this is a `Duplicate`, not a `Scenario`
 //!
 //! Originally classified as `Scenario` in the inventory, the
 //! 05.4b empirical probe (2026-04-08) discovered that pressing
 //! `?` from the begin-testing menu does NOT navigate to a
 //! separate help screen — it simply re-displays the same
-//! begin-testing menu inline.
+//! begin-testing menu inline. The captured grid after `?` is
+//! byte-identical to the captured grid before `?`. A separate
+//! `tack_help` `Scenario` would therefore add no incremental
+//! signal beyond what this test (which IS a Duplicate-class
+//! pin: it verifies the duplication claim itself).
 //!
-//! # Why a real test, not just a doc-only stub
+//! # Promotion history (TPR-05-017 -> TPR-05-022)
 //!
-//! TPR-05-017 (Codex /review-work iteration 2 of M2) correctly
-//! identified that the previous doc-only stub overstated
-//! coverage: the `Duplicate` claim cited the begin-testing
-//! inventory drift gate as the test that covers help behavior,
-//! but the drift gate only sends `n` (to enter the menu) and
-//! never sends `?`. If a future tack build changes `?` to show
-//! a distinct help screen while leaving the initial begin-testing
-//! menu unchanged, the suite would stay green and Section 05
-//! would over-report coverage.
-//!
-//! The fix below converts this from a doc-only stub to a real
-//! `#[test] fn` that:
-//! 1. Spawns tack via `PtySession`.
-//! 2. Sends `n` to enter the begin-testing menu.
-//! 3. Captures the grid as a baseline (proves we're in the menu).
-//! 4. Sends `?`.
-//! 5. Captures the post-`?` grid.
-//! 6. Asserts the post-`?` grid still contains every key entry
-//!    from the menu (proves `?` did not navigate away).
-//! 7. Snapshots the post-`?` grid via insta for visual regression.
-//!
-//! If a future tack release makes `?` a distinct help screen,
-//! the per-entry assertions will fail (the menu key labels won't
-//! be in the post-`?` grid) and the insta snapshot will diff.
-//! That signals an inventory reclassification is needed.
+//! Originally drafted as a doc-only stub citing the 05.0
+//! `begin_testing_inventory` drift gate as covering help
+//! behavior. TPR-05-017 (Codex /review-work iteration 2 of M2)
+//! correctly noted that the drift gate only sends `n` and
+//! never `?`, so the duplicate claim was unverified — promoted
+//! to a real test in the same fix. TPR-05-019 then noted the
+//! real test bypassed the version gate and added the
+//! `ScenarioRunner::available()` route. TPR-05-022 then
+//! cleaned up the doc-only-stub language in this rustdoc and
+//! the inventory comment so the canonical owner is the real
+//! test, not the (no-op) drift gate.
 
 use oriterm_test_support::session::PtySession;
 use oriterm_test_support::tack_framework::ScenarioRunner;
