@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "05.0.c"
     title: "Tack version gate (tack_version_supported)"
-    status: not-started
+    status: complete
   - id: "05.1"
     title: "Modes/glitches scenarios — phase-capture per cap"
     status: not-started
@@ -834,7 +834,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
 **Tasks:**
 
-- [ ] **Add `tack_version_supported` to `session/mod.rs`:**
+- [x] **Add `tack_version_supported` to `session/mod.rs`:**
   ```rust
   /// Lowest tack version Section 05's catalog has been pinned against.
   /// Bump this constant when the catalog is re-verified against a
@@ -915,7 +915,7 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   }
   ```
 
-- [ ] **Extend `ScenarioRunner::available` to AND-combine the version gate:**
+- [x] **Extend `ScenarioRunner::available` to AND-combine the version gate:**
   ```rust
   // runner/mod.rs
   use crate::session::{tack_available, tack_version_supported, tic_available};
@@ -928,9 +928,11 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
   }
   ```
 
-- [ ] **Refactor `tack_version_supported` to extract a pure parser** so the unit tests don't have to shell out. The parser signature: `fn parse_tack_version(stdout: &str, stderr: &str) -> Option<(u32, u32)>`. The public `tack_version_supported()` becomes: invoke `tack -V`, call `parse_tack_version`, compare against pinned constants, emit loud-skip diagnostic if mismatch, return bool. The split is mandatory — testing the parser via real `tack -V` is non-deterministic on hosts that don't have tack installed.
+- [x] **Refactor `tack_version_supported` to extract a pure parser** so the unit tests don't have to shell out. The parser signature: `fn parse_tack_version(stdout: &str, stderr: &str) -> Option<(u32, u32)>`. The public `tack_version_supported()` becomes: invoke `tack -V`, call `parse_tack_version`, compare against pinned constants, emit loud-skip diagnostic if mismatch, return bool. The split is mandatory — testing the parser via real `tack -V` is non-deterministic on hosts that don't have tack installed.
 
-- [ ] **Unit-test the version-string parser** (`session/tests.rs`) with explicit matrix dimensions:
+  **Implemented as a 4-tier split:** (1) `parse_tack_version` is the pure version-string parser. (2) `unsupported_tack_diagnostic(maj, min)` is a pure helper that builds the loud-skip message text. (3) `check_tack_version_with_emit(stdout, stderr, &mut emit)` is a pure version check that takes pre-captured stdout/stderr and an injected emit closure — used by tests with a `String` accumulator. (4) `tack_version_supported()` is the only impure function; it shells out to `tack -V` and calls `check_tack_version_with_emit` with `eprintln!` as the closure. The 4-tier split lets the loud-skip emit pin AND the silent-on-match pin run without `gag` or subprocess spawning. Also extracted `tack_runner_available_combine(tack, tic, version)` as a pure boolean for the AND-combine pin.
+
+- [x] **Unit-test the version-string parser** (`session/tests.rs`) with explicit matrix dimensions:
 
   **Matrix axis — version string variants** (each is a `#[test] fn`, all calling the pure `parse_tack_version` helper, none calling the OS):
   - `parses_pinned_tack_1_08` — exact `"tack version 1.08 (20170726)\n"` → `Some((1, 8))`. Semantic pin: this is the EXACT version on the dev host; if this test fails, the parser is broken at the only working baseline.
@@ -954,9 +956,13 @@ The downstream implication is wall-clock, not correctness: on Windows every PtyS
 
   - All tests construct the input via the pure `parse_tack_version` helper rather than calling `tack -V`, so they run on hosts without tack installed AND in `cargo test --release`. **Debug + release parity:** run BOTH debug and release. Any release-only failure is a bug, never deferred.
 
-- [ ] **Verify Section 04's existing `tack_modes_am` still passes** with the gate active (the dev host is tack 1.08, so the gate evaluates true and the existing test runs unchanged). Cross-host CI behavior: any host without tack 1.08 sees the test skip with the new "version not supported" message instead of running and failing.
+- [x] **Verify Section 04's existing `tack_modes_am` still passes** with the gate active (the dev host is tack 1.08, so the gate evaluates true and the existing test runs unchanged). Cross-host CI behavior: any host without tack 1.08 sees the test skip with the new "version not supported" message instead of running and failing.
 
-- [ ] **Document the upgrade path** in the doc comment of `tack_version_supported`: when a CI host upgrades tack, (1) update `TACK_PINNED_MINOR`, (2) re-run `INSTA_UPDATE=1` for `tack_begin_testing_inventory`, (3) update `BEGIN_TESTING_INVENTORY` to match the new menu, (4) re-run discovery + the full test_menu suite.
+  **Result:** `tack_modes_am`, `tack_smoke_main_menu_at_80x24`, and `tack_begin_testing_inventory` all pass on the dev host (tack 1.08). The version gate evaluates true; the existing tests run unchanged.
+
+- [x] **Document the upgrade path** in the doc comment of `tack_version_supported`: when a CI host upgrades tack, (1) update `TACK_PINNED_MINOR`, (2) re-run `INSTA_UPDATE=1` for `tack_begin_testing_inventory`, (3) update `BEGIN_TESTING_INVENTORY` to match the new menu, (4) re-run discovery + the full test_menu suite.
+
+  **Result:** the 4-step upgrade path is documented in `tack_version_supported`'s rustdoc AND in the loud-skip diagnostic text built by `unsupported_tack_diagnostic`. Operators see the same upgrade path whether they read the source or read the runtime stderr message.
 
 ---
 

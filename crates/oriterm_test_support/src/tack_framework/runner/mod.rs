@@ -65,7 +65,10 @@
 
 use portable_pty::ExitStatus;
 
-use crate::session::{PtySession, tack_available, tic_available};
+use crate::session::{
+    PtySession, tack_available, tack_runner_available_combine, tack_version_supported,
+    tic_available,
+};
 use crate::terminfo::TerminfoEnv;
 
 use super::navigator::TackNavigator;
@@ -306,12 +309,19 @@ impl ScenarioOutcome {
 pub struct ScenarioRunner;
 
 impl ScenarioRunner {
-    /// Returns true iff both `tack` and `tic` are available — call
-    /// at the top of every test that runs scenarios so the test
-    /// skips cleanly when the tools are missing.
+    /// Returns true iff `tack` and `tic` are available AND the
+    /// installed tack reports a version compatible with Section
+    /// 05's pinned catalog. Call at the top of every test that
+    /// runs scenarios so the test skips cleanly when any of the
+    /// three preconditions is missing.
+    ///
+    /// AND-combines the three boolean gates via the pure
+    /// [`tack_runner_available_combine`] helper. The split lets
+    /// unit tests pin the AND-combine semantic without depending
+    /// on host-installed tack/tic.
     #[must_use]
     pub fn available() -> bool {
-        tack_available() && tic_available()
+        tack_runner_available_combine(tack_available(), tic_available(), tack_version_supported())
     }
 }
 
