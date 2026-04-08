@@ -274,10 +274,22 @@ impl PtySession {
             // Block briefly for the next chunk. Capping at 50 ms
             // matches the existing drain_blocking blocking budget so
             // CI hosts under load aren't woken too aggressively.
+            //
+            // Distinguish Timeout from Disconnected: a Timeout
+            // means "no chunk arrived in this slice, try again
+            // until the deadline expires"; a Disconnected means
+            // "the reader thread has closed the channel because
+            // the child exited or the PTY closed, and no future
+            // chunk will ever arrive — return None immediately
+            // so phase capture surfaces the disconnect rather
+            // than waiting out the full timeout budget"
+            // (TPR-05-003).
             let remaining = deadline.saturating_duration_since(now);
             let block_ms = remaining.as_millis().min(50) as u64;
-            let Ok(chunk) = self.rx.recv_timeout(Duration::from_millis(block_ms)) else {
-                continue;
+            let chunk = match self.rx.recv_timeout(Duration::from_millis(block_ms)) {
+                Ok(chunk) => chunk,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
             };
 
             // Feed each byte through the VTE processor
