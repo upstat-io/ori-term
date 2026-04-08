@@ -158,12 +158,15 @@ impl ScenarioRunner {
         let parsed = (spec.parser)(&grid_text);
 
         // State-aware clean quit. `quit_tack(5)` (introduced in
-        // 04.0.b.4) sends one `q\n` via `send_raw` (no 300 ms
-        // quiesce per iteration), observes `try_wait()`, and stops
-        // the moment the child exits — no fixed-count guesswork.
-        // The C2 fix replaces the previous
-        // `send(b"q\n") × 3 + wait_for_child_exit(2_000)`
-        // antipattern.
+        // 04.0.b.4) sends a bare `q` per iteration via `send_raw`
+        // (no newline — tack reads in raw mode and a trailing `\n`
+        // gets queued as a second keystroke that confuses nested
+        // menu state), observes `try_wait()` between sends, and
+        // stops the moment the child exits. After the iterations,
+        // it falls through to `wait_for_child_exit(2_000)` for
+        // canonical bounded-poll exit observation. The C2 fix
+        // replaces the previous `send(b"q\n") × 3 +
+        // wait_for_child_exit(2_000)` antipattern.
         let exit = match spec.quit_path {
             Some(quit) => quit(&mut session),
             None => session.quit_tack(5),

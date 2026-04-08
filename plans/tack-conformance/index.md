@@ -78,7 +78,7 @@ Section 04 hard handoff: ScenarioRunner::run_at must call quit_tack(5) — stric
 ---
 
 ### Section 04: Scenario Catalog Framework
-**File:** `section-04-scenario-framework.md` | **Status:** Not Started
+**File:** `section-04-scenario-framework.md` | **Status:** Complete
 
 ```
 ScenarioSpec, MenuStep, TackNavigator, ScenarioRunner, ScenarioOutcome
