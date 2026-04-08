@@ -205,7 +205,18 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
     BeginTestingKey {
         key: '?',
         label: "help",
-        status: BeginTestingStatus::Scenario,
+        // Reclassified from Scenario to Duplicate after 05.4b empirical
+        // probe (2026-04-08): pressing `?` from the begin-testing menu
+        // does NOT navigate to a separate help screen — it simply
+        // re-displays the same begin-testing menu inline. The menu
+        // rendering is already pinned end-to-end by the 05.0
+        // begin_testing_inventory drift gate snapshot, so a separate
+        // `tack_help` scenario would duplicate that coverage. The stub
+        // file `oriterm_core/tests/tack/test_menu/help.rs` documents
+        // the discovery so future readers don't reinvestigate.
+        status: BeginTestingStatus::Duplicate {
+            covered_by: "begin_testing_inventory (the `?` key re-displays the menu, which is already pinned by the inventory drift gate)",
+        },
     },
 ];
 

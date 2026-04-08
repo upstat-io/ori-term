@@ -25,3 +25,4 @@ pub mod color;
 pub mod cursor_movement;
 pub mod graphic_rendition;
 pub mod modes;
+pub mod padding;

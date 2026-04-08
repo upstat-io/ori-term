@@ -11,8 +11,20 @@
 //! combines them under one menu key) but use different parsers.
 
 pub mod acs;
+pub mod auto_pad_delays;
 pub mod begin_testing_inventory;
 pub mod color;
 pub mod cursor_movement;
+pub mod edit_terminfo;
+pub mod function_key_test;
 pub mod graphic_rendition;
+pub mod help;
 pub mod modes;
+pub mod padding;
+pub mod quit;
+pub mod repeat_test;
+pub mod run_standard_tests;
+pub mod send_reset_init;
+pub mod skip_to_next_test;
+pub mod test_printer;
+pub mod test_specific_cap;

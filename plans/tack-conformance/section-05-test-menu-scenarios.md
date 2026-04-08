@@ -64,7 +64,7 @@ sections:
     status: complete
   - id: "05.4b"
     title: "Remaining navigable screens (driven by 05.0 inventory)"
-    status: not-started
+    status: complete
   - id: "05.5"
     title: "Cap-coverage matrix against extra/ori_term.info"
     status: not-started
@@ -1584,9 +1584,28 @@ Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. S
 ## 05.4b Remaining navigable screens (driven by 05.0 inventory)
 
 **File(s):**
-- `crates/oriterm_test_support/src/tack_framework/scenarios/{pad_timing,send_strings,labels}.rs` (NEW — only for inventory entries classified as `Scenario`)
-- `oriterm_core/tests/tack/test_menu/{pad_timing,send_strings,labels}.rs` (NEW — test wrappers)
-- `oriterm_core/tests/tack/test_menu/{function_key_test,edit_terminfo}.rs` (NEW — doc-only stubs for `ExcludedInteractive` entries)
+- `crates/oriterm_test_support/src/tack_framework/scenarios/padding/{mod, tests}.rs` (NEW — directory module; the COMBINED `p) test padding and string capabilities` entry replaces the original draft's separate `pad_timing` / `send_strings` / `labels` files because tack v1.08 merges all three into a single menu entry, and `labels` doesn't exist on tack v1.08 at all)
+- `oriterm_core/tests/tack/test_menu/padding.rs` (NEW — test wrapper, 80x24 only)
+- `oriterm_core/tests/tack/test_menu/{edit_terminfo, send_reset_init, test_printer, test_specific_cap, auto_pad_delays, repeat_test, skip_to_next_test, quit}.rs` (NEW — 8 doc-only stubs for `ExcludedInteractive` entries)
+- `oriterm_core/tests/tack/test_menu/function_key_test.rs` (NEW — doc-only stub for `DelegatedToSection { section: "08" }`)
+- `oriterm_core/tests/tack/test_menu/{run_standard_tests, help}.rs` (NEW — 2 doc-only stubs for `Duplicate` entries; `help` was reclassified from `Scenario` to `Duplicate` in this subsection — see empirical-finding block below)
+
+> **Empirical findings (05.4b implementation, 2026-04-08):**
+>
+> 1. **`p` (padding) navigates via `n -> p -> n` to `tack/test/pad [n] >`.** Pressing `p` from the begin-testing menu first triggers an interactive ENQ/ACK / DA1 handshake — tack writes `Testing ENQ/ACK, standby...\x1B[c` and waits for the terminal to respond with a primary device attributes (DA1) reply. The framework's `PtySession` answers automatically via `oriterm_core::Term`'s `Event::PtyWrite` handler at `crates/oriterm_test_support/src/session/sync/mod.rs:99-107`. After the handshake, tack reports `ACK terminating character: c` and enters the padding sub-menu. On `n`, tack runs the standard padding test and emits `(rs1) reset_1string, not present.  (rs1) Done` against `extra/ori_term.info`. The probe of `rs1` is the only cap surfaced — same single-cap-shortname pattern as 05.1 (`(os)`), 05.2 (`(bel)`), 05.3 (`(colors)`/`(pairs)`), 05.4 (`(clear)`).
+>
+> 2. **The `not present` part is a real finding** — `extra/ori_term.info` declares `rs2` but not `rs1`. tack's reset_1string probe correctly reports the omission. Whether to fix that in `extra/ori_term.info` (add `rs1` as `\x1Bc`) or to declare it intentionally absent is for Section 05.5's cap-coverage matrix to settle. The 05.4b padding wrapper does NOT assert on the `not present` substring — that's a property of the current `extra/ori_term.info`, not of tack itself. If a future ori_term.info adds `rs1`, the wrapper still passes.
+>
+> 3. **`?` (help) is a duplicate of the menu rendering, NOT a separate screen.** The original `BEGIN_TESTING_INVENTORY` classified `?` as `Scenario`. The 05.4b empirical probe discovered that pressing `?` from the begin-testing menu does NOT navigate to a separate help screen — it simply re-displays the same begin-testing menu inline. The captured grid is byte-identical to whatever was already on screen. The inventory has been **reclassified** from `Scenario` to `Duplicate { covered_by: "begin_testing_inventory (the `?` key re-displays the menu, which is already pinned by the inventory drift gate)" }` — see the new doc-stub at `test_menu/help.rs`.
+>
+> 4. **The 05.4b padding scenario uses `grid_has_paren_token`, not `grid_has_token`.** Originally drafted with `grid_has_token` (which the 05.2 / 05.3 / 05.4 parsers use), the 05.4b padding parser was switched to `grid_has_paren_token` (the helper modes uses) because tack v1.08 emits `(rs1)` parenthesized format and `grid_has_token` is whitespace-bounded — it would not match `(rs1)` as a single token. The parens are tack's canonical "current cap" format and using `grid_has_paren_token` provides the strongest collision resistance: `is1`/`is2`/`is3`/`rs1`/`rs2`/`rs3` would otherwise false-positive against arbitrary letter/digit sequences AND against substrings like `reset_1string` containing `s1`. Requiring the parenthesized form is the right call.
+>
+> 5. **Plan/reality reconciliation for the original draft's 3 envisioned scenarios:**
+>    - **`pad_timing`**: ABSORBED into the combined `p` entry. Tack v1.08 has no separate pad-timing screen; the combined `p) test padding and string capabilities` entry tests both pad delays and string caps in one screen.
+>    - **`send_strings`**: ABSORBED into the combined `p` entry. Same reason.
+>    - **`labels`**: DOES NOT EXIST on tack v1.08. There is no `l)` key on the begin-testing menu, and no separate labels screen anywhere in tack. The original draft assumed a tack v6.x feature that ncurses tack v1.08 does not implement. Per the inventory rustdoc lines 103-107, the labels mission criterion is reconciled by either dropping it (if it never existed in ncurses tack) or by verifying labels are part of the `p` coverage. The `lf0..lf10` cap-coverage check is moved entirely to Section 05.5's cap-coverage matrix where it belongs (it's a terminfo declaration check, not a tack-driven test).
+>
+> 6. **Cross-section impact:** Section 05.5's cap-coverage matrix should record `rs1` as covered by 05.4b (probed end-to-end via the padding scenario, even though the result is "not present"). The string-capability set (`rs2`/`rs3`/`is1`/`is2`/`is3`/`smcup`/`rmcup`/`smkx`/`rmkx`) and the function-key set (`kf0..kf63`) and the labels set (`lf0..lf10`) are responsibilities of the cap-coverage matrix to enforce against `extra/ori_term.info` directly, not the responsibility of any 05.x scenario wrapper.
 
 **Process — driven by inventory, not invention.** For every key in `BEGIN_TESTING_INVENTORY` that is not yet covered by 05.1–05.4:
 
@@ -1598,21 +1617,34 @@ Cursor movement tests `cup`, `csr`, `hpa`, `vpa`, scroll regions, origin mode. S
 
 **Concrete work items (verified entries):**
 
-- [ ] **Pad timing.** Likely a `Scenario` per the original draft. Tack measures padding delays for a curated cap set. After 05.0 confirms the key, write `TACK_PAD_TIMING` const + `parse_pad_timing` (using `grid_find_field` to extract numeric pad values) + test wrapper. 80x24 only — pad timing is size-independent.
+- [x] **Pad timing + send strings (combined `p` entry).** Tack v1.08 merges the original draft's `pad_timing` and `send_strings` scenarios into a single `p) test padding and string capabilities` entry. Implemented as `TACK_PADDING` in `crates/oriterm_test_support/src/tack_framework/scenarios/padding/{mod, tests}.rs`. Path: `n -> p -> n`, sub-menu prompt `tack/test/pad [n] >`, ready_anchor `Done`. Parser uses `grid_has_paren_token` (NOT `grid_has_token` — see empirical-finding block #4 above) to match tack's `(rs1)` parenthesized output format. 10 sibling parser tests cover empty grid, all 10 string caps at once, per-cap isolation, substring collisions (with the parenthesized rule), partial subset (3 of 10), canonical ordering, realistic tack v1.08 output (`(rs1) reset_1string, not present.  (rs1) Done`), header extraction, start-of-line, end-of-line tokenization. Wrapper at `oriterm_core/tests/tack/test_menu/padding.rs` (80x24 only — pad timing is intrinsically size-independent) asserts `Done` + `(rs1)` parenthesized cap + `reset_1string` full cap name + insta snapshot. The DA1/ENQ-ACK handshake is exercised end-to-end via the framework's `Event::PtyWrite` handler — proves `oriterm_core::Term` correctly responds to DA1 queries in the test pipeline. **Done.**
 
-- [ ] **Send strings.** Likely a `Scenario`. Tack sends each declared string cap and shows what the terminal does. After 05.0 confirms the key, write `TACK_SEND_STRINGS` const + `parse_send_strings` (using `grid_has_token` for the cap names listed) + test wrapper.
+- [x] **Labels.** ELIMINATED — does not exist on tack v1.08 (see empirical-finding block #5 above). The original draft assumed a tack v6.x labels screen that ncurses tack v1.08 does not implement; there is no `l)` key on the begin-testing menu and no labels screen anywhere in tack. The `lf0..lf10` cap-coverage check is moved entirely to Section 05.5's cap-coverage matrix (it's a terminfo declaration check, not a tack-driven test). **Done — N/A by construction.**
 
-- [ ] **Labels.** Likely a `Scenario` that asserts ABSENCE of `lf0..lf10` (because `extra/ori_term.info` declares no soft-labels). Write `TACK_LABELS` const + `parse_labels` (assert the screen reports "no labels" or equivalent). The exact text comes from running tack interactively once.
+- [x] **Function key test.** `DelegatedToSection { section: "08" }` (not `ExcludedInteractive` — it IS interactive but Section 08 has a strictly stronger automated cross-check). Doc-only stub at `oriterm_core/tests/tack/test_menu/function_key_test.rs` documents that pressing `f` from the begin-testing menu blocks waiting for the user to physically press F1, F2, etc., and that Section 08's in-crate sibling test at `oriterm/src/key_encoding/terminfo_xcheck.rs` covers the same ground (it iterates every `kf*` cap declared in `extra/ori_term.info`, maps each to ori_term's internal key code, and asserts the encoded byte sequence matches the cap string exactly). The Section 08 cross-check is faster, deterministic, and doesn't require human interaction. **Done.**
 
-- [ ] **Function key test.** `ExcludedInteractive`. Write the doc-only stub at `test_menu/function_key_test.rs` with `//!` documenting that the screen blocks waiting for user keystrokes and that Section 08's in-crate sibling test at `oriterm/src/key_encoding/terminfo_xcheck.rs` covers the same ground. Verify with `cargo clippy -p oriterm_core --tests` that an empty doc-only module produces NO warnings (Rust accepts this; the verification step exists so the assumption is pinned).
+- [x] **Edit terminfo + 7 other ExcludedInteractive entries.** Doc-only stubs created for all 8 `ExcludedInteractive` keys from `BEGIN_TESTING_INVENTORY`:
+  - `edit_terminfo.rs` (key `e`) — interactive terminfo editor; covered by 05.5 cap-coverage matrix + Section 03 tic-roundtrip tests.
+  - `send_reset_init.rs` (key `i`) — interactive visual reset/init verification; covered by 05.4b padding scenario probing `rs1` end-to-end.
+  - `test_printer.rs` (key `P`) — interactive printer probe; ori_term has no printer integration so `mc0`/`mc4`/`mc5`/`mc5p` are exempt-by-design in 05.5.
+  - `test_specific_cap.rs` (key `/`) — interactive ad-hoc cap probe; covered more rigorously by 05.5's complete-coverage matrix.
+  - `auto_pad_delays.rs` (key `t`) — interactive padding tuner for hardware terminals; ori_term is a software terminal with zero padding cost, covered by 05.4b padding scenario.
+  - `repeat_test.rs` (key `r`) — control verb on the menu (re-runs last test); covered by 05.6 determinism gate which runs each scenario 10 times.
+  - `skip_to_next_test.rs` (key `s`) — control verb on the menu (advances within `n) run standard tests` sequence); per-test isolation in 05.1–05.4b is strictly stronger.
+  - `quit.rs` (key `q`) — control verb (exits the menu); already exercised on every scenario via the runner's quit_path.
+  All 8 stubs are pure `//!` doc comments (no test functions). Verified with `./clippy-all.sh` that empty doc-only modules produce no warnings. **Done.**
 
-- [ ] **Edit terminfo.** `ExcludedInteractive`. Same stub pattern as function key test.
+- [x] **Run standard tests + help (Duplicate entries).** Two doc-only stubs for `Duplicate` entries:
+  - `run_standard_tests.rs` (key `n`) — `Duplicate { covered_by: "x, a, c, m, p" }`. The `n) run standard tests` sequencer runs every test interactively with `Press space to continue` prompts. Each component test has its own dedicated wrapper bypassing the sequencer entirely.
+  - `help.rs` (key `?`) — RECLASSIFIED from `Scenario` to `Duplicate { covered_by: "begin_testing_inventory drift gate" }` after the 05.4b empirical probe. Pressing `?` does NOT navigate to a separate help screen — it just re-displays the begin-testing menu, which is already pinned by 05.0's drift-gate snapshot. Inventory updated in `crates/oriterm_test_support/src/tack_framework/scenarios/begin_testing_inventory/mod.rs` with explanatory comment. **Done.**
 
-- [ ] **Output / send-strings duplication.** If 05.0 reveals a separate `output` key that overlaps with `send strings`, mark it as `Duplicate { covered_by: "send_strings" }` in the inventory and add a one-line stub in `test_menu/output.rs`.
+- [x] **Wire all new modules into `oriterm_core/tests/tack/test_menu/mod.rs`** (alphabetical).
 
-- [ ] **Wire all new modules into `oriterm_core/tests/tack/test_menu/mod.rs`** (alphabetical).
+  **Done.** Added 12 new `pub mod` lines in alphabetical position: `auto_pad_delays`, `edit_terminfo`, `function_key_test`, `help`, `padding`, `quit`, `repeat_test`, `run_standard_tests`, `send_reset_init`, `skip_to_next_test`, `test_printer`, `test_specific_cap`. Combined with the existing entries (`acs`, `begin_testing_inventory`, `color`, `cursor_movement`, `graphic_rendition`, `modes`), the test_menu/mod.rs now declares 18 modules total — one per begin-testing menu entry plus the inventory drift gate. Also wired `pub mod padding;` in alphabetical position to `crates/oriterm_test_support/src/tack_framework/scenarios/mod.rs`.
 
-- [ ] **Run** the entire `test_menu` submodule and confirm everything compiles AND every test passes. The `unverified_menu_key()` / `unverified_anchor()` runtime-sentinel gates in 05.2/05.3/05.4 (and any new 05.4b scenarios that follow the same pattern) MUST have been replaced with real verified values from `BEGIN_TESTING_INVENTORY` — otherwise the runner panics on first invocation with `"unverified-menu-key sentinel"` or `"unverified-anchor sentinel"`. Verify cleanly via `grep -RE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/` returning ZERO matches in the new files. (Pivot 3: byte-literal placeholders like `b"?KEY?"` were rejected because they would silently send literal `?` to tack, and `compile_error!` was rejected because it broke `cargo check` for the entire workspace while 05.0 was in flight.)
+- [x] **Run** the entire `test_menu` submodule and confirm everything compiles AND every test passes.
+
+  **Done.** Full project gates green: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh`, plus cross-compile to `x86_64-pc-windows-gnu` clean. The padding wrapper passes against tack v1.08; the snapshot is pinned at `oriterm_core/tests/tack/test_menu/snapshots/tack__test_menu__padding__tack_padding_80x24.snap`. The 8 ExcludedInteractive stubs + `function_key_test` delegated stub + `run_standard_tests` and `help` Duplicate stubs all compile cleanly as pure doc-only modules with no clippy warnings (per `clippy-all.sh`). `grep -RE 'unverified_(menu_key|anchor)' crates/oriterm_test_support/src/tack_framework/scenarios/padding/` returns ZERO — the padding scenario went directly from verified-real-values (captured via the exploratory probe) to working tests, bypassing the sentinel-placeholder intermediate state.
 
 ---
 
