@@ -138,19 +138,43 @@ parser/tokens.rs sibling-tests restructure (Broken Window fix)
 **File:** `section-06-tools-menu-scenarios.md` | **Status:** Not Started
 
 ```
-tack/tools, ANSI status reports, SGR modes, character sets
-DA, DSR, primary device attributes, cursor position
-SGR 0-79, bold, dim, underline, reverse, blink
-G0, G1, GL, GR, character set banks, ACS
-ENQ/ACK, u8, u9, OSC 10, OSC 11, OSC queries
-scan_codes (stub), decompile_terminfo (stub)
-oriterm_core/tests/tack/, text snapshots
+tack/tools, ANSI status reports, SGR modes, character sets, ENQ/ACK
+tools menu empirical inventory: s/g/c/h/e/r/p/i/u/d/q/? (tack v1.08)
+DA1, DA2, DA3, DSR, DECRQM, status reports sub-submenu walker
+SGR 0-79 stable-screen 9-row grid, bold, dim, underline, reverse
+G0, G1, GL, GR, character set banks, DEC special graphics
+u6, u7, u8, u9, ENQ/ACK handshake, tack ENQ sequence + ACK response parse
+TOOLS_MENU_INVENTORY drift gate (parallel to BEGIN_TESTING_INVENTORY)
+STATUS_REPORTS_INVENTORY nested discovery (sub-submenu under s)
+ToolsMenuStatus::MenuMeta variant (q/?) classified upfront, no punts
+shared scenarios::menu_inventory::{assert_menu_drift, collect_menu_keys}
+PtyResponder in-place extension (no new OscResponder type)
+session/pty_responder/{mod, tests}.rs proactive split
+ColorRequest, ClipboardLoad, ClipboardStore event handling
+PtyResponder::take_osc_responses, take_clipboard_stores accessors
+PtySession::drain auto-writes OSC responses back via write_osc_responses_back
+direct-VTE cap xcheck: 23 non-tack-reachable caps (19 esc-seq + 4 bool)
+Smulx (CURLY_UNDERLINE), Setulc (underline_color), Sync (SYNC_UPDATE)
+BD, BE (BRACKETED_PASTE), Se, Ss (DECSCUSR), Cr, Cs, Ms (OSC)
+hs, dsl, fsl, tsl (OSC 2 / Event::Title), RGB, Tc (truecolor)
+XF, AX, XT (bool markers validated via parse_declared_caps)
+PS, PE (in-crate in oriterm_core/src/paste/mod.rs — already unit-tested, 06.5 adds cap-xcheck entry)
+kxIN, kxOUT (genuinely cross-crate in oriterm/src/app/event_loop_helpers/mod.rs:143 — Section 06 owns coverage with stubs)
+scenarios::{character_sets, sgr_modes, status_reports, enq_ack} short module names
+Section 07 const path pin: scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS
+tack_cap_xcheck sibling tests in oriterm_core/src/term/handler
+echo tool (stub), reply tool (stub), hex output (stub)
+change debug level (stub), performance testing (Section 05 overlap)
 cap_coverage extension contract from Section 05.5
-PhaseSpec consumer for scrolling tools-menu screens (e.g. SGR sweep)
+covered_caps tools-menu extension: all 27 entries from section_06.exempt
+fresh-spawn per sub-test in status reports inventory discovery
+STATUS_REPORTS_SUB_SCENARIO_TABLE const-table dispatch (not match arms)
 tack_version_supported gate inherited via ScenarioRunner::available()
-TOOLS_MENU_INVENTORY drift gate (parallel to Section 05's BEGIN_TESTING_INVENTORY)
-covered_caps tools-menu extension: u6/u7/u8/u9, Cr/Cs, Ms, Smulx/Setulc/Sync,
-BD/BE/PS/PE, AX/XT, hs/dsl/fsl/tsl, Se/Ss, XF/kxIN/kxOUT, Tc, RGB
+Mission Criterion Traceability table (two-track approach, 4+23=27)
+BUG-11-3 production-path note: mux OSC routing out of scope for Section 06
+M1 (discovery + framework extensions) / M2 (catalog + direct-VTE xcheck)
+06.5.a RecordingListener helper promotion (structural prerequisite for 06.5)
+handler/test_helpers.rs pub(super) RecordingListener migration
 ```
 
 ---
