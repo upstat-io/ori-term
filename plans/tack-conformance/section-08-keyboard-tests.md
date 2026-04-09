@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "Keyboard / Function Key Tests"
-status: not-started
+status: in-progress
 reviewed: true
 needs_re_review_after: "05"
 re_review_reason: "Section 05's Agent-1 / Agent-2 / Agent-3 review pass introduces a `cap_coverage_matrix` test (Section 05.5) that asserts every cap declared in `extra/ori_term.info` is exercised by at least one Section 05 / 06 / 08 scenario. Per Pivot 5 of /review-plan, the matrix uses an OWNER-PARTITIONED design: each consuming section owns its own `cap_coverage/section_NN.rs::CONTRIBUTION` with `covered` and `exempt` slices. Section 08 owns `cap_coverage/section_08.rs`. The keyboard-cap half of the matrix is split: kf1-kf63 (covered via `expand_kf_caps()` helper in `cap_coverage/mod.rs`) and the modified arrow / Home / End / editing key family kLFT/kRIT/kUP/kDN/kEND/kHOM/kIC/kDC/kNXT/kPRV with mod-param suffixes (covered via `expand_modified_key_caps()` helper) are exempted by the iterator-built expansion in `cap_coverage::exempt_caps()` — Section 08 MUST move those into `CONTRIBUTION.covered` (see subsection 08.6). The named cursor / editing keys (kcub1/kcud1/kcuf1/kcuu1, khome/kend/kpp/knp, kdch1/kich1, kbs) currently live in `cap_coverage/section_08.rs::CONTRIBUTION.exempt` — Section 08's subsection 08.6 MUST move them OUT of `exempt` and INTO `covered` once the keyboard tests land. EXCEPTION: `kmous` (mouse prefix \\E[M) does NOT go through key_encoding::encode_key and must stay in `exempt` with an updated reason — it is not a keyboard cap (cohesion review fix). Section 05.5's stale-exemption negative pin (caps appearing in BOTH any section's `covered` AND any section's `exempt`) fires loudly if a cap appears in both, forcing the cleanup."
@@ -32,7 +32,7 @@ third_party_review:
 sections:
   - id: "08.1"
     title: "infocmp_dump/infocmp_query helpers in oriterm_test_support"
-    status: not-started
+    status: complete
   - id: "08.2"
     title: "Function key tests (kf1-kf63)"
     status: not-started
@@ -163,7 +163,7 @@ The table-driven pattern the original draft used (`const F_KEYS_BASE: &[CapMappi
 
 `infocmp_dump` parses a single `infocmp -A <dir> -1 <term>` invocation into a complete `HashMap<String, String>` of cap name to raw terminfo-encoded value. `infocmp_query` is a convenience wrapper that spawns a dump and extracts one cap. Test bodies that need multiple lookups should call `infocmp_dump` once and use `.get()` on the map.
 
-- [ ] Extend `crates/oriterm_test_support/src/terminfo/mod.rs`:
+- [x] Extend `crates/oriterm_test_support/src/terminfo/mod.rs`:
   ```rust
   use std::collections::HashMap;
 
@@ -319,7 +319,7 @@ The table-driven pattern the original draft used (`const F_KEYS_BASE: &[CapMappi
   }
   ```
 
-- [ ] Add sibling tests at `crates/oriterm_test_support/src/terminfo/tests.rs`:
+- [x] Add sibling tests at `crates/oriterm_test_support/src/terminfo/tests.rs`:
   ```rust
   use super::{infocmp_dump, infocmp_query, decode_terminfo_string};
 
@@ -386,7 +386,7 @@ The table-driven pattern the original draft used (`const F_KEYS_BASE: &[CapMappi
   }
   ```
 
-- [ ] Re-export from `lib.rs`:
+- [x] Re-export from `lib.rs`:
   ```rust
   pub use terminfo::{decode_terminfo_string, infocmp_dump, infocmp_query, TerminfoEnv};
   ```
@@ -1122,9 +1122,9 @@ After subsections 08.1-08.5 land, the cap-coverage matrix must be updated to ref
 - [ ] `oriterm/src/key_encoding/terminfo_xcheck/` directory module exists with `mod.rs` (shared types + helpers), `function_keys.rs`, `navigation.rs`, `modified_keys.rs`. Each file under 500 lines. `super::` imports for `encode_key`, `KeyInput`, `KeyEventType`, `Modifiers`.
 - [ ] **Count pins in every table-driven test** — each test asserts `tested == TABLE.len()` (or a known constant) after the loop. No silent skips. `assert_encoded_matches_terminfo` panics on missing caps (not returns early).
 - [ ] (Fallback only — document only if taken:) If the preferred path is blocked, `oriterm/src/lib.rs:17` is promoted to `pub mod key_encoding;` and `oriterm/tests/keyboard_terminfo.rs` integration test target is created instead. This fallback is NOT taken unless explicitly documented with rationale in 08.R.
-- [ ] `infocmp_dump(env, term) -> Option<HashMap<String, String>>` implemented in `oriterm_test_support` (parse-once approach)
-- [ ] `infocmp_query(env, term, cap) -> Option<String>` implemented as convenience wrapper around `infocmp_dump`
-- [ ] `decode_terminfo_string(s) -> Vec<u8>` implemented and unit-tested
+- [x] `infocmp_dump(env, term) -> Option<HashMap<String, String>>` implemented in `oriterm_test_support` (parse-once approach)
+- [x] `infocmp_query(env, term, cap) -> Option<String>` implemented as convenience wrapper around `infocmp_dump`
+- [x] `decode_terminfo_string(s) -> Vec<u8>` implemented and unit-tested
 - [ ] `function_keys_match_terminfo` test covers F1-F12 unmodified (kf1-kf12)
 - [ ] `function_keys_shift_match_terminfo` test covers Shift+F1-F12 (kf13-kf24)
 - [ ] `function_keys_ctrl_match_terminfo` test covers Ctrl+F1-F12 (kf25-kf36)
