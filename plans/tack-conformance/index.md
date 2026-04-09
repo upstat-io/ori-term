@@ -216,12 +216,18 @@ kf1-kf12 (unmodified), kf13-kf24 (shift), kf25-kf36 (ctrl)
 kf37-kf48 (ctrl+shift), kf49-kf60 (alt), kf61-kf63 (alt+shift)
 kcub1, kcud1, kcuf1, kcuu1 (cursor, app + normal mode)
 kbs, khome, kend, kpp, knp, kdch1, kich1 (editing)
-oriterm, key_encoding, KeyEncoder, in-crate sibling test
-infocmp_query, decode_terminfo_string, CapMapping
-oriterm/src/key_encoding/terminfo_xcheck.rs (preferred)
+kLFT, kRIT, kUP, kDN, kHOM, kEND, kIC, kDC, kNXT, kPRV (modified keys)
+modifier suffixes 3-7, kind, kri (Shift+Down, Shift+Up aliases)
+oriterm, key_encoding, KeyInput, TermMode, in-crate sibling test
+infocmp_dump, infocmp_query, decode_terminfo_string, CapMapping
+oriterm/src/key_encoding/terminfo_xcheck/ (directory module, preferred)
+editing_keys_normal_mode_emit_csi (Home/End normal mode parity)
 cap_coverage extension contract from Section 05.5
+08.6 cap-coverage sync: section_08.rs CONTRIBUTION update
 expand_kf_caps + expand_modified_key_caps SSOT helpers
 covered_caps keyboard extension: kf1-kf63 + cursor + editing + modified-key family
+kmous stays in exempt (mouse prefix, not key encoding)
+--test-threads=1/4 parallelism gate, 10-run determinism gate
 ```
 
 ---
