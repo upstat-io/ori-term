@@ -53,7 +53,7 @@ sections:
     status: complete
   - id: "08.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 08: Keyboard / Function Key Tests
@@ -1158,6 +1158,6 @@ After subsections 08.1-08.5 land, the cap-coverage matrix must be updated to ref
   - [x] `index.md` Section 08 status updated
   - [x] `section-09-verification.md` depends_on includes `"08"` (already present — verified)
 - [x] `/tpr-review` final pass clean (1 low finding — TPR-08-001 decorative banners — fixed and resolved)
-- [ ] `/impl-hygiene-review last commit` final pass clean (after TPR)
+- [x] `/impl-hygiene-review last commit` final pass clean (after TPR). Findings: 3 algorithmic duplication (extracted `setup_terminfo_env`, `run_cap_mapping_test`, `encode_named_key` helpers), 1 BLOAT (function_keys.rs 513→439 lines), 1 decorative banner fixed (gpu/prepare/tests.rs). All resolved.
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck` passes (preferred in-crate sibling path). Every function key across the full `kf1`-`kf63` terminfo namespace (F1-F12 base + Shift = kf13-kf24 + Ctrl = kf25-kf36 + Ctrl+Shift = kf37-kf48 + Alt = kf49-kf60 + Alt+Shift = kf61-kf63), every cursor key in app mode (kcub1/kcud1/kcuf1/kcuu1) AND normal-mode CSI encoding, every editing key (kbs, khome, kend, kpp, knp, kdch1, kich1), and every modified key (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with modifier suffixes 3-7, plus kind/kri) round-trips between `key_encoding::encode_key` and the pinned terminfo. Any divergence found during section work has been resolved with documented rationale. 10 consecutive runs of the test set all pass (determinism gate), both `--test-threads=1` and `--test-threads=4` pass (parallelism gate). Cross-compile for `x86_64-pc-windows-gnu` succeeds with the test body runtime-skipping on Windows. The terminfo and the encoder agree byte-for-byte. Cap-coverage matrix (`tack_cap_coverage_matrix`) passes with all Section 08 keyboard caps in `covered` and only `kmous` remaining in `exempt` (mouse prefix, not key encoding).

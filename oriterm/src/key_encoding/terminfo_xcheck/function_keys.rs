@@ -1,10 +1,9 @@
 //! Function key terminfo cross-check tests (kf1-kf63).
 
 use oriterm_core::TermMode;
-use oriterm_test_support::{TerminfoEnv, infocmp_available, infocmp_dump, tic_available};
 use winit::keyboard::NamedKey;
 
-use super::{CapMapping, Modifiers, assert_encoded_matches_terminfo};
+use super::{CapMapping, Modifiers, run_cap_mapping_test};
 
 /// F1-F12, no modifiers, normal mode.
 static F_KEYS_BASE: &[CapMapping] = &[
@@ -411,102 +410,30 @@ static F_KEYS_ALT_SHIFT: &[CapMapping] = &[
 
 #[test]
 fn function_keys_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping function_keys_match_terminfo");
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in F_KEYS_BASE {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(
-        tested,
-        F_KEYS_BASE.len(),
-        "count pin: expected to test {} caps, only tested {}",
-        F_KEYS_BASE.len(),
-        tested,
-    );
+    run_cap_mapping_test(F_KEYS_BASE);
 }
 
 #[test]
 fn function_keys_shift_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping function_keys_shift_match_terminfo");
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in F_KEYS_SHIFTED {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, F_KEYS_SHIFTED.len());
+    run_cap_mapping_test(F_KEYS_SHIFTED);
 }
 
 #[test]
 fn function_keys_ctrl_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping function_keys_ctrl_match_terminfo");
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in F_KEYS_CTRL {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, F_KEYS_CTRL.len());
+    run_cap_mapping_test(F_KEYS_CTRL);
 }
 
 #[test]
 fn function_keys_ctrl_shift_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping function_keys_ctrl_shift_match_terminfo");
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in F_KEYS_CTRL_SHIFT {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, F_KEYS_CTRL_SHIFT.len());
+    run_cap_mapping_test(F_KEYS_CTRL_SHIFT);
 }
 
 #[test]
 fn function_keys_alt_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping function_keys_alt_match_terminfo");
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in F_KEYS_ALT {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, F_KEYS_ALT.len());
+    run_cap_mapping_test(F_KEYS_ALT);
 }
 
 #[test]
 fn function_keys_alt_shift_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        eprintln!("tic or infocmp not installed, skipping function_keys_alt_shift_match_terminfo");
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in F_KEYS_ALT_SHIFT {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, F_KEYS_ALT_SHIFT.len());
+    run_cap_mapping_test(F_KEYS_ALT_SHIFT);
 }

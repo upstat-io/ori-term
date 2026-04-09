@@ -3,13 +3,12 @@
 
 use oriterm_core::TermMode;
 use oriterm_test_support::{
-    TerminfoEnv, decode_terminfo_string, infocmp_available, infocmp_dump, infocmp_query,
-    tic_available,
+    decode_terminfo_string, infocmp_available, infocmp_query, tic_available,
 };
-use winit::keyboard::{Key, KeyLocation, NamedKey};
+use winit::keyboard::NamedKey;
 
 use super::{
-    KeyEventType, KeyInput, Modifiers, encode_key, modified_base_to_named, suffix_to_mods,
+    Modifiers, encode_named_key, modified_base_to_named, setup_terminfo_env, suffix_to_mods,
 };
 
 /// Cross-check all 62 modified-key caps against the encoder.
@@ -17,11 +16,9 @@ use super::{
 /// 10 bases x (1 base + 5 suffixes) + 2 aliases (kind/kri) = 62.
 #[test]
 fn modified_keys_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
+    let Some(caps) = setup_terminfo_env() else {
         return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
+    };
 
     let bases = [
         "kLFT", "kRIT", "kUP", "kDN", "kHOM", "kEND", "kIC", "kDC", "kNXT", "kPRV",
@@ -34,17 +31,11 @@ fn modified_keys_match_terminfo() {
             panic!("SSOT violation: modified-key base cap '{base}' not found in infocmp dump")
         });
         let expected = decode_terminfo_string(val);
-        let key = Key::Named(modified_base_to_named(base));
-        let input = KeyInput {
-            key: &key,
-            mods: suffix_to_mods(None),
-            mode: TermMode::empty(),
-            text: None,
-            location: KeyLocation::Standard,
-            event_type: KeyEventType::Press,
-            alternate_key: None,
-        };
-        let actual = encode_key(&input);
+        let actual = encode_named_key(
+            modified_base_to_named(base),
+            suffix_to_mods(None),
+            TermMode::empty(),
+        );
         assert_eq!(
             actual, expected,
             "encode_key for modified cap {base} produced {:?} but terminfo says {:?}",
@@ -59,17 +50,11 @@ fn modified_keys_match_terminfo() {
                 panic!("SSOT violation: modified-key cap '{cap_name}' not found in infocmp dump")
             });
             let expected = decode_terminfo_string(val);
-            let key = Key::Named(modified_base_to_named(base));
-            let input = KeyInput {
-                key: &key,
-                mods: suffix_to_mods(Some(suffix)),
-                mode: TermMode::empty(),
-                text: None,
-                location: KeyLocation::Standard,
-                event_type: KeyEventType::Press,
-                alternate_key: None,
-            };
-            let actual = encode_key(&input);
+            let actual = encode_named_key(
+                modified_base_to_named(base),
+                suffix_to_mods(Some(suffix)),
+                TermMode::empty(),
+            );
             assert_eq!(
                 actual, expected,
                 "encode_key for modified cap {cap_name} produced {:?} but terminfo says {:?}",
@@ -85,17 +70,7 @@ fn modified_keys_match_terminfo() {
             panic!("SSOT violation: ncurses alias cap '{cap}' not found in infocmp dump")
         });
         let expected = decode_terminfo_string(val);
-        let key = Key::Named(named);
-        let input = KeyInput {
-            key: &key,
-            mods: Modifiers::SHIFT,
-            mode: TermMode::empty(),
-            text: None,
-            location: KeyLocation::Standard,
-            event_type: KeyEventType::Press,
-            alternate_key: None,
-        };
-        let actual = encode_key(&input);
+        let actual = encode_named_key(named, Modifiers::SHIFT, TermMode::empty());
         assert_eq!(
             actual, expected,
             "encode_key for modified cap {cap} produced {:?} but terminfo says {:?}",
@@ -118,7 +93,7 @@ fn infocmp_query_returns_none_for_cap_not_in_ori_term() {
     if !tic_available() || !infocmp_available() {
         return;
     }
-    let env = TerminfoEnv::compile();
+    let env = oriterm_test_support::TerminfoEnv::compile();
     // kf64 is outside the xterm kfN namespace and MUST NOT be declared.
     assert!(infocmp_query(&env, "ori_term", "kf64").is_none());
 }
