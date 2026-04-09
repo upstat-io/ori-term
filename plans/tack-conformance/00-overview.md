@@ -32,7 +32,7 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 
 - [x] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
 - [x] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
-- [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys
+- [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys plus modified-key family (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with modifier suffixes 3-7, plus kind/kri)
 - [ ] All tests skip cleanly when tack/tic unavailable (cross-platform: compile everywhere, runtime skip)
 - [ ] `./test-all.sh` green, `./build-all.sh` green, `./clippy-all.sh` green — no regressions
 
@@ -117,8 +117,6 @@ Section 01 ──→ Section 02 ──→ Section 03 ──→ Section 04
 - Section 07 (GPU goldens) can be worked in parallel after Sections 05/06 land (its const ScenarioSpec values come from the `tack_framework::scenarios::*` SSOT module Sections 05/06 populate).
 - Section 09 requires all prior sections.
 
-<!-- reviewed: cohesion fix — Sections 06/07/08 now formally depend on Section 05 because Section 05 introduces the cross-section contracts (PhaseSpec, version gate, cap_coverage_matrix, expand_kf_caps/expand_modified_key_caps SSOT helpers) that those sections consume. The previous "independent after 04" claim was true for the first draft but no longer accurate. -->
-
 **Cross-section interactions:**
 - **Section 01 + existing vttest tests**: Migration must preserve all 198 existing snapshots and golden images. Zero behavioral change.
 - **Section 02 + Sections 05-08**: All tack/keyboard tests depend on the pinned terminfo entry from Section 02.
@@ -159,7 +157,6 @@ Phase 4 - Test Catalog Expansion (parallel after Phase 3)
 Phase 5 - Verification
   └─ 09: Full test matrix, cross-platform, regression checks
 ```
-<!-- reviewed: cohesion fix — Phase 3/4 split reflects the post-Agent-2 dependency reality where Sections 06/07/08 consume Section 05's framework extensions and cap_coverage SSOT. -->
 
 **Why this order:**
 - Phase 0 is a pure infrastructure refactor with zero behavioral change — safe foundation.
@@ -192,9 +189,6 @@ Phase 5 - Verification
 | 08 Keyboard Tests | ~360 (kf1-kf63 + cursor + editing + modified-key family + cap_coverage extension subsection) | Medium | 01, 02, 05 |
 | 09 Verification | ~100 | Low | All |
 | **Total new** | **~3,650** | | |
-<!-- reviewed: accuracy/feasibility fix — Section 05 grew by ~350 lines after Agent 1 of /review-plan added the discovery, phase-capture, version-gate, and cap-coverage matrix subsections. -->
-<!-- reviewed: cohesion fix — Section 05 grew an additional ~100 lines after Agent 2 added: mission-criterion traceability table, cross-section sync subsection (05.5b) updating Sections 06/07/08 contracts, expanded EXEMPT_CAPS with cross-section deferral notes for ~60 caps, expand_kf_caps + expand_modified_key_caps helpers, stale-exemption negative pin in cap_coverage_matrix test, compile_error! forcing-function gates replacing the broken byte-literal placeholders in 05.2/05.3/05.4, loud-skip diagnostic in tack_version_supported, expanded phase-capture timeout panic. Sections 06 / 07 / 08 grew by ~60/0/40 lines for the cross-section sync content (cap_coverage extension checklists + frontmatter re_review_reason updates). Section 06 now also depends on 05 (cap_coverage extension contract) and Section 08 now depends on 05 (same). -->
-<!-- reviewed: executability/hygiene fix (Agent 3) — Section 05 grew an additional ~150 lines after Agent 3 of /review-plan applied the Codex midpoint pivots: Pivot 1 added Implementation Milestones M1/M2 with explicit completion gates so the section is implementable without cognitive overload, Pivot 3 replaced compile_error! forcing-functions with runtime unverified_menu_key()/unverified_anchor() sentinels (the compile_error! design broke `cargo check` for the entire oriterm_test_support crate while 05.0 was in flight, blocking concurrent impl-hygiene work — Codex flagged this as too hostile in a multi-agent flow), Pivot 5 refactored the cap-coverage matrix to owner-partitioned CapCoverageContribution per-section files instead of a single flat EXEMPT_CAPS junk drawer (each section's exemptions live in their own owned file), Agent 3 also wove in: parser/tokens.rs sibling-tests-restructure as a Broken Window fix in 05.0.b, the runner/mod.rs split into runner/{mod, stable, phase} BEFORE adding run_phase to stay under 500 lines, the algorithmic-DRY poll_until reuse mandate in run_phase_at, the poll_until visibility widening from pub(super) to pub(crate), TDD ordering checklist items, debug+release parity gates, cross-platform compile gate weaved into M1, file-size projection for cap_coverage/* files. Pivot 2 refined Section 07's depends_on (07 only needs 04 + 05 cap_coverage CONTRACT, not body — captured in new depends_on_contract frontmatter field). Pivot 4 validated PhaseSpec design against the codebase (no action needed). -->
 
 | **Total deleted** | **~480** | | |
 
