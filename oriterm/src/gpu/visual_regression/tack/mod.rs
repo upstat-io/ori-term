@@ -96,7 +96,7 @@ fn run_tack_scenario_golden(spec: &ScenarioSpec, cols: u16, rows: u16) {
     }
 }
 
-// --- Color screen: highest GPU test value (setaf/setab rendering) ---
+// Color screen: highest GPU test value (setaf/setab rendering)
 
 #[test]
 fn tack_golden_color_80x24() {
@@ -113,21 +113,21 @@ fn tack_golden_color_120x40() {
     run_tack_scenario_golden(&TACK_COLOR, 120, 40);
 }
 
-// --- Graphic rendition: SGR styles (bold/dim/italic/underline) ---
+// Graphic rendition: SGR styles (bold/dim/italic/underline)
 
 #[test]
 fn tack_golden_graphic_rendition_80x24() {
     run_tack_scenario_golden(&TACK_GRAPHIC_RENDITION_SGR, 80, 24);
 }
 
-// --- Character sets: DEC line-drawing (G0/G1/GL/GR banks) ---
+// Character sets: DEC line-drawing (G0/G1/GL/GR banks)
 
 #[test]
 fn tack_golden_character_sets_80x24() {
     run_tack_scenario_golden(&TACK_TOOLS_G0_DEC_GRAPHICS, 80, 24);
 }
 
-// --- Modes: SGR-styled cap labels ---
+// Modes: SGR-styled cap labels
 
 #[test]
 fn tack_golden_modes_80x24() {
