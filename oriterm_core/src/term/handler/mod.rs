@@ -481,3 +481,9 @@ impl<T: EventListener> Handler for Term<T> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod test_helpers;
+
+#[cfg(test)]
+mod tack_cap_xcheck;

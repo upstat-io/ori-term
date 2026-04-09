@@ -135,7 +135,7 @@ parser/tokens.rs sibling-tests restructure (Broken Window fix)
 ---
 
 ### Section 06: Tack Scenarios: Tools Menu
-**File:** `section-06-tools-menu-scenarios.md` | **Status:** Not Started
+**File:** `section-06-tools-menu-scenarios.md` | **Status:** Complete
 
 ```
 tack/tools, ANSI status reports, SGR modes, character sets, ENQ/ACK

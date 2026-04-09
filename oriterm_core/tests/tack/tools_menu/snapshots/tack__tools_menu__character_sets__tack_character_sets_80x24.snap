@@ -1,0 +1,16 @@
+---
+source: oriterm_core/tests/tack/tools_menu/character_sets.rs
+expression: outcome.grid_text
+---
+Enter the bank ()*+,-./ followed by the character set 0123456789:;<=>? for      
+private use, and @A...Z[\]^_`a...z{|}~ for standard sets.                       
+                                                                                
+G1 GL    !"#$%&'()*+,-./0123456789:;<=>?                                        
+        @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^                                         
+        ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·   DEL <>                                
+                                                                                
+G1 GR   ��������������������������������                                        
+        ��������������������������������                                        
+        ��������������������������������   DEL <�>                              
+                                                                                
+bank+set>
