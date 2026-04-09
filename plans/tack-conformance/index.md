@@ -184,16 +184,25 @@ handler/test_helpers.rs pub(super) RecordingListener migration
 
 ```
 GPU, golden images, visual regression, render_to_pixels
-headless_env, compare_with_reference, PIXEL_TOLERANCE
+headless_env, compare_with_reference, PIXEL_TOLERANCE, MAX_MISMATCH_PERCENT
 tack color, tack SGR, tack character sets, tack modes
-FrameInput, frame_input, assert_golden
+FrameInput, frame_input_helper (07.0 extraction dedups vttest)
 oriterm/src/gpu/visual_regression/tack/
+oriterm/src/gpu/visual_regression/frame_input_helper.rs
 oriterm/tests/references/tack_*.png
 6 goldens: color x3 + graphic_rendition + character_sets + modes
 LiveSession::finish M5 cleanup contract
 LiveSession::golden_name SSOT (no rebuilt format strings)
 no run_phase_with_session_at — modes golden uses TACK_MODES_AM (os cap)
 tack_version_supported gate inherited via ScenarioRunner::available()
+consolidated skip gate: tack + tic + headless_env inside run_tack_scenario_golden
+cross-adapter raster drift out of scope — PIXEL_TOLERANCE absorbs AA only
+ORITERM_UPDATE_GOLDEN must be unset/failed in CI (07.5b in-source panic guard)
+in-source CI guard, meta_tests.rs regression test, #[ignore] for env-var isolation
+text_blink_tests.rs:100 third reader of ORITERM_UPDATE_GOLDEN — informs #[ignore] strategy
+07.5a determinism matrix: 10 reruns × 2 thread-modes × 2 profiles
+07.0 → 07.1 → 07.2/07.3/07.4/07.4b → 07.5a → 07.5b sequential ordering
+NO FinishOnDrop RAII guard — compare → finish → log order is canonical
 ```
 
 ---

@@ -9,6 +9,7 @@
 //! 2. Subsequent runs: renders, compares against reference with tolerance.
 //! 3. On mismatch: saves `*_actual.png` and `*_diff.png` for inspection.
 //! 4. `ORITERM_UPDATE_GOLDEN=1`: overwrites references with current output.
+//!    **CI guard:** panics if both `CI` and `ORITERM_UPDATE_GOLDEN` are set.
 //!
 //! # Running
 //!
@@ -21,6 +22,7 @@ mod cursor_opacity_tests;
 mod decoration_tests;
 mod dialog_helpers;
 mod edge_case_tests;
+mod frame_input_helper;
 mod main_window;
 mod meta_tests;
 mod multi_size;
@@ -30,6 +32,7 @@ mod settings_dialog;
 mod status_bar;
 mod tab_bar_brutal;
 mod tab_bar_icons;
+mod tack;
 mod text_blink_tests;
 mod vttest;
 mod weight_tests;
@@ -183,6 +186,17 @@ pub(super) fn compare_with_reference(
 
     let actual: RgbaImage =
         ImageBuffer::from_raw(width, height, pixels.to_vec()).expect("pixel buffer size mismatch");
+
+    // CI safety: panic hard if someone accidentally sets
+    // ORITERM_UPDATE_GOLDEN in a CI environment. Overwriting goldens
+    // in CI silently masks pixel regressions.
+    if std::env::var("CI").is_ok() && std::env::var("ORITERM_UPDATE_GOLDEN").as_deref() == Ok("1") {
+        panic!(
+            "ORITERM_UPDATE_GOLDEN=1 is set in a CI environment (CI env var detected). \
+             This would silently overwrite reference goldens, masking pixel regressions. \
+             Unset ORITERM_UPDATE_GOLDEN before running GPU tests in CI."
+        );
+    }
 
     // Regeneration mode: overwrite reference with current output.
     if std::env::var("ORITERM_UPDATE_GOLDEN").as_deref() == Ok("1") {
