@@ -14,8 +14,7 @@
 //! them. There is no central `EXEMPT_CAPS` constant.
 
 use oriterm_test_support::tack_framework::cap_coverage::{
-    ALL_CONTRIBUTIONS, covered_caps, exempt_caps, expand_kf_caps, expand_modified_key_caps,
-    parse_declared_caps,
+    ALL_CONTRIBUTIONS, covered_caps, exempt_caps, parse_declared_caps,
 };
 
 #[test]
@@ -43,27 +42,14 @@ fn tack_cap_coverage_matrix() {
         uncovered.join("\n  "),
     );
 
-    // Negative pin: as Sections 06 / 08 land, they MUST move
-    // entries OUT of their `exempt` and INTO their `covered`.
-    // A cap appearing in BOTH any section's `covered` AND any
-    // section's `exempt` is a stale exemption — the matrix
-    // fails loudly so the cleanup happens. The cleanup is part
-    // of the 06.N / 08.N completion checklists.
+    // Negative pin: a cap appearing in BOTH any section's `covered`
+    // AND any section's `exempt` is a stale exemption — the matrix
+    // fails loudly so the cleanup happens.
     //
-    // TPR-05-025 fix: the stale-exemption gate must scan BOTH
-    // explicit per-section `contrib.exempt` slices AND the
-    // iterator-built keyboard exemptions from `expand_kf_caps()`
-    // and `expand_modified_key_caps()`. The iterator-built
-    // exemptions are the dominant source of Section 08's keyboard
-    // coverage gap (kf1..=kf63 + the modified-key family ~125
-    // caps total). If Section 08 later moves any of those caps
-    // into its `CONTRIBUTION.covered`, the cleanup contract
-    // requires the iterator helper to ALSO be updated (or the
-    // moved cap removed from the helper). Without scanning the
-    // helpers here, Section 08 could move `kf1` into `covered`
-    // while `expand_kf_caps()` still produces it, leaving the
-    // exemption silently stale and the SSOT decay protection
-    // broken.
+    // Note: expand_kf_caps() and expand_modified_key_caps() now feed
+    // into covered_caps() (via section_08::covered_caps_08), not
+    // exempt_caps(). The stale-exemption check only scans the
+    // per-section `contrib.exempt` slices.
     let mut stale_exemptions: Vec<String> = Vec::new();
     for contrib in ALL_CONTRIBUTIONS {
         for (cap, _reason) in contrib.exempt {
@@ -73,25 +59,6 @@ fn tack_cap_coverage_matrix() {
                     section = contrib.section,
                 ));
             }
-        }
-    }
-    // ALSO check the iterator-built exemptions (TPR-05-025).
-    for cap in expand_kf_caps() {
-        if covered.contains(&cap) {
-            stale_exemptions.push(format!(
-                "{cap} (in expand_kf_caps() iterator AND in some section's covered — \
-                 update expand_kf_caps() to remove this cap, OR remove the cap from \
-                 the section's `covered` if the helper is the canonical owner)"
-            ));
-        }
-    }
-    for cap in expand_modified_key_caps() {
-        if covered.contains(&cap) {
-            stale_exemptions.push(format!(
-                "{cap} (in expand_modified_key_caps() iterator AND in some section's covered — \
-                 update expand_modified_key_caps() to remove this cap, OR remove the cap from \
-                 the section's `covered` if the helper is the canonical owner)"
-            ));
         }
     }
     assert!(

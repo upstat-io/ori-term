@@ -89,7 +89,9 @@ pub const ALL_CONTRIBUTIONS: &[&CapCoverageContribution] = &[
 /// Sum every section's `covered` slice into a `BTreeSet<String>`.
 ///
 /// Iterates [`ALL_CONTRIBUTIONS`] so adding a new section is a
-/// one-line edit to the array.
+/// one-line edit to the array. Section 08's kf1-kf63 and modified-key
+/// family are added via [`section_08::covered_caps_08`] because the
+/// programmatic expansion avoids a 130+ entry static slice.
 #[must_use]
 pub fn covered_caps() -> BTreeSet<String> {
     let mut s = BTreeSet::new();
@@ -97,6 +99,10 @@ pub fn covered_caps() -> BTreeSet<String> {
         for cap in contrib.covered {
             s.insert((*cap).to_string());
         }
+    }
+    // Section 08's programmatic extension: kf1-kf63 + modified-key family.
+    for cap in section_08::covered_caps_08() {
+        s.insert(cap);
     }
     s
 }
@@ -110,15 +116,6 @@ pub fn exempt_caps() -> BTreeSet<String> {
         for (cap, _reason) in contrib.exempt {
             s.insert((*cap).to_string());
         }
-    }
-    // Iterator-built keyboard exemptions (Section 08) so we don't
-    // hand-write 60+ rows in `section_08.rs`. The kf cap range and
-    // modified-key bases are stable across tack versions.
-    for cap in expand_kf_caps() {
-        s.insert(cap);
-    }
-    for cap in expand_modified_key_caps() {
-        s.insert(cap);
     }
     s
 }

@@ -32,7 +32,7 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 
 - [x] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
 - [x] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
-- [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys plus modified-key family (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with modifier suffixes 3-7, plus kind/kri)
+- [x] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys plus modified-key family (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with modifier suffixes 3-7, plus kind/kri)
 - [ ] All tests skip cleanly when tack/tic unavailable (cross-platform: compile everywhere, runtime skip)
 - [ ] `./test-all.sh` green, `./build-all.sh` green, `./clippy-all.sh` green — no regressions
 
@@ -214,5 +214,5 @@ Phase 5 - Verification
 | 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Complete |
 | 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Complete |
 | 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Complete |
-| 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Not Started |
+| 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Complete |
 | 09 | Verification | `section-09-verification.md` | Not Started |

@@ -208,7 +208,7 @@ NO FinishOnDrop RAII guard — compare → finish → log order is canonical
 ---
 
 ### Section 08: Keyboard/Function Key Tests
-**File:** `section-08-keyboard-tests.md` | **Status:** Not Started
+**File:** `section-08-keyboard-tests.md` | **Status:** Complete
 
 ```
 keyboard, function keys, smkx, rmkx, key encoding
