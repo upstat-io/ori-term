@@ -1,12 +1,9 @@
 //! Cursor key and editing key terminfo cross-check tests.
 
 use oriterm_core::TermMode;
-use oriterm_test_support::{TerminfoEnv, infocmp_available, infocmp_dump, tic_available};
-use winit::keyboard::{Key, KeyLocation, NamedKey};
+use winit::keyboard::NamedKey;
 
-use super::{
-    CapMapping, KeyEventType, KeyInput, Modifiers, assert_encoded_matches_terminfo, encode_key,
-};
+use super::{CapMapping, Modifiers, encode_named_key, run_cap_mapping_test};
 
 // 08.3: Cursor keys
 
@@ -42,17 +39,7 @@ static CURSOR_KEYS_APP: &[CapMapping] = &[
 
 #[test]
 fn cursor_keys_app_mode_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in CURSOR_KEYS_APP {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, CURSOR_KEYS_APP.len());
+    run_cap_mapping_test(CURSOR_KEYS_APP);
 }
 
 /// Cursor keys in normal (rmkx) mode — verify encode_key produces
@@ -67,17 +54,7 @@ fn cursor_keys_normal_mode_emit_csi() {
         (NamedKey::ArrowLeft, b"\x1b[D"),
     ];
     for (named, expected) in pairs {
-        let key = Key::Named(*named);
-        let input = KeyInput {
-            key: &key,
-            mods: Modifiers::empty(),
-            mode: TermMode::empty(),
-            text: None,
-            location: KeyLocation::Standard,
-            event_type: KeyEventType::Press,
-            alternate_key: None,
-        };
-        let actual = encode_key(&input);
+        let actual = encode_named_key(*named, Modifiers::empty(), TermMode::empty());
         assert_eq!(
             actual, *expected,
             "{:?} in normal mode produced {:?}, expected {:?}",
@@ -138,17 +115,7 @@ static EDITING_KEYS: &[CapMapping] = &[
 
 #[test]
 fn editing_keys_match_terminfo() {
-    if !tic_available() || !infocmp_available() {
-        return;
-    }
-    let env = TerminfoEnv::compile();
-    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump");
-    let mut tested = 0usize;
-    for mapping in EDITING_KEYS {
-        assert_encoded_matches_terminfo(&caps, mapping);
-        tested += 1;
-    }
-    assert_eq!(tested, EDITING_KEYS.len());
+    run_cap_mapping_test(EDITING_KEYS);
 }
 
 /// Home/End in normal (non-APP_CURSOR) mode — verify encode_key
@@ -158,17 +125,7 @@ fn editing_keys_match_terminfo() {
 fn editing_keys_normal_mode_emit_csi() {
     let pairs: &[(NamedKey, &[u8])] = &[(NamedKey::Home, b"\x1b[H"), (NamedKey::End, b"\x1b[F")];
     for (named, expected) in pairs {
-        let key = Key::Named(*named);
-        let input = KeyInput {
-            key: &key,
-            mods: Modifiers::empty(),
-            mode: TermMode::empty(),
-            text: None,
-            location: KeyLocation::Standard,
-            event_type: KeyEventType::Press,
-            alternate_key: None,
-        };
-        let actual = encode_key(&input);
+        let actual = encode_named_key(*named, Modifiers::empty(), TermMode::empty());
         assert_eq!(
             actual, *expected,
             "{:?} in normal mode produced {:?}, expected {:?}",

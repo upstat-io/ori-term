@@ -21,7 +21,9 @@ mod navigation;
 use std::collections::HashMap;
 
 use oriterm_core::TermMode;
-use oriterm_test_support::decode_terminfo_string;
+use oriterm_test_support::{
+    TerminfoEnv, decode_terminfo_string, infocmp_available, infocmp_dump, tic_available,
+};
 use winit::keyboard::{Key, KeyLocation, NamedKey};
 
 use super::{KeyEventType, KeyInput, Modifiers, encode_key};
@@ -81,6 +83,57 @@ fn assert_encoded_matches_terminfo(caps: &HashMap<String, String>, mapping: &Cap
         "key_encoding::encode_key for cap {} produced {:?} but terminfo says {:?}",
         mapping.cap, actual, expected,
     );
+}
+
+/// Set up the pinned terminfo environment and dump caps.
+///
+/// Returns `None` when `tic` or `infocmp` are unavailable (runtime
+/// skip on Windows native). Callers should early-return on `None`.
+fn setup_terminfo_env() -> Option<HashMap<String, String>> {
+    if !tic_available() || !infocmp_available() {
+        return None;
+    }
+    let env = TerminfoEnv::compile();
+    Some(infocmp_dump(&env, "ori_term").expect("infocmp dump"))
+}
+
+/// Run a `CapMapping` array through `assert_encoded_matches_terminfo`,
+/// skipping when tic/infocmp are unavailable.
+fn run_cap_mapping_test(mappings: &[CapMapping]) {
+    let Some(caps) = setup_terminfo_env() else {
+        return;
+    };
+    let mut tested = 0usize;
+    for mapping in mappings {
+        assert_encoded_matches_terminfo(&caps, mapping);
+        tested += 1;
+    }
+    assert_eq!(
+        tested,
+        mappings.len(),
+        "count pin: expected to test {} caps, only tested {}",
+        mappings.len(),
+        tested,
+    );
+}
+
+/// Encode a named key with the given modifiers and terminal mode.
+///
+/// Convenience helper that constructs a `KeyInput` for a standard
+/// `Press` event with no text, no alternate key, and
+/// `KeyLocation::Standard`.
+fn encode_named_key(named: NamedKey, mods: Modifiers, mode: TermMode) -> Vec<u8> {
+    let key = Key::Named(named);
+    let input = KeyInput {
+        key: &key,
+        mods,
+        mode,
+        text: None,
+        location: KeyLocation::Standard,
+        event_type: KeyEventType::Press,
+        alternate_key: None,
+    };
+    encode_key(&input)
 }
 
 /// Map xterm modifier suffix to Modifiers bitset.
