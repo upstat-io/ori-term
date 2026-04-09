@@ -75,7 +75,7 @@ fire-and-forget vs request/response, separate abstractions
 
 ---
 
-### Section 04: Verification Chain Harness + Pilots + Coverage Report
+### Section 04: Verification Chain Harness + Pilots + Coverage Report + Cataloging Safety Net
 **File:** `section-04-verification-chain-harness.md` | **Status:** Not Started
 
 ```
@@ -87,8 +87,13 @@ TeseqHarness extension, visual_regression extension, render_frame_cached
 sixel pilot, DA1 pilot, non-visual pilot, visual pilot
 catalog row schema freeze, schema MVP, frozen template
 spec-coverage-report, cargo run -p oriterm_test_support --bin
-coverage tracking, per-stack percentage, regression detection
+coverage tracking, per-stack absolute verified count, monotonic gating
+citation scan, catalog row ID grep, false-verified detection
+uncataloged citation detection, uncataloged-backlog.md
+cataloging safety net, UncatalogedDetector, continuous delta detection
+regression detection, absolute count not percentage
 BLOAT split, gpu/prepare/mod.rs 504, gpu/prepare/dirty_skip/mod.rs 506
+section 04 to 05 coupling, 04.4 04.5 04.7 blocked until 05.6 lands
 ```
 
 ---
@@ -275,7 +280,7 @@ iTerm2 OSC suite, SetMark, RemoteHost, CurrentDir
 ```
 cell-level alpha, transparency, translucent overlays
 notcurses trans scene, multi-plane composition
-Cell struct alpha field, oriterm_core/src/cell.rs
+Cell struct alpha field, oriterm_core/src/cell/mod.rs
 CellFlags ALPHA, premultiplied alpha, straight alpha
 GPU pipeline, BlendState, oriterm/src/gpu/pipeline/image.rs
 PREMULTIPLIED_ALPHA_BLENDING, opacity, fg_dim, bg_alpha
@@ -347,22 +352,22 @@ oriterm_core/src/term/charset/mod.rs
 
 ---
 
-### Section 19: Historical Stacks
+### Section 19: Historical LEGACY CONTROL Stacks
 **File:** `section-19-historical-stacks.md` | **Status:** Not Started
 
 ```
-historical stacks, legacy emulation, DEC heritage
+historical legacy control stacks, DEC heritage
+no deferral forks, every stack implemented not verified-with-deviation
 VT52, ESC A B C D F H I J K Y Z
 VT100, VT102, VT220 8-bit + downloadable
 VT320 rectangular editing + page memory
 VT420 left/right margins, VT520 525 color
-DEC LK201 keyboard protocol
-DEC ReGIS, ReGIS graphics, vector graphics
-Tektronix 4010, Tektronix 4014
-Wyse 50, Wyse 60, attribute byte
-ADM-3A, dumb terminal
-IBM PC ANSI.SYS, MS-DOS ANSI extensions
+DEC LK201 keyboard protocol, LK201 scan codes, LK201 DA2 identification
+Wyse 50, Wyse 60, attribute byte, protected mode, status line, key programming
+ADM-3A, dumb terminal, ESC = row col cursor addressing
+IBM PC ANSI.SYS, MS-DOS ANSI extensions, keyboard reassignment CSI p
 Microsoft Console Virtual Terminal Sequences
+(ReGIS and Tek 4014 and vector_raster helper are Section 26, not Section 19)
 ```
 
 ---
@@ -457,6 +462,25 @@ treesitter highlighting, git log -p, ripgrep colored
 
 ---
 
+### Section 26: Historical VECTOR Stacks (vector_raster + ReGIS + Tek 4010/4014)
+**File:** `section-26-historical-vector-stacks.md` | **Status:** Not Started
+
+```
+historical vector stacks, vector graphics, rasterizer
+shared vector_raster helper, oriterm_core/src/vector_raster
+VectorCanvas, Bresenham line, midpoint circle, midpoint arc, Catmull-Rom curve
+even-odd fill polygon, stroke text, to_image_placement
+DEC ReGIS, ReGIS graphics, ReGIS command interpreter
+ReGIS parser, ReGIS interpreter, DCS p introducer
+Tektronix 4010, Tektronix 4014, Tek byte-pair coordinate decoder
+Tek alpha vs graphics mode, Tek rasterizer, GS US ESC FF
+depends on section 05 (deterministic lane for rasterizer goldens)
+depends on section 07 (image lifecycle, ImageCache::on_resize)
+depends on section 08 (baseline parser/dispatch)
+```
+
+---
+
 ## Catalog Files
 
 | File | Stacks Covered |
@@ -476,7 +500,7 @@ treesitter highlighting, git log -p, ripgrep colored
 | `catalog/charsets.md` | DEC charsets, NRCS, ISO 2022, ISO 8859, UAX policies |
 | `catalog/audio-print.md` | BEL, ANSI music, DECPS, visual bell, print sequences |
 | `catalog/shell-integration.md` | OSC 7, OSC 9/99/777, OSC 133, OSC 633, command timing |
-| `catalog/historical.md` | VT52, VT100/102/220/320/420/520, ReGIS, Tek, Wyse, ADM-3A, ANSI.SYS |
+| `catalog/historical.md` | VT52, VT100/102/220/320/420/520, DEC LK201 keyboard, Wyse 50/60, ADM-3A, IBM PC ANSI.SYS, Microsoft Console VT (legacy control — Section 19); ReGIS, Tek 4014 (vector — Section 26) |
 | `catalog/de-facto-behaviors.md` | sequences with no spec, reference impl tiebreakers cited per row |
 
 ## Quick Reference
@@ -501,10 +525,11 @@ treesitter highlighting, git log -p, ripgrep colored
 | 16 | Mouse Protocols | `section-16-mouse-protocols.md` |
 | 17 | Kitty Keyboard Protocol | `section-17-kitty-keyboard.md` |
 | 18 | Charsets + UAX Policy | `section-18-charsets-and-uax-policy.md` |
-| 19 | Historical Stacks | `section-19-historical-stacks.md` |
+| 19 | Historical LEGACY CONTROL Stacks (VT52, LK201, Wyse, ADM-3A, IBM PC, MS Console) | `section-19-historical-stacks.md` |
 | 20 | Audio + Print | `section-20-audio-and-print.md` |
 | 21 | notcurses-demo Harness + Scene Matrix + qrcode smoke | `section-21-notcurses-demo-harness.md` |
 | 22 | Real-App E2E Harness | `section-22-real-app-harness.md` |
 | 23 | Cross-Stack Regression Sweep + Coverage CI | `section-23-cross-stack-regression-sweep.md` |
 | 24 | notcurses-demo FULL-PASS Milestone | `section-24-notcurses-demo-full-pass.md` |
 | 25 | Real-App FULL-PASS Milestone | `section-25-real-app-full-pass.md` |
+| 26 | Historical VECTOR Stacks (vector_raster + ReGIS + Tek 4010/4014) | `section-26-historical-vector-stacks.md` |

@@ -2,7 +2,7 @@
 section: "01"
 title: "Catalog Bootstrap"
 status: not-started
-reviewed: true
+reviewed: false
 goal: "Build the spec-conformance catalog as the empirical map of every protocol sequence ori_term targets, with implementation pointers and provisional verification status — no tests written in this section."
 success_criteria:
   - "`plans/spec-conformance/catalog/` exists with one markdown file per protocol family (16 catalog files + README + _legacy-tack-mapping placeholder created by section 02)"
@@ -182,7 +182,7 @@ After 01.1-01.3 give bottom-up coverage, walk every primary spec document with t
   - `catalog/charsets.md` → ISO 2022 + DEC technical manuals + UAX
   - `catalog/audio-print.md` → DEC technical manuals + ANSI.SYS reference
   - `catalog/shell-integration.md` → Final Term + iTerm2 + VS Code source
-  - `catalog/historical.md` → DEC user manuals
+  - `catalog/historical.md` → DEC user manuals (VT52 + VT100-520), DEC LK201 technical manual, DEC ReGIS technical manual, Tektronix 4014 Programmer's Reference Manual, Wyse 50/60 user manual, ADM-3A docs, MS-DOS ANSI.SYS reference, Microsoft Console VT spec
 - [ ] For each spec section in each primary spec, check the catalog. Missing rows get added with `Implementation: MISSING` and the primary spec as the source.
 - [ ] For ambiguous spec text (where multiple interpretations exist), populate the `De-facto reference` column with the chosen tiebreaker per the authority ladder.
 - [ ] **Validation**: every spec section in every primary spec corresponds to at least one catalog row.
