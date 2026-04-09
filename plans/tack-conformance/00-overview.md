@@ -31,7 +31,7 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 - [x] Tack tool scenarios cover EVERY automatable tools menu screen in tack v1.08: ANSI status reports (DA1/DA2/DA3, DSR, DECRQM), SGR mode table (modes 0-79), character set banks (G0/G1/GL/GR), ENQ/ACK handshake (u8/u9). Interactive-only tools (echo, reply, change debug level) have in-code exclusion stubs. For the 23 modern caps that tack v1.08 cannot reach (Smulx, Setulc, Sync, BD, BE, PS, PE, Se, Ss, XF, kxIN, kxOUT, Tc, RGB, Cr, Cs, Ms, hs, dsl, fsl, tsl, AX, XT — 19 escape-sequence-emitting caps plus 4 pure-bool markers), Section 06 provides direct VTE round-trip tests in `oriterm_core` (21 caps — including PS/PE, because the byte-emitting `prepare_paste` pure function lives at `oriterm_core/src/paste/mod.rs:11-14` and is already unit-tested there) and in `oriterm` (2 caps — kxIN/kxOUT, emitted by winit focus events from `oriterm/src/app/event_loop_helpers/mod.rs:143 send_focus_event`; the winit dependency anchors these in the app shell). Both crates feed synthetic escape sequences or call the emitting pure function and assert the correct event/handler fires OR the correct outbound bytes are written. Section 06 also extends `oriterm_test_support::session::PtyResponder` in-place with `ColorRequest`/`ClipboardLoad`/`ClipboardStore` handling so OSC 10/11/52 round-trip tests can actually complete (no new listener type — the extension keeps `Term<PtyResponder>` as the canonical test-side type). Total Section 06 cap coverage: 27 caps = 4 tack-reachable (u6/u7/u8/u9) + 23 direct-VTE. NOTE: BUG-11-3 (mux-side OSC routing) is out of Section 06's scope — Section 06's tests bypass the mux entirely, so a green Section 06 does NOT prove OSC works end-to-end in the live app.
 
 - [x] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
-- [ ] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
+- [x] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
 - [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys
 - [ ] All tests skip cleanly when tack/tic unavailable (cross-platform: compile everywhere, runtime skip)
 - [ ] `./test-all.sh` green, `./build-all.sh` green, `./clippy-all.sh` green — no regressions
@@ -219,6 +219,6 @@ Phase 5 - Verification
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Complete |
 | 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Complete |
 | 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Complete |
-| 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Not Started |
+| 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Complete |
 | 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Not Started |
 | 09 | Verification | `section-09-verification.md` | Not Started |

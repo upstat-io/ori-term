@@ -221,8 +221,8 @@ fn update_golden_overwrites_reference() {
 /// — running it under default `cargo test` parallelism would leak
 /// `ORITERM_UPDATE_GOLDEN=1` into sibling tests (notably
 /// `text_blink_tests.rs:100` which also reads it) and silently
-/// regenerate goldens. Run explicitly: `cargo test --features gpu-tests
-/// -- compare_with_reference_ci_guard_fires --ignored`.
+/// regenerate goldens. Run explicitly:
+/// `cargo test -p oriterm --features gpu-tests 'compare_with_reference_ci_guard_fires' -- --ignored --test-threads=1`.
 #[test]
 #[ignore]
 #[should_panic(expected = "ORITERM_UPDATE_GOLDEN=1 is set in a CI environment")]

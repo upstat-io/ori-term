@@ -180,7 +180,7 @@ handler/test_helpers.rs pub(super) RecordingListener migration
 ---
 
 ### Section 07: GPU Golden Images
-**File:** `section-07-gpu-golden-images.md` | **Status:** Not Started
+**File:** `section-07-gpu-golden-images.md` | **Status:** Complete
 
 ```
 GPU, golden images, visual regression, render_to_pixels
