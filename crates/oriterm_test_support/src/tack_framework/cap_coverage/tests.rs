@@ -7,8 +7,8 @@
 use std::collections::BTreeSet;
 
 use super::{
-    ALL_CONTRIBUTIONS, expand_kf_caps, expand_modified_key_caps, parse_declared_caps,
-    parse_terminfo_source,
+    ALL_CONTRIBUTIONS, declared_cap_value, expand_kf_caps, expand_modified_key_caps,
+    extract_cap_value, parse_declared_caps, parse_terminfo_source,
 };
 
 // ----- Parser dimension: synthetic-input pins for each tic format quirk.
@@ -395,6 +395,134 @@ fn stale_exemption_negative_pin() {
          failed; the integration test's iterator-scan path is broken \
          (TPR-05-025 regression)"
     );
+}
+
+// ----- extract_cap_value sibling tests (TPR-06-003 promoted helper) -----
+
+#[test]
+fn extract_cap_value_returns_value_for_present_string_cap() {
+    let src = "ori_term|test entry,\n  am, u9=\\E[c, u8=\\E[?%[;0123456789]c,\n";
+    assert_eq!(extract_cap_value(src, "u9"), Some("\\E[c".to_string()));
+    assert_eq!(
+        extract_cap_value(src, "u8"),
+        Some("\\E[?%[;0123456789]c".to_string()),
+    );
+}
+
+#[test]
+fn extract_cap_value_returns_none_for_absent_cap() {
+    let src = "ori_term|test entry,\n  am, bce, msgr,\n";
+    assert_eq!(extract_cap_value(src, "u9"), None);
+}
+
+#[test]
+fn extract_cap_value_returns_none_for_bool_cap() {
+    // Bool caps have no `=` so the helper correctly returns None
+    // (the bool form is verified separately via `parse_declared_caps`).
+    let src = "ori_term|test entry,\n  am, bce, msgr,\n";
+    assert_eq!(extract_cap_value(src, "am"), None);
+}
+
+#[test]
+fn extract_cap_value_finds_cap_on_continuation_line() {
+    let src = "ori_term|test entry,\n  am,\n  u9=\\E[c,\n";
+    assert_eq!(extract_cap_value(src, "u9"), Some("\\E[c".to_string()));
+}
+
+#[test]
+fn parse_terminfo_source_and_extract_cap_value_agree_on_blank_line_break() {
+    // TPR-06-009 SEMANTIC PIN: the shared `collapse_continuations`
+    // helper treats blank lines as hard breaks in the entry
+    // stream. Both `parse_terminfo_source` (cap names) and
+    // `extract_cap_value` (cap values) delegate to it, so they
+    // must agree on the blank-line termination behavior.
+    //
+    // Input shape: an entry with a mid-continuation blank line.
+    // The blank line MUST reset continuation so the post-blank
+    // line is NOT silently appended to the pre-blank buffer.
+    let src = "ori_term|test entry,\n\
+               \tsetab=\\E[48;\n\
+               \n\
+               \t5;%p1%d%;m,\n\
+               \tbce,\n";
+    // Cap-name extraction: all three caps (setab, bce) must still
+    // be discovered — the blank line breaks the setab continuation
+    // but bce is a standalone cap on its own line.
+    let names = parse_synthetic(src);
+    assert!(names.contains("setab"), "setab must be discovered");
+    assert!(names.contains("bce"), "bce must be discovered");
+    // Cap-value extraction: setab's value is truncated at the
+    // blank line — we get the first-half only, NOT a nonsense
+    // concatenation with the post-blank `5;%p1%d%;m,` fragment.
+    // (The post-blank fragment is treated as its own entry line
+    // and discarded as an unnamed comma-separated token.)
+    let setab = extract_cap_value(src, "setab").expect("setab must extract");
+    assert_eq!(setab, "\\E[48;");
+    // bce is a bool cap, no value.
+    assert_eq!(extract_cap_value(src, "bce"), None);
+}
+
+#[test]
+fn extract_cap_value_handles_multiline_continuations() {
+    // TPR-06-006 SEMANTIC PIN: tic format allows cap values to
+    // continue on the next physical line when the current line
+    // does NOT end with `,`. The continuation line's leading
+    // whitespace is stripped before concatenation. The previous
+    // single-line implementation silently truncated multi-line
+    // caps like `setab`/`setaf`. Pin the multiline contract.
+    let src = "ori_term|test entry,\n\
+               \tsetab=\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;\n\
+               \t      5;%p1%d%;m,\n\
+               \tsetaf=\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5\n\
+               \t      ;%p1%d%;m,\n";
+    assert_eq!(
+        extract_cap_value(src, "setab"),
+        Some("\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m".to_string()),
+    );
+    assert_eq!(
+        extract_cap_value(src, "setaf"),
+        Some("\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m".to_string()),
+    );
+}
+
+#[test]
+fn extract_cap_value_handles_real_terminfo_multiline_caps() {
+    // REAL-TERMINFO PIN — call the public `declared_cap_value`
+    // wrapper against the embedded `extra/ori_term.info` source
+    // and assert that `setab`/`setaf` (which are multi-line in
+    // the actual terminfo) extract their full value, not the
+    // truncated first-line slice. Catches a regression in the
+    // continuation parser against the same multi-line caps the
+    // tic-source authors actually maintain.
+    let setab = declared_cap_value("setab").expect("setab must be declared in extra/ori_term.info");
+    // The full value contains both halves: the prefix from line 1
+    // and the suffix from the continuation line.
+    assert!(
+        setab.contains("48;") && setab.contains("5;%p1%d%;m"),
+        "setab continuation truncated; got: {setab:?}"
+    );
+    let setaf = declared_cap_value("setaf").expect("setaf must be declared in extra/ori_term.info");
+    assert!(
+        setaf.contains("38;") && setaf.contains("%p1%d%;m"),
+        "setaf continuation truncated; got: {setaf:?}"
+    );
+}
+
+#[test]
+fn declared_cap_value_returns_real_terminfo_values() {
+    // Smoke pin against the embedded `extra/ori_term.info` source —
+    // u9 and u8 are stable cap declarations that Section 06.4 also
+    // depends on. If this test starts failing, the canonical
+    // helper diverged from the embedded terminfo and Section 06's
+    // tack_cap_xcheck cross-references will all break in lockstep.
+    assert_eq!(declared_cap_value("u9"), Some("\\E[c".to_string()));
+    assert!(
+        declared_cap_value("u8")
+            .unwrap_or_default()
+            .starts_with("\\E[?"),
+    );
+    // Bool cap returns None.
+    assert_eq!(declared_cap_value("am"), None);
 }
 
 #[test]

@@ -14,6 +14,8 @@ use oriterm_ui::theme::UiTheme;
 use super::App;
 use crate::config::Config;
 
+mod focus_events;
+
 /// Resolve the [`UiTheme`] from config override + system theme.
 ///
 /// Maps [`ThemeOverride`] → [`UiTheme`]: `Dark` → `dark()`, `Light` → `light()`,
@@ -136,40 +138,11 @@ impl App {
         self.render_dirty_windows();
     }
 
-    /// Send a focus-in or focus-out escape sequence to the active pane.
-    ///
-    /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
-    /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
-    pub(super) fn send_focus_event(&mut self, focused: bool) {
-        let Some(pane_id) = self.active_pane_id() else {
-            return;
-        };
-        let Some(mode) = self.pane_mode(pane_id) else {
-            return;
-        };
-        if !mode.contains(oriterm_core::TermMode::FOCUS_IN_OUT) {
-            return;
-        }
-        let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
-        self.write_pane_input(pane_id, seq);
-    }
-
-    /// Flush a pending focus-out event.
-    ///
-    /// Called from `about_to_wait` and from `Focused(true)` handlers. Checks
-    /// if focus moved to a child dialog — if so, the focus-out is suppressed
-    /// because the terminal is still "active" from the user's perspective.
-    pub(super) fn flush_pending_focus_out(&mut self) {
-        let Some(pending) = self.pending_focus_out.take() else {
-            return;
-        };
-        // If focus moved to a child dialog of the window that lost focus,
-        // suppress the PTY focus-out escape sequence.
-        if self.window_manager.focused_is_child_of(pending.window_id) {
-            return;
-        }
-        self.send_focus_event(false);
-    }
+    // `send_focus_event` and `flush_pending_focus_out` were
+    // extracted into the `focus_events` sibling submodule by
+    // TPR-06-004 to keep this file under the 500-line hygiene
+    // limit AND to give Section 06.5 Track B's kxIN/kxOUT
+    // cross-crate tests a testable seam (`focus_event_seq_for_mode`).
 
     /// Process pending macOS fullscreen transition events.
     ///

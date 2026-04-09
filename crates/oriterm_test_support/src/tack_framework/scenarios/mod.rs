@@ -24,12 +24,15 @@
 
 pub mod acs;
 pub mod begin_testing_inventory;
+pub mod character_sets;
 pub mod color;
 pub mod cursor_movement;
+pub mod enq_ack;
 pub mod graphic_rendition;
 pub mod menu_inventory;
 pub mod modes;
 pub mod padding;
+pub mod sgr_modes;
 pub mod status_reports;
 pub mod status_reports_inventory;
 pub mod tools_menu_inventory;

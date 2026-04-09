@@ -236,3 +236,8 @@ fn control_flow_recovering_overrides_dirty() {
     let result = compute_control_flow(&input);
     assert_eq!(result, ControlFlowDecision::Wait);
 }
+
+// Section 06.5 Track B kxIN/kxOUT cross-crate xcheck tests
+// were extracted into the `focus_events` sibling submodule by
+// TPR-06-002/003/004 — see
+// `oriterm/src/app/event_loop_helpers/focus_events/tests.rs`.

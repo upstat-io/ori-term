@@ -186,37 +186,23 @@ pub fn expand_modified_key_caps() -> Vec<String> {
 /// synthetic terminfo strings to exercise each tic format quirk in
 /// isolation. Single canonical home for the parser body — no
 /// algorithmic duplication between production and test code.
-pub(super) fn parse_terminfo_source(src: &str) -> BTreeSet<String> {
+pub fn parse_terminfo_source(src: &str) -> BTreeSet<String> {
     let mut caps = BTreeSet::new();
-    let mut in_continuation = false;
-    for raw_line in src.lines() {
-        let trimmed = raw_line.trim_start();
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            in_continuation = false;
-            continue;
-        }
-        // Entry header lines start in column 0 (no leading whitespace).
-        // They are the entry name + aliases, not cap declarations.
-        if !raw_line.starts_with(char::is_whitespace) {
-            in_continuation = false;
-            continue;
-        }
-        // Cap declarations end with `,` on the line that DECLARES
-        // the cap. Continuation lines (the cap value spans multiple
-        // physical lines) do NOT end with `,` — they end mid-value.
-        // Track continuation state: if the previous line did not
-        // end with `,`, this line is a continuation and we skip
-        // cap-name extraction.
-        let line_ended_with_comma = raw_line.trim_end().ends_with(',');
-        if in_continuation {
-            in_continuation = !line_ended_with_comma;
-            continue;
-        }
-        in_continuation = !line_ended_with_comma;
+    // TPR-06-009 fix: delegate continuation-walking to the
+    // canonical `collapse_entry_lines` helper so both
+    // `parse_terminfo_source` (cap-name extraction) and
+    // `extract_cap_value` (cap-value extraction) share one
+    // implementation of the tic continuation rules — no
+    // algorithmic duplication, no risk of divergence on
+    // edge cases (blank lines, comment lines, entry headers).
+    // The helper ONLY yields cap-declaration entries; comments,
+    // entry headers, and blank lines are filtered at the
+    // canonical dispatch point.
+    for logical in collapse_entry_lines(src) {
         // Cap declarations are comma-separated within a logical
         // line. A cap name is the leading identifier, optionally
         // followed by `=`, `#`, or `@` (cancellation).
-        for token in trimmed.split(',') {
+        for token in logical.split(',') {
             let t = token.trim();
             if t.is_empty() || t.starts_with("use=") {
                 continue;
@@ -239,6 +225,123 @@ pub(super) fn parse_terminfo_source(src: &str) -> BTreeSet<String> {
 #[must_use]
 pub fn parse_declared_caps() -> BTreeSet<String> {
     parse_terminfo_source(TERMINFO_SRC)
+}
+
+/// Extract the value of a named string cap from a tic-format
+/// terminfo source. Returns `None` if the cap is absent or is a
+/// bool/numeric cap with no `=value` form.
+///
+/// Honors tic line-continuation rules: a logical entry line that
+/// does NOT end with `,` is continued on the next physical line,
+/// and the continuation line's leading whitespace is stripped
+/// before concatenation. This matches the tic source format used
+/// by `setab`/`setaf` (and any other multi-line cap) in
+/// `extra/ori_term.info` — without continuation handling, the
+/// helper would silently truncate any cap whose value spans
+/// multiple physical lines.
+///
+/// The returned value is in tic source form — e.g. `\E` for
+/// escape, NOT the literal byte `\x1b`. Pure function over the
+/// input string; callers that need the embedded
+/// `extra/ori_term.info` value can use [`declared_cap_value`]
+/// instead.
+///
+/// Section 06.5's `tack_cap_xcheck` tests and Section 06.4's
+/// `enq_ack` test wrapper both rely on this helper for terminfo
+/// declaration cross-referencing. The single canonical home avoids
+/// the algorithmic duplication that would otherwise scatter the
+/// extraction logic across multiple in-crate test files.
+#[must_use]
+pub fn extract_cap_value(src: &str, cap: &str) -> Option<String> {
+    for logical in collapse_entry_lines(src) {
+        for token in logical.split(',') {
+            let t = token.trim();
+            if let Some(rest) = t.strip_prefix(cap)
+                && let Some(val) = rest.strip_prefix('=')
+            {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Walk a tic-format terminfo source and yield each LOGICAL cap-
+/// declaration entry line — concatenating continuation lines into
+/// the line they extend, with leading/trailing whitespace
+/// stripped. Comment lines, entry header lines (column-0 name +
+/// aliases), and blank lines are FILTERED OUT at this canonical
+/// dispatch point so both `parse_terminfo_source` and
+/// `extract_cap_value` see the same cap-declaration-only view.
+///
+/// Tic continuation rule: if an entry line does not end with `,`
+/// (allowing trailing whitespace), the next physical line is a
+/// continuation. The continuation line's leading whitespace is
+/// stripped before concatenation. Continuation continues until a
+/// physical line ends with `,`.
+///
+/// Blank lines and non-entry lines (comments, headers) are hard
+/// breaks in the continuation stream — they flush any in-flight
+/// buffer and reset continuation state. This matches the original
+/// `parse_terminfo_source` behavior and guarantees that both
+/// cap-name and cap-value consumers agree on the same logical
+/// line boundaries (TPR-06-009 SSOT fix).
+fn collapse_entry_lines(src: &str) -> Vec<String> {
+    let mut logical: Vec<String> = Vec::new();
+    let mut buffer = String::new();
+    let mut in_continuation = false;
+    for raw_line in src.lines() {
+        let trimmed = raw_line.trim_start();
+        // Blank lines, comment lines, and entry header lines all
+        // terminate any in-flight continuation and contribute NO
+        // entry output. The original parse_terminfo_source treated
+        // each of these as a `continue` — the helper preserves
+        // that behavior at its single canonical dispatch point.
+        let is_blank = trimmed.is_empty();
+        let is_comment = trimmed.starts_with('#');
+        let is_header = !is_blank && !raw_line.starts_with(char::is_whitespace);
+        if is_blank || is_comment || is_header {
+            if in_continuation {
+                logical.push(std::mem::take(&mut buffer));
+                in_continuation = false;
+            }
+            continue;
+        }
+        // This line is an indented entry line (cap declaration or
+        // continuation of one).
+        let line_ended_with_comma = raw_line.trim_end().ends_with(',');
+        if in_continuation {
+            // Concatenate without intermediate whitespace — tic
+            // continuation lines start with formatting indent
+            // that is NOT part of the cap value.
+            buffer.push_str(trimmed);
+        } else {
+            buffer = trimmed.to_string();
+        }
+        if line_ended_with_comma {
+            logical.push(std::mem::take(&mut buffer));
+            in_continuation = false;
+        } else {
+            in_continuation = true;
+        }
+    }
+    if !buffer.is_empty() {
+        logical.push(buffer);
+    }
+    logical
+}
+
+/// Extract the value of a named string cap from the embedded
+/// `extra/ori_term.info` source. Returns `None` if the cap is
+/// absent or is a bool/numeric cap.
+///
+/// Thin wrapper over [`extract_cap_value`] that fixes the source
+/// to [`TERMINFO_SRC`]. Used by Section 06.4's `enq_ack` test
+/// wrapper to cross-reference `u8`/`u9` declarations against the
+/// pinned terminfo.
+#[must_use]
+pub fn declared_cap_value(cap: &str) -> Option<String> {
+    extract_cap_value(TERMINFO_SRC, cap)
 }
 
 #[cfg(test)]

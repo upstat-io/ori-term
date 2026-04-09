@@ -2,67 +2,24 @@
 //!
 //! Feed raw bytes through `vte::ansi::Processor` → `Term<RecordingListener>`
 //! and verify grid state and events.
+//!
+//! `RecordingListener`, `term_with_recorder`, `term_with_recorder_sized`,
+//! and `feed` were promoted into the sibling `super::test_helpers`
+//! module by the 06.5.a refactor so the same helpers can be reused
+//! by `super::tack_cap_xcheck::tests` (Section 06.5's direct-VTE
+//! cap-xcheck matrix). See that module's rustdoc for the rationale.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use vte::ansi::Processor;
-
-use crate::event::{Event, EventListener};
 use crate::index::Column;
 use crate::term::Term;
 use crate::theme::Theme;
 
-/// Event listener that records all events for assertions.
-#[derive(Clone)]
-struct RecordingListener {
-    events: Arc<Mutex<Vec<String>>>,
-}
-
-impl RecordingListener {
-    fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("lock poisoned").clone()
-    }
-}
-
-impl EventListener for RecordingListener {
-    fn send_event(&self, event: Event) {
-        self.events
-            .lock()
-            .expect("lock poisoned")
-            .push(format!("{event:?}"));
-    }
-}
-
-/// Create a Term with 24 lines, 80 columns, and a recording listener.
-fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
-    term_with_recorder_sized(24, 80)
-}
-
-/// Create a Term with the given dimensions and a recording listener.
-fn term_with_recorder_sized(
-    lines: usize,
-    cols: usize,
-) -> (Term<RecordingListener>, RecordingListener) {
-    let listener = RecordingListener::new();
-    let term = Term::new(lines, cols, 0, Theme::default(), listener.clone());
-    (term, listener)
-}
+use super::test_helpers::{feed, term_with_recorder, term_with_recorder_sized};
 
 /// Create a Term with VoidListener (when events don't matter).
 fn term() -> Term<crate::event::VoidListener> {
     Term::new(24, 80, 0, Theme::default(), crate::event::VoidListener)
-}
-
-/// Feed raw bytes through the VTE processor.
-fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {
-    let mut processor: Processor = Processor::new();
-    processor.advance(term, bytes);
 }
 
 // --- Print (input) tests ---

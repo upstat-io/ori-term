@@ -1,0 +1,14 @@
+---
+source: oriterm_core/tests/tack/tools_menu/sgr_modes.rs
+expression: outcome.grid_text
+---
+Mode  0 Mode  1 Mode  2 Mode  3 Mode  4 Mode  5 Mode  6 Mode  7 Mode  8 Mode  9 
+Mode 10 Mode 11 Mode 12 Mode 13 Mode 14 Mode 15 Mode 16 Mode 17 Mode 18 Mode 19 
+Mode 20 Mode 21 Mode 22 Mode 23 Mode 24 Mode 25 Mode 26 Mode 27 Mode 28 Mode 29 
+Mode 30 Mode 31 Mode 32 Mode 33 Mode 34 Mode 35 Mode 36 Mode 37 Mode 38 Mode 39 
+Mode 40 Mode 41 Mode 42 Mode 43 Mode 44 Mode 45 Mode 46 Mode 47 Mode 48 Mode 49 
+Mode 50 Mode 51 Mode 52 Mode 53 Mode 54 Mode 55 Mode 56 Mode 57 Mode 58 Mode 59 
+Mode 60 Mode 61 Mode 62 Mode 63 Mode 64 Mode 65 Mode 66 Mode 67 Mode 68 Mode 69 
+Mode 70 Mode 71 Mode 72 Mode 73 Mode 74 Mode 75 Mode 76 Mode 77 Mode 78 Mode 79 
+                                                                                
+tack/tools/sgr Enter =><?r [<cr>] >
