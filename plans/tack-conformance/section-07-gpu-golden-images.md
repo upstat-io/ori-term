@@ -32,7 +32,7 @@ depends_on_contract:
   - section: "06"
     contract: "scenario const path (character_sets) — Section 07 imports `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS`. Section 06 landed the const at `crates/oriterm_test_support/src/tack_framework/scenarios/character_sets/mod.rs:180` with the single-word `character_sets` module name (verified 2026-04-08)."
 third_party_review:
-  status: in-progress
+  status: resolved
   updated: 2026-04-09
 sections:
   - id: "07.0"
@@ -61,7 +61,7 @@ sections:
     status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
   - id: "07.N"
     title: "Completion Checklist"
     status: complete
@@ -772,7 +772,7 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
 - [x] `./build-all.sh` green
 - [x] `./clippy-all.sh` green
 - [x] `timeout 150 ./test-all.sh` green
-- [ ] All TPR checkpoint findings resolved (see `07.R`)
+- [x] All TPR checkpoint findings resolved (see `07.R`)
 
 **Plan sync:**
 - [x] Section frontmatter `status` → `complete`
@@ -785,6 +785,6 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
 
 **Final review gates:**
 - [x] `/tpr-review` final pass clean — 5 iterations, 7 findings (TPR-07-001 through TPR-07-007), all resolved. Code fixes: version gate (TPR-07-005), doc comments (TPR-07-003/007). Plan text fixes: premature completion (TPR-07-001/004), audit text (TPR-07-002), invocation syntax (TPR-07-003/006).
-- [ ] `/impl-hygiene-review last commit` final pass clean (after TPR) — specifically verifies the `frame_input_helper` extraction removed the `LEAK:algorithmic-duplication` finding and no `build_frame_input` copy snuck back in
+- [x] `/impl-hygiene-review last commit` final pass clean (after TPR) — specifically verifies the `frame_input_helper` extraction removed the `LEAK:algorithmic-duplication` finding and no `build_frame_input` copy snuck back in
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm --features gpu-tests -- tack_golden` runs all 6 tack GPU goldens (3 color sizes + 1 graphic rendition + 1 character sets + 1 modes) deterministically. Pixel comparison passes at the existing PIXEL_TOLERANCE. Goldens are committed under `oriterm/tests/references/tack_*.png`. The text scenarios from Sections 04/05/06 still pass — they reference the same const ScenarioSpec values via `oriterm_test_support::tack_framework::scenarios::*`. Section 07 closes the visual regression gap for tack scenarios.
