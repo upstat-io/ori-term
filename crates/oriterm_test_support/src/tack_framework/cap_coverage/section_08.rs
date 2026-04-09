@@ -1,63 +1,49 @@
 //! Section 08's cap-coverage contribution.
 //!
-//! Section 08 (keyboard / function key tests) has not landed yet.
-//! `covered` is empty until Section 08 lands; the `kf1..=kf63`
-//! family and the modified arrow / Home / End / editing key
-//! family are exempted via the iterator-built helpers in
-//! `cap_coverage::exempt_caps()` so this file does not have to
-//! hand-write 100+ rows.
+//! Section 08 (keyboard / function key tests) validates the
+//! `key_encoding::encode_key` pipeline against the pinned terminfo.
+//! `covered` includes the named cursor/editing keys tested directly
+//! in the `terminfo_xcheck` tables. The kf1-kf63 and modified-key
+//! families are added programmatically via `covered_caps_08()`.
 
-use super::CapCoverageContribution;
+use super::{CapCoverageContribution, expand_kf_caps, expand_modified_key_caps};
 
 pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
     section: "08",
     covered: &[
-        // EMPTY until Section 08 lands.
+        // Cursor keys — tested in 08.3 (navigation.rs).
+        "kcub1", "kcud1", "kcuf1", "kcuu1",
+        // Home/End — tested in 08.4 (navigation.rs, APP_CURSOR mode).
+        "khome", "kend", // Editing keys — tested in 08.4 (navigation.rs).
+        "kbs", "kpp", "knp", "kdch1", "kich1",
     ],
     exempt: &[
-        // Cursor + editing keys — deferred to Section 08
-        // terminfo_xcheck. (kf1-kf63 + modified-key family are
-        // exempted via the iterator-built expansion in
-        // `cap_coverage::exempt_caps()` — see expand_kf_caps and
-        // expand_modified_key_caps.)
-        (
-            "kcub1",
-            "deferred to Section 08 keyboard terminfo_xcheck (cursor keys)",
-        ),
-        ("kcud1", "deferred to Section 08 keyboard terminfo_xcheck"),
-        ("kcuf1", "deferred to Section 08 keyboard terminfo_xcheck"),
-        ("kcuu1", "deferred to Section 08 keyboard terminfo_xcheck"),
-        ("khome", "deferred to Section 08 keyboard terminfo_xcheck"),
-        ("kend", "deferred to Section 08 keyboard terminfo_xcheck"),
-        (
-            "kpp",
-            "deferred to Section 08 keyboard terminfo_xcheck (PageUp)",
-        ),
-        (
-            "knp",
-            "deferred to Section 08 keyboard terminfo_xcheck (PageDn)",
-        ),
-        (
-            "kdch1",
-            "deferred to Section 08 keyboard terminfo_xcheck (Delete)",
-        ),
-        (
-            "kich1",
-            "deferred to Section 08 keyboard terminfo_xcheck (Insert)",
-        ),
-        // ----- TPR-05-029 fix: kbs and kmous belong to Section 08's
-        // keyboard family per Section 08's frontmatter and 08.4
-        // editing/navigation key scenario. Section 05's tests
-        // exercise them indirectly (tack reads input) but do not
-        // surface them as (cap) shortnames. Section 08 will pin
-        // both via terminfo_xcheck when it lands.
-        (
-            "kbs",
-            "deferred to Section 08 keyboard terminfo_xcheck (Backspace) — Section 08.4 editing-key scenario",
-        ),
+        // kmous (\E[M) is the mouse encoding prefix — it does NOT go
+        // through key_encoding::encode_key and cannot be cross-checked
+        // by the keyboard terminfo_xcheck tests. Belongs to the mouse
+        // input subsystem (future roadmap section 10).
         (
             "kmous",
-            "deferred to Section 08 keyboard terminfo_xcheck (mouse prefix \\E[M) — Section 08 owns mouse-input encoding",
+            "mouse encoding prefix \\E[M — not testable via key_encoding::encode_key; \
+             belongs to mouse input subsystem (roadmap Section 10)",
         ),
     ],
 };
+
+/// Section 08's full covered cap set including programmatic expansions.
+///
+/// Returns the union of the static `CONTRIBUTION.covered` entries
+/// with `expand_kf_caps()` (kf1-kf63) and `expand_modified_key_caps()`
+/// (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with suffixes,
+/// plus kind/kri). This avoids a 130+ entry static slice.
+#[must_use]
+pub fn covered_caps_08() -> Vec<String> {
+    let mut out: Vec<String> = CONTRIBUTION
+        .covered
+        .iter()
+        .map(|c| (*c).to_string())
+        .collect();
+    out.extend(expand_kf_caps());
+    out.extend(expand_modified_key_caps());
+    out
+}

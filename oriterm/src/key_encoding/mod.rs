@@ -225,4 +225,6 @@ fn keycode_to_us_char(code: KeyCode) -> Option<u32> {
 }
 
 #[cfg(test)]
+mod terminfo_xcheck;
+#[cfg(test)]
 mod tests;

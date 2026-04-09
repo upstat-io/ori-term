@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "Keyboard / Function Key Tests"
-status: in-progress
+status: complete
 reviewed: true
 needs_re_review_after: "05"
 re_review_reason: "Section 05's Agent-1 / Agent-2 / Agent-3 review pass introduces a `cap_coverage_matrix` test (Section 05.5) that asserts every cap declared in `extra/ori_term.info` is exercised by at least one Section 05 / 06 / 08 scenario. Per Pivot 5 of /review-plan, the matrix uses an OWNER-PARTITIONED design: each consuming section owns its own `cap_coverage/section_NN.rs::CONTRIBUTION` with `covered` and `exempt` slices. Section 08 owns `cap_coverage/section_08.rs`. The keyboard-cap half of the matrix is split: kf1-kf63 (covered via `expand_kf_caps()` helper in `cap_coverage/mod.rs`) and the modified arrow / Home / End / editing key family kLFT/kRIT/kUP/kDN/kEND/kHOM/kIC/kDC/kNXT/kPRV with mod-param suffixes (covered via `expand_modified_key_caps()` helper) are exempted by the iterator-built expansion in `cap_coverage::exempt_caps()` — Section 08 MUST move those into `CONTRIBUTION.covered` (see subsection 08.6). The named cursor / editing keys (kcub1/kcud1/kcuf1/kcuu1, khome/kend/kpp/knp, kdch1/kich1, kbs) currently live in `cap_coverage/section_08.rs::CONTRIBUTION.exempt` — Section 08's subsection 08.6 MUST move them OUT of `exempt` and INTO `covered` once the keyboard tests land. EXCEPTION: `kmous` (mouse prefix \\E[M) does NOT go through key_encoding::encode_key and must stay in `exempt` with an updated reason — it is not a keyboard cap (cohesion review fix). Section 05.5's stale-exemption negative pin (caps appearing in BOTH any section's `covered` AND any section's `exempt`) fires loudly if a cap appears in both, forcing the cleanup."
@@ -27,55 +27,55 @@ inspired_by:
   - "ncurses infocmp(1) man page — capability extraction syntax"
 depends_on: ["01", "02", "05"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-09
 sections:
   - id: "08.1"
     title: "infocmp_dump/infocmp_query helpers in oriterm_test_support"
     status: complete
   - id: "08.2"
     title: "Function key tests (kf1-kf63)"
-    status: not-started
+    status: complete
   - id: "08.3"
     title: "Cursor key tests (rmkx + smkx modes)"
-    status: not-started
+    status: complete
   - id: "08.4"
     title: "Editing/navigation key tests (kbs, khome, kend, kpp, knp, kdch1, kich1)"
-    status: not-started
+    status: complete
   - id: "08.5"
     title: "Modified key tests (kLFT, kRIT, kUP, kDN, kHOM, kEND, kIC, kDC, kNXT, kPRV with modifier suffixes)"
-    status: not-started
+    status: complete
   - id: "08.6"
     title: "Cap-coverage extension (section_08.rs sync)"
-    status: not-started
+    status: complete
   - id: "08.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "08.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 08: Keyboard / Function Key Tests
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Validate that ori_term's `key_encoding::encode_key` produces byte sequences that exactly match what `extra/ori_term.info` declares for each function/cursor/editing key. This catches the silent class of bugs where the terminfo claims `kf1=\EOP` but encode_key emits `\E[11~` (or vice versa) — the symptom is "F1 doesn't work in vim under ori_term", and the root cause is a divergence between the terminfo declaration and the application's actual key encoder. After this section, every key in the terminfo is mechanically verified to round-trip.
 
 **Success Criteria:**
 
-- [ ] **Preferred in-crate directory path:** `oriterm/src/key_encoding/terminfo_xcheck/` directory module exists with `mod.rs`, `function_keys.rs`, `navigation.rs`, `modified_keys.rs` as a `#[cfg(test)] mod terminfo_xcheck;` submodule of `oriterm/src/key_encoding/mod.rs`, leaving `pub(crate) mod key_encoding;` unchanged in `oriterm/src/lib.rs:17`. Fallback `oriterm/tests/keyboard_terminfo.rs` integration test target is only created if the in-crate path is blocked (documented in 08.R).
-- [ ] `oriterm_test_support::infocmp_query(env: &TerminfoEnv, term: &str, cap: &str) -> Option<String>` exists and returns the raw cap value (or None if unset)
-- [ ] All function keys F1-F12 in normal mode (no modifiers) tested
-- [ ] All function keys F1-F12 in shift, control, and alt modifier combinations tested where ori_term encodes them
-- [ ] All cursor keys (Up/Down/Left/Right) tested in both rmkx (normal) and smkx (application) modes
-- [ ] All editing keys (Backspace, Delete, Insert, Home, End, PgUp, PgDn) tested
-- [ ] Home/End normal mode CSI encoding verified (parity with cursor_keys_normal_mode_emit_csi)
-- [ ] All 62 modified-key caps tested (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV base + suffixes 3-7, plus kind/kri)
-- [ ] All infocmp-dependent tests skip cleanly when `tic`/`infocmp` are unavailable; pure encoder tests run unconditionally on all platforms
-- [ ] `timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck` passes (preferred in-crate path)
-- [ ] 10 consecutive runs of the `terminfo_xcheck` test group all pass (determinism gate)
-- [ ] cap_coverage/section_08.rs CONTRIBUTION updated: all tested caps in `covered`, only `kmous` in `exempt`
-- [ ] Satisfies mission criterion #13 (keyboard tests)
+- [x] **Preferred in-crate directory path:** `oriterm/src/key_encoding/terminfo_xcheck/` directory module exists with `mod.rs`, `function_keys.rs`, `navigation.rs`, `modified_keys.rs` as a `#[cfg(test)] mod terminfo_xcheck;` submodule of `oriterm/src/key_encoding/mod.rs`, leaving `pub(crate) mod key_encoding;` unchanged in `oriterm/src/lib.rs:17`. Fallback `oriterm/tests/keyboard_terminfo.rs` integration test target is only created if the in-crate path is blocked (documented in 08.R).
+- [x] `oriterm_test_support::infocmp_query(env: &TerminfoEnv, term: &str, cap: &str) -> Option<String>` exists and returns the raw cap value (or None if unset)
+- [x] All function keys F1-F12 in normal mode (no modifiers) tested
+- [x] All function keys F1-F12 in shift, control, and alt modifier combinations tested where ori_term encodes them
+- [x] All cursor keys (Up/Down/Left/Right) tested in both rmkx (normal) and smkx (application) modes
+- [x] All editing keys (Backspace, Delete, Insert, Home, End, PgUp, PgDn) tested
+- [x] Home/End normal mode CSI encoding verified (parity with cursor_keys_normal_mode_emit_csi)
+- [x] All 62 modified-key caps tested (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV base + suffixes 3-7, plus kind/kri)
+- [x] All infocmp-dependent tests skip cleanly when `tic`/`infocmp` are unavailable; pure encoder tests run unconditionally on all platforms
+- [x] `timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck` passes (preferred in-crate path)
+- [x] 10 consecutive runs of the `terminfo_xcheck` test group all pass (determinism gate)
+- [x] cap_coverage/section_08.rs CONTRIBUTION updated: all tested caps in `covered`, only `kmous` in `exempt`
+- [x] Satisfies mission criterion #13 (keyboard tests)
 
 **Context:** Function key encoding is a notorious source of "works on the keyboard, breaks in vim/less/htop" bugs. The chain is:
 1. User presses F1
@@ -401,23 +401,23 @@ The table-driven pattern the original draft used (`const F_KEYS_BASE: &[CapMappi
 
 The new submodule reads each `kfN` cap from the pinned terminfo, constructs a `KeyInput` for the corresponding F-key + modifier combo, calls `encode_key`, and asserts the produced bytes match the terminfo declaration.
 
-- [ ] **Add submodule declaration.** At the bottom of `oriterm/src/key_encoding/mod.rs`, alongside the existing `#[cfg(test)] mod tests;` declaration (line 228), add:
+- [x] **Add submodule declaration.** At the bottom of `oriterm/src/key_encoding/mod.rs`, alongside the existing `#[cfg(test)] mod tests;` declaration (line 228), add:
   ```rust
   #[cfg(test)]
   mod terminfo_xcheck;
   ```
   The file already has `#[cfg(test)] mod tests;` -- two `#[cfg(test)] mod` declarations in the same file is valid Rust. Place the new declaration immediately after the existing one. Verify `pub(crate) mod key_encoding;` in `oriterm/src/lib.rs:17` stays UNCHANGED -- the in-crate approach does not require the visibility promotion.
 
-- [ ] **Create directory module structure.** Per the file layout above (Finding 5 — 500-line split), create `oriterm/src/key_encoding/terminfo_xcheck/` as a directory with `mod.rs`, `function_keys.rs`, `navigation.rs`, `modified_keys.rs`. The `mod.rs` declares `mod function_keys; mod navigation; mod modified_keys;` and contains the shared `CapMapping` struct, `assert_encoded_matches_terminfo` helper, and shared imports. Each leaf file contains its domain-specific tables and test functions.
+- [x] **Create directory module structure.** Per the file layout above (Finding 5 — 500-line split), create `oriterm/src/key_encoding/terminfo_xcheck/` as a directory with `mod.rs`, `function_keys.rs`, `navigation.rs`, `modified_keys.rs`. The `mod.rs` declares `mod function_keys; mod navigation; mod modified_keys;` and contains the shared `CapMapping` struct, `assert_encoded_matches_terminfo` helper, and shared imports. Each leaf file contains its domain-specific tables and test functions.
 
-- [ ] **Super-import discipline.** With the directory module layout:
+- [x] **Super-import discipline.** With the directory module layout:
   - `terminfo_xcheck/mod.rs` uses `use super::{encode_key, KeyInput, KeyEventType, Modifiers};` — one `super::` reaches `key_encoding/mod.rs`.
   - Leaf files (`function_keys.rs`, `navigation.rs`, `modified_keys.rs`) use `use super::{CapMapping, assert_encoded_matches_terminfo};` to reach shared items in `terminfo_xcheck/mod.rs`, and `use super::super::{encode_key, KeyInput, KeyEventType, Modifiers};` to reach `key_encoding/mod.rs` items (or re-export them from `terminfo_xcheck/mod.rs` with `pub(super) use super::{...};` so leaf files just use `super::`).
   - No `use oriterm::key_encoding::...` — the files ARE inside `key_encoding`, so `super::` is the correct path.
   - For items from `oriterm_core` (`TermMode`), use the full crate path `use oriterm_core::TermMode;`.
   - For items from `oriterm_test_support` (`TerminfoEnv`, `infocmp_dump`, `decode_terminfo_string`, `tic_available`, `infocmp_available`), use `use oriterm_test_support::{...};` — the dev-dependency added in Section 01.4 makes the crate visible inside `#[cfg(test)]` modules anywhere in `oriterm`.
 
-- [ ] Create `oriterm/src/key_encoding/terminfo_xcheck/mod.rs`:
+- [x] Create `oriterm/src/key_encoding/terminfo_xcheck/mod.rs`:
   ```rust
   //! Cross-check ori_term's key_encoding pipeline against the pinned
   //! terminfo entry. For each function/cursor/editing cap declared in
@@ -581,7 +581,7 @@ The new submodule reads each `kfN` cap from the pinned terminfo, constructs a `K
 
   **Note on `NamedKey::F13`-`F24`:** if ori_term encodes keys above F12, add those mappings too. Inspect `oriterm/src/key_encoding/legacy.rs` and `kitty.rs` for the supported range. The terminfo declares kf1-kf63 historically — many of those (kf13-kf63) are modified F1-F12 sequences (`kf13 = Shift+F1`, etc.), not separate physical keys.
 
-- [ ] Add modified F-key tests (Shift+F1, Ctrl+F1, etc.). Each table is fully enumerated — NO `// ...` elisions. The ranges match xterm's terminfo entry (`infocmp xterm-256color | grep '^[ \t]*kf' | sort`) and must be reproduced verbatim:
+- [x] Add modified F-key tests (Shift+F1, Ctrl+F1, etc.). Each table is fully enumerated — NO `// ...` elisions. The ranges match xterm's terminfo entry (`infocmp xterm-256color | grep '^[ \t]*kf' | sort`) and must be reproduced verbatim:
   ```rust
   // kf13..kf24 = Shift+F1..F12 (xterm convention)
   static F_KEYS_SHIFTED: &[CapMapping] = &[
@@ -742,7 +742,7 @@ The new submodule reads each `kfN` cap from the pinned terminfo, constructs a `K
 
 Cursor keys differ between normal mode (rmkx, sequences like `\E[A`) and application mode (smkx, sequences like `\EOA`). Test BOTH modes.
 
-- [ ] Add to `terminfo_xcheck/navigation.rs`:
+- [x] Add to `terminfo_xcheck/navigation.rs`:
   ```rust
   /// Cursor keys in normal (rmkx) mode.
   /// Note: terminfo doesn't have separate caps for normal vs app mode
@@ -812,7 +812,7 @@ Cursor keys differ between normal mode (rmkx, sequences like `\E[A`) and applica
 
 **File(s):** `oriterm/src/key_encoding/terminfo_xcheck/navigation.rs` (extend)
 
-- [ ] Add to `terminfo_xcheck/navigation.rs`:
+- [x] Add to `terminfo_xcheck/navigation.rs`:
   ```rust
   static EDITING_KEYS: &[CapMapping] = &[
       CapMapping { cap: "kbs",   named: NamedKey::Backspace, mods: Modifiers::empty(), term_mode: TermMode::empty() },
@@ -843,7 +843,7 @@ Cursor keys differ between normal mode (rmkx, sequences like `\E[A`) and applica
 
   **Normal-mode Home/End parity (REQUIRED):** Like cursor keys (08.3), Home and End have different encodings in normal mode (`\E[H` / `\E[F`) vs application mode (`\EOH` / `\EOF`). The terminfo declares the application-mode form (`khome`/`kend`), so the `EDITING_KEYS` table correctly uses `TermMode::APP_CURSOR`. Add the following test to `terminfo_xcheck/navigation.rs`:
 
-- [ ] Add `editing_keys_normal_mode_emit_csi` test:
+- [x] Add `editing_keys_normal_mode_emit_csi` test:
   ```rust
   /// Home/End in normal (non-APP_CURSOR) mode — verify encode_key
   /// produces the standard CSI sequence, not the application SS3 form.
@@ -893,7 +893,7 @@ The modifier suffix → `Modifiers` mapping follows xterm convention:
 
 The two special caps `kind` and `kri` are ncurses aliases for Shift+Down and Shift+Up (equivalent to `kDN` and `kUP` respectively).
 
-- [ ] Add modifier mapping helper to `terminfo_xcheck/mod.rs` (shared across leaf files):
+- [x] Add modifier mapping helper to `terminfo_xcheck/mod.rs` (shared across leaf files):
   ```rust
   /// Map xterm modifier suffix to Modifiers bitset.
   /// The base caps (kLFT, kRIT, etc.) without a digit suffix use
@@ -928,7 +928,7 @@ The two special caps `kind` and `kri` are ncurses aliases for Shift+Down and Shi
   }
   ```
 
-- [ ] Add modified key cross-check test to `terminfo_xcheck/modified_keys.rs`:
+- [x] Add modified key cross-check test to `terminfo_xcheck/modified_keys.rs`:
   ```rust
   #[test]
   fn modified_keys_match_terminfo() {
@@ -1034,9 +1034,9 @@ The two special caps `kind` and `kri` are ncurses aliases for Shift+Down and Shi
 
 **Post-08.5 verification gate (runs after ALL test subsections 08.1-08.5 land):**
 
-- [ ] **TPR checkpoint** — `/tpr-review` covering 08.1-08.5. Catches: `infocmp_dump` parsing bugs (multi-line cap values, boolean vs string vs numeric disambiguation), `decode_terminfo_string` edge cases, `KeyInput` field mismatches with the current `key_encoding::mod.rs`, modifier-to-kfN mapping wrong against xterm convention, modified-key suffix-to-Modifiers mapping errors.
+- [x] **TPR checkpoint** — `/tpr-review` covering 08.1-08.5. Catches: `infocmp_dump` parsing bugs (multi-line cap values, boolean vs string vs numeric disambiguation), `decode_terminfo_string` edge cases, `KeyInput` field mismatches with the current `key_encoding::mod.rs`, modifier-to-kfN mapping wrong against xterm convention, modified-key suffix-to-Modifiers mapping errors.
 
-- [ ] **Run all keyboard tests.** The preferred in-crate sibling location puts these tests in the `oriterm` crate's unit-test target, so the `--test` flag selects by test-function-name prefix, not by integration target name:
+- [x] **Run all keyboard tests.** The preferred in-crate sibling location puts these tests in the `oriterm` crate's unit-test target, so the `--test` flag selects by test-function-name prefix, not by integration target name:
   ```
   timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck
   ```
@@ -1044,7 +1044,7 @@ The two special caps `kind` and `kri` are ncurses aliases for Shift+Down and Shi
 
   **Fallback command** (only if the integration-test fallback was taken): `timeout 150 cargo test -p oriterm --test keyboard_terminfo`.
 
-- [ ] **Negative pin -- infocmp_query returns None for undeclared caps.** Add a test that asserts `infocmp_query` returns `None` for a cap name that `extra/ori_term.info` does NOT declare. This ensures the infocmp parsing helper itself is correct (it doesn't hallucinate caps) and that the `assert_encoded_matches_terminfo` loop's short-circuit path fires for absent caps. Note: this does NOT assert that `encode_key` refuses to produce bytes for keys without terminfo cap names -- `encode_key` validly produces sequences for key combinations beyond the `kf1`-`kf63` terminfo namespace (e.g., modifier combos that xterm encodes but terminfo cannot name):
+- [x] **Negative pin -- infocmp_query returns None for undeclared caps.** Add a test that asserts `infocmp_query` returns `None` for a cap name that `extra/ori_term.info` does NOT declare. This ensures the infocmp parsing helper itself is correct (it doesn't hallucinate caps) and that the `assert_encoded_matches_terminfo` loop's short-circuit path fires for absent caps. Note: this does NOT assert that `encode_key` refuses to produce bytes for keys without terminfo cap names -- `encode_key` validly produces sequences for key combinations beyond the `kf1`-`kf63` terminfo namespace (e.g., modifier combos that xterm encodes but terminfo cannot name):
   ```rust
   #[test]
   fn infocmp_query_returns_none_for_cap_not_in_ori_term() {
@@ -1058,7 +1058,7 @@ The two special caps `kind` and `kri` are ncurses aliases for Shift+Down and Shi
   ```
   This is the semantic-pin test that ONLY passes when the terminfo source does not declare `kf64`. It validates the infocmp parsing path, not the encoder's key coverage.
 
-- [ ] **Determinism gate (10 reruns).** Key encoding is deterministic by construction, but the infocmp subprocess call and the TerminfoEnv temp-dir compile path are shared with Sections 02-07. Run the full `terminfo_xcheck` test group 10 times in a row:
+- [x] **Determinism gate (10 reruns).** Key encoding is deterministic by construction, but the infocmp subprocess call and the TerminfoEnv temp-dir compile path are shared with Sections 02-07. Run the full `terminfo_xcheck` test group 10 times in a row:
   ```
   for i in $(seq 1 10); do
       timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck || break
@@ -1066,14 +1066,14 @@ The two special caps `kind` and `kri` are ncurses aliases for Shift+Down and Shi
   ```
   All 10 must pass. Any failure -> file `/add-bug` immediately and treat as a blocker.
 
-- [ ] **Both `--test-threads` modes.** Run with `--test-threads=1` and `--test-threads=4`:
+- [x] **Both `--test-threads` modes.** Run with `--test-threads=1` and `--test-threads=4`:
   ```
   timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck -- --test-threads=1
   timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck -- --test-threads=4
   ```
   Both must pass. Parallel runs surface `TerminfoEnv` temp-dir collision bugs (each call must use its own `tempfile::TempDir`).
 
-- [ ] **Debug + release parity.** Run the test group in release mode to catch any optimizer-sensitive divergence:
+- [x] **Debug + release parity.** Run the test group in release mode to catch any optimizer-sensitive divergence:
   ```
   timeout 150 cargo test -p oriterm --release key_encoding::terminfo_xcheck
   ```
@@ -1089,22 +1089,22 @@ After subsections 08.1-08.5 land, the cap-coverage matrix must be updated to ref
 
 **CRITICAL — `kmous` disposition:** `kmous=\E[M` is the mouse encoding prefix. It does NOT go through `key_encoding::encode_key` and cannot be cross-checked by the keyboard terminfo_xcheck tests. Section 08 is NOT the right place to test `kmous` -- mouse encoding lives in a different subsystem (mouse reporting / `oriterm_core` or `oriterm_mux` input path). `kmous` must be moved from `section_08.rs::CONTRIBUTION.exempt` to whichever section actually tests mouse input encoding, OR it must remain in `exempt` with an updated reason pointing to the correct future owner. Do NOT move it to `covered` without an actual test -- that would create a false coverage claim.
 
-- [ ] **Move named cursor + editing keys to `covered`.** Update `section_08.rs::CONTRIBUTION`:
+- [x] **Move named cursor + editing keys to `covered`.** Update `section_08.rs::CONTRIBUTION`:
   - Move `kcub1`, `kcud1`, `kcuf1`, `kcuu1`, `khome`, `kend`, `kpp`, `knp`, `kdch1`, `kich1`, `kbs` from `exempt` to `covered`. These are all tested by 08.3 (cursor), 08.4 (editing), and 08.5 (modified keys via their base forms).
   - Do NOT move `kmous` to `covered` -- update its `exempt` reason to: `"mouse encoding prefix \\E[M — not testable via key_encoding::encode_key; belongs to mouse input subsystem (future roadmap section)"`.
 
-- [ ] **Move kf1-kf63 + modified-key family to `covered`.** Remove the iterator-built exemptions from `cap_coverage::exempt_caps()` in `crates/oriterm_test_support/src/tack_framework/cap_coverage/mod.rs` and move coverage tracking to `section_08.rs` using a programmatic approach:
+- [x] **Move kf1-kf63 + modified-key family to `covered`.** Remove the iterator-built exemptions from `cap_coverage::exempt_caps()` in `crates/oriterm_test_support/src/tack_framework/cap_coverage/mod.rs` and move coverage tracking to `section_08.rs` using a programmatic approach:
   - Add a `pub fn covered_caps_08() -> Vec<String>` method to `section_08.rs` that returns the union of the static `CONTRIBUTION.covered` entries (cursor + editing keys from the first bullet) with `expand_kf_caps()` and `expand_modified_key_caps()` results. This avoids a 136-entry static slice.
   - Update `cap_coverage::covered_caps()` in `mod.rs` to call `section_08::covered_caps_08()` and insert those entries alongside the static `CONTRIBUTION.covered` entries from other sections. The current `for contrib in ALL_CONTRIBUTIONS { for cap in contrib.covered { ... } }` loop stays for sections 05/06; section 08's programmatic extension is added after it.
   - Remove the `expand_kf_caps()` and `expand_modified_key_caps()` calls from `exempt_caps()` — they are no longer exemptions.
   - Verify the stale-exemption negative pin does not fire (no cap in both covered and exempt across any section).
 
-- [ ] **Run `tack_cap_coverage_matrix` and confirm zero stale exemptions.** The negative pin fires on any cap in both `covered` and `exempt` across all sections:
+- [x] **Run `tack_cap_coverage_matrix` and confirm zero stale exemptions.** The negative pin fires on any cap in both `covered` and `exempt` across all sections:
   ```
   timeout 150 cargo test -p oriterm_core --test tack tack_cap_coverage_matrix
   ```
 
-- [ ] **Update `section_08.rs` doc comment** to reflect that Section 08 has landed and `covered` is populated.
+- [x] **Update `section_08.rs` doc comment** to reflect that Section 08 has landed and `covered` is populated.
 
 ---
 
@@ -1112,51 +1112,52 @@ After subsections 08.1-08.5 land, the cap-coverage matrix must be updated to ref
 
 <!-- Reserved for Codex or other external reviewers. -->
 
-- None.
+- [x] `[TPR-08-001][low]` `oriterm/src/key_encoding/terminfo_xcheck/navigation.rs:11`, `oriterm/src/key_encoding/terminfo_xcheck/navigation.rs:69` — The new Section 08 navigation test module uses decorative banner comments (`// ── ... ──`), which violates `.claude/rules/code-hygiene.md`'s "Never: Decorative banners" rule.
+  Resolved: Fixed on 2026-04-09. Replaced decorative `// ── ... ──` banners with plain `// Section name` section labels.
 
 ---
 
 ## 08.N Completion Checklist
 
-- [ ] **PREFERRED path taken:** `oriterm/src/lib.rs:17` stays as `pub(crate) mod key_encoding;` (NO visibility promotion). `#[cfg(test)] mod terminfo_xcheck;` declaration added at the bottom of `oriterm/src/key_encoding/mod.rs`.
-- [ ] `oriterm/src/key_encoding/terminfo_xcheck/` directory module exists with `mod.rs` (shared types + helpers), `function_keys.rs`, `navigation.rs`, `modified_keys.rs`. Each file under 500 lines. `super::` imports for `encode_key`, `KeyInput`, `KeyEventType`, `Modifiers`.
-- [ ] **Count pins in every table-driven test** — each test asserts `tested == TABLE.len()` (or a known constant) after the loop. No silent skips. `assert_encoded_matches_terminfo` panics on missing caps (not returns early).
-- [ ] (Fallback only — document only if taken:) If the preferred path is blocked, `oriterm/src/lib.rs:17` is promoted to `pub mod key_encoding;` and `oriterm/tests/keyboard_terminfo.rs` integration test target is created instead. This fallback is NOT taken unless explicitly documented with rationale in 08.R.
+- [x] **PREFERRED path taken:** `oriterm/src/lib.rs:17` stays as `pub(crate) mod key_encoding;` (NO visibility promotion). `#[cfg(test)] mod terminfo_xcheck;` declaration added at the bottom of `oriterm/src/key_encoding/mod.rs`.
+- [x] `oriterm/src/key_encoding/terminfo_xcheck/` directory module exists with `mod.rs` (shared types + helpers), `function_keys.rs`, `navigation.rs`, `modified_keys.rs`. Each file under 500 lines. `super::` imports for `encode_key`, `KeyInput`, `KeyEventType`, `Modifiers`.
+- [x] **Count pins in every table-driven test** — each test asserts `tested == TABLE.len()` (or a known constant) after the loop. No silent skips. `assert_encoded_matches_terminfo` panics on missing caps (not returns early).
+- [x] (Fallback NOT taken — preferred in-crate path works.) `oriterm/src/lib.rs:17` unchanged.
 - [x] `infocmp_dump(env, term) -> Option<HashMap<String, String>>` implemented in `oriterm_test_support` (parse-once approach)
 - [x] `infocmp_query(env, term, cap) -> Option<String>` implemented as convenience wrapper around `infocmp_dump`
 - [x] `decode_terminfo_string(s) -> Vec<u8>` implemented and unit-tested
-- [ ] `function_keys_match_terminfo` test covers F1-F12 unmodified (kf1-kf12)
-- [ ] `function_keys_shift_match_terminfo` test covers Shift+F1-F12 (kf13-kf24)
-- [ ] `function_keys_ctrl_match_terminfo` test covers Ctrl+F1-F12 (kf25-kf36)
-- [ ] `function_keys_ctrl_shift_match_terminfo` test covers Ctrl+Shift+F1-F12 (kf37-kf48)
-- [ ] `function_keys_alt_match_terminfo` test covers Alt+F1-F12 (kf49-kf60)
-- [ ] `function_keys_alt_shift_match_terminfo` test covers Alt+Shift+F1-F3 (kf61-kf63)
-- [ ] `cursor_keys_app_mode_match_terminfo` test covers kcub1/kcud1/kcuf1/kcuu1
-- [ ] `cursor_keys_normal_mode_emit_csi` test verifies normal-mode CSI encoding
-- [ ] `editing_keys_match_terminfo` test covers kbs, khome (app mode), kend (app mode), kpp, knp, kdch1, kich1
-- [ ] `editing_keys_normal_mode_emit_csi` test verifies Home emits `\E[H` and End emits `\E[F` in normal mode (parity with `cursor_keys_normal_mode_emit_csi`)
-- [ ] `modified_keys_match_terminfo` test covers all 62 modified-key caps (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV base + suffixes 3-7, plus kind/kri)
-- [ ] `infocmp_query_returns_none_for_cap_not_in_ori_term` negative pin test passes — asserts that querying an undeclared cap (`kf64`) returns `None`
-- [ ] **Cap-coverage extension (subsection 08.6).** All items in 08.6 complete: named cursor/editing keys moved to `covered`, kf1-kf63 + modified-key family moved to `covered`, `kmous` remains in `exempt` with updated reason, `tack_cap_coverage_matrix` green, `section_08.rs` doc comment updated.
-- [ ] All tests pass deterministically (10 consecutive runs of `cargo test -p oriterm key_encoding::terminfo_xcheck`)
-- [ ] Both `--test-threads=1` and `--test-threads=4` runs pass (surfaces `TerminfoEnv` tempdir collision bugs)
-- [ ] Debug + release parity: `cargo test -p oriterm --release key_encoding::terminfo_xcheck` produces same results as debug
-- [ ] Infocmp-dependent tests skip cleanly when `tic`/`infocmp` are unavailable (runtime gate, not `#[cfg(unix)]`)
-- [ ] Pure encoder tests (`cursor_keys_normal_mode_emit_csi`, `editing_keys_normal_mode_emit_csi`) run unconditionally on all platforms including Windows — no tic/infocmp gate
-- [ ] Cross-compile for `x86_64-pc-windows-gnu` succeeds
-- [ ] Any divergences between encoder output and terminfo declarations resolved (in favor of the encoder OR the terminfo, whichever is correct — document the choice)
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `timeout 150 ./test-all.sh` green
-- [ ] Plan annotation cleanup
-- [ ] All TPR checkpoint findings resolved (see `08.R`)
-- [ ] **Plan sync**:
-  - [ ] Section frontmatter `status` → `complete`
-  - [ ] `00-overview.md` Quick Reference table updated
-  - [ ] `00-overview.md` Mission Success Criteria #13 (keyboard tests) ticked
-  - [ ] `index.md` Section 08 status updated
-  - [ ] `section-09-verification.md` depends_on includes `"08"` (already present — verify not removed)
-- [ ] `/tpr-review` final pass clean
+- [x] `function_keys_match_terminfo` test covers F1-F12 unmodified (kf1-kf12)
+- [x] `function_keys_shift_match_terminfo` test covers Shift+F1-F12 (kf13-kf24)
+- [x] `function_keys_ctrl_match_terminfo` test covers Ctrl+F1-F12 (kf25-kf36)
+- [x] `function_keys_ctrl_shift_match_terminfo` test covers Ctrl+Shift+F1-F12 (kf37-kf48)
+- [x] `function_keys_alt_match_terminfo` test covers Alt+F1-F12 (kf49-kf60)
+- [x] `function_keys_alt_shift_match_terminfo` test covers Alt+Shift+F1-F3 (kf61-kf63)
+- [x] `cursor_keys_app_mode_match_terminfo` test covers kcub1/kcud1/kcuf1/kcuu1
+- [x] `cursor_keys_normal_mode_emit_csi` test verifies normal-mode CSI encoding
+- [x] `editing_keys_match_terminfo` test covers kbs, khome (app mode), kend (app mode), kpp, knp, kdch1, kich1
+- [x] `editing_keys_normal_mode_emit_csi` test verifies Home emits `\E[H` and End emits `\E[F` in normal mode (parity with `cursor_keys_normal_mode_emit_csi`)
+- [x] `modified_keys_match_terminfo` test covers all 62 modified-key caps (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV base + suffixes 3-7, plus kind/kri)
+- [x] `infocmp_query_returns_none_for_cap_not_in_ori_term` negative pin test passes — asserts that querying an undeclared cap (`kf64`) returns `None`
+- [x] **Cap-coverage extension (subsection 08.6).** All items in 08.6 complete: named cursor/editing keys moved to `covered`, kf1-kf63 + modified-key family moved to `covered`, `kmous` remains in `exempt` with updated reason, `tack_cap_coverage_matrix` green, `section_08.rs` doc comment updated.
+- [x] All tests pass deterministically (10 consecutive runs of `cargo test -p oriterm key_encoding::terminfo_xcheck`)
+- [x] Both `--test-threads=1` and `--test-threads=4` runs pass (surfaces `TerminfoEnv` tempdir collision bugs)
+- [x] Debug + release parity: `cargo test -p oriterm --release key_encoding::terminfo_xcheck` produces same results as debug
+- [x] Infocmp-dependent tests skip cleanly when `tic`/`infocmp` are unavailable (runtime gate, not `#[cfg(unix)]`)
+- [x] Pure encoder tests (`cursor_keys_normal_mode_emit_csi`, `editing_keys_normal_mode_emit_csi`) run unconditionally on all platforms including Windows — no tic/infocmp gate
+- [x] Cross-compile for `x86_64-pc-windows-gnu` succeeds
+- [x] No divergences found — encoder output and terminfo declarations agree byte-for-byte on all caps
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `timeout 150 ./test-all.sh` green
+- [x] Plan annotation cleanup
+- [x] All TPR checkpoint findings resolved (see `08.R` — TPR-08-001 fixed)
+- [x] **Plan sync**:
+  - [x] Section frontmatter `status` → `complete`
+  - [x] `00-overview.md` Quick Reference table updated
+  - [x] `00-overview.md` Mission Success Criteria #13 (keyboard tests) ticked
+  - [x] `index.md` Section 08 status updated
+  - [x] `section-09-verification.md` depends_on includes `"08"` (already present — verified)
+- [x] `/tpr-review` final pass clean (1 low finding — TPR-08-001 decorative banners — fixed and resolved)
 - [ ] `/impl-hygiene-review last commit` final pass clean (after TPR)
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm key_encoding::terminfo_xcheck` passes (preferred in-crate sibling path). Every function key across the full `kf1`-`kf63` terminfo namespace (F1-F12 base + Shift = kf13-kf24 + Ctrl = kf25-kf36 + Ctrl+Shift = kf37-kf48 + Alt = kf49-kf60 + Alt+Shift = kf61-kf63), every cursor key in app mode (kcub1/kcud1/kcuf1/kcuu1) AND normal-mode CSI encoding, every editing key (kbs, khome, kend, kpp, knp, kdch1, kich1), and every modified key (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with modifier suffixes 3-7, plus kind/kri) round-trips between `key_encoding::encode_key` and the pinned terminfo. Any divergence found during section work has been resolved with documented rationale. 10 consecutive runs of the test set all pass (determinism gate), both `--test-threads=1` and `--test-threads=4` pass (parallelism gate). Cross-compile for `x86_64-pc-windows-gnu` succeeds with the test body runtime-skipping on Windows. The terminfo and the encoder agree byte-for-byte. Cap-coverage matrix (`tack_cap_coverage_matrix`) passes with all Section 08 keyboard caps in `covered` and only `kmous` remaining in `exempt` (mouse prefix, not key encoding).
