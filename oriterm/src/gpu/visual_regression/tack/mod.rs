@@ -12,9 +12,9 @@
 //!
 //! Skip cases (prints `skipped: <reason>` via eprintln and returns
 //! without running the test):
+//!   - tack not installed, tic not installed, or tack version
+//!     unsupported (via `ScenarioRunner::available()`)
 //!   - GPU adapter unavailable (no compatible wgpu backend)
-//!   - tack not installed
-//!   - tic not installed (TerminfoEnv::compile would panic)
 //!
 //! All three skip conditions are consolidated into
 //! [`run_tack_scenario_golden`] — per-test functions do NOT scatter
@@ -25,7 +25,6 @@ use oriterm_test_support::tack_framework::scenarios::color::TACK_COLOR;
 use oriterm_test_support::tack_framework::scenarios::graphic_rendition::TACK_GRAPHIC_RENDITION_SGR;
 use oriterm_test_support::tack_framework::scenarios::modes::TACK_MODES_AM;
 use oriterm_test_support::tack_framework::{ScenarioRunner, ScenarioSpec};
-use oriterm_test_support::{tack_available, tic_available};
 
 use super::frame_input_helper::frame_input;
 use super::{compare_with_reference, headless_env, render_to_pixels};
@@ -34,8 +33,9 @@ use super::{compare_with_reference, headless_env, render_to_pixels};
 /// rendered framebuffer matches a committed PNG golden.
 ///
 /// This function owns the ENTIRE skip gate:
-///   - `tack_available()` — else `eprintln` + return
-///   - `tic_available()` — else `eprintln` + return
+///   - `ScenarioRunner::available()` — else `eprintln` + return
+///     (includes `tack_available()`, `tic_available()`, and
+///     `tack_version_supported()` via the canonical gate)
 ///   - `headless_env()` — else `eprintln` + return
 ///
 /// Per-test wrappers MUST NOT call `headless_env()` directly.
@@ -62,12 +62,8 @@ use super::{compare_with_reference, headless_env, render_to_pixels};
 /// the exit-status assertion. A `Drop`-based `finish` would trigger
 /// Rust's panic-during-drop abort semantics on the double-failure path.
 fn run_tack_scenario_golden(spec: &ScenarioSpec, cols: u16, rows: u16) {
-    if !tack_available() {
-        eprintln!("skipped: tack not installed");
-        return;
-    }
-    if !tic_available() {
-        eprintln!("skipped: tic not installed");
+    if !ScenarioRunner::available() {
+        eprintln!("skipped: tack/tic not installed or tack version unsupported");
         return;
     }
     let Some((gpu, pipelines, mut renderer)) = headless_env() else {

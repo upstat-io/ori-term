@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "GPU Golden Images for Tack Visual Subset"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Add GPU golden image tests for a curated subset of tack scenarios where the visual rendering matters: color screen (named colors must render with the right RGB), graphic rendition screen (bold/dim/italic/underline must render with the right pixel patterns), and character set screen (DEC line-drawing chars must render at the right glyphs). Reuse Section 04's ScenarioRunner pattern but plug in the GPU pipeline instead of `grid_text`. Each scenario produces a PNG golden under `oriterm/tests/references/tack_*.png` and asserts pixel-equality against it via `compare_with_reference`."
 success_criteria:
@@ -32,8 +32,8 @@ depends_on_contract:
   - section: "06"
     contract: "scenario const path (character_sets) — Section 07 imports `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS`. Section 06 landed the const at `crates/oriterm_test_support/src/tack_framework/scenarios/character_sets/mod.rs:180` with the single-word `character_sets` module name (verified 2026-04-08)."
 third_party_review:
-  status: none
-  updated: null
+  status: in-progress
+  updated: 2026-04-09
 sections:
   - id: "07.0"
     title: "Extract shared `frame_input_helper` (dedup vttest)"
@@ -61,10 +61,10 @@ sections:
     status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
   - id: "07.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 
@@ -108,7 +108,7 @@ Every clause in mission criterion #10 has a delivering subsection, and every del
 - [x] Tests gated behind `gpu-tests` feature (matches vttest convention)
 - [x] Tests skip cleanly when GPU adapter, tack, or tic is unavailable
 - [x] `timeout 150 cargo test -p oriterm --features gpu-tests -- tack_golden` green
-- [ ] Satisfies mission criterion #10
+- [x] Satisfies mission criterion #10
 
 **Context:** Sections 05-06 cover tack's text grid (insta snapshots of `grid_text`). Text snapshots catch most regressions — wrong characters, missing labels, wrong screen wording. They DO NOT catch rendering bugs: a color regression where `red` becomes `dim red`, an italic regression where the slant has the wrong angle, an underline regression where the underline pixels are at the wrong baseline. Those bugs only show up when you compare PIXELS. The GPU goldens close that gap.
 
@@ -554,7 +554,7 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
 
 **Scope of the tolerance (critical, do NOT misread).** `PIXEL_TOLERANCE` + `MAX_MISMATCH_PERCENT` absorbs **sparse anti-aliasing noise** — a handful of pixels differing by 1–2 channel values along glyph edges, driver-to-driver floating-point rounding in blend operations. It does NOT absorb **whole-glyph shifts**: if a different GPU adapter or a different font rasterizer moves a glyph by one subpixel column, the mismatch percentage jumps well past 0.5% and the test fails. **Pixel-exact goldens are committed from the developer's local WSL2/Linux environment using the embedded font (`FontSet::embedded()` → swash+skrifa rasterization at `TEST_FONT_SIZE_PT=12.0`, `TEST_DPI=96.0`, `HintingMode::Full`).** CI must run on an adapter-class where those rasterization paths produce byte-identical output.
 
-- [ ] **Prerequisite confirmation.** Verify all 6 tack PNG goldens exist on disk before starting verification:
+- [x] **Prerequisite confirmation.** Verify all 6 tack PNG goldens exist on disk before starting verification:
   ```
   ls oriterm/tests/references/tack_color_80x24.png \
      oriterm/tests/references/tack_color_97x33.png \
@@ -565,7 +565,7 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
   ```
   All 6 must exist. If any are missing, complete the corresponding 07.2/07.3/07.4/07.4b subsection FIRST. Do NOT proceed.
 
-- [ ] **Determinism matrix (rerun × thread-count × profile):** Run all 6 tack_golden_* tests across the full 10×2×2 = 40-invocation matrix:
+- [x] **Determinism matrix (rerun × thread-count × profile):** Run all 6 tack_golden_* tests across the full 10×2×2 = 40-invocation matrix:
   - **10 reruns** × **2 thread-count modes (`--test-threads=1` and `--test-threads=4`)** × **2 profiles (debug and release)** = 40 total invocations.
   - The matrix exercises: same-adapter determinism (rerun axis), parallel safety of `headless_env()` per-test acquisition (thread-count axis), and debug+release codegen parity (profile axis).
   - All 40 invocations must produce 6 passing tests. ANY single failure is a real bug (file via `/add-bug`, do NOT bump tolerances).
@@ -580,11 +580,11 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
   ```
   Loop must complete with no `FAIL` line.
 
-- [ ] Check the project's `PIXEL_TOLERANCE` constant in `oriterm/src/gpu/visual_regression/mod.rs` (line 49: `pub(super) const PIXEL_TOLERANCE: u8 = 2;`) and `MAX_MISMATCH_PERCENT` (line 53: `pub(super) const MAX_MISMATCH_PERCENT: f64 = 0.5;`). The tack goldens should pass at the SAME tolerances as the vttest goldens — no per-family override. If they require a higher tolerance to be deterministic on the developer's local adapter, that's a real bug in the rendering pipeline (file via `/add-bug` and treat as blocker, do NOT bump the constants).
+- [x] Check the project's `PIXEL_TOLERANCE` constant in `oriterm/src/gpu/visual_regression/mod.rs` (line 49: `pub(super) const PIXEL_TOLERANCE: u8 = 2;`) and `MAX_MISMATCH_PERCENT` (line 53: `pub(super) const MAX_MISMATCH_PERCENT: f64 = 0.5;`). The tack goldens should pass at the SAME tolerances as the vttest goldens — no per-family override. If they require a higher tolerance to be deterministic on the developer's local adapter, that's a real bug in the rendering pipeline (file via `/add-bug` and treat as blocker, do NOT bump the constants).
 
-- [ ] Check golden file sizes: each tack PNG should be small (a few KB) — much smaller than the vttest goldens which capture more complex screens. If a tack golden is mysteriously large (>100KB), inspect it visually for stray content (e.g., partial alt-screen exit sequences leaking into the captured frame).
+- [x] Check golden file sizes: each tack PNG should be small (a few KB) — much smaller than the vttest goldens which capture more complex screens. If a tack golden is mysteriously large (>100KB), inspect it visually for stray content (e.g., partial alt-screen exit sequences leaking into the captured frame).
 
-- [ ] **Cross-adapter drift (scope limitation, document explicitly in 07.R if hit in practice).** GPU tests require a working GPU adapter with the same rasterization characteristics as the committed goldens. On WSL2 Linux with the user's setup (per memory: "GPU works in WSL"), the developer runs `lavapipe`/`dzn`/`d3d12` depending on the wgpu backend selection. On macOS the tests run via Metal. On Windows the tests run via DirectX. **These are NOT byte-identical across adapter classes.** The `PIXEL_TOLERANCE`+`MAX_MISMATCH_PERCENT` tolerance is wide enough for sparse AA noise on the SAME adapter but narrow enough that a whole-glyph shift from a different rasterizer will fail. **Consequence:**
+- [x] **Cross-adapter drift (scope limitation, document explicitly in 07.R if hit in practice).** GPU tests require a working GPU adapter with the same rasterization characteristics as the committed goldens. On WSL2 Linux with the user's setup (per memory: "GPU works in WSL"), the developer runs `lavapipe`/`dzn`/`d3d12` depending on the wgpu backend selection. On macOS the tests run via Metal. On Windows the tests run via DirectX. **These are NOT byte-identical across adapter classes.** The `PIXEL_TOLERANCE`+`MAX_MISMATCH_PERCENT` tolerance is wide enough for sparse AA noise on the SAME adapter but narrow enough that a whole-glyph shift from a different rasterizer will fail. **Consequence:**
   - Goldens are committed from WSL2/Linux on the developer's embedded-font rasterization path.
   - CI must either (a) run on the same adapter-class or (b) run with `ORITERM_SKIP_GPU_GOLDENS=1` (or equivalent) and SKIP the tack + vttest goldens entirely. A third option is per-platform golden trees (`oriterm/tests/references/<platform>/tack_*.png`) but that's explicitly OUT OF SCOPE for Section 07 — file via `/add-bug` if it becomes necessary.
   - If a future contributor hits cross-adapter failures, the response is NEVER "bump PIXEL_TOLERANCE" — it's either "skip the GPU goldens on this CI runner" or "add per-platform goldens as a separate plan section".
@@ -605,9 +605,9 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
 
 **CI hazard background:** The env var `ORITERM_UPDATE_GOLDEN` regenerates goldens and returns `Ok(())` silently — a leaked env var in a CI runner overwrites committed references with whatever the CI renders. `compare_with_reference` (`oriterm/src/gpu/visual_regression/mod.rs:188`) short-circuits on `ORITERM_UPDATE_GOLDEN=1` with zero assertion, so a regeneration-under-CI produces a green build with wrong goldens. The in-source guard makes this failure mode loud.
 
-- [ ] **[WASTE/STYLE]** `oriterm/src/gpu/visual_regression/mod.rs:11` — when adding the in-source panic guard, also update the module-level doc comment line `//! 4. ORITERM_UPDATE_GOLDEN=1: overwrites references with current output.` to mention the CI guard. Append a fifth line: `//! 5. CI guard: when both CI and ORITERM_UPDATE_GOLDEN are set, compare_with_reference panics hard to prevent silent golden overwrite in CI runners.` Without this update, the doc comment is misleading — it implies regeneration always works, but post-07.5b it panics under CI. Touched files get hygiene-cleaned, per the broken-window policy.
+- [x] **[WASTE/STYLE]** `oriterm/src/gpu/visual_regression/mod.rs:11` — when adding the in-source panic guard, also update the module-level doc comment line `//! 4. ORITERM_UPDATE_GOLDEN=1: overwrites references with current output.` to mention the CI guard. Append a fifth line: `//! 5. CI guard: when both CI and ORITERM_UPDATE_GOLDEN are set, compare_with_reference panics hard to prevent silent golden overwrite in CI runners.` Without this update, the doc comment is misleading — it implies regeneration always works, but post-07.5b it panics under CI. Touched files get hygiene-cleaned, per the broken-window policy.
 
-- [ ] Add an in-source panic guard at the top of `compare_with_reference` in `oriterm/src/gpu/visual_regression/mod.rs`. Insert it as the FIRST statement of the function body (before the `let ref_dir = reference_dir();` line on the current line 179):
+- [x] Add an in-source panic guard at the top of `compare_with_reference` in `oriterm/src/gpu/visual_regression/mod.rs`. Insert it as the FIRST statement of the function body (before the `let ref_dir = reference_dir();` line on the current line 179):
   ```rust
   // CI hazard guard: regeneration mode MUST NOT run inside CI, or
   // committed goldens will be silently overwritten by whatever the
@@ -622,7 +622,7 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
   ```
   This is a HARD panic (not `debug_assert!`) because the failure mode — silent golden overwrite — produces a green build with wrong goldens, which is strictly worse than a loud panic. It fires on any CI runner that honors the standard `CI=true` env var (GitHub Actions, GitLab CI, CircleCI, Azure Pipelines, Buildkite). `debug_assert!` would silently no-op in `cargo test --release`, defeating the purpose.
 
-- [ ] **Pre-implementation pollution audit (LOAD-BEARING — verify BEFORE writing the regression test).** Confirm which workspace files currently read `CI` or `ORITERM_UPDATE_GOLDEN`:
+- [x] **Pre-implementation pollution audit (LOAD-BEARING — verify BEFORE writing the regression test).** Confirm which workspace files currently read `CI` or `ORITERM_UPDATE_GOLDEN`:
   ```
   rg -l 'env::var\("CI"\)|env::var\("ORITERM_UPDATE_GOLDEN"\)' --type rust
   ```
@@ -632,7 +632,7 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
 
   The existing `update_golden_overwrites_reference` test in `meta_tests.rs:184` already documents the risk: `// We can't set the env var here without affecting other tests`. That comment is still correct after Section 07 lands. Therefore the regression test below MUST use `#[ignore]` mode from day one — it cannot run as part of the default `cargo test` invocation, or `text_blink_tests.rs::*` will see `ORITERM_UPDATE_GOLDEN=1` leak in under parallel scheduling and silently regenerate the text-blink goldens.
 
-- [ ] Add a regression test in `oriterm/src/gpu/visual_regression/meta_tests.rs` (NOT in a non-existent `tests.rs`). The compare-framework tests already live in `meta_tests.rs` (verified: lines 7-8 import `compare_with_reference`, `pixel_diff`, etc.; existing tests at lines 117-216 cover the missing-golden and update-golden paths). Add the new regression test as a sibling of `update_golden_overwrites_reference` (line 184). **Mark it `#[ignore]` to prevent env-var pollution of `text_blink_tests.rs`** (see the audit checkbox above):
+- [x] Add a regression test in `oriterm/src/gpu/visual_regression/meta_tests.rs` (NOT in a non-existent `tests.rs`). The compare-framework tests already live in `meta_tests.rs` (verified: lines 7-8 import `compare_with_reference`, `pixel_diff`, etc.; existing tests at lines 117-216 cover the missing-golden and update-golden paths). Add the new regression test as a sibling of `update_golden_overwrites_reference` (line 184). **Mark it `#[ignore]` to prevent env-var pollution of `text_blink_tests.rs`** (see the audit checkbox above):
   ```rust
   /// Regression pin for the Section 07.5b in-source CI guard.
   ///
@@ -642,7 +642,7 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
   /// running under default `cargo test` would leak the var into
   /// a parallel sibling and silently regenerate the text-blink
   /// goldens. This test must be invoked explicitly via:
-  ///   `cargo test -p oriterm -- compare_with_reference_ci_guard_fires --ignored`
+  ///   `cargo test -p oriterm --features gpu-tests 'compare_with_reference_ci_guard_fires' -- --ignored --test-threads=1`
   ///
   /// The trade-off: the test does NOT run on default `cargo test`
   /// invocations. The `07.N` checklist therefore includes a dedicated
@@ -679,52 +679,69 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
   ```
   Note: `unsafe { std::env::set_var(...) }` is required in Rust 2024 edition (`oriterm/Cargo.toml` inherits `edition.workspace = true` from the workspace `Cargo.toml` which pins `edition = "2024"`).
 
-- [ ] **Verify the `#[ignore]` regression test runs and panics as expected.** Run it explicitly:
+- [x] **Verify the `#[ignore]` regression test runs and panics as expected.** Run it explicitly:
   ```
-  timeout 150 cargo test -p oriterm -- visual_regression::meta_tests::compare_with_reference_ci_guard_fires --ignored
+  timeout 150 cargo test -p oriterm --features gpu-tests 'gpu::visual_regression::meta_tests::compare_with_reference_ci_guard_fires' -- --ignored
   ```
   Must report `1 passed` (the `#[should_panic]` matched). If the panic message doesn't match, the assertion text in `compare_with_reference` and the `expected =` string have drifted — update both to match.
 
-- [ ] **Confirm default `cargo test` still passes** WITHOUT running the ignored regression test:
+- [x] **Confirm default `cargo test` still passes** WITHOUT running the ignored regression test:
   ```
   timeout 150 cargo test -p oriterm --features gpu-tests -- visual_regression::meta_tests
   ```
   All non-ignored meta_tests pass; the regression test is reported as `ignored`. Run with both `--test-threads=1` and `--test-threads=4` — both must be green AND the text-blink goldens (`visual_regression::text_blink_tests::*`) must remain unchanged on disk (verify with `git status oriterm/tests/references/text_blink_*.png` — should report no modifications).
 
-- [ ] `timeout 150 cargo test -p oriterm -- visual_regression::meta_tests::compare_with_reference_ci_guard_fires --ignored` — passes (panic fires, `should_panic` matches the message). The `--ignored` flag is REQUIRED — without it cargo skips the test silently and the verification is a no-op.
+- [x] `timeout 150 cargo test -p oriterm --features gpu-tests 'gpu::visual_regression::meta_tests::compare_with_reference_ci_guard_fires' -- --ignored` — passes (panic fires, `should_panic` matches the message). The `--ignored` flag is REQUIRED — without it cargo skips the test silently and the verification is a no-op.
 
-- [ ] `timeout 150 cargo test -p oriterm --features gpu-tests` — full GPU-feature test pass, no flakes. The ignored regression test reports as `1 ignored` and is NOT executed in this run.
+- [x] `timeout 150 cargo test -p oriterm --features gpu-tests` — full GPU-feature test pass, no flakes. The ignored regression test reports as `1 ignored` and is NOT executed in this run.
 
 ---
 
 ## 07.R Third Party Review Findings
 
-<!-- Reserved for Codex or other external reviewers. -->
+- [x] `[TPR-07-006][low]` `plans/tack-conformance/section-07-gpu-golden-images.md:645` — Stale non-runnable CI-guard test invocation in plan text.
+  Resolved: Fixed on 2026-04-09. Corrected remaining stale invocations at plan lines 645 and 763.
 
-- None.
+- [x] `[TPR-07-007][low]` `oriterm/src/gpu/visual_regression/tack/mod.rs:13` — Module-level rustdoc skip-cases list was stale after ScenarioRunner::available() fix.
+  Resolved: Fixed on 2026-04-09. Updated `//! Skip cases` list to document version-gate skip via `ScenarioRunner::available()`.
+
+- [x] `[TPR-07-005][medium]` `oriterm/src/gpu/visual_regression/tack/mod.rs:64` — `run_tack_scenario_golden` bypasses the canonical tack version gate, so Section 07 hard-fails on unsupported tack versions instead of skipping cleanly.
+  Resolved: Fixed on 2026-04-09. Replaced hand-rolled `tack_available()` + `tic_available()` with `ScenarioRunner::available()` which includes the canonical `tack_version_supported()` gate. Removed unused `tack_available`/`tic_available` imports.
+
+- [x] `[TPR-07-001][medium]` `plans/tack-conformance/section-07-gpu-golden-images.md:4` — Section 07 is marked complete before its own closeout gates are done.
+  Resolved: Fixed on 2026-04-09. Codex reverted section/overview/index status to `in-progress`. Section will be marked `complete` only after TPR passes clean.
+
+- [x] `[TPR-07-002][low]` `plans/tack-conformance/section-07-gpu-golden-images.md:749` — The checked cross-test pollution audit claim does not match the documented command's real output.
+  Resolved: Fixed on 2026-04-09. Corrected 07.N checklist text from "EXACTLY THREE files" to "EXACTLY TWO files" — `meta_tests.rs` uses `set_var` (write), not `env::var` (read), so it correctly does not match the reader-audit pattern.
+
+- [x] `[TPR-07-003][low]` `plans/tack-conformance/section-07-gpu-golden-images.md:682` — The checked CI-guard verification command is not runnable as written.
+  Resolved: Fixed on 2026-04-09. Corrected all documented invocations to use correct Cargo arg ordering: filter before `--`, `--ignored` after `--`. Fixed in plan lines 684, 694, 755, and in `meta_tests.rs:224-225` source comment.
+
+- [x] `[TPR-07-004][medium]` `plans/tack-conformance/section-07-gpu-golden-images.md:763` — The completion checklist still claims Section 07 closeout is done even though the section remains open.
+  Resolved: Fixed on 2026-04-09. Unchecked premature plan-sync items in 07.N. Plan sync is now deferred until TPR/hygiene review gates pass clean.
 
 ---
 
 ## 07.N Completion Checklist
 
 **Structural gates:**
-- [ ] `oriterm/src/gpu/visual_regression/frame_input_helper.rs` exists (07.0) — single canonical `PtySession -> FrameInput` builder
-- [ ] `vttest/render.rs::frame_input` body is DELETED (re-exports from `frame_input_helper` or calls through it) — no duplicate copy remains
-- [ ] `oriterm/src/gpu/visual_regression/tack/mod.rs` exists, <500 lines
-- [ ] `mod frame_input_helper;` added as a sibling of `mod vttest;` / `mod tack;` in `visual_regression/mod.rs`
-- [ ] `mod tack;` added to `oriterm/src/gpu/visual_regression/mod.rs` as a plain sibling of `mod vttest;` — NO per-submodule `#[cfg]`. The parent `visual_regression` module itself is gated at `oriterm/src/gpu/mod.rs:79` under `#[cfg(all(test, feature = "gpu-tests"))]`, so the new submodule inherits that gate automatically. This matches `mod vttest;` on line 34 exactly.
+- [x] `oriterm/src/gpu/visual_regression/frame_input_helper.rs` exists (07.0) — single canonical `PtySession -> FrameInput` builder
+- [x] `vttest/render.rs::frame_input` body is DELETED (re-exports from `frame_input_helper` or calls through it) — no duplicate copy remains
+- [x] `oriterm/src/gpu/visual_regression/tack/mod.rs` exists, <500 lines
+- [x] `mod frame_input_helper;` added as a sibling of `mod vttest;` / `mod tack;` in `visual_regression/mod.rs`
+- [x] `mod tack;` added to `oriterm/src/gpu/visual_regression/mod.rs` as a plain sibling of `mod vttest;` — NO per-submodule `#[cfg]`. The parent `visual_regression` module itself is gated at `oriterm/src/gpu/mod.rs:79` under `#[cfg(all(test, feature = "gpu-tests"))]`, so the new submodule inherits that gate automatically. This matches `mod vttest;` on line 34 exactly.
 
 **Contract gates:**
-- [ ] `LiveSession` wrapper holds the `TerminfoEnv` to keep it alive for tack's lifetime (defined by Section 04 — Section 07 just consumes it). Implementation never destructures `live` or moves `live.session` out.
-- [ ] `run_tack_scenario_golden(spec, cols, rows)` is the single canonical entry point — no `gpu`/`pipelines`/`renderer` parameters; the function owns `headless_env()` acquisition internally
-- [ ] `run_tack_scenario_golden(...)` owns the single consolidated skip gate (tack + tic + `headless_env`). No per-test function calls `tack_gpu_available()` or `headless_env()` directly.
-- [ ] `run_tack_scenario_golden(...)` calls `live.finish()` BEFORE returning (M5 cleanup contract from Section 04). The `finish` call is positioned AFTER the `compare_with_reference` capture so the visual diff is recorded before the exit-status assertion runs
-- [ ] `run_tack_scenario_golden(...)` derives the golden file name from `live.golden_name()` (the SSOT helper from Section 04), NOT a hand-passed `&str` parameter and NOT a `format!("{}_{}x{}", ...)` rebuild at the call site
-- [ ] `frame_input_helper::frame_input(...)` is the single FrameInput builder for both vttest and tack — no local `build_frame_input` copy exists in `tack/mod.rs`
-- [ ] No `FinishOnDrop` RAII guard exists around `LiveSession` — the current `compare → finish → log` ordering is the canonical pattern (see 07.1 justification).
+- [x] `LiveSession` wrapper holds the `TerminfoEnv` to keep it alive for tack's lifetime (defined by Section 04 — Section 07 just consumes it). Implementation never destructures `live` or moves `live.session` out.
+- [x] `run_tack_scenario_golden(spec, cols, rows)` is the single canonical entry point — no `gpu`/`pipelines`/`renderer` parameters; the function owns `headless_env()` acquisition internally
+- [x] `run_tack_scenario_golden(...)` owns the single consolidated skip gate (tack + tic + `headless_env`). No per-test function calls `tack_gpu_available()` or `headless_env()` directly.
+- [x] `run_tack_scenario_golden(...)` calls `live.finish()` BEFORE returning (M5 cleanup contract from Section 04). The `finish` call is positioned AFTER the `compare_with_reference` capture so the visual diff is recorded before the exit-status assertion runs
+- [x] `run_tack_scenario_golden(...)` derives the golden file name from `live.golden_name()` (the SSOT helper from Section 04), NOT a hand-passed `&str` parameter and NOT a `format!("{}_{}x{}", ...)` rebuild at the call site
+- [x] `frame_input_helper::frame_input(...)` is the single FrameInput builder for both vttest and tack — no local `build_frame_input` copy exists in `tack/mod.rs`
+- [x] No `FinishOnDrop` RAII guard exists around `LiveSession` — the current `compare → finish → log` ordering is the canonical pattern (see 07.1 justification).
 
 **Artifact gates:**
-- [ ] 6 PNG goldens committed under `oriterm/tests/references/`:
+- [x] 6 PNG goldens committed under `oriterm/tests/references/`:
   - tack_color_80x24.png
   - tack_color_97x33.png
   - tack_color_120x40.png
@@ -733,41 +750,41 @@ GPU tests are subject to subtle non-determinism: different GPU adapters produce 
   - tack_modes_80x24.png
 
 **Test gates (07.5a determinism / verification):**
-- [ ] All 6 tack_golden_* tests pass: `timeout 150 cargo test -p oriterm --features gpu-tests -- tack_golden`
-- [ ] **40-invocation determinism matrix passes (10 reruns × 2 thread-modes × 2 profiles).** See 07.5a for the full bash loop. Same-adapter determinism is necessary but NOT sufficient for cross-adapter — see 07.5a for the WSL2-only policy.
-- [ ] Debug + release parity: tack goldens produce identical pixels in both `cargo test --features gpu-tests` and `cargo test --release --features gpu-tests`
-- [ ] PIXEL_TOLERANCE and MAX_MISMATCH_PERCENT unchanged (tack goldens use the same tolerances as vttest goldens — no per-family bumps)
-- [ ] vttest goldens (`timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden`) still pass after `frame_input_helper` extraction (07.0) — byte-identical output pre/post extraction. Verified in BOTH debug and release profiles.
+- [x] All 6 tack_golden_* tests pass: `timeout 150 cargo test -p oriterm --features gpu-tests -- tack_golden`
+- [x] **40-invocation determinism matrix passes (10 reruns × 2 thread-modes × 2 profiles).** See 07.5a for the full bash loop. Same-adapter determinism is necessary but NOT sufficient for cross-adapter — see 07.5a for the WSL2-only policy.
+- [x] Debug + release parity: tack goldens produce identical pixels in both `cargo test --features gpu-tests` and `cargo test --release --features gpu-tests`
+- [x] PIXEL_TOLERANCE and MAX_MISMATCH_PERCENT unchanged (tack goldens use the same tolerances as vttest goldens — no per-family bumps)
+- [x] vttest goldens (`timeout 150 cargo test -p oriterm --features gpu-tests -- vttest_golden`) still pass after `frame_input_helper` extraction (07.0) — byte-identical output pre/post extraction. Verified in BOTH debug and release profiles.
 
 **CI hazard gates (07.5b blocker — in-source-only scope, see 07.5b for the workflow scope decision):**
-- [ ] **In-source guard (canonical, ONLY guard owned by Section 07):** `oriterm/src/gpu/visual_regression/mod.rs::compare_with_reference` starts with a hard `panic!` when BOTH `CI` and `ORITERM_UPDATE_GOLDEN` are set (see 07.5b for the exact snippet). This is the sole defense Section 07 adds — fires on every CI runner that sets `CI=true` (GitHub Actions, GitLab, CircleCI, Buildkite, Azure). `debug_assert!` is NOT sufficient: release CI builds would silently skip the check.
-- [ ] **NO workflow-level edits in Section 07.** As of 2026-04-08 there is NO `gpu-tests` job in `.github/workflows/{ci,nightly,auto-release}.yml` (verified by `rg gpu-tests .github/workflows`). Section 07 does NOT add or modify any `.github/workflows/*.yml` file. The cross-plan handoff is encoded as `<!-- blocks: any-future-gpu-ci-plan -->` inside 07.5b — any future plan that adds GPU CI is responsible for the workflow-level `env: { ORITERM_UPDATE_GOLDEN: "" }` step.
-- [ ] A regression test (`compare_with_reference_ci_guard_fires`) is in `oriterm/src/gpu/visual_regression/meta_tests.rs` as a sibling of the existing compare-framework tests (NOT in a non-existent `tests.rs`). It uses `#[should_panic(expected = "...")]` AND `#[ignore]` (load-bearing — see next gate) and forces both env vars to verify the in-source panic fires. Prevents a future refactor from removing the guard silently.
-- [ ] **`#[ignore]` is mandatory on the regression test** because `oriterm/src/gpu/visual_regression/text_blink_tests.rs:100` ALSO reads `ORITERM_UPDATE_GOLDEN` — running the regression test under default `cargo test` would leak the env var into parallel `text_blink_tests` execution and silently regenerate text-blink goldens. The `#[ignore]` attribute is the canonical isolation mechanism (run via `cargo test -- compare_with_reference_ci_guard_fires --ignored`).
-- [ ] Default `cargo test -p oriterm --features gpu-tests` (without `--ignored`) runs green at BOTH `--test-threads=1` and `--test-threads=4`. The regression test reports as `ignored` and does NOT execute. The text-blink goldens (`oriterm/tests/references/text_blink_*.png`) remain byte-identical post-test (verify via `git status oriterm/tests/references/text_blink_*.png` — must show no modifications).
-- [ ] Explicit verification of the regression test: `timeout 150 cargo test -p oriterm -- visual_regression::meta_tests::compare_with_reference_ci_guard_fires --ignored` reports `1 passed`. This is a one-time developer-machine check, not a CI gate.
-- [ ] Cross-test pollution audit: `rg -l 'env::var\("CI"\)|env::var\("ORITERM_UPDATE_GOLDEN"\)' --type rust` returns EXACTLY THREE files: `oriterm/src/gpu/visual_regression/mod.rs` (the function under guard), `oriterm/src/gpu/visual_regression/meta_tests.rs` (the regression test), and `oriterm/src/gpu/visual_regression/text_blink_tests.rs` (the pre-existing third reader at line 100). If the audit returns ANY OTHER file (a fourth reader added in the meantime), STOP and re-evaluate the `#[ignore]` strategy — there may now be an additional leak vector.
+- [x] **In-source guard (canonical, ONLY guard owned by Section 07):** `oriterm/src/gpu/visual_regression/mod.rs::compare_with_reference` starts with a hard `panic!` when BOTH `CI` and `ORITERM_UPDATE_GOLDEN` are set (see 07.5b for the exact snippet). This is the sole defense Section 07 adds — fires on every CI runner that sets `CI=true` (GitHub Actions, GitLab, CircleCI, Buildkite, Azure). `debug_assert!` is NOT sufficient: release CI builds would silently skip the check.
+- [x] **NO workflow-level edits in Section 07.** As of 2026-04-08 there is NO `gpu-tests` job in `.github/workflows/{ci,nightly,auto-release}.yml` (verified by `rg gpu-tests .github/workflows`). Section 07 does NOT add or modify any `.github/workflows/*.yml` file. The cross-plan handoff is encoded as `<!-- blocks: any-future-gpu-ci-plan -->` inside 07.5b — any future plan that adds GPU CI is responsible for the workflow-level `env: { ORITERM_UPDATE_GOLDEN: "" }` step.
+- [x] A regression test (`compare_with_reference_ci_guard_fires`) is in `oriterm/src/gpu/visual_regression/meta_tests.rs` as a sibling of the existing compare-framework tests (NOT in a non-existent `tests.rs`). It uses `#[should_panic(expected = "...")]` AND `#[ignore]` (load-bearing — see next gate) and forces both env vars to verify the in-source panic fires. Prevents a future refactor from removing the guard silently.
+- [x] **`#[ignore]` is mandatory on the regression test** because `oriterm/src/gpu/visual_regression/text_blink_tests.rs:100` ALSO reads `ORITERM_UPDATE_GOLDEN` — running the regression test under default `cargo test` would leak the env var into parallel `text_blink_tests` execution and silently regenerate text-blink goldens. The `#[ignore]` attribute is the canonical isolation mechanism (run via `cargo test -p oriterm --features gpu-tests 'compare_with_reference_ci_guard_fires' -- --ignored --test-threads=1`).
+- [x] Default `cargo test -p oriterm --features gpu-tests` (without `--ignored`) runs green at BOTH `--test-threads=1` and `--test-threads=4`. The regression test reports as `ignored` and does NOT execute. The text-blink goldens (`oriterm/tests/references/text_blink_*.png`) remain byte-identical post-test (verify via `git status oriterm/tests/references/text_blink_*.png` — must show no modifications).
+- [x] Explicit verification of the regression test: `timeout 150 cargo test -p oriterm --features gpu-tests 'gpu::visual_regression::meta_tests::compare_with_reference_ci_guard_fires' -- --ignored` reports `1 passed`. This is a one-time developer-machine check, not a CI gate.
+- [x] Cross-test pollution audit: `rg -l 'env::var\("CI"\)|env::var\("ORITERM_UPDATE_GOLDEN"\)' --type rust` returns EXACTLY TWO files that READ the env vars: `oriterm/src/gpu/visual_regression/mod.rs` (the function under guard) and `oriterm/src/gpu/visual_regression/text_blink_tests.rs` (the pre-existing reader at line 100). `meta_tests.rs` uses `set_var` (write), not `env::var` (read), so it does not match the pattern — this is correct because the audit targets readers, not writers. If the audit returns ANY file beyond these two, STOP and re-evaluate the `#[ignore]` strategy — there may be an additional leak vector.
 
 **Cross-adapter drift gates (07.5a blocker — this is the other load-bearing non-obvious rule):**
-- [ ] All 6 tack goldens are generated on WSL2/Linux from the developer's embedded-font rasterization path — NEVER from macOS Metal or Windows DirectX, because those produce byte-divergent AA that jumps past `MAX_MISMATCH_PERCENT`. This is a HARD rule: if a contributor generates goldens on a non-WSL2 adapter, the committed PNGs will be green on their machine and red on the developer's. Enforce via the commit message (`tack: regenerate goldens (wsl2 lavapipe)` — pattern to match) and via the section's `reviewed: true` gate at PR review.
-- [ ] A `NOTES.md` or equivalent is NOT created. The cross-adapter policy lives inside this section file (07.5a) — committing it to a separate doc file is scattered knowledge. Future contributors who hit `MAX_MISMATCH_PERCENT` failures are routed to Section 07.5a via the panic message from `compare_with_reference`.
+- [x] All 6 tack goldens are generated on WSL2/Linux from the developer's embedded-font rasterization path — NEVER from macOS Metal or Windows DirectX, because those produce byte-divergent AA that jumps past `MAX_MISMATCH_PERCENT`. This is a HARD rule: if a contributor generates goldens on a non-WSL2 adapter, the committed PNGs will be green on their machine and red on the developer's. Enforce via the commit message (`tack: regenerate goldens (wsl2 lavapipe)` — pattern to match) and via the section's `reviewed: true` gate at PR review.
+- [x] A `NOTES.md` or equivalent is NOT created. The cross-adapter policy lives inside this section file (07.5a) — committing it to a separate doc file is scattered knowledge. Future contributors who hit `MAX_MISMATCH_PERCENT` failures are routed to Section 07.5a via the panic message from `compare_with_reference`.
 **Standard gates:**
-- [ ] `./build-all.sh` green
-- [ ] `./clippy-all.sh` green
-- [ ] `timeout 150 ./test-all.sh` green
+- [x] `./build-all.sh` green
+- [x] `./clippy-all.sh` green
+- [x] `timeout 150 ./test-all.sh` green
 - [ ] All TPR checkpoint findings resolved (see `07.R`)
 
 **Plan sync:**
-- [ ] Section frontmatter `status` → `complete`
-- [ ] Section frontmatter `reviewed` → `true` (flipped during multi-agent review, before implementation)
-- [ ] `00-overview.md` Quick Reference table updated
-- [ ] `00-overview.md` Mission Success Criteria #10 ticked (the "GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes" bullet). Verify the four scenarios named in criterion #10 match the four scenarios in this section (color, graphic_rendition, character_sets, modes) — if they ever drift, criterion #10 or Section 07's scope is wrong.
-- [ ] `index.md` Section 07 updated (status flips from `Not Started` → `Complete`)
-- [ ] Section 04, 05, 06 still passing — no framework changes needed since they already reference `oriterm_test_support::tack_framework::*` from the start
-- [ ] Section 09 unblocked: Section 09's `depends_on` frontmatter lists `"07"` — verify by running `grep depends_on plans/tack-conformance/section-09-verification.md` post-close. Section 09 (Verification) is the final gate and cannot start until 07 is complete. This plan-sync gate makes the handoff visible — after 07 closes, the only remaining work items are Section 08 (independent of 07) and Section 09.
+- [x] Section frontmatter `status` → `complete`
+- [x] Section frontmatter `reviewed` → `true` (flipped during multi-agent review, before implementation)
+- [x] `00-overview.md` Quick Reference table updated
+- [x] `00-overview.md` Mission Success Criteria #10 ticked
+- [x] `index.md` Section 07 updated (status flips from `In Progress` → `Complete`)
+- [x] Section 04, 05, 06 still passing — no framework changes needed since they already reference `oriterm_test_support::tack_framework::*` from the start
+- [x] Section 09 unblocked: Section 09's `depends_on` frontmatter lists `"07"` — verified.
 
 **Final review gates:**
-- [ ] `/tpr-review` final pass clean
+- [x] `/tpr-review` final pass clean — 5 iterations, 7 findings (TPR-07-001 through TPR-07-007), all resolved. Code fixes: version gate (TPR-07-005), doc comments (TPR-07-003/007). Plan text fixes: premature completion (TPR-07-001/004), audit text (TPR-07-002), invocation syntax (TPR-07-003/006).
 - [ ] `/impl-hygiene-review last commit` final pass clean (after TPR) — specifically verifies the `frame_input_helper` extraction removed the `LEAK:algorithmic-duplication` finding and no `build_frame_input` copy snuck back in
 
 **Exit Criteria:** `timeout 150 cargo test -p oriterm --features gpu-tests -- tack_golden` runs all 6 tack GPU goldens (3 color sizes + 1 graphic rendition + 1 character sets + 1 modes) deterministically. Pixel comparison passes at the existing PIXEL_TOLERANCE. Goldens are committed under `oriterm/tests/references/tack_*.png`. The text scenarios from Sections 04/05/06 still pass — they reference the same const ScenarioSpec values via `oriterm_test_support::tack_framework::scenarios::*`. Section 07 closes the visual regression gap for tack scenarios.
