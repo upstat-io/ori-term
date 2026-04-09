@@ -4,7 +4,10 @@ use std::time::Instant;
 
 use portable_pty::CommandBuilder;
 
-use super::{ORI_TERM_INFO, TerminfoEnv, TerminfoVariant, infocmp_respects_terminfo_env};
+use super::{
+    ORI_TERM_INFO, TerminfoEnv, TerminfoVariant, decode_terminfo_string, infocmp_dump,
+    infocmp_query, infocmp_respects_terminfo_env,
+};
 use crate::{infocmp_available, tic_available};
 
 /// SSOT for the 02.4 round-trip-suite skip gate.
@@ -690,4 +693,96 @@ fn infocmp_env_precedence_probe_returns_false_when_tools_missing() {
             "probe must return false when tic or infocmp is missing"
         );
     }
+}
+
+// Section 08.1 — decode_terminfo_string tests
+
+#[test]
+fn decode_terminfo_string_handles_esc() {
+    assert_eq!(decode_terminfo_string("\\EOP"), b"\x1bOP");
+}
+
+#[test]
+fn decode_terminfo_string_handles_esc_bracket() {
+    assert_eq!(decode_terminfo_string("\\E[A"), b"\x1b[A");
+}
+
+#[test]
+fn decode_terminfo_string_handles_control_caret() {
+    assert_eq!(decode_terminfo_string("^?"), &[0x7f]); // DEL
+    assert_eq!(decode_terminfo_string("^H"), &[0x08]); // BS
+    assert_eq!(decode_terminfo_string("^A"), &[0x01]); // SOH
+}
+
+#[test]
+fn decode_terminfo_string_handles_octal() {
+    assert_eq!(decode_terminfo_string("\\033"), &[0x1b]); // ESC
+}
+
+#[test]
+fn decode_terminfo_string_handles_special_escapes() {
+    assert_eq!(decode_terminfo_string("\\r"), b"\r");
+    assert_eq!(decode_terminfo_string("\\n"), b"\n");
+    assert_eq!(decode_terminfo_string("\\t"), b"\t");
+    assert_eq!(decode_terminfo_string("\\\\"), b"\\");
+    assert_eq!(decode_terminfo_string("\\s"), b" ");
+}
+
+#[test]
+fn decode_terminfo_string_handles_plain_ascii() {
+    assert_eq!(decode_terminfo_string("abc"), b"abc");
+}
+
+#[test]
+fn decode_terminfo_string_handles_combined_sequences() {
+    // \E[15~ is a typical function key sequence
+    assert_eq!(decode_terminfo_string("\\E[15~"), b"\x1b[15~");
+    // \EOA is application-mode cursor up
+    assert_eq!(decode_terminfo_string("\\EOA"), b"\x1bOA");
+}
+
+// Section 08.1 — infocmp_query / infocmp_dump tests
+
+#[test]
+fn infocmp_query_returns_none_for_missing_cap() {
+    if !tic_available() || !infocmp_available() {
+        return;
+    }
+    let env = TerminfoEnv::compile();
+    assert_eq!(
+        infocmp_query(&env, "ori_term", "completely_made_up_cap_xyz"),
+        None
+    );
+}
+
+#[test]
+fn infocmp_query_extracts_kf1() {
+    if !tic_available() || !infocmp_available() {
+        return;
+    }
+    let env = TerminfoEnv::compile();
+    let kf1 = infocmp_query(&env, "ori_term", "kf1");
+    assert!(kf1.is_some(), "ori_term must declare kf1");
+    let raw = decode_terminfo_string(&kf1.unwrap());
+    assert_eq!(raw[0], 0x1b, "kf1 should start with ESC");
+    assert!(raw.len() >= 2, "kf1 should be at least 2 bytes");
+}
+
+#[test]
+fn infocmp_dump_returns_populated_map() {
+    if !tic_available() || !infocmp_available() {
+        return;
+    }
+    let env = TerminfoEnv::compile();
+    let caps = infocmp_dump(&env, "ori_term").expect("infocmp dump should succeed for ori_term");
+    assert!(caps.contains_key("kf1"), "dump should contain kf1");
+    assert!(
+        caps.contains_key("am"),
+        "dump should contain boolean cap am"
+    );
+    assert!(
+        caps.contains_key("colors"),
+        "dump should contain numeric cap colors"
+    );
+    assert!(!caps.contains_key("completely_made_up_xyz"));
 }

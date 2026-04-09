@@ -30,4 +30,7 @@ pub use tack_framework::{
     grid_has_token, grid_line_starts_with, is_unverified_anchor, is_unverified_menu_key,
     unverified_anchor, unverified_menu_key,
 };
-pub use terminfo::{TerminfoEnv, TerminfoVariant, infocmp_respects_terminfo_env};
+pub use terminfo::{
+    TerminfoEnv, TerminfoVariant, decode_terminfo_string, infocmp_dump, infocmp_query,
+    infocmp_respects_terminfo_env,
+};
