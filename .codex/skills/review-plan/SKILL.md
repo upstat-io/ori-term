@@ -140,14 +140,18 @@ The review is not complete until you have checked the plan against the repositor
 Always read:
 
 - `CLAUDE.md`
-- `.claude/rules/tests.md`
-- `.claude/rules/compiler.md`
-- `.claude/rules/impl-hygiene.md`
-- `.claude/rules/roadmap.md`
+- `.claude/rules/impl-hygiene.md` — SSOT / canonical homes / finding categories (LEAK, DRIFT, GAP, WASTE, EXPOSURE, BLOAT, NOTE)
+- `.claude/rules/code-hygiene.md` — file organization, error handling, formatting, function size, public-API discipline
+- `.claude/rules/tests.md` — matrix testing, interaction testing, cross-platform verification, performance invariants, mandatory 150s test timeout
+- `.claude/rules/test-organization.md` — sibling `tests.rs` pattern
+- `.claude/rules/crate-boundaries.md` — per-crate ownership and allowed dependency direction
+- Every per-crate rule file under `.claude/rules/oriterm*.md` whose `paths:` glob covers any file the plan will touch
 
-Also read every file under `.claude/rules/*.md` before finalizing conclusions. Prioritize rules
-that match the plan's touched domains first, but the final review must account for the full rule
-set, marking non-applicable rules as such in your own reasoning rather than silently skipping them.
+Also read every file under `.claude/rules/*.md` before finalizing conclusions. Run `ls .claude/rules/*.md`
+if you're unsure of the current inventory — the list evolves as new per-crate rule files land.
+Prioritize rules that match the plan's touched domains first, but the final review must account for
+the full rule set, marking non-applicable rules as such in your own reasoning rather than silently
+skipping them.
 
 ### 4. Spec And Plan Context
 

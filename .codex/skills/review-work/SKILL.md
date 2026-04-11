@@ -171,14 +171,18 @@ The review is not complete until you have checked the work against the repositor
 Always read:
 
 - `CLAUDE.md`
-- `.claude/rules/tests.md`
-- `.claude/rules/compiler.md`
-- `.claude/rules/impl-hygiene.md`
-- `.claude/rules/roadmap.md`
+- `.claude/rules/impl-hygiene.md` — SSOT / canonical homes / finding categories (LEAK, DRIFT, GAP, WASTE, EXPOSURE, BLOAT, NOTE)
+- `.claude/rules/code-hygiene.md` — file organization, error handling, formatting, function size, public-API discipline
+- `.claude/rules/tests.md` — matrix testing, interaction testing, cross-platform verification, performance invariants, mandatory 150s test timeout
+- `.claude/rules/test-organization.md` — sibling `tests.rs` pattern
+- `.claude/rules/crate-boundaries.md` — per-crate ownership and allowed dependency direction
+- Every per-crate rule file under `.claude/rules/oriterm*.md` whose `paths:` glob covers any changed file (`oriterm_core.md`, `oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`)
 
-Also read every file under `.claude/rules/*.md` before finalizing findings. Prioritize rules that
-match the changed paths or domain first, but the final review must account for the full rule set,
-marking non-applicable rules as such in your own reasoning rather than silently skipping them.
+Also read every file under `.claude/rules/*.md` before finalizing findings. Run `ls .claude/rules/*.md`
+if you're unsure of the current inventory — the list evolves as new per-crate rule files land.
+Prioritize rules that match the changed paths or domain first, but the final review must account
+for the full rule set, marking non-applicable rules as such in your own reasoning rather than
+silently skipping them.
 
 ### 4. Plan Context
 
@@ -333,16 +337,20 @@ When no new findings exist:
 
 If no owning plan section can be identified:
 
-- file findings in `plans/bug-tracker/` under the appropriate subsystem section
-- subsystem mapping:
-  - `ori_parse`/`ori_lexer` → `section-01-parser-lexer.md`
-  - `ori_types` → `section-02-typeck.md`
-  - `ori_eval`/`ori_patterns` → `section-03-eval.md`
-  - `ori_llvm`/`ori_arc` → `section-04-codegen-llvm.md`
-  - `ori_rt` → `section-05-runtime-arc.md`
-  - `library/std`/`ori_registry` → `section-06-stdlib.md`
-  - `oric`/`ori_fmt`/`ori_diagnostic` → `section-07-tooling-cli.md`
-  - `docs/`/`.claude/`/`plans/` → `section-08-spec-docs.md`
+- file findings in `plans/bug-tracker/` under the appropriate subsystem section. Read `plans/bug-tracker/00-overview.md` to discover the authoritative section list (it evolves — never hardcode section names here).
+- subsystem mapping by ori_term crate ownership (as of this writing — verify against `plans/bug-tracker/00-overview.md`):
+  - `oriterm_ui/src/widgets/` → section covering UI Widgets
+  - Settings dialog → section covering Settings Dialog
+  - `oriterm_ui/src/window_root/`, `interaction/`, `pipeline/`, `animation/` → section covering UI Framework
+  - `oriterm/src/font/` → section covering Fonts
+  - `oriterm/src/config/` → section covering Config
+  - `oriterm/src/gpu/` (cached render path, compositor, atlas, perf invariants) → section covering Rendering & Perf
+  - `.github/`, `build-all.sh`, `test-all.sh`, `clippy-all.sh` → section covering CI & Build
+  - `oriterm_core/` (grid, VTE, reflow, selection, search, teseq/tack/vttest) → section covering Core Terminal
+  - `oriterm/src/session/` (tabs, split trees, floating, nav) → section covering Session
+  - `#[cfg(windows)]` branches, ConPTY → section covering Platform Windows
+  - `oriterm_mux/`, `oriterm_ipc/` → section covering Mux & Pane I/O
+  - `docs/`, `.claude/`, `plans/` → file under whichever section has the closest topic
 - use the bug-tracker format:
   ```md
   - [ ] `[BUG-{section}-{ordinal}][{severity}]` **{Short title}** — found by review-work.

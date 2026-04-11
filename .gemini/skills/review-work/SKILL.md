@@ -174,39 +174,42 @@ will pass the schema validator on the first try.
     "files_read": [
       "CLAUDE.md",
       ".claude/rules/impl-hygiene.md",
+      ".claude/rules/code-hygiene.md",
       ".claude/rules/tests.md",
-      "crates/$1/src/lower/iter.rs",
+      ".claude/rules/crate-boundaries.md",
+      ".claude/rules/oriterm.md",
+      "oriterm/src/gpu/window_renderer/render.rs",
       "..."
     ],
     "rules_consulted": [
       ".claude/rules/impl-hygiene.md",
-      ".claude/rules/arc.md"
+      ".claude/rules/oriterm.md"
     ],
     "specs_consulted": [
-      "docs/spec/clause-19-iterators.md"
+      "https://www.w3.org/TR/webgpu/ (wgpu copy_texture_to_texture semantics)"
     ],
     "plans_consulted": [
-      "plans/dual-tpr-gemini/section-05-review-work.md"
+      "plans/roadmap/section-06-rendering-perf.md"
     ],
     "expanded_beyond_packet": true,
-    "expansion_reason": "Followed trait dispatch through to ori_registry to confirm the canonical home"
+    "expansion_reason": "Followed the render path through oriterm/src/gpu/ to confirm where the canonical damage-rect check lives"
   },
   "findings": [
     {
       "ordinal": 1,
       "severity": "high",
-      "location": "crates/$1/src/lower/iter.rs:218",
-      "title": "Add dec on early-exit branch of iterator loop",
-      "evidence": "On `break` inside `for x in iter do ...`, the iterator value's RC is never decremented before the loop exits, leaving a leaked reference on the remaining elements. Reproduced via `tests/valgrind/iter_break.ori`.",
-      "impact": "Memory leak on every early-exit iteration; severity scales with iterator payload size.",
-      "required_plan_update": "Add a `dec` emission to the early-exit branch in `ori_arc/src/lower/control_flow/for_loop.rs`; verify via `` on the matrix tests.",
+      "location": "oriterm/src/gpu/window_renderer/render.rs:218",
+      "title": "Clamp copy extent to destination size in render_frame_cached",
+      "evidence": "When the prepared viewport is larger than the surface texture target, copy_texture_to_texture is called with the source extent, which panics on size mismatch during interactive resize. Reproduced via oriterm/src/gpu/visual_regression/resize_stress.rs::resize_mid_frame.",
+      "impact": "GPU-thread panic during interactive resize; terminal window crashes.",
+      "required_plan_update": "Clamp the copy extent to min(source, destination) in render_frame_cached; verify via `cargo test -p oriterm --test resize_stress`.",
       "layer": "committed",
       "basis": "direct_file_inspection",
       "confidence": "high",
       "citations": [
         {
-          "url": "https://github.com/apple/swift/blob/main/lib/SILOptimizer/ARC/ARCContract.cpp",
-          "description": "Swift's equivalent arc contract pass, for cross-reference"
+          "url": "https://github.com/wezterm/wezterm/blob/main/wezterm-gui/src/termwindow/render.rs",
+          "description": "wezterm's equivalent cached-render copy pattern, for cross-reference"
         }
       ]
     }
@@ -214,10 +217,10 @@ will pass the schema validator on the first try.
   "no_findings": false,
   "verification": {
     "tests_rerun": [
-      "cargo test -p ori_arc aims::emit_rc::iter_break"
+      "cargo test -p oriterm --test resize_stress"
     ],
     "diagnostics_run": [
-      "./target/debug/ori run tests/valgrind/iter_break.ori"
+      "cargo run --target x86_64-pc-windows-gnu --release"
     ],
     "verification_gaps": []
   }
