@@ -31,10 +31,11 @@ When called with no arguments, the review autoscopes to the current "session of 
 > **Why no `/impl-hygiene-review last commit`**: a single-commit view is intentionally not supported as a scope. Real work spans multiple commits — a bug fix is often `tests + impl + plan update`, a feature is often `infra + integration + tests`, a refactor often touches several files across several commits. Reviewing only the last commit misses the cross-commit drift the review exists to catch. Use Auto Mode (no arguments) for the normal case, or `last N commits` for explicit narrow scoping when you genuinely want N=2 or N=3.
 
 ### Path Mode (explicit crate/directory targets)
-- `/impl-hygiene-review compiler/ori_lexer compiler/ori_parse` — review lexer→parser boundary
-- `/impl-hygiene-review compiler/ori_parse compiler/ori_types` — review parser→type-checker boundary
-- `/impl-hygiene-review compiler/ori_types` — review internal phase boundaries within a crate
-- `/impl-hygiene-review compiler/ori_arc` — review ARC pass composition
+- `/impl-hygiene-review oriterm_core oriterm_ui` — review terminal-emulation → UI-framework boundary
+- `/impl-hygiene-review oriterm_core/src/grid oriterm_core/src/term_handler.rs` — review grid/VTE internal boundaries
+- `/impl-hygiene-review oriterm_ui/src/widgets oriterm_ui/src/pipeline` — review widget → propagation pipeline boundary
+- `/impl-hygiene-review oriterm_mux/src/pane/io_thread` — review the pane IO thread's snapshot / reflow discipline
+- `/impl-hygiene-review oriterm/src/gpu` — review GPU render path (cached path, compositor, atlas)
 
 ### Commit Mode (use a commit range as a scope selector)
 - `/impl-hygiene-review last 3 commits` — review files touched by the last N commits (use when N is small and well-defined; for the active work arc, prefer Auto Mode)
@@ -42,33 +43,30 @@ When called with no arguments, the review autoscopes to the current "session of 
 - `/impl-hygiene-review <commit-A>..<commit-B>` — review the commit range
 
 ### Full Project Mode (landscape survey)
-- `/impl-hygiene-review full` — review the entire compiler across all crates and boundaries
+- `/impl-hygiene-review full` — review the entire workspace across all crates and boundaries
 - `/impl-hygiene-review full --focus=dry` — full review with emphasis on algorithmic duplication
 - `/impl-hygiene-review full --focus=leaks` — full review with emphasis on side logic and SSOT
 
-Full project mode is the widest sweep. It reviews every compiler crate, every phase boundary, all cross-crate interactions, and end-to-end pipeline flow. Use this when you want the complete landscape picture.
+Full project mode is the widest sweep. It reviews every workspace crate (`oriterm_core`, `oriterm_ui`, `oriterm_mux`, `oriterm_ipc`, `oriterm`, plus `crates/oriterm_test_support`), every crate-ownership boundary, all cross-crate interactions, and the full render-path / input-path / pane-lifecycle flows. Use this when you want the complete landscape picture.
 
 **CRITICAL: Commits are scope selectors, NOT content filters.** The commit determines WHICH files and areas to review. Once the files are identified, review them completely — report ALL hygiene findings in those files, regardless of whether the finding is "related to" or "caused by" the commit. The commit is a lens to focus on a region of the codebase, nothing more. Do NOT annotate findings with whether they relate to the commit. Do NOT deprioritize or exclude findings because they predate the commit.
 
 **Commit scoping procedure:**
 1. Use `git diff --name-only HEAD~N..HEAD` (or appropriate range) to get the list of changed `.rs` files
-2. Expand to include the full crate(s) those files belong to (e.g., if `crates/$1/src/derive.rs` was touched, include all of `crates/$1/`)
-3. **Dependency expansion**: Also include crates that *consume* the changed crate's public types or functions. If `ori_types` was changed, also expand to `ori_eval`, `ori_llvm`, `ori_arc` (its consumers). This catches boundary violations that the changed crate creates for its downstream consumers.
+2. Expand to include the full crate(s) those files belong to (e.g., if `oriterm_core/src/grid/mod.rs` was touched, include all of `oriterm_core/src/grid/`)
+3. **Dependency expansion**: Also include crates that *consume* the changed crate's public types or functions. The dependency direction is locked by `.claude/rules/crate-boundaries.md` — if `oriterm_core` changed, also expand to `oriterm_ui`, `oriterm_mux`, and `oriterm` (its consumers). This catches boundary violations that the changed crate creates for its downstream consumers.
 4. Proceed with the standard review process using those crates as the target
 
-**Dependency map for expansion:**
+**Dependency map for expansion** (canonical; same shape as `.claude/rules/crate-boundaries.md` §Allowed Dependency Direction):
 ```
-ori_lexer      → consumed by: ori_parse
-ori_parse      → consumed by: ori_types
-ori_ir         → consumed by: ori_types, ori_eval, ori_llvm, ori_arc
-ori_diagnostic → consumed by: all compiler crates
-ori_registry   → consumed by: ori_types, ori_eval, ori_llvm
-ori_types      → consumed by: ori_eval, ori_llvm, ori_arc
-ori_patterns   → consumed by: ori_eval
-ori_eval       → consumed by: oric
-ori_arc        → consumed by: ori_llvm
-ori_llvm       → consumed by: oric
-ori_rt         → consumed by: ori_llvm (FFI contract)
+oriterm_ipc              → consumed by: oriterm_mux, oriterm
+oriterm_core             → consumed by: oriterm_ui, oriterm_mux, oriterm
+oriterm_ui               → consumed by: oriterm
+oriterm_mux              → consumed by: oriterm
+crates/oriterm_test_support → consumed by: any crate's tests (dev-dep)
+crates/vte               → consumed by: oriterm_core (vendored patch)
+crates/portable-pty      → consumed by: oriterm_mux (vendored patch)
+crates/wgpu-hal          → consumed by: oriterm (vendored patch)
 ```
 
 ## Execution
@@ -131,8 +129,14 @@ The full rule set is embedded below (source of truth files — do not maintain s
 **Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
 @.claude/rules/impl-hygiene.md
 
-**Compiler Guidelines** (`.claude/rules/compiler.md`):
-@.claude/rules/compiler.md
+**Code Hygiene** (`.claude/rules/code-hygiene.md`):
+@.claude/rules/code-hygiene.md
+
+**Crate Boundaries** (`.claude/rules/crate-boundaries.md`):
+@.claude/rules/crate-boundaries.md
+
+**Test Organization** (`.claude/rules/test-organization.md`):
+@.claude/rules/test-organization.md
 
 #### 1b. Load Plan Context
 
@@ -181,10 +185,10 @@ Determine the distinct crates or phase boundaries to review based on the target 
 
 For full project mode or when 3+ crates are in scope, spawn an agent to trace the key data flows end-to-end through the pipeline:
 
-1. **Type flow**: How do types get defined (registry) → checked (ori_types) → evaluated (ori_eval) → compiled (ori_llvm)?
-2. **Method dispatch flow**: Where is the canonical dispatch table? How does a method call route from parse → typecheck → eval/codegen?
-3. **Error flow**: How do errors propagate across phase boundaries? Where do they get accumulated, deduplicated, formatted?
-4. **Memory/RC flow**: How do ownership decisions flow from AIMS analysis → ARC pass → codegen emission → runtime?
+1. **Cell flow**: How does a byte from the PTY become a rendered glyph? PTY read (`oriterm_mux`) → VTE parse (`oriterm_core::term_handler`) → grid mutation (`oriterm_core::grid`) → snapshot (`SnapshotDoubleBuffer`) → renderable content (`oriterm_core::renderable_content_into`) → GPU instance writer (`oriterm`/`src/gpu`) → wgpu submit.
+2. **Input flow**: How does a key/mouse event route from winit → WindowRoot → propagation pipeline → widget → action dispatch → back to winit? Where are `hot`/`active`/`focused` state owned?
+3. **Damage flow**: How do damage rects propagate from grid mutation → snapshot → renderer → GPU copy? Where is "nothing changed this frame" decided?
+4. **Lifecycle flow**: Pane create → IO thread spawn → PTY open → first paint → resize → close. Who owns each step?
 
 This agent produces a **flow map** — a brief summary of how each major data category crosses the phase boundaries. This map is passed to all subsequent review agents as context.
 
@@ -322,11 +326,12 @@ This pass reads the code *locally* — each file on its own terms.
 - [ ] Active plan annotations (classification `active-scaffolding`) are acceptable only while the specific finding checkbox is `[ ]`; flip to stale the instant the checkbox becomes `[x]`
 - [ ] Spec references (`Spec: Clause N.M`), `AIMS Section N`, and `eval_v2 Section N` are permanent and always acceptable (classified as `permanent` / `arch-internal` by the tool)
 
-**Unsafe & FFI (for ori_llvm, ori_rt, oric):**
-- [ ] Every unsafe block has a `// SAFETY:` comment?
-- [ ] Unsafe scope minimized?
-- [ ] FFI exports use `ori_` prefix, `#[no_mangle]`, `extern "C"`?
-- [ ] C types use `std::ffi` (c_char, c_int), never raw primitives?
+**Unsafe & FFI (for `oriterm_ipc` Unix/Windows transports, `oriterm_mux` PTY, and any `crates/wgpu-hal` / `crates/portable-pty` integration):**
+- [ ] `unsafe_code = "deny"` at workspace level — any `unsafe` block must be in a `#[allow]`-ed boundary module with justification.
+- [ ] Every `unsafe` block has a `// SAFETY:` comment explaining the invariants the caller upholds.
+- [ ] Unsafe scope minimized — prefer safe wrappers over inlined unsafe at call sites.
+- [ ] FFI / platform calls use `std::ffi` types (`c_char`, `c_int`, `OsStr`) never raw primitives.
+- [ ] Every `#[cfg(target_os = ...)]` FFI branch has counterparts on all three supported targets (Linux / macOS / Windows).
 
 **Naming, Comments, Visibility, Style:**
 - [ ] Phase-specific verb prefixes used? (cook_, parse_, check_, eval_, emit_)
@@ -466,7 +471,7 @@ Spawn a **separate Agent** to generate the fix plan. This agent should use `/cre
 
    **Rules:**
    - Frame as the **architectural destination**, not a task manifest — "cohesive architecture with clean design and correct solutions", not "eliminate N LEAKs"
-   - Describe each area's **design problem** — "scattered cow_mode checks with no canonical dispatch", not "5 LEAK findings in ori_rt"
+   - Describe each area's **design problem** — "scattered damage-tracking state with no canonical dispatch", not "5 LEAK findings in oriterm_core"
    - Finding counts, category breakdowns, and priority ordering belong in `## Metrics`, NOT in the mission
    - The mission must read as a design vision that someone could evaluate the code against when the work is done
 

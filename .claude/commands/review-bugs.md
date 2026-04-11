@@ -16,7 +16,8 @@ Review open bugs in `plans/bug-tracker/`, check for OBE (Overtaken By Events), v
 ```
 
 - No args: review all subsystems
-- `01` or `parser`: review Parser & Lexer bugs only
+- `01` or `widgets`: review UI Widgets bugs only
+- `08` or `core-terminal`: review Core Terminal bugs only
 - `all`: review everything
 - `critical`: review only critical/high bugs across all subsystems
 
@@ -24,17 +25,22 @@ Review open bugs in `plans/bug-tracker/`, check for OBE (Overtaken By Events), v
 
 ### Step 1: Gather Open Bugs
 
-Read each section file (or the targeted one) and collect all `- [ ]` items:
+Read `plans/bug-tracker/00-overview.md` first to discover the current section layout (the Quick Reference table is authoritative — section topics evolve). Then read each `plans/bug-tracker/section-NN-*.md` file that matches the target and collect all `- [ ]` items.
+
+The current sections (as of this writing — verify against `00-overview.md`):
 
 ```
-plans/bug-tracker/section-01-parser-lexer.md
-plans/bug-tracker/section-02-typeck.md
-plans/bug-tracker/section-03-eval.md
-plans/bug-tracker/section-04-codegen-llvm.md
-plans/bug-tracker/section-05-runtime-arc.md
-plans/bug-tracker/section-06-stdlib.md
-plans/bug-tracker/section-07-tooling-cli.md
-plans/bug-tracker/section-08-spec-docs.md
+plans/bug-tracker/section-01-ui-widgets.md
+plans/bug-tracker/section-02-settings-dialog.md
+plans/bug-tracker/section-03-ui-framework.md
+plans/bug-tracker/section-04-fonts.md
+plans/bug-tracker/section-05-config.md
+plans/bug-tracker/section-06-rendering-perf.md
+plans/bug-tracker/section-07-ci-build.md
+plans/bug-tracker/section-08-core-terminal.md
+plans/bug-tracker/section-09-session.md
+plans/bug-tracker/section-10-platform-windows.md
+plans/bug-tracker/section-11-mux.md
 ```
 
 Also check for any existing fix section files:
@@ -46,13 +52,13 @@ plans/bug-tracker/fix-BUG-*.md
 
 For each open bug, check if it's been overtaken by events:
 
-1. **Grep for the repro file** — does the test now pass?
+1. **Grep for the repro file** — does the test now pass? Use the mandatory 150-second timeout (see `.claude/rules/tests.md` §Running Tests):
    ```bash
-   timeout 30 cargo test {test_name} 2>&1 | tail -5
+   timeout 150 cargo test {test_name} 2>&1 | tail -5
    ```
-   Or if it's an Ori test:
+   Or for a conformance test (teseq / tack / vttest / widget harness / visual-regression):
    ```bash
-   timeout 30 cargo run -- test {test_file} 2>&1 | tail -5
+   timeout 150 cargo test -p {crate} --test {harness} {test_name} 2>&1 | tail -5
    ```
 
 2. **Check if the affected code was rewritten** — has the file/function been significantly changed since the bug was filed?

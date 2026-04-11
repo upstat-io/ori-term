@@ -36,11 +36,17 @@ CHECKBOX_RE = re.compile(r"^(\s*)- \[( |x|X)\] +(.*)$")
 BLOCKED_BY_RE = re.compile(r"<!--\s*blocked-by:([A-Za-z0-9.\-]+)(?:\s*-->)?")
 BLOCKED_PROSE_RE = re.compile(r"<!--\s*blocked:\s*(.+?)\s*-->")
 
-# Plan text patterns — file:line references and symbol mentions
-# Match .rs and .ori files with line numbers
-FILE_LINE_RE = re.compile(r"`([a-zA-Z0-9_/.\-]+\.(?:rs|ori)):(\d+)`")
-# Match file paths under compiler/, library/, tests/, or bare crate paths
-FILE_REF_RE = re.compile(r"`((?:compiler|library|tests)/[a-zA-Z0-9_/.\-]+\.(?:rs|ori))`")
+# Plan text patterns — file:line references and symbol mentions.
+# Match .rs, .wgsl (shaders), .toml, .md, .sh, .py, .json source files with
+# line numbers. Anchored on the file extension so plans can reference any
+# file type the project uses, not just Rust sources.
+FILE_LINE_RE = re.compile(r"`([a-zA-Z0-9_/.\-]+\.(?:rs|wgsl|toml|md|sh|py|json|yml|yaml)):(\d+)`")
+# Match file paths under the ori_term workspace crates, vendored crates,
+# top-level script / config locations, and docs/plan locations. Each
+# alternation is a prefix the plan authors actually use in this repo.
+FILE_REF_RE = re.compile(
+    r"`((?:oriterm|oriterm_core|oriterm_ui|oriterm_mux|oriterm_ipc|crates|scripts|plans|docs|assets|mockups|tools|\.claude|\.github)/[a-zA-Z0-9_/.\-]+\.(?:rs|wgsl|toml|md|sh|py|json|yml|yaml))`"
+)
 BACKTICK_SYMBOL_RE = re.compile(r"`([A-Z][A-Za-z0-9_]+(?:::[A-Za-z0-9_]+)*)`")
 DEFERRAL_WORDS = re.compile(
     r"\b(bonus|future\s+(?:work|improvement|enhancement)|nice[\s-]to[\s-]have|"
@@ -512,8 +518,13 @@ def load_all_plans() -> list[PlanInfo]:
 
 # ─── Cross-plan scope overlap ──────────────────────────────────────────────
 
-# Crate-level references extracted from file paths (e.g. "crates/$1/..." → "ori_types")
-CRATE_FROM_PATH_RE = re.compile(r"compiler/(ori_\w+)/")
+# Crate-level references extracted from file paths.
+# ori_term workspace members: oriterm, oriterm_core, oriterm_ui, oriterm_mux,
+# oriterm_ipc, crates/oriterm_test_support. Also match vendored crates under
+# crates/ (portable-pty, vte, wgpu-hal).
+CRATE_FROM_PATH_RE = re.compile(
+    r"(?:^|/)(oriterm(?:_core|_ui|_mux|_ipc)?|crates/(?:oriterm_test_support|portable-pty|vte|wgpu-hal))(?:/|$)"
+)
 
 # Common infrastructure files that appear in many plans — low signal for invalidation
 LOW_SIGNAL_REFS = frozenset({
@@ -523,27 +534,31 @@ LOW_SIGNAL_REFS = frozenset({
     "fmt-all.sh",
     "build-all.sh",
     "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "DESIGN.md",
 })
 
-# Prelude/common symbols that appear in nearly every plan — too ubiquitous to be
-# meaningful overlap signals (analogous to stop words in information retrieval)
+# Common symbols that appear in nearly every plan — too ubiquitous to be
+# meaningful overlap signals (analogous to stop words in information retrieval).
+# Curated for ori_term's Rust + wgpu + winit surface.
 LOW_SIGNAL_SYMBOLS = frozenset({
-    # Prelude types
-    "Option", "Result", "Some", "None", "Ok", "Err", "Never", "Error",
-    "Ordering", "PanicInfo", "TraceEntry",
-    # Prelude traits
-    "Eq", "Clone", "Debug", "Printable", "Formattable", "Comparable",
-    "Hashable", "Default", "Drop", "Len", "IsEmpty", "Iterator",
-    "DoubleEndedIterator", "Iterable", "Collect", "Into", "Sendable", "Value",
-    "Index", "Traceable",
-    # Operator traits
-    "Add", "Sub", "Mul", "Div", "Neg", "Not", "Rem", "Pow",
-    "BitAnd", "BitOr", "BitXor", "Shl", "Shr",
-    # Common Rust/compiler types that appear everywhere
-    "String", "Vec", "HashMap", "HashSet", "Arc", "Box", "Path", "PathBuf",
-    "Name", "Span", "ExprId", "TypeId",
-    # Common Ori types
-    "Duration", "Size", "Point",
+    # Standard library types (Rust)
+    "Option", "Result", "Some", "None", "Ok", "Err",
+    "String", "Vec", "HashMap", "HashSet", "BTreeMap", "BTreeSet",
+    "Arc", "Rc", "Box", "Path", "PathBuf", "OsStr", "OsString",
+    "Cow", "Mutex", "RwLock", "Cell", "RefCell", "OnceCell", "LazyLock", "OnceLock",
+    # Standard library traits
+    "Debug", "Display", "Clone", "Copy", "Default", "Send", "Sync",
+    "Hash", "Eq", "PartialEq", "Ord", "PartialOrd", "Iterator", "IntoIterator",
+    "From", "Into", "AsRef", "AsMut", "Deref", "DerefMut", "Drop", "FnOnce", "FnMut", "Fn",
+    # Common operator / formatting traits
+    "Add", "Sub", "Mul", "Div", "Neg", "Not", "Rem",
+    # winit / wgpu common types (ubiquitous in the UI + GPU layers)
+    "Window", "WindowId", "Event", "Size", "Position",
+    "Device", "Queue", "Surface", "Texture", "Buffer", "BindGroup", "RenderPass",
+    # Universal geometry types
+    "Point", "Rect", "Color", "Duration", "Instant",
     # Keywords that appear as symbols
     "Self",
 })
@@ -588,19 +603,13 @@ class ScopeFootprint:
 def _canonicalize_file_ref(ref: str) -> str:
     """Normalize file path references to a canonical form.
 
-    Plans spell paths differently: 'crates/$1/src/foo.rs' vs
-    'ori_types/src/foo.rs'. Canonicalize to 'compiler/' prefix when the
-    path matches a known crate pattern, so overlaps are detected regardless
-    of which spelling a plan author used.
+    Ori_term plans reference files via workspace-relative paths already
+    (`oriterm_core/src/grid/mod.rs`, `oriterm/src/gpu/window_renderer.rs`,
+    `crates/oriterm_test_support/src/lib.rs`, etc.). No canonicalization
+    is currently required — plan authors use a single consistent spelling.
+    If plan conventions diverge in the future (e.g. some plans drop
+    `oriterm/` and just write `src/gpu/...`), add normalization here.
     """
-    # Already has compiler/ prefix — canonical
-    if ref.startswith("compiler/"):
-        return ref
-    # Bare crate path like 'ori_types/src/...' → 'crates/$1/src/...'
-    m = re.match(r"^(ori_\w+)/", ref)
-    if m:
-        return f"compiler/{ref}"
-    # Non-compiler paths (library/, tests/, docs/, etc.) — keep as-is
     return ref
 
 
