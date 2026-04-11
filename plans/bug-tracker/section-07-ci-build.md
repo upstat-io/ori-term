@@ -28,6 +28,19 @@ sections:
 
 ## 07.1 Active Bugs
 
+- [ ] `[BUG-07-011][low]` **`plans/spec-conformance/index.md` at 535 lines — approaching plan-audit BLOAT_RISK heuristic (500-line threshold)** — found by tpr-review during /review-plan Phase 4 on `plans/spec-conformance/section-02-tack-absorption.md`.
+  Repro: `wc -l plans/spec-conformance/index.md` → `535`. `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json | python3 -c "import json,sys;d=json.load(sys.stdin); [print(f) for f in d['findings'] if f.get('check')=='BLOAT_RISK' and 'index.md' in f.get('location','')]"` reports `major BLOAT_RISK plans/spec-conformance/index.md — 535 lines, at or near 500-line limit`.
+  Subsystem: `plans/spec-conformance/index.md` (plan-hygiene — no code crate). Filed under section 07 per `/add-bug` subsystem mapping (plan-hygiene bugs that don't map to a code crate go in CI & Build alongside BUG-07-005 / BUG-07-006 / BUG-07-010).
+  Found: 2026-04-11 | Source: tpr-review | Reviewers: codex + gemini (TPR-02-002-codex + TPR-02-002-gemini convergence during `/review-plan` Phase 4 on `plans/spec-conformance/section-02-tack-absorption.md`)
+  Context: `plans/spec-conformance/index.md` is the searchable keyword-cluster index for a 26-section plan. Each section carries a ~15-line keyword cluster plus a row in the Quick Reference table. The 500-line hard limit from `.claude/rules/code-hygiene.md` §File Organization is scoped to "source files excluding `tests.rs`", but `plan-audit.py` applies the same heuristic as a BLOAT_RISK advisory to plan-index markdown files.
+  Why NOT fixed in Section 02 scope: `plans/spec-conformance/section-02-tack-absorption.md` is the Phase 0b mechanical absorption step — its atomic commit is scoped to the 8-file set needed for the absorption. Adding index-trimming work would double-scope Section 02 against the same file Section 01's Catalog Bootstrap will eventually edit, creating a merge conflict. Filing here keeps Section 02 scoped and makes the BLOAT a separately tracked artifact.
+  Fix approach:
+  - Option A: split the 26 keyword clusters into a separate `plans/spec-conformance/catalog-keyword-index.md` that `index.md` links to, leaving `index.md` as the slim Quick Reference + cross-ref table only
+  - Option B: trim each keyword cluster from ~15 lines to ~8 lines by removing redundant synonyms (current clusters list both formal names AND developer aliases; trim to one canonical name + 3–4 most-likely search keywords)
+  - Option C: extract the Quick Reference table to a separate file and have `index.md` be ONLY the keyword clusters
+  - Consult `plans/completed/` for prior plan-index conventions to pick the approach with least divergence
+  Severity: low — no correctness impact, no runtime impact, no test impact. The index is usable as-is today. This is a plan-audit advisory that becomes actionable only if the file keeps growing.
+
 - [ ] `[BUG-07-010][medium]` **`./clippy-all.sh` does not lint test targets — 151 pre-existing clippy errors across 6 `oriterm_core` test targets (lib test + alloc_regression + rss_regression + tack + teseq + vttest)** — found by continue-roadmap (tack-conformance section 05.0).
   Repro: `cargo clippy -p oriterm_core --tests --target x86_64-unknown-linux-gnu -- -D warnings` produces **151 errors** that block compilation across 6 distinct test targets. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which only checks lib + bin targets, so all 151 violations have been silently passing CI.
   Subsystem: `clippy-all.sh` + `oriterm_core/src/term/tests.rs` + `oriterm_core/tests/{alloc_regression,rss_regression,tack/main,teseq,vttest}/`
