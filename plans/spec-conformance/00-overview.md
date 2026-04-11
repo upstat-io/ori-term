@@ -38,7 +38,7 @@ Each criterion is concrete and testable. Together they prove the mission is comp
 - [ ] **DEC mode metadata LEAK fixed** — The 5-sync-point LEAK across `NamedPrivateMode` consumers is collapsed into a single registry table. Mode metadata becomes data; behavior stays in match arms. Delivered by section 06.
 - [ ] **Image lifecycle correct under resize/reflow/scrollback/alt-screen** — Image placements survive every grid transformation correctly. Documented invariants tested on a regression matrix. Delivered by section 07.
 - [ ] **Deterministic golden environment** — Canonical golden lane uses pinned software rasterizer (llvmpipe), grayscale alpha hinting, pinned cell metrics, exact-or-tiny pixel tolerance. Delivered by section 05.
-- [ ] **`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` is marked superseded with a mapping table from spec catalog row IDs to legacy tack section IDs. Existing in-flight section 06.* stays in place; new tack sections 07-09 are created directly under spec-conformance. Delivered by section 02.
+- [x] **`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` carries supersede blockquotes in overview + index; index reroute frontmatter is `status: resolved`; overview frontmatter is `status: complete`; `section-09-verification.md` is flipped to `status: complete` with an explicit body-level absorption notice pointing at spec-conformance Section 23. Tack sections 01–08 are completed artifacts committed to `main` (shared `PtySession` infrastructure, pinned `ori_term.info`, scenario-catalog framework, test-menu + tools-menu scenario families, GPU goldens, full kf1–kf63 + cursor + editing + modified-key terminfo cross-check). Tack section 09 (final verification + archival) is absorbed by spec-conformance Section 23 (Cross-Stack Regression Sweep + Coverage CI). `plans/spec-conformance/catalog/_legacy-tack-mapping.md` exists with the tack-09 → spec-23 seed row. No `git mv` is run (citation-stability covenant). Delivered by section 02.
 - [ ] **`./test-all.sh` green** — All tests pass debug + release. No regressions in `oriterm_core/tests/alloc_regression.rs` or `oriterm/src/app/event_loop_helpers/tests.rs`.
 - [ ] **`./build-all.sh` green** — Cross-platform build succeeds (x86_64-pc-windows-gnu via WSL, native Linux, native macOS).
 - [ ] **`./clippy-all.sh` green** — No new clippy warnings under the project's `deny(clippy::all)` + nursery.
@@ -346,9 +346,25 @@ Phase 6 (final integration milestones — depend on every prior section)
 - **Section 20.1 + Section 03.1**: Section 20.1 requires `HostEffect::VisualBell` as a separate variant (not a flag). Section 03.1's type definition MUST include the variant up-front so Section 20.1 can emit it without a type extension cycle.
 - **Section 06 + Section 09.2 (stricter than the general 06+09 coupling)**: the Mode 2026 timeout-abort test `mode_2026_timeout_abort_test` in 09.2 is NON-EXECUTABLE until 06.1 wires `Processor::sync_timeout`/`stop_sync` AND 06.2 emits `PresentationEffect::SyncAbort`. The test will deadlock if run before 06 lands. 09's `depends_on` frontmatter already reflects this but the coupling note exists here so the dependency is front-and-center.
 
+> **Canonical absorption-policy home.** This block is the single source of truth
+> for how the tack-conformance plan is superseded. Other files in the repository
+> (`plans/tack-conformance/index.md`, `plans/tack-conformance/00-overview.md`,
+> `plans/tack-conformance/section-09-verification.md`, `plans/spec-conformance/section-02-tack-absorption.md`,
+> `plans/spec-conformance/section-17-kitty-keyboard.md`, `plans/spec-conformance/section-23-cross-stack-regression-sweep.md`,
+> and `plans/spec-conformance/catalog/_legacy-tack-mapping.md`) reference this
+> block by path rather than restating its content. This prevents the
+> `LEAK:scattered-knowledge` finding the Phase 2 reviewers surfaced.
+
 ## Tack Absorption Strategy (delivered by Section 02)
 
-`plans/tack-conformance/` is in flight: sections 01-05 complete, section 06 (TOOLS_MENU_INVENTORY) just landed, sections 06.0.b/c–06.N pending, sections 07-09 not yet started.
+`plans/tack-conformance/` is **effectively 8/9 done**: sections 01–08 are all `complete`
+on `main` (see `plans/tack-conformance/00-overview.md` Quick Reference) and deliver
+the shared `PtySession` infrastructure, the pinned `ori_term.info` terminfo entry,
+the scenario-catalog framework, the full test-menu and tools-menu scenario families,
+GPU goldens for the visual subset, and the full kf1–kf63 + cursor + editing + modified-key
+terminfo cross-check at `oriterm/src/key_encoding/terminfo_xcheck/`. Only section 09
+(final verification + archival) remains `not-started`, and its scope is absorbed by
+spec-conformance Section 23 (Cross-Stack Regression Sweep + Coverage CI).
 
 **Mechanical absorption (Phase 0b — no file moves, no implementation):**
 
@@ -364,7 +380,12 @@ Section 02 delivers all of this:
    | OSC-52         | tack-conformance/section-06 (tools/u8/u9)        | in flight  |
    ```
 4. Existing tack-conformance sections continue executing under their existing section numbers. No file renames. Citation stability preserved.
-5. New work that would have been tack-conformance sections 07-09 (GPU goldens, keyboard tests, final verification) is created **directly under spec-conformance** as the appropriate per-stack sections (e.g., GPU goldens for terminfo coverage become part of section 08; keyboard encoding tests become section 17; final verification becomes section 23). No section renaming or dual-identity churn.
+5. Tack-conformance section 09 (final verification + archival) is absorbed by
+   `plans/spec-conformance/section-23-cross-stack-regression-sweep.md`, which
+   already declares it subsumes tack-09 (`section-23-*.md:19`). The two currently
+   unchecked mission criteria in `plans/tack-conformance/00-overview.md` (cross-platform
+   skip cleanliness and the `./test-all.sh`/`./build-all.sh`/`./clippy-all.sh` green gate)
+   become Section 23's responsibility. No tack sections are created or renamed.
 
 **Why early absorption (Phase 0b) and not buried in section 08**: Section 02 is mechanical plan hygiene — supersede notices and an empty mapping-table file. It is not implementation-dependent. Doing it early removes dual-track ambiguity while tack 06.x is still moving. Burying it inside section 08 (ECMA-48 baseline) would make 08 do two jobs: protocol implementation AND plan migration. Per Codex's Step 6B feedback, those should be split.
 
@@ -749,7 +770,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | ID | Title                                                  | File                                                 | Status      |
 |----|---                                                     |---                                                   |---          |
 | 01 | Catalog Bootstrap                                      | `section-01-catalog-bootstrap.md`                    | Not Started |
-| 02 | Tack-Conformance Absorption (Phase 0b — plan hygiene)  | `section-02-tack-absorption.md`                      | Not Started |
+| 02 | Tack-Conformance Absorption (Phase 0b — plan hygiene)  | `section-02-tack-absorption.md`                      | Complete    |
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Not Started |
 | 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Not Started |
 | 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Not Started |
