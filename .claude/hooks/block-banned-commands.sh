@@ -4,11 +4,37 @@
 # command (&&, ;, ||), so this hook inspects the full command string.
 #
 # No external dependencies — uses python3 for JSON parsing (no jq).
+#
+# FAIL-OPEN INVARIANT: this hook must never block a tool call because of a
+# malformed payload or an internal script error. A PreToolUse hook that
+# fails closed on unexpected input becomes a tool blocker — the opposite
+# of the safety posture it is supposed to provide. Therefore:
+#   1. `set -u` catches undefined-variable bugs but we do NOT enable
+#      `set -e` — any hidden non-zero exit must fall through to the
+#      explicit `exit 0` at the bottom of the script, not abort mid-hook.
+#   2. The top-level `trap 'exit 0' ERR` is defense-in-depth: any
+#      uncaught error anywhere in the script exits 0 instead of
+#      propagating.
+#   3. Every external-parse invocation (python3, printf, grep) pipes its
+#      stderr to /dev/null and appends `|| true` so a transient parse
+#      failure can never bubble up.
+#   4. `pipefail` is INTENTIONALLY NOT enabled — with pipefail, a python
+#      traceback in the middle of a pipe would propagate the non-zero
+#      exit and fail the hook closed. The only pipelines in this script
+#      are safe-by-construction (the final captured output is always a
+#      best-effort read).
 
-set -euo pipefail
+set -u
+trap 'exit 0' ERR
 
-INPUT=$(cat)
-COMMAND=$(printf '%s' "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))")
+INPUT=$(cat 2>/dev/null || true)
+COMMAND=$(printf '%s' "$INPUT" | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('tool_input', {}).get('command', ''))
+except Exception:
+    pass
+" 2>/dev/null || true)
 
 # Same patterns as the deny list in .claude/settings.json, expressed as
 # bash substring matches against the raw command string.

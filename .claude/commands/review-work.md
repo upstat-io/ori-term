@@ -78,7 +78,7 @@ Gather recently modified plans to detect plan drift:
 ### Step 3: Review Implementation
 
 Perform an independent verification pass:
-- Rerun key tests with the mandatory timeout: `timeout 150 cargo test -p <crate>`, `timeout 150 ./test-all.sh` (never run a test command without a timeout per CLAUDE.md §MANDATORY TEST TIMEOUTS).
+- Rerun key tests with the mandatory 150-second timeout (see `.claude/rules/tests.md` §Running Tests): `timeout 150 cargo test -p <crate>`, `timeout 150 ./test-all.sh`. Never run a test command without a timeout.
 - Use repo-native diagnostic / test scripts — `./build-all.sh` for cross-compile verification, `./clippy-all.sh` for lint regressions, `cargo test -p oriterm_core --test teseq` / `--test tack` / `--test vttest` for terminal-conformance regressions, `cargo test -p oriterm_ui` for widget harness regressions.
 - Verify claims from current outputs and files — do not trust prior agent summaries.
 - For GPU render path changes, verify under `oriterm/src/gpu/visual_regression/` with `render_frame_cached()`; bugs in the cached path are invisible to `render_frame()`.

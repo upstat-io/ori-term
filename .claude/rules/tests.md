@@ -280,7 +280,7 @@ When a test fails and you're unsure whether it's a test bug or a code bug:
 - `cargo test -p oriterm --test main_window` — GPU visual regression (main window scene)
 - `INSTA_UPDATE=1 cargo test -p oriterm_core --test teseq` — update insta snapshots
 
-**Mandatory timeout**: every test command MUST use a 150-second timeout (see CLAUDE.md §MANDATORY TEST TIMEOUTS). `timeout 150 cargo test ...` or `Bash.timeout: 150000`. If tests exceed the timeout, you introduced a hanging test — fix it, don't extend the timeout.
+**Mandatory timeout**: every test command MUST use a 150-second (2 minutes 30 seconds) timeout. Use `timeout 150 cargo test ...` on the command line, or pass `timeout: 150000` to the Bash tool. This is a cross-project rule that applies to ALL test commands (`cargo test`, `cargo test -p ...`, `./test-all.sh`, `./llvm-test.sh`, etc.). If tests exceed the timeout, you introduced a hanging test — fix it, don't extend the timeout. **Never** apply the timeout to non-test long-running processes like `/tpr-review`, `codex exec`, `/review-work`, `/independent-review`, or Agent tasks — those are review/analysis, not tests.
 
 ## Property-Based Testing
 

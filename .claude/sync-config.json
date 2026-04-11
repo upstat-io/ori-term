@@ -50,7 +50,7 @@
     "hooks": [],
     "commands": []
   },
-  "$preserve_comment": "Glob patterns under .claude/ to LEAVE UNTOUCHED even if sync would overwrite. Project-local customizations belong here. Anything this repo has tailored for the terminal emulator (as opposed to the Ori compiler) MUST be listed so /sync-from-orilang does not clobber it. Includes all per-crate rules files (.claude/rules/oriterm*.md) created by /tpr-review and the review-work skill/command pair rewritten for terminal-emulator scope.",
+  "$preserve_comment": "Glob patterns under .claude/ to LEAVE UNTOUCHED even if sync would overwrite. Project-local customizations belong here. Anything this repo has tailored for the terminal emulator (as opposed to the Ori compiler) MUST be listed so /sync-from-orilang does not clobber it. Includes all per-crate rules files (.claude/rules/oriterm*.md) created by /tpr-review and the review-work skill/command pair rewritten for terminal-emulator scope. NOTE: this field is a sibling of `preserve` (not inside it) because JSON arrays cannot contain object keys; the `$preserve_comment` naming convention is how this project annotates array-valued fields. See .claude/sync-config.json for other examples.",
   "preserve": [
     ".claude/rules/project-specific-*.md",
     ".claude/rules/oriterm*.md",

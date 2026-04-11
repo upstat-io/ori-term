@@ -128,7 +128,7 @@ Spawn an agent with full edit authority. This agent merges the scope of the orig
 ```
 Agent (model: opus):
 
-You are reviewing a plan for the Ori compiler at {plan_dir}/.
+You are reviewing a plan for ori_term (the GPU-accelerated terminal emulator) at {plan_dir}/.
 
 **Review mode: {single-section: edit {target_section} only (read siblings for context) | whole-plan: edit all files}**
 
@@ -153,12 +153,15 @@ The plan exists to serve the mission. If the structure fights the mission, chang
 Read file: CLAUDE.md
 ```
 
-Then load the hygiene and testing rules:
+Then load the hygiene, testing, and crate-boundary rules:
 ```
 Read file: .claude/rules/impl-hygiene.md
-Read file: .claude/rules/compiler.md
+Read file: .claude/rules/code-hygiene.md
 Read file: .claude/rules/tests.md
+Read file: .claude/rules/test-organization.md
+Read file: .claude/rules/crate-boundaries.md
 ```
+Plus any per-crate rule files under `.claude/rules/oriterm*.md` whose `paths:` glob covers the code the plan will touch.
 
 ## Context from Prior Phases
 
@@ -175,9 +178,11 @@ Read file: .claude/rules/tests.md
 1. Read ALL files in {plan_dir}/
 2. Cross-reference every technical claim against the actual codebase:
    - Do referenced files, types, functions, modules exist?
-   - Are crate dependency assumptions correct? (`ori_lexer → ori_parse → ori_ir → ori_types → ori_eval → ori_llvm → oric`)
-   - Are described code patterns accurate?
-3. Check claims against the spec in `docs/spec/` (`grammar.ebnf`, `operator-rules.md`, clause files)
+   - Are crate dependency assumptions correct? Current allowed direction (per `.claude/rules/crate-boundaries.md`): `oriterm_ipc` standalone, `oriterm_core` standalone, `oriterm_ui → oriterm_core`, `oriterm_mux → oriterm_core + oriterm_ipc`, `oriterm → oriterm_core + oriterm_ui + oriterm_mux`.
+   - Are described code patterns accurate (e.g. widget harness APIs, `render_frame_cached` vs `render_frame`, snapshot double-buffer discipline, performance invariants)?
+3. Check claims against the relevant external references:
+   - Terminal protocols: vt100.net, XTerm ctlseqs, ECMA-48, terminfo (`man 5 terminfo`)
+   - Reference implementations in `~/projects/reference_repos/console_repos/` (tmux, alacritty, wezterm, ghostty, ratatui, ptyxis, termenv)
 4. For every inaccuracy found, EDIT the plan files directly to fix them
 5. For each section, assess whether the described implementation approach will actually work:
    - Can each checklist item be implemented as described?
@@ -234,7 +239,7 @@ Add a brief comment near each addition: `<!-- reviewed: cohesion fix -->`
 18. Reorder items within sections if they violate crate dependency ordering.
 19. **Rules weaving** — CLAUDE.md and `.claude/rules/*.md` constraints must be embedded organically in checklist items, not assumed:
     - "Add variant X, update match arms at `file.rs:123` and `other.rs:456`" NOT "Add variant (remember sync points)"
-    - Key rules: TDD discipline (tests.md), file size limits, crate ordering, registration sync, ARC invariants, phase boundaries, test conventions
+    - Key rules: TDD discipline (tests.md), file size limits (code-hygiene.md), crate ordering (crate-boundaries.md), performance invariants (alloc / RSS / event-loop), cross-platform matrix (Linux / Windows cross / macOS), test organization (sibling tests.rs)
     - If a section touches a subsystem but doesn't embed its rules, ADD the relevant constraints inline
 20. **Codebase scan** — extract from the plan every file path, crate, and module that will be touched. READ those files (up to 30 files; prioritize files mentioned in multiple sections). Look for issues the plan should address:
     - **BLOAT**: Files over 500 lines the plan will touch but doesn't plan to split
@@ -253,7 +258,7 @@ Add a brief comment near each change: `<!-- reviewed: executability/hygiene fix 
 
 ## Part 4: Testing Rigor & Final Integration
 
-22. For EVERY section that modifies compiler code, verify it has a test strategy meeting CLAUDE.md requirements:
+22. For EVERY section that modifies ori_term code, verify it has a test strategy meeting `.claude/rules/tests.md` requirements:
     - **Matrix tests**: type × pattern dimensions explicitly named
     - Semantic pin: at least one test that ONLY passes with the new semantics
     - TDD ordering: failing tests FIRST, debug+release verification LAST

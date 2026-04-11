@@ -1,12 +1,12 @@
 ---
 name: continue-roadmap
-description: Resume work on the Ori compiler roadmap, picking up where we left off
+description: Resume work on the ori_term roadmap, picking up where we left off
 argument-hint: "[section]"
 ---
 
 # Continue Roadmap
 
-Resume work on the Ori compiler roadmap, picking up where we left off.
+Resume work on the ori_term roadmap at `plans/roadmap/`, picking up where we left off.
 
 ## Usage
 
@@ -254,23 +254,21 @@ After identifying the focus section, **check its frontmatter for `third_party_re
 
 After identifying the focus section, **check the bug tracker for relevant known bugs** in the subsystem being worked on.
 
-Map the focus section to bug-tracker subsystems:
+Map the focus section to bug-tracker subsystems. The authoritative list lives in `plans/bug-tracker/00-overview.md` — re-read it if section topics have shifted. Current mapping (ori_term crate-ownership driven):
 
-| Roadmap Section | Bug Tracker Section(s) |
-|----------------|----------------------|
-| 00 (Parser) | 01 (Parser & Lexer) |
-| 01-02 (Types, Inference) | 02 (Type Checker) |
-| 03 (Traits) | 02 (Type Checker), 06 (Stdlib) |
-| 04 (Modules) | 02 (Type Checker), 07 (Tooling) |
-| 05 (Type Decls) | 02 (Type Checker) |
-| 06 (Capabilities) | 02 (Type Checker), 03 (Evaluator) |
-| 07A-D (Stdlib) | 03 (Evaluator), 06 (Stdlib) |
-| 08-10 (Patterns, Match, Control Flow) | 03 (Evaluator), 04 (Codegen) |
-| 11-12 (FFI, Variadics) | 04 (Codegen), 05 (Runtime) |
-| 15D (Bindings) | 02 (Type Checker), 03 (Evaluator) |
-| 21A-B (LLVM, AOT) | 04 (Codegen), 05 (Runtime) |
-| 22 (Tooling) | 07 (Tooling) |
-| 23 (Evaluator) | 03 (Evaluator) |
+| Roadmap focus area                                       | Bug Tracker Section(s)                                        |
+|----------------------------------------------------------|---------------------------------------------------------------|
+| Grid / VTE / reflow / selection / search / terminfo      | 08 (Core Terminal)                                            |
+| Widget-framework internals / interaction / pipeline      | 03 (UI Framework)                                             |
+| Individual widgets (button, list, tab bar, etc.)         | 01 (UI Widgets)                                               |
+| Settings dialog                                          | 02 (Settings Dialog), 01 (UI Widgets)                         |
+| Font pipeline (swash/skrifa, UI font registry, atlas)    | 04 (Fonts), 06 (Rendering & Perf)                             |
+| Config loading / hot reload / theme / keybinds           | 05 (Config)                                                   |
+| GPU renderer / cached path / shaders / compositor / perf | 06 (Rendering & Perf)                                         |
+| CI, build scripts, cross-compile, test harness           | 07 (CI & Build)                                               |
+| Session model (tabs, splits, floating, directional nav)  | 09 (Session & Tab/Window)                                     |
+| Windows-specific code / ConPTY / x86_64-pc-windows-gnu   | 10 (Platform Windows)                                         |
+| Mux / pane IO thread / snapshot buffer / PTY / IPC       | 11 (Mux & Pane I/O)                                           |
 
 Read the mapped bug-tracker section file(s) and check for `- [ ]` items.
 
@@ -401,20 +399,20 @@ When the scanner shows blocked items, analyze the blocker chain:
 |----------|---------|--------|
 | **Planned cross-section blocker** | `<!-- blocked-by:19 -->` and Section 19 has `- [ ] Implement existential types` | Valid blocker — skip or tackle Section 19 |
 | **Unplanned cross-section blocker** | `<!-- blocked-by:19 -->` but Section 19 has no item that resolves this | Invalid — add the missing item to Section 19, or reclassify as impediment |
-| **Unplanned impediment (prose)** | `<!-- blocked: ARC IR lacks visibility metadata -->` | Must be planned NOW — invoke `/create-plan` to add a subsection |
+| **Unplanned impediment (prose)** | `<!-- blocked: damage tracker reports wrong cells after reflow -->` | Must be planned NOW — invoke `/create-plan` to add a subsection |
 | **Fixable impediment** | Prose blocker where upstream data already exists | Plan it and implement it immediately |
 
 **When unplanned blockers or impediments are detected:**
 
 1. **Investigate each one** — use an Explore agent to verify whether the missing capability is truly unavailable or just unplumbed. Check:
-   - Does the data exist upstream? (e.g., does `ori_types` already have this info?)
-   - What's the plumbing path? (How many files need changes?)
+   - Does the data already flow upstream? (e.g., does the snapshot already carry the damage rects, and the renderer just isn't reading them?)
+   - What's the plumbing path? (How many files / crates need changes?)
    - Is this a 50-line fix or a 500-line architectural change?
 
 2. **Plan the resolution** — every unplanned blocker must get planned work somewhere:
    - **If the fix belongs in the current plan** (most common for impediments): Invoke `/create-plan` to add a new subsection:
      ```
-     /create-plan add "ARC IR function metadata" subsection to plans/repr-opt
+     /create-plan add "Damage-rect plumbing into cached render path" subsection to plans/roadmap
      ```
      The new subsection should: describe the impediment, list the implementation steps, include tests, and reference which blocked items it unblocks.
    - **If the fix belongs in a different plan or roadmap section**: Add a concrete `- [ ]` item to that section describing the work needed, and update the blocker to use `<!-- blocked-by:X -->` pointing to the section. The blocker is now planned.
@@ -568,15 +566,15 @@ Based on user choice:
 
 **Every `- [ ]` checkbox within the current section is part of that section's work — no exceptions.** This includes:
 
-- **LLVM Support** checkboxes (codegen verification)
-- **LLVM Rust Tests** checkboxes (AOT end-to-end tests)
-- **Ori Tests** checkboxes
-- **Rust Tests** checkboxes
+- **Rust unit tests** checkboxes (sibling `tests.rs` coverage)
+- **Integration tests** checkboxes (teseq / tack / vttest / widget-harness / GPU visual-regression / alloc-regression suites)
+- **Cross-platform** checkboxes (Linux host, Windows cross-compile `x86_64-pc-windows-gnu`, macOS CI)
+- **Documentation / plan** checkboxes
 - Any other sub-item checkboxes nested under a parent item
 
-**Do NOT defer items to other sections.** If subsection 1.1A has `[ ] LLVM Rust Tests: No AOT tests for Duration`, that checkbox is part of 1.1A — not Section 21A. Section 21A tracks LLVM *infrastructure* (codegen architecture, optimization passes). Individual feature sections track their own LLVM *coverage* (does this feature work in AOT?).
+**Do NOT defer items to other sections.** If a subsection has `[ ] Windows cross-compile`, that checkbox is part of the subsection — not a generic "platform" catch-all section. Each feature is responsible for its own cross-platform coverage.
 
-**A subsection is only complete when ALL its checkboxes are checked**, including LLVM items. Do not mark a subsection as complete or move to the next subsection while LLVM checkboxes remain unchecked.
+**A subsection is only complete when ALL its checkboxes are checked**, including platform and test items. Do not mark a subsection as complete or move to the next subsection while any checkbox remains unchecked.
 
 ### Verification Rule: Empty Checkboxes Must Be Verified
 
@@ -812,14 +810,13 @@ Fix checkboxes to match verified reality:
 
 When completing a roadmap item:
 
-- [ ] Read spec section thoroughly
-- [ ] Implement feature in compiler
-- [ ] Add Ori spec tests
-- [ ] Add Rust unit tests (if applicable)
-- [ ] Run `cargo test --all` — all tests pass
-- [ ] Check if formatting needs updates (if syntax changed):
-  - [ ] Formatter handles new syntax (`crates/$1/`)
-  - [ ] Formatting tests cover new syntax (`tests/spec/formatting/`)
+- [ ] Read the section's plan item thoroughly (and any referenced reference-repo code under `~/projects/reference_repos/console_repos/`)
+- [ ] Implement the feature in the owning crate (see `.claude/rules/crate-boundaries.md` for ownership)
+- [ ] Add Rust unit tests in sibling `tests.rs` files per `.claude/rules/test-organization.md`
+- [ ] Add integration / conformance / visual-regression tests where applicable (teseq, tack, vttest, widget harness, GPU cached path)
+- [ ] Run `timeout 150 ./test-all.sh` — all tests pass
+- [ ] Run `./clippy-all.sh` — zero warnings across workspace + Windows cross-compile
+- [ ] Run `./build-all.sh` — workspace build green including `cargo build --target x86_64-pc-windows-gnu`
 - [ ] Update section file:
   - [ ] Check off completed items with `[x]`
   - [ ] Update subsection `status` in YAML frontmatter if subsection is now complete

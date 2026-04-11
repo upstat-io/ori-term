@@ -1,6 +1,6 @@
 ---
 name: improve-tooling
-description: "AUTO-TRIGGER: Improve testing, diagnostic, debugging, or developer tooling. TRIGGER when: (1) a script in diagnostics/ or scripts/ produces confusing output, missing information, or wrong results, (2) test-all.sh, clippy-all.sh, or any test harness has gaps, missing coverage, or unclear failure output, (3) dual-exec-verify.sh, diagnose-aot.sh, or any diagnostic script doesn't cover a case you need, (4) you work around a tool limitation instead of fixing the tool, (5) you notice a script is missing --help, error handling, or useful flags, (6) you manually do something a script should automate, (7) RETROSPECTIVE — PER SUBSECTION (primary): invoked immediately after marking a plan subsection complete (e.g., {NN}.1, {NN}.2) to look back at THAT subsection's debugging journey while pain points are still fresh, (8) RETROSPECTIVE — BUG-FIX CLOSE: invoked at /fix-bug Phase 5 completion checklist step 8 to capture root-cause analysis tooling gaps, (9) RETROSPECTIVE — SECTION CLOSE (sweep): invoked at the end of a roadmap/plan section as an integration safety net that verifies per-subsection and bug-fix retrospectives ran and adds only NEW items from cross-cutting patterns. DO NOT TRIGGER for: normal tool usage that works correctly, or one-off ad-hoc commands."
+description: "AUTO-TRIGGER: Improve testing, diagnostic, debugging, or developer tooling. TRIGGER when: (1) a script under `scripts/` or a top-level shell script (`build-all.sh`, `test-all.sh`, `clippy-all.sh`, `fmt-all.sh`) produces confusing output, missing information, or wrong results, (2) any test harness (`cargo test -p oriterm_core --test teseq`, `--test tack`, `--test vttest`, `cargo test -p oriterm_ui`, `cargo test -p oriterm --test architecture`, the GPU visual-regression suites under `oriterm/src/gpu/visual_regression/`) has gaps, missing coverage, or unclear failure output, (3) a terminal-conformance test shows misleading skip messages or silent failures when `teseq` / `tack` / `tic` / `infocmp` / a GPU adapter is unavailable, (4) you work around a tool limitation instead of fixing the tool, (5) you notice a script is missing --help, error handling, or useful flags, (6) you manually do something a script should automate, (7) RETROSPECTIVE — PER SUBSECTION (primary): invoked immediately after marking a plan subsection complete (e.g., {NN}.1, {NN}.2) to look back at THAT subsection's debugging journey while pain points are still fresh, (8) RETROSPECTIVE — BUG-FIX CLOSE: invoked at /fix-bug Phase 5 completion checklist step 8 to capture root-cause analysis tooling gaps, (9) RETROSPECTIVE — SECTION CLOSE (sweep): invoked at the end of a roadmap/plan section as an integration safety net that verifies per-subsection and bug-fix retrospectives ran and adds only NEW items from cross-cutting patterns. DO NOT TRIGGER for: normal tool usage that works correctly, or one-off ad-hoc commands."
 ---
 
 # Improve Tooling
@@ -36,13 +36,17 @@ Additionally, this skill is **mandatorily invoked** as a retrospective at three 
 
 These are the tools you own and must improve:
 
-| Category | Location | Canonical reference |
-|----------|----------|---------------------|
-| **Test harnesses** | `cargo test --all`, `cargo clippy --all -- -D warnings`, `cargo fmt --all`, `cargo build --all` | `CLAUDE.md` §Commands |
-| **Diagnostic scripts** | `diagnostics/` | `.claude/rules/diagnostic.md` §Diagnostic Scripts — full table with all scripts and flags |
-| **Scripts** (build, release, test utilities) | `scripts/` | `CLAUDE.md` §Commands |
-| **Diagnostic common** | `diagnostics/_common.sh` | `.claude/rules/diagnostic.md` |
-| **LLVM test harness** | `cargo test --all` | `CLAUDE.md` §Commands |
+| Category                          | Location                                                                                                             | Canonical reference                     |
+|-----------------------------------|----------------------------------------------------------------------------------------------------------------------|-----------------------------------------|
+| **Top-level build / test wrappers** | `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh`, `./fmt-all.sh`                                               | `CLAUDE.md` §Commands                   |
+| **Terminal conformance harness**    | `oriterm_core/tests/teseq/`, `oriterm_core/tests/tack/`, `oriterm_core/tests/vttest/` + scenario helpers           | `.claude/rules/tests.md` §Terminal Conformance Suites |
+| **Widget harness**                  | `oriterm_ui/src/testing/` (`WidgetTestHarness`)                                                                    | `CLAUDE.md` §Widget Test Harness, `.claude/rules/tests.md` §Widget Harness Testing |
+| **GPU visual-regression harness**   | `oriterm/src/gpu/visual_regression/` (cached render path golden tests)                                             | `CLAUDE.md` §GPU Render Path Testing, `.claude/rules/tests.md` §GPU Cached Render Path Testing |
+| **Allocation / RSS regression**     | `oriterm_core/tests/alloc_regression.rs`, `oriterm_core/tests/rss_regression.rs`                                   | `.claude/rules/tests.md` §Performance Invariants |
+| **Architecture tests**              | `oriterm/tests/architecture.rs`                                                                                    | `.claude/rules/crate-boundaries.md`     |
+| **Scripts** (build, bundle, test utilities) | `scripts/`, `bundle-macos.sh`                                                                               | `CLAUDE.md` §Commands                   |
+| **Dual-source review transport**    | `.claude/skills/dual-tpr/scripts/` (parse-codex, parse-gemini, merge-findings, dual-invoke, status-check, etc.)    | `.claude/skills/dual-tpr/transport.md`  |
+| **Hooks**                           | `.claude/hooks/` (`block-banned-commands.sh`, `classify-review-command.py`, `shell_lex.py`, `verify-hook.sh`)       | — (owned by this skill + tests.md)      |
 
 ## Workflow
 
@@ -76,7 +80,7 @@ Now use the improved tool for your original task. The improvement must actually 
 If the tool gained new flags or capabilities:
 - Update `CLAUDE.md` if the tool is listed there
 - Update the tool's `--help` output
-- Update `diagnostics/README.md` if it's a diagnostic script
+- Update `scripts/README.md` or the top-level wrapper's header comment if one exists
 
 ## Anti-Patterns (BANNED)
 
@@ -113,7 +117,7 @@ It has **three granularities**, fired at different boundaries:
 When invoked immediately after marking a subsection complete:
 
 1. **Reconstruct THIS subsection's debugging journey.** Look at exactly what you did inside this subsection's task block. Ask:
-   - Which `diagnostics/` scripts did I run for this subsection? How many times? Did I have to pipe/grep/manually parse output?
+   - Which `scripts/` or the top-level wrappers (`./build-all.sh`, `./test-all.sh`, etc.) scripts did I run for this subsection? How many times? Did I have to pipe/grep/manually parse output?
    - Which command sequences did I repeat across this subsection's tasks? (e.g., "build, run with ``, grep for the function, eyeball the IR")
    - Where did I add `dbg!` / `eprintln!` / `tracing::debug!` while implementing this subsection? What was each one looking for?
    - Where did I stare at output for >30 seconds trying to understand it?
@@ -128,11 +132,11 @@ When invoked immediately after marking a subsection complete:
 
 5. **Implement accepted improvements NOW** — zero deferral. The improvement IS subsection close-out work. Do not start the next subsection until improvements are committed.
 
-6. **Commit improvements separately** via `/commit-push` with a message like `build(diagnostics): add --per-block flag to codegen-audit.sh — surfaced by {plan}/section-NN.M retrospective`. Tool improvements have their own provenance and reviewability — never bundled into the subsection's implementation commit. Use a valid conventional-commit type per `/commit-push` (e.g., `build` for dev scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs).
+6. **Commit improvements separately** via `/commit-push` with a message like `test(teseq): add --summary flag that lists failures at the end — surfaced by {plan}/section-NN.M retrospective`. Tool improvements have their own provenance and reviewability — never bundled into the subsection's implementation commit. Use a valid conventional-commit type per `/commit-push` (e.g., `build` for dev scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs).
 
 7. **Verify the improvement actually solves the friction** by re-running the original workflow against the improved tool. If it doesn't noticeably help, iterate until it does.
 
-8. **Update documentation** if the tool gained new flags — `CLAUDE.md` (if listed), the script's `--help`, `diagnostics/README.md`.
+8. **Update documentation** if the tool gained new flags — `CLAUDE.md` (if listed), the script's `--help`, `scripts/README.md` or the top-level wrapper's header comment.
 
 **Output of a per-subsection retrospective is one of two states:**
 - **Improvements made** — list each tool changed + the friction it removes, with commit hashes
@@ -145,7 +149,7 @@ When invoked immediately after marking a subsection complete:
 When invoked at `/fix-bug` Phase 5 completion checklist step 8, AFTER TPR and hygiene are clean:
 
 1. **Reconstruct THIS bug's debugging journey.** The scope is the fix section (`fix-BUG-XX-NNN.md`), not a plan subsection. Ask:
-   - Which `diagnostics/` scripts did I run during root-cause analysis? Did any produce confusing or incomplete output?
+   - Which `scripts/` or the top-level wrappers (`./build-all.sh`, `./test-all.sh`, etc.) scripts did I run during root-cause analysis? Did any produce confusing or incomplete output?
    - Where did I add `dbg!` / `tracing::debug!` to chase the root cause? What was each one looking for? Could a script flag have surfaced the same information?
    - Where did the original failure message or test output fail to explain *why* something was wrong?
    - Did the TDD matrix writing reveal missing test helpers or assertion utilities?
@@ -184,9 +188,9 @@ When invoked at the end of a section, after `/tpr-review` and `/impl-hygiene-rev
 ### Candidate Format (all granularities)
 
 For each candidate, articulate:
-- **Tool**: which script/harness needs the change (e.g., `diagnostics/codegen-audit.sh`)
-- **Gap**: what's missing or painful (e.g., "doesn't show RC balance per basic block, only per function")
-- **Improvement**: the specific change (e.g., "add `--per-block` flag")
+- **Tool**: which script/harness needs the change (e.g., `./test-all.sh`, `cargo test -p oriterm_core --test teseq`, `oriterm/src/gpu/visual_regression/`)
+- **Gap**: what's missing or painful (e.g., "teseq skip messages don't say WHY tack is unavailable on a system without libtinfo")
+- **Improvement**: the specific change (e.g., "print the failing precondition in the SKIP line so the operator knows what to install")
 - **Payoff**: how it would have shortened *this* item's work (subsection, bug fix, or section), or how it sharpens future debugging
 - **Source**: which subsection (`{NN}.M`), bug fix (`BUG-XX-NNN`), or cross-pattern surfaced it — used in commit messages
 
@@ -221,8 +225,8 @@ Retrospective mode covers all three. The per-subsection cadence ensures the capt
 
 ## Examples
 
-**Bad**: "dual-exec-verify.sh doesn't check for RC leaks, so I'll manually run `` after it"
-**Good**: Add `--leak-check` flag to `dual-exec-verify.sh` that sets `` and reports results
+**Bad**: "`cargo test -p oriterm_core --test teseq` is skipping silently because `reseq` isn't installed, but the message doesn't say that — I'll just remember to check `which reseq` every time"
+**Good**: Update the teseq test harness so its skip message includes the missing binary name and the install command (`sudo apt install teseq`)
 
 **Bad**: "test-all.sh output is too long to scan, let me grep for FAIL"
 **Good**: Add a summary section to `test-all.sh` that lists all failures at the end

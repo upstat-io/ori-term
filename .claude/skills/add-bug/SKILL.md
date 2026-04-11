@@ -26,9 +26,10 @@ This skill MUST be invoked proactively whenever you encounter a bug that is **no
 - A code journey or exploration reveals unexpected output
 - You encounter an edge case that probably doesn't work
 - You find a TODO/FIXME/HACK comment that describes an unfixed bug
-- A compiler error message is wrong or misleading
-- You notice a mismatch between spec and implementation
-- Any test is `#skip`-ped and the reason looks fixable
+- A rendered frame, widget paint, or escape-sequence handler produces the wrong output
+- A platform-specific `#[cfg(target_os = ...)]` branch is missing on one of the supported targets
+- Any test is `#[ignore]`-d and the reason looks fixable
+- A performance invariant (zero idle CPU, zero allocations in hot render path, stable RSS) appears to be violated
 
 ## Usage
 
@@ -37,28 +38,31 @@ This skill MUST be invoked proactively whenever you encounter a bug that is **no
 ```
 
 The description can be:
-- A free-text bug description: `/add-bug tuple field .0.1 fails because lexer tokenizes 0.1 as float`
-- A file reference: `/add-bug crates/$1/src/iterator/next.rs:45 — double iteration on break`
+- A free-text bug description: `/add-bug cursor blink keeps frame budget gate open when no other animation is active`
+- A file reference: `/add-bug oriterm/src/gpu/window_renderer/render.rs:218 — copy extent mismatch during resize`
 - Context from the current conversation (no args needed if a bug was just discussed)
 
 ## Workflow
 
 ### Step 1: Determine Subsystem
 
-Map the bug to one of the 8 subsystem sections:
+Map the bug to one of the subsystem sections in `plans/bug-tracker/`. The authoritative list (and current open/closed counts) is in `plans/bug-tracker/00-overview.md` — re-read that file any time you are unsure which section to target.
 
-| Section | Subsystem | Crates/Paths |
-|---------|-----------|--------------|
-| 01 | Parser & Lexer | `ori_parse`, `ori_lexer` |
-| 02 | Type Checker | `ori_types` |
-| 03 | Evaluator | `ori_eval`, `ori_patterns` |
-| 04 | Codegen & LLVM | `ori_llvm`, `ori_arc` |
-| 05 | Runtime & ARC | `ori_rt` |
-| 06 | Stdlib | `library/std`, `ori_registry` |
-| 07 | Tooling & CLI | `oric`, `ori_fmt`, `ori_diagnostic` |
-| 08 | Spec & Docs | `docs/`, `.claude/`, `plans/` |
+| Section | Subsystem                    | File                              | Typical crates / paths                                                                 |
+|---------|------------------------------|-----------------------------------|----------------------------------------------------------------------------------------|
+| 01      | UI Widgets                   | `section-01-ui-widgets.md`        | `oriterm_ui/src/widgets/`                                                              |
+| 02      | Settings Dialog              | `section-02-settings-dialog.md`   | `oriterm_ui/src/widgets/dialog/`, `oriterm/src/session/` settings                      |
+| 03      | UI Framework                 | `section-03-ui-framework.md`      | `oriterm_ui/src/window_root/`, `interaction/`, `pipeline/`, `animation/`, `testing/`   |
+| 04      | Fonts                        | `section-04-fonts.md`             | `oriterm/src/font/`, swash/skrifa glyph pipeline, UI font registry                     |
+| 05      | Config                       | `section-05-config.md`            | `oriterm/src/config/`, TOML parse, hot reload                                          |
+| 06      | Rendering & Perf             | `section-06-rendering-perf.md`    | `oriterm/src/gpu/`, compositor, atlas, cached render path, perf invariants             |
+| 07      | CI & Build                   | `section-07-ci-build.md`          | `.github/`, `build-all.sh`, `test-all.sh`, `clippy-all.sh`, cross-compile              |
+| 08      | Core Terminal                | `section-08-core-terminal.md`     | `oriterm_core/` — grid, VTE handler, reflow, selection, search, teseq / tack / vttest |
+| 09      | Session & Tab/Window         | `section-09-session.md`           | `oriterm/src/session/`, split tree, floating layer, nav, layout compute                |
+| 10      | Platform Windows             | `section-10-platform-windows.md`  | Any `#[cfg(windows)]` branch, ConPTY, `x86_64-pc-windows-gnu` cross-compile issues     |
+| 11      | Mux & Pane I/O               | `section-11-mux.md`               | `oriterm_mux/`, IO thread, snapshot double-buffer, PTY, mux backend, IPC               |
 
-If unclear, check the file path or ask. If it spans subsystems, file in the one where the **fix** belongs (not where the symptom appears).
+If unclear, check the file path or ask. If it spans subsystems, file in the one where the **fix** belongs (not where the symptom appears). If a bug doesn't fit any existing section, create a new section file following the `section-NN-<topic>.md` naming convention and update `00-overview.md`'s Quick Reference table.
 
 ### Step 2: Check for Duplicates
 
@@ -159,7 +163,7 @@ The user should not need to prompt you to continue.
 
 Filing a bug is capture only. When a bug is picked up for fixing (via `/review-bugs`, `/continue-roadmap`, or direct request), the **`/fix-bug`** command enforces plan-section rigor:
 
-1. **Investigation** — root cause analysis, spec consultation, reference compiler review
+1. **Investigation** — root cause analysis, reference-repo consultation (tmux / alacritty / wezterm / ghostty / ratatui / ptyxis / termenv under `~/projects/reference_repos/console_repos/`), protocol spec cross-check (vt100.net, XTerm ctlseqs, ECMA-48, terminfo)
 2. **Fix section file** — `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` created with full plan-section structure
 3. **TDD matrix** — all tests written and verified failing BEFORE implementation
 4. **Implementation** — fix applied, tests pass unchanged
