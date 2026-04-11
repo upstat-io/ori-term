@@ -1,5 +1,5 @@
 {
-  "$comment": "Per-project tailoring config for /sync-from-orilang. Committed to git so all developers share the same sync rules. Edit freely \u2014 overrides the defaults from the global skill manifest.",
+  "$comment": "Per-project tailoring config for /sync-from-orilang. Committed to git so all developers share the same sync rules. Edit freely — overrides the defaults from the global skill manifest.",
   "project_type": "rust",
   "project_name": "ori_term",
   "substitutions": {
@@ -50,9 +50,15 @@
     "hooks": [],
     "commands": []
   },
-  "$preserve_comment": "Glob patterns under .claude/ to LEAVE UNTOUCHED even if sync would overwrite. Project-local customizations belong here.",
+  "$preserve_comment": "Glob patterns under .claude/ to LEAVE UNTOUCHED even if sync would overwrite. Project-local customizations belong here. Anything this repo has tailored for the terminal emulator (as opposed to the Ori compiler) MUST be listed so /sync-from-orilang does not clobber it. Includes all per-crate rules files (.claude/rules/oriterm*.md) created by /tpr-review and the review-work skill/command pair rewritten for terminal-emulator scope.",
   "preserve": [
     ".claude/rules/project-specific-*.md",
+    ".claude/rules/oriterm*.md",
+    ".claude/rules/tests.md",
+    ".claude/rules/proposals.md",
+    ".claude/rules/impl-hygiene.md",
+    ".claude/commands/review-work.md",
+    ".claude/skills/review-work/",
     ".claude/skills/project-*/",
     ".claude/settings.local.json"
   ],

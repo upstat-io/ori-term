@@ -1,6 +1,6 @@
 ---
 name: review-work
-description: "Review actual implementation work via dual-source (Codex + Gemini) third-party review — TRIGGER proactively after completing ANY non-trivial work: bug fixes, new features, refactors, multi-file changes, compiler changes, codegen changes, test additions, plan implementations, or anything touching correctness-sensitive code. When in doubt, run it. The cost of an unnecessary review is near zero; the cost of a missed bug is high."
+description: "Review actual implementation work via dual-source (Codex + Gemini) third-party review — TRIGGER proactively after completing ANY non-trivial work: bug fixes, new features, refactors, multi-file changes, grid / VTE / renderer changes, widget framework changes, GPU render path changes, test additions, plan implementations, or anything touching correctness-sensitive code in ori_term. When in doubt, run it. The cost of an unnecessary review is near zero; the cost of a missed bug is high."
 ---
 
 # Dual-Source Review Work (Codex + Gemini)
@@ -50,9 +50,9 @@ Read CLAUDE.md (the project root one)
 - **SSOT**: if the finding reveals scattered knowledge or duplicated dispatch, the fix is to establish/use the canonical home — not to patch each copy
 - **No Side Logic**: if logic lives outside its canonical home, the fix is to move it — not to add another copy that "works"
 - **Canonical Homes**: every behavioral decision has exactly ONE file that defines it. If a fix would create a second source of truth, it is wrong
-- **Phase Boundaries**: fixes must not bleed phase responsibilities. If fixing a codegen bug requires adding type-checking logic to the codegen pass, that's the wrong fix — the type checker should provide the information
-- **Registry as Source of Truth**: builtin type behavior (methods, operators, memory) lives in `ori_registry`. Fixes that hardcode type behavior outside the registry are LEAKs
-- **Enforcement**: when a fix adds a new variant, sync point, or dispatch arm, it MUST have enforcement (exhaustive match, exhaustiveness test, or registry-driven generation) to prevent future drift
+- **Crate Boundaries**: fixes must not bleed responsibilities across crate boundaries. If fixing a widget bug requires adding GPU-specific logic to `oriterm_ui`, that's the wrong fix — `oriterm_ui` must stay headless-testable (see `.claude/rules/crate-boundaries.md` litmus test). Per-crate ownership lives in the per-crate rules under `.claude/rules/oriterm*.md`.
+- **Canonical Homes in ori_term**: grid / VTE / terminfo behavior lives in `oriterm_core`; widget / interaction / animation / compositor lives in `oriterm_ui`; pane lifecycle / PTY / snapshot buffer lives in `oriterm_mux`; app shell / GPU / font pipeline / session model lives in `oriterm`. Fixes that hardcode the same knowledge in a second crate are LEAKs. Check `.claude/rules/crate-boundaries.md` Ownership table.
+- **Enforcement**: when a fix adds a new variant, sync point, or dispatch arm, it MUST have enforcement (exhaustive match, exhaustiveness test, or architecture test in `oriterm/tests/architecture.rs`) to prevent future drift
 
 **The "quick fix" test**: if your fix would not survive a code review by someone who has read `impl-hygiene.md`, it's wrong. The correct fix may touch 10 files across 3 crates — that IS the fix. A workaround that passes tests is not a fix.
 
@@ -63,13 +63,15 @@ Read CLAUDE.md (the project root one)
 - New features or feature extensions
 - Refactors or code reorganization
 - Multi-file changes (2+ files)
-- Any change to compiler crates (`ori_types`, `ori_eval`, `ori_llvm`, `ori_arc`, `ori_parse`, `ori_lexer`, `ori_rt`)
-- Any change to codegen, type checking, or evaluation
-- Any change to the ARC/AIMS pipeline
-- Test matrix additions or test infrastructure changes
+- Any change to `oriterm_core` (grid, VTE handler, reflow, selection, search, terminfo)
+- Any change to `oriterm_ui` (widgets, WindowRoot, interaction, pipeline, animation, test harness)
+- Any change to `oriterm_mux` (pane lifecycle, IO thread, snapshot double-buffer, PTY, mux backend)
+- Any change to `oriterm` (app shell, winit event loop, GPU rendering, session model, font pipeline, config)
+- Any change to the GPU render path (`render_frame_cached`, atlas, compositor, shaders)
+- Any change touching `#[cfg(target_os = ...)]` branches
+- Test matrix additions, teseq / tack / vttest / visual-regression additions
 - Plan section implementations
-- Stdlib or registry changes
-- Changes to error handling or diagnostics
+- Changes to color detection, unicode width, raw mode, signal handling, or panic recovery
 
 **Also run when:**
 - You're unsure whether the change warrants review (default: run it)
@@ -354,10 +356,10 @@ For each validated finding, decide where it lives. This routing is the key revie
 1. **Is there an owning plan section?** — check whether an active plan (roadmap or reroute) has a section covering the affected code.
 2. **If yes** — record the entry (or both halves of an agreement) in that section's `## {NN}.R Third Party Review Findings` block using the reviewer-tagged IDs from `merge-findings.py` verbatim:
    ```md
-   - [ ] `[TPR-04-001-codex][high]` `compiler/foo.rs:123` — Add dec on early-exit branch.
+   - [ ] `[TPR-04-001-codex][high]` `oriterm_core/src/grid/mod.rs:218` — Reset damage tracker on resize.
      Evidence: ... Impact: ... Required plan update: ...
      Basis: fresh_verification. Confidence: high.
-   - [ ] `[TPR-04-001-gemini][high]` `compiler/foo.rs:123` — Add dec on early-exit branch.
+   - [ ] `[TPR-04-001-gemini][high]` `oriterm_core/src/grid/mod.rs:218` — Reset damage tracker on resize.
      Evidence: ... Impact: ... Required plan update: ...
      Basis: direct_file_inspection. Confidence: high. Citations: [{url: "...", description: "..."}]
    ```
@@ -385,15 +387,17 @@ For each validated finding, decide where it lives. This routing is the key revie
 
    Each BUG entry gets ONE ordinal regardless of how many reviewers found it — the ordinal space belongs to the subsystem section, not the reviewers. This preserves the canonical `BUG-XX-NNN` ID shape that all downstream tooling expects.
 
-Subsystem mapping (identical to the single-source version — this routing contract is unchanged):
-- `ori_parse`/`ori_lexer` -> section-01
-- `ori_types` -> section-02
-- `ori_eval`/`ori_patterns` -> section-03
-- `ori_llvm`/`ori_arc` -> section-04
-- `ori_rt` -> section-05
-- `library/std`/`ori_registry` -> section-06
-- `oric`/`ori_fmt`/`ori_diagnostic` -> section-07
-- `docs/`/`.claude/`/`plans/` -> section-08
+Subsystem mapping (by ori_term crate ownership — see `.claude/rules/crate-boundaries.md` for authoritative ownership):
+- `oriterm_core` (grid, VTE handler, reflow, selection, search, terminfo conformance) -> section covering terminal-emulation bugs
+- `oriterm_ui` (widgets, WindowRoot, interaction, pipeline, animation, test harness) -> section covering UI-framework bugs
+- `oriterm_mux` (pane lifecycle, IO thread, snapshot buffer, PTY, mux backend) -> section covering pane-server bugs
+- `oriterm_ipc` (Unix sockets, Windows named pipes, mio integration) -> section covering IPC bugs
+- `oriterm` (app shell, winit event loop, GPU rendering, session model, font pipeline, config) -> section covering app-shell bugs
+- `crates/oriterm_test_support` (test helpers) -> section covering test-support bugs
+- `crates/portable-pty`, `crates/vte`, `crates/wgpu-hal` (vendored patches) -> route to the upstream subsystem that depends on the patched crate
+- `docs/`, `.claude/`, `plans/` -> documentation / tooling section
+
+Check `plans/bug-tracker/00-overview.md` for the current section mapping — if no specific section exists, file under the closest match and note the subsystem explicitly in the `Subsystem:` field.
 
 #### 7b. Fix Each Finding — branch by destination
 
@@ -508,18 +512,18 @@ This section specifies how merged findings are written into the owning plan's `#
 When `merge-findings.py` reports `agreement: true`, both halves are filed adjacent with a cross-reference annotation. Both entries point at each other via the `Agreement:` line so the plan's TPR block preserves the independence contract while still making the convergence visible:
 
 ```md
-- [ ] `[TPR-04-001-codex][high]` `crates/$1/src/lower/iter.rs:218` — Add dec on early-exit branch of iterator loop.
-  Evidence: On `break` inside `for x in iter do ...`, the iterator value's RC is never decremented before the loop exits, leaving a leaked reference on the remaining elements. Reproduced via `tests/valgrind/iter_break.ori`.
-  Impact: Memory leak on every early-exit iteration; severity scales with iterator payload size.
-  Required plan update: Add a `dec` emission to the early-exit branch in `ori_arc/src/lower/control_flow/for_loop.rs`; verify via `` on the matrix tests.
+- [ ] `[TPR-04-001-codex][high]` `oriterm/src/gpu/window_renderer/render.rs:218` — Clamp copy extent to destination size in `render_frame_cached`.
+  Evidence: When the prepared viewport is larger than the surface texture target, `copy_texture_to_texture` is called with the source extent, which panics on size mismatch during interactive resize. Reproduced via `oriterm/src/gpu/visual_regression/resize_stress.rs::resize_mid_frame`.
+  Impact: GPU-thread panic during interactive resize; terminal window crashes.
+  Required plan update: Clamp the copy extent to `min(source, destination)` in `render_frame_cached`; verify via `cargo test -p oriterm --test resize_stress`.
   Basis: fresh_verification. Confidence: high.
   Agreement: [TPR-04-001-gemini] (both reviewers flagged this location/title)
-- [ ] `[TPR-04-001-gemini][high]` `crates/$1/src/lower/iter.rs:218` — Add dec on early-exit branch of iterator loop.
-  Evidence: The lowering pass emits an iterator inc on loop entry but the early-exit path in `lower_break` does not call the matching dec. Verified against Swift's SILOptimizer/ARC/ARCContract.cpp, which explicitly handles the analogous case.
+- [ ] `[TPR-04-001-gemini][high]` `oriterm/src/gpu/window_renderer/render.rs:218` — Clamp copy extent to destination size in `render_frame_cached`.
+  Evidence: The cached render path calls `copy_texture_to_texture` with the full prepared viewport size, but the destination texture was reconfigured to a smaller size mid-frame. Confirmed against wezterm's `cache_texture` pattern which uses `min(src, dst)` for the copy extent.
   Impact: Same as above (agreement finding).
   Required plan update: Same as above.
   Basis: direct_file_inspection. Confidence: high.
-  Citations: [{url: "https://github.com/apple/swift/blob/main/lib/SILOptimizer/ARC/ARCContract.cpp", description: "Swift's equivalent arc contract pass, for cross-reference"}]
+  Citations: [{url: "https://github.com/wezterm/wezterm/blob/main/wezterm-gui/src/termwindow/render.rs", description: "wezterm's equivalent cached-render copy pattern, for cross-reference"}]
   Agreement: [TPR-04-001-codex] (both reviewers flagged this location/title)
 ```
 
@@ -528,10 +532,10 @@ When `merge-findings.py` reports `agreement: true`, both halves are filed adjace
 ### Gemini-only case — a finding with no codex counterpart
 
 ```md
-- [ ] `[TPR-04-002-gemini][medium]` `prelude.ori:5` — Replace println with tracing::debug.
-  Evidence: The prelude emits a `println` on module load to report version info. `println` writes to stdout, which pollutes test captures; the project convention is to use `tracing::debug` with the `ori_*` target (see CLAUDE.md §Tracing).
-  Impact: Test snapshot churn on every prelude load; violates the "no println" rule.
-  Required plan update: Switch to `tracing::debug!(target: "ori_prelude", ...)` and add a `#[tracing::instrument]` on the prelude loader.
+- [ ] `[TPR-04-002-gemini][medium]` `oriterm/src/config/loader.rs:42` — Replace `println!` debug line with `log::debug!`.
+  Evidence: The config loader emits a `println!` on successful reload to report the config path. `println!` writes to stdout, which is the same fd the terminal uses for its own output and causes visual glitches when the config is reloaded while a pane is rendering. The project convention per CLAUDE.md §Coding Standards is to use `log` macros, never `println!` debugging.
+  Impact: Stray bytes injected into the terminal output stream on every config reload; a user-visible rendering glitch.
+  Required plan update: Switch to `log::debug!("config reloaded from {path:?}")` and remove the `println!`.
   Basis: inference. Confidence: medium. (Gemini-only finding — no codex counterpart.)
 ```
 
@@ -540,10 +544,10 @@ When `merge-findings.py` reports `agreement: true`, both halves are filed adjace
 ### Codex-only case — symmetric to gemini-only
 
 ```md
-- [ ] `[TPR-04-003-codex][low]` `crates/$1/src/expr/binary.rs:142` — Tighten error span on operator-precedence mismatch.
-  Evidence: The current error points at the left operand; the spec's operator-rules.md §B.PRECEDENCE example shows the caret should sit on the operator itself.
-  Impact: Diagnostic UX regression in a code path that already has a regression test; trivial fix.
-  Required plan update: Update `binary.rs:142` to emit the span on the operator token.
+- [ ] `[TPR-04-003-codex][low]` `oriterm_ui/src/widgets/button.rs:142` — Tighten focus-ring inset for tiny buttons.
+  Evidence: The current focus-ring rect is computed with a fixed 2-pixel inset; on buttons narrower than 10 pixels, the ring clips into the text. Reference: ratatui's `Block` widget uses a proportional inset instead.
+  Impact: Visual-polish regression on narrow tab-bar buttons; trivial fix.
+  Required plan update: Update `button.rs:142` to use `inset = min(2, width / 5)` for the focus ring.
   Basis: direct_file_inspection. Confidence: high. (Codex-only finding — no gemini counterpart.)
 ```
 
@@ -553,7 +557,7 @@ When a finding is fixed (Step 7b), mark the entry `[x]` and append a `Resolved:`
 
 ```md
 - [x] `[TPR-04-001-codex][high]` ...
-  Resolved: Fixed on 2026-04-07 in commit abc123. Added `dec` emission in `lower_break` early-exit branch; verified via `cargo t -p ori_arc iter_break`.
+  Resolved: Fixed on 2026-04-07 in commit abc123. Clamped copy extent in `render_frame_cached`; verified via `cargo test -p oriterm --test resize_stress`.
 - [x] `[TPR-04-001-gemini][high]` ...
   Resolved: Fixed on 2026-04-07 in commit abc123. Same fix as [TPR-04-001-codex] (agreement).
 ```

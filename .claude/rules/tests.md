@@ -1,27 +1,43 @@
 ---
 paths:
+  - "**/tests/**"
+  - "**/tests.rs"
+  - "**/*_test*.rs"
   - "**test**"
 ---
 
-# Specification Tests
+# ori_term Testing Rules
 
 **Tests are source of truth.** Test fails = code is wrong, not the test.
 **Tests are MANDATORY.** There are zero scenarios where skipping tests is acceptable. Every code change — bug fix, feature, refactor, optimization — requires tests. No exceptions.
 
+## What This File Is For
+
+ori_term is a GPU-accelerated terminal emulator (Rust, wgpu, winit). Its test surface is **not** a language compiler — there is no Ori spec runner, no interpreter vs LLVM parity, no ARC/AOT cross-phase verification. Anything below is framed around the actual test layers this project runs:
+
+- **Crate unit tests** via sibling `tests.rs` files (`cargo test -p <crate>` or `./test-all.sh`)
+- **Integration tests** in each crate's `tests/` directory (e.g. `oriterm_core/tests/`, `oriterm/tests/`)
+- **Widget harness tests** via `WidgetTestHarness` (`oriterm_ui/src/testing/`) — headless widget interaction, no GPU / display server required
+- **GPU cached render path tests** in `oriterm/src/gpu/visual_regression/` — must use `render_frame_cached()` not `render_frame()` (see CLAUDE.md §GPU Render Path Testing)
+- **Terminfo / terminal conformance** via `oriterm_core/tests/teseq/`, `oriterm_core/tests/tack/`, `oriterm_core/tests/vttest/` and their mirrors under `oriterm/src/gpu/visual_regression/`
+- **Allocation regression** via `oriterm_core/tests/alloc_regression.rs` and `oriterm_core/tests/rss_regression.rs` — enforces the zero-allocation hot render path and stable RSS invariants
+- **Control-flow / event-loop purity** via `oriterm/src/app/event_loop_helpers/tests.rs` — pure `compute_control_flow()` tests that enforce the zero-idle-CPU invariant
+- **Cross-platform build** via `cargo build --target x86_64-pc-windows-gnu` — Windows cross-compile from WSL, plus native macOS/Linux in CI
+
 ## TDD for Bugs
 
-The TDD *commitment* (you MUST do TDD, use `/fix-bug`) is in CLAUDE.md §TDD for Bugs. This section details the *methodology*.
+The TDD *commitment* (you MUST do TDD, use `/fix-bug`) is in CLAUDE.md §Bug Discipline. This section details the *methodology*.
 
 1. STOP — don't jump to fixing
-2. Consult spec for intended behavior
+2. Consult the reference repos for intended behavior when the bug touches a protocol or convention that tmux / alacritty / wezterm / ghostty / ratatui / ptyxis already solved
 3. Write MATRIX tests — not just "multiple":
-   - **Exact failing case**: the specific input that triggered the bug
-   - **Edge cases**: empty, single-element, boundary conditions
-   - **Cross-type matrix**: if the fix is type-dependent, test ALL relevant types through the same code path (str, [int], Option<str>, closures, structs, maps, sets)
-   - **Cross-pattern matrix**: if the fix is pattern-dependent, test ALL relevant control-flow patterns (full iteration, break, yield, guard, nested, two-call)
-   - **Cross-feature matrix**: test interactions with other language features that flow through the same code path (see §Interaction Testing below)
-   - **Semantic pin**: at least one test that ONLY passes with the new semantics — the permanent regression guard
-   - **Negative pin**: at least one `#compile_fail` or assertion that REJECTS the old/broken behavior — proves the compiler actively prevents the regression, not just happens to avoid it
+   - **Exact failing case**: the specific input (escape sequence, widget event, font config, GPU target size) that triggered the bug
+   - **Edge cases**: empty input, single-cell grid, zero-sized window, CJK at column 0, empty selection, 1×1 surface, zero-width combining mark
+   - **Cross-type matrix**: if the fix is scalar-type-dependent, test all relevant types through the same code path (`u8`, `u16`, `u32`, `usize`, `f32`, `Color`, `Cell`, `WidgetAction`, `KeymapAction`)
+   - **Cross-pattern matrix**: if the fix is control-flow-dependent, test all relevant flow patterns (`for`, `while`, `loop { break }`, iterator chain, early return, short-circuit)
+   - **Cross-feature matrix**: test interactions with other subsystems that flow through the same code path (see §Interaction Testing)
+   - **Semantic pin**: at least one test that ONLY passes with the new behavior — the permanent regression guard
+   - **Negative pin**: at least one assertion that REJECTS the old/broken behavior — proves the code actively prevents the regression, not just happens to avoid it
 4. Verify tests FAIL (proves understanding)
 5. Fix the code
 6. Tests pass WITHOUT modification
@@ -29,252 +45,266 @@ The TDD *commitment* (you MUST do TDD, use `/fix-bug`) is in CLAUDE.md §TDD for
 
 ## Matrix Testing Rule
 
-**Every fix that touches a code path shared by multiple types or patterns requires matrix coverage.** A fix to iterator cleanup that works for `str` but isn't tested with `[int]`, `Option<str>`, closures, and maps is incomplete. Dimensions:
+**Every fix that touches a code path shared by multiple types, patterns, or platforms requires matrix coverage.** A fix to input dispatch that works for `KeyEvent::Enter` but isn't tested with `Tab`, `Shift+Tab`, `Ctrl+C`, `mouse_down`, and `scroll` is incomplete. Dimensions:
 
-- **Type dimension**: all types that flow through the fixed code path
-- **Pattern dimension**: all control-flow patterns that exercise the fixed code path
-- **Feature dimension**: all language features that interact with the fixed code path (see §Interaction Testing)
-- **Backend dimension**: debug + release builds, interpreter + AOT parity
-- **Phase dimension**: if the fix touches shared infrastructure, verify parse→typeck→eval→codegen all still agree
+- **Type dimension**: all event / value / style types that flow through the fixed code path
+- **Pattern dimension**: all control-flow / propagation patterns that exercise the fixed code path (widget tree recursion, capture vs bubble, focus ring traversal)
+- **Feature dimension**: all subsystems that interact with the fixed code path (see §Interaction Testing)
+- **Platform dimension**: debug + release builds, Linux (host) + Windows (cross-compile) + macOS (CI). Any `#[cfg(target_os = ...)]` branch must have a counterpart test per branch.
+- **Surface dimension**: if the fix touches GPU rendering, verify both `render_frame_cached()` (production path) and the prepare/paint split — do NOT rely on `render_frame()` which skips content caching and hides real bugs
 
 A fix is complete when the matrix is covered. Missing cells are potential regressions waiting to happen.
 
-**Matrix squeeze principle**: Each matrix test narrows the gap between "works" and "crashes," triangulating the bug from multiple angles. When the matrix is dense, the correct fix surface becomes surgically obvious — all surrounding cases are pinned, so the fix must thread precisely between them. This has two compounding effects:
+**Matrix squeeze principle**: Each matrix test narrows the gap between "works" and "crashes," triangulating the bug from multiple angles. When the matrix is dense, the correct fix surface becomes surgically obvious — all surrounding cases are pinned, so the fix must thread precisely between them.
 
-1. **Fix precision**: A dense matrix forces fixes to be narrow and correct. A fix that's too broad breaks existing passing cells; a fix that's too narrow leaves failing cells. The matrix defines the exact boundary.
-2. **Regression triangulation**: When a fix introduces a regression, the existing matrix catches it immediately and identifies exactly which dimension (type, pattern, feature, phase) the regression occupies. This turns "something broke" into "the fix doesn't handle zip iterators with unresolved type variables" — the matrix squeezes out the ambiguity.
-3. **Organic convergence**: Over time, the matrix accumulates coverage that makes each subsequent fix easier and more precise. Bugs that previously required extensive investigation are immediately localized by the matrix to a specific type × pattern × feature cell.
-
-The matrix squeeze effect is strongest when tests are added BEFORE the fix (TDD), not after — the pre-fix failing cells define the exact scope of the bug, and the pre-fix passing cells define the exact boundary the fix must respect.
-
-**Self-verifying matrix completeness** (from Zig): When writing matrix tests that iterate over types or patterns, include a count assertion that proves every cell was visited. A matrix loop that silently skips cells is worse than no matrix at all:
+**Self-verifying matrix completeness**: When writing matrix tests that iterate over types or patterns, include a count assertion that proves every cell was visited:
 ```rust
 let mut count = 0;
-for ty in ALL_TYPES { for pattern in ALL_PATTERNS { test(ty, pattern); count += 1; } }
-assert_eq!(count, ALL_TYPES.len() * ALL_PATTERNS.len()); // proves no cells skipped
+for ty in ALL_INPUT_KINDS { for phase in ALL_PROPAGATION_PHASES { test(ty, phase); count += 1; } }
+assert_eq!(count, ALL_INPUT_KINDS.len() * ALL_PROPAGATION_PHASES.len()); // proves no cells skipped
 ```
 
 ## Matrix Clamping — Pinning Correct Behavior from All Sides
 
-Matrix clamping uses tests to **narrow the solution space** until only the correct fix survives. Each matrix cell is a clamp — a constraint that pins behavior from one angle. The more clamps, the tighter the fix is held in place. The goal is not to limit the number of tests but to ensure every dimension of the bug is pinned so the fix cannot drift.
+Matrix clamping uses tests to **narrow the solution space** until only the correct fix survives. Each matrix cell is a clamp — a constraint that pins behavior from one angle.
 
-- **Clamp from above and below**: for every "should work" cell, add a corresponding "should fail" cell at the boundary. If `int` works, does `float` also work? If `break` is correct, does `continue` in the same position produce the right different behavior? The gap between the passing and failing cells IS the specification of the feature.
-- **Clamp across type boundaries**: if a fix touches a code path shared by `str`, `[int]`, `Option<T>`, and closures, pin all four. A fix that passes for `str` but isn't clamped for `Option<str>` can silently regress when someone changes the Option handling.
-- **Clamp across pattern boundaries**: if a loop fix works for full iteration, clamp it with `break`, `yield`, guard, nested, and two-call patterns. Each pattern exercises a different exit path — unclamped paths are future regressions.
-- **Clamp across feature boundaries**: if the fix interacts with closures, generics, `?`, pattern matching, or traits, add cells for each interaction. Feature boundaries are where compilers break (see §Interaction Testing).
-- **The squeeze effect**: when all surrounding cells are clamped, the correct fix surface is surgically obvious — it must thread precisely between the passing and failing cells. A fix that's too broad breaks a clamped cell above; a fix that's too narrow leaves a clamped cell below. The matrix reveals exactly where the boundary is.
-- **Completeness test**: after writing the matrix, ask: "could a *different* fix also pass all these tests?" If yes, the matrix is not tight enough — add a cell that distinguishes the correct fix from the incorrect alternative.
+- **Clamp from above and below**: for every "should work" cell, add a corresponding "should fail" cell at the boundary. If `Alt+Enter` produces one action, does `Alt+Shift+Enter` produce a *different* action (not a crash, not the same action)?
+- **Clamp across type boundaries**: if a fix touches a code path shared by `KeyEvent`, `MouseEvent`, `WheelEvent`, and `TouchEvent`, pin all four.
+- **Clamp across pattern boundaries**: if a scroll fix works for `direction: up`, clamp it with `down`, `at top`, `at bottom`, `during selection`, `during mark mode`.
+- **Clamp across feature boundaries**: if the fix interacts with selection, mark mode, overlays, focus, or animation, add cells for each interaction.
+- **The squeeze effect**: when all surrounding cells are clamped, the correct fix surface is surgically obvious.
+- **Completeness test**: after writing the matrix, ask: "could a *different* fix also pass all these tests?" If yes, add a cell that distinguishes the correct fix.
 
 **Fix completeness checklist** — a fix is NOT done until:
-- [ ] Matrix tests cover every relevant type × pattern × feature combination
+- [ ] Matrix tests cover every relevant type × pattern × feature × surface combination
 - [ ] At least one semantic pin test would fail if the fix is reverted
 - [ ] At least one negative pin rejects the broken behavior
 - [ ] Positive + negative pairing: every "should work" test has a corresponding "should fail" counterpart
 - [ ] Debug AND release builds pass
-- [ ] `` reports zero leaks on all test programs
-- [ ] Interpreter and AOT produce identical results for all new tests
-- [ ] Plan/roadmap updated if the fix crosses section boundaries
+- [ ] `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green (workspace + Windows cross-compile)
+- [ ] Teseq / tack / vttest suites green if the fix touches VT handling, terminfo, or visual rendering
+- [ ] If the fix touches the GPU render path, visual-regression suite under `oriterm/src/gpu/visual_regression/` green on both cached and prepared paths
 
 ## Interaction Testing — Feature × Feature (MANDATORY)
 
-**Every feature must be tested in combination with other features it can interact with.** Compilers break at feature boundaries, not within features. A type that works alone but fails inside a closure, behind a `?`, inside a `for...yield`, or through a trait method is a real bug that users will hit.
+**Every feature must be tested in combination with other features it can interact with.** Terminal emulators break at feature boundaries, not within features. A widget that works in isolation but fails under a resize, during animation, or inside an overlay is a real bug that users will hit.
 
 **When implementing or fixing feature A, test A × B for every relevant B:**
 
-| If A touches... | Also test with... |
+| If A touches...                  | Also test with...                                                                                           |
 |---|---|
-| Type inference | Generics, closures, trait bounds, `?` operator, pattern matching |
-| Control flow (loops, match) | Break/continue with values, labels, nested loops, yield, `?` |
-| Collections (list, map, set) | Iteration, COW, slicing, nested collections, generic element types |
-| Closures/lambdas | Capture patterns (value types, collections, structs), recursive calls, trait bounds |
-| Error handling (`?`, Result) | Closures, loops, match arms, nested `?`, `try` blocks |
-| Traits/methods | Generic impls, default impls, trait objects, associated types, derived traits |
-| Pattern matching | Nested patterns, guards, bindings (`@`), exhaustiveness, sum types with generics |
-| ARC/memory | Loops (the back-edge), closures (captures), COW (uniqueness checks), nested structures |
-| Structs/sum types | Generics, derive, pattern matching, method dispatch, nested types |
-| String operations | Template literals, interpolation with complex expressions, Unicode edge cases |
+| Grid / VTE parsing               | Reflow, scrollback, selection, mark mode, damage tracking, resize during output                             |
+| Widget input                     | Focus changes, overlays, drag-in-progress, animation in flight, scale change, disabled state                |
+| GPU rendering                    | Cached path (`render_frame_cached`), resize race (viewport vs surface mismatch), DPI change, device loss    |
+| Color detection                  | `NO_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, `COLORTERM`, `TERM=dumb`, non-TTY stdout                          |
+| Unicode width                    | CJK, emoji (base + variation selectors), combining marks, ZWJ sequences, RTL / BiDi                        |
+| Selection                        | Copy, search, mark mode, reflow, scrollback expansion, linear vs rectangular vs semantic                    |
+| Font pipeline                    | Multi-size registry, fallback fonts, live config reload, shaping cache invalidation                         |
+| PTY / ConPTY                     | Write blocking, read buffering, resize mid-output, process death, backpressure                              |
+| Session model (tabs/splits)      | Focus changes, directional nav, mux events, pane close-during-animation, layout recomputation               |
+| Animation                        | Pause/resume on visibility, scale change, input during animation, multiple concurrent animations            |
+| Config reload                    | Font swap, theme swap, keybind reload, pane resize, scrollback budget change                                |
 
-**Minimum interaction coverage**: for any new feature or fix, test at least 3 cross-feature interactions. For features touching ARC/memory, test at least 5 (loops, closures, COW, nested structures, error paths).
+**Minimum interaction coverage**: for any new feature or fix, test at least 3 cross-feature interactions. For features touching the hot render path (prepare/paint), test at least 5 (cached path, resize race, scale change, damage invalidation, scrollback scroll).
 
-## Cross-Phase Verification (MANDATORY)
+## Cross-Platform Verification (MANDATORY)
 
-**A test that only exercises one compiler phase is incomplete.** Production compilers (TypeScript, Swift, Zig) verify that all phases agree on every test. For Ori:
+**Every `#[cfg(target_os = "...")]` branch must have tests.** ori_term targets Linux, macOS, and Windows. The build/test matrix:
 
-1. **Dual-execution parity**: Every spec test runs through both the interpreter and LLVM backend. A test that passes in the interpreter but not LLVM (or vice versa) is a bug — not a "backend limitation." The `test-all.sh` suite enforces this via parallel `cargo st` (interpreter) and `ori test --backend=llvm` (LLVM) runs. Any new test that is skipped for one backend MUST have a plan item tracking when it will be supported.
+1. **Native Linux** — `./test-all.sh` on the host (WSL or Linux)
+2. **Windows cross-compile** — `cargo build --target x86_64-pc-windows-gnu` must succeed (CI also runs native Windows)
+3. **macOS** — CI-only; locally verify via code inspection against `tmux`, `alacritty`, `ghostty` macOS code paths
+4. **Teseq scenarios** — Linux-only (`sudo apt install teseq`); tests must skip gracefully on macOS/Windows (no panic, no false failure)
+5. **Tack / vttest** — conditional on tool availability; must skip cleanly when the tool is missing (see §Graceful Skip Protocol below)
+6. **Architecture tests** — `cargo test -p oriterm --test architecture` enforces crate-boundary rules
 
-2. **Phase-boundary tests**: When a fix touches infrastructure shared between phases (e.g., type representations, pattern compilation, method resolution), write tests that verify the handoff:
-   - **Parse → Typeck**: the parsed AST structure matches what the type checker expects
-   - **Typeck → Eval**: inferred types match runtime behavior (e.g., generic instantiation produces correct values)
-   - **Typeck → Codegen**: type checker decisions (RC strategy, layout, calling convention) produce correct LLVM IR
-   - **ARC → Codegen**: ARC pipeline decisions (uniqueness, reuse, COW) are faithfully lowered to runtime calls
+If a feature cannot be implemented on a platform, it must degrade gracefully with a compile-time `cfg` gate, not a runtime panic. Every `#[cfg(target_os = "...")]` block must have counterparts for all supported targets — no platform left behind.
 
-3. **Fault tolerance testing** (from Gleam): When testing error paths, verify the compiler continues analyzing subsequent definitions. An error in function `f` must not prevent type-checking function `g`. Write `#compile_fail` tests with MULTIPLE errors and verify ALL are reported, not just the first.
+## Graceful Skip Protocol
 
-## ARC/Memory Testing Protocol (MANDATORY for memory-touching changes)
+Tests that depend on an external tool (`teseq`, `tack`, `tic`, `infocmp`, GPU adapter, display server) **must** detect the tool's absence and skip without failing.
 
-Adapted from Swift (SIL ARC tests), Koka (PARC @dup/@drop golden files), and Lean 4 (IR-level inc/dec tests).
+- Detect via a helper (`PtySession::ensure_tack_available`, `reseq::which`, `wgpu::Instance::request_adapter`) at the top of the test
+- On absence: log a `SKIP: <reason>` message and `return` early — do NOT `panic!`, do NOT `assert!(false)`
+- The skip MUST be visible in test output so a missing tool is not silently hidden; use `eprintln!("SKIP: tack binary unavailable")`
+- Every skip path MUST have at least one "also runs" companion test that is NOT gated on the tool, so the matrix is never fully empty on a platform
 
-**Every change to ARC/RC/COW code requires ALL of:**
+Drift-gate tests — `cap_coverage_matrix`, `begin_testing_inventory`, `tools_menu_inventory`, `status_reports_inventory` — run unconditionally on ALL platforms and enforce that gate regressions are impossible to ship.
 
-1. **Behavioral correctness**: program produces the right output
-2. **RC balance**: `` reports zero leaks AND `` shows balanced inc/dec
-3. **IR-level verification** (when touching `ori_arc` or `ori_llvm`): use `` or `` to verify exact RC operation placement. Document expected operations in test comments.
-4. **Positive + negative RC pairing** (from Swift): every test where an optimization SHOULD fire (e.g., elide a retain) must have a companion test where it SHOULD NOT fire (e.g., aliasing prevents elision). Name them together: `test_rc_elision_simple` + `test_rc_elision_blocked_by_alias`.
-5. **Loop-isolated tests** (from Swift): ARC around loops is the #1 source of RC bugs. Test every loop topology separately: simple `for`, `while`, nested loop, loop with `break`, loop with `yield`, loop with `?`.
-6. **COW barrier tests** (from Swift): RC motion must NOT cross `is_unique` / COW uniqueness checks. Test that `cow_branch` instructions remain as barriers.
-7. **Drop elision tests** (from Koka): when a value is consumed and a new value returned, verify the old value is dropped (not leaked). When a value is NOT consumed, verify it is NOT dropped.
-8. **Nested structure tests** (from Lean 4): test RC correctness for `[[int]]`, `{str: [int]}`, `Option<[str]>`, closures capturing collections — these exercise the elem_dec_fn / propagation paths.
+## Performance Invariants (MANDATORY for hot-path changes)
+
+These are enforced by regression tests that must NEVER be disabled. See CLAUDE.md §Performance Invariants for the full contract.
+
+1. **Zero idle CPU beyond cursor blink** — enforced by `compute_control_flow()` pure-function tests in `oriterm/src/app/event_loop_helpers/tests.rs`. When idle, the event loop sleeps via `ControlFlow::Wait`; the only wakeup source is the cursor blink timer. Any change that touches event-loop scheduling MUST re-run these tests.
+2. **Zero allocations in hot render path** — enforced by `oriterm_core/tests/alloc_regression.rs`. The IO thread calls `renderable_content_into()` into a reusable buffer, then `SnapshotDoubleBuffer::flip_swap()` exchanges it with the front buffer via `std::mem::swap()`. All `Vec` buffers are reused via `.clear()` + capacity retention. Any change that allocates per-cell or per-frame MUST fail these tests.
+3. **Stable RSS under sustained output** — enforced by `rss_stability_under_sustained_output` in `oriterm_core/tests/rss_regression.rs`. Scrollback is bounded, image caches evict, GPU textures drop. Any change that adds an unbounded growth vector MUST fail these tests.
+4. **Buffer shrink discipline** — grow-only `Vec` buffers (instance writers, shaping scratch, notification buffer, `RenderableContent` fields) apply `maybe_shrink()` post-render. No shrinking during `draw_frame()` (pure computation, no side effects).
+
+**Never disable a regression test to ship a fix.** If a regression test fails, the fix is wrong — investigate, fix the fix, re-run. Disabling the regression turns the invariant into a ghost — still documented, no longer enforced.
 
 ## Negative Testing Protocol (MANDATORY)
 
-**Every test suite must include negative tests.** A test suite with only positive tests ("this works") provides no protection against the compiler becoming too permissive.
+**Every test suite must include negative tests.** A test suite with only positive tests ("this works") provides no protection against the code becoming too permissive.
 
-1. **Compile-fail tests pin exact errors**: `#compile_fail("E1234")` must match the specific error code, not just "some error." If the error message changes, the test fails — this is the desired behavior. (From Rust's `//~ ERROR` annotations and Go's `// ERROR "pattern"`.)
+1. **Must-reject tests pin exact rejections**: when adding input validation (e.g. "malformed escape sequence must be dropped without crashing"), write a test that feeds the malformed input and asserts the expected rejection behavior. `should_panic` tests are allowed only when the code path is genuinely unreachable from safe inputs; prefer `Result::Err` assertions.
 
-2. **Runtime-fail tests pin exact panics**: `#fail("index out of bounds")` must match the specific panic message. A test that accepts any panic is too weak.
+2. **Must-not-render tests for damage tracking**: when adding a damage-tracking optimization, write a companion test where the optimization must NOT fire (e.g. cell marked dirty → MUST be redrawn). A one-sided test (only checks "it re-renders") misses the regression where the optimization fails to mark a real change dirty.
 
-3. **"Must NOT compile" for every "must compile"**: when adding a new feature with type constraints (e.g., `T: Hashable` required for map keys), write both:
-   - Positive: valid usage compiles and runs → `#compile_fail` would be wrong
-   - Negative: invalid usage produces the correct error → `#compile_fail("E2031")` catches exactly this
+3. **Must-not-allocate tests for hot path**: when claiming an allocation-free path, wrap the inner loop in `oriterm_core::tests::alloc_counter::measure!` and assert `0` allocations. A test that only checks output correctness misses silent allocation regressions.
 
-4. **"Must NOT optimize" for every "must optimize"**: when testing an optimization (RC elision, COW in-place mutation, tail call), write a companion test where the optimization must NOT fire (aliasing, shared reference, non-tail position). (From Swift's `arcsequenceopts_knownsafebugs.sil`.)
+4. **Must-not-leak tests for GPU resources**: texture / buffer / bind-group drops must be verified — not just by running in debug builds, but by explicit leak detection tests. A test that drops a texture and immediately reuses the `wgpu::Device` without checking `poll(Wait)` may miss resource-retention bugs.
 
-5. **Forbid-output pins** (from Rust): when a fix changes behavior (e.g., a warning is no longer emitted, or an error message changes), add a test that asserts the OLD behavior does NOT appear. This is a stronger guarantee than just checking the new behavior is present.
+5. **Forbid-output pins**: when a fix changes behavior (e.g. a warning is no longer emitted, or a color is no longer applied), add a test that asserts the OLD behavior does NOT appear. This is a stronger guarantee than just checking the new behavior is present.
 
-6. **Idempotency testing** (from Swift): when testing a compiler pass/optimization, verify that running it twice produces the same result as running it once. A non-idempotent pass is a bug.
+6. **Idempotency tests**: when fixing a layout pass, resize handler, or damage invalidator, verify that running it twice produces the same result as running it once. A non-idempotent pass is a bug.
 
 ## Regression Discipline
 
-**Every bug fix creates a permanent regression test.** The test carries a comment linking to the issue/plan item that motivated it:
+**Every bug fix creates a permanent regression test.** The test carries a doc comment linking to the bug or plan item that motivated it:
 
-```ori
-// Regression: roadmap section-04.3, iterator drop was skipping nested closures
-@test_nested_closure_iter_drop tests @target () -> void = { ... }
-```
-
-For Rust tests:
 ```rust
-/// Regression: section-04.3 — iterator drop skipped nested closures
-/// See: plans/roadmap/section-04.md §4.3.2
+/// Regression: BUG-11-1 — cursor blink kept frame budget gate open
+/// See: plans/bug-tracker/fix-BUG-11-1.md
 #[test]
-fn test_nested_closure_iter_drop() { ... }
+fn blink_animating_does_not_bypass_frame_budget() { ... }
 ```
 
-**Regression test naming**: `<subject>_<scenario>_<expected>` shape. No ephemeral identifiers (plan names, section numbers, bug IDs) in function names — provenance in `///` doc comments only. Full naming convention, banned-descriptor list, and enforcement rules: `impl-hygiene.md` §Test Function Naming.
+**Regression test naming**: `<subject>_<scenario>_<expected>` shape. No ephemeral identifiers (plan names, section numbers, bug IDs) in function names — provenance in `///` doc comments only. Full naming convention and banned-descriptor list: `impl-hygiene.md` §Test Function Naming.
 
-**Crash/ICE regression tests**: if the compiler ever panics/crashes on valid or invalid input, that input becomes a permanent test — even before the fix is identified. Add it immediately as `#skip("ICE: <description>")` if it can't be fixed yet, but it MUST be recorded. (From Rust's `tests/crashes/` suite.)
-
-## Error/Diagnostic Testing
-
-**Every error code must be tested.** If `ori_diagnostic` defines error code E1234, there must be:
-1. A `#compile_fail("E1234")` test that triggers it
-2. The test input is a minimal reproducer (not a copy of real user code)
-3. The error message is verified (the substring in `#compile_fail` must be specific enough to distinguish from similar errors)
-
-**Error reporting completeness**: when a single input triggers multiple errors, verify ALL errors are reported. A compiler that reports only the first error and silently drops the rest has a fault-tolerance bug. Write multi-error `#compile_fail` tests. (From Gleam's fault tolerance testing.)
-
-**No false positives on valid code**: for every warning or error category, write at least one test with VALID code that must NOT trigger the warning/error. A warning that fires on correct code is worse than a missing warning. (From Gleam's `assert_no_warnings!`.)
+**Crash regression tests**: if any component ever panics on valid input, that input becomes a permanent test — even before the fix is identified. Add it immediately as an `#[ignore]` test with a tracking doc comment if it can't be fixed yet, but it MUST be recorded.
 
 ## Test Hygiene
 
-1. **No orphan tests**: every test file must contain at least one assertion (`assert_eq`, `assert`, `#compile_fail`, `#fail`). A `.ori` test file that runs code but never asserts anything proves nothing and provides false confidence. The assertion IS the test.
+1. **No orphan tests**: every test file must contain at least one assertion (`assert_eq`, `assert`, `assert_matches`, `insta::assert_snapshot!`, or similar). A test that runs code but never asserts anything proves nothing and provides false confidence. The assertion IS the test.
 
-2. **No trivial assertions**: `assert_eq(actual: true, expected: true)` or `assert_eq(actual: 1, expected: 1)` are not tests — they're tautologies. The assertion must test a value that was computed by the code under test.
+2. **No trivial assertions**: `assert_eq!(true, true)` or `assert_eq!(1, 1)` are not tests — they're tautologies. The assertion must test a value that was computed by the code under test.
 
-3. **`#skip` budget**: a file with more than 3 `#skip` annotations is a red flag. Either the feature is not implemented (and the tests should be in a plan, not committed with `#skip`) or there are bugs to fix. Each `#skip` must have a plan item tracking its resolution.
+3. **`#[ignore]` budget**: a file with more than 3 `#[ignore]` annotations is a red flag. Either the feature is not implemented (and the tests should be in a plan, not committed ignored) or there are bugs to fix. Each `#[ignore]` must have a doc comment tracking its resolution.
 
-4. **Stale test detection**: if a `#compile_fail` test starts PASSING (compiler no longer rejects the input), that is a regression — the compiler became too permissive. The test runner should detect this. Similarly, if a `#fail` test starts succeeding, either the runtime behavior changed or the test is no longer exercising the failure path.
+4. **Stale snapshot detection**: if an `insta` snapshot is pending (`*.snap.new`), the test has produced unreviewed output. Worktree cleanliness is a completion criterion — `git status --porcelain -- '*.snap.new' '*.png'` must be empty at green build.
 
-5. **Test file naming**: Ori spec tests use kebab-case matching the feature: `tests/spec/traits/iterator/map-filter-collect.ori`. Rust tests use snake_case: `test_map_filter_collect`. Both must be descriptive of what is being tested.
+5. **Test file layout**: Rust tests live in sibling `tests.rs` files per `.claude/rules/test-organization.md`. `#[cfg(test)] mod tests;` at the bottom of the source file, body in `tests.rs`. No inline `#[cfg(test)] mod tests { ... }` blocks.
+
+## Flaky Tests Are Bugs
+
+Per CLAUDE.md §Bug Discipline, a test that passes sometimes and fails sometimes is a bug — not noise. Do NOT retry and move on. Research the root cause:
+
+- Race condition (IO thread vs main thread, GPU command submission ordering)
+- Timing dependency (frame-counter assumptions, animation easing curves, blink timers)
+- Temp file collision (parallel test runs sharing a path)
+- State leakage (global statics, `static mut`, `OnceLock` not reset between tests)
+- Non-deterministic ordering (`HashMap` iteration, `std::fs::read_dir` order)
+- GPU device-loss timing (lost adapter during test)
+- Surface reconfiguration races (resize during render)
+
+Fix it so the test is deterministic. File via `/add-bug` if discovered during a different fix. **Flake-proofing gate for conformance suites**: the tack + vttest suite must pass 5 consecutive runs at both `--test-threads=1` and `--test-threads=4` before a release is cut.
+
+## Widget Harness Testing
+
+`WidgetTestHarness` (`oriterm_ui/src/testing/`) enables headless widget interaction testing without GPU, display server, or platform dependencies. It wraps `WindowRoot` and is the primary test vehicle for any widget in `oriterm_ui`.
+
+**Writing a new harness test**:
+```rust
+let mut h = WidgetTestHarness::new(ButtonWidget::new("OK"));
+h.mouse_move_to(button_center);
+assert!(h.is_hot(button_id));
+h.click(button_center);
+let scene = h.render(); // paint capture — a Scene, no GPU required
+```
+
+Key APIs: `mouse_move()`, `mouse_down()`, `mouse_up()`, `click()`, `key_press()`, `tab()`, `shift_tab()`, `scroll()`, `drag()`, `type_text()`, `advance_time()`, `resize()`, `render()`, `is_hot()`, `is_active()`, `is_focused()`, `interaction_state()`, `get_widget()`, `all_widget_ids()`, `widgets_with_sense()`, `push_popup()`, `has_overlays()`, `dismiss_overlays()`.
+
+**Rule**: every widget with input senses (hover / click / drag / keyboard / focus) MUST have at least one harness test covering each sense. A widget that owns a sense and has no harness test for that sense is untested — fix it, don't ship it.
+
+## GPU Cached Render Path Testing
+
+The production render path is **content-cached**: content is rendered to an offscreen cache texture, then copied to the surface via `copy_texture_to_texture`. Test-only `render_frame()` skips this entirely — bugs in the cached path are invisible to `render_frame()`. See CLAUDE.md §GPU Render Path Testing.
+
+**Use `render_frame_cached()`** when testing GPU rendering under resize or any condition where viewport and surface dimensions may diverge:
+```rust
+renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
+renderer.render_frame_cached(&gpu, &pipelines, target_w, target_h, true);
+```
+
+Use `gpu.create_copy_dst_target()` when manually creating destination targets (adds `COPY_DST` usage to simulate a surface texture).
+
+## Terminal Conformance Suites
+
+- **teseq** (`cargo test -p oriterm_core --test teseq`) — 176 tests across 10 protocol families. Requires `reseq` (Linux only; `sudo apt install teseq`). Update snapshots with `INSTA_UPDATE=1`.
+- **tack** (`cargo test -p oriterm_core --test tack`) — 27 PTY scenarios + 51 direct-VTE cap xcheck in `tack_cap_xcheck`. Tack-dependent tests skip on Windows; cap xcheck runs on all platforms.
+- **vttest** (`cargo test -p oriterm_core --test vttest`) — vttest menu structural markers for DA/DSR responses.
+- **GPU visual regression** (`cargo test -p oriterm --test main_window` etc.) — golden-image regression for the cached render path.
+
+When adding a new escape sequence handler or terminfo capability, the matching conformance test MUST be added in the same commit as the handler. No handler merges without a test.
 
 ## Anti-patterns (NEVER)
-- Remove test "because it doesn't work" — investigate WHY
-- Change expected to match actual — fix the compiler
-- Assume `#compile_fail`/`#fail` incorrect — compiler may be too permissive
-- Delete "redundant" tests — may cover different phases
-- Mark `#skip` without investigating — find root cause
+
+- Remove a test "because it's flaky" — investigate WHY, fix the determinism
+- Change expected to match actual without proving the new actual is correct — fix the code, not the test
+- Assume the reference implementation is wrong without consulting the reference repos (`~/projects/reference_repos/console_repos/`)
+- Delete "redundant" tests — they may cover different platforms, different widget states, or different event orderings
+- Mark `#[ignore]` without a doc comment and tracking issue
 - Test only one type when the code path handles multiple types — matrix coverage required
-- Test only the happy path when break/yield/guard/nested are possible — pattern coverage required
-- Write only positive tests — negative tests (must-reject, must-not-optimize) are equally required
+- Test only the happy path when drop/resize/error/cancel are possible — pattern coverage required
+- Write only positive tests — negative pins are equally required
 - Write a test without an assertion — running code is not testing it
-- Test a feature in isolation without interaction tests — features break at boundaries
-- Commit a test that is only verified in one backend — dual-execution parity is required
-- Fix ARC/memory code without IR-level verification — behavioral tests alone miss RC imbalances that happen to not leak in the specific test case
-- Accept "it works on my machine" — debug AND release, interpreter AND LLVM, all must pass
+- Test a widget in isolation without harness interaction tests — widgets break at propagation boundaries
+- Ship a fix that disables a regression test — the invariant IS the product
+- Use `render_frame()` to "verify" a cached-path fix — bugs in the cached path are invisible to `render_frame()`
+- Accept "it works on my machine" — debug AND release, Linux AND Windows (cross), macOS (CI), all must pass
 
 ## Investigation Order
-1. Lexer fully implements this?
-2. Parser fully implements this?
-3. Type checker handles this?
-4. Evaluator implements this?
-5. Test runner interprets attributes correctly?
-6. ONLY THEN consider test is wrong
 
-## Quality
-- Test behavior, not implementation
-- Edge cases: empty, boundary, error
-- No flaky: no timing, shared state, order deps
-- `#[ignore]` needs tracking issue
-- Rust tests in sibling `tests.rs`: `#[cfg(test)] mod tests;` in source, body in `tests.rs`
-  - `foo.rs` -> `foo/tests.rs`; `mod.rs` in `bar/` -> `bar/tests.rs`; `lib.rs`/`main.rs` -> `tests.rs` in same dir
-  - **Allowed in source**: `#[cfg(test)]` helper fns, test-only imports, const assertions, `pub(crate) mod test_helpers;`
-  - **Never in source**: `#[cfg(test)] mod tests { #[test] fn ... }` — always extract
-- Ori tests in `_test/` subdirs: `foo.ori` -> `_test/foo.test.ori`
-- Clear naming: `test_parses_nested_generics`
-- AAA structure
+When a test fails and you're unsure whether it's a test bug or a code bug:
 
-## Directories
-- `tests/spec/` — conformance (`.ori` + inline `@test`)
-- `tests/compile-fail/` — expected failures (`#compile_fail`/`#fail`)
-- `tests/run-pass/` — expected success (source + `_test/*.test.ori`)
-- `tests/fmt/` — formatting
-- `tests/aims/` — AIMS scenario tests (ARC, COW, FIP, TRMC)
-- `tests/valgrind/` — memory safety (Valgrind, not in `test-all.sh`)
-- `tests/phases/` — phase integration
-- `crates/$1/tests/aot/` — AOT integration
+1. Reference repo: does tmux / alacritty / wezterm / ghostty / ratatui / ptyxis handle this case? Read their code.
+2. Protocol spec: for VT sequences, check vt100.net, XTerm ctlseqs, ECMA-48. For terminfo, check `man 5 terminfo`.
+3. VTE parser: is the sequence getting parsed at all? Add a trace, re-run.
+4. Term handler: does `term_handler.rs` have a handler for this sequence?
+5. Grid mutation: is the grid actually being updated correctly?
+6. Snapshot / render: is the change flowing through `renderable_content_into()` to the GPU?
+7. ONLY THEN consider the test is wrong.
 
-## Running
-- `cargo st` — all spec tests
-- `cargo st tests/spec/types/` — specific category
-- `cargo test --all` — full suite
-- `cargo test --all` — LLVM unit tests
-- `cargo b --release && ./target/release/ori test --backend=llvm tests/`
+## Running Tests
 
-## Attributes
-- `#skip("reason")` — skip with explanation
-- `#compile_fail("substring")` — expect compile failure
-- `#fail("substring")` — expect runtime failure
+- `./test-all.sh` — full workspace suite (use this — it includes clippy + fmt verification)
+- `./build-all.sh` — workspace build including Windows cross-compile
+- `./clippy-all.sh` — zero-warnings clippy across all crates + targets
+- `./fmt-all.sh` — format all Rust sources
+- `cargo test -p <crate>` — single crate
+- `cargo test -p oriterm_core --test teseq` — teseq suite (Linux only)
+- `cargo test -p oriterm_core --test tack` — tack PTY + cap xcheck
+- `cargo test -p oriterm_core --test vttest` — vttest structural markers
+- `cargo test -p oriterm_ui` — widget harness + animation + layout
+- `cargo test -p oriterm --test architecture` — architecture / boundary tests
+- `cargo test -p oriterm --test main_window` — GPU visual regression (main window scene)
+- `INSTA_UPDATE=1 cargo test -p oriterm_core --test teseq` — update insta snapshots
 
-## Debugging / Tracing
+**Mandatory timeout**: every test command MUST use a 150-second timeout (see CLAUDE.md §MANDATORY TEST TIMEOUTS). `timeout 150 cargo test ...` or `Bash.timeout: 150000`. If tests exceed the timeout, you introduced a hanging test — fix it, don't extend the timeout.
 
-See `compiler.md` §Tracing for full env var reference and per-crate targets. See `diagnostic.md` §Diagnostic Scripts for script flags. Quick test debugging: `cargo st tests/spec/path/`.
+## Property-Based Testing
 
-## Coverage
-`cargo tarpaulin -p CRATE --lib --out Stdout` — target 60-80%
+`proptest` is available in the workspace for invariants that benefit from randomized input:
 
-## Property-Based Testing & Fuzzing
-
-`proptest` is a workspace dependency — use it for invariants that benefit from randomized input generation:
-
-- **Roundtrip properties**: `parse(print(ast)) == ast`, `format(parse(source)) == format(source)` — parser and formatter must agree
-- **Pass idempotency**: `pass(pass(ir)) == pass(ir)` for every compiler pass (see `impl-hygiene.md` §Pass Composition)
-- **Lattice monotonicity**: `join(a, b) >= a && join(a, b) >= b` for every AIMS lattice dimension
-- **Fuzz-to-crash**: `proptest! { |input: String| { let _ = parse(&input); } }` — parser must not panic on any input, ever
-- **Domain-aware shrinking**: use `prop_flat_map` to generate well-formed-ish inputs for deeper pipeline stages (typeck, eval, codegen) — pure random strings only exercise the parser's error recovery
-- **Observational equivalence**: for optimization passes, `eval(original) == eval(optimized)` on all generated inputs — the optimization must not change observable behavior
+- **Roundtrip**: `parse(render(grid)) == grid` for VT output round-trip, `format(parse(config)) == config` for config file round-trip
+- **Determinism**: `render(snapshot) == render(snapshot)` — the same input must produce the same output
+- **Layout invariants**: any widget tree laid out at size W must produce rects that stay inside W and respect z-order
+- **Fuzz-to-crash**: parser must not panic on any input, ever: `proptest! { |bytes: Vec<u8>| { let _ = vte_parser.advance(&mut handler, &bytes); } }`
+- **Observational equivalence**: for damage tracking, `render_full(scene) == render_damaged(scene)` when the damage is trivially everything
 
 Property tests live in the same sibling `tests.rs` file as unit tests, using `proptest!` blocks.
 
 ## Prior Art Reference
 
-These rules are derived from production compiler testing practices:
-- **Rust**: revision-based matrix testing, tidy hygiene enforcement, 4-layer error code verification, `forbid-output` negative pins, descriptive test naming, `tests/crashes/` for ICE regression
-- **Go**: code-generated exhaustive type × operation matrices, `// asmcheck` multi-architecture assembly verification, `test/fixedbugs/` regression corpus
-- **Zig**: comptime/runtime dual execution, self-verifying matrix counters (`comptime assert(perms == N)`), multi-backend × multi-target matrix, one-file-per-error-scenario
-- **TypeScript**: baseline captures every expression's type (not just tested ones), auto-derived configuration matrix from compiler flags, cross-phase simultaneous verification
-- **Gleam**: fault tolerance testing (error recovery doesn't block analysis), `assert_no_warnings!` negative tests, issue-linked regression tests
-- **Roc**: per-expression type annotation tests, cross-phase pinning in one test (`+emit:mono`), parse snapshot tripartite (pass/fail/malformed), no-orphan enforcement
-- **Elm**: `Expected` context type (provenance in every error), Damerau-Levenshtein suggestions, architecture-encoded error quality
-- **Swift**: IR-level RC tests (retain/release at SIL), positive + negative pairing, `is_unique` barrier tests, loop-isolated ARC tests, verifier-as-test (`-enable-sil-verify-all`), idempotency testing
-- **Koka**: exact IR shape golden files (@dup/@drop), drop elision tests, reuse-through-match tests, effect × ARC interaction testing
-- **Lean 4**: IR-level inc/dec/is_shared tests, bug-series systematic coverage (closure_bug1-8), issue-numbered regression naming
+These rules are derived from production terminal-emulator and UI-framework testing practices:
+
+- **tmux**: `grid.c` cell storage with extended-cell fuzzing, `input.c` 83k-line VT parser test suite, `window-copy.c` selection tests
+- **alacritty**: `vte`-crate parser tests, `damage` unit tests, strict clippy as regression surface
+- **wezterm**: `termwiz` parser corpus, `portable-pty` cross-platform tests, color profile detection tests
+- **ghostty**: comptime parser state-machine tests, Valgrind integration, Metal/OpenGL/WebGL matrix testing
+- **ratatui**: `TestBackend` buffer-based widget tests, Unicode-width matrix (CJK, emoji, combining, ZWJ), `unsafe_code = "forbid"`
+- **crossterm**: `io::Result<T>` everywhere, `queue!`/`execute!` macro test corpus, platform-specific test gating
+- **ptyxis**: libvte consumer tests, container-detection matrix, GPU rendering under GTK4
+- **termenv**: color profile detection tests for every env var combination (NO_COLOR / CLICOLOR / CLICOLOR_FORCE / COLORTERM / TERM)
+
+When a bug or test failure touches an area covered by one of these reference repos, read their code before writing the fix. They have already seen this bug.
