@@ -525,7 +525,7 @@ fn produce_snapshot_wakeup_only_when_dirty() {
     );
 }
 
-/// Shutdown flushes any parsed-but-unpublished state (TPR-03-001).
+/// Shutdown flushes any parsed-but-unpublished state.
 ///
 /// Bytes processed in the `select!` arm must be snapshot-published
 /// even if shutdown is queued before the next `maybe_produce_snapshot()`.
@@ -690,7 +690,7 @@ fn test_resize_dedup_skips_same_size() {
 }
 
 /// First resize at spawn dimensions should not trigger PTY resize (dedup seed).
-/// Validates TPR-05-002 fix: `last_pty_size` is seeded from initial dimensions.
+/// Validates fix: `last_pty_size` is seeded from initial dimensions.
 #[test]
 fn test_spawn_size_resize_is_deduped() {
     let mut t = make_sync_thread();
@@ -1301,7 +1301,7 @@ fn test_select_command_input_reply() {
     }
 }
 
-// --- TPR-08-001: snapshot publication between parse chunks ---
+// --- snapshot publication between parse chunks ---
 
 /// A large byte message (> MAX_PARSE_CHUNK) should produce intermediate
 /// snapshots between 64 KB chunks, not just after the entire message.

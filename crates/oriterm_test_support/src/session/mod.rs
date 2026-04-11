@@ -43,7 +43,7 @@ pub use pty_responder::PtyResponder;
 // version-gate API so external callers continue to see
 // `crate::session::tack_available()`, `tack_version_supported()`,
 // etc. Both leaf modules were extracted from `session/mod.rs` in
-// the M1 TPR cleanup (TPR-05-002) to keep `session/mod.rs` under
+// the M1 TPR cleanup to keep `session/mod.rs` under
 // the 500-line file hygiene limit.
 pub use tools::{
     infocmp_available, tack_available, tic_available, tool_available, vttest_available,

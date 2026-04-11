@@ -185,7 +185,7 @@ pub fn expand_modified_key_caps() -> Vec<String> {
 /// algorithmic duplication between production and test code.
 pub fn parse_terminfo_source(src: &str) -> BTreeSet<String> {
     let mut caps = BTreeSet::new();
-    // TPR-06-009 fix: delegate continuation-walking to the
+    // fix: delegate continuation-walking to the
     // canonical `collapse_entry_lines` helper so both
     // `parse_terminfo_source` (cap-name extraction) and
     // `extract_cap_value` (cap-value extraction) share one
@@ -282,7 +282,7 @@ pub fn extract_cap_value(src: &str, cap: &str) -> Option<String> {
 /// buffer and reset continuation state. This matches the original
 /// `parse_terminfo_source` behavior and guarantees that both
 /// cap-name and cap-value consumers agree on the same logical
-/// line boundaries (TPR-06-009 SSOT fix).
+/// line boundaries (SSOT fix).
 fn collapse_entry_lines(src: &str) -> Vec<String> {
     let mut logical: Vec<String> = Vec::new();
     let mut buffer = String::new();

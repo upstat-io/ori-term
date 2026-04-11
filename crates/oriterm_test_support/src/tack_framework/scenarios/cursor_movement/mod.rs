@@ -44,7 +44,7 @@
 //! Section 05.5's cap-coverage matrix should record ONLY `clear`
 //! as covered by 05.4. The earlier draft of this rustdoc claimed
 //! `cup` was transitively covered "since the test demonstrably
-//! uses it to home the cursor" — but TPR-05-016 (Codex
+//! uses it to home the cursor" — but (Codex
 //! /review-work) correctly rejected that claim. `clear` in
 //! `extra/ori_term.info` is defined as `\E[H\E[2J`, which
 //! already homes the cursor via a LITERAL escape sequence (not

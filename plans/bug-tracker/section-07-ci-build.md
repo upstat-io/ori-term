@@ -11,7 +11,7 @@ third_party_review:
 sections:
   - id: "07.1"
     title: "Active Bugs"
-    status: not-started
+    status: in-progress
   - id: "07.R"
     title: "Third Party Review Findings"
     status: complete

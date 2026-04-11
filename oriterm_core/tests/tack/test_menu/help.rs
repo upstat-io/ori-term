@@ -13,22 +13,22 @@
 //!
 //! 1. Gates on `ScenarioRunner::available()` (the canonical
 //!    AND-combine of `tack_available`, `tic_available`, and
-//!    `tack_version_supported`) per TPR-05-019.
+//!    `tack_version_supported`) per
 //! 2. Spawns tack via `PtySession`.
 //! 3. Sends `n` and waits for the begin-testing menu prompt
 //!    (`tack/test [n] >`) via the framework's `wait_for(...)`
-//!    contract — NO fixed sleeps, per TPR-05-031.
+//!    contract — NO fixed sleeps, per
 //! 4. Sends `?` and waits for the menu prompt to re-appear via
 //!    `wait_for(...)`.
 //! 5. Asserts every entry from `BEGIN_TESTING_INVENTORY` (the
-//!    SSOT — NOT a hardcoded copy, per TPR-05-032) is still
+//!    SSOT — NOT a hardcoded copy, per ) is still
 //!    visible (proves `?` did not navigate away).
 //! 6. Snapshots the post-`?` grid via insta for byte-level
 //!    visual regression.
 //! 7. Quits tack via the framework's `quit_tack(5)` contract
 //!    and asserts the child exits cleanly via `success()` —
 //!    matches every other Section 05 scenario teardown path,
-//!    per TPR-05-031.
+//!    per
 //!
 //! If a future tack release makes `?` a distinct help screen,
 //! the per-entry assertions will fail and the insta snapshot
@@ -51,27 +51,27 @@
 //! match exactly. A separate `tack_help` `Scenario` would still
 //! add no incremental signal — the per-entry assertions plus
 //! the post-`?` insta snapshot are stronger than a structural
-//! `Scenario` would be. (TPR-05-023 fix: previous version of
+//! `Scenario` would be. (fix: previous version of
 //! this rustdoc incorrectly said the grids were "byte-identical".)
 //!
-//! # Promotion history (TPR-05-017 -> TPR-05-031/032)
+//! # Promotion history
 //!
 //! Originally drafted as a doc-only stub citing the 05.0
 //! `begin_testing_inventory` drift gate as covering help
-//! behavior. TPR-05-017 (Codex /review-work iteration 2 of M2)
+//! behavior. (Codex /review-work iteration 2 of M2)
 //! correctly noted that the drift gate only sends `n` and
 //! never `?`, so the duplicate claim was unverified — promoted
-//! to a real test in the same fix. TPR-05-019 then noted the
+//! to a real test in the same fix. then noted the
 //! real test bypassed the version gate and added the
-//! `ScenarioRunner::available()` route. TPR-05-022 then
+//! `ScenarioRunner::available()` route. then
 //! cleaned up the doc-only-stub language in this rustdoc and
 //! the inventory comment so the canonical owner is the real
-//! test, not the (no-op) drift gate. TPR-05-031 (final TPR
+//! test, not the (no-op) drift gate. (final TPR
 //! iter 4) noted the test was hand-driving tack with fixed
 //! `wait(500)` sleeps and never asserting clean exit, bypassing
 //! the Section 04 framework contract — fix uses `wait_for(...)`
 //! for synchronization and `quit_tack(5).success()` for the
-//! teardown gate. TPR-05-032 (same iter) noted the test
+//! teardown gate. (same iter) noted the test
 //! hardcoded the 16 menu entries — fix iterates
 //! `BEGIN_TESTING_INVENTORY` directly, eliminating the second
 //! source of truth.
@@ -85,7 +85,7 @@ use oriterm_test_support::terminfo::TerminfoEnv;
 
 #[test]
 fn tack_help_redisplays_begin_testing_menu() {
-    // SEMANTIC PIN for TPR-05-019: gate on the canonical
+    // SEMANTIC PIN for gate on the canonical
     // `ScenarioRunner::available()` AND-combine (tack_available
     // + tic_available + tack_version_supported), NOT on the
     // bare `tack_available() && tic_available()` pair. The
@@ -114,7 +114,7 @@ fn tack_help_redisplays_begin_testing_menu() {
 
     // Step 1: enter the begin-testing menu via `n`. Wait for
     // the begin-testing menu prompt via the framework's
-    // wait_for contract (TPR-05-031: NO fixed sleeps).
+    // wait_for contract (NO fixed sleeps).
     session.send_raw(b"n");
     session.wait_for("tack/test [n] >", 5_000);
 
@@ -140,7 +140,7 @@ fn tack_help_redisplays_begin_testing_menu() {
     session.wait_for("tack/test [n] >", 5_000);
 
     // Step 3: capture the post-`?` grid and assert that EVERY
-    // begin-testing menu entry is still visible. Per TPR-05-032,
+    // begin-testing menu entry is still visible. Per
     // we iterate `BEGIN_TESTING_INVENTORY` directly instead of
     // hardcoding the 16 entries — the inventory IS the SSOT for
     // the menu content, and the per-entry-format string here
@@ -182,7 +182,7 @@ fn tack_help_redisplays_begin_testing_menu() {
 
     // TEARDOWN: quit tack cleanly via the framework's
     // `quit_tack` contract and assert the child exits with
-    // success status (TPR-05-031). This matches every other
+    // success status. This matches every other
     // Section 05 scenario's teardown path — `ScenarioRunner::run`
     // calls the same `quit_tack(TACK_QUIT_MAX_ITERATIONS)` and
     // asserts the result via `assert_quit_status_success`.

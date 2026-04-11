@@ -15,7 +15,7 @@ pub(super) const REGISTERED: &[&str] = &["Ms"];
 
 #[test]
 fn tack_cap_xcheck_ms_cap_value_matches() {
-    // TPR-06-001 fix: pin the literal Ms declaration so a
+    // fix: pin the literal Ms declaration so a
     // terminfo edit that changes the OSC 52 cap value triggers
     // a test failure BEFORE the round-trip tests below.
     assert_cap_value_matches("Ms", "\\E]52;%p1%s;%p2%s\\007");

@@ -16,7 +16,7 @@ pub(super) const REGISTERED: &[&str] = &["Se", "Ss"];
 
 #[test]
 fn tack_cap_xcheck_se_ss_cap_values_match() {
-    // TPR-06-001 fix: pin the literal Se/Ss declarations so a
+    // fix: pin the literal Se/Ss declarations so a
     // terminfo edit that changes the DECSCUSR cap values triggers
     // a test failure BEFORE the round-trip tests below.
     assert_cap_value_matches("Se", "\\E[2 q");

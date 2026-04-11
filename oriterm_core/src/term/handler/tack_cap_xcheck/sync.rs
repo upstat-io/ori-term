@@ -13,7 +13,7 @@ pub(super) const REGISTERED: &[&str] = &["Sync"];
 
 #[test]
 fn tack_cap_xcheck_sync_cap_value_matches() {
-    // TPR-06-001 fix: pin the literal Sync declaration so a
+    // fix: pin the literal Sync declaration so a
     // terminfo edit that changes the DECSET/DECRST 2026 cap value
     // triggers a test failure BEFORE the round-trip tests below.
     assert_cap_value_matches("Sync", "\\E[?2026%?%p1%{1}%-%tl%eh%;");

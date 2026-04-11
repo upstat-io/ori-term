@@ -54,7 +54,7 @@ fn tack_tools_enq_ack_80x24() {
 
     // CAP VALUE CROSS-REFERENCE — extract the literal u9 value
     // from the pinned terminfo source via the canonical helper in
-    // `oriterm_test_support` (TPR-06-003 fix: use the SSOT helper
+    // `oriterm_test_support` (fix: use the SSOT helper
     // instead of duplicating the parser locally) and assert it
     // matches what ori_term's DA1 handler is exercised by.
     // ori_term's u9 is \E[c (the DA1 query, per
@@ -96,10 +96,10 @@ fn tack_tools_enq_ack_80x24() {
     insta::assert_snapshot!(outcome.snapshot_name(), outcome.grid_text);
 }
 
-// TPR-06-005 fix: the previous draft of this file had a local
+// fix: the previous draft of this file had a local
 // `extract_cap_value` helper plus an inline
 // `#[cfg(test)] mod local_helper_tests` block to pin the
-// extraction. TPR-06-003 promoted that helper to
+// extraction. promoted that helper to
 // `oriterm_test_support::tack_framework::cap_coverage::extract_cap_value`
 // (the SSOT for tic-format cap-value extraction); the sibling
 // tests for the canonical helper live next to its definition in

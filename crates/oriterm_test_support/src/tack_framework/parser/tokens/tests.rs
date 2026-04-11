@@ -52,7 +52,7 @@ fn grid_find_field_returns_trailing_value() {
 
 #[test]
 fn grid_find_field_rejects_substring_collision_on_right_boundary() {
-    // SEMANTIC PIN for the TPR-04-001 right-boundary fix. The
+    // SEMANTIC PIN for the right-boundary fix. The
     // earlier draft only checked the LEFT boundary, so this would
     // false-positive and return "oreground". With both boundaries
     // enforced, the helper correctly returns None.
@@ -62,7 +62,7 @@ fn grid_find_field_rejects_substring_collision_on_right_boundary() {
 
 #[test]
 fn grid_find_field_finds_real_token_after_substring_collision_on_same_line() {
-    // SEMANTIC PIN for the TPR-04-001 all-hits-per-line fix. The
+    // SEMANTIC PIN for the all-hits-per-line fix. The
     // earlier draft only inspected the FIRST find() hit per line,
     // so the leading substring `xsetaf` (which fails the left
     // boundary) hid the real `setaf` token later on the same line.

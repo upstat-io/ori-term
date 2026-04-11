@@ -6,10 +6,10 @@
 //!      against the `kxIN`/`kxOUT` cap declarations in
 //!      `extra/ori_term.info` (via the canonical
 //!      `oriterm_test_support::tack_framework::cap_coverage::declared_cap_value`
-//!      helper — TPR-06-003 fix consolidates the parser into one
+//!      helper consolidates the parser into one
 //!      canonical home).
 //!   2. The actual emission-path decision via
-//!      [`super::focus_event_seq_for_mode`] (TPR-06-002 fix —
+//!      [`super::focus_event_seq_for_mode`] (fix —
 //!      tests the load-bearing pure kernel of `send_focus_event`,
 //!      not just the constants).
 
@@ -60,7 +60,7 @@ fn focus_in_and_out_seqs_are_distinct() {
     assert_ne!(FOCUS_IN_SEQ, FOCUS_OUT_SEQ);
 }
 
-// ----- Emission decision pins (TPR-06-002 — exercise the actual
+// ----- Emission decision pins (exercise the actual
 // pure kernel that `send_focus_event` uses, not just the
 // constants) -----
 

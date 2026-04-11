@@ -140,7 +140,7 @@ impl App {
 
     // `send_focus_event` and `flush_pending_focus_out` were
     // extracted into the `focus_events` sibling submodule by
-    // TPR-06-004 to keep this file under the 500-line hygiene
+    // to keep this file under the 500-line hygiene
     // limit AND to give Section 06.5 Track B's kxIN/kxOUT
     // cross-crate tests a testable seam (`focus_event_seq_for_mode`).
 
@@ -453,7 +453,7 @@ pub(super) fn compute_control_flow(input: &ControlFlowInput) -> ControlFlowDecis
     // if the frame budget hasn't elapsed yet. Using `Wait` instead of
     // `WaitUntil` because WaitUntil doesn't reliably sleep on
     // Windows/WSL2 (observed: returns immediately, creating a tight
-    // loop that starves keyboard dispatch — BUG-11-1). With `Wait`,
+    // loop that starves keyboard dispatch). With `Wait`,
     // the coalesced MuxWakeup from the next PTY snapshot wakes us,
     // and winit's PeekMessage drains ALL pending messages (including
     // keyboard events) before calling about_to_wait().

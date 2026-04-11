@@ -6,7 +6,7 @@
 //! members live here. The tool-availability probes
 //! (`tool_available` and friends) live in `tools/tests.rs`; the
 //! tack version gate lives in `version_gate/tests.rs` — both
-//! moved out in the M1 TPR cleanup (TPR-05-006) per the
+//! moved out in the M1 TPR cleanup per the
 //! "one sibling tests.rs per source file" rule.
 
 use std::time::{Duration, Instant};

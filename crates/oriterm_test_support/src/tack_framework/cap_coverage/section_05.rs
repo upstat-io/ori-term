@@ -2,7 +2,7 @@
 //!
 //! `covered` lists ONLY the caps that a Section 05 `#[test] fn`
 //! wrapper directly asserts via `outcome.grid_text.contains(...)`.
-//! Per TPR-05-013 / TPR-05-016 / TPR-05-029 (Codex /review-work
+//! Per (Codex /review-work
 //! findings), the looser interpretation — "any cap tack might
 //! invoke during a Section 05 test path" — was REJECTED:
 //! claiming caps as covered without an assertion that catches a
@@ -156,7 +156,7 @@ pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
         ("initc", "see setaf"),
         ("oc", "OSC 104 reset palette — see setaf"),
         // ----- Cursor / movement caps beyond `clear` (05.4).
-        // Per TPR-05-016, the wrapper only directly asserts (clear);
+        // Per the wrapper only directly asserts (clear);
         // cup is exercised by tack's menu navigation but the
         // observable home behavior comes from clear=\E[H\E[2J's
         // literal escape, NOT from the parameterized cup capability.
@@ -164,7 +164,7 @@ pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
         // or vttest cursor-movement tests.
         (
             "cup",
-            "wrapper does not directly assert; clear=\\E[H\\E[2J explains home behavior (TPR-05-016); honest coverage requires Section 07 GPU goldens or vttest",
+            "wrapper does not directly assert; clear=\\E[H\\E[2J explains home behavior; honest coverage requires Section 07 GPU goldens or vttest",
         ),
         ("cuu1", "see cup"),
         ("cud1", "see cup"),

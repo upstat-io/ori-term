@@ -59,7 +59,7 @@ fn pty_session_drains_simple_output() {
     // platform. Two-arm shell selection — `/bin/sh` on Unix and
     // `cmd.exe` on Windows — is the cross-platform idiom for "run a
     // one-liner in the platform shell." This replaces the previous
-    // `#[cfg(unix)]`-gated test (BUG-07-008) so Windows gets real
+    // `#[cfg(unix)]`-gated test so Windows gets real
     // `ConPTY` drain coverage instead of a no-op skip. The
     // `#[cfg(unix)] / #[cfg(windows)]` block INSIDE the `#[test] fn`
     // is the cross-platform idiom this codebase uses; the OUTER
@@ -455,7 +455,7 @@ fn pty_session_drain_writes_osc_responses_back() {
 
 #[test]
 fn drain_until_returns_none_immediately_on_channel_disconnect() {
-    // SEMANTIC PIN for TPR-05-003: drain_until's contract is that
+    // SEMANTIC PIN for drain_until's contract is that
     // channel closure (the reader thread has hung up because the
     // child exited or the PTY closed) returns None IMMEDIATELY,
     // not after burning the full timeout budget.
@@ -510,8 +510,7 @@ fn drain_until_returns_none_immediately_on_channel_disconnect() {
         elapsed < Duration::from_millis(1_000),
         "drain_until must return immediately on channel disconnect, \
          not burn the full 5 s timeout: elapsed {elapsed:?} \
-         (TPR-05-003 regression — recv_timeout's Disconnected \
-         variant is being treated like Timeout instead of returning \
-         None)"
+         (regression — recv_timeout's Disconnected variant is being \
+         treated like Timeout instead of returning None)"
     );
 }

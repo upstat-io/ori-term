@@ -330,7 +330,7 @@ fn scrollbar_hover_clears_entry_hover() {
 }
 
 /// Wheel scrolling with cursor over the scrollbar must NOT highlight a
-/// menu row behind the bar (regression: TPR-07-015).
+/// menu row behind the bar (regression: ).
 #[test]
 fn scroll_wheel_over_scrollbar_keeps_hover_clear() {
     let mut menu = scrollable_menu();
@@ -543,7 +543,7 @@ fn non_scrollable_menu_item_press_via_on_action() {
 
 #[test]
 fn item_click_without_prior_mouse_move() {
-    // Regression: TPR-07-012 — menu opens under stationary cursor, first
+    // Regression: menu opens under stationary cursor, first
     // click must select the item under the press position, not no-op.
     let mut menu = MenuWidget::new(sample_entries());
     let bounds = Rect::new(0.0, 0.0, 200.0, 200.0);

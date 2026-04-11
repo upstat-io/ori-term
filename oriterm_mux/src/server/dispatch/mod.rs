@@ -136,7 +136,7 @@ pub fn dispatch_request(
                 // IO thread does reflow + PTY resize (SIGWINCH).
                 // Do NOT push an immediate snapshot — the IO thread will
                 // produce one after reflow completes. This prevents
-                // exposing intermediate reflow frames (TPR-05-001).
+                // exposing intermediate reflow frames.
                 pane.send_io_command(PaneIoCommand::Resize { rows, cols });
             }
             None // Fire-and-forget.

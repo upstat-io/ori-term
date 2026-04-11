@@ -15,13 +15,13 @@ sections:
     status: complete
   - id: "24.3"
     title: Minimum Contrast
-    status: not-started
+    status: in-progress
   - id: "24.4"
     title: HiDPI & Display Scaling
     status: in-progress
   - id: "24.5"
     title: Vector Icon Pipeline (tiny_skia)
-    status: complete
+    status: in-progress
   - id: "24.6"
     title: Background Images
     status: not-started
@@ -63,7 +63,7 @@ sections:
     status: not-started
   - id: "24.10"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 24: Visual Polish

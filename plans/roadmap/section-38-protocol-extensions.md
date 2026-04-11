@@ -27,7 +27,7 @@ sections:
     status: not-started
   - id: "38.6"
     title: Color Queries & Reports (OSC 4/10/11/12)
-    status: in-progress
+    status: complete
   - id: "38.7"
     title: Extended Underline Styles (SGR 4:x, SGR 58)
     status: in-progress
@@ -63,7 +63,7 @@ sections:
     status: not-started
   - id: "38.12"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 38: Terminal Protocol Extensions

@@ -101,7 +101,7 @@ impl FontCollection {
         let subpx_x_offset = super::super::subpx_offset(key.subpx_x);
 
         // COLRv1 compositor first — uses the correct COLR clip box for canvas
-        // sizing, preventing bottom/right edge clipping (BUG-04-001). Falls
+        // sizing, preventing bottom/right edge clipping. Falls
         // through to swash for non-COLR glyphs or if compositing fails.
         let gid_u16 = key.glyph_id as u16;
         let mut glyph = try_rasterize_colr_v1(fd, gid_u16, size).or_else(|| {

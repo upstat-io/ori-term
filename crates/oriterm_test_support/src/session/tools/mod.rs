@@ -6,7 +6,7 @@
 //! (`vttest`, `tack`, `tic`, `infocmp`, ...) is not installed.
 //!
 //! Extracted from `session/mod.rs` in the M1 TPR cleanup
-//! (TPR-05-002) to keep `session/mod.rs` under the 500-line file
+//! to keep `session/mod.rs` under the 500-line file
 //! hygiene limit. The public API is unchanged — `session/mod.rs`
 //! re-exports each helper via `pub use tools::*;` so external
 //! callers still see `crate::session::tack_available()` etc.
@@ -23,10 +23,10 @@
 /// (e.g., wrong flag, missing terminfo path, broken install) is
 /// NOT treated as available — that flow would slip past the skip
 /// gate and fail downstream as a panic instead of a clean skip.
-/// Pre-TPR-05-005, this function only checked
-/// `Command::status().is_ok()` which is `true` whenever the spawn
-/// syscall succeeded regardless of exit code; the fix tightens it
-/// to also require `status.success()`.
+/// A prior version only checked `Command::status().is_ok()` which
+/// is `true` whenever the spawn syscall succeeded regardless of
+/// exit code; the current implementation also requires
+/// `status.success()`.
 #[must_use]
 pub fn tool_available(name: &str, version_arg: &str) -> bool {
     std::process::Command::new(name)
@@ -68,7 +68,7 @@ pub fn tic_available() -> bool {
 /// then EXITS with status 1 (not 0). Other ncurses tools like
 /// `tic` and `infocmp` exit 0 from `-V` — tack is the odd one out.
 /// Switching the probe to `-h` (which prints usage to stderr and
-/// exits 0) fixes the false-negative that the TPR-05-005
+/// exits 0) fixes the false-negative that the
 /// `tool_available` tighten introduced (`tool_available` now
 /// requires `status.success()`, so `tack -V`'s exit-1 was
 /// misreporting tack as unavailable on every dev/CI host).

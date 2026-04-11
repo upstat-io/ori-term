@@ -300,7 +300,6 @@ impl PtySession {
             // chunk will ever arrive — return None immediately
             // so phase capture surfaces the disconnect rather
             // than waiting out the full timeout budget"
-            // (TPR-05-003).
             let remaining = deadline.saturating_duration_since(now);
             let block_ms = remaining.as_millis().min(50) as u64;
             let chunk = match self.rx.recv_timeout(Duration::from_millis(block_ms)) {

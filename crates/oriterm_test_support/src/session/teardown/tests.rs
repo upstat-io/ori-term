@@ -40,7 +40,7 @@ impl PtySession {
 }
 
 /// Deterministic pin for the bounded-poll invariant of
-/// [`PtySession::wait_for_child_exit`] (see 03.R TPR-03-004).
+/// [`PtySession::wait_for_child_exit`] (see 03.R ).
 ///
 /// Simulates the "reader thread EOF but `try_wait()` still returns
 /// `Ok(None)`" race window by force-closing the PTY reader channel

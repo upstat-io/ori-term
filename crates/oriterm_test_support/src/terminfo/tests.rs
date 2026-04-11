@@ -477,7 +477,7 @@ fn round_trip_gate_semantics_pinned() {
     // which in turn delegates to the pure
     // `round_trip_gate_closed_for(tic_ok, infocmp_ok)` form pinned
     // below. This is the SSOT for the gate; pinning the pure form
-    // here is how a TPR-02-002-style "the gate test tests nothing"
+    // here is how a "the gate test tests nothing"
     // regression gets caught — if someone flips
     // `!tic_ok || !infocmp_ok` to `!tic_ok && !infocmp_ok` (so
     // round-trip tests would run when only ONE tool is present),
@@ -543,7 +543,6 @@ fn child_process_with_apply_env_reads_pinned_terminfo() {
     // different path — this pin catches a regression in
     // `env_pairs()` / `apply_env()` even after ori_term gets
     // added to the default terminfo database. This addresses
-    // TPR-02-001.
     //
     // Historical deviation from 02.4 plan text: the plan
     // originally proposed matching on `kf63=` as a uniqueness

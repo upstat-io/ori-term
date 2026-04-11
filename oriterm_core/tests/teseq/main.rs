@@ -56,7 +56,7 @@
 //! | Standalone CJK placement | Low | Medium | Medium | Partial coverage via irm/wrap wide-char tests |
 //! | DCS (Sixel, Kitty image) | Low | Low | Large | Complex protocols, separate plan likely |
 //!
-//! See `plans/teseq-conformance/section-07-verification.md` for full gap
+//! See `plans/completed/teseq-conformance/section-07-verification.md` for full gap
 //! analysis.
 
 // Harness utilities are built in Section 01 and consumed by Sections 02-07.

@@ -15,7 +15,7 @@ sections:
     status: in-progress
   - id: "34.2"
     title: MuxServer Daemon
-    status: in-progress
+    status: complete
   - id: "34.3"
     title: OutputCoalescer
     status: in-progress
@@ -30,7 +30,7 @@ sections:
     status: not-started
   - id: "34.5"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 34: IPC Protocol Hardening + Advanced Coalescing

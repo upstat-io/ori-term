@@ -235,7 +235,7 @@ impl DialogWindowContext {
 /// - `paint_requested`: a controller explicitly requested repaint
 ///
 /// Extracted as a testable function because this condition was the root
-/// cause of TPR-10-014 (missing `handled` check caused silent stale frames).
+/// cause of (missing `handled` check caused silent stale frames).
 pub(super) fn needs_content_redraw(
     handled: bool,
     state_changed: bool,
@@ -246,7 +246,7 @@ pub(super) fn needs_content_redraw(
         || requests.contains(oriterm_ui::controllers::ControllerRequests::PAINT)
 }
 
-/// Computes the parent map from a content widget's current layout (TPR-04-002).
+/// Computes the parent map from a content widget's current layout.
 /// Rebuild dialog interaction/focus/layout state after a page switch.
 ///
 /// Takes split borrows from `DialogWindowContext` to avoid conflicting
@@ -333,7 +333,7 @@ pub(super) fn content_parent_map(
 ///
 /// Unlike `WindowRoot::clear_hot_path()` which unconditionally drops all
 /// hover, this hit-tests the current widget tree against `last_cursor_pos`
-/// to preserve hover on widgets that survive the rebuild (TPR-04-007).
+/// to preserve hover on widgets that survive the rebuild.
 ///
 /// Takes decomposed fields because call sites destructure `ctx.content`
 /// (for panel/config access), preventing `&mut DialogWindowContext`.
