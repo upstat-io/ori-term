@@ -104,11 +104,15 @@ Canonical grounding template:
 
     1. CLAUDE.md (project root)
     2. .claude/rules/impl-hygiene.md
-    3. .claude/rules/tests.md
-    4. <any other .claude/rules/*.md relevant to the files under
-       review — e.g. parse.md if the parser is touched, arc.md if
-       the ARC pass is touched, registry.md if ori_registry is
-       touched>
+    3. .claude/rules/code-hygiene.md
+    4. .claude/rules/tests.md
+    5. .claude/rules/test-organization.md
+    6. .claude/rules/crate-boundaries.md
+    7. Any per-crate rule file under .claude/rules/oriterm*.md
+       whose `paths:` glob covers the files under review
+       (oriterm_core.md, oriterm_ui.md, oriterm_mux.md,
+       oriterm_ipc.md, oriterm.md — the live inventory can be
+       discovered with `ls .claude/rules/*.md`).
 
 **Why this is load-bearing:** Without grounding, reviewers produce
 findings against unknown conventions — generic "this looks odd"

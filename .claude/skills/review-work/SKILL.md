@@ -179,12 +179,15 @@ The codex and gemini prompts share the same evidence packet but differ in their 
 
 **Every reviewer prompt MUST contain a "Grounding — read these files FIRST" section before the scope hint.** Without this grounding, reviewers produce findings against unknown conventions — generic "this looks odd" noise instead of precise `LEAK:scattered-knowledge at path:line` findings that match the project's actual rules.
 
-The grounding block is IDENTICAL for both reviewers and MUST list:
+The grounding block is IDENTICAL for both reviewers and MUST list ALL project rule files, then the relevant per-crate rule files:
 
-1. `CLAUDE.md` (project root) — correctness above all, no deferral, stabilization discipline
-2. `.claude/rules/impl-hygiene.md` — SSOT, No Side Logic, finding categories (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE), canonical homes, algorithmic DRY, test-function-naming rules
-3. `.claude/rules/tests.md` — matrix testing rule, interaction testing, negative pin protocol, regression discipline
-4. Any `.claude/rules/*.md` file relevant to the files under review (e.g. `parse.md`, `arc.md`, `registry.md`) — list the specific ones in the prompt
+1. `CLAUDE.md` (project root) — correctness above all, no deferral, stabilization discipline, Bug Discipline, workspace layout
+2. `.claude/rules/impl-hygiene.md` — SSOT, No Side Logic, finding categories (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE), canonical homes, algorithmic DRY, test-function naming
+3. `.claude/rules/code-hygiene.md` — file organization (500-line limit), error handling, formatting, function size, public-API discipline
+4. `.claude/rules/tests.md` — matrix testing, interaction testing, cross-platform verification, negative pin protocol, regression discipline, performance invariants
+5. `.claude/rules/test-organization.md` — sibling `tests.rs` pattern
+6. `.claude/rules/crate-boundaries.md` — per-crate ownership and allowed dependency direction
+7. Every per-crate rule file under `.claude/rules/oriterm*.md` whose `paths:` glob covers any file in scope (`oriterm_core.md`, `oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`). Run `ls .claude/rules/*.md` if you're unsure of the live inventory — the list evolves.
 
 Write both prompts to the scratch dir:
 
@@ -204,8 +207,14 @@ Bash:
 
   1. CLAUDE.md (project root)
   2. .claude/rules/impl-hygiene.md
-  3. .claude/rules/tests.md
-  4. <any other .claude/rules/*.md relevant to the files under review>
+  3. .claude/rules/code-hygiene.md
+  4. .claude/rules/tests.md
+  5. .claude/rules/test-organization.md
+  6. .claude/rules/crate-boundaries.md
+  7. Any .claude/rules/oriterm*.md per-crate rule file whose `paths:`
+     glob covers files in scope (oriterm_core.md, oriterm_ui.md,
+     oriterm_mux.md, oriterm_ipc.md, oriterm.md). Run
+     `ls .claude/rules/*.md` to see the live inventory.
 
   ## Scope: <scope hint — e.g. "HEAD~5..HEAD", a plan section name, or explicit files>
 
@@ -226,8 +235,13 @@ Bash:
 
   1. CLAUDE.md (project root)
   2. .claude/rules/impl-hygiene.md
-  3. .claude/rules/tests.md
-  4. <any other .claude/rules/*.md relevant to the files under review>
+  3. .claude/rules/code-hygiene.md
+  4. .claude/rules/tests.md
+  5. .claude/rules/test-organization.md
+  6. .claude/rules/crate-boundaries.md
+  7. Any .claude/rules/oriterm*.md per-crate rule file whose `paths:`
+     glob covers files in scope (oriterm_core.md, oriterm_ui.md,
+     oriterm_mux.md, oriterm_ipc.md, oriterm.md).
 
   ## Scope: <same scope hint>
 
