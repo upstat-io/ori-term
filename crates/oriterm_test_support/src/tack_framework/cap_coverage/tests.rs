@@ -207,7 +207,7 @@ fn expand_modified_key_caps_matches_terminfo() {
     // in the terminfo, the kf-family exemption set would
     // include phantom entries.
     //
-    // TPR-05-027 fix: this test originally only checked
+    // fix: this test originally only checked
     // `declared - expanded`, not `expanded - declared`. The
     // "and vice versa" claim was therefore unverified — a
     // phantom helper entry could slip through. The fix below
@@ -262,7 +262,7 @@ fn expand_modified_key_caps_matches_terminfo() {
          that are not declared in extra/ori_term.info: {in_expanded_only:?} — \
          either the helper has drifted from terminfo (typo / off-by-one / \
          spurious addition), or extra/ori_term.info dropped a cap that the \
-         helper still produces (TPR-05-027 fix)"
+         helper still produces"
     );
 }
 
@@ -357,7 +357,7 @@ fn stale_exemption_negative_pin() {
          matrix's negative-pin invariant is broken"
     );
 
-    // TPR-05-025 SEMANTIC PIN: the integration test must ALSO scan
+    // SEMANTIC PIN: the integration test must ALSO scan
     // the iterator-built keyboard exemptions (`expand_kf_caps()`
     // and `expand_modified_key_caps()`), not just `contrib.exempt`.
     // Otherwise Section 08 could move `kf1` into `covered` and the
@@ -378,7 +378,7 @@ fn stale_exemption_negative_pin() {
         vec!["kf1".to_string()],
         "expand_kf_caps() iterator stale-exemption check failed; \
          the integration test's iterator-scan path is broken \
-         (TPR-05-025 regression)"
+         (regression)"
     );
 
     let synthetic_covered_modkey: BTreeSet<String> = ["kLFT".to_string()].into_iter().collect();
@@ -393,11 +393,11 @@ fn stale_exemption_negative_pin() {
         vec!["kLFT".to_string()],
         "expand_modified_key_caps() iterator stale-exemption check \
          failed; the integration test's iterator-scan path is broken \
-         (TPR-05-025 regression)"
+         (regression)"
     );
 }
 
-// ----- extract_cap_value sibling tests (TPR-06-003 promoted helper) -----
+// ----- extract_cap_value sibling tests (promoted helper) -----
 
 #[test]
 fn extract_cap_value_returns_value_for_present_string_cap() {
@@ -431,7 +431,7 @@ fn extract_cap_value_finds_cap_on_continuation_line() {
 
 #[test]
 fn parse_terminfo_source_and_extract_cap_value_agree_on_blank_line_break() {
-    // TPR-06-009 SEMANTIC PIN: the shared `collapse_continuations`
+    // SEMANTIC PIN: the shared `collapse_continuations`
     // helper treats blank lines as hard breaks in the entry
     // stream. Both `parse_terminfo_source` (cap names) and
     // `extract_cap_value` (cap values) delegate to it, so they
@@ -464,7 +464,7 @@ fn parse_terminfo_source_and_extract_cap_value_agree_on_blank_line_break() {
 
 #[test]
 fn extract_cap_value_handles_multiline_continuations() {
-    // TPR-06-006 SEMANTIC PIN: tic format allows cap values to
+    // SEMANTIC PIN: tic format allows cap values to
     // continue on the next physical line when the current line
     // does NOT end with `,`. The continuation line's leading
     // whitespace is stripped before concatenation. The previous

@@ -2,7 +2,7 @@
 section: 10
 title: "Platform Windows"
 domain: "oriterm_ui/src/platform_windows/, oriterm_ui/src/window/"
-status: in-progress
+status: not-started
 ---
 
 # Section 10: Platform Windows

@@ -1,7 +1,7 @@
 //! Sibling tests for the runtime tool-availability probes.
 //!
 //! Moved out of `session/tests.rs` in the M1 TPR cleanup
-//! (TPR-05-006) per `.claude/rules/test-organization.md` rule
+//! per `.claude/rules/test-organization.md` rule
 //! "one sibling tests.rs per source file."
 
 use super::{infocmp_available, tack_available, tic_available, tool_available, vttest_available};
@@ -16,7 +16,7 @@ fn tool_available_returns_false_for_nonexistent_binary() {
 
 #[test]
 fn tool_available_returns_false_when_binary_spawns_but_exits_nonzero() {
-    // SEMANTIC PIN for TPR-05-005: tool_available must check
+    // SEMANTIC PIN for tool_available must check
     // BOTH "spawn succeeded" AND "exit code is success." A binary
     // that launches but reports failure (wrong flag, missing
     // terminfo path, broken install) is NOT available — it would
@@ -35,7 +35,7 @@ fn tool_available_returns_false_when_binary_spawns_but_exits_nonzero() {
     assert!(
         !result,
         "tool_available must reject a probe that spawns but exits non-zero \
-         (TPR-05-005 regression — only checking Command::status().is_ok() \
+         (regression — only checking Command::status().is_ok() \
          and missing the status.success() check)"
     );
 }
@@ -59,7 +59,7 @@ fn infocmp_available_matches_tool_available() {
 fn tack_available_matches_tool_available() {
     // NOTE: tack uses `-h` (not `-V`) because tack v1.08's `-V` flag
     // exits with status 1 (it prints the version banner to stdout
-    // but the binary then exits non-zero). After TPR-05-005 tightened
+    // but the binary then exits non-zero). After tightened
     // tool_available to require `status.success()`, the `-V` probe
     // would always report tack as unavailable on every dev/CI host.
     // tack -h prints usage to stderr and exits 0 (verified empirically).
@@ -70,7 +70,7 @@ fn tack_available_matches_tool_available() {
 
 #[test]
 fn tack_available_pinned_to_h_probe_via_direct_spawn() {
-    // SEMANTIC PIN for TPR-05-012: `tack_available()` must agree with
+    // SEMANTIC PIN for `tack_available()` must agree with
     // a DIRECT `tack -h` spawn — independent ground truth, decoupled
     // from `tool_available`.
     //
@@ -81,7 +81,7 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
     // true → assert_eq fails). On a host WITHOUT tack, both sides
     // return false and the assertion passes vacuously — the
     // regression slips through any CI lane that lacks tack. Codex
-    // /review-work (TPR-05-012) flagged the gap as a silent-skip
+    // /review-work flagged the gap as a silent-skip
     // vector that would let the original `-V` regression come back
     // unnoticed in CI.
     //
@@ -124,9 +124,8 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
         tack_available(),
         "tack_available() returned false on a host where `tack -h` \
          exits 0 — the probe flag is wrong (likely reverted to `-V`, \
-         which exits 1 on tack v1.08, fails the TPR-05-005 \
-         status.success() check, and silently skips every tack \
-         integration test). See TPR-05-012."
+         which exits 1 on tack v1.08, fails the status.success() \
+         check, and silently skips every tack integration test)."
     );
 
     // Belt-and-braces: explicitly catch the -V revert by checking
@@ -153,7 +152,7 @@ fn tack_available_pinned_to_h_probe_via_direct_spawn() {
         debug_assert!(
             tack_available(),
             "tack -V exits 1 but tack_available() returned false: \
-             probe is using -V (TPR-05-012 regression)"
+             probe is using -V (regression)"
         );
     }
 }

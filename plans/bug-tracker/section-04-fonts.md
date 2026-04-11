@@ -8,7 +8,7 @@ third_party_review:
 sections:
   - id: "04.1"
     title: "Active Bugs"
-    status: complete
+    status: in-progress
   - id: "04.R"
     title: "Third Party Review Findings"
     status: in-progress

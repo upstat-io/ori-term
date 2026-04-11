@@ -495,7 +495,7 @@ fn rasterized_glyph_carries_format_tag() {
     );
 }
 
-// ── Ligature glyph rasterization (BUG-04-003 diagnostic) ──
+// ── Ligature glyph rasterization (diagnostic) ──
 
 #[test]
 fn rasterize_ligature_glyph_id_produces_bitmap() {
@@ -2138,7 +2138,7 @@ fn face_variations_for_ui_weight_no_axis_returns_empty() {
 #[test]
 fn face_variations_for_ui_weight_applies_to_fallback_with_wght_axis() {
     // Fallback faces with a wght axis should get the requested weight applied,
-    // ensuring consistent weight across primary and fallback glyphs (TPR-02-007).
+    // ensuring consistent weight across primary and fallback glyphs.
     let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
     let result = face_variations_for_ui_weight(SyntheticFlags::NONE, 700, &axes);
     assert_eq!(result.settings.len(), 1);

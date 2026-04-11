@@ -24,7 +24,7 @@ sections:
     status: in-progress
   - id: "21.6"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 21: Context Menu & Window Controls

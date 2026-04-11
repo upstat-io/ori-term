@@ -31,7 +31,7 @@ fn idle_returns_text_blink_wait() {
 
 #[test]
 fn still_dirty_budget_not_elapsed_waits() {
-    // BUG-11-1 fix: when dirty but budget hasn't elapsed, use Wait (not
+    // fix: when dirty but budget hasn't elapsed, use Wait (not
     // WaitUntil) so winit truly sleeps and processes keyboard events on
     // the next MuxWakeup. WaitUntil is broken on Windows/WSL2.
     let mut input = idle_input();
@@ -150,7 +150,7 @@ fn animations_take_priority_over_scheduler_wake() {
     assert_eq!(result, expected);
 }
 
-// Budget gate tests — now applies to ALL present modes (BUG-11-1).
+// Budget gate tests — now applies to ALL present modes.
 
 // Fade blink wakeup tests
 
@@ -238,6 +238,5 @@ fn control_flow_recovering_overrides_dirty() {
 }
 
 // Section 06.5 Track B kxIN/kxOUT cross-crate xcheck tests
-// were extracted into the `focus_events` sibling submodule by
-// TPR-06-002/003/004 — see
+// live in the `focus_events` sibling submodule — see
 // `oriterm/src/app/event_loop_helpers/focus_events/tests.rs`.

@@ -17,7 +17,7 @@ pub(super) const REGISTERED: &[&str] = &["Cr", "Cs"];
 
 #[test]
 fn tack_cap_xcheck_cr_cs_cap_values_match() {
-    // TPR-06-001 fix: pin the literal Cr/Cs declarations so a
+    // fix: pin the literal Cr/Cs declarations so a
     // terminfo edit that changes the OSC 12/112 cap values
     // triggers a test failure BEFORE the round-trip tests below.
     assert_cap_value_matches("Cr", "\\E]112\\007");

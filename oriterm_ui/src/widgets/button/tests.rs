@@ -569,7 +569,7 @@ fn harness_keyboard_activation() {
     );
 }
 
-// -- Disabled layout propagation (TPR-12-013) --
+// -- Disabled layout propagation --
 
 #[test]
 fn disabled_button_layout_sets_disabled_flag() {

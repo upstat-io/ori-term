@@ -174,7 +174,7 @@ fn set_selected() {
     assert!(card.data().selected);
 }
 
-// -- accept_action group filtering (TPR-11-002) --
+// -- accept_action group filtering --
 
 #[test]
 fn accept_action_reacts_to_sibling_scheme_card() {

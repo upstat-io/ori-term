@@ -393,7 +393,7 @@ fn focus_within_clears_on_focus_transfer() {
     assert!(mgr.get_state(root).has_focus_within());
 }
 
-// --- InteractionManager: focus order rebuild sync (TPR-11-004) ---
+// --- InteractionManager: focus order rebuild sync ---
 
 #[test]
 fn focus_order_rebuild_desync_produces_stale_focus_path() {

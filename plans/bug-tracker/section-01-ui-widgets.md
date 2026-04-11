@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "UI Widgets Bugs"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Track and fix bugs in UI widgets"
 depends_on: []
@@ -11,7 +11,7 @@ third_party_review:
 sections:
   - id: "01.1"
     title: "Active Bugs"
-    status: in-progress
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
     status: not-started

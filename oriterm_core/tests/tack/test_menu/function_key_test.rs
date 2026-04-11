@@ -16,7 +16,7 @@
 //!
 //! # Where the equivalent coverage WILL live (Section 08)
 //!
-//! **Important — TPR-05-018 fix.** Section 08 of the
+//! **Important** Section 08 of the
 //! tack-conformance plan is the planned home for function-key
 //! cross-check coverage via `oriterm/src/key_encoding/terminfo_xcheck.rs`.
 //! That in-crate sibling test is intended to:
@@ -38,7 +38,7 @@
 //! 08's keyboard-encoding crate and use the keymap dispatch
 //! that Section 08 will define).
 //!
-//! TPR-05-018 (Codex /review-work iteration 2 of M2) flagged
+//! (Codex /review-work iteration 2 of M2) flagged
 //! the previous version of this stub for overstating coverage:
 //! it claimed Section 08's cross-check "covers the same ground"
 //! and "is faster, deterministic, and doesn't require human

@@ -227,7 +227,7 @@ fn remove_placements_in_region() {
 }
 
 /// Regression: replacing an existing image via `store()` must fully reclaim
-/// old memory including animation state (TPR-01-001).
+/// old memory including animation state.
 #[test]
 fn store_replace_reclaims_old_image_memory() {
     let mut cache = ImageCache::new();
@@ -251,7 +251,7 @@ fn store_replace_reclaims_old_image_memory() {
 
 /// `remove_by_position()` removes placements but preserves image data.
 /// This is the Kitty lowercase delete semantic: `d=r` deletes placements
-/// only, image payloads are retained (TPR-01-013).
+/// only, image payloads are retained.
 #[test]
 fn remove_by_position_preserves_image_data() {
     let mut cache = ImageCache::new();
@@ -271,7 +271,7 @@ fn remove_by_position_preserves_image_data() {
 
 /// `remove_by_position()` + `prune_if_orphaned()` prunes only the specific
 /// images made orphaned by the targeted removal. This is the sixel overwrite
-/// and Kitty uppercase delete semantic (TPR-01-002, TPR-01-013, TPR-01-014).
+/// and Kitty uppercase delete semantic.
 #[test]
 fn remove_by_position_then_targeted_prune() {
     let mut cache = ImageCache::new();
@@ -295,7 +295,7 @@ fn remove_by_position_then_targeted_prune() {
 }
 
 /// Targeted orphan pruning must NOT affect unrelated images stored without
-/// placements (Kitty deferred-placement pattern). TPR-01-014 regression.
+/// placements (Kitty deferred-placement pattern). regression.
 #[test]
 fn targeted_prune_preserves_unrelated_deferred_images() {
     let mut cache = ImageCache::new();
@@ -330,7 +330,7 @@ fn targeted_prune_preserves_unrelated_deferred_images() {
 }
 
 /// Regression: `remove_placements_in_region()` must prune orphaned image
-/// payloads when the last placement is erased (TPR-01-004).
+/// payloads when the last placement is erased.
 #[test]
 fn remove_placements_in_region_prunes_orphaned_image() {
     let mut cache = ImageCache::new();

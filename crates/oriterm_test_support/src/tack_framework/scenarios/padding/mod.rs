@@ -43,7 +43,7 @@
 //! The wrapper does NOT assert on the `not present` substring
 //! because that is a property of the current `extra/ori_term.info`,
 //! not of the padding test itself. (Earlier draft of this rustdoc
-//! incorrectly said "delegate to `rs2`" — TPR-05-021 corrected the
+//! incorrectly said "delegate to `rs2`" corrected the
 //! factual error against the pinned terminfo source.)
 //!
 //! # Hybrid coverage strategy

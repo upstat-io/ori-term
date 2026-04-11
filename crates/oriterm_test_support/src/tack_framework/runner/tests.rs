@@ -570,7 +570,7 @@ fn phase_default_timeout_ms_matches_documented_value() {
 
 // ============================================================
 // 05.0.b run_phase_at orchestration tests against real tack
-// (TPR-05-011 fix).
+// (fix).
 //
 // These tests pin the orchestration BEHAVIOR of `run_phase_at`
 // itself — not the lower-level `phase_capture_loop` (already

@@ -12,20 +12,20 @@
 //! fix path: pin the new version, re-run discovery, update
 //! inventory.
 //!
-//! # Module split rationale (TPR-05-002, TPR-05-006)
+//! # Module split rationale
 //!
 //! The version gate originally landed in `session/mod.rs` as part
 //! of 05.0.c. Codex M1 TPR flagged this as a hygiene violation
 //! because `session/mod.rs` exceeded the 500-line limit after the
-//! addition (TPR-05-002), so it was extracted into a flat
-//! `session/version_gate.rs` leaf. A subsequent iter (TPR-05-006)
+//! addition, so it was extracted into a flat
+//! `session/version_gate.rs` leaf. A subsequent iter
 //! converted the leaf to a directory module: `version_gate/mod.rs`
 //! plus its sibling `version_gate/tests.rs`, per the
 //! `.claude/rules/test-organization.md` "one tests.rs per source
 //! file" rule. The runtime tool-availability probes
 //! (`tool_available`, `tack_available`, etc.) were extracted in
-//! the same TPR-05-002 wave into `session/tools/mod.rs` (also a
-//! directory module post-TPR-05-006).
+//! the same wave into `session/tools/mod.rs` (also a
+//! directory module in a subsequent refactor).
 //!
 //! The public API surface is unchanged — `session/mod.rs`
 //! re-exports every item via `pub use version_gate::*;` so

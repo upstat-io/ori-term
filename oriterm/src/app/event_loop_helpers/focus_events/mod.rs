@@ -1,7 +1,7 @@
 //! Focus-event escape sequences and the `App` methods that emit
 //! them in response to winit `WindowEvent::Focused`.
 //!
-//! Extracted from `event_loop_helpers/mod.rs` in TPR-06-004 to
+//! Extracted from `event_loop_helpers/mod.rs` in to
 //! keep the parent file under the 500-line hygiene limit AND to
 //! give Section 06.5 Track B's `kxIN`/`kxOUT` cross-crate tests a
 //! testable seam (see [`focus_event_seq_for_mode`] — the pure
@@ -29,7 +29,7 @@ pub(super) const FOCUS_OUT_SEQ: &[u8] = b"\x1b[O";
 /// terminal has not enabled `FOCUS_IN_OUT` and no event should
 /// be emitted).
 ///
-/// Section 06.5's TPR-06-002 finding asked for an actual test of
+/// Section 06.5's finding asked for an actual test of
 /// the emission path — not just the constants. This function is
 /// the testable kernel of [`App::send_focus_event`]: tests can
 /// feed synthetic `TermMode` snapshots and assert the returned

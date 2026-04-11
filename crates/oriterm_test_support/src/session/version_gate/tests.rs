@@ -1,7 +1,7 @@
 //! Sibling tests for the tack version gate.
 //!
 //! Moved out of `session/tests.rs` in the M1 TPR cleanup
-//! (TPR-05-006) per `.claude/rules/test-organization.md` rule
+//! per `.claude/rules/test-organization.md` rule
 //! "one sibling tests.rs per source file."
 //!
 //! All tests call the PURE helpers (`parse_tack_version`,

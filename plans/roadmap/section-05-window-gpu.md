@@ -54,7 +54,7 @@ sections:
     status: complete
   - id: "5.16"
     title: "GPU Device Lost Recovery — Core Engine"
-    status: not-started
+    status: in-progress
   - id: "5.17"
     title: "Recovery Correctness & Infrastructure"
     status: not-started

@@ -2,7 +2,7 @@
 section: 9
 title: "Session & Tab/Window Management"
 domain: "oriterm/src/app/tab_management/, oriterm/src/session/"
-status: in-progress
+status: not-started
 ---
 
 # Section 09: Session & Tab/Window Management

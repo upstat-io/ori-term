@@ -106,7 +106,7 @@ fn parse_graphic_rendition_screen_handles_label_at_end_of_line() {
 
 #[test]
 fn parse_graphic_rendition_screen_returns_labels_in_canonical_order() {
-    // SEMANTIC PIN for TPR-05-014: the parser walks SGR_LABELS in
+    // SEMANTIC PIN for the parser walks SGR_LABELS in
     // declaration order and pushes matches in that order, so the
     // returned `capability_labels` vec MUST appear in the canonical
     // [bold, dim, underline, blink, reverse, invis] order REGARDLESS
@@ -131,7 +131,7 @@ fn parse_graphic_rendition_screen_returns_labels_in_canonical_order() {
 
 #[test]
 fn parse_graphic_rendition_screen_returns_partial_subset_in_canonical_order() {
-    // SEMANTIC PIN for TPR-05-014: when only a subset of SGR labels
+    // SEMANTIC PIN for when only a subset of SGR labels
     // is present, the parser returns just those labels — still in
     // canonical order, with no padding/empty entries for missing
     // labels. Pin 3 of 6 (bold, underline, reverse) to catch a

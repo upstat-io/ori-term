@@ -216,7 +216,7 @@ fn rebuild_reregisters_widgets() {
 
 /// `rebuild` syncs InteractionManager focus when focused widget leaves the order.
 ///
-/// Regression test for TPR-11-005: `rebuild()` calls `set_focus_order()` which
+/// Regression test for `rebuild()` calls `set_focus_order()` which
 /// may clear FocusManager's focus, but InteractionManager was not updated.
 #[test]
 fn rebuild_syncs_interaction_focus_on_order_change() {
@@ -382,7 +382,7 @@ fn overlay_dismissed_on_outside_click() {
 
 /// Moving the cursor over an active overlay must NOT make background widgets
 /// hot — the overlay consumes the mouse event before the base tree hot path
-/// is updated (TPR-11-011).
+/// is updated.
 #[test]
 fn overlay_mouse_does_not_make_background_widget_hot() {
     use crate::overlay::Placement;
@@ -488,12 +488,12 @@ fn hover_marks_widget_prepaint_dirty() {
     }
 }
 
-// -- sync_focus_order tests (TPR-11-006 regression) --
+// -- sync_focus_order tests (regression) --
 
 /// `sync_focus_order` clears InteractionManager focus when the focused widget
 /// leaves the new order — models the dialog reset-defaults / page-switch flow.
 ///
-/// Regression test for TPR-11-006: dialog content handlers previously
+/// Regression test for dialog content handlers previously
 /// duplicated the sync logic inline; now they call `sync_focus_order()`
 /// directly, so this test covers all three production call sites.
 #[test]
@@ -571,11 +571,11 @@ fn sync_focus_order_noop_without_focus() {
     assert_eq!(root.interaction().focused_widget(), None);
 }
 
-// -- clear_hot_path tests (TPR-04-004 regression) --
+// -- clear_hot_path tests (regression) --
 
 /// `clear_hot_path` clears stale hover state after a tree rebuild.
 ///
-/// Regression test for TPR-04-004: dialog page rebuilds left old widgets
+/// Regression test for dialog page rebuilds left old widgets
 /// logically hot until the next cursor move.
 #[test]
 fn clear_hot_path_removes_stale_hover() {
@@ -642,10 +642,10 @@ fn clear_hot_path_marks_dirty() {
     );
 }
 
-// -- refresh_hot_path tests (TPR-04-007 regression) --
+// -- refresh_hot_path tests (regression) --
 
 /// `refresh_hot_path` preserves hover on widgets still under the cursor
-/// after a tree rebuild (TPR-04-007).
+/// after a tree rebuild.
 ///
 /// Regression: `clear_hot_path()` unconditionally dropped hover on all
 /// widgets, including those that survived the rebuild and were still
@@ -760,10 +760,10 @@ fn interaction_invalidation_and_frame_requests_mut_destructures_correctly() {
     assert!(invalidation.is_prepaint_dirty(btn_id));
 }
 
-// -- TPR-11-009: rebuild GC tests --
+// -- rebuild GC tests --
 
 /// `replace_widget` followed by `rebuild` does not leave stale interaction
-/// registrations from the old widget tree (TPR-11-009).
+/// registrations from the old widget tree.
 #[test]
 fn replace_widget_does_not_leak_old_registrations() {
     let btn_a = ButtonWidget::new("A");
@@ -828,7 +828,7 @@ fn rebuild_gcs_stale_registrations() {
 }
 
 /// `compute_layout` GCs stale interaction registrations after structural
-/// changes, matching `rebuild()` behavior (TPR-04-006).
+/// changes, matching `rebuild()` behavior.
 #[test]
 fn compute_layout_gcs_stale_registrations() {
     use crate::widgets::container::ContainerWidget;

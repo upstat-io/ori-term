@@ -149,7 +149,7 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // DelegatedToSection { section: "08" } classification is
         // CORRECT (function-key coverage belongs in Section 08's
         // keyboard-encoding crate, not in Section 05's tack
-        // catalog), but per TPR-05-018 (Codex /review-work
+        // catalog), but per (Codex /review-work
         // iteration 2 of M2): Section 08 is currently
         // `status: not-started` and the planned cross-check file
         // `oriterm/src/key_encoding/terminfo_xcheck.rs` does NOT
@@ -223,7 +223,7 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // screen — it simply re-displays the same begin-testing
         // menu inline.
         //
-        // **Coverage source after TPR-05-017 / TPR-05-022 fix:**
+        // **Coverage source after fix:**
         // the duplicate claim is backed by a REAL automated test
         // at `oriterm_core/tests/tack/test_menu/help.rs`
         // (`tack_help_redisplays_begin_testing_menu`) that:
@@ -242,8 +242,8 @@ pub const BEGIN_TESTING_INVENTORY: &[BeginTestingKey] = &[
         // The previous version of this comment said the 05.0
         // begin_testing_inventory drift gate covered help
         // behavior, which was UNVERIFIED — the drift gate only
-        // sends `n` and never `?`. TPR-05-017 (Codex /review-work
-        // iteration 2 of M2) flagged the gap; TPR-05-022 then
+        // sends `n` and never `?`. (Codex /review-work
+        // iteration 2 of M2) flagged the gap; then
         // flagged this comment as still pointing at the old
         // owner. The Duplicate classification is now backed by
         // an automated test that directly presses `?` and pins

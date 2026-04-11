@@ -133,7 +133,7 @@ fn parse_padding_screen_handles_realistic_tack_v108_output() {
     // "not present" part of tack's output reflects the current
     // state of extra/ori_term.info, which declares NO reset-string
     // capabilities at all (neither rs1, rs2, nor rs3) — see
-    // TPR-05-021 for the empirical correction. Other caps in
+    // for the empirical correction. Other caps in
     // STRING_CAPS are absent from the captured grid because tack
     // only probes caps that exist in the terminfo entry, and
     // none of them are declared.

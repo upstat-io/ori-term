@@ -139,7 +139,7 @@ fn tack_cap_xcheck_smulx_cap_value_matches() {
 
 #[test]
 fn tack_cap_xcheck_setulc_cap_value_matches() {
-    // TPR-06-001 fix: pin the literal Setulc declaration so a
+    // fix: pin the literal Setulc declaration so a
     // terminfo edit that changes the SGR 58 cap value triggers a
     // test failure BEFORE the round-trip tests above are exercised.
     assert_cap_value_matches(

@@ -111,7 +111,7 @@ pub(super) const XCHECK_REGISTERED_CAPS: &[&[&str]] = &[
 /// claim was wrong: `oriterm_test_support` is a dev-dependency of
 /// `oriterm_core` (see `oriterm_core/Cargo.toml`), so the
 /// canonical helper IS reachable from this `#[cfg(test)]` module.
-/// TPR-06-003 fixed the duplication by removing the local
+/// fixed the duplication by removing the local
 /// reimplementation and routing through the canonical helper.
 ///
 /// [`parse_declared_caps`]: oriterm_test_support::tack_framework::cap_coverage::parse_declared_caps
@@ -142,7 +142,7 @@ pub(super) fn assert_cap_declared(cap: &str) {
 ///
 /// Delegates to the canonical [`declared_cap_value`] helper in
 /// `oriterm_test_support::tack_framework::cap_coverage` — see
-/// [`assert_cap_declared`] for the SSOT rationale (TPR-06-003).
+/// [`assert_cap_declared`] for the SSOT rationale.
 ///
 /// [`declared_cap_value`]: oriterm_test_support::tack_framework::cap_coverage::declared_cap_value
 pub(super) fn assert_cap_value_matches(cap: &str, expected: &str) {

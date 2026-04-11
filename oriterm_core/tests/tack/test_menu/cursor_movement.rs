@@ -59,7 +59,7 @@ fn run_cursor_movement_at(cols: u16, rows: u16) {
     //    literal escape (NOT an invocation of the parameterized
     //    `cup` capability). The "home position" behavior is
     //    therefore explained entirely by `clear` itself; a `cup`
-    //    regression would not be caught here. (TPR-05-016 fix.)
+    //    regression would not be caught here. (fix.)
     // 2. "(clear)" — proves tack referenced the clear cap by its
     //    terminfo short name (the canonical tack output format
     //    matching the (am)/(os)/(bel)/(colors)/(pairs) pattern
@@ -70,7 +70,7 @@ fn run_cursor_movement_at(cols: u16, rows: u16) {
     // honestly covered by 05.4. Coverage for `cup`, `csr`, `hpa`,
     // `vpa`, `cuu`, `cud`, `cub`, `cuf` must come from Section
     // 07's GPU goldens or vttest — `cup` was previously claimed
-    // as transitively covered, but TPR-05-016 (Codex
+    // as transitively covered, but (Codex
     // /review-work) correctly identified that the home behavior
     // is explained by `clear`'s literal escape and does not
     // independently exercise `cup`.
