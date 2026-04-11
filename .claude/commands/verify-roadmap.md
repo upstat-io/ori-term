@@ -1,3 +1,10 @@
+---
+name: verify-roadmap
+description: Systematically verify AND expand roadmap sections using parallel subagents. Two-phase process — review agents audit existing items and identify gaps against each section's stated mission, then update agents apply findings back into the section files. Use when the user asks to verify the roadmap, expand a section, or catch missing items.
+allowed-tools: Read, Grep, Glob, Bash, Task, Edit, Write
+argument-hint: "[section | continue]"
+---
+
 # Verify Roadmap Command
 
 Systematically verify AND expand roadmap sections using parallel subagents. Two-phase process: (1) review agents audit existing items and identify gaps against each section's stated mission, (2) update agents apply findings back into the section files — which is the entire point of this command.
@@ -91,8 +98,8 @@ Each agent processes its section items sequentially (items within a section stay
 
 **MANDATORY: Every agent MUST begin by reading ALL project context.** Before verifying a single item, each agent must read — in full, every line — the following files:
 
-1. `/home/eric/projects/ori_term/CLAUDE.md` — project instructions (read ALL of it)
-2. Every file in `/home/eric/projects/ori_term/.claude/rules/` — ALL rules files, every line
+1. `CLAUDE.md` (at the repository root) — project instructions (read ALL of it)
+2. Every file in `.claude/rules/` — ALL rules files, every line
 3. The reference repos or standards relevant to the section being verified
 
 Include this as an explicit instruction in each agent's prompt:
@@ -100,10 +107,11 @@ Include this as an explicit instruction in each agent's prompt:
 BEFORE YOU START: Read these files in full — every single line, no skipping.
 Do not start verifying items until you have read ALL of these files.
 
-1. /home/eric/projects/ori_term/CLAUDE.md (ALL of it — contains coding standards,
-   performance invariants, testing requirements, crate boundaries)
+1. CLAUDE.md at the repository root (ALL of it — contains the Broken Window Policy,
+   NO WORKAROUNDS doctrine, Bug Discipline, workspace layout, and pointers to
+   the canonical rule files)
 
-2. ALL rules files in /home/eric/projects/ori_term/.claude/rules/ — read every file,
+2. ALL rules files in .claude/rules/ — read every file,
    every line:
    - code-hygiene.md, crate-boundaries.md, impl-hygiene.md, test-organization.md
 

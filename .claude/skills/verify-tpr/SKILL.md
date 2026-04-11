@@ -1,6 +1,6 @@
 ---
 name: verify-tpr
-model: sonnet
+model: opus
 description: "Triage TPR findings in a plan section with full codebase validation. Invoked by /continue-roadmap when third_party_review.status is 'findings'. Validates each finding against actual code, spec, and plan — accepts or rejects with rigor."
 argument-hint: "<section-file-path>"
 ---

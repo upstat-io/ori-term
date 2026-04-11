@@ -1,3 +1,9 @@
+---
+name: pr-main
+description: Commit, push, and create a pull request to main/master. Streamlines the dev → master workflow into a single command. Use when the user asks to create a PR, open a pull request, or ship work upstream.
+allowed-tools: Read, Bash, Edit, Write
+---
+
 # PR to Main
 
 Commit, push, and create a PR to main/master. The nightly workflow handles merging. Streamlines the dev → master workflow into a single command.

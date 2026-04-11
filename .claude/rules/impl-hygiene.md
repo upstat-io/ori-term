@@ -242,14 +242,14 @@ When both apply (e.g., a dispatch table that encodes both facts and routing), fi
 
 ## File Organization
 
-- **500-line limit**: source files (excluding tests); exceeding = **BLOAT** finding
-- **Proactive split**: split at ~450 lines if you know more code is coming. Don't wait until over the limit.
-- **Single responsibility per file**: one logical operation or one type family. Anti-pattern: `utils.rs`, `helpers.rs`, `misc.rs`. Every file name describes its domain.
-- **Submodule extraction**: logical group exceeding ~200 lines -> sibling submodule; parent `mod.rs` = dispatch hub
-- **Split when touching**: touching a file over 500 lines without splitting = finding
-- **Tests in sibling `tests.rs`**: `#[cfg(test)] mod tests;` declaration only — body in sibling file
-- **Section markers**: plain `// Section name` on its own line, preceded by blank line. No decorative characters.
-- **Banner removal**: if you touch a file with decorative banners (`// ===`, `// ---`), remove them.
+File-size, module-organization, and test-location conventions live in their canonical homes:
+- **File size limit, proactive splits, single-responsibility per file, banner policy**: see `.claude/rules/code-hygiene.md` §File Organization (500-line limit, ~450-line proactive split, anti-patterns, submodule extraction).
+- **`tests.rs` sibling pattern**: see `.claude/rules/test-organization.md`.
+
+This section used to duplicate those rules, which caused drift when thresholds changed. The rules remain canonical in the files above; this section retains only the hygiene-review framing for how to cite file-size findings:
+- A file over the limit without a split plan = **BLOAT** finding
+- Touching a file already over the limit without splitting = **BLOAT** finding
+- A helpers-dumping-ground file (`utils.rs`, `helpers.rs`, `misc.rs`) = **BLOAT** finding (single-responsibility violation)
 
 ### Module Roles
 
@@ -482,7 +482,7 @@ for row in grid.visible_rows() {
 - Every `unsafe` block requires a `// SAFETY:` comment explaining the invariant
 - Minimize unsafe scope — extract safe logic outside the unsafe block
 - `unsafe` justified only for: platform FFI (winit, wgpu interop), raw pointer operations (GPU buffer mapping), performance-critical hot paths where safe alternatives measurably regress
-- **Platform-specific code**: isolate behind `#[cfg(target_os)]` blocks with implementations for all three platforms (macOS, Windows, Linux). Abstract platform differences behind shared interfaces.
+- **Cross-platform discipline** is canonically defined in `.claude/rules/tests.md` §Cross-Platform Verification (every `#[cfg(target_os = ...)]` branch has counterparts for Linux / macOS / Windows, Windows cross-compile green, etc.). Treat any hygiene finding on a missing platform branch as a citation against that rule.
 
 ## Panic & Assertion
 

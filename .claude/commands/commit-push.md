@@ -1,3 +1,10 @@
+---
+name: commit-push
+description: Stage, commit, and push all changes to the remote repository using conventional commit format. Use when the user asks to commit, push, save work, or "commit this". Supports a `preview` mode that shows the summary and asks for confirmation before committing.
+allowed-tools: Read, Bash, Edit, Write
+argument-hint: "[preview]"
+---
+
 # Commit and Push All Changes
 
 Stage, commit, and push all changes to the remote repository using conventional commit format.
