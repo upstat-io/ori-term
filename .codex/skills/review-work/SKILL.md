@@ -253,7 +253,10 @@ This is not a diff skim.
 - Use commit-by-commit history to catch accidental regressions hidden by the final tree.
 - Prefer diagnostics, tracing, and repo-native verification tools over guesswork.
 
-When a change touches ARC, AOT, lowering, runtime, tests, spec, or roadmap-owned areas, assume
+When a change touches grid / VTE handler / reflow, the GPU render path (cached path, atlas,
+compositor), the widget framework (interaction, pipeline, controllers), pane IO thread or
+snapshot double-buffer, cross-platform `#[cfg(target_os)]` branches, performance invariants
+(zero idle CPU, zero alloc, stable RSS, buffer shrink), tests, or roadmap-owned areas, assume
 the failure surface is wider than the diff and expand the review accordingly.
 
 ## Mandatory Standards Checks

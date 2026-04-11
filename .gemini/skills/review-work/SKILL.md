@@ -178,7 +178,7 @@ will pass the schema validator on the first try.
       ".claude/rules/tests.md",
       ".claude/rules/crate-boundaries.md",
       ".claude/rules/oriterm.md",
-      "oriterm/src/gpu/window_renderer/render.rs",
+      "oriterm/src/gpu/visual_regression/resize_stress.rs",
       "..."
     ],
     "rules_consulted": [
@@ -189,10 +189,10 @@ will pass the schema validator on the first try.
       "https://www.w3.org/TR/webgpu/ (wgpu copy_texture_to_texture semantics)"
     ],
     "plans_consulted": [
-      "plans/roadmap/section-06-rendering-perf.md"
+      "plans/roadmap/section-05-window-gpu.md"
     ],
     "expanded_beyond_packet": true,
-    "expansion_reason": "Followed the render path through oriterm/src/gpu/ to confirm where the canonical damage-rect check lives"
+    "expansion_reason": "Followed the cached render path through oriterm/src/gpu/ to confirm where viewport/surface mismatch is handled"
   },
   "findings": [
     {
@@ -200,9 +200,9 @@ will pass the schema validator on the first try.
       "severity": "high",
       "location": "oriterm/src/gpu/window_renderer/render.rs:218",
       "title": "Clamp copy extent to destination size in render_frame_cached",
-      "evidence": "When the prepared viewport is larger than the surface texture target, copy_texture_to_texture is called with the source extent, which panics on size mismatch during interactive resize. Reproduced via oriterm/src/gpu/visual_regression/resize_stress.rs::resize_mid_frame.",
+      "evidence": "When the prepared viewport is larger than the surface texture target, copy_texture_to_texture is called with the source extent, which panics on size mismatch during interactive resize. Reproduced via `cargo test -p oriterm resize_stress_rapid_dimension_changes` in oriterm/src/gpu/visual_regression/resize_stress.rs.",
       "impact": "GPU-thread panic during interactive resize; terminal window crashes.",
-      "required_plan_update": "Clamp the copy extent to min(source, destination) in render_frame_cached; verify via `cargo test -p oriterm --test resize_stress`.",
+      "required_plan_update": "Clamp the copy extent to min(source, destination) in render_frame_cached; verify via `cargo test -p oriterm resize_stress_rapid_dimension_changes`.",
       "layer": "committed",
       "basis": "direct_file_inspection",
       "confidence": "high",
@@ -217,10 +217,11 @@ will pass the schema validator on the first try.
   "no_findings": false,
   "verification": {
     "tests_rerun": [
-      "cargo test -p oriterm --test resize_stress"
+      "cargo test -p oriterm resize_stress_rapid_dimension_changes",
+      "cargo test -p oriterm resize_stress_tiny_to_large"
     ],
     "diagnostics_run": [
-      "cargo run --target x86_64-pc-windows-gnu --release"
+      "./build-all.sh"
     ],
     "verification_gaps": []
   }

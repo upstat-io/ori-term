@@ -219,8 +219,10 @@ This is not a plan skim.
 - Use history and current tree state together to catch stale assumptions hidden by old status text.
 - Prefer diagnostics, tracing, and repo-native verification tools over guesswork.
 
-When a plan touches ARC, AOT, lowering, runtime, tests, spec, or roadmap-owned areas, assume the
-failure surface is wider than a single section and expand the review accordingly.
+When a plan touches grid / VTE / reflow, GPU render path, widget framework interaction pipeline,
+pane IO thread / snapshot buffer, cross-platform `#[cfg(target_os)]` branches, performance
+invariants, tests, or roadmap-owned areas, assume the failure surface is wider than a single
+section and expand the review accordingly.
 
 ## Mandatory Standards Checks
 
