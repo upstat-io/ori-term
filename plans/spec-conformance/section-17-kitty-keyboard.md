@@ -63,6 +63,17 @@ sections:
 
 **Reference implementations:** see frontmatter.
 
+**Absorbed infrastructure (from tack-conformance section 08, now `complete`):**
+The terminfo cross-check surface at `oriterm/src/key_encoding/terminfo_xcheck/`
+already verifies the FULL kf1–kf63 namespace + cursor keys (normal + application
+mode) + editing keys + the modified-key family (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV
+with modifier suffixes 3–7, plus kind/kri) against the pinned `ori_term.info`
+terminfo entry. Section 17 **extends** that surface with the kitty keyboard encoder,
+modifyOtherKeys encoder, and Win32 Input encoder — it does NOT rewrite it. Before
+writing new tests, read the existing cross-check tests and add the new encoder
+variants as sibling tests in the same directory. Canonical absorption policy:
+see [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](./00-overview.md#tack-absorption-strategy-delivered-by-section-02).
+
 **Depends on:** Section 16 (mouse encoding pattern established; kitty keyboard reuses similar Effect::Pty / encoder scaffolding).
 
 ---

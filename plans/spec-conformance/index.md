@@ -2,7 +2,7 @@
 reroute: true
 name: "Spec Conformance"
 full_name: "Spec Conformance: Universal Terminal Protocol Verification"
-status: queued
+status: active
 order: 2
 ---
 
@@ -44,7 +44,7 @@ provisional row schema, freeze gate after section 04 pilot
 ---
 
 ### Section 02: Tack-Conformance Absorption
-**File:** `section-02-tack-absorption.md` | **Status:** Not Started
+**File:** `section-02-tack-absorption.md` | **Status:** Complete
 
 ```
 tack absorption, plan hygiene, mechanical migration, no file moves

@@ -1,13 +1,35 @@
 ---
 plan: "tack-conformance"
 title: "Tack Conformance: Automated Terminfo Capability Validation Suite"
-status: in-progress
+status: complete
 references:
   - "plans/completed/vttest-conformance/"
   - "plans/completed/golden-image-audit/"
 ---
 
 # Tack Conformance: Automated Terminfo Capability Validation Suite
+
+> **⚠ Superseded by [plans/spec-conformance/](../spec-conformance/00-overview.md).**
+>
+> Sections 01–08 of tack-conformance are **completed artifacts** committed to `main`
+> (each section file's frontmatter carries `status: complete`; `plans/tack-conformance/00-overview.md`'s
+> Quick Reference table and the per-section `**Status:**` labels in
+> `plans/tack-conformance/index.md`'s keyword clusters both reflect this). Section 09's
+> row and label literally still say `Not Started` / `not-started` in those surfaces
+> (02.1's scope fence forbids editing them), but its scope is absorbed per the next paragraph.
+> Section 09 (final verification + archival) is superseded by
+> [plans/spec-conformance/section-23-cross-stack-regression-sweep.md](../spec-conformance/section-23-cross-stack-regression-sweep.md),
+> which explicitly inherits the cross-platform sweep, flake gate, performance
+> invariants, and archival gate.
+>
+> Existing tack-conformance section files (`section-01-*.md` through
+> `section-09-*.md`) remain in place for citation stability — commit messages
+> and PRs that reference these paths (for example `tack-conformance/section-06`)
+> continue to resolve correctly. No `git mv` is run. No files are deleted.
+>
+> The canonical absorption policy lives in
+> [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](../spec-conformance/00-overview.md#tack-absorption-strategy-delivered-by-section-02).
+> This notice is intentionally a pointer, not a restatement.
 
 ## Mission
 

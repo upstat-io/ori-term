@@ -53,6 +53,20 @@ sections:
 
 **Reference implementations:** see frontmatter.
 
+**Absorbed from tack-conformance section 09:** This section explicitly inherits
+the cross-platform skip matrix, the flake-proofing gate (5 runs × 2 thread-modes
+× debug/release), the DA/DSR cross-validation contract against vttest menu6, the
+alloc/RSS regression checks, and the archival-in-place covenant (no `git mv`).
+Tack-conformance sections 01–08 are already `complete` on `main` — the shared
+`PtySession`, pinned `ori_term.info`, scenario framework, test/tools menu scenario
+families, GPU goldens for the visual subset, and the kf1–kf63 terminfo cross-check
+all exist. Section 23 **consumes** those artifacts as existing regression fixtures
+and wires them into the new coverage-report `--check` CI gate. The two currently
+unchecked mission criteria in `plans/tack-conformance/00-overview.md` (cross-platform
+skip cleanliness and the `./test-all.sh`/`./build-all.sh`/`./clippy-all.sh` green
+gate) are this section's responsibility. Canonical absorption policy:
+see [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](./00-overview.md#tack-absorption-strategy-delivered-by-section-02).
+
 **Depends on:** Section 04 (coverage report binary exists), Section 08 (baseline + ~3 stacks verified so the report has meaningful content).
 
 ---
