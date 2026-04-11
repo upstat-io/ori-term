@@ -150,16 +150,22 @@ the repository standards.
 Always read:
 
 - `CLAUDE.md`
-- `.claude/rules/tests.md`
-- `.claude/rules/compiler.md`
-- `.claude/rules/impl-hygiene.md`
-- `.claude/rules/roadmap.md`
+- `.claude/rules/impl-hygiene.md` — SSOT / canonical homes / finding categories (LEAK, DRIFT, GAP, WASTE, EXPOSURE, BLOAT, NOTE)
+- `.claude/rules/code-hygiene.md` — file organization, error handling, formatting, function size, public-API discipline
+- `.claude/rules/tests.md` — matrix testing, interaction testing, cross-platform verification, performance invariants, mandatory 150s test timeout
+- `.claude/rules/test-organization.md` — sibling `tests.rs` pattern
+- `.claude/rules/crate-boundaries.md` — per-crate ownership + allowed dependency direction
 
-Also read every file under `.claude/rules/*.md` before finalizing
-findings. Prioritize rules that match the changed paths or domain
-first, but the final review must account for the full rule set,
-marking non-applicable rules as such in your own reasoning rather
-than silently skipping them.
+Plus every per-crate rule file under `.claude/rules/oriterm*.md` whose
+`paths:` glob covers any changed file (e.g. `oriterm_core.md`,
+`oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`).
+
+Also read every remaining file under `.claude/rules/*.md` before
+finalizing findings. Prioritize rules that match the changed paths
+or domain first, but the final review must account for the full
+rule set, marking non-applicable rules as such in your own reasoning
+rather than silently skipping them. Run `ls .claude/rules/*.md` if
+you're unsure of the current inventory — the list evolves.
 
 ### 4. Plan Context
 

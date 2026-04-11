@@ -112,21 +112,33 @@ Do not start verifying items until you have read ALL of these files.
    the canonical rule files)
 
 2. ALL rules files in .claude/rules/ — read every file,
-   every line:
-   - code-hygiene.md, crate-boundaries.md, impl-hygiene.md, test-organization.md
+   every line. Run `ls .claude/rules/*.md` first to get the current
+   inventory (the list evolves — new per-crate rules files are
+   added as new crates land). As of this writing the set is:
+   - code-hygiene.md, crate-boundaries.md, impl-hygiene.md,
+     test-organization.md, tests.md, oriterm.md, oriterm_core.md,
+     oriterm_ui.md, oriterm_mux.md, oriterm_ipc.md
+   Any additional `.claude/rules/oriterm*.md` per-crate file that
+   may appear after this command was last updated — read it too if
+   its `paths:` frontmatter glob is relevant to the section being
+   verified.
 
-3. The relevant reference repos for the section being verified (from
-   ~/projects/reference_repos/console_repos/ — alacritty, wezterm, ghostty, etc.)
+3. The relevant reference repos for the section being verified
+   (from ~/projects/reference_repos/console_repos/ — alacritty,
+   wezterm, ghostty, ratatui, ptyxis, termenv, etc.) and
+   ~/projects/reference_repos/gui_repos/ for widget/GPU questions.
 
-These files contain CRITICAL context: crate boundary rules, test organization standards,
-performance invariants, coding standards, and hygiene rules.
-An agent that skips reading these files WILL produce incorrect verification results.
+These files contain CRITICAL context: crate boundary rules, test
+organization standards, performance invariants, coding standards,
+hygiene rules, and per-crate ownership + forbidden-list discipline.
+An agent that skips reading these files WILL produce incorrect
+verification results.
 
 After reading, report what you loaded at the top of your results file:
-  Context loaded: CLAUDE.md (read), rules/*.md (4 files read), reference: [repos consulted]
+  Context loaded: CLAUDE.md (read), rules/*.md (N files read: <comma-separated list>), reference: [repos consulted]
 ```
 
-This is non-negotiable. An agent that skips reading these files will miss critical context about crate boundaries, test organization, and performance invariants. The supervisor MUST verify that agent results begin with the "Context loaded" line showing all files were read. If the line is missing or shows fewer than 4 rules files, the agent's results are unreliable — re-run the section.
+This is non-negotiable. An agent that skips reading these files will miss critical context about crate boundaries, test organization, performance invariants, and per-crate ownership. The supervisor MUST verify that agent results begin with the "Context loaded" line showing all files were read. If the line is missing, or the reported file count is smaller than `ls .claude/rules/*.md | wc -l` on the current commit, the agent's results are unreliable — re-run the section.
 
 #### Step 3: Supervisor Monitoring
 
