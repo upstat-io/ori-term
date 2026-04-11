@@ -132,7 +132,7 @@ This is a third-party consultation, not an autonomous task. If you edit any file
 
 ---
 
-You are helping with the Ori compiler (Rust codebase, LLVM backend, ARC memory management).
+You are helping with ori_term (Rust codebase, GPU-accelerated terminal emulator built on wgpu + winit, in the same category as alacritty, wezterm, and ghostty).
 
 This is an independent, adversarial consultation:
 - Trust current files, fresh command output, and git objects.
@@ -147,8 +147,9 @@ Before you look at the question or any of the context files below, read these ru
 
 1. `CLAUDE.md` (project root) — correctness above all, no deferral, stabilization discipline, one system one owner, no reasoning out of findings
 2. `.claude/rules/impl-hygiene.md` — SSOT (Single Source of Truth), No Side Logic, canonical homes, finding categories (LEAK, DRIFT, GAP, WASTE, EXPOSURE, BLOAT, NOTE), algorithmic DRY, test-function-naming rules
-3. `.claude/rules/tests.md` — matrix testing rule, interaction testing, negative pin protocol, regression discipline, cross-phase verification
-4. Any other `.claude/rules/*.md` file relevant to the specific question — e.g. `parse.md` for parser questions, `arc.md` for ARC/memory questions, `registry.md` for type-system questions, `compiler.md` for general compiler questions
+3. `.claude/rules/tests.md` — matrix testing rule, interaction testing, negative pin protocol, regression discipline, cross-platform verification, performance invariants
+4. `.claude/rules/crate-boundaries.md` — ori_term crate ownership and allowed dependency direction
+5. Any per-crate rule file under `.claude/rules/oriterm*.md` (e.g. `oriterm_core.md`, `oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`) whose `paths:` glob covers the files the question touches
 
 Every concern you raise MUST use the vocabulary defined in `impl-hygiene.md` (LEAK/DRIFT/GAP/WASTE/etc.) and cite the specific rule or architectural principle it violates. Generic "this looks odd" feedback is not useful — the caller wants "DRIFT: sentinel format duplicated across 4 files at X:N, Y:M, Z:K" specificity.
 
@@ -187,7 +188,7 @@ This is a third-party consultation, not an autonomous task. Prompt discipline vi
 
 ---
 
-You are helping with the Ori compiler (Rust codebase, LLVM backend, ARC memory management).
+You are helping with ori_term (Rust codebase, GPU-accelerated terminal emulator built on wgpu + winit, in the same category as alacritty, wezterm, and ghostty).
 
 This is an independent, adversarial consultation:
 - Trust current files, fresh command output, and git objects.
@@ -202,8 +203,9 @@ Before you look at the question or any of the context files below, read these ru
 
 1. `CLAUDE.md` (project root) — correctness above all, no deferral, stabilization discipline, one system one owner, no reasoning out of findings
 2. `.claude/rules/impl-hygiene.md` — SSOT (Single Source of Truth), No Side Logic, canonical homes, finding categories (LEAK, DRIFT, GAP, WASTE, EXPOSURE, BLOAT, NOTE), algorithmic DRY, test-function-naming rules
-3. `.claude/rules/tests.md` — matrix testing rule, interaction testing, negative pin protocol, regression discipline, cross-phase verification
-4. Any other `.claude/rules/*.md` file relevant to the specific question — e.g. `parse.md` for parser questions, `arc.md` for ARC/memory questions, `registry.md` for type-system questions, `compiler.md` for general compiler questions
+3. `.claude/rules/tests.md` — matrix testing rule, interaction testing, negative pin protocol, regression discipline, cross-platform verification, performance invariants
+4. `.claude/rules/crate-boundaries.md` — ori_term crate ownership and allowed dependency direction
+5. Any per-crate rule file under `.claude/rules/oriterm*.md` (e.g. `oriterm_core.md`, `oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`) whose `paths:` glob covers the files the question touches
 
 Every concern you raise MUST use the vocabulary defined in `impl-hygiene.md` (LEAK/DRIFT/GAP/WASTE/etc.) and cite the specific rule or architectural principle it violates. Generic "this looks odd" feedback is not useful — the caller wants "DRIFT: sentinel format duplicated across 4 files at X:N, Y:M, Z:K" specificity.
 

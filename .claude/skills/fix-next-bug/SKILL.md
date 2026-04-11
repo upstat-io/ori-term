@@ -20,26 +20,14 @@ No arguments needed — the skill auto-selects based on priority.
 
 Bugs are selected in this order:
 1. **Severity** — `critical` > `high` > `medium` > `low`
-2. **Pipeline position** — lower section number first (earlier in the compiler pipeline = higher impact):
-   - 01 Parser & Lexer → 02 Type Checker → 03 Evaluator → 04 Codegen & LLVM → 05 Runtime & ARC → 06 Stdlib → 07 Tooling & CLI → 08 Spec & Docs
+2. **Subsystem impact** — earlier bug-tracker sections generally represent broader impact (core terminal and rendering issues affect every user interaction), but this is a loose ordering — defer to the user's own priorities from `plans/bug-tracker/00-overview.md` when they differ. Default order mirrors the Quick Reference table in that file.
 3. **Ordinal** — lower bug number first within the same section and severity
 
 ## Workflow
 
 ### Step 1: Scan All Open Bugs
 
-Read all section files to collect every `- [ ]` entry:
-
-```
-plans/bug-tracker/section-01-parser-lexer.md
-plans/bug-tracker/section-02-typeck.md
-plans/bug-tracker/section-03-eval.md
-plans/bug-tracker/section-04-codegen-llvm.md
-plans/bug-tracker/section-05-runtime-arc.md
-plans/bug-tracker/section-06-stdlib.md
-plans/bug-tracker/section-07-tooling-cli.md
-plans/bug-tracker/section-08-spec-docs.md
-```
+Read `plans/bug-tracker/00-overview.md` to discover the current section list (it lives in the Quick Reference table). Section topics can change over time — never hardcode a list here. Then read every section file that exists in `plans/bug-tracker/` matching `section-NN-*.md` and collect every `- [ ]` entry.
 
 For each `- [ ]` entry, extract:
 - **ID**: `BUG-{section}-{ordinal}`
@@ -110,7 +98,7 @@ How would you like to proceed?
 
 **After `/fix-bug` completes (in EITHER mode), before doing anything else:**
 
-1. Run `git status` to check for uncommitted changes (staged, unstaged, or untracked files in compiler/library/tests paths)
+1. Run `git status` to check for uncommitted changes (staged, unstaged, or untracked files anywhere in the workspace)
 2. If there are uncommitted changes:
    - Invoke `/commit-push` to commit all changes
    - Verify the commit succeeded (clean `git status`)

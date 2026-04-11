@@ -23,7 +23,7 @@ Fix a bug with the same rigor as a plan section: investigation, root cause analy
 **Before ANY other work**, re-read the project's CLAUDE.md files to ground yourself in the rules:
 
 1. **Read `CLAUDE.md`** (project root) — the One Rule, ownership, deferral, TDD, fix completeness, stabilization discipline, coding guidelines, commands
-2. **Read `.claude/rules/` files relevant to the bug's subsystem** — e.g., `.claude/rules/tests.md` for test patterns, `.claude/rules/registry.md` for registry bugs, `.claude/rules/arc.md` for ARC/memory bugs
+2. **Read `.claude/rules/` files relevant to the bug's subsystem** — always `.claude/rules/tests.md` for test patterns, `.claude/rules/impl-hygiene.md` for SSOT and canonical-home discipline, `.claude/rules/crate-boundaries.md` for crate ownership, and any per-crate rule file under `.claude/rules/oriterm*.md` whose `paths:` glob covers the files being modified
 
 This is NOT optional. Context drift across long sessions causes rule violations. Re-reading ensures every fix follows the same standard regardless of when it runs in a session.
 
@@ -92,7 +92,7 @@ Spending time checking out old commits to see if something "was already broken" 
       ```
    6. **Stop** — do NOT proceed to Phase 1.5 or beyond. The bug is resolved.
 
-3. **Consult the spec** — check `docs/spec/` for the intended behavior. The spec is authoritative.
+3. **Consult the external protocol / reference** — for VT / terminfo / ANSI bugs, check vt100.net, XTerm ctlseqs, ECMA-48, or `man 5 terminfo`. For GPU / wgpu bugs, check the wgpu docs and the reference terminal emulators under `~/projects/reference_repos/console_repos/`. For widget / layout / GUI bugs, check the reference GUI repos under `~/projects/reference_repos/gui_repos/`. The upstream spec / reference implementation is authoritative.
 
 4. **Root cause analysis** — trace the bug to its *root cause*, not just the symptom. Follow the chain:
    - What was observed? (symptom)
@@ -100,7 +100,7 @@ Spending time checking out old commits to see if something "was already broken" 
    - Why did that code do the wrong thing? (root cause)
    - Is the root cause localized or systemic? (blast radius)
 
-5. **Check reference compilers** (if the bug involves a design question) — consult `~/projects/reference_repos/lang_repos/` for prior art on how other compilers handle this case.
+5. **Check reference implementations** (if the bug involves a design question) — consult `~/projects/reference_repos/console_repos/` (tmux, alacritty, wezterm, ghostty, ratatui, ptyxis, termenv) for prior art on how other terminal emulators handle the same case. For widget / GPU / compositor questions also check `~/projects/reference_repos/gui_repos/` (egui, iced, zed/GPUI, druid, masonry, makepad) and the Chromium UI sparse checkout at `~/projects/reference_repos/chromium_ui/`.
 
 6. **Identify all affected code paths** — the fix may need changes in multiple places. List every file and function that needs to change.
 
@@ -138,7 +138,7 @@ After investigation, assess whether this bug is a **point fix** (inline bug fix)
 
 **If blocked/latent** (prerequisite feature doesn't exist yet):
 1. **Do NOT proceed to Phase 2.** The bug cannot be fixed because the infrastructure doesn't exist.
-2. **Update the bug entry** — add a note explaining the blocker: `Blocked: {reason — e.g., "LLVM FFI codegen not yet implemented"}`. Do NOT mark it `[x]`.
+2. **Update the bug entry** — add a note explaining the blocker: `Blocked: {reason — e.g., "wgpu 24.x does not expose the surface format negotiation hook required to fix this on Windows"}`. Do NOT mark it `[x]`.
 3. **Report the blocker:**
    ```
    Blocked: [BUG-{section}-{ordinal}][{severity}] {title}
@@ -257,7 +257,7 @@ Fixed: [BUG-{section}-{ordinal}][{severity}] {title}
 - **TPR and hygiene review are MANDATORY for ALL severities** — per CLAUDE.md Fix Completeness, a fix is not done until `/tpr-review` passed and `/impl-hygiene-review` passed, with no severity carve-out. The investigation/TDD phases scale down for simple bugs; the review gates do not.
 
 ### Complex bugs (3+ files, architectural)
-- Full investigation with reference compilers
+- Full investigation with reference terminal emulators and GUI frameworks
 - Multiple design approaches with tradeoffs documented
 - TPR checkpoints during implementation if it spans multiple logical steps
 - Consider whether the fix belongs in a proper plan section instead of a bug fix

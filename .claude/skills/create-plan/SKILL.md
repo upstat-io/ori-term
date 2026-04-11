@@ -80,7 +80,7 @@ If not provided via arguments, use `AskUserQuestion` to ask:
 1. **Plan name** — kebab-case directory name
 2. **Plan title** — Human-readable title (e.g., "Error Recovery System")
 3. **Goal** — One-line description of what this plan accomplishes
-4. **Rough scope** — Which parts of the compiler/runtime/stdlib does this touch? (crates, subsystems, features)
+4. **Rough scope** — Which ori_term crates and subsystems does this touch? (`oriterm_core` / `oriterm_ui` / `oriterm_mux` / `oriterm_ipc` / `oriterm`, plus specific paths inside each — e.g. `oriterm_core/src/grid/`, `oriterm_ui/src/widgets/`, `oriterm/src/gpu/`). See `.claude/rules/crate-boundaries.md` for ownership.
 
 Do NOT ask for sections yet. Sections emerge from research, not from guessing.
 
@@ -97,11 +97,11 @@ Take the user's rough goal and expand it into:
 
 **Scoping discipline — CRITICAL:**
 
-The compiler is under active development. Plans exist to build out the compiler's feature set. Scoping must reflect this reality:
+ori_term is a GPU-accelerated terminal emulator in the same category as alacritty, wezterm, and ghostty. Plans exist to build it out against the reference terminal emulators' feature set. Scoping must reflect this reality:
 
 **Valid reasons to scope something OUT:**
-- It doesn't fit Ori's design philosophy — would feel tacked on, not organic to the language
-- It doesn't improve the compiler meaningfully — busywork with no architectural payoff
+- It's not a terminal emulator concern (e.g. language-server features, package manager integration)
+- It doesn't improve user-facing terminal behavior meaningfully — busywork with no architectural payoff
 - It's architecturally incoherent with the existing design direction
 - It belongs in a different plan that addresses a different subsystem (but must be cross-linked as a dependency)
 
@@ -213,8 +213,14 @@ The full rule set is embedded below (source of truth files — do not maintain s
 **Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
 @.claude/rules/impl-hygiene.md
 
-**Compiler Guidelines** (`.claude/rules/compiler.md`):
-@.claude/rules/compiler.md
+**Code Hygiene** (`.claude/rules/code-hygiene.md`):
+@.claude/rules/code-hygiene.md
+
+**Crate Boundaries** (`.claude/rules/crate-boundaries.md`):
+@.claude/rules/crate-boundaries.md
+
+**Test Organization** (`.claude/rules/test-organization.md`):
+@.claude/rules/test-organization.md
 
 ---
 
@@ -490,7 +496,7 @@ INSTRUCTIONS:
    - "How should X interact with the ARC pipeline?"
    - "What error messages should X produce?"
 
-2. For EACH design decision, check the reference repos at ~/projects/reference_repos/lang_repos/:
+2. For EACH design decision, check the reference repos at ~/projects/reference_repos/console_repos/ (tmux, alacritty, wezterm, ghostty, ratatui, ptyxis, termenv) and ~/projects/reference_repos/gui_repos/ for widget/GPU concerns:
    - Rust, Swift, Koka, Lean4 for ARC/memory topics
    - Gleam, Elm, Roc for type system topics
    - Go, Zig, TypeScript for general patterns

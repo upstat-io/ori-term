@@ -231,8 +231,8 @@ Retrospective mode covers all three. The per-subsection cadence ensures the capt
 **Bad**: "test-all.sh output is too long to scan, let me grep for FAIL"
 **Good**: Add a summary section to `test-all.sh` that lists all failures at the end
 
-**Bad**: "I need to compare IR before and after my change, let me manually diff two ir-dump.sh runs"
-**Good**: `ir-diff.sh` already exists — use it. If it's missing a feature you need, improve it.
+**Bad**: "I need to compare a GPU visual-regression golden before and after my change, let me screenshot both manually and eyeball the difference"
+**Good**: The visual-regression suite under `oriterm/src/gpu/visual_regression/` already produces golden images — run the suite against both commits, compare the produced PNGs with `compare` (ImageMagick) or the built-in insta snapshot diff, and if the diff output is unhelpful, improve the harness to emit a per-cell diff map.
 
 **Bad**: "This script doesn't handle the case where the file doesn't exist"
 **Good**: Add existence checks with clear error messages: `echo "Error: $file not found" >&2; exit 1`

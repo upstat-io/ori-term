@@ -24,8 +24,7 @@
     ],
     "rules": [
       "impl-hygiene.md",
-      "tests.md",
-      "proposals.md"
+      "tests.md"
     ],
     "hooks": [
       "block-banned-commands.sh",
@@ -55,7 +54,6 @@
     ".claude/rules/project-specific-*.md",
     ".claude/rules/oriterm*.md",
     ".claude/rules/tests.md",
-    ".claude/rules/proposals.md",
     ".claude/rules/impl-hygiene.md",
     ".claude/commands/review-work.md",
     ".claude/skills/review-work/",

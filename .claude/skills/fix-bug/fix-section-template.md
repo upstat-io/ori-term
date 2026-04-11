@@ -115,7 +115,7 @@ Write ALL tests BEFORE the fix. Verify they fail against current code.
 - [ ] {Test that ONLY passes with the correct/new semantics — the permanent regression guard}
 
 ### Negative pin
-- [ ] {Test that REJECTS the old/broken behavior — proves the compiler actively prevents regression}
+- [ ] {Test that REJECTS the old/broken behavior — proves the code actively prevents regression}
 
 ### Verify tests fail before fix
 - [ ] All new tests fail against current code (confirming they test the right thing)
@@ -146,17 +146,19 @@ TPR findings raised against this fix are recorded here by the executor (Claude) 
 Reviews MUST complete before bug closure — a bug marked resolved before TPR/hygiene is a premature closure.
 
 - [ ] All new tests pass unchanged after fix (no test modifications needed)
-- [ ] Matrix completeness verified — every cell in type x pattern x feature grid has a test
+- [ ] Matrix completeness verified — every cell in type × pattern × feature × platform grid has a test
 - [ ] Debug AND release builds pass (`cargo b && cargo b --release`)
-- [ ] Interpreter and LLVM produce identical results for all new tests (dual-execution parity)
-- [ ] `` reports zero leaks on affected test programs (for memory-touching fixes)
-- [ ] `timeout 150 cargo test --all` green — no regressions
-- [ ] `timeout 150 cargo clippy --all -- -D warnings` green
+- [ ] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu`)
+- [ ] If the fix touches the GPU render path, visual-regression suite under `oriterm/src/gpu/visual_regression/` green (cached path via `render_frame_cached`)
+- [ ] If the fix touches the hot render path, `oriterm_core/tests/alloc_regression.rs` and `rss_regression.rs` still green (performance invariants preserved)
+- [ ] `timeout 150 ./test-all.sh` green — no regressions
+- [ ] `./clippy-all.sh` green
+- [ ] `./build-all.sh` green (workspace + cross-compile)
 - [ ] `cargo test -p {affected_crate}` green
 - [ ] `/commit-push` — commit all changes before review
-- [ ] `/tpr-review` passed — independent dual-source review found no actionable findings. **MANDATORY for ALL severities** — per CLAUDE.md Fix Completeness, no severity carve-out.
+- [ ] `/tpr-review` passed — independent dual-source review found no actionable findings. **MANDATORY for ALL severities** — per CLAUDE.md "NO WORKAROUNDS" and the Bug Discipline rigor rule, no severity carve-out.
 - [ ] `/impl-hygiene-review` passed — MUST run AFTER `/tpr-review` is clean. **MANDATORY for ALL severities.**
-- [ ] `/improve-tooling` retrospective completed — MANDATORY at fix close, after both reviews are clean. Reflect on the bug-finding journey: which `diagnostics/` scripts you ran during root cause analysis, where you added ad-hoc `dbg!`/`tracing` calls (and what each one was looking for), where the original failure message was unhelpful, where the matrix tests were tedious because helpers were missing, what instrumentation would have made the bug obvious in 1 minute instead of 30. Bug fixes are the richest source of tooling gaps because you've just spent time fighting the diagnostic surface — capture every gap. Implement every accepted improvement NOW (zero deferral) and commit each via SEPARATE `/commit-push` using a valid conventional-commit type (e.g., `build(diagnostics): add --bb-level RC tracking — surfaced by BUG-XX-NNN retrospective` — `build`/`test`/`chore`/`ci`/`docs` are the valid types; do NOT use `tools(...)`, the lefthook commit-msg hook rejects it). See `.claude/skills/improve-tooling/SKILL.md` "Retrospective Mode" for the full look-back protocol.
+- [ ] `/improve-tooling` retrospective completed — MANDATORY at fix close, after both reviews are clean. Reflect on the bug-finding journey: which test harness / script / diagnostic you ran during root cause analysis, where you added ad-hoc `log::debug!`/`tracing` calls (and what each one was looking for), where the original failure message was unhelpful, where the matrix tests were tedious because helpers were missing, what instrumentation would have made the bug obvious in 1 minute instead of 30. Bug fixes are the richest source of tooling gaps because you've just spent time fighting the diagnostic surface — capture every gap. Implement every accepted improvement NOW (zero deferral) and commit each via SEPARATE `/commit-push` using a valid conventional-commit type (e.g., `test(teseq): surface missing `reseq` binary in skip message — surfaced by BUG-XX-NNN retrospective` — `build`/`test`/`chore`/`ci`/`docs` are the valid types; do NOT use `tools(...)`, the lefthook commit-msg hook rejects it). See `.claude/skills/improve-tooling/SKILL.md` "Retrospective Mode" for the full look-back protocol.
 - [ ] Bug entry in `plans/bug-tracker/section-{NN}-*.md` updated: `- [x]` with resolution details (canonical format from `plans/bug-tracker/00-overview.md`)
 - [ ] Fix section frontmatter `status` updated to `complete`
 - [ ] Bug-tracker `00-overview.md` Quick Reference open bug count updated

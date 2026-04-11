@@ -675,37 +675,41 @@ Bug discovered during plan execution
 
 ## Gap Detection and Escalation Protocol
 
-When implementing a roadmap item and you discover that a required language feature
-is missing, incomplete, or blocks the current work:
+When implementing a roadmap item and you discover that a required dependency,
+API, reference implementation, or infrastructure piece is missing, incomplete,
+or blocks the current work:
 
 ### STOP — Do Not Work Around
 
-**Never silently substitute a workaround.** If `.0` syntax doesn't work, don't
-quietly switch to destructuring. If a pattern form panics, don't restructure the
-test to avoid it. The workaround hides the gap from the user and from the roadmap.
+**Never silently substitute a workaround.** If a wgpu API you need isn't
+exposed, don't quietly copy-paste the vendored `wgpu-hal` internals inline.
+If `WidgetTestHarness` is missing a method for your widget, don't bypass the
+harness and test manually — the harness IS the contract. If a VT escape
+sequence handler is missing, don't special-case the sequence at the call
+site — route it through the VTE handler where it belongs.
 
 ### Flag Immediately
 
 Use AskUserQuestion to escalate:
 
-1. **What's missing**: Describe the exact gap (e.g., "parser rejects `.0` after dot — tuple field access not implemented")
-2. **Where it's documented** (or not): Check spec, EBNF, roadmap for the feature
-3. **Impact**: What current work is blocked or degraded
-4. **Recommendation**: Fix now (if small, < 30 min), track and fix later (if large), or ask user
+1. **What's missing**: Describe the exact gap (e.g., "winit 0.31 removed `Window::set_outer_position` on Wayland, so the settings-dialog drag-to-move fallback path has no Wayland implementation")
+2. **Where the contract is documented** (or not): Check CLAUDE.md, `.claude/rules/*.md`, the roadmap section, or the upstream crate's docs for the feature
+3. **Impact**: What current work is blocked or degraded, and on which platform
+4. **Recommendation**: Fix now (if small, < 30 min), track and fix later via `/add-bug` (if large), or ask user
 
-### Track in Roadmap
+### Track in Roadmap or Bug Tracker
 
 If the gap is deferred (not fixed immediately):
 1. Add a `<!-- gap: description -->` comment on the blocked roadmap item
-2. Add a `- [ ]` checkbox for the missing feature in the appropriate section
-3. Add blocker references (`<!-- blocked-by:X -->` / `<!-- unblocks:X.Y -->`)
+2. File the gap via `/add-bug` in the appropriate `plans/bug-tracker/section-NN-*.md`
+3. Add blocker references on the roadmap item (`<!-- blocked-by:BUG-NN-NNN -->`)
 
 ### Why This Matters
 
 Silent workarounds create invisible technical debt. A gap that isn't flagged:
 - Won't appear in the roadmap scanner output
 - Won't be prioritized for implementation
-- Will surprise users when they try the "supported" syntax
+- Will surprise users when they hit the broken path at runtime (e.g. a widget that silently does nothing on one platform)
 - Forces every future implementer to discover and work around it independently
 
 ---
