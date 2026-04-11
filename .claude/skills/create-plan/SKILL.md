@@ -18,9 +18,11 @@ Create a new plan directory with index and section files using the standard plan
 /create-plan add "<subsection title>" subsection to plans/<plan-dir>
 ```
 
-- `name`: Directory name for the plan (kebab-case, e.g., `gpu-refactor`, `mux-architecture`)
+- `name`: Directory name for the plan (kebab-case, e.g., `error-recovery`, `lsp-integration`)
 - `description`: Optional one-line description of the plan's goal
 - **Existing plan mode**: If the input references an existing plan directory (e.g., "add X to plans/repr-opt", "add section to roadmap"), this command operates in **Existing Plan Mode** — see the dedicated section below.
+
+**Output directory override**: Set `ORI_PLAN_ROOT` to redirect plan output to a different root directory. When set, all plan files are written under `$ORI_PLAN_ROOT/{name}/` instead of `plans/{name}/`. Default behavior (no env var) is unchanged. This is primarily for test harnesses that need to exercise `/create-plan` non-destructively without writing into the repo's `plans/` directory.
 
 ---
 
@@ -30,7 +32,7 @@ Create a new plan directory with index and section files using the standard plan
 
 **Existing Plan Mode**: The argument indicates adding a section or subsection to an existing plan. Detected when:
 - The input contains "roadmap" or references an existing roadmap section (legacy Roadmap Mode — operates on `plans/roadmap/`)
-- The input references any existing plan directory (e.g., "add X to plans/gpu-refactor", "add subsection to plans/mux-flatten")
+- The input references any existing plan directory (e.g., "add X to plans/repr-opt", "add subsection to plans/test-suite-health")
 - The input uses the explicit syntax: `add "<title>" subsection to plans/<dir>`
 
 When in Existing Plan Mode, the target is the referenced plan directory. See "Existing Plan Mode" section below for the full workflow.
@@ -55,7 +57,7 @@ These principles govern the entire plan creation process. When in doubt, consult
 
 6. **External consultations are SEQUENTIAL and FOREGROUND** — All `/tp-help` and `/tpr-review` invocations MUST run in the foreground (NOT `run_in_background`). MUST wait for each to complete and read its output before proceeding. NEVER launch them in parallel with each other or with other agents/skills. The pipeline is sequential by design — each consultation's feedback informs the next step.
 
-7. **Rules are woven in, not assumed** — Plans cannot assume the implementer has CLAUDE.md or `.claude/rules/*.md` loaded in context. Every section must embed the specific rules that govern its work — TDD discipline, file size limits, crate ordering, test conventions, module boundaries, rendering pipeline purity, cross-platform requirements. The plan is a self-contained execution document. If a rule applies to a section's work, it must appear in that section — either as a checklist constraint, a callout, or an inline requirement. The goal is for rules to appear organically as part of the work description, not as a separate "rules to follow" appendix.
+7. **Rules are woven in, not assumed** — Plans cannot assume the implementer has CLAUDE.md or `.claude/rules/*.md` loaded in context. Every section must embed the specific rules that govern its work — TDD discipline, file size limits, crate ordering, test conventions, phase boundaries, registration sync requirements. The plan is a self-contained execution document. If a rule applies to a section's work, it must appear in that section — either as a checklist constraint, a callout, or an inline requirement. The goal is for rules to appear organically as part of the work description, not as a separate "rules to follow" appendix.
 
 ---
 
@@ -76,9 +78,9 @@ This is mandatory. Do not skip, skim, or partially read. The rules in CLAUDE.md 
 If not provided via arguments, use `AskUserQuestion` to ask:
 
 1. **Plan name** — kebab-case directory name
-2. **Plan title** — Human-readable title (e.g., "GPU Renderer Refactor")
+2. **Plan title** — Human-readable title (e.g., "Error Recovery System")
 3. **Goal** — One-line description of what this plan accomplishes
-4. **Rough scope** — Which parts of the codebase does this touch? (crates, subsystems, features)
+4. **Rough scope** — Which parts of the compiler/runtime/stdlib does this touch? (crates, subsystems, features)
 
 Do NOT ask for sections yet. Sections emerge from research, not from guessing.
 
@@ -95,21 +97,21 @@ Take the user's rough goal and expand it into:
 
 **Scoping discipline — CRITICAL:**
 
-The terminal emulator is under active development. Plans exist to build out the emulator's feature set. Scoping must reflect this reality:
+The compiler is under active development. Plans exist to build out the compiler's feature set. Scoping must reflect this reality:
 
 **Valid reasons to scope something OUT:**
-- It doesn't fit ori_term's architecture — would feel tacked on, not organic to the emulator's design
-- It doesn't improve the emulator meaningfully — busywork with no architectural payoff
+- It doesn't fit Ori's design philosophy — would feel tacked on, not organic to the language
+- It doesn't improve the compiler meaningfully — busywork with no architectural payoff
 - It's architecturally incoherent with the existing design direction
 - It belongs in a different plan that addresses a different subsystem (but must be cross-linked as a dependency)
 
 **INVALID reasons to scope something out:**
-- "The UI framework doesn't support X yet" — that's a blocker to resolve (Step 1C), not a scope exclusion
-- "The GPU renderer can't handle Y" — same: blocker, not scope
+- "The type checker doesn't support X yet" — that's a blocker to resolve (Step 1C), not a scope exclusion
+- "The codegen can't handle Y" — same: blocker, not scope
 - "We'd need to add Z infrastructure first" — same: blocker, not scope
 - Any "missing prerequisite" or "missing feature" argument — if we always scoped out features because prerequisites were missing, no features would ever get built. Missing prerequisites are what Step 1C (Blocker Identification) captures and what the plan resolves.
 
-When evaluating scope, ask: "Is this being excluded because it doesn't belong in ori_term, or because building it requires work?" Only the first is valid. The second is the plan's job.
+When evaluating scope, ask: "Is this being excluded because it doesn't belong in Ori, or because building it requires work?" Only the first is valid. The second is the plan's job.
 
 ### Step 1C: Blocker Identification
 
@@ -133,8 +135,8 @@ The mission must remove any blockers in its way. Before the mission can be fulfi
 
 This is not a single consultation — it is a **consensus loop**. You and Codex iterate on the mission's direction, approach, and integration points until you reach genuine agreement. The loop runs until one of two outcomes:
 
-1. **Consensus reached**: You and Codex agree on how the plan integrates with ori_term's architecture, what the approach should be, and that it's a good fit.
-2. **Agreed rejection**: You and Codex both agree that part or all of the proposed direction is not a good fit for ori_term — in which case, document why and propose an alternative direction.
+1. **Consensus reached**: You and Codex agree on how the plan integrates with Ori's architecture, what the approach should be, and that it's a good fit.
+2. **Agreed rejection**: You and Codex both agree that part or all of the proposed direction is not a good fit for Ori — in which case, document why and propose an alternative direction.
 
 **Loop protocol:**
 
@@ -144,14 +146,14 @@ Build a `/tp-help` prompt that includes:
 - The user's original generic mission statement
 - Your expanded mission (scope, deliverables, success criteria, boundaries) from Step 1B
 - The identified blockers and their resolution strategy from Step 1C
-- Your proposed direction and approach — how does this integrate with ori_term's existing architecture?
+- Your proposed direction and approach — how does this integrate with Ori's existing architecture?
 - Any open questions or uncertainties
 
 Ask Codex specifically:
 - "Is this mission statement complete and executable? Are there gaps?"
 - "Are the identified blockers comprehensive, or am I missing dependencies?"
 - "Is the scope right — too broad, too narrow, or just right for a single plan?"
-- "Does this direction integrate well with ori_term's architecture? Where are the natural integration points?"
+- "Does this direction integrate well with Ori's architecture? Where are the natural integration points?"
 - "What would you change about the approach?"
 
 **Round 2+** — Respond to Codex's feedback:
@@ -160,8 +162,8 @@ After each Codex response, evaluate:
 - **Points of agreement**: Lock these in. They become part of the consensus.
 - **Points of disagreement**: For each, either (a) accept Codex's point and update the mission, or (b) push back with specific reasoning and ask Codex to reconsider. Do NOT silently ignore disagreements.
 - **New concerns raised**: Address each one. If Codex identified a blocker or integration issue you missed, incorporate it.
-- **Integration fit**: If Codex questions whether something fits ori_term, engage seriously — is there a better organic integration point? Or is this genuinely not the right approach?
-- **Scoping pushback**: If Codex suggests scoping something out because "the UI framework doesn't support X yet" or "Y infrastructure is missing," push back — those are blockers to resolve, not scope exclusions. The only valid reason to exclude something is that it doesn't fit ori_term's design. Missing prerequisites are what the plan exists to build.
+- **Integration fit**: If Codex questions whether something fits Ori, engage seriously — is there a better organic integration point? Or is this genuinely not the right approach?
+- **Scoping pushback**: If Codex suggests scoping something out because "the compiler doesn't support X yet" or "Y infrastructure is missing," push back — those are blockers to resolve, not scope exclusions. The only valid reason to exclude something is that it doesn't fit Ori's design. Missing prerequisites are what the plan exists to build.
 
 Call `/tp-help` again with:
 - What you agree on so far (locked-in consensus points)
@@ -178,7 +180,7 @@ Call `/tp-help` again with:
 **After consensus**, compile the results:
 
 1. **Consensus points**: What you and Codex agreed on — direction, approach, integration points, scope
-2. **Rejected directions**: What you both agreed is not a good fit for ori_term, and why
+2. **Rejected directions**: What you both agreed is not a good fit for Ori, and why
 3. **Draft execution outline**: A preliminary sketch of how the plan will be executed — approximate section structure, rough ordering, key phases. This is a draft (full planning hasn't run yet), but it gives the user a sense of shape:
    - What gets built first (foundation/prerequisites)
    - What the core implementation phases are
@@ -193,7 +195,7 @@ Present:
 1. **Original input**: What the user said
 2. **Expanded mission**: The full executable mission statement (scope, deliverables, success criteria, boundaries)
 3. **Claude + Codex consensus**: What was agreed on — direction, approach, integration points. Present this as a unified position, not a transcript. The user should see what was decided and why.
-4. **Rejected directions** (if any): What was considered and ruled out as not fitting ori_term, with reasoning
+4. **Rejected directions** (if any): What was considered and ruled out as not fitting Ori, with reasoning
 5. **Identified blockers**: Each blocker, where it's currently tracked (if anywhere), and how this plan will resolve it
 6. **Cross-plan impacts**: Which other plans/roadmap items will be updated as resolved when this plan executes
 7. **Draft execution outline**: The preliminary plan shape — section structure, ordering, phases. Flag this as a draft that will be refined during the full research and planning phases.
@@ -206,13 +208,13 @@ Ask: "Does this mission and approach accurately capture what you want? Any adjus
 
 Read `.claude/skills/create-plan/plan-schema.md` for the structure reference.
 
-The full rule set is embedded below (source of truth files — do not maintain separate copies). Use these rules when structuring plan sections to ensure plans account for module boundary discipline, file size limits, rendering pipeline purity, cross-platform requirements, and other hygiene requirements from the start.
+The full rule set is embedded below (source of truth files — do not maintain separate copies). Use these rules when structuring plan sections to ensure plans account for registration sync points, file size limits, phase boundary discipline, and other hygiene requirements from the start.
 
-**Implementation Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
+**Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
 @.claude/rules/impl-hygiene.md
 
-**Code Hygiene Rules** (`.claude/rules/code-hygiene.md`):
-@.claude/rules/code-hygiene.md
+**Compiler Guidelines** (`.claude/rules/compiler.md`):
+@.claude/rules/compiler.md
 
 ---
 
@@ -238,7 +240,7 @@ Tailor agents to the specific plan topic. Standard agents:
 #### Agent 1: Implementation & Boundary Survey
 
 ```
-You are researching the ori_term codebase for plan creation. Your job is to build a complete inventory of everything related to: {topic/scope}.
+You are researching the Ori compiler codebase for plan creation. Your job is to build a complete inventory of everything related to: {topic/scope}.
 
 Read CLAUDE.md first.
 
@@ -266,7 +268,7 @@ PART B — Integration Points & Boundaries:
    - What functions are called across the boundary? (Read actual call sites)
    - What registration/sync points exist? (enums, match arms, if-chains that must stay in sync)
 3. Map the full pipeline flow for {topic}:
-   - oriterm_core (terminal emulation) → oriterm_ui (widgets/layout) → oriterm_mux (pane server) → oriterm (app shell/GPU)
+   - Lexer → Parser → IR → Types → Eval → LLVM → Runtime
    - At each stage, what representation does {topic} have?
    - Where are the hand-off points?
 4. Check for registration sync requirements:
@@ -295,31 +297,30 @@ Then:
   EXISTING_BUGS: {any bugs or issues you noticed while reading}
 ```
 
-#### Agent 2: Tests, Hygiene & Constraint Audit
+#### Agent 2: Tests, Spec, & Hygiene Audit
 
 ```
-You are researching the ori_term codebase for plan creation. Your job is to understand the test landscape, constraints, and hygiene state for {topic/scope}.
+You are researching the Ori compiler codebase for plan creation. Your job is to understand the test landscape, spec requirements, and hygiene state for {topic/scope}.
 
-Read CLAUDE.md first, then read .claude/rules/impl-hygiene.md, .claude/rules/code-hygiene.md, .claude/rules/test-organization.md, and .claude/rules/crate-boundaries.md.
+Read CLAUDE.md first, then read .claude/rules/impl-hygiene.md and .claude/rules/compiler.md.
 
-PART A — Tests & Constraints:
+PART A — Tests & Spec:
 1. Find ALL existing tests related to {topic}:
-   - Rust unit tests (sibling tests.rs files)
-   - Architecture tests (oriterm/tests/architecture/)
-   - Widget tests using WidgetTestHarness
+   - Rust unit tests (tests.rs files)
+   - Rust integration tests (ori_llvm/tests/aot/)
+   - Ori spec tests (tests/spec/)
+   - Valgrind tests (tests/valgrind/)
    - Read the actual test code, not just file names
-2. Check existing plans:
+2. Check the spec:
+   - Read relevant sections of docs/spec/
+   - Read grammar.ebnf for syntax rules
+   - Read operator-rules.md if operators are involved
+   - Report what the spec says about this topic
+3. Check existing plans:
    - Read plans/ directory for related or superseded plans
    - Report any existing plan items that overlap with this topic
    - Report any completed plan items that this plan builds on
-3. Check performance invariants:
-   - oriterm_core/tests/alloc_regression.rs
-   - oriterm/src/app/event_loop_helpers/tests.rs
-   - Are there hot paths this plan touches?
-4. Check cross-platform requirements:
-   - Does this plan need platform-specific code?
-   - What existing #[cfg(target_os)] blocks exist?
-5. Check CLAUDE.md and memory for relevant context
+4. Check CLAUDE.md and memory for relevant context
 
 PART B — Hygiene Audit:
 1. Find all files that will likely be touched based on the scope: {topic}
@@ -329,7 +330,7 @@ PART B — Hygiene Audit:
    - Any existing TODOs, FIXMEs, HACKs, WORKAROUNDs
    - Any dead code or stale comments you notice
    - Any registration sync points that are already out of sync
-3. Check for crate boundary violations:
+3. Check for phase boundary violations:
    - Does any file import from a crate it shouldn't?
    - Is internal state leaking through boundary types?
 4. Check test file conventions:
@@ -342,16 +343,53 @@ PART B — Hygiene Audit:
 
 OUTPUT FORMAT:
   EXISTING_TESTS: {list with paths and coverage}
+  SPEC_REQUIREMENTS: {what the spec mandates}
   RELATED_PLANS: {existing plans that overlap}
-  PERFORMANCE_INVARIANTS: {hot paths, alloc constraints}
-  PLATFORM_REQUIREMENTS: {cross-platform considerations}
   FILES_TOUCHED: {list with line counts}
   OVER_LIMIT: {files > 500 lines}
   HYGIENE_ISSUES: {categorized findings with file:line}
   SYNC_VIOLATIONS: {any already-broken sync points}
   PRIORITY_SPLITS: {files that must be split before work begins}
   UNCLEAR: {anything ambiguous}
-  EXISTING_BUGS: {bugs found in tests or hygiene}
+  EXISTING_BUGS: {bugs found in tests, spec compliance, or hygiene}
+```
+
+#### Agent 3: Runtime & Codegen State (if the plan touches runtime/LLVM)
+
+```
+You are researching the Ori compiler codebase for plan creation. Your job is to understand the runtime and codegen state for {topic/scope}.
+
+Read CLAUDE.md first.
+
+INSTRUCTIONS:
+1. Read the relevant runtime code in crates/$1/src/:
+   - What C-ABI functions exist for this feature?
+   - What data layouts are used?
+   - What memory management patterns (RC inc/dec, COW, SSO)?
+2. Read the relevant codegen code in crates/$1/src/:
+   - How is this feature lowered to LLVM IR?
+   - What builtins are emitted?
+   - How does the ARC pipeline interact?
+3. Read the ARC pipeline if relevant (crates/$1/src/):
+   - How does the optimizer analyze this feature?
+   - What contracts/lattice states apply?
+   - What rewrite rules fire?
+4. Check for eval/LLVM divergence:
+   - Compare ori_eval handling with ori_llvm handling
+   - Are there known behavioral differences?
+   - Grep for TODO|FIXME|HACK|WORKAROUND in relevant files
+5. Check diagnostic scripts:
+   - What diagnostic tools exist for this area?
+   - What environment variables control debugging?
+
+OUTPUT FORMAT:
+  RUNTIME_FUNCTIONS: {C-ABI functions with signatures}
+  CODEGEN_PATTERNS: {how LLVM IR is generated}
+  ARC_INTERACTION: {optimizer analysis and rewrites}
+  EVAL_LLVM_DIVERGENCE: {known differences}
+  DEBUG_TOOLS: {relevant diagnostic scripts/env vars}
+  UNCLEAR: {anything ambiguous}
+  EXISTING_BUGS: {bugs found while reading}
 ```
 
 ### Step 4: Pass 2 — Deep Read (sequential, focused)
@@ -372,30 +410,36 @@ OUTPUT FORMAT:
 
 ### Step 5: Pass 3 — Pattern Study (single focused agent)
 
-Launch **one agent** to trace 2-3 analogous features end-to-end through the codebase. These are features that already exist and follow the same structural pattern that the new plan will need.
+Launch **one agent** to trace 2-3 analogous features end-to-end through the compiler pipeline. These are features that already exist and follow the same structural pattern that the new plan will need.
 
 ```
-You are studying implementation patterns in the ori_term codebase. Your job is to trace analogous features end-to-end to discover the exact implementation pattern that {topic/scope} should follow.
+You are studying implementation patterns in the Ori compiler. Your job is to trace analogous features end-to-end to discover the exact implementation pattern that {topic/scope} should follow.
 
 Read CLAUDE.md first.
 
 INSTRUCTIONS:
-1. Identify 2-3 features ALREADY IMPLEMENTED in ori_term that are structurally similar to {topic}. Examples:
-   - If adding a new widget: trace how an existing widget (Button, Toggle) was implemented
-   - If adding a new interaction pattern: trace how HoverController or ClickController works
-   - If modifying the grid: trace how selection or search was implemented
-   - If adding GPU rendering: trace how an existing render pass works
+1. Identify 2-3 features ALREADY IMPLEMENTED in the compiler that are structurally similar to {topic}. Examples:
+   - If adding a new collection type: trace how Map or Set was implemented
+   - If adding a new trait: trace how Comparable or Hashable was implemented
+   - If adding a new expression form: trace how match or for-yield was implemented
+   - If adding codegen support: trace how an existing feature flows through ori_llvm
 
-2. For EACH analogous feature, trace the COMPLETE implementation through every relevant layer:
-   a. Core types: What types in oriterm_core? (grid, cell, palette, etc.)
-   b. UI framework: What widget/controller in oriterm_ui? (widget trait, layout, interaction)
-   c. Mux layer: What pane/PTY handling in oriterm_mux? (if applicable)
-   d. App shell: What wiring in oriterm? (event loop, GPU, session)
-   e. Tests: What test files and patterns? (sibling tests.rs, WidgetTestHarness, architecture tests)
+2. For EACH analogous feature, trace the COMPLETE implementation through every compiler phase:
+   a. Lexer: What tokens? (crates/$1/src/)
+   b. Parser: What AST nodes? (crates/$1/src/)
+   c. IR: What IR representation? (crates/$1/src/)
+   d. Type checker: What type rules? (crates/$1/src/)
+   e. Registry: What method/type registrations? (crates/$1/src/)
+   f. Evaluator: What evaluation logic? (crates/$1/src/)
+   g. ARC pipeline: What memory analysis? (crates/$1/src/)
+   h. LLVM codegen: What IR generation? (crates/$1/src/)
+   i. Runtime: What C-ABI support? (crates/$1/src/)
+   j. Stdlib: What library support? ()
+   k. Tests: What test files and patterns? (tests/spec/, */tests.rs)
 
-3. For each layer, READ THE ACTUAL CODE. Report:
+3. For each phase, READ THE ACTUAL CODE. Report:
    - Exact file path and function/type names
-   - How data enters and leaves that layer
+   - How data enters and leaves that phase
    - What registration/sync points were needed
    - What the implementation pattern is (not just "it exists" but "here's how it works")
 
@@ -408,11 +452,17 @@ INSTRUCTIONS:
 OUTPUT FORMAT:
 For each analogous feature:
   FEATURE: {name}
-  LAYER TRACE:
-    CORE: {file, types, how it works}
-    UI: {file, widgets/controllers, how it works}
-    MUX: {file, pane handling, how it works}
-    APP: {file, wiring, how it works}
+  PIPELINE TRACE:
+    LEXER: {file, tokens, how it works}
+    PARSER: {file, AST nodes, how it works}
+    IR: {file, IR types, how it works}
+    TYPECK: {file, type rules, how it works}
+    REGISTRY: {file, registrations, how it works}
+    EVAL: {file, eval logic, how it works}
+    ARC: {file, analysis, how it works}
+    LLVM: {file, codegen, how it works}
+    RUNTIME: {file, C-ABI, how it works}
+    STDLIB: {file, library support, how it works}
     TESTS: {files, patterns, coverage}
   SYNC_POINTS: {all registration points that had to stay in sync}
   ORDER_OF_OPERATIONS: {what was built first, second, third}
@@ -420,35 +470,30 @@ For each analogous feature:
 
 Then:
   RECOMMENDED_PATTERN: {the pattern the new plan should follow}
-  RECOMMENDED_ORDER: {the order in which layers should be implemented}
+  RECOMMENDED_ORDER: {the order in which phases should be implemented}
   PATTERN_RISKS: {where the new feature might need to deviate from the pattern}
 ```
 
 ### Step 6: Pass 4 — Prior Art Study (single focused agent)
 
-Launch **one agent** to study reference terminal emulators for the specific design decisions this plan will face.
+Launch **one agent** to study reference compilers for the specific design decisions this plan will face. Not "how does Rust work generally" — "how does Rust solve *this specific problem*."
 
 ```
-You are studying prior art in reference terminal emulator implementations. Your job is to find how other terminal emulators handle the specific design decisions that {topic/scope} will face.
+You are studying prior art in reference compiler implementations. Your job is to find how other compilers handle the specific design decisions that {topic/scope} will face.
 
 Read CLAUDE.md first for reference repo locations.
 
 INSTRUCTIONS:
 1. Identify the 2-4 specific DESIGN DECISIONS this plan will need to make. Examples:
-   - "Should X use damage tracking or full redraws?"
-   - "Should X live in oriterm_ui or oriterm_core?"
-   - "How should X interact with the GPU pipeline?"
-   - "What data structure should X use for storage?"
+   - "Should X use static dispatch or dynamic dispatch?"
+   - "Should X be represented in the IR or desugared earlier?"
+   - "How should X interact with the ARC pipeline?"
+   - "What error messages should X produce?"
 
-2. For EACH design decision, check the reference repos at ~/projects/reference_repos/console_repos/:
-   - Alacritty (Rust, OpenGL, 4-crate workspace)
-   - WezTerm (Rust, WebGPU, 69-crate monorepo)
-   - Ghostty (Zig, Metal+OpenGL)
-   - Ratatui (Rust, widget framework)
-   - Crossterm (Rust, terminal abstraction)
-   - tmux (C, canonical multiplexer)
-   Also check ~/projects/reference_repos/gui_repos/ if the plan involves UI/widgets:
-   - egui, iced, zed/GPUI, druid, masonry, makepad
+2. For EACH design decision, check the reference repos at ~/projects/reference_repos/lang_repos/:
+   - Rust, Swift, Koka, Lean4 for ARC/memory topics
+   - Gleam, Elm, Roc for type system topics
+   - Go, Zig, TypeScript for general patterns
 
 3. For each reference implementation you find:
    - Read the ACTUAL CODE (not just file names)
@@ -459,15 +504,15 @@ INSTRUCTIONS:
 4. Synthesize design recommendations:
    - For each design decision, recommend an approach with evidence
    - Cite specific files and patterns from reference implementations
-   - Explain which reference implementation's approach best fits ori_term's constraints
+   - Explain which reference implementation's approach best fits Ori's constraints
 
 OUTPUT FORMAT:
 For each design decision:
   DECISION: {what needs to be decided}
   REFERENCE IMPLEMENTATIONS:
-    {Project}: {file path} — {their approach and why}
-    {Project}: {file path} — {their approach and why}
-  RECOMMENDATION: {what ori_term should do}
+    {Language}: {file path} — {their approach and why}
+    {Language}: {file path} — {their approach and why}
+  RECOMMENDATION: {what Ori should do}
   EVIDENCE: {why, citing specific reference impl trade-offs}
   RISKS: {what could go wrong with this approach}
 ```
@@ -491,7 +536,7 @@ Build a `/tp-help` prompt that includes:
 Ask Codex specifically:
 - "Do you see any architectural risks I'm missing?"
 - "Is this the right decomposition for this problem?"
-- "Are there better patterns from the reference terminal emulators for this specific case?"
+- "Are there better patterns from the reference compilers for this specific case?"
 
 Evaluate Codex's response against your research — you have deeper codebase context, so filter accordingly. Incorporate useful insights into the architecture design.
 
@@ -510,7 +555,7 @@ After ALL research passes complete, synthesize findings into a structured archit
 3. **Implementation pattern** — the exact pattern that analogous features follow, and how this plan should follow it (from Pass 3)
 4. **Design decisions** — for each decision, the recommended approach with evidence from prior art (from Pass 4)
 5. **All sync points** — every enum, match, registry that must be updated together
-6. **Test strategy** — existing coverage AND planned test requirements per section: what tests exist (from Pass 1-2), what matrix dimensions (types x patterns) each section needs, where semantic pin tests are needed, what harness patterns (WidgetTestHarness, sibling tests.rs, architecture tests)
+6. **Test strategy** — existing coverage AND planned test requirements per section: what tests exist (from Pass 1-2), what matrix dimensions (types x patterns) each section needs, where semantic pin tests are needed
 7. **All unclear items** — things the research couldn't determine
 8. **All existing bugs found** — bugs discovered during research (these go into the plan)
 9. **Hygiene pre-scan** — files that need splitting or cleanup
@@ -574,16 +619,20 @@ Present:
 
 ### Step 10: Create Directory Structure
 
-Create the plan directory:
+**Plan root**: Use `$ORI_PLAN_ROOT` if set, otherwise `plans`. Check with `echo ${ORI_PLAN_ROOT:-plans}` — this is the base directory for the plan.
+
+Create the plan directory under the plan root:
 
 ```
-plans/{name}/
+{plan_root}/{name}/
 ├── index.md           # Already created in Step 8
 ├── 00-overview.md     # Already created in Step 8
 ├── section-01-*.md    # Written sequentially starting here
 ├── section-02-*.md    # Written after section-01 is complete
 └── section-NN-*.md    # Written after all prior sections are complete
 ```
+
+Where `{plan_root}` is `${ORI_PLAN_ROOT:-plans}`. When `ORI_PLAN_ROOT` is not set, this resolves to the standard `plans/{name}/`.
 
 ### Step 11: Write Sections Sequentially
 
@@ -603,16 +652,16 @@ For each section, in order from 01 to N:
 - **Analogous pattern**: Reference the analogous feature's implementation pattern — "Follow the same pattern as {feature} in {files}"
 - **Code examples**: Show target implementation based on actual code patterns found during research, not invented patterns
 - **Test strategy**: Every section that modifies code MUST include matrix testing and pinning requirements per CLAUDE.md — this is not deferred to implementation or review:
-  - **Matrix dimensions**: Identify ALL types and ALL control-flow patterns that flow through the changed code path. The plan must name these explicitly (e.g., "test with ASCII, CJK, emoji, combining marks, ZWJ sequences" and "test resize, scroll, reflow, selection, search"). Missing cells are future regressions.
+  - **Matrix dimensions**: Identify ALL types and ALL control-flow patterns that flow through the changed code path. The plan must name these explicitly (e.g., "test with str, [int], Option<str>, closures, structs, maps" and "test full iteration, break, yield, guard, nested, two-call"). Missing cells are future regressions.
   - **Semantic pin**: At least one test per behavioral change that ONLY passes with the new semantics — a permanent regression guard. The plan must describe what the pin tests.
   - **TDD ordering**: "Write failing test matrix BEFORE implementation" as the section's FIRST checklist item; "Verify all tests pass in debug and release" as the LAST item.
-  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, widget tests via WidgetTestHarness, architecture tests, visual regression tests).
+  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, Ori spec tests in `tests/spec/`, AOT tests in `ori_llvm/tests/aot/`, Valgrind tests in `tests/valgrind/`).
   - A section without explicit matrix dimensions and semantic pin requirements is NOT executable.
 - **Dependencies on prior sections**: Explicitly reference what earlier sections provide. "This section uses the {type} defined in Section {N} ({file path})."
 - **What this section provides to later sections**: State what downstream sections will depend on. "Section {M} will use the {API/type/pattern} established here."
 
 - **Success criteria**: Every section MUST have detailed success criteria — concrete, testable conditions that prove the section's work is done. Not "implement X" but "X produces Y when Z is run." Each criterion must connect upward to at least one mission success criterion in `00-overview.md`. A section without success criteria is not executable.
-- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. Read CLAUDE.md and the relevant rule files (`.claude/rules/test-organization.md` for test sections, `.claude/rules/impl-hygiene.md` for module boundaries, `.claude/rules/crate-boundaries.md` for crate ownership, `.claude/rules/code-hygiene.md` for surface cleanliness) and embed the applicable constraints directly into the section's tasks. For example: if a section adds a new widget, the checklist item should say "Add `FooWidget` in `oriterm_ui/src/widgets/foo/mod.rs` — implement Widget trait, add to widget registry, create sibling `tests.rs` with WidgetTestHarness tests" rather than "Add widget (remember to follow conventions)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
+- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. Read CLAUDE.md and the relevant rule files (`.claude/rules/tests.md` for test sections, `.claude/rules/compiler.md` for compiler changes, `.claude/rules/registry.md` for registry work, `.claude/rules/arc.md` for ARC work, etc.) and embed the applicable constraints directly into the section's tasks. For example: if a section adds an enum variant, the checklist item should say "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
 
 **Frontmatter includes:**
 - Section ID, title, status: not-started, goal, `success_criteria` list
@@ -621,12 +670,11 @@ For each section, in order from 01 to N:
 - `depends_on` based on actual crate dependency chain AND section content dependencies
 - `third_party_review: { status: none, updated: null }`
 - `## {NN}.R Third Party Review Findings` block (empty, with `- None.`) before the completion checklist
-- Completion checklist at the end — MUST include both `/tpr-review` AND `/impl-hygiene-review last commit` as final gates (hygiene review runs after TPR is clean, per `plan-schema.md`)
-- **Mid-section TPR checkpoints** on substantial subsections per `plan-schema.md` TPR Checkpoint Rules — catch issues early, not just at section end
+- **Per-subsection close-out blocks** — EVERY subsection ({NN}.1, {NN}.2, ...) MUST end with a "Subsection close-out" block containing the per-subsection `/improve-tooling` retrospective BEFORE the `---` separator. This is the PRIMARY tooling growth mechanism — pain memory decays within hours, so the look-back must fire while the subsection's debugging journey is still hot, not deferred to section close. Use the canonical form from `plan-schema.md` (subsection {NN}.1 example). Plans that omit per-subsection close-outs will fail `/continue-roadmap` validation.
+- Completion checklist at the end — MUST include `/tpr-review`, `/impl-hygiene-review`, AND `/improve-tooling` **section-close sweep** as final gates, in that order: TPR clean → hygiene clean → tooling sweep. The sweep is a SAFETY NET that (a) verifies every subsection's per-subsection retrospective actually ran, and (b) adds only NEW items from cross-subsection patterns invisible at per-item scope. The bulk of tooling growth must already be captured in per-subsection close-outs by the time the sweep runs. The sweep is mandatory at every section close (even when nothing felt painful), but it should produce few or zero new findings when per-subsection captures are thorough — that is the expected outcome. See `plan-schema.md` for the exact wording, and `.claude/skills/improve-tooling/SKILL.md` "Retrospective Mode" for both granularities.
 
 **`reviewed` field rules:**
-- **Section 01**: `reviewed: true` — it is the starting point of implementation and was validated during plan creation against the research findings.
-- **All other sections (02+)**: `reviewed: false` — they have NOT been validated against actual implementation reality. As Section 01 is implemented, assumptions in later sections may become stale or wrong.
+- **ALL sections**: `reviewed: false` at creation — plans are written against research findings, not validated against implementation reality. `/continue-roadmap`'s pre-implementation gate (Step 1.7) will trigger a single-section `/review-plan` before work begins on each section, flipping it to `reviewed: true` after validation.
 
 **After writing each section**, briefly verify:
 - File paths referenced in this section exist
@@ -646,7 +694,7 @@ After all sections are written:
 
 ## Phase 5: Cohesion Review & Finalization
 
-### Step 13: Cohesion Check (before /review-plan)
+### Step 13: Cohesion Check (NEW — before /review-plan)
 
 Launch **one agent** to read the ENTIRE plan front-to-back and check for internal coherence:
 
@@ -654,7 +702,7 @@ Launch **one agent** to read the ENTIRE plan front-to-back and check for interna
 You are reviewing a newly created plan for internal coherence. Read EVERY file in the plan directory: {plan_dir}/
 
 Check for:
-1. CONTRADICTIONS: Does Section X say one thing and Section Y say another? (e.g., Section 2 says "add type Foo to module Bar" but Section 5 says "add type Baz to module Bar" for the same purpose)
+1. CONTRADICTIONS: Does Section X say one thing and Section Y say another? (e.g., Section 2 says "add variant Foo to enum Bar" but Section 5 says "add variant Baz to enum Bar" for the same purpose)
 2. GAPS: Is there work that falls between sections? (e.g., Section 2 produces a type that Section 4 consumes, but no section handles the transformation between them)
 3. REDUNDANCY: Do multiple sections do the same work? (e.g., both Section 3 and Section 5 add the same match arm)
 4. BROKEN REFERENCES: Does Section X reference a type/file/function from Section Y that Section Y doesn't actually define?
@@ -664,7 +712,7 @@ Check for:
 8. SUCCESS CRITERIA COVERAGE: Does every mission success criterion in 00-overview.md trace to at least one section that delivers it? Does every section have its own success criteria? Does each section criterion connect upward to at least one mission criterion? A mission criterion with no section delivering it is a plan gap. A section without success criteria is not executable.
 
 For each issue found, report:
-  ISSUE TYPE: {contradiction/gap/redundancy/broken-ref/ordering/sync-gap/overview-drift/criteria-gap}
+  ISSUE TYPE: {contradiction/gap/redundancy/broken-ref/ordering/sync-gap/overview-drift}
   SECTIONS: {which sections are involved}
   DETAILS: {what the issue is}
   FIX: {how to resolve it}
@@ -703,7 +751,7 @@ Show the user:
 
 ```
 Skill: review-plan
-Args: plans/{name}/
+Args: {plan_root}/{name}/
 ```
 
 This runs the formal review pipeline as defined in the `/review-plan` skill. It will edit the plan files directly to fix any issues.
@@ -715,43 +763,213 @@ After `/review-plan` completes, report to the user:
 - What the review changed
 - Any remaining concerns that need human judgement
 
-### Step 18: Ask About Reroute Status
+### Step 18: Reroute Lifecycle Setup — MANDATORY
 
-Use `AskUserQuestion` to ask the user whether this plan should be the active reroute. This determines the `reroute` frontmatter in `index.md`.
+**This step is MANDATORY for every plan creation and is NEVER silently skipped.** The reroute system controls which plan `/continue-roadmap` jumps to first, so getting the queue right is load-bearing for every future session. The only valid skip condition is enumerated below — and even then, the skip must be acknowledged out loud, not silent.
 
-If the user says **yes**: add reroute frontmatter to `index.md` with `status: active` and `order: 1`.
-If the user says **queued**: add reroute frontmatter with `status: queued` and ask for the `order` value.
-If the user says **no**: do not add reroute frontmatter (plan is not a reroute).
+#### When this step runs
+
+| Situation | Behavior |
+|---|---|
+| **New plan** (just created in this session) | ALWAYS run — ask the reroute question |
+| **Existing plan, no reroute frontmatter present** | ALWAYS run — ask the reroute question |
+| **Existing plan, reroute frontmatter already populated** | Run, but offer to keep the existing settings as the default option |
+| **Operating on `plans/roadmap/` directly** | SKIP — the main roadmap is never a reroute by definition. Acknowledge the skip out loud: "Skipping reroute setup — operating on the main roadmap directly." |
+
+There is no other skip condition. If you find yourself reaching the end of the skill without having run this step, that is a bug — go back and run it.
+
+#### Sub-step 18.1: Read the current reroute landscape
+
+Run the scanner to capture the current state of the queue:
+
+```bash
+.claude/skills/continue-roadmap/roadmap-scan.sh plans/roadmap 2>&1 | sed -n '/=== REROUTES ===/,/^$/p'
+```
+
+This emits the REROUTES block — every active and queued reroute, sorted by order, with their current order values. Capture this output. You will refer back to it when computing shifts and presenting the before/after diff.
+
+#### Sub-step 18.2: Ask the reroute question
+
+Use `AskUserQuestion` with FOUR options:
+
+1. **Active (highest priority — top of queue)** — `status: active`, `order: 1`. All existing active reroutes shift down by 1.
+2. **Active (specific position)** — `status: active`, `order: N` chosen interactively. All existing reroutes with `order >= N` shift down by 1.
+3. **Queued (joins the queue, will be promoted later)** — `status: queued`, `order` set to the next free number after the highest queued order (or 1 + highest active order if no queueds exist).
+4. **Not a reroute** — no reroute frontmatter added. The plan is parallel to the main roadmap but does not block it. Confirm by asking the user to also choose `parallel: true | false` (parallels are tracked in the scanner; non-parallel non-reroute plans are invisible to `/continue-roadmap`).
+
+When presenting the question, include the current REROUTES block from sub-step 18.1 in the question text so the user can see the queue they're inserting into.
+
+#### Sub-step 18.3: Compute the order shifts
+
+The `order` field uses a **single global namespace**: every reroute (active or queued, in any plan directory) has a unique `order` value. The shift algorithm depends on the user's answer:
+
+| User chose | Algorithm |
+|---|---|
+| **Active, top** | New plan gets `order: 1`. Every existing reroute (active and queued) with `order >= 1` shifts to `order + 1`. (i.e., everything shifts down by one.) |
+| **Active, position N** | New plan gets `order: N`. Every existing reroute with `order >= N` shifts to `order + 1`. Reroutes with `order < N` are unchanged. |
+| **Queued** | New plan gets `order = max(all existing reroute orders) + 1`. No existing plans shift. |
+| **Not a reroute** | No order assigned. No shifts. |
+
+**Edge cases to handle explicitly**:
+- A plan with no `order:` field defaults to `999`. When shifting, treat `999` as a sentinel ("no specific order, parked at the bottom") — do NOT shift `999` plans. But if the user picks a high N that collides with `999`, set the colliding plan's order to a real value before shifting.
+- Two existing plans with the same `order` value (collision from a prior bug or manual edit): flag this to the user before shifting. The user must resolve the collision first, OR you must offer to resolve it as part of this step (assign the lower-numbered plan to the lower order, the higher-numbered plan to the next free slot).
+- Active and queued plans share the same namespace, so a queued plan at `order: 6` and an active plan at `order: 6` is a collision even though they're filtered separately by the scanner. Resolve.
+
+#### Sub-step 18.4: Present the before/after diff
+
+Before writing any files, show the user a side-by-side preview:
+
+```
+Current reroute queue:
+  1. [active]  Plan A
+  2. [active]  Plan B
+  3. [queued]  Plan C
+  4. [queued]  Plan D
+
+After your change ({choice}):
+  1. [active]  NEW PLAN  ← inserted
+  2. [active]  Plan A    ← was 1
+  3. [active]  Plan B    ← was 2
+  4. [queued]  Plan C    ← was 3
+  5. [queued]  Plan D    ← was 4
+
+Files that will be modified:
+  - plans/<new-plan>/index.md       — add reroute frontmatter
+  - plans/<new-plan>/00-overview.md — set status to match
+  - plans/plan-a/index.md            — order 1 → 2
+  - plans/plan-b/index.md            — order 2 → 3
+  - plans/plan-c/index.md            — order 3 → 4
+  - plans/plan-d/index.md            — order 4 → 5
+```
+
+Use `AskUserQuestion` to ask "Apply these changes?" with options "Apply", "Adjust position", "Cancel reroute setup".
+
+#### Sub-step 18.5: Apply the changes
+
+Once the user confirms, update **every** file in the modification list. The full sync surface for any reroute change is:
+
+| File | What to change |
+|---|---|
+| `plans/<new-plan>/index.md` | Add `reroute: true`, `name`, `full_name`, `status`, `order` to frontmatter |
+| `plans/<new-plan>/00-overview.md` | Set `status:` field to match (`active`, `queued`, or unset for non-reroute) |
+| `plans/<shifted-plan>/index.md` (each) | Update `order:` value to the shifted number |
+
+**Do NOT update**:
+- The Quick Reference / Estimated Effort tables in `00-overview.md` — those track section status, not plan-level reroute meta. Section status is independent of reroute order.
+- `plans/roadmap/00-overview.md` — the main roadmap doesn't track per-reroute orders; the scanner discovers them dynamically.
+- Section files inside any plan — section content is independent of reroute order.
+
+#### Sub-step 18.6: Verify the result
+
+After applying, re-run the scanner to confirm the queue is well-ordered:
+
+```bash
+.claude/skills/continue-roadmap/roadmap-scan.sh plans/roadmap 2>&1 | sed -n '/=== REROUTES ===/,/^$/p'
+```
+
+The output should show:
+- The new plan in its expected position
+- All shifted plans with their new orders
+- No duplicate orders within the active set
+- No duplicate orders within the queued set
+- No active-vs-queued collisions on the same order
+
+If verification fails, STOP and diagnose — do not move on with a corrupted queue. Common causes: a plan's index.md was modified by another process during the apply step (conflict), or an order value was missed during the shift loop. Re-read the scanner output, find the discrepancy, fix it, re-verify.
+
+#### Sub-step 18.7: Report
+
+Report the final state to the user in a single paragraph:
+- What `status` and `order` the new plan got
+- How many existing plans were shifted (and their new orders)
+- The verification scanner output snippet
+- A reminder that `/continue-roadmap` will now pick up the new plan first (if active at order: 1) or queue it for promotion (if queued)
+
+### Step 19: Cross-Plan Review Invalidation (MANDATORY)
+
+A new cross-cutting plan can invalidate `reviewed: true` sections in other plans. If this plan touches files, types, or subsystems that other plan sections reference, those reviews are stale — they were validated against a codebase state that this plan will change.
+
+**Why this matters:** `reviewed: true` means "validated against the current codebase." A new plan that modifies overlapping files/types changes the codebase those reviews were validated against. Without invalidation, `/continue-roadmap` would start implementing a section whose review is stale, potentially building on wrong assumptions.
+
+#### Sub-step 19.1: Run invalidation detection
+
+```bash
+python3 .claude/skills/plan-audit/plan-invalidate.py {plan_root}/{name}/ --json
+```
+
+Read the JSON output. This scans ALL active plans (not completed, not the plan itself) for sections with `reviewed: true` whose file/symbol scope overlaps with the new plan's scope.
+
+#### Sub-step 19.2: Present findings to user
+
+If overlapping sections are found, present them to the user via `AskUserQuestion`:
+
+> **Cross-plan review invalidation detected.**
+>
+> This plan's scope overlaps with **N reviewed sections** across **M other plans**. These sections have `reviewed: true` but their reviews may be stale because this plan modifies files/types they reference.
+>
+> **High-impact overlaps** (weight ≥ 4):
+> - `plans/foo/section-03.md` — overlapping files: `crates/$1/src/...` (weight: 8)
+> - `plans/bar/section-01.md` — overlapping symbols: `EnumRepr`, `IrBuilder` (weight: 5)
+>
+> **Lower-impact overlaps** (weight 2-3):
+> - `plans/baz/section-02.md` — 1 shared file (weight: 2)
+>
+> **Recommendation:** Flip `reviewed: true` → `reviewed: false` on affected sections so `/continue-roadmap` will re-review them before implementation begins.
+>
+> Options:
+> 1. **Apply all** — invalidate all N sections
+> 2. **Apply high-impact only** — invalidate only weight ≥ 4 sections
+> 3. **Skip** — leave reviews as-is (not recommended)
+
+#### Sub-step 19.3: Apply invalidation
+
+If the user approves (option 1 or 2), apply the invalidation:
+
+```bash
+# For "apply all":
+python3 .claude/skills/plan-audit/plan-invalidate.py {plan_root}/{name}/ --apply
+
+# For "high-impact only":
+python3 .claude/skills/plan-audit/plan-invalidate.py {plan_root}/{name}/ --apply --min-weight 4
+```
+
+Report what was changed:
+- How many sections were flipped to `reviewed: false`
+- Which plans were affected
+- Reminder: `/continue-roadmap` will re-review these sections when they come up for implementation
+
+#### Sub-step 19.4: No overlaps found
+
+If the detection returns zero stale sections, report: "No cross-plan review invalidation needed — no other plan sections' reviewed scopes overlap with this plan."
 
 ---
 
 ## Example
 
-**Input:** `/create-plan gpu-refactor "Restructure GPU rendering pipeline for damage tracking"`
+**Input:** `/create-plan error-recovery "Improve compiler error messages and recovery"`
 
-**Phase 1**: Read CLAUDE.md. Ask user about scope. Expand mission. Identify blockers (missing damage rect type, atlas invalidation). Consensus loop with Codex (2-3 rounds). Present mission proposal to user.
+**Phase 1**: Read CLAUDE.md. Ask user about scope ("Which crates? Which error types?").
 
 **Phase 2**:
-- *Pass 1*: Launch 2 parallel agents — (1) survey `oriterm_gpu`, `oriterm/src/app/` rendering code, all GPU-related files; (2) audit tests, hygiene state, performance invariants.
-- *Pass 2*: Deep-read the 12 most critical files. Understand how `GpuRenderer::draw_frame()` works, how the atlas manages glyphs, how damage tracking would integrate.
-- *Pass 3*: Trace how the existing cell rendering pipeline works end-to-end.
-- *Pass 4*: Study Alacritty's damage tracking, Ghostty's multi-backend approach, WezTerm's texture atlas.
+- *Pass 1*: Launch 2 parallel agents — (1) survey `ori_diagnostic`, `ori_types` errors, `ori_parse` recovery, all error-related files; (2) audit tests, spec error codes, hygiene state.
+- *Pass 2*: Deep-read the 12 most critical files. Understand how `DiagnosticQueue` dedup works, how `ErrorGuaranteed` propagates, how recovery tokens are chosen.
+- *Pass 3*: Trace how `E2029` (Hashable-without-Eq) was implemented end-to-end — from type checker detection through diagnostic emission to test coverage. Trace how `E0860` (break-value-in-while) was implemented. Document the exact pattern.
+- *Pass 4*: Study Elm's error diffing (`Reporting/Error/Type.hs`), Roc's `to_diff` pattern, Rust's `DiagnosticBuilder` chain pattern. Recommend approaches for Ori.
 
-**Phase 3**: Design architecture. `/tp-help` architectural consultation. Write `00-overview.md` with data flow, design decisions, dependency graph. `/tp-help` sanity check. Present to user: "Found N critical files. The existing pattern shows {pattern}. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
+**Phase 3**: Design architecture. Write `00-overview.md` with data flow, design decisions (Elm-style diffing vs Rust-style chaining), dependency graph. Present to user: "Found 117 error codes, 64 with docs. The E2029 pattern shows {pattern}. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
 
 **Phase 4**: After user approves architecture, write sections sequentially:
-- Section 01 (damage types) → read it → write Section 02 (tracking integration, building on 01's types) → read both → write Section 03 (atlas invalidation, building on 01+02).
+- Section 01 (error types) → read it → write Section 02 (recovery strategies, building on 01's types) → read both → write Section 03 (user-facing messages, building on 01+02).
 
-**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/gpu-refactor/`.
+**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/error-recovery/`.
 
 **Creates:**
 ```
-plans/gpu-refactor/
+plans/error-recovery/
 ├── index.md
 ├── 00-overview.md
-├── section-01-damage-types.md
-├── section-02-tracking-integration.md
-└── section-03-atlas-invalidation.md
+├── section-01-error-types.md
+├── section-02-recovery-strategies.md
+└── section-03-user-facing-messages.md
 ```
 
 ---
@@ -763,26 +981,8 @@ plans/gpu-refactor/
 | Setup/Infrastructure | `section-01-setup.md` |
 | Core Implementation | `section-02-core.md` |
 | Integration | `section-03-integration.md` |
-| Testing/Verification | `section-NN-verification.md` |
-
----
-
-## Expected `/tp-help` Cadence
-
-The planning process includes **structured `/tp-help` checkpoints**. Here's the expected cadence:
-
-| Checkpoint | Phase | When | Purpose |
-|------------|-------|------|---------|
-| **Step 1D** | Prerequisites | After mission expansion | Consensus on direction and scope |
-| **Step 6B** | Research | After all 4 passes | Architectural direction validation |
-| **Step 8B** | Architecture | After writing overview | Sanity check written document |
-| **Step 16** | Finalization | /review-plan internally | Review agents' /tp-help calls |
-
-**Expected total**: 6-12+ `/tp-help` rounds across a full plan creation. The consensus loop (Step 1D) alone may take 2-5 rounds.
-
-**The rule**: Every major decision point gets challenged by a second brain before it becomes load-bearing. No decision survives on the strength of a single perspective.
-
-**When `/tp-help` is unavailable** (Codex not installed, API errors, timeouts): Note which checkpoints were skipped and flag them in the plan's overview as `<!-- tp-help skipped: {checkpoint} — manual review recommended -->`. Continue without blocking — the feedback is valuable but not a hard gate.
+| Testing | `section-04-testing.md` |
+| Documentation | `section-05-docs.md` |
 
 ---
 
@@ -793,19 +993,19 @@ The planning process includes **structured `/tp-help` checkpoints**. Here's the 
 - Do NOT use soft language that invites skipping: "bonus", "future", "lower priority", "nice to have", "if time permits", "stretch goal".
 - Do NOT label items "requires architectural change" — architectural changes are implementation tasks, not deferrals. If a 30-line change across 3 files is needed, describe the change and make it a checkbox.
 - Do NOT create items that are descriptions of work rather than work itself. "Investigate whether X" is acceptable; "Document the approach for Y" when Y can be implemented is not.
-- If an item genuinely cannot be done within the section (blocked by an unimplemented feature, needs user decision), use `<!-- blocked-by:X -->` with a concrete blocker reference — not vague language.
+- If an item genuinely cannot be done within the section (blocked by an unimplemented language feature, needs user decision), use `<!-- blocked-by:X -->` with a concrete blocker reference — not vague language.
 - Every item must pass this test: "Can the implementing agent, with access to the codebase, complete this item in a single session?" If no, break it into items that can.
 
 ## Matrix Testing & Semantic Pinning Rule
 
-**Every section that modifies code must specify its test strategy at plan creation time.** This is not deferred to implementation or to `/review-plan` — the plan itself must describe:
+**Every section that modifies compiler code must specify its test strategy at plan creation time.** This is not deferred to implementation or to `/review-plan` — the plan itself must describe:
 
-1. **Matrix dimensions**: The types and control-flow patterns that flow through the section's code paths. These are the rows and columns of the test matrix. Name them explicitly — "ASCII, CJK, emoji, combining marks, ZWJ sequences" for character dimension; "resize, scroll, reflow, selection, search" for operation dimension. Missing cells are future regressions.
+1. **Matrix dimensions**: The types and control-flow patterns that flow through the section's code paths. These are the rows and columns of the test matrix. Name them explicitly — "str, [int], Option<str>, closures, structs, maps, sets" for type dimension; "full iteration, break, yield, guard, nested, two-call" for pattern dimension. Missing cells are future regressions.
 2. **Semantic pin**: At least one test per behavioral change that ONLY passes with the new semantics. Without a pin, a regression can silently revert the fix. The plan must describe what each pin tests.
 3. **TDD discipline**: The section's first checklist item writes the failing test matrix. The section's last checklist item verifies debug + release. Tests frame the implementation, not follow it.
 4. **Cross-section coverage**: If a fix in Section N touches code owned by Section M, the test matrix must cover Section M's types and patterns too. Plan boundaries = test boundaries.
 
-A section without these is not executable per CLAUDE.md. The `/review-plan` skill enforces this during review — but catching it at creation time avoids the review rejection cycle.
+A section without these is not executable per CLAUDE.md. The `/review-plan` skill (Agent 4) enforces this during review — but catching it at creation time avoids the review rejection cycle.
 
 ## Zero Assumptions Rule
 
@@ -826,8 +1026,7 @@ The `reviewed: true/false` field in section frontmatter is a **pre-implementatio
 **Why this exists:** Plans are written with assumptions about how the code works. But as you implement Section 01, reality changes — deviations, discoveries, refactors, bug fixes. A section written before prior sections were implemented may reference stale file paths, wrong function signatures, or invalid approaches. `reviewed: false` means "not yet validated against implementation reality."
 
 **Rules:**
-- **Section 01** is always `reviewed: true` at creation — it's the starting point.
-- **All other sections** are `reviewed: false` at creation — plans, not validated reality.
+- **ALL sections** are `reviewed: false` at creation — plans are written against research, not validated implementation reality.
 - **Single-section review** (`/review-plan plans/foo/section-03.md`): This is the pre-implementation gate. After confirming accuracy, flip to `reviewed: true`.
 - **Whole-plan review** (`/review-plan plans/foo/`): Fixes issues, improves quality, but does NOT change `reviewed` values. You're improving the plan holistically, not gating specific sections.
 - **`/continue-roadmap`** starting a `reviewed: false` section: triggers a single-section review first, which flips to `true` after validation.
@@ -837,21 +1036,26 @@ The `reviewed: true/false` field in section frontmatter is a **pre-implementatio
 ## After Creation
 
 Remind the user to:
-1. Review the `/review-plan` verdict and address any flagged concerns
-2. **If performance-sensitive** (GPU rendering, VTE parsing, grid operations): Verify profiling checkpoints in relevant sections
+1. Fill in any remaining section details with specific tasks
+2. Update `00-overview.md` with dependencies and success criteria if not already complete
+3. **If performance-sensitive** (lexer, parser, typeck, eval, codegen): Add `/benchmark` checkpoints to relevant sections
 
 ## Performance-Sensitive Plans
 
-For plans touching hot paths, include a "Performance Validation" section:
+For plans touching hot paths, include a "Performance Validation" section in `index.md`:
 
 ```markdown
 ## Performance Validation
 
-Profile after modifying hot paths.
+Use `/benchmark short` after modifying hot paths.
 
 **When to benchmark:** [list specific sections]
 **Skip benchmarks for:** [list non-perf sections]
 ```
+
+See `.claude/skills/create-plan/plan-schema.md` for full guidance.
+
+---
 
 ---
 
@@ -860,17 +1064,17 @@ Profile after modifying hot paths.
 When the input indicates adding to an existing plan — whether the roadmap, a rerouted plan, or any other plan directory — this command operates on that plan's directory instead of creating a new one.
 
 **Trigger examples:**
-- `/create-plan add selection to roadmap` → operates on `plans/roadmap/`
-- `/create-plan add "damage rect tracking" subsection to plans/gpu-refactor` → operates on `plans/gpu-refactor/`
-- `/create-plan roadmap: tab bar rendering` → operates on `plans/roadmap/`
+- `/create-plan add closures to roadmap` → operates on `plans/roadmap/`
+- `/create-plan add "ARC IR function metadata" subsection to plans/repr-opt` → operates on `plans/repr-opt/`
+- `/create-plan roadmap: pattern matching` → operates on `plans/roadmap/`
 
 **Same rigor, different target.** Every phase applies identically — the research depth, the iterative deepening, the sequential writing, the cohesion review. The only differences are structural: you're inserting into an existing plan, not creating a fresh one.
 
 ### Subsection vs Section Granularity
 
-When invoked from `/continue-roadmap` impediment resolution, the work is typically a **subsection** added to an existing section — not a whole new section file. The granularity depends on scope:
+When invoked from `/continue-roadmap` impediment resolution (Step 2.6), the work is typically a **subsection** added to an existing section — not a whole new section file. The granularity depends on scope:
 
-- **Subsection** (most common for impediments): Add a `## XX.Y` block to an existing section file. Example: adding `## 03.5b Damage Rect Tracking` to `section-03-gpu-pipeline.md` to resolve missing GPU infrastructure.
+- **Subsection** (most common for impediments): Add a `## XX.Y` block to an existing section file. Example: adding `## 03.5b ARC IR Function Metadata` to `section-03-range-analysis.md` to resolve the missing visibility/trait/closure plumbing.
 - **Section**: Add a new section file when the work is large enough to warrant its own file (100+ lines of plan content, multiple subsections, distinct from existing section scope).
 
 For subsections: update the parent section's YAML frontmatter `sections:` array to include the new subsection entry. For sections: create a new section file and update `00-overview.md` and `index.md`.
@@ -946,7 +1150,7 @@ Research is identical in rigor, but adds a plan-specific dimension:
 
 - **Step 16**: Run `/review-plan` on the affected plan directory
 
-- **Step 18**: Skip the reroute question if operating on a plan that is already a reroute or the roadmap itself
+- **Step 18**: Follow the full lifecycle protocol defined in the main Step 18 — the only valid skip condition is operating on `plans/roadmap/` directly (the main roadmap is never a reroute by definition). When operating on an existing plan that already has reroute frontmatter populated, run Step 18 anyway — it offers the existing settings as the default so the user can keep them with one click, but still gets the chance to reprioritize. Adding a subsection to an existing reroute is a perfectly valid trigger to reconsider that reroute's position in the queue (e.g., "this new subsection makes the plan critical — promote to order: 1").
 
 ### Existing Plan Mode: The "Leave It Better" Rule
 
@@ -960,19 +1164,40 @@ Research is identical in rigor, but adds a plan-specific dimension:
 
 This is not optional cleanup — it's a mandatory part of existing plan mode. Every touch of the plan is an opportunity to improve its coherence and accuracy.
 
-### Existing Plan Mode: Example
+### Existing Plan Mode: Impediment Resolution Example
 
-**Input:** `/create-plan add tab bar rendering to roadmap`
+**Input** (from `/continue-roadmap` Step 2.6):
+`/create-plan add "ARC IR Function Metadata" subsection to plans/repr-opt`
 
-**Phase 1**: Read CLAUDE.md. Read the entire roadmap. Expand mission. Identify blockers. Consensus loop. Present proposal.
+**Phase 1**: Read CLAUDE.md. Read `plans/repr-opt/00-overview.md` and the section containing blocked items (e.g., `section-03-range-analysis.md`). Identify that §03.5 has 6 items blocked by "ARC IR lacks visibility/trait/closure metadata."
 
-**Phase 2**: Survey tab bar code, existing roadmap sections touching UI, reference implementations.
+**Phase 2**:
+- *Pass 1*: Survey `ArcFunction` fields in `ori_arc/src/ir/mod.rs`. Find `FunctionSig.is_public` in `ori_types`. Check `lower_to_arc()` in `oric/src/arc_lowering.rs`.
+- *Pass 2*: Deep-read the lowering path. Discover `is_public` exists upstream but is dropped. `num_captures > 0` already identifies closures. Only `is_trait_method` needs inference from `impl_sigs`.
 
-**Phase 3**: Design the new section. Determine where it fits in the dependency graph. Present impact to user.
+**Phase 3**: Design subsection `03.5b ARC IR Function Metadata`. Scope: add `is_public` and `is_trait_method` to `ArcFunction`, thread through lowering, use in `propagate_ranges()`. Update §03 frontmatter with new subsection entry. Present to user with list of 6 items that will be unblocked.
 
-**Phase 4**: Write section. Update affected existing sections and overview.
+**Phase 4**: Write the `## 03.5b` block in `section-03-range-analysis.md`. Remove `<!-- blocked: ... -->` comments from the 6 items. Update §03 frontmatter sections array.
 
-**Phase 5**: Cohesion check on full roadmap. Run `/review-plan plans/roadmap/`.
+**Phase 5**: Cohesion check against §03 and §04 (which also consumes range data). Verify no contradictions.
+
+### Existing Plan Mode: Roadmap Example
+
+**Input:** `/create-plan add pattern matching exhaustiveness to roadmap`
+
+**Phase 1**: Read CLAUDE.md. Read the entire roadmap (overview + all sections). Identify that this relates to type checker work, probably depends on existing Section 07 (type inference), and might affect Section 12 (verification).
+
+**Phase 2**:
+- *Pass 1*: Survey exhaustiveness checking code in `ori_types`, find that `ori_types/src/check/exhaustiveness.rs` exists with 340 lines. Find that Section 07 touches `ori_types/src/check/` but doesn't cover exhaustiveness.
+- *Pass 2*: Deep-read `exhaustiveness.rs` and the 3 existing roadmap sections most related. Discover that Section 07's completion assumes exhaustiveness works, but the current implementation has gaps for nested patterns.
+- *Pass 3*: Trace how Gleam's exhaustiveness checker works end-to-end (`compiler-core/src/exhaustiveness.rs`).
+- *Pass 4*: Compare Elm's exhaustiveness approach (algebraic, provably complete) vs Rust's (witness-based).
+
+**Phase 3**: Design the new section. Determine it should be Section 08 (after type inference, before integration). Update `00-overview.md` dependency graph. Present to user: "The new section depends on 07, and Section 12 should depend on it. Here's the impact..."
+
+**Phase 4**: Write Section 08 sequentially. Then update Section 07 (add forward reference), Section 12 (add dependency), and `00-overview.md` (updated graph + sequence).
+
+**Phase 5**: Cohesion check on full roadmap. Fix any format drift found in older sections. Run `/review-plan plans/roadmap/`.
 
 ---
 
@@ -982,4 +1207,4 @@ The command uses `.claude/skills/create-plan/plan-schema.md` as the structure re
 - Complete index.md template
 - Section file template
 - Status conventions
-- Writing principles
+- The roadmap (`plans/roadmap/`) as a working example

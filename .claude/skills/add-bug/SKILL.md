@@ -7,7 +7,7 @@ argument-hint: "[description or file:line]"
 
 # Add Bug
 
-File a bug in `plans/bug-tracker/` under the correct domain section.
+File a bug in `plans/bug-tracker/` under the correct subsystem section.
 
 ## Proactive Triggering — MANDATORY
 
@@ -23,12 +23,12 @@ This skill MUST be invoked proactively whenever you encounter a bug that is **no
 ### When to trigger (non-exhaustive)
 - You see a test failure unrelated to your current work
 - You notice suspicious behavior while reading code
-- A code review or exploration reveals unexpected output
+- A code journey or exploration reveals unexpected output
 - You encounter an edge case that probably doesn't work
 - You find a TODO/FIXME/HACK comment that describes an unfixed bug
-- You notice a rendering glitch or incorrect layout behavior
-- You find a mismatch between expected and actual widget behavior
-- A platform-specific code path looks broken or incomplete
+- A compiler error message is wrong or misleading
+- You notice a mismatch between spec and implementation
+- Any test is `#skip`-ped and the reason looks fixable
 
 ## Usage
 
@@ -37,34 +37,28 @@ This skill MUST be invoked proactively whenever you encounter a bug that is **no
 ```
 
 The description can be:
-- A free-text bug description: `/add-bug tab bar doesn't render close buttons on hover`
-- A file reference: `/add-bug oriterm_ui/src/widgets/button/mod.rs:45 — click doesn't fire on keyboard Enter`
+- A free-text bug description: `/add-bug tuple field .0.1 fails because lexer tokenizes 0.1 as float`
+- A file reference: `/add-bug crates/$1/src/iterator/next.rs:45 — double iteration on break`
 - Context from the current conversation (no args needed if a bug was just discussed)
 
 ## Workflow
 
-### Step 1: Determine Domain
+### Step 1: Determine Subsystem
 
-Map the bug to one of the domain sections:
+Map the bug to one of the 8 subsystem sections:
 
-| Section | Domain | Crates/Paths |
-|---------|--------|--------------|
-| 01 | Core | Grid, VTE handler, cell, palette, selection, search (`oriterm_core`) |
-| 02 | UI Framework | Widget trait, layout solver, interaction, focus, animation (`oriterm_ui`) |
-| 03 | UI Widgets | Button, toggle, dropdown, slider, dialog, settings panel, tab bar widgets |
-| 04 | GPU | Renderer, atlas, shader pipelines, scene conversion (`oriterm_gpu`) |
-| 05 | Fonts | Font discovery, collection, shaping, rasterization, UI font sizes |
-| 06 | Mux | Pane server, PTY I/O, pane lifecycle, mux backend (`oriterm_mux`) |
-| 07 | Session | Tab/window management, split tree, floating panes, navigation |
-| 08 | Input | Keyboard encoding, mouse input, key dispatch, keybindings |
-| 09 | Icons | Icon path definitions, rasterization, resolution, SVG import |
-| 10 | Platform Windows | ConPTY, DWM, title bar, named pipes |
-| 11 | Platform macOS | Vibrancy, traffic lights, app bundle |
-| 12 | Platform Linux | Wayland/X11, PTY |
-| 13 | Config | Configuration loading, settings serialization, defaults |
-| 14 | IPC | IPC transport, protocol, daemon mode (`oriterm_ipc`) |
+| Section | Subsystem | Crates/Paths |
+|---------|-----------|--------------|
+| 01 | Parser & Lexer | `ori_parse`, `ori_lexer` |
+| 02 | Type Checker | `ori_types` |
+| 03 | Evaluator | `ori_eval`, `ori_patterns` |
+| 04 | Codegen & LLVM | `ori_llvm`, `ori_arc` |
+| 05 | Runtime & ARC | `ori_rt` |
+| 06 | Stdlib | `library/std`, `ori_registry` |
+| 07 | Tooling & CLI | `oric`, `ori_fmt`, `ori_diagnostic` |
+| 08 | Spec & Docs | `docs/`, `.claude/`, `plans/` |
 
-If unclear, check the file path or ask. If it spans domains, file in the one where the **fix** belongs (not where the symptom appears). If the bug doesn't fit an existing category, create a new one.
+If unclear, check the file path or ask. If it spans subsystems, file in the one where the **fix** belongs (not where the symptom appears).
 
 ### Step 2: Check for Duplicates
 
@@ -81,7 +75,7 @@ If a duplicate exists, note it to the user instead of adding a new entry.
 **ID format:** `BUG-{section}-{ordinal}` — ordinal is the next sequential number in that section (count existing bugs + 1).
 
 **Severity:**
-- `critical` — blocks correctness, data corruption, crash, unusable feature
+- `critical` — blocks correctness in the subsystem, data corruption, crash
 - `high` — wrong output, silent failure, should fix when touching adjacent code
 - `medium` — edge case failure, workaround exists, fix opportunistically
 - `low` — cosmetic, minor inconvenience, tracked for dedicated passes
@@ -92,24 +86,38 @@ Do just enough to write a useful bug entry. DO NOT deep-dive — the code may ch
 
 1. Confirm the bug exists (quick grep or test run if trivial)
 2. Identify the approximate location (crate + file, not exact line)
-3. Note any obvious repro steps
+3. Note any obvious repro (existing test file, or 2-3 line Ori snippet)
 
 ### Step 5: Write the Bug Entry
 
-Append to the `## Open Bugs` or `## {NN}.1 Active Bugs` section of the target file:
+Append to the `## Open Bugs` section of the target file:
 
 ```markdown
-- [ ] `[BUG-{section}-{ordinal}][{severity}]` **{Short title}** — found by {source}.
+- [ ] `[BUG-{section}-{ordinal}][{severity}]` **{Short title}**
   Repro: {test file path or minimal repro steps}
   Subsystem: {crate/file path}
-  Found: {YYYY-MM-DD} | Source: {tpr-review | manual | continue-roadmap | review-work}
+  Found: {YYYY-MM-DD} | Source: {source value from the canonical list below}
 ```
 
-**Source values:**
-- `tpr-review` — found by Codex TPR
+If a fix section already exists (from a prior `/fix-bug` that was interrupted), add a cross-ref:
+```markdown
+  Fix: `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md`
+```
+
+**Canonical source values** (use exactly one — this is the SSOT for bug provenance):
+- `tpr-review` — found by `/tpr-review` dual-source review
+- `code-journey` — found by `/code-journey`
 - `manual` — found by the user or during manual work
 - `continue-roadmap` — found while working on the roadmap
-- `review-work` — found by /review-work or code review
+- `review-work` — found by `/review-work`
+- `fix-bug` — found during an active `/fix-bug` workflow (Phase 1 investigation, Phase 3 TDD, Phase 4 test-all, Phase 5 TPR/hygiene)
+- `fix-next-bug` — found during `/fix-next-bug` autopilot iteration
+- `impl-hygiene-review` — found by `/impl-hygiene-review`
+- `review-bugs` — found during `/review-bugs` triage
+- `independent-review` — found by `/independent-review`
+- `design-pattern-review` — found by `/design-pattern-review`
+
+When filing a bug from a dual-source review, add reviewer provenance to the body (not the Source field): `Reviewer: codex`, `Reviewer: gemini`, or `Reviewers: codex + gemini (agreement)`.
 
 ### Step 6: Cross-Reference Check
 
@@ -124,15 +132,9 @@ If an active plan section covers this area, note it in the bug entry:
   Note: Active work in roadmap section {NN} touches this area.
 ```
 
-### Step 7: Update Index and Overview
+This is informational only — the bug still belongs in the bug-tracker (the plan may not cover this specific issue).
 
-After adding the bug:
-
-1. **If new section was created**: Add keyword cluster and quick reference entry to `index.md`
-2. **Update `00-overview.md`**: Update the Quick Reference table with current bug counts
-3. **Update `index.md`**: Update the Quick Reference table
-
-### Step 8: Confirm to User
+### Step 7: Confirm to User
 
 Report what was filed:
 ```
@@ -141,51 +143,28 @@ Filed: [BUG-{section}-{ordinal}][{severity}] {title}
   Cross-ref: {any active plan sections, or "none"}
 ```
 
----
+### Step 8: Resume Prior Workflow — MANDATORY
 
-## Bug Tracker Plan Structure
+**`/add-bug` is almost always invoked mid-task** (proactive filing during `/continue-roadmap`, `/tpr-review`, `/fix-bug`, etc.). After confirming the filing, **immediately resume the interrupted workflow.** Do NOT stop, wait for user input, or present the filing as a standalone deliverable. The bug filing is a side-effect — the main task is still in progress.
 
-If the bug tracker plan doesn't exist yet, create it following the structure in the existing SKILL.md (Step 4 in old version). The key properties:
+If you were in the middle of:
+- `/tpr-review` → continue fixing findings or re-running the transport
+- `/continue-roadmap` → continue implementing the current subsection
+- `/fix-bug` → continue with the current phase
+- Any other workflow → pick up exactly where you left off
 
-- `parallel: true` in `index.md` (not `reroute: true`)
-- `order: 999` (always last in priority)
-- Never marked `status: complete` — it's a living plan
-- Individual bug items ARE marked `[x]` when fixed
-- Section-level status stays `in-progress` permanently
-
-### Bug Entry Format (when fixed)
-
-```markdown
-- [x] `[BUG-{section}-{ordinal}][{severity}]` **{Short title}** — found by {source}.
-  Resolved: {YYYY-MM-DD}. {What fixed it — commit, plan, or rewrite}.
-```
-
-### Bug IDs
-
-- Format: `BUG-{section}-{sequential}`
-- Example: `BUG-03-2` = Section 03, second bug
-- IDs are never reused
-
-### /continue-roadmap Integration
-
-When `/continue-roadmap` detects this parallel plan and presents options:
-- Bug tracker items are ALWAYS the **last option** in the multiple choice list
-- Bug tracker items are NEVER the **recommended** option
-- The option text should read: `Work on bug fixes (Bug Tracker — N open bugs)`
-- Only present this option if there are unchecked (`[ ]`) bug items
-
----
+The user should not need to prompt you to continue.
 
 ## Fix Workflow — What Happens Next
 
-Filing a bug is capture only. When a bug is picked up for fixing (via `/fix-next-bug`, `/continue-roadmap`, or direct request), the **`/fix-bug`** command enforces plan-section rigor:
+Filing a bug is capture only. When a bug is picked up for fixing (via `/review-bugs`, `/continue-roadmap`, or direct request), the **`/fix-bug`** command enforces plan-section rigor:
 
-1. **Investigation** — root cause analysis, reference repo review
+1. **Investigation** — root cause analysis, spec consultation, reference compiler review
 2. **Fix section file** — `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` created with full plan-section structure
 3. **TDD matrix** — all tests written and verified failing BEFORE implementation
 4. **Implementation** — fix applied, tests pass unchanged
-5. **Completion checklist** — test-all, clippy-all, build-all, TPR review, impl-hygiene review
+5. **Completion checklist** — test-all, clippy-all, TPR review, impl-hygiene review
 
 **Every bug fix gets this rigor.** No ad-hoc fixes. The fix section file is the permanent record of investigation, approach, and verification — it stays in the bug tracker alongside the section files.
 
-See `/fix-bug` for the full workflow and fix section template. See `/fix-next-bug` for the autopilot loop that drains the bug queue end-to-end.
+See `/fix-bug` for the full workflow and fix section template.

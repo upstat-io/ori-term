@@ -30,6 +30,7 @@ supersedes:             # Plans this replaces (if any)
   - "plans/{old-plan}/"
 references:             # Design docs, proposals, prior art
   - "plans/{related-doc}.md"
+  - "docs/ori_lang/proposals/{proposal}.md"
 ---
 
 # {Plan Title}: Exhaustive Implementation Plan
@@ -45,7 +46,7 @@ references:             # Design docs, proposals, prior art
 - [ ] {Criterion 1 — specific, measurable, verifiable condition}
 - [ ] {Criterion 2 — with command or test that proves it}
 - [ ] {Criterion 3 — connects to section(s) that deliver it}
-- [ ] `./test-all.sh` green — no regressions
+- [ ] `cargo test --all` green — no regressions
 - [ ] All section success criteria met
 
 ## Architecture
@@ -64,7 +65,7 @@ motivated the principle. 2-3 principles max.}
 
 \`\`\`
 {Optional: show the information/data flow chain if applicable.
-E.g., how each stage enriches data for the next stage.}
+E.g., how each stage enriches IR for the next stage.}
 \`\`\`
 
 ## Section Dependency Graph
@@ -166,7 +167,7 @@ Track root causes, fix locations, and status so they don't get lost.}
 
 The index enables keyword-based discovery across all sections. If this plan is a
 **reroute** (a parallel track alongside the main roadmap), add frontmatter to make
-it discoverable:
+it discoverable by the website:
 
 ```yaml
 ---
@@ -179,8 +180,8 @@ order: N
 ```
 
 - `reroute: true` — marks this plan as a reroute (omit for non-reroute plans)
-- `name` — short display name (e.g., "GPU Fixes")
-- `full_name` — full display name (e.g., "GPU Pipeline Fixes")
+- `name` — short display name for timeline pills (e.g., "LLVM Fixes")
+- `full_name` — full display name for page titles (e.g., "LLVM Codegen Fixes")
 - `status` — `active | queued | resolved`
 - `order` — queue priority; lower value = promoted first when active reroute completes (default 999 if omitted)
 - `key` and `dir` are derived at load time from the directory name
@@ -247,7 +248,7 @@ success_criteria:        # Concrete conditions proving this section is done
   - "{Criterion 1 — testable, verifiable}"
   - "{Criterion 2 — with command or observable result}"
 inspired_by:             # Reference implementations studied
-  - "{Project} {pattern} ({file path})"
+  - "{Language/Tool} {pattern} ({file path})"
 depends_on: ["{NN}"]     # Other sections required first
 third_party_review:
   status: none           # none | findings | resolved
@@ -304,12 +305,25 @@ architectural gap motivated it. Cite specific debugging sessions,
 test failures, or design flaws. 2-4 sentences.}
 
 **Reference implementations:**
-- **{Project}** `{file path}`: {pattern name} — {what we learn from it}
-- **{Project}** `{file path}`: {pattern name} — {what we learn from it}
+- **{Language}** `{file path}`: {pattern name} — {what we learn from it}
+- **{Language}** `{file path}`: {pattern name} — {what we learn from it}
 
 **Depends on:** Section {NN} ({why}).
 
 ---
+
+<!-- ── MANDATORY SUBSECTION STRUCTURE ──
+EVERY subsection ({NN}.1, {NN}.2, ...) MUST end with a **Subsection close-out**
+block containing the per-subsection `/improve-tooling` retrospective. This is
+non-negotiable: pain memory decays within hours, so the look-back must fire
+while the subsection's debugging journey is still hot — NOT at section close.
+
+The close-out block goes AFTER the subsection's implementation/validation
+tasks and BEFORE the `---` separator. See {NN}.1 below for the canonical form;
+every subsequent subsection in this section MUST repeat the same close-out
+shape (only the subsection ID changes). Plans that omit the per-subsection
+close-out will fail `/continue-roadmap` validation.
+-->
 
 ## {NN}.1 {Subsection Title}
 
@@ -329,6 +343,29 @@ and how it fits into the section's overall goal.}
   - [ ] {Sub-task}
 
 - [ ] {Validation task — how to verify this subsection works}
+
+- [ ] **Subsection close-out ({NN}.1)** — MANDATORY before starting {NN}.2:
+  - [ ] All tasks above are `[x]` and the subsection's behavior is verified
+  - [ ] Update this subsection's `status` in section frontmatter to `complete`
+  - [ ] **Run `/improve-tooling` retrospectively on THIS subsection** — reflect
+        on the debugging journey for {NN}.1 specifically: which `diagnostics/`
+        scripts you ran, where you added `dbg!`/`tracing` calls (and what each
+        was looking for), where output was hard to interpret, where test
+        failures gave unhelpful messages, where you ran the same command
+        sequence repeatedly. Forward-look: what tool/log/diagnostic would
+        shorten the next regression in {NN}.1's code path by 10 minutes?
+        Implement every accepted improvement NOW (zero deferral) and commit
+        each via SEPARATE `/commit-push` (e.g., `build(diagnostics): add X to
+        Y.sh — surfaced by {plan}/section-{NN}.1 retrospective`). Use a valid
+        conventional-commit type — `build` for dev/diagnostic scripts, `test`
+        for test-harness changes, `chore` for general tooling, `ci` for CI
+        config, `docs` for tool docs. Do NOT use `tools(...)` — the lefthook
+        commit-msg hook rejects any type outside the standard set. Mandatory
+        even when nothing felt painful — that is exactly when blind spots
+        accumulate. If genuinely no gaps, document briefly: "Retrospective
+        {NN}.1: no tooling gaps — relied on existing scripts X, Y." Do not
+        silently skip. See `.claude/skills/improve-tooling/SKILL.md`
+        "Per-Subsection Workflow" for the full protocol.
 
 ---
 
@@ -373,6 +410,16 @@ acceptable interim if {condition}.
        compound across the remaining subsections. The checkpoint item lives
        at the end of the last subsection in the group. -->
 
+- [ ] **Subsection close-out ({NN}.2)** — MANDATORY before starting {NN}.3:
+  - [ ] All tasks above are `[x]` and the subsection's behavior is verified
+  - [ ] Update this subsection's `status` in section frontmatter to `complete`
+  - [ ] **Run `/improve-tooling` retrospectively on THIS subsection** — same
+        protocol as {NN}.1's close-out, scoped to {NN}.2's debugging journey.
+        Commit improvements separately using a valid conventional-commit type:
+        `build(diagnostics): ... — surfaced by {plan}/section-{NN}.2
+        retrospective` (or `test(...)`, `chore(...)`, etc — see {NN}.1's
+        close-out for the type rules).
+
 ### {Sub-topic within the subsection}
 
 **Discovery:** {What was learned during investigation that changes
@@ -384,7 +431,7 @@ the approach or adds requirements.}
 3. {Validation step — what test to run, what output to expect}
 
 **Reference implementations:**
-- **{Project}** `{file}`: {what it does} — {what we adopt from it}
+- **{Language}** `{file}`: {what it does} — {what we adopt from it}
 
 **Co-implementation requirement with Section {NN} ({topic}):**
 {Why this subsection and another section's work must land together.
@@ -413,12 +460,11 @@ When all findings are triaged:
 ## {NN}.N Completion Checklist
 
 - [ ] {Concrete, verifiable item — not "implement X" but "X passes test Y"}
-- [ ] {Item with specific command to verify: `cargo test -p oriterm_core -- test_name` passes}
+- [ ] {Item with specific command to verify: `grep -r "pattern" path/` returns 0}
 - [ ] {Behavioral verification: `test_name` passes without modification}
-- [ ] {Regression check: `./test-all.sh` green}
-- [ ] {Build check: `./build-all.sh` green, `./clippy-all.sh` green}
+- [ ] {Regression check: `cargo test --all` green}
 - [ ] {No spurious warnings in normal compilation}
-- [ ] Plan annotation cleanup: all temporary scaffolding (TPR, CROSS, BUG, §, Phase, section- refs) removed from `.rs` files
+- [ ] Plan annotation cleanup: `bash .claude/skills/impl-hygiene-review/plan-annotations.sh --plan {NN}` returns 0 annotations — all temporary scaffolding (TPR, CROSS, BUG, §, Phase, section- refs) removed from `.rs` files
 - [ ] All intermediate TPR checkpoint findings resolved (see checkpoint items in subsections above)
 - [ ] **Plan sync** — update plan metadata to reflect this section's completion:
   - [ ] This section's frontmatter `status` → `complete`, subsection statuses updated
@@ -428,12 +474,13 @@ When all findings are triaged:
   - [ ] Cross-links to other plans updated if this section resolved external blockers (`<!-- resolved-by: ... -->`)
   - [ ] Next section's `depends_on` verified — no stale assumptions from this section's work
 - [ ] `/tpr-review` passed (final, full-section) — independent Codex review found no critical or major issues (or all findings triaged)
-- [ ] `/impl-hygiene-review last commit` passed — implementation hygiene review found no critical or major findings (or all findings triaged and fixed). MUST run AFTER `/tpr-review` is clean.
+- [ ] `/impl-hygiene-review` passed — implementation hygiene review found no critical or major findings (or all findings triaged and fixed). MUST run AFTER `/tpr-review` is clean.
+- [ ] `/improve-tooling` **section-close sweep** — MANDATORY safety net after both reviews are clean. The PRIMARY tooling capture happens per-subsection (see each subsection's close-out block above) — by section close those captures should already be committed. The sweep does TWO things: (1) **Verify** every subsection in this section has either an "improvements made" entry (with commits) or a documented "no gaps" negative finding from its own per-subsection retrospective; if any subsection skipped its retrospective, STOP and run it now — the sweep cannot substitute for missed per-subsection captures. (2) **Look for cross-subsection patterns** invisible at per-item scope: command sequences repeated when transitioning between *different* subsections, integration test failures with worse messages than within-subsection failures, mental cross-referencing across files no tool combined, instrumentation that only became obvious after seeing all subsections together. Add ONLY new items that emerged from these cross-cutting patterns — do not duplicate per-subsection findings. Implement immediately (zero deferral), commit separately using a valid conventional-commit type (`build(diagnostics): add X — surfaced by section-{NN} close sweep` — use `build` for dev/diagnostic scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs; the lefthook commit-msg hook rejects any non-standard type), verify against the original scenario. Most sweeps produce zero new findings when per-subsection captures are thorough — that is the expected, healthy outcome and must be documented: "Section-close sweep: per-subsection retrospectives covered everything; no cross-subsection patterns required new tooling." Do not silently skip.
 
 **Exit Criteria:** {Paragraph describing the measurable, testable condition
 that proves this section is complete. Include specific commands, test names,
 metric thresholds. Not "X works" but "X produces Y output when Z command
-is run, with 0 regressions in test suite (N tests)."}
+is run, with 0 regressions in test suite A (N tests) and test suite B (M tests)."}
 ```
 
 ---
@@ -460,36 +507,69 @@ pipeline being built/modified.
 
 ---
 
-## {NN}.2 Performance Validation
+## {NN}.2 Behavioral Equivalence (if applicable)
+
+Verify that the new path produces identical results to the existing path.
+
+- [ ] Build a test harness comparing outputs: {description}
+- [ ] Apply to all relevant tests
+- [ ] Track and investigate every mismatch
+- [ ] Create a CI-runnable script
+
+---
+
+## {NN}.3 Code Journey (Pipeline Integration)
+
+Run `/code-journey` to test the pipeline end-to-end with progressively
+complex Ori programs. This catches issues that unit tests and spec tests
+miss: silent wrong code generation, phase boundary mismatches, cascading
+failures across compiler stages, and eval-vs-LLVM behavioral divergence.
+
+- [ ] Run `/code-journey` — journeys escalate until the compiler breaks down
+- [ ] All CRITICAL findings from journey results triaged (fixed or tracked)
+- [ ] Eval and AOT paths produce identical results for all passing journeys
+- [ ] Journey results archived in `plans/code-journeys/`
+
+**Why this matters:** Unit tests verify individual phases in isolation.
+Code journeys verify that phases compose correctly — data flows through
+the full pipeline (lexer → parser → type checker → canonicalizer →
+eval/LLVM) and produces correct results. They use differential testing
+(eval path as oracle for LLVM path) and progressive complexity
+escalation to map the exact boundary of what works.
+
+**When to run:**
+- After any change to phase boundaries (new IR nodes, new type variants)
+- After changes to monomorphization, ARC pipeline, or codegen
+- After adding new language features that affect multiple phases
+- As final verification before marking a plan complete
+
+---
+
+## {NN}.4 Safety Verification (if applicable)
+
+- [ ] **{Safety property}:** {How it's verified, what tool/technique}
+- [ ] **Stress test:** {Scale — N allocations, N recursion depth, N elements}
+- [ ] **{Tool} verification:** {Script path, what it catches}
+
+---
+
+## {NN}.5 Performance Validation
 
 - [ ] **{Metric 1}:** Measured {what} ({conditions}):
   - {Workload A}: ~{value}
+  - {Workload B}: ~{value}
   - Script: `{script path}`
+  - Benchmark programs: `{path}`
 
-- [ ] **Zero idle CPU beyond cursor blink** — verified by `compute_control_flow()` tests
-- [ ] **Zero allocations in hot render path** — verified by alloc regression tests
-- [ ] **Stable RSS under sustained output** — verified by scrollback bounds
+- [ ] **{Metric 2}:** {comparison}:
+  - {result with concrete numbers}
 
----
-
-## {NN}.3 Safety Verification (if applicable)
-
-- [ ] **{Safety property}:** {How it's verified, what tool/technique}
-- [ ] **Stress test:** {Scale — N cells, N scrollback lines, N resize cycles}
-- [ ] **Cross-platform:** {Verified on macOS, Windows, Linux}
+- [ ] **{Metric 3}:** {measurement}:
+  - {result}
 
 ---
 
-## {NN}.4 Build & Verify
-
-- [ ] `./build-all.sh` green (all platforms)
-- [ ] `./clippy-all.sh` green (no warnings)
-- [ ] `./test-all.sh` green (all tests pass)
-- [ ] Architecture tests pass (`cargo test -p oriterm --test architecture`)
-
----
-
-## {NN}.5 Documentation
+## {NN}.6 Documentation
 
 - [ ] Update superseded plans to point to this plan
 - [ ] Update CLAUDE.md if new commands/paths/patterns introduced
@@ -498,17 +578,21 @@ pipeline being built/modified.
 
 ---
 
-## {NN}.6 Completion Checklist
+## {NN}.7 Completion Checklist
 
 - [ ] Test matrix covers all features (every checkbox in {NN}.1)
-- [ ] Performance validated (zero idle CPU, zero hot-path allocs, stable RSS)
-- [ ] All builds green
+- [ ] Behavioral equivalence verified ({script} passes — 0 mismatches)
+- [ ] Code journey passes — eval/AOT match, no CRITICAL findings unaddressed
+- [ ] Zero {safety violations} detected
+- [ ] Stress tests pass ({N}/{M})
+- [ ] Performance baselined
 - [ ] All documentation updated
-- [ ] Plan annotation cleanup: all temporary scaffolding removed from `.rs` files
-- [ ] `./test-all.sh` green
-- [ ] `./clippy-all.sh` green
+- [ ] Plan annotation cleanup: `plan-annotations.sh` returns 0 annotations for this plan's sections
+- [ ] `cargo test --all` green
+- [ ] `cargo clippy --all -- -D warnings` green
 - [ ] `/tpr-review` passed — independent Codex review clean
-- [ ] `/impl-hygiene-review last commit` passed — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
+- [ ] `/impl-hygiene-review` passed — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
+- [ ] `/improve-tooling` **section-close sweep** — MANDATORY after both reviews are clean. Per-subsection captures from {NN}.1–{NN}.6 should already be committed via each subsection's own close-out block; the sweep verifies they ran (no skips) and adds only NEW cross-cutting items invisible at per-item scope. Verification sections especially benefit from cross-cutting capture because they exercise the full diagnostic surface — but the *primary* tooling growth still happens per-subsection. Look for: diagnostic scripts that were run during multiple subsections with the same output-interpretation friction, manual cross-referencing across dumps that no tool combined, stress-test or perf instrumentation that became obvious only after seeing the full verification picture. Implement immediately, commit separately using a valid conventional-commit type (`build(diagnostics): add X — surfaced by section-{NN} verification close sweep` — see the regular section-close sweep above for the type rules; the lefthook commit-msg hook rejects non-standard types like `tools(...)`), verify against the original scenario. Document the negative finding if there are no cross-cutting gaps. Do not silently skip.
 
 **Exit Criteria:** {Final measurable proof. Include test counts, metric
 thresholds, and the specific commands that demonstrate completion.}
@@ -537,6 +621,63 @@ Sections AND subsections use the same values: `not-started`, `in-progress`, `com
 | `resolved` | Completed and archived |
 
 Do NOT use `done` or `complete` in `index.md` — always use `resolved` for finished plans.
+
+### Reroute Lifecycle — Canonical Algorithm
+
+The `order` field on a reroute is not a free-form number. It is a strictly-monotonic position in a **single global queue** that `/continue-roadmap` uses to decide which plan to work on first. Every reroute (active OR queued, in any plan directory) has a unique `order` value in this shared namespace.
+
+**Invariants (checked by the roadmap scanner and by `/create-plan` Step 18):**
+
+1. **Uniqueness**: no two reroutes share an `order` value — not within the active set, not within the queued set, and not across sets.
+2. **Monotonic insertion**: when inserting a new reroute at position N, every existing reroute with `order >= N` shifts down by 1 (its order becomes `order + 1`). Reroutes with `order < N` are unchanged.
+3. **The sentinel `999`**: a reroute with no explicit `order:` field is treated as `order: 999` ("parked at the bottom, no priority"). Multiple plans may share `999` because it means "unspecified". But if an explicit order of `999` is set, it becomes a concrete position that participates in uniqueness.
+4. **Active before queued at the same logical priority**: when a queued plan is promoted to active, its order does NOT change — it keeps the same numeric value. This means queued plans must be numbered AFTER active plans in the global namespace, so promotion is a metadata-only change.
+5. **Main roadmap is never a reroute**: `plans/roadmap/` does not participate in the queue. It is the fallback that `/continue-roadmap` scans when no active reroute exists.
+
+**Insertion algorithm** (used by `/create-plan` Step 18):
+
+```
+Given: new_order N, all_reroutes = scan plans/*/index.md
+For each r in all_reroutes where r.order >= N and r.order != 999:
+    r.order = r.order + 1
+    write r back to its index.md
+Set the new plan's order = N, write to its index.md
+```
+
+**Promotion algorithm** (used when an active reroute completes and the next queued reroute takes over):
+
+```
+Given: completing_plan (the one just finished), queued = all reroutes with status: queued
+If queued is empty:
+    mark completing_plan status: resolved
+    done — no promotion
+Else:
+    next = queued with minimum order (must be unique by invariant 1)
+    mark completing_plan status: resolved
+    mark next status: active
+    order is UNCHANGED — it was already numbered ahead of future queued plans
+```
+
+**Demotion algorithm** (used when the user manually reprioritizes an active plan to queued):
+
+```
+Given: demoting_plan
+demoting_plan.status = queued
+demoting_plan.order is UNCHANGED — it stays at its current position in the global queue
+No other plans shift.
+```
+
+**Sync surface** (every place that must be updated when reroute status changes):
+
+| File | Change |
+|---|---|
+| `plans/<plan>/index.md` | `reroute`, `status`, `order`, `name`, `full_name` fields |
+| `plans/<plan>/00-overview.md` | Top-level `status:` field (must match `index.md` `status`, using `in-progress` for `active` and `complete` for `resolved`) |
+
+**NOT in the sync surface** (intentionally):
+- Section files — section status is independent of reroute status
+- Quick Reference / Estimated Effort tables in 00-overview.md — those track section progress, not reroute position
+- `plans/roadmap/00-overview.md` — the main roadmap doesn't track per-reroute positions; the scanner discovers them dynamically
 
 ### Completed Plans
 
@@ -567,13 +708,13 @@ Plans cannot assume the implementer has CLAUDE.md or `.claude/rules/*.md`
 loaded in context. Every section must embed the specific rules that
 govern its work — woven organically into checklist items, constraints,
 and callouts. If a rule applies, it appears in the task description
-itself: "Add `FooWidget` in `oriterm_ui/src/widgets/foo/mod.rs` —
-implement Widget trait, create sibling `tests.rs` with WidgetTestHarness"
-rather than "Add widget (check conventions)." The plan is a self-contained
-execution document. Relevant rule files: `test-organization.md` (TDD,
-sibling tests.rs), `impl-hygiene.md` (module boundaries, file size,
-rendering discipline), `code-hygiene.md` (surface cleanliness),
-`crate-boundaries.md` (ownership rules).
+itself: "Add `FooVariant` — update ALL match arms (`file.rs:123`,
+`other.rs:456`)" rather than "Add variant (check sync points)." The
+plan is a self-contained execution document. Relevant rule files:
+`tests.md` (TDD, matrix testing), `compiler.md` (file size, crate
+ordering, API design), `registry.md` (sync points), `arc.md` (AIMS
+invariants), `impl-hygiene.md` (bloat/waste/drift categories),
+`runtime.md`, `llvm.md`, `eval.md`, `parse.md`, `ir.md`, etc.
 
 ### Measurable Exit Criteria
 "Implement X" is not an exit criterion. "{Command} produces {output}
@@ -618,47 +759,16 @@ full-section integration review. Larger, more complex subsections
 trigger a checkpoint sooner rather than later.
 
 ### Reference Implementations
-Cite specific files from reference projects. Not "Alacritty does
-this" but "Alacritty's `alacritty/src/display/damage.rs` uses the
-damage tracking pattern where {description}." Include the path so the
+Cite specific files from reference compilers/projects. Not "Rust does
+this" but "Rust's `rustc_codegen_llvm/mir/operand.rs` uses the
+`OperandValue` pattern where {description}." Include the path so the
 reference can be consulted.
-
----
-
-## TPR Checkpoint Rules
-
-`/tpr-review` should not only run at the end of a section — it should run **mid-section after subsections that produce finished, testable code**. Catching issues early is far cheaper than catching them at the end of a large section.
-
-### When to insert a TPR checkpoint in a subsection
-
-A subsection gets a `- [ ] /tpr-review checkpoint` item when **any** of:
-
-1. **Substantial new code** — the subsection adds or modifies ~100+ lines of production code across multiple files.
-2. **New module or public API** — introduces a new module, trait, or public interface that later subsections build on. Catching design issues here prevents cascading rework.
-3. **Complex logic** — implements non-trivial algorithms, state machines, or cross-module coordination where subtle bugs hide.
-4. **Integration boundary** — wires together components from different crates or layers (e.g., connecting UI to GPU, mux to PTY).
-
-### When NOT to insert a TPR checkpoint
-
-- **Scaffolding-only subsections** — adding type stubs, config fields, or empty trait impls that aren't yet wired in.
-- **Small mechanical changes** — renaming, moving files, updating imports, adjusting constants.
-- **Test-only subsections** — adding tests for already-reviewed code.
-
-### Placement
-
-The TPR checkpoint is the **last item** in the subsection's task list, after validation tasks. It runs after the subsection's code is finished and tests pass.
-
-### Section completion checklist still required
-
-Mid-section TPR checkpoints do **not** replace the final `/tpr-review` in the `{NN}.N Completion Checklist`. The final TPR covers cross-subsection interactions and the section as a whole.
 
 ---
 
 ## Bug Fix Section Template
 
 Bug fixes use a lighter-weight section file that lives in the bug tracker (`plans/bug-tracker/fix-BUG-XX-NNN.md`). Created by the `/fix-bug` command, these follow the same rigor as plan sections but are scoped to a single bug or cluster of related bugs.
-
-The full template lives in `.claude/skills/fix-bug/fix-section-template.md`. The structure is:
 
 ```markdown
 ---
@@ -672,7 +782,7 @@ success_criteria:
   - "{Criterion 2 — with verification command}"
 subsystem: "{crate/file path}"
 found: "{YYYY-MM-DD}"
-source: "{tpr-review|manual|continue-roadmap|review-work}"
+source: "{tpr-review|code-journey|manual|continue-roadmap|review-work}"
 third_party_review:
   status: none
   updated: null
@@ -680,10 +790,85 @@ third_party_review:
 
 # Fix: BUG-{section}-{ordinal} — {Title}
 
+**Status:** Not Started
+**Severity:** {severity}
+**Goal:** {Expanded goal — not 'fix X' but 'X correctly handles Y under conditions Z'}
+
+**Success Criteria:**
+- [ ] {Criterion — specific behavioral outcome with verification}
+- [ ] {Criterion — test name or command}
+
+**Context:** {Why this bug exists. How it was discovered. 2-4 sentences.}
+
+---
+
 ## 1. Root Cause Analysis
+
+- **Symptom**: {What was observed}
+- **Proximate cause**: {What code produced the wrong behavior}
+- **Root cause**: {Why — the architectural/logical flaw}
+- **Blast radius**: {What else is affected}
+- **Affected files**:
+  - `{file}` — {what changes and why}
+
+**Reference implementations** (if applicable):
+- **{Language}** `{file}`: {How they handle this case}
+
+---
+
 ## 2. TDD — Test Matrix
+
+### Exact failing case
+- [ ] {From the repro}
+
+### Edge cases
+- [ ] {Boundary conditions}
+
+### Cross-type coverage (if type-dependent)
+- [ ] {Test each relevant type}
+
+### Cross-pattern coverage (if pattern-dependent)
+- [ ] {Test each relevant pattern}
+
+### Cross-feature interactions
+- [ ] {Test interaction with other features}
+
+### Semantic pin
+- [ ] {Test that ONLY passes with correct semantics}
+
+### Negative pin
+- [ ] {Test that REJECTS old/broken behavior}
+
+### Verify tests fail before fix
+- [ ] All new tests fail against current code
+
+---
+
 ## 3. Implementation
+
+- [ ] {Fix approach with code examples}
+
+---
+
 ## 4. Completion Checklist
+
+- [ ] All new tests pass unchanged after fix
+- [ ] Matrix completeness verified
+- [ ] Debug AND release builds pass
+- [ ] Interpreter and LLVM produce identical results (dual-execution parity)
+- [ ] `` zero leaks (for memory-touching fixes)
+- [ ] `timeout 150 cargo test --all` green
+- [ ] `timeout 150 cargo clippy --all -- -D warnings` green
+- [ ] `cargo test -p {affected_crate}` green
+- [ ] `/commit-push` — commit all changes before review
+- [ ] Bug entry updated: `- [x]` with resolution
+- [ ] Fix section status → `complete`
+- [ ] Bug-tracker overview open bug count updated
+- [ ] `/tpr-review` passed (critical/high: MANDATORY; medium: expected; low: recommended but not required)
+- [ ] `/impl-hygiene-review` passed — AFTER TPR (critical/high: MANDATORY; medium: recommended; low: optional)
+- [ ] `/improve-tooling` retrospective completed — MANDATORY at fix close, after both reviews are clean. Reflect on the bug-finding journey: which `diagnostics/` scripts you ran, where you added ad-hoc `dbg!`/`tracing` calls during root cause analysis, where the test failure messages were unhelpful, where the matrix tests were tedious to write because helpers were missing. Bug fixes are the richest source of tooling gaps because you've just spent time fighting the diagnostic surface — capture every gap you noticed. Implement every accepted improvement NOW (zero deferral) and commit each via SEPARATE `/commit-push`. Especially valuable: instrumentation/logging that would have made the root cause obvious in 1 minute instead of 30, and matrix-test helpers that future fix sections will reuse.
+
+**Exit Criteria:** {Measurable proof of completion with test names and commands.}
 ```
 
 ### Key Differences from Plan Sections
@@ -693,24 +878,27 @@ third_party_review:
 | Location | `plans/{plan}/section-NN-*.md` | `plans/bug-tracker/fix-BUG-XX-NNN.md` |
 | Scope | Feature/subsystem | Single bug or cluster |
 | Subsections | Multiple ({NN}.1, {NN}.2, ...) | Four fixed sections (RCA, TDD, Impl, Checklist) |
-| Research | Multi-pass | Focused investigation |
+| Research | Multi-pass (4 passes, agents) | Focused investigation |
 | TPR checkpoints | After every 2-3 subsections | Final only (unless complex) |
 | {NN}.R section | Reserved for TPR findings | TPR findings go in completion checklist |
 | Overview sync | Mission criteria, dependency graph | Bug count in overview, entry marked resolved |
 
-### When to Escalate from `/fix-bug` to `/create-plan`
+### When to Escalate to a Full Plan
 
-If during `/fix-bug` investigation (Phase 1.5 — Scope Assessment) you discover the bug requires:
-- Changes to 4+ files across multiple crates/subsystems
-- Architectural change or redesigning an existing system (e.g., reworking the render pipeline, replacing the snapshot transport, restructuring widget propagation)
-- New abstractions, new pipeline passes, or new data structures
+If during `/fix-bug` investigation you discover the bug requires:
+- Changes to 5+ files across 3+ crates
+- New data types, pipeline stages, or architectural changes
 - Work that naturally decomposes into 3+ distinct subsections
-- A TDD matrix you can't write because the fix approach itself is unclear
+- Changes that affect multiple other plans
 
-...then escalate to `/create-plan` instead. The fix-bug Phase 1 investigation becomes the research input for the plan, and the bug entry gets a `Escalated to plan: plans/{plan-name}/` note. See `/fix-bug` for the full escalation protocol.
+...then escalate to `/create-plan` instead. The fix section becomes the research input for the plan.
 
 ---
 
 ## Reference
 
-See the roadmap (`plans/roadmap/`) as a working example of this schema in use.
+See `plans/completed/codegen-purity/` for a canonical example:
+- `00-overview.md` — Mission, architecture, dependency graph, phased sequence, metrics
+- `index.md` — Keyword clusters for all 10 sections
+- `section-01-block-merging.md` — Deep design decisions with options/trade-offs
+- `section-10-verification.md` — Comprehensive test matrix and exit criteria

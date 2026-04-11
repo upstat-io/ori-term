@@ -1,0 +1,63 @@
+{
+  "$comment": "Per-project tailoring config for /sync-from-orilang. Committed to git so all developers share the same sync rules. Edit freely \u2014 overrides the defaults from the global skill manifest.",
+  "project_type": "rust",
+  "project_name": "ori_term",
+  "substitutions": {
+    "$comment": "Defaults for project_type='rust' are applied automatically from rust.json. Add overrides here; they win."
+  },
+  "include": {
+    "$comment": "What to pull from canonical. If a category is missing, defaults to 'all tailorable + all portable from that category'.",
+    "skills": [
+      "add-bug",
+      "fix-bug",
+      "fix-next-bug",
+      "continue-roadmap",
+      "create-plan",
+      "plan-audit",
+      "impl-hygiene-review",
+      "improve-tooling",
+      "tpr-review",
+      "tp-help",
+      "review-work",
+      "verify-tpr",
+      "dual-tpr"
+    ],
+    "rules": [
+      "impl-hygiene.md",
+      "tests.md",
+      "proposals.md"
+    ],
+    "hooks": [
+      "block-banned-commands.sh",
+      "verify-hook.sh",
+      "classify-review-command.py",
+      "shell_lex.py"
+    ],
+    "commands": [
+      "review-plan.md",
+      "review-work.md",
+      "commit-push.md",
+      "pr-main.md",
+      "tp-help.md",
+      "independent-review.md",
+      "review-bugs.md"
+    ]
+  },
+  "exclude": {
+    "$comment": "Wins over include. Use to drop specific items even if they're in include.",
+    "skills": [],
+    "rules": [],
+    "hooks": [],
+    "commands": []
+  },
+  "$preserve_comment": "Glob patterns under .claude/ to LEAVE UNTOUCHED even if sync would overwrite. Project-local customizations belong here.",
+  "preserve": [
+    ".claude/rules/project-specific-*.md",
+    ".claude/skills/project-*/",
+    ".claude/settings.local.json"
+  ],
+  "post_sync": {
+    "$comment": "Optional commands to run after a successful sync. Useful for re-running hygiene scripts, re-indexing rules, etc.",
+    "commands": []
+  }
+}
