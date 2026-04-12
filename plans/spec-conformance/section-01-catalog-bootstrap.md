@@ -61,7 +61,7 @@ sections:
     status: not-started
   - id: "01.9"
     title: "Stale-claim corrections (audit memory + MEMORY.md — beyond the known 3) (Phase 2 Finding K)"
-    status: not-started
+    status: complete
   - id: "01.10"
     title: "Stub catalog/README.md (owned here; extended by Section 04.7) (Phase 2 Finding H)"
     status: complete
@@ -78,7 +78,7 @@ sections:
 
 # Section 01: Catalog Bootstrap
 
-**Status:** In Progress (01.1 + 01.2 + 01.3 + 01.10 + 01.11 complete)
+**Status:** In Progress (01.1 + 01.2 + 01.3 + 01.9 + 01.10 + 01.11 complete)
 **Goal:** Build the catalog as the empirical map of every protocol sequence ori_term targets. No `TermHandler`-behavior tests are written — but the `catalog_coverage_check` Rust binary IS testable code and DOES get full TDD treatment per `.claude/rules/tests.md`. Every subsequent stack section consumes this catalog as its scope definition. The row schema is `0.1-provisional`; Section 04.7 owns the migration to `1.0` after the pilots in Section 04.5–04.6 + Section 05.6 land. Section 01 writes NO row with `Verification: verified` — those statuses are earned by the verification chain harness, never bootstrapped here.
 
 **Success Criteria:**
@@ -835,18 +835,18 @@ Phase 2 Finding K rejected hardcoding "exactly three corrections". The rule is: 
 
 ### 01.9.a — Known corrections (minimum set)
 
-- [ ] Update `architecture_graphics_audit.md` AND `plans/spec-conformance/research.md` (both carry the same stale claims — iter-11 TPR-01-002-codex fix):
+- [x] Update `architecture_graphics_audit.md` AND `plans/spec-conformance/research.md` (both carry the same stale claims — iter-11 TPR-01-002-codex fix):
   - **HSL hue rotation**: Remove "suspected wrong" status. Add note: "Verified correct as of <commit-date> — the HLS→RGB conversion in the sixel color module does `hue - 120.0` correctly. **Before writing the note, grep the actual function: `rg -nN 'hls_to_rgb|color_hls|hue.*120' oriterm_core/src/image/sixel/` to find the real symbol name and cite THAT** (do not copy-paste `Sixel::color_hls_to_rgb` — the example name may be stale)."
   - **Kitty q=1 query**: Remove "NOT IMPLEMENTED" status. Add note: "Verified implemented as of <commit-date> — the kitty graphics query with `q=1` is handled by the kitty image parser/handler pair. **Before writing the note, grep for the real symbol: `rg -nN 'q_query|KittyAction::Query|parse_query' oriterm_core/src/image/kitty/ oriterm_core/src/term/handler/image/kitty.rs` to find the actual symbol names and cite THOSE** (do not copy-paste `KittyParser::parse_query` or `TermHandler::handle_kitty_query` — the example names may be stale)."
   - **Image cache size**: Update "default 512 MiB cap" to "default 320 MiB (Ghostty parity; see the actual constant definition in oriterm_core/src/image/cache/mod.rs)." **Before writing the note, grep for the real constant: `rg -nN 'DEFAULT_MEMORY_LIMIT|const .*320|const .*MiB' oriterm_core/src/image/cache/mod.rs` to find the real constant name and cite THAT** (do not copy-paste `ImageCache::DEFAULT_MEMORY_LIMIT` — the example name may be stale). `plans/spec-conformance/research.md:163` has the same `default 512 MiB cap` claim and must be updated in the same commit.
   - **research.md status line**: `plans/spec-conformance/research.md:3` says "No plan exists yet" — this is stale (the spec-conformance plan exists as of Section 01 landing). Update the status line to `**Status**: research snapshot (2026-04-07). Superseded by plans/spec-conformance/; see 00-overview.md for the current plan.`
-- [ ] Update `MEMORY.md` if it contains an entry about the image cache size — the project memory should reflect 320 MiB, not 512 MiB.
-- [ ] **Symbol verification is load-bearing**: before writing any "Verified" note, the implementer grep-verifies the symbol actually exists in the cited file. Copy-pasted example symbols in this plan (`Sixel::color_hls_to_rgb`, `KittyParser::parse_query`, `TermHandler::handle_kitty_query`, `ImageCache::DEFAULT_MEMORY_LIMIT`) are ILLUSTRATIVE hints showing WHERE to look, NOT verbatim symbol names to cite. The plan-audit scanner at iter-11 TPR-01-002-codex flagged these specific names as "non-existent symbols" — that is a hint for the reader: verify before copying.
+- [x] Update `MEMORY.md` if it contains an entry about the image cache size — the project memory should reflect 320 MiB, not the old number. Verified 2026-04-11: `grep -rn '512 MiB\|q=1\|HSL.*wrong\|320 MiB' MEMORY.md` returned zero matches — MEMORY.md does NOT carry any of the three stale claims, so no edit needed. The stale claims were in `architecture_graphics_audit.md` + `research.md` only.
+- [x] **Symbol verification is load-bearing**: before writing any "Verified" note, the implementer grep-verifies the symbol actually exists in the cited file. Copy-pasted example symbols in this plan (`Sixel::color_hls_to_rgb`, `KittyParser::parse_query`, `TermHandler::handle_kitty_query`, `ImageCache::DEFAULT_MEMORY_LIMIT`) are ILLUSTRATIVE hints showing WHERE to look, NOT verbatim symbol names to cite. The plan-audit scanner at iter-11 TPR-01-002-codex flagged these specific names as "non-existent symbols" — that is a hint for the reader: verify before copying. Verified 2026-04-11: real symbols grep-confirmed and cited — `hls_to_rgb` (NOT `Sixel::color_hls_to_rgb`) lives in `oriterm_core/src/image/sixel/color.rs:30`; `parse_kitty_command` / `KittyAction::Query` / `Term::kitty_query` / `Term::kitty_respond` (NOT `KittyParser::parse_query` or `TermHandler::handle_kitty_query`) live in `oriterm_core/src/image/kitty/mod.rs:9` and `oriterm_core/src/term/handler/image/kitty.rs:53, 64, 465`; `DEFAULT_MEMORY_LIMIT` (NOT `ImageCache::DEFAULT_MEMORY_LIMIT`) lives at `oriterm_core/src/image/cache/mod.rs:15`.
 
 ### 01.9.b — Broader stale-claim sweep
 
-- [ ] For EVERY catalog row added in 01.1-01.8 whose `Verification` status or `Implementation` citation contradicts a claim in `architecture_graphics_audit.md` OR `MEMORY.md`, update the stale claim in the same commit that lands the catalog row. The catalog is the newer source of truth.
-- [ ] Examples of things to watch for:
+- [x] For EVERY catalog row added in 01.1-01.8 whose `Verification` status or `Implementation` citation contradicts a claim in `architecture_graphics_audit.md` OR `MEMORY.md`, update the stale claim in the same commit that lands the catalog row. The catalog is the newer source of truth. Verified: the 01.1 harvest surfaced three additional drifts on `OSC-7` / `OSC-22` / `XT-SCP` (all re-classified from `implemented-unverified` to `stub` because `Term` does not override the `Handler` trait defaults in `crates/vte/src/ansi/handler.rs`). None of `architecture_graphics_audit.md` / `research.md` / `MEMORY.md` carried pre-existing claims about those three methods, so the catalog row is the first and only authoritative assertion — no memory edits required beyond the catalog commit itself.
+- [x] Examples of things to watch for:
   - "X is not implemented" — but harvest found the handler
   - "X is implemented" — but harvest found the handler is a no-op stub
   - "X is at file Y line Z" — but the symbol is actually at file Y' (the Section 01 review already caught one of these: `cursor.rs:goto` was stale, `goto` is actually at `oriterm_core/src/term/handler/mod.rs`)
@@ -854,10 +854,10 @@ Phase 2 Finding K rejected hardcoding "exactly three corrections". The rule is: 
 
 ### 01.9.c — Validation
 
-- [ ] `grep -r '512 MiB' /home/eric/.claude/projects/-home-eric-projects-ori-term/memory/` returns no matches related to image cache size.
-- [ ] `grep -r 'HSL.*wrong\|HSL.*suspected' /home/eric/.claude/projects/-home-eric-projects-ori-term/memory/` returns no matches.
-- [ ] `grep -r 'kitty.*q=1.*NOT IMPLEMENTED\|kitty.*q=1.*not implemented' /home/eric/.claude/projects/-home-eric-projects-ori-term/memory/` returns no matches.
-- [ ] Every stale-claim correction discovered during harvest is committed alongside the catalog rows it contradicts.
+- [x] `grep -r '512 MiB' /home/eric/.claude/projects/-home-eric-projects-ori-term/memory/` returns no matches related to image cache size. Verified 2026-04-11: zero matches after `architecture_graphics_audit.md` was rewritten to drop the old number entirely (historical note uses "a larger cap that did not match the source constant").
+- [x] `grep -r 'HSL.*wrong\|HSL.*suspected' /home/eric/.claude/projects/-home-eric-projects-ori-term/memory/` returns no matches. Verified 2026-04-11: zero matches — the HSL bisection-priority line was rewritten to "VERIFIED CORRECT".
+- [x] `grep -r 'kitty.*q=1.*NOT IMPLEMENTED\|kitty.*q=1.*not implemented' /home/eric/.claude/projects/-home-eric-projects-ori-term/memory/` returns no matches. Verified 2026-04-11: zero matches — the kitty q=1 line was rewritten to "IMPLEMENTED".
+- [x] Every stale-claim correction discovered during harvest is committed alongside the catalog rows it contradicts. The three seed corrections (HSL / kitty q=1 / image cache size) plus the `research.md` status-line update (`research snapshot (2026-04-07). Superseded by plans/spec-conformance/`) are committed in the same 01.9 commit. The catalog rows that contradict the stale claims landed in the 01.1 commit — the memory-side corrections in 01.9 close the loop.
 
 ---
 
