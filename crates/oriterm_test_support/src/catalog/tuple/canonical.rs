@@ -155,7 +155,7 @@ fn parse_osc(rest: &str) -> Option<Tuple> {
         if i == 0 {
             canonical_parts.push(p.to_string());
         } else {
-            canonical_parts.push(placeholder_for_osc_part(parts[0], i, p));
+            canonical_parts.push(osc_placeholder(parts[0], i, p));
         }
     }
     Some(Tuple::new(
@@ -166,7 +166,12 @@ fn parse_osc(rest: &str) -> Option<Tuple> {
     ))
 }
 
-fn placeholder_for_osc_part(numeric_id: &str, idx: usize, raw: &str) -> String {
+/// Normalize an OSC payload part to a canonical placeholder string.
+///
+/// This is the SSOT for OSC parameter normalization — used by both
+/// the catalog canonicalizer (`canonical_tuple`) and the capture
+/// extractor (`extract_capture_tuples`).
+pub fn osc_placeholder(numeric_id: &str, idx: usize, raw: &str) -> String {
     match numeric_id {
         "0" | "1" | "2" | "7" | "22" | "50" | "l" | "L" => "text".to_string(),
         "4" => match idx {

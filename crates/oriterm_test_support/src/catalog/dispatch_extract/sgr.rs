@@ -8,18 +8,10 @@
 //! the SGR code.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use super::super::tuple::{Category, Tuple};
-use super::{DispatchExtractError, parse_rust, read_rust};
 
-pub(super) fn extract_sgr_params(
-    path: &Path,
-    out: &mut BTreeSet<Tuple>,
-) -> Result<(), DispatchExtractError> {
-    let source = read_rust(path)?;
-    let file = parse_rust(path, &source)?;
-
+pub(super) fn extract_sgr_params(file: &syn::File, out: &mut BTreeSet<Tuple>) {
     // Find the `attrs_from_sgr_parameters` function and walk its
     // `match param { [0] => ..., ... }` to extract every supported
     // numeric SGR parameter.
@@ -30,8 +22,6 @@ pub(super) fn extract_sgr_params(
         }
         collect_sgr_numeric_from_block(&func.block, out);
     }
-
-    Ok(())
 }
 
 fn collect_sgr_numeric_from_block(block: &syn::Block, out: &mut BTreeSet<Tuple>) {

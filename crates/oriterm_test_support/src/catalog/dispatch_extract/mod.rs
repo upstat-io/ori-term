@@ -97,8 +97,12 @@ impl std::error::Error for DispatchExtractError {
 pub fn extract_dispatch_tuples(workspace_root: &Path) -> Result<Vec<Tuple>, DispatchExtractError> {
     let mut tuples: BTreeSet<Tuple> = BTreeSet::new();
 
+    // Parse csi.rs once and pass the AST to both CSI and SGR walkers.
     let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi.rs");
-    csi::extract_csi_arms(&csi_path, &mut tuples)?;
+    let csi_source = read_rust(&csi_path)?;
+    let csi_file = parse_rust(&csi_path, &csi_source)?;
+    csi::extract_csi_arms(&csi_file, &mut tuples);
+    sgr::extract_sgr_params(&csi_file, &mut tuples);
 
     let osc_path = workspace_root.join("crates/vte/src/ansi/dispatch/osc.rs");
     osc::extract_osc_arms(&osc_path, &mut tuples)?;
@@ -106,10 +110,10 @@ pub fn extract_dispatch_tuples(workspace_root: &Path) -> Result<Vec<Tuple>, Disp
     let mod_path = workspace_root.join("crates/vte/src/ansi/dispatch/mod.rs");
     esc_dcs::extract_mod_arms(&mod_path, &mut tuples)?;
 
-    // SGR numeric universe — every numeric param handled by
-    // `attrs_from_sgr_parameters`. We reparse csi.rs since the
-    // function lives there.
-    sgr::extract_sgr_params(&csi_path, &mut tuples)?;
+    // APC dispatch is unconditional — `Performer::apc_end` calls
+    // `handler.apc_dispatch(&payload)` for every APC sequence.
+    // This isn't a match arm, so the visitors don't catch it.
+    tuples.insert(Tuple::new(Category::Apc, Vec::<u8>::new(), "Pt", "ST"));
 
     // Filter out DECSET/DECRST tuples — those come exclusively from
     // `extract_namedprivatemode_tuples`. The disjointness invariant

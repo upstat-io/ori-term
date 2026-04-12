@@ -69,15 +69,6 @@ pub fn build_dispatch_map(
     Ok(map)
 }
 
-/// Classify a single tuple against the dispatch map.
-pub fn classify(
-    workspace_root: &Path,
-    tuple: &Tuple,
-) -> Result<Classification, DispatchExtractError> {
-    let map = build_dispatch_map(workspace_root)?;
-    Ok(classify_from_map(&map, tuple))
-}
-
 /// Classify a tuple using a pre-built map (avoids rebuilding per
 /// tuple when classifying a batch).
 ///
@@ -149,6 +140,20 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
     {
         let probe = Tuple::new(Category::Csi, Vec::<u8>::new(), "0", "m");
         if let Some(handlers) = map.get(&probe) {
+            return Classification::Dispatched {
+                handlers: handlers.iter().cloned().collect(),
+            };
+        }
+    }
+
+    // APC normalization: the catalog uses `(APC, [_G], key-value, ST)`
+    // for kitty graphics, but APC dispatch is unconditional — the
+    // handler gets the raw payload and discriminates inside. The
+    // dispatch map has the generic `(APC, [], Pt, ST)`. Normalize
+    // any APC tuple to the generic form.
+    if tuple.category == Category::Apc {
+        let generic = Tuple::new(Category::Apc, Vec::<u8>::new(), "Pt", "ST");
+        if let Some(handlers) = map.get(&generic) {
             return Classification::Dispatched {
                 handlers: handlers.iter().cloned().collect(),
             };

@@ -13,7 +13,12 @@ mod canonical;
 
 use core::fmt::{self, Display, Write as _};
 
-pub use canonical::canonical_tuple;
+pub use canonical::{canonical_tuple, osc_placeholder};
+
+/// Tuple signature for coverage comparison: (`category`, `sorted
+/// intermediates`, `final_byte`). Params are excluded because they
+/// differ between catalog, dispatch, and capture canonical forms.
+pub type TupleSig = (String, Vec<u8>, String);
 
 /// Escape sequence category — the top-level discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -117,6 +122,30 @@ impl Tuple {
         }
     }
 
+    /// Normalize this tuple to its comparison signature.
+    ///
+    /// `TupleSig` is `(category_string, sorted_intermediates, final_byte)`.
+    /// For OSC and DCS, `ST` terminators are normalized to `BEL` so that
+    /// `BEL`-vs-`ST` differences do not cause false mismatches.
+    #[must_use]
+    pub fn signature(&self) -> TupleSig {
+        let final_byte = match self.category {
+            Category::Osc | Category::Dcs => {
+                if self.final_byte == "ST" {
+                    "BEL".to_string()
+                } else {
+                    self.final_byte.clone()
+                }
+            }
+            _ => self.final_byte.clone(),
+        };
+        (
+            format!("{}", self.category),
+            self.intermediates.clone(),
+            final_byte,
+        )
+    }
+
     /// Parse a tuple from the canonical [`Display`] form.
     ///
     /// ```text
@@ -197,3 +226,6 @@ impl Display for Tuple {
         write!(f, "], {}, {})", self.params, self.final_byte)
     }
 }
+
+#[cfg(test)]
+mod tests;

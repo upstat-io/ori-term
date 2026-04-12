@@ -40,6 +40,23 @@ pub struct Row {
     pub line_number: usize,
 }
 
+impl Row {
+    /// Returns `true` when this row has a real spec source — not
+    /// `MISSING`, not a peer terminal reference, not the `—`
+    /// placeholder.
+    ///
+    /// This is the SSOT for the "spec-sourced" filter used by the
+    /// reconciler and the `extract-top-down-tuples` subcommand.
+    #[must_use]
+    pub fn has_spec_source(&self) -> bool {
+        let src = self.spec_source.to_lowercase();
+        !src.contains("missing")
+            && !src.contains("wezterm")
+            && !self.spec_source.starts_with('—')
+            && !self.spec_source.starts_with("—") // em dash (UTF-8)
+    }
+}
+
 /// Verification status — constrained enumeration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Verification {

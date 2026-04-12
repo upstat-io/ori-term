@@ -227,3 +227,6 @@ fn matches_header(cells: &[String]) -> bool {
         .zip(CATALOG_COLUMNS.iter())
         .all(|(got, want)| got.trim() == *want)
 }
+
+#[cfg(test)]
+mod tests;
