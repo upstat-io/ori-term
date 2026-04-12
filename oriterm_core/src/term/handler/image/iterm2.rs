@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use log::warn;
 
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::grid::StableRowIndex;
 use crate::image::iterm2::{Iterm2Image, SizeSpec, parse_iterm2_file};
 use crate::image::{
@@ -29,7 +29,7 @@ struct DisplaySizeParams {
     preserve_aspect: bool,
 }
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Parse and execute an iTerm2 File= image command.
     pub(in crate::term::handler) fn handle_iterm2_file(&mut self, params: &[&[u8]]) {
         if !self.image_protocol_enabled {

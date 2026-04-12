@@ -1,8 +1,8 @@
 //! Terminal state machine.
 //!
-//! `Term<T: EventListener>` owns two grids (primary + alternate), mode flags,
+//! `Term<S: EffectSink>` owns two grids (primary + alternate), mode flags,
 //! color palette, charset state, and processes escape sequences via the
-//! `vte::ansi::Handler` trait. Generic over `EventListener` for decoupling
+//! `vte::ansi::Handler` trait. Generic over `EffectSink` for decoupling
 //! from the UI layer.
 
 mod alt_screen;
@@ -26,7 +26,7 @@ use std::collections::{HashMap, VecDeque};
 use vte::ansi::KeyboardModes;
 
 use crate::color::Palette;
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::grid::{CursorShape, Grid, StableRowIndex};
 use crate::image::ImageCache;
 use crate::image::sixel::SixelParser;
@@ -106,15 +106,15 @@ bitflags::bitflags! {
 ///
 /// Owns two grids (primary + alternate screen), terminal mode flags, color
 /// palette, charset state, title, and keyboard mode stacks. Generic over
-/// `T: EventListener` so tests can use `VoidListener` while the real app
-/// routes events through winit.
+/// `S: EffectSink` so tests can use `VoidEffectSink` while the real app
+/// routes effects through a legacy adapter or queuing sink.
 #[derive(Debug)]
 #[allow(
     clippy::struct_excessive_bools,
     reason = "terminal state naturally has independent boolean flags \
               (selection_dirty, has_explicit_title, title_dirty)"
 )]
-pub struct Term<T: EventListener> {
+pub struct Term<S: EffectSink> {
     /// Primary grid (active when not in alt screen).
     grid: Grid,
     /// Alternate grid (active during alt screen; no scrollback).
@@ -153,8 +153,8 @@ pub struct Term<T: EventListener> {
     /// Kitty keyboard enhancement mode stack (inactive screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
     inactive_keyboard_mode_stack: VecDeque<KeyboardModes>,
-    /// Event sink for terminal events.
-    event_listener: T,
+    /// Effect sink for boundary-crossing side effects.
+    effect_sink: S,
     /// Set by content-modifying VTE handler operations (character printing,
     /// erase, insert/delete, scroll). Checked by the owning layer to decide
     /// whether to clear an active selection.
@@ -211,9 +211,9 @@ pub struct Term<T: EventListener> {
     deccolm_default_cols: usize,
 }
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Create a new terminal with the given dimensions and scrollback capacity.
-    pub fn new(lines: usize, cols: usize, scrollback: usize, theme: Theme, listener: T) -> Self {
+    pub fn new(lines: usize, cols: usize, scrollback: usize, theme: Theme, effect_sink: S) -> Self {
         Self {
             grid: Grid::with_scrollback(lines, cols, scrollback),
             alt_grid: None,
@@ -232,7 +232,7 @@ impl<T: EventListener> Term<T> {
             cursor_shape: CursorShape::default(),
             keyboard_mode_stack: VecDeque::new(),
             inactive_keyboard_mode_stack: VecDeque::new(),
-            event_listener: listener,
+            effect_sink,
             selection_dirty: false,
             prompt_state: PromptState::None,
             pending_marks: PendingMarks::empty(),
@@ -255,9 +255,9 @@ impl<T: EventListener> Term<T> {
         }
     }
 
-    /// Event listener for terminal events.
-    pub fn event_listener(&self) -> &T {
-        &self.event_listener
+    /// Effect sink for boundary-crossing side effects.
+    pub fn effect_sink(&self) -> &S {
+        &self.effect_sink
     }
 
     /// Whether bold text promotes ANSI colors 0–7 to bright 8–15.

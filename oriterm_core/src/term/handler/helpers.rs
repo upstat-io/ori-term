@@ -8,7 +8,7 @@ use std::cmp;
 use vte::ansi::{ClearMode, LineClearMode, NamedPrivateMode};
 
 use crate::cell::CellFlags;
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::grid::StableRowIndex;
 use crate::index::{Column, Line};
 use crate::term::{Term, TermMode};
@@ -100,7 +100,7 @@ pub(super) fn crate_version_number() -> usize {
     result
 }
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Try reverse wraparound: if cursor is at column 0 and the previous
     /// line was soft-wrapped, move cursor to the last column of that line.
     ///

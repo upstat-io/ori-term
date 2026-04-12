@@ -4,18 +4,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
-use oriterm_core::{Column, Line, Term, TermMode, Theme, VoidListener};
+use oriterm_core::effect::VoidEffectSink;
+use oriterm_core::{Column, Line, Term, TermMode, Theme};
 
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
 
-/// Helper: create a Term<VoidListener> with default dimensions.
-fn make_term() -> Term<VoidListener> {
-    Term::new(24, 80, 1000, Theme::default(), VoidListener)
+/// Helper: create a Term<VoidEffectSink> with default dimensions.
+fn make_term() -> Term<VoidEffectSink> {
+    Term::new(24, 80, 1000, Theme::default(), VoidEffectSink)
 }
 
 /// Helper: create a thread + handle pair with a no-op wakeup.
-fn make_pair() -> (PaneIoThread<VoidListener>, PaneIoHandle) {
+fn make_pair() -> (PaneIoThread<VoidEffectSink>, PaneIoHandle) {
     new_with_handle(IoThreadConfig {
         terminal: make_term(),
         mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
@@ -51,12 +52,12 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
 }
 
 /// Helper: create a `PaneIoThread` for synchronous testing (no spawning).
-fn make_sync_thread() -> PaneIoThread<VoidListener> {
+fn make_sync_thread() -> PaneIoThread<VoidEffectSink> {
     make_sync_thread_with_term(make_term())
 }
 
 /// Helper: create a `PaneIoThread` with a custom `Term` for synchronous testing.
-fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidListener> {
+fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEffectSink> {
     let rows = term.grid().lines() as u16;
     let cols = term.grid().cols() as u16;
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
@@ -82,7 +83,7 @@ fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidList
 }
 
 /// Helper: create a sync thread with a wakeup counter for testing.
-fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>) {
+fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU32>) {
     let wakeup_count = Arc::new(AtomicU32::new(0));
     let wakeup_clone = Arc::clone(&wakeup_count);
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
@@ -408,7 +409,7 @@ fn bytes_appear_in_terminal_grid() {
 #[test]
 fn handle_bytes_prunes_evicted_markers() {
     // Small grid: 5 lines, 10 scrollback — markers will be evicted quickly.
-    let term = Term::new(5, 80, 10, Theme::default(), VoidListener);
+    let term = Term::new(5, 80, 10, Theme::default(), VoidEffectSink);
     let mut t = make_sync_thread_with_term(term);
 
     // Insert a prompt marker.
@@ -581,7 +582,7 @@ fn produce_snapshot_fires_wakeup() {
 // --- Resize tests (Section 05) ---
 
 /// Helper: create a sync thread with a command sender for testing.
-fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoCommand>) {
+fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneIoCommand>) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let thread = PaneIoThread {

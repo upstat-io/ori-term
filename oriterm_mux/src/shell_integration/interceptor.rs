@@ -7,27 +7,26 @@
 //! (with proper URI parsing and percent-decoding) instead of through the
 //! high-level `Handler::set_working_directory`, which stores the raw URI.
 
-use oriterm_core::event::EventListener;
-use oriterm_core::{Notification, PromptState};
-
-use oriterm_core::Term;
+use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::effect::{Effect, HostEffect, PtyEffect, PtyWriteKind};
+use oriterm_core::{Notification, PromptState, Term};
 
 /// Raw VTE interceptor state.
 ///
-/// Borrows `Term<T>` fields mutably to update them in place. Runs on the
+/// Borrows `Term<S>` fields mutably to update them in place. Runs on the
 /// same locked terminal, on the same bytes, before the high-level processor.
-pub(crate) struct RawInterceptor<'a, T: EventListener> {
-    term: &'a mut Term<T>,
+pub(crate) struct RawInterceptor<'a, S: EffectSink> {
+    term: &'a mut Term<S>,
 }
 
-impl<'a, T: EventListener> RawInterceptor<'a, T> {
+impl<'a, S: EffectSink> RawInterceptor<'a, S> {
     /// Create a new interceptor targeting the given terminal.
-    pub(crate) fn new(term: &'a mut Term<T>) -> Self {
+    pub(crate) fn new(term: &'a mut Term<S>) -> Self {
         Self { term }
     }
 }
 
-impl<T: EventListener> vte::Perform for RawInterceptor<'_, T> {
+impl<S: EffectSink> vte::Perform for RawInterceptor<'_, S> {
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
         if params.is_empty() || params[0].is_empty() {
             return;
@@ -57,14 +56,15 @@ impl<T: EventListener> vte::Perform for RawInterceptor<'_, T> {
         if action == 'q' && intermediates == [b'>'] {
             let version = env!("CARGO_PKG_VERSION");
             let response = format!("\x1bP>|oriterm({version})\x1b\\");
-            self.term
-                .event_listener()
-                .send_event(oriterm_core::Event::PtyWrite(response));
+            self.term.effect_sink().push(Effect::Pty(PtyEffect::Write {
+                bytes: response.into_bytes(),
+                kind: PtyWriteKind::Other,
+            }));
         }
     }
 }
 
-impl<T: EventListener> RawInterceptor<'_, T> {
+impl<S: EffectSink> RawInterceptor<'_, S> {
     /// OSC 7: parse `file://hostname/path` URI and store the path.
     fn handle_osc7(&mut self, params: &[&[u8]]) {
         if params.len() < 2 {
@@ -78,8 +78,8 @@ impl<T: EventListener> RawInterceptor<'_, T> {
             self.term.set_has_explicit_title(false);
             self.term.mark_title_dirty();
             self.term
-                .event_listener()
-                .send_event(oriterm_core::Event::Cwd(path));
+                .effect_sink()
+                .push(Effect::Host(HostEffect::CwdSet { cwd: path }));
         }
     }
 
@@ -106,8 +106,8 @@ impl<T: EventListener> RawInterceptor<'_, T> {
                 self.term.set_prompt_state(PromptState::None);
                 if let Some(duration) = self.term.finish_command() {
                     self.term
-                        .event_listener()
-                        .send_event(oriterm_core::Event::CommandComplete(duration));
+                        .effect_sink()
+                        .push(Effect::Host(HostEffect::CommandComplete { duration }));
                 }
             }
             _ => {}
