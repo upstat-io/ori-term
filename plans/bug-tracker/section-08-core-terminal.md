@@ -43,6 +43,16 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Found: 2026-04-05 | Source: tpr-review (TPR iteration 4)
   Note: Active work in roadmap section 39 (Image Protocols) covers Kitty image support.
 
+- [ ] `[BUG-08-8][high]` **`kitty.rs` is 476 lines — BLOAT-adjacent; must split before Sections 12 / 13 implementation** — found by continue-roadmap.
+  Repro: `wc -l oriterm_core/src/term/handler/image/kitty.rs` prints `476`.
+  Detail: `oriterm_core/src/term/handler/image/kitty.rs` sits 24 lines below the 500-line hard limit defined in `.claude/rules/code-hygiene.md` §File Size (also ~26 lines above the ~450-line proactive-split threshold). Sections 12 (Sixel) and 13 (Kitty Graphics) in `plans/spec-conformance/` are explicitly blocked on splitting this file — starting their implementation work on a 476-line file guarantees a 500+ overflow as soon as new per-action code lands, which would violate the hard limit AND force a mid-section refactor at the worst time (feature work mixed with mechanical moves). This bug is orthogonal to `BUG-08-7`: that bug is about protocol-spec correctness of the delete-specifier arms (semantic); this bug is about file size / structural BLOAT (plumbing).
+  Proposed fix: extract per-action handlers into submodules at `oriterm_core/src/term/handler/image/kitty/` — `transmit.rs`, `place.rs`, `delete.rs`, `animate.rs`, `query.rs`, `frame_compose.rs`. Keep `kitty/mod.rs` as the dispatch entry point that reads `KittyCommand::action` and routes. Follow the sibling `tests.rs` pattern per `.claude/rules/test-organization.md`. Aim for every split file ≤ 200 lines.
+  Subsystem: `oriterm_core/src/term/handler/image/kitty.rs`
+  Found: 2026-04-11 | Source: continue-roadmap
+  Blocking consumers: `plans/spec-conformance/section-12-sixel.md` and `plans/spec-conformance/section-13-kitty-graphics.md`. Neither section's frontmatter `depends_on:` is edited (that field uses section-number grammar); the linkage lives in each section's body text as a `**Blocker note:**` paragraph AND as a completion-checklist entry in each section's own `## 12.N` / `## 13.N` block.
+  Reference rules: `.claude/rules/code-hygiene.md` §File Size.
+  Note: Active work in `plans/spec-conformance/` Section 01 (Catalog Bootstrap) discovered and filed this bug while harvesting the Kitty APC `_G` dispatch arms (Section 01.11). Sections 12 (Sixel) and 13 (Kitty Graphics) will consume the fix.
+
 - [x] `[BUG-08-3][low]` **vttest.rs exceeds 500-line file size limit (956 lines)** — found by tpr-review.
   Found: 2026-04-03 | Source: tpr-review
   Fixed: 2026-04-03 — Split into `tests/vttest/` directory with per-menu modules (main.rs, session.rs, pty_size.rs, menu1-8.rs). Largest file is 239 lines. All 29 tests pass. 207 snapshots regenerated under new module paths.

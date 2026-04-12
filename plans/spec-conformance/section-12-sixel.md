@@ -57,6 +57,8 @@ sections:
 
 **Context:** Pass 1 confirmed sixel parser, decoder, grid integration, and GPU rendering all exist. Section 04's pilot already verified one minimal scenario. This section drives every other catalog row. The HLS rotation bug suspected by the audit memory turned out to be CORRECT (`hue - 120.0` at color.rs:41 — verified by Pass 1), so no fix needed. Section 07's image lifecycle fix is a hard prerequisite for the lifecycle interaction tests.
 
+**Blocker note:** Additionally blocked by `BUG-08-8` (kitty.rs BLOAT split — 476 lines, ≤24 lines from the hard 500-line limit) — see `plans/bug-tracker/section-08-core-terminal.md` for the bug entry. Although BUG-08-8's fix target is `oriterm_core/src/term/handler/image/kitty.rs`, Sections 12 (Sixel) and 13 (Kitty Graphics) are the implementation consumers that MUST NOT begin implementation until the kitty.rs split lands — any new per-action code added on top of the current 476-line baseline would push the file through the 500-line hard limit defined in `.claude/rules/code-hygiene.md` §File Size. This blocker is intentionally NOT recorded in frontmatter `depends_on:` because that field takes section-number tokens, not bug-tracker IDs; `/continue-roadmap` Step 1.92 surfaces BUG-08-8 to implementers when Section 12 becomes focus. Section 12's own completion checklist (see `## 12.N` below) contains a scanner-parsed gate on BUG-08-8 closure.
+
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 05 (deterministic golden lane), Section 07 (image lifecycle fix), Section 08 (baseline correct).
@@ -143,6 +145,7 @@ For every parser-level catalog row (DCS q introducer, P1-P6 raster attrs, color 
 
 ## 12.N Completion Checklist
 
+- [ ] `BUG-08-8` (kitty.rs BLOAT split) is CLOSED in `plans/bug-tracker/section-08-core-terminal.md` — verified by grepping the bug entry for `[x]`. This gate is MANDATORY: Section 12 cannot close while `oriterm_core/src/term/handler/image/kitty.rs` remains above the 500-line hard limit in `.claude/rules/code-hygiene.md` §File Size. See the `**Blocker note:**` in the Context paragraph above for the full rationale. Until BUG-08-8 closes, implementers must not modify `oriterm_core/src/term/handler/image/kitty.rs`.
 - [ ] Failing test matrix written FIRST
 - [ ] **Matrix dimensions**: sixel feature × verification rung × lifecycle event
 - [ ] **Semantic pin**: sixel golden tests + lifecycle matrix are the regression guards

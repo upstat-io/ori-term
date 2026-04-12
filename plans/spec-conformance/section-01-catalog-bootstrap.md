@@ -67,7 +67,7 @@ sections:
     status: complete
   - id: "01.11"
     title: "Bug-tracker filing for kitty.rs BLOAT (blocks Sections 12/13) (Phase 1 Finding 7 + CLAUDE.md §Bug Discipline)"
-    status: not-started
+    status: complete
   - id: "01.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -78,7 +78,7 @@ sections:
 
 # Section 01: Catalog Bootstrap
 
-**Status:** In Progress (01.1 + 01.2 + 01.3 + 01.10 complete)
+**Status:** In Progress (01.1 + 01.2 + 01.3 + 01.10 + 01.11 complete)
 **Goal:** Build the catalog as the empirical map of every protocol sequence ori_term targets. No `TermHandler`-behavior tests are written — but the `catalog_coverage_check` Rust binary IS testable code and DOES get full TDD treatment per `.claude/rules/tests.md`. Every subsequent stack section consumes this catalog as its scope definition. The row schema is `0.1-provisional`; Section 04.7 owns the migration to `1.0` after the pilots in Section 04.5–04.6 + Section 05.6 land. Section 01 writes NO row with `Verification: verified` — those statuses are earned by the verification chain harness, never bootstrapped here.
 
 **Success Criteria:**
@@ -952,7 +952,7 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
 
 **Subsystem routing (Phase 4 TPR finding TPR-01-005-codex):** `oriterm_core/src/term/handler/image/kitty.rs` belongs to `oriterm_core` (the terminal emulation library — grid, VTE handler, image handling, teseq/tack/vttest conformance). Per `plans/bug-tracker/00-overview.md:41` AND the `/add-bug` skill's subsystem table at `.claude/skills/add-bug/SKILL.md:47-80`, the correct bug-tracker section is **section-08 Core Terminal**. The bug ID will therefore be `BUG-08-<ordinal>` (assigned by `/add-bug` when it counts existing bugs in section-08 and picks the next sequential ordinal). The earlier draft incorrectly used `BUG-01-*` — that namespace is reserved for UI Widgets bugs under `oriterm_ui/src/widgets/`.
 
-- [ ] Invoke `/add-bug` with:
+- [x] Invoke `/add-bug` with:
   - **Title**: `oriterm_core/src/term/handler/image/kitty.rs is 476 lines — BLOAT-adjacent; must split before Sections 12/13 implementation`
   - **Subsystem target**: `plans/bug-tracker/section-08-core-terminal.md` (Core Terminal — the owning section per the add-bug subsystem table)
   - **Severity**: `high` (Phase 4 iteration-3 TPR-01-001-codex fix — severity was `medium` in iteration 2 but `medium` is invisible to `/continue-roadmap` Step 1.92's "high or critical bugs are surfaced" rule. Upgraded to `high` because this bug is an absolute blocker on Sections 12 and 13: starting 12/13 implementation on a 476-line file guarantees a 500-line overflow, which violates `.claude/rules/code-hygiene.md` §File Size's hard limit. The `high` severity makes Step 1.92 surface the bug when Sections 12/13 become focus, and "high — should fix when touching adjacent code" per `.claude/skills/add-bug/SKILL.md` severity definitions is exactly the situation here.)
@@ -960,7 +960,7 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
   - **Reference rules**: `.claude/rules/code-hygiene.md` §File Size (500-line hard limit, ~450-line proactive split)
   - **Blocking sections**: reference `plans/spec-conformance/section-12-sixel.md` and `plans/spec-conformance/section-13-kitty-graphics.md` in the bug entry body — NOT in their frontmatter `depends_on:` (see below for why)
   - **Proposed fix**: Extract per-action handlers into submodules (e.g., `kitty/transmit.rs`, `kitty/place.rs`, `kitty/delete.rs`, `kitty/animate.rs`, `kitty/query.rs`, `kitty/frame_compose.rs`). Keep `kitty/mod.rs` as the dispatch entry point. Follow the sibling `tests.rs` pattern per `.claude/rules/test-organization.md`.
-- [ ] Record the bug ID returned by `/add-bug` (e.g., `BUG-08-<next-ordinal>`) in the Section 01 completion checklist (01.N) AND in the 01.11.c validation checklist.
+- [x] Record the bug ID returned by `/add-bug` (e.g., `BUG-08-<next-ordinal>`) in the Section 01 completion checklist (01.N) AND in the 01.11.c validation checklist. **Filed as `BUG-08-8`** (2026-04-11) — see `plans/bug-tracker/section-08-core-terminal.md`. Next-ordinal was 8 (existing open: 1/4/5/6/7; existing closed: 2/3).
 
 ### 01.11.a.i — Blocker linkage (inline body text, NOT `depends_on:`)
 
@@ -969,10 +969,10 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
 1. **Wrong namespace** — the frontmatter `depends_on:` field in `plans/spec-conformance/section-*.md` takes SECTION IDs like `"05"` or `"12"`, not bug-tracker bug IDs. `/continue-roadmap`'s dependency resolver reads `depends_on:` and tries to locate `section-<id>.md`; feeding it `BUG-08-NN` would make it look for `section-BUG-08-NN.md` and fail. Check `plans/spec-conformance/section-12-sixel.md` and `section-13-kitty-graphics.md` frontmatter for the existing `depends_on:` shape before editing.
 2. **Cross-plan dependency** — a bug-tracker bug is not a plan section dependency. The right linkage shape is the bug entry's own "Blocking sections" field (recorded in the body of `plans/bug-tracker/section-08-core-terminal.md`) plus an inline `**Blocker:**` note in Section 12 and Section 13's context paragraphs.
 
-- [ ] Add an inline `**Blocker note:**` in Section 12 (Sixel) and Section 13 (Kitty Graphics) BODY text — NOT the frontmatter. The edit is strictly scoped:
-  - In `plans/spec-conformance/section-12-sixel.md`: find the existing `**Depends on:**` or `**Context:**` paragraph and append a sentence: "Additionally blocked by `BUG-08-<ordinal>` (kitty.rs BLOAT split) — see `plans/bug-tracker/section-08-core-terminal.md` for the bug entry. Sections 12 and 13 must not begin implementation until the kitty.rs split lands."
-  - In `plans/spec-conformance/section-13-kitty-graphics.md`: identical inline note.
-- [ ] **Section 12 / Section 13 entry gates (Phase 4 iteration-2 TPR-01-004-codex + iteration-3 TPR-01-001-codex / TPR-01-002-gemini reality check):** The blocker is enforced through THREE layers, in order of machine-visibility:
+- [x] Add an inline `**Blocker note:**` in Section 12 (Sixel) and Section 13 (Kitty Graphics) BODY text — NOT the frontmatter. The edit is strictly scoped:
+  - In `plans/spec-conformance/section-12-sixel.md`: find the existing `**Depends on:**` or `**Context:**` paragraph and append a sentence: "Additionally blocked by `BUG-08-<ordinal>` (kitty.rs BLOAT split) — see `plans/bug-tracker/section-08-core-terminal.md` for the bug entry. Sections 12 and 13 must not begin implementation until the kitty.rs split lands." Delivered: Blocker note added between `**Context:**` and `**Reference implementations:**` paragraphs, citing BUG-08-8.
+  - In `plans/spec-conformance/section-13-kitty-graphics.md`: identical inline note. Delivered: same placement, and additionally cross-links BUG-08-7 (the orthogonal delete-specifier-mapping bug on the same file) so implementers see both bugs when reading Section 13's context.
+- [x] **Section 12 / Section 13 entry gates (Phase 4 iteration-2 TPR-01-004-codex + iteration-3 TPR-01-001-codex / TPR-01-002-gemini reality check):** The blocker is enforced through THREE layers, in order of machine-visibility:
 
   **Layer 1 — /continue-roadmap Step 1.92 bug-tracker gate (the real machine-visible enforcement).** When an implementer runs `/continue-roadmap` and the focus section is 12 (Sixel) or 13 (Kitty Graphics), Step 1.92 reads `plans/bug-tracker/section-08-core-terminal.md` (the Core Terminal subsystem, which owns `oriterm_core/src/term/handler/image/kitty.rs`) and flags `BUG-08-<ordinal>` as an open high-severity bug in the subsystem. Step 1.92's protocol says: "If `high` bugs exist: mention them — the user may want to address them". This is NOT a hard stop but it IS a machine-visible surfacing that an implementer will see before starting Section 12/13 work. **For this to trigger, 01.11.a below files `BUG-08-<ordinal>` at severity `high` (not `medium`).** The high severity is justified because the bug is an absolute blocker on Sections 12 and 13: starting 12/13 implementation on a 476-line file guarantees a 500-line overflow, which violates `.claude/rules/code-hygiene.md` §File Size's hard limit.
 
@@ -983,27 +983,27 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
   **Why not `success_criteria`?** (Phase 4 iteration-3 TPR-01-001-codex fix.) An earlier draft put the BUG-08 gate in Sections 12/13's `success_criteria`. The `/continue-roadmap` scanner (`.claude/skills/continue-roadmap/roadmap_scan.py:358-442`) does NOT parse `success_criteria` — it parses body checkboxes and `<!-- blocked-by:... -->` markers. Putting the gate in `success_criteria` would be invisible to the scanner, defeating the purpose. The three-layer approach above uses mechanisms the scanner DOES parse (Step 1.92 bug-tracker check) plus human-visible documentation (Layer 2) plus a scanner-enforced completion gate (Layer 3, via the `- [ ]` checklist item in the body).
 
   **Why not `<!-- blocked-by:BUG-08-NNN -->`?** (Phase 4 iteration-3 TPR-01-002-gemini fix.) `/continue-roadmap` Step 2 explicitly says "`<!-- blocked-by:X -->` where X is the blocker SECTION number" — X is an integer section number like `18`, not a bug-tracker ID. Feeding it `BUG-08-NNN` would make the scanner look for `section-BUG-08-NNN.md` and fail. Extending the plan schema to support bug-tracker dependency tokens is out of scope for Section 01 (it would require a scanner change plus schema doc updates). The three-layer approach above works within the existing grammar.
-- [ ] The bug's blocker relationship is tracked in THREE places that are all authoritative:
-  - **Layer 1** — Bug-tracker body: `plans/bug-tracker/section-08-core-terminal.md` lists Sections 12/13 as blocking consumers in the bug entry. `/continue-roadmap` Step 1.92 reads this layer when Sections 12/13 become focus.
-  - **Layer 2** — Plan sections 12/13 body: inline `**Blocker note:**` in each section's Context paragraph references `BUG-08-<ordinal>`. Human-visible convention.
-  - **Layer 3** — Plan sections 12/13 completion-checklist body: scanner-parsed `- [ ]` item in each section's `## 12.N` / `## 13.N` block gating section close on bug closure. The plan schema forbids marking a section `complete` while `- [ ]` items remain.
+- [x] The bug's blocker relationship is tracked in THREE places that are all authoritative:
+  - **Layer 1** — Bug-tracker body: `plans/bug-tracker/section-08-core-terminal.md` lists Sections 12/13 as blocking consumers in the bug entry. `/continue-roadmap` Step 1.92 reads this layer when Sections 12/13 become focus. Verified: BUG-08-8's body contains "Blocking consumers: `plans/spec-conformance/section-12-sixel.md` and `plans/spec-conformance/section-13-kitty-graphics.md`".
+  - **Layer 2** — Plan sections 12/13 body: inline `**Blocker note:**` in each section's Context paragraph references `BUG-08-<ordinal>`. Human-visible convention. Verified in both files.
+  - **Layer 3** — Plan sections 12/13 completion-checklist body: scanner-parsed `- [ ]` item in each section's `## 12.N` / `## 13.N` block gating section close on bug closure. The plan schema forbids marking a section `complete` while `- [ ]` items remain. Verified: 12.N and 13.N now contain `- [ ] BUG-08-8 (kitty.rs BLOAT split) is CLOSED ...` gate items at the top of each checklist.
   - None of these layers uses frontmatter `depends_on:` (section-number grammar) or `success_criteria` (not parsed by the scanner). See "Why not `success_criteria`?" and "Why not `<!-- blocked-by:BUG-08-NNN -->`?" above for the rationale.
-- [ ] Do NOT edit Section 12 or Section 13's frontmatter `depends_on:` arrays. Those arrays remain `["<section-number>"]`-shaped.
+- [x] Do NOT edit Section 12 or Section 13's frontmatter `depends_on:` arrays. Those arrays remain `["<section-number>"]`-shaped. Verified: `section-12-sixel.md` still has `depends_on: ["05", "07", "08"]`; `section-13-kitty-graphics.md` still has `depends_on: ["12"]`.
 
 ### 01.11.b — Related BLOAT NOTEs (informational only — no bug filed)
 
-- [ ] `crates/vte/src/ansi/dispatch/csi.rs` is 390 lines. Section 01 READS it read-only; any split is owned by Section 04 (which touches dispatch during pilot wiring) or by downstream stack sections. No bug filed in Section 01 — the file is not at the boundary yet and Section 01 does not modify it.
-- [ ] `oriterm_core/src/image/cache/mod.rs` is 436 lines. Same treatment — read-only here, split owned by Section 07 (Image Lifecycle Correctness).
-- [ ] `crates/vte/src/lib.rs` is ~895 lines and `crates/vte/src/tests.rs` is ~810 lines. These are VENDORED files per `.claude/rules/crate-boundaries.md` — the vendoring discipline says "treat as external dependency; upstream fixes first; minimal local patches." Section 01 READS these files for PM/SOS parser state harvest (01.1.e) but does NOT modify them. File-size discipline on vendored crates is NOT Section 01's scope — it belongs to whoever owns the vte fork relationship. No bug filed here.
-- [ ] `oriterm_core/src/term/handler/mod.rs` is 489 lines — at the 500-line boundary. Section 01 READS it read-only for handler symbol lookups (e.g., `TermHandler::goto` lives here, NOT in `cursor.rs` as the stale pre-rewrite citation claimed). The split is owned by Section 03 (Effect Boundary Migration, which refactors the handler tree) or Section 08 (ECMA-48 Baseline, which adds new handlers). Section 01 does not modify the file. File-a separate bug-tracker entry here would create artifact proliferation — the file is on Section 03's and Section 08's natural cut list. No separate bug filed BUT Section 01's close checklist (01.N) verifies the file has not crossed 500 during harvest; if it has, Section 01 files a follow-up bug.
-- [ ] `kitty.rs` at 476 lines is the only file that earns a filed bug from Section 01, because it is specifically the target of Sections 12 (Sixel) and 13 (Kitty Graphics) implementation work and starting from 476 lines guarantees a 500+ overflow.
+- [x] `crates/vte/src/ansi/dispatch/csi.rs` is 390 lines. Section 01 READS it read-only; any split is owned by Section 04 (which touches dispatch during pilot wiring) or by downstream stack sections. No bug filed in Section 01 — the file is not at the boundary yet and Section 01 does not modify it. Verified read-only.
+- [x] `oriterm_core/src/image/cache/mod.rs` is 436 lines. Same treatment — read-only here, split owned by Section 07 (Image Lifecycle Correctness). No bug filed.
+- [x] `crates/vte/src/lib.rs` is ~895 lines and `crates/vte/src/tests.rs` is ~810 lines. These are VENDORED files per `.claude/rules/crate-boundaries.md` — the vendoring discipline says "treat as external dependency; upstream fixes first; minimal local patches." Section 01 READS these files for PM/SOS parser state harvest (01.1.e) but does NOT modify them. File-size discipline on vendored crates is NOT Section 01's scope — it belongs to whoever owns the vte fork relationship. No bug filed here.
+- [x] `oriterm_core/src/term/handler/mod.rs` is 489 lines — at the 500-line boundary. Section 01 READS it read-only for handler symbol lookups (e.g., `TermHandler::goto` lives here, NOT in `cursor.rs` as the stale pre-rewrite citation claimed). The split is owned by Section 03 (Effect Boundary Migration, which refactors the handler tree) or Section 08 (ECMA-48 Baseline, which adds new handlers). Section 01 does not modify the file. File-a separate bug-tracker entry here would create artifact proliferation — the file is on Section 03's and Section 08's natural cut list. No separate bug filed BUT Section 01's close checklist (01.N) verifies the file has not crossed 500 during harvest; if it has, Section 01 files a follow-up bug. Verified 2026-04-11: `wc -l oriterm_core/src/term/handler/mod.rs` still prints `489` — no change during Section 01 harvest.
+- [x] `kitty.rs` at 476 lines is the only file that earns a filed bug from Section 01, because it is specifically the target of Sections 12 (Sixel) and 13 (Kitty Graphics) implementation work and starting from 476 lines guarantees a 500+ overflow. Filed as BUG-08-8.
 
 ### 01.11.c — Validation
 
-- [ ] The bug exists in `plans/bug-tracker/section-08-core-terminal.md` with a concrete `BUG-08-<ordinal>` ID (recorded in this section's completion checklist 01.N).
-- [ ] Sections 12 and 13 body text (NOT frontmatter) contain an inline `**Blocker note:**` referencing the `BUG-08-<ordinal>` ID and pointing at `plans/bug-tracker/section-08-core-terminal.md`.
-- [ ] Sections 12 and 13 frontmatter `depends_on:` arrays are UNCHANGED — they still contain only `"<section-number>"` values per the existing plan grammar.
-- [ ] The bug is NOT "deferred" — it is a filed, tracked artifact per CLAUDE.md §Bug Discipline.
+- [x] The bug exists in `plans/bug-tracker/section-08-core-terminal.md` with a concrete `BUG-08-<ordinal>` ID (recorded in this section's completion checklist 01.N). Filed as `BUG-08-8`.
+- [x] Sections 12 and 13 body text (NOT frontmatter) contain an inline `**Blocker note:**` referencing the `BUG-08-<ordinal>` ID and pointing at `plans/bug-tracker/section-08-core-terminal.md`. Verified.
+- [x] Sections 12 and 13 frontmatter `depends_on:` arrays are UNCHANGED — they still contain only `"<section-number>"` values per the existing plan grammar. Verified: Section 12 = `["05", "07", "08"]`, Section 13 = `["12"]`.
+- [x] The bug is NOT "deferred" — it is a filed, tracked artifact per CLAUDE.md §Bug Discipline. Verified.
 
 ---
 
