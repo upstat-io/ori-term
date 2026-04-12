@@ -1,0 +1,12 @@
+# aerc-startup.script
+# aerc's first-run wizard asks for an account. We type through
+# the welcome screen to hit the "no accounts" empty-state view,
+# then quit. Exercises aerc's box-drawing UI chrome + status bar.
+COMMAND: aerc
+WAIT: 1500ms
+KEY: Ctrl+c
+WAIT: 300ms
+KEY: :
+TEXT: quit
+KEY: Enter
+WAIT: 300ms
