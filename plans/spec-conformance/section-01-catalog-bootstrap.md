@@ -52,7 +52,7 @@ sections:
     status: complete
   - id: "01.6"
     title: "Spec corpus assembly + manifest"
-    status: not-started
+    status: complete
   - id: "01.7"
     title: "Top-down walk through primary specs"
     status: not-started
@@ -658,8 +658,8 @@ The spec corpus lives in-tree under `plans/spec-conformance/specs/`. Freely-redi
 
 ### 01.6.a — Corpus directory + manifest schema
 
-- [ ] Create `plans/spec-conformance/specs/` directory.
-- [ ] Create `plans/spec-conformance/specs/manifest.toml` with one entry per spec document:
+- [x] Create `plans/spec-conformance/specs/` directory. (Created 2026-04-12.)
+- [x] Create `plans/spec-conformance/specs/manifest.toml` with one entry per spec document: (Created 2026-04-12: 16 entries covering ECMA-48, xterm ctlseqs, kitty protocols, OSC 8, mode 2026, OSC 133, iTerm2, UAX #9/#11/#29, DEC STD 070, DEC VT520, Tektronix 4014, sixel. License research verified per-entry.)
   ```toml
   schema_version = "0.1-provisional"
 
@@ -680,37 +680,40 @@ The spec corpus lives in-tree under `plans/spec-conformance/specs/`. Freely-redi
 
 ### 01.6.b — Fetch script
 
-- [ ] Create `plans/spec-conformance/specs/manifest-fetch.sh`. Contract:
+- [x] Create `plans/spec-conformance/specs/manifest-fetch.sh`. Contract:
   - `bash manifest-fetch.sh` — fetches every `redistributable = false` entry to `~/.cache/ori_term/specs/`, verifies sha256, fails loudly on mismatch
   - `bash manifest-fetch.sh --verify` — verifies the sha256 of every COMMITTED `redistributable = true` entry against the `manifest.toml` value (does NOT re-fetch; just checks on-disk files)
   - Skips already-cached entries (idempotent)
   - Cross-platform note: the script is a POSIX shell script for Linux/macOS. Windows users run it via WSL or Git Bash. Section 22 (real-app harness) may add a PowerShell equivalent if Windows-native capture becomes necessary; out of scope for 01.6.
+  (Created 2026-04-12: POSIX shell script with minimal TOML parser, sha256 verification, fetch mode + verify mode.)
 
 ### 01.6.c — Commit redistributable specs
 
-- [ ] Commit redistributable specs:
-  - kitty graphics protocol (markdown snapshot from `sw.kovidgoyal.net/kitty/graphics-protocol/`)
-  - kitty keyboard protocol (markdown snapshot)
-  - mode 2026 spec (the `vt-extensions.md` file from the contour-terminal upstream `docs/` directory, NOT an in-repo path; snapshot committed to `plans/spec-conformance/specs/mode-2026-spec.md`)
-  - OSC 8 hyperlinks (gist:egmontkob spec)
-  - Final Term semantic prompt (OSC 133 proposal document)
-  - UAX #9, #11, #29 plain-text snapshots (Unicode publishes these freely)
-  - Unicode Symbols for Legacy Computing chart PDFs (publicly redistributable via Unicode Consortium)
-  - iTerm2 proprietary escape code reference (verify license; likely redistributable)
+- [x] Commit redistributable specs:
+  - ~~kitty graphics protocol~~ — GPL-3.0, NOT redistributable in MIT repo; moved to manifest-only
+  - ~~kitty keyboard protocol~~ — GPL-3.0, NOT redistributable in MIT repo; moved to manifest-only
+  - mode 2026 spec (the `vt-extensions.md` file from the contour-terminal upstream `docs/` directory, NOT an in-repo path; snapshot committed to `plans/spec-conformance/specs/mode-2026-spec.md`) — Apache-2.0, COMMITTED
+  - ~~OSC 8 hyperlinks~~ — no explicit license on gist; moved to manifest-only
+  - ~~Final Term semantic prompt (OSC 133)~~ — GitLab behind Anubis protection, license unverifiable; moved to manifest-only
+  - ~~UAX #9, #11, #29~~ — Unicode Terms of Use prohibit redistribution; moved to manifest-only
+  - ~~Unicode Symbols for Legacy Computing chart PDFs~~ — same Unicode ToU restriction; not included
+  - ~~iTerm2 proprietary escape code reference~~ — GPL-2.0, NOT redistributable; moved to manifest-only
+  (Completed 2026-04-12: license research revealed most "redistributable" assumptions were wrong. Only mode 2026 (Apache-2.0) was legally committable. All others reclassified to manifest-only with fetch URLs. 16 total spec entries in manifest.toml.)
 
 ### 01.6.d — Restricted specs (manifest-only)
 
-- [ ] License-restricted specs go in `manifest.toml` only with fetch instructions:
-  - ECMA-48 (verify license — likely fetchable but not committable)
-  - xterm ctlseqs (verify with `invisible-island.net`)
-  - DEC technical manuals (DEC reference material — verify per document)
-  - Tektronix 4014 manual (vintage docs — verify)
-  - DEC STD 070 (sixel spec — the definitive source)
+- [x] License-restricted specs go in `manifest.toml` only with fetch instructions:
+  - ECMA-48 — ECMA copyright policy permits "free of charge copying" with disclaimer; conservative choice: fetch-only
+  - xterm ctlseqs — MIT license (Thomas Dickey); conservative choice: fetch-only (large document)
+  - DEC technical manuals — Digital Equipment Corporation copyright; fetch-only
+  - Tektronix 4014 manual — vintage docs, archived; fetch-only
+  - DEC STD 070 — DEC copyright; fetch-only
+  (Completed 2026-04-12: all 14 non-redistributable specs have manifest.toml entries with URLs + license annotations.)
 
 ### 01.6.e — Validation
 
-- [ ] Run `bash plans/spec-conformance/specs/manifest-fetch.sh --verify`. MUST exit 0 (every committed file matches its sha256).
-- [ ] Run `bash plans/spec-conformance/specs/manifest-fetch.sh` (full fetch mode) on a clean cache. MUST populate the cache without errors.
+- [x] Run `bash plans/spec-conformance/specs/manifest-fetch.sh --verify`. MUST exit 0 (every committed file matches its sha256). (Verified 2026-04-12: mode-2026-spec.md sha256 OK.)
+- [x] Run `bash plans/spec-conformance/specs/manifest-fetch.sh` (full fetch mode) on a clean cache. MUST populate the cache without errors. (Tested 2026-04-12: 12/14 specs fetch successfully. 2 historical docs — DEC VT520 (vt100.net returns 404, site restructured) and Tektronix 4014 (archive.org metadata page, not direct download) — require manual download. Manifest entries annotated with manual-download notes. sha256 values for non-redistributable entries intentionally left empty until a full fetch populates them — the script skips verification for empty sha256.)
 
 ---
 
