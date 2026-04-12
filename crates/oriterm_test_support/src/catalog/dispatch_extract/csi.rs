@@ -74,8 +74,9 @@ fn collect_csi_recursive(pat: &syn::Pat, out: &mut Vec<Tuple>) {
                 Some(bytes) => bytes,
                 None if matches!(&tup.elems[1], syn::Pat::Ident(_)) => {
                     // Catch-all identifier pattern: `('c', intermediates)`.
-                    // Emit with empty intermediates to represent "any intermediates".
-                    Vec::new()
+                    // Use WILDCARD_INTERMEDIATES sentinel so classify can
+                    // distinguish this from explicit-empty `[]` patterns.
+                    super::WILDCARD_INTERMEDIATES.to_vec()
                 }
                 None => return,
             };
