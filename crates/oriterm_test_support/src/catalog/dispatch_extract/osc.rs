@@ -5,8 +5,7 @@
 //! emits one [`Tuple`] per recognized numeric-id byte string
 //! literal.
 //!
-//! Two entry points:
-//! - [`extract_osc_arms`] — tuples only (no handler method names)
+//! Entry point:
 //! - [`extract_osc_arms_with_handlers`] — tuples + handler methods
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,16 +13,6 @@ use std::path::Path;
 
 use super::super::tuple::{Category, Tuple};
 use super::{DispatchExtractError, extract_handler_methods, parse_rust, read_rust};
-
-pub(super) fn extract_osc_arms(
-    path: &Path,
-    out: &mut BTreeSet<Tuple>,
-) -> Result<(), DispatchExtractError> {
-    let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
-    extract_osc_arms_with_handlers(path, &mut map)?;
-    out.extend(map.into_keys());
-    Ok(())
-}
 
 pub(super) fn extract_osc_arms_with_handlers(
     path: &Path,

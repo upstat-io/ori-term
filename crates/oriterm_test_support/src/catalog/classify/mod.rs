@@ -125,19 +125,6 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
         }
     }
 
-    // SGR normalization: a capture tuple `(CSI, [], Ps, m)` should
-    // match any of the per-SGR-code tuples `(CSI, [], 0, m)`,
-    // `(CSI, [], 1, m)`, etc. in the dispatch map.
-    if tuple.category == Category::Csi && tuple.final_byte == "m" && tuple.intermediates.is_empty()
-    {
-        let probe = Tuple::new(Category::Csi, Vec::<u8>::new(), "0", "m");
-        if let Some(handlers) = map.get(&probe) {
-            return Classification::Dispatched {
-                handlers: handlers.iter().cloned().collect(),
-            };
-        }
-    }
-
     // APC normalization: the catalog uses `(APC, [_G], key-value, ST)`
     // for kitty graphics, but APC dispatch is unconditional — the
     // handler gets the raw payload and discriminates inside. The
