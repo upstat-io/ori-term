@@ -122,13 +122,19 @@ pub fn extract_dispatch_tuples(workspace_root: &Path) -> Result<Vec<Tuple>, Disp
                 && t.intermediates == [b'?']
                 && (t.final_byte == "h" || t.final_byte == "l"))
         })
-        .map(|mut t| {
-            // Replace wildcard sentinel with empty intermediates in
-            // the public output (sentinel is internal to classification).
+        .flat_map(|t| {
+            // Expand wildcard sentinel into the known intermediate
+            // variants for the public output. A catch-all arm like
+            // `('c', intermediates)` dispatches for empty, `>`, and `=`.
             if t.intermediates == WILDCARD_INTERMEDIATES {
-                t.intermediates = Vec::new();
+                vec![
+                    Tuple::new(t.category, Vec::new(), &t.params, &t.final_byte),
+                    Tuple::new(t.category, vec![b'>'], &t.params, &t.final_byte),
+                    Tuple::new(t.category, vec![b'='], &t.params, &t.final_byte),
+                ]
+            } else {
+                vec![t]
             }
-            t
         })
         .collect())
 }
