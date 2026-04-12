@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Effect Boundary Migration"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Introduce `oriterm_core::effect::{Effect, EffectSink}` as the production interface for boundary-crossing side effects, remove closures from `Event::ClipboardLoad`/`ColorRequest`, absorb `Term::pending_notifications` into the Effect channel, and migrate all current Event consumers via a one-phase `LegacyEventSink` adapter."
 success_criteria:
@@ -27,13 +27,13 @@ third_party_review:
 sections:
   - id: "03.1"
     title: "Define Effect type family in oriterm_core::effect"
-    status: not-started
+    status: complete
   - id: "03.2"
     title: "Implement EffectSink trait + concrete bulk-drain implementation"
-    status: not-started
+    status: complete
   - id: "03.3"
     title: "Expose snapshot_seqno for verification chain harness apex"
-    status: not-started
+    status: complete
   - id: "03.4"
     title: "LegacyEventSink adapter — bridge Effect to existing Event/MuxEvent consumers"
     status: not-started
@@ -62,11 +62,11 @@ sections:
 **Goal:** Replace ori_term's current `Event` enum with a properly-structured `Effect` family enum that lives in production at `oriterm_core::effect::*`. The migration removes closures from `ClipboardLoad`/`ColorRequest` (replaced with typed request/response via `ResponseToken`), absorbs `Term::pending_notifications` (the bypass channel) into the Effect drain, separates fire-and-forget host effects from request/response patterns, and exposes the existing `SnapshotDoubleBuffer::seqno` counter (already present, just not public) that section 04's verification chain harness will observe as the Mode 2026 commit apex. Migration is one-phase via a `LegacyEventSink` adapter — no big-bang refactor, no observable behavior change in existing tests.
 
 **Success Criteria:**
-- [ ] `oriterm_core::effect::Effect` family enum exists with all 5 sub-families
+- [x] `oriterm_core::effect::Effect` family enum exists with all 5 sub-families
 - [ ] No closures in handler files — `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
 - [ ] `Term::pending_notifications` bypass is gone — notifications flow through `EffectSink::push(Effect::Host(HostEffect::DesktopNotification {...}))`
 - [ ] `LegacyEventSink` adapter exists and bridges Effect to existing consumers
-- [ ] `SnapshotDoubleBuffer::seqno()` exposed and stable during Mode 2026 sync
+- [x] `SnapshotDoubleBuffer::seqno()` exposed and stable during Mode 2026 sync
 - [ ] All existing tests pass without modification (`./test-all.sh` green debug + release)
 - [ ] No regressions in `oriterm_core/tests/alloc_regression.rs` (closure removal must not introduce new allocations on hot paths)
 - [ ] Connects to mission criterion: **Effect/State separation enforced**
@@ -90,7 +90,7 @@ sections:
 
 Create the new `effect` module with the family enum and sub-types. Pure type definitions; no behavior. Per CLAUDE.md test organization rules, source code in `mod.rs` + leaf files, tests in sibling `tests.rs`.
 
-- [ ] Create `oriterm_core/src/effect/mod.rs` as the dispatch hub:
+- [x] Create `oriterm_core/src/effect/mod.rs` as the dispatch hub:
   ```rust
   //! Boundary-crossing terminal side effects.
   //!
@@ -119,7 +119,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
   #[cfg(test)]
   mod tests;
   ```
-- [ ] Create `oriterm_core/src/effect/effect.rs`:
+- [x] Create `oriterm_core/src/effect/effect.rs`:
   ```rust
   use super::families::*;
 
@@ -144,7 +144,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
       Presentation(PresentationEffect),
   }
   ```
-- [ ] Create `oriterm_core/src/effect/families/mod.rs` + per-family files:
+- [x] Create `oriterm_core/src/effect/families/mod.rs` + per-family files:
   ```rust
   mod pty;
   mod host;
@@ -161,7 +161,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
   pub use ui::UiEffect;
   pub use presentation::{PresentationEffect, SyncAbortReason};
   ```
-- [ ] Implement each family file. `pty.rs`:
+- [x] Implement each family file. `pty.rs`:
   ```rust
   #[derive(Debug, Clone)]
   pub enum PtyEffect {
@@ -193,7 +193,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
       Other,
   }
   ```
-- [ ] Implement `host.rs` (fire-and-forget effects):
+- [x] Implement `host.rs` (fire-and-forget effects):
   ```rust
   #[derive(Debug, Clone)]
   pub enum HostEffect {
@@ -247,7 +247,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
   pub struct AudioRequest { pub kind: AudioKind, pub params: AudioParams }
   // ... AudioKind, AudioParams, ClipboardSelection, etc.
   ```
-- [ ] Implement `host_request.rs` (typed request/response — replaces closures):
+- [x] Implement `host_request.rs` (typed request/response — replaces closures):
   ```rust
   use std::sync::{Arc, Mutex};
 
@@ -331,7 +331,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
 
   pub type ResponseFulfilled = ();
   ```
-- [ ] Implement `ui.rs`:
+- [x] Implement `ui.rs`:
   ```rust
   #[derive(Debug, Clone, Copy)]
   pub enum UiEffect {
@@ -339,7 +339,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
       MouseCursorDirty,
   }
   ```
-- [ ] Implement `presentation.rs` (the Mode 2026 / sync output gate observables):
+- [x] Implement `presentation.rs` (the Mode 2026 / sync output gate observables):
   ```rust
   #[derive(Debug, Clone, Copy)]
   pub enum PresentationEffect {
@@ -355,9 +355,9 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
       AppDisconnected,
   }
   ```
-- [ ] Add `pub mod effect;` to `oriterm_core/src/lib.rs`.
-- [ ] Create `oriterm_core/src/effect/tests.rs` with basic constructibility tests for each variant.
-- [ ] **Validation**: `cargo check -p oriterm_core` passes; new types compile without breaking the existing build.
+- [x] Add `pub mod effect;` to `oriterm_core/src/lib.rs`.
+- [x] Create `oriterm_core/src/effect/tests.rs` with basic constructibility tests for each variant.
+- [x] **Validation**: `cargo check -p oriterm_core` passes; new types compile without breaking the existing build.
 
 ---
 
@@ -371,7 +371,7 @@ The `EffectSink` trait is the production-side interface that the VTE handler emi
 
 **Semantic contract — `drain_into()` vs immediate forwarding**: `QueueingEffectSink` accumulates and `drain_into()` drains. `LegacyEventSink` forwards immediately and `drain_into()` is a no-op. These are DIFFERENT consumption models. To prevent consumers from depending on `drain_into()` semantics from an immediate-forward sink: the `EffectSink` trait doc explicitly states that `drain_into()` appends effects that were NOT already forwarded. Consumers that need guaranteed bulk access MUST use `QueueingEffectSink`. The `LegacyEventSink` adapter's `drain_into()` being a no-op is correct — effects were already forwarded as `Event`s. Add a `/// # Contract` doc section to the trait making this explicit.
 
-- [ ] Create `oriterm_core/src/effect/sink/mod.rs`:
+- [x] Create `oriterm_core/src/effect/sink/mod.rs`:
   ```rust
   use super::Effect;
 
@@ -439,15 +439,15 @@ The `EffectSink` trait is the production-side interface that the VTE handler emi
   - `take_pending() -> Vec<Effect>` replaced with `drain_into(&self, out: &mut Vec<Effect>)`. The old `std::mem::take(&mut *q)` drops `Vec` capacity every drain (blind spot #7: WASTE). The new `drain(..)` empties the queue but retains its capacity for the next push cycle. The consumer reuses its own `Vec<Effect>` across drain calls.
   - Uses `parking_lot::Mutex` (already in workspace deps) instead of `std::sync::Mutex` — no poisoning, better performance under contention.
   - `QueueingEffectSink` does NOT derive `Clone` — cloning a queue-backed sink would clone the `Arc` to the same queue, which is confusing. Consumers should hold a shared reference or pass by generic parameter.
-- [ ] Add to `oriterm_core/src/effect/sink/legacy.rs`: stub for `LegacyEventSink` (filled in 03.4).
-- [ ] Add `pub mod sink;` to `oriterm_core/src/effect/mod.rs`.
-- [ ] Sibling tests in `oriterm_core/src/effect/sink/tests.rs`:
+- [x] Add to `oriterm_core/src/effect/sink/legacy.rs`: stub for `LegacyEventSink` (filled in 03.4).
+- [x] Add `pub mod sink;` to `oriterm_core/src/effect/mod.rs`.
+- [x] Sibling tests in `oriterm_core/src/effect/sink/tests.rs`:
   - `queueing_sink_push_drain_roundtrip()`
   - `queueing_sink_drain_empty_does_not_allocate()` — uses counting allocator
   - `queueing_sink_retains_capacity_after_drain()` — push 10, drain, push 5, verify no reallocation
   - `void_sink_drops_effects_silently()`
   - `drain_into_appends_to_existing_vec()` — push 3, drain into vec with 2 existing items, verify vec has 5
-- [ ] **Validation**: `cargo test -p oriterm_core --lib effect::sink::tests` passes; alloc regression on drain-when-empty is 0.
+- [x] **Validation**: `cargo test -p oriterm_core --lib effect::sink::tests` passes; alloc regression on drain-when-empty is 0.
 
 ---
 
@@ -467,15 +467,15 @@ The original draft placed `snapshot_seqno` on `RenderableContent` and incremente
 
 The fix is to expose the existing seqno rather than create a duplicate:
 
-- [ ] Add `pub fn seqno(&self) -> u64` method to `SnapshotDoubleBuffer` that reads `slot.seqno` under the lock. This is the public API that section 04's harness and section 06's Mode 2026 tests will use.
-- [ ] Add `pub fn consumed_seqno(&self) -> u64` method for tests that need to verify the consumer side.
-- [ ] Verify that `maybe_produce_snapshot()` at `oriterm_mux/src/pane/io_thread/mod.rs:268-276` correctly gates on `sync_bytes_count > 0` (line 269), which means `flip_swap()` is never called during sync. The seqno is therefore stable during sync by construction — no additional code needed.
-- [ ] Add tests in `oriterm_mux/src/pane/io_thread/snapshot/tests.rs`:
+- [x] Add `pub fn seqno(&self) -> u64` method to `SnapshotDoubleBuffer` that reads `slot.seqno` under the lock. This is the public API that section 04's harness and section 06's Mode 2026 tests will use.
+- [x] Add `pub fn consumed_seqno(&self) -> u64` method for tests that need to verify the consumer side.
+- [x] Verify that `maybe_produce_snapshot()` at `oriterm_mux/src/pane/io_thread/mod.rs:268-276` correctly gates on `sync_bytes_count > 0` (line 269), which means `flip_swap()` is never called during sync. The seqno is therefore stable during sync by construction — no additional code needed.
+- [x] Add tests in `oriterm_mux/src/pane/io_thread/snapshot/tests.rs`:
   - `seqno_increments_on_flip_swap()` — already partially covered by existing `flip_swap_exchanges_buffers` test; add explicit seqno assertion
   - `seqno_stable_when_no_flip()` — construct SnapshotDoubleBuffer, verify seqno is 0, call `has_new()`, verify seqno still 0
   - `seqno_not_incremented_during_sync_suppression()` — integration test via `PaneIoThread`: set sync mode, feed bytes, verify `double_buffer.seqno()` unchanged; clear sync mode, feed bytes, verify seqno advances
   - `seqno_advances_atomically_on_sync_commit()` — set sync mode, feed 100 bytes, clear sync, verify seqno advances by exactly 1 (not by N chunks)
-- [ ] **Validation**: tests pass; alloc regression unchanged; `RenderableContent` is NOT modified (no field addition).
+- [x] **Validation**: tests pass; alloc regression unchanged; `RenderableContent` is NOT modified (no field addition).
 - [ ] **TPR checkpoint** — `/tpr-review` covering 03.1–03.3 (Effect type family + sink + seqno). Catches API design issues before they cascade through the migration.
 
 ---
