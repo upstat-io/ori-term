@@ -49,6 +49,12 @@ use std::path::{Path, PathBuf};
 
 use super::tuple::{Category, Tuple};
 
+/// Sentinel byte for catch-all intermediates patterns like
+/// `('c', intermediates)`. Distinguishes wildcard arms from
+/// explicit empty-intermediates arms `('H', [])`. `0xFF` is
+/// never a real VT intermediate byte.
+pub(super) const WILDCARD_INTERMEDIATES: &[u8] = &[0xFF];
+
 /// Error returned by the dispatch extractors.
 #[derive(Debug)]
 pub enum DispatchExtractError {
@@ -108,15 +114,21 @@ pub fn extract_dispatch_tuples(workspace_root: &Path) -> Result<Vec<Tuple>, Disp
     let csi_file = parse_rust(&csi_path, &csi_source)?;
     sgr::extract_sgr_params(&csi_file, &mut tuples);
 
-    // Filter out DECSET/DECRST tuples — those come exclusively from
-    // `extract_namedprivatemode_tuples`. The disjointness invariant
-    // is tested in sibling tests.
+    // Filter out DECSET/DECRST tuples and normalize wildcard sentinel.
     Ok(tuples
         .into_iter()
         .filter(|t| {
             !(t.category == Category::Csi
                 && t.intermediates == [b'?']
                 && (t.final_byte == "h" || t.final_byte == "l"))
+        })
+        .map(|mut t| {
+            // Replace wildcard sentinel with empty intermediates in
+            // the public output (sentinel is internal to classification).
+            if t.intermediates == WILDCARD_INTERMEDIATES {
+                t.intermediates = Vec::new();
+            }
+            t
         })
         .collect())
 }

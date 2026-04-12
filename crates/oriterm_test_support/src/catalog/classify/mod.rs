@@ -106,13 +106,15 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
             };
         }
         // Catch-all intermediates fallback: dispatch arms like
-        // `('c', intermediates)` are extracted with empty intermediates.
-        // When the query has non-empty intermediates (e.g., DA2 `[>]`),
-        // try the empty-intermediates form as a catch-all match.
+        // `('c', intermediates)` are extracted with the WILDCARD_INTERMEDIATES
+        // sentinel `[0xFF]`. When the query has non-empty intermediates
+        // (e.g., DA2 `[>]`), try the sentinel form — this only matches
+        // arms that were genuinely catch-all in the source, NOT arms with
+        // explicit empty intermediates `[]`.
         if !tuple.intermediates.is_empty() {
             let catch_all = Tuple::new(
                 Category::Csi,
-                Vec::<u8>::new(),
+                dispatch_extract::WILDCARD_INTERMEDIATES.to_vec(),
                 "Ps",
                 tuple.final_byte.clone(),
             );

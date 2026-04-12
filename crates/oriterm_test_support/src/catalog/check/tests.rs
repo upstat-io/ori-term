@@ -162,10 +162,22 @@ fn check_with_workspace_root_runs_dispatch_coverage() {
         .iter()
         .filter(|f| f.category == FindingCategory::DispatchWithoutCatalogRow)
         .collect();
-    // The dispatch-coverage path MUST produce at least one finding when
-    // workspace_root is provided — uncovered dispatch arms always exist
-    // during active catalog development. If this ever reaches zero, the
-    // test should be updated to assert zero (meaning full coverage).
+    // Compare against a run WITHOUT workspace_root to pin the path
+    // distinction. Without workspace_root, no dispatch-coverage findings
+    // should exist (dispatch extraction is skipped).
+    let report_no_ws =
+        check(&catalog_dir, CheckMode::Normal, None).expect("real catalog parses without ws");
+    let dispatch_findings_no_ws: Vec<_> = report_no_ws
+        .findings
+        .iter()
+        .filter(|f| f.category == FindingCategory::DispatchWithoutCatalogRow)
+        .collect();
+    assert!(
+        dispatch_findings_no_ws.is_empty(),
+        "expected zero DispatchWithoutCatalogRow findings when workspace_root is None"
+    );
+    // With workspace_root, dispatch-coverage findings MUST exist (uncovered
+    // dispatch arms always exist during active catalog development).
     assert!(
         !dispatch_findings.is_empty(),
         "expected at least one DispatchWithoutCatalogRow finding \
