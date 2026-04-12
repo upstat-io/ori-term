@@ -73,7 +73,7 @@ sections:
     status: not-started
   - id: "01.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 01: Catalog Bootstrap
@@ -82,19 +82,19 @@ sections:
 **Goal:** Build the catalog as the empirical map of every protocol sequence ori_term targets. No `TermHandler`-behavior tests are written — but the `catalog_coverage_check` Rust binary IS testable code and DOES get full TDD treatment per `.claude/rules/tests.md`. Every subsequent stack section consumes this catalog as its scope definition. The row schema is `0.1-provisional`; Section 04.7 owns the migration to `1.0` after the pilots in Section 04.5–04.6 + Section 05.6 land. Section 01 writes NO row with `Verification: verified` — those statuses are earned by the verification chain harness, never bootstrapped here.
 
 **Success Criteria:**
-- [ ] `plans/spec-conformance/catalog/` exists with 16 protocol-family markdown files PLUS a stub `catalog/README.md` (Section 01 owns this stub; Section 04.7 extends it with the frozen schema reference)
-- [ ] Every catalog file declares front-matter `schema_version: "0.1-provisional"`
-- [ ] Every row has all 10 columns populated: `ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes`
-- [ ] Every row's `Implementation` anchors on a stable SYMBOL (e.g., `TermHandler::goto`), with file path in parentheses as metadata. Line numbers may only appear as trailing metadata appended to the file path, never as the primary anchor
-- [ ] Every C0/ESC/C1/CSI/OSC/DCS/APC/**PM/SOS** parser state in `crates/vte/src/lib.rs` that has a dispatch counterpart or explicit discard has at least one catalog row — PM and SOS are NOT omitted
-- [ ] No row holds `Verification: verified` / `verified-partial` / `verified-with-deviation` (those statuses are reserved for Sections 04-20)
-- [ ] Real-app captures are committed under `plans/spec-conformance/captures/` with a `manifest.toml` listing every capture's {app, version, OS, env, script, duration, unique tuple count, sha256}
-- [ ] `plans/spec-conformance/captures/reconciliation-report.md` exists, enumerating every bottom-up/top-down mismatch with its resolution
-- [ ] `crates/oriterm_test_support/src/bin/catalog_coverage_check.rs` exists as a Rust binary (TPR-01-002-gemini — Python rewrite rejected because PTY parsing needs `vte` and Section 04.8 already builds Rust tooling), with sibling `tests.rs` in `crates/oriterm_test_support/src/catalog/tests.rs` (positive, negative-pin, cross-type, self-verifying completeness counter); wired into `./test-all.sh`
-- [ ] Bug-tracker entry filed for `oriterm_core/src/term/handler/image/kitty.rs` BLOAT (476 lines → must split before Sections 12/13 begin)
-- [ ] Audit memory corrections applied for every stale claim discovered during harvest (minimum: HSL hue, kitty q=1, image cache 320 MiB)
-- [ ] `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green debug + release, Linux + Windows cross-compile
-- [ ] Connects to mission criterion: **Catalog complete** (partial — full check after Section 04.7 freeze + 04.9 safety net wiring)
+- [x] `plans/spec-conformance/catalog/` exists with 16 protocol-family markdown files PLUS a stub `catalog/README.md` (Section 01 owns this stub; Section 04.7 extends it with the frozen schema reference)
+- [x] Every catalog file declares front-matter `schema_version: "0.1-provisional"`
+- [x] Every row has all 10 columns populated: `ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes`
+- [x] Every row's `Implementation` anchors on a stable SYMBOL (e.g., `TermHandler::goto`), with file path in parentheses as metadata. Line numbers may only appear as trailing metadata appended to the file path, never as the primary anchor
+- [x] Every C0/ESC/C1/CSI/OSC/DCS/APC/**PM/SOS** parser state in `crates/vte/src/lib.rs` that has a dispatch counterpart or explicit discard has at least one catalog row — PM and SOS are NOT omitted
+- [x] No row holds `Verification: verified` / `verified-partial` / `verified-with-deviation` (those statuses are reserved for Sections 04-20)
+- [x] Real-app captures are committed under `plans/spec-conformance/captures/` with a `manifest.toml` listing every capture's {app, version, OS, env, script, duration, unique tuple count, sha256}
+- [x] `plans/spec-conformance/captures/reconciliation-report.md` exists, enumerating every bottom-up/top-down mismatch with its resolution
+- [x] `crates/oriterm_test_support/src/bin/catalog_coverage_check.rs` exists as a Rust binary (TPR-01-002-gemini — Python rewrite rejected because PTY parsing needs `vte` and Section 04.8 already builds Rust tooling), with sibling `tests.rs` in `crates/oriterm_test_support/src/catalog/tests.rs` (positive, negative-pin, cross-type, self-verifying completeness counter); wired into `./test-all.sh`
+- [x] Bug-tracker entry filed for `oriterm_core/src/term/handler/image/kitty.rs` BLOAT (476 lines → must split before Sections 12/13 begin)
+- [x] Audit memory corrections applied for every stale claim discovered during harvest (minimum: HSL hue, kitty q=1, image cache 320 MiB)
+- [x] `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green debug + release, Linux + Windows cross-compile
+- [x] Connects to mission criterion: **Catalog complete** (partial — full check after Section 04.7 freeze + 04.9 safety net wiring)
 
 **Context:** The catalog is the prerequisite that makes every subsequent section's scope mechanical. Without it, "100% conformance" is unfalsifiable because you don't know what 100% means. This section delivers catalog *breadth* first (every sequence enumerated); the row *schema version* is `0.1-provisional` until Section 04.7 freezes it to `1.0`. The audit memory at `architecture_graphics_audit.md` provides a starting inventory of graphics protocol implementations; Section 01 CORRECTS every stale claim it contradicts during harvest (three known seeds; more may surface).
 
@@ -1023,95 +1023,95 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
 
 ### Catalog artifacts
 
-- [ ] `plans/spec-conformance/catalog/` exists with 16 protocol-family markdown files PLUS `README.md` stub
-- [ ] Every catalog file declares front-matter `schema_version: "0.1-provisional"`
-- [ ] Every match arm in `crates/vte/src/ansi/dispatch/{mod,csi,osc}.rs` corresponds to at least one catalog row (mechanically verified by `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --check --bootstrap-mode`)
-- [ ] Every variant in `NamedPrivateMode` enum (`crates/vte/src/ansi/types.rs`) has ONE row in `catalog/dec-private-modes.md` whose `Sequence` column is `` `CSI ? Ps h` / `CSI ? Ps l` `` (dual-form); `--check` mechanically expands each row into two tuples `(CSI, [?], Ps, h)` / `(CSI, [?], Ps, l)` and asserts both are present in the dispatch set (iteration-1 TPR-01-002-codex fix + iteration-2 TPR-01-003-codex row/tuple clarification)
-- [ ] Every OSC number with a handler in `oriterm_core/src/term/handler/osc.rs` has a row in `catalog/osc.md`
-- [ ] PM (`ESC ^`) and SOS (`ESC X`) each have at least one row in `catalog/ecma-48.md` with all 10 columns populated, `Verification: stub`, `final_byte: ST` in the canonical tuple, and `Notes` citing the `State::SosPmApcString` discard path (Phase 2 Finding D + TPR-01-003-codex tuple canonicalization fix)
-- [ ] SGR dispatch expanded to one row per supported SGR parameter (not one row per dispatch arm) — mechanically verified by `--check` walking `crates/vte/src/ansi/dispatch/csi.rs::attrs_from_sgr_parameters` match arms (iteration-6 TPR-01-001-gemini correction — the numeric universe lives in the vte fork's `attrs_from_sgr_parameters`, NOT in `oriterm_core/src/term/handler/sgr.rs`). Supported universe: `0-9`, `21-25`, `27-29`, `30-39`, `40-49`, `58-59`, `90-97`, `100-107` — approximately 57 rows, not 60. SGR 10-20, 26, 51-55, 113+ are NOT supported and must NOT appear as catalog rows.
-- [ ] OSC numeric dispatch expanded to one row per OSC number — mechanically verified by `--check` walking `oriterm_core/src/term/handler/osc.rs` match arms
-- [ ] Every row has all 10 columns populated (`ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes`)
-- [ ] Every row's `Implementation` column is symbol-primary (grep for `Implementation.*\.rs:[0-9]+ →` returns zero matches where the line number precedes the symbol — symbols are always BEFORE the file path)
-- [ ] Every row's `ID` follows `{STACK}-{MNEMONIC}` format and is globally unique
-- [ ] No row has `Verification: verified` / `verified-partial` / `verified-with-deviation` (Phase 2 Finding L — mechanically gated by `--check --bootstrap-mode`; also verified by `grep -E '\| (verified|verified-partial|verified-with-deviation)\b' plans/spec-conformance/catalog/*.md` returning zero matches)
-- [ ] No row has `Spec source.*wezterm` (Phase 2 Finding J — wezterm is `De-facto ref` only; grep returns zero matches; also verified by `--check`'s wezterm-spec-source negative pin)
+- [x] `plans/spec-conformance/catalog/` exists with 16 protocol-family markdown files PLUS `README.md` stub
+- [x] Every catalog file declares front-matter `schema_version: "0.1-provisional"`
+- [x] Every match arm in `crates/vte/src/ansi/dispatch/{mod,csi,osc}.rs` corresponds to at least one catalog row (mechanically verified by `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --check --bootstrap-mode`)
+- [x] Every variant in `NamedPrivateMode` enum (`crates/vte/src/ansi/types.rs`) has ONE row in `catalog/dec-private-modes.md` whose `Sequence` column is `` `CSI ? Ps h` / `CSI ? Ps l` `` (dual-form); `--check` mechanically expands each row into two tuples `(CSI, [?], Ps, h)` / `(CSI, [?], Ps, l)` and asserts both are present in the dispatch set (iteration-1 TPR-01-002-codex fix + iteration-2 TPR-01-003-codex row/tuple clarification)
+- [x] Every OSC number with a handler in `oriterm_core/src/term/handler/osc.rs` has a row in `catalog/osc.md`
+- [x] PM (`ESC ^`) and SOS (`ESC X`) each have at least one row in `catalog/ecma-48.md` with all 10 columns populated, `Verification: stub`, `final_byte: ST` in the canonical tuple, and `Notes` citing the `State::SosPmApcString` discard path (Phase 2 Finding D + TPR-01-003-codex tuple canonicalization fix)
+- [x] SGR dispatch expanded to one row per supported SGR parameter (not one row per dispatch arm) — mechanically verified by `--check` walking `crates/vte/src/ansi/dispatch/csi.rs::attrs_from_sgr_parameters` match arms (iteration-6 TPR-01-001-gemini correction — the numeric universe lives in the vte fork's `attrs_from_sgr_parameters`, NOT in `oriterm_core/src/term/handler/sgr.rs`). Supported universe: `0-9`, `21-25`, `27-29`, `30-39`, `40-49`, `58-59`, `90-97`, `100-107` — approximately 57 rows, not 60. SGR 10-20, 26, 51-55, 113+ are NOT supported and must NOT appear as catalog rows.
+- [x] OSC numeric dispatch expanded to one row per OSC number — mechanically verified by `--check` walking `oriterm_core/src/term/handler/osc.rs` match arms
+- [x] Every row has all 10 columns populated (`ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes`)
+- [x] Every row's `Implementation` column is symbol-primary (grep for `Implementation.*\.rs:[0-9]+ →` returns zero matches where the line number precedes the symbol — symbols are always BEFORE the file path)
+- [x] Every row's `ID` follows `{STACK}-{MNEMONIC}` format and is globally unique
+- [x] No row has `Verification: verified` / `verified-partial` / `verified-with-deviation` (Phase 2 Finding L — mechanically gated by `--check --bootstrap-mode`; also verified by `grep -E '\| (verified|verified-partial|verified-with-deviation)\b' plans/spec-conformance/catalog/*.md` returning zero matches)
+- [x] No row has `Spec source.*wezterm` (Phase 2 Finding J — wezterm is `De-facto ref` only; grep returns zero matches; also verified by `--check`'s wezterm-spec-source negative pin)
 
 ### Spec corpus artifacts
 
-- [ ] `plans/spec-conformance/specs/manifest.toml` exists with `schema_version: "0.1-provisional"`
-- [ ] `bash plans/spec-conformance/specs/manifest-fetch.sh --verify` exits 0
-- [ ] All freely-redistributable specs committed under `plans/spec-conformance/specs/`
-- [ ] License-restricted specs have fetch URL + sha256 entries in the manifest
+- [x] `plans/spec-conformance/specs/manifest.toml` exists with `schema_version: "0.1-provisional"`
+- [x] `bash plans/spec-conformance/specs/manifest-fetch.sh --verify` exits 0
+- [x] All freely-redistributable specs committed under `plans/spec-conformance/specs/`
+- [x] License-restricted specs have fetch URL + sha256 entries in the manifest
 
 ### Capture artifacts
 
-- [ ] `plans/spec-conformance/captures/` exists with `manifest.toml` + `scripts/README.md` + per-app `.script` files
-- [ ] At least 6 committed deterministic capture flows (vim, tmux, htop, btop, less, nvim) each hitting their `unique_tuples_expected_min` threshold
-- [ ] `bash plans/spec-conformance/captures/verify-manifest.sh` exits 0 (every capture's sha256 matches; every capture exceeds the idle threshold)
-- [ ] Every capture's `.cap` + `.script` + `manifest.toml` entry is committed (not in `/tmp/`)
-- [ ] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --capture-top10-covered captures/<each>.cap` passes for every committed capture
+- [x] `plans/spec-conformance/captures/` exists with `manifest.toml` + `scripts/README.md` + per-app `.script` files
+- [x] At least 6 committed deterministic capture flows (vim, tmux, htop, btop, less, nvim) each hitting their `unique_tuples_expected_min` threshold
+- [x] `bash plans/spec-conformance/captures/verify-manifest.sh` exits 0 (every capture's sha256 matches; every capture exceeds the idle threshold)
+- [x] Every capture's `.cap` + `.script` + `manifest.toml` entry is committed (not in `/tmp/`)
+- [x] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --capture-top10-covered captures/<each>.cap` passes for every committed capture
 
 ### Reconciliation artifacts
 
-- [ ] `plans/spec-conformance/captures/reconciliation-report.md` exists with the per-bucket counts and row tables
-- [ ] Every bottom-up tuple is either in the primary catalog OR moved to `de-facto-behaviors.md` with a reason recorded in the reconciliation report
-- [ ] Every top-down tuple (catalog rows where `Spec source != MISSING`) with no matching bottom-up is in its primary catalog file with `Implementation: MISSING — to be added by Section NN`
+- [x] `plans/spec-conformance/captures/reconciliation-report.md` exists with the per-bucket counts and row tables
+- [x] Every bottom-up tuple is either in the primary catalog OR moved to `de-facto-behaviors.md` with a reason recorded in the reconciliation report
+- [x] Every top-down tuple (catalog rows where `Spec source != MISSING`) with no matching bottom-up is in its primary catalog file with `Implementation: MISSING — to be added by Section NN`
 - [x] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --reconcile` exits 0
 
 ### Coverage-check tool artifacts (Rust binary — TPR-01-002-gemini)
 
-- [ ] `crates/oriterm_test_support/src/catalog/mod.rs` exists as a shared library module (consumed by both `catalog_coverage_check` and Section 04.8's `spec_coverage_report` — single parser, single canonicalizer, no duplication)
-- [ ] `crates/oriterm_test_support/src/catalog/tests.rs` exists as the sibling `tests.rs` per `.claude/rules/test-organization.md`
-- [ ] `crates/oriterm_test_support/src/bin/catalog_coverage_check.rs` exists as the binary entry point and implements all required CLI modes (`--extract-dispatch-tuples`, `--extract-catalog-tuples`, `--extract-top-down-tuples`, `--extract-capture-tuples`, `--extract-namedprivatemode-tuples`, `--check`, `--bootstrap-mode`, `--reconcile`, `--wezterm-cross-check`, `--capture-top10-covered`, `--classify`)
-- [ ] Test matrix per `.claude/rules/tests.md` §Matrix Testing Rule includes: positive pins, negative pins, cross-type matrix, self-verifying completeness counter
-- [ ] Negative pins cover: missed tuple, duplicate row ID, stale symbol anchor, line-number-primary citation, `Verification: verified` in bootstrap mode, wezterm as `Spec source`, missing `NamedPrivateMode` row
-- [ ] Cross-type matrix covers: CSI (param-less, with intermediates, private, special), OSC (BEL term, ST term, numeric), DCS, APC (kitty `_G`, with `final_byte: ST`)
-- [ ] `timeout 150 cargo test -p oriterm_test_support --lib` — all tests green (debug build; the catalog tests run as part of the full oriterm_test_support library-test set — see 01.3.c for why a trailing `catalog` filter is banned)
-- [ ] `timeout 150 cargo test -p oriterm_test_support --lib --release` — all tests green (release build)
-- [ ] `cargo test -p oriterm_test_support --lib -- --list | grep -q 'catalog::tests::'` — sanity check passes (catalog tests are actually in the runnable set, not silently filtered to zero)
-- [ ] `test-all.sh` runs the catalog_coverage_check tests AND `--check --bootstrap-mode` automatically
-- [ ] Tool builds on Linux native, `x86_64-pc-windows-gnu` cross-compile, AND macOS CI (the vendored `vte` crate and `syn` AST walker are cross-compile-validated for every target)
+- [x] `crates/oriterm_test_support/src/catalog/mod.rs` exists as a shared library module (consumed by both `catalog_coverage_check` and Section 04.8's `spec_coverage_report` — single parser, single canonicalizer, no duplication)
+- [x] `crates/oriterm_test_support/src/catalog/tests.rs` exists as the sibling `tests.rs` per `.claude/rules/test-organization.md`
+- [x] `crates/oriterm_test_support/src/bin/catalog_coverage_check.rs` exists as the binary entry point and implements all required CLI modes (`--extract-dispatch-tuples`, `--extract-catalog-tuples`, `--extract-top-down-tuples`, `--extract-capture-tuples`, `--extract-namedprivatemode-tuples`, `--check`, `--bootstrap-mode`, `--reconcile`, `--wezterm-cross-check`, `--capture-top10-covered`, `--classify`)
+- [x] Test matrix per `.claude/rules/tests.md` §Matrix Testing Rule includes: positive pins, negative pins, cross-type matrix, self-verifying completeness counter
+- [x] Negative pins cover: missed tuple, duplicate row ID, stale symbol anchor, line-number-primary citation, `Verification: verified` in bootstrap mode, wezterm as `Spec source`, missing `NamedPrivateMode` row
+- [x] Cross-type matrix covers: CSI (param-less, with intermediates, private, special), OSC (BEL term, ST term, numeric), DCS, APC (kitty `_G`, with `final_byte: ST`)
+- [x] `timeout 150 cargo test -p oriterm_test_support --lib` — all tests green (debug build; the catalog tests run as part of the full oriterm_test_support library-test set — see 01.3.c for why a trailing `catalog` filter is banned)
+- [x] `timeout 150 cargo test -p oriterm_test_support --lib --release` — all tests green (release build)
+- [x] `cargo test -p oriterm_test_support --lib -- --list | grep -q 'catalog::tests::'` — sanity check passes (catalog tests are actually in the runnable set, not silently filtered to zero)
+- [x] `test-all.sh` runs the catalog_coverage_check tests AND `--check --bootstrap-mode` automatically
+- [x] Tool builds on Linux native, `x86_64-pc-windows-gnu` cross-compile, AND macOS CI (the vendored `vte` crate and `syn` AST walker are cross-compile-validated for every target)
 
 ### Audit memory corrections (minimum 3 + any discovered during harvest)
 
-- [ ] `architecture_graphics_audit.md` HSL hue rotation claim corrected (real symbol grep-verified, not copy-pasted from the plan's illustrative hint)
-- [ ] `architecture_graphics_audit.md` kitty q=1 query claim corrected (real symbol grep-verified)
-- [ ] `architecture_graphics_audit.md` image cache size claim corrected (320 MiB, not 512 MiB; real constant name grep-verified)
-- [ ] `plans/spec-conformance/research.md` updated: status line no longer says "No plan exists yet"; `default 512 MiB cap` corrected to 320 MiB with the same grep-verified symbol; `kitty q=1 NOT IMPLEMENTED` corrected with the same verified-handler note (iter-11 TPR-01-002-codex widen)
-- [ ] `MEMORY.md` checked for image cache size entry; corrected if stale
-- [ ] Any additional stale claim discovered during harvest work is corrected in the same commit as the catalog rows that contradict it (`grep -r '512 MiB' memory/` and `grep -r 'HSL.*wrong' memory/` return zero matches)
+- [x] `architecture_graphics_audit.md` HSL hue rotation claim corrected (real symbol grep-verified, not copy-pasted from the plan's illustrative hint)
+- [x] `architecture_graphics_audit.md` kitty q=1 query claim corrected (real symbol grep-verified)
+- [x] `architecture_graphics_audit.md` image cache size claim corrected (320 MiB, not 512 MiB; real constant name grep-verified)
+- [x] `plans/spec-conformance/research.md` updated: status line no longer says "No plan exists yet"; `default 512 MiB cap` corrected to 320 MiB with the same grep-verified symbol; `kitty q=1 NOT IMPLEMENTED` corrected with the same verified-handler note (iter-11 TPR-01-002-codex widen)
+- [x] `MEMORY.md` checked for image cache size entry; corrected if stale
+- [x] Any additional stale claim discovered during harvest work is corrected in the same commit as the catalog rows that contradict it (`grep -r '512 MiB' memory/` and `grep -r 'HSL.*wrong' memory/` return zero matches)
 
 ### Bug-tracker filing
 
-- [ ] `/add-bug` entry filed for `oriterm_core/src/term/handler/image/kitty.rs` BLOAT (476 lines) under `plans/bug-tracker/section-08-core-terminal.md` (Core Terminal subsystem — per iteration-1 TPR-01-005-codex fix, NOT UI Widgets)
-- [ ] Bug filed at severity `high` (Phase 4 iteration-3 TPR-01-001-codex fix — `medium` was invisible to `/continue-roadmap` Step 1.92's surfacing rule; `high` makes the bug visible when Sections 12/13 become focus)
-- [ ] Bug ID recorded in this checklist: `BUG-08-__` (assigned by `/add-bug` as the next ordinal in section-08)
-- [ ] Sections 12 and 13 BODY text contain inline `**Blocker note:**` references to the `BUG-08-__` ID (Layer 2 per 01.11.a.i)
-- [ ] Sections 12 and 13 completion-checklist `## 12.N` / `## 13.N` blocks contain a `- [ ]` item reading "`BUG-08-__` (kitty.rs BLOAT split) is closed in plans/bug-tracker/section-08-core-terminal.md — verified by grepping the bug entry for [x]." (Layer 3 per 01.11.a.i — the scanner-parsed gate that prevents section close while the kitty.rs split is still open)
-- [ ] Sections 12 and 13 frontmatter `depends_on:` arrays are UNCHANGED (still contain only section-number strings)
-- [ ] Sections 12 and 13 `success_criteria` blocks were NOT edited (per iteration-3 TPR-01-001-codex — the scanner does not parse success_criteria so editing it would be invisible)
+- [x] `/add-bug` entry filed for `oriterm_core/src/term/handler/image/kitty.rs` BLOAT (476 lines) under `plans/bug-tracker/section-08-core-terminal.md` (Core Terminal subsystem — per iteration-1 TPR-01-005-codex fix, NOT UI Widgets)
+- [x] Bug filed at severity `high` (Phase 4 iteration-3 TPR-01-001-codex fix — `medium` was invisible to `/continue-roadmap` Step 1.92's surfacing rule; `high` makes the bug visible when Sections 12/13 become focus)
+- [x] Bug ID recorded in this checklist: `BUG-08-8` (assigned by `/add-bug` as the next ordinal in section-08)
+- [x] Sections 12 and 13 BODY text contain inline `**Blocker note:**` references to the `BUG-08-8` ID (Layer 2 per 01.11.a.i)
+- [x] Sections 12 and 13 completion-checklist `## 12.N` / `## 13.N` blocks contain a `- [ ]` item reading "`BUG-08-8` (kitty.rs BLOAT split) is closed in plans/bug-tracker/section-08-core-terminal.md — verified by grepping the bug entry for [x]." (Layer 3 per 01.11.a.i — the scanner-parsed gate that prevents section close while the kitty.rs split is still open)
+- [x] Sections 12 and 13 frontmatter `depends_on:` arrays are UNCHANGED (still contain only section-number strings)
+- [x] Sections 12 and 13 `success_criteria` blocks were NOT edited (per iteration-3 TPR-01-001-codex — the scanner does not parse success_criteria so editing it would be invisible)
 
 ### Conditional bugs (Phase 4 iteration-2 TPR-01-005-gemini fix)
 
-- [ ] Every `/add-bug` escalation invoked from 01.5.c's "Unknown category" routing rule is recorded here with its returned ID. Zero escalations is the NORMAL case (most unknown capture tuples are ori_term parser gaps, not real-app bugs); if this list is non-empty, each entry has a `BUG-{subsystem}-<ordinal>` ID and a one-line description of which capture flow surfaced the sequence.
-- [ ] Recorded bug IDs from capture-routing escalations: `—` (fill in, or leave `—` for zero escalations)
+- [x] Every `/add-bug` escalation invoked from 01.5.c's "Unknown category" routing rule is recorded here with its returned ID. Zero escalations is the NORMAL case (most unknown capture tuples are ori_term parser gaps, not real-app bugs); if this list is non-empty, each entry has a `BUG-{subsystem}-<ordinal>` ID and a one-line description of which capture flow surfaced the sequence.
+- [x] Recorded bug IDs from capture-routing escalations: `—` (zero escalations — all unknown capture tuples were ori_term parser gaps, not real-app bugs)
 
 ### Build + test + clippy gates
 
-- [ ] `./build-all.sh` green (cross-compile to `x86_64-pc-windows-gnu` inclusive; the new `catalog_coverage_check` binary builds for all targets)
-- [ ] `timeout 150 ./test-all.sh` green in both debug and release (includes the new `cargo test -p oriterm_test_support --lib` tests with no trailing substring filter, the `cargo test -p oriterm_test_support --lib -- --list | grep 'catalog::tests::'` sanity check, and the live `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --check --bootstrap-mode` pass against the real catalog — see 01.3.c for the full `test-all.sh` block)
-- [ ] `./clippy-all.sh` green including the new `crates/oriterm_test_support/src/catalog/` module and `bin/catalog_coverage_check.rs` binary
-- [ ] No regressions in `oriterm_core/tests/alloc_regression.rs` or any performance invariant test (Section 01 adds shared library code plus a binary; neither runs in the hot render path, so the alloc regression should stay untouched)
+- [x] `./build-all.sh` green (cross-compile to `x86_64-pc-windows-gnu` inclusive; the new `catalog_coverage_check` binary builds for all targets)
+- [x] `timeout 150 ./test-all.sh` green in both debug and release (includes the new `cargo test -p oriterm_test_support --lib` tests with no trailing substring filter, the `cargo test -p oriterm_test_support --lib -- --list | grep 'catalog::tests::'` sanity check, and the live `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --check --bootstrap-mode` pass against the real catalog — see 01.3.c for the full `test-all.sh` block)
+- [x] `./clippy-all.sh` green including the new `crates/oriterm_test_support/src/catalog/` module and `bin/catalog_coverage_check.rs` binary
+- [x] No regressions in `oriterm_core/tests/alloc_regression.rs` or any performance invariant test (Section 01 adds shared library code plus a binary; neither runs in the hot render path, so the alloc regression should stay untouched)
 
 ### Plan hygiene
 
-- [ ] Plan annotation cleanup: any temporary notes or scaffolding removed from Section 01
+- [x] Plan annotation cleanup: any temporary notes or scaffolding removed from Section 01
 - [ ] Section frontmatter `status` → `complete`, subsection statuses updated (01.1 → 01.11 all complete)
 - [ ] `plans/spec-conformance/00-overview.md` Quick Reference table status for Section 01 updated (Not Started → Complete)
 - [ ] `plans/spec-conformance/00-overview.md` mission success criteria updated (PARTIAL checkmark only on `Catalog complete` — full check after Section 04.7 schema freeze + 04.9 continuous-delta detector wires into CI)
 - [ ] `index.md` Section 01 status updated + keyword cluster refreshed to reflect the new subsection layout (01.1 → 01.11 with the reordering from Phase 2 Finding C)
-- [ ] `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json` shows NO new findings attributable to Section 01 (the 7 Phase 1 findings on Section 01 are all resolved: DEAD_PATH x3 via inline notes/forward-reference acknowledgments, SIZE_VIOLATION via subsection restructuring, BLOAT_RISK x3 via the kitty.rs bug filing + NOTEs for csi.rs and image/cache/mod.rs)
+- [x] `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json` shows NO new findings attributable to Section 01 (the 7 Phase 1 findings on Section 01 are all resolved: DEAD_PATH x3 via inline notes/forward-reference acknowledgments, SIZE_VIOLATION via subsection restructuring, BLOAT_RISK x3 via the kitty.rs bug filing + NOTEs for csi.rs and image/cache/mod.rs)
 
 ### Review gates
 

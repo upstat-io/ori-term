@@ -769,7 +769,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 
 | ID | Title                                                  | File                                                 | Status      |
 |----|---                                                     |---                                                   |---          |
-| 01 | Catalog Bootstrap                                      | `section-01-catalog-bootstrap.md`                    | Not Started |
+| 01 | Catalog Bootstrap                                      | `section-01-catalog-bootstrap.md`                    | In Progress |
 | 02 | Tack-Conformance Absorption (Phase 0b — plan hygiene)  | `section-02-tack-absorption.md`                      | Complete    |
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Not Started |
 | 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Not Started |
