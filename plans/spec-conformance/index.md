@@ -22,7 +22,7 @@ order: 2
 ## Keyword Clusters by Section
 
 ### Section 01: Catalog Bootstrap
-**File:** `section-01-catalog-bootstrap.md` | **Status:** Not Started
+**File:** `section-01-catalog-bootstrap.md` | **Status:** Complete
 
 ```
 catalog, sequence inventory, row schema, row ID, schema_version 0.1-provisional
