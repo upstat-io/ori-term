@@ -33,7 +33,7 @@ sections:
     status: complete
   - id: "03.3"
     title: "Expose snapshot_seqno for verification chain harness apex"
-    status: complete
+    status: in-progress
   - id: "03.4"
     title: "LegacyEventSink adapter — bridge Effect to existing Event/MuxEvent consumers"
     status: complete
@@ -42,7 +42,7 @@ sections:
     status: in-progress
   - id: "03.6"
     title: "Migrate Term::pending_notifications into the Effect channel"
-    status: complete
+    status: in-progress
   - id: "03.7"
     title: "Remove ClipboardLoad/ColorRequest closure variants from Event"
     status: complete
@@ -51,7 +51,7 @@ sections:
     status: not-started
   - id: "03.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 # TPR Checkpoint Placement: 03.4 (after the bridge is built — covers .1-.4),
 # 03.6 (after notifications migration — covers .5-.6), final in 03.N
 ---
