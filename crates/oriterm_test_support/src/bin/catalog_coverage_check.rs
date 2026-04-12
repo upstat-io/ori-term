@@ -14,9 +14,10 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use oriterm_test_support::catalog::{
-    Category, CheckMode, Classification, Tuple, build_dispatch_map, canonical_tuple, check,
-    classify_from_map, extract_capture_tuples, extract_dispatch_tuples,
-    extract_namedprivatemode_tuples, parse_catalog_markdown,
+    CheckMode, Classification, Tuple, build_catalog_signature_set, build_dispatch_map,
+    canonical_tuple, check, classify_from_map, extract_capture_tuples, extract_dispatch_tuples,
+    extract_namedprivatemode_tuples, format_report, load_all_catalog_rows, parse_catalog_markdown,
+    reconcile, tuple_signature,
 };
 
 #[derive(Parser)]
@@ -84,6 +85,27 @@ enum Command {
         workspace_root: PathBuf,
     },
 
+    /// Extract top-down (spec-sourced) catalog tuples. Filters out
+    /// rows with MISSING or wezterm in Spec source.
+    ExtractTopDownTuples {
+        #[arg(long, default_value = "plans/spec-conformance/catalog")]
+        catalog_dir: PathBuf,
+    },
+
+    /// Three-way reconciliation: bottom-up (dispatch) vs top-down
+    /// (spec-sourced catalog) vs captures. Generates and prints the
+    /// reconciliation report.
+    Reconcile {
+        #[arg(long, default_value = ".")]
+        workspace_root: PathBuf,
+
+        #[arg(long, default_value = "plans/spec-conformance/catalog")]
+        catalog_dir: PathBuf,
+
+        #[arg(long, default_value = "plans/spec-conformance/captures")]
+        captures_dir: PathBuf,
+    },
+
     /// Assert that a capture's top 10 most-frequent tuples all have
     /// catalog rows. Exits 1 if any top-10 tuple is missing.
     CaptureTop10Covered {
@@ -113,6 +135,12 @@ fn main() -> ExitCode {
             tuple,
             workspace_root,
         } => run_classify(&tuple, &workspace_root),
+        Command::ExtractTopDownTuples { catalog_dir } => run_extract_top_down(&catalog_dir),
+        Command::Reconcile {
+            workspace_root,
+            catalog_dir,
+            captures_dir,
+        } => run_reconcile(&workspace_root, &catalog_dir, &captures_dir),
         Command::CaptureTop10Covered {
             cap_file,
             catalog_dir,
@@ -321,56 +349,47 @@ fn run_capture_top10_covered(
     }
 }
 
-/// A tuple signature for coverage comparison: (`category_display`,
-/// `sorted_intermediates`, `final_byte`). Params are excluded because
-/// they differ between catalog and capture canonical forms.
-type TupleSig = (String, Vec<u8>, String);
-
-fn tuple_signature(tuple: &Tuple) -> TupleSig {
-    // For OSC and DCS, normalize BEL/ST terminators — both are valid
-    // per ECMA-48 and the catalog canonicalizes to BEL while captures
-    // may use either.
-    let final_byte = match tuple.category {
-        Category::Osc | Category::Dcs => {
-            if tuple.final_byte == "ST" {
-                "BEL".to_string()
-            } else {
-                tuple.final_byte.clone()
-            }
+fn run_extract_top_down(catalog_dir: &std::path::Path) -> ExitCode {
+    let rows = match load_all_catalog_rows(catalog_dir) {
+        Err(e) => {
+            eprintln!("extract-top-down-tuples: {e}");
+            return ExitCode::from(1);
         }
-        _ => tuple.final_byte.clone(),
+        Ok(r) => r,
     };
-    (
-        format!("{}", tuple.category),
-        tuple.intermediates.clone(),
-        final_byte,
-    )
-}
-
-fn build_catalog_signature_set(
-    catalog_dir: &std::path::Path,
-) -> Result<std::collections::BTreeSet<TupleSig>, String> {
-    use std::collections::BTreeSet;
-
-    let mut sigs: BTreeSet<TupleSig> = BTreeSet::new();
-    let entries = std::fs::read_dir(catalog_dir)
-        .map_err(|e| format!("read_dir {}: {e}", catalog_dir.display()))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
-        let path = entry.path();
-        if path.extension().is_none_or(|ext| ext != "md") {
+    for row in &rows {
+        let src = row.spec_source.to_lowercase();
+        if src.contains("missing") || src.contains("wezterm") || row.spec_source.starts_with('—')
+        {
             continue;
         }
-        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if filename == "README.md" || filename.starts_with('_') {
-            continue;
-        }
-        let rows = parse_catalog_markdown(&path).map_err(|e| format!("{e}"))?;
-        for row in &rows {
-            if let Some(tuple) = canonical_tuple(&row.sequence) {
-                sigs.insert(tuple_signature(&tuple));
-            }
+        if let Some(tuple) = canonical_tuple(&row.sequence) {
+            println!("{} {tuple}", row.id);
         }
     }
-    Ok(sigs)
+    ExitCode::SUCCESS
+}
+
+fn run_reconcile(
+    workspace_root: &std::path::Path,
+    catalog_dir: &std::path::Path,
+    captures_dir: &std::path::Path,
+) -> ExitCode {
+    let report = match reconcile(workspace_root, catalog_dir, captures_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("reconcile: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let md = format_report(&report);
+    print!("{md}");
+    eprintln!(
+        "reconcile: {} reconciled, {} de-facto, {} missing, {} capture-only",
+        report.reconciled.len(),
+        report.de_facto.len(),
+        report.missing.len(),
+        report.capture_only.len(),
+    );
+    ExitCode::SUCCESS
 }

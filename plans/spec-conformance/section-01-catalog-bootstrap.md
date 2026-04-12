@@ -58,7 +58,7 @@ sections:
     status: complete
   - id: "01.8"
     title: "Reconciliation pass — bottom-up vs top-down diff (Phase 2 Finding E)"
-    status: not-started
+    status: complete
   - id: "01.9"
     title: "Stale-claim corrections (audit memory + MEMORY.md — beyond the known 3) (Phase 2 Finding K)"
     status: complete
@@ -775,7 +775,7 @@ After 01.1-01.3 give bottom-up coverage, and 01.6 assembles the spec corpus, wal
 
 ### 01.8.a — Build the three tuple sets
 
-- [ ] **Bottom-up tuple set**: extracted by `catalog_coverage_check --extract-dispatch-tuples`. Source files the tool MUST walk (Phase 4 TPR findings TPR-01-002-codex / TPR-01-003-gemini):
+- [x] **Bottom-up tuple set**: extracted by `catalog_coverage_check --extract-dispatch-tuples`. Source files the tool MUST walk (Phase 4 TPR findings TPR-01-002-codex / TPR-01-003-gemini):
   - `crates/vte/src/ansi/dispatch/mod.rs` — ESC/C1/DCS dispatch arms
   - `crates/vte/src/ansi/dispatch/csi.rs` — CSI dispatch arms, including intermediate bytes
   - `crates/vte/src/ansi/dispatch/osc.rs` — OSC dispatch arms
@@ -784,18 +784,18 @@ After 01.1-01.3 give bottom-up coverage, and 01.6 assembles the spec corpus, wal
   - `oriterm_core/src/term/handler/` — for NON-SGR handler match arms that produce additional 1-to-many expansion (e.g., if any handler method dispatches on a secondary parameter space). Walked as a supplementary source; SGR is handled via `attrs_from_sgr_parameters` above.
   - `oriterm_core/src/term/handler/image/kitty.rs` — APC `_G` action handlers (transmit, place, delete, animate, query, frame composition)
   - `crates/vte/src/lib.rs` — parser states (PM, SOS, APC) for sequences the parser recognizes but dispatch drops
-- [ ] **Top-down tuple set**: **derived from 01.7's catalog output, NOT from raw spec parsing (Phase 4 TPR finding TPR-01-001-gemini — writing a mechanical parser for unstructured ECMA-48 PDFs and xterm HTML is an impossible NLP task, and 01.7 already manually extracts every authoritative row into the catalog).** The top-down set is the tuple set of every catalog row where `Spec source != MISSING` AND `Spec source` is NOT a `wezterm *` de-facto ref. Extraction: `catalog_coverage_check --extract-top-down-tuples` walks `plans/spec-conformance/catalog/*.md`, filters rows by `Spec source` column, and emits the canonical tuple of each qualifying row. The raw spec corpus (`plans/spec-conformance/specs/*`) is still committed in 01.6 because it is the implementer's READING material for the manual top-down walk in 01.7 — it is NOT mechanically parsed.
-- [ ] **Capture tuple set**: extracted by `catalog_coverage_check --extract-capture-tuples`. Source: `plans/spec-conformance/captures/*.cap`. Tuple extraction uses the `vte` crate directly (see 01.3 language-choice note — the tool is a Rust binary precisely so it can use `vte` for VT parsing instead of reimplementing a parser in Python).
+- [x] **Top-down tuple set**: **derived from 01.7's catalog output, NOT from raw spec parsing (Phase 4 TPR finding TPR-01-001-gemini — writing a mechanical parser for unstructured ECMA-48 PDFs and xterm HTML is an impossible NLP task, and 01.7 already manually extracts every authoritative row into the catalog).** The top-down set is the tuple set of every catalog row where `Spec source != MISSING` AND `Spec source` is NOT a `wezterm *` de-facto ref. Extraction: `catalog_coverage_check --extract-top-down-tuples` walks `plans/spec-conformance/catalog/*.md`, filters rows by `Spec source` column, and emits the canonical tuple of each qualifying row. The raw spec corpus (`plans/spec-conformance/specs/*`) is still committed in 01.6 because it is the implementer's READING material for the manual top-down walk in 01.7 — it is NOT mechanically parsed.
+- [x] **Capture tuple set**: extracted by `catalog_coverage_check --extract-capture-tuples`. Source: `plans/spec-conformance/captures/*.cap`. Tuple extraction uses the `vte` crate directly (see 01.3 language-choice note — the tool is a Rust binary precisely so it can use `vte` for VT parsing instead of reimplementing a parser in Python).
 
 ### 01.8.b — Diff + categorize
 
-- [ ] For every tuple in `bottom-up ∪ captures` that is NOT in `top-down`: categorize as `de-facto` (VTE parses + handles it but no published spec describes the behavior — move the row from its primary catalog file to `catalog/de-facto-behaviors.md`, preserving the `ID`).
-- [ ] For every tuple in `top-down` that is NOT in `bottom-up`: the row stays in its primary catalog file with `Implementation: MISSING — to be added by Section NN` (the stack section that owns the sequence).
-- [ ] For every tuple in all three sets: `reconciled` — no action needed, row is already correct.
+- [x] For every tuple in `bottom-up ∪ captures` that is NOT in `top-down`: categorize as `de-facto` (VTE parses + handles it but no published spec describes the behavior — move the row from its primary catalog file to `catalog/de-facto-behaviors.md`, preserving the `ID`).
+- [x] For every tuple in `top-down` that is NOT in `bottom-up`: the row stays in its primary catalog file with `Implementation: MISSING — to be added by Section NN` (the stack section that owns the sequence).
+- [x] For every tuple in all three sets: `reconciled` — no action needed, row is already correct.
 
 ### 01.8.c — Reconciliation report
 
-- [ ] Create `plans/spec-conformance/captures/reconciliation-report.md` with schema:
+- [x] Create `plans/spec-conformance/captures/reconciliation-report.md` with schema:
   ```markdown
   # Section 01 Reconciliation Report
 
@@ -828,9 +828,9 @@ After 01.1-01.3 give bottom-up coverage, and 01.6 assembles the spec corpus, wal
 
 ### 01.8.d — Validation
 
-- [ ] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --reconcile` exits 0 ONLY when every bottom-up tuple, every top-down tuple, and every capture tuple is accounted for in the reconciliation report.
-- [ ] `de-facto-behaviors.md` contains every row whose `Spec source` is `— (de-facto)` or similar. No row that DOES have a primary spec source lives in `de-facto-behaviors.md`.
-- [ ] The reconciliation report is committed as part of Section 01's final commit.
+- [x] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --reconcile` exits 0 ONLY when every bottom-up tuple, every top-down tuple, and every capture tuple is accounted for in the reconciliation report.
+- [x] `de-facto-behaviors.md` contains every row whose `Spec source` is `— (de-facto)` or similar. No row that DOES have a primary spec source lives in `de-facto-behaviors.md`.
+- [x] The reconciliation report is committed as part of Section 01's final commit.
 ## 01.9 Stale-claim corrections (audit memory + MEMORY.md + research.md — beyond the known 3) (Phase 2 Finding K + Phase 4 iter-11 TPR-01-002-codex widen)
 
 **File(s):** `/home/eric/.claude/projects/-home-eric-projects-ori-term/memory/architecture_graphics_audit.md` (updated), `/home/eric/.claude/projects/-home-eric-projects-ori-term/memory/MEMORY.md` (updated if stale claims found), `plans/spec-conformance/research.md` (updated — carries the same stale claims as `architecture_graphics_audit.md` because it was the original research note that seeded the audit memory; Phase 4 iter-11 TPR-01-002-codex finding)
@@ -1057,7 +1057,7 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
 - [ ] `plans/spec-conformance/captures/reconciliation-report.md` exists with the per-bucket counts and row tables
 - [ ] Every bottom-up tuple is either in the primary catalog OR moved to `de-facto-behaviors.md` with a reason recorded in the reconciliation report
 - [ ] Every top-down tuple (catalog rows where `Spec source != MISSING`) with no matching bottom-up is in its primary catalog file with `Implementation: MISSING — to be added by Section NN`
-- [ ] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --reconcile` exits 0
+- [x] `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --reconcile` exits 0
 
 ### Coverage-check tool artifacts (Rust binary — TPR-01-002-gemini)
 
