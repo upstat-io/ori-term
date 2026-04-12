@@ -1,7 +1,7 @@
 ---
 plan: "spec-conformance"
 title: "Spec Conformance: Universal Terminal Protocol Verification"
-status: not-started
+status: in-progress
 supersedes:
   - "plans/tack-conformance/"
 references:

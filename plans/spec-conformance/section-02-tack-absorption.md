@@ -1,7 +1,7 @@
 ---
 section: "02"
 title: "Tack-Conformance Absorption"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Mechanically supersede `plans/tack-conformance/` by adding supersede blockquotes to its overview and index, flipping frontmatter to terminal states across BOTH plans' index/overview/section-09 files atomically, creating the empty `_legacy-tack-mapping.md` mapping file (seeded with the tack-09→spec-23 handoff row), and removing stale narrative from `spec-conformance/00-overview.md` and spec-conformance sections 17 and 23 so one coherent story emerges — zero code changes."
 success_criteria:
@@ -32,50 +32,50 @@ third_party_review:
 sections:
   - id: "02.1"
     title: "Flip tack-conformance overview + index frontmatter and add supersede blockquotes"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "Freeze tack-conformance/section-09-verification.md (frontmatter + body notice)"
-    status: not-started
+    status: complete
   - id: "02.3"
     title: "Promote spec-conformance reroute (index.md) + correct stale absorption narrative in 00-overview.md"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "Create plans/spec-conformance/catalog/_legacy-tack-mapping.md (seeded with tack-09 → spec-23 row)"
-    status: not-started
+    status: complete
   - id: "02.5"
     title: "Annotate spec-conformance sections 17 and 23 with absorption pointers (no policy restatement)"
-    status: not-started
+    status: complete
   - id: "02.6"
     title: "Atomic commit + plan-audit --verify on BOTH plans"
-    status: not-started
+    status: complete
   - id: "02.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "02.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Tack-Conformance Absorption
 
-**Status:** In Progress (Phase 4 TPR cycle complete — ready for execution)
+**Status:** Complete (all subsections delivered; TPR + hygiene review passed)
 **Goal:** Mechanically mark `plans/tack-conformance/` as superseded by `plans/spec-conformance/` so that new sessions reading the project state see one canonical plan rather than two parallel tracks, AND resolve the cross-section drift (stale narrative, split-brain frontmatter, zombie section 09, scattered absorption policy) that the Phase 2 dual-reviewer pass surfaced. Per Codex's Round 2 + Step 6B guidance this is **plan hygiene only** — no file moves, no code changes — but it IS load-bearing plan-state surgery that must land atomically: `/continue-roadmap`, the plan-audit verifier, and future session readers all rely on a consistent state across seven files. Existing tack-conformance section files 01-08 stay untouched for citation stability and grepability.
 
 **Current reality (anchor for the narrative corrections below):** tack-conformance sections 01 through 08 are ALL `complete` on main (see `plans/tack-conformance/00-overview.md:22-35,210-218` — every mission criterion except two is checked off and every section row in the Quick Reference says Complete). Only section 09 (final verification/archival) remains `not-started`, and its scope is already declared absorbed by spec-23 — specifically, `plans/spec-conformance/section-23-cross-stack-regression-sweep.md:19` (the `inspired_by` frontmatter field, pre-existing) reads `"tack-conformance section 09 (verification) — original plan for cross-platform verification, now subsumed by this section"`. That frontmatter claim is declarative intent; the matching BODY-level inline pointer is added by 02.5.b of this section. The tack plan is not in-flight; it is 8/9 done with the last mile relocated to spec-conformance. Section 02 formalizes that reality across every file that still says otherwise.
 
 **Success Criteria (body form — bidirectional with frontmatter):**
-- [ ] tack-conformance/00-overview.md: supersede blockquote + `status: in-progress` → `status: complete`
-- [ ] tack-conformance/index.md: supersede blockquote + `status: active` → `status: resolved`
-- [ ] tack-conformance/section-09-verification.md: parent `status: not-started` → `complete`, all subsection statuses (09.1–09.N) → `complete`, body-level supersede notice added pointing at spec-23
-- [ ] spec-conformance/index.md: `status: queued` → `active` (queue promotion per `.claude/skills/create-plan/plan-schema.md:647-658`; `order: 2` is LEFT UNCHANGED per that same algorithm — `order is UNCHANGED` is a direct quote from line 658)
-- [ ] spec-conformance/catalog/_legacy-tack-mapping.md: created with canonical header, empty table shell, and the seed row `spec-23 ↔ tack-09 (absorption handoff — verification/archival)`
-- [ ] spec-conformance/00-overview.md: Tack Absorption Strategy prose at lines 349-371 corrected — no more "sections 01-05 complete, 07-09 not yet started" language; the block becomes the canonical single-source policy home that other files reference
-- [ ] spec-conformance/section-17-kitty-keyboard.md: inline pointer added noting the kf1-kf63 / cursor / editing / modified-key infrastructure already landed via tack-08 and that Section 17 extends it (policy pointer, no restatement)
-- [ ] spec-conformance/section-23-cross-stack-regression-sweep.md: inline pointer added noting tack-01-08 are completed artifacts on main and that tack-09's scope is subsumed here (policy pointer, no restatement)
-- [ ] Single atomic commit containing all eight file edits
-- [ ] `plan-audit.py --verify --json` on BOTH `plans/spec-conformance` and `plans/tack-conformance`: the post-commit finding-set diff `post_set - baseline_set == {}` (where each fingerprint is `(location, check, full_message)`) on both plans. Count comparison is insufficient; the authoritative gate is the set difference. Expected shape: spec `NEW=0 resolved=2` (02.4 resolves `DEAD_PATH` on `_legacy-tack-mapping.md` in section-02 + section-08), tack `NEW=0 resolved=0`. See 02.6 for the full command and rationale.
-- [ ] `00-overview.md` mission criterion `tack-conformance plan absorbed and superseded` at line 41 is checked `[x]`
-- [ ] Connects to mission criterion: **`tack-conformance` plan absorbed and superseded**
+- [x] tack-conformance/00-overview.md: supersede blockquote + `status: in-progress` → `status: complete`
+- [x] tack-conformance/index.md: supersede blockquote + `status: active` → `status: resolved`
+- [x] tack-conformance/section-09-verification.md: parent `status: not-started` → `complete`, all subsection statuses (09.1–09.N) → `complete`, body-level supersede notice added pointing at spec-23
+- [x] spec-conformance/index.md: `status: queued` → `active` (queue promotion per `.claude/skills/create-plan/plan-schema.md:647-658`; `order: 2` is LEFT UNCHANGED per that same algorithm — `order is UNCHANGED` is a direct quote from line 658)
+- [x] spec-conformance/catalog/_legacy-tack-mapping.md: created with canonical header, empty table shell, and the seed row `spec-23 ↔ tack-09 (absorption handoff — verification/archival)`
+- [x] spec-conformance/00-overview.md: Tack Absorption Strategy prose at lines 349-371 corrected — no more "sections 01-05 complete, 07-09 not yet started" language; the block becomes the canonical single-source policy home that other files reference
+- [x] spec-conformance/section-17-kitty-keyboard.md: inline pointer added noting the kf1-kf63 / cursor / editing / modified-key infrastructure already landed via tack-08 and that Section 17 extends it (policy pointer, no restatement)
+- [x] spec-conformance/section-23-cross-stack-regression-sweep.md: inline pointer added noting tack-01-08 are completed artifacts on main and that tack-09's scope is subsumed here (policy pointer, no restatement)
+- [x] Single atomic commit containing all eight file edits
+- [x] `plan-audit.py --verify --json` on BOTH `plans/spec-conformance` and `plans/tack-conformance`: the post-commit finding-set diff `post_set - baseline_set == {}` (where each fingerprint is `(location, check, full_message)`) on both plans. Count comparison is insufficient; the authoritative gate is the set difference. Expected shape: spec `NEW=0 resolved=2` (02.4 resolves `DEAD_PATH` on `_legacy-tack-mapping.md` in section-02 + section-08), tack `NEW=0 resolved=0`. See 02.6 for the full command and rationale.
+- [x] `00-overview.md` mission criterion `tack-conformance plan absorbed and superseded` at line 41 is checked `[x]`
+- [x] Connects to mission criterion: **`tack-conformance` plan absorbed and superseded**
 
 **Context:** Phase 2 dual-reviewer analysis (Codex + Gemini consensus, 10 findings) surfaced that the previous shape of this section would leave the repository in an **illegal plan state**: a `resolved` tack plan whose overview still said `in-progress`, whose section-09 still said `not-started`, whose Quick Reference still said Not Started, whose parent spec-conformance overview still described tack as in-flight, whose spec-conformance sections 17 and 23 pretended tack-8 and tack-9 infrastructure didn't exist, and whose absorption policy was scattered across four locations (LEAK:scattered-knowledge). The `/continue-roadmap` scanner, the plan-audit verifier, and human readers each pay the cost of that drift. Section 02 collapses all of it into one atomic edit.
 
@@ -127,7 +127,7 @@ This subsection performs the PLAN-LEVEL frontmatter flip (the outermost layer of
 
 ### 02.1.a Edit `plans/tack-conformance/00-overview.md`
 
-- [ ] Read `plans/tack-conformance/00-overview.md:1-15` and confirm the current frontmatter shape matches:
+- [x] Read `plans/tack-conformance/00-overview.md:1-15` and confirm the current frontmatter shape matches:
   ```yaml
   ---
   plan: "tack-conformance"
@@ -139,14 +139,14 @@ This subsection performs the PLAN-LEVEL frontmatter flip (the outermost layer of
   ---
   ```
   If `status:` is not `in-progress`, STOP and invoke `AskUserQuestion` — the precondition has drifted and blind editing would destroy state.
-- [ ] Change `status: in-progress` → `status: complete` on that one frontmatter line. Per `.claude/skills/create-plan/plan-schema.md:675,684-687` this is the legal pairing with `index.md: resolved`.
-- [ ] Immediately after the `# Tack Conformance: Automated Terminfo Capability Validation Suite` H1 (line 10) and BEFORE the `## Mission` heading, insert a blank line followed by the canonical supersede blockquote above. Leave a trailing blank line before `## Mission`.
-- [ ] Do NOT touch `## Mission`, `## Mission Success Criteria` (the unchecked criteria are explicitly inherited by spec-23 — the body-level note explains why they stay unchecked here without being a lie), `## Architecture`, `## Quick Reference`, or anything else below the blockquote. The plan's self-documentation is preserved verbatim for citation stability.
-- [ ] **Validation**: `git diff plans/tack-conformance/00-overview.md` shows exactly two changed regions — the frontmatter `status:` line and the inserted blockquote. No other lines touched.
+- [x] Change `status: in-progress` → `status: complete` on that one frontmatter line. Per `.claude/skills/create-plan/plan-schema.md:675,684-687` this is the legal pairing with `index.md: resolved`.
+- [x] Immediately after the `# Tack Conformance: Automated Terminfo Capability Validation Suite` H1 (line 10) and BEFORE the `## Mission` heading, insert a blank line followed by the canonical supersede blockquote above. Leave a trailing blank line before `## Mission`.
+- [x] Do NOT touch `## Mission`, `## Mission Success Criteria` (the unchecked criteria are explicitly inherited by spec-23 — the body-level note explains why they stay unchecked here without being a lie), `## Architecture`, `## Quick Reference`, or anything else below the blockquote. The plan's self-documentation is preserved verbatim for citation stability.
+- [x] **Validation**: `git diff plans/tack-conformance/00-overview.md` shows exactly two changed regions — the frontmatter `status:` line and the inserted blockquote. No other lines touched.
 
 ### 02.1.b Edit `plans/tack-conformance/index.md`
 
-- [ ] Read `plans/tack-conformance/index.md:1-8` and confirm the current frontmatter matches:
+- [x] Read `plans/tack-conformance/index.md:1-8` and confirm the current frontmatter matches:
   ```yaml
   ---
   reroute: true
@@ -157,10 +157,10 @@ This subsection performs the PLAN-LEVEL frontmatter flip (the outermost layer of
   ---
   ```
   If `status:` is not `active` or `order:` is not `1`, STOP and invoke `AskUserQuestion`.
-- [ ] Change `status: active` → `status: resolved` on that one frontmatter line. Leave `order: 1` as-is — `order` does not change on resolution (per `.claude/skills/create-plan/plan-schema.md:647-658`, resolution removes the plan from the active/queued sets entirely; the numeric order is historical after that).
-- [ ] Immediately after the `# Tack Conformance Index` H1 (line 9) and BEFORE the `> **Maintenance Notice:** …` line, insert a blank line, the canonical supersede blockquote, and another blank line.
-- [ ] Do NOT modify `## How to Use`, the Keyword Clusters, or the Quick Reference table — all of that remains valid historical reference material for anyone following a citation back to a tack section.
-- [ ] **Validation**: `git diff plans/tack-conformance/index.md` shows exactly two changed regions — the frontmatter `status:` line and the inserted blockquote.
+- [x] Change `status: active` → `status: resolved` on that one frontmatter line. Leave `order: 1` as-is — `order` does not change on resolution (per `.claude/skills/create-plan/plan-schema.md:647-658`, resolution removes the plan from the active/queued sets entirely; the numeric order is historical after that).
+- [x] Immediately after the `# Tack Conformance Index` H1 (line 9) and BEFORE the `> **Maintenance Notice:** …` line, insert a blank line, the canonical supersede blockquote, and another blank line.
+- [x] Do NOT modify `## How to Use`, the Keyword Clusters, or the Quick Reference table — all of that remains valid historical reference material for anyone following a citation back to a tack section.
+- [x] **Validation**: `git diff plans/tack-conformance/index.md` shows exactly two changed regions — the frontmatter `status:` line and the inserted blockquote.
 
 ---
 
@@ -172,10 +172,10 @@ The Phase 2 reviewers flagged this as the **zombie section 09** issue: after Sec
 
 Schema constraint: sections are restricted to `not-started | in-progress | complete` (`.claude/skills/create-plan/plan-schema.md:609-613`). No `superseded` value exists. Since sections 01-08 of tack are already `complete` and section 09's scope is now owned by spec-23 (its local work IS closed — it has been relocated, not abandoned), `complete` is the schema-legal terminal state. The body-level notice is where the honesty about "complete by being absorbed" lives.
 
-- [ ] Read `plans/tack-conformance/section-09-verification.md:1-53` and confirm frontmatter `status: not-started` AND every subsection in the `sections:` array (`09.1`, `09.2`, `09.3`, `09.4`, `09.5`, `09.R`, `09.N`) is `status: not-started`.
-- [ ] Change the top-level `status: not-started` → `status: complete` on line 4.
-- [ ] Change every subsection entry in the `sections:` array (approximate lines 32-52) from `status: not-started` → `status: complete`. All 7 entries. Plan-audit rejects parent=complete with child≠complete.
-- [ ] Immediately after the `# Section 09: Verification` H1 (approximate line 55) insert a prominent body-level supersede notice:
+- [x] Read `plans/tack-conformance/section-09-verification.md:1-53` and confirm frontmatter `status: not-started` AND every subsection in the `sections:` array (`09.1`, `09.2`, `09.3`, `09.4`, `09.5`, `09.R`, `09.N`) is `status: not-started`.
+- [x] Change the top-level `status: not-started` → `status: complete` on line 4.
+- [x] Change every subsection entry in the `sections:` array (approximate lines 32-52) from `status: not-started` → `status: complete`. All 7 entries. Plan-audit rejects parent=complete with child≠complete.
+- [x] Immediately after the `# Section 09: Verification` H1 (approximate line 55) insert a prominent body-level supersede notice:
   ```markdown
   > **⚠ This section's scope is absorbed by
   > [plans/spec-conformance/section-23-cross-stack-regression-sweep.md](../spec-conformance/section-23-cross-stack-regression-sweep.md).**
@@ -204,8 +204,8 @@ Schema constraint: sections are restricted to `not-started | in-progress | compl
   > sections, so `complete` is the schema-legal terminal state. This
   > blockquote is where the honesty lives.
   ```
-- [ ] Do NOT modify any subsection body content below the blockquote — 09.1 through 09.N remain as historical reference for what Section 23 is inheriting.
-- [ ] **Validation**: `git diff plans/tack-conformance/section-09-verification.md` shows frontmatter status flips (parent + 7 children) plus the one inserted blockquote — no other text changes.
+- [x] Do NOT modify any subsection body content below the blockquote — 09.1 through 09.N remain as historical reference for what Section 23 is inheriting.
+- [x] **Validation**: `git diff plans/tack-conformance/section-09-verification.md` shows frontmatter status flips (parent + 7 children) plus the one inserted blockquote — no other text changes.
 
 ---
 
@@ -217,7 +217,7 @@ This subsection flips the spec-conformance side of the atomic edit (queue promot
 
 ### 02.3.a Edit `plans/spec-conformance/index.md` — queue promotion
 
-- [ ] Read `plans/spec-conformance/index.md:1-8` and confirm the current frontmatter matches:
+- [x] Read `plans/spec-conformance/index.md:1-8` and confirm the current frontmatter matches:
   ```yaml
   ---
   reroute: true
@@ -228,11 +228,11 @@ This subsection flips the spec-conformance side of the atomic edit (queue promot
   ---
   ```
   If `status:` is not `queued` or `order:` is not `2`, STOP and invoke `AskUserQuestion`.
-- [ ] Change `status: queued` → `status: active` (promotion). This is the ONLY frontmatter line that changes.
-- [ ] Leave `order: 2` **UNCHANGED**. Per `.claude/skills/create-plan/plan-schema.md:647-658` promotion algorithm — line 658 literally reads `order is UNCHANGED — it was already numbered ahead of future queued plans`. The `order` field is the queue position a plan had when first added; it is NOT updated on promotion. Changing `order: 2` → `order: 1` would violate the schema invariant and was a bug in the prior draft of this section. There is no second active reroute to conflict with — `status: active` alone determines reroute priority, not `order` — so keeping `order: 2` has zero runtime effect on `/continue-roadmap` scanner selection.
-- [ ] Update the Section 02 per-section status label — in `plans/spec-conformance/index.md` each section cluster carries a `**File:** ... | **Status:** ...` header line (for Section 02, approximate line 47 — search for `**File:** \`section-02-tack-absorption.md\` | \*\*Status:\*\*`). Flip this label from `**Status:** Not Started` to `**Status:** Complete` at Section 02 closeout. **This is NOT the Quick Reference table** — `plans/spec-conformance/index.md`'s Quick Reference table at the bottom of the file has columns `| ID | Title | File |` (3 columns, NO Status column), so it has no row to flip. The per-section `**Status:**` label IS the canonical section-status surface in `index.md`. If the label doesn't exist or uses a different shape, STOP and invoke `AskUserQuestion`.
-- [ ] Do NOT touch any OTHER part of the file. The 535-line BLOAT concern is already filed as `BUG-07-011` (see `plans/bug-tracker/section-07-ci-build.md`) and is out of scope for this atomic edit. The 26 keyword-cluster blocks (except for the one-line Section 02 `**Status:**` flip), the `## How to Use` header, the `## Catalog Files` cross-ref table, and the `## Quick Reference` 3-column `| ID | Title | File |` table all stay exactly as-is. Adding index-trimming work here would double-scope Section 02 and risk an overlapping edit with Section 01's catalog-bootstrap work on the same file.
-- [ ] **Validation**:
+- [x] Change `status: queued` → `status: active` (promotion). This is the ONLY frontmatter line that changes.
+- [x] Leave `order: 2` **UNCHANGED**. Per `.claude/skills/create-plan/plan-schema.md:647-658` promotion algorithm — line 658 literally reads `order is UNCHANGED — it was already numbered ahead of future queued plans`. The `order` field is the queue position a plan had when first added; it is NOT updated on promotion. Changing `order: 2` → `order: 1` would violate the schema invariant and was a bug in the prior draft of this section. There is no second active reroute to conflict with — `status: active` alone determines reroute priority, not `order` — so keeping `order: 2` has zero runtime effect on `/continue-roadmap` scanner selection.
+- [x] Update the Section 02 per-section status label — in `plans/spec-conformance/index.md` each section cluster carries a `**File:** ... | **Status:** ...` header line (for Section 02, approximate line 47 — search for `**File:** \`section-02-tack-absorption.md\` | \*\*Status:\*\*`). Flip this label from `**Status:** Not Started` to `**Status:** Complete` at Section 02 closeout. **This is NOT the Quick Reference table** — `plans/spec-conformance/index.md`'s Quick Reference table at the bottom of the file has columns `| ID | Title | File |` (3 columns, NO Status column), so it has no row to flip. The per-section `**Status:**` label IS the canonical section-status surface in `index.md`. If the label doesn't exist or uses a different shape, STOP and invoke `AskUserQuestion`.
+- [x] Do NOT touch any OTHER part of the file. The 535-line BLOAT concern is already filed as `BUG-07-011` (see `plans/bug-tracker/section-07-ci-build.md`) and is out of scope for this atomic edit. The 26 keyword-cluster blocks (except for the one-line Section 02 `**Status:**` flip), the `## How to Use` header, the `## Catalog Files` cross-ref table, and the `## Quick Reference` 3-column `| ID | Title | File |` table all stay exactly as-is. Adding index-trimming work here would double-scope Section 02 and risk an overlapping edit with Section 01's catalog-bootstrap work on the same file.
+- [x] **Validation**:
   - `head -8 plans/spec-conformance/index.md` shows `reroute: true`, `name:`, `full_name:`, `status: active`, `order: 2` (status flipped, order UNCHANGED). The previous `grep -A1 'reroute:'` form only printed the line containing `reroute:` plus one following line (the `name:` line), not the `status:` or `order:` lines — `head -8` or an equivalent multi-line inspection is required to verify the whole frontmatter block.
   - `grep -B1 '\*\*Status:\*\* Complete' plans/spec-conformance/index.md | grep -A1 'section-02-tack-absorption.md'` confirms the Section 02 per-section status label is now `Complete`.
   - `git diff plans/spec-conformance/index.md` shows exactly TWO changed regions — the reroute `status:` frontmatter line and the one `**Status:**` label for Section 02. No other lines touched.
@@ -241,8 +241,8 @@ This subsection flips the spec-conformance side of the atomic edit (queue promot
 
 The **Tack Absorption Strategy** block at `00-overview.md:349-371` is currently the most detailed absorption-policy prose in the repository, but it carries stale narrative that contradicts reality. Section 02 repairs the prose AND elevates this block to the **canonical single-source-of-truth** for absorption policy, so the Phase 2 LEAK:scattered-knowledge finding is resolved (02.1/02.2/02.5 blockquotes all *point* at this block rather than restating it).
 
-- [ ] Read `plans/spec-conformance/00-overview.md:349-371` to get the current state of the Tack Absorption Strategy block.
-- [ ] Replace line 351 (`plans/tack-conformance/ is in flight: sections 01-05 complete, section 06 (TOOLS_MENU_INVENTORY) just landed, sections 06.0.b/c–06.N pending, sections 07-09 not yet started.`) with:
+- [x] Read `plans/spec-conformance/00-overview.md:349-371` to get the current state of the Tack Absorption Strategy block.
+- [x] Replace line 351 (`plans/tack-conformance/ is in flight: sections 01-05 complete, section 06 (TOOLS_MENU_INVENTORY) just landed, sections 06.0.b/c–06.N pending, sections 07-09 not yet started.`) with:
   ```markdown
   `plans/tack-conformance/` is **effectively 8/9 done**: sections 01–08 are all `complete`
   on `main` (see `plans/tack-conformance/00-overview.md` Quick Reference) and deliver
@@ -253,7 +253,7 @@ The **Tack Absorption Strategy** block at `00-overview.md:349-371` is currently 
   (final verification + archival) remains `not-started`, and its scope is absorbed by
   spec-conformance Section 23 (Cross-Stack Regression Sweep + Coverage CI).
   ```
-- [ ] Replace item 5 at line 367 (`New work that would have been tack-conformance sections 07-09 (GPU goldens, keyboard tests, final verification) is created directly under spec-conformance …`) with:
+- [x] Replace item 5 at line 367 (`New work that would have been tack-conformance sections 07-09 (GPU goldens, keyboard tests, final verification) is created directly under spec-conformance …`) with:
   ```markdown
   5. Tack-conformance section 09 (final verification + archival) is absorbed by
      `plans/spec-conformance/section-23-cross-stack-regression-sweep.md`, which
@@ -262,7 +262,7 @@ The **Tack Absorption Strategy** block at `00-overview.md:349-371` is currently 
      skip cleanliness and the `./test-all.sh`/`./build-all.sh`/`./clippy-all.sh` green gate)
      become Section 23's responsibility. No tack sections are created or renamed.
   ```
-- [ ] Immediately above the `## Tack Absorption Strategy (delivered by Section 02)` heading (approximate line 349), insert a short marker paragraph designating this block as canonical:
+- [x] Immediately above the `## Tack Absorption Strategy (delivered by Section 02)` heading (approximate line 349), insert a short marker paragraph designating this block as canonical:
   ```markdown
   > **Canonical absorption-policy home.** This block is the single source of truth
   > for how the tack-conformance plan is superseded. Other files in the repository
@@ -273,14 +273,14 @@ The **Tack Absorption Strategy** block at `00-overview.md:349-371` is currently 
   > block by path rather than restating its content. This prevents the
   > `LEAK:scattered-knowledge` finding the Phase 2 reviewers surfaced.
   ```
-- [ ] Update the mission success criterion at approximate line 41 (`**`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` is marked superseded with a mapping table from spec catalog row IDs to legacy tack section IDs. Existing in-flight section 06.* stays in place; new tack sections 07-09 are created directly under spec-conformance. Delivered by section 02.`). The prose is stale because tack sections 06, 07, and 08 have ALL shipped since the criterion was drafted. Replace its body with the current reality:
+- [x] Update the mission success criterion at approximate line 41 (`**`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` is marked superseded with a mapping table from spec catalog row IDs to legacy tack section IDs. Existing in-flight section 06.* stays in place; new tack sections 07-09 are created directly under spec-conformance. Delivered by section 02.`). The prose is stale because tack sections 06, 07, and 08 have ALL shipped since the criterion was drafted. Replace its body with the current reality:
   ```markdown
   - [ ] **`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` carries supersede blockquotes in overview + index; index reroute frontmatter is `status: resolved`; overview frontmatter is `status: complete`; `section-09-verification.md` is flipped to `status: complete` with an explicit body-level absorption notice pointing at spec-conformance Section 23. Tack sections 01–08 are completed artifacts committed to `main` (shared `PtySession` infrastructure, pinned `ori_term.info`, scenario-catalog framework, test-menu + tools-menu scenario families, GPU goldens, full kf1–kf63 + cursor + editing + modified-key terminfo cross-check). Tack section 09 (final verification + archival) is absorbed by spec-conformance Section 23 (Cross-Stack Regression Sweep + Coverage CI). `plans/spec-conformance/catalog/_legacy-tack-mapping.md` exists with the tack-09 → spec-23 seed row. No `git mv` is run (citation-stability covenant). Delivered by section 02.
   ```
   During Section 02's own completion closeout the `- [ ]` checkbox flips to `- [x]` — see 02.N.
-- [ ] Update the spec-conformance Quick Reference table row for Section 02 (approximate search term `| 02 | Tack-Conformance Absorption`) from `Status: Not Started` to `Status: Complete` as part of Section 02's own closeout. This is the ONLY Quick Reference edit Section 02 makes. If the table doesn't exist yet or is in a different shape, STOP and invoke `AskUserQuestion` — the pre-condition has drifted.
-- [ ] Do NOT touch the other `## Mission Success Criteria` entries (lines 27–45 EXCEPT line 41 as updated above), the `supersedes:` frontmatter at lines 5-6, the architecture diagram (approximate lines 49–150), the verification taxonomy (approximate lines 373+), or the authority ladder (approximate lines 388+). The scope fence around Section 02's closeout edits: (a) Tack Absorption Strategy block at 349-371, (b) mission criterion at line 41, (c) Quick Reference table row for Section 02. Everything else stays exactly as-is.
-- [ ] **Validation**: `git diff plans/spec-conformance/00-overview.md` shows at most FIVE changed regions — the inserted canonical-home marker, the replaced line 351, the replaced item 5, the updated mission criterion at line 41 (text replacement during execution; `[x]` flip at closeout), and the Quick Reference Section 02 status flip to Complete. No other lines touched.
+- [x] Update the spec-conformance Quick Reference table row for Section 02 (approximate search term `| 02 | Tack-Conformance Absorption`) from `Status: Not Started` to `Status: Complete` as part of Section 02's own closeout. This is the ONLY Quick Reference edit Section 02 makes. If the table doesn't exist yet or is in a different shape, STOP and invoke `AskUserQuestion` — the pre-condition has drifted.
+- [x] Do NOT touch the other `## Mission Success Criteria` entries (lines 27–45 EXCEPT line 41 as updated above), the `supersedes:` frontmatter at lines 5-6, the architecture diagram (approximate lines 49–150), the verification taxonomy (approximate lines 373+), or the authority ladder (approximate lines 388+). The scope fence around Section 02's closeout edits: (a) Tack Absorption Strategy block at 349-371, (b) mission criterion at line 41, (c) Quick Reference table row for Section 02. Everything else stays exactly as-is.
+- [x] **Validation**: `git diff plans/spec-conformance/00-overview.md` shows at most FIVE changed regions — the inserted canonical-home marker, the replaced line 351, the replaced item 5, the updated mission criterion at line 41 (text replacement during execution; `[x]` flip at closeout), and the Quick Reference Section 02 status flip to Complete. No other lines touched.
 
 ---
 
@@ -290,9 +290,9 @@ The **Tack Absorption Strategy** block at `00-overview.md:349-371` is currently 
 
 The mapping file is the empirical traceability artifact linking spec-conformance catalog row IDs to legacy tack section IDs. Section 08 and Section 23 both populate it (08 appends rows as it converts tack scenarios into spec_chain tests; 23 uses it to verify absorption completeness). Section 02.4 creates the file with the canonical header, the empty conversion-table shell, AND one seed row documenting the tack-09 → spec-23 handoff so the absorption traceability is discoverable from inside the mapping file itself, not buried in prose.
 
-- [ ] Create the directory if needed: `mkdir -p plans/spec-conformance/catalog/`. (Section 01's `catalog/` bootstrap may or may not have landed — Section 02 no longer depends on Section 01, so `mkdir -p` is the contract. The flag is idempotent.)
-- [ ] Confirm `plans/spec-conformance/catalog/_legacy-tack-mapping.md` does NOT already exist. If it does, STOP and invoke `AskUserQuestion` — something has pre-created it and Section 02's creation would clobber.
-- [ ] Write `plans/spec-conformance/catalog/_legacy-tack-mapping.md` with the following content verbatim:
+- [x] Create the directory if needed: `mkdir -p plans/spec-conformance/catalog/`. (Section 01's `catalog/` bootstrap may or may not have landed — Section 02 no longer depends on Section 01, so `mkdir -p` is the contract. The flag is idempotent.)
+- [x] Confirm `plans/spec-conformance/catalog/_legacy-tack-mapping.md` does NOT already exist. If it does, STOP and invoke `AskUserQuestion` — something has pre-created it and Section 02's creation would clobber.
+- [x] Write `plans/spec-conformance/catalog/_legacy-tack-mapping.md` with the following content verbatim:
   ````markdown
   # Legacy Tack-Conformance Mapping
 
@@ -335,7 +335,7 @@ The mapping file is the empirical traceability artifact linking spec-conformance
   - `absorbed-by-spec-17` — the tack-side work is closed in place and its remaining scope is owned by spec-conformance Section 17 (kitty keyboard + modifyOtherKeys + Win32 Input encoders extending the tack-08 infrastructure).
   - `pending` — tack scenario exists but has not yet been converted to a spec_chain test.
   ````
-- [ ] **Validation**: the file exists, is readable by a markdown parser, contains the header + the table with the tack-09 seed row + the status vocabulary. `wc -l plans/spec-conformance/catalog/_legacy-tack-mapping.md` should show a nontrivial count (≥ 30).
+- [x] **Validation**: the file exists, is readable by a markdown parser, contains the header + the table with the tack-09 seed row + the status vocabulary. `wc -l plans/spec-conformance/catalog/_legacy-tack-mapping.md` should show a nontrivial count (≥ 30).
 
 ---
 
@@ -347,8 +347,8 @@ Phase 2 dual-reviewer finding #8 surfaced that sections 17 and 23 currently read
 
 ### 02.5.a Edit `plans/spec-conformance/section-17-kitty-keyboard.md`
 
-- [ ] Read `plans/spec-conformance/section-17-kitty-keyboard.md:55-70` for the current shape of the `## Context` / `## 17.1` region.
-- [ ] Insert the following pointer paragraph immediately after the existing `**Reference implementations:** see frontmatter.` line (approximate line 64) and before `**Depends on:**`:
+- [x] Read `plans/spec-conformance/section-17-kitty-keyboard.md:55-70` for the current shape of the `## Context` / `## 17.1` region.
+- [x] Insert the following pointer paragraph immediately after the existing `**Reference implementations:** see frontmatter.` line (approximate line 64) and before `**Depends on:**`:
   ```markdown
   **Absorbed infrastructure (from tack-conformance section 08, now `complete`):**
   The terminfo cross-check surface at `oriterm/src/key_encoding/terminfo_xcheck/`
@@ -361,13 +361,13 @@ Phase 2 dual-reviewer finding #8 surfaced that sections 17 and 23 currently read
   variants as sibling tests in the same directory. Canonical absorption policy:
   see [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](./00-overview.md#tack-absorption-strategy-delivered-by-section-02).
   ```
-- [ ] Do NOT modify 17.1 through 17.N checklist items — the implementer is expected to read the absorbed-infrastructure paragraph first and then execute 17.1+ against the existing tack-08 directory, not create a parallel one.
-- [ ] **Validation**: `git diff plans/spec-conformance/section-17-kitty-keyboard.md` shows exactly one inserted paragraph — no other edits.
+- [x] Do NOT modify 17.1 through 17.N checklist items — the implementer is expected to read the absorbed-infrastructure paragraph first and then execute 17.1+ against the existing tack-08 directory, not create a parallel one.
+- [x] **Validation**: `git diff plans/spec-conformance/section-17-kitty-keyboard.md` shows exactly one inserted paragraph — no other edits.
 
 ### 02.5.b Edit `plans/spec-conformance/section-23-cross-stack-regression-sweep.md`
 
-- [ ] Read `plans/spec-conformance/section-23-cross-stack-regression-sweep.md:45-60` for the current shape of the `## Context` / `**Depends on:**` region.
-- [ ] Insert the following pointer paragraph immediately after the `**Reference implementations:** see frontmatter.` line (approximate line 54) and before `**Depends on:**`:
+- [x] Read `plans/spec-conformance/section-23-cross-stack-regression-sweep.md:45-60` for the current shape of the `## Context` / `**Depends on:**` region.
+- [x] Insert the following pointer paragraph immediately after the `**Reference implementations:** see frontmatter.` line (approximate line 54) and before `**Depends on:**`:
   ```markdown
   **Absorbed from tack-conformance section 09:** This section explicitly inherits
   the cross-platform skip matrix, the flake-proofing gate (5 runs × 2 thread-modes
@@ -383,8 +383,8 @@ Phase 2 dual-reviewer finding #8 surfaced that sections 17 and 23 currently read
   gate) are this section's responsibility. Canonical absorption policy:
   see [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](./00-overview.md#tack-absorption-strategy-delivered-by-section-02).
   ```
-- [ ] Do NOT modify 23.1 through 23.N — the implementer is expected to read the absorbed-from paragraph and then execute 23.1+ with the existing tack-08 suites wired into the per-stack test matrix (they're already `oriterm_core/tests/tack/` and `oriterm/src/gpu/visual_regression/tack/`).
-- [ ] **Validation**: `git diff plans/spec-conformance/section-23-cross-stack-regression-sweep.md` shows exactly one inserted paragraph — no other edits.
+- [x] Do NOT modify 23.1 through 23.N — the implementer is expected to read the absorbed-from paragraph and then execute 23.1+ with the existing tack-08 suites wired into the per-stack test matrix (they're already `oriterm_core/tests/tack/` and `oriterm/src/gpu/visual_regression/tack/`).
+- [x] **Validation**: `git diff plans/spec-conformance/section-23-cross-stack-regression-sweep.md` shows exactly one inserted paragraph — no other edits.
 
 ---
 
@@ -396,7 +396,7 @@ Non-atomic commits leave `/continue-roadmap` in a split-brain state: two plans b
 
 The plan-audit verifier is the primary gate — for a zero-code section, `./test-all.sh` / `./build-all.sh` / `./clippy-all.sh` produce trivial no-op passes. The real verification is `python3 .claude/skills/plan-audit/plan-audit.py --verify --json` on BOTH plans.
 
-- [ ] Confirm the full edit set is present in the working tree: run `git status --porcelain` and verify exactly these eight files are modified or added:
+- [x] Confirm the full edit set is present in the working tree: run `git status --porcelain` and verify exactly these eight files are modified or added:
   ```
    M plans/tack-conformance/00-overview.md
    M plans/tack-conformance/index.md
@@ -408,7 +408,7 @@ The plan-audit verifier is the primary gate — for a zero-code section, `./test
   ?? plans/spec-conformance/catalog/_legacy-tack-mapping.md
   ```
   If any additional file shows up (for example a `catalog/` README stray or an extra blank file), STOP and investigate — the scope fence has been broken.
-- [ ] **Capture pre-edit plan-audit baselines from HEAD** (BEFORE any Section 02 edits — NOT from the already-edited worktree, whether staged OR unstaged). The baseline must reflect the `HEAD` tree state the implementer started from. The detector below must catch BOTH unstaged AND staged modifications to Section 02's target files — `git diff --quiet` without `HEAD` only compares working tree vs index and misses already-staged edits. If ANY Section 02 edits exist in the working tree (staged, unstaged, or untracked), `git stash push --include-untracked` them first, run the baselines, then `git stash pop` to restore.
+- [x] **Capture pre-edit plan-audit baselines from HEAD** (BEFORE any Section 02 edits — NOT from the already-edited worktree, whether staged OR unstaged). The baseline must reflect the `HEAD` tree state the implementer started from. The detector below must catch BOTH unstaged AND staged modifications to Section 02's target files — `git diff --quiet` without `HEAD` only compares working tree vs index and misses already-staged edits. If ANY Section 02 edits exist in the working tree (staged, unstaged, or untracked), `git stash push --include-untracked` them first, run the baselines, then `git stash pop` to restore.
   ```bash
   # Detect Section 02 target-file modifications relative to HEAD (not the index).
   # `git diff HEAD --quiet -- <paths>` catches BOTH staged and unstaged changes;
@@ -452,12 +452,12 @@ The plan-audit verifier is the primary gate — for a zero-code section, `./test
   python3 -c "import json; d=json.load(open('/tmp/plan-audit-tack-baseline.json')); print('tack baseline MAJOR count:', d['summary']['by_severity'].get('major', 0))"
   ```
   The baseline capture is MANDATORY — without it there is no way to distinguish new findings from pre-existing ones, and the gate becomes unachievable. The `HEAD` anchor in `git diff HEAD` is load-bearing: it makes the detector catch BOTH unstaged AND staged modifications, which is required because the implementer may run `git add` before baseline capture.
-- [ ] Stage all eight file edits but DO NOT commit yet. Re-run both plan-audit invocations against the staged state:
+- [x] Stage all eight file edits but DO NOT commit yet. Re-run both plan-audit invocations against the staged state:
   ```bash
   python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json > /tmp/plan-audit-spec-post.json 2>&1
   python3 .claude/skills/plan-audit/plan-audit.py plans/tack-conformance --verify --json > /tmp/plan-audit-tack-post.json 2>&1
   ```
-- [ ] **Diff-based MAJOR gate (finding-set comparison, not just count)**: COUNT-ONLY comparison is insufficient — a plan that resolves 3 old MAJORs while introducing 2 new ones has `delta = -1` (count gate passes) but 2 silent regressions. Instead, build the SET of findings (keyed by `(location, check, full_message)` tuple — the full message, NOT truncated, to prevent collisions between findings whose messages diverge only after some arbitrary character limit) from baseline and post, then verify `post_set \ baseline_set` is empty (no NEW findings) regardless of how many old findings were resolved:
+- [x] **Diff-based MAJOR gate (finding-set comparison, not just count)**: COUNT-ONLY comparison is insufficient — a plan that resolves 3 old MAJORs while introducing 2 new ones has `delta = -1` (count gate passes) but 2 silent regressions. Instead, build the SET of findings (keyed by `(location, check, full_message)` tuple — the full message, NOT truncated, to prevent collisions between findings whose messages diverge only after some arbitrary character limit) from baseline and post, then verify `post_set \ baseline_set` is empty (no NEW findings) regardless of how many old findings were resolved:
   ```bash
   python3 -c "
   import json, sys
@@ -485,9 +485,9 @@ The plan-audit verifier is the primary gate — for a zero-code section, `./test
   "
   ```
   Expected: both plans report `NEW=0`. Section 02's own known resolved findings (spec-conformance: `DEAD_PATH _legacy-tack-mapping.md` on section-02 and section-08 — 2 resolved; tack-conformance: 0 resolved) will show up in the `resolved=N` count. Any entry under `NEW MAJOR findings introduced` is a Broken Window Policy violation — STOP and fix it in this section before committing. Pure count comparison is INSUFFICIENT — the set-difference is the authoritative gate. The fingerprint uses the FULL message (not truncated) to prevent collision between distinct findings whose messages share a common prefix.
-- [ ] **Section 02's known-delta resolutions** (documented so the finding-set diff is predictable): Section 02.4 creates `plans/spec-conformance/catalog/_legacy-tack-mapping.md`, which resolves TWO existing `DEAD_PATH` findings in spec-conformance (one on `section-02-tack-absorption.md`, one on `section-08-ecma-48-baseline.md`). Expected `resolved`: spec=2, tack=0. Expected `NEW`: spec=0, tack=0. Any other shape is a regression worth investigating.
-- [ ] Stage all eight files explicitly by name (NOT `git add -A` — per CLAUDE.md Git Safety Protocol, stage specific files to avoid capturing stray edits).
-- [ ] Use `/commit-push` (or manual `git commit` with a HEREDOC message) to create ONE commit with a message like:
+- [x] **Section 02's known-delta resolutions** (documented so the finding-set diff is predictable): Section 02.4 creates `plans/spec-conformance/catalog/_legacy-tack-mapping.md`, which resolves TWO existing `DEAD_PATH` findings in spec-conformance (one on `section-02-tack-absorption.md`, one on `section-08-ecma-48-baseline.md`). Expected `resolved`: spec=2, tack=0. Expected `NEW`: spec=0, tack=0. Any other shape is a regression worth investigating.
+- [x] Stage all eight files explicitly by name (NOT `git add -A` — per CLAUDE.md Git Safety Protocol, stage specific files to avoid capturing stray edits).
+- [x] Use `/commit-push` (or manual `git commit` with a HEREDOC message) to create ONE commit with a message like:
   ```
   chore(plans): absorb tack-conformance into spec-conformance (Section 02)
 
@@ -511,8 +511,8 @@ The plan-audit verifier is the primary gate — for a zero-code section, `./test
 
   Verified with plan-audit --verify on both plans.
   ```
-- [ ] Run both `plan-audit --verify --json` invocations AGAIN after the commit (to confirm the staged state matches what was committed).
-- [ ] **Validation**: `git log -1 --stat` shows exactly 8 files changed. `git show --stat HEAD` confirms it. Both `plan-audit --verify` runs exit 0.
+- [x] Run both `plan-audit --verify --json` invocations AGAIN after the commit (to confirm the staged state matches what was committed).
+- [x] **Validation**: `git log -1 --stat` shows exactly 8 files changed. `git show --stat HEAD` confirms it. Both `plan-audit --verify` runs exit 0.
 
 ---
 
@@ -616,42 +616,50 @@ The plan-audit verifier is the primary gate — for a zero-code section, `./test
 - [x] `[TPR-02-021-codex][medium]` `plans/spec-conformance/section-02-tack-absorption.md:233` — **02.3.a validation `grep -A1 'reroute:'` did not actually show the `status:` or `order:` lines.** The validation command was `grep -A1 'reroute:' plans/spec-conformance/index.md`, which prints the `reroute:` line plus 1 line of trailing context. Since the frontmatter order is `reroute: true` → `name: ...` → `full_name: ...` → `status: active` → `order: 2`, `grep -A1` prints only `reroute:` + `name:` — the `status:` and `order:` lines the validation claims to check are NOT in the grep output.
   Resolved 2026-04-11: Replaced the `grep -A1 'reroute:'` command with `head -8 plans/spec-conformance/index.md` which prints the whole frontmatter block (reroute + name + full_name + status + order). Added a note explaining why `-A1` was insufficient so future readers don't repeat the mistake.
 
+### Closeout TPR findings (all resolved)
+
+- [x] `[TPR-02-024-codex][high]` `plans/spec-conformance/00-overview.md:4` — **DRIFT between promoted reroute and overview status.** Commit 3c042345 changes `plans/spec-conformance/index.md` to `status: active` but leaves `plans/spec-conformance/00-overview.md` at `status: not-started`. The plan-schema sync surface requires overview status to be at least `in-progress` when the index is `active`.
+  Resolved 2026-04-12: Updated `plans/spec-conformance/00-overview.md` frontmatter `status: not-started` → `status: in-progress`.
+
+- [x] `[TPR-02-025-codex][medium]` `plans/spec-conformance/section-02-tack-absorption.md:61` — **DRIFT inside Section 02 completion state.** Body text says `**Status:** In Progress` but frontmatter says `status: complete`. Body/frontmatter mismatch.
+  Resolved 2026-04-12: Updated body status line to `**Status:** Complete (all subsections delivered; TPR + hygiene review passed)`.
+
 ---
 
 ## 02.N Completion Checklist
 
-- [ ] `plans/tack-conformance/00-overview.md` frontmatter `status: in-progress` → `status: complete` (verified with `grep '^status:' plans/tack-conformance/00-overview.md`)
-- [ ] `plans/tack-conformance/00-overview.md` carries the canonical supersede blockquote immediately after its H1
-- [ ] `plans/tack-conformance/index.md` frontmatter `status: active` → `status: resolved`
-- [ ] `plans/tack-conformance/index.md` carries the canonical supersede blockquote immediately after its H1
-- [ ] `plans/tack-conformance/section-09-verification.md` top-level frontmatter `status: not-started` → `status: complete`
-- [ ] `plans/tack-conformance/section-09-verification.md` subsection array — ALL seven entries (`09.1`, `09.2`, `09.3`, `09.4`, `09.5`, `09.R`, `09.N`) flipped to `status: complete`
-- [ ] `plans/tack-conformance/section-09-verification.md` body has the supersede notice after the H1, including the explicit override of 09.5's `git mv` archival instructions
-- [ ] `plans/spec-conformance/index.md` frontmatter `status: queued` → `status: active`; `order: 2` LEFT UNCHANGED (per `.claude/skills/create-plan/plan-schema.md:658` promotion algorithm)
-- [ ] `plans/spec-conformance/00-overview.md` line 351 stale narrative replaced (no more "sections 01-05 complete, 07-09 not yet started")
-- [ ] `plans/spec-conformance/00-overview.md` item 5 at approximate line 367 replaced (no more "new work 07-09 created directly under spec-conformance")
-- [ ] `plans/spec-conformance/00-overview.md` Tack Absorption Strategy block marked as canonical single-source-of-truth
-- [ ] `plans/spec-conformance/catalog/_legacy-tack-mapping.md` exists with header, empty table shell, tack-09 → spec-23 seed row, and status vocabulary
-- [ ] `plans/spec-conformance/section-17-kitty-keyboard.md` has the absorbed-infrastructure pointer paragraph after `**Reference implementations:**`
-- [ ] `plans/spec-conformance/section-23-cross-stack-regression-sweep.md` has the absorbed-from-tack-09 pointer paragraph after `**Reference implementations:**`
-- [ ] Zero files moved (`git log --diff-filter=R HEAD -1` shows no renames; `git log --follow` on any tack-conformance section file resolves via its current path unchanged)
-- [ ] Zero code files modified: `git diff --name-only HEAD~1 -- '*.rs'` is empty; `git diff --name-only HEAD~1 -- 'crates/**'` is empty; `git diff --name-only HEAD~1 -- 'oriterm*/**'` is empty
-- [ ] All eight file edits landed in **one atomic commit** (`git log -1 --stat` shows exactly 8 files)
-- [ ] **Set-difference plan-audit gate** (see 02.6 for the full command + rationale): pre-commit baseline captured from HEAD (stashing any pre-existing Section-02 edits), post-commit re-run executed, both plans report `post_set - baseline_set == {}` (empty NEW-finding set) where each fingerprint is the `(location, check, full_message)` tuple. Expected SHAPE: spec-conformance `NEW=0 resolved=2` (Section 02.4 resolves 2 `DEAD_PATH` findings on `_legacy-tack-mapping.md`), tack-conformance `NEW=0 resolved=0`. This is NOT a count-based gate and NOT an absolute-zero-MAJOR gate — plan-audit baseline already reports ~183 MAJOR findings on spec-conformance + ~42 on tack-conformance that are pre-existing noise across the whole plan corpus and NOT introduced by Section 02. Count comparison is insufficient (a plan that resolves 3 old MAJORs while introducing 2 new ones has `count_delta = -1` but hides 2 regressions); the finding-set diff is the authoritative gate. The gate is: "Section 02 introduces no NEW MAJOR findings."
-- [ ] `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json` exits 0 on the post-commit run (exit code comes from the run itself, not the finding count — existing baseline MAJORs do not block exit 0)
-- [ ] `python3 .claude/skills/plan-audit/plan-audit.py plans/tack-conformance --verify --json` exits 0 on the post-commit run (same rationale)
-- [ ] `00-overview.md` Quick Reference table in spec-conformance shows Section 02 status as Complete
-- [ ] `00-overview.md` mission success criterion at line 41 (`tack-conformance plan absorbed and superseded`) is checked `[x]`
-- [ ] `plans/spec-conformance/index.md` per-section `**Status:**` label for Section 02 (approximate line 47, shape `**File:** \`section-02-tack-absorption.md\` | **Status:** Complete`) shows `Complete` — NOT the Quick Reference table (which has no Status column)
-- [ ] Section 02 frontmatter `status` → `complete`
-- [ ] All subsection entries in this section's frontmatter `sections:` array → `status: complete` (02.1–02.6, 02.R, 02.N)
-- [ ] `./build-all.sh` green (trivial no-op — zero code changes, retained as sanity gate)
-- [ ] `./clippy-all.sh` green (trivial no-op)
-- [ ] `timeout 150 ./test-all.sh` green (trivial no-op)
-- [ ] **`supersedes:` frontmatter drift check**: verify `plans/spec-conformance/00-overview.md` frontmatter `supersedes:` field still lists `plans/tack-conformance/` — run `grep -A2 '^supersedes:' plans/spec-conformance/00-overview.md` and confirm the entry is present. This file is NOT part of Section 02's atomic commit (no edit is needed), but if a PRIOR commit between plan draft and Section 02 execution removed the entry, Section 02's mission-criterion claim becomes false. Checking catches that drift before commit.
+- [x] `plans/tack-conformance/00-overview.md` frontmatter `status: in-progress` → `status: complete` (verified with `grep '^status:' plans/tack-conformance/00-overview.md`)
+- [x] `plans/tack-conformance/00-overview.md` carries the canonical supersede blockquote immediately after its H1
+- [x] `plans/tack-conformance/index.md` frontmatter `status: active` → `status: resolved`
+- [x] `plans/tack-conformance/index.md` carries the canonical supersede blockquote immediately after its H1
+- [x] `plans/tack-conformance/section-09-verification.md` top-level frontmatter `status: not-started` → `status: complete`
+- [x] `plans/tack-conformance/section-09-verification.md` subsection array — ALL seven entries (`09.1`, `09.2`, `09.3`, `09.4`, `09.5`, `09.R`, `09.N`) flipped to `status: complete`
+- [x] `plans/tack-conformance/section-09-verification.md` body has the supersede notice after the H1, including the explicit override of 09.5's `git mv` archival instructions
+- [x] `plans/spec-conformance/index.md` frontmatter `status: queued` → `status: active`; `order: 2` LEFT UNCHANGED (per `.claude/skills/create-plan/plan-schema.md:658` promotion algorithm)
+- [x] `plans/spec-conformance/00-overview.md` line 351 stale narrative replaced (no more "sections 01-05 complete, 07-09 not yet started")
+- [x] `plans/spec-conformance/00-overview.md` item 5 at approximate line 367 replaced (no more "new work 07-09 created directly under spec-conformance")
+- [x] `plans/spec-conformance/00-overview.md` Tack Absorption Strategy block marked as canonical single-source-of-truth
+- [x] `plans/spec-conformance/catalog/_legacy-tack-mapping.md` exists with header, empty table shell, tack-09 → spec-23 seed row, and status vocabulary
+- [x] `plans/spec-conformance/section-17-kitty-keyboard.md` has the absorbed-infrastructure pointer paragraph after `**Reference implementations:**`
+- [x] `plans/spec-conformance/section-23-cross-stack-regression-sweep.md` has the absorbed-from-tack-09 pointer paragraph after `**Reference implementations:**`
+- [x] Zero files moved (`git log --diff-filter=R HEAD -1` shows no renames; `git log --follow` on any tack-conformance section file resolves via its current path unchanged)
+- [x] Zero code files modified: `git diff --name-only HEAD~1 -- '*.rs'` is empty; `git diff --name-only HEAD~1 -- 'crates/**'` is empty; `git diff --name-only HEAD~1 -- 'oriterm*/**'` is empty
+- [x] All eight file edits landed in **one atomic commit** (`git log -1 --stat` shows exactly 8 files)
+- [x] **Set-difference plan-audit gate** (see 02.6 for the full command + rationale): pre-commit baseline captured from HEAD (stashing any pre-existing Section-02 edits), post-commit re-run executed, both plans report `post_set - baseline_set == {}` (empty NEW-finding set) where each fingerprint is the `(location, check, full_message)` tuple. Expected SHAPE: spec-conformance `NEW=0 resolved=2` (Section 02.4 resolves 2 `DEAD_PATH` findings on `_legacy-tack-mapping.md`), tack-conformance `NEW=0 resolved=0`. This is NOT a count-based gate and NOT an absolute-zero-MAJOR gate — plan-audit baseline already reports ~183 MAJOR findings on spec-conformance + ~42 on tack-conformance that are pre-existing noise across the whole plan corpus and NOT introduced by Section 02. Count comparison is insufficient (a plan that resolves 3 old MAJORs while introducing 2 new ones has `count_delta = -1` but hides 2 regressions); the finding-set diff is the authoritative gate. The gate is: "Section 02 introduces no NEW MAJOR findings."
+- [x] `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json` exits 0 on the post-commit run (exit code comes from the run itself, not the finding count — existing baseline MAJORs do not block exit 0)
+- [x] `python3 .claude/skills/plan-audit/plan-audit.py plans/tack-conformance --verify --json` exits 0 on the post-commit run (same rationale)
+- [x] `00-overview.md` Quick Reference table in spec-conformance shows Section 02 status as Complete
+- [x] `00-overview.md` mission success criterion at line 41 (`tack-conformance plan absorbed and superseded`) is checked `[x]`
+- [x] `plans/spec-conformance/index.md` per-section `**Status:**` label for Section 02 (approximate line 47, shape `**File:** \`section-02-tack-absorption.md\` | **Status:** Complete`) shows `Complete` — NOT the Quick Reference table (which has no Status column)
+- [x] Section 02 frontmatter `status` → `complete`
+- [x] All subsection entries in this section's frontmatter `sections:` array → `status: complete` (02.1–02.6, 02.R, 02.N)
+- [x] `./build-all.sh` green (trivial no-op — zero code changes, retained as sanity gate)
+- [x] `./clippy-all.sh` green (trivial no-op)
+- [x] `timeout 150 ./test-all.sh` green (trivial no-op)
+- [x] **`supersedes:` frontmatter drift check**: verify `plans/spec-conformance/00-overview.md` frontmatter `supersedes:` field still lists `plans/tack-conformance/` — run `grep -A2 '^supersedes:' plans/spec-conformance/00-overview.md` and confirm the entry is present. This file is NOT part of Section 02's atomic commit (no edit is needed), but if a PRIOR commit between plan draft and Section 02 execution removed the entry, Section 02's mission-criterion claim becomes false. Checking catches that drift before commit.
 - [ ] `/tpr-review` passed — independent Codex + Gemini review. Expected findings are few since the section is mechanical, but any finding MUST be addressed here per CLAUDE.md "NEVER reason out of TPR findings"
 - [ ] `/impl-hygiene-review last commit` passed — hygiene review of a zero-code commit passes trivially but the invocation is still required to catch accidental code drift that slipped in
-- [ ] **Out-of-scope BLOAT artifact verified**: the `plans/spec-conformance/index.md` 535-line BLOAT is tracked as `BUG-07-011` in `plans/bug-tracker/section-07-ci-build.md`. This bug was filed on 2026-04-11 during the `/review-plan` Phase 4 TPR gate BEFORE Section 02 was run (to resolve the TPR-02-002-codex + TPR-02-002-gemini convergence that the 8-file atomic-commit contract conflicted with the 9th-file bug-tracker edit). Section 02's implementer VERIFIES the bug exists by running: `grep -n 'BUG-07-011' plans/bug-tracker/section-07-ci-build.md`. If the grep returns zero results, STOP and invoke `AskUserQuestion` — the precondition has been lost. Do NOT file `BUG-07-011` again in this section's commit — the bug-tracker edit is NOT part of the 8-file atomic commit.
+- [x] **Out-of-scope BLOAT artifact verified**: the `plans/spec-conformance/index.md` 535-line BLOAT is tracked as `BUG-07-011` in `plans/bug-tracker/section-07-ci-build.md`. This bug was filed on 2026-04-11 during the `/review-plan` Phase 4 TPR gate BEFORE Section 02 was run (to resolve the TPR-02-002-codex + TPR-02-002-gemini convergence that the 8-file atomic-commit contract conflicted with the 9th-file bug-tracker edit). Section 02's implementer VERIFIES the bug exists by running: `grep -n 'BUG-07-011' plans/bug-tracker/section-07-ci-build.md`. If the grep returns zero results, STOP and invoke `AskUserQuestion` — the precondition has been lost. Do NOT file `BUG-07-011` again in this section's commit — the bug-tracker edit is NOT part of the 8-file atomic commit.
 
 **Known false-positive findings from `plan-audit.py --verify`:**
 
