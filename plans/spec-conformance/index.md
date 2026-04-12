@@ -25,20 +25,43 @@ order: 2
 **File:** `section-01-catalog-bootstrap.md` | **Status:** Not Started
 
 ```
-catalog, sequence inventory, row schema, row ID, plans/spec-conformance/catalog
-phase 1 harvest, phase 2 walk, bottom-up scan, top-down fill
-wezterm escape-sequences.md, ori_term VTE dispatch tables
-real-app capture, notcurses-demo, vim, htop, btop, tmux, helix, ncmpcpp
-spec corpus, plans/spec-conformance/specs, manifest.toml, sha256, fetch script
+catalog, sequence inventory, row schema, row ID, schema_version 0.1-provisional
+plans/spec-conformance/catalog, 10-column schema, stable-symbol primary
+phase 0a catalog map of territory, bottom-up harvest, top-down spec walk
+reconciliation pass, de-facto categorization, MISSING row category
+wezterm escape-sequences.md as De-facto ref only (not Spec source)
+alacritty escape_support.md, ghostty src/lib_vt.zig, stable-symbol citations
+ori_term VTE dispatch tables, PM SOS parser states, State::SosPmApcString
+crates/vte/src/ansi/dispatch/mod.rs, csi.rs, osc.rs, crates/vte/src/lib.rs
+PM privacy message discard, SOS start of string discard, stub verification
+committed deterministic real-app captures, plans/spec-conformance/captures
+vim tmux htop btop less nvim notcurses-demo scripted flows
+captures manifest.toml, sha256, idle-capture rejection, 20 unique tuple threshold
+reconciliation-report.md committed audit trail
+catalog_coverage_check Rust binary, crates/oriterm_test_support/src/bin/catalog_coverage_check.rs
+shared library crates/oriterm_test_support/src/catalog/mod.rs (consumed by spec_coverage_report in Section 04.8)
+sibling tests crates/oriterm_test_support/src/catalog/tests.rs per test-organization.md
+positive pin negative pin cross type matrix test, tests.md matrix testing rule
+missed tuple duplicate ID stale symbol line-number-primary verified bootstrap wezterm spec-source
+spec corpus assembly, plans/spec-conformance/specs, manifest.toml, sha256, fetch script
+manifest-fetch.sh verify mode, redistributable license gate
 ecma-48.md, xterm-ctlseqs.md, dec-private-modes.md, osc.md, sixel.md
 kitty-graphics.md, kitty-keyboard.md, iterm2.md, mode-2026.md
 unicode-subcell.md, mouse.md, charsets.md, audio-print.md
 shell-integration.md, historical.md, de-facto-behaviors.md
+catalog/README.md stub owned by Section 01, extended by Section 04.7
+_legacy-tack-mapping.md owned by Section 02.4 (NOT Section 01)
 authority ladder, conformance reference, per-stack tiebreaker
 verification status taxonomy, missing, stub, implemented-unverified
-verified-partial, verified, verified-with-deviation
-audit memory verification, architecture_graphics_audit.md
-provisional row schema, freeze gate after section 04 pilot
+verified verified-partial verified-with-deviation FORBIDDEN in Section 01
+audit memory verification, architecture_graphics_audit.md, MEMORY.md
+stale claim discovery, broken window policy, HSL hue kitty q=1 image cache 320 MiB
+provisional row schema, schema_version 0.1-provisional, freeze gate Section 04.7
+bug-tracker filing oriterm_core/src/term/handler/image/kitty.rs 476 lines BLOAT
+blocks Section 12 Sixel and Section 13 Kitty Graphics
+csi.rs 390 lines image cache 436 lines NOTE informational only
+subsections 01.1 01.2 01.3 01.4 01.5 01.6 01.7 01.8 01.9 01.10 01.11
+chronological dependency fixed: corpus assembly before top-down walk
 ```
 
 ---

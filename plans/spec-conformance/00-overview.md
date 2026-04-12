@@ -810,7 +810,7 @@ Every catalog row is a markdown table with this explicit column order. Section 0
 | **Spec source**    | yes      | `<Document> §<section>`. Example: `ECMA-48 §8.3.21`, `xterm ctlseqs.html CSI H`, `DEC STD 070 §6.3`. |
 | **Sequence**       | yes      | Canonical backticked form: ``` `CSI Ps;Ps H` ```, ``` `DCS Pid q … ST` ```, ``` `OSC 52 ; c ; <b64> BEL|ST` ```. Use `Ps` for numeric, `Pt` for text, `…` for variable middle, `BEL\|ST` for terminator alternatives. |
 | **Description**    | yes      | One-line behavior summary, sentence case, no period.                                                 |
-| **Implementation** | yes      | `<file_path>:<line>` → `<Type::method>` or `<module>`. Example: ``` `crates/vte/src/ansi/dispatch/csi.rs:91` → `TermHandler::goto` ```. If implementation is missing, use `MISSING — to be added by section NN`. |
+| **Implementation** | yes      | **Stable symbol PRIMARY, file path is metadata, line number is regenerated metadata only.** Canonical form: `` `<Type::method>` (`<file_path>`) `` or `` `<module_path>` (`<file_path>`) ``. Example: `` `TermHandler::goto` (`oriterm_core/src/term/handler/mod.rs`) ``. Line numbers (`:<line>`) MAY be appended to the file path as regenerated metadata emitted by a helper script, and they are NEVER the primary anchor. Rationale: line numbers drift on every edit; stable symbols don't. Reference implementations (`wezterm docs/escape-sequences.md`, `alacritty docs/escape_support.md`, `ghostty src/lib_vt.zig`) also anchor on symbols, never on line numbers. If implementation is missing, use `MISSING — to be added by Section NN`. If a dispatch arm routes to a handler method, cite BOTH as a chain: `` `csi_dispatch::<arm>` → `TermHandler::goto` (`crates/vte/src/ansi/dispatch/csi.rs`, `oriterm_core/src/term/handler/mod.rs`) ``. |
 | **Apex layer**     | yes      | One of the canonical `ApexLayer` enum values (matches `spec_chain::ApexLayer`): `parser-only`, `dispatch`, `state-snapshot`, `renderable-snapshot`, `frame-input`, `gpu-instance`, `texture-render`, `golden-image`, `effect-pty-write`, `effect-clipboard`, `effect-host-title`, `effect-host-notification`, `effect-mode-state`, `effect-presentation-commit`, `effect-audio`. |
 | **Test chain**     | yes      | Space-separated per-rung statuses: `parser:pass dispatch:pass state:pass snapshot:pass`. Use `fail`/`missing`/`skipped` where appropriate. Test chain MUST reach the apex layer; intermediate rungs may be omitted for non-visual apices. |
 | **Verification**   | yes      | One of `missing`, `stub`, `implemented-unverified`, `verified-partial`, `verified`, `verified-with-deviation`. Only `verified` and `verified-with-deviation` count toward conformance. |
@@ -828,7 +828,7 @@ Every catalog row is a markdown table with this explicit column order. Section 0
 | **Spec source**      | ECMA-48 §8.3.21                                                |
 | **Sequence**         | `CSI Ps;Ps H` — Cursor Position                                |
 | **Description**      | Move cursor to (row, col), 1-based                             |
-| **Implementation**   | `crates/vte/src/ansi/dispatch/csi.rs:91` → `TermHandler::goto` |
+| **Implementation**   | `TermHandler::goto` (`oriterm_core/src/term/handler/mod.rs`)   |
 | **Apex layer**       | state-snapshot                                                 |
 | **Test chain**       | parser:pass dispatch:pass state:pass snapshot:pass             |
 | **Verification**     | verified                                                       |
