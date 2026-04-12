@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "01.2"
     title: "Bottom-up harvest from wezterm escape-sequences.md (De-facto ref column ONLY — Phase 2 Finding J)"
-    status: not-started
+    status: complete
   - id: "01.3"
     title: "Mechanical `catalog_coverage_check` Rust binary + sibling tests (Phase 2 Finding G + Phase 4 TPR findings)"
     status: not-started
@@ -269,19 +269,19 @@ WezTerm's escape-sequences.md is a curated catalog with `Seq | Hex | Name | Desc
 
 ### 01.2.a — Cross-reference wezterm rows
 
-- [ ] Read `~/projects/reference_repos/console_repos/wezterm/docs/escape-sequences.md` cover-to-cover.
-- [ ] For every sequence wezterm documents that is NOT yet in ori_term's catalog files, add a row to the appropriate catalog file with:
+- [x] Read `~/projects/reference_repos/console_repos/wezterm/docs/escape-sequences.md` cover-to-cover.
+- [x] For every sequence wezterm documents that is NOT yet in ori_term's catalog files, add a row to the appropriate catalog file with:
   - `Implementation: MISSING — to be added by Section NN` (NN = the stack section that owns this surface)
   - `Spec source: MISSING — to be added in 01.7 top-down walk` (the top-down walk in 01.7 will fill this from the actual authoritative spec; the reconciliation pass in 01.8 then upgrades `MISSING` if 01.7 didn't find a spec source)
   - `De-facto ref: wezterm escape-sequences.md` (this is the ONLY column wezterm goes in)
   - `Verification: missing`
   - All other columns per the 10-column schema
-- [ ] For sequences that ARE in ori_term's catalog but where wezterm has additional notes (e.g., specific quirks or edge cases), copy the wezterm note to the EXISTING row's `Notes` column AND add the wezterm path to the row's `De-facto ref` column (even if it was blank before — two de-facto refs are fine, separated by `;`).
+- [x] For sequences that ARE in ori_term's catalog but where wezterm has additional notes (e.g., specific quirks or edge cases), copy the wezterm note to the EXISTING row's `Notes` column AND add the wezterm path to the row's `De-facto ref` column (even if it was blank before — two de-facto refs are fine, separated by `;`).
 
 ### 01.2.b — Validation
 
-- [ ] **Validation**: every section header in wezterm's escape-sequences.md must correspond to at least one row in ori_term's catalog files (either as an existing row extended with a wezterm note, or as a newly added `MISSING` row). Run the coverage-check script (01.3, `--wezterm-cross-check` mode) to verify.
-- [ ] **Anti-LEAK gate**: grep the catalog files for `Spec source.*wezterm`. The match count MUST be zero. If any row has `Spec source: wezterm ...`, rewrite it so `Spec source` names an actual specification and wezterm moves to `De-facto ref`.
+- [x] **Validation**: every section header in wezterm's escape-sequences.md must correspond to at least one row in ori_term's catalog files (either as an existing row extended with a wezterm note, or as a newly added `MISSING` row). Run the coverage-check script (01.3, `--wezterm-cross-check` mode) to verify. Manually verified 2026-04-11: C0 Controls (`ecma-48.md`), C1 (`ecma-48.md` ESC + DCS sections), Other Escape Sequences (`ecma-48.md`), CSI SGR (`ecma-48.md` — 57 supported + 5 MISSING for wezterm-only + 3 MISSING for RGBA), CSI 38/48/58 subsections (`ecma-48.md`), DCS (`ecma-48.md`, `sixel.md`, `historical.md` for tmux 1000 q), OSC (`osc.md`, `iterm2.md`), Mode Functions / DECSET 2026 (`mode-2026.md`). Empty wezterm sections (Cursor Movement / Editing / Device Functions / Window Functions) still have rows in `ecma-48.md` + `xterm-ctlseqs.md` because ori_term dispatches these from its own CSI walk (`csi::dispatch`). Script-based `--wezterm-cross-check` is deferred to 01.3 when the tool exists.
+- [x] **Anti-LEAK gate**: grep the catalog files for `Spec source.*wezterm`. The match count MUST be zero. If any row has `Spec source: wezterm ...`, rewrite it so `Spec source` names an actual specification and wezterm moves to `De-facto ref`. Verified 2026-04-11: 8 violations found during harvest (SGR 58/59 cited "Kitty / wezterm SGR ext", SGR 73/74/75 cited "ITU T.416 / wezterm ext", SGR 38/48/58 RGBA cited "wezterm mode 6 extension"). All 8 rewritten to cite the authoritative spec (Kitty protocol docs for SGR 58/59, ITU T.416 §13.1.8 for SGR 73/74/75) or `— (de-facto)` for the wezterm-invented RGBA forms. Post-fix `awk -F'|' 'NR>1 && $3 ~ /wezterm/'` returns zero matches.
 
 ---
 
