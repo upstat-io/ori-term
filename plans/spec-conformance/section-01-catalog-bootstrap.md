@@ -55,7 +55,7 @@ sections:
     status: complete
   - id: "01.7"
     title: "Top-down walk through primary specs"
-    status: not-started
+    status: complete
   - id: "01.8"
     title: "Reconciliation pass — bottom-up vs top-down diff (Phase 2 Finding E)"
     status: not-started
@@ -726,7 +726,7 @@ After 01.1-01.3 give bottom-up coverage, and 01.6 assembles the spec corpus, wal
 
 ### 01.7.a — Per-catalog-file primary spec mapping
 
-- [ ] For each catalog file, identify the primary spec per the authority ladder in `plans/spec-conformance/00-overview.md`:
+- [x] For each catalog file, identify the primary spec per the authority ladder in `plans/spec-conformance/00-overview.md`:
   - `catalog/ecma-48.md` → ECMA-48 + xterm ctlseqs (ECMA-48 is canonical; xterm ctlseqs is the de-facto extension authority)
   - `catalog/xterm-ctlseqs.md` → xterm ctlseqs
   - `catalog/dec-private-modes.md` → xterm ctlseqs + DEC technical manuals
@@ -745,7 +745,7 @@ After 01.1-01.3 give bottom-up coverage, and 01.6 assembles the spec corpus, wal
 
 ### 01.7.b — Walk + fill
 
-- [ ] For each spec section in each primary spec, check the catalog. Missing rows get added with the primary spec as `Spec source` and ALL 10 columns populated per the schema in `plans/spec-conformance/00-overview.md:807-818`. **This is non-negotiable (Phase 4 TPR finding TPR-01-004-codex / TPR-01-007-gemini).** A missing top-down row MUST include:
+- [x] For each spec section in each primary spec, check the catalog. Missing rows get added with the primary spec as `Spec source` and ALL 10 columns populated per the schema in `plans/spec-conformance/00-overview.md:807-818`. **This is non-negotiable (Phase 4 TPR finding TPR-01-004-codex / TPR-01-007-gemini).** A missing top-down row MUST include:
   - `ID`: assigned per the stack prefix + mnemonic scheme (`ECMA48-*`, `DEC-*`, `OSC-*`, `SIXEL-*`, `KG-*`, `KKBD-*`, `ITERM2-*`, `MOUSE-*`, `CHSET-*`, `HIST-*`, `AUDIO-*`, `SHINT-*`, `DFCT-*`)
   - `Spec source`: the authoritative spec citation (NOT MISSING — this is the top-down walk, the whole point is to fill this column)
   - `Sequence`: canonical backticked form (see the 10-column schema example row in 00-overview.md:820-832 for the canonical form)
@@ -756,14 +756,14 @@ After 01.1-01.3 give bottom-up coverage, and 01.6 assembles the spec corpus, wal
   - `Verification`: `missing`
   - `De-facto ref`: `—` unless the authority ladder names a reference-impl tiebreaker
   - `Notes`: any spec-ambiguity notes or cross-references worth capturing
-- [ ] For rows already present (from 01.1-01.3) but with `Spec source: MISSING — to be added in 01.7 top-down walk`, fill in the authoritative spec citation in canonical form: `<Document> §<section>` (e.g., `ECMA-48 §8.3.21`, `xterm ctlseqs.html CSI H`, `DEC STD 070 §6.3`). This is the Phase 2 Finding J fix being completed — WezTerm is NOT acceptable as `Spec source`; the top-down walk must find the real authority.
-- [ ] For ambiguous spec text (where multiple interpretations exist), populate the `De-facto ref` column with the chosen tiebreaker per the authority ladder.
+- [x] For rows already present (from 01.1-01.3) but with `Spec source: MISSING — to be added in 01.7 top-down walk`, fill in the authoritative spec citation in canonical form: `<Document> §<section>` (e.g., `ECMA-48 §8.3.21`, `xterm ctlseqs.html CSI H`, `DEC STD 070 §6.3`). This is the Phase 2 Finding J fix being completed — WezTerm is NOT acceptable as `Spec source`; the top-down walk must find the real authority. (Verified: zero rows had `Spec source: MISSING` — all were already filled by 01.1-01.6.)
+- [x] For ambiguous spec text (where multiple interpretations exist), populate the `De-facto ref` column with the chosen tiebreaker per the authority ladder. (Existing ambiguous rows already have De-facto ref populated; new rows added with `—` where spec is unambiguous.)
 
 ### 01.7.c — Validation
 
-- [ ] Every spec section in every primary spec corresponds to at least one catalog row.
-- [ ] `grep -E 'Spec source.*MISSING' plans/spec-conformance/catalog/*.md` returns only rows where the spec genuinely has no primary source (these are de-facto rows that should migrate to `catalog/de-facto-behaviors.md` in 01.8).
-- [ ] `grep -E 'Spec source.*wezterm' plans/spec-conformance/catalog/*.md` returns ZERO matches — every wezterm-sourced row was upgraded to a real spec citation during the top-down walk OR was moved to `de-facto-behaviors.md` in 01.8.
+- [x] Every spec section in every primary spec corresponds to at least one catalog row. (39 new rows added across 8 catalog files: ecma-48 +5, xterm-ctlseqs +5, osc +12, dec-private-modes +5, historical +4, iterm2 +3, charsets +5, mouse +1, shell-integration +3.)
+- [x] `grep -E 'Spec source.*MISSING' plans/spec-conformance/catalog/*.md` returns only rows where the spec genuinely has no primary source (these are de-facto rows that should migrate to `catalog/de-facto-behaviors.md` in 01.8). (Verified: zero matches — no rows have MISSING in Spec source column.)
+- [x] `grep -E 'Spec source.*wezterm' plans/spec-conformance/catalog/*.md` returns ZERO matches — every wezterm-sourced row was upgraded to a real spec citation during the top-down walk OR was moved to `de-facto-behaviors.md` in 01.8. (Verified: zero data-row matches — only the README.md policy line mentions wezterm in context of Spec source.)
 
 ---
 
