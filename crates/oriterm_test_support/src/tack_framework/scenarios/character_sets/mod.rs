@@ -76,13 +76,10 @@
 //!
 //! # Const naming — `TACK_TOOLS_G0_DEC_GRAPHICS`
 //!
-//! Section 07's `depends_on_contract` for Section 06 hard-pins the
-//! exact const path
-//! `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS` (see
-//! `plans/tack-conformance/section-07-gpu-golden-images.md:392`).
-//! That const name is the cross-section API contract — Section 06
-//! MUST publish at exactly this path or Section 07's golden test will
-//! fail to compile when it lands.
+//! The exact const path
+//! `scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS` is the
+//! cross-module API contract — the golden-image test imports it
+//! at this exact path.
 //!
 //! Strictly speaking the canonical scenario sends `)` (the G1 bank
 //! designator), not `(` (the G0 bank designator), so the const name

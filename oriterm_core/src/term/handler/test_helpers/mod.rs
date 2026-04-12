@@ -19,9 +19,8 @@
 //! helpers, but the items remain invisible to consumers outside the
 //! `handler` module tree.
 //!
-//! See `plans/tack-conformance/section-06-tools-menu-scenarios.md`
-//! § 06.5.a for the full rationale and the strict TDD ordering used
-//! to land this move with zero behavioral change.
+//! The strict TDD ordering used to land this move ensured zero
+//! behavioral change.
 
 use std::sync::{Arc, Mutex};
 

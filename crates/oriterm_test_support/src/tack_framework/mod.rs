@@ -1,9 +1,8 @@
 //! Scenario catalog framework for tack-driven conformance tests.
 //!
-//! See `plans/tack-conformance/section-04-scenario-framework.md` for
-//! the design rationale (semantic IDs, menu navigation as data,
+//! Design rationale: semantic IDs, menu navigation as data,
 //! deterministic `wait_for` synchronization, per-scenario parsers,
-//! tokenized grid checks, pre-existing-anchor guard).
+//! tokenized grid checks, pre-existing-anchor guard.
 //!
 //! # Scenarios module
 //!

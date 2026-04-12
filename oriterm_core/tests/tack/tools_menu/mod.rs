@@ -1,5 +1,4 @@
-//! Tack `t) tools` submenu scenarios — see
-//! `plans/tack-conformance/section-06-tools-menu-scenarios.md`.
+//! Tack `t) tools` submenu scenarios.
 //!
 //! This module holds the `#[test] fn` wrappers for Section 06. The
 //! const `ScenarioSpec`/`PhaseSpec` values and per-scenario parsers

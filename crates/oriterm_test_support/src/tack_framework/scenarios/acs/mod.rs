@@ -96,8 +96,7 @@ pub fn parse_acs_screen(grid: &str) -> ScreenFacts {
 ///
 /// Anchor strings empirically verified against tack v1.08
 /// (2026-04-08) — see the module rustdoc for the captured-output
-/// evidence and the 05.2 empirical-finding block in
-/// `plans/tack-conformance/section-05-test-menu-scenarios.md`.
+/// evidence.
 pub const TACK_ACS_GRAPHIC_CHARS: ScenarioSpec = ScenarioSpec {
     id: "tack_acs_graphic_chars",
     screen_id: "tack_acs_graphic_chars",
