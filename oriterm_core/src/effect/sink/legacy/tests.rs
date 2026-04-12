@@ -92,6 +92,85 @@ fn host_title_reset_routes_to_reset_title_event() {
 }
 
 #[test]
+fn host_icon_name_set_routes_to_icon_name_event() {
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Host(HostEffect::IconNameSet {
+        value: Some("icon".into()),
+    }));
+
+    let events = listener.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0], "IconName(icon)");
+}
+
+#[test]
+fn host_icon_name_reset_routes_to_reset_icon_name_event() {
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Host(HostEffect::IconNameSet { value: None }));
+
+    let events = listener.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0], "ResetIconName");
+}
+
+#[test]
+fn host_cwd_set_routes_to_cwd_event() {
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Host(HostEffect::CwdSet { cwd: "/tmp".into() }));
+
+    let events = listener.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0], "Cwd(/tmp)");
+}
+
+#[test]
+fn host_command_complete_routes_to_command_complete_event() {
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Host(HostEffect::CommandComplete {
+        duration: std::time::Duration::from_millis(42),
+    }));
+
+    let events = listener.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0], "CommandComplete(42ms)");
+}
+
+#[test]
+fn host_child_exit_routes_to_child_exit_event() {
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Host(HostEffect::ChildExit { code: 0 }));
+
+    let events = listener.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0], "ChildExit(0)");
+}
+
+#[test]
+fn host_clipboard_store_routes_to_clipboard_store_event() {
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Host(HostEffect::ClipboardStore {
+        selection: ClipboardSelection::Clipboard,
+        data: "text".into(),
+    }));
+
+    let events = listener.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0], "ClipboardStore(Clipboard, text)");
+}
+
+#[test]
 fn host_request_clipboard_load_routes_with_reply_token() {
     let listener = RecordingListener::default();
     let sink = LegacyEventSink::new(listener.clone());
