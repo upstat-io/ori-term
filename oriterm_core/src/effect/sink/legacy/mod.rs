@@ -10,14 +10,12 @@
 
 use std::sync::Arc;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
-
 use crate::color::Rgb;
 use crate::effect::Effect;
 use crate::effect::families::{
     ClipboardSelection, HostEffect, HostRequest, NotificationSource, PtyEffect, UiEffect,
 };
+use crate::effect::families::{format_clipboard_reply, format_color_reply};
 use crate::event::{ClipboardType, Event, EventListener};
 
 use super::EffectSink;
@@ -131,12 +129,8 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
                     selection_to_legacy(selection),
                     Arc::new(move |text: &str| {
                         reply.fulfill(text.to_string());
-                        format!(
-                            "\x1b]52;{};{}{}",
-                            cb as char,
-                            STANDARD.encode(text.as_bytes()),
-                            term,
-                        )
+                        String::from_utf8(format_clipboard_reply(text, cb, &term))
+                            .expect("clipboard reply is valid UTF-8")
                     }),
                 )
             }
@@ -152,10 +146,8 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
                     index,
                     Arc::new(move |color: Rgb| {
                         reply.fulfill(color);
-                        format!(
-                            "\x1b]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}{}",
-                            pfx, color.r, color.r, color.g, color.g, color.b, color.b, term,
-                        )
+                        String::from_utf8(format_color_reply(color, &pfx, &term))
+                            .expect("color reply is valid UTF-8")
                     }),
                 )
             }

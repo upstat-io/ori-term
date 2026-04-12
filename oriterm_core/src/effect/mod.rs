@@ -14,7 +14,7 @@ mod types;
 pub use families::{
     AudioKind, AudioRequest, ClipboardSelection, HostEffect, HostRequest, NotificationSource,
     PresentationEffect, PrintKind, PrintRequest, PtyEffect, PtyWriteKind, ResponseFulfilled,
-    ResponseToken, SyncAbortReason, UiEffect,
+    ResponseToken, SyncAbortReason, UiEffect, format_clipboard_reply, format_color_reply,
 };
 pub use response::PendingResponse;
 pub use sink::legacy::DesktopNotificationRecord;
