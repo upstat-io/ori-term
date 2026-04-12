@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Catalog Bootstrap"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Build the spec-conformance catalog as the empirical map of every protocol sequence ori_term targets, with stable-symbol implementation anchors, committed spec corpus, committed deterministic real-app captures, reconciled bottom-up vs top-down coverage, and a mechanical `catalog_coverage_check` Rust binary. No tests exercising `TermHandler` behavior are written in this section — the catalog itself is the deliverable, plus the testable `catalog_coverage_check` tool with its own sibling unit tests. All rows use `schema_version: 0.1-provisional`; Section 04.7 migrates the whole corpus to `1.0` in lockstep with the pilots. No row in this section is allowed to hold `Verification: verified` or `verified-partial` — those statuses are earned by Sections 04-20, never bootstrapped here."
 success_criteria:
@@ -37,7 +37,7 @@ third_party_review:
 sections:
   - id: "01.1"
     title: "Bottom-up harvest from ori_term VTE dispatch (incl. PM/SOS)"
-    status: not-started
+    status: complete
   - id: "01.2"
     title: "Bottom-up harvest from wezterm escape-sequences.md (De-facto ref column ONLY — Phase 2 Finding J)"
     status: not-started
@@ -64,7 +64,7 @@ sections:
     status: not-started
   - id: "01.10"
     title: "Stub catalog/README.md (owned here; extended by Section 04.7) (Phase 2 Finding H)"
-    status: not-started
+    status: complete
   - id: "01.11"
     title: "Bug-tracker filing for kitty.rs BLOAT (blocks Sections 12/13) (Phase 1 Finding 7 + CLAUDE.md §Bug Discipline)"
     status: not-started
@@ -78,7 +78,7 @@ sections:
 
 # Section 01: Catalog Bootstrap
 
-**Status:** Not Started
+**Status:** In Progress (01.1 + 01.10 complete)
 **Goal:** Build the catalog as the empirical map of every protocol sequence ori_term targets. No `TermHandler`-behavior tests are written — but the `catalog_coverage_check` Rust binary IS testable code and DOES get full TDD treatment per `.claude/rules/tests.md`. Every subsequent stack section consumes this catalog as its scope definition. The row schema is `0.1-provisional`; Section 04.7 owns the migration to `1.0` after the pilots in Section 04.5–04.6 + Section 05.6 land. Section 01 writes NO row with `Verification: verified` — those statuses are earned by the verification chain harness, never bootstrapped here.
 
 **Success Criteria:**
@@ -144,8 +144,8 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
 
 ### 01.1.a — Catalog-file scaffolding
 
-- [ ] Create `plans/spec-conformance/catalog/` directory (if Section 02 has not already created it for `_legacy-tack-mapping.md` per `plans/spec-conformance/section-02-tack-absorption.md:42`)
-- [ ] Create the 16 protocol-family files, each with `schema_version: "0.1-provisional"` front-matter, an H1 heading, and a 10-column markdown table header matching `plans/spec-conformance/00-overview.md:807-818` exactly (`ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes`):
+- [x] Create `plans/spec-conformance/catalog/` directory (if Section 02 has not already created it for `_legacy-tack-mapping.md` per `plans/spec-conformance/section-02-tack-absorption.md:42`)
+- [x] Create the 16 protocol-family files, each with `schema_version: "0.1-provisional"` front-matter, an H1 heading, and a 10-column markdown table header matching `plans/spec-conformance/00-overview.md:807-818` exactly (`ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes`):
   - `catalog/ecma-48.md`
   - `catalog/xterm-ctlseqs.md`
   - `catalog/dec-private-modes.md`
@@ -162,12 +162,12 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
   - `catalog/shell-integration.md`
   - `catalog/historical.md`
   - `catalog/de-facto-behaviors.md`
-- [ ] Section 01 does NOT create `catalog/_legacy-tack-mapping.md` — that is Section 02.4's responsibility (`plans/spec-conformance/section-02-tack-absorption.md:42`). This subsection depends on Section 02 having run. If Section 02 has not run, the directory is created here and `_legacy-tack-mapping.md` stays owned by 02.4 when it does run.
-- [ ] Section 01 DOES create a stub `catalog/README.md` — see 01.10 below. Section 04.7 extends the stub with the frozen schema reference (`plans/spec-conformance/section-04-verification-chain-harness.md:509,515`).
+- [x] Section 01 does NOT create `catalog/_legacy-tack-mapping.md` — that is Section 02.4's responsibility (`plans/spec-conformance/section-02-tack-absorption.md:42`). This subsection depends on Section 02 having run. If Section 02 has not run, the directory is created here and `_legacy-tack-mapping.md` stays owned by 02.4 when it does run.
+- [x] Section 01 DOES create a stub `catalog/README.md` — see 01.10 below. Section 04.7 extends the stub with the frozen schema reference (`plans/spec-conformance/section-04-verification-chain-harness.md:509,515`).
 
 ### 01.1.b — C0 / ESC / C1 dispatch harvest
 
-- [ ] Read `crates/vte/src/ansi/dispatch/mod.rs` end-to-end. For every C0/ESC/C1 dispatch arm, add a row to the appropriate catalog file. Every row uses symbol-primary Implementation: `` `<handler_symbol>` (`<file_path>`) ``. Populate all 10 columns.
+- [x] Read `crates/vte/src/ansi/dispatch/mod.rs` end-to-end. For every C0/ESC/C1 dispatch arm, add a row to the appropriate catalog file. Every row uses symbol-primary Implementation: `` `<handler_symbol>` (`<file_path>`) ``. Populate all 10 columns.
   - C0 (BEL/BS/HT/LF/VT/FF/CR/SO/SI) → `catalog/ecma-48.md` under an H2 heading "C0 Controls"
   - ESC sequences (RIS/DECSC/DECRC/DECPAM/DECPNM/IND/NEL/HTS/RI/SS2/SS3/G0-G3 designation) → `catalog/ecma-48.md` under "ESC Sequences"
   - C1 7-bit ESC-prefixed forms handled today
@@ -175,7 +175,7 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
 
 ### 01.1.c — CSI dispatch harvest
 
-- [ ] Read `crates/vte/src/ansi/dispatch/csi.rs` (390 lines — BLOAT-adjacent; READ-ONLY in this section) end-to-end. For every CSI match arm, add a row to `catalog/ecma-48.md` (cursor/erase/insert/scroll/SGR/modes) OR `catalog/xterm-ctlseqs.md` (window manipulation, focus events, bracketed paste, DECRQM, DECRQSS) with symbol-primary Implementation citations:
+- [x] Read `crates/vte/src/ansi/dispatch/csi.rs` (390 lines — BLOAT-adjacent; READ-ONLY in this section) end-to-end. For every CSI match arm, add a row to `catalog/ecma-48.md` (cursor/erase/insert/scroll/SGR/modes) OR `catalog/xterm-ctlseqs.md` (window manipulation, focus events, bracketed paste, DECRQM, DECRQSS) with symbol-primary Implementation citations:
   - Cursor: CUU, CUD, CUF, CUB, CNL, CPL, CHA, CUP, HVP, CHT, CBT
   - Erase: ED, EL, ECH
   - Insert/Delete: ICH, DCH, IL, DL
@@ -186,11 +186,11 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
   - Window: CSI t (every sub-op — each sub-op is a distinct row, NOT one row per `csi t` arm), push/pop title
   - Cursor style: DECSCUSR
   - Tabs: TBC (and HTS/CHT/CBT already covered above)
-- [ ] **Phase 2 Finding G anchor**: wherever a dispatch arm is 1-to-many (CSI m / OSC numeric / CSI t / OSC 4), the catalog contains one row per OUTPUT sequence, not one row per dispatch arm. The coverage-check script (01.3) mechanically enforces this by expanding dispatch arms into their output tuple set before matching against the catalog.
+- [x] **Phase 2 Finding G anchor**: wherever a dispatch arm is 1-to-many (CSI m / OSC numeric / CSI t / OSC 4), the catalog contains one row per OUTPUT sequence, not one row per dispatch arm. The coverage-check script (01.3) mechanically enforces this by expanding dispatch arms into their output tuple set before matching against the catalog.
 
 ### 01.1.d — OSC dispatch harvest
 
-- [ ] Read `crates/vte/src/ansi/dispatch/osc.rs` end-to-end. For every OSC handler arm, add a row to `catalog/osc.md` (one row per OSC NUMBER, not per dispatch arm):
+- [x] Read `crates/vte/src/ansi/dispatch/osc.rs` end-to-end. For every OSC handler arm, add a row to `catalog/osc.md` (one row per OSC NUMBER, not per dispatch arm):
   - OSC 0/1/2 (title/icon)
   - OSC 4 (palette set/query — one row per subcommand mode if the dispatch arm branches on sub-op)
   - OSC 7 (CWD)
@@ -206,11 +206,11 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
 
 ### 01.1.e — DCS / APC / PM / SOS harvest (Phase 2 Finding D — fixes PM/SOS omission)
 
-- [ ] Read `crates/vte/src/ansi/dispatch/mod.rs` DCS dispatch. Add rows:
+- [x] Read `crates/vte/src/ansi/dispatch/mod.rs` DCS dispatch. Add rows:
   - `catalog/sixel.md` → DCS q (sixel raster)
   - `catalog/ecma-48.md` → DECRQSS (DCS $ q)
-- [ ] Read `oriterm_core/src/term/handler/image/kitty.rs` (476 lines — BLOAT at the 500-line boundary, see 01.11 for the bug-tracker filing) for APC `_G` dispatch. Add rows to `catalog/kitty-graphics.md` for every action handled (transmit, place, delete, animate, query, frame composition). READ-ONLY; the split is owned by the bug-tracker filing in 01.11, not this subsection.
-- [ ] **PM (`^`, 0x5E → `State::SosPmApcString`) — Phase 2 Finding D**: Read `crates/vte/src/lib.rs:189` (the `State::SosPmApcString => self.anywhere(...)` arm) and `crates/vte/src/lib.rs:387` (the `0x5E => self.state = State::SosPmApcString` transition). Add at least one row under a "PM (Privacy Message)" H2 in `catalog/ecma-48.md`. **The row MUST populate all 10 columns per the 10-column schema in `plans/spec-conformance/00-overview.md:807-818`. No partial rows allowed — schema enforcement is mandatory, not a stylistic preference (Phase 4 TPR finding TPR-01-004-codex / TPR-01-007-gemini).**
+- [x] Read `oriterm_core/src/term/handler/image/kitty.rs` (476 lines — BLOAT at the 500-line boundary, see 01.11 for the bug-tracker filing) for APC `_G` dispatch. Add rows to `catalog/kitty-graphics.md` for every action handled (transmit, place, delete, animate, query, frame composition). READ-ONLY; the split is owned by the bug-tracker filing in 01.11, not this subsection.
+- [x] **PM (`^`, 0x5E → `State::SosPmApcString`) — Phase 2 Finding D**: Read `crates/vte/src/lib.rs:189` (the `State::SosPmApcString => self.anywhere(...)` arm) and `crates/vte/src/lib.rs:387` (the `0x5E => self.state = State::SosPmApcString` transition). Add at least one row under a "PM (Privacy Message)" H2 in `catalog/ecma-48.md`. **The row MUST populate all 10 columns per the 10-column schema in `plans/spec-conformance/00-overview.md:807-818`. No partial rows allowed — schema enforcement is mandatory, not a stylistic preference (Phase 4 TPR finding TPR-01-004-codex / TPR-01-007-gemini).**
   - `ID`: `ECMA48-PM-DISCARD`
   - `Spec source`: `ECMA-48 §5.6` (PM is defined in ECMA-48's "Privacy Message" clause; this row is NOT de-facto — ECMA-48 is the authority and explicitly permits discard)
   - `Sequence`: `` `ESC ^ Pt ST` ``
@@ -221,7 +221,7 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
   - `Verification`: `stub`
   - `De-facto ref`: `—` (the ECMA-48 spec is unambiguous here; no reference-impl tiebreaker needed)
   - `Notes`: Parser recognizes the state and discards the payload without dispatch. Discard path covered in `crates/vte/src/tests.rs:778`. ECMA-48 allows implementations to discard Privacy Messages; this is conformant behavior.
-- [ ] **SOS (`X`, 0x58 → `State::SosPmApcString`) — Phase 2 Finding D**: Read `crates/vte/src/lib.rs:369` (`0x58 => self.state = State::SosPmApcString`). Add at least one row under a "SOS (Start Of String)" H2 in `catalog/ecma-48.md`. **The row MUST populate all 10 columns per the 10-column schema.**
+- [x] **SOS (`X`, 0x58 → `State::SosPmApcString`) — Phase 2 Finding D**: Read `crates/vte/src/lib.rs:369` (`0x58 => self.state = State::SosPmApcString`). Add at least one row under a "SOS (Start Of String)" H2 in `catalog/ecma-48.md`. **The row MUST populate all 10 columns per the 10-column schema.**
   - `ID`: `ECMA48-SOS-DISCARD`
   - `Spec source`: `ECMA-48 §5.6` (SOS is defined in ECMA-48's "Start Of String" clause alongside PM; discard is conformant)
   - `Sequence`: `` `ESC X Pt ST` ``
@@ -235,27 +235,28 @@ This subsection harvests every sequence ori_term currently parses or dispatches 
 
 ### 01.1.f — Implementation citation rules (Phase 2 Finding A — stable-symbol primary)
 
-- [ ] For each row, fill `Implementation` with a STABLE SYMBOL (not a line number). Canonical forms:
+- [x] For each row, fill `Implementation` with a STABLE SYMBOL (not a line number). Canonical forms:
   - Single-symbol: `` `TermHandler::goto` (`oriterm_core/src/term/handler/mod.rs`) ``
   - Dispatch→handler chain: `` `csi_dispatch::cup_arm` → `TermHandler::goto` (`crates/vte/src/ansi/dispatch/csi.rs`, `oriterm_core/src/term/handler/mod.rs`) ``
-- [ ] Line numbers MAY appear only as trailing `:NNN` metadata on the file path, and MUST NOT be the primary anchor. Reviewers explicitly rejected line-number-primary citations (the pre-rewrite Section 01 already had a stale `cursor.rs:goto` example — `goto` is actually in `oriterm_core/src/term/handler/mod.rs`, not in `cursor.rs`, proving the DRIFT vulnerability).
-- [ ] **Validation**: grep `plans/spec-conformance/catalog/*.md` for `Implementation.*\.rs:[0-9]+ →` — every match should have the symbol AFTER the file path, not before. The coverage-check script (01.3) mechanically enforces this via a negative pin.
+- [x] Line numbers MAY appear only as trailing `:NNN` metadata on the file path, and MUST NOT be the primary anchor. Reviewers explicitly rejected line-number-primary citations (the pre-rewrite Section 01 already had a stale `cursor.rs:goto` example — `goto` is actually in `oriterm_core/src/term/handler/mod.rs`, not in `cursor.rs`, proving the DRIFT vulnerability).
+- [x] **Validation**: grep `plans/spec-conformance/catalog/*.md` for `Implementation.*\.rs:[0-9]+ →` — every match should have the symbol AFTER the file path, not before. The coverage-check script (01.3) mechanically enforces this via a negative pin. Verified 2026-04-11: zero matches.
 
 ### 01.1.g — Apex layer + Verification population
 
-- [ ] For each row, set `Apex layer` to the provisional apex from the 15 values enumerated in `plans/spec-conformance/00-overview.md:814` (`parser-only`, `dispatch`, `state-snapshot`, `renderable-snapshot`, `frame-input`, `gpu-instance`, `texture-render`, `golden-image`, `effect-pty-write`, `effect-clipboard`, `effect-host-title`, `effect-host-notification`, `effect-mode-state`, `effect-presentation-commit`, `effect-audio`). Section 04.5–04.6 pilots may adjust apex assignments during schema freeze.
-- [ ] For each row, set `Verification` based on what the handler does:
+- [x] For each row, set `Apex layer` to the provisional apex from the 15 values enumerated in `plans/spec-conformance/00-overview.md:814` (`parser-only`, `dispatch`, `state-snapshot`, `renderable-snapshot`, `frame-input`, `gpu-instance`, `texture-render`, `golden-image`, `effect-pty-write`, `effect-clipboard`, `effect-host-title`, `effect-host-notification`, `effect-mode-state`, `effect-presentation-commit`, `effect-audio`). Section 04.5–04.6 pilots may adjust apex assignments during schema freeze.
+- [x] For each row, set `Verification` based on what the handler does:
   - `implemented-unverified` — handler exists and performs the expected mutation/effect
   - `stub` — dispatch recognized but handler is a no-op OR parser drops the payload (SGR 5/6 blink, SGR 8 conceal, mode 1007 alt scroll, mode 9001 Win32, modifyOtherKeys, SCP, DECLRMM, PM, SOS)
   - `missing` — sequences explicitly NOT FOUND (8-bit C1, ANSI music CSI M, DECPS, octants, NRCS variants beyond ASCII+Special)
-- [ ] **NEGATIVE CRITERION — Phase 2 Finding L**: No row in this section is allowed to hold `verified`, `verified-partial`, or `verified-with-deviation`. Those statuses are earned by the verification chain harness in Sections 04-20. A post-close grep MUST find zero matches:
+- [x] **NEGATIVE CRITERION — Phase 2 Finding L**: No row in this section is allowed to hold `verified`, `verified-partial`, or `verified-with-deviation`. Those statuses are earned by the verification chain harness in Sections 04-20. A post-close grep MUST find zero matches:
   ```
   grep -E '\| (verified|verified-partial|verified-with-deviation)\b' plans/spec-conformance/catalog/*.md
   ```
+  Verified 2026-04-11: zero matches.
 
 ### 01.1.h — Test chain column (placeholders only)
 
-- [ ] For each row, set `Test chain` to a `pending` string: `parser:pending dispatch:pending state:pending` for state-snapshot apices, `parser:pending dispatch:pending effect:pending` for effect apices, etc. Section 04 onward replaces `pending` with real results as the harness drives each row. `pending` is NOT one of the enumerated `Test chain` values in the frozen schema — it is a `0.1-provisional`-only placeholder. Section 04.7 migrates `pending` → `missing`/`pass`/`fail`/`skipped` as pilots complete.
+- [x] For each row, set `Test chain` to a `pending` string: `parser:pending dispatch:pending state:pending` for state-snapshot apices, `parser:pending dispatch:pending effect:pending` for effect apices, etc. Section 04 onward replaces `pending` with real results as the harness drives each row. `pending` is NOT one of the enumerated `Test chain` values in the frozen schema — it is a `0.1-provisional`-only placeholder. Section 04.7 migrates `pending` → `missing`/`pass`/`fail`/`skipped` as pilots complete.
 
 ---
 
@@ -867,7 +868,7 @@ Phase 2 Finding H surfaced an ownership collision: Section 01 and Section 04 bot
 
 ### 01.10.a — Stub content
 
-- [ ] Create `plans/spec-conformance/catalog/README.md` with front-matter:
+- [x] Create `plans/spec-conformance/catalog/README.md` with front-matter:
   ```markdown
   ---
   schema_version: "0.1-provisional"
@@ -928,13 +929,13 @@ Phase 2 Finding H surfaced an ownership collision: Section 01 and Section 04 bot
   - `1.0` (Section 04.7, post-05.6) — frozen schema, `pending` removed,
     `verified` gated on the verification chain harness running green
   ```
-- [ ] The stub is ~60 lines. Section 04.7 may add hundreds of lines of schema reference below the "Schema evolution" section — that is NOT Section 01's concern.
+- [x] The stub is ~60 lines. Section 04.7 may add hundreds of lines of schema reference below the "Schema evolution" section — that is NOT Section 01's concern. Actual stub: 61 lines — `catalog/README.md` ends with the "Schema evolution" boundary marker that Section 04.7 writes below.
 
 ### 01.10.b — Validation
 
-- [ ] File exists and has `schema_version: "0.1-provisional"` front-matter.
-- [ ] File lists all 16 catalog files (+ `_legacy-tack-mapping.md` with explicit Section 02 ownership note).
-- [ ] File does NOT duplicate the schema column table from `plans/spec-conformance/00-overview.md` — it POINTS to it.
+- [x] File exists and has `schema_version: "0.1-provisional"` front-matter.
+- [x] File lists all 16 catalog files (+ `_legacy-tack-mapping.md` with explicit Section 02 ownership note).
+- [x] File does NOT duplicate the schema column table from `plans/spec-conformance/00-overview.md` — it POINTS to it.
 
 ---
 

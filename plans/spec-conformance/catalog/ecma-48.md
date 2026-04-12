@@ -1,0 +1,200 @@
+---
+schema_version: "0.1-provisional"
+stack: ecma48
+title: "ECMA-48 Baseline Catalog"
+owner_section: "01 (bootstrap), 08 (verification)"
+---
+
+# ECMA-48 Catalog
+
+Rows for C0 controls, ESC sequences, C1 8-bit forms, CSI (cursor / erase / insert / scroll / SGR / ANSI modes), DCS DECRQSS, PM / SOS.
+
+DEC private modes live in `dec-private-modes.md`. Xterm-specific window / focus / bracketed-paste lives in `xterm-ctlseqs.md`. OSC sequences live in `osc.md`. DCS sixel lives in `sixel.md`. DCS DECRQSS lives here because DECRQSS is defined in ECMA-48 / DEC STD 070 and queries ECMA-48 / ANSI state (SGR, DECSTBM, DECSCL).
+
+Sections 12 (Sixel), 13 (Kitty Graphics) are currently blocked — see `plans/bug-tracker/section-08-core-terminal.md` for the `kitty.rs` BLOAT pre-split.
+
+## C0 Controls
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-C0-BEL | ECMA-48 §8.3.3 | `` `BEL` `` (`0x07`) | Bell — audible / visual alert | `` `Term::bell` (`oriterm_core/src/term/handler/mod.rs`) — dispatched via `Performer::execute` (`crates/vte/src/ansi/dispatch/mod.rs`) `` | effect-host-notification | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Emits `Event::Bell` to the app layer. Audible bell currently stub (see BUG-08-1). |
+| ECMA48-C0-BS | ECMA-48 §8.3.5 | `` `BS` `` (`0x08`) | Backspace — move cursor one cell left | `` `Term::backspace` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Honors `TermMode::REVERSE_WRAP` — may unwrap to previous line at column 0. |
+| ECMA48-C0-HT | ECMA-48 §8.3.60 | `` `HT` `` (`0x09`) | Horizontal Tab — advance to next tab stop | `` `Term::put_tab` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Count parameter via `put_tab(count)`; default 1. |
+| ECMA48-C0-LF | ECMA-48 §8.3.74 | `` `LF` `` (`0x0A`) | Line Feed — cursor down one line, optional CR with LNM | `` `Term::linefeed` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Honors `TermMode::LINE_FEED_NEW_LINE` (LNM). Triggers scroll + image eviction. |
+| ECMA48-C0-VT | ECMA-48 §8.3.161 | `` `VT` `` (`0x0B`) | Vertical Tab — treated as LF | `` `Term::linefeed` (`oriterm_core/src/term/handler/mod.rs`) — shared arm with LF `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Aliased to LF in `Performer::execute`. |
+| ECMA48-C0-FF | ECMA-48 §8.3.44 | `` `FF` `` (`0x0C`) | Form Feed — treated as LF | `` `Term::linefeed` (`oriterm_core/src/term/handler/mod.rs`) — shared arm with LF `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Aliased to LF in `Performer::execute`. |
+| ECMA48-C0-CR | ECMA-48 §8.3.15 | `` `CR` `` (`0x0D`) | Carriage Return — cursor to column 0 | `` `Term::carriage_return` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-C0-SO | ECMA-48 §8.3.114 | `` `SO` `` (`0x0E`) | Shift Out — activate G1 charset | `` `Term::set_active_charset` (`oriterm_core/src/term/handler/mod.rs`) — `CharsetIndex::G1` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-C0-SI | ECMA-48 §8.3.119 | `` `SI` `` (`0x0F`) | Shift In — activate G0 charset | `` `Term::set_active_charset` (`oriterm_core/src/term/handler/mod.rs`) — `CharsetIndex::G0` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-C0-SUB | ECMA-48 §8.3.117 | `` `SUB` `` (`0x1A`) | Substitute — cancel + print replacement | `` `Term::substitute` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Prints a space cell as cancellation marker. |
+| ECMA48-C0-ENQ | ECMA-48 §8.3.38 | `` `ENQ` `` (`0x05`) | Answerback / enquiry | MISSING — to be added by Section 08 (ECMA-48 Baseline) | effect-pty-write | parser:pending dispatch:pending effect:pending | missing | wezterm escape-sequences.md | Not dispatched in `Performer::execute`. See BUG-08-6. |
+
+## ESC Sequences (single-byte + intermediate)
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-ESC-D | ECMA-48 §8.3.45 | `` `ESC D` `` (IND) | Index — cursor down, scroll if at bottom | `` `Term::linefeed` (`oriterm_core/src/term/handler/mod.rs`) — via `Performer::esc_dispatch` (`crates/vte/src/ansi/dispatch/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Dispatch arm in `esc_dispatch` for byte `D`. |
+| ECMA48-ESC-E | ECMA-48 §8.3.86 | `` `ESC E` `` (NEL) | Next Line — LF + CR | `` `Term::linefeed` + `Term::carriage_return` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Composite in `esc_dispatch` for byte `E`. |
+| ECMA48-ESC-H | ECMA-48 §8.3.62 | `` `ESC H` `` (HTS) | Horizontal Tab Set — set tab stop at cursor column | `` `Term::set_horizontal_tabstop` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-M | ECMA-48 §8.3.105 | `` `ESC M` `` (RI) | Reverse Index — cursor up, scroll if at top | `` `Term::reverse_index` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-N | ECMA-48 §8.3.112 | `` `ESC N` `` (SS2) | Single Shift G2 — next char uses G2 | `` `Term::set_single_shift` (`oriterm_core/src/term/handler/mod.rs`) — `CharsetIndex::G2` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-O | ECMA-48 §8.3.113 | `` `ESC O` `` (SS3) | Single Shift G3 — next char uses G3 | `` `Term::set_single_shift` (`oriterm_core/src/term/handler/mod.rs`) — `CharsetIndex::G3` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-Z | ECMA-48 §8.3.32 | `` `ESC Z` `` (DECID / DA alias) | Identify Terminal | `` `Term::identify_terminal` (`oriterm_core/src/term/handler/mod.rs`) → `Term::status_identify_terminal` (`oriterm_core/src/term/handler/status.rs`) `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | VT100 DECID alias for DA1. |
+| ECMA48-ESC-c | ECMA-48 §8.3.109 | `` `ESC c` `` (RIS) | Reset to Initial State | `` `Term::reset_state` (`oriterm_core/src/term/handler/mod.rs`) → `Term::esc_reset_state` (`oriterm_core/src/term/handler/esc.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Full hard reset. |
+| ECMA48-ESC-7 | DEC STD 070 §4.6.2 | `` `ESC 7` `` (DECSC) | Save Cursor — store position + attrs + charset + origin | `` `Term::save_cursor_position` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Saves charset + origin mode alongside grid cursor. |
+| ECMA48-ESC-8 | DEC STD 070 §4.6.2 | `` `ESC 8` `` (DECRC) | Restore Cursor — restore saved state | `` `Term::restore_cursor_position` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Restores charset + origin mode. |
+| ECMA48-ESC-hash-8 | DEC STD 070 §4.6.5 | `` `ESC # 8` `` (DECALN) | Screen Alignment Display — fill screen with `E` | `` `Term::decaln` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-eq | DEC STD 070 §4.6.12 | `` `ESC =` `` (DECKPAM) | Application Keypad | `` `Term::set_keypad_application_mode` (`oriterm_core/src/term/handler/mod.rs`) `` | effect-mode-state | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-gt | DEC STD 070 §4.6.12 | `` `ESC >` `` (DECPNM) | Numeric Keypad | `` `Term::unset_keypad_application_mode` (`oriterm_core/src/term/handler/mod.rs`) `` | effect-mode-state | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-B | ECMA-48 §5.3 | `` `ESC ( B` `` / `` `ESC ) B` `` / `` `ESC * B` `` / `` `ESC + B` `` | Designate ASCII to G0–G3 | `` `Term::configure_charset` (`oriterm_core/src/term/handler/mod.rs`) — `StandardCharset::Ascii` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-ESC-0 | — (de-facto VT100) | `` `ESC ( 0` `` / `` `ESC ) 0` `` / `` `ESC * 0` `` / `` `ESC + 0` `` | Designate DEC Special Graphics to G0–G3 | `` `Term::configure_charset` (`oriterm_core/src/term/handler/mod.rs`) — `StandardCharset::SpecialCharacterAndLineDrawing` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | DEC Special + line drawing — de-facto, not ECMA-48. |
+
+## CSI — Cursor Positioning / Motion
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-CUU | ECMA-48 §8.3.22 | `` `CSI Ps A` `` (CUU) | Cursor Up `Ps` lines | `` `Term::move_up` (`oriterm_core/src/term/handler/mod.rs`) — dispatched by `csi::dispatch` (`crates/vte/src/ansi/dispatch/csi.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-CUD | ECMA-48 §8.3.19 | `` `CSI Ps B` `` (CUD) | Cursor Down `Ps` lines | `` `Term::move_down` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | `CSI Ps e` (VPR) dispatches to the same handler. |
+| ECMA48-CSI-CUF | ECMA-48 §8.3.20 | `` `CSI Ps C` `` (CUF) | Cursor Forward `Ps` columns | `` `Term::move_forward` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | `CSI Ps a` (HPR) dispatches to the same handler. |
+| ECMA48-CSI-CUB | ECMA-48 §8.3.18 | `` `CSI Ps D` `` (CUB) | Cursor Backward `Ps` columns | `` `Term::move_backward` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-CNL | ECMA-48 §8.3.12 | `` `CSI Ps E` `` (CNL) | Cursor Next Line — down + col 0 | `` `Term::move_down_and_cr` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-CPL | ECMA-48 §8.3.13 | `` `CSI Ps F` `` (CPL) | Cursor Preceding Line — up + col 0 | `` `Term::move_up_and_cr` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-CHA | ECMA-48 §8.3.9 | `` `CSI Ps G` `` (CHA) | Cursor Horizontal Absolute — column `Ps` | `` `Term::goto_col` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | `CSI Ps \`` (HPA) dispatches to the same handler. |
+| ECMA48-CSI-CUP | ECMA-48 §8.3.21 | `` `CSI Ps ; Ps H` `` (CUP) | Cursor Position — row `Ps1`, column `Ps2` | `` `Term::goto` (`oriterm_core/src/term/handler/mod.rs`) → `Term::goto_origin_aware` (`oriterm_core/src/term/handler/helpers.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | `CSI Ps;Ps f` (HVP) dispatches to the same handler. |
+| ECMA48-CSI-VPA | ECMA-48 §8.3.158 | `` `CSI Ps d` `` (VPA) | Vertical Line Position Absolute — row `Ps` | `` `Term::goto_line` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-CHT | ECMA-48 §8.3.10 | `` `CSI Ps I` `` (CHT) | Cursor Forward Tabulation | `` `Term::move_forward_tabs` (`oriterm_core/src/term/handler/mod.rs`) — delegates to `put_tab` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-CBT | ECMA-48 §8.3.7 | `` `CSI Ps Z` `` (CBT) | Cursor Backward Tabulation | `` `Term::move_backward_tabs` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+
+## CSI — Erase
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-ED | ECMA-48 §8.3.39 | `` `CSI Ps J` `` (ED) | Erase in Display — 0 below / 1 above / 2 all / 3 scrollback | `` `Term::clear_screen` (`oriterm_core/src/term/handler/mod.rs`) — `ClearMode::{Below,Above,All,Saved}` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | `Ps=3` (scrollback erase) is an xterm extension. |
+| ECMA48-CSI-EL | ECMA-48 §8.3.41 | `` `CSI Ps K` `` (EL) | Erase in Line — 0 right / 1 left / 2 all | `` `Term::clear_line` (`oriterm_core/src/term/handler/mod.rs`) — `LineClearMode::{Right,Left,All}` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-ECH | ECMA-48 §8.3.38 | `` `CSI Ps X` `` (ECH) | Erase Character — `Ps` cells from cursor | `` `Term::erase_chars` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+
+## CSI — Insert / Delete / Scroll
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-ICH | ECMA-48 §8.3.64 | `` `CSI Ps @` `` (ICH) | Insert Blank Characters | `` `Term::insert_blank` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-DCH | ECMA-48 §8.3.26 | `` `CSI Ps P` `` (DCH) | Delete Characters | `` `Term::delete_chars` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-IL | ECMA-48 §8.3.67 | `` `CSI Ps L` `` (IL) | Insert Lines | `` `Term::insert_blank_lines` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-DL | ECMA-48 §8.3.32 | `` `CSI Ps M` `` (DL) | Delete Lines | `` `Term::delete_lines` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-SU | ECMA-48 §8.3.147 | `` `CSI Ps S` `` (SU) | Scroll Up | `` `Term::scroll_up` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Triggers image eviction on scroll. |
+| ECMA48-CSI-SD | ECMA-48 §8.3.112 | `` `CSI Ps T` `` (SD) | Scroll Down | `` `Term::scroll_down` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-DECSTBM | DEC STD 070 §4.6.3 | `` `CSI Ps ; Ps r` `` (DECSTBM) | Set Top and Bottom Margins | `` `Term::set_scrolling_region` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-REP | ECMA-48 §8.3.103 | `` `CSI Ps b` `` (REP) | Repeat preceding character `Ps` times | `` `csi::dispatch` (`crates/vte/src/ansi/dispatch/csi.rs`) → `Term::input` (`oriterm_core/src/term/handler/mod.rs`) `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Uses `preceding_char` cached by `Performer::print`. |
+
+## CSI — Tabs
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-TBC | ECMA-48 §8.3.154 | `` `CSI Ps g` `` (TBC) | Tab Clear — 0 current / 3 all | `` `Term::clear_tabs` (`oriterm_core/src/term/handler/mod.rs`) — `TabulationClearMode::{Current,All}` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-CSI-DECST8C | VT510 §5.8 | `` `CSI ? 5 W` `` (DECST8C) | Reset tab stops every 8 columns | `` `Term::set_tabs` (`oriterm_core/src/term/handler/mod.rs`) — dispatched on `action='W'`, intermediate `?`, param 5 `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Non-DECSET/DECRST question-mark sequence. |
+
+## CSI — ANSI Modes (SM / RM)
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-SM-IRM | ECMA-48 §8.3.64 | `` `CSI 4 h` `` / `` `CSI 4 l` `` (IRM) | Insert Replace Mode — 4 is SM/RM numeric parameter | `` `Term::set_mode` / `Term::unset_mode` (`oriterm_core/src/term/handler/mod.rs`) — `Mode::Named(NamedMode::Insert)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Mapped via `Mode::new(4)`. |
+| ECMA48-CSI-SM-LNM | ECMA-48 §8.3.74 | `` `CSI 20 h` `` / `` `CSI 20 l` `` (LNM) | Line Feed / New Line Mode | `` `Term::set_mode` / `Term::unset_mode` (`oriterm_core/src/term/handler/mod.rs`) — `Mode::Named(NamedMode::LineFeedNewLine)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Mapped via `Mode::new(20)`. Unknown mode numbers log and are ignored. |
+
+## CSI — Device Status / Attribute Reports
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-DA1 | ECMA-48 §8.3.24 | `` `CSI c` `` / `` `CSI 0 c` `` (DA1) | Primary Device Attributes | `` `Term::identify_terminal` (`oriterm_core/src/term/handler/mod.rs`) → `Term::status_identify_terminal` (`oriterm_core/src/term/handler/status.rs`) `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Responds `CSI ? 64;6;4 c` (VT420 + color + sixel). |
+| ECMA48-CSI-DA2 | xterm ctlseqs (DA2) | `` `CSI > c` `` / `` `CSI > 0 c` `` (DA2) | Secondary Device Attributes | `` `Term::status_identify_terminal` (`oriterm_core/src/term/handler/status.rs`) — `Some('>')` arm `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Reports terminal type 0 + crate version. |
+| ECMA48-CSI-DA3 | xterm ctlseqs (DA3) | `` `CSI = c` `` (DA3) | Tertiary Device Attributes (unit ID) | `` `Term::status_identify_terminal` (`oriterm_core/src/term/handler/status.rs`) — `Some('=')` arm `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Returns `DCS ! | 00000000 ST`. Screen 2 variant unhandled (BUG-08-5). |
+| ECMA48-CSI-DSR-5 | ECMA-48 §8.3.35 | `` `CSI 5 n` `` (DSR operating status) | Device Status Report — operating status | `` `Term::device_status` (`oriterm_core/src/term/handler/mod.rs`) → `Term::status_device_status` (`oriterm_core/src/term/handler/status.rs`) `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Responds `CSI 0 n`. |
+| ECMA48-CSI-DSR-6 | ECMA-48 §8.3.35 | `` `CSI 6 n` `` (CPR) | Cursor Position Report | `` `Term::status_device_status` (`oriterm_core/src/term/handler/status.rs`) — arg `6` arm `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Origin-aware when DECOM set. |
+| ECMA48-CSI-DECRQM-ANSI | DEC STD 070 §4.6.8 | `` `CSI Ps $ p` `` (DECRQM ANSI) | Request Mode — ANSI mode status | `` `Term::report_mode` (`oriterm_core/src/term/handler/mod.rs`) → `Term::status_report_mode` (`oriterm_core/src/term/handler/status.rs`) `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Responds `CSI Ps;V $ y`. |
+| ECMA48-CSI-DECRQM-PRIV | DEC STD 070 §4.6.8 | `` `CSI ? Ps $ p` `` (DECRQM private) | Request Mode — private mode status | `` `Term::report_private_mode` (`oriterm_core/src/term/handler/mod.rs`) → `Term::status_report_private_mode` (`oriterm_core/src/term/handler/status.rs`) `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Non-DECSET question-mark dispatch (intermediates `?$`, final `p`). |
+
+## CSI — SGR (Select Graphic Rendition)
+
+One row per supported numeric parameter (not one per dispatch arm). Source of truth: `attrs_from_sgr_parameters` in `crates/vte/src/ansi/dispatch/csi.rs`. Supported universe (verified 2026-04-11): `0-9`, `21-25`, `27-29`, `30-39`, `40-49`, `58-59`, `90-97`, `100-107`. SGR 10-20, 26, 51-55, 113+ are NOT supported and have no rows.
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-SGR-0 | ECMA-48 §8.3.117 | `` `CSI 0 m` `` | Reset all attributes | `` `Term::terminal_attribute` → `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Reset` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Empty SGR (`CSI m`) also maps to `Attr::Reset` via `csi::dispatch`. |
+| ECMA48-SGR-1 | ECMA-48 §8.3.117 | `` `CSI 1 m` `` | Bold | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Bold` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-2 | ECMA-48 §8.3.117 | `` `CSI 2 m` `` | Dim (Faint) | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Dim` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-3 | ECMA-48 §8.3.117 | `` `CSI 3 m` `` | Italic | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Italic` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-4 | ECMA-48 §8.3.117 | `` `CSI 4 m` `` | Underline (single) | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Underline` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Sub-params `4:0`/`4:2`/`4:3`/`4:4`/`4:5` select none/double/curl/dotted/dashed. |
+| ECMA48-SGR-5 | ECMA-48 §8.3.117 | `` `CSI 5 m` `` | Blink (slow) | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::BlinkSlow` `` | state-snapshot | parser:pending dispatch:pending state:pending | stub | — | Dispatch records attribute; renderer does not animate blink. |
+| ECMA48-SGR-6 | ECMA-48 §8.3.117 | `` `CSI 6 m` `` | Blink (fast) | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::BlinkFast` `` | state-snapshot | parser:pending dispatch:pending state:pending | stub | — | Same stub status as slow blink. |
+| ECMA48-SGR-7 | ECMA-48 §8.3.117 | `` `CSI 7 m` `` | Reverse / inverse video | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Reverse` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-8 | ECMA-48 §8.3.117 | `` `CSI 8 m` `` | Conceal / hidden | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Hidden` `` | state-snapshot | parser:pending dispatch:pending state:pending | stub | — | Dispatch recorded; renderer does not hide glyphs. |
+| ECMA48-SGR-9 | ECMA-48 §8.3.117 | `` `CSI 9 m` `` | Crossed-out / strikethrough | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Strike` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-21 | ECMA-48 §8.3.117 | `` `CSI 21 m` `` | Double underline / cancel bold | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelBold` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Mapped as CancelBold per VTE fork convention. |
+| ECMA48-SGR-22 | ECMA-48 §8.3.117 | `` `CSI 22 m` `` | Normal intensity (cancel bold/dim) | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelBoldDim` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-23 | ECMA-48 §8.3.117 | `` `CSI 23 m` `` | Cancel italic | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelItalic` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-24 | ECMA-48 §8.3.117 | `` `CSI 24 m` `` | Cancel underline | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelUnderline` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-25 | ECMA-48 §8.3.117 | `` `CSI 25 m` `` | Cancel blink | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelBlink` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-27 | ECMA-48 §8.3.117 | `` `CSI 27 m` `` | Cancel reverse | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelReverse` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-28 | ECMA-48 §8.3.117 | `` `CSI 28 m` `` | Cancel conceal | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelHidden` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-29 | ECMA-48 §8.3.117 | `` `CSI 29 m` `` | Cancel strike | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::CancelStrike` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-30 | ECMA-48 §8.3.117 | `` `CSI 30 m` `` | Foreground Black | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Black)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-31 | ECMA-48 §8.3.117 | `` `CSI 31 m` `` | Foreground Red | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Red)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-32 | ECMA-48 §8.3.117 | `` `CSI 32 m` `` | Foreground Green | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Green)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-33 | ECMA-48 §8.3.117 | `` `CSI 33 m` `` | Foreground Yellow | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Yellow)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-34 | ECMA-48 §8.3.117 | `` `CSI 34 m` `` | Foreground Blue | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Blue)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-35 | ECMA-48 §8.3.117 | `` `CSI 35 m` `` | Foreground Magenta | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Magenta)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-36 | ECMA-48 §8.3.117 | `` `CSI 36 m` `` | Foreground Cyan | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Cyan)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-37 | ECMA-48 §8.3.117 | `` `CSI 37 m` `` | Foreground White | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::White)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-38 | xterm 256 / truecolor | `` `CSI 38 ; 5 ; Ps m` `` / `` `CSI 38 ; 2 ; r ; g ; b m` `` / `` `CSI 38 : 2 : : r : g : b m` `` | Foreground indexed-256 or RGB | `` `parse_sgr_color` / `handle_colon_rgb` (`crates/vte/src/ansi/dispatch/csi.rs`) → `Attr::Foreground(Color::Indexed/Spec)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | Both semicolon and colon (ITU T.416) sub-param forms supported. |
+| ECMA48-SGR-39 | ECMA-48 §8.3.117 | `` `CSI 39 m` `` | Default foreground | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::Foreground)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-40 | ECMA-48 §8.3.117 | `` `CSI 40 m` `` | Background Black | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Black)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-41 | ECMA-48 §8.3.117 | `` `CSI 41 m` `` | Background Red | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Red)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-42 | ECMA-48 §8.3.117 | `` `CSI 42 m` `` | Background Green | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Green)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-43 | ECMA-48 §8.3.117 | `` `CSI 43 m` `` | Background Yellow | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Yellow)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-44 | ECMA-48 §8.3.117 | `` `CSI 44 m` `` | Background Blue | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Blue)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-45 | ECMA-48 §8.3.117 | `` `CSI 45 m` `` | Background Magenta | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Magenta)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-46 | ECMA-48 §8.3.117 | `` `CSI 46 m` `` | Background Cyan | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Cyan)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-47 | ECMA-48 §8.3.117 | `` `CSI 47 m` `` | Background White | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::White)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-48 | xterm 256 / truecolor | `` `CSI 48 ; 5 ; Ps m` `` / `` `CSI 48 ; 2 ; r ; g ; b m` `` | Background indexed-256 or RGB | `` `parse_sgr_color` / `handle_colon_rgb` (`crates/vte/src/ansi/dispatch/csi.rs`) → `Attr::Background(Color::Indexed/Spec)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-49 | ECMA-48 §8.3.117 | `` `CSI 49 m` `` | Default background | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::Background)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-58 | Kitty / wezterm SGR ext | `` `CSI 58 ; 5 ; Ps m` `` / `` `CSI 58 ; 2 ; r ; g ; b m` `` | Underline color (indexed or RGB) | `` `parse_sgr_color` / `handle_colon_rgb` (`crates/vte/src/ansi/dispatch/csi.rs`) → `Attr::UnderlineColor(Some(...))` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | wezterm escape-sequences.md | De-facto extension first shipped in kitty. |
+| ECMA48-SGR-59 | Kitty / wezterm SGR ext | `` `CSI 59 m` `` | Default underline color | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::UnderlineColor(None)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | wezterm escape-sequences.md | |
+| ECMA48-SGR-90 | xterm aixterm | `` `CSI 90 m` `` | Bright foreground Black | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightBlack)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | aixterm bright colors are de-facto, not ECMA-48. |
+| ECMA48-SGR-91 | xterm aixterm | `` `CSI 91 m` `` | Bright foreground Red | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightRed)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-92 | xterm aixterm | `` `CSI 92 m` `` | Bright foreground Green | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightGreen)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-93 | xterm aixterm | `` `CSI 93 m` `` | Bright foreground Yellow | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightYellow)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-94 | xterm aixterm | `` `CSI 94 m` `` | Bright foreground Blue | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightBlue)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-95 | xterm aixterm | `` `CSI 95 m` `` | Bright foreground Magenta | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightMagenta)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-96 | xterm aixterm | `` `CSI 96 m` `` | Bright foreground Cyan | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightCyan)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-97 | xterm aixterm | `` `CSI 97 m` `` | Bright foreground White | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Foreground(NamedColor::BrightWhite)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-100 | xterm aixterm | `` `CSI 100 m` `` | Bright background Black | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightBlack)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-101 | xterm aixterm | `` `CSI 101 m` `` | Bright background Red | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightRed)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-102 | xterm aixterm | `` `CSI 102 m` `` | Bright background Green | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightGreen)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-103 | xterm aixterm | `` `CSI 103 m` `` | Bright background Yellow | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightYellow)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-104 | xterm aixterm | `` `CSI 104 m` `` | Bright background Blue | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightBlue)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-105 | xterm aixterm | `` `CSI 105 m` `` | Bright background Magenta | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightMagenta)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-106 | xterm aixterm | `` `CSI 106 m` `` | Bright background Cyan | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightCyan)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+| ECMA48-SGR-107 | xterm aixterm | `` `CSI 107 m` `` | Bright background White | `` `sgr::apply` (`oriterm_core/src/term/handler/sgr.rs`) — `Attr::Background(NamedColor::BrightWhite)` `` | state-snapshot | parser:pending dispatch:pending state:pending | implemented-unverified | — | |
+
+## DCS — DECRQSS (Request Status String)
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-DCS-DECRQSS | DEC STD 070 §6.1.2 | `` `DCS $ q Pt ST` `` (DECRQSS) | Request Status String — queries SGR / DECSTBM / DECSCL | `` `Performer::hook` + `Performer::put` + `Performer::unhook` (`crates/vte/src/ansi/dispatch/mod.rs`) → `Term::decrqss` → `Term::status_decrqss` (`oriterm_core/src/term/handler/status.rs`) `` | effect-pty-write | parser:pending dispatch:pending effect:pending | implemented-unverified | — | Recognized queries: `"p` (DECSCL), `r` (DECSTBM), `m` (SGR). Unknown → `DCS 0 $ r ST`. |
+
+## PM (Privacy Message)
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-PM-DISCARD | ECMA-48 §5.6 | `` `ESC ^ Pt ST` `` | Privacy Message — payload discarded | `` `Parser::anywhere` (`crates/vte/src/lib.rs`) — state transition `State::SosPmApcString` via `0x5E` `` | parser-only | parser:pending | stub | — | Parser enters `SosPmApcString` and drops bytes until ST; no dispatch arm fires. ECMA-48 allows implementations to discard Privacy Messages. |
+
+## SOS (Start Of String)
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-SOS-DISCARD | ECMA-48 §5.6 | `` `ESC X Pt ST` `` | Start Of String — payload discarded | `` `Parser::anywhere` (`crates/vte/src/lib.rs`) — state transition `State::SosPmApcString` via `0x58` `` | parser-only | parser:pending | stub | — | Parser enters `SosPmApcString` and drops bytes until ST. Shared state with PM. |
+
+## C1 8-bit Forms
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-C1-8BIT | ECMA-48 §5.3.b | 8-bit C1 bytes `0x80`–`0x9F` | C1 aliases for two-byte ESC forms (e.g., `0x9B` = CSI, `0x9D` = OSC) | MISSING — to be added by Section 08 (ECMA-48 Baseline) | parser-only | parser:pending | missing | — | 7-bit ESC-prefixed forms are recognized; explicit 8-bit C1 discrimination is not implemented in `Parser::advance`. |
