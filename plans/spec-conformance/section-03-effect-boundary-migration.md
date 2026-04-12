@@ -42,7 +42,7 @@ sections:
     status: in-progress
   - id: "03.6"
     title: "Migrate Term::pending_notifications into the Effect channel"
-    status: not-started
+    status: complete
   - id: "03.7"
     title: "Remove ClipboardLoad/ColorRequest closure variants from Event"
     status: not-started
@@ -819,7 +819,7 @@ Effects are pushed into a queue (or forwarded immediately), but there is no defi
 
 Per Codex Round 2, `Term::pending_notifications` is a split-brain side channel that the new Effect sink must absorb. Notifications are appended via `Term::push_notification()` from the raw interceptor at `oriterm_mux/src/shell_integration/interceptor.rs:124,147` (NOT `oriterm_core/src/raw_intercept/` — that path does not exist) and drained via `Term::drain_notifications()` at `oriterm_core/src/term/shell_state.rs:218`. After this subsection, notifications flow through `effect_sink.push(Effect::Host(HostEffect::DesktopNotification { ... }))`. During the legacy phase, the `LegacyEventSink` adapter queues notifications in its secondary `pending_notifications` field (see 03.4, TPR-03-001) and `drain_notifications()` becomes a thin shim that calls `self.effect_sink.drain_pending_notifications()` — the inherent method on `LegacyEventSink`. **[TPR-03-001-gemini]** When consumers migrate to `QueueingEffectSink`, there is NO separate notification drain — `DesktopNotification` effects arrive in the normal `drain_into()` output and the consumer processes them in the same loop as all other effects. The `drain_notifications()` shim exists ONLY on `impl<L: EventListener + Sync> Term<LegacyEventSink<L>>`; it does not exist on `Term<QueueingEffectSink>`.
 
-- [ ] Find every call site of `Term::push_notification()` (verified by grep — two sites):
+- [x] Find every call site of `Term::push_notification()` (verified by grep — two sites):
   - `oriterm_mux/src/shell_integration/interceptor.rs:124` (OSC 9/99 — `handle_notification_simple`):
     ```rust
     // OLD
@@ -842,13 +842,13 @@ Per Codex Round 2, `Term::pending_notifications` is a split-brain side channel t
         body,
     }));
     ```
-- [ ] In `oriterm_core/src/term/shell_state.rs`:
+- [x] In `oriterm_core/src/term/shell_state.rs`:
   - Remove `Term::push_notification()` method (line 223).
   - Rewrite `Term::drain_notifications()` method (line 218) as a thin shim. **[TPR-03-002-codex]** Under the `Term<S: EffectSink>` model there is only ONE generic parameter; the specialization is `impl<L: EventListener + Sync> Term<LegacyEventSink<L>>`. The shim calls `self.effect_sink.drain_pending_notifications()` — an inherent method on `LegacyEventSink<L>`, NOT a trait method. This shim exists ONLY for `Term<LegacyEventSink<L>>`. For `QueueingEffectSink` consumers, there is NO separate `drain_notifications()` — they process `DesktopNotification` effects during their normal `drain_into()` loop and do not need a notification-specific drain at all. For one-phase migration, prefer keeping the legacy shim to avoid breaking the 50+ `drain_notifications()` call sites across `oriterm_mux/tests/` and `oriterm/src/`.
 
   **Design decision — `drain_pending_notifications()` is an inherent method on `LegacyEventSink`, NOT a trait method on `EffectSink`**: Adding this to the `EffectSink` trait would pollute the trait with a legacy-specific method that `QueueingEffectSink` and `VoidEffectSink` would implement as no-ops (pointless stubs) and that future non-legacy sinks would never use. This is purely an artifact of the one-phase migration. The correct placement is as an inherent method on `LegacyEventSink<L>` directly, called only from the `Term<LegacyEventSink<L>>` specialization. Note: `clear_pending_notifications()` is NOT needed as a separate callable method — the RIS handler emits `HostEffect::ClearPendingNotifications` unconditionally (see [TPR-03-002-gemini] above), and `LegacyEventSink::push()` handles that variant internally by clearing its queue. The inherent API surface is `drain_pending_notifications()` only.
-- [ ] **[DRIFT]** `oriterm_core/src/term/mod.rs:172` — remove `pending_notifications: Vec<Notification>` field declaration. Also remove its `Vec::new()` initialization at line 240. Leaving the field alive after removing its setter/drainer creates dead memory.
-- [ ] **[LEAK:scattered-knowledge] [TPR-03-002-gemini]** `oriterm_core/src/term/handler/esc.rs:52` — RIS handler directly calls `self.pending_notifications.clear()`. After the field is removed, the RIS handler is in `impl<S: EffectSink> Term<S>` and cannot call inherent methods on a concrete `S`. The replacement is a SINGLE unconditional emit that works for ALL sink types:
+- [x] **[DRIFT]** `oriterm_core/src/term/mod.rs:172` — remove `pending_notifications: Vec<Notification>` field declaration. Also remove its `Vec::new()` initialization at line 240. Leaving the field alive after removing its setter/drainer creates dead memory.
+- [x] **[LEAK:scattered-knowledge] [TPR-03-002-gemini]** `oriterm_core/src/term/handler/esc.rs:52` — RIS handler directly calls `self.pending_notifications.clear()`. After the field is removed, the RIS handler is in `impl<S: EffectSink> Term<S>` and cannot call inherent methods on a concrete `S`. The replacement is a SINGLE unconditional emit that works for ALL sink types:
   ```rust
   // RIS handler — replaces self.pending_notifications.clear()
   self.effect_sink.push(Effect::Host(HostEffect::ClearPendingNotifications));
@@ -858,15 +858,15 @@ Per Codex Round 2, `Term::pending_notifications` is a split-brain side channel t
   - **`QueueingEffectSink::push()`** queues it. The consumer processes this marker during `drain_into()` and discards any preceding `DesktopNotification` effects in the drained batch. The RIS handler does NOT call `drain_into()` itself — it only emits the effect; draining is the consumer's responsibility.
   - **`VoidEffectSink::push()`** ignores it (no-op). No notifications were queued.
   - These are NOT additions to the `EffectSink` trait — the dispatch is via the concrete `push()` arm in each impl, not a new trait method. See the design decision note above.
-- [ ] **[WASTE]** `oriterm_core/src/term/tests.rs:1598-1631` — `ris_clears_pending_notifications`, `drain_notifications_returns_empty_on_second_call`, and adjacent tests call `Term::push_notification` / `Term::drain_notifications` directly. After the field is removed, rewrite these tests to push via `effect_sink().push(Effect::Host(HostEffect::DesktopNotification { .. }))` and drain via `effect_sink().drain_into()`. The RIS semantic MUST still hold (RIS clears any host-pending notifications) — assert the effect channel is empty after RIS.
-- [ ] **Module conversion**: `shell_state.rs` is currently a file module (`oriterm_core/src/term/shell_state.rs`), not a directory module. Per test-organization.md, adding tests requires converting it to a directory module: rename to `shell_state/mod.rs`, create `shell_state/tests.rs`. Update the `mod shell_state;` declaration in `term/mod.rs` (no change needed — Rust resolves both forms).
-- [ ] If any consumer was calling `term.drain_notifications()` (search found 50+ call sites across `oriterm_mux/tests/`, `oriterm_mux/src/backend/`, `oriterm/src/app/`), either keep the thin shim or update them. The thin shim is strongly preferred for this section — updating 50+ sites is a separate mechanical migration best done in the `plans/effect-cutover/` follow-up.
-- [ ] Add tests in `oriterm_core/src/term/shell_state/tests.rs` (sibling file, after module conversion):
+- [x] **[WASTE]** `oriterm_core/src/term/tests.rs:1598-1631` — `ris_clears_pending_notifications`, `drain_notifications_returns_empty_on_second_call`, and adjacent tests call `Term::push_notification` / `Term::drain_notifications` directly. After the field is removed, rewrite these tests to push via `effect_sink().push(Effect::Host(HostEffect::DesktopNotification { .. }))` and drain via `effect_sink().drain_into()`. The RIS semantic MUST still hold (RIS clears any host-pending notifications) — assert the effect channel is empty after RIS.
+- [x] **Module conversion**: `shell_state.rs` is currently a file module (`oriterm_core/src/term/shell_state.rs`), not a directory module. Per test-organization.md, adding tests requires converting it to a directory module: rename to `shell_state/mod.rs`, create `shell_state/tests.rs`. Update the `mod shell_state;` declaration in `term/mod.rs` (no change needed — Rust resolves both forms).
+- [x] If any consumer was calling `term.drain_notifications()` (search found 50+ call sites across `oriterm_mux/tests/`, `oriterm_mux/src/backend/`, `oriterm/src/app/`), either keep the thin shim or update them. The thin shim is strongly preferred for this section — updating 50+ sites is a separate mechanical migration best done in the `plans/effect-cutover/` follow-up.
+- [x] Add tests in `oriterm_core/src/term/shell_state/tests.rs` (sibling file, after module conversion):
   - `osc_9_pushes_desktop_notification_effect()`
   - `osc_99_pushes_desktop_notification_effect_with_osc99_source()`
   - `osc_777_pushes_desktop_notification_effect_with_osc777_source()`
   - `ris_clears_pending_notification_effects()` — push notification, trigger RIS, drain effect sink, verify empty
-- [ ] **Validation**: `grep -rn 'pending_notifications\|push_notification' oriterm_core/src/ | grep -v 'effect/sink/legacy'` returns no production matches (only the thin shim `drain_notifications` if kept, and tests; `legacy.rs` is excluded because the legacy adapter legitimately has a `pending_notifications` field).
+- [x] **Validation**: `grep -rn 'pending_notifications\|push_notification' oriterm_core/src/ | grep -v 'effect/sink/legacy'` returns no production matches (only the thin shim `drain_notifications` if kept, and tests; `legacy.rs` is excluded because the legacy adapter legitimately has a `pending_notifications` field).
 - [ ] **TPR checkpoint** — `/tpr-review` covering 03.4–03.6 (legacy adapter + handler migration + notifications absorption). Catches integration issues from the multi-file migration.
 
 ---
