@@ -1,9 +1,8 @@
 //! `TackNavigator`: walks `&[MenuStep]` against a live `PtySession`.
 //!
-//! See `plans/tack-conformance/section-04-scenario-framework.md`
-//! § 04.2 for the pre-existing-anchor guard rationale (C1) and the
-//! non-panicking `wait_for_any`-based alternate-anchor matching
-//! (M4b — replaces an earlier draft's `catch_unwind` antipattern).
+//! Pre-existing-anchor guard (C1) uses non-panicking
+//! `wait_for_any`-based alternate-anchor matching instead of
+//! an earlier draft's `catch_unwind` antipattern.
 
 use crate::session::PtySession;
 

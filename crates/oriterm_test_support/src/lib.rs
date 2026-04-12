@@ -11,10 +11,7 @@
 //!     instead of the host's `xterm-256color`.
 //!
 //! Before this crate existed, the PTY/Term/VTE plumbing was duplicated
-//! byte-for-byte between two `VtTestSession` definitions. See
-//! `plans/tack-conformance/section-01-shared-pty-session.md` for the
-//! deduplication history. The terminfo provisioning side lands in
-//! `plans/tack-conformance/section-02-terminfo-provisioning.md`.
+//! byte-for-byte between two `VtTestSession` definitions.
 
 pub mod catalog;
 pub mod session;

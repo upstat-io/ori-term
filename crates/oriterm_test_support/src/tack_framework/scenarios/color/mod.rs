@@ -112,8 +112,7 @@ pub fn parse_color_screen(grid: &str) -> ScreenFacts {
 ///
 /// Anchor strings empirically verified against tack v1.08
 /// (2026-04-08) — see the module rustdoc for the captured-output
-/// evidence and the 05.3 implementation block in
-/// `plans/tack-conformance/section-05-test-menu-scenarios.md`.
+/// evidence.
 pub const TACK_COLOR: ScenarioSpec = ScenarioSpec {
     id: "tack_color",
     screen_id: "tack_color",

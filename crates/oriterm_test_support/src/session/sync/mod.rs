@@ -4,10 +4,8 @@
 //! variants added by Section 04 of the tack-conformance plan:
 //! `wait_for_with_context`, `wait_for_any`) delegate to the private
 //! [`poll_until`] helper that captures the deadline + drain + idle-sleep
-//! skeleton in exactly one place. Two earlier sites duplicated the loop
-//! body — see the `LEAK:algorithmic-duplication` finding documented at
-//! `plans/tack-conformance/section-04-scenario-framework.md` for the
-//! architectural rationale.
+//! skeleton in exactly one place (two earlier sites duplicated the loop
+//! body).
 //!
 //! The 10 ms idle sleep on empty drain is the bounded-poll invariant
 //! that prevents hot-spinning when the reader thread has closed its

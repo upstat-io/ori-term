@@ -27,10 +27,8 @@
 //! - Assert the encoded byte sequence ori_term would write back
 //!   to the PTY matches the cap's terminfo string EXACTLY.
 //!
-//! **HOWEVER — Section 08 is currently `status: not-started` in
-//! `plans/tack-conformance/section-08-keyboard-tests.md`, and
-//! the file `oriterm/src/key_encoding/terminfo_xcheck.rs` does
-//! NOT yet exist in the workspace.** Until Section 08 lands,
+//! **NOTE:** The file `oriterm/src/key_encoding/terminfo_xcheck.rs`
+//! does NOT yet exist in the workspace. Until that lands,
 //! function-key correctness for the `kf0..kf63` capability set
 //! is NOT under automated test in this repository. This is a
 //! known coverage gap that 05.4b inherits — it cannot be

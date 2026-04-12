@@ -1,7 +1,6 @@
 //! Section 06.5 direct-VTE cap xcheck — status line via OSC title.
 //!
-//! Per `plans/tack-conformance/section-02-terminfo-provisioning.md:177`,
-//! Section 02 declared `hs`/`dsl`/`tsl`/`fsl` as title-backed via
+//! The `hs`/`dsl`/`tsl`/`fsl` caps are title-backed via
 //! `oriterm_core/src/term/handler/osc.rs:22 osc_set_title`. The
 //! contract is:
 //!   - `tsl=\E]2;` opens an OSC 2 (set title) sequence.
