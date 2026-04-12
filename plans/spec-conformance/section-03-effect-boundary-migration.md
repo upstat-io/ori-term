@@ -36,7 +36,7 @@ sections:
     status: complete
   - id: "03.4"
     title: "LegacyEventSink adapter — bridge Effect to existing Event/MuxEvent consumers"
-    status: not-started
+    status: complete
   - id: "03.5"
     title: "Migrate VTE handler emission sites to emit Effect"
     status: not-started
@@ -65,7 +65,7 @@ sections:
 - [x] `oriterm_core::effect::Effect` family enum exists with all 5 sub-families
 - [ ] No closures in handler files — `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
 - [ ] `Term::pending_notifications` bypass is gone — notifications flow through `EffectSink::push(Effect::Host(HostEffect::DesktopNotification {...}))`
-- [ ] `LegacyEventSink` adapter exists and bridges Effect to existing consumers
+- [x] `LegacyEventSink` adapter exists and bridges Effect to existing consumers
 - [x] `SnapshotDoubleBuffer::seqno()` exposed and stable during Mode 2026 sync
 - [ ] All existing tests pass without modification (`./test-all.sh` green debug + release)
 - [ ] No regressions in `oriterm_core/tests/alloc_regression.rs` (closure removal must not introduce new allocations on hot paths)
@@ -492,7 +492,7 @@ The migration is one-phase via an adapter: `LegacyEventSink` receives `Effect` p
 
 **Decision**: Option B. Grep the codebase for `impl EventListener` and verify each impl satisfies `Sync`. The concrete impls are: `VoidListener` (unit struct, trivially `Sync`), `RecordingListener` (uses `Arc<Mutex<Vec<String>>>` — `Sync`), `MuxEventProxy` in `oriterm_mux` (uses `Arc<...>` — `Sync`), and the app-layer proxy (uses `EventLoopProxy` — `Sync`). All existing impls are `Sync`. Document this in the adapter's doc comment and add a compile-time assertion.
 
-- [ ] Implement `LegacyEventSink` in `oriterm_core/src/effect/sink/legacy.rs`:
+- [x] Implement `LegacyEventSink` in `oriterm_core/src/effect/sink/legacy.rs`:
   ```rust
   use crate::event::{Event, EventListener};
   use super::{Effect, EffectSink};
@@ -659,8 +659,8 @@ The migration is one-phase via an adapter: `LegacyEventSink` receives `Effect` p
       STANDARD.encode(input.as_bytes())
   }
   ```
-- [ ] **Note**: the closure-wrapping in the legacy adapter is a TEMPORARY shim. The closures here exist only to bridge the old `Event::ClipboardLoad`/`ColorRequest` API for one migration phase. The handlers that EMIT no longer create closures — they emit `HostRequest` with a `ResponseToken`, and the legacy adapter wraps the token in a closure for old consumers. The wrapping closures are owned by the legacy adapter, not the VTE handler, and they go away when section X (some future section, after this plan completes) migrates the last legacy consumer.
-- [ ] Sibling tests in `oriterm_core/src/effect/sink/legacy/tests.rs`:
+- [x] **Note**: the closure-wrapping in the legacy adapter is a TEMPORARY shim. The closures here exist only to bridge the old `Event::ClipboardLoad`/`ColorRequest` API for one migration phase. The handlers that EMIT no longer create closures — they emit `HostRequest` with a `ResponseToken`, and the legacy adapter wraps the token in a closure for old consumers. The wrapping closures are owned by the legacy adapter, not the VTE handler, and they go away when section X (some future section, after this plan completes) migrates the last legacy consumer.
+- [x] Sibling tests in `oriterm_core/src/effect/sink/legacy/tests.rs`:
   - `pty_write_routes_to_pty_write_event()`
   - `host_bell_routes_to_bell_event()`
   - `host_title_set_routes_to_title_event()`
@@ -669,7 +669,7 @@ The migration is one-phase via an adapter: `LegacyEventSink` receives `Effect` p
   - `desktop_notification_queued_in_adapter()` — push `DesktopNotification` effect, verify `drain_pending_notifications()` returns it (TPR-03-001)
   - `desktop_notification_not_forwarded_as_event()` — push `DesktopNotification`, verify the `EventListener` did NOT receive any Event (notifications have no legacy Event variant)
   - `presentation_effects_dropped_silently()` (legacy listeners don't consume them)
-- [ ] **Validation**: `cargo test -p oriterm_core --lib effect::sink::legacy::tests` passes.
+- [x] **Validation**: `cargo test -p oriterm_core --lib effect::sink::legacy::tests` passes.
 
 ---
 
