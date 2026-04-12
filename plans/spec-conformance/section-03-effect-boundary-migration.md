@@ -45,7 +45,7 @@ sections:
     status: complete
   - id: "03.7"
     title: "Remove ClipboardLoad/ColorRequest closure variants from Event"
-    status: not-started
+    status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
     status: not-started
@@ -881,21 +881,21 @@ After 03.5 emits via Effect/HostRequest, and 03.4's legacy adapter routes back t
 
 Per Codex Round 2 ("production interface, not test-only ... migration via LegacyEventSink for one phase, then full migration"), this section adopts the **gradual approach**: closure variants stay in `Event` for now, the legacy adapter wraps closures around the response tokens, but the **handler emission sites no longer create closures**. The closures live only in the adapter, where they will be deleted when consumers migrate to subscribe to Effect directly — per the `plans/effect-cutover/` follow-up plan directory that section 03.N requires to be filed as an in-scope artifact. The frontmatter `success_criteria` and the mission criterion in `00-overview.md` are phrased consistently with this gradual approach — closures are REMOVED FROM EMISSION SITES, not from the enum itself.
 
-- [ ] Verify zero closure construction in handler files:
+- [x] Verify zero closure construction in handler files:
   ```bash
   grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/
   ```
   must return zero matches in the handler files. Closures in the legacy adapter are OK at this stage.
-- [ ] **[WASTE]** `oriterm_core/src/term/handler/osc.rs:141-144` — remove the stale doc comment "Sends a `ClipboardLoad` event with a closure that formats the base64-encoded response" (currently on `osc_clipboard_load` at line 141) once the closure construction is gone. Replace with doc pointing at `HostRequest::ClipboardLoad` + `ResponseToken`.
-- [ ] **[WASTE]** `oriterm_core/src/term/handler/osc.rs:94-97` — remove the stale doc comment "Sends a `ColorRequest` event with a closure that formats the response escape sequence" (currently on `osc_dynamic_color_sequence` at line 94) once the closure construction is gone. Replace with doc pointing at `HostRequest::ColorQuery` + `ResponseToken`.
-- [ ] **[WASTE] [TPR-03-001-codex Tier 2] [TPR-03-003-codex]** Tack cap xcheck tests that match against `Event::ClipboardLoad` by string — after section 03.5 migrates the emission site, update these test assertions to observe `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` directly using a local `QueueingEffectSink` helper constructed in the test (NOT the future Section 04 `SpecHarness` which does not exist yet — TPR-03-005). Construct a `QueueingEffectSink`, wire it into the test `Term`, feed the OSC sequence, drain the sink, and assert on the structured `Effect` variant. Delete the legacy string matching. This is **Tier 2 — an additional verification step**; the unmodified teseq/tack/alloc/RSS suites (Tier 1) must still pass even after these rewrites. To find ALL affected files (not just `oriterm_core/tests/`), run the comprehensive search:
+- [x] **[WASTE]** `oriterm_core/src/term/handler/osc.rs:141-144` — remove the stale doc comment "Sends a `ClipboardLoad` event with a closure that formats the base64-encoded response" (currently on `osc_clipboard_load` at line 141) once the closure construction is gone. Replace with doc pointing at `HostRequest::ClipboardLoad` + `ResponseToken`.
+- [x] **[WASTE]** `oriterm_core/src/term/handler/osc.rs:94-97` — remove the stale doc comment "Sends a `ColorRequest` event with a closure that formats the response escape sequence" (currently on `osc_dynamic_color_sequence` at line 94) once the closure construction is gone. Replace with doc pointing at `HostRequest::ColorQuery` + `ResponseToken`.
+- [x] **[WASTE] [TPR-03-001-codex Tier 2] [TPR-03-003-codex]** Tack cap xcheck tests that match against `Event::ClipboardLoad` by string — after section 03.5 migrates the emission site, update these test assertions to observe `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` directly using a local `QueueingEffectSink` helper constructed in the test (NOT the future Section 04 `SpecHarness` which does not exist yet — TPR-03-005). Construct a `QueueingEffectSink`, wire it into the test `Term`, feed the OSC sequence, drain the sink, and assert on the structured `Effect` variant. Delete the legacy string matching. This is **Tier 2 — an additional verification step**; the unmodified teseq/tack/alloc/RSS suites (Tier 1) must still pass even after these rewrites. To find ALL affected files (not just `oriterm_core/tests/`), run the comprehensive search:
   ```bash
   rg -n 'Event::ClipboardLoad\|Event::ColorRequest\|Event::ClipboardStore' oriterm_core/
   ```
   Known affected files: `oriterm_core/tests/tack/` (cap xcheck), `oriterm_core/src/term/handler/` (emission sites — should return zero after 03.5), `oriterm_core/src/effect/sink/legacy.rs` (adapter shim — expected matches).
-- [ ] **[DRIFT:cross-section]** Section 03 introduces `drain_into()` as the canonical drain API, replacing the original `take_pending()`. The file `plans/spec-conformance/index.md` (Section 03 keyword cluster) still references `take_pending()`. When section 03 completes, the implementor MUST update the keyword cluster in `plans/spec-conformance/index.md` to use `drain_into()` instead of `take_pending()`. This is a closeout gate, not a deferral — the update is mechanical and scoped to plan text, not code.
-- [ ] **[LEAK:scattered-knowledge]** `oriterm_core/src/term/handler/esc.rs:52` — RIS (reset to initial state) handler calls `self.pending_notifications.clear()` directly. This is addressed in 03.6 (the field removal breaks the build here; the fix is part of the migration wave).
-- [ ] Add a deprecation comment on `Event::ClipboardLoad` and `Event::ColorRequest`:
+- [x] **[DRIFT:cross-section]** Section 03 introduces `drain_into()` as the canonical drain API, replacing the original `take_pending()`. The file `plans/spec-conformance/index.md` (Section 03 keyword cluster) still references `take_pending()`. When section 03 completes, the implementor MUST update the keyword cluster in `plans/spec-conformance/index.md` to use `drain_into()` instead of `take_pending()`. This is a closeout gate, not a deferral — the update is mechanical and scoped to plan text, not code.
+- [x] **[LEAK:scattered-knowledge]** `oriterm_core/src/term/handler/esc.rs:52` — RIS (reset to initial state) handler calls `self.pending_notifications.clear()` directly. This is addressed in 03.6 (the field removal breaks the build here; the fix is part of the migration wave).
+- [x] Add a deprecation comment on `Event::ClipboardLoad` and `Event::ColorRequest`:
   ```rust
   /// **Deprecated**: emitted only via `LegacyEventSink` adapter during the
   /// Effect migration. New code should subscribe to `Effect::HostRequest`
@@ -903,7 +903,7 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
   /// migrates (out of scope for spec-conformance plan).
   ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Send + Sync>),
   ```
-- [ ] **Validation**: `grep -rn 'Arc<dyn Fn' oriterm_core/src/event/ oriterm_core/src/term/handler/osc.rs oriterm_core/src/term/handler/` returns matches ONLY in `oriterm_core/src/event/mod.rs` (the deprecated variants) and `oriterm_core/src/effect/sink/legacy.rs` (the adapter shim). No matches in the handler emission sites.
+- [x] **Validation**: `grep -rn 'Arc<dyn Fn' oriterm_core/src/event/ oriterm_core/src/term/handler/osc.rs oriterm_core/src/term/handler/` returns matches ONLY in `oriterm_core/src/event/mod.rs` (the deprecated variants) and `oriterm_core/src/effect/sink/legacy.rs` (the adapter shim). No matches in the handler emission sites.
 
 ---
 
