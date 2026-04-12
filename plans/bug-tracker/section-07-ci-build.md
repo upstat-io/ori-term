@@ -91,6 +91,24 @@ sections:
   4. For `child_process_with_apply_env_reads_pinned_terminfo`: gate the test on a Windows-specific check that `infocmp` is the ncurses-style binary (or skip cleanly when an MSYS variant is detected). Alternatively, replace it with a Windows-equivalent integration test that uses a tool that DOES respect `$TERMINFO`.
   Note: this bug was uncovered by `b6e99416`'s Windows compile fix (`fix(test-support): nightly CI macOS hashed-db panic + Windows -D warnings`). That commit fixed the legitimate Windows -D warnings errors so the test crate would compile cross-platform; the runtime failures it surfaced are pre-existing latent bugs in the recent (Apr 7-8) tack-conformance test additions, not regressions introduced by the compile fix. Filing — not deferral — per CLAUDE.md `/add-bug` discipline.
 
+- [ ] `[BUG-07-012][medium]` **`oriterm_test_support` has 14 clippy `--all-targets` warnings in test files — same gate gap as BUG-07-005/010**
+  Repro: `cargo clippy -p oriterm_test_support --all-targets -- -D warnings` produces 14 errors (all in test files, lib target is clean). `./clippy-all.sh` only checks lib+bin targets so these never fire in CI.
+  Subsystem: `crates/oriterm_test_support/src/{session,tack_framework}/` test files
+  Found: 2026-04-11 | Source: continue-roadmap
+  Locations:
+  - `session/sync/tests.rs:406` — `items_after_statements`
+  - `session/version_gate/tests.rs:152` — `items_after_statements` or `late_init`
+  - `tack_framework/cap_coverage/tests.rs:{369,384}` — `into_iter_on_single_item` (2x)
+  - `tack_framework/cap_coverage/tests.rs:536` — `iter().count()` on slice
+  - `tack_framework/runner/tests.rs:181` — `pass_by_value_not_consumed`
+  - `tack_framework/runner/tests.rs:{603,625}` — `doc_markdown` (2x)
+  - `tack_framework/scenarios/menu_inventory/tests.rs:{8,9}` — `doc_markdown` + `items_after_statements`
+  - `tack_framework/scenarios/sgr_modes/tests.rs:{21,78,95}` — `doc_markdown` + `format_push_string` (3x)
+  - `tack_framework/scenarios/tools_menu_inventory/tests.rs:136` — `case_sensitive_file_extension_comparisons`
+  Same root cause family as BUG-07-005, BUG-07-006, BUG-07-010: `clippy-all.sh`'s scope is too narrow. The gate fix (adding `--all-targets`) should land as ONE fix covering all four bugs' crate surface areas simultaneously.
+  Fix: (1) update each violation site — all are mechanical (backticks in docs, `.len()` over `.iter().count()`, `write!` over `format!(..)`, `Path::new().extension()` over `.ends_with(".rs")`, etc.), (2) coordinate with BUG-07-010's clippy-all.sh gate fix so `--all-targets` covers this crate too.
+  Severity: medium — no production impact, test code only. Blocks `--all-targets` hardening of `clippy-all.sh`.
+
 - [ ] `[BUG-07-004][medium]` **Windows PTY size propagation test removed** — found by tpr-review.
   Repro: `#[cfg(unix)]` gate on `pty_size_is_propagated` test means Windows CI has zero PTY size coverage. ConPTY-size regressions can now slip through unchecked.
   Subsystem: `oriterm_core/tests/vttest.rs:226`

@@ -46,9 +46,7 @@ fn scan_csi_dispatch_fn(block: &syn::Block, out: &mut BTreeSet<Tuple>) {
             // on the shape of the expression.
             if is_action_intermediates_scrutinee(&m.expr) {
                 for arm in &m.arms {
-                    if let Some(tuple) = arm_to_csi_tuple(&arm.pat) {
-                        self.out.insert(tuple);
-                    }
+                    collect_csi_arm(&arm.pat, self.out);
                 }
             } else {
                 // Descend further — some nested matches exist.
@@ -61,24 +59,28 @@ fn scan_csi_dispatch_fn(block: &syn::Block, out: &mut BTreeSet<Tuple>) {
     syn::visit::Visit::visit_block(&mut v, block);
 }
 
-fn arm_to_csi_tuple(pat: &syn::Pat) -> Option<Tuple> {
-    // Arm patterns look like `('H', [])`, `('h', [b'?'])`, etc.
-    let syn::Pat::Tuple(tup) = pat else {
-        return None;
-    };
-    if tup.elems.len() != 2 {
-        return None;
+/// Collect CSI tuples from an arm pattern, handling OR patterns
+/// like `('H', []) | ('f', [])`.
+fn collect_csi_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
+    match pat {
+        syn::Pat::Tuple(tup) if tup.elems.len() == 2 => {
+            if let (Some(final_byte), Some(intermediates)) = (
+                pattern_char_literal(&tup.elems[0]),
+                pattern_byte_slice(&tup.elems[1]),
+            ) {
+                out.insert(Tuple::new(
+                    Category::Csi,
+                    intermediates,
+                    "Ps",
+                    final_byte.to_string(),
+                ));
+            }
+        }
+        syn::Pat::Or(or) => {
+            for sub in &or.cases {
+                collect_csi_arm(sub, out);
+            }
+        }
+        _ => {}
     }
-
-    // First element — character literal for the final byte.
-    let final_byte = pattern_char_literal(&tup.elems[0])?;
-    // Second element — slice / array pattern of byte literals.
-    let intermediates = pattern_byte_slice(&tup.elems[1])?;
-
-    Some(Tuple::new(
-        Category::Csi,
-        intermediates,
-        "Ps",
-        final_byte.to_string(),
-    ))
 }

@@ -14,7 +14,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use oriterm_test_support::catalog::{
-    CheckMode, canonical_tuple, check, extract_capture_tuples, extract_dispatch_tuples,
+    CheckMode, Classification, Tuple, build_dispatch_map, canonical_tuple, check,
+    classify_from_map, extract_capture_tuples, extract_dispatch_tuples,
     extract_namedprivatemode_tuples, parse_catalog_markdown,
 };
 
@@ -72,9 +73,26 @@ enum Command {
     },
 
     /// Classify one tuple: does `ori_term` dispatch it today?
+    /// Returns the `Handler::*` method(s) if dispatched, or
+    /// `no-dispatch` if the parser sees it but the handler drops it.
     Classify {
         /// The canonical tuple string (e.g. `(CSI, [], Ps, H)`).
         tuple: String,
+
+        /// Workspace root for AST walking. Defaults to current dir.
+        #[arg(long, default_value = ".")]
+        workspace_root: PathBuf,
+    },
+
+    /// Assert that a capture's top 10 most-frequent tuples all have
+    /// catalog rows. Exits 1 if any top-10 tuple is missing.
+    CaptureTop10Covered {
+        /// Path to a `.cap` file.
+        cap_file: PathBuf,
+
+        /// Path to `plans/spec-conformance/catalog/`.
+        #[arg(long, default_value = "plans/spec-conformance/catalog")]
+        catalog_dir: PathBuf,
     },
 }
 
@@ -91,7 +109,14 @@ fn main() -> ExitCode {
         }
         Command::ExtractCatalogTuples { catalog_dir } => run_extract_catalog(&catalog_dir),
         Command::ExtractCaptureTuples { cap_file } => run_extract_captures(&cap_file),
-        Command::Classify { tuple } => run_classify(&tuple),
+        Command::Classify {
+            tuple,
+            workspace_root,
+        } => run_classify(&tuple, &workspace_root),
+        Command::CaptureTop10Covered {
+            cap_file,
+            catalog_dir,
+        } => run_capture_top10_covered(&cap_file, &catalog_dir),
     }
 }
 
@@ -220,7 +245,119 @@ fn run_extract_captures(cap_file: &std::path::Path) -> ExitCode {
     }
 }
 
-fn run_classify(tuple: &str) -> ExitCode {
-    println!("classify: {tuple} (not yet implemented — see Section 01.5)");
+fn run_classify(tuple_str: &str, workspace_root: &std::path::Path) -> ExitCode {
+    let Some(tuple) = Tuple::from_display_str(tuple_str) else {
+        eprintln!("classify: cannot parse tuple: {tuple_str}");
+        return ExitCode::from(1);
+    };
+    let map = match build_dispatch_map(workspace_root) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("classify: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    match classify_from_map(&map, &tuple) {
+        Classification::Dispatched { handlers } => {
+            println!("dispatched: {}", handlers.join(", "));
+        }
+        Classification::NoDispatch => {
+            println!("no-dispatch");
+        }
+    }
     ExitCode::SUCCESS
+}
+
+fn run_capture_top10_covered(
+    cap_file: &std::path::Path,
+    catalog_dir: &std::path::Path,
+) -> ExitCode {
+    // Extract capture tuples (sorted by frequency, descending).
+    let pairs = match extract_capture_tuples(cap_file) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("capture-top10-covered: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    // Build the set of catalog tuple signatures — we compare on
+    // (category, intermediates, final_byte) only, because params
+    // differ between catalog form (`Ps`, `Ps;Ps`, per-SGR-code
+    // numbers) and capture form (arity-based `Ps;Ps`).
+    let catalog_sigs = match build_catalog_signature_set(catalog_dir) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("capture-top10-covered: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let top10: Vec<_> = pairs.iter().take(10).collect();
+    let mut missing = Vec::new();
+    for (tuple, count) in &top10 {
+        let sig = tuple_signature(tuple);
+        if !catalog_sigs.contains(&sig) {
+            missing.push((tuple, *count));
+        }
+    }
+
+    if missing.is_empty() {
+        eprintln!(
+            "capture-top10-covered: OK — top {} tuples all have catalog rows",
+            top10.len()
+        );
+        ExitCode::SUCCESS
+    } else {
+        eprintln!(
+            "capture-top10-covered: {} of top {} tuples MISSING from catalog:",
+            missing.len(),
+            top10.len()
+        );
+        for (tuple, count) in &missing {
+            eprintln!("  {count}\t{tuple}");
+        }
+        ExitCode::from(1)
+    }
+}
+
+/// A tuple signature for coverage comparison: (`category_display`,
+/// `sorted_intermediates`, `final_byte`). Params are excluded because
+/// they differ between catalog and capture canonical forms.
+type TupleSig = (String, Vec<u8>, String);
+
+fn tuple_signature(tuple: &Tuple) -> TupleSig {
+    (
+        format!("{}", tuple.category),
+        tuple.intermediates.clone(),
+        tuple.final_byte.clone(),
+    )
+}
+
+fn build_catalog_signature_set(
+    catalog_dir: &std::path::Path,
+) -> Result<std::collections::BTreeSet<TupleSig>, String> {
+    use std::collections::BTreeSet;
+
+    let mut sigs: BTreeSet<TupleSig> = BTreeSet::new();
+    let entries = std::fs::read_dir(catalog_dir)
+        .map_err(|e| format!("read_dir {}: {e}", catalog_dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "md") {
+            continue;
+        }
+        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if filename == "README.md" || filename.starts_with('_') {
+            continue;
+        }
+        let rows = parse_catalog_markdown(&path).map_err(|e| format!("{e}"))?;
+        for row in &rows {
+            if let Some(tuple) = canonical_tuple(&row.sequence) {
+                sigs.insert(tuple_signature(&tuple));
+            }
+        }
+    }
+    Ok(sigs)
 }
