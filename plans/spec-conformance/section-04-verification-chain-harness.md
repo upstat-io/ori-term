@@ -87,14 +87,14 @@ sections:
 # Section 04: Verification Chain Harness + Pilots + Coverage Report
 
 **Status:** Not Started
-**Goal:** Build the verification chain harness that section 08 onward will use to drive every catalog row to `verified` status. The harness extends the existing TeseqHarness + visual_regression patterns with per-rung observation: parser test, dispatch test, state test, renderable snapshot test, frame-input test, GPU instance test, texture render test, golden image test. Two pilot scenarios — one visual (sixel raster fill) and one non-visual (DA1 query) — exercise every applicable rung end-to-end and prove the harness works. The pilots' API requirements are then used to FREEZE the catalog row schema (which was provisional in section 01). The coverage report generator is the binary that walks the catalog files and produces the per-stack verified percentage.
+**Goal:** Build the verification chain harness that section 08 onward will use to drive every catalog row to `verified` status. The harness extends the existing TeseqHarness + visual_regression patterns with per-rung observation: parser test, dispatch test, state test, renderable snapshot test, frame-input test, GPU instance test, texture render test, golden image test. Two pilot scenarios — one visual (sixel raster fill) and one non-visual (DA1 query) — exercise every applicable rung end-to-end and prove the harness works. The pilots' API requirements are then used to FREEZE the catalog row schema (which was provisional in section 01). The coverage report generator is the binary that walks the catalog files (via the shared `oriterm_test_support::catalog::parse_catalog_markdown` parser created by Section 01.3) and produces a per-stack absolute-verified-count table. **Gating metric is absolute count (monotonic), not percentage.** Percentage is advisory only — because section 01 and the continuous-discovery safety net (04.9) keep adding new rows, the denominator grows and percentages can drop while absolute counts stay flat or rise. CI gates on absolute counts per 04.8.
 
 **Success Criteria:**
 - [ ] `SpecHarness` API exists with per-rung observers
 - [ ] Sixel visual pilot drives every visual rung (parser through golden) green
 - [ ] DA1 non-visual pilot drives parser through effect apex green
 - [ ] Catalog row schema frozen and section 01 catalogs migrated
-- [ ] `spec-coverage-report` binary exists and produces correct per-stack percentages
+- [ ] `spec-coverage-report` binary exists and produces correct per-stack absolute-verified-count table (monotonic gating metric — percentage is advisory only; see 04.8 for the full rationale)
 - [ ] BLOAT splits applied as `gpu/prepare/{mod,dirty_skip/mod}.rs` are touched
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
 - [ ] Connects to mission criteria: **Verification chain complete per row**, **Coverage report green**
@@ -506,28 +506,31 @@ The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcrip
 
 ## 04.7 Freeze catalog row schema + migrate section 01 catalog files (LAND AFTER Section 05.6)
 
-**File(s):** `plans/spec-conformance/catalog/README.md` (new), `plans/spec-conformance/catalog/*.md` (migrated)
+**File(s):** `plans/spec-conformance/catalog/README.md` (extended — stub was created by Section 01.10), `plans/spec-conformance/catalog/*.md` (migrated)
+
+**Ownership note (Phase 4 TPR fix for section 01):** Section 01.10 creates a STUB `catalog/README.md` (~60 lines) documenting the catalog directory structure, authority-ladder index, and schema version. This subsection EXTENDS that stub with the frozen schema reference — it does NOT create a new file and MUST NOT overwrite the existing stub's ownership table, authority-ladder pointer, or `schema_version` front-matter. Per the Section 01 / Section 04 ownership split documented in both sections' bodies: Section 01 owns the stub; Section 04.7 owns the frozen schema extension; no file is re-created.
 
 **Ordering gate:** Schema freeze MUST wait until Section 05.6 lands. Reason: the deterministic golden lane may surface new required fields (e.g. `cell_metrics_pin`, `hinting_mode_override`, `pixel_tolerance_override` per row, or a `golden_env_config` column referencing `GoldenLaneConfig` presets). Freezing the schema before 05.6 risks immediate invalidation. During the pre-05 phase, section 01's provisional schema REMAINS provisional and catalog files stay in their section-01 form; this subsection performs the final freeze in a single pass once 05.6 has landed.
 
-After both pilots run green AND Section 05.6 has migrated the sixel pilot to the deterministic lane, the harness API is stable and the catalog row schema can be frozen. Write `catalog/README.md` documenting the canonical row format. Then migrate every catalog file from section 01's provisional schema to the frozen one.
+After both pilots run green AND Section 05.6 has migrated the sixel pilot to the deterministic lane, the harness API is stable and the catalog row schema can be frozen. Extend `catalog/README.md` (the stub created by Section 01.10) with the canonical row format reference. Then migrate every catalog file from section 01's provisional schema to the frozen one.
 
-- [ ] Create `plans/spec-conformance/catalog/README.md` documenting:
+- [ ] Extend `plans/spec-conformance/catalog/README.md` BELOW the existing stub's "Schema evolution" section. Do NOT rewrite or replace the Section 01 stub content above that boundary. Add:
   - The canonical catalog row table format (markdown table with explicit column order)
-  - The required columns: `ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto reference`, `Notes`
+  - The required columns: `ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes` (the column name is `De-facto ref` to match the SSOT in `plans/spec-conformance/00-overview.md` and Section 01.1.e; do NOT use the longer form `De-facto reference` — that would create a column-name DRIFT)
   - The `ApexLayer` enum values (matching `spec_chain::ApexLayer`)
   - The `RungName` enum values
   - The verification status enum values (`missing` / `stub` / `implemented-unverified` / `verified-partial` / `verified` / `verified-with-deviation`)
   - How a row is added (workflow for new sequences)
   - How a row is migrated to `verified` (test chain requirements)
-- [ ] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). Migrate each row to the frozen schema. The `Verification` column may need refinement based on what the pilots discovered.
-- [ ] **Validation**: every catalog file conforms to the frozen schema; `catalog/README.md` is the single source of truth for the format.
+  - Update the stub's front-matter `schema_version: "0.1-provisional"` to `schema_version: "1.0"` as the very last edit of this subsection (the migration is atomic — all catalog files flip to 1.0 in the same commit).
+- [ ] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). Migrate each row to the frozen schema. Every row's front-matter `schema_version` flips from `0.1-provisional` to `1.0` in this subsection. The `Verification` column may need refinement based on what the pilots discovered.
+- [ ] **Validation**: every catalog file has `schema_version: "1.0"`; `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note).
 
 ---
 
 ## 04.8 Coverage report generator binary (catalog walk + citation scan + monotonic absolute count)
 
-**File(s):** `crates/oriterm_test_support/src/bin/spec_coverage_report.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs` (new)
+**File(s):** `crates/oriterm_test_support/src/bin/spec_coverage_report.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` (new), `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs` (new). **Note (Phase 4 section-01 review iteration-8 TPR-01-001-codex fix):** this subsection does NOT create its own `walk.rs` or its own catalog markdown parser. Catalog parsing is owned by `crates/oriterm_test_support/src/catalog/mod.rs`, which is created by Section 01.3 (Mechanical `catalog_coverage_check`) and is the SSOT for markdown-table parsing and tuple canonicalization per `.claude/rules/impl-hygiene.md` §SSOT / §Algorithmic DRY. `spec_coverage_report` imports `oriterm_test_support::catalog::{parse_catalog_markdown, Row}` (the public API exposed by 01.3) and consumes it as a library — no duplicated parser logic. 04.8's own code is limited to: (1) aggregation — grouping rows by stack, counting `Verification` statuses per stack, computing the per-stack absolute count; (2) citation scan — walking the test directories for catalog-row-ID references; (3) cross-check — verifying that `verified` rows in the catalog have at least one test citation AND that test citations resolve to real catalog rows.
 
 The coverage report has TWO responsibilities:
 
@@ -540,12 +543,17 @@ The coverage report has TWO responsibilities:
   ```rust
   //! Coverage report generator library.
   //!
-  //! Walks plans/spec-conformance/catalog/*.md + scans test directories for
-  //! catalog row ID citations. Produces a `CoverageReport` with per-stack
-  //! absolute-count metrics, not just percentages.
-  mod walk;
+  //! Consumes the shared catalog parser at `crate::catalog::parse_catalog_markdown`
+  //! (created by Section 01.3) and scans test directories for catalog row ID
+  //! citations. Produces a `CoverageReport` with per-stack absolute-count metrics.
+  //!
+  //! Catalog parsing is delegated — this module does NOT own markdown-table
+  //! parsing. See `crates/oriterm_test_support/src/catalog/mod.rs` for the SSOT
+  //! parser (single source of truth for both `catalog_coverage_check` and this
+  //! binary, per impl-hygiene.md §SSOT / §Algorithmic DRY).
+  use crate::catalog::{parse_catalog_markdown, Row};
+
   mod scan;
-  pub use walk::{walk_catalog, CatalogRow, StackSummary};
   pub use scan::{scan_test_citations, Citation};
 
   pub struct CoverageReport {
@@ -555,7 +563,49 @@ The coverage report has TWO responsibilities:
       pub per_stack_absolute_verified: std::collections::BTreeMap<String, u32>,
   }
 
+  pub struct StackSummary {
+      pub stack: String,
+      pub verified: u32,
+      pub implemented_unverified: u32,
+      pub stub: u32,
+      pub missing: u32,
+  }
+
   impl CoverageReport {
+      /// Build a coverage report by walking `catalog_dir` via the shared
+      /// `parse_catalog_markdown` parser and scanning `test_dirs` for citations.
+      ///
+      /// Returns `Err` if the catalog directory cannot be read OR if any catalog
+      /// markdown file fails schema validation. **Error propagation is load-bearing**
+      /// (Section 01 iteration-9 TPR-01-001-gemini + iteration-10 TPR-01-001-codex
+      /// fix): `.unwrap_or_default()` is explicitly banned because it would silently
+      /// drop parser errors and let catalog schema drift in.
+      pub fn build(
+          catalog_dir: &std::path::Path,
+          test_dirs: &[std::path::PathBuf],
+      ) -> Result<Self, anyhow::Error> {
+          // 1. Walk plans/spec-conformance/catalog/*.md via the shared parser.
+          //    Propagate every parser error via `?` — never swallow with
+          //    `.unwrap_or_default()`.
+          let mut rows: Vec<Row> = Vec::new();
+          for entry in std::fs::read_dir(catalog_dir)? {
+              let entry = entry?;
+              if entry.path().extension().map_or(false, |ext| ext == "md") {
+                  let file_rows = parse_catalog_markdown(&entry.path())
+                      .map_err(|e| anyhow::anyhow!(
+                          "catalog parse failed for {}: {e}",
+                          entry.path().display()
+                      ))?;
+                  rows.extend(file_rows);
+              }
+          }
+          // 2. Scan test directories for citations
+          let citations = scan_test_citations(test_dirs)?;
+          // 3. Aggregate, cross-check, return
+          Ok(Self::aggregate(rows, citations))
+      }
+
+      fn aggregate(rows: Vec<Row>, citations: Vec<Citation>) -> Self { /* ... */ }
       pub fn has_regression(&self, baseline: &CoverageBaseline) -> bool { /* ... */ }
       pub fn print_table(&self) { /* ... */ }
   }
@@ -563,7 +613,7 @@ The coverage report has TWO responsibilities:
   #[cfg(test)]
   mod tests;
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs` — parses each catalog markdown file, extracts rows via a tiny markdown-table parser, returns `Vec<CatalogRow>` with fields `{ id, stack, verification_status }`.
+- [ ] Do NOT create `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs`. The catalog-walk logic is owned by `crates/oriterm_test_support/src/catalog/mod.rs` (created by Section 01.3) and consumed by both binaries (`catalog_coverage_check` from 01.3 and `spec_coverage_report` from 04.8). A separate `walk.rs` under `spec_chain/coverage/` would violate SSOT — two markdown-table parsers for the same file set.
 - [ ] Create `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` — walks the test directories via `walkdir`, greps every `.rs` file for `// Catalog row: ([A-Z0-9-]+)` AND `catalog_row_id: "([A-Z0-9-]+)"`, produces `Vec<Citation>` with `{ catalog_row_id, test_file_path }`.
 - [ ] Create `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`:
   ```rust
@@ -579,13 +629,18 @@ The coverage report has TWO responsibilities:
   //!
   //! Run: `cargo run -p oriterm_test_support --bin spec-coverage-report`
   //! Check: `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check`
+  //!
+  //! Catalog parsing is owned by `oriterm_test_support::catalog::parse_catalog_markdown`
+  //! (created by Section 01.3). This binary does NOT re-implement markdown-table
+  //! parsing; it only does aggregation, citation scanning, and cross-check.
 
-  use oriterm_test_support::spec_chain::coverage::*;
+  use std::path::PathBuf;
+  use oriterm_test_support::spec_chain::coverage::{CoverageReport, CoverageBaseline};
 
-  fn main() {
-      let workspace_root = /* find workspace root via CARGO_MANIFEST_DIR */;
+  fn main() -> anyhow::Result<()> {
+      let workspace_root: PathBuf = /* find via CARGO_MANIFEST_DIR ancestors */;
       let catalog_dir = workspace_root.join("plans/spec-conformance/catalog");
-      let test_roots = [
+      let test_roots: Vec<PathBuf> = vec![
           workspace_root.join("oriterm_core/tests"),
           workspace_root.join("oriterm/tests"),
           workspace_root.join("oriterm_ui/tests"),
@@ -593,15 +648,17 @@ The coverage report has TWO responsibilities:
           workspace_root.join("crates/oriterm_test_support/src"),
           workspace_root.join("crates/oriterm_test_support/tests"),
       ];
-      let catalog_rows = walk_catalog(&catalog_dir).expect("catalog walk failed");
-      let citations = scan_test_citations(&test_roots).expect("citation scan failed");
-      let report = CoverageReport::from_catalog_and_citations(catalog_rows, citations);
+      // CoverageReport::build() calls the SSOT parser at
+      // oriterm_test_support::catalog::parse_catalog_markdown internally; errors
+      // from the parser propagate here via ? rather than being swallowed (iter-9
+      // TPR-01-001-gemini error-propagation fix — no .unwrap_or_default()).
+      let report = CoverageReport::build(&catalog_dir, &test_roots)?;
       report.print_table();
 
       if std::env::args().any(|a| a == "--check") {
           let baseline = CoverageBaseline::load(
               &workspace_root.join("plans/spec-conformance/coverage-baseline.toml"),
-          ).expect("baseline load failed");
+          )?;
           let mut fail = false;
           if !report.false_verified.is_empty() {
               eprintln!("FALSE VERIFIED (catalog says verified but no test cites):");
@@ -619,10 +676,13 @@ The coverage report has TWO responsibilities:
           }
           if fail { std::process::exit(1); }
       }
+      Ok(())
   }
   ```
+- [ ] **Error propagation (Phase 4 section-01 iteration-9 TPR-01-001-gemini fix — no swallowed errors):** `CoverageReport::build()` MUST propagate parser errors via `Result<Self, anyhow::Error>` rather than silently swallowing them with `.unwrap_or_default()`. If a catalog markdown file fails to parse (bad 10-column schema, unrecognized column name, malformed row), the build fails loudly with the file path and the parser's error message. The earlier `.flat_map(|e| parse_catalog_markdown(&e.path()).unwrap_or_default())` pattern was a LEAK (swallowed error) and is explicitly forbidden — use a fold that accumulates errors and returns the first failure. Section 01.3.a's `parse_catalog_markdown` is documented to return `Result<Vec<Row>, Error>` and this binary respects that signature; consumers must NEVER silently drop errors from the shared parser.
 - [ ] Sibling tests in `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs`:
-  - `walk_catalog_parses_minimal_catalog_file()`
+  - `coverage_report_build_invokes_shared_catalog_parser()` — assert the shared `oriterm_test_support::catalog::parse_catalog_markdown` is the only code path used for markdown parsing (no inline parsing, no duplicated regex)
+  - `coverage_report_build_propagates_parser_errors()` — feed a malformed catalog file, assert `CoverageReport::build()` returns `Err(_)` with the file path in the error message (iter-9 TPR-01-001-gemini error-propagation pin)
   - `scan_test_citations_finds_comment_citation()` (`// Catalog row: ECMA48-CUP`)
   - `scan_test_citations_finds_const_field_citation()` (`catalog_row_id: "ECMA48-CUP"`)
   - `false_verified_flagged_when_catalog_verified_but_no_test_cites()`
