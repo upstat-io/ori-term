@@ -8,21 +8,11 @@
 //! module when it lands.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use super::super::tuple::{Category, Tuple};
-use super::{
-    DispatchExtractError, is_action_intermediates_scrutinee, parse_rust, pattern_byte_slice,
-    pattern_char_literal, read_rust,
-};
+use super::{is_action_intermediates_scrutinee, pattern_byte_slice, pattern_char_literal};
 
-pub(super) fn extract_csi_arms(
-    path: &Path,
-    out: &mut BTreeSet<Tuple>,
-) -> Result<(), DispatchExtractError> {
-    let source = read_rust(path)?;
-    let file = parse_rust(path, &source)?;
-
+pub(super) fn extract_csi_arms(file: &syn::File, out: &mut BTreeSet<Tuple>) {
     for item in &file.items {
         let syn::Item::Fn(func) = item else { continue };
         if func.sig.ident != "dispatch" {
@@ -30,7 +20,6 @@ pub(super) fn extract_csi_arms(
         }
         scan_csi_dispatch_fn(&func.block, out);
     }
-    Ok(())
 }
 
 fn scan_csi_dispatch_fn(block: &syn::Block, out: &mut BTreeSet<Tuple>) {

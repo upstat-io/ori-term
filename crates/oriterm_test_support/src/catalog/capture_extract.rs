@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use vte::Parser;
 
-use super::tuple::{Category, Tuple};
+use super::tuple::{Category, Tuple, osc_placeholder};
 
 /// Capture-extraction error.
 #[derive(Debug)]
@@ -210,50 +210,5 @@ fn csi_params_placeholder(params: &vte::Params) -> String {
         "-".to_string()
     } else {
         vec!["Ps"; params.len()].join(";")
-    }
-}
-
-fn osc_placeholder(numeric_id: &str, idx: usize, raw: &str) -> String {
-    match numeric_id {
-        "0" | "1" | "2" | "7" | "22" | "50" | "l" | "L" => "text".to_string(),
-        "4" => match idx {
-            1 => "index".to_string(),
-            2 => {
-                if raw.contains('?') {
-                    "?".to_string()
-                } else {
-                    "rgb".to_string()
-                }
-            }
-            _ => raw.to_string(),
-        },
-        "10" | "11" | "12" => {
-            if raw.contains('?') {
-                "?".to_string()
-            } else {
-                "rgb".to_string()
-            }
-        }
-        "8" => {
-            if idx == 1 {
-                "params".to_string()
-            } else {
-                "uri".to_string()
-            }
-        }
-        "52" => match idx {
-            1 => "mode".to_string(),
-            2 => {
-                if raw.contains('?') {
-                    "?".to_string()
-                } else {
-                    "b64".to_string()
-                }
-            }
-            _ => raw.to_string(),
-        },
-        "104" => "index".to_string(),
-        "1337" => "key=value".to_string(),
-        _ => raw.to_string(),
     }
 }

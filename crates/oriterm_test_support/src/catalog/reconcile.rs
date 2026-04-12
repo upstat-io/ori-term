@@ -13,30 +13,15 @@ use super::capture_extract::extract_capture_tuples;
 use super::dispatch_extract::{extract_dispatch_tuples, extract_namedprivatemode_tuples};
 use super::parser::parse_catalog_markdown;
 use super::row::Row;
-use super::tuple::{Category, Tuple, canonical_tuple};
-
-/// Tuple signature for coverage comparison: (`category`, `sorted
-/// intermediates`, `final_byte`). Params are excluded because they
-/// differ between catalog, dispatch, and capture canonical forms.
-pub type TupleSig = (String, Vec<u8>, String);
+use super::tuple::{Tuple, TupleSig, canonical_tuple};
 
 /// Normalize a [`Tuple`] to its comparison signature.
+///
+/// Thin wrapper around [`Tuple::signature`] — retained for backward
+/// compatibility at the public API boundary. New code should call
+/// `tuple.signature()` directly.
 pub fn tuple_signature(tuple: &Tuple) -> TupleSig {
-    let final_byte = match tuple.category {
-        Category::Osc | Category::Dcs => {
-            if tuple.final_byte == "ST" {
-                "BEL".to_string()
-            } else {
-                tuple.final_byte.clone()
-            }
-        }
-        _ => tuple.final_byte.clone(),
-    };
-    (
-        format!("{}", tuple.category),
-        tuple.intermediates.clone(),
-        final_byte,
-    )
+    tuple.signature()
 }
 
 /// A catalog row paired with its parsed tuple signature.
@@ -62,22 +47,7 @@ pub struct ReconciliationReport {
 /// Load all catalog rows from a directory (excluding README.md and
 /// `_`-prefixed files).
 pub fn load_all_catalog_rows(catalog_dir: &Path) -> Result<Vec<Row>, String> {
-    let entries = std::fs::read_dir(catalog_dir)
-        .map_err(|e| format!("read_dir {}: {e}", catalog_dir.display()))?;
-    let mut paths: Vec<std::path::PathBuf> = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
-        let path = entry.path();
-        if path.extension().is_none_or(|ext| ext != "md") {
-            continue;
-        }
-        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if filename == "README.md" || filename.starts_with('_') {
-            continue;
-        }
-        paths.push(path);
-    }
-    paths.sort();
+    let paths = super::walk_catalog_files(catalog_dir).map_err(|e| format!("{e}"))?;
     let mut all_rows = Vec::new();
     for path in paths {
         let rows = parse_catalog_markdown(&path).map_err(|e| format!("{e}"))?;
@@ -96,17 +66,6 @@ pub fn build_catalog_signature_set(catalog_dir: &Path) -> Result<BTreeSet<TupleS
         }
     }
     Ok(sigs)
-}
-
-/// Filter catalog rows to those with a real spec source (not MISSING,
-/// not wezterm-sourced, not `—` placeholder). These form the "top-down"
-/// tuple set.
-fn is_spec_sourced(row: &Row) -> bool {
-    let src = row.spec_source.to_lowercase();
-    !src.contains("missing")
-        && !src.contains("wezterm")
-        && !row.spec_source.starts_with('—')
-        && !row.spec_source.starts_with("—") // em dash (UTF-8)
 }
 
 /// Run the full three-way reconciliation.
@@ -129,7 +88,7 @@ pub fn reconcile(
     let all_rows = load_all_catalog_rows(catalog_dir)?;
     let top_down_entries: Vec<CatalogEntry> = all_rows
         .iter()
-        .filter(|r| is_spec_sourced(r))
+        .filter(|r| r.has_spec_source())
         .filter_map(|r| {
             canonical_tuple(&r.sequence).map(|t| CatalogEntry {
                 row_id: r.id.clone(),
@@ -174,7 +133,7 @@ pub fn reconcile(
     let all_rows2 = load_all_catalog_rows(catalog_dir)?;
     let missing: Vec<CatalogEntry> = all_rows2
         .iter()
-        .filter(|r| is_spec_sourced(r))
+        .filter(|r| r.has_spec_source())
         .filter_map(|r| {
             canonical_tuple(&r.sequence).map(|t| CatalogEntry {
                 row_id: r.id.clone(),

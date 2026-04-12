@@ -17,7 +17,7 @@ use oriterm_test_support::catalog::{
     CheckMode, Classification, Tuple, build_catalog_signature_set, build_dispatch_map,
     canonical_tuple, check, classify_from_map, extract_capture_tuples, extract_dispatch_tuples,
     extract_namedprivatemode_tuples, format_report, load_all_catalog_rows, parse_catalog_markdown,
-    reconcile, tuple_signature,
+    reconcile, tuple_signature, walk_catalog_files,
 };
 
 #[derive(Parser)]
@@ -45,6 +45,12 @@ enum Command {
         /// 04.7 freezes the schema.
         #[arg(long)]
         bootstrap_mode: bool,
+
+        /// Workspace root for dispatch-coverage verification. When
+        /// provided, asserts every dispatch tuple has a matching
+        /// catalog row.
+        #[arg(long)]
+        workspace_root: Option<PathBuf>,
     },
 
     /// Extract dispatch tuples from the Rust source tree.
@@ -124,7 +130,8 @@ fn main() -> ExitCode {
         Command::Check {
             catalog_dir,
             bootstrap_mode,
-        } => run_check(&catalog_dir, bootstrap_mode),
+            workspace_root,
+        } => run_check(&catalog_dir, bootstrap_mode, workspace_root.as_deref()),
         Command::ExtractDispatchTuples { workspace_root } => run_extract_dispatch(&workspace_root),
         Command::ExtractNamedPrivateModeTuples { workspace_root } => {
             run_extract_namedprivatemode(&workspace_root)
@@ -148,13 +155,17 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_check(catalog_dir: &std::path::Path, bootstrap_mode: bool) -> ExitCode {
+fn run_check(
+    catalog_dir: &std::path::Path,
+    bootstrap_mode: bool,
+    workspace_root: Option<&std::path::Path>,
+) -> ExitCode {
     let mode = if bootstrap_mode {
         CheckMode::Bootstrap
     } else {
         CheckMode::Normal
     };
-    match check(catalog_dir, mode) {
+    match check(catalog_dir, mode, workspace_root) {
         Err(e) => {
             eprintln!("catalog_coverage_check: {e}");
             ExitCode::from(1)
@@ -216,31 +227,13 @@ fn run_extract_namedprivatemode(workspace_root: &std::path::Path) -> ExitCode {
 }
 
 fn run_extract_catalog(catalog_dir: &std::path::Path) -> ExitCode {
-    let files = match std::fs::read_dir(catalog_dir) {
+    let all_paths = match walk_catalog_files(catalog_dir) {
         Err(e) => {
-            eprintln!("read_dir {}: {e}", catalog_dir.display());
+            eprintln!("extract-catalog-tuples: {e}");
             return ExitCode::from(1);
         }
-        Ok(f) => f,
+        Ok(p) => p,
     };
-    let mut all_paths: Vec<PathBuf> = Vec::new();
-    for entry in files {
-        let entry = match entry {
-            Err(e) => {
-                eprintln!("dir entry: {e}");
-                return ExitCode::from(1);
-            }
-            Ok(e) => e,
-        };
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "md") {
-            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            if filename != "README.md" && !filename.starts_with('_') {
-                all_paths.push(path);
-            }
-        }
-    }
-    all_paths.sort();
     for path in all_paths {
         let rows = match parse_catalog_markdown(&path) {
             Err(e) => {
@@ -358,9 +351,7 @@ fn run_extract_top_down(catalog_dir: &std::path::Path) -> ExitCode {
         Ok(r) => r,
     };
     for row in &rows {
-        let src = row.spec_source.to_lowercase();
-        if src.contains("missing") || src.contains("wezterm") || row.spec_source.starts_with('—')
-        {
+        if !row.has_spec_source() {
             continue;
         }
         if let Some(tuple) = canonical_tuple(&row.sequence) {

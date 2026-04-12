@@ -25,10 +25,14 @@
 //! canonicalizer must normalize against.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use super::dispatch_extract::{extract_dispatch_tuples, extract_namedprivatemode_tuples};
 use super::parser::{CatalogParseError, parse_catalog_markdown};
+use super::reconcile::tuple_signature;
 use super::row::Row;
+use super::tuple::canonical_tuple;
+use super::walk_catalog_files;
 
 /// Operating mode for `--check`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +77,12 @@ pub enum FindingCategory {
     /// `Implementation` column uses line-number-primary form
     /// (`file.rs:91 → Symbol`).
     LineNumberPrimaryCitation,
+    /// `Sequence` column could not be canonicalized to a tuple.
+    /// The row exists in the catalog but will be invisible to
+    /// dispatch-coverage and reconciliation passes.
+    UncanonicalizableSequence,
+    /// A dispatch tuple has no matching catalog row.
+    DispatchWithoutCatalogRow,
 }
 
 impl core::fmt::Display for FindingCategory {
@@ -82,6 +92,8 @@ impl core::fmt::Display for FindingCategory {
             Self::SpecSourceCitesPeer => "spec-source-cites-peer",
             Self::VerifiedInBootstrap => "verified-in-bootstrap",
             Self::LineNumberPrimaryCitation => "line-number-primary-citation",
+            Self::UncanonicalizableSequence => "uncanonicalizable-sequence",
+            Self::DispatchWithoutCatalogRow => "dispatch-without-catalog-row",
         };
         f.write_str(s)
     }
@@ -96,6 +108,10 @@ impl CheckReport {
 
 /// Run all `--check` passes on the catalog at `catalog_dir`.
 ///
+/// When `workspace_root` is `Some`, also verifies that every
+/// dispatch tuple has at least one matching catalog row
+/// (dispatch-coverage check).
+///
 /// # Errors
 ///
 /// Returns [`CatalogParseError`] if any file fails to parse. The
@@ -103,7 +119,11 @@ impl CheckReport {
 /// line-number citation) are accumulated into
 /// [`CheckReport::findings`] and returned even when
 /// `findings.len() > 0`.
-pub fn check(catalog_dir: &Path, mode: CheckMode) -> Result<CheckReport, CatalogParseError> {
+pub fn check(
+    catalog_dir: &Path,
+    mode: CheckMode,
+    workspace_root: Option<&Path>,
+) -> Result<CheckReport, CatalogParseError> {
     let mut report = CheckReport::default();
     let mut all_rows: Vec<Row> = Vec::new();
 
@@ -169,6 +189,28 @@ pub fn check(catalog_dir: &Path, mode: CheckMode) -> Result<CheckReport, Catalog
             });
         }
 
+        // Flag Sequence columns that look like they SHOULD canonicalize
+        // (start with a recognized sequence prefix inside backticks) but
+        // don't. This catches typos and malformed notation. Rows whose
+        // Sequence is a placeholder, a C0/C1 label, or a descriptive
+        // string (Unicode char ranges, mouse protocol descriptions) are
+        // intentionally not flagged — they are not tuple-based sequences.
+        if !row.sequence.is_empty() && canonical_tuple(&row.sequence).is_none() {
+            if sequence_looks_canonicalizable(&row.sequence) {
+                report.findings.push(Finding {
+                    source_file: row.source_file.clone(),
+                    line_number: row.line_number,
+                    row_id: row.id.clone(),
+                    category: FindingCategory::UncanonicalizableSequence,
+                    message: format!(
+                        "Sequence {:?} looks like a canonicalizable notation but \
+                         could not be parsed — check for typos or unsupported forms",
+                        row.sequence
+                    ),
+                });
+            }
+        }
+
         if mode == CheckMode::Bootstrap && row.verification.is_bootstrap_forbidden() {
             report.findings.push(Finding {
                 source_file: row.source_file.clone(),
@@ -184,34 +226,67 @@ pub fn check(catalog_dir: &Path, mode: CheckMode) -> Result<CheckReport, Catalog
         }
     }
 
+    // Dispatch-coverage pass: verify every dispatch tuple has a
+    // matching catalog row (when workspace_root is provided).
+    if let Some(ws) = workspace_root {
+        check_dispatch_coverage(ws, &all_rows, &mut report);
+    }
+
     Ok(report)
 }
 
-fn walk_catalog_files(catalog_dir: &Path) -> Result<Vec<PathBuf>, CatalogParseError> {
-    let mut out = Vec::new();
-    let read = std::fs::read_dir(catalog_dir).map_err(|source| CatalogParseError::Io {
-        path: catalog_dir.to_string_lossy().into_owned(),
-        source,
-    })?;
-    for entry in read {
-        let entry = entry.map_err(|source| CatalogParseError::Io {
-            path: catalog_dir.to_string_lossy().into_owned(),
-            source,
-        })?;
-        let path = entry.path();
-        // Skip the README and the tack mapping file — they are
-        // schema-documentation files, not row tables.
-        if path.extension().is_none_or(|ext| ext != "md") {
-            continue;
+/// Check that every dispatch tuple has at least one matching catalog
+/// row. Findings are appended to `report.findings`.
+fn check_dispatch_coverage(workspace_root: &Path, catalog_rows: &[Row], report: &mut CheckReport) {
+    use super::tuple::TupleSig;
+    use std::collections::BTreeSet;
+
+    // Build the set of catalog tuple signatures.
+    let catalog_sigs: BTreeSet<TupleSig> = catalog_rows
+        .iter()
+        .filter_map(|r| canonical_tuple(&r.sequence).map(|t| tuple_signature(&t)))
+        .collect();
+
+    // Extract dispatch + named-private-mode tuples.
+    let dispatch = match extract_dispatch_tuples(workspace_root) {
+        Ok(t) => t,
+        Err(e) => {
+            report.findings.push(Finding {
+                source_file: String::new(),
+                line_number: 0,
+                row_id: String::new(),
+                category: FindingCategory::DispatchWithoutCatalogRow,
+                message: format!("failed to extract dispatch tuples: {e}"),
+            });
+            return;
         }
-        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if filename == "README.md" || filename.starts_with('_') {
-            continue;
+    };
+    let modes = match extract_namedprivatemode_tuples(workspace_root) {
+        Ok(t) => t,
+        Err(e) => {
+            report.findings.push(Finding {
+                source_file: String::new(),
+                line_number: 0,
+                row_id: String::new(),
+                category: FindingCategory::DispatchWithoutCatalogRow,
+                message: format!("failed to extract named-private-mode tuples: {e}"),
+            });
+            return;
         }
-        out.push(path);
+    };
+
+    for tuple in dispatch.iter().chain(modes.iter()) {
+        let sig = tuple_signature(tuple);
+        if !catalog_sigs.contains(&sig) {
+            report.findings.push(Finding {
+                source_file: String::new(),
+                line_number: 0,
+                row_id: String::new(),
+                category: FindingCategory::DispatchWithoutCatalogRow,
+                message: format!("dispatch tuple {tuple} has no matching catalog row"),
+            });
+        }
     }
-    out.sort();
-    Ok(out)
 }
 
 fn spec_source_cites_peer(spec_source: &str) -> bool {
@@ -226,6 +301,40 @@ fn spec_source_cites_peer(spec_source: &str) -> bool {
         || lowered.contains("alacritty")
         || lowered.contains("ghostty")
         || lowered.contains("ptyxis")
+}
+
+/// Returns `true` when the raw Sequence column string looks like it
+/// should be parseable by `canonical_tuple` — i.e., it is a
+/// backtick-delimited code span whose content starts with one of the
+/// recognized prefixes (CSI, OSC, DCS, ESC, APC). Rows whose
+/// Sequence is a C0/C1 mnemonic, a Unicode char range, or a plain
+/// textual description return `false`.
+fn sequence_looks_canonicalizable(sequence: &str) -> bool {
+    let trimmed = sequence.trim();
+    // The Sequence column must contain at least one backtick to be
+    // considered notation (plain-text descriptions like "CSI subset
+    // + ConPTY" are not canonicalizable).
+    if !trimmed.contains('`') {
+        return false;
+    }
+    // Extract the first backtick-delimited span, stripping any outer
+    // double-backtick decoration (`` `CSI Ps H` `` style).
+    let inner = trimmed
+        .trim_start_matches('`')
+        .trim_start()
+        .trim_end_matches('`')
+        .trim_end_matches('`')
+        .trim();
+    // A multi-sequence row (multiple `` `` `` spans separated by
+    // descriptive text) is not a single canonicalizable notation.
+    if inner.contains("`` ``") || inner.contains("` ``") {
+        return false;
+    }
+    inner.starts_with("CSI ")
+        || inner.starts_with("OSC ")
+        || inner.starts_with("DCS ")
+        || inner.starts_with("ESC ")
+        || inner.starts_with("APC ")
 }
 
 fn implementation_is_line_number_primary(implementation: &str) -> bool {
@@ -257,3 +366,6 @@ fn implementation_is_line_number_primary(implementation: &str) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests;
