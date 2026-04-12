@@ -1873,7 +1873,7 @@ fn apply_font_config_with_no_user_fallbacks() {
     assert_eq!(features.len(), 2, "default config features are calt + liga");
 }
 
-/// Regression test for TPR-01-017: when the first configured fallback fails to
+/// Regression test for when the first configured fallback fails to
 /// load, per-fallback metadata must apply to the correct loaded font. With
 /// `fallback_map = [1]`, config entry 0 was skipped — metadata from config[1]
 /// should apply to loaded index 0, not config[0]'s metadata.
@@ -1931,7 +1931,7 @@ fn apply_font_config_skipped_fallback_metadata_uses_correct_config_entry() {
     );
 }
 
-/// Regression test for TPR-01-018: codepoint-map resolution must use the
+/// Regression test for codepoint-map resolution must use the
 /// loaded fallback index, not the config position. When config entry 0 failed
 /// to load, a family at config[1] is at loaded index 0.
 #[test]
@@ -1980,7 +1980,7 @@ fn apply_font_config_codepoint_map_skipped_fallback_resolves_correct_loaded_inde
     );
 }
 
-/// Regression test for TPR-01-018: codepoint-map for a family that failed to
+/// Regression test for codepoint-map for a family that failed to
 /// load (not in fallback_map) must be skipped, not mapped to the wrong face.
 #[test]
 fn apply_font_config_codepoint_map_unloaded_family_skipped() {

@@ -178,7 +178,7 @@ fn accept_unsaved_updates_indicator_visibility() {
     assert!(node.children[1].content_rect.width() < 0.01);
 }
 
-// -- Save button disabled opacity (TPR-12-012) --
+// -- Save button disabled opacity --
 
 #[test]
 fn save_button_uses_opacity_fade_when_disabled() {

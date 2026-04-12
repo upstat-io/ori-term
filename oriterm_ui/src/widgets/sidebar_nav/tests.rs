@@ -399,7 +399,7 @@ fn harness_single_click_on_first_item_emits_selected() {
     }
 }
 
-/// Regression test for TPR-10-011: clicking search field must grant framework
+/// Regression test for clicking search field must grant framework
 /// focus so keyboard events actually reach the sidebar widget.
 #[test]
 fn harness_search_click_grants_focus_and_accepts_typing() {
@@ -751,7 +751,7 @@ fn hit_test_filtered_items_skip_hidden() {
     );
 }
 
-// -- Click-to-cursor via cached char offsets (TPR-10-008) --
+// -- Click-to-cursor via cached char offsets --
 
 /// Regression test: clicking within populated search text positions the cursor
 /// at the nearest measured character boundary, not a heuristic average.
@@ -843,7 +843,7 @@ fn click_search_before_paint_falls_back() {
     );
 }
 
-// -- Filtered keyboard navigation (TPR-10-010) --
+// -- Filtered keyboard navigation --
 
 /// ArrowDown with active search query navigates to next visible item,
 /// skipping hidden items.

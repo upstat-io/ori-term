@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# PreToolUse hook: block banned git commands even inside compound commands.
+# The built-in deny patterns only match the first subcommand of a compound
+# command (&&, ;, ||), so this hook inspects the full command string.
+#
+# No external dependencies — uses python3 for JSON parsing (no jq).
+#
+# FAIL-OPEN INVARIANT: this hook must never block a tool call because of a
+# malformed payload or an internal script error. A PreToolUse hook that
+# fails closed on unexpected input becomes a tool blocker — the opposite
+# of the safety posture it is supposed to provide. Therefore:
+#   1. `set -u` catches undefined-variable bugs but we do NOT enable
+#      `set -e` — any hidden non-zero exit must fall through to the
+#      explicit `exit 0` at the bottom of the script, not abort mid-hook.
+#   2. The top-level `trap 'exit 0' ERR` is defense-in-depth: any
+#      uncaught error anywhere in the script exits 0 instead of
+#      propagating.
+#   3. Every external-parse invocation (python3, printf, grep) pipes its
+#      stderr to /dev/null and appends `|| true` so a transient parse
+#      failure can never bubble up.
+#   4. `pipefail` is INTENTIONALLY NOT enabled — with pipefail, a python
+#      traceback in the middle of a pipe would propagate the non-zero
+#      exit and fail the hook closed. The only pipelines in this script
+#      are safe-by-construction (the final captured output is always a
+#      best-effort read).
+
+set -u
+trap 'exit 0' ERR
+
+INPUT=$(cat 2>/dev/null || true)
+COMMAND=$(printf '%s' "$INPUT" | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('tool_input', {}).get('command', ''))
+except Exception:
+    pass
+" 2>/dev/null || true)
+
+# Same patterns as the deny list in .claude/settings.json, expressed as
+# bash substring matches against the raw command string.
+BANNED_PATTERNS=(
+  "--no-verify"
+  "--no-gpg-sign"
+  "git stash"
+  "git reset --hard"
+  "git checkout ."
+  "git checkout -- ."
+  "git restore ."
+  "git push --force"
+  "git push -f "
+  "git branch -D"
+  "git rebase"
+)
+
+deny() {
+  local reason="$1"
+  python3 -c "
+import json, sys
+print(json.dumps({
+    'hookSpecificOutput': {
+        'hookEventName': 'PreToolUse',
+        'permissionDecision': 'deny',
+        'permissionDecisionReason': sys.argv[1]
+    }
+}))
+" "$reason"
+  exit 0
+}
+
+# git clean with -f anywhere after it
+if [[ "$COMMAND" =~ git\ clean.*-f ]]; then
+  deny "Blocked: command contains 'git clean -f'"
+fi
+
+# git push -f at end of string
+if [[ "$COMMAND" =~ git\ push.*-f$ ]]; then
+  deny "Blocked: command contains 'git push -f'"
+fi
+
+for pattern in "${BANNED_PATTERNS[@]}"; do
+  if [[ "$COMMAND" == *"$pattern"* ]]; then
+    deny "Blocked: command contains '$pattern'"
+  fi
+done
+
+# ── Guard timeouts on review (codex/gemini) commands ────────────────
+# codex/gemini exec calls are review tasks, NOT tests. They take 20-45
+# minutes in practice — reviews barely ever finish in under 10 minutes,
+# and the operational sweet spot is 20-45 min. Gemini is substantially
+# slower than codex (cold-starts of 8-10 min are routine), so the ceiling
+# must accommodate gemini's worst case. Block any timeout outside that
+# window so a foreground review can't be killed mid-stream.
+# Minimum allowed: 1200000 ms (20 minutes).
+# Maximum allowed: 2700000 ms (45 minutes).
+#
+# BUG-08-001: The matcher must fire only on GENUINE top-level codex or
+# gemini invocations — never on commands that merely mention the literal
+# strings in a path, argument, message body, or quoted text.
+#
+# TPR-04-001-codex/gemini fix (commit pending): the previous regex-based
+# REVIEW_CMD_RE approach leaked bypasses because shell is not a regular
+# language. Seven distinct bypass forms were verified against the old
+# regex (escaped double quotes, $(...) command substitution, backtick
+# substitution, heredocs inside $(...), backslash-newline continuation,
+# literal newline separators, env-var values with internal whitespace
+# that the regex fragmented). Each new alternation opened up more edge
+# cases.
+#
+# The correct architectural fix is shell-aware tokenization. We delegate
+# classification to `.claude/hooks/classify-review-command.py`, which
+# walks the command string with a character-level state machine tracking
+# quote state, subshell depth, command substitution, and compound
+# operators. The classifier returns exit 0 iff the command contains a
+# top-level codex/gemini invocation at any command position.
+#
+# See `.claude/hooks/verify-hook.sh` for the full matrix and
+# `plans/bug-tracker/fix-BUG-08-001.md` for the original design rationale.
+
+CLASSIFY_REVIEW_CMD="$(dirname "${BASH_SOURCE[0]}")/classify-review-command.py"
+
+is_review_command() {
+  # Returns 0 if COMMAND invokes codex/gemini at a top-level command
+  # position, 1 otherwise. Delegates to the Python classifier so shell
+  # grammar edge cases are handled correctly (the earlier regex-based
+  # approach kept leaking bypasses).
+  printf '%s' "$COMMAND" | python3 "$CLASSIFY_REVIEW_CMD"
+}
+
+TIMEOUT=$(printf '%s' "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('timeout',''))" 2>/dev/null || true)
+
+if [[ -n "$TIMEOUT" && "$TIMEOUT" != "None" ]]; then
+  if is_review_command; then
+    # Require at least 20 minutes (1200000 ms) — anything shorter risks
+    # killing the review mid-stream (reviews barely ever complete in 10
+    # minutes, so 5- and 10-minute timeouts almost always fail).
+    if [[ "$TIMEOUT" =~ ^[0-9]+$ ]] && (( TIMEOUT < 1200000 )); then
+      deny "Blocked: timeout ($TIMEOUT ms) on codex/gemini command is too short. Reviews need 20-45 minutes — use at least 1200000 ms, up to 2700000 ms (45 min)."
+    fi
+    if [[ "$TIMEOUT" =~ ^[0-9]+$ ]] && (( TIMEOUT > 2700000 )); then
+      deny "Blocked: timeout ($TIMEOUT ms) on codex/gemini command exceeds 45-minute ceiling (2700000 ms)."
+    fi
+  fi
+fi
+
+# ── Allow background execution on codex commands ────────────────────
+# The Bash tool's foreground timeout cap (600000 ms / 10 min) is shorter
+# than the 45-minute upper bound for codex/gemini reviews, so background
+# execution is the only mechanism that can accommodate long reviews.
+# No block here.
+
+# No banned pattern found — no output so normal permission system applies.
+exit 0

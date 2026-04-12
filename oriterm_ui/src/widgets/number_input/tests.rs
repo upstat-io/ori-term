@@ -150,7 +150,7 @@ fn paint_produces_rect_and_text() {
     assert_eq!(scene.text_runs().len(), 1, "value text only");
 }
 
-/// TPR-13-010 regression: stepper arrows must not depend on Unicode glyph
+/// regression: stepper arrows must not depend on Unicode glyph
 /// coverage. When icons are available, paint produces icon entries instead
 /// of text runs for the arrows.
 #[test]

@@ -1,0 +1,28 @@
+---
+source: oriterm_core/tests/tack/tools_menu/enq_ack.rs
+expression: outcome.grid_text
+---
+ d) change debug level                                                          
+ q) quit                                                                        
+ ?) help                                                                        
+                                                                                
+tack/tools [q] >                                                                
+Testing ENQ/ACK, standby...                                                     
+                                                                                
+ACK terminating character: c                                                    
+                                                                                
+Tools Menu                                                                      
+ s) ANSI status reports                                                         
+ g) ANSI SGR modes (bold, underline, reverse)                                   
+ c) ANSI character sets                                                         
+ h) enable hex output on echo tool                                              
+ e) echo tool                                                                   
+ r) reply tool                                                                  
+ p) performance testing                                                         
+ i) send reset and init                                                         
+ u) test ENQ/ACK handshake                                                      
+ d) change debug level                                                          
+ q) quit                                                                        
+ ?) help                                                                        
+                                                                                
+tack/tools [q] >

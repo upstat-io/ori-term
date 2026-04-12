@@ -52,7 +52,7 @@ impl WindowRoot {
         // GC stale interaction registrations from previous tree structure
         // (e.g., after widget replacement or child changes). Matches the
         // GC in `rebuild()` so callers don't need to know which method
-        // handles structural cleanup (TPR-04-006).
+        // handles structural cleanup.
         let mut valid = Vec::new();
         collect_all_widget_ids(&mut *self.widget, &mut valid);
         let stale = self.interaction.gc_stale_widgets(&valid);
@@ -274,7 +274,7 @@ impl WindowRoot {
         // GC stale interaction registrations from previous tree structure
         // (e.g., after replace_widget or internal child changes). Widgets
         // no longer reachable via for_each_child_mut are deregistered so
-        // InteractionManager state doesn't grow monotonically (TPR-11-009).
+        // InteractionManager state doesn't grow monotonically.
         let mut valid = Vec::new();
         collect_all_widget_ids(&mut *self.widget, &mut valid);
         let stale = self.interaction.gc_stale_widgets(&valid);

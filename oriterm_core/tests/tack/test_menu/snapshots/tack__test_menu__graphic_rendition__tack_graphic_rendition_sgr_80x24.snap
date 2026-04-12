@@ -1,0 +1,6 @@
+---
+source: oriterm_core/tests/tack/test_menu/graphic_rendition.rs
+expression: outcome.grid_text
+---
+Testing bell (bel)                                                              
+If you did not hear the Bell then (bel) has failed.  (bel) Done

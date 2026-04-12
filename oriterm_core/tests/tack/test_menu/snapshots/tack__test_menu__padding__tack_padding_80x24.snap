@@ -1,0 +1,5 @@
+---
+source: oriterm_core/tests/tack/test_menu/padding.rs
+expression: outcome.grid_text
+---
+(rs1) reset_1string, not present.  (rs1) Done

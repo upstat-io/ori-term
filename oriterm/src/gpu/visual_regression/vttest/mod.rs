@@ -8,8 +8,7 @@
 //!
 //! Pre-deduplication this file owned its own copy of `PtyResponder` /
 //! `VtTestSession`. The shared session lives in `crates/oriterm_test_support`
-//! now — see `plans/tack-conformance/section-01-shared-pty-session.md` for
-//! the deduplication history.
+//! now.
 
 mod menus_3_8;
 mod render;

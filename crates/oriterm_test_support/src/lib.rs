@@ -11,11 +11,9 @@
 //!     instead of the host's `xterm-256color`.
 //!
 //! Before this crate existed, the PTY/Term/VTE plumbing was duplicated
-//! byte-for-byte between two `VtTestSession` definitions. See
-//! `plans/tack-conformance/section-01-shared-pty-session.md` for the
-//! deduplication history. The terminfo provisioning side lands in
-//! `plans/tack-conformance/section-02-terminfo-provisioning.md`.
+//! byte-for-byte between two `VtTestSession` definitions.
 
+pub mod catalog;
 pub mod session;
 pub mod tack_framework;
 pub mod terminfo;
@@ -25,8 +23,12 @@ pub use session::{
     vttest_available,
 };
 pub use tack_framework::{
-    LiveSession, MenuStep, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,
+    LiveSession, MenuStep, PhaseSpec, ScenarioOutcome, ScenarioRunner, ScenarioSpec, ScreenFacts,
     ScreenParserFn, TackNavigator, default_parser, grid_find_field, grid_has_paren_token,
-    grid_has_token, grid_line_starts_with,
+    grid_has_token, grid_line_starts_with, is_unverified_anchor, is_unverified_menu_key,
+    unverified_anchor, unverified_menu_key,
 };
-pub use terminfo::{TerminfoEnv, TerminfoVariant, infocmp_respects_terminfo_env};
+pub use terminfo::{
+    TerminfoEnv, TerminfoVariant, decode_terminfo_string, infocmp_dump, infocmp_query,
+    infocmp_respects_terminfo_env,
+};

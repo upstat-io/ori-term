@@ -1,0 +1,21 @@
+# tmux-split-resize.script
+# Start a detached tmux session, attach, split horizontally, split
+# vertically, resize, cycle panes, detach cleanly. Uses a scratch
+# socket so it doesn't disturb the host's tmux state.
+COMMAND: tmux -L ori-capture new-session -s capture
+WAIT: 500ms
+KEY: Ctrl+b
+KEY: "
+WAIT: 200ms
+KEY: Ctrl+b
+KEY: %
+WAIT: 200ms
+KEY: Ctrl+b
+KEY: o
+WAIT: 200ms
+KEY: Ctrl+b
+KEY: Space
+WAIT: 200ms
+KEY: Ctrl+b
+KEY: d
+WAIT: 200ms

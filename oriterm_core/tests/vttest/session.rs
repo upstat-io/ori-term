@@ -2,8 +2,6 @@
 //! existing vttest menu tests don't have to change their import paths
 //! beyond `super::session::*`.
 //!
-//! The session implementation lives in `crates/oriterm_test_support` —
-//! see `plans/tack-conformance/section-01-shared-pty-session.md` for
-//! the deduplication history.
+//! The session implementation lives in `crates/oriterm_test_support`.
 
 pub use oriterm_test_support::{PtySession, vttest_available};

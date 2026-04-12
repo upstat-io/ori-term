@@ -2,7 +2,7 @@
 //!
 //! DA (device attributes), DSR (device status report), DECRQM (mode report),
 //! and CSI t (text area size). Methods are called by the `vte::ansi::Handler`
-//! trait impl on `Term<T>`.
+//! trait impl on `Term<S>`.
 //!
 //! All methods take `&mut self` because the `Handler` trait requires it,
 //! even though these only read state and send events.
@@ -11,7 +11,8 @@ use log::debug;
 use vte::ansi::{Color, Mode, NamedColor, NamedMode, PrivateMode};
 
 use crate::cell::CellFlags;
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::term::{Term, TermMode};
 
 use super::helpers::{
@@ -84,7 +85,7 @@ fn push_color_params(params: &mut Vec<String>, color: Color, is_fg: bool) {
     clippy::needless_pass_by_ref_mut,
     reason = "Handler trait requires &mut self"
 )]
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// DECRQM: report ANSI mode status.
     pub(super) fn status_report_mode(&mut self, mode: Mode) {
         let (num, value) = match mode {
@@ -99,7 +100,10 @@ impl<T: EventListener> Term<T> {
             Mode::Unknown(n) => (n, 0),
         };
         let response = format!("\x1b[{num};{value}$y");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::ModeReport,
+        }));
     }
 
     /// DECRQM: report DEC private mode status.
@@ -114,7 +118,10 @@ impl<T: EventListener> Term<T> {
             PrivateMode::Unknown(n) => (n, 0),
         };
         let response = format!("\x1b[?{num};{value}$y");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::ModeReport,
+        }));
     }
 
     /// DA: device attributes response.
@@ -128,20 +135,29 @@ impl<T: EventListener> Term<T> {
                 //   4  = sixel graphics
                 // vttest checks for 62+ (VT220+) to enable CSI 18t
                 // size queries and other VT200+ features.
-                let response = "\x1b[?64;6;4c".to_string();
-                self.event_listener.send_event(Event::PtyWrite(response));
+                let response = "\x1b[?64;6;4c";
+                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+                    bytes: response.as_bytes().to_vec(),
+                    kind: PtyWriteKind::DeviceAttribute,
+                }));
             }
             Some('>') => {
                 // DA2: terminal type 0, version, conformance level 1.
                 let version = crate_version_number();
                 let response = format!("\x1b[>0;{version};1c");
-                self.event_listener.send_event(Event::PtyWrite(response));
+                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+                    bytes: response.into_bytes(),
+                    kind: PtyWriteKind::DeviceAttribute,
+                }));
             }
             Some('=') => {
                 // DA3: unit ID. DCS response: DCS ! | XXXXXXXX ST.
                 // Eight zero digits as unit ID (same as xterm default).
-                let response = "\x1bP!|00000000\x1b\\".to_string();
-                self.event_listener.send_event(Event::PtyWrite(response));
+                let response = "\x1bP!|00000000\x1b\\";
+                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+                    bytes: response.as_bytes().to_vec(),
+                    kind: PtyWriteKind::DeviceAttribute,
+                }));
             }
             Some(c) => debug!("Unsupported DA intermediate '{c}'"),
         }
@@ -151,8 +167,10 @@ impl<T: EventListener> Term<T> {
     pub(super) fn status_device_status(&mut self, arg: usize) {
         match arg {
             5 => {
-                self.event_listener
-                    .send_event(Event::PtyWrite("\x1b[0n".to_string()));
+                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+                    bytes: b"\x1b[0n".to_vec(),
+                    kind: PtyWriteKind::DeviceStatus,
+                }));
             }
             6 => {
                 // Per DEC spec, when DECOM is active, DSR 6 reports the
@@ -165,7 +183,10 @@ impl<T: EventListener> Term<T> {
                 };
                 let col = self.grid().cursor().col().0 + 1;
                 let response = format!("\x1b[{line};{col}R");
-                self.event_listener.send_event(Event::PtyWrite(response));
+                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+                    bytes: response.into_bytes(),
+                    kind: PtyWriteKind::CursorReport,
+                }));
             }
             _ => debug!("Unknown device status query: {arg}"),
         }
@@ -176,7 +197,10 @@ impl<T: EventListener> Term<T> {
         let lines = self.grid().lines();
         let cols = self.grid().cols();
         let response = format!("\x1b[8;{lines};{cols}t");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::Other,
+        }));
     }
 
     /// DECRQSS: Request Status String.
@@ -210,6 +234,9 @@ impl<T: EventListener> Term<T> {
                 "\x1bP0$r\x1b\\".to_string()
             }
         };
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::StatusString,
+        }));
     }
 }

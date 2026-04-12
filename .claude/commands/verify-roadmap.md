@@ -1,3 +1,10 @@
+---
+name: verify-roadmap
+description: Systematically verify AND expand roadmap sections using parallel subagents. Two-phase process — review agents audit existing items and identify gaps against each section's stated mission, then update agents apply findings back into the section files. Use when the user asks to verify the roadmap, expand a section, or catch missing items.
+allowed-tools: Read, Grep, Glob, Bash, Task, Edit, Write
+argument-hint: "[section | continue]"
+---
+
 # Verify Roadmap Command
 
 Systematically verify AND expand roadmap sections using parallel subagents. Two-phase process: (1) review agents audit existing items and identify gaps against each section's stated mission, (2) update agents apply findings back into the section files — which is the entire point of this command.
@@ -91,8 +98,8 @@ Each agent processes its section items sequentially (items within a section stay
 
 **MANDATORY: Every agent MUST begin by reading ALL project context.** Before verifying a single item, each agent must read — in full, every line — the following files:
 
-1. `/home/eric/projects/ori_term/CLAUDE.md` — project instructions (read ALL of it)
-2. Every file in `/home/eric/projects/ori_term/.claude/rules/` — ALL rules files, every line
+1. `CLAUDE.md` (at the repository root) — project instructions (read ALL of it)
+2. Every file in `.claude/rules/` — ALL rules files, every line
 3. The reference repos or standards relevant to the section being verified
 
 Include this as an explicit instruction in each agent's prompt:
@@ -100,25 +107,38 @@ Include this as an explicit instruction in each agent's prompt:
 BEFORE YOU START: Read these files in full — every single line, no skipping.
 Do not start verifying items until you have read ALL of these files.
 
-1. /home/eric/projects/ori_term/CLAUDE.md (ALL of it — contains coding standards,
-   performance invariants, testing requirements, crate boundaries)
+1. CLAUDE.md at the repository root (ALL of it — contains the Broken Window Policy,
+   NO WORKAROUNDS doctrine, Bug Discipline, workspace layout, and pointers to
+   the canonical rule files)
 
-2. ALL rules files in /home/eric/projects/ori_term/.claude/rules/ — read every file,
-   every line:
-   - code-hygiene.md, crate-boundaries.md, impl-hygiene.md, test-organization.md
+2. ALL rules files in .claude/rules/ — read every file,
+   every line. Run `ls .claude/rules/*.md` first to get the current
+   inventory (the list evolves — new per-crate rules files are
+   added as new crates land). As of this writing the set is:
+   - code-hygiene.md, crate-boundaries.md, impl-hygiene.md,
+     test-organization.md, tests.md, oriterm.md, oriterm_core.md,
+     oriterm_ui.md, oriterm_mux.md, oriterm_ipc.md
+   Any additional `.claude/rules/oriterm*.md` per-crate file that
+   may appear after this command was last updated — read it too if
+   its `paths:` frontmatter glob is relevant to the section being
+   verified.
 
-3. The relevant reference repos for the section being verified (from
-   ~/projects/reference_repos/console_repos/ — alacritty, wezterm, ghostty, etc.)
+3. The relevant reference repos for the section being verified
+   (from ~/projects/reference_repos/console_repos/ — alacritty,
+   wezterm, ghostty, ratatui, ptyxis, termenv, etc.) and
+   ~/projects/reference_repos/gui_repos/ for widget/GPU questions.
 
-These files contain CRITICAL context: crate boundary rules, test organization standards,
-performance invariants, coding standards, and hygiene rules.
-An agent that skips reading these files WILL produce incorrect verification results.
+These files contain CRITICAL context: crate boundary rules, test
+organization standards, performance invariants, coding standards,
+hygiene rules, and per-crate ownership + forbidden-list discipline.
+An agent that skips reading these files WILL produce incorrect
+verification results.
 
 After reading, report what you loaded at the top of your results file:
-  Context loaded: CLAUDE.md (read), rules/*.md (4 files read), reference: [repos consulted]
+  Context loaded: CLAUDE.md (read), rules/*.md (N files read: <comma-separated list>), reference: [repos consulted]
 ```
 
-This is non-negotiable. An agent that skips reading these files will miss critical context about crate boundaries, test organization, and performance invariants. The supervisor MUST verify that agent results begin with the "Context loaded" line showing all files were read. If the line is missing or shows fewer than 4 rules files, the agent's results are unreliable — re-run the section.
+This is non-negotiable. An agent that skips reading these files will miss critical context about crate boundaries, test organization, performance invariants, and per-crate ownership. The supervisor MUST verify that agent results begin with the "Context loaded" line showing all files were read. If the line is missing, or the reported file count is smaller than `ls .claude/rules/*.md | wc -l` on the current commit, the agent's results are unreliable — re-run the section.
 
 #### Step 3: Supervisor Monitoring
 

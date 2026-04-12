@@ -1740,7 +1740,7 @@ fn tabs_end_with_multipliers() {
     );
 }
 
-// -- Regression: TPR-11-012 — draw_window_controls propagates frame_requests --
+// -- Regression: draw_window_controls propagates frame_requests --
 
 #[cfg(not(target_os = "macos"))]
 #[test]

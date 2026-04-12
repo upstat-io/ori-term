@@ -145,7 +145,7 @@ impl MuxBackend for EmbeddedMux {
             // Do NOT mark snapshot_dirty here — the renderer should keep
             // drawing the previous cached snapshot until the IO thread
             // publishes the resized one. This prevents exposing
-            // intermediate reflow frames during drag resize (TPR-05-001).
+            // intermediate reflow frames during drag resize.
             pane.send_io_command(PaneIoCommand::Resize { rows, cols });
         }
     }

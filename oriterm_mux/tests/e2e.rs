@@ -1474,17 +1474,13 @@ fn multi_client_independent_panes() {
     client_b.close_pane(pane_b);
 }
 
-// ---------------------------------------------------------------------------
-// Tests: BUG-11-1 — Input blocked during output flooding
-// ---------------------------------------------------------------------------
-
-/// BUG-11-1: Ctrl+C + signal_child during flooding.
+/// Ctrl+C + signal_child during flooding.
 ///
 /// Note: signal_child currently sends to shell PGID, not foreground PGID.
 /// Disabled until tcgetpgrp-based delivery is implemented.
 #[test]
 #[ignore = "signal_child sends to shell PGID, not foreground PGID — needs tcgetpgrp fix"]
-fn bug_11_1_ctrl_c_during_flood_via_signal_child() {
+fn ctrl_c_during_flood_via_signal_child() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
@@ -1567,7 +1563,7 @@ fn bug_11_1_ctrl_c_during_flood_via_signal_child() {
 /// If no, the writer thread is somehow blocked even for 1 byte.
 #[test]
 #[ignore = "flaky on CI — real PTY timing; openpty NULL termios may leave ISIG off on some runners"]
-fn bug_11_1_plain_ctrl_c_without_signal_child() {
+fn plain_ctrl_c_without_signal_child() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
     let pane_id = spawn_test_pane_ready(&mut client);

@@ -105,18 +105,47 @@ paths:
 - Pipeline orchestration (use `WindowRoot` methods)
 - Duplicate type definitions of anything in `oriterm_ui`
 
+### `crates/oriterm_test_support` (workspace test helpers)
+
+Shared test utilities used by crate-level `cargo test -p <crate>` runs across the workspace. Lives at `crates/oriterm_test_support/` as a real workspace member (`Cargo.toml` `members` list) rather than a dev-dependency of a single crate so that every crate can re-use the same helpers.
+
+**Owns:**
+- Headless fixture builders (grid, cell, palette, selection, snapshot mocks)
+- PTY mock for `oriterm_mux` tests (no real child process required)
+- Reference golden-image loader for GPU visual-regression tests
+- Shared teseq / tack / vttest fixture helpers
+
+**Depends on:** whatever crate the fixture targets (dev-dep only — used under `[dev-dependencies]` in consumer crates, never pulled in at runtime). Must never be in a consumer crate's `[dependencies]`.
+
+**Must NOT contain:**
+- Production logic — if the helper is useful at runtime, it belongs in the target crate, not here
+- Platform-specific FFI — use the target crate's existing abstraction
+
 ### `crates/vte` (vendored VTE parser)
 
-Vendored fork of the `vte` crate. Treat as external dependency. Do not add oriterm-specific types here.
+Vendored fork of the upstream `vte` crate, patched for oriterm-specific performance and protocol handling. Treat as an external dependency — **do not add oriterm-specific types here**. If a change is genuinely needed, open an issue upstream first and vendor the patch with a clear reason in the crate's README.
+
+### `crates/portable-pty` (vendored PTY abstraction)
+
+Vendored fork of `portable-pty`. Same discipline as `crates/vte` — treat as external, upstream fixes first, minimal local patches. Consumed by `oriterm_mux`.
+
+### `crates/wgpu-hal` (vendored wgpu hardware abstraction)
+
+Vendored slice of `wgpu-hal` for a specific wgpu patch this project needs. Same discipline as the other vendored crates. Consumed by `oriterm` (via `wgpu`).
 
 ## Allowed Dependency Direction
 
 ```
-oriterm_ipc  (standalone — no oriterm_* deps)
-oriterm_core (standalone — no oriterm_* deps)
-oriterm_ui   → oriterm_core
-oriterm_mux  → oriterm_core, oriterm_ipc
-oriterm      → oriterm_core, oriterm_ui, oriterm_mux
+oriterm_ipc              (standalone — no oriterm_* deps)
+oriterm_core             (standalone — no oriterm_* deps)
+oriterm_ui               → oriterm_core
+oriterm_mux              → oriterm_core, oriterm_ipc
+oriterm                  → oriterm_core, oriterm_ui, oriterm_mux
+
+crates/oriterm_test_support → used as [dev-dependencies] only
+crates/vte                   → consumed by oriterm_core (vendored)
+crates/portable-pty          → consumed by oriterm_mux (vendored)
+crates/wgpu-hal              → consumed by oriterm (vendored)
 ```
 
 ## Litmus Test

@@ -6,6 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use oriterm_core::ClipboardType;
+use oriterm_core::effect::LegacyEventSink;
 use oriterm_core::event::{Event, EventListener};
 
 /// Structured event capture for test assertions.

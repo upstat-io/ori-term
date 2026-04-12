@@ -16,7 +16,7 @@ success_criteria:
   - "{Criterion 2 — with verification command}"
 subsystem: "{crate/file path}"
 found: "{YYYY-MM-DD}"
-source: "{tpr-review|manual|continue-roadmap|review-work}"
+source: "{canonical source value from /add-bug SKILL.md}"
 third_party_review:
   status: none
   updated: null
@@ -48,7 +48,43 @@ Cite the original bug entry. 2-4 sentences.}
   - `{file2}` — {what needs to change and why}
 
 **Reference implementations** (if applicable):
-- **{Emulator}** `{file path}`: {How they handle this case}
+- **{Language}** `{file path}`: {How they handle this case}
+
+---
+
+## 1.5 Fix Consensus (via /tp-help)
+
+Independent dual-source design review of the proposed fix approach. Ran BEFORE tests or implementation to catch wrong-approach errors before they lock in. See `.claude/skills/fix-bug/SKILL.md` § Phase 1.75 for the calling contract.
+
+- **Proposed approach (pre-consensus)**: {Claude's initial plan before tp-help — what would have been written into § 3 Implementation if consensus had been skipped}
+- **tp-help run scratch dir**: `{$RUN path}`
+
+### Round 1
+- **Codex summary**: {brief summary of codex's response — key agreements and disagreements}
+- **Gemini summary**: {brief summary of gemini's response — key agreements and disagreements}
+- **Agreement points**: {where Claude + both reviewers converge}
+- **Disagreement points**: {where they diverge from Claude's proposal or from each other}
+- **Independent code verification**: {what Claude checked against actual code — file:line cites for each verified/refuted finding}
+- **Outcome**: {agreement → proceed | persuaded divergence → proceed with revised approach | unpersuaded divergence → round 2}
+
+### Round 2 *(if round 1 outcome was "unpersuaded divergence")*
+- **Follow-up question**: {the counter-argument or clarification Claude sent}
+- **Codex response summary**: {…}
+- **Gemini response summary**: {…}
+- **Independent code verification**: {file:line cites}
+- **Outcome**: {agreement | persuaded divergence | unpersuaded divergence → round 3}
+
+### Round 3 *(hard cap — if round 2 outcome was "unpersuaded divergence")*
+- **Follow-up question**: {…}
+- **Codex response summary**: {…}
+- **Gemini response summary**: {…}
+- **Independent code verification**: {file:line cites}
+- **Outcome**: {agreement | persuaded divergence | deadlock}
+
+### Final agreed approach
+{The fix approach that will be implemented in § 3 — either the original proposal, a persuaded-divergence revision, or (autopilot deadlock only) Claude's best-grounded approach. Must be concrete enough that § 2 TDD matrix and § 3 Implementation can be written directly from it.}
+
+{**If autopilot deadlock**: explicitly state "AUTOPILOT DEADLOCK" here. Include Claude's grounding for the chosen approach (which reviewer's critiques were addressed, which were deemed incorrect after code verification, and the residual uncertainty). /fix-next-bug's final session report will flag this bug for user audit.}
 
 ---
 
@@ -64,13 +100,16 @@ Write ALL tests BEFORE the fix. Verify they fail against current code.
 - [ ] {Additional edge cases}
 
 ### Cross-type coverage (if type-dependent)
-- [ ] {Test with different input types as applicable}
+- [ ] {Test with str}
+- [ ] {Test with [int]}
+- [ ] {Test with Option<T>}
+- [ ] {Test with structs, closures, maps, sets as applicable}
 
 ### Cross-pattern coverage (if pattern-dependent)
 - [ ] {Test each relevant control-flow pattern}
 
 ### Cross-feature interactions
-- [ ] {Test interaction with selection, search, scrollback, resize, etc. as applicable}
+- [ ] {Test interaction with closures, generics, ?, pattern matching, traits as applicable}
 
 ### Semantic pin
 - [ ] {Test that ONLY passes with the correct/new semantics — the permanent regression guard}
@@ -90,24 +129,40 @@ Write ALL tests BEFORE the fix. Verify they fail against current code.
   // Code sketch showing the target fix (types, signatures, key logic)
   ```
 - [ ] {Additional implementation steps if multi-file}
-- [ ] {Any co-implementation requirements with other crates}
+- [ ] {Any co-implementation requirements with other subsystems}
+
+---
+
+## R. Third Party Review Findings
+
+TPR findings raised against this fix are recorded here by the executor (Claude) during Phase 5. When `/tpr-review` produces findings related to this bug fix, the executor transcribes them into this block using the standard reviewer-tagged format (e.g. `[TPR-XX-001-codex]`). This block is the permanent TPR audit trail for this fix — it stays with the fix section even after resolution.
+
+{Initially empty — populated by the executor during Phase 5 completion checklist.}
 
 ---
 
 ## 4. Completion Checklist
 
+Reviews MUST complete before bug closure — a bug marked resolved before TPR/hygiene is a premature closure.
+
 - [ ] All new tests pass unchanged after fix (no test modifications needed)
-- [ ] Matrix completeness verified — every relevant cell has a test
+- [ ] Matrix completeness verified — every cell in type × pattern × feature × platform grid has a test
+- [ ] Debug AND release builds pass (`cargo b && cargo b --release`)
+- [ ] Windows cross-compile green (`cargo build --target x86_64-pc-windows-gnu`)
+- [ ] If the fix touches the GPU render path, visual-regression suite under `oriterm/src/gpu/visual_regression/` green (cached path via `render_frame_cached`)
+- [ ] If the fix touches the hot render path, `oriterm_core/tests/alloc_regression.rs` and `rss_regression.rs` still green (performance invariants preserved)
 - [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] `timeout 150 ./clippy-all.sh` green
-- [ ] `./build-all.sh` green — cross-compilation succeeds
+- [ ] `./clippy-all.sh` green
+- [ ] `./build-all.sh` green (workspace + cross-compile)
 - [ ] `cargo test -p {affected_crate}` green
 - [ ] `/commit-push` — commit all changes before review
-- [ ] Bug entry in `plans/bug-tracker/section-{NN}-*.md` updated: `- [x]` with resolution details
+- [ ] `/tpr-review` passed — independent dual-source review found no actionable findings. **MANDATORY for ALL severities** — per CLAUDE.md "NO WORKAROUNDS" and the Bug Discipline rigor rule, no severity carve-out.
+- [ ] `/impl-hygiene-review` passed — MUST run AFTER `/tpr-review` is clean. **MANDATORY for ALL severities.**
+- [ ] `/improve-tooling` retrospective completed — MANDATORY at fix close, after both reviews are clean. Reflect on the bug-finding journey: which test harness / script / diagnostic you ran during root cause analysis, where you added ad-hoc `log::debug!`/`tracing` calls (and what each one was looking for), where the original failure message was unhelpful, where the matrix tests were tedious because helpers were missing, what instrumentation would have made the bug obvious in 1 minute instead of 30. Bug fixes are the richest source of tooling gaps because you've just spent time fighting the diagnostic surface — capture every gap. Implement every accepted improvement NOW (zero deferral) and commit each via SEPARATE `/commit-push` using a valid conventional-commit type (e.g., `test(teseq): surface missing `reseq` binary in skip message — surfaced by BUG-XX-NNN retrospective` — `build`/`test`/`chore`/`ci`/`docs` are the valid types; do NOT use `tools(...)`, the lefthook commit-msg hook rejects it). See `.claude/skills/improve-tooling/SKILL.md` "Retrospective Mode" for the full look-back protocol.
+- [ ] Bug entry in `plans/bug-tracker/section-{NN}-*.md` updated: `- [x]` with resolution details (canonical format from `plans/bug-tracker/00-overview.md`)
 - [ ] Fix section frontmatter `status` updated to `complete`
 - [ ] Bug-tracker `00-overview.md` Quick Reference open bug count updated
-- [ ] `/tpr-review` passed — independent Codex review found no critical or major issues (critical/high severity: MANDATORY; medium: expected; low: recommended but not required)
-- [ ] `/impl-hygiene-review last commit` passed — MUST run AFTER `/tpr-review` is clean (critical/high: MANDATORY; medium: recommended; low: optional)
+- [ ] Final `/commit-push` — commit closure artifacts (bug entry, fix section status, overview count)
 
 **Exit Criteria:** {Paragraph describing the measurable, testable condition
 that proves this fix is complete. Include specific test names, commands,

@@ -263,7 +263,7 @@ impl Widget for SchemeCardWidget {
 
     fn accept_action(&mut self, action: &WidgetAction) -> bool {
         // Only react to Selected from sibling scheme cards in the same group,
-        // not from sidebar nav, cursor picker, or dropdown selections (TPR-11-002).
+        // not from sidebar nav, cursor picker, or dropdown selections.
         if let WidgetAction::Selected { id, index } = action {
             if self.scheme_group.contains(id) {
                 let should_be_selected = *index == self.scheme_index;

@@ -6,28 +6,34 @@ use crate::session::PtySession;
 
 /// Spawn a silent long-lived child suitable for timeout/bounded-poll
 /// pin tests. Two-arm cross-platform: Unix `/bin/sh -c "sleep 10"`,
-/// Windows `ping.exe -n 11 127.0.0.1` (~10 s of silence on both arms).
+/// Windows `cmd.exe /C "pause > NUL"` (blocks until killed on both
+/// arms).
 ///
-/// Windows note: we spawn `ping.exe` DIRECTLY rather than wrapping
-/// it in `cmd.exe /C "ping … > NUL"`. The wrapper form makes
-/// `cmd.exe` the immediate child and `ping.exe` a grandchild
-/// attached to the ConPTY. When `PtySession::drop` calls
-/// `TerminateProcess` on `cmd.exe`, the grandchild `ping.exe`
-/// becomes orphaned and is NOT terminated automatically — it
-/// remains attached to the pseudoconsole as a still-alive
-/// "console client". The subsequent `ClosePseudoConsole` (called
-/// when `_master` drops) then blocks waiting for the orphaned
-/// grandchild to release the HPCON, hanging the test for the
-/// remainder of `ping`'s 10-second timer. Spawning `ping.exe`
-/// directly makes the ConPTY client identical to the immediate
-/// child, so `TerminateProcess` kills the only attached client
-/// and `ClosePseudoConsole` returns immediately.
+/// Windows note: we use `pause`, an in-process `cmd.exe` builtin,
+/// rather than spawning a real subprocess like `ping.exe`. Two
+/// reasons:
 ///
-/// We discard `ping`'s stdout (which is normally line-buffered
-/// status output) because the test only needs the child to be
-/// alive and silent — `ping.exe`'s output is harmless for the
-/// timeout/bounded-poll assertions, which only care that
-/// `wait_for` does not match an unrelated needle.
+/// 1. **Grandchild orphan avoidance.** Wrapping a real subprocess
+///    in `cmd.exe /C "child …"` makes the wrapper the immediate
+///    child and the real subprocess a grandchild attached to the
+///    `ConPTY`. When `PtySession::drop` terminates `cmd.exe`, the
+///    grandchild becomes orphaned and remains attached to the
+///    pseudoconsole as a still-alive console client.
+///    `ClosePseudoConsole` (called when `_master` drops) then
+///    blocks waiting for the orphaned grandchild to release the
+///    HPCON.
+/// 2. **No shared kernel resources.** `ping.exe` (and similar
+///    network-touching helpers) contend on Windows ICMP loopback
+///    rate limits when many tests run in parallel, ballooning
+///    per-test wall-clock from <1 s to 10+ s. `pause` is a pure
+///    user-mode busy-loop on console input — no network, no file
+///    I/O, no inherited resource contention.
+///
+/// `pause` consumes one byte from stdin and exits. None of the
+/// silent-long-lived consumers write to the child after spawn,
+/// so `pause` blocks for the full test duration; the
+/// `Drop`-driven `TerminateProcess` is the only termination
+/// path.
 fn spawn_silent_long_lived() -> PtySession {
     #[cfg(unix)]
     let cmd = {
@@ -38,8 +44,8 @@ fn spawn_silent_long_lived() -> PtySession {
     };
     #[cfg(windows)]
     let cmd = {
-        let mut c = CommandBuilder::new("ping.exe");
-        c.args(["-n", "11", "127.0.0.1"]);
+        let mut c = CommandBuilder::new("cmd.exe");
+        c.args(["/C", "pause > NUL"]);
         c.env("TERM", "xterm-256color");
         c
     };
@@ -48,13 +54,13 @@ fn spawn_silent_long_lived() -> PtySession {
 
 #[test]
 fn pty_session_drains_simple_output() {
-    // Portable PTY drain smoke test. portable-pty owns ConPTY on
+    // Portable PTY drain smoke test. portable-pty owns `ConPTY` on
     // Windows, so the same `PtySession` spawn path works on every
     // platform. Two-arm shell selection — `/bin/sh` on Unix and
     // `cmd.exe` on Windows — is the cross-platform idiom for "run a
     // one-liner in the platform shell." This replaces the previous
-    // `#[cfg(unix)]`-gated test (BUG-07-008) so Windows gets real
-    // ConPTY drain coverage instead of a no-op skip. The
+    // `#[cfg(unix)]`-gated test so Windows gets real
+    // `ConPTY` drain coverage instead of a no-op skip. The
     // `#[cfg(unix)] / #[cfg(windows)]` block INSIDE the `#[test] fn`
     // is the cross-platform idiom this codebase uses; the OUTER
     // `#[cfg(unix)] #[test]` form is the antipattern banned by
@@ -241,7 +247,7 @@ fn pty_session_wait_for_any_empty_slice_returns_none() {
 
 #[test]
 fn pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn() {
-    // Regression pin for the Windows ConPTY HPCON premature-close
+    // Regression pin for the Windows `ConPTY` HPCON premature-close
     // failure mode. Spawns 5 sequential `PtySession`s with the
     // silent-long-lived child (cmd.exe + ping on Windows, /bin/sh +
     // sleep on Unix), drops each, then spawns a fresh
@@ -322,5 +328,187 @@ fn pty_session_wait_for_any_bounded_poll_invariant() {
     assert!(
         elapsed < Duration::from_millis(1500),
         "bounded-poll wall-clock: expected <1500 ms, got {elapsed:?}"
+    );
+}
+
+#[test]
+fn pty_session_drain_writes_osc_responses_back() {
+    // SEMANTIC PIN for Section 06.0.c: `drain_blocking` must flush the
+    // `PtyResponder::osc_responses` queue back through `self.writer`
+    // after each VTE advance, exactly the same way it already flushes
+    // `take_responses` (DA/DSR path). Proof-of-work: spawn a stdin-echo
+    // child in raw mode, forge an OSC 10 query into the child's stdin,
+    // and observe that after `drain_blocking` finishes,
+    // `palette().color(10)` equals `PtyResponder`'s pinned TEST_COLOR
+    // (0xabcdef).
+    //
+    // Why palette-inspection proves the round-trip. The only path that
+    // sets palette[10] to 0xabcdef is: (1) child echoes query bytes back
+    // through PTY read → (2) VTE parses OSC 10 query → (3) Term fires
+    // `Event::ColorRequest(10, formatter)` → (4) PtyResponder calls
+    // `formatter(TEST_COLOR)` and buffers the canonical response into
+    // `osc_responses` → (5) `drain_blocking`'s `write_osc_responses_back`
+    // writes that response through `self.writer` → (6) child echoes
+    // response bytes back → (7) VTE parses the response as an OSC 10
+    // *set* and calls `palette.set_indexed(10, TEST_COLOR)`. Any broken
+    // link in that chain leaves palette[10] at its default.
+    //
+    // **Raw mode is load-bearing.** The PTY line discipline defaults
+    // to ICANON + ECHOCTL, which echoes `\x1b` as the visible two-byte
+    // sequence `^[` — that is NOT a valid OSC query for VTE, so the
+    // round-trip silently fails. `stty raw -echo` disables canonical
+    // mode and terminal-driver echo; `cat` then provides byte-exact
+    // echo from stdin to stdout.
+    //
+    // **Platform scope.** The raw-mode `stty` + `cat` pipeline is
+    // POSIX-specific. Windows ``ConPTY`` has a different
+    // line-discipline model with no direct `stty raw` equivalent, and
+    // the responder's OSC dispatch is platform-independent Rust, so
+    // the Windows path is covered by the sibling unit tests in
+    // `pty_responder/tests.rs` (which exercise `Term<PtyResponder>`
+    // directly, no PTY). The test function itself exists on every
+    // platform — the cross-platform `#[test] fn` existence rule from
+    // tack-conformance section 02.3 is preserved; only the body skips
+    // on non-Unix hosts with a loud `eprintln!`.
+    #[cfg(not(unix))]
+    {
+        eprintln!(
+            "pty_session_drain_writes_osc_responses_back: skipping on \
+             non-unix host — raw-mode PTY echo pipeline is POSIX-specific; \
+             Windows coverage lives in pty_responder sibling unit tests"
+        );
+        return;
+    }
+
+    #[cfg(unix)]
+    {
+        // `stty raw -echo` disables ICANON + ECHO + ECHOCTL so the PTY
+        // driver no longer echoes control bytes as `^X` sequences; the
+        // subsequent `cat` then echoes every input byte byte-exact.
+        // `echo STTY-READY` after `stty` is the synchronisation marker
+        // — the test blocks on that marker before sending the OSC
+        // query, eliminating the race between `stty` applying and
+        // `send_raw` firing.
+        let mut c = CommandBuilder::new("/bin/sh");
+        c.args(["-c", "stty raw -echo; printf 'STTY-READY\\n'; exec cat"]);
+        c.env("TERM", "xterm-256color");
+        let mut session = PtySession::spawn(c, 80, 24);
+
+        // Wait until `stty` has applied and `printf` has fired. Any
+        // content arriving after the marker is guaranteed raw-echo
+        // territory.
+        session.wait_for("STTY-READY", 5_000);
+
+        // OSC 10 query/set targets the foreground color entry in the
+        // palette, which lives at `NamedColor::Foreground as usize`
+        // (= 256). Checking ANSI index 10 (bright green) would always
+        // succeed trivially because OSC 10 never touches it.
+        const FG_INDEX: usize = 256;
+
+        // Baseline sanity: palette[FG] must NOT be TEST_COLOR before
+        // the round-trip fires. Defends against a future change to
+        // Theme::default that accidentally picks 0xabcdef as the
+        // default — the test would otherwise pass trivially with no
+        // OSC handling at all.
+        let baseline = session.term().palette().color(FG_INDEX);
+        assert_ne!(
+            (baseline.r, baseline.g, baseline.b),
+            (0xab, 0xcd, 0xef),
+            "theme default collided with the pinned TEST_COLOR — the \
+             round-trip assertion would be vacuous"
+        );
+
+        // Forge the OSC 10 query into the child's stdin. Raw-mode `cat`
+        // echoes it back byte-exact through the PTY reader channel; the
+        // drain loop picks it up, feeds it through VTE, and fires
+        // ColorRequest. We terminate with `\x1b\\` (ST) rather than BEL
+        // so the VTE parser's OSC state machine transitions via the
+        // canonical String-Terminator path.
+        session.send_raw(b"\x1b]10;?\x1b\\");
+
+        // Drive the round-trip. Each drain_blocking budget is a
+        // generous 500 ms upper bound (typical round-trip is <10 ms on
+        // a local PTY loop) so a CI runner under load still completes.
+        // Four iterations are enough for: (1) query echo arrives →
+        // ColorRequest → osc_resp flushed to writer; (2) response echo
+        // arrives → palette update; plus slack for kernel pipe
+        // scheduling.
+        for _ in 0..4 {
+            session.drain_blocking(500);
+        }
+
+        let captured = session.term().palette().color(FG_INDEX);
+        assert_eq!(
+            (captured.r, captured.g, captured.b),
+            (0xab, 0xcd, 0xef),
+            "palette[Foreground] must be TEST_COLOR (0xabcdef) after \
+             the OSC 10 query/response round-trip — drain_blocking \
+             failed to flush PtyResponder::osc_responses back through \
+             the PTY writer. Observed palette[Foreground]: \
+             ({:#04x}, {:#04x}, {:#04x})",
+            captured.r,
+            captured.g,
+            captured.b,
+        );
+    }
+}
+
+impl PtySession {
+    /// Replace the reader channel with a pre-closed one so subsequent
+    /// `recv_timeout` calls see `Disconnected` immediately.
+    ///
+    /// The reader thread still holds the old `tx` end; its next
+    /// `tx.send()` returns `Err` and breaks the read loop — no leak.
+    fn force_close_rx_for_disconnect_test(&mut self) {
+        let (_tx, rx) = std::sync::mpsc::channel();
+        self.rx = rx;
+    }
+}
+
+#[test]
+fn drain_until_returns_none_immediately_on_channel_disconnect() {
+    // SEMANTIC PIN for drain_until's contract: channel closure
+    // (the reader thread has hung up because the child exited or
+    // the PTY closed) returns None IMMEDIATELY, not after burning
+    // the full timeout budget.
+    //
+    // The earlier draft used `let Ok(chunk) = ... else { continue; }`
+    // which collapsed both Timeout and Disconnected into "loop
+    // again," so a child that exited before the phase anchor
+    // appeared would burn the full 5 s deadline before reporting
+    // a (misleading) timeout. The fix distinguishes the two
+    // RecvTimeoutError variants and returns None on Disconnected.
+    //
+    // We directly close the channel instead of relying on timers
+    // for the reader thread to observe EOF. On Windows, ConPTY
+    // keeps the pipe open until the master handle drops — which
+    // happens at PtySession::drop, not at child exit. Timers are
+    // inherently fragile; force-closing the rx is deterministic.
+    let mut session = spawn_silent_long_lived();
+
+    // Drain any buffered startup output, then force-disconnect.
+    session.drain();
+    session.force_close_rx_for_disconnect_test();
+
+    let started = Instant::now();
+    let captured = session.drain_until("__NEVER_APPEARS__", 64 * 1024, 5_000);
+    let elapsed = started.elapsed();
+
+    assert!(
+        captured.is_none(),
+        "drain_until must return None when the needle never appears \
+         and the channel disconnects"
+    );
+    // The disconnect-fast-return is a 1 s upper bound (very
+    // generous — the actual return should be sub-100 ms). The
+    // important property is "well below the 5 s timeout budget"
+    // so a regression to the old `continue` semantics is caught
+    // unambiguously.
+    assert!(
+        elapsed < Duration::from_millis(1_000),
+        "drain_until must return immediately on channel disconnect, \
+         not burn the full 5 s timeout: elapsed {elapsed:?} \
+         (regression — recv_timeout's Disconnected variant is being \
+         treated like Timeout instead of returning None)"
     );
 }

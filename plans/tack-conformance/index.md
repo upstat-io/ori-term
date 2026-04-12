@@ -2,11 +2,33 @@
 reroute: true
 name: "Tack Conformance"
 full_name: "Tack Conformance: Automated Terminfo Capability Validation Suite"
-status: active
+status: resolved
 order: 1
 ---
 
 # Tack Conformance Index
+
+> **⚠ Superseded by [plans/spec-conformance/](../spec-conformance/00-overview.md).**
+>
+> Sections 01–08 of tack-conformance are **completed artifacts** committed to `main`
+> (each section file's frontmatter carries `status: complete`; `plans/tack-conformance/00-overview.md`'s
+> Quick Reference table and the per-section `**Status:**` labels in
+> `plans/tack-conformance/index.md`'s keyword clusters both reflect this). Section 09's
+> row and label literally still say `Not Started` / `not-started` in those surfaces
+> (02.1's scope fence forbids editing them), but its scope is absorbed per the next paragraph.
+> Section 09 (final verification + archival) is superseded by
+> [plans/spec-conformance/section-23-cross-stack-regression-sweep.md](../spec-conformance/section-23-cross-stack-regression-sweep.md),
+> which explicitly inherits the cross-platform sweep, flake gate, performance
+> invariants, and archival gate.
+>
+> Existing tack-conformance section files (`section-01-*.md` through
+> `section-09-*.md`) remain in place for citation stability — commit messages
+> and PRs that reference these paths (for example `tack-conformance/section-06`)
+> continue to resolve correctly. No `git mv` is run. No files are deleted.
+>
+> The canonical absorption policy lives in
+> [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](../spec-conformance/00-overview.md#tack-absorption-strategy-delivered-by-section-02).
+> This notice is intentionally a pointer, not a restatement.
 
 > **Maintenance Notice:** Update this index when adding/modifying sections.
 
@@ -103,7 +125,7 @@ cross-section consumer re-review gate for 05/06/07, Section 07 depends_on extend
 ---
 
 ### Section 05: Tack Scenarios: Test Menu
-**File:** `section-05-test-menu-scenarios.md` | **Status:** Not Started
+**File:** `section-05-test-menu-scenarios.md` | **Status:** Complete
 
 ```
 tack/test, modes, glitches, ACS, graphic rendition, color, cursor movement
@@ -113,42 +135,102 @@ bel, flash, civis, cvvis, cnorm, sgr
 colors, pairs, setf, setb, scp, op, ncv, bce
 clear, home, cr, nel, cub1, cup, vpa, hpa
 oriterm_core/tests/tack/, text snapshots, insta
+PhaseSpec, ScenarioRunner::run_phase, run_phase_at, phase_anchor
+BEGIN_TESTING_INVENTORY, BeginTestingKey, BeginTestingStatus
+tack_begin_testing_inventory discovery test, drift gate
+tack_version_supported, TACK_PINNED_MAJOR/MINOR, version gate, loud-skip diagnostic
+cap_coverage_matrix, parse_declared_caps, CapCoverageContribution
+section_05.rs, section_06.rs, section_08.rs, owner-partitioned exemptions (Pivot 5)
+expand_kf_caps, expand_modified_key_caps, stale-exemption negative pin
+tack_modes_phase_am/bce/bw/km/mir/msgr/xenl, unique screen_id per phase
+grid_has_token, grid_has_paren_token, grid_find_field (M3 fix consumers)
+mission criterion traceability table, cap-coverage contribution target
+05.5b cross-section sync (06/07/08 contract changes)
+unverified_menu_key, unverified_anchor runtime sentinels (Pivot 3)
+phase-capture timeout panic includes setup_anchor + trigger + step count
+Implementation Milestones M1 (foundation) / M2 (catalog) (Pivot 1)
+poll_until reuse mandate (algorithmic-DRY skeleton, runner/phase.rs)
+runner/mod.rs split into stable.rs + phase.rs (BLOAT prevention)
+parser/tokens.rs sibling-tests restructure (Broken Window fix)
 ```
 
 ---
 
 ### Section 06: Tack Scenarios: Tools Menu
-**File:** `section-06-tools-menu-scenarios.md` | **Status:** Not Started
+**File:** `section-06-tools-menu-scenarios.md` | **Status:** Complete
 
 ```
-tack/tools, ANSI status reports, SGR modes, character sets
-DA, DSR, primary device attributes, cursor position
-SGR 0-79, bold, dim, underline, reverse, blink
-G0, G1, GL, GR, character set banks, ACS
-ENQ/ACK, u8, u9, OSC 10, OSC 11, OSC queries
-scan_codes (stub), decompile_terminfo (stub)
-oriterm_core/tests/tack/, text snapshots
+tack/tools, ANSI status reports, SGR modes, character sets, ENQ/ACK
+tools menu empirical inventory: s/g/c/h/e/r/p/i/u/d/q/? (tack v1.08)
+DA1, DA2, DA3, DSR, DECRQM, status reports sub-submenu walker
+SGR 0-79 stable-screen 9-row grid, bold, dim, underline, reverse
+G0, G1, GL, GR, character set banks, DEC special graphics
+u6, u7, u8, u9, ENQ/ACK handshake, tack ENQ sequence + ACK response parse
+TOOLS_MENU_INVENTORY drift gate (parallel to BEGIN_TESTING_INVENTORY)
+STATUS_REPORTS_INVENTORY nested discovery (sub-submenu under s)
+ToolsMenuStatus::MenuMeta variant (q/?) classified upfront, no punts
+shared scenarios::menu_inventory::{assert_menu_drift, collect_menu_keys}
+PtyResponder in-place extension (no new OscResponder type)
+session/pty_responder/{mod, tests}.rs proactive split
+ColorRequest, ClipboardLoad, ClipboardStore event handling
+PtyResponder::take_osc_responses, take_clipboard_stores accessors
+PtySession::drain auto-writes OSC responses back via write_osc_responses_back
+direct-VTE cap xcheck: 23 non-tack-reachable caps (19 esc-seq + 4 bool)
+Smulx (CURLY_UNDERLINE), Setulc (underline_color), Sync (SYNC_UPDATE)
+BD, BE (BRACKETED_PASTE), Se, Ss (DECSCUSR), Cr, Cs, Ms (OSC)
+hs, dsl, fsl, tsl (OSC 2 / Event::Title), RGB, Tc (truecolor)
+XF, AX, XT (bool markers validated via parse_declared_caps)
+PS, PE (in-crate in oriterm_core/src/paste/mod.rs — already unit-tested, 06.5 adds cap-xcheck entry)
+kxIN, kxOUT (genuinely cross-crate in oriterm/src/app/event_loop_helpers/mod.rs:143 — Section 06 owns coverage with stubs)
+scenarios::{character_sets, sgr_modes, status_reports, enq_ack} short module names
+Section 07 const path pin: scenarios::character_sets::TACK_TOOLS_G0_DEC_GRAPHICS
+tack_cap_xcheck sibling tests in oriterm_core/src/term/handler
+echo tool (stub), reply tool (stub), hex output (stub)
+change debug level (stub), performance testing (Section 05 overlap)
+cap_coverage extension contract from Section 05.5
+covered_caps tools-menu extension: all 27 entries from section_06.exempt
+fresh-spawn per sub-test in status reports inventory discovery
+STATUS_REPORTS_SUB_SCENARIO_TABLE const-table dispatch (not match arms)
+tack_version_supported gate inherited via ScenarioRunner::available()
+Mission Criterion Traceability table (two-track approach, 4+23=27)
+BUG-11-3 production-path note: mux OSC routing out of scope for Section 06
+M1 (discovery + framework extensions) / M2 (catalog + direct-VTE xcheck)
+06.5.a RecordingListener helper promotion (structural prerequisite for 06.5)
+handler/test_helpers.rs pub(super) RecordingListener migration
 ```
 
 ---
 
 ### Section 07: GPU Golden Images
-**File:** `section-07-gpu-golden-images.md` | **Status:** Not Started
+**File:** `section-07-gpu-golden-images.md` | **Status:** Complete
 
 ```
 GPU, golden images, visual regression, render_to_pixels
-headless_env, compare_with_reference, PIXEL_TOLERANCE
+headless_env, compare_with_reference, PIXEL_TOLERANCE, MAX_MISMATCH_PERCENT
 tack color, tack SGR, tack character sets, tack modes
-FrameInput, frame_input, assert_golden
+FrameInput, frame_input_helper (07.0 extraction dedups vttest)
 oriterm/src/gpu/visual_regression/tack/
+oriterm/src/gpu/visual_regression/frame_input_helper.rs
 oriterm/tests/references/tack_*.png
 6 goldens: color x3 + graphic_rendition + character_sets + modes
+LiveSession::finish M5 cleanup contract
+LiveSession::golden_name SSOT (no rebuilt format strings)
+no run_phase_with_session_at — modes golden uses TACK_MODES_AM (os cap)
+tack_version_supported gate inherited via ScenarioRunner::available()
+consolidated skip gate: tack + tic + headless_env inside run_tack_scenario_golden
+cross-adapter raster drift out of scope — PIXEL_TOLERANCE absorbs AA only
+ORITERM_UPDATE_GOLDEN must be unset/failed in CI (07.5b in-source panic guard)
+in-source CI guard, meta_tests.rs regression test, #[ignore] for env-var isolation
+text_blink_tests.rs:100 third reader of ORITERM_UPDATE_GOLDEN — informs #[ignore] strategy
+07.5a determinism matrix: 10 reruns × 2 thread-modes × 2 profiles
+07.0 → 07.1 → 07.2/07.3/07.4/07.4b → 07.5a → 07.5b sequential ordering
+NO FinishOnDrop RAII guard — compare → finish → log order is canonical
 ```
 
 ---
 
 ### Section 08: Keyboard/Function Key Tests
-**File:** `section-08-keyboard-tests.md` | **Status:** Not Started
+**File:** `section-08-keyboard-tests.md` | **Status:** Complete
 
 ```
 keyboard, function keys, smkx, rmkx, key encoding
@@ -156,9 +238,18 @@ kf1-kf12 (unmodified), kf13-kf24 (shift), kf25-kf36 (ctrl)
 kf37-kf48 (ctrl+shift), kf49-kf60 (alt), kf61-kf63 (alt+shift)
 kcub1, kcud1, kcuf1, kcuu1 (cursor, app + normal mode)
 kbs, khome, kend, kpp, knp, kdch1, kich1 (editing)
-oriterm, key_encoding, KeyEncoder, in-crate sibling test
-infocmp_query, decode_terminfo_string, CapMapping
-oriterm/src/key_encoding/terminfo_xcheck.rs (preferred)
+kLFT, kRIT, kUP, kDN, kHOM, kEND, kIC, kDC, kNXT, kPRV (modified keys)
+modifier suffixes 3-7, kind, kri (Shift+Down, Shift+Up aliases)
+oriterm, key_encoding, KeyInput, TermMode, in-crate sibling test
+infocmp_dump, infocmp_query, decode_terminfo_string, CapMapping
+oriterm/src/key_encoding/terminfo_xcheck/ (directory module, preferred)
+editing_keys_normal_mode_emit_csi (Home/End normal mode parity)
+cap_coverage extension contract from Section 05.5
+08.6 cap-coverage sync: section_08.rs CONTRIBUTION update
+expand_kf_caps + expand_modified_key_caps SSOT helpers
+covered_caps keyboard extension: kf1-kf63 + cursor + editing + modified-key family
+kmous stays in exempt (mouse prefix, not key encoding)
+--test-threads=1/4 parallelism gate, 10-run determinism gate
 ```
 
 ---

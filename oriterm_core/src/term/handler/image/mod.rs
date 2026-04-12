@@ -10,10 +10,10 @@ mod sixel;
 
 use log::debug;
 
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::term::Term;
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Handle an APC sequence dispatched by the VTE parser.
     ///
     /// The first byte identifies the protocol: `G` = Kitty graphics.

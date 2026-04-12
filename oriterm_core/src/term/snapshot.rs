@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use crate::color::palette::Palette;
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::grid::CursorShape;
 use crate::image::ImageId;
 use crate::index::Column;
@@ -18,7 +18,7 @@ use super::renderable::{
     RenderablePlacement, TermDamage,
 };
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Extract a complete rendering snapshot.
     ///
     /// Convenience wrapper that allocates a fresh [`RenderableContent`] and

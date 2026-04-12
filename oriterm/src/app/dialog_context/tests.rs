@@ -14,7 +14,7 @@ use super::key_conversion::{winit_key_to_ui_key, winit_mods_to_ui};
 use super::needs_content_redraw;
 
 // ---------------------------------------------------------------------------
-// needs_content_redraw — regression for TPR-10-014
+// needs_content_redraw — regression for
 // ---------------------------------------------------------------------------
 
 #[test]

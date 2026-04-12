@@ -8,13 +8,13 @@
 //! enter alt screen (only editors, pagers, etc.), so this avoids wasting
 //! memory.
 
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::grid::Grid;
 use crate::image::ImageCache;
 
 use super::{Term, TermMode};
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Switch between primary and alternate screen (mode 1049).
     ///
     /// Saves/restores cursor, toggles `TermMode::ALT_SCREEN`, swaps keyboard

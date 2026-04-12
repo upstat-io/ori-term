@@ -6,12 +6,13 @@
 
 use vte::ansi::{NamedPrivateMode, PrivateMode};
 
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, UiEffect};
 use crate::term::{Term, TermMode};
 
 use super::helpers::named_private_mode_flag;
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Apply DECSET (set private mode).
     pub(super) fn apply_decset(&mut self, named: NamedPrivateMode) {
         match named {
@@ -23,28 +24,33 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::LineWrap => self.mode.insert(TermMode::LINE_WRAP),
             NamedPrivateMode::BlinkingCursor => {
                 self.mode.insert(TermMode::CURSOR_BLINKING);
-                self.event_listener.send_event(Event::CursorBlinkingChange);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::CursorBlinkChanged { enabled: true }));
             }
             NamedPrivateMode::ShowCursor => self.mode.insert(TermMode::SHOW_CURSOR),
             NamedPrivateMode::X10Mouse => {
                 self.mode.remove(TermMode::ANY_MOUSE);
                 self.mode.insert(TermMode::MOUSE_X10);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(TermMode::ANY_MOUSE);
                 self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportCellMouseMotion => {
                 self.mode.remove(TermMode::ANY_MOUSE);
                 self.mode.insert(TermMode::MOUSE_DRAG);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportAllMouseMotion => {
                 self.mode.remove(TermMode::ANY_MOUSE);
                 self.mode.insert(TermMode::MOUSE_MOTION);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportFocusInOut => self.mode.insert(TermMode::FOCUS_IN_OUT),
             NamedPrivateMode::Utf8Mouse => {
@@ -112,24 +118,29 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::LineWrap => self.mode.remove(TermMode::LINE_WRAP),
             NamedPrivateMode::BlinkingCursor => {
                 self.mode.remove(TermMode::CURSOR_BLINKING);
-                self.event_listener.send_event(Event::CursorBlinkingChange);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::CursorBlinkChanged { enabled: false }));
             }
             NamedPrivateMode::ShowCursor => self.mode.remove(TermMode::SHOW_CURSOR),
             NamedPrivateMode::X10Mouse => {
                 self.mode.remove(TermMode::MOUSE_X10);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportCellMouseMotion => {
                 self.mode.remove(TermMode::MOUSE_DRAG);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportAllMouseMotion => {
                 self.mode.remove(TermMode::MOUSE_MOTION);
-                self.event_listener.send_event(Event::MouseCursorDirty);
+                self.effect_sink
+                    .push(Effect::Ui(UiEffect::MouseCursorDirty));
             }
             NamedPrivateMode::ReportFocusInOut => self.mode.remove(TermMode::FOCUS_IN_OUT),
             NamedPrivateMode::Utf8Mouse => self.mode.remove(TermMode::MOUSE_UTF8),

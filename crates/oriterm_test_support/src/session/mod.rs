@@ -12,61 +12,80 @@
 //! helpers (`drain`, `drain_blocking`, `wait`, `wait_for`) live in the
 //! [`sync`] submodule together with the private `poll_until` SSOT
 //! helper. The child-exit and quit helpers (`wait_for_child_exit`) live
-//! in the [`teardown`] submodule. Each leaf module owns its own sibling
-//! `tests.rs` per `.claude/rules/test-organization.md`.
+//! in the [`teardown`] submodule. The test-side [`EventListener`]
+//! ([`PtyResponder`]) lives in the [`pty_responder`] submodule so its
+//! dispatch + sibling tests can grow without pushing `session/mod.rs`
+//! over the 500-line hygiene limit. Each leaf module owns its own
+//! sibling `tests.rs` per `.claude/rules/test-organization.md`.
 
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+#[cfg(windows)]
+use std::sync::Mutex;
 use std::thread;
 
-use oriterm_core::event::{Event, EventListener};
+use oriterm_core::effect::LegacyEventSink;
+use oriterm_core::event::ClipboardType;
 use oriterm_core::{Term, Theme};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::terminfo::TerminfoEnv;
 
+mod pty_responder;
 mod sync;
 mod teardown;
+mod tools;
+mod version_gate;
 
-/// Captures `PtyWrite` responses so the test driver can write them back.
+// Re-export [`PtyResponder`] so the historical import path
+// `crate::session::PtyResponder` keeps working after the 06.0.c
+// proactive split moved the type into its own sibling module.
+pub use pty_responder::PtyResponder;
+// Re-export the runtime tool-availability probes and the tack
+// version-gate API so external callers continue to see
+// `crate::session::tack_available()`, `tack_version_supported()`,
+// etc. Both leaf modules were extracted from `session/mod.rs` in
+// the M1 TPR cleanup to keep `session/mod.rs` under
+// the 500-line file hygiene limit.
+pub use tools::{
+    infocmp_available, tack_available, tic_available, tool_available, vttest_available,
+};
+pub use version_gate::{
+    TACK_PINNED_MAJOR, TACK_PINNED_MINOR, check_tack_version_with_emit, parse_tack_version,
+    tack_runner_available_combine, tack_version_supported, unsupported_tack_diagnostic,
+};
+
+/// Process-wide mutex used to serialize Windows `ConPTY` sessions
+/// for the entire `PtySession` lifetime.
 ///
-/// Used to complete DA/DSR query/response handshakes inside `vttest`,
-/// `tack`, and similar protocol-driven tools. The struct is `pub` only
-/// because it appears in `Term<PtyResponder>` — the type parameter that
-/// `PtySession::term()` exposes through its return type. Both the
-/// constructor and the response-buffer drain are `pub(crate)` so that
-/// external callers cannot reach `session.term().event_listener()
-/// .take_responses()` and steal the DA/DSR reply queue that
-/// `PtySession::drain()` / `drain_blocking()` exclusively own.
-pub struct PtyResponder {
-    responses: Arc<Mutex<Vec<String>>>,
-}
-
-impl PtyResponder {
-    /// Construct an empty responder with no buffered responses.
-    pub(crate) fn new() -> Self {
-        Self {
-            responses: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    /// Drain all buffered `PtyWrite` payloads, returning them in arrival
-    /// order. The internal buffer is reset to empty.
-    pub(crate) fn take_responses(&self) -> Vec<String> {
-        std::mem::take(&mut *self.responses.lock().expect("PtyResponder mutex poisoned"))
-    }
-}
-
-impl EventListener for PtyResponder {
-    fn send_event(&self, event: Event) {
-        if let Event::PtyWrite(data) = event {
-            self.responses
-                .lock()
-                .expect("PtyResponder mutex poisoned")
-                .push(data);
-        }
-    }
-}
+/// **Windows-only contention point.** Empirical testing on
+/// Windows 11 shows that running more than ~4 simultaneous
+/// active `PtySession`s causes per-test wall-clock to balloon
+/// by an order of magnitude (a <1 s test takes 50+ s when run
+/// alongside 7 other `ConPTY` tests). The contention surfaces
+/// across the entire `ConPTY` lifetime — pseudoconsole
+/// allocation, child-process console attachment, PTY I/O, and
+/// teardown — not just at the spawn step. Serializing only
+/// `openpty + spawn_command` does not eliminate the slowdown.
+///
+/// Holding this mutex from `PtySession::spawn` until
+/// `PtySession::drop` serializes the entire `ConPTY` lifetime on
+/// Windows. Non-PTY tests (parser, terminfo, parallel-safe
+/// helpers) still run in parallel — only `PtySession`-using
+/// tests are forced into serial execution. Total Windows test
+/// runtime stays bounded by the sum of individual test costs,
+/// rather than collapsing into the contention quagmire.
+///
+/// Linux and macOS PTYs do not exhibit this contention —
+/// `openpty` is a thin libc call that does not contend across
+/// threads — so the mutex is `cfg(windows)`-only.
+///
+/// **Poison recovery.** Tests that intentionally `catch_unwind`
+/// inside the session body would poison this mutex if the
+/// guard's drop ran during unwind. We recover from poisoning
+/// via `PoisonError::into_inner` so a panicked test does not
+/// permanently break the next test's spawn.
+#[cfg(windows)]
+static CONPTY_LIFETIME_LOCK: Mutex<()> = Mutex::new(());
 
 /// PTY-driven test session: child process, byte channel, writer, Term, VTE.
 ///
@@ -78,21 +97,21 @@ impl EventListener for PtyResponder {
 /// **Field declaration order is load-bearing.** Rust drops struct fields
 /// in declaration order after [`Drop::drop`] returns. `child` MUST be
 /// declared before `_master` so the child handle drops first and the
-/// `PTY` master drops last. On Windows `ConPTY` this enforces Microsoft's
+/// `PTY` master drops last. On Windows ``ConPTY`` this enforces Microsoft's
 /// `ClosePseudoConsole` contract: the call must follow child exit, not
 /// precede it. See `Self::_master` for the full rationale.
 pub struct PtySession {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     writer: Box<dyn Write + Send>,
-    term: Term<PtyResponder>,
+    term: Term<LegacyEventSink<PtyResponder>>,
     proc: vte::ansi::Processor,
     cols: u16,
     rows: u16,
     child: Box<dyn Child + Send + Sync>,
-    /// Held to keep the underlying `PTY` master (Windows `ConPTY` `HPCON`
+    /// Held to keep the underlying `PTY` master (Windows ``ConPTY`` `HPCON`
     /// or Unix master fd) alive for the entire child process lifetime.
     ///
-    /// **Why this exists (Windows `ConPTY` contract).** Microsoft's
+    /// **Why this exists (Windows ``ConPTY`` contract).** Microsoft's
     /// [`ClosePseudoConsole` documentation][docs] states *"you should
     /// never call `ClosePseudoConsole` until after the client has exited
     /// or the call may hang."* Dropping `Box<dyn MasterPty>` triggers
@@ -131,6 +150,19 @@ pub struct PtySession {
     ///
     /// [docs]: https://learn.microsoft.com/en-us/windows/console/closepseudoconsole
     _master: Box<dyn MasterPty + Send>,
+    /// Process-wide `ConPTY` serialization guard. See
+    /// [`CONPTY_LIFETIME_LOCK`] for the rationale. Held for the
+    /// entire `PtySession` lifetime so concurrent
+    /// `PtySession`-using tests are forced into serial
+    /// execution on Windows.
+    ///
+    /// Field declared LAST so its drop runs after `_master`'s
+    /// drop — the lock is released only after
+    /// `ClosePseudoConsole` has fully completed, so the next
+    /// test's `spawn` (which acquires the lock) sees a clean
+    /// console subsystem state.
+    #[cfg(windows)]
+    _conpty_guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl PtySession {
@@ -142,6 +174,23 @@ impl PtySession {
     /// function.
     #[must_use]
     pub fn spawn(cmd: CommandBuilder, cols: u16, rows: u16) -> Self {
+        // Serialize `ConPTY` sessions on Windows for the entire
+        // `PtySession` lifetime — see [`CONPTY_LIFETIME_LOCK`] for
+        // the rationale. The guard is held in the `_conpty_guard`
+        // field below and dropped only when `PtySession` drops, so
+        // concurrent test threads block here until the previous
+        // session has fully torn down (including `ClosePseudoConsole`
+        // running through `_master`'s drop).
+        //
+        // Poison recovery: a panicked test inside the session body
+        // would poison the mutex on guard drop. We recover via
+        // `PoisonError::into_inner` so the next test's spawn proceeds
+        // normally instead of panicking with `PoisonError`.
+        #[cfg(windows)]
+        let conpty_guard = CONPTY_LIFETIME_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -177,7 +226,13 @@ impl PtySession {
         });
 
         let listener = PtyResponder::new();
-        let term = Term::new(rows as usize, cols as usize, 0, Theme::default(), listener);
+        let term = Term::new(
+            rows as usize,
+            cols as usize,
+            0,
+            Theme::default(),
+            LegacyEventSink::new(listener),
+        );
         let proc = vte::ansi::Processor::new();
 
         Self {
@@ -195,6 +250,8 @@ impl PtySession {
             // state on Windows. See the `_master` field doc for the
             // full rationale.
             _master: pair.master,
+            #[cfg(windows)]
+            _conpty_guard: conpty_guard,
         }
     }
 
@@ -251,8 +308,21 @@ impl PtySession {
     /// needs to mutate `Term` outside of byte-feeding, add a narrow
     /// operation method on `PtySession` instead.
     #[must_use]
-    pub fn term(&self) -> &Term<PtyResponder> {
+    pub fn term(&self) -> &Term<LegacyEventSink<PtyResponder>> {
         &self.term
+    }
+
+    /// Drain every `ClipboardStore` event captured since the last call.
+    ///
+    /// OSC 52 store is a one-way write from the terminal client to the
+    /// host clipboard — there is no PTY response to flush back, so
+    /// scenarios inspect this side channel directly to verify that a
+    /// copy sequence reached `Term` with the expected clipboard target
+    /// and decoded payload. Section 06.5 direct-VTE cap xcheck tests
+    /// consume this for OSC 52 coverage.
+    #[must_use]
+    pub fn take_clipboard_stores(&self) -> Vec<(ClipboardType, String)> {
+        self.term.effect_sink().listener().take_clipboard_stores()
     }
 
     /// Number of columns the PTY was opened with.
@@ -362,7 +432,7 @@ impl Drop for PtySession {
         //
         // **Ordering contract.** This synchronous reap MUST happen
         // before `_master` drops below (declaration-order field drop
-        // runs `child` before `_master`). On Windows ConPTY this
+        // runs `child` before `_master`). On Windows `ConPTY` this
         // ordering is load-bearing: `ClosePseudoConsole` is called
         // inside `_master`'s drop chain, and Microsoft's documented
         // contract is that the call must follow child exit, not
@@ -372,62 +442,6 @@ impl Drop for PtySession {
         // hang inside `WaitForSingleObject`.
         let _ = self.child.wait();
     }
-}
-
-/// Check if `name` is installed and runnable on PATH.
-///
-/// Used by integration tests to skip cleanly when a required tool
-/// (`vttest`, `tack`, `tic`, `reseq`, ...) is not available. The
-/// `--version` argument is the convention every well-behaved CLI
-/// supports; some (`vttest`) prefer `--help` — pass that explicitly.
-#[must_use]
-pub fn tool_available(name: &str, version_arg: &str) -> bool {
-    std::process::Command::new(name)
-        .arg(version_arg)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok()
-}
-
-/// Convenience: vttest specifically uses `--help` (it has no `--version`).
-#[must_use]
-pub fn vttest_available() -> bool {
-    tool_available("vttest", "--help")
-}
-
-/// Check if `tic` (terminfo compiler) is installed.
-///
-/// Probe is `tic -V`, which is the version flag every ncurses build
-/// (BSD and GNU) supports. A too-old `tic` (ncurses < 6.0) may exist
-/// and still fail to compile modern extension caps; in that case
-/// `TerminfoEnv::compile()` panics with the tic stderr output, which
-/// IS the failure contract — the user sees the message and upgrades
-/// their ncurses package.
-#[must_use]
-pub fn tic_available() -> bool {
-    tool_available("tic", "-V")
-}
-
-/// Check if `tack` (terminfo action checker, ncurses) is installed.
-///
-/// Tack ships with ncurses on Linux/macOS, not on native Windows.
-/// Use this gate at the top of every test that spawns tack so the
-/// suite skips cleanly on platforms missing the tool.
-#[must_use]
-pub fn tack_available() -> bool {
-    tool_available("tack", "-V")
-}
-
-/// Check if `infocmp` (terminfo decompiler / inspector) is installed.
-///
-/// Probe is `infocmp -V`. Used by `terminfo` round-trip tests to
-/// gate cleanly when `infocmp` is missing. `TerminfoEnv::compile()`
-/// itself never depends on `infocmp` — that gate is enforced by
-/// keeping the `compile()` constructor pure-`tic`.
-#[must_use]
-pub fn infocmp_available() -> bool {
-    tool_available("infocmp", "-V")
 }
 
 #[cfg(test)]

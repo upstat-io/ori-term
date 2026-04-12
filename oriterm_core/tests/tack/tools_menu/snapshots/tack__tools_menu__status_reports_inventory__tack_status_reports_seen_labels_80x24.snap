@@ -1,0 +1,12 @@
+---
+source: oriterm_core/tests/tack/tools_menu/status_reports_inventory.rs
+expression: "&labels_manifest"
+---
+Cursor position
+Data destination
+Primary device attributes
+Secondary device attributes
+Select modifier key reporting
+Terminal status
+Tertiary device attributes
+Window report

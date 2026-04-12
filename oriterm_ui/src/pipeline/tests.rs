@@ -135,7 +135,7 @@ fn lifecycle_before_widget_added_panics() {
     );
 }
 
-/// Regression test for TPR-04-003: register a widget without draining
+/// Regression test for register a widget without draining
 /// WidgetAdded, then accumulate a HotChanged event. On the next
 /// "render frame" (drain_events → prepare_widget_tree), both events
 /// are delivered in order and the WidgetAdded-first assertion passes.
@@ -1229,7 +1229,7 @@ fn selective_prepaint_identical_to_full_for_dirty_widgets() {
 }
 
 /// Animation-driven widgets continue to update even when no interaction-driven
-/// dirtiness exists. This is a regression test for TPR-03-010: the
+/// dirtiness exists. This is a regression test for the
 /// selective walk must still reach the animating widget on subsequent frames.
 ///
 /// The harness clears invalidation after each `render()` call,
@@ -1262,7 +1262,7 @@ fn animation_driven_widget_updates_without_interaction_dirtiness() {
     // Advance more time — without any new interaction events.
     // This is the critical test: invalidation was cleared after the first
     // advance_time, so the animation must survive purely through the
-    // tick_animation() full-walk path (TPR-03-010 fix).
+    // tick_animation() full-walk path (fix).
     h.advance_time(Duration::from_millis(16));
     let scene2 = h.render();
     let fills2: Vec<_> = scene2.quads().iter().filter_map(|q| q.style.fill).collect();
@@ -1296,7 +1296,7 @@ fn animation_driven_widget_updates_without_interaction_dirtiness() {
 /// animating on frame N, frame N+1 should also visit the widget, and so on
 /// until the animation completes.
 ///
-/// Regression test for TPR-03-010: verifies that the full walk during
+/// Regression test for verifies that the full walk during
 /// `tick_animation()` allows multi-frame animations to run to completion.
 #[test]
 fn animation_dirty_marking_persists_across_frames() {
@@ -1337,7 +1337,7 @@ fn animation_dirty_marking_persists_across_frames() {
     );
 }
 
-/// Nested-widget animation regression test (TPR-04-001): a button inside a
+/// Nested-widget animation regression test: a button inside a
 /// container should animate correctly when the harness clears invalidation
 /// after `render()` rather than after `advance_time()`.
 ///

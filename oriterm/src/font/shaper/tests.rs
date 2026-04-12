@@ -1164,7 +1164,7 @@ fn ui_text_mixed_subpixel_phases() {
     );
 }
 
-// ── Per-Face Synthetic Bold (TPR-02-010) ──
+// ── Per-Face Synthetic Bold ──
 
 #[test]
 fn per_face_synthetic_adds_bold_for_face_without_wght() {
@@ -1214,7 +1214,7 @@ fn per_face_synthetic_preserves_existing_bold() {
 
 #[test]
 fn per_face_synthetic_skips_bold_primary_slot() {
-    // TPR-02-011: When a face is already the Bold primary slot (FaceIdx 1),
+    // When a face is already the Bold primary slot (FaceIdx 1),
     // per_face_synthetic must NOT add synthetic bold — that would double-embolden.
     let fc = test_collection();
 
@@ -1747,7 +1747,7 @@ fn zero_length_text_returns_zero_width_with_valid_size_q6() {
     );
 }
 
-// Weight-aware shaping regression (TPR-02-005)
+// Weight-aware shaping regression
 
 /// Verify that `create_shaping_faces_for_weight` applies the requested weight
 /// to variation axes, producing faces with the correct `wght` coordinates.
@@ -2141,7 +2141,7 @@ fn line_height_with_letter_spacing() {
     assert!(mws.width > mwo.width, "width should increase with spacing");
 }
 
-// ── Ligature shaping (BUG-04-003 diagnostic) ──
+// ── Ligature shaping (diagnostic) ──
 
 /// Build a FontCollection from embedded JetBrains Mono (deterministic, no system deps).
 fn embedded_collection() -> FontCollection {

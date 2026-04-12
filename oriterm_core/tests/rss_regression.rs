@@ -9,7 +9,8 @@
 
 #![cfg(any(target_os = "linux", target_os = "macos", windows))]
 
-use oriterm_core::{Term, Theme, VoidListener};
+use oriterm_core::effect::VoidEffectSink;
+use oriterm_core::{Term, Theme};
 
 /// Read the current process RSS in bytes.
 ///
@@ -70,8 +71,8 @@ fn platform_rss() -> Option<usize> {
     }
 }
 
-fn make_term(scrollback: usize) -> Term<VoidListener> {
-    Term::new(24, 80, scrollback, Theme::default(), VoidListener)
+fn make_term(scrollback: usize) -> Term<VoidEffectSink> {
+    Term::new(24, 80, scrollback, Theme::default(), VoidEffectSink)
 }
 
 const MB: usize = 1_048_576;

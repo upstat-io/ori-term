@@ -533,7 +533,7 @@ fn writer_thread_sets_stall_flag_during_write() {
     handle.join().expect("writer thread panicked");
 }
 
-/// **BUG-11-1 reproduction**: when the writer is stalled on a full pipe,
+/// **Reproduction**: when the writer is stalled on a full pipe,
 /// Ctrl+C (0x03) queued after the stall is stuck **permanently**. Nobody
 /// drains the pipe — the child (`yes`) never reads stdin. The writer
 /// thread's `write_all()` blocks forever, and every subsequent message
@@ -548,7 +548,7 @@ fn writer_thread_sets_stall_flag_during_write() {
 /// the deadlock, then drop the reader (simulating SIGINT killing the
 /// child, which closes the pipe and unblocks the write).
 #[test]
-fn bug_11_1_ctrl_c_stuck_behind_stalled_write() {
+fn ctrl_c_stuck_behind_stalled_write() {
     use std::thread;
     use std::time::Duration;
 
@@ -611,7 +611,7 @@ fn bug_11_1_ctrl_c_stuck_behind_stalled_write() {
 /// Same setup as the reproduction test, but verify the **full round-trip**:
 /// stall → detect → unblock → Ctrl+C byte delivered.
 #[test]
-fn bug_11_1_ctrl_c_delivered_after_stall_cleared() {
+fn ctrl_c_delivered_after_stall_cleared() {
     use std::io::Read as _;
     use std::thread;
     use std::time::Duration;

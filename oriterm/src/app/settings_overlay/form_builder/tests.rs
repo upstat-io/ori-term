@@ -58,7 +58,7 @@ fn scheme_card_ids_captured() {
     );
 }
 
-/// Regression test for TPR-11-001: sidebar_id must be captured so
+/// Regression test for sidebar_id must be captured so
 /// `dispatch_dialog_settings_action` can gate `active_page` updates.
 #[test]
 fn sidebar_id_captured() {
@@ -77,7 +77,7 @@ fn sidebar_id_captured() {
     );
 }
 
-/// Regression test for TPR-10-016: update info wiring through the builder.
+/// Regression test for update info wiring through the builder.
 #[test]
 fn dialog_builds_with_update_info() {
     let config = Config::default();

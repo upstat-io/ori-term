@@ -1,0 +1,6 @@
+---
+source: oriterm_core/tests/tack/test_menu/cursor_movement.rs
+expression: outcome.grid_text
+---
+This line should start in the home position.                                                                            
+The rest of the screen should be clear.  (clear) Done

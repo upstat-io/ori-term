@@ -112,7 +112,7 @@ pub struct KeyInput<'a> {
 /// terminal mode, and the encoder exists in `win32.rs`, but dispatch is not
 /// yet wired here. Activation is tracked in roadmap Section 08b (Input
 /// Event Normalization). The mode tracking is needed independently for
-/// `ConPTY` Ctrl+C delivery (BUG-11-1).
+/// `ConPTY` Ctrl+C delivery.
 pub fn encode_key(input: &KeyInput<'_>) -> Vec<u8> {
     // Kitty keyboard protocol takes priority when any flag is set.
     if input.mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL) {
@@ -224,5 +224,7 @@ fn keycode_to_us_char(code: KeyCode) -> Option<u32> {
     })
 }
 
+#[cfg(test)]
+mod terminfo_xcheck;
 #[cfg(test)]
 mod tests;

@@ -455,7 +455,7 @@ impl ApplicationHandler<TermEvent> for App {
         // gate prevents event loop starvation during sustained PTY output
         // flooding where about_to_wait() is called continuously — without
         // it, blink_animating=true causes uncapped rendering that starves
-        // winit's keyboard dispatch (BUG-11-1).
+        // winit's keyboard dispatch.
         if any_dirty && (budget_elapsed || urgent_redraw) {
             self.render_dirty_windows();
         }

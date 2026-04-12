@@ -3,84 +3,19 @@
 //! These free functions adapt a shared [`PtySession`] (from
 //! `oriterm_test_support`) into a [`FrameInput`] for the GPU pipeline,
 //! then run the headless render and compare the result against a
-//! reference PNG. Pre-deduplication these were methods on a local
-//! `VtTestSession` struct that owned its own PTY plumbing — see
-//! `plans/tack-conformance/section-01-shared-pty-session.md`.
+//! reference PNG. The `PtySession → FrameInput` builder lives in the
+//! shared [`frame_input_helper`](super::frame_input_helper) module
+//! so both vttest and tack golden tests consume the same code path.
 
-use oriterm_core::{Rgb, TermMode};
 use oriterm_test_support::PtySession;
 
 use crate::font::CellMetrics;
-use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
+use crate::gpu::frame_input::FrameInput;
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
+use crate::gpu::visual_regression::frame_input_helper::frame_input;
 use crate::gpu::visual_regression::{compare_with_reference, render_to_pixels};
 use crate::gpu::window_renderer::WindowRenderer;
-
-/// Build a [`FrameInput`] from the current `PtySession` grid state.
-pub(super) fn frame_input(session: &PtySession, cell: CellMetrics) -> FrameInput {
-    let cols = session.cols() as usize;
-    let rows = session.rows() as usize;
-    let w = (cell.width * cols as f32).ceil() as u32;
-    let h = (cell.height * rows as f32).ceil() as u32;
-
-    let content = session.term().renderable_content();
-
-    let fg = Rgb {
-        r: 211,
-        g: 215,
-        b: 207,
-    };
-    // Palette bg must differ from the cell bg so the prepare phase emits
-    // bg quads. Cells have bg=(0,0,0) from the terminal, so use a slightly
-    // different palette bg. The renderer clears to palette bg, then draws
-    // cell bg quads on top, then glyphs.
-    let palette_bg = Rgb { r: 1, g: 1, b: 1 };
-
-    let reverse_video = content.mode.contains(TermMode::REVERSE_VIDEO);
-
-    // When DECSCNM is active, cell colors are already resolved against the
-    // swapped palette in `renderable_content_into()`. The FramePalette
-    // fg/bg must also be swapped so the clear color (screen background)
-    // matches the swapped default background.
-    let (frame_fg, frame_bg) = if reverse_video {
-        (palette_bg, fg)
-    } else {
-        (fg, palette_bg)
-    };
-    let palette = FramePalette {
-        background: frame_bg,
-        foreground: frame_fg,
-        cursor_color: Rgb {
-            r: 255,
-            g: 255,
-            b: 255,
-        },
-        opacity: 1.0,
-        selection_fg: None,
-        selection_bg: None,
-    };
-
-    FrameInput {
-        content,
-        viewport: ViewportSize::new(w, h),
-        cell_size: cell,
-        content_cols: cols,
-        content_rows: rows,
-        palette,
-        selection: None,
-        search: None,
-        hovered_cell: None,
-        hovered_url_segments: Vec::new(),
-        mark_cursor: None,
-        window_focused: true,
-        reverse_video,
-        fg_dim: 1.0,
-        text_blink_opacity: 1.0,
-        subpixel_positioning: true,
-        prompt_marker_rows: Vec::new(),
-    }
-}
 
 /// Build a [`FrameInput`] with a custom `text_blink_opacity` override.
 pub(super) fn frame_input_with_blink(

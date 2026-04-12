@@ -37,61 +37,18 @@ No "tracked for later" (without an artifact), no "known issue" (without filing),
 
 ---
 
-## Coding Standards
+## Coding Standards & Testing
 
-**Extracted from**: Alacritty, WezTerm, Ghostty, Ptyxis, Ratatui, Crossterm, Bubbletea, Lipgloss, Termenv — the patterns every serious terminal project agrees on.
+Canonical homes for project conventions (read these before writing code):
 
-**Error Handling**: No `unwrap()` in library code — return `Result` or provide a default. No `panic!` on user-recoverable errors. Use `std::io::Result<T>` for I/O operations. Custom `Error` enum with `From` impls for domain-specific errors. Error chains via `.context()` or `source()`.
+- **`.claude/rules/code-hygiene.md`** — file organization (500-line limit, submodule discipline, single-responsibility, banner policy), error handling, `unsafe_code = "deny"`, clippy configuration, formatting, public API discipline, function size.
+- **`.claude/rules/test-organization.md`** — sibling `tests.rs` pattern, inline-test-module ban, import style.
+- **`.claude/rules/tests.md`** — TDD for bugs, matrix testing, interaction testing, cross-platform verification, performance invariants, flaky tests are bugs, mandatory 150s test timeout.
+- **`.claude/rules/impl-hygiene.md`** — SSOT / No Side Logic / canonical homes / finding categories (LEAK / DRIFT / GAP / WASTE / EXPOSURE / BLOAT / NOTE), phase boundaries, algorithmic DRY, test-function naming.
+- **`.claude/rules/crate-boundaries.md`** — per-crate ownership and allowed dependency direction.
+- **Per-crate rules** — `.claude/rules/oriterm_core.md`, `oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`. Each file's `paths:` glob scopes it to the owning crate's source tree.
 
-**Unsafe**: `unsafe_code = "deny"` in Cargo.toml. Zero unsafe in library code (Ratatui forbids it entirely). Only justified platform FFI in clearly marked modules.
-
-**Linting**: Clippy warnings are errors (`all = deny`). Pedantic + nursery enabled as warnings. No `#[allow(clippy)]` without written justification. `enum_glob_use = deny`, `if_not_else = deny`.
-
-**Formatting**: `imports_granularity = "Module"`. Group imports: std, external, crate. Comments wrapped at 100 chars. Format code in doc comments.
-
-**Module Organization**: Separate terminal logic from GUI (Alacritty pattern: pure terminal lib vs. rendering binary). One primary type per module file. Re-export key types at parent `mod.rs`. Two-file pattern: `style.rs` + `style/` directory for sub-modules. Platform-specific code behind `#[cfg()]` in dedicated files. **Source files (excluding `tests.rs`) must not exceed 500 lines** — when writing new code, proactively split into submodules before hitting the limit rather than writing a large file and splitting later.
-
-**Public API**: Keep surface small — expose primitives, not internals. `#[must_use]` on builder methods. `impl Into<T>` and `impl AsRef<str>` for ergonomic APIs. Document every public item with `///`. First line: summary. Second: blank. Then details.
-
-**Functions**: < 50 lines (target < 30). No 20+ arm match blocks — extract helpers at 3+ similar arms. No boolean flag parameters (split function or use enum). > 3 params → config/options struct.
-
-**Memory**: Newtypes for IDs (`TabId(u64)`, not bare `u64`). `Arc` only when shared ownership is required. No `Arc` cloning in hot paths. Intern/cache repeated strings. `#[cold]` on error-path factory functions.
-
-**Performance**: O(n^2) → O(n) or O(n log n). Hash lookups not linear scans. No allocation in hot loops. Iterators over indexing. Buffer output, flush atomically — never write char-by-char. Damage tracking to minimize GPU work.
-
-**Testing**: Buffer/TestBackend approach for rendering tests (from Ratatui). Test Unicode width with CJK, emoji, combining marks, ZWJ sequences. Test every env var combination for color detection. Platform matrix in CI. Visual regression tests where applicable. Verify behavior not implementation.
-
-**Style**: No dead/commented code, no banners. `//!`/`///` doc comments. Full sentences with periods in comments. No `println!` debugging — use `log` macros.
-
----
-
-## Terminal Emulator Rules
-
-Non-negotiable. Every one comes from a real bug observed across the reference repos.
-
-**Color Detection Priority** (every project agrees on this order):
-```
-NO_COLOR set (any value)          → disabled (highest priority)
-CLICOLOR_FORCE != "0"             → force color even if not TTY
-CLICOLOR == "0"                   → disabled
-COLORTERM=truecolor|24bit         → TrueColor
-COLORTERM/TERM contains 256color  → ANSI256
-TERM set + not "dumb"             → ANSI (16 color)
-TERM=dumb or not a TTY            → None
-```
-Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → stripped.
-
-**Width = Unicode, not `len()`**: Never use `str.len()` or `chars().count()` for display width. Use `unicode-width` crate. CJK = width 2. Combining marks = width 0. Strip ANSI before measuring. Wrap and truncate by display width, not bytes. Ellipsis is `…` (U+2026, width 1), not `...`.
-
-**Buffer Output**: Never write char-by-char. Buffer the full frame, flush once. Synchronized output (Mode 2026). Double-buffer and diff (only write changed cells). This prevents flicker.
-
-**RAII Cleanup**: Raw mode via Drop guards. Panic hook restores terminal state before printing. SIGINT/SIGTERM restore. Alternate screen: enter it → must leave it. No leaked terminal state on any exit path.
-
-**Resize**: SIGWINCH on Unix. Re-query size after signal. Never cache stale terminal size. Fallback: 80x24. All layout relative to current terminal width — never hardcode.
-
-**Piped Output**: `!stdout().is_terminal()` → no colors (unless CLICOLOR_FORCE), no cursor manipulation, no raw mode, plain text only. Check the actual output fd, not stdin.
-
-**Dumb Terminals**: `TERM=dumb` or no TERM → no escape sequences, no cursor movement, no colors. Degrade gracefully, never crash.
+**The coding-standards rules drawn from Alacritty, WezTerm, Ghostty, Ptyxis, Ratatui, Crossterm, Bubbletea, Lipgloss, Termenv live in `code-hygiene.md` — this file no longer restates them.**
 
 ---
 
@@ -105,58 +62,32 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 ---
 
-## Key Paths
+## Workspace Layout
 
-**oriterm (GUI binary — thin shell):** `oriterm/src/app/` — App struct, winit event loop, GPU init, input dispatch — thin shell delegating to WindowRoot | `oriterm/src/session/` — GUI session model (tabs, windows, layouts) | `oriterm/src/session/split_tree/` — SplitTree pane tiling | `oriterm/src/session/floating/` — FloatingLayer pane overlay | `oriterm/src/session/compute/` — Layout computation (pixel-space) | `oriterm/src/session/nav/` — Directional pane navigation
+The workspace has 5 primary member crates plus `crates/oriterm_test_support` (test helpers) and three vendored dependency patches (`crates/vte`, `crates/portable-pty`, `crates/wgpu-hal`). Per-crate ownership and the allowed dependency direction live in `.claude/rules/crate-boundaries.md` and in the per-crate rules files under `.claude/rules/oriterm*.md`.
 
-**oriterm_ui (UI framework):** `oriterm_ui/src/widgets/` — Widget trait + all widget implementations | `oriterm_ui/src/window_root/` — WindowRoot (per-window UI composition unit) | `oriterm_ui/src/interaction/` — Pure interaction utilities (resize geometry, cursor hiding, mark mode motion) | `oriterm_ui/src/pipeline/` — Pipeline orchestration (layout → prepaint → paint → dispatch) | `oriterm_ui/src/testing/` — WidgetTestHarness (headless testing)
+- `oriterm_core` — terminal emulation library (grid, VTE, cell, palette, selection, search). Standalone.
+- `oriterm_ui` — UI framework (widgets, WindowRoot, interaction, pipeline, animation, test harness). Depends on `oriterm_core` only.
+- `oriterm_mux` — pane server (PTY I/O, pane lifecycle, mux backend, snapshot double-buffer). Depends on `oriterm_core` + `oriterm_ipc`.
+- `oriterm_ipc` — platform IPC transport (Unix sockets, Windows named pipes). Standalone.
+- `oriterm` — application shell (winit event loop, GPU, font pipeline, session model, session/split-tree/floating/nav). Consumes all of the above.
 
-**oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (IO thread handle, lock-free atomics) | `oriterm_mux/src/pane/io_thread/` — PaneIoThread (owns Term exclusively, VTE parsing, snapshot production, command processing) | `oriterm_mux/src/pane/io_thread/snapshot/` — SnapshotDoubleBuffer (lock-free snapshot transfer IO→main) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
+**Litmus test:** Can this code be tested in a `#[test]` without a GPU, display server, or terminal? If yes → `oriterm_ui`. If no → `oriterm`. See `.claude/rules/crate-boundaries.md` for the full litmus test and per-crate ownership table.
 
-**oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex) | `oriterm_core/tests/teseq/` — Teseq scenario-based escape sequence tests (176 tests across 10 protocol families)
+To find the authoritative path for a type or module, use `cargo metadata` or `cargo test -p <crate>` rather than a hardcoded path table here — paths drift, `cargo metadata` does not.
 
-**oriterm_gpu (rendering):** `oriterm_gpu/src/renderer.rs` — GPU rendering (wgpu, draw_frame) | `oriterm_gpu/src/atlas.rs` — Glyph atlas | `oriterm_gpu/src/pipeline.rs` — WGSL shader pipelines
+## Reference Repos
 
-## Crate Boundaries
+The reference implementations this project compares itself against live at `~/projects/reference_repos/` on the developer machine. They are **not a dependency** — they are a precondition for design decisions, and missing them should produce a clear error (not a silent fallback).
 
-**`oriterm_core`** — Terminal emulation library (grid, VTE, selection, search). Standalone, no workspace deps.
-**`oriterm_ui`** — UI framework (widgets, WindowRoot, interaction, pipeline, animation, testing). Depends on `oriterm_core` only.
-**`oriterm_mux`** — Pane server (PTY I/O, pane lifecycle, mux backend). Each pane has a dedicated Terminal IO thread that owns `Term` exclusively — VTE parsing, reflow, and snapshot production happen on the IO thread. The main thread reads lock-free snapshots via `SnapshotDoubleBuffer`. Depends on `oriterm_core` + `oriterm_ipc`.
-**`oriterm_ipc`** — Platform IPC transport (Unix sockets, Windows named pipes). Standalone, no workspace deps.
-**`oriterm`** — Application shell (winit event loop, GPU, font pipeline, session model). Consumes all other crates.
+- **Terminal emulators / multiplexers** (`~/projects/reference_repos/console_repos/`): tmux, alacritty, wezterm, ghostty, ratatui, crossterm, bubbletea, lipgloss, ptyxis, termenv, notcurses. Consult these for VT parsing, grid storage, reflow, selection, color detection, resize handling, RAII cleanup, and protocol conformance.
+- **GUI / widget frameworks** (`~/projects/reference_repos/gui_repos/`): egui, iced, zed/GPUI, druid, masonry, makepad. Consult these for widget composition, hit testing, pipeline orchestration, layout, focus management.
+- **Chromium UI subset** (`~/projects/reference_repos/chromium_ui/` — `ui/aura/`, `ui/gfx/geometry/`): architectural reference for the `oriterm_ui` layer (Rect = Point + Size, half-open intervals, epsilon-clamped SizeF, `GetNonClientComponent` hit testing, `WindowTargeter` strategy).
+- **Font pipeline** (`~/projects/reference_repos/swash/`, `~/projects/reference_repos/fontations/`): swash v0.2.6 + skrifa for pure-Rust rasterization with hinting.
 
-**Allowed dependency direction:**
-```
-oriterm_ipc  (standalone)
-oriterm_core (standalone)
-oriterm_ui   → oriterm_core
-oriterm_mux  → oriterm_core, oriterm_ipc
-oriterm      → oriterm_core, oriterm_ui, oriterm_mux
-```
+Each reference repo has its own subsystem-specific strengths — the per-crate rules files under `.claude/rules/oriterm*.md` cite the relevant one when discussing a subsystem convention.
 
-**Litmus test:** Can this code be tested in a `#[test]` without a GPU, display server, or terminal? If yes → `oriterm_ui`. If no → `oriterm`. See `.claude/rules/crate-boundaries.md` for full ownership rules.
-
-## Reference Repos (`~/projects/reference_repos/console_repos/`)
-
-- **tmux** — C, the canonical terminal multiplexer. Grid/screen/tty separation, `input.c` (83k-line VT parser), `grid.c` (cell storage + extended cells for wide/RGB), `screen-write.c` (damage-tracked screen updates), `window-copy.c` (selection/search/vi-mode). Gold standard for PTY management, reflow, and session persistence
-- **alacritty** — 4-crate workspace, OpenGL, `vte` parser, strict clippy (`deny(clippy::all)`), `rustfmt.toml` with module imports
-- **wezterm** — 69-crate monorepo, `anyhow`+`thiserror` errors, Lua config, `portable-pty`, multiplexer architecture
-- **ghostty** — Zig, Metal+OpenGL+WebGL, SIMD, comptime C ABI, AGENTS.md, Valgrind integration
-- **ratatui** — 9-crate workspace, `unsafe_code = "forbid"`, Buffer-based widget tests, TestBackend, pedantic clippy
-- **crossterm** — Single crate, Command trait pattern (`queue!`/`execute!` macros), `io::Result<T>` everywhere
-- **bubbletea** — Go Elm Architecture (Model/Update/View), frame-based rendering (60/120 FPS), goroutine channels
-- **lipgloss** — CSS-like fluent styling, AdaptiveColor/CompleteColor, lazy `sync.Once` renderer
-- **ptyxis** — C/GTK4, GNOME's default terminal (Fedora/RHEL/Ubuntu). libvte consumer with GPU-accelerated rendering, `ptyxis-agent` out-of-process PTY helper for Flatpak sandboxing, `.palette` file format for color schemes with light/dark auto-adaptation, profile system (per-profile container/palette/shell), tab monitor for process tracking (`sudo`/SSH indicators), container-first architecture (Podman/Toolbox/Distrobox discovery), encrypted scrollback, terminal inspector for OSC/mouse debugging
-- **termenv** — Color profile detection (NO_COLOR/CLICOLOR), `Environ` interface for testing, profile-aware downgrade
-
-## Performance Invariants
-
-These invariants are enforced by regression tests in `oriterm_core/tests/alloc_regression.rs` and `oriterm/src/app/event_loop_helpers/tests.rs`. Do not introduce code that violates them.
-
-- **Zero idle CPU beyond cursor blink.** When idle, the event loop sleeps via `ControlFlow::Wait`. The only wakeup source is the cursor blink timer (~1.89 Hz). No polling, no spurious `WaitUntil` lingering from prior activity. Verified by `compute_control_flow()` pure function tests.
-- **Zero allocations in hot render path.** The IO thread calls `renderable_content_into()` into a reusable buffer, then `SnapshotDoubleBuffer::flip_swap()` exchanges it with the front buffer via `std::mem::swap()`. The main thread calls `swap_front()` + `swap_renderable_content()` — all pointer swaps, zero allocation. All `Vec` buffers are reused via `.clear()` + capacity retention. `HashSet` scratch buffers live on `RenderableContent`. No `Vec::new()` or `Box::new()` per cell or per frame.
-- **Stable RSS under sustained output.** Scrollback is bounded by `max_scrollback` with row recycling via `Row::reset()`. Image caches evict via frame-based aging. GPU textures drop via `wgpu::Texture::Drop`. No unbounded growth vector exists for normal terminal operation.
-- **Buffer shrink discipline.** Grow-only `Vec` buffers (instance writers, shaping scratch, notification buffer, `RenderableContent` fields) apply `maybe_shrink()` post-render: `if capacity > 4 * len && capacity > 4096 → shrink_to(len * 2)`. No shrinking during `draw_frame()` (pure computation, no side effects).
+---
 
 ## Plans
 
@@ -172,81 +103,6 @@ When the user says **"continue plan X"** or **"resume plan X"** or **"pick up pl
 Plans are the source of truth for multi-session work. Keep them in sync with reality.
 
 **Review Gate:** Every roadmap section has `reviewed: true/false` in its frontmatter. Sections with `reviewed: false` have NOT been vetted by `/review-plan` and must not be implemented without review. `/continue-roadmap` enforces this gate automatically — it will stop and warn before working on an unreviewed section.
-
----
-
-## UI Framework — Zero Exceptions Rule
-
-Every single UI control — buttons, toggles, sliders, dropdowns, text inputs, window chrome buttons, tab bar tabs, close buttons, menu items, scroll thumbs, dialog headers — goes through the unified controller + animator + propagation pipeline. No special cases, no manual `hovered: bool` fields, no one-off `handle_mouse()` implementations. One system, one path, no exceptions.
-
-- **WindowRoot** is the per-window composition unit — owns widget tree, InteractionManager, FocusManager, OverlayManager, compositor, and pipeline. Both WidgetTestHarness and production windows wrap WindowRoot. No framework state should be owned outside WindowRoot.
-- **InteractionManager** is the single source of truth for all interaction state (hot, active, focused, disabled).
-- **VisualStateAnimator** drives all state-dependent visual transitions (hover colors, focus rings, pressed states).
-- **EventControllers** (HoverController, ClickController, DragController, etc.) handle all input — no widget implements raw event methods directly.
-- **The propagation pipeline** routes events through the widget tree — no container manually calls `child.handle_mouse()`.
-
-If you find a widget doing its own hover/press/focus tracking outside this system, that is a bug. Fix it.
-
----
-
-## Widget Test Harness
-
-`WidgetTestHarness` (`oriterm_ui/src/testing/`) enables headless widget testing without GPU, display server, or platform dependencies. It wraps `WindowRoot` and provides input simulation, state inspection, and paint capture.
-
-**Running harness tests**: `cargo test -p oriterm_ui` runs all widget and harness tests. Architecture tests: `cargo test -p oriterm --test architecture`.
-
-**Writing new harness tests** (in any `tests.rs` file within `oriterm_ui`):
-```rust
-let mut h = WidgetTestHarness::new(ButtonWidget::new("OK"));
-h.mouse_move_to(center);      // Input simulation
-assert!(h.is_hot(button_id)); // State inspection
-h.click(center);              // Click helper (move + down + up)
-let scene = h.render();       // Paint capture (returns Scene)
-```
-
-Key APIs: `mouse_move()`, `mouse_down()`, `mouse_up()`, `click()`, `key_press()`, `tab()`, `shift_tab()`, `scroll()`, `drag()`, `type_text()`, `advance_time()`, `resize()`, `render()`, `is_hot()`, `is_active()`, `is_focused()`, `interaction_state()`, `get_widget()`, `all_widget_ids()`, `widgets_with_sense()`, `push_popup()`, `has_overlays()`, `dismiss_overlays()`.
-
----
-
-## GPU Render Path Testing
-
-The production render path uses **content caching** (`render_cached`): content is rendered to an offscreen cache texture, then copied to the surface via `copy_texture_to_texture`. Test-only `render_frame()` skips this entirely — it renders directly to an offscreen target. **Bugs in the cached path are invisible to `render_frame()`.**
-
-**`render_frame_cached()`** (`oriterm/src/gpu/window_renderer/render.rs`) is the test-only method that exercises the production cached render path. It accepts a target size that may differ from the prepared viewport — exactly the mismatch that occurs when the surface is reconfigured during interactive resize.
-
-**Writing cached render path tests** (in `oriterm/src/gpu/visual_regression/resize_stress.rs`):
-```rust
-// Prepare at one size, render to a smaller target (simulates resize race).
-renderer.prepare(&input, &gpu, &pipelines, origin, 1.0, true);
-renderer.render_frame_cached(&gpu, &pipelines, target_w, target_h, true);
-```
-
-**Key rule**: When testing GPU rendering under resize or any condition where viewport and surface dimensions may diverge, always use `render_frame_cached()`. Use `gpu.create_copy_dst_target()` when manually creating destination targets (adds `COPY_DST` usage to simulate a surface texture).
-
-**Test-only APIs**:
-- `WindowRenderer::render_frame_cached()` — cached render to controllable target size
-- `GpuState::create_copy_dst_target()` — render target with `COPY_DST` for copy destinations
-- `RenderTarget::texture()` — backing texture access for copy operations
-
----
-
-## Action & Keymap System
-
-Actions are typed enums declared by widgets. Keybindings are data (not code) that map keystrokes to actions. Dispatch routes through context-scoped focus path.
-
-**Declaring an action** (in `oriterm_ui/src/action/keymap_action/mod.rs`):
-```rust
-actions!(widget, [Activate, Dismiss, NavigateDown, NavigateUp, Confirm]);
-```
-
-**Adding a keybinding** (in `oriterm_ui/src/action/keymap/defaults.rs`):
-```rust
-KeyBinding::new(Keystroke::new(Key::Enter), None, Box::new(widget::Activate))
-```
-
-**Context scoping**: Widgets return `key_context() -> Option<&'static str>` (e.g., `"Button"`, `"Dropdown"`). Bindings match only when the focused widget's context stack includes the binding's context.
-
-**Widget integration**: Implement `handle_keymap_action(&mut self, action: &dyn KeymapAction) -> Option<WidgetAction>` to receive dispatched actions.
 
 ---
 

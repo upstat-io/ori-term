@@ -1,0 +1,25 @@
+# btop-basic.script
+# Open btop, cycle views, toggle graphs, press help (h), quit (q).
+# btop renders CPU/mem/net/proc with Braille + block glyphs which
+# exercises the unicode subcell rendering path.
+COMMAND: btop
+WAIT: 1500ms
+KEY: h
+WAIT: 800ms
+KEY: Escape
+WAIT: 400ms
+KEY: +
+WAIT: 300ms
+KEY: +
+WAIT: 300ms
+KEY: -
+WAIT: 300ms
+KEY: 1
+WAIT: 400ms
+KEY: 2
+WAIT: 400ms
+KEY: 3
+WAIT: 400ms
+KEY: 4
+WAIT: 400ms
+KEY: q

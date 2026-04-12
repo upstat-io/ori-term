@@ -110,7 +110,7 @@ fn per_page_dirty_scheme_changes_two_pages() {
     assert!(dirty[1], "colors page should be dirty for scheme change");
 }
 
-/// TPR-12-011 regression: after ResetDefaults, dirty detection must compare
+/// regression: after ResetDefaults, dirty detection must compare
 /// `Config::default()` (pending) against the persisted config (original).
 /// If original was non-default, the reset creates a genuine unsaved change.
 #[test]
@@ -133,7 +133,7 @@ fn reset_to_defaults_dirty_when_original_differs() {
     );
 }
 
-/// TPR-12-011 regression: when the persisted config is already defaults,
+/// regression: when the persisted config is already defaults,
 /// reset-to-defaults should not produce false dirty state.
 #[test]
 fn reset_to_defaults_clean_when_original_is_default() {
