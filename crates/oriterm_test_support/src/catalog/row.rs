@@ -52,6 +52,9 @@ impl Row {
         let src = self.spec_source.to_lowercase();
         !src.contains("missing")
             && !src.contains("wezterm")
+            && !src.contains("alacritty")
+            && !src.contains("ghostty")
+            && !src.contains("ptyxis")
             && !self.spec_source.starts_with('—')
             && !self.spec_source.starts_with("—") // em dash (UTF-8)
     }

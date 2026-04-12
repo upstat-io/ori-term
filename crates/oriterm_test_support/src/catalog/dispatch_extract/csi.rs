@@ -4,8 +4,7 @@
 //! top-level `match (action, intermediates) { ... }` in the
 //! `dispatch` function — and emits one [`Tuple`] per arm pattern.
 //!
-//! Two entry points:
-//! - [`extract_csi_arms`] — tuples only (no handler method names)
+//! Entry point:
 //! - [`extract_csi_arms_with_handlers`] — tuples + handler methods
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,12 +14,6 @@ use super::{
     extract_handler_methods, is_action_intermediates_scrutinee, pattern_byte_slice,
     pattern_char_literal,
 };
-
-pub(super) fn extract_csi_arms(file: &syn::File, out: &mut BTreeSet<Tuple>) {
-    let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
-    extract_csi_arms_with_handlers(file, &mut map);
-    out.extend(map.into_keys());
-}
 
 pub(super) fn extract_csi_arms_with_handlers(
     file: &syn::File,
@@ -73,17 +66,25 @@ fn collect_csi_tuples_from_pat(pat: &syn::Pat) -> Vec<Tuple> {
 fn collect_csi_recursive(pat: &syn::Pat, out: &mut Vec<Tuple>) {
     match pat {
         syn::Pat::Tuple(tup) if tup.elems.len() == 2 => {
-            if let (Some(final_byte), Some(intermediates)) = (
-                pattern_char_literal(&tup.elems[0]),
-                pattern_byte_slice(&tup.elems[1]),
-            ) {
-                out.push(Tuple::new(
-                    Category::Csi,
-                    intermediates,
-                    "Ps",
-                    final_byte.to_string(),
-                ));
-            }
+            let Some(final_byte) = pattern_char_literal(&tup.elems[0]) else {
+                return;
+            };
+            // Resolve intermediates: explicit byte-slice or catch-all ident.
+            let intermediates = match pattern_byte_slice(&tup.elems[1]) {
+                Some(bytes) => bytes,
+                None if matches!(&tup.elems[1], syn::Pat::Ident(_)) => {
+                    // Catch-all identifier pattern: `('c', intermediates)`.
+                    // Emit with empty intermediates to represent "any intermediates".
+                    Vec::new()
+                }
+                None => return,
+            };
+            out.push(Tuple::new(
+                Category::Csi,
+                intermediates,
+                "Ps",
+                final_byte.to_string(),
+            ));
         }
         syn::Pat::Or(or) => {
             for sub in &or.cases {

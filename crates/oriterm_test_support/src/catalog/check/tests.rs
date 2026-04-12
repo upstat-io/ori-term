@@ -125,6 +125,53 @@ fn check_rejects_duplicate_row_id() {
 // -------- Positive pin: full real catalog passes ---------------------------
 
 #[test]
+fn check_with_workspace_root_runs_dispatch_coverage() {
+    let repo_root = std::env::var("CARGO_MANIFEST_DIR")
+        .ok()
+        .and_then(|mpd| {
+            std::path::PathBuf::from(mpd)
+                .parent()?
+                .parent()
+                .map(std::path::Path::to_path_buf)
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let catalog_dir = repo_root.join("plans/spec-conformance/catalog");
+    let vte_dispatch = repo_root.join("crates/vte/src/ansi/dispatch");
+    if !catalog_dir.exists() || !vte_dispatch.exists() {
+        eprintln!(
+            "SKIP check_with_workspace_root_runs_dispatch_coverage: {} or {} missing",
+            catalog_dir.display(),
+            vte_dispatch.display()
+        );
+        return;
+    }
+    let report =
+        check(&catalog_dir, CheckMode::Normal, Some(&repo_root)).expect("real catalog parses");
+    assert!(
+        report.files_scanned > 0,
+        "expected at least one catalog file scanned"
+    );
+    assert!(report.rows_total > 0, "expected at least one catalog row");
+    // Dispatch coverage results are examined but we don't assert zero
+    // findings here — the catalog may legitimately have uncovered
+    // dispatch arms during active development. What we DO assert is that
+    // the dispatch-coverage path ran (i.e., we got here without panicking
+    // or returning an IO error).
+    let dispatch_findings: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.category == FindingCategory::DispatchWithoutCatalogRow)
+        .collect();
+    // Log for visibility — don't fail the test on dispatch gaps.
+    if !dispatch_findings.is_empty() {
+        eprintln!(
+            "INFO: {} dispatch-without-catalog-row findings",
+            dispatch_findings.len()
+        );
+    }
+}
+
+#[test]
 fn real_catalog_passes_bootstrap_mode_check() {
     let repo_root = std::env::var("CARGO_MANIFEST_DIR")
         .ok()

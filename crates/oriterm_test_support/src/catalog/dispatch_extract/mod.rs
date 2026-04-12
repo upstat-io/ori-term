@@ -95,25 +95,18 @@ impl std::error::Error for DispatchExtractError {
 /// Returns [`DispatchExtractError`] on io failures or `syn` parse
 /// errors.
 pub fn extract_dispatch_tuples(workspace_root: &Path) -> Result<Vec<Tuple>, DispatchExtractError> {
-    let mut tuples: BTreeSet<Tuple> = BTreeSet::new();
+    // Delegate to the richer `extract_dispatch_map` for the main dispatch
+    // arms, then layer SGR per-parameter tuples on top (they are needed
+    // for catalog row matching but are not per-arm handler data).
+    let map = extract_dispatch_map(workspace_root)?;
+    let mut tuples: BTreeSet<Tuple> = map.into_keys().collect();
 
-    // Parse csi.rs once and pass the AST to both CSI and SGR walkers.
+    // Add SGR per-parameter tuples (needed for per-SGR catalog row matching
+    // in `--check`; `extract_dispatch_map` only emits the bare arm tuple).
     let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi.rs");
     let csi_source = read_rust(&csi_path)?;
     let csi_file = parse_rust(&csi_path, &csi_source)?;
-    csi::extract_csi_arms(&csi_file, &mut tuples);
     sgr::extract_sgr_params(&csi_file, &mut tuples);
-
-    let osc_path = workspace_root.join("crates/vte/src/ansi/dispatch/osc.rs");
-    osc::extract_osc_arms(&osc_path, &mut tuples)?;
-
-    let mod_path = workspace_root.join("crates/vte/src/ansi/dispatch/mod.rs");
-    esc_dcs::extract_mod_arms(&mod_path, &mut tuples)?;
-
-    // APC dispatch is unconditional — `Performer::apc_end` calls
-    // `handler.apc_dispatch(&payload)` for every APC sequence.
-    // This isn't a match arm, so the visitors don't catch it.
-    tuples.insert(Tuple::new(Category::Apc, Vec::<u8>::new(), "Pt", "ST"));
 
     // Filter out DECSET/DECRST tuples — those come exclusively from
     // `extract_namedprivatemode_tuples`. The disjointness invariant
