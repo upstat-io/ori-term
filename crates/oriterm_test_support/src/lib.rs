@@ -16,6 +16,7 @@
 //! deduplication history. The terminfo provisioning side lands in
 //! `plans/tack-conformance/section-02-terminfo-provisioning.md`.
 
+pub mod catalog;
 pub mod session;
 pub mod tack_framework;
 pub mod terminfo;

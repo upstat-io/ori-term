@@ -2021,8 +2021,10 @@ dependencies = [
 name = "oriterm_test_support"
 version = "0.2.0-alpha.20260408"
 dependencies = [
+ "clap",
  "oriterm_core",
  "portable-pty",
+ "syn",
  "tempfile",
  "vte",
 ]
