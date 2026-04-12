@@ -260,7 +260,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
       /// the reply formatter can reconstruct the correct escape sequence.
       ColorQuery {
           prefix: String,
-          index: u16,
+          index: usize,
           terminator: String,
           reply: ResponseToken<crate::color::Rgb>,
       },
@@ -354,7 +354,7 @@ The `EffectSink` trait is the production-side interface that the VTE handler emi
 
 **Design decision — generic `Term<S: EffectSink>` vs `Arc<dyn EffectSink>`**: The current `Term<T: EventListener>` is statically dispatched (monomorphized). Adding `Arc<dyn EffectSink>` would introduce dynamic dispatch on the handler hot path — every `push()` call goes through a vtable. Instead, `Term` gains a SECOND generic parameter: `Term<T: EventListener, S: EffectSink = VoidEffectSink>`. The `S` parameter defaults to `VoidEffectSink` so existing code that only cares about `EventListener` doesn't need to specify it. When the `LegacyEventSink` adapter is used (03.4), `S = LegacyEventSink<T>` and the compiler monomorphizes both `EventListener::send_event` and `EffectSink::push` — zero vtable overhead. The `Arc<dyn EffectSink>` approach is explicitly rejected for the hot path.
 
-**Semantic contract — `take_pending()` vs immediate forwarding**: `QueueingEffectSink` accumulates and `take_pending()` drains. `LegacyEventSink` forwards immediately and `take_pending()` returns empty. These are DIFFERENT consumption models. To prevent consumers from depending on `take_pending()` semantics from an immediate-forward sink: the `EffectSink` trait doc explicitly states that `take_pending()` returns effects that were NOT already forwarded. Consumers that need guaranteed bulk access MUST use `QueueingEffectSink`. The `LegacyEventSink` adapter's `take_pending()` returning empty is correct — effects were already forwarded as `Event`s. Add a `/// # Contract` doc section to the trait making this explicit.
+**Semantic contract — `drain_into()` vs immediate forwarding**: `QueueingEffectSink` accumulates and `drain_into()` drains. `LegacyEventSink` forwards immediately and `drain_into()` is a no-op. These are DIFFERENT consumption models. To prevent consumers from depending on `drain_into()` semantics from an immediate-forward sink: the `EffectSink` trait doc explicitly states that `drain_into()` appends effects that were NOT already forwarded. Consumers that need guaranteed bulk access MUST use `QueueingEffectSink`. The `LegacyEventSink` adapter's `drain_into()` being a no-op is correct — effects were already forwarded as `Event`s. Add a `/// # Contract` doc section to the trait making this explicit.
 
 - [ ] Create `oriterm_core/src/effect/sink/mod.rs`:
   ```rust
@@ -365,11 +365,12 @@ The `EffectSink` trait is the production-side interface that the VTE handler emi
   /// # Contract
   ///
   /// - `push()` accepts an effect. Implementations may either queue it for
-  ///   later retrieval via `take_pending()`, or forward it immediately to a
+  ///   later retrieval via `drain_into()`, or forward it immediately to a
   ///   downstream consumer (as `LegacyEventSink` does).
-  /// - `take_pending()` returns effects that have NOT already been forwarded.
-  ///   For queuing sinks, this drains the queue. For immediate-forward sinks,
-  ///   this returns empty — the effects were already delivered via `push()`.
+  /// - `drain_into()` appends effects that have NOT already been forwarded.
+  ///   For queuing sinks, this drains the queue into the provided Vec.
+  ///   For immediate-forward sinks, this is a no-op — the effects were
+  ///   already delivered via `push()`.
   /// - Consumers that need guaranteed deferred-then-bulk-drain semantics
   ///   MUST use `QueueingEffectSink` (or a type that documents those semantics).
   ///   Do NOT assume all `EffectSink` impls queue.
@@ -599,7 +600,7 @@ The migration is one-phase via an adapter: `LegacyEventSink` receives `Effect` p
                   let pfx = prefix.clone();
                   let term = terminator.clone();
                   Event::ColorRequest(
-                      index as usize,
+                      index,
                       std::sync::Arc::new(move |color: crate::color::Rgb| {
                           token.fulfill(color);
                           // Use the captured prefix and terminator from the
@@ -683,11 +684,17 @@ The VTE handlers currently call `self.event_listener.send_event(Event::Foo(...))
   ```
 
   **Migration checklist for callers** (to be done incrementally, NOT all at once):
-  - [ ] `oriterm_mux/src/pane/io_thread/mod.rs` — switch from `Term::new()` to `Term::with_legacy_sink()` (this is the FIRST caller to migrate; it enables effect-sink-aware IO thread)
-  - [ ] All test files that construct `Term<VoidListener>` — NO CHANGE needed (VoidEffectSink default)
-  - [ ] `oriterm/src/` app-layer callers — NO CHANGE needed during legacy phase (VoidEffectSink default); migrate to `with_legacy_sink()` when app-layer effect consumption is wired
-  Note: this requires `T: Clone` or the listener to be shared via `Arc`. Evaluate whether `Term` should store `Arc<T>` for the listener and pass `Arc::clone` to `LegacyEventSink`, or whether `LegacyEventSink` should take an `Arc<T>`. The current `event_listener: T` field is owned — the simplest migration is to have `LegacyEventSink` wrap an `Arc<T>` and change `event_listener` to `Arc<T>` as well. This is a mechanical change; all existing code already treats the listener as shared.
+  - [ ] `oriterm_mux/src/domain/local.rs:138-144` — mux IO thread production caller. **MUST** switch from `Term::new()` to `Term::with_legacy_sink()` — this is the primary non-void listener site that enables effect-sink-aware IO thread operation.
+  - [ ] `oriterm_mux/src/domain/handoff/mod.rs:115-121` — mux handoff caller. **MUST** switch to `Term::with_legacy_sink()`.
+  - [ ] `crates/oriterm_test_support/src/session/pty_responder/mod.rs:141-145` — test harness caller. **MUST** switch to `Term::with_legacy_sink()` to preserve notification and effect observable behavior in integration tests.
+  - [ ] `oriterm_core/tests/teseq/harness/events.rs:61-63` — teseq event recorder. **MUST** switch to `Term::with_legacy_sink()` to preserve event recording in the teseq test infrastructure.
+  - [ ] All other test files that construct `Term<VoidListener>` — NO CHANGE needed (VoidEffectSink default silently discards all effects, which is correct for non-effect tests).
+  - [ ] `oriterm/src/` app-layer callers — NO CHANGE needed during legacy phase (VoidEffectSink default); migrate to `with_legacy_sink()` when app-layer effect consumption is wired.
+
+  **Arc wrapping decision**: constructors accept `listener: T` directly and the `LegacyEventSink<T>` stores it by value. No `Arc<T>` wrapping is needed — `Term` holds `event_listener: T` (owned), and `with_legacy_sink()` moves it into `LegacyEventSink::new(listener)`. The `Term` struct no longer holds the listener directly when `LegacyEventSink` is the sink; the sink owns it. This is cleaner than dual ownership via `Arc<T>`.
 - [ ] Update all `impl<T: EventListener> ... for Term<T>` blocks to `impl<T: EventListener, S: EffectSink> ... for Term<T, S>`. This is a mechanical find-and-replace across handler submodules.
+
+  **Exception**: `Term::new()` MUST remain in a specialized `impl<T: EventListener> Term<T, VoidEffectSink>` block. It returns `Term<T, VoidEffectSink>` and does not need `S` as a parameter. The mechanical find-and-replace applies to ALL OTHER impl blocks — constructors, methods, and trait impls — but NOT to the `Term::new()` impl block.
 - [ ] **[BLOAT watch]** `oriterm_core/src/term/mod.rs` is currently at 499 lines — at the 500-line limit. Adding the `effect_sink` field and the `with_legacy_sink` constructor will push it over. Extract the constructors (`new`, `with_legacy_sink`) into `oriterm_core/src/term/constructors.rs` BEFORE adding the new code.
 
 ### 03.5b Handler emission site migration (oriterm_core)
@@ -697,7 +704,7 @@ Complete list of ALL emission sites (verified by `grep -rn 'send_event' oriterm_
 - [ ] `handler/mod.rs:135` — `Event::Bell` → `self.effect_sink.push(Effect::Host(HostEffect::Bell))`
 - [ ] `handler/osc.rs:36` — `Event::Title(t)` / `Event::ResetTitle` → `self.effect_sink.push(Effect::Host(HostEffect::TitleSet { value: Some(t) }))` / `value: None`
 - [ ] `handler/osc.rs:50` — `Event::IconName(n)` / `Event::ResetIconName` → similar to Title
-- [ ] `handler/osc.rs:102-111` — **REMOVE the closure in `osc_dynamic_color_sequence()`**, replace with `HostRequest::ColorQuery { prefix: prefix.to_string(), index: index as u16, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `prefix` and `terminator` parameters from `osc_dynamic_color_sequence(&self, prefix: &str, index: usize, terminator: &str)` are captured as owned fields on the request (TPR-03-001-gemini). The format string `"\x1b]{prefix};rgb:{r:02x}{r:02x}/..."` moves to the reply-return formatter (see 03.5d).
+- [ ] `handler/osc.rs:102-111` — **REMOVE the closure in `osc_dynamic_color_sequence()`**, replace with `HostRequest::ColorQuery { prefix: prefix.to_string(), index, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `prefix` and `terminator` parameters from `osc_dynamic_color_sequence(&self, prefix: &str, index: usize, terminator: &str)` are captured as owned fields on the request (TPR-03-001-gemini). The format string `"\x1b]{prefix};rgb:{r:02x}{r:02x}/..."` moves to the reply-return formatter (see 03.5d).
 - [ ] `handler/osc.rs:137-138` — `Event::ClipboardStore(...)` → `Effect::Host(HostEffect::ClipboardStore { selection, data })` (fire-and-forget, no reply token — TPR-03-004)
 - [ ] `handler/osc.rs:153-159` — **REMOVE the closure in `osc_clipboard_load()`**, replace with `HostRequest::ClipboardLoad { selection, clipboard_char: clipboard, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `clipboard` and `terminator` parameters from `osc_clipboard_load(&self, clipboard: u8, terminator: &str)` are captured as owned fields on the request (TPR-03-002-gemini). The base64 formatting moves to the reply-return formatter.
 - [ ] `handler/esc.rs:65` — `Event::ResetTitle` → `self.effect_sink.push(Effect::Host(HostEffect::TitleSet { value: None }))` (this was MISSING from the original plan — blind spot #5)
@@ -829,9 +836,11 @@ Per Codex Round 2, `Term::pending_notifications` is a split-brain side channel t
     ```
 - [ ] In `oriterm_core/src/term/shell_state.rs`:
   - Remove `Term::push_notification()` method (line 223).
-  - Rewrite `Term::drain_notifications()` method (line 218) as a thin shim. During the legacy phase, this shim calls `effect_sink.drain_pending_notifications()` on the `LegacyEventSink` (which maintains a secondary notification queue — see 03.4, TPR-03-001). For `QueueingEffectSink`, the shim calls `drain_into()` and filters for `DesktopNotification` variants. Add a `fn drain_pending_notifications(&self) -> Vec<DesktopNotificationRecord>` method on the `EffectSink` trait with a default no-op implementation, overridden by `LegacyEventSink`. For one-phase migration, prefer keeping the shim to avoid breaking the 50+ `drain_notifications()` call sites across `oriterm_mux/tests/` and `oriterm/src/`.
+  - Rewrite `Term::drain_notifications()` method (line 218) as a thin shim. During the legacy phase, `Term<T, LegacyEventSink<T>>` is specialized: the shim calls `self.effect_sink.drain_pending_notifications()` directly on the inherent method of `LegacyEventSink` (NOT a trait method — see below). For the general case (`QueueingEffectSink`), the shim calls `drain_into()` and filters for `DesktopNotification` variants. For one-phase migration, prefer keeping the shim to avoid breaking the 50+ `drain_notifications()` call sites across `oriterm_mux/tests/` and `oriterm/src/`.
+
+  **Design decision — `drain_pending_notifications()` is an inherent method on `LegacyEventSink`, NOT a trait method on `EffectSink`**: Adding `drain_pending_notifications()` and `clear_pending_host_notifications()` to the `EffectSink` trait would pollute the trait with legacy-specific methods that `QueueingEffectSink` and `VoidEffectSink` would implement as no-ops (pointless stubs) and that future non-legacy sinks would never use. These are purely an artifact of the one-phase migration. The correct placement is as inherent methods on `LegacyEventSink<L>` directly. The `Term::drain_notifications()` shim accesses them via a concrete-type bound or a separate helper trait scoped only to the legacy phase.
 - [ ] **[DRIFT]** `oriterm_core/src/term/mod.rs:172` — remove `pending_notifications: Vec<Notification>` field declaration. Also remove its `Vec::new()` initialization at line 240. Leaving the field alive after removing its setter/drainer creates dead memory.
-- [ ] **[LEAK:scattered-knowledge]** `oriterm_core/src/term/handler/esc.rs:52` — RIS handler directly calls `self.pending_notifications.clear()`. After the field is removed, this must be replaced. The correct fix depends on the EffectSink implementation: for `QueueingEffectSink`, RIS should drain and discard all pending host notifications. For `LegacyEventSink`, RIS clears the secondary `pending_notifications` queue (the adapter's internal notification buffer from TPR-03-001). Add a method `fn clear_pending_host_notifications(&self)` on `EffectSink` that `QueueingEffectSink` implements by draining and filtering, `LegacyEventSink` implements by clearing its `pending_notifications` Mutex, and `VoidEffectSink` implements as a no-op.
+- [ ] **[LEAK:scattered-knowledge]** `oriterm_core/src/term/handler/esc.rs:52` — RIS handler directly calls `self.pending_notifications.clear()`. After the field is removed, this must be replaced. Add a `fn clear_pending_notifications(&self)` inherent method on `LegacyEventSink<L>` that clears its internal `pending_notifications` Mutex. For the `QueueingEffectSink` path, the RIS handler drains and discards host notifications by calling `drain_into()` and dropping any `DesktopNotification` variants. For `VoidEffectSink`, the field is already absent and no action is needed. These are inherent methods on the concrete types, NOT an addition to the `EffectSink` trait — see the design decision note above.
 - [ ] **[WASTE]** `oriterm_core/src/term/tests.rs:1598-1631` — `ris_clears_pending_notifications`, `drain_notifications_returns_empty_on_second_call`, and adjacent tests call `Term::push_notification` / `Term::drain_notifications` directly. After the field is removed, rewrite these tests to push via `effect_sink().push(Effect::Host(HostEffect::DesktopNotification { .. }))` and drain via `effect_sink().drain_into()`. The RIS semantic MUST still hold (RIS clears any host-pending notifications) — assert the effect channel is empty after RIS.
 - [ ] **Module conversion**: `shell_state.rs` is currently a file module (`oriterm_core/src/term/shell_state.rs`), not a directory module. Per test-organization.md, adding tests requires converting it to a directory module: rename to `shell_state/mod.rs`, create `shell_state/tests.rs`. Update the `mod shell_state;` declaration in `term/mod.rs` (no change needed — Rust resolves both forms).
 - [ ] If any consumer was calling `term.drain_notifications()` (search found 50+ call sites across `oriterm_mux/tests/`, `oriterm_mux/src/backend/`, `oriterm/src/app/`), either keep the thin shim or update them. The thin shim is strongly preferred for this section — updating 50+ sites is a separate mechanical migration best done in the `plans/effect-cutover/` follow-up.

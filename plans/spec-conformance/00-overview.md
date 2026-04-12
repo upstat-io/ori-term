@@ -30,7 +30,7 @@ Each criterion is concrete and testable. Together they prove the mission is comp
 - [ ] **`notcurses-demo` runs cleanly** — All 28 scenes pass against per-scene correctness criteria with zero visual glitches, zero tearing, zero ghosting on the canonical golden lane (Linux/x86_64 + llvmpipe). Delivered by section 24.
 - [ ] **Real-app E2E milestones pass** — vim, htop, btop, tmux, aerc, helix, ncmpcpp, less, nvim all run a recorded session through ori_term and produce a snapshot identical to the golden. Delivered by section 25.
 - [ ] **Cross-stack regression sweep green** — Every PR runs every stack's verification chain in CI. A row dropping from `verified` to any lower status is a build failure. Delivered by section 23.
-- [ ] **Effect/State separation enforced** — The `oriterm_core::effect::Effect` type is the production interface for all boundary-crossing side effects. VTE handler files no longer construct `Arc<dyn Fn…>` closures for `ClipboardLoad`/`ColorRequest`; those closures now live only inside the `LegacyEventSink` adapter shim for one migration phase. `Term::pending_notifications` bypass is absorbed into `EffectSink::take_pending()`. Delivered by section 03.
+- [ ] **Effect/State separation enforced** — The `oriterm_core::effect::Effect` type is the production interface for all boundary-crossing side effects. VTE handler files no longer construct `Arc<dyn Fn…>` closures for `ClipboardLoad`/`ColorRequest`; those closures now live only inside the `LegacyEventSink` adapter shim for one migration phase. `Term::pending_notifications` bypass is absorbed into `EffectSink::drain_into()`. Delivered by section 03.
 - [ ] **Deprecated closure Event variants scheduled for deletion** — `Event::ClipboardLoad` and `Event::ColorRequest` are marked deprecated in `oriterm_core/src/event/mod.rs`. Section 03 delivers the LegacyEventSink adapter shim containing the last closure constructions.
   - Closed when: (a) the `LegacyEventSink` adapter shim is the ONLY location that constructs the closure variants (verified by grep — see section 03.N gate), AND (b) a concrete follow-up plan directory exists at `plans/effect-cutover/` with an index, overview, and at least one reviewed section describing the migration of each current legacy consumer to subscribe to `Effect::HostRequest` directly. Filing the plan IS an in-scope deliverable of spec-conformance, NOT a deferral dodge — section 03.N explicitly requires the plan directory to exist before section 03 can be marked complete.
   - **Explicit anti-deferral**: "we'll file a plan someday" is not acceptable. The follow-up plan directory must be committed alongside the spec-conformance work that closes this mission criterion.
@@ -473,7 +473,7 @@ Phase 1 — Foundation (5 narrow, focused sections, parallel after 03+04)
   │       migration phase)
   │     - Replace emission-site closures with HostRequest::ClipboardLoad /
   │       HostRequest::ColorQuery + ResponseToken
-  │     - Absorb Term::pending_notifications via EffectSink::take_pending()
+  │     - Absorb Term::pending_notifications via EffectSink::drain_into()
   │  Gate: `grep -rn 'Arc<dyn Fn\\|Arc::new(move' oriterm_core/src/term/handler/`
   │        returns zero matches (handler files are closure-free); all current
   │        Event consumers route through Effect via the legacy adapter;
@@ -655,7 +655,7 @@ Phase 6 — Final integration milestones (depend on every prior section)
 - **8-bit C1 control tests** — Will fail until section 08 adds 8-bit C1 detection in the VTE handler. Root cause: VTE only handles 7-bit ESC-prefixed C1.
 - **ANSI music tests** — Will fail until section 20. Root cause: CSI M (music) and DECPS (sound) have no handlers.
 - **Kitty keyboard encoding tests** — Will fail until section 17. Root cause: parsing exists but no PTY encoding side.
-- **`Term::pending_notifications` migration tests** — Will fail until section 03. Root cause: the bypass channel is not yet routed through `EffectSink::take_pending()`.
+- **`Term::pending_notifications` migration tests** — Will fail until section 03. Root cause: the bypass channel is not yet routed through `EffectSink::drain_into()`.
 
 Do NOT attempt to fix these tests individually. They share infrastructure dependencies that must be built bottom-up through Phases 1-2.
 
