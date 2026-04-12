@@ -28,7 +28,7 @@ inspired_by:
 depends_on: []
 third_party_review:
   status: resolved
-  updated: 2026-04-11
+  updated: 2026-04-12
 sections:
   - id: "02.1"
     title: "Flip tack-conformance overview + index frontmatter and add supersede blockquotes"
