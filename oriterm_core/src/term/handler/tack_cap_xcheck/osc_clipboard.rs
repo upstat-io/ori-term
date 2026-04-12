@@ -80,6 +80,79 @@ fn tack_cap_xcheck_ms_osc_52_load_fires_clipboard_load_effect() {
 }
 
 #[test]
+fn tack_cap_xcheck_ms_osc_52_store_primary_selection() {
+    let mut term = term_with_effect_sink();
+    // OSC 52 ; p ; aGVsbG8= BEL — store into X11 primary selection
+    feed(&mut term, b"\x1b]52;p;aGVsbG8=\x07");
+
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+
+    let found = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Host(HostEffect::ClipboardStore {
+                selection: ClipboardSelection::Primary,
+                data,
+            }) if data == "hello"
+        )
+    });
+    assert!(
+        found,
+        "OSC 52 store with 'p' must use ClipboardSelection::Primary; got {effects:?}",
+    );
+}
+
+#[test]
+fn tack_cap_xcheck_ms_osc_52_store_select_buffer() {
+    let mut term = term_with_effect_sink();
+    // OSC 52 ; s ; aGVsbG8= BEL — store into X11 select buffer
+    feed(&mut term, b"\x1b]52;s;aGVsbG8=\x07");
+
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+
+    let found = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Host(HostEffect::ClipboardStore {
+                selection: ClipboardSelection::Select,
+                data,
+            }) if data == "hello"
+        )
+    });
+    assert!(
+        found,
+        "OSC 52 store with 's' must use ClipboardSelection::Select; got {effects:?}",
+    );
+}
+
+#[test]
+fn tack_cap_xcheck_ms_osc_52_load_select_buffer() {
+    let mut term = term_with_effect_sink();
+    // OSC 52 ; s ; ? BEL — query select buffer
+    feed(&mut term, b"\x1b]52;s;?\x07");
+
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+
+    let found = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::HostRequest(HostRequest::ClipboardLoad {
+                selection: ClipboardSelection::Select,
+                clipboard_char: b's',
+                ..
+            })
+        )
+    });
+    assert!(
+        found,
+        "OSC 52 query with 's' must use ClipboardSelection::Select; got {effects:?}",
+    );
+}
+
+#[test]
 fn tack_cap_xcheck_ms_osc_52_invalid_base64_does_not_panic() {
     // NEGATIVE PIN — invalid base64 must be a no-op (the handler
     // logs a debug warning and returns), NOT a panic. Catches a
