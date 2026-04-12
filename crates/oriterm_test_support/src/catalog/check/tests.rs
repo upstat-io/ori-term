@@ -152,23 +152,26 @@ fn check_with_workspace_root_runs_dispatch_coverage() {
         "expected at least one catalog file scanned"
     );
     assert!(report.rows_total > 0, "expected at least one catalog row");
-    // Dispatch coverage results are examined but we don't assert zero
-    // findings here — the catalog may legitimately have uncovered
-    // dispatch arms during active development. What we DO assert is that
-    // the dispatch-coverage path ran (i.e., we got here without panicking
-    // or returning an IO error).
+    // Assert the dispatch-coverage path actually ran by checking for
+    // DispatchWithoutCatalogRow findings. With `workspace_root = Some(...)`,
+    // the check should have produced these findings (dispatch arms exist
+    // that aren't covered by catalog rows). Without workspace_root, the
+    // report would have zero of these. This pins the path distinction.
     let dispatch_findings: Vec<_> = report
         .findings
         .iter()
         .filter(|f| f.category == FindingCategory::DispatchWithoutCatalogRow)
         .collect();
-    // Log for visibility — don't fail the test on dispatch gaps.
-    if !dispatch_findings.is_empty() {
-        eprintln!(
-            "INFO: {} dispatch-without-catalog-row findings",
-            dispatch_findings.len()
-        );
-    }
+    // The dispatch-coverage path MUST produce at least one finding when
+    // workspace_root is provided — uncovered dispatch arms always exist
+    // during active catalog development. If this ever reaches zero, the
+    // test should be updated to assert zero (meaning full coverage).
+    assert!(
+        !dispatch_findings.is_empty(),
+        "expected at least one DispatchWithoutCatalogRow finding \
+         when workspace_root is provided — the dispatch-coverage path \
+         may not have run"
+    );
 }
 
 #[test]
