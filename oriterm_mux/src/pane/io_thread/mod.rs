@@ -1,4 +1,4 @@
-//! Terminal IO thread — owns `Term<T>` exclusively and processes VTE bytes.
+//! Terminal IO thread — owns `Term<S>` exclusively and processes VTE bytes.
 //!
 //! The IO thread receives raw PTY bytes from the reader thread via a channel,
 //! parses them through both VTE processors, and maintains terminal state.
@@ -20,7 +20,8 @@ use std::{fmt, io};
 
 use crossbeam_channel::{Receiver, Sender};
 
-use oriterm_core::{EventListener, RenderableContent, Term};
+use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::{RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
 pub(crate) use snapshot::SnapshotDoubleBuffer;
@@ -36,14 +37,15 @@ use crate::shell_integration::interceptor::RawInterceptor;
 /// responsive under sustained output.
 const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
 
-/// Terminal IO thread — owns `Term<T>` and processes commands + PTY bytes.
+/// Terminal IO thread — owns `Term<S>` and processes commands + PTY bytes.
 ///
-/// Generic over `T: EventListener` so the IO thread's `Term` can use
-/// `IoThreadEventProxy` (suppresses metadata during dual-Term migration)
-/// while the old path uses `MuxEventProxy`.
-pub struct PaneIoThread<T: EventListener> {
+/// Generic over `S: EffectSink` so the IO thread's `Term` can use
+/// `LegacyEventSink<IoThreadEventProxy>` (suppresses metadata during
+/// dual-Term migration) while the old path uses
+/// `LegacyEventSink<MuxEventProxy>`.
+pub struct PaneIoThread<S: EffectSink + 'static> {
     /// The terminal state machine — exclusively owned by this thread.
-    terminal: Term<T>,
+    terminal: Term<S>,
     /// Receives commands from the main thread.
     cmd_rx: Receiver<PaneIoCommand>,
     /// Receives raw PTY bytes from the reader thread.
@@ -85,7 +87,7 @@ pub struct PaneIoThread<T: EventListener> {
     selection_dirty: Arc<AtomicBool>,
 }
 
-impl<T: EventListener> PaneIoThread<T> {
+impl<S: EffectSink> PaneIoThread<S> {
     /// Run the IO thread message loop.
     ///
     /// Priority: drain commands first, then process pending bytes with
@@ -320,7 +322,7 @@ impl<T: EventListener> PaneIoThread<T> {
     }
 }
 
-impl<T: EventListener> fmt::Debug for PaneIoThread<T> {
+impl<S: EffectSink> fmt::Debug for PaneIoThread<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PaneIoThread")
             .field("shutdown", &self.shutdown.load(Ordering::Relaxed))
@@ -395,9 +397,9 @@ impl fmt::Debug for PaneIoHandle {
 }
 
 /// Configuration for creating a Terminal IO thread.
-pub struct IoThreadConfig<T: EventListener> {
+pub struct IoThreadConfig<S: EffectSink + 'static> {
     /// The terminal state machine — transferred to the IO thread.
-    pub terminal: Term<T>,
+    pub terminal: Term<S>,
     /// Lock-free mode cache (shared with main thread).
     pub mode_cache: Arc<AtomicU32>,
     /// Shutdown flag (shared with reader/writer threads).
@@ -433,9 +435,9 @@ pub struct IoThreadConfig<T: EventListener> {
 ///
 /// The caller spawns the thread via [`PaneIoThread::spawn()`], then
 /// sets the join handle on the returned `PaneIoHandle`.
-pub fn new_with_handle<T: EventListener>(
-    config: IoThreadConfig<T>,
-) -> (PaneIoThread<T>, PaneIoHandle) {
+pub fn new_with_handle<S: EffectSink + 'static>(
+    config: IoThreadConfig<S>,
+) -> (PaneIoThread<S>, PaneIoHandle) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
     let double_buffer = SnapshotDoubleBuffer::new();

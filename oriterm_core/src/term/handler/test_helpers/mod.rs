@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use vte::ansi::Processor;
 
+use crate::effect::LegacyEventSink;
 use crate::event::{Event, EventListener};
 use crate::term::Term;
 use crate::theme::Theme;
@@ -69,8 +70,8 @@ impl EventListener for RecordingListener {
 
 /// Create a `Term` with 24 lines, 80 columns, and a recording
 /// listener.
-pub(in crate::term::handler) fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener)
-{
+pub(in crate::term::handler) fn term_with_recorder()
+-> (Term<LegacyEventSink<RecordingListener>>, RecordingListener) {
     term_with_recorder_sized(24, 80)
 }
 
@@ -79,9 +80,15 @@ pub(in crate::term::handler) fn term_with_recorder() -> (Term<RecordingListener>
 pub(in crate::term::handler) fn term_with_recorder_sized(
     lines: usize,
     cols: usize,
-) -> (Term<RecordingListener>, RecordingListener) {
+) -> (Term<LegacyEventSink<RecordingListener>>, RecordingListener) {
     let listener = RecordingListener::new();
-    let term = Term::new(lines, cols, 0, Theme::default(), listener.clone());
+    let term = Term::new(
+        lines,
+        cols,
+        0,
+        Theme::default(),
+        LegacyEventSink::new(listener.clone()),
+    );
     (term, listener)
 }
 

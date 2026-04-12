@@ -25,6 +25,18 @@ pub use legacy::LegacyEventSink;
 ///   MUST use `QueueingEffectSink` (or a type that documents those semantics).
 ///   Do NOT assume all `EffectSink` impls queue.
 ///
+/// # Ordering
+///
+/// Effects pushed via `push()` are ordered relative to each other:
+/// if A is pushed before B, A appears before B in `drain_into()`.
+/// Effects are NOT ordered relative to state changes — an effect
+/// pushed during VTE handling may be drained before or after the
+/// next snapshot publication. Consumers that need to correlate
+/// effects with state must use `PresentationEffect::Commit`
+/// which carries the `snapshot_seqno` at the time of commit.
+/// This is the ONLY synchronization point between the effect
+/// stream and the state stream.
+///
 /// # Thread safety
 ///
 /// `Send + Sync` is required because the IO thread pushes effects and the

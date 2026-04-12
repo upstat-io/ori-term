@@ -9,7 +9,7 @@
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
-use oriterm_core::event::VoidListener;
+use oriterm_core::effect::VoidEffectSink;
 use oriterm_core::term::Term;
 use oriterm_core::theme::Theme;
 use vte::ansi::Processor;
@@ -142,7 +142,7 @@ fn bench_vte_ascii_only(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{cols}x{lines}")),
             &(cols, lines, &buf),
             |b, &(cols, lines, buf)| {
-                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidListener);
+                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidEffectSink);
                 let mut proc: Processor = Processor::new();
                 b.iter(|| {
                     proc.advance(&mut term, black_box(buf));
@@ -166,7 +166,7 @@ fn bench_vte_mixed(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{cols}x{lines}")),
             &(cols, lines, &buf),
             |b, &(cols, lines, buf)| {
-                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidListener);
+                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidEffectSink);
                 let mut proc: Processor = Processor::new();
                 b.iter(|| {
                     proc.advance(&mut term, black_box(buf));
@@ -190,7 +190,7 @@ fn bench_vte_heavy_escape(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{cols}x{lines}")),
             &(cols, lines, &buf),
             |b, &(cols, lines, buf)| {
-                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidListener);
+                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidEffectSink);
                 let mut proc: Processor = Processor::new();
                 b.iter(|| {
                     proc.advance(&mut term, black_box(buf));

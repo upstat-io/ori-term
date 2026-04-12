@@ -5,15 +5,15 @@ use std::collections::VecDeque;
 use vte::ansi::{KeyboardModes, Processor};
 
 use crate::color::Rgb;
-use crate::event::VoidListener;
+use crate::effect::VoidEffectSink;
 use crate::grid::CursorShape;
 use crate::index::{Column, Line};
 use crate::theme::Theme;
 
 use super::{RenderableContent, Term, TermMode};
 
-fn make_term() -> Term<VoidListener> {
-    Term::new(24, 80, 1000, Theme::default(), VoidListener)
+fn make_term() -> Term<VoidEffectSink> {
+    Term::new(24, 80, 1000, Theme::default(), VoidEffectSink)
 }
 
 /// Feed raw bytes through the VTE processor.
@@ -120,14 +120,14 @@ fn swap_alt_preserves_keyboard_mode_stacks() {
 // --- Damage tracking integration (Term::damage / Term::reset_damage) ---
 
 /// Create a small terminal and clear initial damage.
-fn damage_term() -> Term<VoidListener> {
-    let mut t = Term::new(6, 10, 100, Theme::default(), VoidListener);
+fn damage_term() -> Term<VoidEffectSink> {
+    let mut t = Term::new(6, 10, 100, Theme::default(), VoidEffectSink);
     t.reset_damage();
     t
 }
 
 /// Collect damaged line indices from a term.
-fn damaged_lines(term: &mut Term<VoidListener>) -> Vec<usize> {
+fn damaged_lines(term: &mut Term<VoidEffectSink>) -> Vec<usize> {
     term.damage().map(|d| d.line).collect()
 }
 
@@ -768,7 +768,7 @@ fn damage_set_scroll_region_damages_via_goto() {
 
 #[test]
 fn new_with_dark_theme_uses_dark_palette() {
-    let t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
+    let t = Term::new(4, 10, 0, Theme::Dark, VoidEffectSink);
     assert_eq!(
         t.palette().foreground(),
         Rgb {
@@ -790,7 +790,7 @@ fn new_with_dark_theme_uses_dark_palette() {
 
 #[test]
 fn new_with_light_theme_uses_light_palette() {
-    let t = Term::new(4, 10, 0, Theme::Light, VoidListener);
+    let t = Term::new(4, 10, 0, Theme::Light, VoidEffectSink);
     assert_eq!(
         t.palette().foreground(),
         Rgb {
@@ -812,7 +812,7 @@ fn new_with_light_theme_uses_light_palette() {
 
 #[test]
 fn set_theme_switches_palette() {
-    let mut t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
+    let mut t = Term::new(4, 10, 0, Theme::Dark, VoidEffectSink);
     t.reset_damage();
 
     t.set_theme(Theme::Light);
@@ -842,7 +842,7 @@ fn set_theme_switches_palette() {
 
 #[test]
 fn set_theme_same_theme_is_noop() {
-    let mut t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
+    let mut t = Term::new(4, 10, 0, Theme::Dark, VoidEffectSink);
     t.reset_damage();
 
     t.set_theme(Theme::Dark);
@@ -854,7 +854,7 @@ fn set_theme_same_theme_is_noop() {
 
 #[test]
 fn ris_resets_to_current_theme() {
-    let mut t = Term::new(4, 10, 0, Theme::Light, VoidListener);
+    let mut t = Term::new(4, 10, 0, Theme::Light, VoidEffectSink);
     // Verify light palette is active.
     assert_eq!(
         t.palette().background(),
@@ -1242,7 +1242,7 @@ fn term_resize_zero_is_noop() {
 
 #[test]
 fn term_resize_with_vte_wrapped_content() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
     // Write 20 chars — fills 10-col row and wraps to next line via VTE handler.
     feed(&mut term, b"abcdefghijklmnopqrst");
     // Cursor should be on line 1 after wrap.
@@ -1500,7 +1500,7 @@ fn range_returns_none_when_command_start_missing() {
 
 #[test]
 fn scroll_to_previous_prompt_scrolls_viewport() {
-    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidListener);
+    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidEffectSink);
     // Fill scrollback: 30 lines.
     for _ in 0..30 {
         feed(&mut term, b"\r\n");
@@ -1524,7 +1524,7 @@ fn scroll_to_previous_prompt_scrolls_viewport() {
 
 #[test]
 fn scroll_to_next_prompt_scrolls_viewport() {
-    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidListener);
+    let mut term = Term::new(10, 80, 1000, Theme::default(), VoidEffectSink);
     // Fill scrollback: 30 lines.
     for _ in 0..30 {
         feed(&mut term, b"\r\n");
@@ -1690,7 +1690,7 @@ fn prune_prompt_markers_exact_boundary() {
 #[test]
 fn scroll_region_preserves_scrollback_content() {
     // Small terminal with scrollback to verify content survives region scrolls.
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
 
     // Fill all 5 lines.
     feed(&mut term, b"Line 0\r\nLine 1\r\nLine 2\r\nLine 3\r\nLine 4");
@@ -1721,7 +1721,7 @@ fn scroll_region_preserves_scrollback_content() {
 
 #[test]
 fn scrollback_survives_region_scroll_down() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
 
     // Write content that pushes into scrollback.
     for i in 0..8u8 {
@@ -1772,7 +1772,7 @@ fn prompt_markers_survive_subsequent_output() {
 #[test]
 fn prompt_markers_survive_scrolling() {
     // Small terminal with scrollback.
-    let mut term = Term::new(5, 20, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 20, 100, Theme::default(), VoidEffectSink);
 
     // Mark a prompt.
     term.set_prompt_mark_pending(true);
@@ -1794,7 +1794,7 @@ fn prompt_markers_survive_scrolling() {
 
 #[test]
 fn prompt_markers_evicted_by_manual_prune() {
-    let mut term = Term::new(3, 10, 5, Theme::default(), VoidListener);
+    let mut term = Term::new(3, 10, 5, Theme::default(), VoidEffectSink);
 
     // Mark a prompt at row 0 (absolute row 0).
     term.set_prompt_mark_pending(true);
@@ -1818,7 +1818,7 @@ use std::sync::Arc;
 
 /// Store a 2×2 RGBA test image and place it at the given cell row/col.
 fn place_test_image(
-    term: &mut Term<VoidListener>,
+    term: &mut Term<VoidEffectSink>,
     stable_row: u64,
     col: usize,
     rows: usize,
@@ -1857,7 +1857,7 @@ fn place_test_image(
 #[test]
 fn image_scrolls_with_display_offset() {
     // 4 lines, 10 cols, 10 scrollback.
-    let mut term = Term::new(4, 10, 10, Theme::default(), VoidListener);
+    let mut term = Term::new(4, 10, 10, Theme::default(), VoidEffectSink);
     term.set_cell_dimensions(8, 16);
 
     // Place image at stable row 0 (first visible line at start).
@@ -1885,7 +1885,7 @@ fn image_scrolls_with_display_offset() {
 #[test]
 fn image_partially_above_viewport_has_negative_y() {
     // 4 lines, 10 cols, 20 scrollback.
-    let mut term = Term::new(4, 10, 20, Theme::default(), VoidListener);
+    let mut term = Term::new(4, 10, 20, Theme::default(), VoidEffectSink);
     term.set_cell_dimensions(8, 16);
 
     // Place a 3-row tall image at stable row 0.
@@ -1913,7 +1913,7 @@ fn image_partially_above_viewport_has_negative_y() {
 
 #[test]
 fn image_at_viewport_bottom_visible() {
-    let mut term = Term::new(4, 10, 10, Theme::default(), VoidListener);
+    let mut term = Term::new(4, 10, 10, Theme::default(), VoidEffectSink);
     term.set_cell_dimensions(8, 16);
 
     // Place image at stable row 3 (last visible line).
@@ -2117,7 +2117,7 @@ fn resize_shrink_then_snapshot_cursor_in_bounds() {
 
 #[test]
 fn resize_grow_then_snapshot_with_scrollback() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
     // Fill terminal so content overflows into scrollback.
     for i in 0..10 {
         let line = format!("line{i:05}\r\n");
@@ -2135,7 +2135,7 @@ fn resize_grow_then_snapshot_with_scrollback() {
 
 #[test]
 fn resize_reflow_wrap_then_snapshot() {
-    let mut term = Term::new(5, 20, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 20, 100, Theme::default(), VoidEffectSink);
     feed(&mut term, b"abcdefghijklmnopqrst");
 
     // Shrink cols — content wraps across two lines.
@@ -2150,7 +2150,7 @@ fn resize_reflow_wrap_then_snapshot() {
 
 #[test]
 fn resize_reflow_unwrap_then_snapshot() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
     feed(&mut term, b"abcdefghijklmnopqrst");
 
     // Grow cols — two wrapped lines should merge.
@@ -2191,7 +2191,7 @@ fn resize_snapshot_damage_is_all_dirty() {
 
 #[test]
 fn resize_snapshot_display_offset_reset() {
-    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidEffectSink);
     // Fill scrollback.
     for i in 0..20 {
         let line = format!("line{i:03}\r\n");
@@ -2268,7 +2268,7 @@ fn stress_resize_rapid_dimension_changes() {
 
 #[test]
 fn stress_resize_with_scrollback_and_reflow() {
-    let mut term = Term::new(10, 40, 500, Theme::default(), VoidListener);
+    let mut term = Term::new(10, 40, 500, Theme::default(), VoidEffectSink);
     // Fill with enough content to populate scrollback.
     for i in 0..100 {
         let line = format!("line {i:04} with some padding text here\r\n");
@@ -2319,7 +2319,7 @@ fn stress_resize_alternating_grow_shrink() {
 
 #[test]
 fn stress_resize_with_wide_chars() {
-    let mut term = Term::new(10, 20, 100, Theme::default(), VoidListener);
+    let mut term = Term::new(10, 20, 100, Theme::default(), VoidEffectSink);
     // Write CJK wide characters.
     feed(&mut term, "日本語テスト".as_bytes());
 

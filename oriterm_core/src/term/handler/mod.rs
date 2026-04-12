@@ -1,4 +1,4 @@
-//! VTE handler implementation for `Term<T>`.
+//! VTE handler implementation for `Term<S>`.
 //!
 //! Implements `vte::ansi::Handler` to process escape sequences, control
 //! characters, and printable input. Each method delegates to the
@@ -12,7 +12,8 @@ use vte::ansi::{
     StandardCharset, TabulationClearMode,
 };
 
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, HostEffect};
 use crate::grid::editing::{DisplayEraseMode, LineEraseMode};
 use crate::grid::navigation::TabClearMode;
 use crate::index::Column;
@@ -35,7 +36,7 @@ mod status;
 // Rust requires a single `impl Trait` block, so this file is exempt from
 // the 500-line split rule (it's a pure dispatch table with no logic).
 
-impl<T: EventListener> Handler for Term<T> {
+impl<S: EffectSink> Handler for Term<S> {
     #[inline]
     fn input(&mut self, c: char) {
         self.selection_dirty = true;
@@ -132,7 +133,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn bell(&mut self) {
-        self.event_listener.send_event(Event::Bell);
+        self.effect_sink.push(Effect::Host(HostEffect::Bell));
     }
 
     fn substitute(&mut self) {

@@ -2,16 +2,17 @@
 //!
 //! Handles DECSCUSR (cursor shape), Kitty keyboard protocol, and
 //! stub responses for unimplemented DCS sequences. Methods are called
-//! by the `vte::ansi::Handler` trait impl on `Term<T>`.
+//! by the `vte::ansi::Handler` trait impl on `Term<S>`.
 
 use log::debug;
 use vte::ansi::{CursorStyle, KeyboardModes, KeyboardModesApplyBehavior, ModifyOtherKeys};
 
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect, PtyWriteKind, UiEffect};
 use crate::grid::CursorShape;
 use crate::term::{KEYBOARD_MODE_STACK_MAX_DEPTH, Term, TermMode};
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// DECSCUSR: set cursor shape and blinking.
     ///
     /// `None` means reset to default (Block + no explicit blinking).
@@ -24,7 +25,10 @@ impl<T: EventListener> Term<T> {
             self.cursor_shape = CursorShape::default();
             self.mode.insert(TermMode::CURSOR_BLINKING);
         }
-        self.event_listener.send_event(Event::CursorBlinkingChange);
+        self.effect_sink
+            .push(Effect::Ui(UiEffect::CursorBlinkChanged {
+                enabled: self.mode.contains(TermMode::CURSOR_BLINKING),
+            }));
     }
 
     /// Set only the cursor shape (no blinking change).
@@ -92,7 +96,10 @@ impl<T: EventListener> Term<T> {
             .unwrap_or(KeyboardModes::NO_MODE)
             .bits();
         let response = format!("\x1b[?{bits}u");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::KeyboardEvent,
+        }));
     }
 
     /// `XTerm` `modifyOtherKeys`: stub implementation.
@@ -112,8 +119,11 @@ impl<T: EventListener> Term<T> {
     )]
     pub(super) fn dcs_report_modify_other_keys(&mut self) {
         // Report mode 0 (disabled) since we don't implement modifyOtherKeys.
-        let response = "\x1b[>4;0m".to_string();
-        self.event_listener.send_event(Event::PtyWrite(response));
+        let response = "\x1b[>4;0m";
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.as_bytes().to_vec(),
+            kind: PtyWriteKind::Other,
+        }));
     }
 
     /// CSI 14 t: report text area size in pixels.
@@ -130,6 +140,9 @@ impl<T: EventListener> Term<T> {
         let height = grid.lines() as u32 * u32::from(self.cell_pixel_height);
         let width = grid.cols() as u32 * u32::from(self.cell_pixel_width);
         let response = format!("\x1b[4;{height};{width}t");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::Other,
+        }));
     }
 }

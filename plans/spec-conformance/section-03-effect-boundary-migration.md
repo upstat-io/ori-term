@@ -39,7 +39,7 @@ sections:
     status: complete
   - id: "03.5"
     title: "Migrate VTE handler emission sites to emit Effect"
-    status: not-started
+    status: in-progress
   - id: "03.6"
     title: "Migrate Term::pending_notifications into the Effect channel"
     status: not-started
@@ -63,7 +63,7 @@ sections:
 
 **Success Criteria:**
 - [x] `oriterm_core::effect::Effect` family enum exists with all 5 sub-families
-- [ ] No closures in handler files — `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
+- [x] No closures in handler files — `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
 - [ ] `Term::pending_notifications` bypass is gone — notifications flow through `EffectSink::push(Effect::Host(HostEffect::DesktopNotification {...}))`
 - [x] `LegacyEventSink` adapter exists and bridges Effect to existing consumers
 - [x] `SnapshotDoubleBuffer::seqno()` exposed and stable during Mode 2026 sync
@@ -699,47 +699,47 @@ The VTE handlers currently call `self.event_listener.send_event(Event::Foo(...))
 
 **event_listener() accessor callers**: `rg -n 'event_listener()' -g'*.rs'` identifies any code that reads the listener back out of `Term`. These must be updated: if the caller needs a `LegacyEventSink`, it holds a reference to the sink (which owns the listener), not to `Term`. Add `pub fn effect_sink(&self) -> &S` accessor on `Term`; remove `event_listener()` accessor entirely.
 
-- [ ] Replace `Term<T: EventListener>` with `Term<S: EffectSink>` in `oriterm_core/src/term/mod.rs:117`. Replace `event_listener: T` field with `effect_sink: S` (line 157).
-- [ ] Update all `impl<T: EventListener> ... for Term<T>` blocks to `impl<S: EffectSink> ... for Term<S>`. This is a mechanical find-and-replace across handler submodules — there is no "exception" block because there is no `T` parameter remaining.
-- [ ] Add `pub fn effect_sink(&self) -> &S` accessor. Remove the `event_listener()` accessor.
-- [ ] Migrate all 77 callers as described above (VoidListener → VoidEffectSink; non-void → LegacyEventSink::new(listener)).
-- [ ] **[BLOAT watch]** `oriterm_core/src/term/mod.rs` is currently at 499 lines — at the 500-line limit. Adding the `effect_sink` field and updated constructors will push it over. Extract the constructors (`new`, `new_void`) into `oriterm_core/src/term/constructors.rs` BEFORE adding the new code.
+- [x] Replace `Term<T: EventListener>` with `Term<S: EffectSink>` in `oriterm_core/src/term/mod.rs:117`. Replace `event_listener: T` field with `effect_sink: S` (line 157).
+- [x] Update all `impl<T: EventListener> ... for Term<T>` blocks to `impl<S: EffectSink> ... for Term<S>`. This is a mechanical find-and-replace across handler submodules — there is no "exception" block because there is no `T` parameter remaining.
+- [x] Add `pub fn effect_sink(&self) -> &S` accessor. Remove the `event_listener()` accessor.
+- [x] Migrate all 77 callers as described above (VoidListener → VoidEffectSink; non-void → LegacyEventSink::new(listener)).
+- [x] **[BLOAT watch]** `oriterm_core/src/term/mod.rs` is currently at 499 lines — at the 500-line limit. Adding the `effect_sink` field and updated constructors will push it over. Extract the constructors (`new`, `new_void`) into `oriterm_core/src/term/constructors.rs` BEFORE adding the new code.
 
 ### 03.5b Handler emission site migration (oriterm_core)
 
 Complete list of ALL emission sites (verified by `grep -rn 'send_event' oriterm_core/src/term/`):
 
-- [ ] `handler/mod.rs:135` — `Event::Bell` → `self.effect_sink.push(Effect::Host(HostEffect::Bell))`
-- [ ] `handler/osc.rs:36` — `Event::Title(t)` / `Event::ResetTitle` → `self.effect_sink.push(Effect::Host(HostEffect::TitleSet { value: Some(t) }))` / `value: None`
-- [ ] `handler/osc.rs:50` — `Event::IconName(n)` / `Event::ResetIconName` → similar to Title
-- [ ] `handler/osc.rs:102-111` — **REMOVE the closure in `osc_dynamic_color_sequence()`**, replace with `HostRequest::ColorQuery { prefix: prefix.to_string(), index, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `prefix` and `terminator` parameters from `osc_dynamic_color_sequence(&self, prefix: &str, index: usize, terminator: &str)` are captured as owned fields on the request (TPR-03-001-gemini). The format string `"\x1b]{prefix};rgb:{r:02x}{r:02x}/..."` moves to the reply-return formatter (see 03.5d).
-- [ ] `handler/osc.rs:137-138` — `Event::ClipboardStore(...)` → `Effect::Host(HostEffect::ClipboardStore { selection, data })` (fire-and-forget, no reply token — TPR-03-004)
-- [ ] `handler/osc.rs:153-159` — **REMOVE the closure in `osc_clipboard_load()`**, replace with `HostRequest::ClipboardLoad { selection, clipboard_char: clipboard, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `clipboard` and `terminator` parameters from `osc_clipboard_load(&self, clipboard: u8, terminator: &str)` are captured as owned fields on the request (TPR-03-002-gemini). The base64 formatting moves to the reply-return formatter.
-- [ ] `handler/esc.rs:65` — `Event::ResetTitle` → `self.effect_sink.push(Effect::Host(HostEffect::TitleSet { value: None }))` (this was MISSING from the original plan — blind spot #5)
-- [ ] `handler/dcs.rs:27` — `Event::CursorBlinkingChange` → `self.effect_sink.push(Effect::Ui(UiEffect::CursorBlinkChanged { enabled: self.mode.contains(TermMode::CURSOR_BLINKING) }))` (this was MISSING from the original plan — blind spot #5)
-- [ ] `handler/dcs.rs:95` — `Event::PtyWrite(response)` (keyboard mode report) → `Effect::Pty(PtyEffect::Write { bytes: response.into_bytes(), kind: PtyWriteKind::KeyboardEvent })`
-- [ ] `handler/dcs.rs:116` — `Event::PtyWrite(response)` (modifyOtherKeys report) → `Effect::Pty(PtyEffect::Write { bytes: response.into_bytes(), kind: PtyWriteKind::Other })`
-- [ ] `handler/dcs.rs:133` — `Event::PtyWrite(response)` (text area size pixels) → `Effect::Pty(PtyEffect::Write { bytes: response.into_bytes(), kind: PtyWriteKind::Other })`
-- [ ] `handler/modes.rs:26` — `Event::CursorBlinkingChange` (DECSET BlinkingCursor) → `Effect::Ui(UiEffect::CursorBlinkChanged { enabled: true })`
-- [ ] `handler/modes.rs:32,37,42,47` — `Event::MouseCursorDirty` (DECSET mouse modes) → `Effect::Ui(UiEffect::MouseCursorDirty)`
-- [ ] `handler/modes.rs:115` — `Event::CursorBlinkingChange` (DECRST BlinkingCursor) → `Effect::Ui(UiEffect::CursorBlinkChanged { enabled: false })`
-- [ ] `handler/modes.rs:120,124,128,132` — `Event::MouseCursorDirty` (DECRST mouse modes) → `Effect::Ui(UiEffect::MouseCursorDirty)`
-- [ ] `handler/status.rs:102` — `Event::PtyWrite(response)` (DECRQM ANSI mode) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::ModeReport })`
-- [ ] `handler/status.rs:117` — DECRQM private mode → same as above
-- [ ] `handler/status.rs:132,138,144` — DA1/DA2/DA3 → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::DeviceAttribute })`
-- [ ] `handler/status.rs:155` — DSR status OK → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::DeviceStatus })`
-- [ ] `handler/status.rs:168` — DSR cursor position → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::CursorReport })`
-- [ ] `handler/status.rs:179` — CSI 18 t (text area size chars) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::Other })`
-- [ ] `handler/status.rs:213` — DECRQSS → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::StatusString })`
-- [ ] `handler/image/kitty.rs:474` — kitty image protocol response → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::ImageProtocolReply })`
+- [x] `handler/mod.rs:135` — `Event::Bell` → `self.effect_sink.push(Effect::Host(HostEffect::Bell))`
+- [x] `handler/osc.rs:36` — `Event::Title(t)` / `Event::ResetTitle` → `self.effect_sink.push(Effect::Host(HostEffect::TitleSet { value: Some(t) }))` / `value: None`
+- [x] `handler/osc.rs:50` — `Event::IconName(n)` / `Event::ResetIconName` → similar to Title
+- [x] `handler/osc.rs:102-111` — **REMOVE the closure in `osc_dynamic_color_sequence()`**, replace with `HostRequest::ColorQuery { prefix: prefix.to_string(), index, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `prefix` and `terminator` parameters from `osc_dynamic_color_sequence(&self, prefix: &str, index: usize, terminator: &str)` are captured as owned fields on the request (TPR-03-001-gemini). The format string `"\x1b]{prefix};rgb:{r:02x}{r:02x}/..."` moves to the reply-return formatter (see 03.5d).
+- [x] `handler/osc.rs:137-138` — `Event::ClipboardStore(...)` → `Effect::Host(HostEffect::ClipboardStore { selection, data })` (fire-and-forget, no reply token — TPR-03-004)
+- [x] `handler/osc.rs:153-159` — **REMOVE the closure in `osc_clipboard_load()`**, replace with `HostRequest::ClipboardLoad { selection, clipboard_char: clipboard, terminator: terminator.to_string(), reply: ResponseToken::new() }`. The `clipboard` and `terminator` parameters from `osc_clipboard_load(&self, clipboard: u8, terminator: &str)` are captured as owned fields on the request (TPR-03-002-gemini). The base64 formatting moves to the reply-return formatter.
+- [x] `handler/esc.rs:65` — `Event::ResetTitle` → `self.effect_sink.push(Effect::Host(HostEffect::TitleSet { value: None }))` (this was MISSING from the original plan — blind spot #5)
+- [x] `handler/dcs.rs:27` — `Event::CursorBlinkingChange` → `self.effect_sink.push(Effect::Ui(UiEffect::CursorBlinkChanged { enabled: self.mode.contains(TermMode::CURSOR_BLINKING) }))` (this was MISSING from the original plan — blind spot #5)
+- [x] `handler/dcs.rs:95` — `Event::PtyWrite(response)` (keyboard mode report) → `Effect::Pty(PtyEffect::Write { bytes: response.into_bytes(), kind: PtyWriteKind::KeyboardEvent })`
+- [x] `handler/dcs.rs:116` — `Event::PtyWrite(response)` (modifyOtherKeys report) → `Effect::Pty(PtyEffect::Write { bytes: response.into_bytes(), kind: PtyWriteKind::Other })`
+- [x] `handler/dcs.rs:133` — `Event::PtyWrite(response)` (text area size pixels) → `Effect::Pty(PtyEffect::Write { bytes: response.into_bytes(), kind: PtyWriteKind::Other })`
+- [x] `handler/modes.rs:26` — `Event::CursorBlinkingChange` (DECSET BlinkingCursor) → `Effect::Ui(UiEffect::CursorBlinkChanged { enabled: true })`
+- [x] `handler/modes.rs:32,37,42,47` — `Event::MouseCursorDirty` (DECSET mouse modes) → `Effect::Ui(UiEffect::MouseCursorDirty)`
+- [x] `handler/modes.rs:115` — `Event::CursorBlinkingChange` (DECRST BlinkingCursor) → `Effect::Ui(UiEffect::CursorBlinkChanged { enabled: false })`
+- [x] `handler/modes.rs:120,124,128,132` — `Event::MouseCursorDirty` (DECRST mouse modes) → `Effect::Ui(UiEffect::MouseCursorDirty)`
+- [x] `handler/status.rs:102` — `Event::PtyWrite(response)` (DECRQM ANSI mode) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::ModeReport })`
+- [x] `handler/status.rs:117` — DECRQM private mode → same as above
+- [x] `handler/status.rs:132,138,144` — DA1/DA2/DA3 → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::DeviceAttribute })`
+- [x] `handler/status.rs:155` — DSR status OK → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::DeviceStatus })`
+- [x] `handler/status.rs:168` — DSR cursor position → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::CursorReport })`
+- [x] `handler/status.rs:179` — CSI 18 t (text area size chars) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::Other })`
+- [x] `handler/status.rs:213` — DECRQSS → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::StatusString })`
+- [x] `handler/image/kitty.rs:474` — kitty image protocol response → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::ImageProtocolReply })`
 
 ### 03.5c Raw interceptor emission sites (oriterm_mux)
 
 The raw interceptor at `oriterm_mux/src/shell_integration/interceptor.rs` also emits events. These were MISSING from the original plan (blind spot #5):
 
-- [ ] `interceptor.rs:62` — `Event::PtyWrite(response)` (XTVERSION reply) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::Other })`
-- [ ] `interceptor.rs:82` — `Event::Cwd(path)` (OSC 7) → `Effect::Host(HostEffect::CwdSet { cwd: path })`
-- [ ] `interceptor.rs:110` — `Event::CommandComplete(duration)` (OSC 133;D) → `Effect::Host(HostEffect::CommandComplete { duration })`
+- [x] `interceptor.rs:62` — `Event::PtyWrite(response)` (XTVERSION reply) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::Other })`
+- [x] `interceptor.rs:82` — `Event::Cwd(path)` (OSC 7) → `Effect::Host(HostEffect::CwdSet { cwd: path })`
+- [x] `interceptor.rs:110` — `Event::CommandComplete(duration)` (OSC 133;D) → `Effect::Host(HostEffect::CommandComplete { duration })`
 - [ ] `interceptor.rs:124,147` — `push_notification()` calls (OSC 9/99/777) → handled in 03.6
 
 Note: The interceptor accesses `Term` via `self.term.event_listener()`. After the migration, it should access `self.term.effect_sink()` instead. The `RawInterceptor` struct's generic parameter must also carry the `S: EffectSink` bound.
@@ -752,7 +752,7 @@ When the VTE handler emits `HostRequest::ClipboardLoad { reply: token }` or `Hos
 
 **Legacy-phase note (TPR-03-003-gemini)**: During the legacy phase (when `LegacyEventSink` is active), the reply-return path is handled ENTIRELY by the legacy consumer's manual PTY write. The `LegacyEventSink` adapter wraps the `ResponseToken` in a back-compat closure that both fulfills the token AND returns the formatted string. The IO thread `pending_responses` polling described below is NOT active during the legacy phase — it activates only when consumers migrate to subscribe to `Effect::HostRequest` directly (in `plans/effect-cutover/`). The `PendingResponse` infrastructure is defined here for completeness but remains dormant until the cutover.
 
-- [ ] Define `PendingResponse` in `oriterm_core::effect` (NOT in `oriterm_mux`) so that both `QueueingEffectSink` users and the mux IO thread can use the same reply-polling infrastructure (TPR-03-002 — core-owned, not mux-only). Add a `pending_responses: Vec<PendingResponse>` field to `PaneIoThread`. `PendingResponse` is a type-erased wrapper:
+- [x] Define `PendingResponse` in `oriterm_core::effect` (NOT in `oriterm_mux`) so that both `QueueingEffectSink` users and the mux IO thread can use the same reply-polling infrastructure (TPR-03-002 — core-owned, not mux-only). Add a `pending_responses: Vec<PendingResponse>` field to `PaneIoThread`. `PendingResponse` is a type-erased wrapper:
   ```rust
   // In oriterm_core/src/effect/response.rs (new file)
   /// A response token awaiting fulfillment + a formatter that turns the
@@ -783,7 +783,7 @@ When the VTE handler emits `HostRequest::ClipboardLoad { reply: token }` or `Hos
 
 Effects are pushed into a queue (or forwarded immediately), but there is no defined happens-before relationship between effects and state changes/snapshot publication.
 
-- [ ] Document the ordering contract in `EffectSink` trait doc:
+- [x] Document the ordering contract in `EffectSink` trait doc:
   ```
   /// # Ordering
   ///
@@ -797,19 +797,19 @@ Effects are pushed into a queue (or forwarded immediately), but there is no defi
   /// This is the ONLY synchronization point between the effect
   /// stream and the state stream.
   ```
-- [ ] `SyncCommit { snapshot_seqno }` is NOT a generic ordering guarantee — it is a specific synchronization point for Mode 2026. General effect-state ordering is left intentionally relaxed because the IO thread produces snapshots asynchronously from effect emission.
+- [x] `SyncCommit { snapshot_seqno }` is NOT a generic ordering guarantee — it is a specific synchronization point for Mode 2026. General effect-state ordering is left intentionally relaxed because the IO thread produces snapshots asynchronously from effect emission.
 
 ### 03.5f BLOAT watch items
 
-- [ ] **[BLOAT watch]** `oriterm_core/src/term/handler/mod.rs` is currently at 489 lines — near the 500-line limit. The handler migration in 03.5 modifies several emission sites; if the edits push the file past 500 lines, split `handler/mod.rs` into `mod.rs` (dispatch hub) + `handler/emit.rs` (the new emission helpers) BEFORE adding the new code. Do not leave `mod.rs` over-limit even briefly.
-- [ ] **[BLOAT watch]** `oriterm_core/src/term/handler/image/kitty.rs` is currently at 476 lines. 03.5 migrates line 474 (kitty image protocol ACK/error) to emit `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply })`. If the migration pushes the file over 500 lines, split by extracting the reply-formatting helpers into `image/kitty_reply.rs`.
-- [ ] **[BLOAT watch]** `oriterm_core/src/term/mod.rs` is currently at 499 lines — at the limit. See 03.5a for the mandatory constructor extraction.
-- [ ] **[BLOAT watch]** `oriterm_mux/src/pane/io_thread/mod.rs` is currently at 470 lines. Adding the `pending_responses` field and the polling loop in `drain_commands()` / `handle_command()` may push it over 500 lines. If so, extract the response-polling logic into `io_thread/response_poll.rs`.
+- [x] **[BLOAT watch]** `oriterm_core/src/term/handler/mod.rs` is currently at 489 lines — near the 500-line limit. The handler migration in 03.5 modifies several emission sites; if the edits push the file past 500 lines, split `handler/mod.rs` into `mod.rs` (dispatch hub) + `handler/emit.rs` (the new emission helpers) BEFORE adding the new code. Do not leave `mod.rs` over-limit even briefly.
+- [x] **[BLOAT watch]** `oriterm_core/src/term/handler/image/kitty.rs` is currently at 476 lines. 03.5 migrates line 474 (kitty image protocol ACK/error) to emit `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply })`. If the migration pushes the file over 500 lines, split by extracting the reply-formatting helpers into `image/kitty_reply.rs`.
+- [x] **[BLOAT watch]** `oriterm_core/src/term/mod.rs` is currently at 499 lines — at the limit. See 03.5a for the mandatory constructor extraction.
+- [x] **[BLOAT watch]** `oriterm_mux/src/pane/io_thread/mod.rs` is currently at 470 lines. Adding the `pending_responses` field and the polling loop in `drain_commands()` / `handle_command()` may push it over 500 lines. If so, extract the response-polling logic into `io_thread/response_poll.rs`.
 
 ### 03.5g Validation
 
-- [ ] **Complete emission site coverage**: `grep -rn 'send_event' oriterm_core/src/term/handler/ oriterm_mux/src/shell_integration/interceptor.rs` returns zero matches (all migrated to `effect_sink.push()`).
-- [ ] Existing tests in `oriterm_core/tests/teseq/`, `oriterm_core/tests/tack/`, and the alloc/RSS regression tests pass without modification. The legacy adapter preserves observable behavior.
+- [x] **Complete emission site coverage**: `grep -rn 'send_event' oriterm_core/src/term/handler/ oriterm_mux/src/shell_integration/interceptor.rs` returns zero matches (all migrated to `effect_sink.push()`).
+- [x] Existing tests in `oriterm_core/tests/teseq/`, `oriterm_core/tests/tack/`, and the alloc/RSS regression tests pass without modification. The legacy adapter preserves observable behavior.
 
 ---
 

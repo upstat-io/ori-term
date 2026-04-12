@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use log::{debug, warn};
 
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::grid::StableRowIndex;
 use crate::image::kitty::{
     KittyAction, KittyCommand, KittyTransmission, LoadingImage, parse_kitty_command,
@@ -27,7 +28,7 @@ pub(super) struct KittyStoreParams {
     pub(super) transmission: KittyTransmission,
 }
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Parse and execute a Kitty graphics command.
     pub(super) fn handle_kitty_graphics(&mut self, data: &[u8]) {
         if !self.image_protocol_enabled {
@@ -471,6 +472,9 @@ impl<T: EventListener> Term<T> {
         }
 
         let response = format!("\x1b_Gi={image_id};{msg}\x1b\\");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: response.into_bytes(),
+            kind: PtyWriteKind::ImageProtocolReply,
+        }));
     }
 }

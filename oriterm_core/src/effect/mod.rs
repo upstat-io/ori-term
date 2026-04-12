@@ -7,6 +7,7 @@
 //! they are observed via `RenderableContent` snapshots.
 
 mod families;
+mod response;
 pub mod sink;
 mod types;
 
@@ -15,6 +16,7 @@ pub use families::{
     PresentationEffect, PrintKind, PrintRequest, PtyEffect, PtyWriteKind, ResponseFulfilled,
     ResponseToken, SyncAbortReason, UiEffect,
 };
+pub use response::PendingResponse;
 pub use sink::legacy::DesktopNotificationRecord;
 pub use sink::{EffectSink, LegacyEventSink, QueueingEffectSink, VoidEffectSink};
 pub use types::Effect;

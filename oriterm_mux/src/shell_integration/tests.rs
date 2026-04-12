@@ -193,15 +193,16 @@ fn setup_injection_wsl_returns_none() {
 
 // --- Raw interceptor ---
 
-use oriterm_core::{PromptState, Term, Theme, VoidListener};
+use oriterm_core::effect::VoidEffectSink;
+use oriterm_core::{PromptState, Term, Theme};
 
 /// Helper: create a minimal terminal for interceptor tests.
-fn make_term() -> Term<VoidListener> {
-    Term::new(24, 80, 100, Theme::Dark, VoidListener)
+fn make_term() -> Term<VoidEffectSink> {
+    Term::new(24, 80, 100, Theme::Dark, VoidEffectSink)
 }
 
 /// Helper: feed raw bytes through the interceptor.
-fn intercept(term: &mut Term<VoidListener>, bytes: &[u8]) {
+fn intercept(term: &mut Term<VoidEffectSink>, bytes: &[u8]) {
     let mut parser = vte::Parser::new();
     let mut interceptor = super::interceptor::RawInterceptor::new(term);
     parser.advance(&mut interceptor, bytes);
@@ -606,7 +607,7 @@ fn ensure_scripts_nonexistent_parent_returns_error() {
 #[test]
 fn prompt_navigation_scrolls_to_previous() {
     // Small terminal: 4 visible lines, 100 scrollback.
-    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidListener);
+    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidEffectSink);
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
 
     // Mark prompt at current position (abs row 0).
@@ -625,7 +626,7 @@ fn prompt_navigation_scrolls_to_previous() {
 
 #[test]
 fn prompt_navigation_no_prompt_above_returns_false() {
-    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidListener);
+    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidEffectSink);
 
     // Mark prompt at current position (row 0), viewport is already here.
     term.set_prompt_mark_pending(true);
@@ -637,7 +638,7 @@ fn prompt_navigation_no_prompt_above_returns_false() {
 
 #[test]
 fn prompt_navigation_scrolls_to_next() {
-    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidListener);
+    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidEffectSink);
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
 
     // Write some content then mark a prompt.
@@ -901,8 +902,16 @@ impl oriterm_core::EventListener for RecordingListener {
 
 #[test]
 fn xtversion_responds_with_oriterm_version() {
+    use oriterm_core::effect::LegacyEventSink;
+
     let listener = RecordingListener::new();
-    let mut term = Term::new(24, 80, 100, Theme::Dark, listener.clone());
+    let mut term = Term::new(
+        24,
+        80,
+        100,
+        Theme::Dark,
+        LegacyEventSink::new(listener.clone()),
+    );
 
     // CSI > q — XTVERSION request.
     let mut parser = vte::Parser::new();

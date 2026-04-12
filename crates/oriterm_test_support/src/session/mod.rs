@@ -23,6 +23,7 @@ use std::io::{Read, Write};
 use std::sync::Mutex;
 use std::thread;
 
+use oriterm_core::effect::LegacyEventSink;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::{Term, Theme};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -102,7 +103,7 @@ static CONPTY_LIFETIME_LOCK: Mutex<()> = Mutex::new(());
 pub struct PtySession {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     writer: Box<dyn Write + Send>,
-    term: Term<PtyResponder>,
+    term: Term<LegacyEventSink<PtyResponder>>,
     proc: vte::ansi::Processor,
     cols: u16,
     rows: u16,
@@ -225,7 +226,13 @@ impl PtySession {
         });
 
         let listener = PtyResponder::new();
-        let term = Term::new(rows as usize, cols as usize, 0, Theme::default(), listener);
+        let term = Term::new(
+            rows as usize,
+            cols as usize,
+            0,
+            Theme::default(),
+            LegacyEventSink::new(listener),
+        );
         let proc = vte::ansi::Processor::new();
 
         Self {
@@ -301,7 +308,7 @@ impl PtySession {
     /// needs to mutate `Term` outside of byte-feeding, add a narrow
     /// operation method on `PtySession` instead.
     #[must_use]
-    pub fn term(&self) -> &Term<PtyResponder> {
+    pub fn term(&self) -> &Term<LegacyEventSink<PtyResponder>> {
         &self.term
     }
 
@@ -315,7 +322,7 @@ impl PtySession {
     /// consume this for OSC 52 coverage.
     #[must_use]
     pub fn take_clipboard_stores(&self) -> Vec<(ClipboardType, String)> {
-        self.term.event_listener().take_clipboard_stores()
+        self.term.effect_sink().listener().take_clipboard_stores()
     }
 
     /// Number of columns the PTY was opened with.

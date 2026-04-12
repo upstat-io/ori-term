@@ -7,21 +7,28 @@
 
 use std::sync::Arc;
 
+use oriterm_core::effect::LegacyEventSink;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::{Event, EventListener, Term, Theme};
 use vte::ansi::Processor;
 
 use super::PtyResponder;
 
-/// Build a 24×80 `Term` driven by a fresh `PtyResponder`, returning both
+/// Build a 24x80 `Term` driven by a fresh `PtyResponder`, returning both
 /// the term and a clone of the responder that tests can inspect.
-fn term_with_responder() -> (Term<PtyResponder>, PtyResponder) {
+fn term_with_responder() -> (Term<LegacyEventSink<PtyResponder>>, PtyResponder) {
     let responder = PtyResponder::new();
-    let term = Term::new(24, 80, 0, Theme::default(), responder.clone());
+    let term = Term::new(
+        24,
+        80,
+        0,
+        Theme::default(),
+        LegacyEventSink::new(responder.clone()),
+    );
     (term, responder)
 }
 
-fn feed(term: &mut Term<PtyResponder>, bytes: &[u8]) {
+fn feed(term: &mut Term<LegacyEventSink<PtyResponder>>, bytes: &[u8]) {
     let mut processor: Processor = Processor::new();
     processor.advance(term, bytes);
 }

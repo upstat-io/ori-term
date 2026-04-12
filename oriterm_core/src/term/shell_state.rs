@@ -5,7 +5,7 @@
 //! title resolution, notifications, and prompt-based navigation.
 
 use super::{Notification, PendingMarks, PromptMarker, PromptState, Term};
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 
 /// Extract the last path component from a CWD path for tab display.
 ///
@@ -23,7 +23,7 @@ pub fn cwd_short_path(cwd: &str) -> &str {
     if component.is_empty() { "/" } else { component }
 }
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     // -- Prompt state --
 
     /// Current shell integration prompt state (OSC 133).

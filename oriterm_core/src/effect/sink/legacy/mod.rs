@@ -60,6 +60,14 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
         }
     }
 
+    /// Access the wrapped `EventListener`.
+    ///
+    /// Used by test infrastructure that holds the `Term` and needs to read
+    /// back events from the inner listener (e.g. `PtyResponder::take_responses()`).
+    pub fn listener(&self) -> &L {
+        &self.listener
+    }
+
     /// Drain all queued desktop notifications.
     ///
     /// Called by the thin `Term::drain_notifications()` shim during the
