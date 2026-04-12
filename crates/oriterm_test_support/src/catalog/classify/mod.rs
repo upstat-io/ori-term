@@ -6,19 +6,20 @@
 //! `catalog_coverage_check capture-top10-covered` subcommands
 //! (Section 01.5.c).
 //!
-//! The classifier walks the dispatch AST via the same `syn`
-//! infrastructure the dispatch extractors use, but also captures
-//! the handler method names from each match arm body. The result
-//! is a `BTreeMap<Tuple, BTreeSet<String>>` mapping each
-//! dispatched tuple to the set of `Handler::*` methods that arm
-//! invokes.
-
-mod walkers;
+//! The classifier delegates to the dispatch extractors in the
+//! sibling `dispatch_extract` submodule which walk the dispatch
+//! AST and capture both the arm pattern (→ tuple) and the arm
+//! body (→ handler method calls). The result is a
+//! `BTreeMap<Tuple, BTreeSet<String>>` mapping each dispatched
+//! tuple to the set of `Handler::*` methods that arm invokes.
+//!
+//! `NamedPrivateMode` entries are added as
+//! `set_private_mode` / `unset_private_mode`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use super::dispatch_extract::DispatchExtractError;
+use super::dispatch_extract::{self, DispatchExtractError};
 use super::tuple::{Category, Tuple};
 
 /// Result of classifying a single tuple.
@@ -33,11 +34,9 @@ pub enum Classification {
 
 /// Build the full dispatch map: `Tuple → {Handler method names}`.
 ///
-/// Walks `crates/vte/src/ansi/dispatch/{csi,osc,mod}.rs` relative
-/// to `workspace_root`, extracting both the arm pattern (→ tuple)
-/// and the arm body (→ handler method calls on `handler` or
-/// `self.handler`). Also includes `NamedPrivateMode` entries as
-/// `set_private_mode` / `unset_private_mode`.
+/// Delegates to [`dispatch_extract::extract_dispatch_map`] for
+/// CSI / OSC / ESC / DCS / APC arms, then adds `NamedPrivateMode`
+/// entries as `set_private_mode` / `unset_private_mode`.
 ///
 /// # Errors
 ///
@@ -45,26 +44,19 @@ pub enum Classification {
 pub fn build_dispatch_map(
     workspace_root: &Path,
 ) -> Result<BTreeMap<Tuple, BTreeSet<String>>, DispatchExtractError> {
-    let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
+    let mut map = dispatch_extract::extract_dispatch_map(workspace_root)?;
 
-    let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi.rs");
-    walkers::extract_csi_with_handlers(&csi_path, &mut map)?;
-
-    let mod_path = workspace_root.join("crates/vte/src/ansi/dispatch/mod.rs");
-    walkers::extract_mod_with_handlers(&mod_path, &mut map)?;
-
-    let osc_path = workspace_root.join("crates/vte/src/ansi/dispatch/osc.rs");
-    walkers::extract_osc_with_handlers(&osc_path, &mut map)?;
-
-    let types_path = workspace_root.join("crates/vte/src/ansi/types.rs");
-    walkers::extract_private_mode_handlers(&types_path, workspace_root, &mut map)?;
-
-    // APC dispatch is unconditional — Performer::apc_end calls
-    // handler.apc_dispatch(&payload) for every APC sequence.
-    // This isn't a match arm, so the visitor doesn't catch it.
-    map.entry(Tuple::new(Category::Apc, Vec::<u8>::new(), "Pt", "ST"))
-        .or_default()
-        .insert("apc_dispatch".to_string());
+    // NamedPrivateMode entries — each mode number gets a
+    // set_private_mode/unset_private_mode handler pair.
+    let pm_tuples = dispatch_extract::extract_namedprivatemode_tuples(workspace_root)?;
+    for tuple in pm_tuples {
+        let method = if tuple.final_byte == "h" {
+            "set_private_mode"
+        } else {
+            "unset_private_mode"
+        };
+        map.entry(tuple).or_default().insert(method.to_string());
+    }
 
     Ok(map)
 }

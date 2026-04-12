@@ -4,16 +4,30 @@
 //! `match params[0] { ... }` in the `dispatch` function — and
 //! emits one [`Tuple`] per recognized numeric-id byte string
 //! literal.
+//!
+//! Two entry points:
+//! - [`extract_osc_arms`] — tuples only (no handler method names)
+//! - [`extract_osc_arms_with_handlers`] — tuples + handler methods
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::super::tuple::{Category, Tuple};
-use super::{DispatchExtractError, parse_rust, read_rust};
+use super::{DispatchExtractError, extract_handler_methods, parse_rust, read_rust};
 
 pub(super) fn extract_osc_arms(
     path: &Path,
     out: &mut BTreeSet<Tuple>,
+) -> Result<(), DispatchExtractError> {
+    let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
+    extract_osc_arms_with_handlers(path, &mut map)?;
+    out.extend(map.into_keys());
+    Ok(())
+}
+
+pub(super) fn extract_osc_arms_with_handlers(
+    path: &Path,
+    map: &mut BTreeMap<Tuple, BTreeSet<String>>,
 ) -> Result<(), DispatchExtractError> {
     let source = read_rust(path)?;
     let file = parse_rust(path, &source)?;
@@ -23,22 +37,21 @@ pub(super) fn extract_osc_arms(
         if func.sig.ident != "dispatch" {
             continue;
         }
-        scan_osc_dispatch_fn(&func.block, out);
+        scan_osc_dispatch_fn(&func.block, map);
     }
     Ok(())
 }
 
-fn scan_osc_dispatch_fn(block: &syn::Block, out: &mut BTreeSet<Tuple>) {
-    // OSC dispatch matches `params[0]` against byte-string literals.
+fn scan_osc_dispatch_fn(block: &syn::Block, map: &mut BTreeMap<Tuple, BTreeSet<String>>) {
     struct OscVisitor<'a> {
-        out: &'a mut BTreeSet<Tuple>,
+        map: &'a mut BTreeMap<Tuple, BTreeSet<String>>,
     }
 
     impl syn::visit::Visit<'_> for OscVisitor<'_> {
         fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
             if is_params_zero_scrutinee(&m.expr) {
                 for arm in &m.arms {
-                    collect_osc_arm(&arm.pat, self.out);
+                    collect_osc_arm_with_handlers(&arm.pat, &arm.body, self.map);
                 }
             } else {
                 syn::visit::visit_expr_match(self, m);
@@ -46,19 +59,22 @@ fn scan_osc_dispatch_fn(block: &syn::Block, out: &mut BTreeSet<Tuple>) {
         }
     }
 
-    let mut v = OscVisitor { out };
+    let mut v = OscVisitor { map };
     syn::visit::Visit::visit_block(&mut v, block);
 }
 
 fn is_params_zero_scrutinee(expr: &syn::Expr) -> bool {
-    // Matches `params[0]` indexing.
     let syn::Expr::Index(idx) = expr else {
         return false;
     };
     matches!(&*idx.expr, syn::Expr::Path(p) if p.path.is_ident("params"))
 }
 
-fn collect_osc_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
+fn collect_osc_arm_with_handlers(
+    pat: &syn::Pat,
+    body: &syn::Expr,
+    map: &mut BTreeMap<Tuple, BTreeSet<String>>,
+) {
     match pat {
         syn::Pat::Lit(syn::PatLit {
             lit: syn::Lit::ByteStr(b),
@@ -67,18 +83,15 @@ fn collect_osc_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
             let value = b.value();
             if let Ok(id) = std::str::from_utf8(&value) {
                 if !id.is_empty() {
-                    out.insert(Tuple::new(
-                        Category::Osc,
-                        Vec::<u8>::new(),
-                        id.to_string(),
-                        "BEL",
-                    ));
+                    let tuple = Tuple::new(Category::Osc, Vec::<u8>::new(), id.to_string(), "BEL");
+                    let methods = extract_handler_methods(body);
+                    map.entry(tuple).or_default().extend(methods);
                 }
             }
         }
         syn::Pat::Or(or) => {
             for sub in &or.cases {
-                collect_osc_arm(sub, out);
+                collect_osc_arm_with_handlers(sub, body, map);
             }
         }
         _ => {}
