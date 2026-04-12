@@ -357,3 +357,6 @@ impl<L: EventListener + Sync> Term<LegacyEventSink<L>> {
         self.effect_sink.drain_pending_notifications()
     }
 }
+
+#[cfg(test)]
+mod tests;

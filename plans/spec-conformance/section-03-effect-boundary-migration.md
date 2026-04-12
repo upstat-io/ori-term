@@ -39,7 +39,7 @@ sections:
     status: complete
   - id: "03.5"
     title: "Migrate VTE handler emission sites to emit Effect"
-    status: in-progress
+    status: complete
   - id: "03.6"
     title: "Migrate Term::pending_notifications into the Effect channel"
     status: in-progress
@@ -740,7 +740,7 @@ The raw interceptor at `oriterm_mux/src/shell_integration/interceptor.rs` also e
 - [x] `interceptor.rs:62` — `Event::PtyWrite(response)` (XTVERSION reply) → `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::Other })`
 - [x] `interceptor.rs:82` — `Event::Cwd(path)` (OSC 7) → `Effect::Host(HostEffect::CwdSet { cwd: path })`
 - [x] `interceptor.rs:110` — `Event::CommandComplete(duration)` (OSC 133;D) → `Effect::Host(HostEffect::CommandComplete { duration })`
-- [ ] `interceptor.rs:124,147` — `push_notification()` calls (OSC 9/99/777) → handled in 03.6
+- [x] `interceptor.rs:124,147` — `push_notification()` calls (OSC 9/99/777) → handled in 03.6
 
 Note: The interceptor accesses `Term` via `self.term.event_listener()`. After the migration, it should access `self.term.effect_sink()` instead. The `RawInterceptor` struct's generic parameter must also carry the `S: EffectSink` bound.
 
@@ -775,9 +775,9 @@ When the VTE handler emits `HostRequest::ClipboardLoad { reply: token }` or `Hos
   }
   ```
   The mux IO thread imports `PendingResponse` from `oriterm_core::effect`. Section 04's `SpecHarness` (in `oriterm_core` tests) can also use it directly without depending on `oriterm_mux`.
-- [ ] When the IO thread (or the legacy adapter) processes a `HostRequest::ClipboardLoad`, it registers a `PendingResponse` whose `poll` closure calls `token.take()` and, if `Some(text)`, formats the base64 response using the `clipboard_char` and `terminator` fields from the request, and returns `Some(Effect::Pty(PtyEffect::Write { ... }))`.
-- [ ] In `drain_commands()` / `handle_command()`, after draining the command channel, iterate `pending_responses` and poll each. For any that return `Some(effect)`, push the effect through the effect sink. Remove fulfilled entries. (Note: this polling is dormant during the legacy phase — see the legacy-phase note above.)
-- [ ] Add a test: `reply_token_clipboard_load_produces_pty_write()` — emit `HostRequest::ClipboardLoad`, fulfill the token, poll, assert `Effect::Pty` is produced with correct base64 content.
+- [x] When the IO thread (or the legacy adapter) processes a `HostRequest::ClipboardLoad`, it registers a `PendingResponse` whose `poll` closure calls `token.take()` and, if `Some(text)`, formats the base64 response using the `clipboard_char` and `terminator` fields from the request, and returns `Some(Effect::Pty(PtyEffect::Write { ... }))`.
+- [x] In `drain_commands()` / `handle_command()`, after draining the command channel, iterate `pending_responses` and poll each. For any that return `Some(effect)`, push the effect through the effect sink. Remove fulfilled entries. (Note: this polling is dormant during the legacy phase — see the legacy-phase note above.)
+- [x] Add a test: `reply_token_clipboard_load_produces_pty_write()` — emit `HostRequest::ClipboardLoad`, fulfill the token, poll, assert `Effect::Pty` is produced with correct base64 content.
 
 ### 03.5e Ordering contract (blind spot #6)
 
@@ -931,7 +931,7 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 - [x] ALL VTE handler emission sites migrated to emit Effect — verified by: `grep -rn 'send_event' oriterm_core/src/term/handler/ oriterm_mux/src/shell_integration/interceptor.rs` returns zero matches
 - [x] ALL emission sites from 03.5b and 03.5c are individually checked off (34 sites in oriterm_core + 3 sites in interceptor)
 - [x] `Term::pending_notifications` bypass channel removed (field + push + direct clear); OSC 9/99/777 flow through Effect; thin `drain_notifications()` shim kept for back-compat
-- [ ] `shell_state.rs` converted to directory module (`shell_state/mod.rs` + `shell_state/tests.rs`) per test-organization.md
+- [x] `shell_state.rs` converted to directory module (`shell_state/mod.rs` + `shell_state/tests.rs`) per test-organization.md
 - [x] LegacyEventSink adapter routes Effect → existing Event for back-compat; `L: EventListener + Sync` bound; DesktopNotification queued in adapter's secondary `pending_notifications` (TPR-03-001); existing tests pass without modification
 - [x] Ordering contract documented on EffectSink trait (effects ordered relative to each other; NOT ordered relative to state; SyncCommit is the only sync point)
 - [x] Reply-return path implemented: `PendingResponse` defined in `oriterm_core::effect` (core-owned, TPR-03-002), used by `PaneIoThread`, polled in `drain_commands()` / `handle_command()` (dormant during legacy phase; activates at cutover)

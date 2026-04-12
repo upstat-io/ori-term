@@ -11,6 +11,7 @@
 mod commands;
 pub(crate) mod event_proxy;
 mod handler;
+mod response_poll;
 pub(crate) mod snapshot;
 
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use std::{fmt, io};
 
 use crossbeam_channel::{Receiver, Sender};
 
+use oriterm_core::effect::PendingResponse;
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::{RenderableContent, Term};
 
@@ -85,6 +87,12 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// when `Term::selection_dirty` becomes true. Read/cleared by the main
     /// thread in `check_selection_invalidation()`.
     selection_dirty: Arc<AtomicBool>,
+    /// Pending host-request responses awaiting fulfillment.
+    ///
+    /// Dormant during the legacy phase (`LegacyEventSink` handles the
+    /// round-trip via closures). Activates when consumers migrate to
+    /// `QueueingEffectSink` (in `plans/effect-cutover/`).
+    pending_responses: Vec<PendingResponse>,
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
@@ -165,6 +173,7 @@ impl<S: EffectSink> PaneIoThread<S> {
         if let Some((rows, cols)) = last_resize {
             self.process_resize(rows, cols);
         }
+        self.poll_pending_responses();
     }
 
     /// Parse a byte buffer with bounded chunking.
@@ -458,6 +467,7 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         last_pty_size: (config.initial_rows as u32) << 16 | config.initial_cols as u32,
         search: None,
         selection_dirty: config.selection_dirty,
+        pending_responses: Vec::new(),
     };
     let handle = PaneIoHandle {
         cmd_tx,
