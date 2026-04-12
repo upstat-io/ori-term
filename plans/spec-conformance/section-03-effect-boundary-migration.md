@@ -64,12 +64,12 @@ sections:
 **Success Criteria:**
 - [x] `oriterm_core::effect::Effect` family enum exists with all 5 sub-families
 - [x] No closures in handler files — `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
-- [ ] `Term::pending_notifications` bypass is gone — notifications flow through `EffectSink::push(Effect::Host(HostEffect::DesktopNotification {...}))`
+- [x] `Term::pending_notifications` bypass is gone — notifications flow through `EffectSink::push(Effect::Host(HostEffect::DesktopNotification {...}))`
 - [x] `LegacyEventSink` adapter exists and bridges Effect to existing consumers
 - [x] `SnapshotDoubleBuffer::seqno()` exposed and stable during Mode 2026 sync
-- [ ] All existing tests pass without modification (`./test-all.sh` green debug + release)
-- [ ] No regressions in `oriterm_core/tests/alloc_regression.rs` (closure removal must not introduce new allocations on hot paths)
-- [ ] Connects to mission criterion: **Effect/State separation enforced**
+- [x] All existing tests pass without modification (`./test-all.sh` green debug + release)
+- [x] No regressions in `oriterm_core/tests/alloc_regression.rs` (closure removal must not introduce new allocations on hot paths)
+- [x] Connects to mission criterion: **Effect/State separation enforced**
 
 **Context:** Codex's Round 2 + Round 3 consensus established that the current `Event` enum mixes four different abstractions (state changes, fire-and-forget effects, request/response with closures, transport noise like Wakeup). The closure-based `ClipboardLoad` and `ColorRequest` carry `Arc<dyn Fn(...) -> String>` payloads that capture formatter state from the OSC handler and pass it to the consumer — this is awkward, leaks formatting logic out of `oriterm_core`, and prevents tests from cleanly observing what response the handler will format. The fix is to switch to typed request/response: the handler emits `HostRequest::ClipboardLoad { sel, reply: token }`, the consumer satisfies the request and delivers the reply via the token, and the terminal then formats the reply via its own `Effect::Pty(PtyEffect::Write(...))` emission. Pass 1 + Pass 2 confirmed the exact closure signatures at `oriterm_core/src/event/mod.rs:46,50` and the bypass channel at `oriterm_core/src/term/shell_state.rs:218`.
 
@@ -918,44 +918,44 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 ## 03.N Completion Checklist
 
 ### TDD ordering
-- [ ] Failing test matrix written FIRST (TDD): tests in 03.1, 03.2, 03.3, 03.4, 03.6 written before implementation
-- [ ] **Matrix dimensions**: Effect family × emission site × consumer routing — all 5 families × every relevant emission site (Bell, Title, IconName, ResetTitle, Cwd, ClipboardStore, ClipboardLoad, ColorQuery, CursorBlink, MouseCursorDirty, PtyWrite for DA1/DA2/DA3/CPR/DSR/DECRQM-ANSI/DECRQM-private/DECRQSS/keyboard-mode-report/modifyOtherKeys-report/text-area-size-chars/text-area-size-pixels/kitty-image-reply/XTVERSION, DesktopNotification for OSC 9/99/777, CommandComplete for OSC 133;D, CwdSet for OSC 7) × LegacyEventSink routing test
-- [ ] **Semantic pin**: at least one test that PASSES only when closures are gone — `compile_fail` or grep-based assertion that `Arc<dyn Fn` does not appear in handler files
-- [ ] **Reply-return path tests**: at least one test verifying the full round-trip: handler emits `HostRequest::ClipboardLoad` → consumer fulfills `ResponseToken` → IO thread polls and produces `Effect::Pty(PtyEffect::Write { ... })` with correct base64 content. Same for `ColorQuery`.
+- [x] Failing test matrix written FIRST (TDD): tests in 03.1, 03.2, 03.3, 03.4, 03.6 written before implementation
+- [x] **Matrix dimensions**: Effect family × emission site × consumer routing — all 5 families × every relevant emission site (Bell, Title, IconName, ResetTitle, Cwd, ClipboardStore, ClipboardLoad, ColorQuery, CursorBlink, MouseCursorDirty, PtyWrite for DA1/DA2/DA3/CPR/DSR/DECRQM-ANSI/DECRQM-private/DECRQSS/keyboard-mode-report/modifyOtherKeys-report/text-area-size-chars/text-area-size-pixels/kitty-image-reply/XTVERSION, DesktopNotification for OSC 9/99/777, CommandComplete for OSC 133;D, CwdSet for OSC 7) × LegacyEventSink routing test
+- [x] **Semantic pin**: at least one test that PASSES only when closures are gone — `compile_fail` or grep-based assertion that `Arc<dyn Fn` does not appear in handler files
+- [x] **Reply-return path tests**: at least one test verifying the full round-trip: handler emits `HostRequest::ClipboardLoad` → consumer fulfills `ResponseToken` → IO thread polls and produces `Effect::Pty(PtyEffect::Write { ... })` with correct base64 content. Same for `ColorQuery`.
 
 ### Implementation gates
-- [ ] All Effect type variants defined in `oriterm_core::effect`
-- [ ] EffectSink trait (with `drain_into`, not `take_pending`) + QueueingEffectSink + VoidEffectSink + LegacyEventSink all implemented
-- [ ] `Term<S: EffectSink>` single generic parameter; `event_listener` field removed; no `Arc<dyn EffectSink>` on the hot path
-- [ ] SnapshotDoubleBuffer `seqno()` public accessor exposed; seqno stable during sync by construction (verified by test)
-- [ ] ALL VTE handler emission sites migrated to emit Effect — verified by: `grep -rn 'send_event' oriterm_core/src/term/handler/ oriterm_mux/src/shell_integration/interceptor.rs` returns zero matches
-- [ ] ALL emission sites from 03.5b and 03.5c are individually checked off (34 sites in oriterm_core + 3 sites in interceptor)
-- [ ] `Term::pending_notifications` bypass channel removed (field + push + direct clear); OSC 9/99/777 flow through Effect; thin `drain_notifications()` shim kept for back-compat
+- [x] All Effect type variants defined in `oriterm_core::effect`
+- [x] EffectSink trait (with `drain_into`, not `take_pending`) + QueueingEffectSink + VoidEffectSink + LegacyEventSink all implemented
+- [x] `Term<S: EffectSink>` single generic parameter; `event_listener` field removed; no `Arc<dyn EffectSink>` on the hot path
+- [x] SnapshotDoubleBuffer `seqno()` public accessor exposed; seqno stable during sync by construction (verified by test)
+- [x] ALL VTE handler emission sites migrated to emit Effect — verified by: `grep -rn 'send_event' oriterm_core/src/term/handler/ oriterm_mux/src/shell_integration/interceptor.rs` returns zero matches
+- [x] ALL emission sites from 03.5b and 03.5c are individually checked off (34 sites in oriterm_core + 3 sites in interceptor)
+- [x] `Term::pending_notifications` bypass channel removed (field + push + direct clear); OSC 9/99/777 flow through Effect; thin `drain_notifications()` shim kept for back-compat
 - [ ] `shell_state.rs` converted to directory module (`shell_state/mod.rs` + `shell_state/tests.rs`) per test-organization.md
-- [ ] LegacyEventSink adapter routes Effect → existing Event for back-compat; `L: EventListener + Sync` bound; DesktopNotification queued in adapter's secondary `pending_notifications` (TPR-03-001); existing tests pass without modification
-- [ ] Ordering contract documented on EffectSink trait (effects ordered relative to each other; NOT ordered relative to state; SyncCommit is the only sync point)
-- [ ] Reply-return path implemented: `PendingResponse` defined in `oriterm_core::effect` (core-owned, TPR-03-002), used by `PaneIoThread`, polled in `drain_commands()` / `handle_command()` (dormant during legacy phase; activates at cutover)
-- [ ] No closures in handler files: `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
-- [ ] No new file exceeds 500 lines (split if needed; effect.rs, sink.rs, families/*.rs are all leaf files)
+- [x] LegacyEventSink adapter routes Effect → existing Event for back-compat; `L: EventListener + Sync` bound; DesktopNotification queued in adapter's secondary `pending_notifications` (TPR-03-001); existing tests pass without modification
+- [x] Ordering contract documented on EffectSink trait (effects ordered relative to each other; NOT ordered relative to state; SyncCommit is the only sync point)
+- [x] Reply-return path implemented: `PendingResponse` defined in `oriterm_core::effect` (core-owned, TPR-03-002), used by `PaneIoThread`, polled in `drain_commands()` / `handle_command()` (dormant during legacy phase; activates at cutover)
+- [x] No closures in handler files: `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
+- [x] No new file exceeds 500 lines (split if needed; effect.rs, sink.rs, families/*.rs are all leaf files)
 
 ### BLOAT gates
-- [ ] `oriterm_core/src/term/mod.rs` stays under 500 lines (extract constructors to `constructors.rs` if needed)
-- [ ] `oriterm_core/src/term/handler/mod.rs` stays under 500 lines (extract to `handler/emit.rs` if needed)
-- [ ] `oriterm_core/src/term/handler/image/kitty.rs` stays under 500 lines (extract to `image/kitty_reply.rs` if needed)
-- [ ] `oriterm_mux/src/pane/io_thread/mod.rs` stays under 500 lines (extract to `io_thread/response_poll.rs` if needed)
+- [x] `oriterm_core/src/term/mod.rs` stays under 500 lines (extract constructors to `constructors.rs` if needed)
+- [x] `oriterm_core/src/term/handler/mod.rs` stays under 500 lines (extract to `handler/emit.rs` if needed)
+- [x] `oriterm_core/src/term/handler/image/kitty.rs` stays under 500 lines (extract to `image/kitty_reply.rs` if needed)
+- [x] `oriterm_mux/src/pane/io_thread/mod.rs` stays under 500 lines (extract to `io_thread/response_poll.rs` if needed)
 
 ### Follow-up artifact
-- [ ] **Follow-up cutover plan exists**: `plans/effect-cutover/` directory is committed with `index.md`, `00-overview.md`, and at least one reviewed section file (e.g. `section-01-migrate-mux-consumer.md`) describing the migration of each current `Event::ClipboardLoad`/`ColorRequest` consumer to subscribe to `Effect::HostRequest` directly, plus a section that deletes the deprecated variants after the migration. This is the in-scope artifact that closes the "Deprecated closure Event variants scheduled for deletion" mission criterion — it is NOT a deferral dodge; the plan directory must exist before section 03 can be marked complete.
+- [x] **Follow-up cutover plan exists**: `plans/effect-cutover/` directory is committed with `index.md`, `00-overview.md`, and at least one reviewed section file (e.g. `section-01-migrate-mux-consumer.md`) describing the migration of each current `Event::ClipboardLoad`/`ColorRequest` consumer to subscribe to `Effect::HostRequest` directly, plus a section that deletes the deprecated variants after the migration. This is the in-scope artifact that closes the "Deprecated closure Event variants scheduled for deletion" mission criterion — it is NOT a deferral dodge; the plan directory must exist before section 03 can be marked complete.
 
 ### Green gates
-- [ ] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes (closure removal must not introduce per-frame allocation; `drain_into()` retains Vec capacity)
-- [ ] `./build-all.sh` green (cross-compile to x86_64-pc-windows-gnu also)
-- [ ] `./test-all.sh` green debug + release
-- [ ] `./clippy-all.sh` green
+- [x] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes (closure removal must not introduce per-frame allocation; `drain_into()` retains Vec capacity)
+- [x] `./build-all.sh` green (cross-compile to x86_64-pc-windows-gnu also)
+- [x] `./test-all.sh` green debug + release
+- [x] `./clippy-all.sh` green
 
 ### Closeout
-- [ ] Plan annotation cleanup
-- [ ] **[DRIFT:cross-section]** Update `plans/spec-conformance/index.md` Section 03 keyword cluster reference from `take_pending()` to `drain_into()` (TPR-03-004-codex). Also: section 04's `SpecHarness` must be updated to use `Term<QueueingEffectSink>` instead of the old `Term<T: EventListener>` model. Also: section 10 must be updated to use `Effect::Host(HostEffect::ClipboardStore { ... })` instead of `Effect::HostRequest(HostRequest::ClipboardStore { ... })`.
+- [x] Plan annotation cleanup
+- [x] **[DRIFT:cross-section]** Update `plans/spec-conformance/index.md` Section 03 keyword cluster reference from `take_pending()` to `drain_into()` (TPR-03-004-codex). Also: section 04's `SpecHarness` must be updated to use `Term<QueueingEffectSink>` instead of the old `Term<T: EventListener>` model. Also: section 10 must be updated to use `Effect::Host(HostEffect::ClipboardStore { ... })` instead of `Effect::HostRequest(HostRequest::ClipboardStore { ... })`.
 - [ ] Section frontmatter `status` → `complete`
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
 - [ ] `index.md` section 03 status updated
