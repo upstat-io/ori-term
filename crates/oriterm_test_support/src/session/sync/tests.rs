@@ -453,12 +453,24 @@ fn pty_session_drain_writes_osc_responses_back() {
     }
 }
 
+impl PtySession {
+    /// Replace the reader channel with a pre-closed one so subsequent
+    /// `recv_timeout` calls see `Disconnected` immediately.
+    ///
+    /// The reader thread still holds the old `tx` end; its next
+    /// `tx.send()` returns `Err` and breaks the read loop — no leak.
+    fn force_close_rx_for_disconnect_test(&mut self) {
+        let (_tx, rx) = std::sync::mpsc::channel();
+        self.rx = rx;
+    }
+}
+
 #[test]
 fn drain_until_returns_none_immediately_on_channel_disconnect() {
-    // SEMANTIC PIN for drain_until's contract is that
-    // channel closure (the reader thread has hung up because the
-    // child exited or the PTY closed) returns None IMMEDIATELY,
-    // not after burning the full timeout budget.
+    // SEMANTIC PIN for drain_until's contract: channel closure
+    // (the reader thread has hung up because the child exited or
+    // the PTY closed) returns None IMMEDIATELY, not after burning
+    // the full timeout budget.
     //
     // The earlier draft used `let Ok(chunk) = ... else { continue; }`
     // which collapsed both Timeout and Disconnected into "loop
@@ -467,36 +479,16 @@ fn drain_until_returns_none_immediately_on_channel_disconnect() {
     // a (misleading) timeout. The fix distinguishes the two
     // RecvTimeoutError variants and returns None on Disconnected.
     //
-    // Two-arm cross-platform: spawn a child that prints something
-    // (so the PTY isn't immediately empty) then exits cleanly.
-    // The reader thread observes EOF, closes the channel; the
-    // next drain_until recv hits Disconnected.
-    #[cfg(unix)]
-    let cmd = {
-        let mut c = CommandBuilder::new("/bin/sh");
-        c.args(["-c", "echo HELLO; exit 0"]);
-        c.env("TERM", "xterm-256color");
-        c
-    };
-    #[cfg(windows)]
-    let cmd = {
-        let mut c = CommandBuilder::new("cmd.exe");
-        c.args(["/C", "echo HELLO"]);
-        c.env("TERM", "xterm-256color");
-        c
-    };
-    let mut session = PtySession::spawn(cmd, 80, 24);
+    // We directly close the channel instead of relying on timers
+    // for the reader thread to observe EOF. On Windows, ConPTY
+    // keeps the pipe open until the master handle drops — which
+    // happens at PtySession::drop, not at child exit. Timers are
+    // inherently fragile; force-closing the rx is deterministic.
+    let mut session = spawn_silent_long_lived();
 
-    // Ensure the child has actually exited before testing the
-    // disconnect path. The previous 200 ms sleep was insufficient
-    // on Windows CI where cmd.exe + ConPTY teardown can take longer.
-    let _status = session.wait_for_child_exit(5_000);
-    // Drain any remaining buffered output so the channel is empty.
+    // Drain any buffered startup output, then force-disconnect.
     session.drain();
-    // Brief sleep for the reader thread to observe EOF and close
-    // the channel (the child has exited, but the reader thread's
-    // read() → Ok(0) → break → drop(tx) is asynchronous).
-    std::thread::sleep(Duration::from_millis(200));
+    session.force_close_rx_for_disconnect_test();
 
     let started = Instant::now();
     let captured = session.drain_until("__NEVER_APPEARS__", 64 * 1024, 5_000);
