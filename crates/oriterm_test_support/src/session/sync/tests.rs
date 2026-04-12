@@ -487,9 +487,15 @@ fn drain_until_returns_none_immediately_on_channel_disconnect() {
     };
     let mut session = PtySession::spawn(cmd, 80, 24);
 
-    // Wait briefly so the child exits and the reader thread closes
-    // the channel before drain_until starts. 200 ms is plenty for
-    // an `echo + exit 0` to complete on any host.
+    // Ensure the child has actually exited before testing the
+    // disconnect path. The previous 200 ms sleep was insufficient
+    // on Windows CI where cmd.exe + ConPTY teardown can take longer.
+    let _status = session.wait_for_child_exit(5_000);
+    // Drain any remaining buffered output so the channel is empty.
+    session.drain();
+    // Brief sleep for the reader thread to observe EOF and close
+    // the channel (the child has exited, but the reader thread's
+    // read() → Ok(0) → break → drop(tx) is asynchronous).
     std::thread::sleep(Duration::from_millis(200));
 
     let started = Instant::now();
