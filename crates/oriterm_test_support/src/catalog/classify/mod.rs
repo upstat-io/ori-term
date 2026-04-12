@@ -107,22 +107,20 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
         }
         // Catch-all intermediates fallback: dispatch arms like
         // `('c', intermediates)` are extracted with the WILDCARD_INTERMEDIATES
-        // sentinel `[0xFF]`. When the query has non-empty intermediates
-        // (e.g., DA2 `[>]`), try the sentinel form — this only matches
-        // arms that were genuinely catch-all in the source, NOT arms with
-        // explicit empty intermediates `[]`.
-        if !tuple.intermediates.is_empty() {
-            let catch_all = Tuple::new(
-                Category::Csi,
-                dispatch_extract::WILDCARD_INTERMEDIATES.to_vec(),
-                "Ps",
-                tuple.final_byte.clone(),
-            );
-            if let Some(handlers) = map.get(&catch_all) {
-                return Classification::Dispatched {
-                    handlers: handlers.iter().cloned().collect(),
-                };
-            }
+        // sentinel `[0xFF]`. Try the sentinel form for ANY intermediates
+        // (empty or non-empty) — a catch-all arm matches both. The sentinel
+        // approach prevents false positives because only catch-all arms
+        // produce `[0xFF]` entries; explicit `[]` arms keep `[]`.
+        let catch_all = Tuple::new(
+            Category::Csi,
+            dispatch_extract::WILDCARD_INTERMEDIATES.to_vec(),
+            "Ps",
+            tuple.final_byte.clone(),
+        );
+        if let Some(handlers) = map.get(&catch_all) {
+            return Classification::Dispatched {
+                handlers: handlers.iter().cloned().collect(),
+            };
         }
     }
 
