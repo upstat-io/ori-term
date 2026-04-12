@@ -22,8 +22,8 @@ inspired_by:
   - "ori_term existing `Event` enum at `oriterm_core/src/event/mod.rs` — the type being migrated"
 depends_on: ["02"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-12
 sections:
   - id: "03.1"
     title: "Define Effect type family in oriterm_core::effect"
@@ -33,7 +33,7 @@ sections:
     status: complete
   - id: "03.3"
     title: "Expose snapshot_seqno for verification chain harness apex"
-    status: in-progress
+    status: complete
   - id: "03.4"
     title: "LegacyEventSink adapter — bridge Effect to existing Event/MuxEvent consumers"
     status: complete
@@ -42,13 +42,13 @@ sections:
     status: complete
   - id: "03.6"
     title: "Migrate Term::pending_notifications into the Effect channel"
-    status: in-progress
+    status: complete
   - id: "03.7"
     title: "Remove ClipboardLoad/ColorRequest closure variants from Event"
     status: complete
   - id: "03.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "03.N"
     title: "Completion Checklist"
     status: in-progress
@@ -476,7 +476,7 @@ The fix is to expose the existing seqno rather than create a duplicate:
   - `seqno_not_incremented_during_sync_suppression()` — integration test via `PaneIoThread`: set sync mode, feed bytes, verify `double_buffer.seqno()` unchanged; clear sync mode, feed bytes, verify seqno advances
   - `seqno_advances_atomically_on_sync_commit()` — set sync mode, feed 100 bytes, clear sync, verify seqno advances by exactly 1 (not by N chunks)
 - [x] **Validation**: tests pass; alloc regression unchanged; `RenderableContent` is NOT modified (no field addition).
-- [ ] **TPR checkpoint** — `/tpr-review` covering 03.1–03.3 (Effect type family + sink + seqno). Catches API design issues before they cascade through the migration.
+- [x] **TPR checkpoint** — `/tpr-review` covering 03.1–03.3 (combined into full-section review at 03.N close-out, 2026-04-12).
 
 ---
 
@@ -867,7 +867,7 @@ Per Codex Round 2, `Term::pending_notifications` is a split-brain side channel t
   - `osc_777_pushes_desktop_notification_effect_with_osc777_source()`
   - `ris_clears_pending_notification_effects()` — push notification, trigger RIS, drain effect sink, verify empty
 - [x] **Validation**: `grep -rn 'pending_notifications\|push_notification' oriterm_core/src/ | grep -v 'effect/sink/legacy'` returns no production matches (only the thin shim `drain_notifications` if kept, and tests; `legacy.rs` is excluded because the legacy adapter legitimately has a `pending_notifications` field).
-- [ ] **TPR checkpoint** — `/tpr-review` covering 03.4–03.6 (legacy adapter + handler migration + notifications absorption). Catches integration issues from the multi-file migration.
+- [x] **TPR checkpoint** — `/tpr-review` covering 03.4–03.6 (combined into full-section review at 03.N close-out, 2026-04-12).
 
 ---
 
@@ -909,9 +909,20 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 
 ## 03.R Third Party Review Findings
 
-<!-- Reserved for Codex or other external reviewers. -->
+<!-- Full-section dual-source TPR review (Codex + Gemini), 2026-04-12. -->
 
-- None.
+- [x] `[TPR-03-001-codex][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:159` — GAP: Wake the IO thread when a ResponseToken is fulfilled.
+  Evidence: `ResponseToken::fulfill()` only stores into the slot. The IO thread blocks in `crossbeam_channel::select!` on cmd/byte channels. No wake path triggers when a host consumer fulfills a token, so idle OSC 52 / color query replies have unbounded latency.
+  Impact: Dormant during legacy phase (LegacyEventSink handles round-trip via closures). Activates at effect-cutover.
+  Resolved: Fixed on 2026-04-12. Updated `plans/effect-cutover/section-01-migrate-mux-consumer.md` §01.3 to require a concrete IO thread wake mechanism from token fulfillment + idle-query latency test. No code change needed — code is dormant by design; the plan update ensures the wake mechanism ships with the cutover.
+
+- [x] `[TPR-03-002-codex][low]` `oriterm_core/src/term/handler/osc.rs:110` — GAP: OSC 52 `s` select buffer collapsed to `Primary`, making `ClipboardSelection::Select` dead state.
+  Evidence: Both `osc_clipboard_store()` and `osc_clipboard_load()` mapped `b's'` to `ClipboardSelection::Primary`. The `Select` variant was defined but never emitted — SSOT drift in the boundary type.
+  Resolved: Fixed on 2026-04-12. Changed `b's'` → `ClipboardSelection::Select` in both handlers. Added 3 tests: `store_primary_selection`, `store_select_buffer`, `load_select_buffer`. Legacy adapter `Primary | Select => Selection` preserves back-compat.
+
+- [x] `[TPR-03-001-gemini][low]` `oriterm_core/src/effect/response.rs:19` — GAP: PendingResponse has no unit test in oriterm_core.
+  Evidence: PendingResponse is defined in `oriterm_core::effect::response` but only tested in downstream `oriterm_mux`. Test boundary leakage — core behavior verified exclusively by a downstream crate.
+  Resolved: Fixed on 2026-04-12. Added 3 unit tests in `oriterm_core/src/effect/tests.rs`: `pending_response_returns_none_when_unfulfilled`, `pending_response_returns_effect_when_fulfilled`, `pending_response_returns_none_after_drain`.
 
 ---
 

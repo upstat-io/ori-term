@@ -40,7 +40,9 @@ third_party_review:
 
 - [ ] Wire up `pending_responses: Vec<PendingResponse>` in PaneIoThread
 - [ ] Poll fulfilled tokens in `drain_commands()` / `handle_command()`
+- [ ] **Add IO thread wake mechanism for token fulfillment**: `ResponseToken::fulfill()` currently only stores into the slot — it does not wake the IO thread. When the IO thread is idle (blocking in `crossbeam_channel::select!` on `cmd_rx`/`byte_rx`), a fulfilled token will not be polled until unrelated activity (PTY output or command) wakes the thread. Add a wake channel or `Sender::send()` notification from `fulfill()` into the IO thread's `select!` set so that fulfilled tokens trigger an immediate poll. Without this, idle OSC 52 / color query replies have unbounded latency. (Surfaced by TPR-03-001-codex during Section 03 close-out.)
 - [ ] Test: clipboard load round-trip produces correct PTY reply
+- [ ] Test: idle-query latency — fulfill a token with no other channel activity and verify the reply is written to PTY within one poll cycle (not deferred until unrelated wakeup)
 
 ## 01.4 Delete legacy infrastructure
 

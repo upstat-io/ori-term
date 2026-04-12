@@ -107,7 +107,8 @@ impl<S: EffectSink> Term<S> {
     pub(super) fn osc_clipboard_store(&self, clipboard: u8, base64: &[u8]) {
         let selection = match clipboard {
             b'c' => ClipboardSelection::Clipboard,
-            b'p' | b's' => ClipboardSelection::Primary,
+            b'p' => ClipboardSelection::Primary,
+            b's' => ClipboardSelection::Select,
             _ => return,
         };
 
@@ -143,7 +144,8 @@ impl<S: EffectSink> Term<S> {
     pub(super) fn osc_clipboard_load(&self, clipboard: u8, terminator: &str) {
         let selection = match clipboard {
             b'c' => ClipboardSelection::Clipboard,
-            b'p' | b's' => ClipboardSelection::Primary,
+            b'p' => ClipboardSelection::Primary,
+            b's' => ClipboardSelection::Select,
             _ => return,
         };
 

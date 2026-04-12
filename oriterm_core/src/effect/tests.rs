@@ -198,3 +198,59 @@ fn effect_debug() {
     let debug = format!("{effect:?}");
     assert!(debug.contains("Bell"));
 }
+
+#[test]
+fn pending_response_returns_none_when_unfulfilled() {
+    let token = ResponseToken::<String>::new();
+    let mut pr = PendingResponse::new(Box::new(move || {
+        let text = token.take()?;
+        Some(Effect::Pty(PtyEffect::Write {
+            bytes: text.into_bytes(),
+            kind: PtyWriteKind::Other,
+        }))
+    }));
+    assert!(pr.poll().is_none());
+    assert!(pr.poll().is_none());
+}
+
+#[test]
+fn pending_response_returns_effect_when_fulfilled() {
+    let token = ResponseToken::<String>::new();
+    let token_clone = token.clone();
+    let mut pr = PendingResponse::new(Box::new(move || {
+        let text = token.take()?;
+        Some(Effect::Pty(PtyEffect::Write {
+            bytes: text.into_bytes(),
+            kind: PtyWriteKind::Other,
+        }))
+    }));
+
+    token_clone.fulfill("hello".to_owned());
+    let effect = pr.poll();
+    assert!(effect.is_some());
+    match effect.unwrap() {
+        Effect::Pty(PtyEffect::Write { bytes, kind }) => {
+            assert_eq!(bytes, b"hello");
+            assert_eq!(kind, PtyWriteKind::Other);
+        }
+        other => panic!("expected Pty(Write), got {other:?}"),
+    }
+}
+
+#[test]
+fn pending_response_returns_none_after_drain() {
+    let token = ResponseToken::<String>::new();
+    let token_clone = token.clone();
+    let mut pr = PendingResponse::new(Box::new(move || {
+        let text = token.take()?;
+        Some(Effect::Pty(PtyEffect::Write {
+            bytes: text.into_bytes(),
+            kind: PtyWriteKind::Other,
+        }))
+    }));
+
+    token_clone.fulfill("data".to_owned());
+    assert!(pr.poll().is_some());
+    // After draining, subsequent polls return None.
+    assert!(pr.poll().is_none());
+}
