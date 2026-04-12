@@ -8,8 +8,8 @@
 //! high-level `Handler::set_working_directory`, which stores the raw URI.
 
 use oriterm_core::effect::sink::EffectSink;
-use oriterm_core::effect::{Effect, HostEffect, PtyEffect, PtyWriteKind};
-use oriterm_core::{Notification, PromptState, Term};
+use oriterm_core::effect::{Effect, HostEffect, NotificationSource, PtyEffect, PtyWriteKind};
+use oriterm_core::{PromptState, Term};
 
 /// Raw VTE interceptor state.
 ///
@@ -115,20 +115,28 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
     }
 
     /// OSC 9/99: simple notification (body only).
-    fn handle_notification_simple(&mut self, params: &[&[u8]]) {
+    fn handle_notification_simple(&self, params: &[&[u8]]) {
         let body = if params.len() >= 2 {
             String::from_utf8_lossy(params[1]).into_owned()
         } else {
             String::new()
         };
-        self.term.push_notification(Notification {
-            title: String::new(),
-            body,
-        });
+        let source = if params.first().is_some_and(|p| *p == b"9") {
+            NotificationSource::Osc9
+        } else {
+            NotificationSource::Osc99
+        };
+        self.term
+            .effect_sink()
+            .push(Effect::Host(HostEffect::DesktopNotification {
+                source,
+                title: String::new(),
+                body,
+            }));
     }
 
     /// OSC 777: rxvt-unicode notification (`notify;title;body`).
-    fn handle_notification_777(&mut self, params: &[&[u8]]) {
+    fn handle_notification_777(&self, params: &[&[u8]]) {
         if params.len() < 2 {
             return;
         }
@@ -144,7 +152,13 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
             .get(3)
             .map(|p| String::from_utf8_lossy(p).into_owned())
             .unwrap_or_default();
-        self.term.push_notification(Notification { title, body });
+        self.term
+            .effect_sink()
+            .push(Effect::Host(HostEffect::DesktopNotification {
+                source: NotificationSource::Osc777,
+                title,
+                body,
+            }));
     }
 }
 

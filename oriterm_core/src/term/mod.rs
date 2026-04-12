@@ -168,8 +168,6 @@ pub struct Term<S: EffectSink> {
     /// Used for jump-to-prompt navigation and semantic zone selection.
     /// Pruned when scrollback eviction removes old rows.
     prompt_markers: Vec<PromptMarker>,
-    /// Pending desktop notifications collected from OSC 9/99/777.
-    pending_notifications: Vec<Notification>,
     /// When OSC 133;C (output start) was received — marks command execution start.
     command_start: Option<std::time::Instant>,
     /// Duration of the last completed command (OSC 133;D − OSC 133;C).
@@ -237,7 +235,6 @@ impl<S: EffectSink> Term<S> {
             prompt_state: PromptState::None,
             pending_marks: PendingMarks::empty(),
             prompt_markers: Vec::new(),
-            pending_notifications: Vec::new(),
             command_start: None,
             last_command_duration: None,
             has_explicit_title: false,

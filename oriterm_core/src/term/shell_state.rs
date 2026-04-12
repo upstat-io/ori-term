@@ -4,8 +4,10 @@
 //! limit. These methods manage prompt state (OSC 133), CWD (OSC 7),
 //! title resolution, notifications, and prompt-based navigation.
 
-use super::{Notification, PendingMarks, PromptMarker, PromptState, Term};
+use super::{PendingMarks, PromptMarker, PromptState, Term};
 use crate::effect::sink::EffectSink;
+use crate::effect::sink::legacy::{DesktopNotificationRecord, LegacyEventSink};
+use crate::event::EventListener;
 
 /// Extract the last path component from a CWD path for tab display.
 ///
@@ -212,18 +214,6 @@ impl<S: EffectSink> Term<S> {
         self.last_command_duration
     }
 
-    // -- Notifications --
-
-    /// Drain pending desktop notifications (OSC 9/99/777).
-    pub fn drain_notifications(&mut self) -> Vec<Notification> {
-        std::mem::take(&mut self.pending_notifications)
-    }
-
-    /// Push a notification from the raw interceptor.
-    pub fn push_notification(&mut self, notification: Notification) {
-        self.pending_notifications.push(notification);
-    }
-
     // -- Title state --
 
     /// Whether the current title was explicitly set via OSC 0/2.
@@ -349,5 +339,21 @@ impl<S: EffectSink> Term<S> {
             .enumerate()
             .rev()
             .find(|(_, m)| m.prompt <= near_row)
+    }
+}
+
+/// Legacy-phase shim: `drain_notifications` on `Term<LegacyEventSink<L>>`.
+///
+/// During the legacy phase, desktop notifications are queued inside the
+/// `LegacyEventSink` adapter (since there is no `Event` variant for them).
+/// This thin shim delegates to `LegacyEventSink::drain_pending_notifications()`.
+///
+/// When consumers migrate to `QueueingEffectSink`, there is NO separate
+/// notification drain — `DesktopNotification` effects arrive in the normal
+/// `drain_into()` output. This shim exists ONLY for the legacy adapter.
+impl<L: EventListener + Sync> Term<LegacyEventSink<L>> {
+    /// Drain desktop notifications queued inside the legacy adapter.
+    pub fn drain_notifications(&self) -> Vec<DesktopNotificationRecord> {
+        self.effect_sink.drain_pending_notifications()
     }
 }

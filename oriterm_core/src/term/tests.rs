@@ -5,7 +5,9 @@ use std::collections::VecDeque;
 use vte::ansi::{KeyboardModes, Processor};
 
 use crate::color::Rgb;
-use crate::effect::VoidEffectSink;
+use crate::effect::{
+    Effect, EffectSink, HostEffect, NotificationSource, QueueingEffectSink, VoidEffectSink,
+};
 use crate::grid::CursorShape;
 use crate::index::{Column, Line};
 use crate::theme::Theme;
@@ -14,6 +16,33 @@ use super::{RenderableContent, Term, TermMode};
 
 fn make_term() -> Term<VoidEffectSink> {
     Term::new(24, 80, 1000, Theme::default(), VoidEffectSink)
+}
+
+/// Create a term with a queuing sink so notification effects can be observed.
+fn make_queuing_term() -> Term<QueueingEffectSink> {
+    Term::new(24, 80, 1000, Theme::default(), QueueingEffectSink::new())
+}
+
+/// Drain effects from a queuing term and extract desktop notifications,
+/// applying `ClearPendingNotifications` semantics (clears preceding notifs).
+fn drain_desktop_notifications(
+    term: &Term<QueueingEffectSink>,
+) -> Vec<(NotificationSource, String, String)> {
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+    let mut notifs = Vec::new();
+    for effect in effects {
+        match effect {
+            Effect::Host(HostEffect::DesktopNotification {
+                source,
+                title,
+                body,
+            }) => notifs.push((source, title, body)),
+            Effect::Host(HostEffect::ClearPendingNotifications) => notifs.clear(),
+            _ => {}
+        }
+    }
+    notifs
 }
 
 /// Feed raw bytes through the VTE processor.
@@ -1596,39 +1625,45 @@ fn ris_clears_command_timing() {
 
 #[test]
 fn ris_clears_pending_notifications() {
-    let mut term = make_term();
-    term.push_notification(super::Notification {
-        title: "Build".to_string(),
-        body: "Done".to_string(),
-    });
+    let mut term = make_queuing_term();
+    term.effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc9,
+            title: "Build".into(),
+            body: "Done".into(),
+        }));
 
-    assert_eq!(term.drain_notifications().len(), 1);
+    assert_eq!(drain_desktop_notifications(&term).len(), 1);
 
     // Push another.
-    term.push_notification(super::Notification {
-        title: "Test".to_string(),
-        body: "Pass".to_string(),
-    });
+    term.effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc9,
+            title: "Test".into(),
+            body: "Pass".into(),
+        }));
 
     feed(&mut term, b"\x1bc");
 
-    assert!(term.drain_notifications().is_empty());
+    assert!(drain_desktop_notifications(&term).is_empty());
 }
 
 // --- Drain notifications idempotent ---
 
 #[test]
 fn drain_notifications_returns_empty_on_second_call() {
-    let mut term = make_term();
-    term.push_notification(super::Notification {
-        title: String::new(),
-        body: "hello".to_string(),
-    });
+    let term = make_queuing_term();
+    term.effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc9,
+            title: String::new(),
+            body: "hello".into(),
+        }));
 
-    let first = term.drain_notifications();
+    let first = drain_desktop_notifications(&term);
     assert_eq!(first.len(), 1);
 
-    let second = term.drain_notifications();
+    let second = drain_desktop_notifications(&term);
     assert!(second.is_empty(), "second drain should return empty");
 }
 

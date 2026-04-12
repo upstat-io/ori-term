@@ -193,19 +193,43 @@ fn setup_injection_wsl_returns_none() {
 
 // --- Raw interceptor ---
 
-use oriterm_core::effect::VoidEffectSink;
+use oriterm_core::effect::{Effect, EffectSink, HostEffect, QueueingEffectSink};
 use oriterm_core::{PromptState, Term, Theme};
 
 /// Helper: create a minimal terminal for interceptor tests.
-fn make_term() -> Term<VoidEffectSink> {
-    Term::new(24, 80, 100, Theme::Dark, VoidEffectSink)
+fn make_term() -> Term<QueueingEffectSink> {
+    Term::new(24, 80, 100, Theme::Dark, QueueingEffectSink::new())
 }
 
 /// Helper: feed raw bytes through the interceptor.
-fn intercept(term: &mut Term<VoidEffectSink>, bytes: &[u8]) {
+fn intercept(term: &mut Term<QueueingEffectSink>, bytes: &[u8]) {
     let mut parser = vte::Parser::new();
     let mut interceptor = super::interceptor::RawInterceptor::new(term);
     parser.advance(&mut interceptor, bytes);
+}
+
+/// Test-local notification record for readable assertions.
+struct TestNotification {
+    title: String,
+    body: String,
+}
+
+/// Drain effects from a queuing term and extract desktop notifications,
+/// applying `ClearPendingNotifications` semantics (clears preceding notifs).
+fn drain_desktop_notifications(term: &Term<QueueingEffectSink>) -> Vec<TestNotification> {
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+    let mut notifs = Vec::new();
+    for effect in effects {
+        match effect {
+            Effect::Host(HostEffect::DesktopNotification { title, body, .. }) => {
+                notifs.push(TestNotification { title, body });
+            }
+            Effect::Host(HostEffect::ClearPendingNotifications) => notifs.clear(),
+            _ => {}
+        }
+    }
+    notifs
 }
 
 #[test]
@@ -262,7 +286,7 @@ fn interceptor_osc9_simple_notification() {
     let mut term = make_term();
     intercept(&mut term, b"\x1b]9;Hello world\x07");
 
-    let notifs = term.drain_notifications();
+    let notifs = drain_desktop_notifications(&term);
     assert_eq!(notifs.len(), 1);
     assert_eq!(notifs[0].body, "Hello world");
     assert!(notifs[0].title.is_empty());
@@ -273,7 +297,7 @@ fn interceptor_osc777_notification() {
     let mut term = make_term();
     intercept(&mut term, b"\x1b]777;notify;Build;Done!\x07");
 
-    let notifs = term.drain_notifications();
+    let notifs = drain_desktop_notifications(&term);
     assert_eq!(notifs.len(), 1);
     assert_eq!(notifs[0].title, "Build");
     assert_eq!(notifs[0].body, "Done!");
@@ -284,7 +308,7 @@ fn interceptor_osc777_ignores_non_notify() {
     let mut term = make_term();
     intercept(&mut term, b"\x1b]777;other;foo;bar\x07");
 
-    let notifs = term.drain_notifications();
+    let notifs = drain_desktop_notifications(&term);
     assert!(notifs.is_empty());
 }
 
@@ -582,7 +606,7 @@ fn interceptor_osc99_kitty_notification() {
     let mut term = make_term();
     intercept(&mut term, b"\x1b]99;Build complete\x07");
 
-    let notifs = term.drain_notifications();
+    let notifs = drain_desktop_notifications(&term);
     assert_eq!(notifs.len(), 1);
     assert_eq!(notifs[0].body, "Build complete");
     assert!(notifs[0].title.is_empty());
@@ -607,7 +631,7 @@ fn ensure_scripts_nonexistent_parent_returns_error() {
 #[test]
 fn prompt_navigation_scrolls_to_previous() {
     // Small terminal: 4 visible lines, 100 scrollback.
-    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidEffectSink);
+    let mut term = Term::new(4, 80, 100, Theme::Dark, QueueingEffectSink::new());
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
 
     // Mark prompt at current position (abs row 0).
@@ -626,7 +650,7 @@ fn prompt_navigation_scrolls_to_previous() {
 
 #[test]
 fn prompt_navigation_no_prompt_above_returns_false() {
-    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidEffectSink);
+    let mut term = Term::new(4, 80, 100, Theme::Dark, QueueingEffectSink::new());
 
     // Mark prompt at current position (row 0), viewport is already here.
     term.set_prompt_mark_pending(true);
@@ -638,7 +662,7 @@ fn prompt_navigation_no_prompt_above_returns_false() {
 
 #[test]
 fn prompt_navigation_scrolls_to_next() {
-    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidEffectSink);
+    let mut term = Term::new(4, 80, 100, Theme::Dark, QueueingEffectSink::new());
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
 
     // Write some content then mark a prompt.
@@ -765,7 +789,7 @@ fn interceptor_osc9_single_char_body() {
     let mut term = make_term();
     intercept(&mut term, b"\x1b]9;X\x07");
 
-    let notifs = term.drain_notifications();
+    let notifs = drain_desktop_notifications(&term);
     assert_eq!(notifs.len(), 1);
     assert_eq!(notifs[0].body, "X");
 }
@@ -832,7 +856,7 @@ fn ris_clears_pending_notifications() {
 
     // Push a notification via OSC 9.
     intercept(&mut term, b"\x1b]9;Build finished\x07");
-    assert_eq!(term.drain_notifications().len(), 1);
+    assert_eq!(drain_desktop_notifications(&term).len(), 1);
 
     // Push another.
     intercept(&mut term, b"\x1b]9;Test passed\x07");
@@ -842,7 +866,7 @@ fn ris_clears_pending_notifications() {
     proc.advance(&mut term, b"\x1bc");
 
     assert!(
-        term.drain_notifications().is_empty(),
+        drain_desktop_notifications(&term).is_empty(),
         "RIS should clear pending notifications"
     );
 }

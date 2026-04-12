@@ -50,7 +50,8 @@ impl<S: EffectSink> Term<S> {
         self.prompt_state = PromptState::None;
         self.pending_marks = crate::term::PendingMarks::empty();
         self.prompt_markers.clear();
-        self.pending_notifications.clear();
+        self.effect_sink
+            .push(Effect::Host(HostEffect::ClearPendingNotifications));
         self.command_start = None;
         self.last_command_duration = None;
         self.has_explicit_title = false;
