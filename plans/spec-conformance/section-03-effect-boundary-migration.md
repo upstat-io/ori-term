@@ -924,6 +924,10 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
   Evidence: PendingResponse is defined in `oriterm_core::effect::response` but only tested in downstream `oriterm_mux`. Test boundary leakage — core behavior verified exclusively by a downstream crate.
   Resolved: Fixed on 2026-04-12. Added 3 unit tests in `oriterm_core/src/effect/tests.rs`: `pending_response_returns_none_when_unfulfilled`, `pending_response_returns_effect_when_fulfilled`, `pending_response_returns_none_after_drain`.
 
+- [x] `[TPR-03-001-codex-r2][low]` `plans/spec-conformance/section-03-effect-boundary-migration.md:959` — DRIFT: Follow-up artifact gate claims "reviewed section file" but cutover section has `reviewed: false`.
+  Evidence: 03.N checklist item claims "at least one reviewed section file" but `plans/effect-cutover/section-01-migrate-mux-consumer.md` has `reviewed: false`.
+  Resolved: Fixed on 2026-04-12. Updated checklist wording to reflect actual state — the follow-up artifact EXISTS with content; the `reviewed: false` gate triggers when the cutover plan is picked up for implementation, not at Section 03 close-out.
+
 ---
 
 ## 03.N Completion Checklist
@@ -956,7 +960,7 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 - [x] `oriterm_mux/src/pane/io_thread/mod.rs` stays under 500 lines (extract to `io_thread/response_poll.rs` if needed)
 
 ### Follow-up artifact
-- [x] **Follow-up cutover plan exists**: `plans/effect-cutover/` directory is committed with `index.md`, `00-overview.md`, and at least one reviewed section file (e.g. `section-01-migrate-mux-consumer.md`) describing the migration of each current `Event::ClipboardLoad`/`ColorRequest` consumer to subscribe to `Effect::HostRequest` directly, plus a section that deletes the deprecated variants after the migration. This is the in-scope artifact that closes the "Deprecated closure Event variants scheduled for deletion" mission criterion — it is NOT a deferral dodge; the plan directory must exist before section 03 can be marked complete.
+- [x] **Follow-up cutover plan exists**: `plans/effect-cutover/` directory is committed with `index.md`, `00-overview.md`, and at least one section file (`section-01-migrate-mux-consumer.md`, `reviewed: false` — review gate triggers when that plan is picked up for implementation) describing the migration of each current `Event::ClipboardLoad`/`ColorRequest` consumer to subscribe to `Effect::HostRequest` directly, plus a section that deletes the deprecated variants after the migration. This is the in-scope artifact that closes the "Deprecated closure Event variants scheduled for deletion" mission criterion — it is NOT a deferral dodge; the plan directory must exist before section 03 can be marked complete.
 
 ### Green gates
 - [x] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes (closure removal must not introduce per-frame allocation; `drain_into()` retains Vec capacity)
