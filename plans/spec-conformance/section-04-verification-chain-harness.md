@@ -184,7 +184,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
       /// Feed bytes through the parser and dispatch.
       pub fn feed(&mut self, bytes: &[u8]) {
           self.processor.advance(&mut self.term, bytes);
-          self.observed.effects_emitted.extend(self.effect_sink.take_pending());
+          self.effect_sink.drain_into(&mut self.observed.effects_emitted);
       }
 
       /// Run a scenario through every rung up to its apex.
