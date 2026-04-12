@@ -191,6 +191,16 @@ One row per supported numeric parameter (not one per dispatch arm). Source of tr
 | ECMA48-SGR-48-RGBA | — (de-facto) | `` `CSI 48 : 6 : : r : g : b : a m` `` | Background RGBA | MISSING — to be added by Section 15 (Cell-Level Alpha + Transparency) | state-snapshot | parser:pending dispatch:pending state:pending | missing | wezterm escape-sequences.md | |
 | ECMA48-SGR-58-RGBA | — (de-facto) | `` `CSI 58 : 6 : : r : g : b : a m` `` | Underline RGBA | MISSING — to be added by Section 15 (Cell-Level Alpha + Transparency) | state-snapshot | parser:pending dispatch:pending state:pending | missing | wezterm escape-sequences.md | |
 
+## CSI — Soft Reset / Selective Erase / Scroll Left-Right
+
+| ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| ECMA48-CSI-DECSTR | DEC STD 070 §4.6.9 | `` `CSI ! p` `` (DECSTR) | Soft Terminal Reset — resets modes/attributes without clearing screen | MISSING — to be added by Section 08 (ECMA-48 Baseline) | state-snapshot | parser:pending dispatch:pending state:pending | missing | — | Not dispatched in `csi::dispatch`. Distinct from RIS (`ESC c`) which is a full hard reset. |
+| ECMA48-CSI-DECSED | DEC STD 070 §4.6.3 | `` `CSI ? Ps J` `` (DECSED) | Selective Erase in Display — erase only cells not protected by DECSCA | MISSING — to be added by Section 08 (ECMA-48 Baseline) | state-snapshot | parser:pending dispatch:pending state:pending | missing | — | Not dispatched in `csi::dispatch` (no `('J', [b'?'])` arm). DECSCA character protection attribute also unimplemented. |
+| ECMA48-CSI-DECSEL | DEC STD 070 §4.6.3 | `` `CSI ? Ps K` `` (DECSEL) | Selective Erase in Line — erase only unprotected cells | MISSING — to be added by Section 08 (ECMA-48 Baseline) | state-snapshot | parser:pending dispatch:pending state:pending | missing | — | Not dispatched in `csi::dispatch` (no `('K', [b'?'])` arm). Pair with DECSED. |
+| ECMA48-CSI-SL | ECMA-48 §8.3.121 | `` `CSI Ps SP @` `` (SL) | Scroll Left — shift columns left by `Ps` within scroll margins | MISSING — to be added by Section 08 (ECMA-48 Baseline) | state-snapshot | parser:pending dispatch:pending state:pending | missing | — | Not dispatched in `csi::dispatch` (no `('@', [b' '])` arm). Used by some TUI apps for horizontal scrolling. |
+| ECMA48-CSI-SR | ECMA-48 §8.3.122 | `` `CSI Ps SP A` `` (SR) | Scroll Right — shift columns right by `Ps` within scroll margins | MISSING — to be added by Section 08 (ECMA-48 Baseline) | state-snapshot | parser:pending dispatch:pending state:pending | missing | — | Not dispatched in `csi::dispatch` (no `('A', [b' '])` arm). Pair with SL. |
+
 ## DCS — DECRQSS (Request Status String)
 
 | ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
