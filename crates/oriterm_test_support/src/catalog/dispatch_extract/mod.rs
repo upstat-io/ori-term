@@ -43,7 +43,7 @@ mod osc;
 mod private_mode;
 mod sgr;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -213,4 +213,87 @@ pub(super) fn pattern_byte_slice(pat: &syn::Pat) -> Option<Vec<u8>> {
         bytes.push(b.value());
     }
     Some(bytes)
+}
+
+/// Walk the VTE dispatch tree and emit a map of tuples to their
+/// handler method names.
+///
+/// This is the rich variant of [`extract_dispatch_tuples`] — it
+/// extracts both the arm pattern (→ tuple) and the arm body
+/// (→ handler method calls). Used by the classify module to
+/// build the dispatch map without a separate AST walk.
+///
+/// # Errors
+///
+/// Returns [`DispatchExtractError`] on IO or `syn` parse failure.
+pub fn extract_dispatch_map(
+    workspace_root: &Path,
+) -> Result<BTreeMap<Tuple, BTreeSet<String>>, DispatchExtractError> {
+    let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
+
+    let csi_path = workspace_root.join("crates/vte/src/ansi/dispatch/csi.rs");
+    let csi_source = read_rust(&csi_path)?;
+    let csi_file = parse_rust(&csi_path, &csi_source)?;
+    csi::extract_csi_arms_with_handlers(&csi_file, &mut map);
+
+    let osc_path = workspace_root.join("crates/vte/src/ansi/dispatch/osc.rs");
+    osc::extract_osc_arms_with_handlers(&osc_path, &mut map)?;
+
+    let mod_path = workspace_root.join("crates/vte/src/ansi/dispatch/mod.rs");
+    esc_dcs::extract_mod_arms_with_handlers(&mod_path, &mut map)?;
+
+    // APC dispatch is unconditional — Performer::apc_end calls
+    // handler.apc_dispatch(&payload) for every APC sequence.
+    map.entry(Tuple::new(Category::Apc, Vec::<u8>::new(), "Pt", "ST"))
+        .or_default()
+        .insert("apc_dispatch".to_string());
+
+    Ok(map)
+}
+
+// -------- Handler method extraction from arm body AST --------------------
+
+/// Extract all `Handler::*` method names called in an AST
+/// expression, looking for method calls where the receiver is
+/// `handler`, `self.handler`, `&handler`, or `*handler`.
+pub(super) fn extract_handler_methods(expr: &syn::Expr) -> BTreeSet<String> {
+    struct MethodVisitor<'a> {
+        methods: &'a mut BTreeSet<String>,
+    }
+
+    impl syn::visit::Visit<'_> for MethodVisitor<'_> {
+        fn visit_expr_method_call(&mut self, mc: &syn::ExprMethodCall) {
+            if is_handler_receiver(&mc.receiver) {
+                self.methods.insert(mc.method.to_string());
+            }
+            syn::visit::visit_expr_method_call(self, mc);
+        }
+    }
+
+    let mut methods = BTreeSet::new();
+    let mut v = MethodVisitor {
+        methods: &mut methods,
+    };
+    syn::visit::Visit::visit_expr(&mut v, expr);
+    methods
+}
+
+/// Check if a receiver is `handler` (direct ident) or
+/// `self.handler` (field access on self), including through
+/// references and derefs.
+pub(super) fn is_handler_receiver(expr: &syn::Expr) -> bool {
+    match expr {
+        syn::Expr::Path(p) => p.path.is_ident("handler"),
+        syn::Expr::Field(f) => {
+            matches!(&*f.base, syn::Expr::Path(p) if p.path.is_ident("self"))
+                && matches!(&f.member, syn::Member::Named(ident) if ident == "handler")
+        }
+        syn::Expr::Reference(r) => is_handler_receiver(&r.expr),
+        syn::Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::Deref(_),
+            expr,
+            ..
+        }) => is_handler_receiver(expr),
+        _ => false,
+    }
 }

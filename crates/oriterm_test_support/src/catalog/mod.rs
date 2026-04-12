@@ -40,7 +40,9 @@ use std::path::{Path, PathBuf};
 pub use capture_extract::extract_capture_tuples;
 pub use check::{CheckMode, CheckReport, check};
 pub use classify::{Classification, build_dispatch_map, classify_from_map};
-pub use dispatch_extract::{extract_dispatch_tuples, extract_namedprivatemode_tuples};
+pub use dispatch_extract::{
+    extract_dispatch_map, extract_dispatch_tuples, extract_namedprivatemode_tuples,
+};
 pub use parser::{CatalogParseError, parse_catalog_markdown};
 pub use reconcile::{
     ReconciliationReport, build_catalog_signature_set, build_sig_to_row_ids, format_report,

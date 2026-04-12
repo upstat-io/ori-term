@@ -13,49 +13,73 @@
 //! designation arms with a catch-all `intermediates` ident bind
 //! emit four DA tuples, one per supported intermediate. DCS hook
 //! arms emit `(DCS, intermediates, Pid|Pt, final)` tuples.
+//!
+//! Two entry points:
+//! - [`extract_mod_arms`] — tuples only (no handler method names)
+//! - [`extract_mod_arms_with_handlers`] — tuples + handler methods
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::super::tuple::{Category, Tuple};
-use super::{
-    DispatchExtractError, is_action_intermediates_scrutinee, parse_rust, pattern_byte_slice,
-    pattern_char_literal, read_rust,
-};
+use super::{DispatchExtractError, extract_handler_methods, parse_rust, read_rust};
 
 pub(super) fn extract_mod_arms(
     path: &Path,
     out: &mut BTreeSet<Tuple>,
 ) -> Result<(), DispatchExtractError> {
+    let mut map: BTreeMap<Tuple, BTreeSet<String>> = BTreeMap::new();
+    extract_mod_arms_with_handlers(path, &mut map)?;
+    out.extend(map.into_keys());
+    Ok(())
+}
+
+pub(super) fn extract_mod_arms_with_handlers(
+    path: &Path,
+    map: &mut BTreeMap<Tuple, BTreeSet<String>>,
+) -> Result<(), DispatchExtractError> {
     let source = read_rust(path)?;
     let file = parse_rust(path, &source)?;
 
-    // We walk this file looking for ESC-byte match patterns and the
-    // DCS `hook` function. `Performer::execute` dispatches C0 bytes;
-    // the catalog treats those as per-byte rows covered under
-    // `ecma-48.md` directly, so we do not emit tuples for execute.
-    let mut v = ModVisitor { out };
+    let mut v = ModVisitorWithHandlers {
+        map,
+        in_hook: false,
+    };
     syn::visit::Visit::visit_file(&mut v, &file);
     Ok(())
 }
 
-struct ModVisitor<'a> {
-    out: &'a mut BTreeSet<Tuple>,
+struct ModVisitorWithHandlers<'a> {
+    map: &'a mut BTreeMap<Tuple, BTreeSet<String>>,
+    in_hook: bool,
 }
 
-impl syn::visit::Visit<'_> for ModVisitor<'_> {
+impl syn::visit::Visit<'_> for ModVisitorWithHandlers<'_> {
+    fn visit_impl_item_fn(&mut self, method: &syn::ImplItemFn) {
+        let name = method.sig.ident.to_string();
+        let was_in_hook = self.in_hook;
+        self.in_hook = name == "hook";
+        syn::visit::visit_impl_item_fn(self, method);
+        self.in_hook = was_in_hook;
+    }
+
     fn visit_expr_match(&mut self, m: &syn::ExprMatch) {
         if is_byte_intermediates_scrutinee(&m.expr) {
-            // `match (byte, intermediates) { (b'B', intermediates) => ... }`
-            // — esc_dispatch arms.
             for arm in &m.arms {
-                collect_esc_arm(&arm.pat, self.out);
+                if let Some(tuple) = esc_arm_to_tuple(&arm.pat) {
+                    let methods = extract_handler_methods(&arm.body);
+                    self.map.entry(tuple).or_default().extend(methods);
+                } else {
+                    // Check for charset designation catch-all arms
+                    // that produce DA tuples.
+                    collect_esc_da_arms(&arm.pat, &arm.body, self.map);
+                }
             }
-        } else if is_action_intermediates_scrutinee(&m.expr) {
-            // DCS hook's `match action { ... }` uses (action, []/[$]).
+        } else if self.in_hook && is_action_scrutinee(&m.expr) {
             for arm in &m.arms {
-                if let Some(tuple) = arm_to_dcs_tuple(&arm.pat) {
-                    self.out.insert(tuple);
+                if let Some(tuple) = dcs_hook_arm_to_tuple(&arm.pat, arm.guard.as_ref()) {
+                    let methods = extract_handler_methods(&arm.body);
+                    self.map.entry(tuple).or_default().extend(methods);
                 }
             }
         } else {
@@ -76,26 +100,27 @@ fn is_byte_intermediates_scrutinee(expr: &syn::Expr) -> bool {
     has_byte && has_inter
 }
 
-fn collect_esc_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
+fn is_action_scrutinee(expr: &syn::Expr) -> bool {
+    matches!(expr, syn::Expr::Path(p) if p.path.is_ident("action"))
+}
+
+/// Extract an ESC tuple from a match arm pattern with a byte-slice
+/// intermediates element.
+fn esc_arm_to_tuple(pat: &syn::Pat) -> Option<Tuple> {
     let syn::Pat::Tuple(tup) = pat else {
-        return;
+        return None;
     };
     if tup.elems.len() != 2 {
-        return;
+        return None;
     }
-
-    // First element — byte literal for the final byte.
     let final_byte = match &tup.elems[0] {
         syn::Pat::Lit(syn::PatLit {
             lit: syn::Lit::Byte(b),
             ..
         }) => b.value(),
-        _ => return,
+        _ => return None,
     };
-
-    // Second element — slice pattern of byte literals, OR a bare
-    // `intermediates` identifier (catch-all, e.g. `configure_charset!`).
-    let intermediates: Vec<u8> = match &tup.elems[1] {
+    match &tup.elems[1] {
         syn::Pat::Slice(slice) => {
             let mut bytes = Vec::new();
             for elem in &slice.elems {
@@ -107,44 +132,67 @@ fn collect_esc_arm(pat: &syn::Pat, out: &mut BTreeSet<Tuple>) {
                     bytes.push(b.value());
                 }
             }
-            bytes
+            Some(Tuple::new(
+                Category::Esc,
+                bytes,
+                "-",
+                (final_byte as char).to_string(),
+            ))
         }
-        syn::Pat::Ident(_) => {
-            // The catch-all `intermediates` case — e.g. the charset
-            // designation macro that accepts `(`, `)`, `*`, `+`. We
-            // emit four tuples, one per supported intermediate.
-            for intermediate in [b'(', b')', b'*', b'+'] {
-                out.insert(Tuple::new(
-                    Category::Da,
-                    [intermediate],
-                    "-",
-                    (final_byte as char).to_string(),
-                ));
-            }
-            return;
-        }
-        _ => return,
-    };
-
-    out.insert(Tuple::new(
-        Category::Esc,
-        intermediates,
-        "-",
-        (final_byte as char).to_string(),
-    ));
+        _ => None,
+    }
 }
 
-fn arm_to_dcs_tuple(pat: &syn::Pat) -> Option<Tuple> {
-    let syn::Pat::Tuple(tup) = pat else {
-        return None;
-    };
+/// Handle the charset designation catch-all arms that produce DA
+/// tuples (one per supported intermediate: `(`, `)`, `*`, `+`).
+fn collect_esc_da_arms(
+    pat: &syn::Pat,
+    body: &syn::Expr,
+    map: &mut BTreeMap<Tuple, BTreeSet<String>>,
+) {
+    let syn::Pat::Tuple(tup) = pat else { return };
     if tup.elems.len() != 2 {
-        return None;
+        return;
     }
+    let final_byte = match &tup.elems[0] {
+        syn::Pat::Lit(syn::PatLit {
+            lit: syn::Lit::Byte(b),
+            ..
+        }) => b.value(),
+        _ => return,
+    };
+    // Second element is a bare `intermediates` identifier (catch-all).
+    let syn::Pat::Ident(_) = &tup.elems[1] else {
+        return;
+    };
+    let methods = extract_handler_methods(body);
+    for intermediate in [b'(', b')', b'*', b'+'] {
+        let tuple = Tuple::new(
+            Category::Da,
+            [intermediate],
+            "-",
+            (final_byte as char).to_string(),
+        );
+        map.entry(tuple).or_default().extend(methods.clone());
+    }
+}
 
-    let final_byte = pattern_char_literal(&tup.elems[0])?;
-    let intermediates = pattern_byte_slice(&tup.elems[1])?;
-
+fn dcs_hook_arm_to_tuple(
+    pat: &syn::Pat,
+    guard: Option<&(syn::token::If, Box<syn::Expr>)>,
+) -> Option<Tuple> {
+    let final_byte = match pat {
+        syn::Pat::Lit(syn::PatLit {
+            lit: syn::Lit::Char(c),
+            ..
+        }) => c.value(),
+        _ => return None,
+    };
+    let intermediates = if let Some((_if_token, guard_expr)) = guard {
+        infer_intermediates_from_guard(guard_expr)
+    } else {
+        Vec::new()
+    };
     let params = if final_byte == 'q' && intermediates.is_empty() {
         "Pid"
     } else {
@@ -156,4 +204,35 @@ fn arm_to_dcs_tuple(pat: &syn::Pat) -> Option<Tuple> {
         params,
         final_byte.to_string(),
     ))
+}
+
+fn infer_intermediates_from_guard(expr: &syn::Expr) -> Vec<u8> {
+    if let syn::Expr::MethodCall(mc) = expr {
+        if mc.method == "is_empty" {
+            return Vec::new();
+        }
+    }
+    if let syn::Expr::Binary(syn::ExprBinary {
+        op: syn::BinOp::Eq(_),
+        right,
+        ..
+    }) = expr
+    {
+        if let syn::Expr::Reference(r) = &**right {
+            if let syn::Expr::Array(arr) = &*r.expr {
+                let mut bytes = Vec::new();
+                for elem in &arr.elems {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Byte(b),
+                        ..
+                    }) = elem
+                    {
+                        bytes.push(b.value());
+                    }
+                }
+                return bytes;
+            }
+        }
+    }
+    Vec::new()
 }
