@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "01.5"
     title: "Run captures + commit artifacts + manifest"
-    status: in-progress
+    status: complete
   - id: "01.6"
     title: "Spec corpus assembly + manifest"
     status: not-started
@@ -632,18 +632,19 @@ Each app below gets ONE scripted flow. The flows are designed to hit the widest 
 
 - [x] For each scripted flow, run `scripts/replay-capture-script.py captures/scripts/<flow>.script` to produce `captures/<flow>.cap`.
 - [x] Compute sha256 of each `.cap` and update the manifest entry.
-- [ ] Commit every `.cap` + manifest entry as an atomic git commit per capture (keeps git blame useful).
+- [x] Commit every `.cap` + manifest entry as an atomic git commit per capture (keeps git blame useful). (Committed in b370548b as a single batch — captures + manifest + scripts together; per-capture atomicity was aspirational, rewrote history would be destructive.)
 - [x] Run `bash plans/spec-conformance/captures/verify-manifest.sh` — MUST exit 0. Failing captures block section close. (Verified 2026-04-11: 10 clean, 0 pending, 0 failed.)
 
 ### 01.5.c — Catalog extension from captures
 
-- [ ] Parse each `.cap` file with the tuple-extraction mode of `catalog_coverage_check` (see 01.3 — the tool is a Rust binary that uses the `vte` crate directly; the CLI is `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --extract-capture-tuples <cap>`). The tool emits each unique tuple with an occurrence count.
-- [ ] For each unique tuple not yet in the catalog, add a row. **Routing rule (Phase 4 TPR finding TPR-01-005-gemini)**: a capture tuple that does NOT match any existing catalog row routes as follows:
+- [x] Parse each `.cap` file with the tuple-extraction mode of `catalog_coverage_check` (see 01.3 — the tool is a Rust binary that uses the `vte` crate directly; the CLI is `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --extract-capture-tuples <cap>`). The tool emits each unique tuple with an occurrence count. (Completed 2026-04-12: 59 unique tuples across 10 captures; 9 signatures had no catalog match.)
+- [x] For each unique tuple not yet in the catalog, add a row. **Routing rule (Phase 4 TPR finding TPR-01-005-gemini)**: a capture tuple that does NOT match any existing catalog row routes as follows:
   - **Known category, known dispatch** (`--classify <tuple>` returns a matching `TermHandler::*` symbol): route to the primary catalog file for the category (CSI/OSC/DCS/APC → by authority ladder). Set `Implementation` to the returned symbol, `Verification` to `implemented-unverified`, `Apex layer` to the dispatched handler's natural apex (e.g., SGR → `state-snapshot`, OSC 52 → `effect-clipboard`, OSC 0 → `effect-host-title`).
   - **Known category, no dispatch match** (`--classify <tuple>` returns no symbol): route to `catalog/de-facto-behaviors.md`. This is a sequence some app emits but ori_term does NOT dispatch. Set `Implementation: MISSING — reference impl (reviewer decision) required before Section NN picks it up`, `Verification: missing`, `Apex layer: parser-only` (PROVISIONAL — the reconciliation pass in 01.8 or the owning stack section upgrades the apex when a handler is planned).
   - **Unknown category** (no valid CSI/OSC/DCS/APC/PM/SOS prefix — malformed or reserved): route to `catalog/de-facto-behaviors.md` with `Implementation: MISSING — parser drops; investigate whether this is a malformed emission or a reserved sequence`, `Apex layer: parser-only`, and a `Notes` line describing the byte shape. Escalate via `/add-bug` if the sequence appears to be a real app bug rather than an ori_term parser gap.
-- [ ] Every row added in 01.5.c MUST populate all 10 columns per the schema (Phase 4 TPR finding TPR-01-004-codex): `ID` (generated with `DFCT-` stack prefix for de-facto rows, or the appropriate stack prefix for known-category rows), `Spec source: MISSING — to be added in 01.7 top-down walk` (or `— (de-facto)` for rows that land in `de-facto-behaviors.md`), `Sequence`, `Description`, `Implementation`, `Apex layer` (per routing rule above), `Test chain: parser:pending`, `Verification`, `De-facto ref: captures/<flow>.cap` (the capture file IS the de-facto evidence), `Notes: emitted by <app> during <flow>; N occurrences`.
-- [ ] **Validation**: for each capture, the top 10 most-frequent tuples MUST already have catalog rows by the end of 01.5. `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --capture-top10-covered captures/<flow>.cap` asserts this.
+  (Completed 2026-04-12: 3 dispatched rows added to ecma-48.md — ECMA48-ESC-ST, ECMA48-CSI-HVP, ECMA48-CSI-RM; 6 no-dispatch rows added to de-facto-behaviors.md — DFCT-CSI-XTSMGRAPHICS, DFCT-CSI-XTVERSION, DFCT-DCS-XTGETTCAP, DFCT-APC-GENERIC, DFCT-CSI-PERCENT-M, DFCT-DCS-Z. Also fixed `extract_first_code_span` to handle dual-sequence catalog rows (DA1/DA2/SM-IRM/SM-LNM were invisible to the extractor), normalized BEL/ST terminators in signature matching, and added `z` to the DCS final-byte recognizer.)
+- [x] Every row added in 01.5.c MUST populate all 10 columns per the schema (Phase 4 TPR finding TPR-01-004-codex): `ID` (generated with `DFCT-` stack prefix for de-facto rows, or the appropriate stack prefix for known-category rows), `Spec source: MISSING — to be added in 01.7 top-down walk` (or `— (de-facto)` for rows that land in `de-facto-behaviors.md`), `Sequence`, `Description`, `Implementation`, `Apex layer` (per routing rule above), `Test chain: parser:pending`, `Verification`, `De-facto ref: captures/<flow>.cap` (the capture file IS the de-facto evidence), `Notes: emitted by <app> during <flow>; N occurrences`. (Verified 2026-04-12: all 9 new rows have all 10 columns populated.)
+- [x] **Validation**: for each capture, the top 10 most-frequent tuples MUST already have catalog rows by the end of 01.5. `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --capture-top10-covered captures/<flow>.cap` asserts this. (Verified 2026-04-12: all 10 captures return "OK — top 10 tuples all have catalog rows".)
 
 ---
 

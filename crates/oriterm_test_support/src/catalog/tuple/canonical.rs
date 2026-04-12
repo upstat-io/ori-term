@@ -24,18 +24,16 @@ use super::{Category, Tuple};
 /// [`parser::parse_catalog_markdown`] because the parser rejects rows
 /// whose `Sequence` column is empty or malformed.
 pub fn canonical_tuple(sequence: &str) -> Option<Tuple> {
-    // Extract the content of the innermost code span. The catalog's
+    // Extract the content of the FIRST code span. The catalog's
     // Sequence column wraps the actual sequence notation in backticks
-    // (sometimes double-backtick `` `` `…` `` ``) and may append a
-    // mnemonic suffix like `(CUP)` outside the code span. We want
-    // ONLY what's inside the backticks.
-    let s = extract_code_span_content(sequence);
+    // (sometimes double-backtick `` `` `…` `` ``) and may list
+    // alternatives separated by ` / `. We want ONLY the first
+    // code span's content.
+    let s = extract_first_code_span(sequence);
 
-    // Handle `CSI … h` / `CSI … l` pair form by taking the first alternative
-    // — the catalog mechanically expands to paired `h`/`l` tuples at check
-    // time via `parser::row_to_tuples`.
+    // Handle `CSI … h / CSI … l` pair form inside a single code span
+    // by taking the first alternative.
     let s = s.split(" / ").next().unwrap_or(&s);
-    let s = s.split('/').next().unwrap_or(s).trim();
     let s = s.trim_matches('`').trim();
 
     if let Some(rest) = s.strip_prefix("CSI ") {
@@ -63,32 +61,44 @@ pub fn canonical_tuple(sequence: &str) -> Option<Tuple> {
     None
 }
 
-/// Extract the content from a backtick-delimited code span.
+/// Extract the content of the FIRST code span.
 ///
-/// Handles:
+/// Handles single-span and multi-alternative formats:
 /// - `` `CSI Ps H` `` → `CSI Ps H`
-/// - `` `` `CSI Ps H` `` (CUP) `` → `CSI Ps H`
+/// - `` `CSI > c` `` / `` `CSI > 0 c` `` (DA2) → `CSI > c`
 /// - `CSI Ps H` (no backticks) → `CSI Ps H`
 ///
-/// Returns the innermost code-span content, or the trimmed input
-/// if no backticks are present.
-fn extract_code_span_content(s: &str) -> String {
+/// For dual-sequence rows (` / ` alternatives), we only extract the
+/// first code span — the caller only needs one representative tuple.
+fn extract_first_code_span(s: &str) -> String {
     let s = s.trim();
-    // Walk forward to the first backtick, then backward from the
-    // end to the last backtick. Content between those two positions
-    // is the code-span body. Byte-index slicing is safe because
-    // backticks are ASCII (single-byte, never part of a multi-byte
-    // UTF-8 sequence).
-    let first_tick = s.find('`');
-    let last_tick = s.rfind('`');
-    match (first_tick, last_tick) {
-        (Some(f), Some(l)) if f < l => {
-            let inner = s.get(f + 1..l).unwrap_or(s);
-            let inner = inner.trim().trim_matches('`').trim();
-            inner.to_string()
-        }
-        _ => s.to_string(),
+    // Find the innermost pair of backticks by walking past leading
+    // decoration backticks (`` `` `) to the content boundary.
+    // Strategy: skip all leading backticks/spaces to find where the
+    // content starts, then find the next backtick to end the content.
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+
+    // Walk past leading backticks and spaces to find content start.
+    let mut i = 0;
+    while i < len && (bytes[i] == b'`' || bytes[i] == b' ') {
+        i += 1;
     }
+    if i >= len {
+        return s.trim_matches('`').trim().to_string();
+    }
+    let content_start = i;
+
+    // Find the next backtick or ` /` to end the content.
+    while i < len && bytes[i] != b'`' {
+        i += 1;
+    }
+    let content_end = i;
+
+    s.get(content_start..content_end)
+        .unwrap_or(s)
+        .trim()
+        .to_string()
 }
 
 fn parse_csi(rest: &str) -> Option<Tuple> {
@@ -217,7 +227,7 @@ fn parse_dcs(rest: &str) -> Option<Tuple> {
                 intermediates.push(b);
                 continue;
             }
-            if matches!(b, b'q' | b'|' | b'p' | b'r') {
+            if matches!(b, b'q' | b'|' | b'p' | b'r' | b'z') {
                 final_byte = Some(b as char);
                 break;
             }

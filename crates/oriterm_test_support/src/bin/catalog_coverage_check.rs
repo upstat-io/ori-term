@@ -14,7 +14,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use oriterm_test_support::catalog::{
-    CheckMode, Classification, Tuple, build_dispatch_map, canonical_tuple, check,
+    Category, CheckMode, Classification, Tuple, build_dispatch_map, canonical_tuple, check,
     classify_from_map, extract_capture_tuples, extract_dispatch_tuples,
     extract_namedprivatemode_tuples, parse_catalog_markdown,
 };
@@ -327,10 +327,23 @@ fn run_capture_top10_covered(
 type TupleSig = (String, Vec<u8>, String);
 
 fn tuple_signature(tuple: &Tuple) -> TupleSig {
+    // For OSC and DCS, normalize BEL/ST terminators — both are valid
+    // per ECMA-48 and the catalog canonicalizes to BEL while captures
+    // may use either.
+    let final_byte = match tuple.category {
+        Category::Osc | Category::Dcs => {
+            if tuple.final_byte == "ST" {
+                "BEL".to_string()
+            } else {
+                tuple.final_byte.clone()
+            }
+        }
+        _ => tuple.final_byte.clone(),
+    };
     (
         format!("{}", tuple.category),
         tuple.intermediates.clone(),
-        tuple.final_byte.clone(),
+        final_byte,
     )
 }
 
