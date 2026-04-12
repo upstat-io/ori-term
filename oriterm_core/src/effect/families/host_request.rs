@@ -97,3 +97,38 @@ impl<T> Default for ResponseToken<T> {
 
 /// Marker type for acknowledgement responses where no data is returned.
 pub type ResponseFulfilled = ();
+
+// ---------------------------------------------------------------------------
+// Reply formatting — canonical home for PTY response construction.
+//
+// Both `LegacyEventSink` and the dormant `response_poll` module use these
+// functions. Centralizing here prevents SSOT drift between the two paths.
+// ---------------------------------------------------------------------------
+
+/// Format an OSC 52 clipboard reply as raw PTY bytes.
+///
+/// The reply echoes back the clipboard character and the base64-encoded text,
+/// terminated by the same string terminator the original query used.
+pub fn format_clipboard_reply(text: &str, clipboard_char: u8, terminator: &str) -> Vec<u8> {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+    format!(
+        "\x1b]52;{};{}{}",
+        clipboard_char as char,
+        STANDARD.encode(text.as_bytes()),
+        terminator,
+    )
+    .into_bytes()
+}
+
+/// Format an OSC color query reply as raw PTY bytes.
+///
+/// The reply uses the `XParseColor` `rgb:RR/GG/BB` doubled-nibble format
+/// matching `XTerm`'s behavior, terminated by the query's string terminator.
+pub fn format_color_reply(color: crate::color::Rgb, prefix: &str, terminator: &str) -> Vec<u8> {
+    format!(
+        "\x1b]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}{}",
+        prefix, color.r, color.r, color.g, color.g, color.b, color.b, terminator,
+    )
+    .into_bytes()
+}

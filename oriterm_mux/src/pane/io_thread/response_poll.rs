@@ -8,11 +8,11 @@
 //! activates when consumers migrate to `QueueingEffectSink` (in
 //! `plans/effect-cutover/`).
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
-
 use oriterm_core::effect::sink::EffectSink;
-use oriterm_core::effect::{Effect, HostRequest, PendingResponse, PtyEffect, PtyWriteKind};
+use oriterm_core::effect::{
+    Effect, HostRequest, PendingResponse, PtyEffect, PtyWriteKind, format_clipboard_reply,
+    format_color_reply,
+};
 
 use super::PaneIoThread;
 
@@ -21,7 +21,9 @@ impl<S: EffectSink> PaneIoThread<S> {
     ///
     /// Creates a `PendingResponse` that polls the request's `ResponseToken`
     /// and, when fulfilled, produces an `Effect::Pty(PtyEffect::Write { .. })`
-    /// with the correctly formatted reply.
+    /// with the correctly formatted reply. Formatting is delegated to the
+    /// canonical functions in `oriterm_core::effect` (shared with the legacy
+    /// adapter to prevent SSOT drift).
     ///
     /// # Dormant during legacy phase
     ///
@@ -43,13 +45,9 @@ impl<S: EffectSink> PaneIoThread<S> {
                 self.pending_responses
                     .push(PendingResponse::new(Box::new(move || {
                         let text = reply.take()?;
-                        let encoded = STANDARD.encode(text.as_bytes());
-                        let response = format!(
-                            "\x1b]52;{};{}{}",
-                            clipboard_char as char, encoded, terminator,
-                        );
+                        let bytes = format_clipboard_reply(&text, clipboard_char, &terminator);
                         Some(Effect::Pty(PtyEffect::Write {
-                            bytes: response.into_bytes(),
+                            bytes,
                             kind: PtyWriteKind::Other,
                         }))
                     })));
@@ -63,19 +61,9 @@ impl<S: EffectSink> PaneIoThread<S> {
                 self.pending_responses
                     .push(PendingResponse::new(Box::new(move || {
                         let color = reply.take()?;
-                        let response = format!(
-                            "\x1b]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}{}",
-                            prefix,
-                            color.r,
-                            color.r,
-                            color.g,
-                            color.g,
-                            color.b,
-                            color.b,
-                            terminator,
-                        );
+                        let bytes = format_color_reply(color, &prefix, &terminator);
                         Some(Effect::Pty(PtyEffect::Write {
-                            bytes: response.into_bytes(),
+                            bytes,
                             kind: PtyWriteKind::Other,
                         }))
                     })));
@@ -88,7 +76,8 @@ impl<S: EffectSink> PaneIoThread<S> {
     /// Iterates `pending_responses`, polls each token. Fulfilled responses
     /// produce `Effect::Pty(PtyEffect::Write { .. })` which is pushed through
     /// the terminal's effect sink for the consumer to process. Fulfilled
-    /// entries are removed.
+    /// entries are removed in FIFO order (preserving insertion ordering per
+    /// the `EffectSink` ordering contract).
     ///
     /// During the legacy phase, `pending_responses` is always empty — this
     /// is effectively a no-op.
@@ -100,7 +89,8 @@ impl<S: EffectSink> PaneIoThread<S> {
         while i < self.pending_responses.len() {
             if let Some(effect) = self.pending_responses[i].poll() {
                 self.terminal.effect_sink().push(effect);
-                self.pending_responses.swap_remove(i);
+                // Use `remove` (not `swap_remove`) to preserve FIFO order.
+                self.pending_responses.remove(i);
             } else {
                 i += 1;
             }
