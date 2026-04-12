@@ -63,6 +63,8 @@ sections:
 
 **Context:** Pass 1 confirmed kitty graphics is implemented end-to-end at `oriterm_core/src/image/kitty/parse.rs:141-291` + `oriterm_core/src/term/handler/image/kitty.rs` + `oriterm_core/src/term/handler/image/kitty_animation.rs`. The audit memory's "kitty q=1 query NOT IMPLEMENTED" claim is stale — Pass 1 confirmed the query IS handled (parse.rs:197 + kitty.rs:320). Animation supports both Overwrite and AlphaBlend modes (kitty_animation.rs:58-62). The image protocol replies (ACK/error) emit via `Event::PtyWrite` at kitty.rs:465 — after section 03's migration, these are `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply })`.
 
+**Blocker note:** Additionally blocked by `BUG-08-8` (kitty.rs BLOAT split — 476 lines, ≤24 lines from the hard 500-line limit) — see `plans/bug-tracker/section-08-core-terminal.md` for the bug entry. Section 13's implementation work targets `oriterm_core/src/term/handler/image/kitty.rs` directly (the per-action handlers for transmit / place / delete / query / animate / frame compose); any new code added on top of the current 476-line baseline would push the file through the 500-line hard limit defined in `.claude/rules/code-hygiene.md` §File Size. This blocker is intentionally NOT recorded in frontmatter `depends_on:` because that field takes section-number tokens, not bug-tracker IDs; `/continue-roadmap` Step 1.92 surfaces BUG-08-8 to implementers when Section 13 becomes focus. Section 13's own completion checklist (see `## 13.N` below) contains a scanner-parsed gate on BUG-08-8 closure. BUG-08-7 (a separate semantic-correctness bug on the delete specifiers) ALSO targets the same file; the two bugs should ideally be fixed in the same sitting — the split from BUG-08-8 creates the natural file structure that makes BUG-08-7's delete-arm fix straightforward.
+
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 12 (sixel landed; image cache + GPU pipeline shared with kitty; section 12's lifecycle tests cover the shared infrastructure).
@@ -147,6 +149,8 @@ Sixel and kitty share the image cache + GPU pipeline. A bug in either can corrup
 
 ## 13.N Completion Checklist
 
+- [ ] `BUG-08-8` (kitty.rs BLOAT split) is CLOSED in `plans/bug-tracker/section-08-core-terminal.md` — verified by grepping the bug entry for `[x]`. This gate is MANDATORY: Section 13 cannot close while `oriterm_core/src/term/handler/image/kitty.rs` remains above the 500-line hard limit in `.claude/rules/code-hygiene.md` §File Size. See the `**Blocker note:**` in the Context paragraph above for the full rationale. Section 13's per-action implementation targets the split files, not the monolithic `kitty.rs` — closing the split is a prerequisite for any per-action code lands here.
+- [ ] `BUG-08-7` (kitty delete dispatch — 4 wrong specifier mappings + missing d=q/Q/f/F) is CLOSED in `plans/bug-tracker/section-08-core-terminal.md`. This is a semantic-correctness bug on the delete arm of kitty graphics dispatch — Section 13's delete-action verification would be meaningless against the broken specifier mappings. Ideally fixed in the same sitting as BUG-08-8 (the file split creates the natural `delete.rs` file where the corrected specifier logic lives).
 - [ ] Failing test matrix written FIRST
 - [ ] **Matrix dimensions**: action × format × chunked-state × animation-mode × placement-type × reply-status
 - [ ] **Semantic pin**: cross-stack regression test (sixel + kitty mixed) is the SSOT regression guard for the shared image infrastructure
