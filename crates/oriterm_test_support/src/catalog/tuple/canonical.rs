@@ -1,113 +1,11 @@
-//! Canonical tuple form for escape sequences.
+//! Sequence-column → [`Tuple`] canonicalizer.
 //!
-//! The tuple `(category, intermediates, params, final_byte)` is the
-//! common currency across dispatch extraction, catalog parsing, and
-//! capture extraction. The same sequence is written identically
-//! regardless of which extractor produced it, so set-equality on
-//! `Vec<Tuple>` answers "does this row cover this dispatch arm?".
-//!
-//! See `plans/spec-conformance/section-01-catalog-bootstrap.md §01.3.a`
-//! for the full rules.
+//! [`canonical_tuple`] parses the catalog's `Sequence` column
+//! string (e.g., `` `CSI Ps;Ps H` ``) into a canonical [`Tuple`].
+//! The function handles backtick wrapping, mnemonic suffixes like
+//! `(CUP)`, and the `h / l` pair form used by DECSET/DECRST rows.
 
-use core::fmt::{self, Display, Write as _};
-
-/// Escape sequence category — the top-level discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Category {
-    /// C0 control code (`0x00`–`0x1F`).
-    C0,
-    /// C1 control code (`0x80`–`0x9F`).
-    C1,
-    /// 7-bit ESC sequence, no CSI (`ESC <final>` or `ESC <intermediate> <final>`).
-    Esc,
-    /// Control Sequence Introducer (`CSI … <final>`).
-    Csi,
-    /// Operating System Command (`OSC <numeric>; <payload> BEL|ST`).
-    Osc,
-    /// Device Control String (`DCS … <final> … ST`).
-    Dcs,
-    /// Application Program Command (`APC <key=value>; <payload> ST`).
-    Apc,
-    /// Privacy Message (`PM … ST`).
-    Pm,
-    /// Start Of String (`SOS … ST`).
-    Sos,
-    /// Charset designation (`ESC ( <id>`, etc.).
-    Da,
-}
-
-impl Display for Category {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::C0 => "C0",
-            Self::C1 => "C1",
-            Self::Esc => "ESC",
-            Self::Csi => "CSI",
-            Self::Osc => "OSC",
-            Self::Dcs => "DCS",
-            Self::Apc => "APC",
-            Self::Pm => "PM",
-            Self::Sos => "SOS",
-            Self::Da => "DA",
-        };
-        f.write_str(s)
-    }
-}
-
-/// Canonical tuple form for a single escape sequence.
-///
-/// - `category` — see [`Category`].
-/// - `intermediates` — sorted byte sequence (`?`, `>`, `$`, ...).
-/// - `params` — normalized parameter placeholder (`Ps`, `Ps;Ps`, `text`, …).
-/// - `final_byte` — the dispatch-triggering byte, or the canonical
-///   terminator for string-family sequences (`ST` for PM/SOS/APC).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple {
-    pub category: Category,
-    pub intermediates: Vec<u8>,
-    pub params: String,
-    pub final_byte: String,
-}
-
-impl Tuple {
-    /// Construct a tuple with already-canonicalized components.
-    ///
-    /// Intermediates are sorted in-place so that `[b'?', b'$']` and
-    /// `[b'$', b'?']` produce the same tuple. Callers passing a
-    /// pre-sorted slice pay only the comparison cost.
-    pub fn new(
-        category: Category,
-        intermediates: impl Into<Vec<u8>>,
-        params: impl Into<String>,
-        final_byte: impl Into<String>,
-    ) -> Self {
-        let mut intermediates = intermediates.into();
-        intermediates.sort_unstable();
-        Self {
-            category,
-            intermediates,
-            params: params.into(),
-            final_byte: final_byte.into(),
-        }
-    }
-}
-
-impl Display for Tuple {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, [", self.category)?;
-        for (i, b) in self.intermediates.iter().enumerate() {
-            if i > 0 {
-                f.write_str(", ")?;
-            }
-            if b.is_ascii_graphic() {
-                f.write_char(*b as char)?;
-            } else {
-                write!(f, "0x{b:02x}")?;
-            }
-        }
-        write!(f, "], {}, {})", self.params, self.final_byte)
-    }
-}
+use super::{Category, Tuple};
 
 /// Canonicalize a `Sequence`-column string into a [`Tuple`].
 ///
@@ -126,13 +24,17 @@ impl Display for Tuple {
 /// [`parser::parse_catalog_markdown`] because the parser rejects rows
 /// whose `Sequence` column is empty or malformed.
 pub fn canonical_tuple(sequence: &str) -> Option<Tuple> {
-    // Strip backticks, then trim whitespace.
-    let s = sequence.trim().trim_matches('`').trim();
+    // Extract the content of the innermost code span. The catalog's
+    // Sequence column wraps the actual sequence notation in backticks
+    // (sometimes double-backtick `` `` `…` `` ``) and may append a
+    // mnemonic suffix like `(CUP)` outside the code span. We want
+    // ONLY what's inside the backticks.
+    let s = extract_code_span_content(sequence);
 
     // Handle `CSI … h` / `CSI … l` pair form by taking the first alternative
     // — the catalog mechanically expands to paired `h`/`l` tuples at check
     // time via `parser::row_to_tuples`.
-    let s = s.split(" / ").next().unwrap_or(s);
+    let s = s.split(" / ").next().unwrap_or(&s);
     let s = s.split('/').next().unwrap_or(s).trim();
     let s = s.trim_matches('`').trim();
 
@@ -161,16 +63,35 @@ pub fn canonical_tuple(sequence: &str) -> Option<Tuple> {
     None
 }
 
+/// Extract the content from a backtick-delimited code span.
+///
+/// Handles:
+/// - `` `CSI Ps H` `` → `CSI Ps H`
+/// - `` `` `CSI Ps H` `` (CUP) `` → `CSI Ps H`
+/// - `CSI Ps H` (no backticks) → `CSI Ps H`
+///
+/// Returns the innermost code-span content, or the trimmed input
+/// if no backticks are present.
+fn extract_code_span_content(s: &str) -> String {
+    let s = s.trim();
+    // Walk forward to the first backtick, then backward from the
+    // end to the last backtick. Content between those two positions
+    // is the code-span body. Byte-index slicing is safe because
+    // backticks are ASCII (single-byte, never part of a multi-byte
+    // UTF-8 sequence).
+    let first_tick = s.find('`');
+    let last_tick = s.rfind('`');
+    match (first_tick, last_tick) {
+        (Some(f), Some(l)) if f < l => {
+            let inner = s.get(f + 1..l).unwrap_or(s);
+            let inner = inner.trim().trim_matches('`').trim();
+            inner.to_string()
+        }
+        _ => s.to_string(),
+    }
+}
+
 fn parse_csi(rest: &str) -> Option<Tuple> {
-    // CSI forms:
-    //   "? Ps h"            → (CSI, [?], Ps, h)
-    //   "Ps ; Ps H"         → (CSI, [], Ps;Ps, H)
-    //   "Ps SP q"           → (CSI, [SP], Ps, q)  -- SP is literal space intermediate
-    //   "> 4 ; Ps m"        → (CSI, [>], Ps, m)
-    //   "? Ps $ p"          → (CSI, [$?], Ps, p)
-    //   "c" / "0 c"         → (CSI, [], -, c)
-    //
-    // Strategy: tokenize into (tokens: Vec<&str>, last), then classify.
     let tokens: Vec<&str> = rest.split_whitespace().collect();
     if tokens.is_empty() {
         return None;
@@ -189,7 +110,6 @@ fn parse_csi(rest: &str) -> Option<Tuple> {
                 intermediates.push(tok.as_bytes()[0]);
             }
             "SP" => {
-                // SCP / DECSCUSR use a literal space intermediate.
                 intermediates.push(b' ');
             }
             _ => params_tokens.push(tok),
@@ -204,9 +124,7 @@ fn normalize_csi_params(tokens: &[&str]) -> String {
     if tokens.is_empty() {
         return "-".to_string();
     }
-    // Join tokens, then collapse Ps-like placeholders on `;`.
     let joined = tokens.join(" ");
-    // Canonicalize `Ps ; Ps` → `Ps;Ps`.
     let cleaned: String = joined.chars().filter(|c| !c.is_whitespace()).collect();
     if cleaned.is_empty() {
         "-".to_string()
@@ -216,15 +134,8 @@ fn normalize_csi_params(tokens: &[&str]) -> String {
 }
 
 fn parse_osc(rest: &str) -> Option<Tuple> {
-    // OSC forms:
-    //   "0 ; Pt BEL|ST"       → (OSC, [], 0;text, BEL)
-    //   "4 ; index ; rgb BEL|ST" → (OSC, [], 4;index;rgb, BEL)
-    //   "52 ; Pc ; <b64> BEL|ST" → (OSC, [], 52;mode;b64, BEL)
-    //
-    // Take the segment before the terminator as the payload.
     let (payload, terminator) = split_terminator(rest);
     let payload = payload.trim();
-    // Split on `;` preserving the numeric id.
     let parts: Vec<&str> = payload.split(';').map(str::trim).collect();
     if parts.is_empty() {
         return None;
@@ -232,7 +143,6 @@ fn parse_osc(rest: &str) -> Option<Tuple> {
     let mut canonical_parts: Vec<String> = Vec::with_capacity(parts.len());
     for (i, p) in parts.iter().enumerate() {
         if i == 0 {
-            // Numeric id is preserved literally (see OSC numeric-id rule).
             canonical_parts.push(p.to_string());
         } else {
             canonical_parts.push(placeholder_for_osc_part(parts[0], i, p));
@@ -247,7 +157,6 @@ fn parse_osc(rest: &str) -> Option<Tuple> {
 }
 
 fn placeholder_for_osc_part(numeric_id: &str, idx: usize, raw: &str) -> String {
-    // Dispatch placeholder on the numeric id + position.
     match numeric_id {
         "0" | "1" | "2" | "7" | "22" | "50" | "l" | "L" => "text".to_string(),
         "4" => match idx {
@@ -293,14 +202,6 @@ fn placeholder_for_osc_part(numeric_id: &str, idx: usize, raw: &str) -> String {
 }
 
 fn parse_dcs(rest: &str) -> Option<Tuple> {
-    // DCS forms the catalog uses:
-    //   "Ps1 ; Ps2 ; Ps3 q <data> ST"  → (DCS, [], Pid, q)  -- sixel
-    //   "$ q Pt ST"                    → (DCS, [$], Pt, q)  -- DECRQSS
-    //   "! | Pt ST"                    → (DCS, [!], Pt, |)  -- DECUDK
-    //
-    // Strategy: scan tokens for (a) single-char intermediate markers
-    // `$`, `!`, `"`, `#` and (b) the first dispatch final byte
-    // (`q`, `|`, `p`, `r`). Everything else is parameter text.
     let (payload, _terminator) = split_terminator(rest);
     let tokens: Vec<&str> = payload.split_whitespace().collect();
     if tokens.is_empty() {
@@ -334,9 +235,6 @@ fn parse_dcs(rest: &str) -> Option<Tuple> {
 }
 
 fn parse_apc_sequence(rest: &str) -> Tuple {
-    // APC forms:
-    //   "G key=value ; <data> ST"  → (APC, [_G], key-value, ST)
-    //   "_G key=value ; <data> ST" → (APC, [_G], key-value, ST)
     let rest = rest.trim_start_matches('_').trim_start();
     let (_payload, terminator) = split_terminator(rest);
     if rest.starts_with('G') {
@@ -347,13 +245,6 @@ fn parse_apc_sequence(rest: &str) -> Tuple {
 }
 
 fn parse_esc(rest: &str) -> Option<Tuple> {
-    // Forms:
-    //   "^ Pt ST"  → (PM, [], Pt, ST)
-    //   "X Pt ST"  → (SOS, [], Pt, ST)
-    //   "_ G ... ST" → (APC, [_G], key-value, ST)
-    //   "( B"      → (DA, [(], -, B)
-    //   "D"        → (ESC, [], -, D)   -- IND
-    //   "# 8"      → (ESC, [#], -, 8)  -- DECALN
     let tokens: Vec<&str> = rest.split_whitespace().collect();
     if tokens.is_empty() {
         return None;
@@ -363,7 +254,6 @@ fn parse_esc(rest: &str) -> Option<Tuple> {
         "X" => Some(Tuple::new(Category::Sos, Vec::<u8>::new(), "Pt", "ST")),
         "_" => Some(Tuple::new(Category::Apc, [b'_', b'G'], "key-value", "ST")),
         "(" | ")" | "*" | "+" => {
-            // Charset designation.
             if let Some(final_token) = tokens.get(1) {
                 if final_token.len() == 1 {
                     return Some(Tuple::new(
@@ -405,17 +295,8 @@ fn parse_esc(rest: &str) -> Option<Tuple> {
 }
 
 fn split_terminator(rest: &str) -> (&str, String) {
-    // Find the last ST / BEL / BEL|ST / BEL\|ST token in the sequence.
-    // Markdown escapes `\|` inside a table cell but by the time the
-    // parser has unescaped the cell we see a literal pipe.
-    //
-    // `split_once` from the right gives us a borrow pair without
-    // string-index slicing (which clippy flags as potentially
-    // non-UTF-8-safe even though our terminators are ASCII).
     for term in ["BEL|ST", "BEL", "ST", "0x9C"] {
         if let Some((payload, _after)) = rest.rsplit_once(term) {
-            // Prefer BEL as canonical for OSC alternatives — it's
-            // the form the catalog uses when both are valid.
             let canonical = if term == "ST" && !rest.contains("BEL") {
                 "ST".to_string()
             } else {
