@@ -928,6 +928,10 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
   Evidence: 03.N checklist item claims "at least one reviewed section file" but `plans/effect-cutover/section-01-migrate-mux-consumer.md` has `reviewed: false`.
   Resolved: Fixed on 2026-04-12. Updated checklist wording to reflect actual state — the follow-up artifact EXISTS with content; the `reviewed: false` gate triggers when the cutover plan is picked up for implementation, not at Section 03 close-out.
 
+- [x] `[TPR-03-001-codex-r3][low]` `plans/spec-conformance/00-overview.md:35` — DRIFT: Mission criterion still says "reviewed section" after 03.N gate was updated.
+  Evidence: `00-overview.md:35` still requires "at least one reviewed section" for the follow-up artifact — inconsistent with the updated 03.N checklist.
+  Resolved: Fixed on 2026-04-12. Synchronized `00-overview.md` mission criterion to match the 03.N policy: "at least one section file" with note that `reviewed: false` gate triggers at cutover time.
+
 ---
 
 ## 03.N Completion Checklist
