@@ -105,6 +105,23 @@ pub fn classify_from_map(map: &BTreeMap<Tuple, BTreeSet<String>>, tuple: &Tuple)
                 handlers: handlers.iter().cloned().collect(),
             };
         }
+        // Catch-all intermediates fallback: dispatch arms like
+        // `('c', intermediates)` are extracted with empty intermediates.
+        // When the query has non-empty intermediates (e.g., DA2 `[>]`),
+        // try the empty-intermediates form as a catch-all match.
+        if !tuple.intermediates.is_empty() {
+            let catch_all = Tuple::new(
+                Category::Csi,
+                Vec::<u8>::new(),
+                "Ps",
+                tuple.final_byte.clone(),
+            );
+            if let Some(handlers) = map.get(&catch_all) {
+                return Classification::Dispatched {
+                    handlers: handlers.iter().cloned().collect(),
+                };
+            }
+        }
     }
 
     // OSC normalization: capture tuples have params like `"0;text"` but
