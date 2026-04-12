@@ -39,14 +39,15 @@ pub enum Event {
     ResetIconName,
     /// OSC 52 clipboard store request.
     ClipboardStore(ClipboardType, String),
-    /// OSC 52 clipboard load request.
-    ///
-    /// The closure formats the clipboard text into the response escape
-    /// sequence that gets written back to the PTY.
+    /// **Deprecated**: emitted only via `LegacyEventSink` adapter during the
+    /// Effect migration. New code should subscribe to `Effect::HostRequest`
+    /// directly. This variant will be removed when the last legacy consumer
+    /// migrates (see `plans/effect-cutover/`).
     ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Send + Sync>),
-    /// OSC 4/10/11 color query response.
-    ///
-    /// The closure formats the RGB color into the response escape sequence.
+    /// **Deprecated**: emitted only via `LegacyEventSink` adapter during the
+    /// Effect migration. New code should subscribe to `Effect::HostRequest`
+    /// directly. This variant will be removed when the last legacy consumer
+    /// migrates (see `plans/effect-cutover/`).
     ColorRequest(usize, Arc<dyn Fn(Rgb) -> String + Send + Sync>),
     /// Response bytes to write back to PTY (DA, DSR, DECRPM, etc.).
     PtyWrite(String),

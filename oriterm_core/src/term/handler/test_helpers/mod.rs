@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use vte::ansi::Processor;
 
-use crate::effect::LegacyEventSink;
+use crate::effect::{LegacyEventSink, QueueingEffectSink};
 use crate::event::{Event, EventListener};
 use crate::term::Term;
 use crate::theme::Theme;
@@ -90,6 +90,15 @@ pub(in crate::term::handler) fn term_with_recorder_sized(
         LegacyEventSink::new(listener.clone()),
     );
     (term, listener)
+}
+
+/// Create a `Term` with 24 lines, 80 columns, and a
+/// `QueueingEffectSink` for direct `Effect` observation.
+///
+/// Use `term.effect_sink().drain_into(&mut effects)` to inspect
+/// the structured `Effect` variants emitted by the handler.
+pub(in crate::term::handler) fn term_with_effect_sink() -> Term<QueueingEffectSink> {
+    Term::new(24, 80, 0, Theme::default(), QueueingEffectSink::new())
 }
 
 /// Feed raw bytes through the VTE processor into a handler.

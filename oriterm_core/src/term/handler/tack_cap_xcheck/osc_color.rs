@@ -7,10 +7,13 @@
 //!
 //! Note: `ori_term` routes OSC 12 set/reset through the palette's
 //! cursor color slot. The set form changes the palette directly;
-//! the query form (OSC 12 ?) fires `Event::ColorRequest` for the
-//! upstream listener to format and reply.
+//! the query form (OSC 12 ?) fires
+//! `Effect::HostRequest(HostRequest::ColorQuery { .. })` for the
+//! upstream consumer to fulfill via the response token.
 
-use super::super::test_helpers::{feed, term_with_recorder};
+use crate::effect::{Effect, EffectSink, HostRequest};
+
+use super::super::test_helpers::{feed, term_with_effect_sink};
 use super::{assert_cap_declared, assert_cap_value_matches};
 
 pub(super) const REGISTERED: &[&str] = &["Cr", "Cs"];
@@ -27,7 +30,7 @@ fn tack_cap_xcheck_cr_cs_cap_values_match() {
 #[test]
 fn tack_cap_xcheck_cs_sets_cursor_color_via_osc_12() {
     assert_cap_declared("Cs");
-    let (mut term, _l) = term_with_recorder();
+    let mut term = term_with_effect_sink();
     // OSC 12 ; rgb:ff/00/00 BEL — set cursor color to red.
     feed(&mut term, b"\x1b]12;rgb:ff/00/00\x07");
     let cursor_color = term.palette().cursor_color();
@@ -39,7 +42,7 @@ fn tack_cap_xcheck_cs_sets_cursor_color_via_osc_12() {
 #[test]
 fn tack_cap_xcheck_cr_resets_cursor_color_via_osc_112() {
     assert_cap_declared("Cr");
-    let (mut term, _l) = term_with_recorder();
+    let mut term = term_with_effect_sink();
     // First set a non-default cursor color.
     feed(&mut term, b"\x1b]12;rgb:ff/00/00\x07");
     let after_set = term.palette().cursor_color();
@@ -62,15 +65,22 @@ fn tack_cap_xcheck_cr_resets_cursor_color_via_osc_112() {
 }
 
 #[test]
-fn tack_cap_xcheck_osc_12_query_fires_color_request_event() {
-    let (mut term, listener) = term_with_recorder();
+fn tack_cap_xcheck_osc_12_query_fires_color_query_effect() {
+    let mut term = term_with_effect_sink();
     // OSC 12 ; ? BEL — query cursor color. The handler must fire
-    // Event::ColorRequest with the cursor index so the upstream
-    // listener can format the response.
+    // Effect::HostRequest(HostRequest::ColorQuery { .. }) with
+    // the prefix and index for the cursor color slot.
     feed(&mut term, b"\x1b]12;?\x07");
-    let events = listener.events();
+
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+
+    let found = effects
+        .iter()
+        .any(|e| matches!(e, Effect::HostRequest(HostRequest::ColorQuery { .. })));
     assert!(
-        events.iter().any(|e| e.contains("ColorRequest")),
-        "OSC 12 query must fire Event::ColorRequest; got {events:?}",
+        found,
+        "OSC 12 query must fire Effect::HostRequest(HostRequest::ColorQuery {{ .. }}); \
+         got {effects:?}",
     );
 }
