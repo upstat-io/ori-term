@@ -91,7 +91,7 @@ ResponseToken, request/response, no closures, typed reply
 LegacyEventSink, Event::ClipboardLoad migration, Event::ColorRequest migration
 oriterm_core/src/event/mod.rs:46, oriterm_core/src/event/mod.rs:50
 Term::pending_notifications, drain_notifications, shell_state.rs:218
-EffectSink::take_pending, bulk drain, host adapter coalescing
+EffectSink::drain_into, bulk drain, host adapter coalescing
 desktop notifications, OSC 9, OSC 99, OSC 777, push_notification
 fire-and-forget vs request/response, separate abstractions
 ```
