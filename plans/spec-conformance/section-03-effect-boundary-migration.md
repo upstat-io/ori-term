@@ -198,7 +198,7 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
   #[derive(Debug, Clone)]
   pub enum HostEffect {
       Bell,
-      /// Visual bell (DECVB, mode 12) — separate variant, not a flag on Bell.
+      /// Visual bell (DECVB) — separate variant, not a flag on Bell.
       /// Rationale: audible and visual bells route to different host consumers
       /// (audio adapter vs UI flash animator); forcing every consumer to
       /// check a flag is worse than dispatching on the variant directly.
@@ -866,7 +866,7 @@ Per Codex Round 2, `Term::pending_notifications` is a split-brain side channel t
   - `osc_99_pushes_desktop_notification_effect_with_osc99_source()`
   - `osc_777_pushes_desktop_notification_effect_with_osc777_source()`
   - `ris_clears_pending_notification_effects()` — push notification, trigger RIS, drain effect sink, verify empty
-- [ ] **Validation**: `grep -rn 'pending_notifications\|push_notification' oriterm_core/src/` returns no production matches (only the thin shim `drain_notifications` if kept, and tests).
+- [ ] **Validation**: `grep -rn 'pending_notifications\|push_notification' oriterm_core/src/ | grep -v 'effect/sink/legacy'` returns no production matches (only the thin shim `drain_notifications` if kept, and tests; `legacy.rs` is excluded because the legacy adapter legitimately has a `pending_notifications` field).
 - [ ] **TPR checkpoint** — `/tpr-review` covering 03.4–03.6 (legacy adapter + handler migration + notifications absorption). Catches integration issues from the multi-file migration.
 
 ---
@@ -955,7 +955,7 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 
 ### Closeout
 - [ ] Plan annotation cleanup
-- [ ] **[DRIFT:cross-section]** Update `plans/spec-conformance/index.md` Section 03 keyword cluster reference from `take_pending()` to `drain_into()` (TPR-03-004-codex)
+- [ ] **[DRIFT:cross-section]** Update `plans/spec-conformance/index.md` Section 03 keyword cluster reference from `take_pending()` to `drain_into()` (TPR-03-004-codex). Also: section 04's `SpecHarness` must be updated to use `Term<QueueingEffectSink>` instead of the old `Term<T: EventListener>` model. Also: section 10 must be updated to use `Effect::Host(HostEffect::ClipboardStore { ... })` instead of `Effect::HostRequest(HostRequest::ClipboardStore { ... })`.
 - [ ] Section frontmatter `status` → `complete`
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
 - [ ] `index.md` section 03 status updated
