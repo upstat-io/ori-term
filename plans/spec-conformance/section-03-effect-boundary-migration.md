@@ -2,7 +2,7 @@
 section: "03"
 title: "Effect Boundary Migration"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Introduce `oriterm_core::effect::{Effect, EffectSink}` as the production interface for boundary-crossing side effects, remove closures from `Event::ClipboardLoad`/`ColorRequest`, absorb `Term::pending_notifications` into the Effect channel, and migrate all current Event consumers via a one-phase `LegacyEventSink` adapter."
 success_criteria:
   - "`oriterm_core::effect::{Effect, EffectSink}` exists with the family enum: `Pty(PtyEffect) | Host(HostEffect) | HostRequest(HostRequest) | Ui(UiEffect) | Presentation(PresentationEffect)`"
