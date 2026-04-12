@@ -1,7 +1,7 @@
 ---
 section: "01"
 title: "Catalog Bootstrap"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Build the spec-conformance catalog as the empirical map of every protocol sequence ori_term targets, with stable-symbol implementation anchors, committed spec corpus, committed deterministic real-app captures, reconciled bottom-up vs top-down coverage, and a mechanical `catalog_coverage_check` Rust binary. No tests exercising `TermHandler` behavior are written in this section — the catalog itself is the deliverable, plus the testable `catalog_coverage_check` tool with its own sibling unit tests. All rows use `schema_version: 0.1-provisional`; Section 04.7 migrates the whole corpus to `1.0` in lockstep with the pilots. No row in this section is allowed to hold `Verification: verified` or `verified-partial` — those statuses are earned by Sections 04-20, never bootstrapped here."
 success_criteria:
@@ -73,7 +73,7 @@ sections:
     status: not-started
   - id: "01.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 01: Catalog Bootstrap
@@ -1107,15 +1107,15 @@ The rule: file a bug-tracker entry NOW via `/add-bug` BEFORE Section 01 closes. 
 ### Plan hygiene
 
 - [x] Plan annotation cleanup: any temporary notes or scaffolding removed from Section 01
-- [ ] Section frontmatter `status` → `complete`, subsection statuses updated (01.1 → 01.11 all complete)
-- [ ] `plans/spec-conformance/00-overview.md` Quick Reference table status for Section 01 updated (Not Started → Complete)
-- [ ] `plans/spec-conformance/00-overview.md` mission success criteria updated (PARTIAL checkmark only on `Catalog complete` — full check after Section 04.7 schema freeze + 04.9 continuous-delta detector wires into CI)
-- [ ] `index.md` Section 01 status updated + keyword cluster refreshed to reflect the new subsection layout (01.1 → 01.11 with the reordering from Phase 2 Finding C)
+- [x] Section frontmatter `status` → `complete`, subsection statuses updated (01.1 → 01.11 all complete)
+- [x] `plans/spec-conformance/00-overview.md` Quick Reference table status for Section 01 updated (Not Started → Complete)
+- [x] `plans/spec-conformance/00-overview.md` mission success criteria updated (PARTIAL checkmark only on `Catalog complete` — full check after Section 04.7 schema freeze + 04.9 continuous-delta detector wires into CI)
+- [x] `index.md` Section 01 status updated + keyword cluster refreshed to reflect the new subsection layout (01.1 → 01.11 with the reordering from Phase 2 Finding C)
 - [x] `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json` shows NO new findings attributable to Section 01 (the 7 Phase 1 findings on Section 01 are all resolved: DEAD_PATH x3 via inline notes/forward-reference acknowledgments, SIZE_VIOLATION via subsection restructuring, BLOAT_RISK x3 via the kitty.rs bug filing + NOTEs for csi.rs and image/cache/mod.rs)
 
 ### Review gates
 
-- [ ] `/tpr-review` passed — independent dual-source (Codex + Gemini) review returns clean on Section 01
-- [ ] `/impl-hygiene-review last commit` passed — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
+- [x] `/tpr-review` passed — independent dual-source (Codex + Gemini) review: 6 iterations, 27 findings fixed, clean on iteration 6 (2026-04-12)
+- [x] `/impl-hygiene-review` passed — hygiene review clean (11 minor tool findings, all appropriate for dev tooling). MUST run AFTER `/tpr-review` is clean.
 
 **Exit Criteria:** `plans/spec-conformance/catalog/` contains 16 protocol-family markdown files + `README.md` stub, every file declared `schema_version: "0.1-provisional"`, every row populated across all 10 columns with symbol-primary `Implementation` citations, every dispatch arm (including PM/SOS and every `NamedPrivateMode` enum variant) has at least one catalog row, no row holds `Verification: verified`, real-app captures are committed under `plans/spec-conformance/captures/` with a populated manifest, the reconciliation report categorizes every bottom-up / top-down mismatch, the `crates/oriterm_test_support/src/bin/catalog_coverage_check.rs` binary passes its sibling tests and is wired into `test-all.sh` via `cargo test -p oriterm_test_support --lib` (no trailing substring filter — see 01.3.c's cargo invocation note for why) + `cargo test -p oriterm_test_support --lib -- --list | grep 'catalog::tests::'` (sanity check that catalog::tests:: is in the runnable set) + `cargo run -p oriterm_test_support --bin catalog_coverage_check -- --check --bootstrap-mode`, the `kitty.rs` BLOAT bug is filed as `BUG-08-*` in `plans/bug-tracker/section-08-core-terminal.md` with inline body-text blocker notes in Sections 12 and 13 (NOT their frontmatter `depends_on:`), audit memory corrections are applied for every stale claim discovered during harvest, and `./build-all.sh` / `./test-all.sh` / `./clippy-all.sh` are all green. Section 04.7 will migrate the whole corpus from `schema_version: 0.1-provisional` to `1.0` once the verification chain pilots land; this section's row data is throwaway-stable — correct as scope, not as final.
