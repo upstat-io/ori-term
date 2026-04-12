@@ -1,0 +1,26 @@
+# less-long-file.script
+# Open less on /etc/services (a long committed Linux system file),
+# page down, page up, jump to end, jump to start, search forward,
+# quit. Exercises less's cursor positioning, reverse-video status
+# line, and motion sequences.
+COMMAND: less /etc/services
+WAIT: 500ms
+KEY: Space
+WAIT: 200ms
+KEY: Space
+WAIT: 200ms
+KEY: b
+WAIT: 200ms
+KEY: G
+WAIT: 200ms
+KEY: g
+WAIT: 200ms
+KEY: /
+TEXT: http
+KEY: Enter
+WAIT: 300ms
+KEY: n
+WAIT: 200ms
+KEY: n
+WAIT: 200ms
+KEY: q

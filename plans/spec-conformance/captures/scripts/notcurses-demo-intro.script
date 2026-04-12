@@ -1,0 +1,8 @@
+# notcurses-demo-intro.script
+# Run the notcurses-demo intro scene only (`-p intro`). The intro
+# scene paints the NC logo with Braille + quadrant glyphs + RGB
+# color fade + transparency — high tuple yield per second, which
+# is ideal for the catalog's de-facto discovery pass.
+COMMAND: notcurses-demo -p /usr/share/notcurses i
+WAIT: 6000ms
+KEY: q
