@@ -39,6 +39,12 @@ Bugs in the pane multiplexer — PTY I/O, IO thread behavior, pane lifecycle, me
   Found: 2026-04-05 | Source: tpr-review
   Note: Keyboard Ctrl+C (BUG-11-1) works correctly — the kernel PTY layer handles `\x03` → SIGINT to the foreground PGID. This bug only affects the programmatic `signal_child()` path.
 
+- [ ] `[BUG-11-6][medium]` **`push_notification_triggers_dirty_flag` e2e test flaky — asserts on first dirty snapshot**
+  Repro: `cargo test -p oriterm_mux --test e2e push_notification_triggers_dirty_flag` in a loop; fails intermittently.
+  Subsystem: `oriterm_mux/tests/e2e.rs:280`
+  Analysis: Test sends `echo PUSH_TEST\n`, waits for `is_pane_snapshot_dirty`, then asserts the refreshed snapshot contains "PUSH_TEST". The snapshot can become dirty from the command echo or prompt redraw before the actual output lands. Fix: continue the loop when snapshot doesn't contain "PUSH_TEST" instead of asserting on the first dirty snapshot.
+  Found: 2026-04-12 | Source: continue-roadmap
+
 ## Resolved Bugs
 
 - [x] `[BUG-11-1][critical]` **All input blocked during sustained output flooding (even single pane)** — found by manual.

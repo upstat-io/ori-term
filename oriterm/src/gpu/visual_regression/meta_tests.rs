@@ -215,3 +215,29 @@ fn update_golden_overwrites_reference() {
     // Verify the original reference size was non-zero.
     assert!(size_v1 > 0, "reference PNG should have non-zero size");
 }
+
+/// Verify the CI guard fires when both `CI` and `ORITERM_UPDATE_GOLDEN`
+/// are set. This test is `#[ignore]` because it mutates global env vars
+/// — running it under default `cargo test` parallelism would leak
+/// `ORITERM_UPDATE_GOLDEN=1` into sibling tests (notably
+/// `text_blink_tests.rs:100` which also reads it) and silently
+/// regenerate goldens. Run explicitly:
+/// `cargo test -p oriterm --features gpu-tests 'compare_with_reference_ci_guard_fires' -- --ignored --test-threads=1`.
+#[test]
+#[ignore]
+#[should_panic(expected = "ORITERM_UPDATE_GOLDEN=1 is set in a CI environment")]
+#[allow(
+    unsafe_code,
+    reason = "set_var is unsafe in edition 2024 due to env race risk; \
+    this test is #[ignore] and must run in isolation via --test-threads=1"
+)]
+fn compare_with_reference_ci_guard_fires() {
+    // SAFETY: test is #[ignore] and must run in isolation (--ignored
+    // --test-threads=1) to avoid leaking env vars into parallel tests.
+    unsafe {
+        std::env::set_var("CI", "true");
+        std::env::set_var("ORITERM_UPDATE_GOLDEN", "1");
+    }
+    // The panic fires inside compare_with_reference before any file I/O.
+    let _ = compare_with_reference("ci_guard_test", &[0; 16], 2, 2);
+}

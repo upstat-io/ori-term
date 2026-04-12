@@ -15,7 +15,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-use oriterm_core::{Term, Theme, VoidListener};
+use oriterm_core::effect::VoidEffectSink;
+use oriterm_core::{Term, Theme};
 
 // --- Counting allocator with enable/disable gate ---
 
@@ -72,8 +73,8 @@ fn measure_allocs<F: FnOnce()>(f: F) -> u64 {
     measure(f).allocs
 }
 
-fn make_term() -> Term<VoidListener> {
-    Term::new(24, 80, 1000, Theme::default(), VoidListener)
+fn make_term() -> Term<VoidEffectSink> {
+    Term::new(24, 80, 1000, Theme::default(), VoidEffectSink)
 }
 
 /// Threshold for "zero-alloc" assertion. Accounts for noise from parallel
@@ -268,7 +269,7 @@ fn snapshot_swap_path_zero_alloc_after_warmup() {
 fn profile_blank_row_memory() {
     let cols = 120;
     let scrollback = 10_000;
-    let mut term = Term::new(50, cols, scrollback, Theme::default(), VoidListener);
+    let mut term = Term::new(50, cols, scrollback, Theme::default(), VoidEffectSink);
     let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
 
     // Fill scrollback with alternating content and blank lines.
@@ -330,7 +331,7 @@ fn profile_blank_row_memory() {
 #[test]
 #[ignore = "profiling test — run separately to avoid counting allocator noise"]
 fn profile_resize_allocation_count() {
-    let mut term = Term::new(50, 120, 1000, Theme::default(), VoidListener);
+    let mut term = Term::new(50, 120, 1000, Theme::default(), VoidEffectSink);
     let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
 
     // Fill grid with content so resize has rows to reflow.

@@ -1,12 +1,12 @@
 # Spec Conformance — Research
 
-**Status**: research only. No plan exists yet. This document captures what we learned before any planning, so the plan can be written from a known foundation when the time comes.
+**Status**: research snapshot (2026-04-07). **Superseded by `plans/spec-conformance/`** — see `plans/spec-conformance/00-overview.md` for the current plan tree (26 sections, active reroute). This document captured the foundation the plan was written against and is now historical context, NOT a source-of-truth for current project state. Claims below that disagree with the catalog under `plans/spec-conformance/catalog/` lose to the catalog.
 
-**Date**: 2026-04-07
+**Date**: 2026-04-07 (research snapshot); superseded 2026-04-11 during §01.9 stale-claim corrections.
 
 **Mandate (paraphrased from user)**: ori_term has many visible rendering issues running notcurses-demo. The strategy is to tackle the spec of each stack used (Kitty, Sixel, Unicode subcell glyphs, OSC, CSI/SGR, Mode 2026, etc.), aiming for 100% compliance per stack, methodically tested with golden images, snapshot pinning, and matrix testing. The test framework is a co-deliverable — built incrementally, driven by what each stack's tests demand, never speculatively.
 
-**Hold**: this plan is parked until the existing `plans/tack-conformance/` plan lands. tack-conformance covers the ECMA-48 / terminfo baseline that spec-conformance depends on, and may establish patterns (PTY session, snapshot format, reference invocation) we should inherit rather than reinvent.
+**Status update (2026-04-11)**: the plan exists. `plans/spec-conformance/` is the active reroute. `plans/tack-conformance/` has been mechanically absorbed via `plans/spec-conformance/section-02-tack-absorption.md`; tack files stay in place for citation stability per the absorption covenant. Section 01 (Catalog Bootstrap) has delivered the catalog + bootstrap gate + bug filings; Sections 12 (Sixel) and 13 (Kitty Graphics) are blocked on `BUG-08-8` (kitty.rs BLOAT split).
 
 ---
 
@@ -160,7 +160,7 @@ Image / pixel graphics protocols:
 - Kitty placement: `oriterm_core/src/term/handler/image/kitty.rs:148-164, 401-462` — image_id, placement_id, z-index, virtual placements (U=1 with unicode placeholders), delete actions
 - Kitty animation: `oriterm_core/src/term/handler/image/kitty_animation.rs` — frame composition, base frames (verify alpha modes)
 - iTerm2 OSC 1337: `oriterm_core/src/term/handler/image/iterm2.rs:1-232` — base64, inline/download, GIF frame extraction
-- Image cache: `oriterm_core/src/image/cache/mod.rs:1-436` — LRU, hash-deduped, default 512 MiB cap
+- Image cache: `oriterm_core/src/image/cache/mod.rs:1-436` — LRU, hash-deduped. Default memory cap is **320 MiB** via `DEFAULT_MEMORY_LIMIT: usize = 320 * 1024 * 1024` (`cache/mod.rs:15`, used as `memory_limit` on line 64). Ghostty parity. (Corrected 2026-04-11 during §01.9 audit — the pre-§01.9 assertion of the cap disagreed with the source constant.)
 - GPU image pipeline: `oriterm/src/gpu/pipeline/image.rs:1-127` — 36-byte instance, premultiplied alpha blend, lazy upload
 
 Pixel-blit glyphs (rendered via `Canvas` abstraction in `oriterm/src/gpu/builtin_glyphs/mod.rs:60-90` with fractional pixel precision — no chunky misalignment per audit):
@@ -185,7 +185,7 @@ Modes / cursor / scroll regions:
 Detection:
 - DA1: `CSI?64;6;4c` (VT420 + ANSI color + sixel param 4)
 - DA2/DA3: implemented
-- **Kitty graphics query (`q=1`): NOT IMPLEMENTED** — apps may fall back to glyphs
+- **Kitty graphics query (`q=1`): IMPLEMENTED** (corrected 2026-04-11 during §01.9 audit — the pre-01.9 note said "NOT IMPLEMENTED" which was wrong). `parse_kitty_command` (re-exported from `oriterm_core/src/image/kitty/mod.rs:9`) parses `a=q` into `KittyAction::Query`; `Term::handle_kitty_graphics` → `Term::kitty_query` at `oriterm_core/src/term/handler/image/kitty.rs:53, 64` dispatches it and responds via `Term::kitty_respond` (line 465). Current response is a hardcoded `OK` — capability-richness is Section 13 scope, but dispatch is live.
 
 Other:
 - OSC 8 hyperlinks: `crates/vte/src/ansi/dispatch/osc.rs:120-142`
@@ -196,13 +196,13 @@ Other:
 
 **Bisection priorities (where to look for bugs first)**
 
-1. HSL color rotation in sixel decoder (`hls_to_rgb`) — WezTerm rotates `hue_angle - 120°`; verify ours matches
-2. Kitty animation frame blending — partial; alpha modes need cross-check
+1. ~~HSL color rotation in sixel decoder~~ — **VERIFIED CORRECT 2026-04-11 during §01.9 audit.** `hls_to_rgb` at `oriterm_core/src/image/sixel/color.rs:30` does `let hf = hue as f64 - 120.0;` on line 41 — matches WezTerm. Test pin at `oriterm_core/src/image/sixel/tests.rs:83` (sixel hue 120 → standard hue 0 = red).
+2. Kitty animation frame blending — partial; alpha modes need cross-check (Section 13 owns)
 3. Premultiplied vs straight alpha in image GPU pipeline — easy to get wrong
-4. Cell-level alpha gap — scenes with overlapping translucent planes (trans.c) likely render wrong
+4. Cell-level alpha gap — scenes with overlapping translucent planes (trans.c) likely render wrong (Section 15 owns)
 5. Sixel cursor positioning vs DECSDM toggle
-6. Synchronized output flushing (mode 2026) — must actually defer GPU draws
-7. Kitty `q=1` query response — small fix, may unblock detection
+6. Synchronized output flushing (mode 2026) — must actually defer GPU draws (Section 06 owns)
+7. ~~Kitty `q=1` query response~~ — **DISPATCH IMPLEMENTED 2026-04-11.** See the "Kitty graphics query" entry under Detection above; residual work (richer capability report) tracked by Section 13.
 
 ## 3. Initial strategy candidate (rejected) — notcurses-demo replay harness
 

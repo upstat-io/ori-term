@@ -230,7 +230,7 @@ fn accept_action_noop_for_display_none() {
     );
 }
 
-// --- Layout transparency (TPR-06-007) ---
+// --- Layout transparency ---
 
 /// Test leaf that returns a Fill-sized layout box.
 struct FillLeaf {

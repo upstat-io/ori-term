@@ -266,7 +266,7 @@ fn hidden_tab_bar_chrome_init_uses_zero_height() {
     }
 }
 
-/// Regression (TPR-09-020): Search overlay chrome height must be 0 when
+/// Regression: Search overlay chrome height must be 0 when
 /// `TabBarPosition::Hidden`, regardless of the widget's own metrics.
 /// The redraw paths use `if tab_bar_hidden { 0.0 } else { metrics().height }`
 /// — this test validates the branch.
@@ -301,7 +301,7 @@ fn hidden_tab_bar_search_overlay_uses_zero_chrome_height() {
     }
 }
 
-/// Regression (TPR-09-020): Config reload position-to-Hidden must publish
+/// Regression: Config reload position-to-Hidden must publish
 /// effective height 0.0 to macOS, not the raw metrics height.
 #[test]
 fn config_reload_hidden_publishes_zero_effective_height() {

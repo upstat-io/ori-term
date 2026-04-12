@@ -11,7 +11,7 @@ third_party_review:
 sections:
   - id: "07.1"
     title: "Active Bugs"
-    status: not-started
+    status: in-progress
   - id: "07.R"
     title: "Third Party Review Findings"
     status: complete
@@ -28,8 +28,42 @@ sections:
 
 ## 07.1 Active Bugs
 
+- [ ] `[BUG-07-011][low]` **`plans/spec-conformance/index.md` at 535 lines — approaching plan-audit BLOAT_RISK heuristic (500-line threshold)** — found by tpr-review during /review-plan Phase 4 on `plans/spec-conformance/section-02-tack-absorption.md`.
+  Repro: `wc -l plans/spec-conformance/index.md` → `535`. `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json | python3 -c "import json,sys;d=json.load(sys.stdin); [print(f) for f in d['findings'] if f.get('check')=='BLOAT_RISK' and 'index.md' in f.get('location','')]"` reports `major BLOAT_RISK plans/spec-conformance/index.md — 535 lines, at or near 500-line limit`.
+  Subsystem: `plans/spec-conformance/index.md` (plan-hygiene — no code crate). Filed under section 07 per `/add-bug` subsystem mapping (plan-hygiene bugs that don't map to a code crate go in CI & Build alongside BUG-07-005 / BUG-07-006 / BUG-07-010).
+  Found: 2026-04-11 | Source: tpr-review | Reviewers: codex + gemini (TPR-02-002-codex + TPR-02-002-gemini convergence during `/review-plan` Phase 4 on `plans/spec-conformance/section-02-tack-absorption.md`)
+  Context: `plans/spec-conformance/index.md` is the searchable keyword-cluster index for a 26-section plan. Each section carries a ~15-line keyword cluster plus a row in the Quick Reference table. The 500-line hard limit from `.claude/rules/code-hygiene.md` §File Organization is scoped to "source files excluding `tests.rs`", but `plan-audit.py` applies the same heuristic as a BLOAT_RISK advisory to plan-index markdown files.
+  Why NOT fixed in Section 02 scope: `plans/spec-conformance/section-02-tack-absorption.md` is the Phase 0b mechanical absorption step — its atomic commit is scoped to the 8-file set needed for the absorption. Adding index-trimming work would double-scope Section 02 against the same file Section 01's Catalog Bootstrap will eventually edit, creating a merge conflict. Filing here keeps Section 02 scoped and makes the BLOAT a separately tracked artifact.
+  Fix approach:
+  - Option A: split the 26 keyword clusters into a separate `plans/spec-conformance/catalog-keyword-index.md` that `index.md` links to, leaving `index.md` as the slim Quick Reference + cross-ref table only
+  - Option B: trim each keyword cluster from ~15 lines to ~8 lines by removing redundant synonyms (current clusters list both formal names AND developer aliases; trim to one canonical name + 3–4 most-likely search keywords)
+  - Option C: extract the Quick Reference table to a separate file and have `index.md` be ONLY the keyword clusters
+  - Consult `plans/completed/` for prior plan-index conventions to pick the approach with least divergence
+  Severity: low — no correctness impact, no runtime impact, no test impact. The index is usable as-is today. This is a plan-audit advisory that becomes actionable only if the file keeps growing.
+
+- [ ] `[BUG-07-010][medium]` **`./clippy-all.sh` does not lint test targets — 151 pre-existing clippy errors across 6 `oriterm_core` test targets (lib test + alloc_regression + rss_regression + tack + teseq + vttest)** — found by continue-roadmap (tack-conformance section 05.0).
+  Repro: `cargo clippy -p oriterm_core --tests --target x86_64-unknown-linux-gnu -- -D warnings` produces **151 errors** that block compilation across 6 distinct test targets. `./clippy-all.sh` runs `cargo clippy --workspace -- -D warnings` which only checks lib + bin targets, so all 151 violations have been silently passing CI.
+  Subsystem: `clippy-all.sh` + `oriterm_core/src/term/tests.rs` + `oriterm_core/tests/{alloc_regression,rss_regression,tack/main,teseq,vttest}/`
+  Found: 2026-04-08 | Source: continue-roadmap
+  Affected test targets (each fails to compile under `-D warnings`):
+  - `oriterm_core` (lib test) — `oriterm_core/src/term/tests.rs` and other sibling unit tests. Includes `float_cmp` on `assert_eq!(viewport_y, 48.0)` at line 1926, `len_zero` (`.len() > 0`) at line 2126, plus dozens more (`unnested_or_patterns`, `derive_partial_eq_without_eq`, `manual_let_else`, `match_same_arms`, `unnecessary_raw_string_hashes`, `derivable_impls`, `doc_markdown`, etc.).
+  - `oriterm_core` (test "alloc_regression") — 1 error (likely `doc_markdown`).
+  - `oriterm_core` (test "rss_regression") — 1 error (likely `doc_markdown`).
+  - `oriterm_core` (test "tack") — 3 errors, all `doc_markdown` in `oriterm_core/tests/tack/main.rs:4:5`, `35:55`, `36:5`. NOT introduced by tack-conformance 05.0; my new files in `oriterm_core/tests/tack/test_menu/` are clean.
+  - `oriterm_core` (test "teseq") — error count not enumerated, in `oriterm_core/tests/teseq/`.
+  - `oriterm_core` (test "vttest") — 11 errors. **Overlaps with `[BUG-07-005]`** — that bug already documents the menu*.rs violations.
+  Same root cause family as `[BUG-07-005]` and `[BUG-07-006]`: clippy-all.sh's scope is too narrow. BUG-07-005 covers the integration tests in `oriterm_core/tests/vttest/`; this entry expands the surface area to ALL oriterm_core test targets including the lib test (sibling `tests.rs` files like `oriterm_core/src/term/tests.rs`), `alloc_regression`, `rss_regression`, `tack`, and `teseq`. The total violation count is therefore **151 errors across 6 test targets**, of which 11 are the BUG-07-005 vttest subset and 140 are NEW surface area first quantified here.
+  Severity: medium — same family as 005/006, larger surface area, no production impact (test code only) but blocks any future `--all-targets` clippy hardening of `clippy-all.sh`. Filing now (per CLAUDE.md `/add-bug` discipline) so the cleanup is tracked as a single coherent fix.
+  Fix: (1) update each violation site across the 6 affected test targets — most are mechanical (`!is_empty()` over `len() > 0`, `Eq` derive alongside `PartialEq`, `let-else` over `match`, backticks in doc comments). The `float_cmp` violation needs `assert!((a - b).abs() < EPSILON)`. (2) Update `./clippy-all.sh` to add `cargo clippy --workspace --all-targets -- -D warnings` (or a separate `cargo clippy --workspace --tests` step) so test-target lints are gated by CI going forward. (3) Coordinate with BUG-07-005's vttest fix so the 11 overlapping errors are not double-counted. None of the 151 errors are caused by tack-conformance section 05.0 — verified by `cargo clippy -p oriterm_core --test tack --target x86_64-unknown-linux-gnu -- -D warnings` showing all 3 tack-test errors live in `main.rs:4`, `35`, `36` (untouched by 05.0).
+  Note: Active work in tack-conformance section 05 (M1: 05.0 → 05.0.b → 05.0.c → 05.1) does not modify any of the violation lines. Discovered while running `cargo clippy -p oriterm_core --tests` to verify 05.0's new files are clean — they ARE clean; these errors come from pre-existing test code that has never been linted because `./clippy-all.sh` excludes test targets.
+
 - [x] `[BUG-07-009][high]` **10 Windows ConPTY runtime test failures in `oriterm_test_support`, first surfaces as `STATUS_DLL_INIT_FAILED` (`0xC0000142`) on cmd.exe spawn after several silent-long-lived ping spawns** — found by nightly CI 2026-04-08 after fixing the Windows compile errors that previously masked these tests.
-  **Fixed 2026-04-08.** Root cause: `PtySession::spawn` dropped `pair.master` at function exit, calling `ClosePseudoConsole` while the child was still alive. Per Microsoft's documented contract, `ClosePseudoConsole` must be called only after the child has exited; doing it earlier corrupts console-subsystem DLL state and causes subsequent `cmd.exe` spawns to fail with `STATUS_DLL_INIT_FAILED` or hang inside `WaitForSingleObject`. Fix: store `pair.master` as `_master` field on `PtySession` (declared after `child` so Rust's declaration-order field-drop runs `child` first, then `_master` — the Microsoft-sanctioned ordering). Mirror of the in-tree production pattern at `oriterm_mux/src/pty/spawn.rs:261` (`PtyControl(pair.master)`) and the wezterm reference at `mux/src/domain.rs:619-652`. Secondary fix: `child_process_with_apply_env_reads_pinned_terminfo` now uses the unique tempdir basename (not the full Windows path) for its uniqueness assertion, since MSYS infocmp on Windows reports paths in normalized form (drive letter stripped, `\` → `/`); also gated on a new `infocmp_respects_terminfo_env()` runtime probe so hosts whose infocmp lacks env-var precedence support skip cleanly. Verified by all 53 `oriterm_test_support` tests passing serially in 11.96 s on a Windows native host (previously: 10 failures + multiple hangs). New regression test: `pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn` (semantic pin for the spawn-drop-spawn cycle). See `fix-BUG-07-009.md` for the full investigation.
+  **Fixed 2026-04-08.** Three-part fix.
+  **(1) HPCON premature close.** `PtySession::spawn` dropped `pair.master` at function exit, calling `ClosePseudoConsole` while the child was still alive. Per Microsoft's documented contract, `ClosePseudoConsole` must be called only after the child has exited; doing it earlier corrupts console-subsystem DLL state and causes subsequent `cmd.exe` spawns to fail with `STATUS_DLL_INIT_FAILED` or hang inside `WaitForSingleObject`. Fix: store `pair.master` as `_master` field on `PtySession` (declared after `child` so Rust's declaration-order field-drop runs `child` first, then `_master` — the Microsoft-sanctioned ordering). Mirror of the in-tree production pattern at `oriterm_mux/src/pty/spawn.rs:261` (`PtyControl(pair.master)`) and the wezterm reference at `mux/src/domain.rs:619-652`.
+  **(2) Grandchild orphan.** Helper test commands wrapped real subprocesses in `cmd.exe /C "ping … > NUL"`. The wrapper made cmd.exe the immediate ConPTY child and ping a grandchild; `PtySession::drop` only terminates the immediate child, leaving ping orphaned but still attached as a console client. The subsequent `ClosePseudoConsole` blocked waiting for the grandchild to release the HPCON. Fix: replace all wrapped-subprocess helpers with `cmd.exe /C "echo X & pause > NUL"` patterns where `pause` is a `cmd.exe` builtin (in-process, no grandchild). Affects `spawn_silent_long_lived` and the navigator pre-existing-anchor / alternate-anchor tests.
+  **(3) Parallel ConPTY contention.** Empirical testing showed that running >4 simultaneous active `PtySession`s on Windows ballooned per-test wall-clock from <1 s to 50+ s — Windows ConPTY contends across the entire pseudoconsole lifetime, not just spawn. Fix: introduce `CONPTY_LIFETIME_LOCK` (a `static Mutex<()>` held in an `_conpty_guard` field for the entire `PtySession` lifetime) to serialize ConPTY-using tests on Windows. Non-PTY tests (parser, terminfo, helpers) still run in parallel. Linux/macOS PTYs are unaffected — the lock is `cfg(windows)`-only.
+  **(4) Path-format mismatch.** `child_process_with_apply_env_reads_pinned_terminfo` asserted on the full Windows tempdir path, but MSYS infocmp on Windows reports paths in normalized form (drive letter stripped, `\` → `/`). Fix: assert on the unique tempdir basename instead. Also gated on a new `infocmp_respects_terminfo_env()` runtime probe so hosts whose infocmp lacks env-var precedence support skip cleanly.
+  **Verification.** All 53 `oriterm_test_support` tests now pass in parallel in 9.81 s on a Windows native host (previously: 10 failures + multiple 60+ s hangs). Full `cargo test --workspace` is green (~7000 tests across all crates). New regression test: `pty_session_repeated_spawn_drop_cycle_succeeds_on_subsequent_cmd_exe_spawn` (semantic pin for the spawn-drop-spawn cycle). See `fix-BUG-07-009.md` for the full investigation.
   Repro:
   1. Cross-compile + run the test suite on a Windows runner: `cargo test -p oriterm_test_support --target x86_64-pc-windows-msvc` (or trigger a nightly CI run).
   2. Observe that 10 tests fail in this exact set:
@@ -56,6 +90,24 @@ sections:
   3. If portable-pty's ConPTY backend has a leak, file an upstream fix (vendored at `crates/portable-pty/`).
   4. For `child_process_with_apply_env_reads_pinned_terminfo`: gate the test on a Windows-specific check that `infocmp` is the ncurses-style binary (or skip cleanly when an MSYS variant is detected). Alternatively, replace it with a Windows-equivalent integration test that uses a tool that DOES respect `$TERMINFO`.
   Note: this bug was uncovered by `b6e99416`'s Windows compile fix (`fix(test-support): nightly CI macOS hashed-db panic + Windows -D warnings`). That commit fixed the legitimate Windows -D warnings errors so the test crate would compile cross-platform; the runtime failures it surfaced are pre-existing latent bugs in the recent (Apr 7-8) tack-conformance test additions, not regressions introduced by the compile fix. Filing — not deferral — per CLAUDE.md `/add-bug` discipline.
+
+- [ ] `[BUG-07-012][medium]` **`oriterm_test_support` has 14 clippy `--all-targets` warnings in test files — same gate gap as BUG-07-005/010**
+  Repro: `cargo clippy -p oriterm_test_support --all-targets -- -D warnings` produces 14 errors (all in test files, lib target is clean). `./clippy-all.sh` only checks lib+bin targets so these never fire in CI.
+  Subsystem: `crates/oriterm_test_support/src/{session,tack_framework}/` test files
+  Found: 2026-04-11 | Source: continue-roadmap
+  Locations:
+  - `session/sync/tests.rs:406` — `items_after_statements`
+  - `session/version_gate/tests.rs:152` — `items_after_statements` or `late_init`
+  - `tack_framework/cap_coverage/tests.rs:{369,384}` — `into_iter_on_single_item` (2x)
+  - `tack_framework/cap_coverage/tests.rs:536` — `iter().count()` on slice
+  - `tack_framework/runner/tests.rs:181` — `pass_by_value_not_consumed`
+  - `tack_framework/runner/tests.rs:{603,625}` — `doc_markdown` (2x)
+  - `tack_framework/scenarios/menu_inventory/tests.rs:{8,9}` — `doc_markdown` + `items_after_statements`
+  - `tack_framework/scenarios/sgr_modes/tests.rs:{21,78,95}` — `doc_markdown` + `format_push_string` (3x)
+  - `tack_framework/scenarios/tools_menu_inventory/tests.rs:136` — `case_sensitive_file_extension_comparisons`
+  Same root cause family as BUG-07-005, BUG-07-006, BUG-07-010: `clippy-all.sh`'s scope is too narrow. The gate fix (adding `--all-targets`) should land as ONE fix covering all four bugs' crate surface areas simultaneously.
+  Fix: (1) update each violation site — all are mechanical (backticks in docs, `.len()` over `.iter().count()`, `write!` over `format!(..)`, `Path::new().extension()` over `.ends_with(".rs")`, etc.), (2) coordinate with BUG-07-010's clippy-all.sh gate fix so `--all-targets` covers this crate too.
+  Severity: medium — no production impact, test code only. Blocks `--all-targets` hardening of `clippy-all.sh`.
 
 - [ ] `[BUG-07-004][medium]` **Windows PTY size propagation test removed** — found by tpr-review.
   Repro: `#[cfg(unix)]` gate on `pty_size_is_propagated` test means Windows CI has zero PTY size coverage. ConPTY-size regressions can now slip through unchecked.

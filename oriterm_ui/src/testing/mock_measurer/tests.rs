@@ -46,7 +46,7 @@ fn empty_text() {
     assert_eq!(metrics.line_count, 1);
 }
 
-// Non-ASCII regression (TPR-03-008)
+// Non-ASCII regression
 
 #[test]
 fn non_ascii_width_matches_glyph_count() {

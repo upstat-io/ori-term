@@ -1,0 +1,21 @@
+# nvim-minimal.script
+# Minimal neovim session with no user config (-u NONE). Types a
+# line, saves to /tmp/nvim-capture.txt, quits.
+COMMAND: nvim -u NONE --noplugin /tmp/nvim-capture.txt
+WAIT: 500ms
+KEY: i
+TEXT: hello neovim world
+KEY: Escape
+WAIT: 100ms
+KEY: o
+TEXT: second line
+KEY: Escape
+WAIT: 100ms
+
+KEY: :
+TEXT: w
+KEY: Enter
+WAIT: 200ms
+KEY: :
+TEXT: q
+KEY: Enter

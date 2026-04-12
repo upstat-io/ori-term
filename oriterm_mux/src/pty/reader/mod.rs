@@ -19,7 +19,7 @@ use super::adopt::{AdoptedPtyHandle, ExitSignal};
 /// from `read()` more frequently, which drains the `ConPTY` output pipe
 /// in smaller chunks. This gives conhost more opportunities to process
 /// the input pipe between output flushes — critical for Ctrl+C delivery
-/// during sustained output flooding (BUG-11-1). Alacritty uses 1 MB but
+/// during sustained output flooding. Alacritty uses 1 MB but
 /// doesn't use `ConPTY` (it uses non-blocking I/O with polling).
 const READ_BUFFER_SIZE: usize = 0x2_0000; // 128 KB
 
@@ -83,7 +83,7 @@ impl PtyReader {
     /// the input pipe between output bursts. Without this, the tight read
     /// loop keeps the output pipe drained so aggressively that conhost
     /// never gets a scheduling window to handle input — making Ctrl+C
-    /// unresponsive during sustained output flooding (BUG-11-1). `WezTerm`
+    /// unresponsive during sustained output flooding. `WezTerm`
     /// achieves the same effect by doing VTE parsing inline on its reader
     /// thread (~5-10ms per 128KB chunk).
     fn run(mut self) {
@@ -130,7 +130,7 @@ impl PtyReader {
             // WezTerm achieves this naturally because its reader does VTE
             // parsing inline (~5-10ms per 128KB chunk). Our reader offloads
             // parsing to the IO thread and loops back to read() instantly,
-            // starving conhost's input thread (BUG-11-1). A 1ms sleep
+            // starving conhost's input thread. A 1ms sleep
             // after each read gives conhost scheduling time to handle
             // Ctrl+C between output bursts. Throughput impact is minimal:
             // 128KB per 1ms = 128 MB/s, far above terminal needs.

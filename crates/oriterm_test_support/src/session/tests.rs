@@ -1,38 +1,19 @@
+//! Sibling tests for `session/mod.rs`.
+//!
+//! `mod.rs` itself owns `PtySession` (constructors, accessors,
+//! `send`/`send_raw` write primitives, `Drop`) and the
+//! `CONPTY_LIFETIME_LOCK` static. Tests that exercise those
+//! members live here. The tool-availability probes
+//! (`tool_available` and friends) live in `tools/tests.rs`; the
+//! tack version gate lives in `version_gate/tests.rs` — both
+//! moved out in the M1 TPR cleanup per the
+//! "one sibling tests.rs per source file" rule.
+
 use std::time::{Duration, Instant};
 
 use portable_pty::CommandBuilder;
 
-use super::{
-    PtySession, infocmp_available, tack_available, tic_available, tool_available, vttest_available,
-};
-
-#[test]
-fn tool_available_returns_false_for_nonexistent_binary() {
-    assert!(!tool_available(
-        "definitely_not_a_real_program_xyz_oriterm",
-        "--version"
-    ));
-}
-
-#[test]
-fn vttest_available_matches_tool_available() {
-    assert_eq!(vttest_available(), tool_available("vttest", "--help"));
-}
-
-#[test]
-fn tic_available_matches_tool_available() {
-    assert_eq!(tic_available(), tool_available("tic", "-V"));
-}
-
-#[test]
-fn infocmp_available_matches_tool_available() {
-    assert_eq!(infocmp_available(), tool_available("infocmp", "-V"));
-}
-
-#[test]
-fn tack_available_matches_tool_available() {
-    assert_eq!(tack_available(), tool_available("tack", "-V"));
-}
+use super::PtySession;
 
 #[test]
 fn pty_session_send_raw_writes_without_quiesce() {

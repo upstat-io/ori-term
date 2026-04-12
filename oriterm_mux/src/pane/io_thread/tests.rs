@@ -4,18 +4,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
-use oriterm_core::{Column, Line, Term, TermMode, Theme, VoidListener};
+use oriterm_core::effect::VoidEffectSink;
+use oriterm_core::{Column, Line, Term, TermMode, Theme};
 
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
 
-/// Helper: create a Term<VoidListener> with default dimensions.
-fn make_term() -> Term<VoidListener> {
-    Term::new(24, 80, 1000, Theme::default(), VoidListener)
+/// Helper: create a Term<VoidEffectSink> with default dimensions.
+fn make_term() -> Term<VoidEffectSink> {
+    Term::new(24, 80, 1000, Theme::default(), VoidEffectSink)
 }
 
 /// Helper: create a thread + handle pair with a no-op wakeup.
-fn make_pair() -> (PaneIoThread<VoidListener>, PaneIoHandle) {
+fn make_pair() -> (PaneIoThread<VoidEffectSink>, PaneIoHandle) {
     new_with_handle(IoThreadConfig {
         terminal: make_term(),
         mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
@@ -51,12 +52,12 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
 }
 
 /// Helper: create a `PaneIoThread` for synchronous testing (no spawning).
-fn make_sync_thread() -> PaneIoThread<VoidListener> {
+fn make_sync_thread() -> PaneIoThread<VoidEffectSink> {
     make_sync_thread_with_term(make_term())
 }
 
 /// Helper: create a `PaneIoThread` with a custom `Term` for synchronous testing.
-fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidListener> {
+fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEffectSink> {
     let rows = term.grid().lines() as u16;
     let cols = term.grid().cols() as u16;
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
@@ -78,11 +79,12 @@ fn make_sync_thread_with_term(term: Term<VoidListener>) -> PaneIoThread<VoidList
         last_pty_size: (rows as u32) << 16 | cols as u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
     }
 }
 
 /// Helper: create a sync thread with a wakeup counter for testing.
-fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>) {
+fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU32>) {
     let wakeup_count = Arc::new(AtomicU32::new(0));
     let wakeup_clone = Arc::clone(&wakeup_count);
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
@@ -107,6 +109,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidListener>, Arc<AtomicU32>
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
     };
     (thread, wakeup_count)
 }
@@ -154,6 +157,7 @@ fn shutdown_via_channel_disconnect() {
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -228,6 +232,7 @@ fn byte_delivery_parses_vte() {
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -372,6 +377,7 @@ fn handle_bytes_chunked_drains_commands() {
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -408,7 +414,7 @@ fn bytes_appear_in_terminal_grid() {
 #[test]
 fn handle_bytes_prunes_evicted_markers() {
     // Small grid: 5 lines, 10 scrollback — markers will be evicted quickly.
-    let term = Term::new(5, 80, 10, Theme::default(), VoidListener);
+    let term = Term::new(5, 80, 10, Theme::default(), VoidEffectSink);
     let mut t = make_sync_thread_with_term(term);
 
     // Insert a prompt marker.
@@ -525,7 +531,7 @@ fn produce_snapshot_wakeup_only_when_dirty() {
     );
 }
 
-/// Shutdown flushes any parsed-but-unpublished state (TPR-03-001).
+/// Shutdown flushes any parsed-but-unpublished state.
 ///
 /// Bytes processed in the `select!` arm must be snapshot-published
 /// even if shutdown is queued before the next `maybe_produce_snapshot()`.
@@ -581,7 +587,7 @@ fn produce_snapshot_fires_wakeup() {
 // --- Resize tests (Section 05) ---
 
 /// Helper: create a sync thread with a command sender for testing.
-fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoCommand>) {
+fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneIoCommand>) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let thread = PaneIoThread {
@@ -601,6 +607,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidListener>, Sender<PaneIoC
         last_pty_size: (24u32 << 16) | 80u32,
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
     };
     (thread, cmd_tx)
 }
@@ -690,7 +697,7 @@ fn test_resize_dedup_skips_same_size() {
 }
 
 /// First resize at spawn dimensions should not trigger PTY resize (dedup seed).
-/// Validates TPR-05-002 fix: `last_pty_size` is seeded from initial dimensions.
+/// Validates fix: `last_pty_size` is seeded from initial dimensions.
 #[test]
 fn test_spawn_size_resize_is_deduped() {
     let mut t = make_sync_thread();
@@ -1301,7 +1308,7 @@ fn test_select_command_input_reply() {
     }
 }
 
-// --- TPR-08-001: snapshot publication between parse chunks ---
+// --- snapshot publication between parse chunks ---
 
 /// A large byte message (> MAX_PARSE_CHUNK) should produce intermediate
 /// snapshots between 64 KB chunks, not just after the entire message.
@@ -1650,4 +1657,146 @@ fn test_resize_during_sustained_output() {
     assert!(t.double_buffer.swap_front(&mut snap));
     assert_eq!(snap.cols, 69, "snapshot cols");
     assert_eq!(snap.lines, 24, "snapshot rows");
+}
+
+// --- Reply-return path tests (Section 03.5d) ---
+
+/// Register a `ClipboardLoad` pending response, fulfill the token, poll,
+/// and verify the `Effect::Pty` reply contains correct base64 content.
+///
+/// This tests the dormant reply-return infrastructure that activates when
+/// consumers migrate from `LegacyEventSink` to `QueueingEffectSink`
+/// (in `plans/effect-cutover/`).
+#[test]
+fn reply_token_clipboard_load_produces_pty_write() {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+
+    use oriterm_core::effect::{ClipboardSelection, Effect, HostRequest, PtyEffect, ResponseToken};
+
+    let mut t = make_sync_thread();
+
+    // Create a ClipboardLoad request with a fresh token.
+    let token = ResponseToken::<String>::new();
+    let token_clone = token.clone();
+    let request = HostRequest::ClipboardLoad {
+        selection: ClipboardSelection::Clipboard,
+        clipboard_char: b'c',
+        terminator: "\x1b\\".to_string(),
+        reply: token,
+    };
+
+    // Register the pending response.
+    t.register_host_request_response(request);
+    assert_eq!(
+        t.pending_responses.len(),
+        1,
+        "one pending response registered"
+    );
+
+    // Poll before fulfillment — should return None, entry retained.
+    t.poll_pending_responses();
+    assert_eq!(
+        t.pending_responses.len(),
+        1,
+        "unfulfilled response retained"
+    );
+
+    // Fulfill the token with clipboard text.
+    token_clone.fulfill("hello world".to_string());
+
+    // Poll after fulfillment — should produce Effect::Pty and remove entry.
+    // poll_pending_responses pushes the effect through the VoidEffectSink (no-op),
+    // so we poll the PendingResponse directly to capture the effect.
+    let effect = t.pending_responses[0].poll();
+    assert!(effect.is_some(), "fulfilled token should produce an effect");
+
+    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect.unwrap() else {
+        panic!("expected Effect::Pty(PtyEffect::Write)");
+    };
+
+    let response_str = String::from_utf8(bytes).expect("valid UTF-8");
+    let expected_encoded = STANDARD.encode(b"hello world");
+    let expected = format!("\x1b]52;c;{}\x1b\\", expected_encoded);
+    assert_eq!(response_str, expected, "base64-encoded OSC 52 reply");
+}
+
+/// Register a `ColorQuery` pending response, fulfill the token, poll,
+/// and verify the `Effect::Pty` reply contains correct rgb: format.
+#[test]
+fn reply_token_color_query_produces_pty_write() {
+    use oriterm_core::color::Rgb;
+    use oriterm_core::effect::{Effect, HostRequest, PtyEffect, ResponseToken};
+
+    let mut t = make_sync_thread();
+
+    let token = ResponseToken::<Rgb>::new();
+    let token_clone = token.clone();
+    let request = HostRequest::ColorQuery {
+        prefix: "10".to_string(),
+        index: 0,
+        terminator: "\x07".to_string(),
+        reply: token,
+    };
+
+    t.register_host_request_response(request);
+    assert_eq!(t.pending_responses.len(), 1);
+
+    // Fulfill with a color.
+    token_clone.fulfill(Rgb {
+        r: 0xAB,
+        g: 0xCD,
+        b: 0xEF,
+    });
+
+    let effect = t.pending_responses[0].poll();
+    assert!(effect.is_some());
+
+    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect.unwrap() else {
+        panic!("expected Effect::Pty(PtyEffect::Write)");
+    };
+
+    let response_str = String::from_utf8(bytes).expect("valid UTF-8");
+    // Format: \x1b]10;rgb:ABAB/CDCD/EFEF\x07
+    assert_eq!(
+        response_str, "\x1b]10;rgb:abab/cdcd/efef\x07",
+        "rgb: formatted OSC color reply"
+    );
+}
+
+/// Multiple pending responses — each is polled independently.
+#[test]
+fn multiple_pending_responses_polled_independently() {
+    use oriterm_core::effect::{ClipboardSelection, HostRequest, ResponseToken};
+
+    let mut t = make_sync_thread();
+
+    let token1 = ResponseToken::<String>::new();
+    let token1_clone = token1.clone();
+    let token2 = ResponseToken::<String>::new();
+
+    t.register_host_request_response(HostRequest::ClipboardLoad {
+        selection: ClipboardSelection::Clipboard,
+        clipboard_char: b'c',
+        terminator: "\x1b\\".to_string(),
+        reply: token1,
+    });
+    t.register_host_request_response(HostRequest::ClipboardLoad {
+        selection: ClipboardSelection::Primary,
+        clipboard_char: b'p',
+        terminator: "\x07".to_string(),
+        reply: token2,
+    });
+    assert_eq!(t.pending_responses.len(), 2);
+
+    // Fulfill only the first token.
+    token1_clone.fulfill("first".to_string());
+
+    // poll_pending_responses should remove only the fulfilled one.
+    t.poll_pending_responses();
+    assert_eq!(
+        t.pending_responses.len(),
+        1,
+        "one fulfilled response removed, one unfulfilled retained"
+    );
 }

@@ -1,17 +1,18 @@
 //! ESC sequence handler implementations.
 //!
 //! Handles RIS (full reset) and DECALN (screen alignment test).
-//! Methods are called by the `vte::ansi::Handler` trait impl on `Term<T>`.
+//! Methods are called by the `vte::ansi::Handler` trait impl on `Term<S>`.
 
 use log::debug;
 
 use crate::cell::Cell;
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, HostEffect};
 use crate::index::{Column, Line};
 
 use super::super::{CharsetState, PromptState, Term, TermMode};
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// RIS (ESC c): full terminal reset.
     ///
     /// Resets both grids, mode flags, charset, palette, title, cursor shape,
@@ -49,7 +50,8 @@ impl<T: EventListener> Term<T> {
         self.prompt_state = PromptState::None;
         self.pending_marks = crate::term::PendingMarks::empty();
         self.prompt_markers.clear();
-        self.pending_notifications.clear();
+        self.effect_sink
+            .push(Effect::Host(HostEffect::ClearPendingNotifications));
         self.command_start = None;
         self.last_command_duration = None;
         self.has_explicit_title = false;
@@ -62,7 +64,8 @@ impl<T: EventListener> Term<T> {
             cache.clear();
         }
 
-        self.event_listener.send_event(Event::ResetTitle);
+        self.effect_sink
+            .push(Effect::Host(HostEffect::TitleSet { value: None }));
     }
 
     /// DECALN (ESC # 8): DEC Screen Alignment Test.

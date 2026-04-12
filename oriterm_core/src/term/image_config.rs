@@ -4,12 +4,12 @@
 //! limit. These methods configure image protocol behavior, cache limits,
 //! cell dimensions, and advance animation frames.
 
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::grid::StableRowIndex;
 
 use super::Term;
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Set cell pixel dimensions (called by GUI after font metrics are known).
     ///
     /// Also recalculates cell coverage for fixed-pixel image placements

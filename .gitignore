@@ -3,3 +3,12 @@
 *:Zone.Identifier
 .claude/worktrees/
 .verify-results/
+
+# Ephemeral /sync-from-orilang artifacts — per-run backups and local machine state.
+.claude/**/*.bak.*
+.claude/.sync-ref/
+.claude/sync-manifest.json
+
+# Python bytecode from .claude/skills/*/ helper scripts (plan-audit, etc.)
+.claude/**/__pycache__/
+.claude/**/*.pyc

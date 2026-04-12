@@ -1,13 +1,35 @@
 ---
 plan: "tack-conformance"
 title: "Tack Conformance: Automated Terminfo Capability Validation Suite"
-status: in-progress
+status: complete
 references:
   - "plans/completed/vttest-conformance/"
   - "plans/completed/golden-image-audit/"
 ---
 
 # Tack Conformance: Automated Terminfo Capability Validation Suite
+
+> **⚠ Superseded by [plans/spec-conformance/](../spec-conformance/00-overview.md).**
+>
+> Sections 01–08 of tack-conformance are **completed artifacts** committed to `main`
+> (each section file's frontmatter carries `status: complete`; `plans/tack-conformance/00-overview.md`'s
+> Quick Reference table and the per-section `**Status:**` labels in
+> `plans/tack-conformance/index.md`'s keyword clusters both reflect this). Section 09's
+> row and label literally still say `Not Started` / `not-started` in those surfaces
+> (02.1's scope fence forbids editing them), but its scope is absorbed per the next paragraph.
+> Section 09 (final verification + archival) is superseded by
+> [plans/spec-conformance/section-23-cross-stack-regression-sweep.md](../spec-conformance/section-23-cross-stack-regression-sweep.md),
+> which explicitly inherits the cross-platform sweep, flake gate, performance
+> invariants, and archival gate.
+>
+> Existing tack-conformance section files (`section-01-*.md` through
+> `section-09-*.md`) remain in place for citation stability — commit messages
+> and PRs that reference these paths (for example `tack-conformance/section-06`)
+> continue to resolve correctly. No `git mv` is run. No files are deleted.
+>
+> The canonical absorption policy lives in
+> [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](../spec-conformance/00-overview.md#tack-absorption-strategy-delivered-by-section-02).
+> This notice is intentionally a pointer, not a restatement.
 
 ## Mission
 
@@ -27,11 +49,12 @@ This is a **testing infrastructure plan** (side plan, not roadmap). It complemen
 - [x] `vttest_available()` defined in exactly ONE location (shared crate) — no scattered knowledge
 - [x] `extra/ori_term.info` terminfo source exists as a hand-authored, fully-pinned entry: a private `ori_term+common` base fragment plus two user-facing entries (`ori_term` and `ori_term-direct`) that consume only the private fragment via `use=ori_term+common,`. The capability vocabulary is derived from xterm-256color conventions, but there is NO `use=xterm-256color,` inheritance — every cap is declared explicitly so host terminfo drift never silently changes what ori_term claims. (Matches Alacritty's `alacritty+common` pattern.)
 - [x] `tic` compiles `ori_term.info` successfully; tests use pinned `TERM=ori_term` + BOTH `TERMINFO` and `TERMINFO_DIRS` pointing at the compiled entry (some ncurses consumers honor only one of the two — set both). Verified end-to-end by `child_process_with_apply_env_reads_pinned_terminfo`, which spawns `infocmp` with the env triple set and asserts `infocmp`'s reconstruction-source header points inside `env.terminfo_dir()` — proving env-precedence steered the child to OUR compiled entry, not any system-installed `ori_term`. The test is immune to future packaging releases that might install `ori_term` system-wide.
-- [ ] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
-- [ ] Tack tool scenarios cover EVERY automatable tools screen: ANSI status reports (DA/DSR), SGR modes, character sets, ENQ/ACK, OSC queries. Interactive/overlap tools (scan codes, decompile terminfo) have in-code stubs.
-- [ ] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
-- [ ] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
-- [ ] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys
+- [x] Tack test scenarios cover EVERY navigable begin-testing screen: modes/glitches, ACS, graphic rendition, color, cursor movement, pad timing, send strings, labels. Interactive-only screens (function key test, edit terminfo, output) have concrete in-code exclusion stubs.
+- [x] Tack tool scenarios cover EVERY automatable tools menu screen in tack v1.08: ANSI status reports (DA1/DA2/DA3, DSR, DECRQM), SGR mode table (modes 0-79), character set banks (G0/G1/GL/GR), ENQ/ACK handshake (u8/u9). Interactive-only tools (echo, reply, change debug level) have in-code exclusion stubs. For the 23 modern caps that tack v1.08 cannot reach (Smulx, Setulc, Sync, BD, BE, PS, PE, Se, Ss, XF, kxIN, kxOUT, Tc, RGB, Cr, Cs, Ms, hs, dsl, fsl, tsl, AX, XT — 19 escape-sequence-emitting caps plus 4 pure-bool markers), Section 06 provides direct VTE round-trip tests in `oriterm_core` (21 caps — including PS/PE, because the byte-emitting `prepare_paste` pure function lives at `oriterm_core/src/paste/mod.rs:11-14` and is already unit-tested there) and in `oriterm` (2 caps — kxIN/kxOUT, emitted by winit focus events from `oriterm/src/app/event_loop_helpers/mod.rs:143 send_focus_event`; the winit dependency anchors these in the app shell). Both crates feed synthetic escape sequences or call the emitting pure function and assert the correct event/handler fires OR the correct outbound bytes are written. Section 06 also extends `oriterm_test_support::session::PtyResponder` in-place with `ColorRequest`/`ClipboardLoad`/`ClipboardStore` handling so OSC 10/11/52 round-trip tests can actually complete (no new listener type — the extension keeps `Term<PtyResponder>` as the canonical test-side type). Total Section 06 cap coverage: 27 caps = 4 tack-reachable (u6/u7/u8/u9) + 23 direct-VTE. NOTE: BUG-11-3 (mux-side OSC routing) is out of Section 06's scope — Section 06's tests bypass the mux entirely, so a green Section 06 does NOT prove OSC works end-to-end in the live app.
+
+- [x] Text snapshots (insta) exist for all navigable tack test screens at 80x24 (with size matrix for color/cursor)
+- [x] GPU golden images exist for curated visual tack test subset: color (3 sizes), graphic rendition, character sets, modes
+- [x] Keyboard/function key capability tests exist in `oriterm` crate exercising real key encoding pipeline for the FULL kf1-kf63 namespace (F1-F12, Shift, Ctrl, Ctrl+Shift, Alt, Alt+Shift) plus cursor keys (normal + application mode) plus editing keys plus modified-key family (kLFT/kRIT/kUP/kDN/kHOM/kEND/kIC/kDC/kNXT/kPRV with modifier suffixes 3-7, plus kind/kri)
 - [ ] All tests skip cleanly when tack/tic unavailable (cross-platform: compile everywhere, runtime skip)
 - [ ] `./test-all.sh` green, `./build-all.sh` green, `./clippy-all.sh` green — no regressions
 
@@ -96,23 +119,24 @@ tack's interactive menu-driven design requires structured navigation scripts. Ea
 Section 01 ──→ Section 02 ──→ Section 03 ──→ Section 04
 (PtySession)   (Terminfo)     (Smoke Test)   (Scenario Framework)
                                                   ↓
+                                            Section 05
+                                           (Test Menu)
+                                       — owns cap_coverage_matrix —
+                                                  ↓
                                     ┌─────────────┼─────────────┐
                                     ↓             ↓             ↓
-                              Section 05    Section 06    Section 07
-                              (Test Menu)   (Tools Menu)  (GPU Golden)
-                                    ↓             ↓             ↓
+                              Section 06    Section 07    Section 08
+                              (Tools Menu)  (GPU Golden)  (Keyboard)
                                     └─────────────┼─────────────┘
-                                                  ↓
-                                            Section 08
-                                           (Keyboard)
                                                   ↓
                                             Section 09
                                           (Verification)
 ```
 
 - Sections 01-04 are sequential: each gates the next.
-- Sections 05, 06, 07 are independent after 04 and can be worked in any order.
-- Section 08 depends on 01 (shared PtySession) and 02 (terminfo) but NOT on 03-07. It tests ori_term's key encoding pipeline directly (not through tack), using the pinned terminfo entry to validate key sequences match what the terminfo claims.
+- **Section 05 now gates Sections 06/07/08** (post Agent-2 review). Section 05 introduces (a) the `PhaseSpec` framework extension, (b) the `tack_version_supported()` gate, (c) the `BEGIN_TESTING_INVENTORY` discovery pattern, and (d) the `cap_coverage_matrix` SSOT enforcement. Sections 06 and 08 must extend `covered_caps()` with their cap lists and remove matching `EXEMPT_CAPS` entries — the matrix test fires loudly on stale exemptions. Section 07 inherits the version gate and the open architectural decision (default: NO `run_phase_with_session_at`, modes GPU golden uses stable-screen `TACK_MODES_AM`).
+- Section 06 (tools menu) and Section 08 (keyboard) can be worked in parallel after Section 05 lands.
+- Section 07 (GPU goldens) can be worked in parallel after Sections 05/06 land (its const ScenarioSpec values come from the `tack_framework::scenarios::*` SSOT module Sections 05/06 populate).
 - Section 09 requires all prior sections.
 
 **Cross-section interactions:**
@@ -135,14 +159,24 @@ Phase 2 - Scenario Framework
   └─ 04: Scenario catalog framework (ScenarioSpec, TackNavigator)
   Gate: one end-to-end scenario (e.g., tack_modes_am) passes with snapshot
 
-Phase 3 - Test Coverage  [CRITICAL PATH]
-  └─ 05: Test menu scenarios (modes, ACS/SGR, color, cursor)
-  └─ 06: Tools menu scenarios (ANSI status, SGR, charsets)
-  └─ 07: GPU golden images (visual subset)
-  └─ 08: Keyboard/function key tests
-  Gate: all tack categories have test coverage
+Phase 3 - Test Catalog Foundation [CRITICAL PATH]
+  └─ 05: Test menu scenarios + framework extensions
+        - PhaseSpec / ScenarioRunner::run_phase (mid-flow capture)
+        - tack_version_supported gate
+        - BEGIN_TESTING_INVENTORY discovery + drift gate
+        - cap_coverage_matrix SSOT enforcement
+        - test menu scenarios (modes, ACS/SGR, color, cursor)
+  Gate: catalog framework extensions land; cap_coverage_matrix passes
+        with deferral exemptions for Sections 06/08; all 05 scenarios green
 
-Phase 4 - Verification
+Phase 4 - Test Catalog Expansion (parallel after Phase 3)
+  └─ 06: Tools menu scenarios + cap_coverage extension (consumer of 05)
+  └─ 07: GPU golden images for visual subset (consumer of 05)
+  └─ 08: Keyboard/function key tests + cap_coverage extension (consumer of 05)
+  Gate: cap_coverage_matrix passes with all deferral exemptions REMOVED
+        (every cap in extra/ori_term.info is now in covered_caps())
+
+Phase 5 - Verification
   └─ 09: Full test matrix, cross-platform, regression checks
 ```
 
@@ -171,12 +205,13 @@ Phase 4 - Verification
 | 02 Terminfo Provisioning | ~200 | Medium | 01 |
 | 03 Tack Smoke Test | ~100 | Low | 02 |
 | 04 Scenario Framework | ~260 (incl. snapshot policy doc) | Medium | 03 |
-| 05 Test Menu Scenarios | ~550 (18 scenarios + 3 stubs) | Medium | 04 |
-| 06 Tools Menu Scenarios | ~420 (7 scenarios + 2 stubs) | Medium | 04 |
-| 07 GPU Golden Images | ~240 (6 goldens) | Low | 01, 02, 04, 05 |
-| 08 Keyboard Tests | ~320 (kf1-kf63) | Medium | 01, 02 |
+| 05 Test Menu Scenarios | ~1,100 (discovery + phase-capture extension + version gate + 18 scenarios + 3 stubs + owner-partitioned cap-coverage matrix [Pivot 5 of Agent 3] + cross-section sync + traceability table + per-section CapCoverageContribution files + expand_kf/expand_modified_key helpers + stale-exemption negative pin + runtime sentinel forcing-function helpers [Pivot 3] + Implementation Milestones M1/M2 [Pivot 1] + algorithmic-DRY poll_until reuse note) | High | 04 |
+| 06 Tools Menu Scenarios | ~1,450 (06.0 tools inventory discovery + shared menu_inventory extraction + 06.0.b status-reports nested inventory + 06.0.c PtyResponder in-place extension incl. proactive split into session/pty_responder/ + 06.1 status reports per-sub-test scenarios + 06.2 SGR sweep stable-screen + 06.3 character sets G0 DEC graphics + 06.4 ENQ/ACK + 06.5.a RecordingListener helper promotion (structural prerequisite) + 06.5 direct-VTE cap xcheck for 23 non-tack-reachable caps, of which 21 are in-crate in oriterm_core (PS/PE live in-crate because prepare_paste is in oriterm_core) and only kxIN/kxOUT are genuinely cross-crate with stubs pointing to oriterm/src/app/event_loop_helpers/tests.rs + 06.6 interactive exclusion stubs + 06.7 determinism/size/cross-compile + cap_coverage extension that moves all 27 entries from section_06.exempt into section_06.covered) | High | 04, 05 |
+| 07 GPU Golden Images | ~310 (6 goldens + frame_input_helper extraction dedup of vttest; modes golden uses TACK_MODES_AM stable-screen, NOT phase capture) | Low | 01, 02, 04, 05, 06 |
+| 08 Keyboard Tests | ~360 (kf1-kf63 + cursor + editing + modified-key family + cap_coverage extension subsection) | Medium | 01, 02, 05 |
 | 09 Verification | ~100 | Low | All |
-| **Total new** | **~2,510** | | |
+| **Total new** | **~3,650** | | |
+
 | **Total deleted** | **~480** | | |
 
 ## Known Bugs (Pre-existing)
@@ -198,8 +233,8 @@ Phase 4 - Verification
 | 02 | Terminfo Provisioning | `section-02-terminfo-provisioning.md` | Complete |
 | 03 | Tack Smoke Test | `section-03-tack-smoke-test.md` | Complete |
 | 04 | Scenario Catalog Framework | `section-04-scenario-framework.md` | Complete |
-| 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Not Started |
-| 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Not Started |
-| 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Not Started |
-| 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Not Started |
+| 05 | Tack Scenarios: Test Menu | `section-05-test-menu-scenarios.md` | Complete |
+| 06 | Tack Scenarios: Tools Menu | `section-06-tools-menu-scenarios.md` | Complete |
+| 07 | GPU Golden Images | `section-07-gpu-golden-images.md` | Complete |
+| 08 | Keyboard/Function Key Tests | `section-08-keyboard-tests.md` | Complete |
 | 09 | Verification | `section-09-verification.md` | Not Started |

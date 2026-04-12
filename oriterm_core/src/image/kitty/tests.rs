@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use vte::ansi::Processor;
 
 use super::parse::{KittyAction, KittyError, KittyTransmission, parse_kitty_command};
+use crate::effect::LegacyEventSink;
 use crate::event::{Event, EventListener};
 use crate::image::ImageId;
 use crate::term::Term;
@@ -267,9 +268,15 @@ impl EventListener for RecordingListener {
     }
 }
 
-fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
+fn term_with_recorder() -> (Term<LegacyEventSink<RecordingListener>>, RecordingListener) {
     let listener = RecordingListener::new();
-    let term = Term::new(24, 80, 100, Theme::default(), listener.clone());
+    let term = Term::new(
+        24,
+        80,
+        100,
+        Theme::default(),
+        LegacyEventSink::new(listener.clone()),
+    );
     (term, listener)
 }
 

@@ -91,6 +91,24 @@ impl SnapshotDoubleBuffer {
         let slot = self.inner.lock();
         slot.seqno > slot.consumed_seqno
     }
+
+    /// Current publication sequence number.
+    ///
+    /// Incremented atomically by `flip_swap()`. During Mode 2026 sync
+    /// suppression, `maybe_produce_snapshot()` returns early and never
+    /// calls `flip_swap()` — so the seqno does not advance during sync.
+    /// This is the apex for section 04's verification chain harness and
+    /// section 06's Mode 2026 timeout tests.
+    pub fn seqno(&self) -> u64 {
+        self.inner.lock().seqno
+    }
+
+    /// Sequence number the main thread last consumed via `swap_front()`.
+    ///
+    /// Useful for tests that need to verify the consumer side has caught up.
+    pub fn consumed_seqno(&self) -> u64 {
+        self.inner.lock().consumed_seqno
+    }
 }
 
 #[cfg(test)]

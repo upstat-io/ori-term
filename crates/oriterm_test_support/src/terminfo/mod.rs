@@ -26,6 +26,7 @@
 //! probe only asks "can infocmp see the entry we asked tic to
 //! write?" and leaves structural assertions to 02.4.
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -338,6 +339,143 @@ const _: fn() = || {
     fn assert_send<T: Send>() {}
     assert_send::<TerminfoEnv>();
 };
+
+/// Parse a full `infocmp` dump into a cap-name → raw-value map.
+///
+/// Invokes `infocmp -x -A <env_dir> -1 <term>` once and parses every
+/// cap declaration into a [`HashMap`]. Boolean caps (e.g., `am,`) map
+/// to an empty string. Numeric caps (e.g., `colors#256,`) map to the
+/// numeric string. String caps (e.g., `kf1=\EOP,`) map to the encoded
+/// value string (still terminfo-encoded — call [`decode_terminfo_string`]
+/// on the values as needed).
+///
+/// Returns `None` if `infocmp` is not available or exits non-zero.
+/// Callers must gate on [`crate::infocmp_available`] first.
+///
+/// This is the preferred entry point for tests that validate multiple
+/// caps — call once, look up many.
+#[must_use]
+pub fn infocmp_dump(env: &TerminfoEnv, term: &str) -> Option<HashMap<String, String>> {
+    let output = Command::new("infocmp")
+        .arg("-x")
+        .arg("-A")
+        .arg(env.terminfo_dir())
+        .arg("-1")
+        .arg(term)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut map = HashMap::new();
+    for line in text.lines() {
+        // Skip entry header lines (they start at column 0).
+        if !line.starts_with(|c: char| c.is_whitespace()) {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        // Strip trailing comma (terminfo entry separator).
+        let trimmed = trimmed.trim_end_matches(',');
+        if trimmed.is_empty() {
+            continue;
+        }
+        // String cap: name=value
+        if let Some((name, value)) = trimmed.split_once('=') {
+            map.insert(name.to_string(), value.to_string());
+        // Numeric cap: name#value
+        } else if let Some((name, value)) = trimmed.split_once('#') {
+            map.insert(name.to_string(), value.to_string());
+        // Boolean cap: just the name
+        } else {
+            map.insert(trimmed.to_string(), String::new());
+        }
+    }
+    Some(map)
+}
+
+/// Extract a single capability's value from a compiled terminfo entry.
+///
+/// Convenience wrapper around [`infocmp_dump`] for callers that only
+/// need one cap. For tests that validate many caps, prefer calling
+/// `infocmp_dump` once and using `.get()` on the returned map.
+///
+/// Returns `None` if the cap is not declared or `infocmp` is unavailable.
+#[must_use]
+pub fn infocmp_query(env: &TerminfoEnv, term: &str, cap: &str) -> Option<String> {
+    infocmp_dump(env, term)?.get(cap).cloned()
+}
+
+/// Decode terminfo escape syntax to raw bytes.
+///
+/// Terminfo encodes ESC as `\E`, CR as `\r`, etc. [`infocmp_dump`]
+/// returns these encoded forms — this function converts them back to
+/// the raw byte sequences that `encode_key` would actually produce.
+///
+/// Handles: `\E` (ESC), `\e` (ESC), `\r` (CR), `\n` (LF), `\t` (TAB),
+/// `\b` (BS), `\f` (FF), `\\` (backslash), `\s` (space), `\,` (comma),
+/// `\:` (colon), `\0` (NUL), `\NNN` (octal), `^X` (control char).
+///
+/// Does NOT handle parameterized strings (`%p1%d` etc.) — those are for
+/// `cup`/`csr`/`setaf`, not keyboard caps.
+#[must_use]
+pub fn decode_terminfo_string(s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('E' | 'e') => out.push(0x1b),
+                Some('r') => out.push(b'\r'),
+                Some('n') => out.push(b'\n'),
+                Some('t') => out.push(b'\t'),
+                Some('b') => out.push(0x08),
+                Some('f') => out.push(0x0c),
+                Some('\\') | None => out.push(b'\\'),
+                Some('s') => out.push(b' '),
+                Some(',') => out.push(b','),
+                Some(':') => out.push(b':'),
+                Some(other) if other.is_ascii_digit() => {
+                    // Octal (up to 3 digits).
+                    let mut n = (other as u8) - b'0';
+                    for _ in 0..2 {
+                        if let Some(d) = chars.peek().filter(|c| c.is_ascii_digit()) {
+                            n = n * 8 + (*d as u8 - b'0');
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    out.push(n);
+                }
+                Some(other) => {
+                    // Unknown escape — push verbatim so test diffs are clear.
+                    out.push(b'\\');
+                    out.extend(other.to_string().bytes());
+                }
+            }
+        } else if c == '^' {
+            // Control char: ^X means Ctrl-X.
+            if let Some(letter) = chars.next() {
+                let upper = letter.to_ascii_uppercase();
+                if ('@'..='_').contains(&upper) {
+                    out.push((upper as u8) - b'@');
+                } else if upper == '?' {
+                    out.push(0x7f); // DEL
+                } else {
+                    out.push(b'^');
+                    out.extend(letter.to_string().bytes());
+                }
+            } else {
+                out.push(b'^');
+            }
+        } else {
+            // Regular char (ASCII expected for keyboard caps).
+            out.extend(c.to_string().bytes());
+        }
+    }
+    out
+}
 
 #[cfg(test)]
 mod tests;

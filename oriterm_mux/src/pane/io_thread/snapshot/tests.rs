@@ -162,3 +162,60 @@ fn is_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<SnapshotDoubleBuffer>();
 }
+
+/// `seqno()` increments on each `flip_swap()`.
+#[test]
+fn seqno_increments_on_flip_swap() {
+    let db = SnapshotDoubleBuffer::new();
+    assert_eq!(db.seqno(), 0);
+
+    let mut buf = RenderableContent::default();
+    db.flip_swap(&mut buf);
+    assert_eq!(db.seqno(), 1);
+
+    db.flip_swap(&mut buf);
+    assert_eq!(db.seqno(), 2);
+
+    db.flip_swap(&mut buf);
+    assert_eq!(db.seqno(), 3);
+}
+
+/// `seqno()` is stable when no `flip_swap()` occurs.
+#[test]
+fn seqno_stable_when_no_flip() {
+    let db = SnapshotDoubleBuffer::new();
+    assert_eq!(db.seqno(), 0);
+
+    // has_new() and swap_front() don't change seqno.
+    assert!(!db.has_new());
+    assert_eq!(db.seqno(), 0);
+
+    let mut buf = RenderableContent::default();
+    assert!(!db.swap_front(&mut buf));
+    assert_eq!(db.seqno(), 0);
+}
+
+/// `consumed_seqno()` advances when `swap_front()` consumes a snapshot.
+#[test]
+fn consumed_seqno_tracks_consumer() {
+    let db = SnapshotDoubleBuffer::new();
+    assert_eq!(db.consumed_seqno(), 0);
+
+    let mut producer = RenderableContent::default();
+    db.flip_swap(&mut producer);
+    assert_eq!(db.seqno(), 1);
+    assert_eq!(db.consumed_seqno(), 0);
+
+    let mut consumer = RenderableContent::default();
+    db.swap_front(&mut consumer);
+    assert_eq!(db.consumed_seqno(), 1);
+
+    // Multiple flips without consuming — consumed_seqno stays at 1.
+    db.flip_swap(&mut producer);
+    db.flip_swap(&mut producer);
+    assert_eq!(db.seqno(), 3);
+    assert_eq!(db.consumed_seqno(), 1);
+
+    db.swap_front(&mut consumer);
+    assert_eq!(db.consumed_seqno(), 3);
+}

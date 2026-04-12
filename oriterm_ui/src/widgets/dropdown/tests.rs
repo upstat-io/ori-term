@@ -138,7 +138,7 @@ fn accept_action_ignores_wrong_id() {
 
 #[test]
 fn confirm_emits_open_dropdown_not_selected() {
-    // Regression: TPR-13-009 — keyboard Confirm must open the popup, not
+    // Regression: keyboard Confirm must open the popup, not
     // silently cycle the selection.
     use crate::action::keymap_action::Confirm;
     use crate::geometry::Rect;
@@ -154,7 +154,7 @@ fn confirm_emits_open_dropdown_not_selected() {
 
 #[test]
 fn dismiss_does_not_emit_overlay_action() {
-    // Regression: TPR-13-008 — Escape on a closed dropdown trigger must NOT
+    // Regression: Escape on a closed dropdown trigger must NOT
     // emit DismissOverlay (which would close the entire settings dialog).
     use crate::action::keymap_action::Dismiss;
     use crate::geometry::Rect;

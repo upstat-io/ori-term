@@ -9,6 +9,7 @@
 
 pub mod cell;
 pub mod color;
+pub mod effect;
 pub mod event;
 pub mod grid;
 pub mod image;

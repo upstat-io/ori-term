@@ -10,7 +10,7 @@
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
-use oriterm_core::event::VoidListener;
+use oriterm_core::effect::VoidEffectSink;
 use oriterm_core::grid::{DirtyTracker, Grid};
 use oriterm_core::index::Column;
 use oriterm_core::term::{RenderableContent, Term};
@@ -510,7 +510,7 @@ fn bench_renderable_content_into(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{cols}x{lines}")),
             &(cols, lines),
             |b, &(cols, lines)| {
-                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidListener);
+                let mut term = Term::new(lines, cols, 1000, Theme::default(), VoidEffectSink);
                 // Fill every visible line with content.
                 let chars = ascii_heavy_line(cols);
                 for line in 0..lines {

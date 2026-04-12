@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use log::{debug, warn};
 
-use crate::event::EventListener;
+use crate::effect::sink::EffectSink;
 use crate::image::kitty::KittyCommand;
 use crate::image::{CompositionMode, ImageId};
 use crate::term::Term;
 
-impl<T: EventListener> Term<T> {
+impl<S: EffectSink> Term<S> {
     /// Handle `a=f` — transmit an animation frame.
     ///
     /// Adds a frame to an existing image. If the image is not yet

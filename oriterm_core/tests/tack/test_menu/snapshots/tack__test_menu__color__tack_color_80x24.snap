@@ -1,0 +1,6 @@
+---
+source: oriterm_core/tests/tack/test_menu/color.rs
+expression: outcome.grid_text
+---
+This terminal can display 256 colors and 32767 color pairs.  (colors) (pairs)   
+(colors) (pairs) Done

@@ -3958,7 +3958,7 @@ fn url_underline_y_base_integer_at_fractional_scale() {
     );
 }
 
-// ── Text blink opacity tests (Section 05B) ──
+// Text blink opacity tests
 
 #[test]
 fn blink_cell_gets_dimmed_fg() {

@@ -30,7 +30,7 @@ sections:
     status: not-started
   - id: "23.6"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 23: Performance & Damage Tracking

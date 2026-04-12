@@ -2,67 +2,24 @@
 //!
 //! Feed raw bytes through `vte::ansi::Processor` → `Term<RecordingListener>`
 //! and verify grid state and events.
+//!
+//! `RecordingListener`, `term_with_recorder`, `term_with_recorder_sized`,
+//! and `feed` were promoted into the sibling `super::test_helpers`
+//! module by the 06.5.a refactor so the same helpers can be reused
+//! by `super::tack_cap_xcheck::tests` (Section 06.5's direct-VTE
+//! cap-xcheck matrix). See that module's rustdoc for the rationale.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use vte::ansi::Processor;
-
-use crate::event::{Event, EventListener};
 use crate::index::Column;
 use crate::term::Term;
 use crate::theme::Theme;
 
-/// Event listener that records all events for assertions.
-#[derive(Clone)]
-struct RecordingListener {
-    events: Arc<Mutex<Vec<String>>>,
-}
+use super::test_helpers::{feed, term_with_recorder, term_with_recorder_sized};
 
-impl RecordingListener {
-    fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("lock poisoned").clone()
-    }
-}
-
-impl EventListener for RecordingListener {
-    fn send_event(&self, event: Event) {
-        self.events
-            .lock()
-            .expect("lock poisoned")
-            .push(format!("{event:?}"));
-    }
-}
-
-/// Create a Term with 24 lines, 80 columns, and a recording listener.
-fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
-    term_with_recorder_sized(24, 80)
-}
-
-/// Create a Term with the given dimensions and a recording listener.
-fn term_with_recorder_sized(
-    lines: usize,
-    cols: usize,
-) -> (Term<RecordingListener>, RecordingListener) {
-    let listener = RecordingListener::new();
-    let term = Term::new(lines, cols, 0, Theme::default(), listener.clone());
-    (term, listener)
-}
-
-/// Create a Term with VoidListener (when events don't matter).
-fn term() -> Term<crate::event::VoidListener> {
-    Term::new(24, 80, 0, Theme::default(), crate::event::VoidListener)
-}
-
-/// Feed raw bytes through the VTE processor.
-fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {
-    let mut processor: Processor = Processor::new();
-    processor.advance(term, bytes);
+/// Create a Term with VoidEffectSink (when effects don't matter).
+fn term() -> Term<crate::effect::VoidEffectSink> {
+    Term::new(24, 80, 0, Theme::default(), crate::effect::VoidEffectSink)
 }
 
 // --- Print (input) tests ---
@@ -2602,7 +2559,7 @@ fn esc7_esc8_preserves_sgr_attributes() {
 #[test]
 fn esc7_esc8_preserves_wrap_pending() {
     // 5-column terminal.
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Fill the line to trigger wrap-pending (col == cols).
     feed(&mut t, b"ABCDE");
     // Cursor col should be past last column (wrap-pending).
@@ -2802,7 +2759,7 @@ fn reverse_index_from_middle_moves_up() {
 /// Ghostty: reverseIndex at top of scroll region scrolls within region.
 #[test]
 fn reverse_index_top_of_scroll_region() {
-    let mut t = Term::new(10, 2, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(10, 2, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Set up content.
     feed(&mut t, b"\x1b[2;1H"); // Move to line 1 (0-based)
     feed(&mut t, b"A\r\n");
@@ -2830,7 +2787,7 @@ fn reverse_index_top_of_scroll_region() {
 /// Ghostty: reverseIndex outside scroll region just moves cursor up.
 #[test]
 fn reverse_index_outside_scroll_region() {
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, b"A\r\n");
     feed(&mut t, b"B\r\n");
     feed(&mut t, b"C");
@@ -2906,7 +2863,7 @@ fn esc7_esc8_preserves_hyperlink() {
     let mut t = term();
     // Set a hyperlink.
     feed(&mut t, b"\x1b]8;;https://example.com\x07");
-    let get_link = |t: &Term<crate::event::VoidListener>| {
+    let get_link = |t: &Term<crate::effect::VoidEffectSink>| {
         t.grid()
             .cursor()
             .template
@@ -3359,7 +3316,7 @@ fn combining_mark_at_wrap_pending() {
     // 5-column terminal: write "abcde" to fill the line.
     // After 'e', cursor is at col 5 (== cols), i.e. wrap-pending.
     // A combining mark should attach to 'e' at col 4, not trigger a wrap.
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, "abcde\u{0300}".as_bytes());
 
     let grid = t.grid();
@@ -3624,7 +3581,7 @@ fn mixed_zerowidth_types_on_same_cell() {
 fn combining_mark_after_line_wrap() {
     // 5-column terminal. Write "ABCDE" to fill line 0, then "F" wraps to line 1.
     // Then a combining mark should attach to 'F' on line 1.
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, "ABCDEF\u{0301}".as_bytes());
 
     let grid = t.grid();
@@ -3649,7 +3606,7 @@ fn wide_char_at_boundary_sets_leading_spacer() {
     // 5-column terminal. Write "ABCD" (fills cols 0-3), then a wide char at col 4
     // can't fit (needs 2 cells, only 1 left). The boundary cell should become
     // LEADING_WIDE_CHAR_SPACER, and the wide char goes to the next line.
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, b"ABCD");
     feed(&mut t, "漢".as_bytes());
 
@@ -3678,7 +3635,7 @@ fn combining_mark_on_wide_char_after_wrap() {
 
     // 5-column terminal. Write "ABC" (3 cols), then a wide char wraps to next line.
     // Then a combining mark should attach to the wide char base, not the spacer.
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, b"ABCD");
     // Wide char at col 4 can't fit → wraps to line 1.
     feed(&mut t, "漢\u{0301}".as_bytes());
@@ -3731,7 +3688,7 @@ fn variation_selector_at_col_zero_discarded() {
 fn combining_mark_does_not_trigger_wrap() {
     // 5-column terminal, fill line with "abcde" (wrap pending at col 5).
     // Multiple combining marks should attach to 'e' without wrapping.
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, "abcde\u{0300}\u{0301}\u{0302}".as_bytes());
 
     let grid = t.grid();
@@ -4303,7 +4260,7 @@ fn multiple_wide_chars_place_correctly() {
 #[test]
 fn wide_char_at_last_column_wraps_to_next_line() {
     // 10-column terminal: wide char at col 9 can't fit, wraps.
-    let mut t = Term::new(5, 10, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 10, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Fill to col 9 (last column).
     feed(&mut t, b"123456789");
     assert_eq!(t.grid().cursor().col(), Column(9));
@@ -4333,7 +4290,7 @@ fn wide_char_at_last_column_wraps_to_next_line() {
 #[test]
 fn wide_char_on_single_column_grid_is_skipped() {
     // Width-2 char on a 1-column grid — can never fit.
-    let mut t = Term::new(5, 1, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 1, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, "世".as_bytes());
 
     // Cursor shouldn't have moved (char was skipped).
@@ -4344,7 +4301,7 @@ fn wide_char_on_single_column_grid_is_skipped() {
 
 #[test]
 fn printing_past_last_column_wraps_to_next_line() {
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, b"ABCDE");
     // After writing 5 chars in a 5-col grid, cursor is at col 5 (wrap-pending).
     assert_eq!(t.grid().cursor().col(), Column(5));
@@ -4365,7 +4322,7 @@ fn printing_past_last_column_wraps_to_next_line() {
 
 #[test]
 fn wrap_pending_cleared_by_cursor_movement() {
-    let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 5, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, b"ABCDE");
     // Wrap pending — cursor at col 5 (one past last).
     assert_eq!(t.grid().cursor().col(), Column(5));
@@ -4558,7 +4515,7 @@ fn mode_1048_saves_and_restores_cursor() {
 
 #[test]
 fn reverse_wrap_at_col0_wraps_to_previous_wrapped_line() {
-    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Enable reverse wraparound.
     feed(&mut t, b"\x1b[?45h");
     assert!(t.mode().contains(TermMode::REVERSE_WRAP));
@@ -4581,7 +4538,7 @@ fn reverse_wrap_at_col0_wraps_to_previous_wrapped_line() {
 
 #[test]
 fn reverse_wrap_at_col0_noop_if_not_wrapped() {
-    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::effect::VoidEffectSink);
     feed(&mut t, b"\x1b[?45h");
 
     // Write a short line (no wrap) and move to start of next line.
@@ -4597,7 +4554,7 @@ fn reverse_wrap_at_col0_noop_if_not_wrapped() {
 
 #[test]
 fn reverse_wrap_disabled_does_not_wrap() {
-    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Do NOT enable mode 45.
 
     // Fill first line and force wrap.
@@ -4740,7 +4697,7 @@ fn decrst_mouse_tracking_does_not_reactivate_previous() {
 
 #[test]
 fn reverse_wrap_at_line_0_is_noop() {
-    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Enable reverse wraparound.
     feed(&mut t, b"\x1b[?45h");
 
@@ -4992,7 +4949,11 @@ use crate::grid::StableRowIndex;
 use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
 
 /// Create a test image and placement at the given grid position.
-fn place_test_image(t: &mut Term<crate::event::VoidListener>, col: usize, row: usize) -> ImageId {
+fn place_test_image(
+    t: &mut Term<crate::effect::VoidEffectSink>,
+    col: usize,
+    row: usize,
+) -> ImageId {
     let id = t.image_cache_mut().next_image_id();
     let data = ImageData {
         id,
@@ -5117,7 +5078,7 @@ fn ech_clears_images_in_char_range() {
 #[test]
 fn scrollback_eviction_prunes_image_placements() {
     // Create a term with 1 scrollback line.
-    let mut t = Term::new(5, 80, 1, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 80, 1, Theme::default(), crate::effect::VoidEffectSink);
     // Place image on row 0.
     place_test_image(&mut t, 0, 0);
     assert_eq!(t.image_cache().placement_count(), 1);
@@ -5139,7 +5100,7 @@ fn scrollback_eviction_prunes_image_placements() {
 #[test]
 fn resize_prunes_evicted_image_placements() {
     // Create a term with 2 scrollback lines.
-    let mut t = Term::new(10, 80, 2, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(10, 80, 2, Theme::default(), crate::effect::VoidEffectSink);
     // Place image on row 0 (first visible row).
     place_test_image(&mut t, 0, 0);
     assert_eq!(t.image_cache().placement_count(), 1);
@@ -5304,7 +5265,7 @@ fn ascii_fast_path_falls_through_for_non_ascii_charset() {
 #[test]
 fn ascii_fast_path_handles_wrap_at_line_end() {
     // 10-column terminal.
-    let mut t = Term::new(5, 10, 0, Theme::default(), crate::event::VoidListener);
+    let mut t = Term::new(5, 10, 0, Theme::default(), crate::effect::VoidEffectSink);
     // Write exactly 10 chars to fill the line, then one more to trigger wrap.
     feed(&mut t, b"0123456789A");
 

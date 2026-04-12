@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::mpsc;
 
+use oriterm_core::effect::LegacyEventSink;
 use oriterm_core::{Term, Theme};
 
 use crate::id::{DomainId, PaneId};
@@ -117,7 +118,7 @@ pub fn adopt_pane(
         usize::from(config.cols),
         config.scrollback,
         config.theme,
-        io_event_proxy,
+        LegacyEventSink::new(io_event_proxy),
     );
 
     // 4. Writer channel + writer thread.

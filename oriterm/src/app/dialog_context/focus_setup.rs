@@ -33,7 +33,7 @@ impl App {
 
         // Register all content widgets with InteractionManager.
         // WidgetAdded events stay pending and are delivered on the first
-        // compose_dialog_widgets() frame via prepare_widget_tree (TPR-04-003).
+        // compose_dialog_widgets() frame via prepare_widget_tree.
         crate::app::widget_pipeline::register_widget_tree(
             ctx.content.content_widget_mut(),
             ctx.root.interaction_mut(),
@@ -68,7 +68,7 @@ impl App {
         ctx.root.focus_mut().set_focus_order(focusable);
         if let Some(id) = initial_focus {
             // FocusChanged events stay pending for delivery on the first
-            // compose_dialog_widgets() frame (TPR-04-003).
+            // compose_dialog_widgets() frame.
             let changed = {
                 let (interaction, focus) = ctx.root.interaction_and_focus_mut();
                 interaction.request_focus(id, focus)

@@ -6,11 +6,12 @@
 
 use std::sync::atomic::Ordering;
 
-use oriterm_core::{EventListener, Selection, SelectionMode, SelectionPoint, Term};
+use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::{Selection, SelectionMode, SelectionPoint, Term};
 
 use super::{PaneIoCommand, PaneIoThread};
 
-impl<T: EventListener> PaneIoThread<T> {
+impl<S: EffectSink + 'static> PaneIoThread<S> {
     /// Process a resize command on the IO thread.
     ///
     /// Performs grid reflow, then sends SIGWINCH to the PTY. The ordering
@@ -56,7 +57,7 @@ impl<T: EventListener> PaneIoThread<T> {
     /// Used by `SelectCommandOutput` and `SelectCommandInput` commands.
     fn build_zone_selection(
         &self,
-        range_fn: impl FnOnce(&Term<T>, usize) -> Option<(usize, usize)>,
+        range_fn: impl FnOnce(&Term<S>, usize) -> Option<(usize, usize)>,
     ) -> Option<Selection> {
         let grid = self.terminal.grid();
         let sb_len = grid.scrollback().len();

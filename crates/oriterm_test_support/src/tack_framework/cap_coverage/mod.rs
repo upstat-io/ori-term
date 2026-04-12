@@ -1,0 +1,345 @@
+//! Parses `extra/ori_term.info` at test time and builds a coverage
+//! matrix against the Section 05 / 06 / 08 scenario catalog.
+//!
+//! Embedded via `include_str!` so the test does not need a working
+//! directory or filesystem access — runs cross-platform.
+//!
+//! # Owner-partitioned exemption sources (Pivot 5)
+//!
+//! Each consuming section owns its own [`CapCoverageContribution`]
+//! in a sibling submodule (`section_05`, `section_06`, `section_08`).
+//! The matrix test sums them. This avoids the
+//! single-flat-`EXEMPT_CAPS`-junk-drawer pattern an earlier draft
+//! had. Adding a new consuming section = new file, not a new
+//! entry in a 200-line flat list.
+//!
+//! # Why this is a separate concern from screen coverage
+//!
+//! Sections 05/06 ensure every navigable screen has a scenario.
+//! That is necessary but not sufficient: tack can drift from the
+//! terminfo without test failures if a NEW cap is added to
+//! `extra/ori_term.info` and no scenario exercises it. The
+//! cap-coverage matrix closes that gap by parsing the SSOT
+//! terminfo file at test time and asserting every cap is exercised
+//! by at least one scenario (or is on a per-section
+//! [`CapCoverageContribution::exempt`] slice with a comment
+//! explaining why).
+//!
+//! # Stale-exemption negative pin
+//!
+//! A cap appearing in BOTH any section's `covered` AND any
+//! section's `exempt` (its own OR another section's) makes the
+//! matrix test fail loudly. This forces the cleanup hand-off —
+//! when Section 06 adds its tools-menu caps to `section_06`'s
+//! `covered`, it MUST also remove them from any section's
+//! `exempt`. The negative pin protects against the SSOT decay
+//! this whole structure exists to prevent.
+
+use std::collections::BTreeSet;
+
+pub mod section_05;
+pub mod section_06;
+pub mod section_08;
+
+/// The pinned terminfo source, embedded at compile time. Same
+/// `include_str!` pattern as `TerminfoEnv::compile()`.
+const TERMINFO_SRC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../extra/ori_term.info"
+));
+
+/// One section's contribution to the cap-coverage matrix.
+///
+/// `covered` is the list of caps this section's scenarios actively
+/// exercise; an entry here means at least one `#[test] fn` in this
+/// section drives a tack scenario whose execution path invokes the
+/// cap (the cap is part of the test pipeline that produces the
+/// captured grid + `Done` terminator). `exempt` is the list of caps
+/// this section intentionally does NOT cover, with a `(cap, reason)`
+/// tuple per entry. The matrix test sums `covered` and `exempt`
+/// across every section's contribution.
+///
+/// Adding a cap to `exempt` is a code-review event — it bypasses
+/// the coverage gate and requires explicit justification. Adding a
+/// cap to `covered` means a test exists.
+///
+/// The stale-exemption negative pin (in the matrix test in
+/// `oriterm_core/tests/tack/test_menu/cap_coverage_matrix.rs`) fires
+/// loudly when a cap appears in BOTH any section's `covered` AND
+/// any section's `exempt`. This forces Sections 06 / 08 to clean up
+/// their exemptions in lockstep with adding their `covered` entries
+/// — the SSOT decay protection.
+pub struct CapCoverageContribution {
+    /// Section identifier (e.g. `"05"`, `"06"`, `"08"`).
+    pub section: &'static str,
+    /// Caps actively exercised by this section's scenarios.
+    pub covered: &'static [&'static str],
+    /// Caps this section deliberately exempts, with reasons.
+    pub exempt: &'static [(&'static str, &'static str)],
+}
+
+/// All section contributions, in declaration order. Adding a new
+/// section = adding one entry to this array AND a new sibling file.
+pub const ALL_CONTRIBUTIONS: &[&CapCoverageContribution] = &[
+    &section_05::CONTRIBUTION,
+    &section_06::CONTRIBUTION,
+    &section_08::CONTRIBUTION,
+];
+
+/// Sum every section's `covered` slice into a `BTreeSet<String>`.
+///
+/// Iterates [`ALL_CONTRIBUTIONS`] so adding a new section is a
+/// one-line edit to the array. Section 08's kf1-kf63 and modified-key
+/// family are added via [`section_08::covered_caps_08`] because the
+/// programmatic expansion avoids a 130+ entry static slice.
+#[must_use]
+pub fn covered_caps() -> BTreeSet<String> {
+    let mut s = BTreeSet::new();
+    for contrib in ALL_CONTRIBUTIONS {
+        for cap in contrib.covered {
+            s.insert((*cap).to_string());
+        }
+    }
+    // Section 08's programmatic extension: kf1-kf63 + modified-key family.
+    for cap in section_08::covered_caps_08() {
+        s.insert(cap);
+    }
+    s
+}
+
+/// Sum every section's `exempt` slice into a `BTreeSet<String>`.
+/// The matrix test uses this for the stale-exemption negative pin.
+#[must_use]
+pub fn exempt_caps() -> BTreeSet<String> {
+    let mut s = BTreeSet::new();
+    for contrib in ALL_CONTRIBUTIONS {
+        for (cap, _reason) in contrib.exempt {
+            s.insert((*cap).to_string());
+        }
+    }
+    s
+}
+
+/// Helper expansion: every kfNN cap from kf1 through kf63.
+///
+/// Used by the matrix test (and re-exported for Section 08 to
+/// compare against). Section 08's `covered_caps` extension MUST
+/// produce the same range or the stale-exemption pin fires.
+#[must_use]
+pub fn expand_kf_caps() -> Vec<String> {
+    (1..=63).map(|n| format!("kf{n}")).collect()
+}
+
+/// Helper expansion: every modified arrow / Home / End / editing
+/// key cap that `extra/ori_term.info` declares.
+///
+/// The base names (`kLFT`, `kRIT`, `kUP`, `kDN`, `kEND`, `kHOM`,
+/// `kIC`, `kDC`, `kNXT`, `kPRV`) appear with no suffix (the
+/// shift-only form) and with mod-param suffixes 3..=7 (alt, alt+shift,
+/// ctrl, ctrl+shift, ctrl+alt). Plus two specials (`kind`, `kri`)
+/// that ncurses defines as the shift-down / shift-up cursor keys.
+/// Mirrors the actual cap names declared at
+/// `extra/ori_term.info:159-181` — the `expand_modified_key_caps_matches_terminfo`
+/// test asserts the lists match.
+#[must_use]
+pub fn expand_modified_key_caps() -> Vec<String> {
+    let bases = [
+        "kLFT", "kRIT", "kUP", "kDN", "kEND", "kHOM", "kIC", "kDC", "kNXT", "kPRV",
+    ];
+    let mut out = Vec::new();
+    for base in bases {
+        out.push((*base).to_string());
+        for suffix in 3..=7 {
+            out.push(format!("{base}{suffix}"));
+        }
+    }
+    out.push("kind".to_string());
+    out.push("kri".to_string());
+    out
+}
+
+/// Parse a terminfo source string and return the set of declared
+/// cap names (boolean caps + numeric caps + string caps).
+///
+/// The parser handles tic format quirks:
+/// - Comment lines (`# ...`) are skipped.
+/// - Entry header lines (start in column 0, end with `,`) are
+///   skipped — they declare the entry name and aliases, not caps.
+/// - Continuation lines (cap value continues on next indented line)
+///   are NOT parsed as cap declarations — only the line that STARTS
+///   the cap is processed.
+/// - `use=other_term` references are skipped (the leading `use`
+///   token is not a cap name).
+/// - Cancellation markers (`name@`) are KEPT in the set — `@` means
+///   "cancel inherited cap" but the cap NAME is still part of the
+///   entry's surface, so the matrix-coverage gate must account for it.
+/// - Numeric caps (`name#256`) and string caps (`name=value`) are
+///   both included; only the leading identifier (everything before
+///   `=`/`#`/`@`/whitespace) is extracted as the cap name.
+///
+/// Pure function over the input string — no embedded source coupling.
+/// The public [`parse_declared_caps`] wrapper calls this with
+/// [`TERMINFO_SRC`]; the sibling tests in `tests.rs` call it with
+/// synthetic terminfo strings to exercise each tic format quirk in
+/// isolation. Single canonical home for the parser body — no
+/// algorithmic duplication between production and test code.
+pub fn parse_terminfo_source(src: &str) -> BTreeSet<String> {
+    let mut caps = BTreeSet::new();
+    // fix: delegate continuation-walking to the
+    // canonical `collapse_entry_lines` helper so both
+    // `parse_terminfo_source` (cap-name extraction) and
+    // `extract_cap_value` (cap-value extraction) share one
+    // implementation of the tic continuation rules — no
+    // algorithmic duplication, no risk of divergence on
+    // edge cases (blank lines, comment lines, entry headers).
+    // The helper ONLY yields cap-declaration entries; comments,
+    // entry headers, and blank lines are filtered at the
+    // canonical dispatch point.
+    for logical in collapse_entry_lines(src) {
+        // Cap declarations are comma-separated within a logical
+        // line. A cap name is the leading identifier, optionally
+        // followed by `=`, `#`, or `@` (cancellation).
+        for token in logical.split(',') {
+            let t = token.trim();
+            if t.is_empty() || t.starts_with("use=") {
+                continue;
+            }
+            let name: String = t
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                caps.insert(name);
+            }
+        }
+    }
+    caps
+}
+
+/// Parse the embedded `extra/ori_term.info` and return the set of
+/// declared cap names. Thin wrapper over [`parse_terminfo_source`]
+/// that fixes the source to [`TERMINFO_SRC`] (the embedded file).
+#[must_use]
+pub fn parse_declared_caps() -> BTreeSet<String> {
+    parse_terminfo_source(TERMINFO_SRC)
+}
+
+/// Extract the value of a named string cap from a tic-format
+/// terminfo source. Returns `None` if the cap is absent or is a
+/// bool/numeric cap with no `=value` form.
+///
+/// Honors tic line-continuation rules: a logical entry line that
+/// does NOT end with `,` is continued on the next physical line,
+/// and the continuation line's leading whitespace is stripped
+/// before concatenation. This matches the tic source format used
+/// by `setab`/`setaf` (and any other multi-line cap) in
+/// `extra/ori_term.info` — without continuation handling, the
+/// helper would silently truncate any cap whose value spans
+/// multiple physical lines.
+///
+/// The returned value is in tic source form — e.g. `\E` for
+/// escape, NOT the literal byte `\x1b`. Pure function over the
+/// input string; callers that need the embedded
+/// `extra/ori_term.info` value can use [`declared_cap_value`]
+/// instead.
+///
+/// Section 06.5's `tack_cap_xcheck` tests and Section 06.4's
+/// `enq_ack` test wrapper both rely on this helper for terminfo
+/// declaration cross-referencing. The single canonical home avoids
+/// the algorithmic duplication that would otherwise scatter the
+/// extraction logic across multiple in-crate test files.
+#[must_use]
+pub fn extract_cap_value(src: &str, cap: &str) -> Option<String> {
+    for logical in collapse_entry_lines(src) {
+        for token in logical.split(',') {
+            let t = token.trim();
+            if let Some(rest) = t.strip_prefix(cap)
+                && let Some(val) = rest.strip_prefix('=')
+            {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Walk a tic-format terminfo source and yield each LOGICAL cap-
+/// declaration entry line — concatenating continuation lines into
+/// the line they extend, with leading/trailing whitespace
+/// stripped. Comment lines, entry header lines (column-0 name +
+/// aliases), and blank lines are FILTERED OUT at this canonical
+/// dispatch point so both `parse_terminfo_source` and
+/// `extract_cap_value` see the same cap-declaration-only view.
+///
+/// Tic continuation rule: if an entry line does not end with `,`
+/// (allowing trailing whitespace), the next physical line is a
+/// continuation. The continuation line's leading whitespace is
+/// stripped before concatenation. Continuation continues until a
+/// physical line ends with `,`.
+///
+/// Blank lines and non-entry lines (comments, headers) are hard
+/// breaks in the continuation stream — they flush any in-flight
+/// buffer and reset continuation state. This matches the original
+/// `parse_terminfo_source` behavior and guarantees that both
+/// cap-name and cap-value consumers agree on the same logical
+/// line boundaries (SSOT fix).
+fn collapse_entry_lines(src: &str) -> Vec<String> {
+    let mut logical: Vec<String> = Vec::new();
+    let mut buffer = String::new();
+    let mut in_continuation = false;
+    for raw_line in src.lines() {
+        let trimmed = raw_line.trim_start();
+        // Blank lines, comment lines, and entry header lines all
+        // terminate any in-flight continuation and contribute NO
+        // entry output. The original parse_terminfo_source treated
+        // each of these as a `continue` — the helper preserves
+        // that behavior at its single canonical dispatch point.
+        let is_blank = trimmed.is_empty();
+        let is_comment = trimmed.starts_with('#');
+        let is_header = !is_blank && !raw_line.starts_with(char::is_whitespace);
+        if is_blank || is_comment || is_header {
+            if in_continuation {
+                logical.push(std::mem::take(&mut buffer));
+                in_continuation = false;
+            }
+            continue;
+        }
+        // This line is an indented entry line (cap declaration or
+        // continuation of one).
+        let line_ended_with_comma = raw_line.trim_end().ends_with(',');
+        if in_continuation {
+            // Concatenate without intermediate whitespace — tic
+            // continuation lines start with formatting indent
+            // that is NOT part of the cap value.
+            buffer.push_str(trimmed);
+        } else {
+            buffer = trimmed.to_string();
+        }
+        if line_ended_with_comma {
+            logical.push(std::mem::take(&mut buffer));
+            in_continuation = false;
+        } else {
+            in_continuation = true;
+        }
+    }
+    if !buffer.is_empty() {
+        logical.push(buffer);
+    }
+    logical
+}
+
+/// Extract the value of a named string cap from the embedded
+/// `extra/ori_term.info` source. Returns `None` if the cap is
+/// absent or is a bool/numeric cap.
+///
+/// Thin wrapper over [`extract_cap_value`] that fixes the source
+/// to [`TERMINFO_SRC`]. Used by Section 06.4's `enq_ack` test
+/// wrapper to cross-reference `u8`/`u9` declarations against the
+/// pinned terminfo.
+#[must_use]
+pub fn declared_cap_value(cap: &str) -> Option<String> {
+    extract_cap_value(TERMINFO_SRC, cap)
+}
+
+#[cfg(test)]
+mod tests;
