@@ -31,6 +31,7 @@ pub mod check;
 pub mod classify;
 pub mod dispatch_extract;
 pub mod parser;
+pub mod reconcile;
 pub mod row;
 pub mod tuple;
 
@@ -39,6 +40,10 @@ pub use check::{CheckMode, CheckReport, check};
 pub use classify::{Classification, build_dispatch_map, classify, classify_from_map};
 pub use dispatch_extract::{extract_dispatch_tuples, extract_namedprivatemode_tuples};
 pub use parser::{CatalogParseError, parse_catalog_markdown};
+pub use reconcile::{
+    ReconciliationReport, TupleSig, build_catalog_signature_set, build_sig_to_row_ids,
+    format_report, load_all_catalog_rows, reconcile, tuple_signature,
+};
 pub use row::{CATALOG_COLUMN_COUNT, CATALOG_COLUMNS, Row, Verification};
 pub use tuple::{Category, Tuple, canonical_tuple};
 
