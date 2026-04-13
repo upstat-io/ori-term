@@ -1,54 +1,58 @@
 ---
 section: "05"
 title: "Golden Lane Determinism"
-status: not-started
-reviewed: false
-goal: "Make the canonical golden image lane reproducible across runs and machines by pinning a software rasterizer (llvmpipe), pinning hinting mode to grayscale alpha for goldens, pinning cell metrics, and tightening tolerance to exact-or-tiny per-pixel matching with SSIM/ΔE relegated to diagnostic-only."
+status: in-progress
+reviewed: true
+goal: "Make the canonical golden image lane reproducible across runs and machines by pinning a software rasterizer via `force_fallback_adapter: true` (primary) with `DeviceType::Cpu` validation (secondary), pinning hinting mode to grayscale alpha, disabling subpixel positioning, deriving cell metrics from `FontCollection::cell_metrics()` (the SSOT), and tightening tolerance to exact-or-tiny per-pixel matching with failure diagnostics (per-channel max difference, mismatch count/percentage, `_actual.png` + `_diff.png` artifacts)."
 success_criteria:
-  - "`oriterm/src/gpu/visual_regression/mod.rs::headless_env_with_pinned_software_rasterizer()` exists and returns a `(GpuState, GpuPipelines, WindowRenderer)` triple using llvmpipe (or equivalent software rasterizer) explicitly"
+  - "`oriterm/src/gpu/visual_regression/mod.rs::headless_env_with_pinned_software_rasterizer()` exists and returns a `(GpuState, GpuPipelines, WindowRenderer)` triple using `force_fallback_adapter: true` (primary mechanism) with `DeviceType::Cpu` validation (secondary), returning `None` when neither succeeds"
   - "`HintingMode::Full` is no longer hardcoded; spec-conformance golden tests default to `HintingMode::None` (grayscale alpha) for cross-machine reproducibility; per-test override hooks exist for tests that need explicit hinting"
-  - "`oriterm/src/gpu/state/helpers.rs::pick_adapter` (current code: `enumerate_adapters` + first-discrete-then-fallback) no longer makes the headless selection uncontrollable. `GpuState::try_init_headless` (at `mod.rs:430`) and `GpuState::new_headless` (at `mod.rs:156`) are extended to accept an explicit adapter preference (software rasterizer / discrete / integrated), and the spec-conformance harness passes the software-rasterizer preference."
-  - "Cell metrics (cell width, cell height in pixels) are pinned per golden test via a `GoldenLaneConfig` struct; default values match the existing visual_regression test font (12pt @ 96 DPI)"
-  - "Per-pixel tolerance for spec-conformance goldens defaults to 0 (exact match); per-test override allows ΔE ≤ 1 with explicit comment justification"
-  - "SSIM / ΔE diff metrics are relegated to diagnostic-only — they appear in failure messages but are NOT the gating metric"
+  - "`oriterm/src/gpu/state/helpers.rs::pick_adapter` is extended with an `AdapterPreference` enum. `GpuState::try_init_headless` and `GpuState::new_headless` are extended to accept an explicit adapter preference. The `SoftwareRasterizer` variant uses `force_fallback_adapter: true` via `instance.request_adapter()` as PRIMARY mechanism, with `enumerate_adapters()` + `DeviceType::Cpu` filter as SECONDARY fallback."
+  - "Cell metrics are NOT stored independently in `GoldenLaneConfig`. `GoldenLaneConfig` stores font configuration (font_size_pt, dpi, hinting_mode, glyph_format) and DERIVES cell metrics from `FontCollection::cell_metrics()` (the SSOT at `oriterm/src/font/collection/mod.rs:249`). No `cell_width_px: u32` or `cell_height_px: u32` fields — that would be a LEAK:shadow-home."
+  - "Subpixel positioning is explicitly disabled (`subpixel_positioning: false`) in the deterministic lane's `FrameInput` construction, eliminating a source of cross-run variation"
+  - "Per-pixel tolerance for spec-conformance goldens defaults to 0 (exact match); per-test override allows pixel_tolerance <= 1 (per-channel) with explicit comment justification"
+  - "Failure message includes: per-channel max difference, total mismatch count, mismatch percentage, and saves `_actual.png` + `_diff.png` for visual inspection. No SSIM or ΔE computation needed. `compare_with_reference_strict()` computes per-channel max difference via an additional scan over the pixel buffer (or by extending `pixel_diff()` to return a stats struct) — `pixel_diff()` alone only returns `(mismatch_count, diff_image)` and does NOT provide per-channel max difference."
   - "All existing visual_regression tests still pass (the existing tests use the old non-deterministic env via the un-renamed `headless_env()`; spec-conformance goldens use the new pinned env)"
-  - "BLOAT check: `oriterm/src/gpu/state/mod.rs` (currently 493) does not exceed 500 lines after this section's edits — split if it does"
+  - "BLOAT split: `oriterm/src/gpu/state/mod.rs` (currently 493 lines) is PROACTIVELY split into `state/mod.rs` (dispatch + windowed init) + `state/headless.rs` (headless construction logic) as the FIRST checklist item, BEFORE adding any new code"
   - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release"
   - "Section's mission criterion connection: contributes to **Deterministic golden environment** mission criterion"
 inspired_by:
-  - "wgpu-test patterns — explicit adapter selection via `wgpu::Backends::VULKAN | wgpu::Backends::GL` and `wgpu::PowerPreference::LowPower` for software fallback"
+  - "wgpu-test patterns — explicit adapter selection via `wgpu::RequestAdapterOptions { force_fallback_adapter: true, .. }` for software fallback"
   - "Mesa llvmpipe — software rasterizer used by Linux CI environments for reproducible GPU output"
-  - "ori_term existing `oriterm/src/gpu/visual_regression/mod.rs:65-112` — `headless_env_with_hinting()` is the entry point being extended"
+  - "ori_term existing `oriterm/src/gpu/visual_regression/mod.rs:65-117` — `headless_env_with_hinting()` is the entry point being extended"
 depends_on: ["03"]
 # NOTE: Section 05 depends on Section 03 (Effect system), NOT Section 04.
 # Section 04 Phase 1b (04.4, 04.5, 04.7) depends on Section 05.
 # Section 04 Phase 1a (04.1-04.3, 04.6, 04.8, 04.9) is independent of 05.
 # This makes the dependency graph acyclic: 03 → {04-Phase1a, 05} → 04-Phase1b
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-13
 sections:
+  - id: "05.0"
+    title: "Proactive BLOAT split: state/mod.rs → state/headless.rs"
+    status: not-started
   - id: "05.1"
-    title: "Add explicit adapter preference parameter to GpuState::new_headless"
+    title: "Add explicit adapter preference parameter to GpuState headless init"
     status: not-started
   - id: "05.2"
-    title: "Add headless_env_with_pinned_software_rasterizer() entry point"
+    title: "GoldenLaneConfig struct — font config only, cell metrics derived from SSOT"
     status: not-started
   - id: "05.3"
-    title: "Decouple HintingMode default from spec-conformance goldens"
+    title: "Add headless_env_with_pinned_software_rasterizer() entry point"
     status: not-started
   - id: "05.4"
-    title: "Pin cell metrics via GoldenLaneConfig struct"
+    title: "Decouple HintingMode + subpixel positioning defaults from spec-conformance goldens"
     status: not-started
   - id: "05.5"
     title: "Tighten tolerance: exact-or-tiny default, per-test override"
     status: not-started
   - id: "05.6"
-    title: "Migrate sixel_minimal pilot golden to the deterministic lane"
+    title: "Validate deterministic lane end-to-end with reproducibility proof"
     status: not-started
   - id: "05.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "05.N"
     title: "Completion Checklist"
     status: not-started
@@ -57,177 +61,422 @@ sections:
 # Section 05: Golden Lane Determinism
 
 **Status:** Not Started
-**Goal:** Make the spec-conformance golden image lane reproducible across runs and machines. Section 04's pilots may pass on the dev machine but flake on CI or another developer's GPU because the current `oriterm/src/gpu/visual_regression/mod.rs` picks `wgpu::PowerPreference::HighPerformance` adapters non-deterministically and uses `HintingMode::Full` which interacts with subpixel rasterization. This section pins everything: software rasterizer (llvmpipe or equivalent), grayscale alpha hinting, cell metrics, and exact-or-tiny per-pixel tolerance as the primary gate (with SSIM/ΔE only as diagnostic).
+**Goal:** Make the spec-conformance golden image lane reproducible across runs and machines. Section 04's visual pilots (04.4, 04.5) depend on this section for deterministic golden comparison. The current `oriterm/src/gpu/visual_regression/mod.rs` picks adapters non-deterministically via `pick_adapter()` in `oriterm/src/gpu/state/helpers.rs` (enumerate + first-discrete fallback), and uses `HintingMode::Full` (at `visual_regression/mod.rs:92`) which interacts with subpixel rasterization. Additionally, `subpixel_positioning: true` is hardcoded in both `visual_regression/spec_chain/visual_harness.rs:176` and `visual_regression/frame_input_helper.rs:89`, introducing another source of cross-run variation. This section pins everything: software rasterizer via `force_fallback_adapter: true` (primary) with `DeviceType::Cpu` validation (secondary), grayscale alpha hinting, disabled subpixel positioning, cell metrics derived from `FontCollection::cell_metrics()` (the SSOT), and exact-or-tiny per-pixel tolerance as the primary gate (with per-channel max difference, mismatch count/percentage, and `_actual.png` + `_diff.png` artifacts as diagnostic).
 
 **Success Criteria:**
-- [ ] `headless_env_with_pinned_software_rasterizer()` entry point exists in visual_regression
-- [ ] `GpuState::new_headless()` accepts adapter preference parameter; spec-conformance harness passes software rasterizer
+- [ ] `state/mod.rs` proactively split into `state/mod.rs` + `state/headless.rs` (BLOAT prevention)
+- [ ] `headless_env_with_pinned_software_rasterizer()` entry point exists in `oriterm/src/gpu/visual_regression/mod.rs`
+- [ ] `GpuState::new_headless()` accepts adapter preference parameter; software rasterizer uses `force_fallback_adapter: true` (primary), `DeviceType::Cpu` (secondary validation)
 - [ ] `HintingMode::Full` no longer hardcoded; spec-conformance defaults to grayscale alpha (`HintingMode::None`)
-- [ ] Cell metrics pinned per golden test via `GoldenLaneConfig`
-- [ ] Tolerance defaults to exact (0); per-test override to ΔE ≤ 1 with comment
-- [ ] SSIM/ΔE in diagnostic only, not gating
+- [ ] `subpixel_positioning: false` for all spec-conformance golden FrameInput construction
+- [ ] `GoldenLaneConfig` stores font config, DERIVES cell metrics from `FontCollection::cell_metrics()` -- no independent `cell_width_px`/`cell_height_px` fields
+- [ ] Tolerance defaults to exact (0); per-test override to pixel_tolerance <= 1 (per-channel) with comment
+- [ ] Failure diagnostics: per-channel max difference, mismatch count/percentage, `_actual.png` + `_diff.png` artifacts (no SSIM/ΔE computation)
 - [ ] Existing visual_regression tests still pass (back-compat preserved)
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
 - [ ] Connects to mission criterion: **Deterministic golden environment**
 
-**Context:** Pass 1 confirmed `oriterm/src/gpu/state/helpers.rs::pick_adapter` (called indirectly by `GpuState::new_headless` at `mod.rs:156` → `try_init_headless` at `mod.rs:430`) enumerates adapters via `instance.enumerate_adapters(backends)` and picks the first discrete GPU (or any fallback). There is NO `PowerPreference` pin, NO `force_fallback_adapter`, and NO software-rasterizer preference — headless selection is non-deterministic across machines. Pass 1 also confirmed `oriterm/src/gpu/visual_regression/mod.rs:87` defaults `headless_env_full()` to `HintingMode::Full`. Both produce variation across runs and machines: a CI runner on Mesa with llvmpipe will rasterize differently from a dev machine with NVIDIA, and `HintingMode::Full` interacts with subpixel positioning to produce slightly different glyph edges. Codex's Step 6B feedback stated explicitly: "deterministic GPU adapter selection belongs in foundation if visual verification is part of the locked model; otherwise every later golden/image section inherits avoidable flake."
+**Context:** Pass 1 confirmed `oriterm/src/gpu/state/helpers.rs::pick_adapter` (called indirectly by `GpuState::new_headless` at `state/mod.rs:156` -> `try_init_headless` at `state/mod.rs:430`) enumerates adapters via `instance.enumerate_adapters(backends)` and picks the first discrete GPU (or any fallback). There is NO `PowerPreference` pin, NO `force_fallback_adapter`, and NO software-rasterizer preference -- headless selection is non-deterministic across machines. Pass 1 also confirmed `oriterm/src/gpu/visual_regression/mod.rs:92` defaults `headless_env_full()` to `HintingMode::Full`. Both produce variation across runs and machines: a CI runner on Mesa with llvmpipe will rasterize differently from a dev machine with NVIDIA, and `HintingMode::Full` interacts with subpixel positioning to produce slightly different glyph edges. Additionally, `subpixel_positioning: true` is hardcoded at `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs:176` and `oriterm/src/gpu/visual_regression/frame_input_helper.rs:89` -- even with grayscale alpha hinting, this introduces sub-pixel glyph offset variation.
 
 **Reference implementations:**
-- **wgpu-test** patterns — adapter selection via `wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::LowPower, force_fallback_adapter: true, .. }` forces a software fallback when available.
-- **Mesa llvmpipe** — Linux software rasterizer used by CI environments for reproducible output. Available on most Linux distros via `mesa-utils` or similar.
-- **ori_term existing** `oriterm/src/gpu/visual_regression/mod.rs:65-112` — `headless_env_with_hinting()` is the entry point being extended with the deterministic variant.
+- **wgpu-test** patterns -- `wgpu::RequestAdapterOptions { force_fallback_adapter: true, .. }` forces a software fallback when available. This is the canonical wgpu mechanism and must be the PRIMARY approach. Note: `DeviceType::Cpu` is unreliable -- WARP on Windows sometimes reports as `DiscreteGpu`/`Other`, and mesa llvmpipe behavior varies by driver version. `force_fallback_adapter: true` works reliably because it's a wgpu-level contract, not a driver-reported classification.
+- **Mesa llvmpipe** -- Linux software rasterizer used by CI environments for reproducible output. Available on most Linux distros. On Windows, WARP serves the same role; on macOS, no software rasterizer is generally available (tests gate via `#[cfg_attr]`).
+- **ori_term existing** `oriterm/src/gpu/visual_regression/mod.rs:74-117` -- `headless_env_with_hinting()` is the entry point being extended with the deterministic variant.
 
-**Depends on:** Section 04 (the spec-conformance harness needs the deterministic env to capture the sixel_minimal pilot golden reproducibly).
+**Depends on:** Section 03 (the effect system). Section 04 Phase 1b (04.4, 04.5, 04.7) depends on THIS section. Phase 1a (04.1-04.3, 04.6, 04.8, 04.9) is independent of 05. This makes the dependency graph acyclic: `03 -> {04-Phase1a, 05} -> 04-Phase1b`.
 
 ---
 
-## 05.1 Add explicit adapter preference parameter to GpuState::new_headless
+## 05.0 Proactive BLOAT split: state/mod.rs -> state/headless.rs
 
-**File(s):** `oriterm/src/gpu/state/mod.rs`, `oriterm/src/gpu/state/helpers.rs`, `oriterm/src/gpu/state/tests.rs`
+**File(s):** `oriterm/src/gpu/state/mod.rs` (493 lines -- at the 500-line limit), `oriterm/src/gpu/state/headless.rs` (new)
 
-`GpuState::new_headless()` (at `mod.rs:156`) currently calls `try_init_headless()` (at `mod.rs:430`) which in turn calls `pick_adapter()` in `helpers.rs:8`. The current `pick_adapter` uses `instance.enumerate_adapters(backends)` + "first discrete GPU or fallback" logic — no `PowerPreference`, no `force_fallback_adapter`, no software-rasterizer path. Add an overload that accepts an explicit adapter preference so the caller can pin the selection for reproducibility.
+`oriterm/src/gpu/state/mod.rs` is at 493 lines. Subsections 05.1-05.3 will add the `AdapterPreference` enum, `new_headless_with_preference()`, and an expanded `try_init_headless()`. This will push the file well past 500 lines. Per `code-hygiene.md` the 500-line limit is a hard limit on source files (test files exempt). The split MUST happen FIRST, before adding any new code, so the limit is never breached.
+
+- [ ] Extract `try_init_headless()` (at `state/mod.rs:430-470`) and `new_headless()` (at `state/mod.rs:156-160`) into `oriterm/src/gpu/state/headless.rs`. The new file contains:
+  - `GpuState::try_init_headless()` (moved, unchanged)
+  - `GpuState::new_headless()` (moved, unchanged)
+  - Any future headless construction methods (05.1 adds `new_headless_with_preference()` here)
+- [ ] `state/mod.rs` retains: windowed `try_init()`, `new()`, `create_surface()`, all accessors and utility methods, the `mod headless;` declaration.
+- [ ] Verify `state/mod.rs` is well under 500 lines after extraction.
+- [ ] Verify `state/headless.rs` is under 500 lines.
+- [ ] Sibling test validation: existing tests in `oriterm/src/gpu/state/tests.rs` still pass (they use `GpuState::new_headless()` which just moved files, not APIs).
+- [ ] **Validation**: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green.
+
+---
+
+## 05.1 Add explicit adapter preference parameter to GpuState headless init
+
+**File(s):** `oriterm/src/gpu/state/helpers.rs`, `oriterm/src/gpu/state/headless.rs` (created in 05.0), `oriterm/src/gpu/state/mod.rs`, `oriterm/src/gpu/state/tests.rs`
+
+`GpuState::new_headless()` currently calls `try_init_headless()` which calls `pick_adapter()` in `helpers.rs:8`. The current `pick_adapter` uses `instance.enumerate_adapters(backends)` + "first discrete GPU or fallback" logic -- no `force_fallback_adapter`, no software-rasterizer path. Add an overload that accepts an explicit adapter preference so the caller can pin the selection for reproducibility.
+
+**Critical design: `force_fallback_adapter: true` is the PRIMARY mechanism.** The `DeviceType::Cpu` filter from `enumerate_adapters()` is SECONDARY validation only. Rationale: `DeviceType::Cpu` is unreliable across drivers (WARP on Windows sometimes reports as `DiscreteGpu`/`Other`). `force_fallback_adapter: true` is a wgpu-level contract that reliably selects the software fallback when available.
 
 - [ ] Define an `AdapterPreference` enum in `oriterm/src/gpu/state/helpers.rs`:
   ```rust
+  /// Adapter selection preference for headless GPU initialization.
+  #[derive(Copy, Clone, Debug, PartialEq, Eq)]
   pub(crate) enum AdapterPreference {
-      /// Current default — discrete GPU preferred, any fallback.
+      /// Current default -- discrete GPU preferred, any fallback.
       DiscreteOrFallback,
-      /// Software rasterizer (llvmpipe / WARP). Returns `None` if unavailable.
+      /// Software rasterizer (llvmpipe / WARP / swiftshader).
+      /// PRIMARY: `force_fallback_adapter: true` via `instance.request_adapter()`.
+      /// SECONDARY: `enumerate_adapters()` + `DeviceType::Cpu` filter.
+      /// Returns `None` if neither mechanism finds a software adapter.
       SoftwareRasterizer,
   }
   ```
-- [ ] Extend `pick_adapter()` (at `helpers.rs:8`) to take `AdapterPreference` and implement the software-rasterizer branch. For `SoftwareRasterizer`: filter `enumerate_adapters()` output for entries whose `adapter.get_info().device_type == wgpu::DeviceType::Cpu`, falling back to `force_fallback_adapter: true` via an explicit `instance.request_adapter()` call if enumeration finds nothing.
-- [ ] Refactor `GpuState::try_init_headless()` (at `mod.rs:430`) to thread `AdapterPreference` from a new `GpuState::new_headless_with_preference(pref: AdapterPreference)` entry point. Preserve the existing `new_headless()` behavior (it calls `new_headless_with_preference(AdapterPreference::DiscreteOrFallback)`).
-- [ ] Sibling tests in `oriterm/src/gpu/state/tests.rs`:
-  - `new_headless_default_picks_discrete_or_fallback()` (existing behavior preserved)
-  - `new_headless_with_software_rasterizer_picks_llvmpipe_or_warp_or_returns_none()`
-  - `pick_adapter_software_rasterizer_prefers_cpu_device_type()`
-- [ ] **Validation**: existing tests still pass; new entry point works on Linux (the canonical golden lane).
-- [ ] **BLOAT check**: `wc -l oriterm/src/gpu/state/mod.rs` — currently at 493. If this section pushes it over 500, split immediately into `state/mod.rs` (dispatch) + `state/headless.rs` (the headless construction logic).
-
----
-
-## 05.2 Add headless_env_with_pinned_software_rasterizer() entry point
-
-**File(s):** `oriterm/src/gpu/visual_regression/mod.rs`, sibling tests
-
-A new entry point in visual_regression that uses the pinned software rasterizer. The existing entry points (`headless_env`, `headless_env_with_config`, `headless_env_with_hinting`) remain unchanged for back-compat with the existing visual_regression test suite.
-
-- [ ] Add `headless_env_with_pinned_software_rasterizer(config: GoldenLaneConfig) -> Option<(GpuState, GpuPipelines, WindowRenderer)>` to `oriterm/src/gpu/visual_regression/mod.rs`. Implementation calls `GpuState::new_headless_with_adapter(GpuState::software_rasterizer_options())`, then uses `config` for font/hinting/cell metrics.
-- [ ] The function returns `None` if the software rasterizer is unavailable on the current platform. Tests using this entry point should `#[cfg_attr(not(target_os = "linux"), ignore)]` on macOS/Windows where the software rasterizer story is more nuanced (section 23's CI matrix configures the appropriate platforms).
-- [ ] Sibling tests in `oriterm/src/gpu/visual_regression/tests.rs` (or wherever existing tests live):
-  - `pinned_software_rasterizer_returns_env_on_linux()`
-- [ ] **Validation**: new entry point works on Linux; gracefully `None`s on platforms without llvmpipe.
-
----
-
-## 05.3 Decouple HintingMode default from spec-conformance goldens
-
-**File(s):** `oriterm/src/gpu/visual_regression/mod.rs`, `crates/oriterm_test_support/src/spec_chain/observers/golden.rs`
-
-The existing `headless_env_full()` defaults to `HintingMode::Full` at line 87. The existing tests rely on this default. Spec-conformance goldens use a NEW default (`HintingMode::None` for grayscale alpha). The decoupling: don't change the existing default, add a new spec-conformance-specific path with the new default.
-
-- [ ] In `oriterm/src/gpu/visual_regression/mod.rs`, document that `headless_env_full()` defaults to `HintingMode::Full` for back-compat with existing tests.
-- [ ] **[WASTE]** `oriterm/src/gpu/visual_regression/mod.rs:78,82,92` — add a doc comment block above `headless_env`, `headless_env_full`, and `headless_env_with_hinting` marking them as **legacy non-deterministic entry points**. New spec-conformance goldens MUST use `headless_env_with_pinned_software_rasterizer` instead. The legacy functions stay because the existing reference_tests.rs suite depends on them (see below).
-- [ ] **[WASTE]** `oriterm/src/gpu/visual_regression/reference_tests.rs:15-16,354,424` — the reference_tests suite imports and uses `headless_env_full` and `headless_env_with_hinting` directly. Add a module-level `//!` doc comment at the top of `reference_tests.rs` stating: "This module uses the legacy non-deterministic visual_regression env. New golden tests for spec conformance MUST use `headless_env_with_pinned_software_rasterizer` (see section 05). These tests remain on the legacy env for historical back-compat only."
-- [ ] In `headless_env_with_pinned_software_rasterizer()`, default to `HintingMode::None` (grayscale alpha) unless `GoldenLaneConfig` overrides.
-- [ ] Update `crates/oriterm_test_support/src/spec_chain/observers/golden.rs` (from section 04) to use the new pinned entry point for spec-conformance goldens.
-- [ ] Document why grayscale alpha is the default: hinting + subpixel positioning interactions produce variation across runs even on the same machine; grayscale alpha is reproducible because the rasterizer makes simpler decisions.
-- [ ] **Validation**: spec-conformance goldens are reproducible across two consecutive runs of the same test on the same machine (manual sanity check).
-
----
-
-## 05.4 Pin cell metrics via GoldenLaneConfig struct
-
-**File(s):** `oriterm/src/gpu/visual_regression/mod.rs`, `crates/oriterm_test_support/src/spec_chain/golden_lane_config.rs` (new)
-
-Cell metrics depend on font + hinting + GPU driver. Even with the software rasterizer, font metrics may shift if the font cache produces a slightly different glyph for the same character at the same size. Pinning cell metrics (cell width and height in pixels) at config time eliminates this drift.
-
-- [ ] Create `GoldenLaneConfig` struct:
+  `state/mod.rs` re-exports `AdapterPreference` as `pub(crate)` so that `visual_regression/` code can pass the enum to `GpuState::new_headless_with_preference()`.
+- [ ] Add `pick_adapter_with_preference()` in `oriterm/src/gpu/state/helpers.rs` (keeping the original `pick_adapter()` unchanged for back-compat):
   ```rust
+  pub(crate) fn pick_adapter_with_preference(
+      instance: &wgpu::Instance,
+      backends: wgpu::Backends,
+      preference: AdapterPreference,
+  ) -> Option<wgpu::Adapter> {
+      match preference {
+          AdapterPreference::DiscreteOrFallback => {
+              pick_adapter(instance, None, backends)
+          }
+          AdapterPreference::SoftwareRasterizer => {
+              // PRIMARY: force_fallback_adapter is a wgpu-level contract.
+              // In wgpu 28, request_adapter() returns Result<Adapter, RequestAdapterError>.
+              let primary = pollster::block_on(instance.request_adapter(
+                  &wgpu::RequestAdapterOptions {
+                      power_preference: wgpu::PowerPreference::LowPower,
+                      force_fallback_adapter: true,
+                      compatible_surface: None,
+                  },
+              ));
+              if let Ok(adapter) = primary {
+                  return Some(adapter);
+              }
+              // SECONDARY: enumerate + DeviceType::Cpu filter (unreliable
+              // on some drivers, but catches edge cases).
+              for a in pollster::block_on(
+                  instance.enumerate_adapters(backends),
+              ) {
+                  if a.get_info().device_type == wgpu::DeviceType::Cpu {
+                      return Some(a);
+                  }
+              }
+              None
+          }
+      }
+  }
+  ```
+- [ ] Add `GpuState::new_headless_with_preference(pref: AdapterPreference)` in `oriterm/src/gpu/state/headless.rs`. Preserve the existing `new_headless()` behavior (it calls `new_headless_with_preference(AdapterPreference::DiscreteOrFallback)`).
+- [ ] Refactor `GpuState::try_init_headless()` in `oriterm/src/gpu/state/headless.rs` to accept `AdapterPreference` and call `pick_adapter_with_preference()` instead of `pick_adapter()`.
+- [ ] Store `wgpu::AdapterInfo` on `GpuState` (or return it alongside headless init) so tests and diagnostics can inspect the selected adapter. Current `GpuState` drops the adapter after init.
+- [ ] Sibling tests in `oriterm/src/gpu/state/tests.rs`:
+  - `new_headless_default_picks_discrete_or_fallback()` -- existing behavior preserved
+  - `new_headless_with_software_preference_uses_force_fallback_primary()` -- asserts that when `force_fallback_adapter: true` finds an adapter, that adapter is used (validates the primary mechanism)
+  - `pick_adapter_software_rasterizer_returns_none_when_unavailable()` -- negative pin: on a system with no software rasterizer, returns `None` (not a panic)
+  - `pick_adapter_discrete_or_fallback_matches_original_behavior()` -- semantic pin: `DiscreteOrFallback` delegates to the original `pick_adapter()`
+- [ ] **Validation**: existing tests still pass; new entry point works on Linux (the canonical golden lane).
+
+---
+
+## 05.2 GoldenLaneConfig struct -- font config only, cell metrics derived from SSOT
+
+**File(s):** `oriterm/src/gpu/visual_regression/golden_lane_config.rs` (new)
+
+**Placement rationale:** ALL consumers of `GoldenLaneConfig` live under `oriterm/src/gpu/visual_regression/` (the pinned entry point, the spec_chain visual harness, the golden observer, the tolerance comparator). The canonical home is co-located with its consumers. NOT in `crates/oriterm_test_support/` (wrong crate -- oriterm_test_support does not depend on oriterm's GPU types).
+
+**SSOT discipline:** `FontCollection::cell_metrics()` at `oriterm/src/font/collection/mod.rs:249` is the SSOT for cell dimensions. It returns `CellMetrics { width: f32, height: f32, baseline: f32, ... }`. `GoldenLaneConfig` MUST NOT store independent cell metric values (`cell_width_px: u32`, `cell_height_px: u32`). That would be a `LEAK:shadow-home` -- a second source of truth that WILL drift. Instead, `GoldenLaneConfig` stores font configuration (size, DPI, hinting, glyph format) and the consumer constructs a `FontCollection` from these, then reads `cell_metrics()` from the result.
+
+- [ ] Create `oriterm/src/gpu/visual_regression/golden_lane_config.rs`:
+  ```rust
+  //! Configuration for the deterministic golden image lane.
+  //!
+  //! Stores font configuration + comparison parameters. Cell metrics
+  //! are NOT stored here -- they are DERIVED from `FontCollection::cell_metrics()`
+  //! after constructing the font with these parameters. See `font/collection/mod.rs:249`
+  //! for the SSOT.
+
+  use crate::font::{GlyphFormat, HintingMode};
+
+  /// Configuration for spec-conformance golden image tests.
+  ///
+  /// Cell metrics are intentionally absent: construct a `FontCollection`
+  /// from these font parameters, then call `font_collection.cell_metrics()`
+  /// to get the authoritative cell dimensions.
+  #[derive(Clone, Debug)]
   pub struct GoldenLaneConfig {
-      pub font_size_pt: f32,    // default 12.0
-      pub dpi: f32,             // default 96.0
-      pub glyph_format: GlyphFormat, // default Alpha
-      pub hinting_mode: HintingMode, // default None for grayscale alpha
-      pub cell_width_px: u32,   // pinned, default computed from font
-      pub cell_height_px: u32,  // pinned, default computed from font
+      // Font parameters (inputs to FontCollection construction)
+      pub font_size_pt: f32,
+      pub dpi: f32,
+      pub glyph_format: GlyphFormat,
+      pub hinting_mode: HintingMode,
+
+      // Viewport dimensions (in grid cells)
       pub viewport_cols: u32,
       pub viewport_rows: u32,
-      pub pixel_tolerance: u8,  // default 0 (exact)
-      pub max_diff_percent: f64, // default 0.0
+
+      // FrameInput determinism
+      pub subpixel_positioning: bool,
+
+      // Comparison parameters
+      pub pixel_tolerance: u8,
+      pub max_diff_percent: f64,
   }
 
   impl GoldenLaneConfig {
-      pub const SPEC_DEFAULT: Self = Self { /* canonical values */ };
+      /// Canonical spec-conformance defaults.
+      ///
+      /// - 12pt @ 96 DPI: matches existing visual_regression test font.
+      /// - HintingMode::None: grayscale alpha for reproducibility.
+      /// - GlyphFormat::Alpha: no subpixel color rendering.
+      /// - subpixel_positioning: false: snaps glyphs to integer pixel
+      ///   boundaries for exact matching.
+      /// - pixel_tolerance 0: exact per-pixel match required.
+      /// - max_diff_percent 0.0: zero mismatches allowed.
+      pub const SPEC_DEFAULT: Self = Self {
+          font_size_pt: 12.0,
+          dpi: 96.0,
+          glyph_format: GlyphFormat::Alpha,
+          hinting_mode: HintingMode::None,
+          viewport_cols: 80,
+          viewport_rows: 24,
+          subpixel_positioning: false,
+          pixel_tolerance: 0,
+          max_diff_percent: 0.0,
+      };
   }
   ```
+- [ ] Add `mod golden_lane_config;` to `oriterm/src/gpu/visual_regression/mod.rs` and `pub(super) use golden_lane_config::GoldenLaneConfig;` (or `pub(crate)` if needed by spec_chain modules).
 - [ ] Wire `GoldenLaneConfig` through `headless_env_with_pinned_software_rasterizer()` so the test caller can override defaults.
-- [ ] **Validation**: same scenario rendered with same `GoldenLaneConfig::SPEC_DEFAULT` produces identical pixels on two consecutive runs.
+- [ ] **Design invariant (no test needed)**: `GoldenLaneConfig` must never gain `cell_width_px` or `cell_height_px` fields — field absence is a compile-time property that cannot be asserted at runtime in Rust. Instead, document the invariant directly in the struct's doc comment: "Cell metrics (`cell_width_px`, `cell_height_px`) are intentionally absent. Construct a `FontCollection` from the font parameters in this struct and call `FontCollection::cell_metrics()` to obtain authoritative cell dimensions. Adding independent cell metric fields here would create a `LEAK:shadow-home` against `font/collection/mod.rs:249`."
+- [ ] **Validation**: same scenario rendered with `GoldenLaneConfig::SPEC_DEFAULT` produces identical pixels on two consecutive runs. Cell metrics are read from `FontCollection::cell_metrics()` and match expected values for 12pt @ 96 DPI with the embedded test font.
+
+---
+
+## 05.3 Add headless_env_with_pinned_software_rasterizer() entry point
+
+**File(s):** `oriterm/src/gpu/visual_regression/mod.rs`
+
+A new entry point in visual_regression that uses the pinned software rasterizer. The existing entry points (`headless_env`, `headless_env_with_config`, `headless_env_with_hinting`) remain unchanged for back-compat with the existing visual_regression test suite.
+
+- [ ] Add `headless_env_with_pinned_software_rasterizer(config: &GoldenLaneConfig) -> Option<(GpuState, GpuPipelines, WindowRenderer)>` to `oriterm/src/gpu/visual_regression/mod.rs`. Implementation:
+  1. Calls `GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer)` -- returns `None` if no software adapter available.
+  2. Reads `config.hinting_mode` directly (no additional defaulting -- `GoldenLaneConfig::SPEC_DEFAULT` already provides `HintingMode::None`).
+  3. Uses `config.glyph_format` (default `GlyphFormat::Alpha`) for glyph rasterization.
+  4. Uses `config.font_size_pt` and `config.dpi` for font size.
+  5. Constructs the core `SpecHarness` (or equivalent) using `SpecHarness::with_size(config.viewport_rows as usize, config.viewport_cols as usize)` — making `GoldenLaneConfig`'s viewport dimensions the authoritative source for the harness grid size.
+  6. After constructing the `FontCollection`, DERIVES cell metrics via `FontCollection::cell_metrics()` -- does NOT use any independently stored cell metric values.
+- [ ] After adapter creation, log the adapter info (name, backend, device_type) at `log::info!` level for diagnosability. This is informational only -- do NOT add a `debug_assert!` on `device_type == Cpu` (see 05.1 rationale: `DeviceType::Cpu` is unreliable across drivers; `force_fallback_adapter: true` is the contract, and WARP on Windows may report as `DiscreteGpu`/`Other`).
+- [ ] The function returns `None` if the software rasterizer is unavailable on the current platform. Tests using this entry point should use the graceful skip protocol from `.claude/rules/tests.md`:
+  ```rust
+  let Some((gpu, pipelines, renderer)) =
+      headless_env_with_pinned_software_rasterizer(&GoldenLaneConfig::SPEC_DEFAULT)
+  else {
+      eprintln!("SKIP: software rasterizer unavailable");
+      return;
+  };
+  ```
+  On macOS where no software rasterizer is typically available, this skip is expected. On Linux with mesa, it should always succeed. On Windows with WARP, it should succeed in most configurations.
+- [ ] **Validation**: new entry point works on Linux; gracefully returns `None` on platforms without a software rasterizer.
+
+---
+
+## 05.4 Decouple HintingMode + subpixel positioning defaults from spec-conformance goldens
+
+**File(s):** `oriterm/src/gpu/visual_regression/mod.rs`, `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs`, `oriterm/src/gpu/visual_regression/frame_input_helper.rs`, `oriterm/src/gpu/visual_regression/spec_chain/observers/golden.rs` (will be created by 04.4 -- this section defines the contract it must use)
+
+The existing `headless_env_full()` at `oriterm/src/gpu/visual_regression/mod.rs:87` defaults to `HintingMode::Full`. The existing tests rely on this default. Spec-conformance goldens use NEW defaults: `HintingMode::None` (grayscale alpha) AND `subpixel_positioning: false`. The decoupling: don't change the existing default, add a new spec-conformance-specific path with the new defaults.
+
+### 05.4a HintingMode decoupling
+
+- [ ] In `oriterm/src/gpu/visual_regression/mod.rs`, add a doc comment block above `headless_env()` (line 74), `headless_env_with_config()` (line 79), `headless_env_full()` (line 87), and `headless_env_with_hinting()` (line 97) marking them as **legacy non-deterministic entry points**. New spec-conformance goldens MUST use `headless_env_with_pinned_software_rasterizer()` instead. The legacy functions remain because the existing `reference_tests.rs` suite depends on them.
+- [ ] Add a module-level doc comment at the top of `oriterm/src/gpu/visual_regression/reference_tests.rs` stating: "This module uses the legacy non-deterministic visual_regression env. New golden tests for spec conformance MUST use `headless_env_with_pinned_software_rasterizer` (see section 05). These tests remain on the legacy env for historical back-compat only."
+- [ ] `headless_env_with_pinned_software_rasterizer()` (from 05.3) reads `config.hinting_mode` directly (no additional defaulting -- `GoldenLaneConfig::SPEC_DEFAULT` already provides `HintingMode::None`).
+
+### 05.4b Subpixel positioning pin
+
+`subpixel_positioning: true` is hardcoded at two locations in the visual regression harness:
+- `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs:176`
+- `oriterm/src/gpu/visual_regression/frame_input_helper.rs:89`
+
+Even with `HintingMode::None`, subpixel positioning introduces fractional glyph offsets that vary across runs depending on floating-point scheduling, font metric rounding, and driver behavior. For deterministic goldens, subpixel positioning MUST be disabled.
+
+- [ ] Add a `config: GoldenLaneConfig` field to `VisualSpecHarness` (at `visual_harness.rs`). Add `VisualSpecHarness::with_config(config: GoldenLaneConfig) -> Option<Self>` constructor that calls `headless_env_with_pinned_software_rasterizer(&config)` (which returns `Option`) and stores the config for later use by observers. `VisualSpecHarness::with_config()` returns `Option<Self>` because `headless_env_with_pinned_software_rasterizer()` returns `Option` — the constructor propagates the `None` case rather than unwrapping. `VisualSpecHarness::new()` returns `Option<Self>` (already the case in the existing implementation — no return type change needed). Callers must use the graceful skip protocol:
+- [ ] **Fate of `VisualSpecHarness::with_size(lines, cols)`**: The existing `with_size()` constructor (at `visual_harness.rs:53-61`) must delegate to `with_config()` using `GoldenLaneConfig::SPEC_DEFAULT` with custom `viewport_rows` and `viewport_cols`. `with_size()` returns `Option<Self>` (already the case in the existing implementation — no return type change needed). The existing `new()` delegates to `with_size(24, 80)` → `with_config(GoldenLaneConfig { viewport_rows: 24, viewport_cols: 80, ..SPEC_DEFAULT })`. Existing tests that call `with_size()` (e.g., `spec_chain/tests.rs:27`) must be audited — if they already handle `Option<Self>`, no change is needed; update only if they call `.unwrap()` or otherwise ignore the `None` case.
+  ```rust
+  let Some(mut harness) = VisualSpecHarness::with_config(GoldenLaneConfig::SPEC_DEFAULT) else {
+      eprintln!("SKIP: software rasterizer unavailable");
+      return;
+  };
+  ```
+- [ ] `build_frame_input()` reads `self.config.subpixel_positioning` instead of hardcoding `true`.
+- [ ] The golden observer (04.4) receives `&self.config` from the harness to pass to `compare_with_reference_strict()`.
+- [ ] The `build_frame_input()` helper in `frame_input_helper.rs` must accept a parameter (or config) for `subpixel_positioning` rather than hardcoding `true`. The existing callers (tack/vttest GPU goldens) continue passing `true` for back-compat; spec-conformance callers pass `false`.
+- [ ] Document why subpixel positioning is disabled: "Subpixel positioning adjusts glyph x-offsets by fractional pixels to improve text appearance on physical displays. In a deterministic golden lane, any fractional offset variance produces pixel-level differences that fail exact matching. Disabling it snaps all glyphs to integer pixel boundaries, eliminating this variation source."
+- [ ] **Note for 04.3b**: `VisualSpecHarness::new()` and `VisualSpecHarness::with_size()` already return `Option<Self>` (no return type change in this section). Audit `visual_regression/spec_chain/tests.rs` and any test that constructs `VisualSpecHarness` to confirm they handle the `Option` return; use the graceful skip protocol for any test that does not.
+
+### 05.4c Document the rationale
+
+- [ ] Document why grayscale alpha is the default for spec-conformance: "HintingMode::Full applies TrueType hinting instructions, which adjust glyph outlines to pixel boundaries. The adjustments are font-version-dependent and interact with subpixel geometry. HintingMode::None produces grayscale alpha masks with simpler rasterizer decisions, making output reproducible across runs and machines. The visual quality tradeoff is irrelevant for golden comparison -- we're testing terminal emulation correctness, not display quality."
+
+### 05.4d Validation
+
+- [ ] **Validation**: spec-conformance goldens are reproducible across two consecutive runs of the same test on the same machine (manual sanity check). Existing visual_regression tests in `reference_tests.rs` still pass unchanged (they don't use the new pinned path).
 
 ---
 
 ## 05.5 Tighten tolerance: exact-or-tiny default, per-test override
 
-**File(s):** `crates/oriterm_test_support/src/spec_chain/observers/golden.rs`, `oriterm/src/gpu/visual_regression/mod.rs`
+**File(s):** `oriterm/src/gpu/visual_regression/mod.rs`, `oriterm/src/gpu/visual_regression/spec_chain/observers/golden.rs` (will be created by 04.4 after 05 lands)
 
-Section 04's golden observer uses the existing `compare_with_reference()` with `PIXEL_TOLERANCE = 2` and `MAX_MISMATCH_PERCENT = 0.5`. Spec-conformance tightens this to exact-or-tiny per-pixel matching as the primary gate. SSIM/ΔE are diagnostic only.
+Section 04's golden observer will use the tolerance from `GoldenLaneConfig`. The existing `compare_with_reference()` in `oriterm/src/gpu/visual_regression/mod.rs:178` uses `PIXEL_TOLERANCE = 2` and `MAX_MISMATCH_PERCENT = 0.5`. Spec-conformance tightens this to exact-or-tiny per-pixel matching as the primary gate.
 
-- [ ] Add `compare_with_reference_strict(name, pixels, w, h, config: &GoldenLaneConfig) -> Result<(), String>` to visual_regression. Strict mode:
-  - Default: pixel-exact match (every channel identical)
-  - Per-config override: ΔE ≤ N for N up to 1 (any larger requires explicit comment in the test)
-  - Failure message includes ΔE distribution histogram, max ΔE per channel, SSIM score, and saves `_actual.png` + `_diff.png` for inspection
-- [ ] Update spec_chain golden observer to call the strict variant.
-- [ ] Document the test-side override pattern: `#[golden_lane_override(pixel_tolerance = 1, reason = "anti-aliasing variation on glyph edges")]` (or similar — concrete syntax TBD by implementation).
+- [ ] Add `compare_with_reference_strict(name: &str, pixels: &[u8], w: u32, h: u32, config: &GoldenLaneConfig) -> Result<(), String>` to `oriterm/src/gpu/visual_regression/mod.rs`. Strict mode:
+  - **Two-gate comparison**: First gate: `config.pixel_tolerance` (per-channel max). Second gate: `config.max_diff_percent` (maximum percentage of pixels that may differ). Both must pass. `SPEC_DEFAULT` sets both to 0/0.0 (pixel-exact match with zero allowed mismatches). The existing `compare_with_reference()` uses a similar two-gate model (`PIXEL_TOLERANCE` + `MAX_MISMATCH_PERCENT`); the strict variant reads both values from `GoldenLaneConfig` instead of constants.
+  - Per-config override: `config.pixel_tolerance` up to 1, `config.max_diff_percent` up to 0.1 (any larger values must have explicit doc comment justification in the test code)
+  - Failure message includes: per-channel max difference, total mismatch count, mismatch percentage, and saves `_actual.png` + `_diff.png` for visual inspection. No SSIM or ΔE computation needed. **Note:** `pixel_diff()` only returns `(mismatch_count, diff_image)` — it does NOT compute per-channel max difference. `compare_with_reference_strict()` must perform an additional scan over the pixel buffer to compute per-channel max differences itself (or extend `pixel_diff()` to return a `PixelDiffStats { mismatch_count, max_diff_r, max_diff_g, max_diff_b, max_diff_a }` struct). Do NOT claim `pixel_diff()` already provides this information — it does not.
+- [ ] The existing `compare_with_reference()` (at `mod.rs:178`) remains unchanged for legacy tests. The new `compare_with_reference_strict()` is the only comparison function for spec-conformance goldens.
+- [ ] **Contract for 04.4's golden observer**: When section 04.4 creates `oriterm/src/gpu/visual_regression/spec_chain/observers/golden.rs`, it MUST call `compare_with_reference_strict()` (not `compare_with_reference()`). The observer receives `GoldenLaneConfig` from the `VisualSpecHarness` and passes it through.
+- [ ] Document the test-side override pattern for future test authors:
+  ```rust
+  // Override pixel tolerance for a test that has known anti-aliasing
+  // variation on glyph edges (must document WHY).
+  let config = GoldenLaneConfig {
+      pixel_tolerance: 1,
+      ..GoldenLaneConfig::SPEC_DEFAULT
+  };
+  ```
+- [ ] Sibling tests in `oriterm/src/gpu/visual_regression/mod.rs` (or its `tests.rs` if one exists):
+  - `strict_comparison_rejects_single_pixel_difference()` -- negative pin
+  - `strict_comparison_accepts_exact_match()` -- positive pin
+  - `strict_comparison_with_tolerance_1_accepts_minor_variation()` -- override path
+  - `strict_comparison_saves_diff_artifacts_on_failure()` -- diagnostics work
 - [ ] **Validation**: identical inputs produce 0-diff; intentional 1-pixel changes are detected and rejected.
 
 ---
 
-## 05.6 Migrate sixel_minimal pilot golden to the deterministic lane
+## 05.6 Validate deterministic lane end-to-end with reproducibility proof
 
-**File(s):** `oriterm_core/tests/spec_chain/pilots/sixel_minimal.rs` (modified), `crates/oriterm_test_support/tests/references/spec_chain/pilots/sixel_minimal.png` (re-captured)
+**File(s):** `oriterm/src/gpu/visual_regression/spec_chain/tests.rs` (add tests), `oriterm/src/gpu/visual_regression/mod.rs`
 
-Section 04 captured the sixel_minimal golden using the existing non-deterministic env. Now that the deterministic lane exists, re-capture the golden via the deterministic env and verify the test passes reproducibly.
+**Note on the sixel pilot:** The sixel visual pilot (`sixel_minimal.rs`) is created by section 04.5, which lands AFTER this section. Per 04.5's ordering gate: "The committed `sixel_minimal.png` golden is captured directly via `headless_env_with_pinned_software_rasterizer(GoldenLaneConfig::SPEC_DEFAULT)` -- using the deterministic env natively, not a legacy throwaway." There is NO non-deterministic golden to migrate. Section 04.5 depends on section 05 being complete. This subsection validates the lane infrastructure is ready for 04.5 to consume.
 
-- [ ] Update `oriterm_core/tests/spec_chain/pilots/sixel_minimal.rs` to use `headless_env_with_pinned_software_rasterizer(GoldenLaneConfig::SPEC_DEFAULT)` instead of the existing `headless_env_with_hinting()`.
-- [ ] Re-capture the golden:
-  ```bash
-  ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm_core --test spec_chain pilots::sixel_minimal
+The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (NOT `oriterm_core/tests/spec_chain/pilots/` -- crate boundary: GPU visual pilots require `pub(super)` access to visual_regression helpers which are in the `oriterm` crate, not `oriterm_core`).
+
+- [ ] Add a deterministic lane smoke test to `oriterm/src/gpu/visual_regression/spec_chain/tests.rs` (or a new `oriterm/src/gpu/visual_regression/deterministic_lane_tests.rs`):
+  ```rust
+  /// Reproducibility proof: render the same known content twice via the
+  /// deterministic lane and assert the pixel output is byte-identical.
+  /// This is the foundational regression guard for the entire golden lane.
+  #[test]
+  fn deterministic_lane_produces_identical_output_across_runs() {
+      let config = GoldenLaneConfig::SPEC_DEFAULT;
+      let Some((gpu, pipelines, mut renderer)) =
+          headless_env_with_pinned_software_rasterizer(&config)
+      else {
+          eprintln!("SKIP: software rasterizer unavailable");
+          return;
+      };
+      // Render a known grid state (e.g., "Hello" at (0,0))
+      let input = /* build FrameInput with subpixel_positioning: false */;
+      let pixels_1 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
+      let pixels_2 = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);
+      assert_eq!(pixels_1, pixels_2, "deterministic lane must produce identical output");
+  }
   ```
-- [ ] Verify reproducibility — run the test twice in succession and confirm the diff is exactly 0 pixels:
-  ```bash
-  cargo test -p oriterm_core --test spec_chain pilots::sixel_minimal
-  cargo test -p oriterm_core --test spec_chain pilots::sixel_minimal
+- [ ] Add a deterministic lane reproducibility test using `render_frame_cached()` (the production cached render path) -- NOT just `render_to_pixels()` which calls `render_frame()`. Per `.claude/rules/tests.md` and `.claude/rules/oriterm.md`, `render_frame_cached()` is the production path and must be tested. Use `gpu.create_copy_dst_target()` for the destination texture. **CRITICAL:** `render_frame_cached()` and `create_copy_dst_target()` are gated behind `#[cfg(all(test, feature = "gpu-tests"))]`. This test MUST be placed in a `#[cfg(feature = "gpu-tests")]` module or file (e.g., `deterministic_lane_tests.rs` alongside `resize_stress.rs`, which already uses this pattern), NOT in the unconditional `spec_chain/tests.rs`.
+- [ ] Add a deterministic semantic pin for the subpixel positioning toggle: construct a `FrameInput` with fractional-pixel glyph offsets (e.g., advance width 7.5px for a narrow character). With `subpixel_positioning: true`, the glyph should be placed at the fractional offset; with `subpixel_positioning: false`, it should snap to the nearest integer pixel boundary. Assert that the pixel output differs at the sub-pixel boundary row/column. This is a deterministic test -- no "may need manual verification" fallback.
+- [ ] Add an adapter type validation test:
+  ```rust
+  /// Asserts the deterministic lane selects a software adapter.
+  ///
+  /// When `force_fallback_adapter: true` succeeds, the adapter name must
+  /// contain one of the known software rasterizer strings. This is an
+  /// observable-behavior assertion that does not rely on the unreliable
+  /// `DeviceType::Cpu` field (WARP on Windows may report as
+  /// `DiscreteGpu`/`Other`; `force_fallback_adapter` is the contract).
+  #[test]
+  fn deterministic_lane_selects_software_adapter() {
+      let gpu = GpuState::new_headless_with_preference(
+          AdapterPreference::SoftwareRasterizer,
+      );
+      match gpu {
+          Ok(g) => {
+              let info = g.adapter_info();
+              let name_lower = info.name.to_lowercase();
+              const KNOWN_SOFTWARE_RASTERIZERS: &[&str] = &[
+                  "llvmpipe", "lavapipe", "warp", "swiftshader",
+                  "mesa software", "cpu",
+              ];
+              assert!(
+                  KNOWN_SOFTWARE_RASTERIZERS.iter().any(|s| name_lower.contains(s)),
+                  "Expected a software rasterizer adapter name, got: {:?} \
+                   (backend={:?}, device_type={:?}). Known strings: {:?}",
+                  info.name, info.backend, info.device_type,
+                  KNOWN_SOFTWARE_RASTERIZERS,
+              );
+          }
+          Err(_) => {
+              eprintln!("SKIP: no software rasterizer available");
+          }
+      }
+  }
   ```
-- [ ] **Validation**: pilot test passes; golden is the new deterministic-lane image; back-to-back runs produce 0 diffs.
+- [ ] **Validation**: all tests pass on Linux with mesa/llvmpipe. Reproducibility test produces 0-pixel diff on back-to-back runs. Existing visual_regression tests still pass (they don't use the deterministic lane).
 
 ---
 
 ## 05.R Third Party Review Findings
 
-- None.
+- [x] **[TPR-05-001-gemini]** Reorder subsections so GoldenLaneConfig is defined before use (05.2 entry point used `GoldenLaneConfig` but 05.4 defined it). Fixed on 2026-04-13: reordered so GoldenLaneConfig (now 05.2) comes before the entry point (now 05.3). Updated all cross-references.
+- [x] **[TPR-05-002-codex]** Fix AdapterPreference visibility -- `pub(super)` too narrow for `visual_regression/` consumers. Fixed on 2026-04-13: changed to `pub(crate)` on `AdapterPreference` and `pick_adapter_with_preference()`, added re-export note in 05.1.
+- [x] **[TPR-05-003-gemini]** Add Copy/Clone derives to AdapterPreference (simple enum was missing derives). Fixed on 2026-04-13: added `#[derive(Copy, Clone, Debug, PartialEq, Eq)]` in 05.1.
+- [x] **[TPR-05-001-codex]** Thread GoldenLaneConfig through VisualSpecHarness -- harness lacked explicit config field and constructor. Fixed on 2026-04-13: added checklist items in 05.4b for `config: GoldenLaneConfig` field, `with_config()` constructor, `build_frame_input()` reading from config, and golden observer receiving config.
+- [x] **[TPR-05-003-codex]** Fix DeviceType::Cpu contradiction -- `debug_assert!` on device_type contradicted the 05.1 rationale that `DeviceType::Cpu` is unreliable. Fixed on 2026-04-13: replaced with `log::info!` diagnostic in 05.3, added checklist item to store `AdapterInfo` on `GpuState` in 05.1, updated 05.6 adapter test to use stored adapter info.
+- [x] **[TPR-05-002-gemini]** Remove SSIM/ΔE requirements -- unnecessary computation when `pixel_diff()` provides all needed diagnostics. Fixed on 2026-04-13: removed all SSIM/ΔE gating and diagnostic references from goal, success criteria, 05.5, and plan body. Replaced with per-channel max difference, mismatch count/percentage, and `_actual.png` + `_diff.png` artifacts.
+- [x] **[TPR-05-004-codex]** Add render_frame_cached test to 05.6 -- production cached render path must be tested per `.claude/rules/tests.md`. Fixed on 2026-04-13: added checklist item in 05.6 for `render_frame_cached()` test with `create_copy_dst_target()`.
+- [x] **[TPR-05-004-gemini]** Fix redundant HintingMode defaulting in 05.4a -- `headless_env_with_pinned_software_rasterizer()` should read config directly, not implement its own defaulting. Fixed on 2026-04-13: clarified in 05.3 and 05.4a that the function reads `config.hinting_mode` directly with no additional defaulting.
+- [x] **[TPR-05-005-codex]** Fix weak subpixel negative pin -- test degenerated to a comment when outputs matched. Fixed on 2026-04-13: replaced with deterministic semantic pin using fractional-pixel glyph offsets that asserts pixel output differs at sub-pixel boundaries.
+- [x] **[TPR-05-001-codex][iter2][medium]** Replace leftover ΔE wording with pixel-tolerance wording. Fixed on 2026-04-13: replaced all three remaining "ΔE ≤ 1" occurrences (frontmatter success_criteria, body success criteria, completion checklist matrix) with "pixel_tolerance <= 1 (per-channel)" wording.
+- [x] **[TPR-05-002-codex][iter2][medium]** Fix `request_adapter()` API to handle `Result` not `Option`. Fixed on 2026-04-13: in the 05.1 `pick_adapter_with_preference()` sketch, changed `if primary.is_some() { return primary; }` to `if let Ok(adapter) = primary { return Some(adapter); }` with a note that wgpu 28 returns `Result<Adapter, RequestAdapterError>`.
+- [x] **[TPR-05-003-codex][iter2][high]** Gate cached-path test behind `gpu-tests` feature. Fixed on 2026-04-13: 05.6 `render_frame_cached()` checklist item now explicitly states the test must be placed in a `#[cfg(feature = "gpu-tests")]` module/file (like `resize_stress.rs`), NOT in the unconditional `spec_chain/tests.rs`.
+- [x] **[TPR-05-004-codex][iter2][medium] + [TPR-05-001-gemini][iter2][medium]** Fix `pixel_diff()` diagnostic claim -- `pixel_diff()` only returns `(mismatch_count, diff_image)`, not per-channel max difference. Fixed on 2026-04-13: updated frontmatter success_criteria and 05.5 body to state that `compare_with_reference_strict()` must compute per-channel max differences itself (additional scan over pixel buffer), or extend `pixel_diff()` to return a `PixelDiffStats` struct. Removed the false claim that `pixel_diff()` already provides this.
+- [x] **[TPR-05-005-codex][iter2][medium]** Sync Section 04 ordering-gate prose with Section 05. Fixed on 2026-04-13: updated `section-04-verification-chain-harness.md` frontmatter structural note and 04.7 ordering gate to state that 05.6 validates the deterministic lane and 04.5 captures the pilot directly on it — removed obsolete "migration in 05.6" language. Updated `blocked_by_until_05_lands` annotation and 04.N checklist item to match.
+- [x] **[TPR-05-002-gemini][iter2][high]** `VisualSpecHarness` return type for graceful skip. Fixed on 2026-04-13: 05.4b now explicitly states `VisualSpecHarness::with_config()` returns `Option<Self>` (propagating the `Option` from `headless_env_with_pinned_software_rasterizer()`), `VisualSpecHarness::new()` should also return `Option<Self>` for consistency, added the graceful skip snippet, and added a checklist item noting that 04.3b's existing tests may need updating to handle `Option<Self>`.
+- [x] **[TPR-05-001-codex][iter3][medium]** Specify fate of `VisualSpecHarness::with_size()` — existing constructor not addressed by new config-based API. Fixed on 2026-04-13: added checklist item in 05.4b specifying that `with_size()` delegates to `with_config(GoldenLaneConfig { viewport_rows, viewport_cols, ..SPEC_DEFAULT })`, return type changes to `Option<Self>`, and existing tests updated to handle `Option`.
+- [x] **[TPR-05-002-codex][iter3][medium]** Define `max_diff_percent` semantics in `GoldenLaneConfig` — field existed with no consumer. Fixed on 2026-04-13: updated 05.5 to specify two-gate comparison model (`pixel_tolerance` per-channel + `max_diff_percent` percentage gate), matching the existing `compare_with_reference()` pattern. Both values read from `GoldenLaneConfig`.
+- [x] **[TPR-05-001-gemini][iter4][medium]** `VisualSpecHarness` constructors already return `Option<Self>` — plan wrongly implied a return type change was needed. Fixed on 2026-04-13: 05.4b now says constructors "return `Option<Self>` (already the case in the existing implementation — no return type change needed)". The 04.3b checklist item is reframed as an audit (confirm existing tests handle `Option`; only update tests that call `.unwrap()` or ignore the `None` case).
+- [x] **[TPR-05-002-codex][iter4][medium]** `with_config()` must wire viewport dimensions to the core `SpecHarness`. Fixed on 2026-04-13: added explicit step 5 in 05.3's implementation checklist: "Constructs the core `SpecHarness` using `SpecHarness::with_size(config.viewport_rows as usize, config.viewport_cols as usize)` — making `GoldenLaneConfig`'s viewport dimensions the authoritative source for the harness grid size."
+- [x] **[TPR-05-003-codex][iter4][low]** Drop the non-implementable field-absence test — field absence in a Rust struct is a compile-time property, not testable at runtime. Fixed on 2026-04-13: replaced the "negative test" checklist item in 05.2 with a design invariant: the absence of `cell_width_px`/`cell_height_px` must be documented in the struct's doc comment as a `LEAK:shadow-home` guard, not asserted in a test.
+- [x] **[TPR-05-001-codex][iter4][medium]** Fix adapter validation test sketch — test only logged adapter info and skipped, asserting nothing. Fixed on 2026-04-13: updated the 05.6 adapter test to assert that when `force_fallback_adapter: true` succeeds the adapter name (lowercased) contains one of the known software rasterizer strings ("llvmpipe", "lavapipe", "warp", "swiftshader", "mesa software", "cpu"). Uses observable-behavior assertion rather than the unreliable `DeviceType::Cpu` field.
 
 ---
 
 ## 05.N Completion Checklist
 
 - [ ] Failing test matrix written FIRST (TDD)
-- [ ] **Matrix dimensions**: adapter type (high-perf vs software) × hinting mode × cell metric pinning × tolerance configuration
-- [ ] **Semantic pin**: golden reproducibility test — same scenario rendered twice produces 0-pixel diff (this is the regression guard for the entire deterministic lane)
+- [ ] **Matrix dimensions**: adapter type (discrete vs software via `force_fallback_adapter` vs software via `DeviceType::Cpu` fallback) x hinting mode (`HintingMode::None` vs `HintingMode::Full`) x subpixel positioning (true vs false) x tolerance configuration (exact vs pixel_tolerance <= 1 per-channel)
+- [ ] **Semantic pin**: golden reproducibility test -- same scenario rendered twice via the deterministic lane produces byte-identical pixel output (this is the regression guard for the entire deterministic lane)
+- [ ] **Negative pins**:
+  - `compare_with_reference_strict()` rejects single-pixel differences when tolerance is 0
+  - `pick_adapter_with_preference(SoftwareRasterizer)` returns `None` when no software adapter exists (doesn't panic)
+  - Non-deterministic path (`headless_env_with_hinting`) uses `HintingMode::Full` (back-compat preserved -- proves the new path didn't accidentally change the legacy default)
+- [ ] BLOAT split applied FIRST: `state/mod.rs` split into `state/mod.rs` + `state/headless.rs`
 - [ ] `headless_env_with_pinned_software_rasterizer()` entry point works on Linux
+- [ ] `force_fallback_adapter: true` is the primary adapter selection mechanism, `DeviceType::Cpu` is secondary validation
 - [ ] HintingMode default is grayscale alpha for spec-conformance goldens
-- [ ] `GoldenLaneConfig` struct exists and pins cell metrics
+- [ ] Subpixel positioning is disabled for spec-conformance goldens
+- [ ] `GoldenLaneConfig` stores font config only, derives cell metrics from `FontCollection::cell_metrics()` -- NO independent `cell_width_px`/`cell_height_px` fields
 - [ ] `compare_with_reference_strict()` defaults to 0 pixel tolerance
-- [ ] Sixel pilot golden re-captured; back-to-back runs produce 0-pixel diff
 - [ ] Existing visual_regression tests still pass (back-compat preserved via separate entry points)
-- [ ] `oriterm/src/gpu/state/mod.rs` line count under 500
+- [ ] `oriterm/src/gpu/state/mod.rs` well under 500 lines
+- [ ] `oriterm/src/gpu/state/headless.rs` under 500 lines
 - [ ] Alloc regression unchanged
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
 - [ ] Plan annotation cleanup
-- [ ] Section frontmatter `status` → `complete`
+- [ ] Section frontmatter `status` -> `complete`
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
 - [ ] `index.md` section 05 status updated
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
-**Exit Criteria:** Spec-conformance golden tests run reproducibly on Linux/x86_64 with the pinned software rasterizer; sixel pilot golden produces 0-pixel diff on back-to-back runs; existing visual_regression tests still pass.
+**Exit Criteria:** Spec-conformance golden tests run reproducibly on Linux/x86_64 with the pinned software rasterizer (`force_fallback_adapter: true` primary, `DeviceType::Cpu` secondary), `HintingMode::None`, `subpixel_positioning: false`; reproducibility proof test produces 0-pixel diff on back-to-back runs; cell metrics derived from `FontCollection::cell_metrics()` (no shadow SSOT); existing visual_regression tests still pass unchanged.

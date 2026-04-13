@@ -26,23 +26,23 @@ depends_on: ["03"]
 # Structural note on 04 ↔ 05 coupling: subsections 04.4 (texture-render observer),
 # 04.5 (sixel visual pilot, committing a golden), and 04.7 (schema freeze, which
 # may key on golden-observer fields) are NOT reproducible until section 05 pins
-# the software rasterizer, hinting mode, cell metrics, and tolerance. Options:
+# the software rasterizer, hinting mode, cell metrics, and tolerance. The chosen
+# ordering:
 #   (a) land 04.1–04.3, 04.6 (non-visual pilot), 04.8 (coverage report walker)
 #       BEFORE section 05, then land 04.4, 04.5, 04.7 (schema freeze) AFTER
 #       section 05.
-#   (b) land 04 end-to-end against the existing non-deterministic env with the
-#       sixel pilot golden recaptured in 05.6 once the deterministic lane is in
-#       place, accepting transient flakiness of 04.5 between 04 and 05 landing.
-# Section 05 section-05.6 ("Migrate sixel_minimal pilot golden to the
-# deterministic lane") is the apex point where the sixel pilot transitions
-# from non-deterministic to deterministic. The catalog schema freeze in 04.7
-# MUST NOT be finalized until 05.6 has landed — if 05.6 surfaces new required
-# fields (e.g., `cell_metrics` pin, `pixel_tolerance_override` per row), the
-# frozen schema has to include them. Section 04's completion checklist lists
-# this dependency explicitly.
+# Section 05.6 ("Validate deterministic lane end-to-end with reproducibility
+# proof") is the validation apex for the deterministic lane infrastructure.
+# Section 04.5 captures the sixel pilot golden DIRECTLY on the deterministic
+# lane (using headless_env_with_pinned_software_rasterizer from 05.3 and
+# GoldenLaneConfig::SPEC_DEFAULT) — there is no non-deterministic throwaway
+# golden to migrate. The catalog schema freeze in 04.7 MUST NOT be finalized
+# until Section 05 has landed — if 05 surfaces new required fields (e.g.,
+# `cell_metrics` pin, `pixel_tolerance_override` per row), the frozen schema
+# has to include them. Section 04's completion checklist lists this dependency.
 blocked_by_until_05_lands:
-  - "04.5 (sixel visual pilot) runs on non-deterministic env only; may flake"
-  - "04.7 (catalog row schema freeze) — do NOT finalize until 05.6 lands"
+  - "04.5 (sixel visual pilot) — captures golden directly on deterministic lane; blocked until 05.3 lands"
+  - "04.7 (catalog row schema freeze) — do NOT finalize until Section 05 has landed"
 third_party_review:
   status: resolved
   updated: 2026-04-12
@@ -654,9 +654,9 @@ The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcrip
 
 **Ownership note (Phase 4 TPR fix for section 01):** Section 01.10 creates a STUB `catalog/README.md` (~60 lines) documenting the catalog directory structure, authority-ladder index, and schema version. This subsection EXTENDS that stub with the frozen schema reference — it does NOT create a new file and MUST NOT overwrite the existing stub's ownership table, authority-ladder pointer, or `schema_version` front-matter. Per the Section 01 / Section 04 ownership split documented in both sections' bodies: Section 01 owns the stub; Section 04.7 owns the frozen schema extension; no file is re-created.
 
-**Ordering gate:** Schema freeze MUST wait until Section 05.6 lands. Reason: the deterministic golden lane may surface new required fields (e.g. `cell_metrics_pin`, `hinting_mode_override`, `pixel_tolerance_override` per row, or a `golden_env_config` column referencing `GoldenLaneConfig` presets). Freezing the schema before 05.6 risks immediate invalidation. During the pre-05 phase, section 01's provisional schema REMAINS provisional and catalog files stay in their section-01 form; this subsection performs the final freeze in a single pass once 05.6 has landed.
+**Ordering gate:** Schema freeze MUST wait until Section 05 has landed and 05.6 (the end-to-end deterministic lane validation) has been validated. Reason: the deterministic golden lane may surface new required fields (e.g. `cell_metrics_pin`, `hinting_mode_override`, `pixel_tolerance_override` per row, or a `golden_env_config` column referencing `GoldenLaneConfig` presets). Freezing the schema before 05 is validated risks immediate invalidation. During the pre-05 phase, section 01's provisional schema REMAINS provisional and catalog files stay in their section-01 form; this subsection performs the final freeze in a single pass once Section 05 has landed. Note: 04.5's sixel pilot golden is captured directly on the deterministic lane (not migrated from a non-deterministic throwaway) — 05.6 validates the lane infrastructure that 04.5 will use.
 
-After both pilots run green AND Section 05.6 has migrated the sixel pilot to the deterministic lane, the harness API is stable and the catalog row schema can be frozen. Extend `catalog/README.md` (the stub created by Section 01.10) with the canonical row format reference. Then migrate every catalog file from section 01's provisional schema to the frozen one.
+After both pilots run green AND Section 05 has landed (with 05.6 validating the deterministic lane), the harness API is stable and the catalog row schema can be frozen. Extend `catalog/README.md` (the stub created by Section 01.10) with the canonical row format reference. Then migrate every catalog file from section 01's provisional schema to the frozen one.
 
 - [ ] Extend `plans/spec-conformance/catalog/README.md` BELOW the existing stub's "Schema evolution" section. Do NOT rewrite or replace the Section 01 stub content above that boundary. Add:
   - The canonical catalog row table format (markdown table with explicit column order)
@@ -954,7 +954,7 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
 - [ ] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm`)
 - [x] BLOAT splits applied: `oriterm/src/gpu/prepare/mod.rs` (395 lines) and `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (378 lines) are now under 500 lines (verified by `wc -l` on 2026-04-13)
-- [x] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05.6)
+- [x] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05 lands and 05.6 validates the deterministic lane)
 - [x] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
 - [x] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
 - [ ] Sixel visual pilot test passes on the deterministic lane (after 05.6); golden captured under `tests/references/spec_chain/pilots/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer`
