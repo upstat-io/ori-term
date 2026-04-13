@@ -214,12 +214,17 @@ impl RungName {
 /// Parser rung expectation: expected raw `Perform` callback.
 #[derive(Copy, Clone, Debug)]
 pub struct ParserExpectation {
-    /// Expected final byte / action char (e.g. `'H'` for CUP).
+    /// Expected final byte / action char (e.g. `'H'` for CUP, `'q'` for DCS sixel).
     pub action: char,
     /// Expected parameter values (flattened subparams).
     pub params: &'static [u16],
     /// Expected CSI/ESC intermediate bytes.
     pub intermediates: &'static [u8],
+    /// OSC command number (e.g. `Some(52)` for OSC 52 clipboard).
+    /// When set, the observer matches `OscDispatch` with this command number
+    /// parsed from the first param's ASCII digits. `None` means this
+    /// expectation is not for an OSC sequence.
+    pub osc_command: Option<u16>,
 }
 
 impl ParserExpectation {
@@ -229,18 +234,21 @@ impl ParserExpectation {
             action,
             params,
             intermediates: &[],
+            osc_command: None,
         }
     }
 
     /// Convenience: OSC command with given numeric command number.
     ///
-    /// The command number is stored in `params[0]` as a `u16`.
-    /// Example: `osc(&[52])` matches `OSC 52` (clipboard).
-    pub const fn osc(params: &'static [u16]) -> Self {
+    /// Example: `osc(52)` matches `OSC 52` (clipboard).
+    /// The observer parses the full ASCII command number from the
+    /// OSC's first param and compares against this value.
+    pub const fn osc(command: u16) -> Self {
         Self {
-            action: '\0', // OSC has no action byte
-            params,
+            action: '\0',
+            params: &[],
             intermediates: &[],
+            osc_command: Some(command),
         }
     }
 
@@ -250,6 +258,7 @@ impl ParserExpectation {
             action,
             params,
             intermediates: &[],
+            osc_command: None,
         }
     }
 }
