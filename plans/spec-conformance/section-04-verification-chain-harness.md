@@ -956,6 +956,9 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `[TPR-04-003-gemini-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:43` — Sixel pilot `min_non_zero_pixels: None`.
   Resolved: Fixed on 2026-04-13. Same fix as [TPR-04-001-codex-r4] — set `min_non_zero_pixels: Some(1)` (agreement).
 
+- [x] `[TPR-04-001-codex-r5][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:47` — Sixel pilot still missing parser/gpu_instance expectations after round 4 fix.
+  Resolved: Fixed on 2026-04-13. Added `parser: Some(ParserExpectation::dcs('q', &[0]))` and `gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0))`. Pilot now has 5/8 rungs with expectations (parser + frame_input + gpu_instance + texture + golden). Remaining 3 (dispatch, state, renderable) are stub types with no assertion fields yet.
+
 ---
 
 ## 04.N Completion Checklist

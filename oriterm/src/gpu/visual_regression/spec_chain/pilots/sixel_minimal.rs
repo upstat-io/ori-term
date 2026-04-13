@@ -8,8 +8,8 @@
 //! This pilot establishes the harness MVP for visual sequences.
 
 use oriterm_test_support::spec_chain::{
-    ApexLayer, FrameInputExpectation, GoldenExpectation, RungName, ScenarioExpectations,
-    SpecScenario, TextureExpectation,
+    ApexLayer, FrameInputExpectation, GoldenExpectation, GpuInstanceExpectation, ParserExpectation,
+    RungName, ScenarioExpectations, SpecScenario, TextureExpectation,
 };
 
 use super::super::visual_harness::VisualSpecHarness;
@@ -46,9 +46,12 @@ fn sixel_minimal_drives_every_rung_green() {
         setup: b"",
         expectations: ScenarioExpectations {
             // Per-rung expectations strengthen the semantic pin beyond
-            // the golden apex — a regression in any rung is caught before
-            // the golden comparison runs.
+            // the golden apex. Rungs with stub expectation types
+            // (dispatch, state, renderable) pass unconditionally until
+            // their types gain assertion fields in later sections.
+            parser: Some(ParserExpectation::dcs('q', &[0])),
             frame_input: Some(FrameInputExpectation::default_grid()),
+            gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0)),
             texture: Some(TextureExpectation {
                 // Floor guard: catches uninitialized render targets (all
                 // zeros). Note: with PALETTE_BG = Rgb(1,1,1), background
