@@ -70,7 +70,7 @@ sections:
     status: complete
   - id: "04.7"
     title: "Freeze catalog row schema + migrate section 01 catalog files"
-    status: not-started
+    status: complete
   - id: "04.8"
     title: "Coverage report generator binary (catalog walk + citation scan + monotonic absolute count)"
     status: complete
@@ -658,7 +658,7 @@ The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcrip
 
 After both pilots run green AND Section 05 has landed (with 05.6 validating the deterministic lane), the harness API is stable and the catalog row schema can be frozen. Extend `catalog/README.md` (the stub created by Section 01.10) with the canonical row format reference. Then migrate every catalog file from section 01's provisional schema to the frozen one.
 
-- [ ] Extend `plans/spec-conformance/catalog/README.md` BELOW the existing stub's "Schema evolution" section. Do NOT rewrite or replace the Section 01 stub content above that boundary. Add:
+- [x] Extend `plans/spec-conformance/catalog/README.md` BELOW the existing stub's "Schema evolution" section. Do NOT rewrite or replace the Section 01 stub content above that boundary. Added (2026-04-13):
   - The canonical catalog row table format (markdown table with explicit column order)
   - The required columns: `ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes` (the column name is `De-facto ref` to match the SSOT in `plans/spec-conformance/00-overview.md` and Section 01.1.e; do NOT use the longer form `De-facto reference` — that would create a column-name DRIFT)
   - The `ApexLayer` enum values (matching `spec_chain::ApexLayer`)
@@ -667,8 +667,8 @@ After both pilots run green AND Section 05 has landed (with 05.6 validating the 
   - How a row is added (workflow for new sequences)
   - How a row is migrated to `verified` (test chain requirements)
   - Update the stub's front-matter `schema_version: "0.1-provisional"` to `schema_version: "1.0"` as the very last edit of this subsection (the migration is atomic — all catalog files flip to 1.0 in the same commit).
-- [ ] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). Migrate each row to the frozen schema. Every row's front-matter `schema_version` flips from `0.1-provisional` to `1.0` in this subsection. The `Verification` column may need refinement based on what the pilots discovered.
-- [ ] **Validation**: every catalog file has `schema_version: "1.0"`; `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note).
+- [x] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). All 17 files migrated: `schema_version` flipped from `0.1-provisional` to `1.0`. Row format unchanged — the provisional format was already correct per the 10-column schema. (2026-04-13)
+- [x] **Validation**: every catalog file has `schema_version: "1.0"` (17/17 files verified); `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note). Provisional status labels updated. (2026-04-13)
 
 ---
 
@@ -959,8 +959,8 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
 - [x] Sixel visual pilot test passes on the deterministic lane; golden captured at `tests/references/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer` (9692 bytes — verified 2026-04-13)
 - [x] DA1 non-visual pilot test passes (3/3 green: drives_to_effect_apex, reply_bytes_match, skips_parser_rung — verified 2026-04-13)
-- [ ] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen AFTER 05.6)
-- [ ] All catalog files migrated to the frozen schema
+- [x] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen 2026-04-13 after both pilots + deterministic lane validated)
+- [x] All catalog files migrated to the frozen schema (17/17 files — verified 2026-04-13)
 - [x] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (16 stacks, 315 total rows — verified 2026-04-13)
 - [x] Coverage report walks BOTH catalog files AND test source files (scans `catalog/*.md` via shared parser + 8 test root dirs for `// Catalog row:` and `catalog_row_id:` citations — verified 2026-04-13)
 - [x] `--check` mode of the report binary correctly detects ALL FOUR gates: (a) absolute-verified-count regression, (b) false-verified (no citation), (c) uncataloged citation (no catalog row), (d) non-empty uncataloged-backlog without paired catalog-update PR — all four gates verified, exit code 1 on uncataloged backlog (2026-04-13)

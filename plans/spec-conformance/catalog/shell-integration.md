@@ -1,5 +1,5 @@
 ---
-schema_version: "0.1-provisional"
+schema_version: "1.0"
 stack: shint
 title: "Shell Integration Catalog"
 owner_section: "01 (bootstrap), 10 (verification)"
