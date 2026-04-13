@@ -29,7 +29,7 @@ third_party_review:
 sections:
   - id: "07.1"
     title: "Research reference impls and extract lifecycle submodule"
-    status: not-started
+    status: complete
   - id: "07.2"
     title: "Write failing regression matrix tests (TDD: tests FIRST)"
     status: not-started
@@ -104,27 +104,27 @@ sections:
 
 **Part A: Research**
 
-- [ ] Read reference impls to confirm resize/reflow behavior:
+- [x] Read reference impls to confirm resize/reflow behavior:
   - `~/projects/reference_repos/console_repos/ghostty/` — image cache resize handling in `src/terminal/kitty/` or equivalent
   - `~/projects/reference_repos/console_repos/wezterm/` — `term/src/terminalstate/image.rs` for cell-attachment model
   - `~/projects/reference_repos/console_repos/kitty/` — `kitty/graphics.py` for resize behavior
-- [ ] Confirm the column-resize approach: **remove placements entirely outside the new grid bounds** (cell_col >= new_cols). No clamping, no runtime policy enum.
-- [ ] Research reflow handling: confirm no reference impl remaps cache-coordinate placements through reflow (WezTerm avoids via cell attachment; Ghostty uses tracked pins). Our approach (return-value `ReflowMapping` from `Grid::resize`) is novel for the cache-coordinate model.
+- [x] Confirm the column-resize approach: **remove placements entirely outside the new grid bounds** (cell_col >= new_cols). No clamping, no runtime policy enum.
+- [x] Research reflow handling: confirm no reference impl remaps cache-coordinate placements through reflow (WezTerm avoids via cell attachment; Ghostty uses tracked pins). Our approach (return-value `ReflowMapping` from `Grid::resize`) is novel for the cache-coordinate model.
 
 **Part B: Extract lifecycle submodule**
 
 `cache/mod.rs` is 436 lines. Adding `on_resize` (~30 lines) + `remap_placements` (~40 lines) + `#[cfg(test)] mod tests;` would exceed 500 lines. Proactive split:
 
-- [ ] Create `oriterm_core/src/image/cache/lifecycle.rs` with these methods extracted from `cache/mod.rs`:
+- [x] Create `oriterm_core/src/image/cache/lifecycle.rs` with these methods extracted from `cache/mod.rs`:
   - `prune_scrollback` (currently lines 325-328)
   - `remove_placements_in_region` (currently lines 336-358)
   - `update_cell_coverage` (currently lines 395-410)
   - The new `on_resize` and `remap_placements` methods (implemented in 07.4)
-- [ ] Update `cache/mod.rs`: add `mod lifecycle;`, remove extracted method bodies, add `#[cfg(test)] mod tests;`
-- [ ] Create empty `oriterm_core/src/image/cache/tests.rs` with test-organization.md preamble
-- [ ] Verify `cache/mod.rs` well under 500 lines after extraction
-- [ ] `./build-all.sh` green — extraction is a refactor, no behavior change
-- [ ] `./test-all.sh` green — existing tests in `image/tests.rs` pass unchanged
+- [x] Update `cache/mod.rs`: add `mod lifecycle;`, remove extracted method bodies, add `#[cfg(test)] mod tests;`
+- [x] Create empty `oriterm_core/src/image/cache/tests.rs` with test-organization.md preamble
+- [x] Verify `cache/mod.rs` well under 500 lines after extraction
+- [x] `./build-all.sh` green — extraction is a refactor, no behavior change
+- [x] `./test-all.sh` green — existing tests in `image/tests.rs` pass unchanged
 
 **Validation**: Research documented. Lifecycle submodule extracted. `cache/mod.rs` < 400 lines. All existing tests pass.
 
