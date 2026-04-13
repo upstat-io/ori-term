@@ -20,13 +20,17 @@ use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 /// golden-test palette.
 ///
 /// Uses the canonical fg `(211, 215, 207)` / palette_bg `(1, 1, 1)`
-/// pair, `subpixel_positioning: true`, and all overlay fields
-/// (`selection`, `search`, `hovered_cell`, etc.) set to their neutral
-/// defaults. Both vttest and tack GPU goldens consume this — having
-/// two copies is `LEAK:algorithmic-duplication` per `impl-hygiene.md`.
+/// pair and all overlay fields (`selection`, `search`, `hovered_cell`,
+/// etc.) set to their neutral defaults. `subpixel_positioning` is
+/// caller-controlled: legacy vttest/tack goldens pass `true`;
+/// spec-conformance goldens pass `false` for deterministic pixel output.
+///
+/// Both vttest and tack GPU goldens consume this — having two copies
+/// is `LEAK:algorithmic-duplication` per `impl-hygiene.md`.
 pub(in crate::gpu::visual_regression) fn frame_input(
     session: &PtySession,
     cell: CellMetrics,
+    subpixel_positioning: bool,
 ) -> FrameInput {
     let cols = session.cols() as usize;
     let rows = session.rows() as usize;
@@ -86,7 +90,7 @@ pub(in crate::gpu::visual_regression) fn frame_input(
         reverse_video,
         fg_dim: 1.0,
         text_blink_opacity: 1.0,
-        subpixel_positioning: true,
+        subpixel_positioning,
         prompt_marker_rows: Vec::new(),
     }
 }

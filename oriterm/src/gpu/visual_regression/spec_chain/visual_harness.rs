@@ -17,6 +17,7 @@ use oriterm_test_support::spec_chain::{RungName, RungResult, SpecHarness, SpecSc
 use crate::gpu::frame_input::{FrameInput, FramePalette, ViewportSize};
 use crate::gpu::pipelines::GpuPipelines;
 use crate::gpu::state::GpuState;
+use crate::gpu::visual_regression::GoldenLaneConfig;
 use crate::gpu::window_renderer::WindowRenderer;
 
 use super::observers;
@@ -24,13 +25,16 @@ use super::observers;
 /// Visual verification chain harness (rungs 1-8).
 ///
 /// Wraps `SpecHarness` (headless, rungs 1-4) and adds GPU observation
-/// for rungs 5-8. Holds the headless GPU environment created by
-/// `headless_env_with_hinting()`.
+/// for rungs 5-8. Holds the deterministic GPU environment created by
+/// `headless_env_with_pinned_software_rasterizer()` and the
+/// `GoldenLaneConfig` that controls hinting, subpixel positioning,
+/// and tolerance parameters.
 pub struct VisualSpecHarness {
     core: SpecHarness,
     gpu: GpuState,
     pipelines: GpuPipelines,
     renderer: WindowRenderer,
+    config: GoldenLaneConfig,
 }
 
 /// Standard golden-test palette foreground.
@@ -47,24 +51,41 @@ const PALETTE_BG: Rgb = Rgb { r: 1, g: 1, b: 1 };
 
 impl VisualSpecHarness {
     /// Create a new visual harness with default terminal (24×80) and
-    /// headless GPU environment.
+    /// the deterministic golden lane defaults.
     ///
-    /// Returns `None` if no GPU adapter is available (CI without GPU).
+    /// Returns `None` if no software rasterizer is available.
     pub fn new() -> Option<Self> {
         Self::with_size(24, 80)
     }
 
-    /// Create a new visual harness with custom terminal dimensions.
+    /// Create a new visual harness with custom terminal dimensions
+    /// using the deterministic golden lane.
     ///
-    /// Returns `None` if no GPU adapter is available.
+    /// Returns `None` if no software rasterizer is available.
     pub fn with_size(lines: usize, cols: usize) -> Option<Self> {
-        let (gpu, pipelines, renderer) = super::super::headless_env()?;
-        let core = SpecHarness::with_size(lines, cols);
+        Self::with_config(GoldenLaneConfig {
+            viewport_rows: lines as u32,
+            viewport_cols: cols as u32,
+            ..GoldenLaneConfig::SPEC_DEFAULT
+        })
+    }
+
+    /// Create a new visual harness with explicit golden lane configuration.
+    ///
+    /// Uses `headless_env_with_pinned_software_rasterizer()` to pin
+    /// the software rasterizer, hinting mode, and glyph format from
+    /// `config`. Returns `None` if the software rasterizer is unavailable.
+    pub fn with_config(config: GoldenLaneConfig) -> Option<Self> {
+        let (gpu, pipelines, renderer) =
+            super::super::headless_env_with_pinned_software_rasterizer(&config)?;
+        let core =
+            SpecHarness::with_size(config.viewport_rows as usize, config.viewport_cols as usize);
         Some(Self {
             core,
             gpu,
             pipelines,
             renderer,
+            config,
         })
     }
 
@@ -129,6 +150,9 @@ impl VisualSpecHarness {
     /// Uses the same palette constants as `frame_input_helper::frame_input()`
     /// (canonical home for `PtySession` → `FrameInput`). This method is
     /// the canonical home for `Term` → `FrameInput` in harness context.
+    ///
+    /// `subpixel_positioning` is read from `self.config` — spec-conformance
+    /// goldens disable it for deterministic pixel output.
     fn build_frame_input(&self) -> FrameInput {
         let term = self.core.term();
         let content = term.renderable_content();
@@ -173,7 +197,7 @@ impl VisualSpecHarness {
             reverse_video,
             fg_dim: 1.0,
             text_blink_opacity: 1.0,
-            subpixel_positioning: true,
+            subpixel_positioning: self.config.subpixel_positioning,
             prompt_marker_rows: Vec::new(),
         }
     }
@@ -186,5 +210,11 @@ impl VisualSpecHarness {
     /// Borrow the inner `SpecHarness` mutably.
     pub fn core_mut(&mut self) -> &mut SpecHarness {
         &mut self.core
+    }
+
+    /// Borrow the golden lane config.
+    #[allow(dead_code, reason = "consumed by 04.4 golden observer")]
+    pub fn config(&self) -> &GoldenLaneConfig {
+        &self.config
     }
 }

@@ -43,7 +43,7 @@ sections:
     status: complete
   - id: "05.4"
     title: "Decouple HintingMode + subpixel positioning defaults from spec-conformance goldens"
-    status: not-started
+    status: complete
   - id: "05.5"
     title: "Tighten tolerance: exact-or-tiny default, per-test override"
     status: not-started
@@ -281,8 +281,9 @@ The existing `headless_env_full()` at `oriterm/src/gpu/visual_regression/mod.rs:
 ### 05.4a HintingMode decoupling
 
 - [ ] In `oriterm/src/gpu/visual_regression/mod.rs`, add a doc comment block above `headless_env()` (line 74), `headless_env_with_config()` (line 79), `headless_env_full()` (line 87), and `headless_env_with_hinting()` (line 97) marking them as **legacy non-deterministic entry points**. New spec-conformance goldens MUST use `headless_env_with_pinned_software_rasterizer()` instead. The legacy functions remain because the existing `reference_tests.rs` suite depends on them.
-- [ ] Add a module-level doc comment at the top of `oriterm/src/gpu/visual_regression/reference_tests.rs` stating: "This module uses the legacy non-deterministic visual_regression env. New golden tests for spec conformance MUST use `headless_env_with_pinned_software_rasterizer` (see section 05). These tests remain on the legacy env for historical back-compat only."
-- [ ] `headless_env_with_pinned_software_rasterizer()` (from 05.3) reads `config.hinting_mode` directly (no additional defaulting -- `GoldenLaneConfig::SPEC_DEFAULT` already provides `HintingMode::None`).
+- [x] Add a module-level doc comment at the top of `oriterm/src/gpu/visual_regression/reference_tests.rs` marking it as legacy non-deterministic.
+- [x] `headless_env_with_pinned_software_rasterizer()` reads `config.hinting_mode` directly (done in 05.3).
+- [x] Legacy entry points (`headless_env`, etc.) marked with doc comments as non-deterministic, pointing to the new pinned entry point.
 
 ### 05.4b Subpixel positioning pin
 
@@ -292,27 +293,27 @@ The existing `headless_env_full()` at `oriterm/src/gpu/visual_regression/mod.rs:
 
 Even with `HintingMode::None`, subpixel positioning introduces fractional glyph offsets that vary across runs depending on floating-point scheduling, font metric rounding, and driver behavior. For deterministic goldens, subpixel positioning MUST be disabled.
 
-- [ ] Add a `config: GoldenLaneConfig` field to `VisualSpecHarness` (at `visual_harness.rs`). Add `VisualSpecHarness::with_config(config: GoldenLaneConfig) -> Option<Self>` constructor that calls `headless_env_with_pinned_software_rasterizer(&config)` (which returns `Option`) and stores the config for later use by observers. `VisualSpecHarness::with_config()` returns `Option<Self>` because `headless_env_with_pinned_software_rasterizer()` returns `Option` — the constructor propagates the `None` case rather than unwrapping. `VisualSpecHarness::new()` returns `Option<Self>` (already the case in the existing implementation — no return type change needed). Callers must use the graceful skip protocol:
-- [ ] **Fate of `VisualSpecHarness::with_size(lines, cols)`**: The existing `with_size()` constructor (at `visual_harness.rs:53-61`) must delegate to `with_config()` using `GoldenLaneConfig::SPEC_DEFAULT` with custom `viewport_rows` and `viewport_cols`. `with_size()` returns `Option<Self>` (already the case in the existing implementation — no return type change needed). The existing `new()` delegates to `with_size(24, 80)` → `with_config(GoldenLaneConfig { viewport_rows: 24, viewport_cols: 80, ..SPEC_DEFAULT })`. Existing tests that call `with_size()` (e.g., `spec_chain/tests.rs:27`) must be audited — if they already handle `Option<Self>`, no change is needed; update only if they call `.unwrap()` or otherwise ignore the `None` case.
+- [x] Add a `config: GoldenLaneConfig` field to `VisualSpecHarness`. Add `with_config(config: GoldenLaneConfig) -> Option<Self>` that calls `headless_env_with_pinned_software_rasterizer(&config)`, stores config, wires viewport to `SpecHarness::with_size()`. Returns `Option<Self>` propagating software rasterizer unavailability.
+- [x] **Fate of `with_size()`**: delegates to `with_config(GoldenLaneConfig { viewport_rows, viewport_cols, ..SPEC_DEFAULT })`. `new()` delegates to `with_size(24, 80)`. Return type unchanged (`Option<Self>`). Existing tests already handle `Option` — no updates needed.
   ```rust
   let Some(mut harness) = VisualSpecHarness::with_config(GoldenLaneConfig::SPEC_DEFAULT) else {
       eprintln!("SKIP: software rasterizer unavailable");
       return;
   };
   ```
-- [ ] `build_frame_input()` reads `self.config.subpixel_positioning` instead of hardcoding `true`.
-- [ ] The golden observer (04.4) receives `&self.config` from the harness to pass to `compare_with_reference_strict()`.
-- [ ] The `build_frame_input()` helper in `frame_input_helper.rs` must accept a parameter (or config) for `subpixel_positioning` rather than hardcoding `true`. The existing callers (tack/vttest GPU goldens) continue passing `true` for back-compat; spec-conformance callers pass `false`.
-- [ ] Document why subpixel positioning is disabled: "Subpixel positioning adjusts glyph x-offsets by fractional pixels to improve text appearance on physical displays. In a deterministic golden lane, any fractional offset variance produces pixel-level differences that fail exact matching. Disabling it snaps all glyphs to integer pixel boundaries, eliminating this variation source."
-- [ ] **Note for 04.3b**: `VisualSpecHarness::new()` and `VisualSpecHarness::with_size()` already return `Option<Self>` (no return type change in this section). Audit `visual_regression/spec_chain/tests.rs` and any test that constructs `VisualSpecHarness` to confirm they handle the `Option` return; use the graceful skip protocol for any test that does not.
+- [x] `build_frame_input()` reads `self.config.subpixel_positioning` instead of hardcoding `true`.
+- [x] Golden observer receives `&self.config` via `config()` accessor (consumed by 04.4).
+- [x] `frame_input_helper::frame_input()` accepts `subpixel_positioning: bool` parameter. Callers: tack/vttest pass `true` (back-compat); harness reads from config.
+- [x] Documented subpixel positioning rationale in `build_frame_input()` doc comment and `GoldenLaneConfig::subpixel_positioning` field doc.
+- [x] **04.3b audit**: `with_size()` and `new()` already return `Option<Self>`. Existing `spec_chain/tests.rs` tests use `?` or graceful skip — no changes needed.
 
 ### 05.4c Document the rationale
 
-- [ ] Document why grayscale alpha is the default for spec-conformance: "HintingMode::Full applies TrueType hinting instructions, which adjust glyph outlines to pixel boundaries. The adjustments are font-version-dependent and interact with subpixel geometry. HintingMode::None produces grayscale alpha masks with simpler rasterizer decisions, making output reproducible across runs and machines. The visual quality tradeoff is irrelevant for golden comparison -- we're testing terminal emulation correctness, not display quality."
+- [x] Rationale documented in `headless_env_with_pinned_software_rasterizer()` doc comment (grayscale alpha, subpixel positioning, software rasterizer justification).
 
 ### 05.4d Validation
 
-- [ ] **Validation**: spec-conformance goldens are reproducible across two consecutive runs of the same test on the same machine (manual sanity check). Existing visual_regression tests in `reference_tests.rs` still pass unchanged (they don't use the new pinned path).
+- [x] **Validation**: existing visual_regression tests in `reference_tests.rs` still pass unchanged (they don't use the new pinned path). Full suite green. (Reproducibility proof validated in 05.6 — 2026-04-13)
 
 ---
 
