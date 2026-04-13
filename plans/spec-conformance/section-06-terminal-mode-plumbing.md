@@ -288,6 +288,16 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
 - [x] `[TPR-06-002-gemini-i2][medium]` `section-06:318` — Same as [TPR-06-002-codex-i2]: nested BSU test expectation wrong.
   Resolved: Fixed on 2026-04-13. Same fix as [TPR-06-002-codex-i2].
 
+**Implementation TPR findings (2026-04-13, 3 iterations):**
+- [x] `[TPR-06-001-codex-i3][medium]` `oriterm_core/src/effect/sink/legacy/tests.rs:272` — Pin the LegacyEventSink log path with a real assertion. Tests only asserted `is_empty()` for events — would still pass if the `info!` line were removed.
+  Resolved: Fixed on 2026-04-13. Added `pending_presentation_effects` queue, then replaced with `AtomicU32` counter per TPR-06-001-codex-i4. Tests now assert `presentation_effect_count() > 0`.
+- [x] `[TPR-06-002-codex-i3][low]` `plans/spec-conformance/section-06-terminal-mode-plumbing.md:55` — Stale body status banner said "Not Started" but frontmatter said "in-progress".
+  Resolved: Fixed on 2026-04-13. Updated body banner to "In Progress".
+- [x] `[TPR-06-001-codex-i4][medium]` `oriterm_core/src/effect/sink/legacy/mod.rs:108` — `pending_presentation_effects` Vec queue created unbounded per-pane memory growth (no production consumer).
+  Resolved: Fixed on 2026-04-13. Replaced `Vec<PresentationEffect>` queue with `AtomicU32` counter — zero memory overhead, tests pin the count.
+
+**Final TPR pass: iteration 3 (2026-04-13) — clean. Both Codex and Gemini returned zero actionable findings.**
+
 ---
 
 ## 06.N Completion Checklist
@@ -313,7 +323,7 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
 - [ ] Section frontmatter `status` -> `complete` (pending TPR + hygiene reviews)
 - [x] `00-overview.md` Quick Reference + mission criteria updated (Mode 2026 timeout wired)
 - [x] `index.md` section 06 status updated
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed (3 iterations: 2 findings → 1 finding → clean)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
 **Exit Criteria:** Mode 2026 timeout-abort wired via deadline-aware select! using the processor's existing timeout state (no duplication); Abort effect emitted and observable (docstring corrected, LegacyEventSink no longer drops it); post-parse housekeeping shared between normal and timeout paths; `named_private_mode_number()` eliminated (WASTE); remaining sync points enforced via compile-time exhaustive matches; test matrix covers timeout, resize-during-sync, alt-screen-during-sync, double-publish, nested-BSU, and negative pin.
