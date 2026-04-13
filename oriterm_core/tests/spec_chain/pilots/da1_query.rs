@@ -5,7 +5,7 @@
 //! to `identify_terminal`, and the effect transcript captures
 //! `PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute }`.
 //!
-//! Catalog row: ECMA48-DA1
+//! Catalog row: ECMA48-CSI-DA1
 //! Apex: EffectPtyWrite
 
 use oriterm_test_support::spec_chain::{
@@ -21,7 +21,7 @@ use oriterm_test_support::spec_chain::{
 #[test]
 fn da1_query_drives_to_effect_apex() {
     let scenario = SpecScenario {
-        catalog_row_id: "ECMA48-DA1",
+        catalog_row_id: "ECMA48-CSI-DA1",
         bytes: b"\x1b[c",
         apex_layer: ApexLayer::EffectPtyWrite,
         setup: b"",
@@ -104,7 +104,7 @@ fn da1_reply_bytes_match_vt420_attributes() {
 #[test]
 fn da1_skips_parser_rung_when_no_expectation() {
     let scenario = SpecScenario {
-        catalog_row_id: "ECMA48-DA1-SKIP-PARSER",
+        catalog_row_id: "TEST-DA1-SKIP-PARSER",
         bytes: b"\x1b[c",
         apex_layer: ApexLayer::EffectPtyWrite,
         setup: b"",

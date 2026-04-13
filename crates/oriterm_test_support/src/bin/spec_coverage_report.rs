@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use oriterm_test_support::spec_chain::coverage::{CoverageBaseline, CoverageReport};
+use oriterm_test_support::spec_chain::uncataloged;
 
 fn main() -> ExitCode {
     let workspace_root = find_workspace_root();
@@ -28,7 +29,14 @@ fn main() -> ExitCode {
         workspace_root.join("crates/oriterm_test_support/tests"),
     ];
 
-    let report = match CoverageReport::build(&catalog_dir, &test_roots) {
+    // Exclude the scanner's own source and binary to prevent it from
+    // reading doc-comment examples as real catalog citations.
+    let exclude_dirs: Vec<PathBuf> = vec![
+        workspace_root.join("crates/oriterm_test_support/src/bin"),
+        workspace_root.join("crates/oriterm_test_support/src/spec_chain/coverage"),
+    ];
+
+    let report = match CoverageReport::build(&catalog_dir, &test_roots, &exclude_dirs) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: {e}");
@@ -70,7 +78,33 @@ fn main() -> ExitCode {
             eprintln!("REGRESSION: absolute verified count dropped for one or more stacks");
         }
 
-        if has_false_verified || has_uncataloged || has_regression {
+        // Gate 4: uncataloged backlog — sequences observed during test
+        // execution that have no matching catalog row.
+        let uncataloged_dir = std::env::temp_dir().join("oriterm-spec-uncataloged");
+        let has_backlog = match uncataloged::read_accumulated_tuples(&uncataloged_dir) {
+            Ok(tuples) if !tuples.is_empty() => {
+                eprintln!(
+                    "UNCATALOGED BACKLOG ({} distinct tuples observed but not in catalog):",
+                    tuples.len()
+                );
+                for (cat, intermediates, final_byte) in &tuples {
+                    let hex: Vec<String> =
+                        intermediates.iter().map(|b| format!("{b:02x}")).collect();
+                    eprintln!(
+                        "  [{cat}] intermediates=[{}] final={final_byte}",
+                        hex.join(",")
+                    );
+                }
+                true
+            }
+            Ok(_) => false,
+            Err(e) => {
+                eprintln!("warning: failed to read uncataloged backlog: {e}");
+                false
+            }
+        };
+
+        if has_false_verified || has_uncataloged || has_regression || has_backlog {
             return ExitCode::FAILURE;
         }
     }

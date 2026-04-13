@@ -56,9 +56,13 @@ impl CoverageReport {
     /// Uses `walk_catalog_files` and `parse_catalog_markdown` (SSOT — no
     /// inline parsing). Error propagation is load-bearing: parser errors
     /// propagate via `?`, never swallowed with `.unwrap_or_default()`.
+    ///
+    /// `exclude_dirs` prevents the citation scanner from reading its own
+    /// source code as if it were test citations.
     pub fn build(
         catalog_dir: &Path,
         test_dirs: &[std::path::PathBuf],
+        exclude_dirs: &[std::path::PathBuf],
     ) -> Result<Self, CoverageError> {
         let catalog_files = walk_catalog_files(catalog_dir)?;
         let mut all_rows: Vec<(String, Row)> = Vec::new();
@@ -75,7 +79,7 @@ impl CoverageReport {
             }
         }
 
-        let citations = scan_test_citations(test_dirs)?;
+        let citations = scan_test_citations(test_dirs, exclude_dirs)?;
         Ok(Self::aggregate(&all_rows, &citations))
     }
 
@@ -119,9 +123,11 @@ impl CoverageReport {
             .cloned()
             .collect();
 
+        // Exclude TEST-* scaffold IDs — these are harness unit test
+        // fixtures, not real coverage claims.
         let uncataloged: Vec<String> = cited_ids
             .iter()
-            .filter(|id| !all_ids.contains(*id))
+            .filter(|id| !all_ids.contains(*id) && !id.starts_with("TEST-"))
             .cloned()
             .collect();
 
