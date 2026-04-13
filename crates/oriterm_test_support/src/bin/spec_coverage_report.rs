@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use oriterm_test_support::catalog::build_catalog_signature_set;
 use oriterm_test_support::spec_chain::coverage::{CoverageBaseline, CoverageReport};
 use oriterm_test_support::spec_chain::uncataloged;
 
@@ -79,25 +80,35 @@ fn main() -> ExitCode {
         }
 
         // Gate 4: uncataloged backlog — sequences observed during test
-        // execution that have no matching catalog row.
-        let uncataloged_dir = std::env::temp_dir().join("oriterm-spec-uncataloged");
-        let has_backlog = match uncataloged::read_accumulated_tuples(&uncataloged_dir) {
-            Ok(tuples) if !tuples.is_empty() => {
-                eprintln!(
-                    "UNCATALOGED BACKLOG ({} distinct tuples observed but not in catalog):",
-                    tuples.len()
-                );
-                for (cat, intermediates, final_byte) in &tuples {
-                    let hex: Vec<String> =
-                        intermediates.iter().map(|b| format!("{b:02x}")).collect();
+        // execution that have no matching catalog row. Subtracts the
+        // known catalog signature set so already-cataloged sequences
+        // don't trigger false failures.
+        let spool_dir = workspace_root.join("target/spec-chain-uncataloged");
+        let catalog_sigs = build_catalog_signature_set(&catalog_dir).unwrap_or_default();
+        let has_backlog = match uncataloged::read_accumulated_tuples(&spool_dir) {
+            Ok(tuples) => {
+                let unknown: Vec<_> = tuples
+                    .iter()
+                    .filter(|sig| !catalog_sigs.contains(*sig))
+                    .collect();
+                if unknown.is_empty() {
+                    false
+                } else {
                     eprintln!(
-                        "  [{cat}] intermediates=[{}] final={final_byte}",
-                        hex.join(",")
+                        "UNCATALOGED BACKLOG ({} distinct tuples observed but not in catalog):",
+                        unknown.len()
                     );
+                    for (cat, intermediates, final_byte) in &unknown {
+                        let hex: Vec<String> =
+                            intermediates.iter().map(|b| format!("{b:02x}")).collect();
+                        eprintln!(
+                            "  [{cat}] intermediates=[{}] final={final_byte}",
+                            hex.join(",")
+                        );
+                    }
+                    true
                 }
-                true
             }
-            Ok(_) => false,
             Err(e) => {
                 eprintln!("warning: failed to read uncataloged backlog: {e}");
                 false
