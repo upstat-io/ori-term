@@ -125,6 +125,61 @@ impl SpecHarness {
             .drain_into(&mut self.outcome.effects_emitted);
     }
 
+    /// Feed a scenario's setup + input bytes without running observers.
+    ///
+    /// Clears prior recordings before feeding the scenario's own bytes,
+    /// so observations reflect only the scenario input. Used by
+    /// `VisualSpecHarness` (04.3b) which needs to run its own rung
+    /// iteration with GPU observers for rungs 5-8.
+    pub fn prepare_scenario(&mut self, scenario: &SpecScenario) {
+        if !scenario.setup.is_empty() {
+            self.feed(scenario.setup);
+        }
+        self.outcome.perform_actions.clear();
+        self.outcome.dispatched_calls.clear();
+        self.outcome.effects_emitted.clear();
+        self.feed(scenario.bytes);
+    }
+
+    /// Observe a single rung against the captured data.
+    ///
+    /// Handles headless rungs 1-4 (Parser, Dispatch, State, Effect,
+    /// Renderable). Visual rungs 5-8 return `pass` — they are handled
+    /// by `VisualSpecHarness` in the `oriterm` crate.
+    pub fn observe_rung(
+        &self,
+        rung: RungName,
+        expectations: &super::scenario::ScenarioExpectations,
+    ) -> RungResult {
+        match rung {
+            RungName::Parser => match &expectations.parser {
+                Some(e) => observers::observe_parser(&self.outcome, e),
+                None => RungResult::pass(rung),
+            },
+            RungName::Dispatch => match &expectations.dispatch {
+                Some(e) => observers::observe_dispatch(&self.outcome, e),
+                None => RungResult::pass(rung),
+            },
+            RungName::State => match &expectations.state {
+                Some(e) => observers::observe_state(self.handler.term(), e),
+                None => RungResult::pass(rung),
+            },
+            RungName::Effect => match &expectations.effect {
+                Some(e) => observers::observe_effect(&self.outcome, e),
+                None => RungResult::pass(rung),
+            },
+            RungName::Renderable => match expectations.renderable {
+                Some(e) => observers::observe_renderable(self.handler.term(), e),
+                None => RungResult::pass(rung),
+            },
+            // Visual rungs 5-8: handled by VisualSpecHarness (04.3b/04.4).
+            RungName::FrameInput
+            | RungName::GpuInstance
+            | RungName::TextureRender
+            | RungName::GoldenImage => RungResult::pass(rung),
+        }
+    }
+
     /// Run a scenario through every applicable rung, stopping at the
     /// first failure.
     ///
@@ -133,49 +188,11 @@ impl SpecHarness {
     /// Rungs with `None` expectations pass unconditionally (the scenario
     /// doesn't assert that rung). Stops at the first failing rung.
     pub fn run_scenario(&mut self, scenario: &SpecScenario) -> Vec<RungResult> {
-        // Apply setup bytes if any.
-        if !scenario.setup.is_empty() {
-            self.feed(scenario.setup);
-        }
+        self.prepare_scenario(scenario);
 
-        // Clear recordings — we only observe the scenario's own bytes,
-        // not setup bytes or stale data from prior feed() calls.
-        self.outcome.perform_actions.clear();
-        self.outcome.dispatched_calls.clear();
-        self.outcome.effects_emitted.clear();
-
-        // Feed the scenario bytes.
-        self.feed(scenario.bytes);
-
-        let exp = &scenario.expectations;
         let mut results = Vec::new();
-
         for &rung in scenario.applicable_rungs() {
-            let result = match rung {
-                RungName::Parser => match &exp.parser {
-                    Some(e) => observers::observe_parser(&self.outcome, e),
-                    None => RungResult::pass(rung),
-                },
-                RungName::Dispatch => match &exp.dispatch {
-                    Some(e) => observers::observe_dispatch(&self.outcome, e),
-                    None => RungResult::pass(rung),
-                },
-                RungName::State => match &exp.state {
-                    Some(e) => observers::observe_state(self.handler.term(), e),
-                    None => RungResult::pass(rung),
-                },
-                RungName::Effect => match &exp.effect {
-                    Some(e) => observers::observe_effect(&self.outcome, e),
-                    None => RungResult::pass(rung),
-                },
-                // Rungs 4-8: stub observers (expanded in 04.3/04.3b/04.4).
-                RungName::Renderable
-                | RungName::FrameInput
-                | RungName::GpuInstance
-                | RungName::TextureRender
-                | RungName::GoldenImage => RungResult::pass(rung),
-            };
-
+            let result = self.observe_rung(rung, &scenario.expectations);
             let failed = !result.passed;
             results.push(result);
             if failed {
