@@ -773,7 +773,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Complete    |
 | 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Complete    |
 | 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Complete    |
-| 06 | Terminal Mode Plumbing (Mode 2026 + sync-point reduction) | `section-06-terminal-mode-plumbing.md`            | In Progress |
+| 06 | Terminal Mode Plumbing (Mode 2026 + sync-point reduction) | `section-06-terminal-mode-plumbing.md`            | Complete    |
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Not Started |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Not Started |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Not Started |
