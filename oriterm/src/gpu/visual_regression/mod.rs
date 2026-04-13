@@ -149,10 +149,6 @@ pub(super) fn headless_env_with_hinting(
 /// `headless_env_full`, `headless_env_with_hinting`) remain for the existing
 /// visual regression test suite. New spec-conformance goldens MUST use this
 /// function instead.
-#[allow(
-    dead_code,
-    reason = "consumed by 05.4 VisualSpecHarness + 05.6 validation tests"
-)]
 pub(crate) fn headless_env_with_pinned_software_rasterizer(
     config: &GoldenLaneConfig,
 ) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {

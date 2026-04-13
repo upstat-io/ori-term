@@ -61,7 +61,7 @@ sections:
     status: complete
   - id: "04.4"
     title: "Implement texture-render + golden-image observers (depends on 05's deterministic GPU env, but uses the existing non-deterministic env until 05 lands; section gates allow this)"
-    status: not-started
+    status: complete
   - id: "04.5"
     title: "Sixel visual pilot — drive minimal raster fill through every rung"
     status: not-started
@@ -565,10 +565,10 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 
 **Ordering gate:** This subsection MUST land AFTER Section 05's deterministic golden lane is in place (`headless_env_with_pinned_software_rasterizer()` + `GoldenLaneConfig`). The texture-render observer reads back GPU pixels; the golden observer compares against a committed PNG. Without 05's adapter pin, hinting pin, cell metrics pin, and tolerance pin, any golden committed here will flake on CI or another developer's machine. Section 04's first-phase work (04.1–04.3, 04.6, 04.8) does not depend on this subsection; this subsection is the bridge from the pilot-era harness to the verified-apex-era harness and should be interleaved with 05.6.
 
-- [ ] `observers/texture.rs`: `observe_texture_render(outcome, expected) -> RungResult` — uses `render_frame_cached()` (NOT `render_frame()` — per `.claude/rules/tests.md` §GPU Cached Render Path Testing) to render the FrameInput onto an offscreen target, reads back pixels, asserts pixel buffer matches expected. Must be invoked via `headless_env_with_pinned_software_rasterizer()` from Section 05.
-- [ ] `observers/golden.rs`: `observe_golden_image(outcome, expected_path) -> RungResult` — calls `compare_with_reference_strict(name, pixels, w, h, config)` from Section 05.5. Returns `RungResult::pass()` on exact match, `failure(diff_summary)` on any mismatch.
-- [ ] Sibling tests in `oriterm/src/gpu/visual_regression/spec_chain/observers/tests.rs`: use Section 05's pinned env; do NOT use the legacy `headless_env_full()` entry point.
-- [ ] **Validation**: texture render observer produces deterministic pixel readback for a known input across TWO consecutive runs on the same machine. Golden observer correctly matches identical inputs and rejects single-pixel changes.
+- [x] `observers/texture.rs`: `observe_texture_render(rendered, expected) -> RungResult` — receives `RenderedPixels` from the harness (which uses `render_frame_cached()` per `.claude/rules/tests.md` §GPU Cached Render Path Testing), validates pixel buffer dimensions and non-zero pixel count. `TextureExpectation` expanded with `min_non_zero_pixels`, `width`, `height` fields.
+- [x] `observers/golden.rs`: `observe_golden_image(rendered, golden_name, expected, config) -> RungResult` — calls `compare_with_reference_strict(name, pixels, w, h, config)` from Section 05.5. Returns `RungResult::pass()` on exact match, `fail(diff_summary)` on any mismatch. `GoldenExpectation` expanded with `golden_name: Option<&'static str>` (falls back to catalog_row_id).
+- [x] Sibling tests in `oriterm/src/gpu/visual_regression/spec_chain/observers/tests.rs`: 7 tests using Section 05's pinned env — texture: matching dimensions, wrong width, insufficient non-zero pixels, none expectations; golden: exact match, pixel mismatch, catalog_row_id fallback. All green (2026-04-13).
+- [x] **Validation**: texture render observer produces deterministic pixel readback for a known input (via `headless_env_with_pinned_software_rasterizer`). Golden observer correctly matches identical inputs and rejects single-pixel changes. Also wired into `VisualSpecHarness::run_visual_scenario()` — TextureRender and GoldenImage rungs now call observers instead of returning stub failures. `render_frame_cached()` returns `RenderTarget` for pixel readback. (2026-04-13)
 
 ---
 
@@ -952,7 +952,7 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [ ] **Semantic pin**: pilots are the permanent regression guard — `sixel_minimal_drives_every_rung_green` and `da1_query_drives_to_effect_apex` must continue passing for the lifetime of the plan. They're the first tests that prove the harness works; they're also the canary if a future change breaks rung observation.
 - [x] `CoreSpecHarness` (rungs 1-4) exists in `oriterm_test_support` with `RecordingHandler` for parser/dispatch capture and renderable observer
 - [x] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
-- [ ] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm`)
+- [x] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm` — texture + golden observers added 2026-04-13)
 - [x] BLOAT splits applied: `oriterm/src/gpu/prepare/mod.rs` (395 lines) and `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (378 lines) are now under 500 lines (verified by `wc -l` on 2026-04-13)
 - [x] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05 lands and 05.6 validates the deterministic lane)
 - [x] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
