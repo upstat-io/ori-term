@@ -168,7 +168,7 @@ nested BSU, max-buffer-bytes, sync abort, SYNC_UPDATE_TIMEOUT 150ms
 image lifecycle, image_cache resize, ImagePlacement, PlacementSizing
 StableRowIndex, reflow remapping, ReflowMapping struct
 oriterm_core/src/image/cache/mod.rs, cache/lifecycle.rs extraction
-oriterm_core/src/grid/resize/mod.rs, reflow_cells row-range tracking
+oriterm_core/src/grid/resize/mod.rs, reflow_cells first_output_row mapping
 prune_scrollback, remove_placements_in_region, on_resize, remap_placements
 update_cell_coverage, FixedPixels, CellCount, sizing modes
 cell-metric plumbing, set_cell_dimensions, ImageConfig extension
