@@ -1,7 +1,7 @@
 ---
 section: "03"
 title: "Effect Boundary Migration"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Introduce `oriterm_core::effect::{Effect, EffectSink}` as the production interface for boundary-crossing side effects, remove closures from `Event::ClipboardLoad`/`ColorRequest`, absorb `Term::pending_notifications` into the Effect channel, and migrate all current Event consumers via a one-phase `LegacyEventSink` adapter."
 success_criteria:
@@ -51,7 +51,7 @@ sections:
     status: complete
   - id: "03.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 # TPR Checkpoint Placement: 03.4 (after the bridge is built — covers .1-.4),
 # 03.6 (after notifications migration — covers .5-.6), final in 03.N
 ---
@@ -975,10 +975,10 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 ### Closeout
 - [x] Plan annotation cleanup
 - [x] **[DRIFT:cross-section]** Update `plans/spec-conformance/index.md` Section 03 keyword cluster reference from `take_pending()` to `drain_into()` (TPR-03-004-codex). Also: section 04's `SpecHarness` must be updated to use `Term<QueueingEffectSink>` instead of the old `Term<T: EventListener>` model. Also: section 10 must be updated to use `Effect::Host(HostEffect::ClipboardStore { ... })` instead of `Effect::HostRequest(HostRequest::ClipboardStore { ... })`.
-- [ ] Section frontmatter `status` → `complete`
-- [ ] `00-overview.md` Quick Reference + mission criteria updated
-- [ ] `index.md` section 03 status updated
-- [ ] `/tpr-review` passed (final, full-section) — independent Codex review
-- [ ] `/impl-hygiene-review last commit` passed — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
+- [x] Section frontmatter `status` → `complete`
+- [x] `00-overview.md` Quick Reference + mission criteria updated
+- [x] `index.md` section 03 status updated
+- [x] `/tpr-review` passed (final, full-section) — dual-source Codex + Gemini review, 2026-04-12. 4 iterations, 5 findings surfaced and resolved, clean on iteration 4. See 03.R block.
+- [x] `/impl-hygiene-review` passed — auto-scoped hygiene review, 2026-04-12. 1 finding (GAP: missing LegacyEventSink routing tests) fixed — 6 tests added. Banner cleanup applied. Clean after fixes.
 
 **Exit Criteria:** `oriterm_core::effect::Effect` exists as the production interface; closures removed from VTE handler emission; `Term<S: EffectSink>` uses static dispatch with a single generic parameter (no `T: EventListener`, no Arc<dyn>); `event_listener` field removed from `Term`; `Term::pending_notifications` bypass absorbed; LegacyEventSink owns the listener and bridges existing consumers via Effect → Event conversion; RIS handler emits `HostEffect::ClearPendingNotifications` unconditionally — `LegacyEventSink::push()` clears its internal queue, `QueueingEffectSink` consumers process the marker during `drain_into()`, `VoidEffectSink` ignores it; `drain_notifications()` thin shim exists ONLY on `impl<L: EventListener + Sync> Term<LegacyEventSink<L>>`; reply-return path for ResponseToken implemented in IO thread; SnapshotDoubleBuffer `seqno()` exposed for section 04 + section 06; ordering contract documented; full test suite green debug + release; alloc regression unchanged.
