@@ -166,19 +166,20 @@ nested BSU, max-buffer-bytes, sync abort, SYNC_UPDATE_TIMEOUT 150ms
 
 ```
 image lifecycle, image_cache resize, ImagePlacement, PlacementSizing
-StableRowIndex, reflow invalidation, reflow scoped out
+StableRowIndex, reflow remapping, ReflowMapping struct
 oriterm_core/src/image/cache/mod.rs, cache/lifecycle.rs extraction
-prune_scrollback, remove_placements_in_region, on_resize
+oriterm_core/src/grid/resize/mod.rs, reflow_cells row-range tracking
+prune_scrollback, remove_placements_in_region, on_resize, remap_placements
 update_cell_coverage, FixedPixels, CellCount, sizing modes
+cell-metric plumbing, set_cell_dimensions, ImageConfig extension
+app → mux → Term cell dimensions, sync_grid_layout, handle_dpi_change
 alt-screen swap, alt_image_cache, alt cache existence condition
 ED/EL erase, scrollback eviction, column out-of-bounds removal
-image+resize regression matrix, 3 protocols x 2 sizing x 6 mutations = 36
-cache/tests.rs new test file, image/tests.rs 854 lines existing
-negative rendering pin, RenderableContent::images assertion
-no ResizePolicy enum, no speculative generalization
+reflow row split, reflow row merge, total_evicted adjustment
+image+resize+reflow regression matrix, 3 protocols x 2 sizing x 7 mutations = 42
+cache/tests.rs new test file, negative rendering pin
 Kitty placeholder U+10EEEE cell-attachment, section 13 owns
-notcurses keller scene, image lifecycle stress test
-blocked-by future-section-reflow-image-remap
+notcurses keller scene, BUG-08-9 resolved
 ```
 
 ---
