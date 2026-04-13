@@ -1003,7 +1003,7 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [ ] Section frontmatter `status` → `complete` (after TPR + hygiene pass)
 - [x] `00-overview.md` Quick Reference updated (04 → In Progress, 05 → In Progress; BLOAT items → Complete; catalog schema → frozen v1.0 — 2026-04-13)
 - [x] `index.md` reviewed — no status column to update (ID/Title/File only)
-- [ ] `/tpr-review` passed (final, full-section)
+- [x] `/tpr-review` passed (final, full-section) — clean on iteration 6 (2026-04-13). 12 findings across 5 rounds, all fixed: pilot expectations strengthened (parser/frame_input/gpu_instance with image quads/texture/golden), catalog DRIFT fixed, test file split per test-organization.md, regression provenance added, naming convention aligned.
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
 **Exit Criteria:** `CoreSpecHarness` (headless, rungs 1-4) + `VisualSpecHarness` (GPU, rungs 5-8) drive both pilots through every applicable rung green; `RecordingHandler` captures parser/dispatch observations; catalog row schema frozen and section 01 catalogs migrated; `coverage-baseline.toml` committed with initial counts; coverage report binary works with all four CI gates; `UncatalogedDetector` accumulates tuples in-memory (no file I/O during parallel tests); BLOAT files split under 500 lines; full test suite green debug + release; alloc regression unchanged. Sections 08-20 can now be written against a stable harness API and a frozen catalog schema.

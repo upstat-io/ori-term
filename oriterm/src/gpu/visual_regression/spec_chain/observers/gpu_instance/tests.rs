@@ -23,9 +23,8 @@ fn dummy_image_quad() -> ImageQuad {
     }
 }
 
-/// Regression: [TPR-04-001-codex-r7] — image quad observer added by
-/// Section 04 Phase 1b. Tests pin positive/negative behavior for
-/// `min_image_quads` across below/above quad layers.
+/// Regression: image quad observer (Section 04.4) — pins positive/negative
+/// behavior for `min_image_quads` across below/above quad layers.
 #[test]
 fn image_quads_below_present_passes() {
     let vp = ViewportSize::new(100, 100);
@@ -41,7 +40,7 @@ fn image_quads_below_present_passes() {
     );
 }
 
-/// Regression: [TPR-04-001-codex-r7] — above-layer image quad.
+/// Regression: image quad observer (Section 04.4) — above-layer quad.
 #[test]
 fn image_quads_above_present_passes() {
     let vp = ViewportSize::new(100, 100);
@@ -57,7 +56,7 @@ fn image_quads_above_present_passes() {
     );
 }
 
-/// Regression: [TPR-04-001-codex-r7] — negative pin: empty image lists.
+/// Regression: image quad observer (Section 04.4) — negative pin: empty lists.
 #[test]
 fn image_quads_empty_fails() {
     let vp = ViewportSize::new(100, 100);
@@ -77,7 +76,7 @@ fn image_quads_empty_fails() {
     );
 }
 
-/// Regression: [TPR-04-001-codex-r7] — split-count: below + above.
+/// Regression: image quad observer (Section 04.4) — split-count: below + above.
 #[test]
 fn image_quads_both_layers_counted() {
     let vp = ViewportSize::new(100, 100);
