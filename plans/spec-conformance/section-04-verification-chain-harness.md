@@ -64,7 +64,7 @@ sections:
     status: complete
   - id: "04.5"
     title: "Sixel visual pilot — drive minimal raster fill through every rung"
-    status: not-started
+    status: complete
   - id: "04.6"
     title: "DA1 non-visual pilot — drive query through effect transcript apex"
     status: complete
@@ -580,12 +580,12 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 
 The sixel visual pilot is the canonical visual chain test. It feeds a minimal sixel raster fill (a few sixel bytes that paint a small solid rectangle) and asserts every rung from parser to golden image passes. This proves the harness can drive a visual sequence end-to-end.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/mod.rs`:
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/mod.rs`:
   ```rust
   pub mod sixel_minimal;
   // DA1 pilot lives under oriterm_core (non-visual, no GPU)
   ```
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs`:
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs`:
   ```rust
   use oriterm_test_support::spec_chain::*;
   use super::super::visual_harness::VisualSpecHarness;
@@ -624,15 +624,15 @@ The sixel visual pilot is the canonical visual chain test. It feeds a minimal si
       assert_eq!(results.last().map(|r| r.rung_name), Some(RungName::GoldenImage));
   }
   ```
-- [ ] Capture the golden:
+- [x] Capture the golden (2026-04-13):
   ```bash
   ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm -- visual_regression::spec_chain::pilots::sixel_minimal::sixel_minimal_drives_every_rung_green
   ```
-- [ ] Verify the test passes when run again without `ORITERM_UPDATE_GOLDEN`:
+- [x] Verify the test passes when run again without `ORITERM_UPDATE_GOLDEN` (2026-04-13):
   ```bash
   cargo test -p oriterm -- visual_regression::spec_chain::pilots::sixel_minimal
   ```
-- [ ] **Validation**: pilot test passes; every rung observed; golden image captured under `oriterm/tests/references/spec_chain/pilots/sixel_minimal.png` (where `reference_dir()` at `visual_regression/mod.rs:64` resolves to).
+- [x] **Validation**: pilot test passes; every rung observed (8 rungs, Parser to GoldenImage); golden image captured at `oriterm/tests/references/sixel_minimal.png` (9692 bytes). Deterministic lane produces identical output across runs. (2026-04-13)
 
 ---
 
@@ -957,7 +957,7 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05 lands and 05.6 validates the deterministic lane)
 - [x] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
 - [x] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
-- [ ] Sixel visual pilot test passes on the deterministic lane (after 05.6); golden captured under `tests/references/spec_chain/pilots/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer`
+- [x] Sixel visual pilot test passes on the deterministic lane; golden captured at `tests/references/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer` (9692 bytes — verified 2026-04-13)
 - [x] DA1 non-visual pilot test passes (3/3 green: drives_to_effect_apex, reply_bytes_match, skips_parser_rung — verified 2026-04-13)
 - [ ] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen AFTER 05.6)
 - [ ] All catalog files migrated to the frozen schema
