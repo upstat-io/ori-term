@@ -10,6 +10,7 @@
 
 mod commands;
 pub(crate) mod event_proxy;
+mod handle;
 mod handler;
 mod response_poll;
 pub(crate) mod snapshot;
@@ -17,15 +18,17 @@ pub(crate) mod snapshot;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 use std::{fmt, io};
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 
 use oriterm_core::effect::PendingResponse;
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::{RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
+pub use handle::{IoThreadConfig, PaneIoHandle, new_with_handle};
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
 use crate::pty::PtyControl;
@@ -124,21 +127,53 @@ impl<S: EffectSink> PaneIoThread<S> {
             // 3. Produce snapshot if state changed and sync output allows it.
             self.maybe_produce_snapshot();
 
-            // 4. Block on either channel when idle.
-            crossbeam_channel::select! {
-                recv(self.cmd_rx) -> msg => match msg {
-                    Ok(PaneIoCommand::Shutdown) => {
-                        self.shutdown.store(true, Ordering::Release);
-                        self.maybe_produce_snapshot();
-                        return;
+            // 4. Block on either channel when idle, with sync timeout if active.
+            //
+            // Mode 2026 (synchronized output): when a sync buffer is pending,
+            // the VTE processor's StdSyncHandler tracks a deadline. If no new
+            // bytes arrive before the deadline, we must call stop_sync to flush
+            // the buffer — otherwise an app that crashes mid-sync hangs the
+            // terminal forever.
+            let sync_deadline = self.processor.sync_timeout().sync_timeout();
+            match sync_deadline {
+                Some(deadline) => {
+                    let timeout = deadline.saturating_duration_since(Instant::now());
+                    crossbeam_channel::select! {
+                        recv(self.cmd_rx) -> msg => match msg {
+                            Ok(PaneIoCommand::Shutdown) => {
+                                self.shutdown.store(true, Ordering::Release);
+                                self.maybe_produce_snapshot();
+                                return;
+                            }
+                            Ok(cmd) => self.handle_command(cmd),
+                            Err(_) => return,
+                        },
+                        recv(self.byte_rx) -> msg => match msg {
+                            Ok(bytes) => self.handle_bytes_chunked(&bytes),
+                            Err(_) => return,
+                        },
+                        default(timeout) => {
+                            self.handle_sync_timeout();
+                        },
                     }
-                    Ok(cmd) => self.handle_command(cmd),
-                    Err(_) => return,
-                },
-                recv(self.byte_rx) -> msg => match msg {
-                    Ok(bytes) => self.handle_bytes_chunked(&bytes),
-                    Err(_) => return,
-                },
+                }
+                None => {
+                    crossbeam_channel::select! {
+                        recv(self.cmd_rx) -> msg => match msg {
+                            Ok(PaneIoCommand::Shutdown) => {
+                                self.shutdown.store(true, Ordering::Release);
+                                self.maybe_produce_snapshot();
+                                return;
+                            }
+                            Ok(cmd) => self.handle_command(cmd),
+                            Err(_) => return,
+                        },
+                        recv(self.byte_rx) -> msg => match msg {
+                            Ok(bytes) => self.handle_bytes_chunked(&bytes),
+                            Err(_) => return,
+                        },
+                    }
+                }
             }
         }
     }
@@ -243,7 +278,49 @@ impl<S: EffectSink> PaneIoThread<S> {
             self.grid_dirty.store(true, Ordering::Release);
         }
 
-        // 3. Deferred prompt marking.
+        // 3. Post-parse housekeeping (shared with handle_sync_timeout).
+        self.post_parse_housekeeping(evicted_before);
+    }
+
+    /// Handle Mode 2026 sync timeout — flush the buffered bytes and publish.
+    ///
+    /// Called when the `crossbeam_channel::select!` `default(timeout)` arm fires,
+    /// meaning no new bytes or commands arrived within the sync deadline. The VTE
+    /// processor's buffered bytes are replayed (not discarded), post-parse
+    /// housekeeping runs, and a snapshot is forced.
+    fn handle_sync_timeout(&mut self) {
+        let evicted_before = self.terminal.grid().total_evicted();
+
+        // Replay buffered bytes through VTE. The raw interceptor is NOT re-run —
+        // handle_bytes() already ran it on these bytes when they first arrived
+        // (before they entered the sync buffer).
+        self.processor.stop_sync(&mut self.terminal);
+
+        // Post-parse housekeeping must run after replay — prompt markers, mode
+        // cache, and selection-dirty would be stale otherwise.
+        self.post_parse_housekeeping(evicted_before);
+
+        // sync_bytes_count() is always 0 after stop_sync(handler, None) —
+        // the buffer is unconditionally cleared.
+        debug_assert_eq!(
+            self.processor.sync_bytes_count(),
+            0,
+            "stop_sync must clear sync buffer"
+        );
+
+        // Force snapshot publication.
+        self.grid_dirty.store(true, Ordering::Release);
+        self.maybe_produce_snapshot();
+    }
+
+    /// Post-parse housekeeping shared between `handle_bytes()` and
+    /// `handle_sync_timeout()`.
+    ///
+    /// Runs deferred prompt marking, marker pruning for scrollback eviction,
+    /// mode cache update, and selection-dirty propagation. Must be called after
+    /// any VTE byte processing (both normal and timeout-replay paths).
+    fn post_parse_housekeeping(&mut self, evicted_before: usize) {
+        // Deferred prompt marking.
         if self.terminal.prompt_mark_pending() {
             self.terminal.mark_prompt_row();
         }
@@ -254,17 +331,17 @@ impl<S: EffectSink> PaneIoThread<S> {
             self.terminal.mark_output_start_row();
         }
 
-        // 4. Prune prompt markers invalidated by scrollback eviction.
+        // Prune prompt markers invalidated by scrollback eviction.
         let newly_evicted = self.terminal.grid().total_evicted() - evicted_before;
         if newly_evicted > 0 {
             self.terminal.prune_prompt_markers(newly_evicted);
         }
 
-        // 5. Update mode cache for lock-free queries from main thread.
+        // Update mode cache for lock-free queries from main thread.
         self.mode_cache
             .store(self.terminal.mode().bits(), Ordering::Release);
 
-        // 6. Propagate selection-dirty flag for lock-free main-thread reads.
+        // Propagate selection-dirty flag for lock-free main-thread reads.
         if self.terminal.is_selection_dirty() {
             self.terminal.clear_selection_dirty();
             self.selection_dirty.store(true, Ordering::Release);
@@ -337,145 +414,6 @@ impl<S: EffectSink> fmt::Debug for PaneIoThread<S> {
             .field("shutdown", &self.shutdown.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
-}
-
-/// Main-thread handle to a Terminal IO thread.
-///
-/// Provides non-blocking command sending and byte forwarding. The IO thread
-/// processes commands in order and produces snapshots. The main thread reads
-/// the latest snapshot via the shared [`SnapshotDoubleBuffer`].
-/// Created by [`new_with_handle()`].
-pub struct PaneIoHandle {
-    /// Send commands to the IO thread.
-    cmd_tx: Sender<PaneIoCommand>,
-    /// Send raw PTY bytes to the IO thread (cloned for the reader thread).
-    byte_tx: Sender<Vec<u8>>,
-    /// IO thread join handle (taken on shutdown).
-    join: Option<JoinHandle<()>>,
-    /// Shared double buffer — main thread reads snapshots from here.
-    double_buffer: SnapshotDoubleBuffer,
-}
-
-impl PaneIoHandle {
-    /// Send a command to the IO thread.
-    pub fn send_command(&self, cmd: PaneIoCommand) {
-        if let Err(e) = self.cmd_tx.send(cmd) {
-            log::warn!("IO thread command send failed: {e}");
-        }
-    }
-
-    /// Clone the byte sender for the PTY reader thread.
-    pub fn byte_sender(&self) -> Sender<Vec<u8>> {
-        self.byte_tx.clone()
-    }
-
-    /// Access the shared snapshot double buffer.
-    ///
-    /// The main thread uses this to swap its old buffer for the latest
-    /// snapshot produced by the IO thread.
-    pub fn double_buffer(&self) -> &SnapshotDoubleBuffer {
-        &self.double_buffer
-    }
-
-    /// Shut down the IO thread and wait for it to exit.
-    pub fn shutdown(&mut self) {
-        let _ = self.cmd_tx.send(PaneIoCommand::Shutdown);
-        if let Some(handle) = self.join.take() {
-            let _ = handle.join();
-        }
-    }
-
-    /// Set the join handle after spawning.
-    pub fn set_join(&mut self, handle: JoinHandle<()>) {
-        self.join = Some(handle);
-    }
-}
-
-impl Drop for PaneIoHandle {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
-impl fmt::Debug for PaneIoHandle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PaneIoHandle")
-            .field("alive", &self.join.is_some())
-            .finish_non_exhaustive()
-    }
-}
-
-/// Configuration for creating a Terminal IO thread.
-pub struct IoThreadConfig<S: EffectSink + 'static> {
-    /// The terminal state machine — transferred to the IO thread.
-    pub terminal: Term<S>,
-    /// Lock-free mode cache (shared with main thread).
-    pub mode_cache: Arc<AtomicU32>,
-    /// Shutdown flag (shared with reader/writer threads).
-    pub shutdown: Arc<AtomicBool>,
-    /// Wakeup callback — signals the main thread on new state.
-    pub wakeup: Arc<dyn Fn() + Send + Sync>,
-    /// Grid dirty flag (shared with `IoThreadEventProxy`).
-    pub grid_dirty: Arc<AtomicBool>,
-    /// PTY control handle for resize (SIGWINCH). `None` in tests and
-    /// for adopted (default-terminal handoff) panes.
-    pub pty_control: Option<PtyControl>,
-    /// Adopted conhost signal handle for resize on Windows Default
-    /// Terminal handoff panes. `None` for spawned panes (which use
-    /// `pty_control`) and tests. The IO thread's `process_resize`
-    /// falls back to this when `pty_control` is `None`.
-    pub adopted_signal: Option<AdoptedSignal>,
-    /// Initial PTY dimensions (rows, cols) — seeds the dedup guard so the
-    /// first resize at spawn size skips the redundant syscall.
-    pub initial_rows: u16,
-    /// Initial PTY columns from spawn.
-    pub initial_cols: u16,
-    /// Shared selection-dirty flag (set by IO thread, read/cleared by main thread).
-    pub selection_dirty: Arc<AtomicBool>,
-}
-
-/// Create the IO thread and its main-thread handle.
-///
-/// Channels and the shared double buffer are created here and split
-/// between the two sides. The `grid_dirty` atomic is shared with
-/// the IO thread's `IoThreadEventProxy` — the proxy sets it during
-/// VTE parsing, the IO thread reads + clears it after snapshot
-/// production.
-///
-/// The caller spawns the thread via [`PaneIoThread::spawn()`], then
-/// sets the join handle on the returned `PaneIoHandle`.
-pub fn new_with_handle<S: EffectSink + 'static>(
-    config: IoThreadConfig<S>,
-) -> (PaneIoThread<S>, PaneIoHandle) {
-    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
-    let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
-    let double_buffer = SnapshotDoubleBuffer::new();
-    let thread = PaneIoThread {
-        terminal: config.terminal,
-        cmd_rx,
-        byte_rx,
-        shutdown: config.shutdown,
-        wakeup: config.wakeup,
-        processor: vte::ansi::Processor::new(),
-        raw_parser: vte::Parser::new(),
-        mode_cache: config.mode_cache,
-        double_buffer: double_buffer.clone(),
-        snapshot_buf: RenderableContent::default(),
-        grid_dirty: config.grid_dirty,
-        pty_control: config.pty_control,
-        adopted_signal: config.adopted_signal,
-        last_pty_size: (config.initial_rows as u32) << 16 | config.initial_cols as u32,
-        search: None,
-        selection_dirty: config.selection_dirty,
-        pending_responses: Vec::new(),
-    };
-    let handle = PaneIoHandle {
-        cmd_tx,
-        byte_tx,
-        join: None,
-        double_buffer,
-    };
-    (thread, handle)
 }
 
 #[cfg(test)]
