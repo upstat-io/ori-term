@@ -52,7 +52,7 @@ sections:
     status: complete
   - id: "04.2"
     title: "Implement parser/dispatch/state observers"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "Implement renderable observer + BLOAT splits (headless — oriterm_test_support)"
     status: not-started
@@ -513,12 +513,12 @@ Each observer takes the captured `SpecOutcome` and an `Expectation` struct, and 
 
 These are conceptually distinct observations on the same data — the parser observer checks "did the parser extract the right parameters?" while the dispatch observer checks "did the dispatch route to the right handler method?"
 
-- [ ] `observers/parser.rs`: `observe_parser(outcome, expected) -> RungResult` — assert that the parser tokenized the expected sequence by checking `outcome.perform_actions` (raw `Perform`-level callbacks) for an entry matching the expected category, intermediates, and final byte. Example: for CSI `H` with params `[5, 10]`, assert there is a `PerformAction::CsiDispatch { params: [5, 10], intermediates: [], action: 'H', .. }`. This operates on the raw parser layer — distinct from rung 2 (dispatch) which checks semantic `Handler` method calls.
-- [ ] `observers/dispatch.rs`: `observe_dispatch(outcome, expected) -> RungResult` — assert that the expected handler method was called by checking `outcome.dispatched_calls` for an entry with the expected method name. Example: for `DispatchExpectation::method("goto")`, assert there is a `DispatchCall { method: "goto", .. }`.
-- [ ] `observers/state.rs`: `observe_state(outcome, expected) -> RungResult` — assert that the final terminal state matches expected (cells, cursor, modes, palette, etc.). Compare against `outcome.final_grid_state`.
-- [ ] `observers/effect.rs`: `observe_effect(outcome, expected) -> RungResult` — assert that the expected Effect was emitted (or that NO effect was emitted, depending on the expectation). Compare against `outcome.effects_emitted`.
-- [ ] Sibling tests for each observer.
-- [ ] **Validation**: each observer's tests pass in isolation. Observers correctly distinguish "expected matched" vs "expected absent" vs "expected missing".
+- [x] `observers/parser.rs`: `observe_parser(outcome, expected) -> RungResult` — assert that the parser tokenized the expected sequence by checking `outcome.perform_actions` (raw `Perform`-level callbacks) for an entry matching the expected category, intermediates, and final byte. Example: for CSI `H` with params `[5, 10]`, assert there is a `PerformAction::CsiDispatch { params: [5, 10], intermediates: [], action: 'H', .. }`. This operates on the raw parser layer — distinct from rung 2 (dispatch) which checks semantic `Handler` method calls.
+- [x] `observers/dispatch.rs`: `observe_dispatch(outcome, expected) -> RungResult` — assert that the expected handler method was called by checking `outcome.dispatched_calls` for an entry with the expected method name. Example: for `DispatchExpectation::method("goto")`, assert there is a `DispatchCall { method: "goto", .. }`.
+- [x] `observers/state.rs`: `observe_state(outcome, expected) -> RungResult` — assert that the final terminal state matches expected (cells, cursor, modes, palette, etc.). State observer takes `&Term` directly for cursor/grid access.
+- [x] `observers/effect.rs`: `observe_effect(outcome, expected) -> RungResult` — assert that the expected Effect was emitted (or that NO effect was emitted, depending on the expectation). Compare against `outcome.effects_emitted`.
+- [x] Sibling tests for each observer.
+- [x] **Validation**: each observer's tests pass in isolation. Observers correctly distinguish "expected matched" vs "expected absent" vs "expected missing".
 
 ---
 

@@ -99,6 +99,12 @@ sections:
   - **Repro**: Press Ctrl+Shift+P to toggle a floating pane. The pane content is transparent — you can see the main terminal grid behind it.
   - **Found**: 2026-03-31 — manual, user report.
 
+- [ ] `[BUG-06-011][medium]` **Settings dialog golden image mismatch — `settings_appearance_clean_96dpi`**
+  Repro: `cargo test -p oriterm --lib gpu::visual_regression::settings_dialog::settings_appearance_clean_96dpi`
+  Subsystem: `oriterm/src/gpu/visual_regression/settings_dialog/`
+  Found: 2026-04-12 | Source: continue-roadmap
+  Note: Produces actual + diff PNGs at `oriterm/tests/references/settings_appearance_clean_96dpi_{actual,diff}.png`. May be a pixel-level drift from font/layout changes rather than a functional regression.
+
 ---
 
 ## 06.R Third Party Review Findings
