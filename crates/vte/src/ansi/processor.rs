@@ -109,6 +109,43 @@ impl<T: Timeout> Processor<T> {
         }
     }
 
+    /// Process bytes from the PTY, recording raw `Perform` callbacks via
+    /// the `PerformObserver` before dispatching to the `Handler`.
+    ///
+    /// This is the observation-enabled counterpart to [`advance`](Self::advance).
+    /// The observer sees every raw parser action (CSI, OSC, ESC, execute,
+    /// print, DCS, APC) before the `Handler` processes it.
+    ///
+    /// Note: synchronized-update buffering (`advance_sync`) bypasses the
+    /// observer — bytes are stored raw and replayed through the normal
+    /// `Performer` when the sync completes. This means the observer sees
+    /// the actions in their replayed order, not their arrival order, which
+    /// is the correct semantic for spec conformance verification.
+    #[inline]
+    pub fn advance_with_observer<H, O>(
+        &mut self,
+        handler: &mut H,
+        observer: &mut O,
+        bytes: &[u8],
+    ) where
+        H: Handler,
+        O: super::observer::PerformObserver,
+    {
+        let mut processed = 0;
+        while processed != bytes.len() {
+            if self.state.sync_state.timeout.pending_timeout() {
+                // Sync buffering — observer will see actions during replay.
+                processed += self.advance_sync(handler, &bytes[processed..]);
+            } else {
+                let mut observed =
+                    ObservedPerformer::new(&mut self.state, handler, observer);
+                processed += self
+                    .parser
+                    .advance_until_terminated(&mut observed, &bytes[processed..]);
+            }
+        }
+    }
+
     /// End a synchronized update.
     pub fn stop_sync<H>(&mut self, handler: &mut H)
     where
@@ -285,4 +322,33 @@ pub trait Timeout: Default {
     fn clear_timeout(&mut self);
     /// Returns whether a timeout is currently active and has not yet expired.
     fn pending_timeout(&self) -> bool;
+}
+
+/// `Performer` variant that records raw `PerformAction` entries into
+/// a `PerformObserver` before delegating to the real `Performer`.
+///
+/// Uses the same `ProcessorState` and `Handler` — no dispatch duplication.
+pub(super) struct ObservedPerformer<
+    'a,
+    H: Handler,
+    T: Timeout,
+    O: super::observer::PerformObserver,
+> {
+    pub(super) state: &'a mut ProcessorState<T>,
+    pub(super) handler: &'a mut H,
+    pub(super) observer: &'a mut O,
+    pub(super) terminated: bool,
+}
+
+impl<'a, H: Handler + 'a, T: Timeout, O: super::observer::PerformObserver>
+    ObservedPerformer<'a, H, T, O>
+{
+    #[inline]
+    pub fn new<'b>(
+        state: &'b mut ProcessorState<T>,
+        handler: &'b mut H,
+        observer: &'b mut O,
+    ) -> ObservedPerformer<'b, H, T, O> {
+        ObservedPerformer { state, handler, observer, terminated: false }
+    }
 }

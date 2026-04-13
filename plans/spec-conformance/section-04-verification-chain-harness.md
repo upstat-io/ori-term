@@ -49,7 +49,7 @@ third_party_review:
 sections:
   - id: "04.1"
     title: "Design SpecHarness API + per-rung observers"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "Implement parser/dispatch/state observers"
     status: not-started
@@ -127,7 +127,7 @@ This coupling is the reason the `depends_on` frontmatter lists only `03` for the
 
 The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>`, accepts a sequence (bytes or `.teseq` scenario), feeds it through every applicable rung, and exposes per-rung observation methods. Const-constructible scenario definitions following the tack ScenarioSpec pattern.
 
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/mod.rs` as the dispatch hub:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/mod.rs` as the dispatch hub:
   ```rust
   //! Verification chain harness for spec conformance tests.
   //!
@@ -154,7 +154,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
   #[cfg(test)]
   mod tests;
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/api.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/api.rs`:
 
   **CRITICAL ARCHITECTURAL DECISION — parser/dispatch rung capture mechanism:**
 
@@ -297,7 +297,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
       pub fn observe_golden_image_rung(&self, expected: &GoldenExpectation) -> RungResult { ... }
   }
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/scenario.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/scenario.rs`:
   ```rust
   use super::*;
 
@@ -348,7 +348,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
       GpuInstance, TextureRender, GoldenImage,
   }
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/recording_handler.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/recording_handler.rs`:
   ```rust
   //! Recording handler wrapper for parser/dispatch observation.
   //!
@@ -402,13 +402,13 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
   // impl Handler for RecordingHandler<S> — records each call, delegates to self.term.
   // Each method: self.calls.push(DispatchCall { method: "goto", args: ... }); self.term.goto(line, col);
   ```
-- [ ] Sibling tests in `crates/oriterm_test_support/src/spec_chain/tests.rs`:
+- [x] Sibling tests in `crates/oriterm_test_support/src/spec_chain/tests.rs`:
   - `harness_constructs()`
   - `feed_advances_parser_and_captures_effects()`
   - `feed_records_dispatch_calls()` — feed `\x1b[5;10H` and assert `dispatched_calls` contains a `goto` entry
   - `run_scenario_stops_at_first_failed_rung()`
   - `apex_layer_determines_applicable_rungs()`
-- [ ] **Validation**: `cargo test -p oriterm_test_support --lib spec_chain::tests` passes; harness constructs without panic.
+- [x] **Validation**: `cargo test -p oriterm_test_support --lib spec_chain::tests` passes; harness constructs without panic.
 
 ### Canonical `SpecScenario` recipe (for test authors writing new rows)
 
