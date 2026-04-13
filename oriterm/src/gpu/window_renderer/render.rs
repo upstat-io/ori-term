@@ -40,7 +40,7 @@ impl WindowRenderer {
         target_width: u32,
         target_height: u32,
         content_changed: bool,
-    ) {
+    ) -> crate::gpu::render_target::RenderTarget {
         let device = &gpu.device;
         let queue = &gpu.queue;
         let vp = self.prepared.viewport;
@@ -126,6 +126,7 @@ impl WindowRenderer {
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+        output
     }
 
     /// Upload the stored prepared frame to the GPU and execute draw calls.

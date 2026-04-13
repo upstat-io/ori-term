@@ -412,10 +412,29 @@ impl GpuInstanceExpectation {
     }
 }
 
-/// Texture render rung expectation (stub — expanded in 04.4).
+/// Texture render rung expectation.
+///
+/// Validates properties of the pixel buffer produced by `render_frame_cached()`.
+/// All fields are optional — `None` means "don't check this property."
 #[derive(Copy, Clone, Debug, Default)]
-pub struct TextureExpectation;
+pub struct TextureExpectation {
+    /// Minimum number of non-zero pixels expected in the RGBA buffer.
+    /// Catches blank renders where the content pass produced nothing.
+    pub min_non_zero_pixels: Option<usize>,
+    /// Expected pixel buffer dimensions. If set, both must match.
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
 
-/// Golden image rung expectation (stub — expanded in 04.4).
+/// Golden image rung expectation.
+///
+/// Compares the rendered pixel buffer against a committed reference PNG
+/// via `compare_with_reference_strict()`. The `golden_name` field is the
+/// base name for the reference file (e.g., `"sixel_minimal"` resolves to
+/// `oriterm/tests/references/sixel_minimal.png`).
 #[derive(Copy, Clone, Debug, Default)]
-pub struct GoldenExpectation;
+pub struct GoldenExpectation {
+    /// Base name for the reference PNG (passed to `compare_with_reference_strict`).
+    /// When `None`, the scenario's `catalog_row_id` is used as the name.
+    pub golden_name: Option<&'static str>,
+}

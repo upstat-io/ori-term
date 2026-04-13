@@ -126,10 +126,6 @@ pub(super) fn compare_with_reference(
 /// Failure diagnostics include per-channel max difference, total mismatch
 /// count, mismatch percentage, and saves `_actual.png` + `_diff.png` for
 /// visual inspection.
-#[allow(
-    dead_code,
-    reason = "consumed by 04.4 golden observer + 05.6 validation tests"
-)]
 pub(crate) fn compare_with_reference_strict(
     name: &str,
     pixels: &[u8],
@@ -296,10 +292,6 @@ pub(super) fn pixel_diff(
 }
 
 /// Per-channel diff statistics for strict golden comparison.
-#[allow(
-    dead_code,
-    reason = "consumed by 04.4 golden observer + 05.6 validation tests"
-)]
 pub(crate) struct PixelDiffStats {
     /// Number of pixels that exceed the tolerance in any channel.
     pub mismatch_count: usize,

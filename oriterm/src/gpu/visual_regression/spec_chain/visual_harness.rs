@@ -22,6 +22,14 @@ use crate::gpu::window_renderer::WindowRenderer;
 
 use super::observers;
 
+/// Pixel data from the most recent `render_frame_cached()` call,
+/// carried between the TextureRender and GoldenImage rungs.
+struct RenderedPixelData {
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
 /// Visual verification chain harness (rungs 1-8).
 ///
 /// Wraps `SpecHarness` (headless, rungs 1-4) and adds GPU observation
@@ -35,6 +43,8 @@ pub struct VisualSpecHarness {
     pipelines: GpuPipelines,
     renderer: WindowRenderer,
     config: GoldenLaneConfig,
+    /// Pixel data from the TextureRender rung, consumed by GoldenImage.
+    last_rendered: Option<RenderedPixelData>,
 }
 
 /// Standard golden-test palette foreground.
@@ -86,6 +96,7 @@ impl VisualSpecHarness {
             pipelines,
             renderer,
             config,
+            last_rendered: None,
         })
     }
 
@@ -97,6 +108,7 @@ impl VisualSpecHarness {
     /// Section 04.4 (texture-render + golden-image, after Section 05).
     pub fn run_visual_scenario(&mut self, scenario: &SpecScenario) -> Vec<RungResult> {
         self.core.prepare_scenario(scenario);
+        self.last_rendered = None;
 
         let mut results = Vec::new();
         let mut frame_input: Option<FrameInput> = None;
@@ -124,13 +136,60 @@ impl VisualSpecHarness {
                         None => RungResult::pass(rung),
                     }
                 }
-                // Rungs 7-8: observers not yet implemented (section 04.4,
-                // after Section 05's deterministic golden lane is in place).
-                // Return fail to prevent false-green results.
-                RungName::TextureRender | RungName::GoldenImage => RungResult::fail(
-                    rung,
-                    "observer not yet implemented (section 04.4 — requires Section 05)",
-                ),
+                RungName::TextureRender => {
+                    let _input = frame_input
+                        .as_ref()
+                        .expect("TextureRender rung requires FrameInput rung to have run first");
+                    // Render via the production cached path.
+                    let vp = self.renderer.prepared.viewport;
+                    let output = self.renderer.render_frame_cached(
+                        &self.gpu,
+                        &self.pipelines,
+                        vp.width,
+                        vp.height,
+                        true,
+                    );
+                    let pixels = self
+                        .gpu
+                        .read_render_target(&output)
+                        .expect("pixel readback should succeed");
+                    // Stash pixels for the GoldenImage rung, then borrow.
+                    self.last_rendered = Some(RenderedPixelData {
+                        pixels,
+                        width: vp.width,
+                        height: vp.height,
+                    });
+                    let data = self.last_rendered.as_ref().unwrap();
+                    let rendered = observers::RenderedPixels {
+                        pixels: &data.pixels,
+                        width: data.width,
+                        height: data.height,
+                    };
+                    match &scenario.expectations.texture {
+                        Some(e) => observers::observe_texture_render(&rendered, e),
+                        None => RungResult::pass(rung),
+                    }
+                }
+                RungName::GoldenImage => {
+                    let data = self
+                        .last_rendered
+                        .as_ref()
+                        .expect("GoldenImage rung requires TextureRender rung to have run first");
+                    let rendered = observers::RenderedPixels {
+                        pixels: &data.pixels,
+                        width: data.width,
+                        height: data.height,
+                    };
+                    match &scenario.expectations.golden {
+                        Some(e) => observers::observe_golden_image(
+                            &rendered,
+                            scenario.catalog_row_id,
+                            e,
+                            self.config(),
+                        ),
+                        None => RungResult::pass(rung),
+                    }
+                }
                 // Rungs 1-4: delegate to core observers.
                 _ => self.core.observe_rung(rung, &scenario.expectations),
             };
@@ -213,7 +272,6 @@ impl VisualSpecHarness {
     }
 
     /// Borrow the golden lane config.
-    #[allow(dead_code, reason = "consumed by 04.4 golden observer")]
     pub fn config(&self) -> &GoldenLaneConfig {
         &self.config
     }
