@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "Image Lifecycle Correctness"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Add the missing resize handler, reflow-aware placement remapping, and cell-metric plumbing so image placements survive every grid transformation correctly: scrollback eviction, grid resize, column reflow, alt-screen toggle, ED/EL erase, and font-size/DPI changes."
 success_criteria:
@@ -24,8 +24,8 @@ inspired_by:
   - "WezTerm — attaches images to cells (cell-based model); reflows through screen rewrap. ori_term uses cache-coordinate model instead, requiring explicit remapping"
 depends_on: ["04"]
 third_party_review:
-  status: none
-  updated: null
+  status: resolved
+  updated: 2026-04-13
 sections:
   - id: "07.1"
     title: "Research reference impls and extract lifecycle submodule"
@@ -47,7 +47,7 @@ sections:
     status: not-started
   - id: "07.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "07.N"
     title: "Completion Checklist"
     status: not-started
@@ -55,7 +55,7 @@ sections:
 
 # Section 07: Image Lifecycle Correctness
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Make image placements survive every grid transformation correctly. This requires three pieces of work: (1) a resize handler that removes column-out-of-bounds placements, (2) a reflow-aware remapping system that keeps placements attached to their content rows when `Grid::resize` rewrites row topology, and (3) cell-metric plumbing so `FixedPixels` placement coverage is updated when font size or DPI changes at runtime.
 
 **The three problems solved by this section:**
