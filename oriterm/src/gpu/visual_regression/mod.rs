@@ -24,10 +24,6 @@ mod dialog_helpers;
 mod edge_case_tests;
 mod frame_input_helper;
 mod golden_lane_config;
-#[allow(
-    unused_imports,
-    reason = "used once 05.3 wires the deterministic entry point"
-)]
 pub(crate) use golden_lane_config::GoldenLaneConfig;
 mod main_window;
 mod meta_tests;
@@ -51,7 +47,7 @@ use image::{ImageBuffer, Rgba, RgbaImage};
 
 use super::frame_input::FrameInput;
 use super::pipelines::GpuPipelines;
-use super::state::GpuState;
+use super::state::{AdapterPreference, GpuState};
 use super::window_renderer::WindowRenderer;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
@@ -116,6 +112,63 @@ pub(super) fn headless_env_with_hinting(
         TEST_FONT_WEIGHT,
         550,
         hinting,
+    )
+    .ok()?;
+    let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    Some((gpu, pipelines, renderer))
+}
+
+/// Create a headless rendering environment pinned to a software rasterizer
+/// for deterministic golden image comparison.
+///
+/// This is the canonical entry point for spec-conformance golden tests.
+/// Uses `force_fallback_adapter: true` (primary) to select a software
+/// rasterizer (llvmpipe/WARP/swiftshader), reads font parameters from
+/// `config`, and derives cell metrics from `FontCollection::cell_metrics()`
+/// (the SSOT — no independent cell metric storage).
+///
+/// Returns `None` if no software rasterizer is available on the current
+/// platform. Tests should use the graceful skip protocol:
+///
+/// ```text
+/// let Some((gpu, pipelines, renderer)) =
+///     headless_env_with_pinned_software_rasterizer(&GoldenLaneConfig::SPEC_DEFAULT)
+/// else {
+///     eprintln!("SKIP: software rasterizer unavailable");
+///     return;
+/// };
+/// ```
+///
+/// **Legacy entry points** (`headless_env`, `headless_env_with_config`,
+/// `headless_env_full`, `headless_env_with_hinting`) remain for the existing
+/// visual regression test suite. New spec-conformance goldens MUST use this
+/// function instead.
+#[allow(
+    dead_code,
+    reason = "consumed by 05.4 VisualSpecHarness + 05.6 validation tests"
+)]
+pub(crate) fn headless_env_with_pinned_software_rasterizer(
+    config: &GoldenLaneConfig,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    let gpu = GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer).ok()?;
+
+    let info = gpu.adapter_info();
+    log::info!(
+        "deterministic lane: adapter={}, backend={:?}, device_type={:?}",
+        info.name,
+        info.backend,
+        info.device_type,
+    );
+
+    let pipelines = GpuPipelines::new(&gpu);
+    let font_collection = FontCollection::new(
+        FontSet::embedded(),
+        config.font_size_pt,
+        config.dpi,
+        config.glyph_format,
+        TEST_FONT_WEIGHT,
+        550,
+        config.hinting_mode,
     )
     .ok()?;
     let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);

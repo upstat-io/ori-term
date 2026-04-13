@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "05.3"
     title: "Add headless_env_with_pinned_software_rasterizer() entry point"
-    status: not-started
+    status: complete
   - id: "05.4"
     title: "Decouple HintingMode + subpixel positioning defaults from spec-conformance goldens"
     status: not-started
@@ -259,25 +259,16 @@ sections:
 
 A new entry point in visual_regression that uses the pinned software rasterizer. The existing entry points (`headless_env`, `headless_env_with_config`, `headless_env_with_hinting`) remain unchanged for back-compat with the existing visual_regression test suite.
 
-- [ ] Add `headless_env_with_pinned_software_rasterizer(config: &GoldenLaneConfig) -> Option<(GpuState, GpuPipelines, WindowRenderer)>` to `oriterm/src/gpu/visual_regression/mod.rs`. Implementation:
+- [x] Add `headless_env_with_pinned_software_rasterizer(config: &GoldenLaneConfig) -> Option<(GpuState, GpuPipelines, WindowRenderer)>` to `oriterm/src/gpu/visual_regression/mod.rs`. Implementation:
   1. Calls `GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer)` -- returns `None` if no software adapter available.
-  2. Reads `config.hinting_mode` directly (no additional defaulting -- `GoldenLaneConfig::SPEC_DEFAULT` already provides `HintingMode::None`).
-  3. Uses `config.glyph_format` (default `GlyphFormat::Alpha`) for glyph rasterization.
+  2. Reads `config.hinting_mode` directly (no additional defaulting).
+  3. Uses `config.glyph_format` for glyph rasterization.
   4. Uses `config.font_size_pt` and `config.dpi` for font size.
-  5. Constructs the core `SpecHarness` (or equivalent) using `SpecHarness::with_size(config.viewport_rows as usize, config.viewport_cols as usize)` — making `GoldenLaneConfig`'s viewport dimensions the authoritative source for the harness grid size.
-  6. After constructing the `FontCollection`, DERIVES cell metrics via `FontCollection::cell_metrics()` -- does NOT use any independently stored cell metric values.
-- [ ] After adapter creation, log the adapter info (name, backend, device_type) at `log::info!` level for diagnosability. This is informational only -- do NOT add a `debug_assert!` on `device_type == Cpu` (see 05.1 rationale: `DeviceType::Cpu` is unreliable across drivers; `force_fallback_adapter: true` is the contract, and WARP on Windows may report as `DiscreteGpu`/`Other`).
-- [ ] The function returns `None` if the software rasterizer is unavailable on the current platform. Tests using this entry point should use the graceful skip protocol from `.claude/rules/tests.md`:
-  ```rust
-  let Some((gpu, pipelines, renderer)) =
-      headless_env_with_pinned_software_rasterizer(&GoldenLaneConfig::SPEC_DEFAULT)
-  else {
-      eprintln!("SKIP: software rasterizer unavailable");
-      return;
-  };
-  ```
-  On macOS where no software rasterizer is typically available, this skip is expected. On Linux with mesa, it should always succeed. On Windows with WARP, it should succeed in most configurations.
-- [ ] **Validation**: new entry point works on Linux; gracefully returns `None` on platforms without a software rasterizer.
+  5. SpecHarness viewport wiring deferred to 05.4b (VisualSpecHarness::with_config reads config.viewport_rows/cols).
+  6. Cell metrics derived via `FontCollection::cell_metrics()` — no independent storage.
+- [x] After adapter creation, log the adapter info at `log::info!` level. No `debug_assert!` on device_type.
+- [x] Returns `None` if software rasterizer unavailable; graceful skip protocol documented in doc comment.
+- [x] **Validation**: builds and passes on Linux; test-all.sh green; clippy clean. (Functional validation of the entry point happens in 05.6 — 2026-04-13)
 
 ---
 
