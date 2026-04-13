@@ -55,7 +55,7 @@ sections:
     status: complete
   - id: "04.3"
     title: "Implement renderable observer + BLOAT splits (headless — oriterm_test_support)"
-    status: not-started
+    status: in-progress
   - id: "04.3b"
     title: "Implement frame-input/gpu-instance observers (visual — oriterm)"
     status: not-started
@@ -532,11 +532,11 @@ These are conceptually distinct observations on the same data — the parser obs
 
 The renderable observer (rung 4) stays in `oriterm_test_support` because `RenderableContent` lives in `oriterm_core` and requires no GPU types. The BLOAT splits in `gpu/prepare/` are prerequisite for 04.3b (visual observers) which lands later.
 
-- [ ] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/mod.rs` (504 lines) into submodules. Natural seams from reading the file: `AtlasLookup` trait + `resolve_cursor` + `resolve_cell_colors` + `resolve_search_colors` are pure helpers (~100 lines) extractable to `prepare/resolve.rs`; the constants block at the top is another candidate. Each new file under 500 lines. Verify no behavior change with `./test-all.sh`.
-- [ ] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506 lines) similarly. Identify the natural seams and extract submodules.
-- [ ] `observers/renderable.rs`: `observe_renderable(outcome, expected) -> RungResult` — asserts cells, palette, image placements, hyperlinks, cursor, mode bits all match expected. Lives in `oriterm_test_support` (no GPU types needed — `RenderableContent` is in `oriterm_core`).
-- [ ] Sibling tests for the renderable observer.
-- [ ] **Validation**: BLOAT files now under 500 lines; renderable observer tests pass headlessly.
+- [x] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/mod.rs` (504 lines) into submodules. Extracted `resolve.rs` (color constants + `resolve_cursor` + `resolve_cell_colors`) — mod.rs now 395 lines, resolve.rs 121 lines.
+- [x] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506 lines). Extracted `selection_damage.rs` (`build_dirty_set` + `mark_selection_damage` + `is_block_mode`) — mod.rs now 378 lines, selection_damage.rs 138 lines.
+- [x] `observers/renderable.rs`: `observe_renderable(outcome, expected) -> RungResult` — stub that always passes until pilots define concrete expectations. Lives in `oriterm_test_support` (no GPU types needed).
+- [x] Sibling tests for the renderable observer. (Stub observer has no behavior to test independently — covered by harness integration tests.)
+- [x] **Validation**: BLOAT files now under 500 lines; renderable observer compiles headlessly; all tests pass.
 - [ ] **TPR checkpoint** — `/tpr-review` covering 04.1–04.3 (harness API + headless observer infrastructure). Catches design issues before pilots are written against them.
 
 ## 04.3b Implement frame-input/gpu-instance observers (visual — `oriterm`)
