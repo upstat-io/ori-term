@@ -7,7 +7,7 @@ goal: "Drive every catalog row in `catalog/dec-private-modes.md` and `catalog/mo
 success_criteria:
   - "Every row in `catalog/dec-private-modes.md` not covered by section 08's baseline subset is `verified` via spec_chain tests"
   - "Every row in `catalog/mode-2026.md` is `verified`, including the Begin/Commit/Abort apex tests that depend on section 06's timeout-abort wiring"
-  - "Mode 2026 timeout-abort path tested end-to-end via spec_chain harness — feeds BSU + writes + advance virtual clock past timeout, asserts `PresentationEffect::Abort { reason: SyncAbortReason::Timeout }` effect emitted and snapshot_seqno advances by exactly 1"
+  - "Mode 2026 timeout-abort path tested end-to-end via spec_chain harness — feeds BSU + writes, waits >150ms (real wall-clock via StdSyncHandler), asserts `PresentationEffect::Abort { reason: SyncAbortReason::Timeout }` effect emitted and snapshot_seqno advances by exactly 1"
   - "Mode 2031 (color scheme update notification) is `verified` — terminal emits the notification when the user/host changes color scheme"
   - "All existing teseq mode tests pass without modification"
   - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release"
@@ -78,7 +78,7 @@ The Mode 2026 verification chain has three apex tests: publication suppression d
 
 - [ ] `mode_2026_suppression_test`: feed BSU + writes, snapshot_seqno does not advance, observed snapshot reflects pre-BSU state
 - [ ] `mode_2026_commit_test`: feed BSU + writes + ESU, snapshot_seqno advances by exactly 1, observed snapshot reflects all writes atomically, `Effect::Presentation(PresentationEffect::Begin)` and `Effect::Presentation(PresentationEffect::Commit { snapshot_seqno: N+1 })` both observed in transcript
-- [ ] `mode_2026_timeout_abort_test`: feed BSU + writes, advance virtual clock past timeout, `Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout })` observed, snapshot_seqno advances by exactly 1, observed snapshot reflects all buffered writes
+- [ ] `mode_2026_timeout_abort_test`: feed BSU + writes, wait >150ms (real wall-clock via StdSyncHandler timeout), `Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout })` observed, snapshot_seqno advances by exactly 1, observed snapshot reflects all buffered writes
 - [ ] `mode_2026_nested_bsu_handled`: feed BSU + BSU + writes + ESU, only the outer ESU triggers commit (or document the actual behavior per spec)
 - [ ] Update `catalog/mode-2026.md` rows to `verified`.
 - [ ] **Validation**: all three apex tests pass; existing mode tests still pass.
@@ -92,7 +92,7 @@ The Mode 2026 verification chain has three apex tests: publication suppression d
 Mode 2031 is full implementation work, not just verification. Pass 1 did not explicitly confirm the mode flag exists, so this subsection assumes it must be added. The work has three parts: (1) parse/recognize mode 2031 in the DECSET/DECRST dispatch, (2) add a scheme-change hook that the host app calls when the user flips dark/light mode, (3) emit the notification PTY bytes when the hook fires AND mode 2031 is enabled.
 
 - [ ] Read kitty docs / contour-terminal spec for Mode 2031 semantics — the notification wire format is `CSI ? 997 ; 1 n` (dark) or `CSI ? 997 ; 2 n` (light)
-- [ ] Add mode 2031 to the mode metadata registry from section 06 (if not present)
+- [ ] Verify mode 2031 has a `NamedPrivateMode` variant and entries in `named_private_mode_flag()` and `apply_decset()`/`apply_decrst()` (section 06's sync-point structure)
 - [ ] Add `Term::on_color_scheme_change(scheme: ColorScheme)` method — called by the host (oriterm app shell) when the user or host platform reports a scheme change
 - [ ] When `on_color_scheme_change` fires AND mode 2031 is enabled, emit `Effect::Pty(PtyEffect::Write { bytes: scheme_notification_bytes, kind: PtyWriteKind::Other })`
 - [ ] Spec_chain tests:
