@@ -53,6 +53,13 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Reference rules: `.claude/rules/code-hygiene.md` §File Size.
   Note: Active work in `plans/spec-conformance/` Section 01 (Catalog Bootstrap) discovered and filed this bug while harvesting the Kitty APC `_G` dispatch arms (Section 01.11). Sections 12 (Sixel) and 13 (Kitty Graphics) will consume the fix.
 
+- [ ] `[BUG-08-9][medium]` **`Term::set_cell_dimensions` has no production caller — FixedPixels image placements never get updated cell coverage at runtime** — found by tpr-review.
+  Repro: Change font size at runtime with a sixel FixedPixels image on screen. The image's `cols`/`rows` coverage is never recalculated because `set_cell_dimensions` (at `image_config.rs:17`) is only called in tests. `PaneIoCommand` has no cell-dimension variant; `App::handle_dpi_change` and `sync_grid_layout` do not forward cell metrics to the IO-thread `Term`.
+  Detail: Cross-crate plumbing gap: `oriterm/src/app/` must detect cell-metric changes (font size, DPI), `oriterm_mux/` needs a new `PaneIoCommand` variant to transport `(cell_w, cell_h)`, and the IO thread handler must call `term.set_cell_dimensions(w, h)`. Without this, `ImageCache::update_cell_coverage` is dead code in production.
+  Subsystem: `oriterm_core/src/term/image_config.rs`, `oriterm_mux/src/pane/io_thread/`, `oriterm/src/app/`
+  Found: 2026-04-13 | Source: tpr-review | Reviewer: codex (TPR-07-001-codex during spec-conformance Section 07 review)
+  Note: Active work in `plans/spec-conformance/` Section 07 (Image Lifecycle Correctness) explicitly scopes this out; section 07 handles grid-dimension-only resizes where cell metrics are unchanged.
+
 - [x] `[BUG-08-3][low]` **vttest.rs exceeds 500-line file size limit (956 lines)** — found by tpr-review.
   Found: 2026-04-03 | Source: tpr-review
   Fixed: 2026-04-03 — Split into `tests/vttest/` directory with per-menu modules (main.rs, session.rs, pty_size.rs, menu1-8.rs). Largest file is 239 lines. All 29 tests pass. 207 snapshots regenerated under new module paths.
