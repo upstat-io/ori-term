@@ -21,6 +21,7 @@ mod compare;
 mod core_tests;
 mod cursor_opacity_tests;
 mod decoration_tests;
+mod deterministic_lane_cached_tests;
 mod deterministic_lane_tests;
 mod dialog_helpers;
 mod edge_case_tests;
@@ -173,7 +174,8 @@ pub(crate) fn headless_env_with_pinned_software_rasterizer(
         config.hinting_mode,
     )
     .ok()?;
-    let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    renderer.set_subpixel_positioning(config.subpixel_positioning);
     Some((gpu, pipelines, renderer))
 }
 

@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Verification Chain Harness + Pilots + Coverage Report"
-status: complete
+status: in-progress
 reviewed: true
 goal: "Build the SpecHarness API that drives a sequence through every applicable rung of the verification chain (parser → dispatch → state/effect → renderable → frame-input → gpu-instance → texture → golden), validate the API with one visual pilot (sixel) and one non-visual pilot (DA1), freeze the catalog row schema based on what the pilots needed, and deliver the spec-coverage-report binary."
 success_criteria:
