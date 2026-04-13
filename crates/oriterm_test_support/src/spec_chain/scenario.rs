@@ -418,8 +418,12 @@ impl GpuInstanceExpectation {
 /// All fields are optional — `None` means "don't check this property."
 #[derive(Copy, Clone, Debug, Default)]
 pub struct TextureExpectation {
-    /// Minimum number of non-zero pixels expected in the RGBA buffer.
-    /// Catches blank renders where the content pass produced nothing.
+    /// Minimum number of non-zero pixels (any RGBA channel != 0) in the
+    /// rendered buffer. This is a FLOOR GUARD, not a content detector —
+    /// with an opaque background (e.g. `PALETTE_BG = Rgb(1,1,1)`), every
+    /// background pixel is counted as non-zero. Use this to catch fully
+    /// uninitialized targets (all transparent black), not to prove content
+    /// was rendered. The golden image comparison is the content assertion.
     pub min_non_zero_pixels: Option<usize>,
     /// Expected pixel buffer dimensions. If set, both must match.
     pub width: Option<u32>,

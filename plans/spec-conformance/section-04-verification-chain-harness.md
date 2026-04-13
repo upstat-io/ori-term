@@ -45,7 +45,7 @@ blocked_by_until_05_lands:
   - "04.7 (catalog row schema freeze) — do NOT finalize until Section 05 has landed"
 third_party_review:
   status: resolved
-  updated: 2026-04-12
+  updated: 2026-04-13
 sections:
   - id: "04.1"
     title: "Design SpecHarness API + per-rung observers"
@@ -942,6 +942,19 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
   Resolved: Fixed on 2026-04-12. Added `Hook` (merged with `CsiDispatch` arm), `OscDispatch`, `ApcStart`/`ApcEnd` matching.
 - [x] `[TPR-04-004-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/scenario.rs:278` — Add public const constructors for stub expectation types.
   Resolved: Fixed on 2026-04-12. Changed stub types from `struct Foo { _private: () }` to unit structs `struct Foo;` with `#[derive(Default)]`. Fully const-constructible.
+
+- [x] `[TPR-04-001-codex-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:46` — Sixel pilot has all-None expectations for rungs 1-6.
+  Resolved: Fixed on 2026-04-13. Added `frame_input: Some(FrameInputExpectation::default_grid())` and set `min_non_zero_pixels: Some(1)`.
+- [x] `[TPR-04-002-codex-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/texture.rs:40` — `min_non_zero_pixels` counts background pixels.
+  Resolved: Fixed on 2026-04-13. Added doc comment on `TextureExpectation::min_non_zero_pixels` clarifying it's a floor guard, not a content detector. Golden comparison is the content assertion.
+- [x] `[TPR-04-003-codex-r4][low]` `plans/spec-conformance/catalog/README.md:83` — DRIFT in frozen schema vocabulary.
+  Resolved: Fixed on 2026-04-13. Aligned to SSOT: `state` → `state-snapshot`, `renderable` → `renderable-snapshot`, `parser:done` → `parser:pass`.
+- [x] `[TPR-04-001-gemini-r4][low]` `oriterm/src/gpu/visual_regression/deterministic_lane_tests.rs:271` — Test cleanup on panic.
+  Resolved: Fixed on 2026-04-13. Added RAII `Cleanup` guard with `Drop` impl that removes all 3 artifact paths.
+- [x] `[TPR-04-002-gemini-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/tests.rs:114` — Missing `wrong_height` negative test.
+  Resolved: Fixed on 2026-04-13. Added `texture_observer_fails_on_wrong_height` test (8th observer test).
+- [x] `[TPR-04-003-gemini-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:43` — Sixel pilot `min_non_zero_pixels: None`.
+  Resolved: Fixed on 2026-04-13. Same fix as [TPR-04-001-codex-r4] — set `min_non_zero_pixels: Some(1)` (agreement).
 
 ---
 

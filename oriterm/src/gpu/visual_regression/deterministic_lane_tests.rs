@@ -260,6 +260,21 @@ fn strict_comparison_saves_diff_artifacts_on_failure() {
     let actual_path = ref_dir.join(format!("{name}_actual.png"));
     let diff_path = ref_dir.join(format!("{name}_diff.png"));
 
+    // RAII cleanup guard — removes test artifacts even on assertion panic.
+    struct Cleanup {
+        paths: Vec<std::path::PathBuf>,
+    }
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            for p in &self.paths {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+    let _cleanup = Cleanup {
+        paths: vec![ref_path.clone(), actual_path.clone(), diff_path.clone()],
+    };
+
     // Save the reference.
     let _ = compare_with_reference_strict(name, &pixels, w, h, &config);
 
@@ -290,11 +305,7 @@ fn strict_comparison_saves_diff_artifacts_on_failure() {
         msg.contains("_diff.png"),
         "error message must reference _diff.png: {msg}"
     );
-
-    // Clean up.
-    let _ = std::fs::remove_file(&ref_path);
-    let _ = std::fs::remove_file(&actual_path);
-    let _ = std::fs::remove_file(&diff_path);
+    // _cleanup Drop handles removal on both success and panic paths.
 }
 
 // ── Back-compat validation ────────────────────────────────────────

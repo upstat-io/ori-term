@@ -8,7 +8,8 @@
 //! This pilot establishes the harness MVP for visual sequences.
 
 use oriterm_test_support::spec_chain::{
-    ApexLayer, GoldenExpectation, RungName, ScenarioExpectations, SpecScenario, TextureExpectation,
+    ApexLayer, FrameInputExpectation, GoldenExpectation, RungName, ScenarioExpectations,
+    SpecScenario, TextureExpectation,
 };
 
 use super::super::visual_harness::VisualSpecHarness;
@@ -44,10 +45,17 @@ fn sixel_minimal_drives_every_rung_green() {
         apex_layer: ApexLayer::GoldenImage,
         setup: b"",
         expectations: ScenarioExpectations {
-            // Minimal expectations — pilot proves the chain works, not
-            // exhaustive per-rung validation. Golden comparison is the apex.
+            // Per-rung expectations strengthen the semantic pin beyond
+            // the golden apex — a regression in any rung is caught before
+            // the golden comparison runs.
+            frame_input: Some(FrameInputExpectation::default_grid()),
             texture: Some(TextureExpectation {
-                min_non_zero_pixels: None,
+                // Floor guard: catches uninitialized render targets (all
+                // zeros). Note: with PALETTE_BG = Rgb(1,1,1), background
+                // pixels ARE non-zero — this guards against a completely
+                // blank (transparent) target, not against missing content.
+                // The golden comparison is the content assertion.
+                min_non_zero_pixels: Some(1),
                 width: None,
                 height: None,
             }),
