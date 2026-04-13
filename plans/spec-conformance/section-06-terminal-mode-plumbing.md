@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Terminal Mode Plumbing (Mode 2026 timeout-abort + mode metadata consolidation)"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Wire the Mode 2026 timeout-abort path that currently has zero call sites in ori_term, and consolidate DEC mode metadata to eliminate the multi-sync-point LEAK across NamedPrivateMode consumers."
 success_criteria:
@@ -47,12 +47,12 @@ sections:
     status: complete
   - id: "06.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 06: Terminal Mode Plumbing
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Fix the Mode 2026 timeout-abort path (completely unwired — app crashes mid-sync hang the terminal forever) and consolidate DEC mode metadata by eliminating redundant sync points. Per two independent third-party reviews (Codex + Gemini), the original plan had critical architectural errors: the `select!` loop blocks indefinitely during sync, duplicated timeout state was proposed, the registry was placed in the wrong crate, and several factual inaccuracies existed.
 
 **Success Criteria:**
@@ -320,10 +320,10 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
 - [x] Alloc regression unchanged (5 passed, 0 failed)
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
 - [x] Plan annotation cleanup (0 annotations found — clean)
-- [ ] Section frontmatter `status` -> `complete` (pending TPR + hygiene reviews)
+- [x] Section frontmatter `status` -> `complete`
 - [x] `00-overview.md` Quick Reference + mission criteria updated (Mode 2026 timeout wired)
 - [x] `index.md` section 06 status updated
 - [x] `/tpr-review` passed (3 iterations: 2 findings → 1 finding → clean)
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [x] `/impl-hygiene-review` passed — 1 DRIFT finding (stale module doc), fixed inline
 
 **Exit Criteria:** Mode 2026 timeout-abort wired via deadline-aware select! using the processor's existing timeout state (no duplication); Abort effect emitted and observable (docstring corrected, LegacyEventSink no longer drops it); post-parse housekeeping shared between normal and timeout paths; `named_private_mode_number()` eliminated (WASTE); remaining sync points enforced via compile-time exhaustive matches; test matrix covers timeout, resize-during-sync, alt-screen-during-sync, double-publish, nested-BSU, and negative pin.
