@@ -56,3 +56,6 @@ pub fn observe_gpu_instance(
 
     RungResult::pass(RungName::GpuInstance)
 }
+
+#[cfg(test)]
+mod tests;

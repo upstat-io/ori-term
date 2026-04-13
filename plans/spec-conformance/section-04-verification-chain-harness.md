@@ -965,6 +965,13 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `[TPR-04-001-codex-r7][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/gpu_instance.rs:47` — No direct unit tests for min_image_quads positive/negative paths.
   Resolved: Fixed on 2026-04-13. Added 4 unit tests: passes_when_below_present, passes_when_above_present, fails_when_empty (negative pin), counts_both_layers (split-count case).
 
+- [x] `[TPR-04-001-gemini-r8][high]` `observers/tests.rs` — Combined test file violates one-tests.rs-per-source-file rule.
+  Resolved: Fixed on 2026-04-13. Converted gpu_instance.rs, texture.rs, golden.rs to directory modules with dedicated sibling tests.rs files. Removed combined observers/tests.rs.
+- [x] `[TPR-04-002-gemini-r8][medium]` `observers/tests.rs` — Missing regression doc comments on image quad tests.
+  Resolved: Fixed on 2026-04-13. Added `/// Regression: [TPR-04-001-codex-r7]` provenance on all 4 GPU instance image quad tests.
+- [x] `[TPR-04-003-gemini-r8][low]` `observers/tests.rs` — Test naming format `subject_expected_scenario` vs convention `subject_scenario_expected`.
+  Resolved: Fixed on 2026-04-13. Renamed to `subject_scenario_expected` shape (e.g. `image_quads_below_present_passes`).
+
 ---
 
 ## 04.N Completion Checklist
