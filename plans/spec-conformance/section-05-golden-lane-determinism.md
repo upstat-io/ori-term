@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "05.6"
     title: "Validate deterministic lane end-to-end with reproducibility proof"
-    status: not-started
+    status: in-progress
   - id: "05.R"
     title: "Third Party Review Findings"
     status: complete
@@ -340,7 +340,7 @@ Section 04's golden observer will use the tolerance from `GoldenLaneConfig`. The
 
 The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (NOT `oriterm_core/tests/spec_chain/pilots/` -- crate boundary: GPU visual pilots require `pub(super)` access to visual_regression helpers which are in the `oriterm` crate, not `oriterm_core`).
 
-- [ ] Add a deterministic lane smoke test to `oriterm/src/gpu/visual_regression/spec_chain/tests.rs` (or a new `oriterm/src/gpu/visual_regression/deterministic_lane_tests.rs`):
+- [x] Add deterministic lane smoke test in `oriterm/src/gpu/visual_regression/deterministic_lane_tests.rs` — `deterministic_lane_produces_identical_output_across_runs()` renders the same clear color twice and asserts byte-identical pixel output. Test sketch:
   ```rust
   /// Reproducibility proof: render the same known content twice via the
   /// deterministic lane and assert the pixel output is byte-identical.
@@ -361,9 +361,9 @@ The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/six
       assert_eq!(pixels_1, pixels_2, "deterministic lane must produce identical output");
   }
   ```
-- [ ] Add a deterministic lane reproducibility test using `render_frame_cached()` (the production cached render path) -- NOT just `render_to_pixels()` which calls `render_frame()`. Per `.claude/rules/tests.md` and `.claude/rules/oriterm.md`, `render_frame_cached()` is the production path and must be tested. Use `gpu.create_copy_dst_target()` for the destination texture. **CRITICAL:** `render_frame_cached()` and `create_copy_dst_target()` are gated behind `#[cfg(all(test, feature = "gpu-tests"))]`. This test MUST be placed in a `#[cfg(feature = "gpu-tests")]` module or file (e.g., `deterministic_lane_tests.rs` alongside `resize_stress.rs`, which already uses this pattern), NOT in the unconditional `spec_chain/tests.rs`.
-- [ ] Add a deterministic semantic pin for the subpixel positioning toggle: construct a `FrameInput` with fractional-pixel glyph offsets (e.g., advance width 7.5px for a narrow character). With `subpixel_positioning: true`, the glyph should be placed at the fractional offset; with `subpixel_positioning: false`, it should snap to the nearest integer pixel boundary. Assert that the pixel output differs at the sub-pixel boundary row/column. This is a deterministic test -- no "may need manual verification" fallback.
-- [ ] Add an adapter type validation test:
+- [ ] Add a deterministic lane reproducibility test using `render_frame_cached()`. **Deferred to 04.4** — `render_frame_cached()` needs a full FrameInput with terminal content which is set up by the visual pilots. The deterministic_lane_tests.rs file is already in place; the cached-path test will be added when 04.4's texture-render observer provides the infrastructure.
+- [ ] Add a deterministic semantic pin for the subpixel positioning toggle. **Deferred to 04.4/04.5** — requires full FrameInput with rendered glyphs to observe fractional positioning. The test infrastructure is in place; the semantic pin will be added when the visual pilot renders actual glyphs.
+- [x] Add adapter type validation test — `deterministic_lane_selects_software_adapter()` asserts adapter name contains known software rasterizer string. Test sketch in plan, implemented in `deterministic_lane_tests.rs`. Original sketch:
   ```rust
   /// Asserts the deterministic lane selects a software adapter.
   ///
@@ -399,7 +399,7 @@ The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/six
       }
   }
   ```
-- [ ] **Validation**: all tests pass on Linux with mesa/llvmpipe. Reproducibility test produces 0-pixel diff on back-to-back runs. Existing visual_regression tests still pass (they don't use the deterministic lane).
+- [x] **Validation**: 6 deterministic lane tests pass on Linux with llvmpipe (reproducibility proof, adapter type, 3 strict comparison tests, legacy back-compat). Full test suite green. (2026-04-13)
 
 ---
 
