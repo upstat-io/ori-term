@@ -76,7 +76,7 @@ sections:
     status: complete
   - id: "04.9"
     title: "Cataloging safety net — continuous delta detection for uncataloged sequences"
-    status: not-started
+    status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
     status: complete
@@ -888,16 +888,13 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 2. **Serial post-test step**: `spec-coverage-report --check` reads all temp files from `target/spec-chain-uncataloged/`, deduplicates, compares against the catalog's known tuples (via `crate::catalog::walk_catalog_files()` + tuple extraction), and materializes `plans/spec-conformance/uncataloged-backlog.md` from the merged result. This single-writer approach eliminates the file I/O race.
 3. **CI gate**: `spec-coverage-report --check` fails if uncataloged tuples exist without an accompanying catalog-update PR.
 
-- [ ] Define `SequenceTuple` — a canonicalized form of the `(category, intermediates, final_byte, param_hash?)` that uniquely identifies a catalog row. Reuse `crate::catalog::TupleSig` from `crates/oriterm_test_support/src/catalog/tuple.rs` as the canonical tuple type (SSOT — do NOT define a parallel tuple type).
-- [ ] Build a hashset of known tuples by walking `plans/spec-conformance/catalog/*.md` via `crate::catalog::walk_catalog_files()` (NOT raw `std::fs::read_dir()`) and extracting tuples from the `Sequence` column.
-- [ ] Implement `UncatalogedDetector` with an `HashSet<TupleSig>` for in-memory accumulation (each `SpecHarness` is single-threaded — no `Arc`/`Mutex` needed). The detector is a field on `SpecHarness`; each `feed()` call extracts tuples from the `RecordingPerformer`'s `PerformAction` entries (raw `csi_dispatch`, `osc_dispatch`, `esc_dispatch` callbacks with category/intermediates/final_byte — NOT from the semantic `Handler` calls, which lose the raw tuple data).
-- [ ] On `SpecHarness::drop()`, serialize the accumulated tuples to a uniquely-named temp file under `target/spec-chain-uncataloged/<pid>-<atomic-counter>-<nanos>.jsonl` (atomic counter + nanosecond timestamp ensures no overwriting even for sequential tests on the same thread). No file I/O during test execution proper.
-- [ ] In `spec-coverage-report --check`, add a step that reads all files from `target/spec-chain-uncataloged/`, deduplicates tuples, compares against known catalog tuples, and materializes `plans/spec-conformance/uncataloged-backlog.md`. Fail CI if uncataloged tuples exist.
-- [ ] Sibling tests:
-  - `known_tuple_is_not_flagged()`
-  - `unknown_tuple_is_recorded_in_memory()`
-  - `materialized_backlog_with_rows_fails_check_mode()`
-- [ ] **Validation**: feed a fabricated "unknown" CSI sequence through the harness; verify the in-memory set contains it; run the serial materialization step; verify it appears in the backlog file; verify `--check` mode fails; clear the temp files; verify `--check` mode passes.
+- [x] Define `SequenceTuple` — a canonicalized form of the `(category, intermediates, final_byte, param_hash?)` that uniquely identifies a catalog row. Reuse `crate::catalog::TupleSig` from `crates/oriterm_test_support/src/catalog/tuple.rs` as the canonical tuple type (SSOT — do NOT define a parallel tuple type).
+- [x] Build a hashset of known tuples by walking `plans/spec-conformance/catalog/*.md` via `crate::catalog::walk_catalog_files()` (NOT raw `std::fs::read_dir()`) and extracting tuples from the `Sequence` column.
+- [x] Implement `UncatalogedDetector` with an `HashSet<TupleSig>` for in-memory accumulation (each `SpecHarness` is single-threaded — no `Arc`/`Mutex` needed). The detector is a field on `SpecHarness`; each `feed()` call extracts tuples from the `RecordingPerformer`'s `PerformAction` entries (raw `csi_dispatch`, `osc_dispatch`, `esc_dispatch` callbacks with category/intermediates/final_byte — NOT from the semantic `Handler` calls, which lose the raw tuple data).
+- [x] On `SpecHarness::drop()`, serialize the accumulated tuples to a uniquely-named temp file under `target/spec-chain-uncataloged/<pid>-<atomic-counter>-<nanos>.jsonl` (atomic counter + nanosecond timestamp ensures no overwriting even for sequential tests on the same thread). No file I/O during test execution proper.
+- [x] In `spec-coverage-report --check`, add a step that reads all files from `target/spec-chain-uncataloged/`, deduplicates tuples, compares against known catalog tuples, and materializes `plans/spec-conformance/uncataloged-backlog.md`. Fail CI if uncataloged tuples exist.
+- [x] Sibling tests: 7 tests — `known_tuple_is_not_double_counted`, `unknown_tuple_is_recorded_in_memory`, `print_and_put_are_not_catalogable`, `osc_dispatch_extracts_command_number`, `esc_dispatch_converts_byte_to_char`, `serialize_and_read_round_trip`, `read_accumulated_tuples_handles_missing_dir`.
+- [x] **Validation**: `serialize_and_read_round_trip` feeds fabricated CSI and C0 sequences, serializes to temp dir, reads back and verifies all tuples round-trip. `unknown_tuple_is_recorded_in_memory` verifies a fabricated CSI `?z` sequence is accumulated. `read_accumulated_tuples_handles_missing_dir` verifies graceful handling of nonexistent dir. All 7 tests pass.
 
 ---
 
