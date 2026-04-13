@@ -67,7 +67,7 @@ sections:
     status: not-started
   - id: "04.6"
     title: "DA1 non-visual pilot — drive query through effect transcript apex"
-    status: in-progress
+    status: complete
   - id: "04.7"
     title: "Freeze catalog row schema + migrate section 01 catalog files"
     status: not-started
@@ -644,7 +644,7 @@ The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcrip
 
 - [x] Create `oriterm_core/tests/spec_chain/pilots/da1_query.rs`: Integration test with 3 tests — `da1_query_drives_to_effect_apex` (full scenario with parser + dispatch + effect rungs via `run_scenario`), `da1_reply_bytes_match_vt420_attributes` (verifies exact reply bytes `\x1b[?64;6;4c`), `da1_skips_parser_rung_when_no_expectation` (proves None expectations pass unconditionally). Note: CSI c default param is `[0]` per VTE parser convention.
 - [x] **Validation**: all 3 pilot tests pass; effect transcript correctly captures `PtyEffect::Write { kind: DeviceAttribute, bytes: ESC[?64;6;4c }`; PtyWriteKind discriminator observable via `EffectExpectation::pty("DeviceAttribute")`.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.5–04.6 (both pilots green). Validates the harness API works end-to-end before the schema freeze locks it in. (04.5 is Phase 1b — deferred until Section 05; TPR runs after 04.6 alone for now.)
+- [x] **TPR checkpoint** — `/tpr-review` covering 04.3b–04.9 (Phase 1a). 2 semantic iterations, 6 codex findings found and fixed: (1) UncatalogedDetector wired into harness lifecycle, (2) citation scanner false-positive fix, (3) catalog row ID mismatch fix, (4) TextureRender/GoldenImage stub observer rejection, (5) backlog gate subtracts catalog signatures, (6) repo-local spool directory. Gemini unavailable (API capacity) across both iterations — codex-only clean pass accepted. (2026-04-13)
 
 ---
 
