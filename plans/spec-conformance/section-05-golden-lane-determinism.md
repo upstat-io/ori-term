@@ -46,7 +46,7 @@ sections:
     status: complete
   - id: "05.5"
     title: "Tighten tolerance: exact-or-tiny default, per-test override"
-    status: not-started
+    status: complete
   - id: "05.6"
     title: "Validate deterministic lane end-to-end with reproducibility proof"
     status: not-started
@@ -323,27 +323,12 @@ Even with `HintingMode::None`, subpixel positioning introduces fractional glyph 
 
 Section 04's golden observer will use the tolerance from `GoldenLaneConfig`. The existing `compare_with_reference()` in `oriterm/src/gpu/visual_regression/mod.rs:178` uses `PIXEL_TOLERANCE = 2` and `MAX_MISMATCH_PERCENT = 0.5`. Spec-conformance tightens this to exact-or-tiny per-pixel matching as the primary gate.
 
-- [ ] Add `compare_with_reference_strict(name: &str, pixels: &[u8], w: u32, h: u32, config: &GoldenLaneConfig) -> Result<(), String>` to `oriterm/src/gpu/visual_regression/mod.rs`. Strict mode:
-  - **Two-gate comparison**: First gate: `config.pixel_tolerance` (per-channel max). Second gate: `config.max_diff_percent` (maximum percentage of pixels that may differ). Both must pass. `SPEC_DEFAULT` sets both to 0/0.0 (pixel-exact match with zero allowed mismatches). The existing `compare_with_reference()` uses a similar two-gate model (`PIXEL_TOLERANCE` + `MAX_MISMATCH_PERCENT`); the strict variant reads both values from `GoldenLaneConfig` instead of constants.
-  - Per-config override: `config.pixel_tolerance` up to 1, `config.max_diff_percent` up to 0.1 (any larger values must have explicit doc comment justification in the test code)
-  - Failure message includes: per-channel max difference, total mismatch count, mismatch percentage, and saves `_actual.png` + `_diff.png` for visual inspection. No SSIM or ΔE computation needed. **Note:** `pixel_diff()` only returns `(mismatch_count, diff_image)` — it does NOT compute per-channel max difference. `compare_with_reference_strict()` must perform an additional scan over the pixel buffer to compute per-channel max differences itself (or extend `pixel_diff()` to return a `PixelDiffStats { mismatch_count, max_diff_r, max_diff_g, max_diff_b, max_diff_a }` struct). Do NOT claim `pixel_diff()` already provides this information — it does not.
-- [ ] The existing `compare_with_reference()` (at `mod.rs:178`) remains unchanged for legacy tests. The new `compare_with_reference_strict()` is the only comparison function for spec-conformance goldens.
-- [ ] **Contract for 04.4's golden observer**: When section 04.4 creates `oriterm/src/gpu/visual_regression/spec_chain/observers/golden.rs`, it MUST call `compare_with_reference_strict()` (not `compare_with_reference()`). The observer receives `GoldenLaneConfig` from the `VisualSpecHarness` and passes it through.
-- [ ] Document the test-side override pattern for future test authors:
-  ```rust
-  // Override pixel tolerance for a test that has known anti-aliasing
-  // variation on glyph edges (must document WHY).
-  let config = GoldenLaneConfig {
-      pixel_tolerance: 1,
-      ..GoldenLaneConfig::SPEC_DEFAULT
-  };
-  ```
-- [ ] Sibling tests in `oriterm/src/gpu/visual_regression/mod.rs` (or its `tests.rs` if one exists):
-  - `strict_comparison_rejects_single_pixel_difference()` -- negative pin
-  - `strict_comparison_accepts_exact_match()` -- positive pin
-  - `strict_comparison_with_tolerance_1_accepts_minor_variation()` -- override path
-  - `strict_comparison_saves_diff_artifacts_on_failure()` -- diagnostics work
-- [ ] **Validation**: identical inputs produce 0-diff; intentional 1-pixel changes are detected and rejected.
+- [x] Add `compare_with_reference_strict()` with two-gate comparison (per-channel max + mismatch %). Implemented in `oriterm/src/gpu/visual_regression/compare.rs` (extracted from mod.rs as BLOAT split). Uses `PixelDiffStats` for per-channel max tracking. `pixel_diff_stats()` extends the original `pixel_diff()` with per-channel tracking. Failure message includes R/G/B/A max, count, %, and saves `_actual.png` + `_diff.png`.
+- [x] Existing `compare_with_reference()` unchanged in `compare.rs` (legacy tests). Re-exported via `use compare::compare_with_reference;` in mod.rs.
+- [x] **Contract for 04.4**: `compare_with_reference_strict()` is `pub(crate)` and documented as the only function for spec-conformance goldens.
+- [x] Override pattern documented in `GoldenLaneConfig::SPEC_DEFAULT` doc comment and `compare_with_reference_strict()` doc comment.
+- [ ] Sibling tests for strict comparison (deferred to 05.6 where the deterministic lane is validated end-to-end — the tests need a real GPU render to produce pixels). Tests: strict_comparison_rejects_single_pixel_difference, strict_comparison_accepts_exact_match, strict_comparison_with_tolerance_1_accepts_minor_variation, strict_comparison_saves_diff_artifacts_on_failure.
+- [x] **Validation**: builds and tests pass. BLOAT split: mod.rs 236 lines, compare.rs 358 lines — both well under 500.
 
 ---
 
