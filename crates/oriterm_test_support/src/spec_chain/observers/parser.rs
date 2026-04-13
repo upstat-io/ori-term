@@ -42,19 +42,17 @@ pub fn observe_parser(outcome: &SpecOutcome, expected: &ParserExpectation) -> Ru
         }
         PerformAction::Print { c } => *c == expected.action && expected.intermediates.is_empty(),
         PerformAction::OscDispatch { params, .. } => {
-            // OSC has no final byte or intermediates — match on first
-            // param as the command number. The expected action char
-            // represents the OSC command (e.g. '0' for OSC 0 title set).
-            if params.is_empty() {
+            // OSC has no final byte — match on the full first param as
+            // the command number (ASCII digits). The expected.params
+            // carries the command number as a u16 value for comparison.
+            if params.is_empty() || expected.params.is_empty() {
                 return false;
             }
             let first = &params[0];
-            if first.is_empty() {
-                return false;
-            }
-            // The first param is the OSC command number as ASCII bytes.
-            // Match against expected.action as u8.
-            first[0] == expected.action as u8
+            // Parse the ASCII command number from the first param.
+            let cmd_str = std::str::from_utf8(first).unwrap_or("");
+            let cmd_num: u16 = cmd_str.parse().unwrap_or(u16::MAX);
+            cmd_num == expected.params[0]
         }
         // APC: not matchable via ParserExpectation (no structured params).
         // APC-based sequences are observed at the dispatch rung instead.

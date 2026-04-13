@@ -231,6 +231,27 @@ impl ParserExpectation {
             intermediates: &[],
         }
     }
+
+    /// Convenience: OSC command with given numeric command number.
+    ///
+    /// The command number is stored in `params[0]` as a `u16`.
+    /// Example: `osc(&[52])` matches `OSC 52` (clipboard).
+    pub const fn osc(params: &'static [u16]) -> Self {
+        Self {
+            action: '\0', // OSC has no action byte
+            params,
+            intermediates: &[],
+        }
+    }
+
+    /// Convenience: DCS sequence with given action char and params.
+    pub const fn dcs(action: char, params: &'static [u16]) -> Self {
+        Self {
+            action,
+            params,
+            intermediates: &[],
+        }
+    }
 }
 
 /// Dispatch rung expectation: expected `Handler` method name.
