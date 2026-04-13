@@ -74,7 +74,7 @@ sections:
 - [x] Failure diagnostics: per-channel max difference, mismatch count/percentage, `_actual.png` + `_diff.png` artifacts (no SSIM/ΔE computation)
 - [x] Existing visual_regression tests still pass (back-compat preserved)
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [x] Connects to mission criterion: **Deterministic golden environment** (mission criterion checked in `00-overview.md` — 2026-04-13)
+- [ ] Connects to mission criterion: **Deterministic golden environment** (will check after Section 05 fully closes)
 
 **Context:** Pass 1 confirmed `oriterm/src/gpu/state/helpers.rs::pick_adapter` (called indirectly by `GpuState::new_headless` at `state/mod.rs:156` -> `try_init_headless` at `state/mod.rs:430`) enumerates adapters via `instance.enumerate_adapters(backends)` and picks the first discrete GPU (or any fallback). There is NO `PowerPreference` pin, NO `force_fallback_adapter`, and NO software-rasterizer preference -- headless selection is non-deterministic across machines. Pass 1 also confirmed `oriterm/src/gpu/visual_regression/mod.rs:92` defaults `headless_env_full()` to `HintingMode::Full`. Both produce variation across runs and machines: a CI runner on Mesa with llvmpipe will rasterize differently from a dev machine with NVIDIA, and `HintingMode::Full` interacts with subpixel positioning to produce slightly different glyph edges. Additionally, `subpixel_positioning: true` is hardcoded at `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs:176` and `oriterm/src/gpu/visual_regression/frame_input_helper.rs:89` -- even with grayscale alpha hinting, this introduces sub-pixel glyph offset variation.
 
@@ -431,6 +431,10 @@ The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/six
 - [x] **[TPR-05-003-codex][iter5][low]** Section 04 status inconsistent across index (`Not Started`) and overview (`Complete`) vs section file (`in-progress`). Fixed on 2026-04-13: synced both to `In Progress`.
 - [x] **[TPR-05-001-gemini][iter5][low]** Gate test module `mod` declaration with cfg attribute. Rejected: the existing `resize_stress.rs` uses the identical pattern (unconditional `mod` declaration + inner `#![cfg(all(test, feature = "gpu-tests"))]`). This IS the codebase convention. Clippy/build are clean.
 - [x] **[TPR-05-002-gemini][iter5][informational]** Extract opaque boolean to named variable in test code. Non-actionable (informational severity). Consistent with existing test patterns in `resize_stress.rs`.
+- [x] **[TPR-05-001-codex][iter6][medium]** Test claims to verify cache-reuse optimization but only asserts pixel equivalence. Fixed on 2026-04-13: renamed `cached_render_reuse_branch_matches_full_render` to `content_unchanged_path_produces_correct_output` with updated doc comment clarifying it verifies output correctness, not optimization activation.
+- [x] **[TPR-05-002-codex][iter6][low]** 05.N checklist `[x] Section frontmatter status -> complete` contradicts actual in-progress state. Fixed on 2026-04-13: unchecked the item with note it will flip after TPR + hygiene pass.
+- [x] **[TPR-05-001-gemini][iter6][low]** Decorative banners `// ── ... ───` in deterministic_lane_cached_tests.rs violate code-hygiene.md. Fixed on 2026-04-13: replaced with plain section comments.
+- [x] **[TPR-05-002-gemini][iter6][medium]** Mission criterion `[x] Deterministic golden environment` checked while Section 05 still in-progress. Fixed on 2026-04-13: unchecked mission criterion and section success criteria item until Section 05 fully closes.
 
 ---
 
@@ -456,7 +460,7 @@ The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/six
 - [x] Alloc regression unchanged (5/5 pass — verified 2026-04-13)
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release (verified 2026-04-13)
 - [x] Plan annotation cleanup (zero stale annotations — verified 2026-04-13)
-- [x] Section frontmatter `status` -> `complete`
+- [ ] Section frontmatter `status` -> `complete` (will flip after TPR + hygiene pass clean)
 - [x] `00-overview.md` Quick Reference + mission criteria updated (2026-04-13)
 - [x] `index.md` section 05 status updated (2026-04-13)
 - [ ] `/tpr-review` passed (final, full-section)

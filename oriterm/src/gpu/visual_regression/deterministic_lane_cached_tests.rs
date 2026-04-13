@@ -15,7 +15,7 @@ use crate::gpu::visual_regression::{
     GoldenLaneConfig, headless_env_with_pinned_software_rasterizer,
 };
 
-// ── Cached render reproducibility proof ──────────────────────────
+// Cached render reproducibility proof
 
 /// Render the same terminal content twice via the production cached render
 /// path (`render_frame_cached`) and assert byte-identical pixel output.
@@ -67,15 +67,21 @@ fn cached_render_produces_identical_output_across_runs() {
     );
 }
 
-/// Verify the cache-reuse branch (`content_changed=false`) produces
-/// byte-identical output to the full render branch.
+/// Verify the `content_changed=false` code path produces correct output.
 ///
 /// In production, steady-state frames (cursor blink, no content change)
-/// hit the `content_changed=false` path which skips content uploads and
-/// reuses the cached texture. This test ensures that path produces the
-/// same pixels as a full re-render.
+/// pass `content_changed=false` to both `prepare()` and
+/// `render_frame_cached()`. This test exercises that code path and
+/// asserts it produces the same pixels as `content_changed=true` for
+/// unchanged input — catching regressions where the false branch
+/// produces stale, blank, or corrupt output.
+///
+/// Note: this test verifies output CORRECTNESS of the false path, not
+/// that the cache-reuse optimization is active. A regression that
+/// silently re-renders on the false path would still pass (but would
+/// be caught by performance invariant tests, not this test).
 #[test]
-fn cached_render_reuse_branch_matches_full_render() {
+fn content_unchanged_path_produces_correct_output() {
     let config = GoldenLaneConfig::SPEC_DEFAULT;
     let Some((gpu, pipelines, mut renderer)) =
         headless_env_with_pinned_software_rasterizer(&config)
@@ -118,7 +124,7 @@ fn cached_render_reuse_branch_matches_full_render() {
     );
 }
 
-// ── Subpixel positioning toggle semantic pin ─────────────────────
+// Subpixel positioning toggle semantic pin
 
 /// Semantic pin: the deterministic lane correctly propagates
 /// `GoldenLaneConfig.subpixel_positioning` to the renderer AND the flag
