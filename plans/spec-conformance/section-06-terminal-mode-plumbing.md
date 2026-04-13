@@ -30,9 +30,6 @@ sections:
   - id: "06.1"
     title: "Make io_thread select! deadline-aware for sync timeout"
     status: not-started
-  - id: "06.1b"
-    title: "Replay RawInterceptor over sync buffer on timeout"
-    status: not-started
   - id: "06.2"
     title: "Extract post-parse housekeeping into shared method"
     status: not-started
@@ -63,7 +60,6 @@ sections:
 - [ ] No duplicated timeout state — queries processor's existing `StdSyncHandler::sync_timeout()` API
 - [ ] `PresentationEffect::Abort` effect emitted on timeout, observable in production (LegacyEventSink no longer drops it)
 - [ ] `Abort` docstring corrected: says "flush" not "discard" (matches `stop_sync` behavior)
-- [ ] RawInterceptor replayed over buffered bytes before VTE replay (shell integration: OSC 7, OSC 133, notifications)
 - [ ] Post-parse housekeeping shared between normal parse and timeout-abort replay
 - [ ] `named_private_mode_number()` eliminated — replaced by `mode as u16` cast
 - [ ] Test matrix covers: basic timeout, resize-during-sync, alt-screen-during-sync, double-publish prevention, nested BSU, max-buffer-overflow
@@ -108,7 +104,7 @@ The io thread's main loop at line 128 uses `crossbeam_channel::select!` which bl
 
 - [ ] **Read and understand** the current loop structure at `oriterm_mux/src/pane/io_thread/mod.rs:112-143`. The `select!` at line 128 blocks indefinitely. The sync timeout check must happen INSIDE this select as a deadline/timeout arm.
 - [ ] **Compute the sync deadline** at the top of step 4 (before the `select!`). Query `self.processor.sync_timeout().sync_timeout()` (returns `Option<Instant>` from `StdSyncHandler` at `crates/vte/src/ansi/processor.rs:287`). Convert to a `Duration` via `deadline.saturating_duration_since(Instant::now())`. If `None`, the select has no timeout (blocks indefinitely as before).
-- [ ] **Add a `default(duration)` arm** to the `select!` macro. When the timeout fires (both channels empty for `duration`): (1) capture `evicted_before` from the grid, (2) replay the raw interceptor over the buffered bytes (see 06.1b below), (3) call `self.processor.stop_sync(&mut self.terminal)` to replay the buffered bytes through VTE, (4) run `self.post_parse_housekeeping(evicted_before)` (from 06.2), (5) emit the Abort effect (06.3), (6) force a snapshot: `self.grid_dirty.store(true, Ordering::Release); self.maybe_produce_snapshot();` and `continue` the loop.
+- [ ] **Add a `default(duration)` arm** to the `select!` macro. When the timeout fires (both channels empty for `duration`): (1) capture `evicted_before` from the grid, (2) call `self.processor.stop_sync(&mut self.terminal)` to replay the buffered bytes through VTE, (3) run `self.post_parse_housekeeping(evicted_before)` (from 06.2), (4) emit the Abort effect (06.3), (5) force a snapshot: `self.grid_dirty.store(true, Ordering::Release); self.maybe_produce_snapshot();` and `continue` the loop. **Note**: NO RawInterceptor replay is needed — `handle_bytes()` already runs the raw interceptor on ALL incoming bytes BEFORE they enter the sync buffer (lines 228-232), so the shell-integration effects (OSC 7, OSC 133, notifications) have already been processed.
 - [ ] **Emit the Abort effect** after `stop_sync` (detailed in 06.3).
 - [ ] **Guard against double-publish**: After `stop_sync` replays the buffer, `sync_bytes_count()` should be 0 (unless a new BSU was nested in the buffer). The `maybe_produce_snapshot()` call after forcing `grid_dirty = true` is safe because `sync_bytes_count() == 0` (stop_sync clears it). If `sync_bytes_count() > 0` (nested BSU), `maybe_produce_snapshot()` correctly suppresses — no double-publish. Add a `debug_assert!` documenting this invariant.
 - [ ] **Do NOT add a `sync_deadline: Option<Instant>` field** to `PaneIoThread`. The deadline is already tracked inside the processor's `SyncState<StdSyncHandler>`. Adding a parallel tracker is duplicated state (LEAK finding from both reviewers).
@@ -127,8 +123,8 @@ match sync_deadline {
             default(timeout) => {
                 // Sync timeout fired — abort and flush.
                 let evicted_before = self.terminal.grid().total_evicted();
-                // Replay raw interceptor BEFORE VTE replay (matches handle_bytes order).
-                self.replay_raw_interceptor_over_sync_buffer();
+                // No raw interceptor replay needed — handle_bytes() already ran
+                // the raw interceptor on these bytes before they entered the buffer.
                 self.processor.stop_sync(&mut self.terminal);
                 self.post_parse_housekeeping(evicted_before);
                 self.emit_sync_abort_effect();
@@ -145,30 +141,6 @@ match sync_deadline {
     },
 }
 ```
-
----
-
-## 06.1b Replay RawInterceptor over sync buffer on timeout
-
-**File(s):** `oriterm_mux/src/pane/io_thread/mod.rs`
-
-`handle_bytes()` runs two distinct parsers in sequence (lines 228-235): first the `RawInterceptor` (via `self.raw_parser.advance(&mut interceptor, bytes)`) which handles OSC 7 (CWD), OSC 133 (semantic prompt markers A/B/C), OSC 9/99/777 (notifications), and XTVERSION. Then the high-level VTE `processor.advance()`. When `stop_sync()` replays buffered bytes, it only runs them through the VTE `Performer` — the raw interceptor is bypassed. This means shell-integration sequences (CWD updates, prompt markers, command timing) buffered inside a Mode 2026 sync window are silently lost on timeout.
-
-- [ ] **Expose the sync buffer for raw replay**: `Processor::stop_sync()` takes `&mut handler` and replays internally. To also run the raw interceptor, the timeout path needs access to the buffered bytes BEFORE `stop_sync` clears them. Options:
-  - (a) Read `self.processor.sync_bytes_count()` to detect a non-empty buffer, then access the buffer via a new `Processor::sync_buffer(&self) -> &[u8]` accessor. Run the raw interceptor over this slice, THEN call `stop_sync()`.
-  - (b) Factor the replay into a shared method that does both: raw interceptor + VTE replay.
-  Option (a) is simpler and doesn't require restructuring `stop_sync()`. The accessor is a one-line addition to the vendored VTE crate (returning `&self.state.sync_state.buffer`).
-- [ ] **Add `Processor::sync_buffer(&self) -> &[u8]`** to `crates/vte/src/ansi/processor.rs` — returns `&self.state.sync_state.buffer`. This is a read-only accessor on existing state, not a new feature.
-- [ ] **In the timeout path** (06.1 pseudocode), before `stop_sync()`:
-  ```rust
-  let sync_buf = self.processor.sync_buffer();
-  if !sync_buf.is_empty() {
-      let mut interceptor = RawInterceptor::new(&mut self.terminal);
-      self.raw_parser.advance(&mut interceptor, sync_buf);
-  }
-  ```
-- [ ] **Sibling test**: `timeout_replay_runs_raw_interceptor()` — feed BSU + OSC 7 CWD update inside the sync buffer, trigger timeout, assert the CWD was updated (proving the raw interceptor ran over the buffered bytes).
-- [ ] **Validation**: `grep` confirms `RawInterceptor` is used in both `handle_bytes()` and the timeout path.
 
 ---
 
@@ -275,9 +247,9 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
 - [ ] `resize_during_sync_timeout()` — Feed BSU + content. Send a `Resize` command via `cmd_rx`. Trigger timeout. Assert: (1) buffered bytes replay correctly, (2) grid dimensions match the resize, (3) snapshot is coherent (no crash, no panic from stale size assumptions).
 - [ ] `alt_screen_swap_in_replayed_bytes()` — Feed BSU + `\x1b[?1049h` (enter alt screen). Trigger timeout. Assert: (1) mode_cache reflects `ALT_SCREEN` after replay, (2) subsequent writes go to the alt grid.
 - [ ] `no_double_publish_on_timeout()` — Feed BSU + content. Trigger timeout (which calls `maybe_produce_snapshot`). Assert wakeup fires exactly once (not twice). The `maybe_produce_snapshot` after `stop_sync` is the ONLY publish — the normal `maybe_produce_snapshot` in the loop should not double-fire because `grid_dirty` is cleared by `produce_snapshot`.
-- [ ] `nested_bsu_in_sync_buffer()` — Feed BSU + content + another BSU. Trigger timeout. Assert: `stop_sync` processes the first batch but a new sync is started (via the nested BSU). `sync_bytes_count()` should be > 0 after the timeout path because the nested BSU re-enters sync mode.
+- [ ] `nested_bsu_in_sync_buffer()` — Feed BSU + content + another BSU. Trigger timeout. Assert: `stop_sync()` calls `stop_sync_internal(handler, None)` which replays ALL buffered bytes (including the nested BSU) then unconditionally clears the buffer and unsets SyncUpdate mode. After timeout, `sync_bytes_count() == 0` and the terminal is NOT in sync mode. The nested BSU's `set_private_mode(SyncUpdate)` fires during replay but is immediately overridden by the `unset_private_mode` + buffer clear at the end of `stop_sync_internal`. This matches VTE's current behavior — `stop_sync()` is unconditional termination, not a BSU-aware partial replay.
 - [ ] `sync_abort_after_max_buffer_overflow()` — Feed BSU + 2 MiB of data (exceeds `SYNC_BUFFER_SIZE`). Assert the overflow path in `advance_sync()` at `crates/vte/src/ansi/processor.rs:210` fires and processes the bytes. This is the VTE-level overflow, NOT the timeout — verify both paths work. **Note**: `SyncAbortReason::MaxBufferBytesExceeded` exists in `oriterm_core/src/effect/families/presentation.rs:23` but is currently never emitted — the VTE overflow calls `stop_sync_internal()` which unsets the mode but doesn't emit an effect (the effect layer is in oriterm_core, not VTE). For this section, verify the overflow processes correctly. Emitting the MaxBufferBytesExceeded effect requires a cross-crate plumbing change (VTE would need to signal the overflow reason to the Handler) — track this for a future section if needed.
-- [ ] `timeout_replay_preserves_shell_integration()` — Feed BSU + OSC 7 (CWD) + OSC 133;A (prompt start). Trigger timeout. Assert: (1) the terminal's CWD is updated to the OSC 7 value, (2) a prompt marker was placed. This proves the RawInterceptor ran over the buffered bytes during replay.
+- [ ] `run_loop_sync_timeout_fires()` — **Spawned run-loop test** (uses `spawn_pair_with_flag()` pattern from existing tests). Sends BSU + content via the byte channel, then waits >150ms without sending more bytes. Asserts: (1) the pane's snapshot eventually reflects the buffered content (proving `stop_sync` fired and published), (2) the pane did NOT hang forever. This is the only test that exercises the real `crossbeam_channel::select!` deadline arm in `PaneIoThread::run()` — the helper-level tests below verify extracted replay/state logic but cannot prove the select actually wakes up.
 - [ ] `no_timeout_when_not_in_sync()` — Verify that when `sync_timeout().sync_timeout()` returns `None` (no active sync), the select blocks indefinitely (no spurious timeout arm fires). This is a negative pin — the timeout behavior must NOT activate outside of sync mode.
 
 ### Semantic pins
@@ -290,7 +262,7 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
 ## 06.R Third Party Review Findings
 
 - [x] `[TPR-06-001-codex][high]` `section-06:156` — RawInterceptor bypass during timeout replay. Timeout path replays bytes through VTE Performer but skips the RawInterceptor (OSC 7, OSC 133, XTVERSION).
-  Resolved: Fixed on 2026-04-13. Added subsection 06.1b (RawInterceptor replay over sync buffer), `Processor::sync_buffer()` accessor, test `timeout_replay_preserves_shell_integration()`, and updated pseudocode.
+  Resolved: Rejected after verification in iteration 2 (2026-04-13). `handle_bytes()` runs the RawInterceptor on ALL incoming bytes BEFORE they enter the sync buffer (lines 228-232). The raw interceptor already processed these bytes — replaying it again would cause DOUBLE-EXECUTION of CWD updates, prompt markers, and notifications. Subsection 06.1b removed.
 - [x] `[TPR-06-002-codex][medium]` `section-06:225` — Test matrix doesn't test actual `run()` loop with real channels.
   Resolved: Rejected after verification on 2026-04-13. Existing tests in `oriterm_mux/src/pane/io_thread/tests.rs` DO exercise `run()` via `spawn()` + real channels (e.g., `shutdown_via_command`, `test_concurrent_resize_and_pty_output`). Finding is factually incorrect.
 - [x] `[TPR-06-003-codex][medium]` `00-overview.md:38,129,347` — DRIFT between Section 06 and overview/section 09: stale `SyncBegin/SyncCommit/SyncAbort` names, stale "registry table" mission text.
@@ -301,6 +273,18 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
   Resolved: Fixed on 2026-04-13. Updated pseudocode to capture `evicted_before` and pass it.
 - [x] `[TPR-06-003-gemini][medium]` `section-06:246` — `MaxBufferBytesExceeded` variant exists but is never emitted by VTE overflow.
   Resolved: Added a note to the max-buffer test item explaining the cross-crate gap. The overflow test verifies correct processing; emitting the effect requires VTE→Handler signaling which is a future plumbing item.
+
+**Iteration 2 findings (2026-04-13):**
+- [x] `[TPR-06-001-codex-i2][high]` `section-09:75` — Mode 2026 apex tests should be in oriterm_mux, not oriterm_core (timeout/snapshot lives in oriterm_mux). Also "virtual clock" wording is invalid.
+  Resolved: Rejected — this is a Section 09 concern, not Section 06. Section 09 has `reviewed: false` and will be reviewed via `/review-plan` before implementation. The stale variant names in Section 09 were already fixed in iteration 1.
+- [x] `[TPR-06-002-codex-i2][medium]` `section-06:278` — Nested BSU test incorrectly expects `sync_bytes_count() > 0` after `stop_sync`.
+  Resolved: Fixed on 2026-04-13. Updated test expectation to match VTE's actual behavior: `stop_sync(handler, None)` unconditionally clears the buffer and unsets SyncUpdate.
+- [x] `[TPR-06-003-codex-i2][medium]` `section-06:256` — Need at least one spawned run-loop test for the deadline-aware select path.
+  Resolved: Fixed on 2026-04-13. Added `run_loop_sync_timeout_fires()` spawned test using `spawn_pair_with_flag()` pattern.
+- [x] `[TPR-06-001-gemini-i2][high]` `section-06:154` — RawInterceptor double-execution: handle_bytes already runs raw_parser before bytes enter the sync buffer. Replaying the raw interceptor again during stop_sync would cause double CWD updates, double prompt markers, etc.
+  Resolved: Fixed on 2026-04-13. Removed subsection 06.1b, removed Processor::sync_buffer() accessor, removed timeout_replay_preserves_shell_integration test, updated pseudocode. Added note explaining why no raw replay is needed.
+- [x] `[TPR-06-002-gemini-i2][medium]` `section-06:318` — Same as [TPR-06-002-codex-i2]: nested BSU test expectation wrong.
+  Resolved: Fixed on 2026-04-13. Same fix as [TPR-06-002-codex-i2].
 
 ---
 
