@@ -136,12 +136,13 @@ impl SpecHarness {
         // Apply setup bytes if any.
         if !scenario.setup.is_empty() {
             self.feed(scenario.setup);
-            // Clear recordings from setup — we only want to observe the
-            // scenario's own bytes.
-            self.outcome.perform_actions.clear();
-            self.outcome.dispatched_calls.clear();
-            self.outcome.effects_emitted.clear();
         }
+
+        // Clear recordings — we only observe the scenario's own bytes,
+        // not setup bytes or stale data from prior feed() calls.
+        self.outcome.perform_actions.clear();
+        self.outcome.dispatched_calls.clear();
+        self.outcome.effects_emitted.clear();
 
         // Feed the scenario bytes.
         self.feed(scenario.bytes);

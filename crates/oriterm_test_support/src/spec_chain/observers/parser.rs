@@ -42,24 +42,27 @@ pub fn observe_parser(outcome: &SpecOutcome, expected: &ParserExpectation) -> Ru
         }
         PerformAction::Print { c } => *c == expected.action && expected.intermediates.is_empty(),
         PerformAction::OscDispatch { params, .. } => {
-            // OSC matching: action is ignored (OSC has no final byte),
-            // params are matched as flattened bytes. The first param's
-            // first byte is used as the "action" for matching.
-            if expected.params.is_empty() && !params.is_empty() {
-                // Match any OSC if no specific params expected.
-                true
-            } else if let Some(first) = params.first() {
-                // Match on first param byte as the "command number".
-                !first.is_empty() && first[0] == expected.action as u8
-            } else {
-                false
+            // OSC has no final byte or intermediates — match on first
+            // param as the command number. The expected action char
+            // represents the OSC command (e.g. '0' for OSC 0 title set).
+            if params.is_empty() {
+                return false;
             }
+            let first = &params[0];
+            if first.is_empty() {
+                return false;
+            }
+            // The first param is the OSC command number as ASCII bytes.
+            // Match against expected.action as u8.
+            first[0] == expected.action as u8
         }
-        PerformAction::ApcStart | PerformAction::ApcEnd => {
-            // APC start/end: no params, no intermediates.
-            expected.params.is_empty() && expected.intermediates.is_empty()
-        }
-        PerformAction::ApcPut { .. } | PerformAction::Put { .. } | PerformAction::Unhook => false,
+        // APC: not matchable via ParserExpectation (no structured params).
+        // APC-based sequences are observed at the dispatch rung instead.
+        PerformAction::ApcStart
+        | PerformAction::ApcEnd
+        | PerformAction::ApcPut { .. }
+        | PerformAction::Put { .. }
+        | PerformAction::Unhook => false,
     });
 
     if found {

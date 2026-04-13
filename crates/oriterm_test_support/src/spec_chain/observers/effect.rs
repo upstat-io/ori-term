@@ -5,8 +5,7 @@
 //! both the top-level family and optional sub-variant (e.g.
 //! `PtyWriteKind::DeviceAttribute`).
 
-use oriterm_core::effect::Effect;
-use oriterm_core::effect::PtyEffect;
+use oriterm_core::effect::{Effect, PtyEffect, PtyWriteKind};
 
 use crate::spec_chain::api::{RungResult, SpecOutcome};
 use crate::spec_chain::scenario::{EffectExpectation, RungName};
@@ -33,7 +32,11 @@ pub fn observe_effect(outcome: &SpecOutcome, expected: &EffectExpectation) -> Ru
             .iter()
             .map(|eff| {
                 let (family, sub) = effect_names(eff);
-                format!("{family}::{sub}")
+                if sub.is_empty() {
+                    family.to_string()
+                } else {
+                    format!("{family}::{sub}")
+                }
             })
             .collect();
         let expected_desc = match expected.sub_variant {
@@ -61,20 +64,17 @@ fn effect_names(eff: &Effect) -> (&'static str, &'static str) {
 /// Extract the `PtyWriteKind` name from a `PtyEffect`.
 fn pty_sub_name(pty: &PtyEffect) -> &'static str {
     match pty {
-        PtyEffect::Write { kind, .. } => {
-            use oriterm_core::effect::PtyWriteKind;
-            match kind {
-                PtyWriteKind::DeviceAttribute => "DeviceAttribute",
-                PtyWriteKind::CursorReport => "CursorReport",
-                PtyWriteKind::DeviceStatus => "DeviceStatus",
-                PtyWriteKind::ModeReport => "ModeReport",
-                PtyWriteKind::StatusString => "StatusString",
-                PtyWriteKind::ImageProtocolReply => "ImageProtocolReply",
-                PtyWriteKind::MouseEvent => "MouseEvent",
-                PtyWriteKind::KeyboardEvent => "KeyboardEvent",
-                PtyWriteKind::FocusEvent => "FocusEvent",
-                PtyWriteKind::Other => "Other",
-            }
-        }
+        PtyEffect::Write { kind, .. } => match kind {
+            PtyWriteKind::DeviceAttribute => "DeviceAttribute",
+            PtyWriteKind::CursorReport => "CursorReport",
+            PtyWriteKind::DeviceStatus => "DeviceStatus",
+            PtyWriteKind::ModeReport => "ModeReport",
+            PtyWriteKind::StatusString => "StatusString",
+            PtyWriteKind::ImageProtocolReply => "ImageProtocolReply",
+            PtyWriteKind::MouseEvent => "MouseEvent",
+            PtyWriteKind::KeyboardEvent => "KeyboardEvent",
+            PtyWriteKind::FocusEvent => "FocusEvent",
+            PtyWriteKind::Other => "Other",
+        },
     }
 }
