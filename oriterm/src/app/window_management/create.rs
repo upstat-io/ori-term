@@ -29,9 +29,12 @@ impl App {
     ) -> Option<WindowId> {
         let (winit_id, session_wid) = self.create_window_bare(event_loop)?;
 
-        // Extract geometry from the new window's per-window renderer
-        // (scoped to release the borrow before mux operations).
-        let (cols, rows) = {
+        // Extract geometry AND cell metrics from the new window's
+        // per-window renderer (scoped to release the borrow before
+        // mux operations). Cell metrics seed the IO-thread Term so
+        // FixedPixels image placements compute correct coverage
+        // before the first PTY byte arrives.
+        let (cols, rows, cell_w, cell_h) = {
             let ctx = self.windows.get(&winit_id)?;
             let renderer = ctx.renderer.as_ref()?;
             let (w, h) = ctx.window.size_px();
@@ -48,7 +51,9 @@ impl App {
             let wl = super::super::chrome::compute_window_layout(
                 w, h, &cell, scale, hidden, tb_h, sb_h, 0.0,
             );
-            (wl.cols, wl.rows)
+            let cell_w = cell.width.round().max(1.0) as u16;
+            let cell_h = cell.height.round().max(1.0) as u16;
+            (wl.cols, wl.rows, cell_w, cell_h)
         };
 
         let mux = self.mux.as_mut()?;
@@ -70,6 +75,9 @@ impl App {
         let pane_id = match mux.spawn_pane(&spawn_config, theme) {
             Ok(pid) => {
                 mux.set_pane_theme(pid, theme, palette);
+                mux.set_image_config(pid, self.config.terminal.image_config());
+                mux.set_bold_is_bright(pid, self.config.behavior.bold_is_bright);
+                mux.set_cell_dimensions(pid, cell_w, cell_h);
                 mux.discard_notifications();
                 pid
             }

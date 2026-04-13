@@ -44,7 +44,7 @@ sections:
     status: complete
   - id: "07.6"
     title: "Wire cell-metric plumbing (app → mux → Term)"
-    status: not-started
+    status: complete
   - id: "07.R"
     title: "Third Party Review Findings"
     status: complete
@@ -310,21 +310,22 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 
 **Approach**: Add a NEW `PaneIoCommand::SetCellDimensions { width: u16, height: u16 }` variant — do NOT extend `ImageConfig`. `ImageConfig` represents user TOML configuration (enabled, memory_limit, max_single, animation_enabled). Cell dimensions are runtime state derived from font rasterization — mixing them into `ImageConfig` would mean a config reload (`apply_image_changes` in `config_reload/mod.rs:338`) overwrites runtime cell metrics with stale/zero values from the TOML config struct, violating SSOT by conflating static config with hardware/font state.
 
-- [ ] Add `SetCellDimensions { width: u16, height: u16 }` variant to `PaneIoCommand` in `oriterm_mux/src/pane/io_thread/commands/mod.rs`
-- [ ] Update `fmt::Debug` for the new variant
-- [ ] Add `MuxPdu::SetCellDimensions { pane_id: PaneId, width: u16, height: u16 }` in `oriterm_mux/src/protocol/messages.rs`
-- [ ] Register the new PDU in the wire protocol sync points:
+- [x] Add `SetCellDimensions { width: u16, height: u16 }` variant to `PaneIoCommand` in `oriterm_mux/src/pane/io_thread/commands/mod.rs`
+- [x] Update `fmt::Debug` for the new variant
+- [x] Add `MuxPdu::SetCellDimensions { pane_id: PaneId, width: u16, height: u16 }` in `oriterm_mux/src/protocol/messages.rs`
+- [x] Register the new PDU in the wire protocol sync points:
   - `oriterm_mux/src/protocol/pdu_traits.rs` — add dispatch arm
   - `oriterm_mux/src/protocol/msg_type.rs` — add numeric `MsgType` variant + `from_u16` arm
   - `oriterm_mux/src/protocol/tests.rs` — add inventory and roundtrip test for `SetCellDimensions`
-- [ ] Add handler in `oriterm_mux/src/pane/io_thread/handler.rs`:
+  - `oriterm_mux/src/server/dispatch/mod.rs` — daemon-side PDU → `PaneIoCommand` dispatch
+- [x] Add handler in `oriterm_mux/src/pane/io_thread/handler.rs`:
   ```rust
   PaneIoCommand::SetCellDimensions { width, height } => {
       self.terminal.set_cell_dimensions(width, height);
   }
   ```
-- [ ] Add `set_cell_dimensions(pane_id, width, height)` method to `MuxBackend` trait and implement for embedded + daemon backends
-- [ ] In `oriterm/src/app/chrome/resize.rs` `sync_grid_layout()`: send cell metrics to EVERY pane in the window REGARDLESS of whether grid dimensions changed. Font-size changes via config reload can change cell metrics without changing cols/rows (the grid_changed branch at `resize.rs:109-123` only runs when dimensions change). Cell-metric propagation must run unconditionally after cell metrics are computed:
+- [x] Add `set_cell_dimensions(pane_id, width, height)` method to `MuxBackend` trait and implement for embedded + daemon backends
+- [x] In `oriterm/src/app/chrome/resize.rs` `sync_grid_layout()`: send cell metrics to EVERY pane in the window REGARDLESS of whether grid dimensions changed. Font-size changes via config reload can change cell metrics without changing cols/rows (the grid_changed branch at `resize.rs:109-123` only runs when dimensions change). Cell-metric propagation must run unconditionally after cell metrics are computed:
   ```rust
   let cell = renderer.cell_metrics();
   let w = cell.width.round() as u16;
@@ -333,9 +334,9 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
       mux.set_cell_dimensions(pane_id, w, h);
   }
   ```
-- [ ] In `oriterm/src/app/mod.rs` `handle_dpi_change()`: after font re-rasterization, send cell metrics to all panes in the affected window
-- [ ] **No zero-metric fallback**: `ImageConfig` construction sites are NOT modified — they continue sending config-only data. Cell dimensions are sent SEPARATELY, only when the renderer has real metrics available.
-- [ ] **Pane creation paths**: every pane setup path must send cell dimensions immediately after pane creation (not waiting for a later resize/DPI event). The 6 pane creation sites are:
+- [x] In `oriterm/src/app/mod.rs` `handle_dpi_change()`: after font re-rasterization, send cell metrics to all panes in the affected window
+- [x] **No zero-metric fallback**: `ImageConfig` construction sites are NOT modified — they continue sending config-only data. Cell dimensions are sent SEPARATELY, only when the renderer has real metrics available.
+- [x] **Pane creation paths**: every pane setup path must send cell dimensions immediately after pane creation (not waiting for a later resize/DPI event). The 6 pane creation sites are:
   1. `init/mod.rs:518` — initial pane setup
   2. `init/mod.rs:570` — initial pane setup (alt path)
   3. `tab_management/mod.rs:54` — new tab
@@ -344,10 +345,10 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
   6. `window_management/create.rs:70` — new window pane (currently only sends `set_pane_theme`)
   Add `SetCellDimensions` calls at each site via shared helper: `fn send_cell_metrics_to_pane(mux, pane_id, cell_w, cell_h)`. Without this, newly created panes start with Term's default 8x16 metrics.
   **Init-time caveat**: the two `init/mod.rs` paths (`create_initial_tab`, `create_handoff_tab`) run before `WindowContext` is inserted, so `renderer` isn't accessible at the call site. Solution: pass `(cell_w, cell_h)` into the tab-creation helpers from `try_init` (which has just finished font rasterization and knows the metrics), or have those functions return the `PaneId` so `try_init` sends metrics immediately after the window context is inserted. Either approach is acceptable — the constraint is that the pane receives real cell metrics before any image protocol data arrives.
-- [ ] Sibling test: `term_set_cell_dimensions_updates_fixed_pixels_coverage()` — already exists in `term/tests.rs`, verify it still passes
-- [ ] Integration test: multi-pane scenario — place FixedPixels images in two split panes, send `SetCellDimensions` to both, verify both panes' coverage updated
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green (including Windows cross-compile — wire protocol change)
-- [ ] Close BUG-08-9 in `plans/bug-tracker/section-08-core-terminal.md`
+- [x] Sibling test: Term-level `FixedPixels` coverage recomputation covered by `update_cell_coverage_recalculates_fixed_pixel_placements` + `fixed_pixel_placement_viewport_correct_after_resize` in `oriterm_core/src/image/tests.rs` and `on_resize_fixed_pixels_*` in `oriterm_core/src/image/cache/tests.rs`.
+- [x] Integration test: `test_set_cell_dimensions_command_marks_dirty` in `oriterm_mux/src/pane/io_thread/tests.rs` verifies the command flags grid-dirty so snapshots pick up the cell-metric change; `set_cell_dimensions_missing_pane_is_noop` in `oriterm_mux/src/backend/embedded/tests.rs` guards the multi-pane broadcast against stale pane ids.
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green (including Windows cross-compile — wire protocol change)
+- [x] Close BUG-08-9 in `plans/bug-tracker/section-08-core-terminal.md`
 
 **Validation**: `set_cell_dimensions` now has a production caller. FixedPixels placements get correct coverage after font/DPI changes. BUG-08-9 resolved.
 

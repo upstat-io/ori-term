@@ -210,9 +210,14 @@ impl App {
         // Section 03.9 Phase 4 — Windows handoff path: take any pending
         // HandoffData from `App::new_handoff` and adopt the pre-existing
         // PTY handles instead of spawning a fresh shell.
+        // Capture cell metrics before create_*_tab so we can seed the
+        // IO-thread Term with real values instead of its `8x16` default.
+        let cell_w_u16 = cell.width.round().max(1.0) as u16;
+        let cell_h_u16 = cell.height.round().max(1.0) as u16;
+
         #[cfg(target_os = "windows")]
         let used_handoff = if let Some(handoff) = self.handoff_pending.take() {
-            self.create_handoff_tab(session_wid, handoff)?;
+            self.create_handoff_tab(session_wid, handoff, cell_w_u16, cell_h_u16)?;
             true
         } else {
             false
@@ -220,7 +225,13 @@ impl App {
         #[cfg(not(target_os = "windows"))]
         let used_handoff = false;
         if !is_claimed && !used_handoff {
-            self.create_initial_tab(session_wid, wl.rows as u16, wl.cols as u16)?;
+            self.create_initial_tab(
+                session_wid,
+                wl.rows as u16,
+                wl.cols as u16,
+                cell_w_u16,
+                cell_h_u16,
+            )?;
         }
         let t_mux = t_mux_start.elapsed();
 
@@ -468,6 +479,8 @@ impl App {
         &mut self,
         session_wid: crate::session::WindowId,
         handoff: crate::platform::default_terminal::handoff::HandoffData,
+        cell_w: u16,
+        cell_h: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use oriterm_mux::AdoptedPtyHandle;
 
@@ -517,6 +530,7 @@ impl App {
         mux.set_pane_theme(pane_id, theme, palette);
         mux.set_image_config(pane_id, self.config.terminal.image_config());
         mux.set_bold_is_bright(pane_id, self.config.behavior.bold_is_bright);
+        mux.set_cell_dimensions(pane_id, cell_w, cell_h);
 
         // Local tab creation (mirrors create_initial_tab).
         let tab_id = self.session.alloc_tab_id();
@@ -538,11 +552,17 @@ impl App {
     ///
     /// The mux backend and window must already exist. The pane is stored
     /// inside the backend.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "init-time wiring: session id + grid dims + cell dims — grouping into a struct would require a struct purely for this internal helper, with no other callers"
+    )]
     pub(super) fn create_initial_tab(
         &mut self,
         session_wid: crate::session::WindowId,
         rows: u16,
         cols: u16,
+        cell_w: u16,
+        cell_h: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let theme = self
             .config
@@ -571,6 +591,12 @@ impl App {
 
         // Apply bold-is-bright config.
         mux.set_bold_is_bright(pane_id, self.config.behavior.bold_is_bright);
+
+        // Seed cell metrics so FixedPixels image placements compute
+        // correct coverage from the first frame. Without this the
+        // IO-thread `Term` holds its `8x16` default until the next
+        // resize / DPI event.
+        mux.set_cell_dimensions(pane_id, cell_w, cell_h);
 
         // Local tab creation.
         let tab_id = self.session.alloc_tab_id();

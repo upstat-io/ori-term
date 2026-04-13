@@ -62,6 +62,13 @@ pub enum PaneIoCommand {
     },
     /// Update image protocol configuration.
     SetImageConfig(ImageConfig),
+    /// Update cell pixel dimensions. Separate from `SetImageConfig`
+    /// because cell metrics are runtime state derived from font
+    /// rasterization, not user TOML config — mixing them into
+    /// `ImageConfig` would let a config reload overwrite live metrics
+    /// with zero/stale values (violating SSOT between static config
+    /// and hardware/font state).
+    SetCellDimensions { width: u16, height: u16 },
     /// Extract plain text from a selection region (response via oneshot).
     ExtractText {
         selection: Selection,
@@ -114,6 +121,11 @@ impl fmt::Debug for PaneIoCommand {
             Self::MarkAllDirty => write!(f, "MarkAllDirty"),
             Self::SnapshotNow { .. } => write!(f, "SnapshotNow {{ .. }}"),
             Self::SetImageConfig(..) => write!(f, "SetImageConfig(..)"),
+            Self::SetCellDimensions { width, height } => f
+                .debug_struct("SetCellDimensions")
+                .field("width", width)
+                .field("height", height)
+                .finish(),
             Self::ExtractText { .. } => write!(f, "ExtractText {{ .. }}"),
             Self::ExtractHtml { .. } => write!(f, "ExtractHtml {{ .. }}"),
             Self::OpenSearch => write!(f, "OpenSearch"),

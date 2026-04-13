@@ -43,6 +43,7 @@ impl MuxPdu {
             Self::SpawnPane { .. } => MsgType::SpawnPane,
             Self::ListPanes => MsgType::ListPanes,
             Self::SetImageConfig { .. } => MsgType::SetImageConfig,
+            Self::SetCellDimensions { .. } => MsgType::SetCellDimensions,
             Self::HelloAck { .. } => MsgType::HelloAck,
             Self::PaneClosedAck => MsgType::PaneClosedAck,
             Self::Subscribed { .. } => MsgType::Subscribed,
@@ -88,6 +89,7 @@ impl MuxPdu {
                 | Self::SearchPrevMatch { .. }
                 | Self::SetCapabilities { .. }
                 | Self::SetImageConfig { .. }
+                | Self::SetCellDimensions { .. }
                 | Self::SetPanePriority { .. }
                 | Self::SignalChild { .. }
         )

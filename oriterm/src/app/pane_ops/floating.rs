@@ -59,12 +59,15 @@ impl App {
         let palette =
             crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
 
+        let (cell_w, cell_h) = self.current_cell_dims();
+
         let Some(mux) = &mut self.mux else { return };
         let new_pane_id = match mux.spawn_pane(&config, theme) {
             Ok(pid) => {
                 mux.set_pane_theme(pid, theme, palette);
                 mux.set_image_config(pid, self.config.terminal.image_config());
                 mux.set_bold_is_bright(pid, self.config.behavior.bold_is_bright);
+                mux.set_cell_dimensions(pid, cell_w, cell_h);
                 log::info!("spawn floating pane: {pid:?}");
                 pid
             }
