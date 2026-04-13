@@ -959,6 +959,9 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `[TPR-04-001-codex-r5][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:47` — Sixel pilot still missing parser/gpu_instance expectations after round 4 fix.
   Resolved: Fixed on 2026-04-13. Added `parser: Some(ParserExpectation::dcs('q', &[0]))` and `gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0))`. Pilot now has 5/8 rungs with expectations (parser + frame_input + gpu_instance + texture + golden). Remaining 3 (dispatch, state, renderable) are stub types with no assertion fields yet.
 
+- [x] `[TPR-04-001-codex-r6][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:54` — GPU instance rung-6 expectation doesn't check sixel image quads.
+  Resolved: Fixed on 2026-04-13. Added `min_image_quads: Option<usize>` to `GpuInstanceExpectation`, observer checks `prepared.image_quads_below.len() + prepared.image_quads_above.len()`. Sixel pilot uses `.with_images(1)` to assert image quads reached the GPU prepare phase.
+
 ---
 
 ## 04.N Completion Checklist

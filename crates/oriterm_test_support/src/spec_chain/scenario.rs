@@ -390,6 +390,10 @@ pub struct GpuInstanceExpectation {
     pub min_glyphs: Option<usize>,
     /// Whether a cursor instance should be present.
     pub has_cursor: Option<bool>,
+    /// Minimum number of image quad instances (below + above layers).
+    /// Used by sixel / kitty graphics / iTerm2 pilots to assert that
+    /// image content reached the GPU prepare phase.
+    pub min_image_quads: Option<usize>,
 }
 
 impl GpuInstanceExpectation {
@@ -399,6 +403,7 @@ impl GpuInstanceExpectation {
             min_backgrounds: Some(1),
             min_glyphs: Some(1),
             has_cursor: None,
+            min_image_quads: None,
         }
     }
 
@@ -408,7 +413,15 @@ impl GpuInstanceExpectation {
             min_backgrounds: Some(backgrounds),
             min_glyphs: Some(glyphs),
             has_cursor: None,
+            min_image_quads: None,
         }
+    }
+
+    /// Expect image quads from sixel / kitty / iTerm2 content.
+    #[must_use]
+    pub const fn with_images(mut self, min: usize) -> Self {
+        self.min_image_quads = Some(min);
+        self
     }
 }
 

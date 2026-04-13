@@ -44,5 +44,15 @@ pub fn observe_gpu_instance(
         }
     }
 
+    if let Some(min_images) = expected.min_image_quads {
+        let actual = prepared.image_quads_below.len() + prepared.image_quads_above.len();
+        if actual < min_images {
+            return RungResult::fail(
+                RungName::GpuInstance,
+                format!("GPU image quads: expected >= {min_images}, got {actual}"),
+            );
+        }
+    }
+
     RungResult::pass(RungName::GpuInstance)
 }
