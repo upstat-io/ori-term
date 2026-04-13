@@ -8,6 +8,7 @@
 //! See `plans/spec-conformance/00-overview.md` for the architecture.
 
 mod api;
+pub mod observers;
 mod recording_handler;
 mod scenario;
 
