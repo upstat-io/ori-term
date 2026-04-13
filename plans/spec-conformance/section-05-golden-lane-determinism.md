@@ -31,7 +31,7 @@ third_party_review:
 sections:
   - id: "05.0"
     title: "Proactive BLOAT split: state/mod.rs → state/headless.rs"
-    status: not-started
+    status: complete
   - id: "05.1"
     title: "Add explicit adapter preference parameter to GpuState headless init"
     status: not-started
@@ -93,15 +93,15 @@ sections:
 
 `oriterm/src/gpu/state/mod.rs` is at 493 lines. Subsections 05.1-05.3 will add the `AdapterPreference` enum, `new_headless_with_preference()`, and an expanded `try_init_headless()`. This will push the file well past 500 lines. Per `code-hygiene.md` the 500-line limit is a hard limit on source files (test files exempt). The split MUST happen FIRST, before adding any new code, so the limit is never breached.
 
-- [ ] Extract `try_init_headless()` (at `state/mod.rs:430-470`) and `new_headless()` (at `state/mod.rs:156-160`) into `oriterm/src/gpu/state/headless.rs`. The new file contains:
+- [x] Extract `try_init_headless()` (at `state/mod.rs:430-470`) and `new_headless()` (at `state/mod.rs:156-160`) into `oriterm/src/gpu/state/headless.rs`. The new file contains:
   - `GpuState::try_init_headless()` (moved, unchanged)
   - `GpuState::new_headless()` (moved, unchanged)
   - Any future headless construction methods (05.1 adds `new_headless_with_preference()` here)
-- [ ] `state/mod.rs` retains: windowed `try_init()`, `new()`, `create_surface()`, all accessors and utility methods, the `mod headless;` declaration.
-- [ ] Verify `state/mod.rs` is well under 500 lines after extraction.
-- [ ] Verify `state/headless.rs` is under 500 lines.
-- [ ] Sibling test validation: existing tests in `oriterm/src/gpu/state/tests.rs` still pass (they use `GpuState::new_headless()` which just moved files, not APIs).
-- [ ] **Validation**: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green.
+- [x] `state/mod.rs` retains: windowed `try_init()`, `new()`, `create_surface()`, all accessors and utility methods, the `mod headless;` declaration.
+- [x] Verify `state/mod.rs` is well under 500 lines after extraction. (436 lines — verified 2026-04-13)
+- [x] Verify `state/headless.rs` is under 500 lines. (70 lines — verified 2026-04-13)
+- [x] Sibling test validation: existing tests in `oriterm/src/gpu/state/tests.rs` still pass (they use `GpuState::new_headless()` which just moved files, not APIs).
+- [x] **Validation**: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green. (verified 2026-04-13)
 
 ---
 
