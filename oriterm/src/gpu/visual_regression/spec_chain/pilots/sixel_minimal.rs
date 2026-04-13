@@ -51,7 +51,7 @@ fn sixel_minimal_drives_every_rung_green() {
             // their types gain assertion fields in later sections.
             parser: Some(ParserExpectation::dcs('q', &[0])),
             frame_input: Some(FrameInputExpectation::default_grid()),
-            gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0)),
+            gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0).with_images(1)),
             texture: Some(TextureExpectation {
                 // Floor guard: catches uninitialized render targets (all
                 // zeros). Note: with PALETTE_BG = Rgb(1,1,1), background
