@@ -29,6 +29,8 @@ mod multi_size;
 mod reference_tests;
 mod resize_stress;
 mod settings_dialog;
+#[cfg(test)]
+mod spec_chain;
 mod status_bar;
 mod tab_bar_brutal;
 mod tab_bar_icons;

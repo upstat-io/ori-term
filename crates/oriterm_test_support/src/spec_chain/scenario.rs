@@ -340,13 +340,77 @@ impl EffectExpectation {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct RenderableExpectation;
 
-/// Frame input rung expectation (stub — expanded in 04.3b).
-#[derive(Copy, Clone, Debug, Default)]
-pub struct FrameInputExpectation;
+/// Frame input rung expectation (rung 5).
+///
+/// Asserts that the `FrameInput` assembled from terminal state has the
+/// expected grid dimensions, cursor visibility, and mode flags.
+#[derive(Copy, Clone, Debug)]
+pub struct FrameInputExpectation {
+    /// Expected grid column count.
+    pub cols: Option<usize>,
+    /// Expected grid row count.
+    pub rows: Option<usize>,
+    /// Expected cursor visibility in the renderable content.
+    pub cursor_visible: Option<bool>,
+    /// Expected DECSCNM (reverse video) state.
+    pub reverse_video: Option<bool>,
+}
 
-/// GPU instance rung expectation (stub — expanded in 04.3b).
-#[derive(Copy, Clone, Debug, Default)]
-pub struct GpuInstanceExpectation;
+impl FrameInputExpectation {
+    /// Expect specific grid dimensions.
+    pub const fn grid(cols: usize, rows: usize) -> Self {
+        Self {
+            cols: Some(cols),
+            rows: Some(rows),
+            cursor_visible: None,
+            reverse_video: None,
+        }
+    }
+
+    /// Expect default 80×24 grid with cursor visible.
+    pub const fn default_grid() -> Self {
+        Self {
+            cols: Some(80),
+            rows: Some(24),
+            cursor_visible: Some(true),
+            reverse_video: Some(false),
+        }
+    }
+}
+
+/// GPU instance rung expectation (rung 6).
+///
+/// Asserts that the prepared GPU instance buffers contain the expected
+/// number and kind of instances after `WindowRenderer::prepare()`.
+#[derive(Copy, Clone, Debug)]
+pub struct GpuInstanceExpectation {
+    /// Minimum number of background quad instances.
+    pub min_backgrounds: Option<usize>,
+    /// Minimum total glyph instances (mono + subpixel + color).
+    pub min_glyphs: Option<usize>,
+    /// Whether a cursor instance should be present.
+    pub has_cursor: Option<bool>,
+}
+
+impl GpuInstanceExpectation {
+    /// Expect at least one background and at least one glyph.
+    pub const fn non_empty() -> Self {
+        Self {
+            min_backgrounds: Some(1),
+            min_glyphs: Some(1),
+            has_cursor: None,
+        }
+    }
+
+    /// Expect specific minimum instance counts.
+    pub const fn at_least(backgrounds: usize, glyphs: usize) -> Self {
+        Self {
+            min_backgrounds: Some(backgrounds),
+            min_glyphs: Some(glyphs),
+            has_cursor: None,
+        }
+    }
+}
 
 /// Texture render rung expectation (stub — expanded in 04.4).
 #[derive(Copy, Clone, Debug, Default)]

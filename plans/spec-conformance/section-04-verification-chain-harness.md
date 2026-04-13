@@ -58,7 +58,7 @@ sections:
     status: complete
   - id: "04.3b"
     title: "Implement frame-input/gpu-instance observers (visual — oriterm)"
-    status: not-started
+    status: complete
   - id: "04.4"
     title: "Implement texture-render + golden-image observers (depends on 05's deterministic GPU env, but uses the existing non-deterministic env until 05 lands; section gates allow this)"
     status: not-started
@@ -547,13 +547,13 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 
 **Why not promote helpers to `pub`?** Making `headless_env_with_hinting`, `render_to_pixels`, and `compare_with_reference` public would EXPOSE internal GPU test infrastructure as part of `oriterm`'s public API — a violation of `.claude/rules/code-hygiene.md` §"Public API discipline". The `pub(super)` visibility is correct; the harness must live where it can access them.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/mod.rs` as the visual harness hub (add `mod spec_chain;` to `visual_regression/mod.rs` under `#[cfg(test)]`).
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs`: `VisualSpecHarness` wraps `SpecHarness` (core, from `oriterm_test_support`), holds a `GpuState` + `GpuPipelines` + `FontCollection`, and provides `observe_frame_input_rung()`, `observe_gpu_instance_rung()`. Uses the existing `frame_input_helper::frame_input()` at `oriterm/src/gpu/visual_regression/frame_input_helper.rs:27` for `FrameInput` construction — do NOT duplicate (SSOT). Has direct access to `super::super::headless_env_with_hinting`, `render_to_pixels`, `compare_with_reference` via `pub(super)` visibility.
-- [ ] `observers/frame_input.rs`: `observe_frame_input(outcome, expected) -> RungResult` — asserts FrameInput composition (viewport, cell metrics, hovered cell, prompt markers, etc.) matches expected.
-- [ ] `observers/gpu_instance.rs`: `observe_gpu_instance(outcome, expected) -> RungResult` — asserts the GPU instance buffer contents match expected (vertex count, UV coords, colors, z-order). Use the existing `oriterm/src/gpu/instance_writer/` infrastructure.
-- [ ] After BLOAT splits (from 04.3), add observation hooks: `gpu::prepare::observe_renderable(content) -> RenderableSnapshot` and similar for FrameInput and GPU instances. These are debug-only paths gated behind `#[cfg(any(test, debug_assertions))]` to avoid hot-path overhead in release builds.
-- [ ] Sibling tests in `spec_chain/tests.rs` for each observer.
-- [ ] **Validation**: observer tests pass under `cargo test -p oriterm -- spec_chain`.
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/mod.rs` as the visual harness hub (add `mod spec_chain;` to `visual_regression/mod.rs` under `#[cfg(test)]`).
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs`: `VisualSpecHarness` wraps `SpecHarness` (core, from `oriterm_test_support`), holds `GpuState` + `GpuPipelines` + `WindowRenderer`. Builds `FrameInput` from `Term` state using the same palette constants as `frame_input_helper` (SSOT). Added `prepare_scenario()` and `observe_rung()` to core `SpecHarness` for clean rung delegation without algorithmic duplication.
+- [x] `observers/frame_input.rs`: `observe_frame_input(&FrameInput, &FrameInputExpectation) -> RungResult` — asserts grid dimensions (cols, rows), cursor visibility, and reverse video mode. `FrameInputExpectation` expanded with `cols`, `rows`, `cursor_visible`, `reverse_video` fields.
+- [x] `observers/gpu_instance.rs`: `observe_gpu_instance(&PreparedFrame, &GpuInstanceExpectation) -> RungResult` — asserts background count, total glyph count (mono + subpixel + color), and cursor presence. `GpuInstanceExpectation` expanded with `min_backgrounds`, `min_glyphs`, `has_cursor` fields.
+- [x] Observation hooks: `PreparedFrame` fields are `pub(crate)`, giving `VisualSpecHarness` direct access to instance buffers without needing separate debug-gated hooks. No hot-path instrumentation needed — the observer reads post-prepare state.
+- [x] Sibling tests in `spec_chain/tests.rs` for each observer. 10 tests: 2 harness construction, 4 frame_input observer (pass/fail cols/rows/none), 2 gpu_instance observer (pass/fail threshold), 2 visual scenario end-to-end (full rung chain, early-stop on failure).
+- [x] **Validation**: observer tests pass under `cargo test -p oriterm --features gpu-tests -- spec_chain` (10/10 pass). `build-all.sh`, `clippy-all.sh`, `test-all.sh` all green.
 
 ---
 
