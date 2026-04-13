@@ -32,16 +32,16 @@ sections:
     status: complete
   - id: "07.2"
     title: "Write failing regression matrix tests (TDD: tests FIRST)"
-    status: not-started
+    status: complete
   - id: "07.3"
     title: "Add ReflowMapping to Grid::resize"
-    status: not-started
+    status: complete
   - id: "07.4"
     title: "Implement ImageCache::on_resize and remap_placements"
-    status: not-started
+    status: complete
   - id: "07.5"
     title: "Wire Term::resize with full reflow support"
-    status: not-started
+    status: complete
   - id: "07.6"
     title: "Wire cell-metric plumbing (app → mux → Term)"
     status: not-started
@@ -139,29 +139,31 @@ Per CLAUDE.md TDD discipline, failing tests are written FIRST.
 ### Unit tests in `cache/tests.rs`
 
 **Column-bounds tests:**
-- [ ] `on_resize_removes_placement_fully_outside_new_cols()` — place at col=90 spanning 10, resize to 80, assert removed
-- [ ] `on_resize_preserves_placement_within_new_cols()` — place at col=5 spanning 10, resize to 80, assert survives
-- [ ] `on_resize_preserves_partially_overlapping_placement()` — place at col=75 spanning 10, resize to 80, assert survives (renderer clips)
-- [ ] `on_resize_prunes_orphaned_image_after_all_placements_removed()` — store+place at col=90, resize to 80, assert image data removed
-- [ ] `on_resize_preserves_deferred_kitty_image_without_placements()` — store without placing, resize, assert image data NOT removed
+- [x] `on_resize_removes_placement_fully_outside_new_cols()` — place at col=90 spanning 10, resize to 80, assert removed
+- [x] `on_resize_preserves_placement_within_new_cols()` — place at col=5 spanning 10, resize to 80, assert survives
+- [x] `on_resize_preserves_partially_overlapping_placement()` — place at col=75 spanning 10, resize to 80, assert survives (renderer clips)
+- [x] `on_resize_prunes_orphaned_image_after_all_placements_removed()` — store+place at col=90, resize to 80, assert image data removed
+- [x] `on_resize_preserves_deferred_kitty_image_without_placements()` — store without placing, resize, assert image data NOT removed
 
 **FixedPixels tests:**
-- [ ] `on_resize_fixed_pixels_within_bounds_survives()` — FixedPixels placement at col=0, fits in new cols, survives
-- [ ] `on_resize_fixed_pixels_out_of_bounds_removed()` — FixedPixels placement at col=8, new_cols=8, removed
+- [x] `on_resize_fixed_pixels_within_bounds_survives()` — FixedPixels placement at col=0, fits in new cols, survives
+- [x] `on_resize_fixed_pixels_out_of_bounds_removed()` — FixedPixels placement at col=8, new_cols=8, removed
 
 **Reflow remapping tests:**
-- [ ] `remap_placements_updates_stable_row_index_after_reflow()` — place image, build a `ReflowMapping` that moves row 5 → output row 10, call `remap_placements`, assert placement's `cell_row` updated to `StableRowIndex(old_total_evicted + 10)`
-- [ ] `remap_placements_skips_already_evicted_placement()` — place image at StableRowIndex below old_total_evicted (already evicted), assert no panic (checked_sub prevents underflow), placement unchanged
-- [ ] `remap_placements_handles_unwrap()` — soft-wrapped continuation line unwrapped into single row by width increase, both source rows map to same output row, placement on continuation row remaps correctly
-- [ ] `remap_placements_handles_row_split()` — single source row split into 2 new rows by width decrease, placement maps to first new row
-- [ ] `remap_placements_preserves_kitty_deferred_images()` — images with no placements survive remap unchanged
+- [x] `remap_placements_updates_stable_row_index_after_reflow()` — place image, build a `ReflowMapping` that moves row 5 → output row 10, call `remap_placements`, assert placement's `cell_row` updated to `StableRowIndex(old_total_evicted + 10)`
+- [x] `remap_placements_skips_already_evicted_placement()` — place image at StableRowIndex below old_total_evicted (already evicted), assert no panic (checked_sub prevents underflow), placement unchanged
+- [x] `remap_placements_handles_unwrap()` — soft-wrapped continuation line unwrapped into single row by width increase, both source rows map to same output row, placement on continuation row remaps correctly
+- [x] `remap_placements_handles_row_split()` — single source row split into 2 new rows by width decrease, placement maps to first new row
+- [x] `remap_placements_preserves_kitty_deferred_images()` — images with no placements survive remap unchanged
 
 **Negative rendering pin:**
-- [ ] `removed_placement_not_in_renderable_content()` — construct Term, place sixel at col=90, resize to 80, assert `RenderableContent::images` does NOT contain the removed placement
+- [x] `removed_placement_not_in_renderable_content()` — construct Term, place sixel at col=90, resize to 80, assert `RenderableContent::images` does NOT contain the removed placement
 
-### Integration matrix in `tests/image_lifecycle_matrix.rs`
+### Integration matrix in `cache/matrix_tests.rs`
 
-- [ ] Build table-driven test matrix:
+Note: lives at `oriterm_core/src/image/cache/matrix_tests.rs` (not `tests/`) because `ImageCache::{place,store,next_image_id,placements_in_viewport}` are `pub(crate)` — production placements go through VTE handlers, not the public API.
+
+- [x] Build table-driven test matrix:
   ```rust
   struct LifecycleScenario {
       name: &'static str,
@@ -171,9 +173,9 @@ Per CLAUDE.md TDD discipline, failing tests are written FIRST.
       expected: PlacementState,    // Survives, Removed, Remapped
   }
   ```
-- [ ] Enumerate: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios
-- [ ] Self-verifying count assertion: `assert_eq!(count, 42);`
-- [ ] **Validation**: on_resize and remap tests initially FAIL (methods don't exist). Existing-handler scenarios (scrollback, alt screen, ED, EL) should pass. If any fail, file via `/add-bug`.
+- [x] Enumerate: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios
+- [x] Self-verifying count assertion: `assert_eq!(count, 42);`
+- [x] **Validation**: All 42 scenarios pass with the on_resize + remap_placements implementation from 07.4. BUG-08-10 filed during implementation (image_cache()/image_cache_mut() inversion — does not affect matrix correctness since Term::resize operates on fields directly).
 
 ---
 
@@ -183,7 +185,7 @@ Per CLAUDE.md TDD discipline, failing tests are written FIRST.
 
 This subsection adds the row-remap infrastructure that makes reflow-aware image placement remapping possible. The `reflow_cells` loop already tracks `src_idx` per source row — we add per-row boundary recording with O(1) overhead.
 
-- [ ] Define `ReflowMapping` struct in `grid/resize/mod.rs`:
+- [x] Define `ReflowMapping` struct in `grid/resize/mod.rs`:
   ```rust
   /// Maps old absolute row indices to result row indices after reflow.
   /// Built during `reflow_cells` with O(1) per-row overhead.
@@ -207,25 +209,25 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
       pub old_total_evicted: u64,
   }
   ```
-- [ ] Modify `reflow_cells()` (at `resize/mod.rs:303`) to build the mapping:
+- [x] Modify `reflow_cells()` (at `resize/mod.rs:303`) to build the mapping:
   - Track `pending_output_row = result.len()` — the index the current `out_row` will have when finalized
   - At the START of each source row's processing: record `first_output_row.push(pending_output_row + out_col_contribution)` where `out_col_contribution` accounts for whether we're mid-row (content will land on `pending_output_row`) or if `reflow_row_cells` pushed result rows mid-processing
   - **Key insight**: when `reflow_row_cells` fills `out_row` and pushes it to result mid-row, `pending_output_row` must be updated to `result.len()`. Track this by comparing `result.len()` before and after `reflow_row_cells`
   - For each source row: `first_output_row.push(result.len() - if_just_pushed_else_pending)`
   - The simplest correct approach: record `result.len()` before calling `reflow_row_cells`, then record `result.len()` after. If result grew, the source row's content started on a prior output row. Map to the row where the first cell landed.
   - Return the mapping alongside existing return values
-- [ ] Capture `old_total_evicted = self.total_evicted` BEFORE `scrollback.clear()` in `apply_reflow_result` — this is the conversion base for StableRowIndex → old absolute row
-- [ ] Handle scrollback overflow in `apply_reflow_result`: when `self.scrollback.push(row)` evicts an old row (ring buffer at capacity), increment `self.total_evicted`. Currently this is NOT done (confirmed: line 271 pushes without tracking eviction). This is a pre-existing bug affecting ALL StableRowIndex users, not just images.
-- [ ] Modify `Grid::resize()` return type: `pub fn resize(...) -> Option<ReflowMapping>`:
+- [x] Capture `old_total_evicted = self.total_evicted` BEFORE `scrollback.clear()` in `apply_reflow_result` — this is the conversion base for StableRowIndex → old absolute row
+- [x] Handle scrollback overflow in `apply_reflow_result`: when `self.scrollback.push(row)` evicts an old row (ring buffer at capacity), increment `self.total_evicted`. Currently this is NOT done (confirmed: line 271 pushes without tracking eviction). This is a pre-existing bug affecting ALL StableRowIndex users, not just images.
+- [x] Modify `Grid::resize()` return type: `pub fn resize(...) -> Option<ReflowMapping>`:
   - Return `Some(mapping)` when `reflow: true` and column count changed
   - Return `None` when `reflow: false` or column count unchanged
-- [ ] Export `ReflowMapping` from `grid/mod.rs`
-- [ ] Sibling tests in `grid/resize/tests.rs`:
+- [x] Export `ReflowMapping` from `grid/mod.rs`
+- [x] Sibling tests in `grid/resize/tests.rs`:
   - `reflow_mapping_tracks_row_split()` — 80-col grid with a 120-char wrapped (WRAP flag set) line, resize to 60 cols, verify split
   - `reflow_mapping_tracks_unwrap()` — 40-col grid with a soft-wrapped continuation line (WRAP flag on first row), resize to 80, verify both source rows map to the SAME output row (unwrap, not merge of independent lines)
   - `reflow_mapping_none_when_no_reflow()` — resize with `reflow: false`, verify `None` returned
   - `reflow_mapping_none_when_cols_unchanged()` — resize with same cols but different rows, verify `None` returned
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
 
 **Validation**: `ReflowMapping` is produced correctly for row splits, merges, and no-change cases. Grid tests pass. No regressions.
 
@@ -237,17 +239,17 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
 
 ### on_resize (column-bounds removal)
 
-- [ ] Add `pub(crate) fn on_resize(&mut self, new_cols: usize, _new_rows: usize)`:
+- [x] Add `pub(crate) fn on_resize(&mut self, new_cols: usize, _new_rows: usize)`:
   - `remove_placements_where(|p| p.cell_col >= new_cols)` — removes placements whose starting column is entirely outside the new grid
   - Partially overlapping placements (start < new_cols, end >= new_cols) survive — the renderer clips
   - `prune_if_orphaned(&affected_ids)` — targeted pruning only, preserving Kitty deferred images
   - `_new_rows` accepted for forward-compatibility but unused (row bounds handled by StableRowIndex eviction)
   - Mark `dirty = true` if any placements removed
-- [ ] Unit tests from 07.2 now pass for column-bounds scenarios
+- [x] Unit tests from 07.2 now pass for column-bounds scenarios
 
 ### remap_placements (reflow-aware row remapping)
 
-- [ ] Add `pub(crate) fn remap_placements(&mut self, mapping: &ReflowMapping)`:
+- [x] Add `pub(crate) fn remap_placements(&mut self, mapping: &ReflowMapping)`:
   - For each placement, convert `cell_row: StableRowIndex` to old absolute row using `checked_sub`: `let Some(old_abs) = cell_row.0.checked_sub(mapping.old_total_evicted) else { continue; }` — if underflow, the placement was already evicted before reflow; skip it (prune_scrollback will clean it up)
   - If `old_abs as usize >= mapping.first_output_row.len()`: skip (out of range — row added after mapping was built)
   - Look up `new_output_row = mapping.first_output_row[old_abs as usize]`
@@ -255,7 +257,7 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
   - **Never remove a placement because its mapping range is "empty"** — in the reflow algorithm, wrapped rows contribute to a pending `out_row` without finalizing it, so an empty range means "absorbed into pending row", NOT "deleted". Every source row maps to exactly one output row via `first_output_row`.
   - After processing, `prune_if_orphaned` for any removed placements (only from underflow/out-of-range skips)
   - Mark `dirty = true` if any placements changed
-- [ ] Unit tests from 07.2 now pass for reflow remapping scenarios
+- [x] Unit tests from 07.2 now pass for reflow remapping scenarios
 
 **Validation**: All cache unit tests pass. `./test-all.sh` green.
 
@@ -265,11 +267,11 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
 
 **File(s):** `oriterm_core/src/term/mod.rs` (around line 446)
 
-- [ ] Modify `Term::resize` to capture the `Option<ReflowMapping>` from `Grid::resize`:
+- [x] Modify `Term::resize` to capture the `Option<ReflowMapping>` from `Grid::resize`:
   ```rust
   let mapping = self.grid.resize(new_lines, new_cols, reflow);
   ```
-- [ ] **Operation ordering is critical**: `remap_placements` MUST run BEFORE `prune_scrollback`, because remap translates old StableRowIndex values to new ones — if prune runs first, it compares unmapped (old) cell_row values against the post-reflow eviction boundary and incorrectly deletes placements whose content survived reflow.
+- [x] **Operation ordering is critical**: `remap_placements` MUST run BEFORE `prune_scrollback`, because remap translates old StableRowIndex values to new ones — if prune runs first, it compares unmapped (old) cell_row values against the post-reflow eviction boundary and incorrectly deletes placements whose content survived reflow.
   ```rust
   // 1. Remap FIRST (translate old StableRowIndex → new)
   if let Some(ref mapping) = mapping {
@@ -282,19 +284,19 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
   // 3. THEN remove column-out-of-bounds
   self.image_cache.on_resize(new_cols, new_lines);
   ```
-- [ ] For the alt image cache — use the same condition as alt grid resize (`if let Some(alt) = &mut self.alt_grid`), matching alt grid EXISTENCE, NOT alt screen active:
+- [x] For the alt image cache — use the same condition as alt grid resize (`if let Some(alt) = &mut self.alt_grid`), matching alt grid EXISTENCE, NOT alt screen active:
   ```rust
   if let Some(cache) = &mut self.alt_image_cache {
       cache.on_resize(new_cols, new_lines);
       // Alt grid never reflows (reflow: false), so no remap needed
   }
   ```
-- [ ] Sibling tests in `oriterm_core/src/term/tests.rs`:
+- [x] Sibling tests in `oriterm_core/src/term/tests.rs`:
   - `term_resize_removes_out_of_bounds_image_placement()` — sixel at col=90, resize to 80, assert removed
   - `term_resize_updates_alt_cache_when_alt_exists()` — ensure_alt_grid, place in alt, resize, assert removed
   - `term_resize_remaps_image_placement_through_reflow()` — place image, resize with reflow=true, assert placement's `cell_row` updated to follow content
   - `term_resize_without_reflow_skips_remap()` — place image, resize with reflow=false, assert `cell_row` unchanged
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
 
 **Validation**: Term-level tests pass. Existing teseq tests pass. Integration matrix from 07.2 passes for resize + reflow scenarios.
 

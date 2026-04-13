@@ -2399,3 +2399,122 @@ fn stress_resize_vte_output_between_resizes() {
         assert_eq!(buf.cells.len(), rows * cols);
     }
 }
+
+// ── Image lifecycle on resize (section 07.5) ──
+
+/// A placement whose starting column falls entirely outside the new
+/// grid width must be dropped by `Term::resize`.
+#[test]
+fn term_resize_removes_out_of_bounds_image_placement() {
+    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+    place_test_image(&mut term, 0, 90, 1, 10);
+    assert_eq!(term.image_cache().placement_count(), 1);
+
+    term.resize(24, 80, true);
+
+    assert_eq!(
+        term.image_cache().placement_count(),
+        0,
+        "placement starting at col=90 must be removed when new_cols=80"
+    );
+}
+
+/// The alt-screen image cache (when allocated) also gets column-bounds
+/// handling on resize. Alt grid never reflows, so only `on_resize`
+/// runs on the alt cache — no remap.
+#[test]
+fn term_resize_updates_alt_cache_when_alt_exists() {
+    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+    // Enter alt mode — allocates the alt cache and places us in it.
+    // While in alt mode, image_cache_mut() routes to the alt-screen's
+    // cache so the placement we make is the one the resize must clean.
+    term.swap_alt();
+    place_test_image(&mut term, 0, 90, 1, 10);
+    assert_eq!(
+        term.image_cache().placement_count(),
+        1,
+        "alt-mode placement should be visible before resize"
+    );
+
+    term.resize(24, 80, true);
+
+    assert_eq!(
+        term.image_cache().placement_count(),
+        0,
+        "alt-mode placement at col=90 must be removed when new_cols=80"
+    );
+}
+
+/// When reflow runs, `Term::resize` remaps placements through the
+/// `ReflowMapping` so they continue to point at the same content.
+/// A soft-wrapped continuation row unwraps into its parent on grow —
+/// the placement on the continuation row must follow the content.
+#[test]
+fn term_resize_remaps_image_placement_through_reflow() {
+    let mut term = Term::new(3, 10, 100, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Seed: row 0 wrapped ("helloworld"), row 1 continuation ("again").
+    use crate::cell::CellFlags;
+    for (col, ch) in "helloworld".chars().enumerate() {
+        term.grid_mut()[Line(0)][Column(col)] = crate::cell::Cell {
+            ch,
+            ..crate::cell::Cell::default()
+        };
+    }
+    term.grid_mut()[Line(0)][Column(9)]
+        .flags
+        .insert(CellFlags::WRAP);
+    for (col, ch) in "again".chars().enumerate() {
+        term.grid_mut()[Line(1)][Column(col)] = crate::cell::Cell {
+            ch,
+            ..crate::cell::Cell::default()
+        };
+    }
+
+    // Place image on the continuation row (stable row 1).
+    place_test_image(&mut term, 1, 0, 1, 2);
+    assert_eq!(
+        term.image_cache()
+            .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX))[0]
+            .cell_row
+            .0,
+        1
+    );
+
+    // Grow to 20 cols — unwrap collapses rows 0+1 into single output row 0.
+    term.resize(3, 20, true);
+
+    // The placement on stable row 1 should now be mapped to row 0
+    // (where the unwrapped content lives).
+    let placements = term
+        .image_cache()
+        .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
+    assert_eq!(placements.len(), 1);
+    assert_eq!(
+        placements[0].cell_row.0, 0,
+        "placement must follow unwrapped content onto output row 0"
+    );
+}
+
+/// `reflow: false` skips the remap step entirely — placements retain
+/// their original `cell_row` when reflow does not run.
+#[test]
+fn term_resize_without_reflow_skips_remap() {
+    let mut term = Term::new(3, 20, 100, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+    place_test_image(&mut term, 1, 0, 1, 2);
+
+    term.resize(5, 10, false);
+
+    let placements = term
+        .image_cache()
+        .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
+    assert_eq!(placements.len(), 1);
+    assert_eq!(
+        placements[0].cell_row.0, 1,
+        "reflow=false must leave cell_row unchanged"
+    );
+}

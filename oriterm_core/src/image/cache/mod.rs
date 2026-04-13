@@ -374,4 +374,6 @@ impl std::fmt::Debug for ImageCache {
 }
 
 #[cfg(test)]
+mod matrix_tests;
+#[cfg(test)]
 mod tests;
