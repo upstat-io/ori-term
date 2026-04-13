@@ -82,7 +82,7 @@ sections:
     status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 # TPR Checkpoint Placement: 04.3 (after headless observer infrastructure — covers .1-.3),
 # 04.6 (after both pilots run green — covers .3b-.6), final in 04.N
 ---
@@ -93,13 +93,13 @@ sections:
 **Goal:** Build the verification chain harness that section 08 onward will use to drive every catalog row to `verified` status. The harness is split into two layers by crate boundary: `CoreSpecHarness` (headless, rungs 1-4: parser/dispatch/state/effect/renderable) lives in `oriterm_test_support`, and `VisualSpecHarness` (GPU, rungs 5-8: frame-input/gpu-instance/texture/golden) lives in `oriterm/src/gpu/visual_regression/spec_chain/` (under `#[cfg(test)]`). Raw parser tuples are captured via a vendored VTE `Processor::advance_with_observer()` shim with `PerformObserver` trait. Semantic dispatch calls are captured via `RecordingHandler`, a wrapper that implements `vte::ansi::Handler` and records each method call before delegating to `Term<QueueingEffectSink>`. Two pilot scenarios — one visual (sixel raster fill) and one non-visual (DA1 query) — exercise every applicable rung end-to-end and prove the harness works. The pilots' API requirements are then used to FREEZE the catalog row schema (which was provisional in section 01). The coverage report generator is the binary that walks the catalog files (via the shared `oriterm_test_support::catalog::parse_catalog_markdown` parser and `walk_catalog_files()` created by Section 01.3) and produces a per-stack absolute-verified-count table. **Gating metric is absolute count (monotonic), not percentage.** Percentage is advisory only — because section 01 and the continuous-discovery safety net (04.9) keep adding new rows, the denominator grows and percentages can drop while absolute counts stay flat or rise. CI gates on absolute counts per 04.8.
 
 **Success Criteria:**
-- [ ] `CoreSpecHarness` (headless) + `VisualSpecHarness` (GPU, at `visual_regression/spec_chain/`) APIs exist with per-rung observers; vendored VTE `PerformObserver` captures raw parser tuples; `RecordingHandler` captures semantic dispatch calls
-- [ ] Sixel visual pilot drives every visual rung (parser through golden) green
-- [ ] DA1 non-visual pilot drives parser through effect apex green
-- [ ] Catalog row schema frozen and section 01 catalogs migrated
-- [ ] `spec-coverage-report` binary exists and produces correct per-stack absolute-verified-count table (monotonic gating metric — percentage is advisory only; see 04.8 for the full rationale)
-- [ ] BLOAT splits applied as `gpu/prepare/{mod,dirty_skip/mod}.rs` are touched
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
+- [x] `CoreSpecHarness` (headless) + `VisualSpecHarness` (GPU, at `visual_regression/spec_chain/`) APIs exist with per-rung observers; vendored VTE `PerformObserver` captures raw parser tuples; `RecordingHandler` captures semantic dispatch calls
+- [ ] Sixel visual pilot drives every visual rung (parser through golden) green <!-- blocked-by:05 -->
+- [x] DA1 non-visual pilot drives parser through effect apex green
+- [ ] Catalog row schema frozen and section 01 catalogs migrated <!-- blocked-by:05 -->
+- [x] `spec-coverage-report` binary exists and produces correct per-stack absolute-verified-count table (monotonic gating metric — percentage is advisory only; see 04.8 for the full rationale)
+- [x] BLOAT splits applied as `gpu/prepare/{mod,dirty_skip/mod}.rs` are touched
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
 - [ ] Connects to mission criteria: **Verification chain complete per row**, **Coverage report green**
 
 **Context:** The harness is the load-bearing test infrastructure for the entire spec-conformance plan. Sections 08-20 each take a catalog file and grind every row from `implemented-unverified` to `verified` using this harness — without it, those sections have nothing to write tests against. Per Codex's "catalog breadth first, schema freeze after pilot" guidance, the catalog row format from section 01 is provisional; the pilots in this section discover what fields the harness actually needs to observe (e.g., does the row need an explicit `apex_layer` field or can it be inferred? Does the row need a `golden_path` field for visual sequences? What about per-platform variants?). Once the pilots run green, the schema is frozen and section 01's catalogs are migrated.
@@ -950,26 +950,26 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [ ] Failing test matrix written FIRST (TDD): pilot tests in 04.5 + 04.6 written before observer wiring; observer tests in 04.2/04.3/04.4 written before observer implementation
 - [ ] **Matrix dimensions**: rung × scenario type (visual/non-visual) × apex layer × verification status — pilots cover both visual chain (8 rungs to GoldenImage apex) and non-visual chain (3-4 rungs to EffectPtyWrite apex)
 - [ ] **Semantic pin**: pilots are the permanent regression guard — `sixel_minimal_drives_every_rung_green` and `da1_query_drives_to_effect_apex` must continue passing for the lifetime of the plan. They're the first tests that prove the harness works; they're also the canary if a future change breaks rung observation.
-- [ ] `CoreSpecHarness` (rungs 1-4) exists in `oriterm_test_support` with `RecordingHandler` for parser/dispatch capture and renderable observer
-- [ ] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
+- [x] `CoreSpecHarness` (rungs 1-4) exists in `oriterm_test_support` with `RecordingHandler` for parser/dispatch capture and renderable observer
+- [x] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
 - [ ] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm`)
-- [ ] BLOAT splits applied: `oriterm/src/gpu/prepare/mod.rs` and `oriterm/src/gpu/prepare/dirty_skip/mod.rs` are now under 500 lines (verified by `wc -l`)
-- [ ] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05.6)
-- [ ] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
-- [ ] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
+- [x] BLOAT splits applied: `oriterm/src/gpu/prepare/mod.rs` (395 lines) and `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (378 lines) are now under 500 lines (verified by `wc -l` on 2026-04-13)
+- [x] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05.6)
+- [x] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
+- [x] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
 - [ ] Sixel visual pilot test passes on the deterministic lane (after 05.6); golden captured under `tests/references/spec_chain/pilots/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer`
-- [ ] DA1 non-visual pilot test passes
+- [x] DA1 non-visual pilot test passes (3/3 green: drives_to_effect_apex, reply_bytes_match, skips_parser_rung — verified 2026-04-13)
 - [ ] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen AFTER 05.6)
 - [ ] All catalog files migrated to the frozen schema
-- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (not just percentages)
-- [ ] Coverage report walks BOTH catalog files AND test source files (grep for `// Catalog row: <ID>` comments + `catalog_row_id: "<ID>"` const fields)
-- [ ] `--check` mode of the report binary correctly detects ALL FOUR gates: (a) absolute-verified-count regression, (b) false-verified (no citation), (c) uncataloged citation (no catalog row), (d) non-empty uncataloged-backlog without paired catalog-update PR
-- [ ] Cataloging safety net (04.9) lands: `UncatalogedDetector` records tuples in-memory during test execution (thread-safe `HashSet<TupleSig>`), serializes to temp files on drop, and `spec-coverage-report --check` materializes the backlog in a single serial post-test step. No file I/O during parallel test execution (flaky-test discipline per `.claude/rules/tests.md`).
-- [ ] Observation hooks in `gpu/prepare/` are gated behind `#[cfg(any(test, debug_assertions))]` so release builds have zero overhead
-- [ ] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes
-- [ ] `./build-all.sh` green (cross-compile too)
-- [ ] `./test-all.sh` green debug + release
-- [ ] `./clippy-all.sh` green
+- [x] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (16 stacks, 315 total rows — verified 2026-04-13)
+- [x] Coverage report walks BOTH catalog files AND test source files (scans `catalog/*.md` via shared parser + 8 test root dirs for `// Catalog row:` and `catalog_row_id:` citations — verified 2026-04-13)
+- [x] `--check` mode of the report binary correctly detects ALL FOUR gates: (a) absolute-verified-count regression, (b) false-verified (no citation), (c) uncataloged citation (no catalog row), (d) non-empty uncataloged-backlog without paired catalog-update PR — all four gates verified, exit code 1 on uncataloged backlog (2026-04-13)
+- [x] Cataloging safety net (04.9) lands: `UncatalogedDetector` records tuples in-memory during test execution (`HashSet<TupleSig>`), serializes to temp files on drop, and `spec-coverage-report --check` materializes the backlog in a single serial post-test step. No file I/O during parallel test execution (flaky-test discipline per `.claude/rules/tests.md`). 6 unit tests green.
+- [x] Observation hooks in `gpu/prepare/` are gated behind `#[cfg(test)]` (more restrictive than `#[cfg(any(test, debug_assertions))]`) so release builds have zero overhead — verified 2026-04-13
+- [x] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes (5/5 green — verified 2026-04-13)
+- [x] `./build-all.sh` green (debug + release cross-compile — verified 2026-04-13)
+- [x] `./test-all.sh` green debug + release (verified 2026-04-13)
+- [x] `./clippy-all.sh` green (host + Windows cross-compile — verified 2026-04-13)
 - [ ] Plan annotation cleanup
 - [ ] Section frontmatter `status` → `complete`
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
