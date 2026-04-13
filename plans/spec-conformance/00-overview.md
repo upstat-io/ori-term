@@ -337,7 +337,7 @@ Phase 6 (final integration milestones — depend on every prior section)
 **Cross-section interactions (must be co-implemented):**
 
 - **Section 06 + Section 09**: The mode 2026 timeout-abort fix (section 06 adds the API call site in `oriterm_mux/src/pane/io_thread/mod.rs`) and the mode 2026 verification chain rows (section 09 enumerates them with their test ladders) must land together — the timeout test in the catalog is non-executable until the API call is wired.
-- **Section 06 + Section 08**: The mode metadata registry refactor (section 06 fixes the LEAK) and the ECMA-48 baseline mode rows (section 08 verifies the basic-mode subset) must land together — adding new modes in section 08 against the unfixed LEAK creates 5-sync-point drift bugs immediately.
+- **Section 06 + Section 08**: The mode metadata consolidation (section 06 eliminates the WASTE `named_private_mode_number()` function, reducing sync points from 6 to 5) and the ECMA-48 baseline mode rows (section 08 verifies the basic-mode subset) should land together — adding new modes in section 08 benefits from the cleaner sync-point structure.
 - **Section 07 + Section 21**: Image+resize/reflow correctness and notcurses-demo harness must land together. The `keller` scene resizes during the all-7-blitters test, and any image lifecycle bug breaks the scene's correctness criterion. Section 07 lands the fix; section 21 verifies it under harness stress before section 24 expects every scene to pass.
 - **Section 12 + Section 13**: Sixel and kitty graphics share `ImageCache`, `ImageTextureCache`, and the GPU image pipeline. A regression in either silently breaks the other. Cross-stack regression sweep (section 23) catches this in CI, but the per-section test ladders must include placement-survives-other-protocol scenarios.
 - **Section 02 sets up the absorption that 08 references**: Section 02 adds the supersede notice and creates the mapping-table file. Section 08 populates the mapping table with the actual catalog row → tack section IDs. Sections are co-implemented in the sense that 02's empty mapping table file is filled by 08, but they are SEPARATE sections (02 is plan-hygiene only, 08 is implementation work).
@@ -514,12 +514,11 @@ Phase 1 — Foundation (5 narrow, focused sections, parallel after 03+04)
   ├─ 06 Terminal Mode Plumbing (control plane):
   │     - Mode 2026 timeout-abort wiring (call sync_timeout/stop_sync
   │       in oriterm_mux/src/pane/io_thread/mod.rs)
-  │     - Mode metadata registry: data-only consolidation of the 5-sync-
-  │       point LEAK across NamedPrivateMode + PrivateMode::new +
-  │       named_private_mode_number/_flag + apply_decset/_decrst
+  │     - Mode metadata sync-point reduction: eliminate WASTE function
+  │       named_private_mode_number() (replaced by mode as u16 cast),
+  │       reducing 6 sync points to 5 enforced by exhaustive matches
   │     - Behavior stays in match arms (per Codex Q4 pushback)
-  │  Gate: timeout-abort tests pass; adding a new mode requires touching
-  │        exactly one registry entry, not 5
+  │  Gate: timeout-abort tests pass; sync points reduced from 6 to 5
   │
   └─ 07 Image Lifecycle Correctness (graphics state):
         - image_cache resize/reflow handler (currently MISSING)
@@ -710,7 +709,7 @@ Per-section line estimates are approximate. Sections will be refined as their de
 | 03 Effect Boundary Migration                  | ~2,500                           | High       | 02          |
 | 04 Verification Chain Harness + Pilots + 04.8 Coverage Report + 04.9 Cataloging Safety Net | ~4,200 | High | 03 (hard) + 05 (soft: 04.4/04.5/04.7 gated on 05.6) |
 | 05 Golden Lane Determinism                    | ~1,500                           | Medium     | 04          |
-| 06 Terminal Mode Plumbing (timeout + registry)| ~1,500                           | Medium     | 04          |
+| 06 Terminal Mode Plumbing (timeout + sync-point reduction) | ~1,500              | Medium     | 04          |
 | 07 Image Lifecycle Correctness                | ~2,000                           | Medium     | 04          |
 | 08 ECMA-48 Baseline                           | ~4,000                           | Medium     | 02, 06      |
 | 09 DEC Private Modes (full)                   | ~2,000                           | Medium     | 06, 08      |
@@ -774,7 +773,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Complete    |
 | 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Complete    |
 | 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Complete    |
-| 06 | Terminal Mode Plumbing (Mode 2026 + metadata registry) | `section-06-terminal-mode-plumbing.md`               | Not Started |
+| 06 | Terminal Mode Plumbing (Mode 2026 + sync-point reduction) | `section-06-terminal-mode-plumbing.md`            | Not Started |
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Not Started |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Not Started |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Not Started |
