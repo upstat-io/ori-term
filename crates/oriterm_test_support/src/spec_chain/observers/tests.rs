@@ -65,6 +65,26 @@ fn parser_observer_matches_execute() {
     );
 }
 
+#[test]
+fn parser_observer_matches_dcs_hook() {
+    let mut harness = SpecHarness::new();
+    // DCS q (sixel introducer) — action 'q', no intermediates.
+    harness.feed(b"\x1bPq\x1b\\");
+
+    // VTE produces a default param of 0 for DCS q without explicit params.
+    let expected = ParserExpectation {
+        action: 'q',
+        params: &[0],
+        intermediates: &[],
+    };
+    let result = observe_parser(harness.outcome(), &expected);
+    assert!(
+        result.passed,
+        "parser observer should match DCS Hook 'q': {:?}",
+        result.failure
+    );
+}
+
 // ── Dispatch observer ───────────────────────────────────────────────
 
 #[test]
@@ -171,5 +191,33 @@ fn effect_observer_fails_on_empty_effects() {
     assert!(
         !result.passed,
         "effect observer should fail when no effects emitted"
+    );
+}
+
+#[test]
+fn effect_observer_matches_pty_sub_variant() {
+    let mut harness = SpecHarness::new();
+    // DA1 query emits Pty::Write { kind: DeviceAttribute }.
+    harness.feed(b"\x1b[c");
+
+    let expected = EffectExpectation::pty("DeviceAttribute");
+    let result = observe_effect(harness.outcome(), &expected);
+    assert!(
+        result.passed,
+        "effect observer should match Pty::DeviceAttribute: {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn effect_observer_fails_on_wrong_sub_variant() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[c"); // DA1 → DeviceAttribute
+
+    let expected = EffectExpectation::pty("CursorReport");
+    let result = observe_effect(harness.outcome(), &expected);
+    assert!(
+        !result.passed,
+        "effect observer should fail for wrong sub-variant"
     );
 }
