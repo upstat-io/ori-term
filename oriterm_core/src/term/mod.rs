@@ -331,8 +331,15 @@ impl<S: EffectSink> Term<S> {
 
     /// Reference to the active screen's image cache.
     ///
-    /// Returns the alternate image cache when `ALT_SCREEN` mode is active,
-    /// falling back to the primary cache if the alt cache was not allocated.
+    /// Mirrors [`Self::grid`]: returns `alt_image_cache` when
+    /// `ALT_SCREEN` is active, primary `image_cache` otherwise. The
+    /// semantic field convention is load-bearing: `image_cache` always
+    /// holds primary-screen placements, `alt_image_cache` always holds
+    /// alt-screen placements. `Term::resize` pairs `self.grid` with
+    /// `self.image_cache` and `self.alt_grid` with `self.alt_image_cache`
+    /// — that pairing is correct only when neither field is swapped,
+    /// so do NOT reintroduce the cache swap in `toggle_alt_common`
+    /// (see BUG-08-10 / TPR-07-001 round 6).
     pub fn image_cache(&self) -> &ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
             debug_assert!(
@@ -347,8 +354,7 @@ impl<S: EffectSink> Term<S> {
 
     /// Mutable reference to the active screen's image cache.
     ///
-    /// Returns the alternate image cache when `ALT_SCREEN` mode is active,
-    /// falling back to the primary cache if the alt cache was not allocated.
+    /// See [`Self::image_cache`] for the routing contract.
     pub fn image_cache_mut(&mut self) -> &mut ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
             debug_assert!(

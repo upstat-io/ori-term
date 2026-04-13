@@ -27,7 +27,7 @@ use vte::ansi::Processor;
 use crate::effect::VoidEffectSink;
 use crate::grid::StableRowIndex;
 use crate::image::{ImageData, ImageFormat, ImageId, ImagePlacement, ImageSource, PlacementSizing};
-use crate::term::Term;
+use crate::term::{Term, TermMode};
 use crate::theme::Theme;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -185,10 +185,16 @@ fn apply_mutation_and_observe(
         }
     }
 
-    // image_cache() routes by ALT_SCREEN flag. See BUG-08-10 — while
-    // in alt mode, image_cache() returns the *inactive* primary cache,
-    // which is exactly where our placement lives, so this read path
-    // works for both AltEnter and AltExit scenarios.
+    // The placement was made in primary mode (lives in the primary
+    // `image_cache` field). After the TPR-07-001 round-6 fix, the two
+    // caches are semantically isolated: `image_cache()` in alt mode
+    // returns the (empty) alt cache, not the primary. Swap back to
+    // primary before observing so `image_cache()` returns the cache
+    // that owns the placement under test.
+    if term.mode().contains(TermMode::ALT_SCREEN) {
+        term.swap_alt();
+    }
+
     let cache = term.image_cache();
     let placements = cache.placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
     let Some(p) = placements.iter().find(|p| p.image_id == id) else {

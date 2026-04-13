@@ -412,6 +412,14 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [x] `[TPR-07-002-gemini][medium]` — Purge remaining stale row-range terminology.
   Resolved: Fixed.
 
+**Round 6 (post-implementation):**
+- [x] `[TPR-07-001-codex][high]` `oriterm_core/src/term/mod.rs:474` — Route each resize path through the cache that owns that screen.
+  Resolved: Fixed on 2026-04-13 in commit {next}. Removed the image-cache field swap from `toggle_alt_common`. `image_cache` and `alt_image_cache` fields now carry their semantic contents at all times. `image_cache()` / `image_cache_mut()` route by `ALT_SCREEN` mode (mirroring `grid()` / `grid_mut()`). `Term::resize` now correctly pairs `self.grid` with `self.image_cache` (primary) and `self.alt_grid` with `self.alt_image_cache` (alt). Added regression `term_resize_routes_each_grid_through_its_own_image_cache` that reads fields directly to catch any future routing inversion. BUG-08-10 closed as part of this fix. Matrix test `image_lifecycle_matrix` updated to swap back to primary mode before observation (the old bug meant alt-mode `image_cache()` leaked primary content, which the old matrix inadvertently relied on).
+- [x] `[TPR-07-001-gemini][high]` `oriterm_core/src/term/mod.rs:456` — Fix primary grid reflow mapping applied to alt image cache in alt screen mode.
+  Resolved: Same fix as [TPR-07-001-codex] (agreement — both reviewers flagged the same root cause).
+- [x] `[TPR-07-002-gemini][medium]` `oriterm/src/app/chrome/resize.rs:135` — Prevent unconditional cell metrics broadcast from dirtying all pane snapshots.
+  Resolved: Fixed on 2026-04-13. Added `WindowContext::last_broadcast_cell_dims: Option<(u16, u16)>` and short-circuit in `App::broadcast_cell_metrics_to_window`: if the new `(cell_w, cell_h)` equals the last broadcast dims, return early without dirtying any pane or issuing `set_cell_dimensions` IPC. On first broadcast (field is `None`) and on any change, the broadcast runs and the field is updated. `sync_grid_layout` and `handle_dpi_change` callers are unchanged — the short-circuit lives at the canonical broadcast site (SSOT).
+
 ---
 
 ## 07.N Completion Checklist
