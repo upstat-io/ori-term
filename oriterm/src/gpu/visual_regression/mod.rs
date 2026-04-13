@@ -23,6 +23,12 @@ mod decoration_tests;
 mod dialog_helpers;
 mod edge_case_tests;
 mod frame_input_helper;
+mod golden_lane_config;
+#[allow(
+    unused_imports,
+    reason = "used once 05.3 wires the deterministic entry point"
+)]
+pub(crate) use golden_lane_config::GoldenLaneConfig;
 mod main_window;
 mod meta_tests;
 mod multi_size;
