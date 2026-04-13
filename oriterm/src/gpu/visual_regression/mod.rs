@@ -21,6 +21,7 @@ mod compare;
 mod core_tests;
 mod cursor_opacity_tests;
 mod decoration_tests;
+mod deterministic_lane_tests;
 mod dialog_helpers;
 mod edge_case_tests;
 mod frame_input_helper;
