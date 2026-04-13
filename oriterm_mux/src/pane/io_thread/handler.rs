@@ -125,6 +125,10 @@ impl<S: EffectSink + 'static> PaneIoThread<S> {
                 self.terminal
                     .set_image_animation_enabled(config.animation_enabled);
             }
+            PaneIoCommand::SetCellDimensions { width, height } => {
+                self.terminal.set_cell_dimensions(width, height);
+                self.grid_dirty.store(true, Ordering::Release);
+            }
             PaneIoCommand::ScrollToPreviousPrompt => {
                 self.terminal.scroll_to_previous_prompt();
                 self.grid_dirty.store(true, Ordering::Release);

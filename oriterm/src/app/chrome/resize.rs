@@ -96,6 +96,14 @@ impl App {
             border_inset,
         );
 
+        // Capture cell metrics for post-layout mux broadcast. Must
+        // propagate REGARDLESS of whether grid dimensions change —
+        // config-reload font-size changes recompute `cell` without
+        // changing `cols`/`rows`, and `FixedPixels` image placements
+        // still need refreshed coverage.
+        let cell_w_u16 = cell.width.round().max(1.0) as u16;
+        let cell_h_u16 = cell.height.round().max(1.0) as u16;
+
         // Reborrow mutably now that immutable reads are done.
         let ctx = self.windows.get_mut(&winit_id).expect("checked above");
         let old_cols = ctx.terminal_grid.cols();
@@ -121,6 +129,10 @@ impl App {
             }
             self.update_resize_increments(winit_id);
         }
+
+        // Propagate cell metrics to every pane in this window
+        // unconditionally — see comment above cell_w_u16 capture.
+        self.broadcast_cell_metrics_to_window(winit_id, cell_w_u16, cell_h_u16);
 
         grid_changed
     }

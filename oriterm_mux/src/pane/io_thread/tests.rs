@@ -943,6 +943,30 @@ fn test_set_theme_command() {
     );
 }
 
+/// `SetCellDimensions` command is plumbed to `Term::set_cell_dimensions`
+/// without panicking, and flags the grid dirty so the main thread pulls
+/// a fresh snapshot. The underlying Term-level recomputation (cell
+/// coverage for `FixedPixels` placements) is verified in
+/// `oriterm_core::image::cache::tests` — this test covers only the
+/// mux-layer plumbing.
+#[test]
+fn test_set_cell_dimensions_command_marks_dirty() {
+    use std::sync::atomic::Ordering;
+
+    let mut t = make_sync_thread();
+    t.grid_dirty.store(false, Ordering::Release);
+
+    t.handle_command(PaneIoCommand::SetCellDimensions {
+        width: 16,
+        height: 32,
+    });
+
+    assert!(
+        t.grid_dirty.load(Ordering::Acquire),
+        "SetCellDimensions must flag grid_dirty so the main thread re-reads the snapshot"
+    );
+}
+
 /// SetCursorShape command changes the cursor shape.
 #[test]
 fn test_set_cursor_shape_command() {

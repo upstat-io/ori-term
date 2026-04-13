@@ -169,6 +169,13 @@ pub trait MuxBackend {
     /// Apply image protocol configuration to a pane.
     fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig);
 
+    /// Propagate cell pixel dimensions to a pane's terminal so
+    /// `FixedPixels` image placements compute correct cell coverage
+    /// after font-size or DPI changes. Separate from `set_image_config`
+    /// because cell metrics are runtime state (font rasterization
+    /// output), not static TOML config.
+    fn set_cell_dimensions(&mut self, pane_id: PaneId, width: u16, height: u16);
+
     // -- Scroll operations --
 
     /// Scroll the viewport by `delta` lines (positive = toward history).

@@ -172,6 +172,18 @@ impl MuxBackend for MuxClient {
         self.dirty_panes.insert(pane_id);
     }
 
+    fn set_cell_dimensions(&mut self, pane_id: PaneId, width: u16, height: u16) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetCellDimensions {
+                pane_id,
+                width,
+                height,
+            });
+            transport.invalidate_pushed_snapshot(pane_id);
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
     fn open_search(&mut self, pane_id: PaneId) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::OpenSearch { pane_id });
