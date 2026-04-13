@@ -10,7 +10,7 @@ mod helpers;
 mod pipeline_cache;
 
 // Re-export for visual_regression/ consumers (deterministic golden lane).
-#[allow(unused_imports, reason = "used by visual_regression once 05.3 lands")]
+#[cfg(all(test, feature = "gpu-tests"))]
 pub(crate) use helpers::AdapterPreference;
 
 use helpers::{
