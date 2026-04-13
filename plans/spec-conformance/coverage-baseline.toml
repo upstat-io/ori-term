@@ -1,0 +1,23 @@
+# Coverage baseline — absolute verified row counts per stack.
+# Updated by spec-coverage-report --update-baseline.
+# CI fails if any stack's verified count drops below these values.
+#
+# Initial values are all 0 (no rows verified yet). As sections 08-20
+# verify rows, the baseline is updated.
+[stacks]
+audio-print = 0
+charsets = 0
+de-facto-behaviors = 0
+dec-private-modes = 0
+ecma-48 = 0
+historical = 0
+iterm2 = 0
+kitty-graphics = 0
+kitty-keyboard = 0
+mode-2026 = 0
+mouse = 0
+osc = 0
+shell-integration = 0
+sixel = 0
+unicode-subcell = 0
+xterm-ctlseqs = 0
