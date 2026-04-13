@@ -139,7 +139,7 @@ animation clock, blink phase, locale, LANG
 ---
 
 ### Section 06: Terminal Mode Plumbing
-**File:** `section-06-terminal-mode-plumbing.md` | **Status:** Not Started
+**File:** `section-06-terminal-mode-plumbing.md` | **Status:** In Progress
 
 ```
 mode 2026, sync output, synchronized output, presentation gates
