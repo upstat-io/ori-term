@@ -2,7 +2,7 @@
 section: "04"
 title: "Verification Chain Harness + Pilots + Coverage Report"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Build the SpecHarness API that drives a sequence through every applicable rung of the verification chain (parser → dispatch → state/effect → renderable → frame-input → gpu-instance → texture → golden), validate the API with one visual pilot (sixel) and one non-visual pilot (DA1), freeze the catalog row schema based on what the pilots needed, and deliver the spec-coverage-report binary."
 success_criteria:
   - "`CoreSpecHarness` (headless, rungs 1-4) API exists in `oriterm_test_support/src/spec_chain/mod.rs` with `RecordingHandler` for dispatch capture and vendored VTE `PerformObserver` for raw tuple capture; `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping the core harness with GPU observation"
