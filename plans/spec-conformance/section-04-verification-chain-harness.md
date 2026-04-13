@@ -55,7 +55,7 @@ sections:
     status: complete
   - id: "04.3"
     title: "Implement renderable observer + BLOAT splits (headless — oriterm_test_support)"
-    status: in-progress
+    status: complete
   - id: "04.3b"
     title: "Implement frame-input/gpu-instance observers (visual — oriterm)"
     status: not-started
@@ -537,7 +537,7 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 - [x] `observers/renderable.rs`: `observe_renderable(outcome, expected) -> RungResult` — stub that always passes until pilots define concrete expectations. Lives in `oriterm_test_support` (no GPU types needed).
 - [x] Sibling tests for the renderable observer. (Stub observer has no behavior to test independently — covered by harness integration tests.)
 - [x] **Validation**: BLOAT files now under 500 lines; renderable observer compiles headlessly; all tests pass.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.1–04.3 (harness API + headless observer infrastructure). Catches design issues before pilots are written against them.
+- [x] **TPR checkpoint** — `/tpr-review` covering 04.1–04.3. 5 iterations, 16 findings fixed, clean pass. Key improvements: run_scenario wired to observers, EffectExpectation sub_variant, parser DCS/OSC/APC support, unit struct stubs.
 
 ## 04.3b Implement frame-input/gpu-instance observers (visual — `oriterm`)
 
