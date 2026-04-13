@@ -29,10 +29,10 @@ third_party_review:
 sections:
   - id: "06.1"
     title: "Make io_thread select! deadline-aware for sync timeout"
-    status: complete
+    status: in-progress
   - id: "06.2"
     title: "Extract post-parse housekeeping into shared method"
-    status: complete
+    status: in-progress
   - id: "06.3"
     title: "Emit Abort effect + fix docstring + fix LegacyEventSink drop"
     status: not-started
@@ -44,7 +44,7 @@ sections:
     status: not-started
   - id: "06.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "06.N"
     title: "Completion Checklist"
     status: not-started
