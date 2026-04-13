@@ -962,6 +962,9 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `[TPR-04-001-codex-r6][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:54` — GPU instance rung-6 expectation doesn't check sixel image quads.
   Resolved: Fixed on 2026-04-13. Added `min_image_quads: Option<usize>` to `GpuInstanceExpectation`, observer checks `prepared.image_quads_below.len() + prepared.image_quads_above.len()`. Sixel pilot uses `.with_images(1)` to assert image quads reached the GPU prepare phase.
 
+- [x] `[TPR-04-001-codex-r7][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/gpu_instance.rs:47` — No direct unit tests for min_image_quads positive/negative paths.
+  Resolved: Fixed on 2026-04-13. Added 4 unit tests: passes_when_below_present, passes_when_above_present, fails_when_empty (negative pin), counts_both_layers (split-count case).
+
 ---
 
 ## 04.N Completion Checklist

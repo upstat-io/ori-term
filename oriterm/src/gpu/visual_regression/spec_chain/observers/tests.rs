@@ -3,14 +3,19 @@
 //! Uses the deterministic golden lane from Section 05 — NOT the legacy
 //! `headless_env_full()` entry point.
 
-use oriterm_test_support::spec_chain::{GoldenExpectation, RungName, TextureExpectation};
+use oriterm_core::Rgb;
+use oriterm_test_support::spec_chain::{
+    GoldenExpectation, GpuInstanceExpectation, RungName, TextureExpectation,
+};
 
+use crate::gpu::frame_input::ViewportSize;
+use crate::gpu::prepared_frame::{ImageQuad, PreparedFrame};
 use crate::gpu::visual_regression::{
     GoldenLaneConfig, headless_env_with_pinned_software_rasterizer,
 };
 
 use super::texture::RenderedPixels;
-use super::{observe_golden_image, observe_texture_render};
+use super::{observe_golden_image, observe_gpu_instance, observe_texture_render};
 
 // ── Texture observer tests ───────────────────────────────────────
 
@@ -260,4 +265,86 @@ fn golden_observer_uses_catalog_row_id_as_fallback_name() {
 
     // Clean up.
     let _ = std::fs::remove_file(&ref_path);
+}
+
+// ── GPU instance observer: image quad tests ──────────────────────
+
+fn dummy_image_quad() -> ImageQuad {
+    ImageQuad {
+        image_id: oriterm_core::image::ImageId::from_raw(1),
+        x: 0.0,
+        y: 0.0,
+        w: 10.0,
+        h: 10.0,
+        uv_x: 0.0,
+        uv_y: 0.0,
+        uv_w: 1.0,
+        uv_h: 1.0,
+        opacity: 1.0,
+    }
+}
+
+#[test]
+fn gpu_instance_image_quads_passes_when_below_present() {
+    let vp = ViewportSize::new(100, 100);
+    let mut frame = PreparedFrame::new(vp, Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    frame.image_quads_below.push(dummy_image_quad());
+
+    let expected = GpuInstanceExpectation::at_least(0, 0).with_images(1);
+    let result = observe_gpu_instance(&frame, &expected);
+    assert!(
+        result.passed,
+        "should pass with 1 below quad: {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn gpu_instance_image_quads_passes_when_above_present() {
+    let vp = ViewportSize::new(100, 100);
+    let mut frame = PreparedFrame::new(vp, Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    frame.image_quads_above.push(dummy_image_quad());
+
+    let expected = GpuInstanceExpectation::at_least(0, 0).with_images(1);
+    let result = observe_gpu_instance(&frame, &expected);
+    assert!(
+        result.passed,
+        "should pass with 1 above quad: {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn gpu_instance_image_quads_fails_when_empty() {
+    let vp = ViewportSize::new(100, 100);
+    let frame = PreparedFrame::new(vp, Rgb { r: 0, g: 0, b: 0 }, 1.0);
+
+    let expected = GpuInstanceExpectation::at_least(0, 0).with_images(1);
+    let result = observe_gpu_instance(&frame, &expected);
+    assert!(!result.passed, "should fail with 0 image quads");
+    assert!(
+        result
+            .failure
+            .as_deref()
+            .unwrap_or("")
+            .contains("image quads"),
+        "failure should mention image quads: {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn gpu_instance_image_quads_counts_both_layers() {
+    let vp = ViewportSize::new(100, 100);
+    let mut frame = PreparedFrame::new(vp, Rgb { r: 0, g: 0, b: 0 }, 1.0);
+    frame.image_quads_below.push(dummy_image_quad());
+    frame.image_quads_above.push(dummy_image_quad());
+
+    let expected = GpuInstanceExpectation::at_least(0, 0).with_images(2);
+    let result = observe_gpu_instance(&frame, &expected);
+    assert!(
+        result.passed,
+        "should pass with 1 below + 1 above = 2 total: {:?}",
+        result.failure
+    );
 }
