@@ -52,7 +52,7 @@ sections:
 
 # Section 06: Terminal Mode Plumbing
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Fix the Mode 2026 timeout-abort path (completely unwired — app crashes mid-sync hang the terminal forever) and consolidate DEC mode metadata by eliminating redundant sync points. Per two independent third-party reviews (Codex + Gemini), the original plan had critical architectural errors: the `select!` loop blocks indefinitely during sync, duplicated timeout state was proposed, the registry was placed in the wrong crate, and several factual inaccuracies existed.
 
 **Success Criteria:**
