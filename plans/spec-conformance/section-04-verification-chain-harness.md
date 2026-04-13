@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Verification Chain Harness + Pilots + Coverage Report"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Build the SpecHarness API that drives a sequence through every applicable rung of the verification chain (parser → dispatch → state/effect → renderable → frame-input → gpu-instance → texture → golden), validate the API with one visual pilot (sixel) and one non-visual pilot (DA1), freeze the catalog row schema based on what the pilots needed, and deliver the spec-coverage-report binary."
 success_criteria:
@@ -82,7 +82,7 @@ sections:
     status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 # TPR Checkpoint Placement: 04.3 (after headless observer infrastructure — covers .1-.3),
 # 04.6 (after both pilots run green — covers .3b-.6), final in 04.N
 ---
@@ -1000,10 +1000,10 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `./test-all.sh` green debug + release (verified 2026-04-13)
 - [x] `./clippy-all.sh` green (host + Windows cross-compile — verified 2026-04-13)
 - [x] Plan annotation cleanup (zero stale annotations — only 35 permanent section-ref annotations remain — verified 2026-04-13)
-- [ ] Section frontmatter `status` → `complete` (after TPR + hygiene pass)
+- [x] Section frontmatter `status` → `complete` (TPR clean on iteration 6 + hygiene clean — 2026-04-13)
 - [x] `00-overview.md` Quick Reference updated (04 → In Progress, 05 → In Progress; BLOAT items → Complete; catalog schema → frozen v1.0 — 2026-04-13)
 - [x] `index.md` reviewed — no status column to update (ID/Title/File only)
 - [x] `/tpr-review` passed (final, full-section) — clean on iteration 6 (2026-04-13). 12 findings across 5 rounds, all fixed: pilot expectations strengthened (parser/frame_input/gpu_instance with image quads/texture/golden), catalog DRIFT fixed, test file split per test-organization.md, regression provenance added, naming convention aligned.
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [x] `/impl-hygiene-review` passed (2026-04-13) — zero critical/major findings. 4 minor BLOAT (pre-existing fn-length and nesting-depth in compare.rs, render.rs, deterministic_lane_tests.rs). 4 stale annotations cleaned up.
 
 **Exit Criteria:** `CoreSpecHarness` (headless, rungs 1-4) + `VisualSpecHarness` (GPU, rungs 5-8) drive both pilots through every applicable rung green; `RecordingHandler` captures parser/dispatch observations; catalog row schema frozen and section 01 catalogs migrated; `coverage-baseline.toml` committed with initial counts; coverage report binary works with all four CI gates; `UncatalogedDetector` accumulates tuples in-memory (no file I/O during parallel tests); BLOAT files split under 500 lines; full test suite green debug + release; alloc regression unchanged. Sections 08-20 can now be written against a stable harness API and a frozen catalog schema.
