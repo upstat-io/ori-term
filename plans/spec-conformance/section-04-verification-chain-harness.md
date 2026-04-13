@@ -67,7 +67,7 @@ sections:
     status: not-started
   - id: "04.6"
     title: "DA1 non-visual pilot — drive query through effect transcript apex"
-    status: not-started
+    status: in-progress
   - id: "04.7"
     title: "Freeze catalog row schema + migrate section 01 catalog files"
     status: not-started
@@ -642,45 +642,9 @@ The sixel visual pilot is the canonical visual chain test. It feeds a minimal si
 
 The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcript apex works. DA1 is `CSI c` — the terminal responds with a `CSI ? ... c` reply that identifies its capabilities. The reply is a `PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute }` — the apex of the non-visual chain.
 
-- [ ] Create `oriterm_core/tests/spec_chain/pilots/da1_query.rs`:
-  ```rust
-  use oriterm_test_support::spec_chain::*;
-  use oriterm_core::effect::*;
-
-  /// Pilot scenario: DA1 device attribute query.
-  ///
-  /// Catalog row: ECMA48-DA1
-  /// Apex: EffectPtyWrite (PtyWriteKind::DeviceAttribute)
-  ///
-  /// Drives a CSI c query and asserts the harness observes the
-  /// expected PtyEffect::Write with DeviceAttribute kind. This pilot
-  /// establishes the harness MVP for non-visual sequences with PTY-reply apex.
-  #[test]
-  fn da1_query_drives_to_effect_apex() {
-      let mut harness = SpecHarness::new();
-      harness.feed(b"\x1b[c");
-
-      // Parser rung: assert CSI c was parsed
-      let parsed = harness.observe_parser_rung(&ParserExpectation::csi('c'));
-      assert!(parsed.passed);
-
-      // Dispatch rung: assert identify_terminal handler was invoked
-      let dispatched = harness.observe_dispatch_rung(&DispatchExpectation::method("identify_terminal"));
-      assert!(dispatched.passed);
-
-      // Effect apex: PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute, ... }
-      // The reply bytes should be the VT420 + sixel attribute string per
-      // oriterm_core/src/term/handler/status.rs.
-      let effect_apex = harness.observe_effect_rung(&EffectExpectation::pty_write(
-          PtyWriteKind::DeviceAttribute,
-          // expected reply prefix (the exact bytes are parameter-dependent)
-          b"\x1b[?64",
-      ));
-      assert!(effect_apex.passed, "DA1 reply effect not observed: {:?}", effect_apex.failure);
-  }
-  ```
-- [ ] **Validation**: pilot test passes; effect transcript correctly captures the reply; PtyWriteKind discriminator is observable.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.5–04.6 (both pilots green). Validates the harness API works end-to-end before the schema freeze locks it in.
+- [x] Create `oriterm_core/tests/spec_chain/pilots/da1_query.rs`: Integration test with 3 tests — `da1_query_drives_to_effect_apex` (full scenario with parser + dispatch + effect rungs via `run_scenario`), `da1_reply_bytes_match_vt420_attributes` (verifies exact reply bytes `\x1b[?64;6;4c`), `da1_skips_parser_rung_when_no_expectation` (proves None expectations pass unconditionally). Note: CSI c default param is `[0]` per VTE parser convention.
+- [x] **Validation**: all 3 pilot tests pass; effect transcript correctly captures `PtyEffect::Write { kind: DeviceAttribute, bytes: ESC[?64;6;4c }`; PtyWriteKind discriminator observable via `EffectExpectation::pty("DeviceAttribute")`.
+- [ ] **TPR checkpoint** — `/tpr-review` covering 04.5–04.6 (both pilots green). Validates the harness API works end-to-end before the schema freeze locks it in. (04.5 is Phase 1b — deferred until Section 05; TPR runs after 04.6 alone for now.)
 
 ---
 
