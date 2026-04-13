@@ -15,6 +15,7 @@ use vte::ansi::{PerformAction, PerformActionCollector, Processor};
 use super::observers;
 use super::recording_handler::{DispatchCall, RecordingHandler};
 use super::scenario::{RungName, SpecScenario};
+use super::uncataloged::UncatalogedDetector;
 
 /// Headless verification chain harness for spec conformance tests.
 ///
@@ -25,6 +26,7 @@ pub struct SpecHarness {
     processor: Processor,
     perform_observer: PerformActionCollector,
     outcome: SpecOutcome,
+    uncataloged: UncatalogedDetector,
 }
 
 /// Accumulated observations from feeding bytes through the harness.
@@ -96,6 +98,7 @@ impl SpecHarness {
             processor,
             perform_observer,
             outcome: SpecOutcome::default(),
+            uncataloged: UncatalogedDetector::new(),
         }
     }
 
@@ -123,6 +126,8 @@ impl SpecHarness {
             .term()
             .effect_sink()
             .drain_into(&mut self.outcome.effects_emitted);
+        // Feed observed parser actions to the uncataloged detector.
+        self.uncataloged.feed_actions(&self.outcome.perform_actions);
     }
 
     /// Feed a scenario's setup + input bytes without running observers.
@@ -217,5 +222,24 @@ impl SpecHarness {
 impl Default for SpecHarness {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Output directory for uncataloged tuple serialization.
+const UNCATALOGED_OUTPUT_DIR: &str = "oriterm-spec-uncataloged";
+
+impl Drop for SpecHarness {
+    fn drop(&mut self) {
+        let dir = std::env::temp_dir().join(UNCATALOGED_OUTPUT_DIR);
+        if let Err(e) = self.uncataloged.serialize_to_dir(&dir) {
+            eprintln!("warning: failed to serialize uncataloged tuples: {e}");
+        }
+    }
+}
+
+impl SpecHarness {
+    /// Borrow the uncataloged detector (for test assertions).
+    pub fn uncataloged(&self) -> &UncatalogedDetector {
+        &self.uncataloged
     }
 }

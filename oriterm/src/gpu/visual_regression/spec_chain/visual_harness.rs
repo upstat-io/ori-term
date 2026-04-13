@@ -103,8 +103,13 @@ impl VisualSpecHarness {
                         None => RungResult::pass(rung),
                     }
                 }
-                // Rungs 7-8: stubs until 04.4 (after Section 05).
-                RungName::TextureRender | RungName::GoldenImage => RungResult::pass(rung),
+                // Rungs 7-8: observers not yet implemented (section 04.4,
+                // after Section 05's deterministic golden lane is in place).
+                // Return fail to prevent false-green results.
+                RungName::TextureRender | RungName::GoldenImage => RungResult::fail(
+                    rung,
+                    "observer not yet implemented (section 04.4 — requires Section 05)",
+                ),
                 // Rungs 1-4: delegate to core observers.
                 _ => self.core.observe_rung(rung, &scenario.expectations),
             };

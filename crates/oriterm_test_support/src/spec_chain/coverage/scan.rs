@@ -25,18 +25,30 @@ pub struct Citation {
 /// Scan test directories for catalog row ID citations.
 ///
 /// Recursively walks each directory, reading every `.rs` file and
-/// extracting citations via string matching.
-pub fn scan_test_citations(dirs: &[PathBuf]) -> Result<Vec<Citation>, CoverageError> {
+/// extracting citations via string matching. Directories in
+/// `exclude` are skipped (prevents the scanner from reading its own
+/// source code as if it were test citations).
+pub fn scan_test_citations(
+    dirs: &[PathBuf],
+    exclude: &[PathBuf],
+) -> Result<Vec<Citation>, CoverageError> {
     let mut citations = Vec::new();
     for dir in dirs {
         if dir.exists() {
-            walk_dir_recursive(dir, &mut citations)?;
+            walk_dir_recursive(dir, exclude, &mut citations)?;
         }
     }
     Ok(citations)
 }
 
-fn walk_dir_recursive(dir: &Path, citations: &mut Vec<Citation>) -> Result<(), CoverageError> {
+fn walk_dir_recursive(
+    dir: &Path,
+    exclude: &[PathBuf],
+    citations: &mut Vec<Citation>,
+) -> Result<(), CoverageError> {
+    if exclude.iter().any(|e| dir.starts_with(e)) {
+        return Ok(());
+    }
     let entries = std::fs::read_dir(dir)
         .map_err(|e| CoverageError::Scan(format!("failed to read {}: {e}", dir.display())))?;
 
@@ -45,7 +57,7 @@ fn walk_dir_recursive(dir: &Path, citations: &mut Vec<Citation>) -> Result<(), C
         let path = entry.path();
 
         if path.is_dir() {
-            walk_dir_recursive(&path, citations)?;
+            walk_dir_recursive(&path, exclude, citations)?;
         } else if path.extension().is_some_and(|ext| ext == "rs") {
             scan_file(&path, citations)?;
         } else {
@@ -91,9 +103,13 @@ fn scan_file(path: &Path, citations: &mut Vec<Citation>) -> Result<(), CoverageE
 
 /// Extract a catalog row ID from a `catalog_row_id: "ID"` pattern.
 ///
-/// Uses `split` instead of byte indexing to avoid `string_slice` clippy
-/// warnings and handle multi-byte UTF-8 safely.
+/// Anchored to lines that START with `catalog_row_id:` (after trimming)
+/// to avoid matching doc-comment examples or code that mentions the
+/// pattern inline.
 fn extract_const_field_id(line: &str) -> Option<String> {
+    if !line.starts_with("catalog_row_id:") {
+        return None;
+    }
     let after = line.split("catalog_row_id:").nth(1)?;
     let after_first_quote = after.split('"').nth(1)?;
     let id = after_first_quote.split('"').next()?;

@@ -9,7 +9,7 @@ fn scan_test_citations_finds_comment_citation() {
     let file = dir.path().join("test.rs");
     std::fs::write(&file, "// Catalog row: ECMA48-CUP\nfn test() {}\n").unwrap();
 
-    let citations = super::scan_test_citations(&[dir.path().to_path_buf()]).unwrap();
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
     assert_eq!(citations.len(), 1);
     assert_eq!(citations[0].row_id, "ECMA48-CUP");
 }
@@ -20,7 +20,7 @@ fn scan_test_citations_finds_doc_comment_citation() {
     let file = dir.path().join("test.rs");
     std::fs::write(&file, "/// Catalog row: ECMA48-SGR\nfn test() {}\n").unwrap();
 
-    let citations = super::scan_test_citations(&[dir.path().to_path_buf()]).unwrap();
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
     assert_eq!(citations.len(), 1);
     assert_eq!(citations[0].row_id, "ECMA48-SGR");
 }
@@ -31,7 +31,7 @@ fn scan_test_citations_finds_inner_doc_comment_citation() {
     let file = dir.path().join("test.rs");
     std::fs::write(&file, "//! Catalog row: OSC-52\nfn test() {}\n").unwrap();
 
-    let citations = super::scan_test_citations(&[dir.path().to_path_buf()]).unwrap();
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
     assert_eq!(citations.len(), 1);
     assert_eq!(citations[0].row_id, "OSC-52");
 }
@@ -44,16 +44,16 @@ fn scan_test_citations_finds_const_field_citation() {
         &file,
         r#"
 const SCENARIO: SpecScenario = SpecScenario {
-    catalog_row_id: "ECMA48-DA1",
+    catalog_row_id: "ECMA48-CSI-DA1",
     bytes: b"\x1b[c",
 };
 "#,
     )
     .unwrap();
 
-    let citations = super::scan_test_citations(&[dir.path().to_path_buf()]).unwrap();
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
     assert_eq!(citations.len(), 1);
-    assert_eq!(citations[0].row_id, "ECMA48-DA1");
+    assert_eq!(citations[0].row_id, "ECMA48-CSI-DA1");
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn scan_test_citations_ignores_non_rs_files() {
     )
     .unwrap();
 
-    let citations = super::scan_test_citations(&[dir.path().to_path_buf()]).unwrap();
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
     assert!(citations.is_empty());
 }
 
@@ -76,7 +76,7 @@ fn scan_test_citations_walks_subdirectories() {
     std::fs::create_dir(&sub).unwrap();
     std::fs::write(sub.join("test.rs"), "// Catalog row: DEEP-ID\n").unwrap();
 
-    let citations = super::scan_test_citations(&[dir.path().to_path_buf()]).unwrap();
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
     assert_eq!(citations.len(), 1);
     assert_eq!(citations[0].row_id, "DEEP-ID");
 }
@@ -164,7 +164,7 @@ fn coverage_report_build_propagates_parser_errors() {
     writeln!(f, "|---|---|---|---|---|---|---|---|---|---|").unwrap();
     writeln!(f, "| X | only-two-cols |").unwrap();
 
-    let result = CoverageReport::build(dir.path(), &[]);
+    let result = CoverageReport::build(dir.path(), &[], &[]);
     assert!(result.is_err(), "malformed catalog should propagate error");
     let err = result.unwrap_err().to_string();
     assert!(
