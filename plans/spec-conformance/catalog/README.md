@@ -80,7 +80,7 @@ Each catalog file contains a single markdown table. The column order is fixed �
 | 4 | `Description` | prose | What the sequence does. |
 | 5 | `Implementation` | code | Stable symbol path: `Handler::method` or `Performer::hook` → `Term::handler`. File paths are metadata; line numbers are regenerated. |
 | 6 | `Apex layer` | enum | The deepest rung the verification chain drives for this row (see ApexLayer below). |
-| 7 | `Test chain` | rung:status | Per-rung status. Format: `parser:done dispatch:done ...` or `parser:pending`. |
+| 7 | `Test chain` | rung:status | Per-rung status. Format: `parser:pass dispatch:pass ...` or `parser:pending`. Uses `pass`/`fail`/`missing`/`skipped`/`pending` per the SSOT at `00-overview.md`. |
 | 8 | `Verification` | enum | Overall verification status (see below). |
 | 9 | `De-facto ref` | citation | Peer implementation reference (wezterm, alacritty, ghostty, etc.). Column name is `De-facto ref` — NOT `De-facto reference` (SSOT: `00-overview.md` §Catalog Row Schema). |
 | 10 | `Notes` | prose | Implementation notes, caveats, cross-references. |
@@ -93,8 +93,8 @@ Matches `oriterm_test_support::spec_chain::ApexLayer`:
 |---|---|---|
 | `parser-only` | Parser | Tokenization-only sequences |
 | `dispatch` | Parser → Dispatch | Routing verification |
-| `state` | Parser → Dispatch → State | Terminal mutation |
-| `renderable` | ... → Renderable | Content extraction |
+| `state-snapshot` | Parser → Dispatch → State | Terminal mutation |
+| `renderable-snapshot` | ... → Renderable | Content extraction |
 | `frame-input` | ... → FrameInput | Grid assembly |
 | `gpu-instance` | ... → GpuInstance | Instance buffer |
 | `texture-render` | ... → TextureRender | Pixel output |
@@ -148,5 +148,5 @@ Matches `oriterm_test_support::spec_chain::RungName`:
 1. Write a `SpecScenario` test that drives through the row's declared apex
 2. Include `catalog_row_id: "THE-ROW-ID"` in the scenario (citation scanner requirement)
 3. Run the test through the harness — all rungs must pass
-4. Update `Test chain` to `parser:done dispatch:done ...`
+4. Update `Test chain` to `parser:pass dispatch:pass ...`
 5. Update `Verification` to `verified` (or `verified-with-deviation` with a Notes entry)

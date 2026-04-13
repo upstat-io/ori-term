@@ -73,6 +73,29 @@ fn texture_observer_fails_on_wrong_width() {
 }
 
 #[test]
+fn texture_observer_fails_on_wrong_height() {
+    let pixels = vec![0u8; 160 * 48 * 4];
+    let rendered = RenderedPixels {
+        pixels: &pixels,
+        width: 160,
+        height: 48,
+    };
+    let expected = TextureExpectation {
+        width: None,
+        height: Some(96),
+        min_non_zero_pixels: None,
+    };
+
+    let result = observe_texture_render(&rendered, &expected);
+    assert!(!result.passed, "wrong height should fail");
+    assert!(
+        result.failure.as_deref().unwrap_or("").contains("height"),
+        "failure message should mention height: {:?}",
+        result.failure
+    );
+}
+
+#[test]
 fn texture_observer_fails_on_insufficient_non_zero_pixels() {
     // All-zero pixel buffer.
     let pixels = vec![0u8; 100 * 100 * 4];
