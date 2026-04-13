@@ -85,8 +85,14 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
             // No legacy Event variant for these — drop silently.
             Effect::Host(
                 HostEffect::VisualBell | HostEffect::AudioRequest(_) | HostEffect::PrintRequest(_),
-            )
-            | Effect::Presentation(_) => return,
+            ) => return,
+            // No legacy Event variant for Presentation effects — log so they
+            // are observable (the full migration to direct Effect subscription
+            // is tracked in plans/effect-cutover/).
+            Effect::Presentation(ref p) => {
+                log::info!("Presentation effect (no legacy Event route): {p:?}");
+                return;
+            }
             Effect::Host(HostEffect::TitleSet { value: Some(t) }) => Event::Title(t),
             Effect::Host(HostEffect::TitleSet { value: None }) => Event::ResetTitle,
             Effect::Host(HostEffect::IconNameSet { value: Some(n) }) => Event::IconName(n),

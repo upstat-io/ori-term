@@ -308,9 +308,24 @@ impl<S: EffectSink> PaneIoThread<S> {
             "stop_sync must clear sync buffer"
         );
 
+        // Emit the Abort effect so the sync abort is observable in production.
+        // Must happen after stop_sync returns (stop_sync borrows &mut terminal).
+        self.emit_sync_abort_effect();
+
         // Force snapshot publication.
         self.grid_dirty.store(true, Ordering::Release);
         self.maybe_produce_snapshot();
+    }
+
+    /// Emit a `PresentationEffect::Abort` through the terminal's effect sink.
+    fn emit_sync_abort_effect(&self) {
+        use oriterm_core::effect::{Effect, PresentationEffect, SyncAbortReason};
+
+        self.terminal
+            .effect_sink()
+            .push(Effect::Presentation(PresentationEffect::Abort {
+                reason: SyncAbortReason::Timeout,
+            }));
     }
 
     /// Post-parse housekeeping shared between `handle_bytes()` and

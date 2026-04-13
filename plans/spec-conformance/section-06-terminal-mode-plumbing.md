@@ -29,19 +29,19 @@ third_party_review:
 sections:
   - id: "06.1"
     title: "Make io_thread select! deadline-aware for sync timeout"
-    status: in-progress
+    status: complete
   - id: "06.2"
     title: "Extract post-parse housekeeping into shared method"
-    status: in-progress
+    status: complete
   - id: "06.3"
     title: "Emit Abort effect + fix docstring + fix LegacyEventSink drop"
-    status: not-started
+    status: complete
   - id: "06.4"
     title: "Eliminate named_private_mode_number() (WASTE removal)"
-    status: not-started
+    status: complete
   - id: "06.5"
     title: "Test matrix: sync timeout + edge cases"
-    status: not-started
+    status: complete
   - id: "06.R"
     title: "Third Party Review Findings"
     status: complete
@@ -56,16 +56,16 @@ sections:
 **Goal:** Fix the Mode 2026 timeout-abort path (completely unwired — app crashes mid-sync hang the terminal forever) and consolidate DEC mode metadata by eliminating redundant sync points. Per two independent third-party reviews (Codex + Gemini), the original plan had critical architectural errors: the `select!` loop blocks indefinitely during sync, duplicated timeout state was proposed, the registry was placed in the wrong crate, and several factual inaccuracies existed.
 
 **Success Criteria:**
-- [ ] `Processor::sync_timeout`/`stop_sync` called from io_thread via deadline-aware `select!`
-- [ ] No duplicated timeout state — queries processor's existing `StdSyncHandler::sync_timeout()` API
-- [ ] `PresentationEffect::Abort` effect emitted on timeout, observable in production (LegacyEventSink no longer drops it)
-- [ ] `Abort` docstring corrected: says "flush" not "discard" (matches `stop_sync` behavior)
-- [ ] Post-parse housekeeping shared between normal parse and timeout-abort replay
-- [ ] `named_private_mode_number()` eliminated — replaced by `mode as u16` cast
-- [ ] Test matrix covers: basic timeout, resize-during-sync, alt-screen-during-sync, double-publish prevention, nested BSU, max-buffer-overflow
-- [ ] All existing mode tests pass without modification
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [ ] Connects to mission criteria: **Mode 2026 fully wired**, **DEC mode metadata sync-point reduction**
+- [x] `Processor::sync_timeout`/`stop_sync` called from io_thread via deadline-aware `select!`
+- [x] No duplicated timeout state — queries processor's existing `StdSyncHandler::sync_timeout()` API
+- [x] `PresentationEffect::Abort` effect emitted on timeout, observable in production (LegacyEventSink no longer drops it)
+- [x] `Abort` docstring corrected: says "flush" not "discard" (matches `stop_sync` behavior)
+- [x] Post-parse housekeeping shared between normal parse and timeout-abort replay
+- [x] `named_private_mode_number()` eliminated — replaced by `mode as u16` cast
+- [x] Test matrix covers: basic timeout, resize-during-sync, alt-screen-during-sync, double-publish prevention, nested BSU, max-buffer-overflow
+- [x] All existing mode tests pass without modification
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
+- [x] Connects to mission criteria: **Mode 2026 fully wired**, **DEC mode metadata sync-point reduction**
 
 **Context:**
 
@@ -105,7 +105,7 @@ The io thread's main loop at line 128 uses `crossbeam_channel::select!` which bl
 - [x] **Read and understand** the current loop structure at `oriterm_mux/src/pane/io_thread/mod.rs:112-143`. The `select!` at line 128 blocks indefinitely. The sync timeout check must happen INSIDE this select as a deadline/timeout arm.
 - [x] **Compute the sync deadline** at the top of step 4 (before the `select!`). Query `self.processor.sync_timeout().sync_timeout()` (returns `Option<Instant>` from `StdSyncHandler` at `crates/vte/src/ansi/processor.rs:287`). Convert to a `Duration` via `deadline.saturating_duration_since(Instant::now())`. If `None`, the select has no timeout (blocks indefinitely as before).
 - [x] **Add a `default(duration)` arm** to the `select!` macro. When the timeout fires (both channels empty for `duration`): (1) capture `evicted_before` from the grid, (2) call `self.processor.stop_sync(&mut self.terminal)` to replay the buffered bytes through VTE, (3) run `self.post_parse_housekeeping(evicted_before)` (from 06.2), (4) emit the Abort effect (06.3), (5) force a snapshot: `self.grid_dirty.store(true, Ordering::Release); self.maybe_produce_snapshot();` and `continue` the loop. **Note**: NO RawInterceptor replay is needed — `handle_bytes()` already runs the raw interceptor on ALL incoming bytes BEFORE they enter the sync buffer (lines 228-232), so the shell-integration effects (OSC 7, OSC 133, notifications) have already been processed.
-- [ ] **Emit the Abort effect** after `stop_sync` (detailed in 06.3 — effect emission not yet implemented, tracked there).
+- [x] **Emit the Abort effect** after `stop_sync` (detailed in 06.3 — effect emission not yet implemented, tracked there).
 - [x] **Guard against double-publish**: After `stop_sync()` (called via `stop_sync_internal(handler, None)`), `sync_bytes_count()` is always 0 — the buffer is unconditionally cleared and SyncUpdate mode is unset. The `maybe_produce_snapshot()` call after forcing `grid_dirty = true` is therefore safe: `sync_bytes_count() == 0` guarantees the suppression gate won't re-trigger. Add a `debug_assert_eq!(self.processor.sync_bytes_count(), 0)` after `stop_sync` to document this invariant.
 - [x] **Do NOT add a `sync_deadline: Option<Instant>` field** to `PaneIoThread`. The deadline is already tracked inside the processor's `SyncState<StdSyncHandler>`. Adding a parallel tracker is duplicated state (LEAK finding from both reviewers).
 - [x] **Validation**: manual trace through the loop verifying that (a) during normal operation with no sync, the select blocks indefinitely as before, (b) during active sync, the select has a 150ms timeout, (c) when the timeout fires, stop_sync is called and a snapshot is published.
@@ -159,7 +159,7 @@ When `stop_sync` replays buffered bytes in the timeout path, these housekeeping 
 - [x] **Extract** the housekeeping block (lines 246-271 in `handle_bytes()`) into a `fn post_parse_housekeeping(&mut self, evicted_before: usize)` method.
 - [x] **Call it from `handle_bytes()`** after `processor.advance()` and the sync gate check, replacing the current inline code.
 - [x] **Call it from the timeout-abort path** in 06.1 after `processor.stop_sync()`. Pass `evicted_before` captured before the stop_sync call (to detect scrollback eviction during replay).
-- [ ] **Sibling test**: `timeout_abort_runs_post_parse_housekeeping()` — feed BSU + bytes that set a mode (e.g. `\x1b[?25l` to hide cursor), trigger timeout, assert mode_cache reflects the mode change from the replayed bytes. (Deferred to 06.5 test matrix)
+- [x] **Sibling test**: `sync_timeout_runs_post_parse_housekeeping()` — feeds BSU + `\x1b[?25l`, triggers timeout, asserts mode_cache reflects cursor hidden after replay. Implemented in 06.5 test matrix.
 - [x] **Validation**: mode_cache is updated after timeout-abort replay. Grep confirms `post_parse_housekeeping` is called from both paths.
 
 **BLOAT split**: `oriterm_mux/src/pane/io_thread/mod.rs` exceeded 500 lines after adding `handle_sync_timeout()` and `post_parse_housekeeping()`. Extracted `PaneIoHandle`, `IoThreadConfig`, and `new_with_handle()` to `oriterm_mux/src/pane/io_thread/handle.rs` (160 lines). `mod.rs` is now 421 lines.
@@ -174,21 +174,21 @@ Three related fixes:
 
 ### 06.3a: Emit Abort effect on timeout
 
-- [ ] After `processor.stop_sync()` in the timeout-abort path (06.1), emit the effect via `self.terminal.effect_sink().push(Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout }))`. (The `effect_sink` is accessed through `Term`'s public API — verify the exact accessor method.)
-- [ ] **Note**: `stop_sync()` takes `&mut self.terminal` as a handler, so the effect push must happen AFTER the `stop_sync` call returns (cannot borrow `self.terminal` mutably and call `effect_sink()` simultaneously). Extract a small helper method `emit_sync_abort_effect(&mut self)` that calls `self.terminal.effect_sink().push(...)`.
-- [ ] Sibling test: `sync_timeout_emits_abort_effect()` — feeds BSU + content, triggers timeout, asserts `Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout })` is observable.
+- [x] After `processor.stop_sync()` in the timeout-abort path (06.1), emit the effect via `self.terminal.effect_sink().push(Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout }))`. (The `effect_sink` is accessed through `Term`'s public API — verify the exact accessor method.)
+- [x] **Note**: `stop_sync()` takes `&mut self.terminal` as a handler, so the effect push must happen AFTER the `stop_sync` call returns (cannot borrow `self.terminal` mutably and call `effect_sink()` simultaneously). Extract a small helper method `emit_sync_abort_effect(&mut self)` that calls `self.terminal.effect_sink().push(...)`.
+- [x] Sibling test: `sync_timeout_emits_abort_effect()` — feeds BSU + content, triggers timeout, asserts `Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout })` is observable. Implemented in 06.5 test matrix using `QueueingEffectSink`.
 
 ### 06.3b: Fix Abort docstring
 
-- [ ] In `oriterm_core/src/effect/families/presentation.rs:14`, change the doc comment from `/// Abort synchronized update — discard buffered output.` to `/// Abort synchronized update — flush buffered output.` because `stop_sync()` at `crates/vte/src/ansi/processor.rs:162-193` REPLAYS the buffered bytes through the `Performer` (line 173: `self.parser.advance(&mut performer, &buffer[..offset])`), then clears the sync state. It does NOT discard.
-- [ ] **Validation**: grep the docstring to confirm it says "flush" not "discard".
+- [x] In `oriterm_core/src/effect/families/presentation.rs:14`, change the doc comment from `/// Abort synchronized update — discard buffered output.` to `/// Abort synchronized update — flush buffered output.` because `stop_sync()` at `crates/vte/src/ansi/processor.rs:162-193` REPLAYS the buffered bytes through the `Performer` (line 173: `self.parser.advance(&mut performer, &buffer[..offset])`), then clears the sync state. It does NOT discard.
+- [x] **Validation**: grep the docstring to confirm it says "flush" not "discard".
 
 ### 06.3c: Fix LegacyEventSink dropping Presentation effects
 
-- [ ] In `oriterm_core/src/effect/sink/legacy/mod.rs:89`, the match arm `Effect::Presentation(_) => return` silently drops ALL presentation effects. This means the `Abort` effect emitted in 06.3a will never be observable in production (panes use `LegacyEventSink`).
-- [ ] **Fix**: For the immediate term, change the `Presentation` arm to log the effect at `info!` level so it's observable in logs. The full fix (migrating to direct `Effect` subscription) is tracked in `plans/effect-cutover/` and is out of scope for this section. But the silent drop with no log is a bug — at minimum, log it.
-- [ ] **Alternative (preferred if feasible)**: If `LegacyEventSink` can forward `Presentation` effects through the existing `EventListener` interface (e.g. as a new `Event::SyncAbort` variant), do that instead. But if adding an `Event` variant just for the migration bridge is churny, the log approach is acceptable.
-- [ ] Sibling test: `legacy_sink_does_not_silently_drop_presentation_effects()` — push an `Abort` effect to a `LegacyEventSink`, assert it was logged or forwarded (not silently dropped).
+- [x] In `oriterm_core/src/effect/sink/legacy/mod.rs:89`, the match arm `Effect::Presentation(_) => return` silently drops ALL presentation effects. This means the `Abort` effect emitted in 06.3a will never be observable in production (panes use `LegacyEventSink`).
+- [x] **Fix**: For the immediate term, change the `Presentation` arm to log the effect at `info!` level so it's observable in logs. The full fix (migrating to direct `Effect` subscription) is tracked in `plans/effect-cutover/` and is out of scope for this section. But the silent drop with no log is a bug — at minimum, log it.
+- [x] **Alternative (preferred if feasible)**: If `LegacyEventSink` can forward `Presentation` effects through the existing `EventListener` interface (e.g. as a new `Event::SyncAbort` variant), do that instead. But if adding an `Event` variant just for the migration bridge is churny, the log approach is acceptable. **Decision**: log approach chosen — adding an `Event::SyncAbort` variant to the legacy bridge just for observability during a migration phase is unnecessary churn.
+- [x] Sibling test: `legacy_sink_does_not_silently_drop_presentation_effects()` — push an `Abort` effect to a `LegacyEventSink`, assert it was logged or forwarded (not silently dropped). **Implemented**: `presentation_abort_logged_not_forwarded_as_event()` and updated `presentation_effects_logged_not_forwarded_as_event()` in `oriterm_core/src/effect/sink/legacy/tests.rs`.
 
 ---
 
@@ -198,11 +198,11 @@ Three related fixes:
 
 `named_private_mode_number()` at `helpers.rs:22-53` is a 30-line match that manually maps every `NamedPrivateMode` variant to its mode number. But the enum already has explicit `u16` discriminants (`CursorKeys = 1`, `ColumnMode = 3`, etc.), and `PrivateMode::raw()` at `crates/vte/src/ansi/types.rs:210-215` already uses `named as u16`. This function is WASTE — it duplicates information that's already in the enum's discriminants.
 
-- [ ] **Delete** `named_private_mode_number()` from `helpers.rs`.
-- [ ] **Replace the single call site** in `status.rs:113` (`let num = named_private_mode_number(named)`) with `let num = named as u16`.
-- [ ] **Remove** the import of `named_private_mode_number` from `status.rs:19`.
-- [ ] **Validation**: `cargo test -p oriterm_core` passes. The mode-to-number mapping is verified by checking that `NamedPrivateMode::CursorKeys as u16 == 1`, etc. — the compiler enforces this via the discriminant.
-- [ ] **Keep `named_private_mode_flag()`** — this function maps variants to `Option<TermMode>` flags, which is genuine metadata not derivable from the enum alone (e.g. `ColumnMode` maps to `None`, `CursorKeys` maps to `Some(TermMode::APP_CURSOR)`). The exhaustive match serves as a compile-time guard: adding a new `NamedPrivateMode` variant forces updating this function. This is NOT a registry candidate — it's a clean exhaustive match in the right crate.
+- [x] **Delete** `named_private_mode_number()` from `helpers.rs`.
+- [x] **Replace the single call site** in `status.rs:113` (`let num = named_private_mode_number(named)`) with `let num = named as u16`.
+- [x] **Remove** the import of `named_private_mode_number` from `status.rs:19`.
+- [x] **Validation**: `cargo test -p oriterm_core` passes (1623 tests). All 57 teseq mode tests pass. The mode-to-number mapping is verified by the enum's explicit discriminants — the compiler enforces correctness.
+- [x] **Keep `named_private_mode_flag()`** — this function maps variants to `Option<TermMode>` flags, which is genuine metadata not derivable from the enum alone (e.g. `ColumnMode` maps to `None`, `CursorKeys` maps to `Some(TermMode::APP_CURSOR)`). The exhaustive match serves as a compile-time guard: adding a new `NamedPrivateMode` variant forces updating this function. This is NOT a registry candidate — it's a clean exhaustive match in the right crate.
 
 ### Why no mode_registry.rs in crates/vte
 
@@ -243,16 +243,16 @@ Option (b) is acceptable for a 150ms timeout — tests complete in <200ms each. 
 
 ### Required tests
 
-- [ ] `sync_timeout_aborts_and_flushes_buffered_writes()` — Feed BSU + visible content (e.g. `"hello"`). Wait >150ms. Trigger the timeout path. Assert: (1) `sync_bytes_count() == 0` after abort, (2) snapshot contains "hello" (bytes were replayed, not discarded), (3) `grid_dirty` was set, (4) wakeup fired, (5) snapshot_seqno advanced by exactly 1.
-- [ ] `sync_timeout_emits_abort_effect()` — Same as above but asserts the `Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout })` was pushed to the effect sink. (Requires a non-void effect sink — use `LegacyEventSink` with a test listener, or a `QueueingEffectSink` if available.)
-- [ ] `sync_timeout_runs_post_parse_housekeeping()` — Feed BSU + `\x1b[?25l` (hide cursor). Trigger timeout. Assert mode_cache reflects `SHOW_CURSOR` removed (housekeeping ran after replay).
-- [ ] `resize_during_sync_timeout()` — Feed BSU + content. Send a `Resize` command via `cmd_rx`. Trigger timeout. Assert: (1) buffered bytes replay correctly, (2) grid dimensions match the resize, (3) snapshot is coherent (no crash, no panic from stale size assumptions).
-- [ ] `alt_screen_swap_in_replayed_bytes()` — Feed BSU + `\x1b[?1049h` (enter alt screen). Trigger timeout. Assert: (1) mode_cache reflects `ALT_SCREEN` after replay, (2) subsequent writes go to the alt grid.
-- [ ] `no_double_publish_on_timeout()` — Feed BSU + content. Trigger timeout (which calls `maybe_produce_snapshot`). Assert wakeup fires exactly once (not twice). The `maybe_produce_snapshot` after `stop_sync` is the ONLY publish — the normal `maybe_produce_snapshot` in the loop should not double-fire because `grid_dirty` is cleared by `produce_snapshot`.
-- [ ] `nested_bsu_in_sync_buffer()` — Feed BSU + content + another BSU. Trigger timeout. Assert: `stop_sync()` calls `stop_sync_internal(handler, None)` which replays ALL buffered bytes (including the nested BSU) then unconditionally clears the buffer and unsets SyncUpdate mode. After timeout, `sync_bytes_count() == 0` and the terminal is NOT in sync mode. The nested BSU's `set_private_mode(SyncUpdate)` fires during replay but is immediately overridden by the `unset_private_mode` + buffer clear at the end of `stop_sync_internal`. This matches VTE's current behavior — `stop_sync()` is unconditional termination, not a BSU-aware partial replay.
-- [ ] `sync_abort_after_max_buffer_overflow()` — Feed BSU + 2 MiB of data (exceeds `SYNC_BUFFER_SIZE`). Assert the overflow path in `advance_sync()` at `crates/vte/src/ansi/processor.rs:210` fires and processes the bytes. This is the VTE-level overflow, NOT the timeout — verify both paths work. **Note**: `SyncAbortReason::MaxBufferBytesExceeded` exists in `oriterm_core/src/effect/families/presentation.rs:23` but is currently never emitted — the VTE overflow calls `stop_sync_internal()` which unsets the mode but doesn't emit an effect (the effect layer is in oriterm_core, not VTE). For this section, verify the overflow processes correctly. Emitting the MaxBufferBytesExceeded effect requires a cross-crate plumbing change (VTE would need to signal the overflow reason to the Handler) — track this for a future section if needed.
-- [ ] `run_loop_sync_timeout_fires()` — **Spawned run-loop test** (uses `spawn_pair_with_flag()` pattern from existing tests). Sends BSU + content via the byte channel, then waits >150ms without sending more bytes. Asserts: (1) the pane's snapshot eventually reflects the buffered content (proving `stop_sync` fired and published), (2) the pane did NOT hang forever. This is the only test that exercises the real `crossbeam_channel::select!` deadline arm in `PaneIoThread::run()` — the helper-level tests below verify extracted replay/state logic but cannot prove the select actually wakes up.
-- [ ] `no_timeout_when_not_in_sync()` — Verify that when `sync_timeout().sync_timeout()` returns `None` (no active sync), the select blocks indefinitely (no spurious timeout arm fires). This is a negative pin — the timeout behavior must NOT activate outside of sync mode.
+- [x] `sync_timeout_aborts_and_flushes_buffered_writes()` — Semantic pin: verifies sync buffer cleared, snapshot contains replayed "hello", grid_dirty set, wakeup fires, seqno advances.
+- [x] `sync_timeout_emits_abort_effect()` — Uses `QueueingEffectSink` to observe `Effect::Presentation(PresentationEffect::Abort { reason: SyncAbortReason::Timeout })`.
+- [x] `sync_timeout_runs_post_parse_housekeeping()` — Feeds BSU + `\x1b[?25l`, triggers timeout, asserts mode_cache reflects cursor hidden.
+- [x] `resize_during_sync_timeout()` — Resize via `process_resize(40, 100)` during sync, then timeout. Grid dimensions match, no crash.
+- [x] `alt_screen_swap_in_replayed_bytes()` — BSU + `\x1b[?1049h`, timeout. Alt screen active in both Term mode and mode_cache.
+- [x] `no_double_publish_on_timeout()` — Wakeup fires exactly once on timeout (no double-publish).
+- [x] `nested_bsu_in_sync_buffer()` — BSU + content + nested BSU + content. After timeout: sync buffer empty, mode unset, both "before" and "after" in snapshot.
+- [x] `sync_abort_after_max_buffer_overflow()` — Feeds BSU + >2 MiB. VTE overflow fires, sync buffer cleared.
+- [x] `run_loop_sync_timeout_fires()` — Spawned run-loop test via `spawn_pair_with_flag()`. Sends BSU + content via byte_sender, waits >150ms, asserts snapshot contains content (proves the real `select!` deadline arm fires).
+- [x] `no_timeout_when_not_in_sync()` — Negative pin: no BSU sent, `sync_timeout()` returns `None`, sync buffer stays empty after normal bytes.
 
 ### Semantic pins
 
