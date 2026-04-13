@@ -56,6 +56,7 @@ fn parser_observer_matches_execute() {
         action: '\x07',
         params: &[],
         intermediates: &[],
+        osc_command: None,
     };
     let result = observe_parser(harness.outcome(), &expected);
     assert!(
@@ -72,16 +73,42 @@ fn parser_observer_matches_dcs_hook() {
     harness.feed(b"\x1bPq\x1b\\");
 
     // VTE produces a default param of 0 for DCS q without explicit params.
-    let expected = ParserExpectation {
-        action: 'q',
-        params: &[0],
-        intermediates: &[],
-    };
+    let expected = ParserExpectation::dcs('q', &[0]);
     let result = observe_parser(harness.outcome(), &expected);
     assert!(
         result.passed,
         "parser observer should match DCS Hook 'q': {:?}",
         result.failure
+    );
+}
+
+#[test]
+fn parser_observer_matches_osc_command() {
+    let mut harness = SpecHarness::new();
+    // OSC 0 ; title ST — set window title.
+    harness.feed(b"\x1b]0;hello\x1b\\");
+
+    let expected = ParserExpectation::osc(0);
+    let result = observe_parser(harness.outcome(), &expected);
+    assert!(
+        result.passed,
+        "parser observer should match OSC 0: {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn parser_observer_distinguishes_osc_commands() {
+    let mut harness = SpecHarness::new();
+    // Feed OSC 0 (title set).
+    harness.feed(b"\x1b]0;hello\x1b\\");
+
+    // Expect OSC 52 (clipboard) — should NOT match OSC 0.
+    let expected = ParserExpectation::osc(52);
+    let result = observe_parser(harness.outcome(), &expected);
+    assert!(
+        !result.passed,
+        "parser observer should not match OSC 52 when OSC 0 was sent"
     );
 }
 
