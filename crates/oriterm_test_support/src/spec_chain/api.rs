@@ -225,12 +225,18 @@ impl Default for SpecHarness {
     }
 }
 
-/// Output directory for uncataloged tuple serialization.
-const UNCATALOGED_OUTPUT_DIR: &str = "oriterm-spec-uncataloged";
-
 impl Drop for SpecHarness {
     fn drop(&mut self) {
-        let dir = std::env::temp_dir().join(UNCATALOGED_OUTPUT_DIR);
+        // Spool files go under `target/spec-chain-uncataloged/` (repo-local,
+        // cleaned by `cargo clean`). Uses CARGO_MANIFEST_DIR to locate the
+        // workspace `target/` directory regardless of cwd.
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .map_or_else(
+                || std::env::temp_dir().join("oriterm-spec-uncataloged"),
+                |root| root.join("target/spec-chain-uncataloged"),
+            );
         if let Err(e) = self.uncataloged.serialize_to_dir(&dir) {
             eprintln!("warning: failed to serialize uncataloged tuples: {e}");
         }
