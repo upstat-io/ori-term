@@ -138,7 +138,7 @@ fn effect_observer_matches_pty_effect() {
     // DA1 query: CSI c → triggers identify_terminal → emits Pty effect.
     harness.feed(b"\x1b[c");
 
-    let expected = EffectExpectation { variant: "Pty" };
+    let expected = EffectExpectation::family("Pty");
     let result = observe_effect(harness.outcome(), &expected);
     assert!(
         result.passed,
@@ -152,7 +152,7 @@ fn effect_observer_fails_on_wrong_variant() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1b[c");
 
-    let expected = EffectExpectation { variant: "Ui" };
+    let expected = EffectExpectation::family("Ui");
     let result = observe_effect(harness.outcome(), &expected);
     assert!(
         !result.passed,
@@ -166,7 +166,7 @@ fn effect_observer_fails_on_empty_effects() {
     // Feed a CUP sequence — no effects emitted.
     harness.feed(b"\x1b[5;10H");
 
-    let expected = EffectExpectation { variant: "Pty" };
+    let expected = EffectExpectation::family("Pty");
     let result = observe_effect(harness.outcome(), &expected);
     assert!(
         !result.passed,

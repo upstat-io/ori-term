@@ -266,39 +266,62 @@ impl StateExpectation {
     }
 }
 
-/// Effect rung expectation (stub — expanded in 04.2).
+/// Effect rung expectation.
+///
+/// Matches effects by top-level family and optional sub-variant.
+/// Example: `EffectExpectation::pty("DeviceAttribute")` matches
+/// `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute, .. })`.
 #[derive(Copy, Clone, Debug)]
 pub struct EffectExpectation {
     /// Expected effect variant name (e.g. `"Pty"`, `"Host"`).
     pub variant: &'static str,
+    /// Optional sub-variant name (e.g. `"DeviceAttribute"` for `PtyWriteKind`).
+    /// `None` means any sub-variant matches.
+    pub sub_variant: Option<&'static str>,
 }
 
-/// Renderable rung expectation (stub — expanded in 04.3).
-#[derive(Copy, Clone, Debug)]
-pub struct RenderableExpectation {
-    _private: (),
+impl EffectExpectation {
+    /// Expect a PTY effect with a specific write kind.
+    pub const fn pty(kind: &'static str) -> Self {
+        Self {
+            variant: "Pty",
+            sub_variant: Some(kind),
+        }
+    }
+
+    /// Expect a host effect (any sub-variant).
+    pub const fn host() -> Self {
+        Self {
+            variant: "Host",
+            sub_variant: None,
+        }
+    }
+
+    /// Expect any effect of the given family.
+    pub const fn family(variant: &'static str) -> Self {
+        Self {
+            variant,
+            sub_variant: None,
+        }
+    }
 }
+
+/// Renderable rung expectation (stub — expanded when pilots exercise it).
+#[derive(Copy, Clone, Debug, Default)]
+pub struct RenderableExpectation;
 
 /// Frame input rung expectation (stub — expanded in 04.3b).
-#[derive(Copy, Clone, Debug)]
-pub struct FrameInputExpectation {
-    _private: (),
-}
+#[derive(Copy, Clone, Debug, Default)]
+pub struct FrameInputExpectation;
 
 /// GPU instance rung expectation (stub — expanded in 04.3b).
-#[derive(Copy, Clone, Debug)]
-pub struct GpuInstanceExpectation {
-    _private: (),
-}
+#[derive(Copy, Clone, Debug, Default)]
+pub struct GpuInstanceExpectation;
 
 /// Texture render rung expectation (stub — expanded in 04.4).
-#[derive(Copy, Clone, Debug)]
-pub struct TextureExpectation {
-    _private: (),
-}
+#[derive(Copy, Clone, Debug, Default)]
+pub struct TextureExpectation;
 
 /// Golden image rung expectation (stub — expanded in 04.4).
-#[derive(Copy, Clone, Debug)]
-pub struct GoldenExpectation {
-    _private: (),
-}
+#[derive(Copy, Clone, Debug, Default)]
+pub struct GoldenExpectation;
