@@ -15,6 +15,7 @@
 
 pub mod catalog;
 pub mod session;
+pub mod spec_chain;
 pub mod tack_framework;
 pub mod terminfo;
 

@@ -12,6 +12,7 @@ mod attr;
 mod colors;
 mod dispatch;
 mod handler;
+pub mod observer;
 mod processor;
 mod types;
 
@@ -22,6 +23,7 @@ pub use cursor_icon;
 // Re-export all public items to preserve the crate's public API.
 pub use colors::{Hyperlink, Rgb};
 pub use handler::Handler;
+pub use observer::{PerformAction, PerformActionCollector, PerformObserver};
 #[cfg(feature = "std")]
 pub use processor::StdSyncHandler;
 pub use processor::{Processor, Timeout};
