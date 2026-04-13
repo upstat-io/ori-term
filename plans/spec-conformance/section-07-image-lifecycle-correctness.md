@@ -19,7 +19,7 @@ success_criteria:
   - "Connects to mission criterion: **Image lifecycle correct under resize/reflow/scrollback/alt-screen**"
 inspired_by:
   - "ori_term existing `oriterm_core/src/image/cache/mod.rs:325-358` — `prune_scrollback` and `remove_placements_in_region` are the existing handlers; `on_resize` follows the same `remove_placements_where` + `prune_if_orphaned` pattern"
-  - "ori_term existing `oriterm_core/src/grid/resize/mod.rs:303-379` — `reflow_cells` already tracks `src_idx` per row; emitting `first_output_row` per source row is ~30 lines of additional tracking"
+  - "ori_term existing `oriterm_core/src/grid/resize/mod.rs:303-379` — `reflow_cells` already tracks `src_idx` per row; emitting `first_output_row` per source row is ~30 lines of additional per-row boundary recording"
   - "Ghostty — derives clamped rects at use time; out-of-bounds columns removed on resize"
   - "WezTerm — attaches images to cells (cell-based model); reflows through screen rewrap. ori_term uses cache-coordinate model instead, requiring explicit remapping"
 depends_on: ["04"]
@@ -62,7 +62,7 @@ sections:
 
 1. **Column-out-of-bounds (resize without reflow):** When the grid shrinks horizontally (window resize, DECCOLM 80↔132 toggle), placements whose `cell_col` is beyond the new column count become invalid. Currently NO code handles this — `ImageCache` has `prune_scrollback` and `remove_placements_in_region` but no resize handler.
 
-2. **Row topology rewrite (resize with reflow):** `Grid::resize(..., reflow: true)` calls `reflow_cols` which collects all rows, rewrites them cell-by-cell at the new width, and clears/rebuilds scrollback (`scrollback.clear()` at `grid/resize/mod.rs:268`). During this process `total_evicted` is NOT adjusted, so `StableRowIndex` values computed before reflow silently point to wrong content rows. The `reflow_cells` loop (`grid/resize/mod.rs:303-379`) already tracks `src_idx` per source row — we add row-range tracking to emit a `ReflowMapping` that maps old absolute rows → new absolute row ranges. `ImageCache::remap_placements` then translates each placement's `StableRowIndex` through this mapping.
+2. **Row topology rewrite (resize with reflow):** `Grid::resize(..., reflow: true)` calls `reflow_cols` which collects all rows, rewrites them cell-by-cell at the new width, and clears/rebuilds scrollback (`scrollback.clear()` at `grid/resize/mod.rs:268`). During this process `total_evicted` is NOT adjusted, so `StableRowIndex` values computed before reflow silently point to wrong content rows. The `reflow_cells` loop (`grid/resize/mod.rs:303-379`) already tracks `src_idx` per source row — we add per-row output-index recording to emit a `ReflowMapping` with `first_output_row` that maps each source row to the output row where its first cell landed. `ImageCache::remap_placements` then translates each placement's `StableRowIndex` through this mapping.
 
 3. **Stale cell coverage (font/DPI changes):** `Term::set_cell_dimensions` (at `image_config.rs:17`) calls `update_cell_coverage` to recompute `cols`/`rows` for `FixedPixels` placements, but has NO production caller — only test code calls it. `ImageConfig` doesn't carry cell dimensions, `PaneIoCommand::SetImageConfig` doesn't transport them, and `sync_grid_layout`/`handle_dpi_change` in the app layer never send them. We wire this end-to-end.
 
@@ -318,7 +318,7 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
   }
   ```
 - [ ] Add `set_cell_dimensions(pane_id, width, height)` method to `MuxBackend` trait and implement for embedded + daemon backends
-- [ ] In `oriterm/src/app/chrome/resize.rs` `sync_grid_layout()`: after `resize_all_panes`, send cell metrics to EVERY pane affected by this window's renderer metrics (not just the active pane — split and floating panes share the same font/DPI):
+- [ ] In `oriterm/src/app/chrome/resize.rs` `sync_grid_layout()`: send cell metrics to EVERY pane in the window REGARDLESS of whether grid dimensions changed. Font-size changes via config reload can change cell metrics without changing cols/rows (the grid_changed branch at `resize.rs:109-123` only runs when dimensions change). Cell-metric propagation must run unconditionally after cell metrics are computed:
   ```rust
   let cell = renderer.cell_metrics();
   let w = cell.width.round() as u16;
@@ -329,7 +329,14 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
   ```
 - [ ] In `oriterm/src/app/mod.rs` `handle_dpi_change()`: after font re-rasterization, send cell metrics to all panes in the affected window
 - [ ] **No zero-metric fallback**: `ImageConfig` construction sites are NOT modified — they continue sending config-only data. Cell dimensions are sent SEPARATELY, only when the renderer has real metrics available.
-- [ ] **Pane creation paths**: every pane setup path must send cell dimensions immediately after pane creation (not waiting for a later resize/DPI event). The 5 pane creation sites (`init/mod.rs:518`, `init/mod.rs:570`, `tab_management/mod.rs:54`, `pane_ops/mod.rs:104`, `pane_ops/floating.rs:66`) currently send only `SetImageConfig`. Add `SetCellDimensions` calls (using the current renderer's cell metrics) at each site, ideally via a shared helper: `fn send_cell_metrics_to_pane(mux, pane_id, renderer)`. Without this, newly created panes start with Term's default 8x16 metrics and FixedPixels coverage is wrong until the next resize event.
+- [ ] **Pane creation paths**: every pane setup path must send cell dimensions immediately after pane creation (not waiting for a later resize/DPI event). The 6 pane creation sites are:
+  1. `init/mod.rs:518` — initial pane setup
+  2. `init/mod.rs:570` — initial pane setup (alt path)
+  3. `tab_management/mod.rs:54` — new tab
+  4. `pane_ops/mod.rs:104` — split pane
+  5. `pane_ops/floating.rs:66` — floating pane
+  6. `window_management/create.rs:70` — new window pane (currently only sends `set_pane_theme`)
+  Add `SetCellDimensions` calls at each site via shared helper: `fn send_cell_metrics_to_pane(mux, pane_id, renderer)`. Without this, newly created panes start with Term's default 8x16 metrics.
 - [ ] Sibling test: `term_set_cell_dimensions_updates_fixed_pixels_coverage()` — already exists in `term/tests.rs`, verify it still passes
 - [ ] Integration test: multi-pane scenario — place FixedPixels images in two split panes, send `SetCellDimensions` to both, verify both panes' coverage updated
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green (including Windows cross-compile — wire protocol change)
@@ -409,9 +416,11 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [ ] 07.6: `sync_grid_layout()` sends cell metrics to ALL panes in window (not just active)
 - [ ] 07.6: `handle_dpi_change()` sends cell metrics to ALL panes in affected window
 - [ ] 07.6: Existing `ImageConfig` construction sites NOT modified (separation of concerns)
-- [ ] 07.6: All 5 pane creation paths send `SetCellDimensions` via shared helper after pane setup
+- [ ] 07.6: All 6 pane creation paths send `SetCellDimensions` via shared helper after pane setup (incl. window_management/create.rs)
 - [ ] 07.6: Multi-pane integration test: newly created split pane gets correct cell metrics without resize
 - [ ] 07.6: Multi-pane integration test: both split panes get updated metrics after font change
+- [ ] 07.6: Regression test: font-size change without grid-size change still sends SetCellDimensions
+- [ ] 07.6: Regression test: new-window pane gets correct cell metrics on creation
 - [ ] 07.6: Windows cross-compile green (wire protocol change)
 - [ ] 07.6: BUG-08-9 closed
 - [ ] **Matrix**: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios + self-verifying count
