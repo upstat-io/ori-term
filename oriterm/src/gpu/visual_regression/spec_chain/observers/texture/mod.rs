@@ -59,3 +59,6 @@ pub fn observe_texture_render(
 
     RungResult::pass(RungName::TextureRender)
 }
+
+#[cfg(test)]
+mod tests;

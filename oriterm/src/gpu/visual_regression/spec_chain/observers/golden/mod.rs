@@ -31,3 +31,6 @@ pub fn observe_golden_image(
         Err(msg) => RungResult::fail(RungName::GoldenImage, msg),
     }
 }
+
+#[cfg(test)]
+mod tests;
