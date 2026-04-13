@@ -19,7 +19,11 @@ inspired_by:
   - "wgpu-test patterns — explicit adapter selection via `wgpu::Backends::VULKAN | wgpu::Backends::GL` and `wgpu::PowerPreference::LowPower` for software fallback"
   - "Mesa llvmpipe — software rasterizer used by Linux CI environments for reproducible GPU output"
   - "ori_term existing `oriterm/src/gpu/visual_regression/mod.rs:65-112` — `headless_env_with_hinting()` is the entry point being extended"
-depends_on: ["04"]
+depends_on: ["03"]
+# NOTE: Section 05 depends on Section 03 (Effect system), NOT Section 04.
+# Section 04 Phase 1b (04.4, 04.5, 04.7) depends on Section 05.
+# Section 04 Phase 1a (04.1-04.3, 04.6, 04.8, 04.9) is independent of 05.
+# This makes the dependency graph acyclic: 03 → {04-Phase1a, 05} → 04-Phase1b
 third_party_review:
   status: none
   updated: null

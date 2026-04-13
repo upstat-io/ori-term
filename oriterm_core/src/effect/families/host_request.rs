@@ -98,12 +98,10 @@ impl<T> Default for ResponseToken<T> {
 /// Marker type for acknowledgement responses where no data is returned.
 pub type ResponseFulfilled = ();
 
-// ---------------------------------------------------------------------------
 // Reply formatting — canonical home for PTY response construction.
 //
 // Both `LegacyEventSink` and the dormant `response_poll` module use these
 // functions. Centralizing here prevents SSOT drift between the two paths.
-// ---------------------------------------------------------------------------
 
 /// Format an OSC 52 clipboard reply as raw PTY bytes.
 ///
