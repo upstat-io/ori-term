@@ -13,4 +13,6 @@ pub mod observers;
 pub mod visual_harness;
 
 #[cfg(test)]
+mod pilots;
+#[cfg(test)]
 mod tests;
