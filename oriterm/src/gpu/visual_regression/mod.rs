@@ -69,10 +69,16 @@ pub(super) fn reference_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/references")
 }
 
-/// Attempt to create a headless rendering environment with embedded font.
+/// **Legacy non-deterministic** headless rendering environment.
 ///
-/// Uses `FontSet::embedded()` for deterministic output regardless of system
-/// fonts. Returns `None` if no GPU adapter is available.
+/// Uses `FontSet::embedded()` and any available GPU adapter. Adapter
+/// selection is non-deterministic across machines (discrete GPU preferred).
+/// Defaults to `HintingMode::Full` with `subpixel_positioning: true`.
+///
+/// New spec-conformance goldens MUST use
+/// [`headless_env_with_pinned_software_rasterizer`] instead — it pins
+/// the software rasterizer, hinting mode, and subpixel positioning for
+/// reproducible output.
 pub(crate) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_with_config(TEST_FONT_SIZE_PT, TEST_DPI)
 }
