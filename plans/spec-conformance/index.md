@@ -146,11 +146,17 @@ mode 2026, sync output, synchronized output, presentation gates
 Processor::sync_timeout, Processor::stop_sync, timeout-abort
 oriterm_mux/src/pane/io_thread/mod.rs, sync_bytes_count
 publication suppression, snapshot_seqno
-mode metadata registry, NamedPrivateMode SSOT, LEAK fix, 5 sync points
-crates/vte/src/ansi/types.rs:226, types.rs:175, helpers.rs:22, helpers.rs:56
-modes.rs:17, mode behavior in match arms, data registry only
-mode entry, registry table, single source of truth
-nested BSU, max-buffer-bytes, sync abort
+crossbeam_channel select! deadline-aware, default(timeout) arm
+StdSyncHandler::sync_timeout, Option<Instant>, no duplicated state
+post_parse_housekeeping extraction, shared normal + timeout path
+PresentationEffect::Abort, SyncAbortReason::Timeout
+Abort docstring flush not discard, stop_sync replays bytes
+LegacyEventSink drops Presentation effects, silent drop fix
+named_private_mode_number elimination, mode as u16, WASTE removal
+NamedPrivateMode 6 sync points, compile-time exhaustive match guard
+named_private_mode_flag retained, crate boundary, no registry in vte
+resize during sync, alt-screen swap during sync, double-publish prevention
+nested BSU, max-buffer-bytes, sync abort, SYNC_UPDATE_TIMEOUT 150ms
 ```
 
 ---

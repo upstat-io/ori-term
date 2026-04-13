@@ -35,7 +35,7 @@ Each criterion is concrete and testable. Together they prove the mission is comp
   - Closed when: (a) the `LegacyEventSink` adapter shim is the ONLY location that constructs the closure variants (verified by grep — see section 03.N gate), AND (b) a concrete follow-up plan directory exists at `plans/effect-cutover/` with an index, overview, and at least one section file describing the migration of each current legacy consumer to subscribe to `Effect::HostRequest` directly (the section's `reviewed: false` gate triggers when the cutover plan is picked up for implementation, not at Section 03 close-out). Filing the plan IS an in-scope deliverable of spec-conformance, NOT a deferral dodge — section 03.N explicitly requires the plan directory to exist before section 03 can be marked complete.
   - **Explicit anti-deferral**: "we'll file a plan someday" is not acceptable. The follow-up plan directory must be committed alongside the spec-conformance work that closes this mission criterion.
 - [ ] **Mode 2026 fully wired** — Both publication suppression AND the timeout-abort path are wired. `Processor::sync_timeout` and `stop_sync` are called from `oriterm_mux/src/pane/io_thread/mod.rs` with a documented timeout. Delivered by section 06.
-- [ ] **DEC mode metadata LEAK fixed** — The 5-sync-point LEAK across `NamedPrivateMode` consumers is collapsed into a single registry table. Mode metadata becomes data; behavior stays in match arms. Delivered by section 06.
+- [ ] **DEC mode metadata sync-point reduction** — The 6-sync-point LEAK across `NamedPrivateMode` consumers is reduced to 5 by eliminating the WASTE function `named_private_mode_number()` (replaced by `mode as u16` cast). Remaining 5 sync points enforced by compile-time exhaustive matches — no registry table needed (crate boundary violation per review). Delivered by section 06.
 - [ ] **Image lifecycle correct under resize/reflow/scrollback/alt-screen** — Image placements survive every grid transformation correctly. Documented invariants tested on a regression matrix. Delivered by section 07.
 - [x] **Deterministic golden environment** — Canonical golden lane uses pinned software rasterizer (llvmpipe), grayscale alpha hinting, pinned cell metrics, exact-or-tiny pixel tolerance. Delivered by section 05. (Complete 2026-04-13)
 - [x] **`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` carries supersede blockquotes in overview + index; index reroute frontmatter is `status: resolved`; overview frontmatter is `status: complete`; `section-09-verification.md` is flipped to `status: complete` with an explicit body-level absorption notice pointing at spec-conformance Section 23. Tack sections 01–08 are completed artifacts committed to `main` (shared `PtySession` infrastructure, pinned `ori_term.info`, scenario-catalog framework, test-menu + tools-menu scenario families, GPU goldens, full kf1–kf63 + cursor + editing + modified-key terminfo cross-check). Tack section 09 (final verification + archival) is absorbed by spec-conformance Section 23 (Cross-Stack Regression Sweep + Coverage CI). `plans/spec-conformance/catalog/_legacy-tack-mapping.md` exists with the tack-09 → spec-23 seed row. No `git mv` is run (citation-stability covenant). Delivered by section 02.
@@ -126,8 +126,8 @@ Effect type family (lives at oriterm_core::effect::Effect):
   │                                ColorQuery { index, reply: ResponseToken }
   ├─ Ui(UiEffect)              ── UI hints: CursorBlinkChanged, MouseCursorDirty
   └─ Presentation(PresentationEffect) ── Sync gates:
-                                   SyncBegin, SyncCommit { snapshot_seqno },
-                                   SyncAbort { reason: SyncAbortReason }
+                                   Begin, Commit { snapshot_seqno },
+                                   Abort { reason: SyncAbortReason }
 
 State observables (already exist in RenderableContent + Term):
   RenderableContent: cells, cursor, palette, mode bits, image placements,
@@ -156,7 +156,7 @@ The catalog is the single source of truth for what ori_term supports. The catalo
 
 This complements the existing SSOT discipline in `.claude/rules/impl-hygiene.md` (Single Source of Truth section). The catalog rows are the canonical home for "what is the spec contract for this sequence?"; consumers (test names, coverage reports, plan sections) query the catalog rather than maintaining parallel lists.
 
-The DEC mode handling LEAK (currently 4 sync points across `crates/vte/src/ansi/types.rs:226-295`, `types.rs:175`, `oriterm_core/src/term/handler/helpers.rs:22,56`, and `modes.rs:17-102`) is an existing SSOT violation and is fixed in section 02 — mode metadata becomes a single registry table that all consumers query.
+The DEC mode handling LEAK (6 sync points across `crates/vte/src/ansi/types.rs:226-295`, `types.rs:175`, `oriterm_core/src/term/handler/helpers.rs:22,56`, and `modes.rs:17-102`) is an existing SSOT violation — section 06 eliminates the WASTE function `named_private_mode_number()` (replaced by `mode as u16` cast), reducing to 5 sync points enforced by compile-time exhaustive matches.
 
 ### 3. Boundary-crossing effects are first-class, not afterthoughts
 
@@ -344,7 +344,7 @@ Phase 6 (final integration milestones — depend on every prior section)
 - **Section 26.1 + Section 26.2 + Section 26.3 share `vector_raster`** (formerly 19.3/19.4/19.5 — moved to Section 26 per the Section 19 split): Section 26.1 builds `oriterm_core/src/vector_raster/` (Bresenham lines, midpoint circles, midpoint arcs, Catmull-Rom curves, even-odd fill polygon, stroke text). Section 26.2 (ReGIS) and Section 26.3 (Tek 4014) both rasterize their vector commands through this shared helper. Subsection 26.1 MUST land before 26.2 and 26.3 — it is the architectural joint that keeps both interpreters a reasonable size.
 - **Section 26 ↔ Section 05 ↔ Section 07**: Section 26's ReGIS and Tek 4014 interpreters commit rasterizer goldens (line/circle/arc/curve/fill primitives) to the deterministic lane defined in Section 05. They also push rasterized placements into `ImageCache`, so they inherit `ImageCache::on_resize` from Section 07. Section 26 MUST land after 05 + 07 + 08 all land.
 - **Section 20.1 + Section 03.1**: Section 20.1 requires `HostEffect::VisualBell` as a separate variant (not a flag). Section 03.1's type definition MUST include the variant up-front so Section 20.1 can emit it without a type extension cycle.
-- **Section 06 + Section 09.2 (stricter than the general 06+09 coupling)**: the Mode 2026 timeout-abort test `mode_2026_timeout_abort_test` in 09.2 is NON-EXECUTABLE until 06.1 wires `Processor::sync_timeout`/`stop_sync` AND 06.2 emits `PresentationEffect::SyncAbort`. The test will deadlock if run before 06 lands. 09's `depends_on` frontmatter already reflects this but the coupling note exists here so the dependency is front-and-center.
+- **Section 06 + Section 09.2 (stricter than the general 06+09 coupling)**: the Mode 2026 timeout-abort test `mode_2026_timeout_abort_test` in 09.2 is NON-EXECUTABLE until 06.1 wires `Processor::sync_timeout`/`stop_sync` AND 06.3 emits `PresentationEffect::Abort { reason: SyncAbortReason::Timeout }`. The test will deadlock if run before 06 lands. 09's `depends_on` frontmatter already reflects this but the coupling note exists here so the dependency is front-and-center.
 
 > **Canonical absorption-policy home.** This block is the single source of truth
 > for how the tack-conformance plan is superseded. Other files in the repository
