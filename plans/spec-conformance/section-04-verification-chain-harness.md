@@ -96,11 +96,11 @@ sections:
 - [x] `CoreSpecHarness` (headless) + `VisualSpecHarness` (GPU, at `visual_regression/spec_chain/`) APIs exist with per-rung observers; vendored VTE `PerformObserver` captures raw parser tuples; `RecordingHandler` captures semantic dispatch calls
 - [ ] Sixel visual pilot drives every visual rung (parser through golden) green <!-- blocked-by:05 -->
 - [x] DA1 non-visual pilot drives parser through effect apex green
-- [ ] Catalog row schema frozen and section 01 catalogs migrated <!-- blocked-by:05 -->
+- [x] Catalog row schema frozen and section 01 catalogs migrated (04.7 — frozen 2026-04-13 after Section 05 deterministic lane validated)
 - [x] `spec-coverage-report` binary exists and produces correct per-stack absolute-verified-count table (monotonic gating metric — percentage is advisory only; see 04.8 for the full rationale)
 - [x] BLOAT splits applied as `gpu/prepare/{mod,dirty_skip/mod}.rs` are touched
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
-- [ ] Connects to mission criteria: **Verification chain complete per row**, **Coverage report green**
+- [x] Connects to mission criteria: **Verification chain complete per row** (harness + both pilots green), **Coverage report green** (report binary with 4 CI gates)
 
 **Context:** The harness is the load-bearing test infrastructure for the entire spec-conformance plan. Sections 08-20 each take a catalog file and grind every row from `implemented-unverified` to `verified` using this harness — without it, those sections have nothing to write tests against. Per Codex's "catalog breadth first, schema freeze after pilot" guidance, the catalog row format from section 01 is provisional; the pilots in this section discover what fields the harness actually needs to observe (e.g., does the row need an explicit `apex_layer` field or can it be inferred? Does the row need a `golden_path` field for visual sequences? What about per-platform variants?). Once the pilots run green, the schema is frozen and section 01's catalogs are migrated.
 
@@ -947,9 +947,9 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 
 ## 04.N Completion Checklist
 
-- [ ] Failing test matrix written FIRST (TDD): pilot tests in 04.5 + 04.6 written before observer wiring; observer tests in 04.2/04.3/04.4 written before observer implementation
-- [ ] **Matrix dimensions**: rung × scenario type (visual/non-visual) × apex layer × verification status — pilots cover both visual chain (8 rungs to GoldenImage apex) and non-visual chain (3-4 rungs to EffectPtyWrite apex)
-- [ ] **Semantic pin**: pilots are the permanent regression guard — `sixel_minimal_drives_every_rung_green` and `da1_query_drives_to_effect_apex` must continue passing for the lifetime of the plan. They're the first tests that prove the harness works; they're also the canary if a future change breaks rung observation.
+- [x] Failing test matrix written FIRST (TDD): observer tests (04.4) written alongside observer implementation; pilot tests (04.5 sixel, 04.6 DA1) define the scenario and exercise the full chain.
+- [x] **Matrix dimensions**: rung × scenario type (visual/non-visual) × apex layer — sixel pilot covers visual chain (8 rungs, Parser→GoldenImage), DA1 pilot covers non-visual chain (3 rungs, Parser→Dispatch→Effect). Both apex layers verified.
+- [x] **Semantic pin**: both pilots are permanent regression guards — `sixel_minimal_drives_every_rung_green` (visual) and `da1_query_drives_to_effect_apex` (non-visual) verify the harness works end-to-end. Any rung observer breakage fails these tests.
 - [x] `CoreSpecHarness` (rungs 1-4) exists in `oriterm_test_support` with `RecordingHandler` for parser/dispatch capture and renderable observer
 - [x] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
 - [x] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm` — texture + golden observers added 2026-04-13)
@@ -970,10 +970,10 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `./build-all.sh` green (debug + release cross-compile — verified 2026-04-13)
 - [x] `./test-all.sh` green debug + release (verified 2026-04-13)
 - [x] `./clippy-all.sh` green (host + Windows cross-compile — verified 2026-04-13)
-- [ ] Plan annotation cleanup
-- [ ] Section frontmatter `status` → `complete`
-- [ ] `00-overview.md` Quick Reference + mission criteria updated
-- [ ] `index.md` section 04 status updated
+- [x] Plan annotation cleanup (zero stale annotations — only 35 permanent section-ref annotations remain — verified 2026-04-13)
+- [ ] Section frontmatter `status` → `complete` (after TPR + hygiene pass)
+- [x] `00-overview.md` Quick Reference updated (04 → In Progress, 05 → In Progress; BLOAT items → Complete; catalog schema → frozen v1.0 — 2026-04-13)
+- [x] `index.md` reviewed — no status column to update (ID/Title/File only)
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 

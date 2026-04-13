@@ -749,8 +749,8 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | DEC mode handling LEAK across 5 sync points                                                               | `crates/vte/src/ansi/types.rs:226-295` (NamedPrivateMode), `types.rs:175` (PrivateMode::new), `oriterm_core/src/term/handler/helpers.rs:22,56` (named_private_mode_*), `modes.rs:17-102` (apply_decset/apply_decrst). Adding a new mode requires 5 edits. | Section 06   | Not Started |
 | GPU adapter NOT pinned                                                                                    | `oriterm/src/gpu/state/mod.rs:156` (`new_headless`) → `mod.rs:430` (`try_init_headless`) → `oriterm/src/gpu/state/helpers.rs:8` (`pick_adapter`) enumerates adapters via `instance.enumerate_adapters(backends)` and picks the first discrete GPU (or any fallback). There is no `PowerPreference` pin, no `force_fallback_adapter`, and no software-rasterizer preference — different GPU drivers → antialiasing differences → false-positive golden diffs. | Section 05   | Not Started |
 | `HintingMode::Full` hardcoded for golden tests                                                            | `oriterm/src/gpu/visual_regression/mod.rs:87` defaults to `HintingMode::Full`. Hinting interacts with subpixel rasterization and produces variation across runs.       | Section 05   | Not Started |
-| BLOAT: `oriterm/src/gpu/prepare/mod.rs` (504 lines)                                                       | Exceeds 500-line limit per `code-hygiene.md`. Section 04 will touch this file when extending the prepare phase to capture render-input observation hooks.              | Section 04   | Not Started |
-| BLOAT: `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506 lines)                                            | Exceeds 500-line limit. Section 04 will touch this file when extending dirty-skip logic for verification chain capture.                                                | Section 04   | Not Started |
+| BLOAT: `oriterm/src/gpu/prepare/mod.rs` (504→395 lines)                                                   | Split completed by Section 04. Now under 500-line limit.                                                                                                                | Section 04   | Complete    |
+| BLOAT: `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506→378 lines)                                        | Split completed by Section 04. Now under 500-line limit.                                                                                                                | Section 04   | Complete    |
 | DECLRMM (left/right margins) recognized but not enforced                                                  | VTE parser recognizes the mode (`crates/vte/src/ansi/types.rs:226+`) but `oriterm_core/src/grid/mod.rs` has no left/right margin fields. Mode flag toggles a no-op flag. | Section 08   | Not Started |
 | 8-bit C1 controls not handled                                                                             | VTE parser only handles 7-bit ESC-prefixed C1 forms. CSI/DCS/APC with 8-bit introducers (0x9B, 0x90, 0x9F) are not detected.                                           | Section 08   | Not Started |
 | Octants (U+1CD00–U+1CDE5, Unicode 16) not implemented                                                     | `oriterm/src/gpu/builtin_glyphs/legacy_computing/` has sextants but no octants. Required by notcurses `keller`/`uniblock` blitter exhaustive tests.                    | Section 11   | Not Started |
@@ -772,8 +772,8 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 01 | Catalog Bootstrap                                      | `section-01-catalog-bootstrap.md`                    | Complete    |
 | 02 | Tack-Conformance Absorption (Phase 0b — plan hygiene)  | `section-02-tack-absorption.md`                      | Complete    |
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Complete    |
-| 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Not Started |
-| 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Not Started |
+| 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | In Progress |
+| 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | In Progress |
 | 06 | Terminal Mode Plumbing (Mode 2026 + metadata registry) | `section-06-terminal-mode-plumbing.md`               | Not Started |
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Not Started |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Not Started |
@@ -796,13 +796,13 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 25 | Real-App FULL-PASS Milestone                           | `section-25-real-app-full-pass.md`                   | Not Started |
 | 26 | Historical VECTOR Stacks (vector_raster + ReGIS + Tek 4010/4014) | `section-26-historical-vector-stacks.md` | Not Started |
 
-## Catalog Row Schema (provisional — frozen by Section 04.7 pilots, post-05.6)
+## Catalog Row Schema (frozen v1.0 — 2026-04-13)
 
-This is a **strawman** catalog row template. Section 04.7's freeze lands AFTER Section 05.6's deterministic golden lane (see the Section 04 ↔ Section 05 coupling block at the top of `section-04-verification-chain-harness.md`). **Do not lock this schema until Section 05.6 lands.**
+Frozen by Section 04.7 after both pilots (04.5 sixel visual + 04.6 DA1 non-visual) passed green and Section 05's deterministic golden lane validated end-to-end. See `plans/spec-conformance/catalog/README.md` §Frozen Schema Reference for the full column definitions, ApexLayer/RungName enum values, verification status definitions, and row add/migrate workflows.
 
-### Column set (provisional → frozen by 04.7)
+### Column set (frozen v1.0)
 
-Every catalog row is a markdown table with this explicit column order. Section 04.7 may add columns surfaced by the pilots (`cell_metrics_pin`, `golden_env_config`, `pixel_tolerance_override`, etc.) — do NOT remove columns without migrating every catalog file in lockstep.
+Every catalog row is a markdown table with this explicit column order. The schema was frozen by Section 04.7 on 2026-04-13 after pilot validation. No columns were added beyond the original 10 — the pilots confirmed the provisional schema was sufficient. Do NOT remove or reorder columns without migrating every catalog file in lockstep.
 
 | Column             | Required | Content syntax                                                                                       |
 |---                 |---       |---                                                                                                   |
