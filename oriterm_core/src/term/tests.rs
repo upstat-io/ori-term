@@ -2499,6 +2499,96 @@ fn term_resize_remaps_image_placement_through_reflow() {
     );
 }
 
+/// Regression guard for TPR-07-001 / BUG-08-10.
+///
+/// After removing the image-cache swap from `toggle_alt_common`, the
+/// `image_cache` and `alt_image_cache` fields hold their semantic
+/// contents regardless of `ALT_SCREEN` mode: primary placements live
+/// in `self.image_cache`, alt placements live in `self.alt_image_cache`.
+/// This test bypasses the `image_cache()` accessor and reads the
+/// fields directly so it catches any future routing inversion the
+/// accessor might hide.
+#[test]
+fn term_resize_routes_each_grid_through_its_own_image_cache() {
+    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Place in primary (image_cache_mut via primary mode → image_cache field).
+    place_test_image(&mut term, 0, 5, 1, 2);
+    assert_eq!(
+        term.image_cache.placement_count(),
+        1,
+        "primary field must hold the primary-mode placement"
+    );
+    assert!(
+        term.alt_image_cache.is_none(),
+        "alt cache not yet allocated"
+    );
+
+    // Enter alt, place there.
+    term.swap_alt();
+    place_test_image(&mut term, 0, 90, 1, 10); // col 90 — goes out of bounds on 80 resize.
+    assert_eq!(
+        term.image_cache.placement_count(),
+        1,
+        "primary field still has its 1 placement (NOT swapped)"
+    );
+    assert_eq!(
+        term.alt_image_cache.as_ref().unwrap().placement_count(),
+        1,
+        "alt field now holds the alt-mode placement (NOT swapped)"
+    );
+
+    // Resize while in alt mode — primary cache keeps its placement
+    // (primary grid's reflow mapping does NOT touch the alt cache),
+    // alt cache's col=90 placement is dropped by on_resize.
+    term.resize(24, 80, true);
+
+    assert_eq!(
+        term.image_cache.placement_count(),
+        1,
+        "primary placement at col=5 must survive — primary grid's reflow must not hit the alt cache"
+    );
+    assert_eq!(
+        term.alt_image_cache.as_ref().unwrap().placement_count(),
+        0,
+        "alt placement at col=90 must be removed by on_resize on the alt cache"
+    );
+}
+
+/// Isolation check: primary-mode and alt-mode placements do NOT leak
+/// into each other's cache. Regression for BUG-08-10 which allowed
+/// alt-mode placements to appear in primary after swap back.
+#[test]
+fn alt_image_cache_isolation_check() {
+    let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Primary: place at col=5.
+    place_test_image(&mut term, 0, 5, 1, 2);
+    assert_eq!(term.image_cache().placement_count(), 1);
+
+    // Enter alt — alt cache newly allocated, empty.
+    term.swap_alt();
+    assert_eq!(
+        term.image_cache().placement_count(),
+        0,
+        "alt mode must not see the primary placement"
+    );
+
+    // Place in alt at col=10.
+    place_test_image(&mut term, 0, 10, 1, 2);
+    assert_eq!(term.image_cache().placement_count(), 1);
+
+    // Back to primary — primary should still only have its original.
+    term.swap_alt();
+    assert_eq!(
+        term.image_cache().placement_count(),
+        1,
+        "primary must still hold only its original placement — alt-mode placement must not leak"
+    );
+}
+
 /// `reflow: false` skips the remap step entirely — placements retain
 /// their original `cell_row` when reflow does not run.
 #[test]

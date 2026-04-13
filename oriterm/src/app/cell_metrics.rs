@@ -54,11 +54,22 @@ impl App {
         cell_w: u16,
         cell_h: u16,
     ) {
-        // Collect all pane IDs up front to avoid holding both a session
-        // reference and a mux reference at the same time.
+        // Short-circuit when nothing changed. Per TPR-07-002-gemini
+        // (2026-04-13): `sync_grid_layout` fires on every layout pass
+        // including every tick of an interactive drag-resize. If we
+        // broadcast unconditionally, every pane gets inserted into
+        // `snapshot_dirty` and (in daemon mode) has its pushed
+        // snapshot invalidated via IPC on every tick — O(N panes × M
+        // resize events) of wasted work when font/DPI haven't changed.
         let Some(ctx) = self.windows.get(&winit_id) else {
             return;
         };
+        if ctx.last_broadcast_cell_dims == Some((cell_w, cell_h)) {
+            return;
+        }
+
+        // Collect all pane IDs up front to avoid holding both a session
+        // reference and a mux reference at the same time.
         let session_wid = ctx.window.session_window_id();
         let Some(session_window) = self.session.get_window(session_wid) else {
             return;
@@ -77,6 +88,11 @@ impl App {
         };
         for pane_id in pane_ids {
             mux.set_cell_dimensions(pane_id, cell_w, cell_h);
+        }
+
+        // Record the broadcast so subsequent identical calls short-circuit.
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
+            ctx.last_broadcast_cell_dims = Some((cell_w, cell_h));
         }
     }
 }
