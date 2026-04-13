@@ -2,7 +2,7 @@
 section: "06"
 title: "Terminal Mode Plumbing (Mode 2026 timeout-abort + mode metadata consolidation)"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Wire the Mode 2026 timeout-abort path that currently has zero call sites in ori_term, and consolidate DEC mode metadata to eliminate the multi-sync-point LEAK across NamedPrivateMode consumers."
 success_criteria:
   - "`Processor::sync_timeout()` and `Processor::stop_sync()` are CALLED from `oriterm_mux/src/pane/io_thread/mod.rs` — `grep -rn 'sync_timeout\\|stop_sync' oriterm_mux/src/pane/io_thread/` returns matches"
