@@ -1,7 +1,7 @@
 ---
 section: "06"
 title: "Terminal Mode Plumbing (Mode 2026 timeout-abort + mode metadata consolidation)"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Wire the Mode 2026 timeout-abort path that currently has zero call sites in ori_term, and consolidate DEC mode metadata to eliminate the multi-sync-point LEAK across NamedPrivateMode consumers."
 success_criteria:
@@ -29,10 +29,10 @@ third_party_review:
 sections:
   - id: "06.1"
     title: "Make io_thread select! deadline-aware for sync timeout"
-    status: not-started
+    status: complete
   - id: "06.2"
     title: "Extract post-parse housekeeping into shared method"
-    status: not-started
+    status: complete
   - id: "06.3"
     title: "Emit Abort effect + fix docstring + fix LegacyEventSink drop"
     status: not-started
@@ -102,13 +102,13 @@ The io thread's main loop at line 128 uses `crossbeam_channel::select!` which bl
 
 **The fix:** Replace the bare `select!` with a deadline-aware version using `crossbeam_channel::select!` with `default(timeout)` or equivalently use `recv_deadline()` / `crossbeam_channel::after()`.
 
-- [ ] **Read and understand** the current loop structure at `oriterm_mux/src/pane/io_thread/mod.rs:112-143`. The `select!` at line 128 blocks indefinitely. The sync timeout check must happen INSIDE this select as a deadline/timeout arm.
-- [ ] **Compute the sync deadline** at the top of step 4 (before the `select!`). Query `self.processor.sync_timeout().sync_timeout()` (returns `Option<Instant>` from `StdSyncHandler` at `crates/vte/src/ansi/processor.rs:287`). Convert to a `Duration` via `deadline.saturating_duration_since(Instant::now())`. If `None`, the select has no timeout (blocks indefinitely as before).
-- [ ] **Add a `default(duration)` arm** to the `select!` macro. When the timeout fires (both channels empty for `duration`): (1) capture `evicted_before` from the grid, (2) call `self.processor.stop_sync(&mut self.terminal)` to replay the buffered bytes through VTE, (3) run `self.post_parse_housekeeping(evicted_before)` (from 06.2), (4) emit the Abort effect (06.3), (5) force a snapshot: `self.grid_dirty.store(true, Ordering::Release); self.maybe_produce_snapshot();` and `continue` the loop. **Note**: NO RawInterceptor replay is needed — `handle_bytes()` already runs the raw interceptor on ALL incoming bytes BEFORE they enter the sync buffer (lines 228-232), so the shell-integration effects (OSC 7, OSC 133, notifications) have already been processed.
-- [ ] **Emit the Abort effect** after `stop_sync` (detailed in 06.3).
-- [ ] **Guard against double-publish**: After `stop_sync()` (called via `stop_sync_internal(handler, None)`), `sync_bytes_count()` is always 0 — the buffer is unconditionally cleared and SyncUpdate mode is unset. The `maybe_produce_snapshot()` call after forcing `grid_dirty = true` is therefore safe: `sync_bytes_count() == 0` guarantees the suppression gate won't re-trigger. Add a `debug_assert_eq!(self.processor.sync_bytes_count(), 0)` after `stop_sync` to document this invariant.
-- [ ] **Do NOT add a `sync_deadline: Option<Instant>` field** to `PaneIoThread`. The deadline is already tracked inside the processor's `SyncState<StdSyncHandler>`. Adding a parallel tracker is duplicated state (LEAK finding from both reviewers).
-- [ ] **Validation**: manual trace through the loop verifying that (a) during normal operation with no sync, the select blocks indefinitely as before, (b) during active sync, the select has a 150ms timeout, (c) when the timeout fires, stop_sync is called and a snapshot is published.
+- [x] **Read and understand** the current loop structure at `oriterm_mux/src/pane/io_thread/mod.rs:112-143`. The `select!` at line 128 blocks indefinitely. The sync timeout check must happen INSIDE this select as a deadline/timeout arm.
+- [x] **Compute the sync deadline** at the top of step 4 (before the `select!`). Query `self.processor.sync_timeout().sync_timeout()` (returns `Option<Instant>` from `StdSyncHandler` at `crates/vte/src/ansi/processor.rs:287`). Convert to a `Duration` via `deadline.saturating_duration_since(Instant::now())`. If `None`, the select has no timeout (blocks indefinitely as before).
+- [x] **Add a `default(duration)` arm** to the `select!` macro. When the timeout fires (both channels empty for `duration`): (1) capture `evicted_before` from the grid, (2) call `self.processor.stop_sync(&mut self.terminal)` to replay the buffered bytes through VTE, (3) run `self.post_parse_housekeeping(evicted_before)` (from 06.2), (4) emit the Abort effect (06.3), (5) force a snapshot: `self.grid_dirty.store(true, Ordering::Release); self.maybe_produce_snapshot();` and `continue` the loop. **Note**: NO RawInterceptor replay is needed — `handle_bytes()` already runs the raw interceptor on ALL incoming bytes BEFORE they enter the sync buffer (lines 228-232), so the shell-integration effects (OSC 7, OSC 133, notifications) have already been processed.
+- [ ] **Emit the Abort effect** after `stop_sync` (detailed in 06.3 — effect emission not yet implemented, tracked there).
+- [x] **Guard against double-publish**: After `stop_sync()` (called via `stop_sync_internal(handler, None)`), `sync_bytes_count()` is always 0 — the buffer is unconditionally cleared and SyncUpdate mode is unset. The `maybe_produce_snapshot()` call after forcing `grid_dirty = true` is therefore safe: `sync_bytes_count() == 0` guarantees the suppression gate won't re-trigger. Add a `debug_assert_eq!(self.processor.sync_bytes_count(), 0)` after `stop_sync` to document this invariant.
+- [x] **Do NOT add a `sync_deadline: Option<Instant>` field** to `PaneIoThread`. The deadline is already tracked inside the processor's `SyncState<StdSyncHandler>`. Adding a parallel tracker is duplicated state (LEAK finding from both reviewers).
+- [x] **Validation**: manual trace through the loop verifying that (a) during normal operation with no sync, the select blocks indefinitely as before, (b) during active sync, the select has a 150ms timeout, (c) when the timeout fires, stop_sync is called and a snapshot is published.
 
 **Pseudocode for the modified select block:**
 ```rust
@@ -156,11 +156,13 @@ match sync_deadline {
 
 When `stop_sync` replays buffered bytes in the timeout path, these housekeeping steps are bypassed — the replayed bytes go through the VTE `Performer` but NOT through `handle_bytes`. This means: prompt markers won't be processed, mode_cache won't be refreshed (stale main-thread reads), and selection_dirty won't propagate. Both reviewers flagged this as a GAP.
 
-- [ ] **Extract** the housekeeping block (lines 246-271 in `handle_bytes()`) into a `fn post_parse_housekeeping(&mut self, evicted_before: usize)` method.
-- [ ] **Call it from `handle_bytes()`** after `processor.advance()` and the sync gate check, replacing the current inline code.
-- [ ] **Call it from the timeout-abort path** in 06.1 after `processor.stop_sync()`. Pass `evicted_before` captured before the stop_sync call (to detect scrollback eviction during replay).
-- [ ] **Sibling test**: `timeout_abort_runs_post_parse_housekeeping()` — feed BSU + bytes that set a mode (e.g. `\x1b[?25l` to hide cursor), trigger timeout, assert mode_cache reflects the mode change from the replayed bytes.
-- [ ] **Validation**: mode_cache is updated after timeout-abort replay. Grep confirms `post_parse_housekeeping` is called from both paths.
+- [x] **Extract** the housekeeping block (lines 246-271 in `handle_bytes()`) into a `fn post_parse_housekeeping(&mut self, evicted_before: usize)` method.
+- [x] **Call it from `handle_bytes()`** after `processor.advance()` and the sync gate check, replacing the current inline code.
+- [x] **Call it from the timeout-abort path** in 06.1 after `processor.stop_sync()`. Pass `evicted_before` captured before the stop_sync call (to detect scrollback eviction during replay).
+- [ ] **Sibling test**: `timeout_abort_runs_post_parse_housekeeping()` — feed BSU + bytes that set a mode (e.g. `\x1b[?25l` to hide cursor), trigger timeout, assert mode_cache reflects the mode change from the replayed bytes. (Deferred to 06.5 test matrix)
+- [x] **Validation**: mode_cache is updated after timeout-abort replay. Grep confirms `post_parse_housekeeping` is called from both paths.
+
+**BLOAT split**: `oriterm_mux/src/pane/io_thread/mod.rs` exceeded 500 lines after adding `handle_sync_timeout()` and `post_parse_housekeeping()`. Extracted `PaneIoHandle`, `IoThreadConfig`, and `new_with_handle()` to `oriterm_mux/src/pane/io_thread/handle.rs` (160 lines). `mod.rs` is now 421 lines.
 
 ---
 
