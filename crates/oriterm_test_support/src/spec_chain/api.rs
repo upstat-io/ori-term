@@ -12,6 +12,7 @@ use oriterm_core::effect::sink::{EffectSink, QueueingEffectSink};
 
 use vte::ansi::{PerformAction, PerformActionCollector, Processor};
 
+use super::observers;
 use super::recording_handler::{DispatchCall, RecordingHandler};
 use super::scenario::{RungName, SpecScenario};
 
@@ -127,9 +128,10 @@ impl SpecHarness {
     /// Run a scenario through every applicable rung, stopping at the
     /// first failure.
     ///
-    /// Observer implementations (04.2) provide the per-rung assertion
-    /// logic. This method is a placeholder that validates the scenario's
-    /// rung chain can be driven; actual rung assertions are wired in 04.2.
+    /// For each rung in the scenario's chain, the corresponding observer
+    /// checks the captured data against the scenario's expectations.
+    /// Rungs with `None` expectations pass unconditionally (the scenario
+    /// doesn't assert that rung). Stops at the first failing rung.
     pub fn run_scenario(&mut self, scenario: &SpecScenario) -> Vec<RungResult> {
         // Apply setup bytes if any.
         if !scenario.setup.is_empty() {
@@ -144,14 +146,43 @@ impl SpecHarness {
         // Feed the scenario bytes.
         self.feed(scenario.bytes);
 
-        // Build rung results. Until observers are wired (04.2), we
-        // produce a pass for each applicable rung — proving the harness
-        // exercises the full chain without panicking.
-        scenario
-            .applicable_rungs()
-            .iter()
-            .map(|&rung| RungResult::pass(rung))
-            .collect()
+        let exp = &scenario.expectations;
+        let mut results = Vec::new();
+
+        for &rung in scenario.applicable_rungs() {
+            let result = match rung {
+                RungName::Parser => match &exp.parser {
+                    Some(e) => observers::observe_parser(&self.outcome, e),
+                    None => RungResult::pass(rung),
+                },
+                RungName::Dispatch => match &exp.dispatch {
+                    Some(e) => observers::observe_dispatch(&self.outcome, e),
+                    None => RungResult::pass(rung),
+                },
+                RungName::State => match &exp.state {
+                    Some(e) => observers::observe_state(self.handler.term(), e),
+                    None => RungResult::pass(rung),
+                },
+                RungName::Effect => match &exp.effect {
+                    Some(e) => observers::observe_effect(&self.outcome, e),
+                    None => RungResult::pass(rung),
+                },
+                // Rungs 4-8: stub observers (expanded in 04.3/04.3b/04.4).
+                RungName::Renderable
+                | RungName::FrameInput
+                | RungName::GpuInstance
+                | RungName::TextureRender
+                | RungName::GoldenImage => RungResult::pass(rung),
+            };
+
+            let failed = !result.passed;
+            results.push(result);
+            if failed {
+                break;
+            }
+        }
+
+        results
     }
 
     /// Borrow the accumulated outcome (for observer assertions).

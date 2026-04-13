@@ -973,6 +973,15 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `[TPR-04-005-gemini-r2][low]` `section-04:915` — Remove Arc<Mutex> from per-harness UncatalogedDetector.
   Resolved: Fixed on 2026-04-12. Changed to plain `HashSet<TupleSig>` — each `SpecHarness` is single-threaded.
 
+- [x] `[TPR-04-001-codex-r3][high]` `crates/oriterm_test_support/src/spec_chain/api.rs:133` — Wire scenario expectations into `run_scenario` via observer functions.
+  Resolved: Fixed on 2026-04-12. `run_scenario()` now calls observer functions (observe_parser, observe_dispatch, observe_state, observe_effect) for each rung with `Some` expectation. Stops at first failure.
+- [x] `[TPR-04-002-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/observers/effect.rs:13` — Expand `EffectExpectation` to match on sub-variant (e.g. `PtyWriteKind`).
+  Resolved: Fixed on 2026-04-12. Added `sub_variant: Option<&'static str>` to `EffectExpectation` with `pty()`, `host()`, `family()` const constructors. Observer matches on `PtyWriteKind` name.
+- [x] `[TPR-04-003-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/observers/parser.rs:14` — Add DCS/OSC/APC matching to parser observer.
+  Resolved: Fixed on 2026-04-12. Added `Hook` (merged with `CsiDispatch` arm), `OscDispatch`, `ApcStart`/`ApcEnd` matching.
+- [x] `[TPR-04-004-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/scenario.rs:278` — Add public const constructors for stub expectation types.
+  Resolved: Fixed on 2026-04-12. Changed stub types from `struct Foo { _private: () }` to unit structs `struct Foo;` with `#[derive(Default)]`. Fully const-constructible.
+
 ---
 
 ## 04.N Completion Checklist
