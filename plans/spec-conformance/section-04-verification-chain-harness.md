@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Verification Chain Harness + Pilots + Coverage Report"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Build the SpecHarness API that drives a sequence through every applicable rung of the verification chain (parser → dispatch → state/effect → renderable → frame-input → gpu-instance → texture → golden), validate the API with one visual pilot (sixel) and one non-visual pilot (DA1), freeze the catalog row schema based on what the pilots needed, and deliver the spec-coverage-report binary."
 success_criteria:
@@ -79,7 +79,7 @@ sections:
     status: not-started
   - id: "04.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "04.N"
     title: "Completion Checklist"
     status: not-started
@@ -89,7 +89,7 @@ sections:
 
 # Section 04: Verification Chain Harness + Pilots + Coverage Report
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Build the verification chain harness that section 08 onward will use to drive every catalog row to `verified` status. The harness is split into two layers by crate boundary: `CoreSpecHarness` (headless, rungs 1-4: parser/dispatch/state/effect/renderable) lives in `oriterm_test_support`, and `VisualSpecHarness` (GPU, rungs 5-8: frame-input/gpu-instance/texture/golden) lives in `oriterm/src/gpu/visual_regression/spec_chain/` (under `#[cfg(test)]`). Raw parser tuples are captured via a vendored VTE `Processor::advance_with_observer()` shim with `PerformObserver` trait. Semantic dispatch calls are captured via `RecordingHandler`, a wrapper that implements `vte::ansi::Handler` and records each method call before delegating to `Term<QueueingEffectSink>`. Two pilot scenarios — one visual (sixel raster fill) and one non-visual (DA1 query) — exercise every applicable rung end-to-end and prove the harness works. The pilots' API requirements are then used to FREEZE the catalog row schema (which was provisional in section 01). The coverage report generator is the binary that walks the catalog files (via the shared `oriterm_test_support::catalog::parse_catalog_markdown` parser and `walk_catalog_files()` created by Section 01.3) and produces a per-stack absolute-verified-count table. **Gating metric is absolute count (monotonic), not percentage.** Percentage is advisory only — because section 01 and the continuous-discovery safety net (04.9) keep adding new rows, the denominator grows and percentages can drop while absolute counts stay flat or rise. CI gates on absolute counts per 04.8.
 
 **Success Criteria:**
