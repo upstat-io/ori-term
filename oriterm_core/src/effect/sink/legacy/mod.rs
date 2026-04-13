@@ -9,12 +9,12 @@
 //! migrate to subscribe to `Effect` directly (in `plans/effect-cutover/`).
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::color::Rgb;
 use crate::effect::Effect;
 use crate::effect::families::{
-    ClipboardSelection, HostEffect, HostRequest, NotificationSource, PresentationEffect, PtyEffect,
-    UiEffect,
+    ClipboardSelection, HostEffect, HostRequest, NotificationSource, PtyEffect, UiEffect,
 };
 use crate::effect::families::{format_clipboard_reply, format_color_reply};
 use crate::event::{ClipboardType, Event, EventListener};
@@ -48,10 +48,10 @@ pub struct LegacyEventSink<L: EventListener + Sync> {
     /// Notifications have no legacy `Event` variant, so they are queued
     /// here and drained by `drain_pending_notifications()`.
     pending_notifications: parking_lot::Mutex<Vec<DesktopNotificationRecord>>,
-    /// Secondary queue for `Presentation` effects (Mode 2026 begin/commit/abort).
-    /// Presentation effects have no legacy `Event` variant. Queued here for
-    /// observability (tests drain, production logs).
-    pending_presentation_effects: parking_lot::Mutex<Vec<PresentationEffect>>,
+    /// Counter of `Presentation` effects received (Mode 2026 begin/commit/abort).
+    /// Presentation effects have no legacy `Event` variant — they are logged
+    /// and counted (not queued) to avoid unbounded memory growth in production.
+    presentation_effect_count: AtomicU32,
 }
 
 impl<L: EventListener + Sync> LegacyEventSink<L> {
@@ -60,7 +60,7 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
         Self {
             listener,
             pending_notifications: parking_lot::Mutex::new(Vec::new()),
-            pending_presentation_effects: parking_lot::Mutex::new(Vec::new()),
+            presentation_effect_count: AtomicU32::new(0),
         }
     }
 
@@ -80,12 +80,18 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
         std::mem::take(&mut *self.pending_notifications.lock())
     }
 
-    /// Drain all queued presentation effects (Mode 2026 begin/commit/abort).
+    /// Return the count of `Presentation` effects received since creation
+    /// (or since the last `reset_presentation_effect_count()` call).
     ///
-    /// Used by tests to verify that `Presentation` effects are observable
-    /// through the legacy adapter (not silently dropped).
-    pub fn drain_pending_presentation_effects(&self) -> Vec<PresentationEffect> {
-        std::mem::take(&mut *self.pending_presentation_effects.lock())
+    /// Used by tests to verify that effects are not silently dropped.
+    /// Production code only logs — no queue, no unbounded growth.
+    pub fn presentation_effect_count(&self) -> u32 {
+        self.presentation_effect_count.load(Ordering::Relaxed)
+    }
+
+    /// Reset the presentation-effect counter to zero.
+    pub fn reset_presentation_effect_count(&self) {
+        self.presentation_effect_count.store(0, Ordering::Relaxed);
     }
 }
 
@@ -100,12 +106,13 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
             Effect::Host(
                 HostEffect::VisualBell | HostEffect::AudioRequest(_) | HostEffect::PrintRequest(_),
             ) => return,
-            // No legacy Event variant for Presentation effects — queue for
-            // observability and log (the full migration to direct Effect
-            // subscription is tracked in plans/effect-cutover/).
-            Effect::Presentation(p) => {
+            // No legacy Event variant for Presentation effects — log and count
+            // (no queue to avoid unbounded growth). The full migration to direct
+            // Effect subscription is tracked in plans/effect-cutover/.
+            Effect::Presentation(ref p) => {
                 log::info!("Presentation effect (no legacy Event route): {p:?}");
-                self.pending_presentation_effects.lock().push(p);
+                self.presentation_effect_count
+                    .fetch_add(1, Ordering::Relaxed);
                 return;
             }
             Effect::Host(HostEffect::TitleSet { value: Some(t) }) => Event::Title(t),
@@ -202,8 +209,8 @@ impl<L: EventListener + Sync + std::fmt::Debug> std::fmt::Debug for LegacyEventS
                 &self.pending_notifications.lock().len(),
             )
             .field(
-                "pending_presentation_effects",
-                &self.pending_presentation_effects.lock().len(),
+                "presentation_effect_count",
+                &self.presentation_effect_count.load(Ordering::Relaxed),
             )
             .finish()
     }
