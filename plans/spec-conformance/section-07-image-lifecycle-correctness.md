@@ -2,7 +2,7 @@
 section: "07"
 title: "Image Lifecycle Correctness"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Add the missing resize handler, reflow-aware placement remapping, and cell-metric plumbing so image placements survive every grid transformation correctly: scrollback eviction, grid resize, column reflow, alt-screen toggle, ED/EL erase, and font-size/DPI changes."
 success_criteria:
   - "`ImageCache::on_resize(new_cols, new_rows)` exists and removes image placements whose column extent is entirely outside the new grid bounds"
@@ -85,7 +85,7 @@ sections:
 
 **Reference implementations:**
 - **ori_term existing** `cache/mod.rs:268-286` — `remove_placements_where` + targeted `prune_if_orphaned` is the canonical placement-removal pattern.
-- **ori_term existing** `grid/resize/mod.rs:303-379` — `reflow_cells` loop tracks `src_idx` per source row; adding row-range tracking is O(1) per-row overhead.
+- **ori_term existing** `grid/resize/mod.rs:303-379` — `reflow_cells` loop tracks `src_idx` per source row; recording `first_output_row` per source row is O(1) per-row overhead.
 - **Ghostty** — derives clamped rects at use time; out-of-bounds columns removed.
 - **WezTerm** — cell-attachment model; reflows through screen rewrap. Different architecture.
 
@@ -311,6 +311,10 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [ ] Add `SetCellDimensions { width: u16, height: u16 }` variant to `PaneIoCommand` in `oriterm_mux/src/pane/io_thread/commands/mod.rs`
 - [ ] Update `fmt::Debug` for the new variant
 - [ ] Add `MuxPdu::SetCellDimensions { pane_id: PaneId, width: u16, height: u16 }` in `oriterm_mux/src/protocol/messages.rs`
+- [ ] Register the new PDU in the wire protocol sync points:
+  - `oriterm_mux/src/protocol/pdu_traits.rs` — add dispatch arm
+  - `oriterm_mux/src/protocol/msg_type.rs` — add numeric `MsgType` variant + `from_u16` arm
+  - `oriterm_mux/src/protocol/tests.rs` — add inventory and roundtrip test for `SetCellDimensions`
 - [ ] Add handler in `oriterm_mux/src/pane/io_thread/handler.rs`:
   ```rust
   PaneIoCommand::SetCellDimensions { width, height } => {
@@ -336,7 +340,8 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
   4. `pane_ops/mod.rs:104` — split pane
   5. `pane_ops/floating.rs:66` — floating pane
   6. `window_management/create.rs:70` — new window pane (currently only sends `set_pane_theme`)
-  Add `SetCellDimensions` calls at each site via shared helper: `fn send_cell_metrics_to_pane(mux, pane_id, renderer)`. Without this, newly created panes start with Term's default 8x16 metrics.
+  Add `SetCellDimensions` calls at each site via shared helper: `fn send_cell_metrics_to_pane(mux, pane_id, cell_w, cell_h)`. Without this, newly created panes start with Term's default 8x16 metrics.
+  **Init-time caveat**: the two `init/mod.rs` paths (`create_initial_tab`, `create_handoff_tab`) run before `WindowContext` is inserted, so `renderer` isn't accessible at the call site. Solution: pass `(cell_w, cell_h)` into the tab-creation helpers from `try_init` (which has just finished font rasterization and knows the metrics), or have those functions return the `PaneId` so `try_init` sends metrics immediately after the window context is inserted. Either approach is acceptable — the constraint is that the pane receives real cell metrics before any image protocol data arrives.
 - [ ] Sibling test: `term_set_cell_dimensions_updates_fixed_pixels_coverage()` — already exists in `term/tests.rs`, verify it still passes
 - [ ] Integration test: multi-pane scenario — place FixedPixels images in two split panes, send `SetCellDimensions` to both, verify both panes' coverage updated
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green (including Windows cross-compile — wire protocol change)
@@ -378,7 +383,31 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [x] `[TPR-07-001-codex][medium]` — Rewrite summary contract to match first_output_row and primary-only remap.
   Resolved: Fixed stale "row ranges" and "both caches" language in frontmatter, success criteria, and inspired_by.
 - [x] `[TPR-07-002-codex][high]` — Add pane-creation and adoption paths to cell-metric plumbing.
-  Resolved: Added 5 pane creation sites to 07.6 with shared helper. Regression test for newly created pane getting correct metrics.
+  Resolved: Added 6 pane creation sites (including window_management/create.rs) to 07.6 with shared helper. Init-time caveat documented. Regression tests added.
+
+**Round 4:**
+- [x] `[TPR-07-001-codex][high]` — Add new-window pane creation path to cell-metric fanout.
+  Resolved: Added window_management/create.rs as 6th pane path.
+- [x] `[TPR-07-002-codex][high]` — Decouple cell-metric propagation from grid-size changes.
+  Resolved: sync_grid_layout sends metrics unconditionally. Font-only metric test added.
+- [x] `[TPR-07-003-codex][medium]` — Purge stale row-range and ImageConfig-extension language.
+  Resolved: Fixed in section body and index.md.
+- [x] `[TPR-07-001-gemini][medium]` — Fix stale row-range language in section summary.
+  Resolved: Fixed.
+- [x] `[TPR-07-002-gemini][low]` — Fix stale row-range language in index.md.
+  Resolved: Fixed.
+
+**Round 5:**
+- [x] `[TPR-07-001-codex][high]` — Account for mux wire protocol sync points.
+  Resolved: Added pdu_traits.rs, msg_type.rs, protocol/tests.rs to 07.6 file list.
+- [x] `[TPR-07-002-codex][medium]` — Specify how init-only pane paths obtain cell metrics.
+  Resolved: Added init-time caveat documenting two approaches for passing metrics to create_initial_tab/create_handoff_tab.
+- [x] `[TPR-07-003-codex][low]` — Purge remaining stale round-4 wording.
+  Resolved: Fixed row-range tracking → first_output_row in reference section.
+- [x] `[TPR-07-001-gemini][high]` — Add round 4 findings to 07.R.
+  Resolved: All round 4+5 findings recorded.
+- [x] `[TPR-07-002-gemini][medium]` — Purge remaining stale row-range terminology.
+  Resolved: Fixed.
 
 ---
 
@@ -421,6 +450,7 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [ ] 07.6: Multi-pane integration test: both split panes get updated metrics after font change
 - [ ] 07.6: Regression test: font-size change without grid-size change still sends SetCellDimensions
 - [ ] 07.6: Regression test: new-window pane gets correct cell metrics on creation
+- [ ] 07.6: Wire protocol sync points: pdu_traits.rs, msg_type.rs, protocol/tests.rs updated for SetCellDimensions
 - [ ] 07.6: Windows cross-compile green (wire protocol change)
 - [ ] 07.6: BUG-08-9 closed
 - [ ] **Matrix**: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios + self-verifying count
