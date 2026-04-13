@@ -1,7 +1,7 @@
 //! Helper functions for VTE handler dispatch.
 //!
-//! Mode number lookups, mode-to-flag mappings, cursor positioning helpers,
-//! and version encoding used by the Handler impl and mode dispatch.
+//! Mode-to-flag mappings, cursor positioning helpers, and version encoding
+//! used by the Handler impl and mode dispatch.
 
 use std::cmp;
 
