@@ -81,7 +81,7 @@ git history preservation, --follow, no rename churn
 ---
 
 ### Section 03: Effect Boundary Migration
-**File:** `section-03-effect-boundary-migration.md` | **Status:** Not Started
+**File:** `section-03-effect-boundary-migration.md` | **Status:** Complete
 
 ```
 Effect type, EffectSink, oriterm_core::effect, production interface
@@ -99,7 +99,7 @@ fire-and-forget vs request/response, separate abstractions
 ---
 
 ### Section 04: Verification Chain Harness + Pilots + Coverage Report + Cataloging Safety Net
-**File:** `section-04-verification-chain-harness.md` | **Status:** In Progress
+**File:** `section-04-verification-chain-harness.md` | **Status:** Complete
 
 ```
 verification chain, test ladder, harness foundation, MVP framework
