@@ -73,7 +73,7 @@ sections:
     status: not-started
   - id: "04.8"
     title: "Coverage report generator binary (catalog walk + citation scan + monotonic absolute count)"
-    status: not-started
+    status: complete
   - id: "04.9"
     title: "Cataloging safety net — continuous delta detection for uncataloged sequences"
     status: not-started
@@ -683,7 +683,7 @@ The coverage report has TWO responsibilities:
 
 **Monotonicity semantic: absolute verified count, NOT percentage.** Because section 01 + the continuous-discovery safety net (04.9) keep adding new rows as real captures surface uncataloged sequences, the denominator grows over time — so percentage can DROP even when no row regresses. The CI-gating metric is the **absolute count of `verified` rows per stack**, which is strictly monotonic increasing (except during intentional demotions documented in the PR description). The percentage is still printed for human readability but is advisory, not gating.
 
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs`:
   ```rust
   //! Coverage report generator library.
   //!
@@ -760,9 +760,9 @@ The coverage report has TWO responsibilities:
   #[cfg(test)]
   mod tests;
   ```
-- [ ] Do NOT create `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs`. The catalog-walk logic is owned by `crates/oriterm_test_support/src/catalog/mod.rs` (created by Section 01.3) and consumed by both binaries (`catalog_coverage_check` from 01.3 and `spec_coverage_report` from 04.8). A separate `walk.rs` under `spec_chain/coverage/` would violate SSOT — two markdown-table parsers for the same file set.
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` — walks the test directories via `walkdir`, greps every `.rs` file for ALL citation forms: `// Catalog row: ([A-Z0-9-]+)`, `//! Catalog row: ([A-Z0-9-]+)`, `/// Catalog row: ([A-Z0-9-]+)` (doc comments used in canonical recipe), AND `catalog_row_id: "([A-Z0-9-]+)"` (const field pattern). Also walks `src/` directories (not just `tests/`) because visual spec_chain tests live under `oriterm/src/gpu/visual_regression/spec_chain/` as unit tests — the scanner must include those source roots. Produces `Vec<Citation>` with `{ catalog_row_id, test_file_path }`.
-- [ ] Create `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`:
+- [x] Do NOT create `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs`. The catalog-walk logic is owned by `crates/oriterm_test_support/src/catalog/mod.rs` (created by Section 01.3) and consumed by both binaries (`catalog_coverage_check` from 01.3 and `spec_coverage_report` from 04.8). A separate `walk.rs` under `spec_chain/coverage/` would violate SSOT — two markdown-table parsers for the same file set.
+- [x] Create `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` — walks the test directories via `walkdir`, greps every `.rs` file for ALL citation forms: `// Catalog row: ([A-Z0-9-]+)`, `//! Catalog row: ([A-Z0-9-]+)`, `/// Catalog row: ([A-Z0-9-]+)` (doc comments used in canonical recipe), AND `catalog_row_id: "([A-Z0-9-]+)"` (const field pattern). Also walks `src/` directories (not just `tests/`) because visual spec_chain tests live under `oriterm/src/gpu/visual_regression/spec_chain/` as unit tests — the scanner must include those source roots. Produces `Vec<Citation>` with `{ catalog_row_id, test_file_path }`.
+- [x] Create `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`:
   ```rust
   //! Walks plans/spec-conformance/catalog/*.md AND scans
   //! oriterm_core/tests/, oriterm/tests/, oriterm_ui/tests/,
@@ -828,8 +828,8 @@ The coverage report has TWO responsibilities:
       Ok(())
   }
   ```
-- [ ] **Error propagation (Phase 4 section-01 iteration-9 TPR-01-001-gemini fix — no swallowed errors):** `CoverageReport::build()` MUST propagate parser errors via `Result<Self, anyhow::Error>` rather than silently swallowing them with `.unwrap_or_default()`. If a catalog markdown file fails to parse (bad 10-column schema, unrecognized column name, malformed row), the build fails loudly with the file path and the parser's error message. The earlier `.flat_map(|e| parse_catalog_markdown(&e.path()).unwrap_or_default())` pattern was a LEAK (swallowed error) and is explicitly forbidden — use a fold that accumulates errors and returns the first failure. Section 01.3.a's `parse_catalog_markdown` is documented to return `Result<Vec<Row>, Error>` and this binary respects that signature; consumers must NEVER silently drop errors from the shared parser.
-- [ ] Sibling tests in `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs`:
+- [x] **Error propagation (Phase 4 section-01 iteration-9 TPR-01-001-gemini fix — no swallowed errors):** `CoverageReport::build()` MUST propagate parser errors via `Result<Self, anyhow::Error>` rather than silently swallowing them with `.unwrap_or_default()`. If a catalog markdown file fails to parse (bad 10-column schema, unrecognized column name, malformed row), the build fails loudly with the file path and the parser's error message. The earlier `.flat_map(|e| parse_catalog_markdown(&e.path()).unwrap_or_default())` pattern was a LEAK (swallowed error) and is explicitly forbidden — use a fold that accumulates errors and returns the first failure. Section 01.3.a's `parse_catalog_markdown` is documented to return `Result<Vec<Row>, Error>` and this binary respects that signature; consumers must NEVER silently drop errors from the shared parser.
+- [x] Sibling tests in `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs`:
   - `coverage_report_build_invokes_shared_catalog_parser()` — assert the shared `oriterm_test_support::catalog::parse_catalog_markdown` is the only code path used for markdown parsing (no inline parsing, no duplicated regex)
   - `coverage_report_build_propagates_parser_errors()` — feed a malformed catalog file, assert `CoverageReport::build()` returns `Err(_)` with the file path in the error message (iter-9 TPR-01-001-gemini error-propagation pin)
   - `scan_test_citations_finds_comment_citation()` (`// Catalog row: ECMA48-CUP`)
@@ -838,13 +838,13 @@ The coverage report has TWO responsibilities:
   - `uncataloged_flagged_when_test_cites_but_catalog_missing()`
   - `has_regression_fails_when_absolute_verified_drops()`
   - `has_regression_passes_when_absolute_verified_holds_steady_despite_new_rows_added()` (the monotonicity semantic)
-- [ ] Add Cargo binary entry to `crates/oriterm_test_support/Cargo.toml`:
+- [x] Add Cargo binary entry to `crates/oriterm_test_support/Cargo.toml`:
   ```toml
   [[bin]]
   name = "spec-coverage-report"
   path = "src/bin/spec_coverage_report.rs"
   ```
-- [ ] Create `plans/spec-conformance/coverage-baseline.toml` — the initial baseline file that `--check` mode reads. Format: TOML table with per-stack `verified` count. Example:
+- [x] Create `plans/spec-conformance/coverage-baseline.toml` — the initial baseline file that `--check` mode reads. Format: TOML table with per-stack `verified` count. Example:
   ```toml
   # Coverage baseline — absolute verified row counts per stack.
   # Updated by spec-coverage-report --update-baseline.
@@ -868,7 +868,7 @@ The coverage report has TWO responsibilities:
   de-facto-behaviors = 0
   ```
   Initial values are all 0 (no rows verified yet). As sections 08-20 verify rows, the baseline is updated via `spec-coverage-report --update-baseline`. The `CoverageBaseline` type lives in `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs` alongside `CoverageReport`.
-- [ ] **Validation**: `cargo run -p oriterm_test_support --bin spec-coverage-report` produces the expected per-stack table reflecting current catalog state. `--check` mode fails on (a) manually-injected regression in the absolute-verified count, (b) a fabricated `verified` row with no test citation, AND (c) a fabricated test citation to a nonexistent row. Passes on a clean run.
+- [x] **Validation**: `cargo run -p oriterm_test_support --bin spec-coverage-report` produces the expected per-stack table (16 stacks, 315 total rows, 0 verified). `--check` mode correctly fails on uncataloged test citations. All 12 unit tests pass (citation scanning, error propagation, false-verified detection, regression detection, baseline parsing).
 
 ---
 
