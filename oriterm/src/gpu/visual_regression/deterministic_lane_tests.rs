@@ -237,6 +237,66 @@ fn strict_comparison_with_tolerance_1_accepts_minor_variation() {
     let _ = std::fs::remove_file(&ref_path);
 }
 
+/// Verifies that `_actual.png` and `_diff.png` artifacts are saved when
+/// strict comparison fails. The error message must reference both paths.
+#[test]
+fn strict_comparison_saves_diff_artifacts_on_failure() {
+    let config = GoldenLaneConfig::SPEC_DEFAULT;
+    let Some((gpu, _, _)) = headless_env_with_pinned_software_rasterizer(&config) else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
+
+    let w = 160u32;
+    let h = 48u32;
+    let target = gpu.create_render_target(w, h);
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("readback should succeed");
+
+    let name = "strict_artifacts_test";
+    let ref_dir = super::reference_dir();
+    let ref_path = ref_dir.join(format!("{name}.png"));
+    let actual_path = ref_dir.join(format!("{name}_actual.png"));
+    let diff_path = ref_dir.join(format!("{name}_diff.png"));
+
+    // Save the reference.
+    let _ = compare_with_reference_strict(name, &pixels, w, h, &config);
+
+    // Modify one pixel to force failure.
+    let mut modified = pixels.clone();
+    if modified.len() >= 4 {
+        modified[0] = modified[0].wrapping_add(10);
+    }
+
+    // Ensure artifacts don't already exist.
+    let _ = std::fs::remove_file(&actual_path);
+    let _ = std::fs::remove_file(&diff_path);
+
+    let result = compare_with_reference_strict(name, &modified, w, h, &config);
+    assert!(result.is_err(), "modified pixels should fail strict check");
+
+    // Artifacts must exist after a failure.
+    assert!(actual_path.exists(), "_actual.png must be saved on failure");
+    assert!(diff_path.exists(), "_diff.png must be saved on failure");
+
+    // Error message must reference both artifact paths.
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("_actual.png"),
+        "error message must reference _actual.png: {msg}"
+    );
+    assert!(
+        msg.contains("_diff.png"),
+        "error message must reference _diff.png: {msg}"
+    );
+
+    // Clean up.
+    let _ = std::fs::remove_file(&ref_path);
+    let _ = std::fs::remove_file(&actual_path);
+    let _ = std::fs::remove_file(&diff_path);
+}
+
 // ── Back-compat validation ────────────────────────────────────────
 
 /// Existing visual_regression tests still pass — the legacy env is untouched.

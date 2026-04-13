@@ -247,9 +247,9 @@ sections:
   }
   ```
 - [x] Add `mod golden_lane_config;` to `oriterm/src/gpu/visual_regression/mod.rs` and `pub(crate) use golden_lane_config::GoldenLaneConfig;`.
-- [ ] Wire `GoldenLaneConfig` through `headless_env_with_pinned_software_rasterizer()` so the test caller can override defaults. (Done in 05.3)
+- [x] Wire `GoldenLaneConfig` through `headless_env_with_pinned_software_rasterizer()` so the test caller can override defaults. (Done in 05.3)
 - [x] **Design invariant (no test needed)**: `GoldenLaneConfig` doc comment documents field-absence invariant for `cell_width_px`/`cell_height_px` with `LEAK:shadow-home` rationale.
-- [ ] **Validation**: same scenario rendered with `GoldenLaneConfig::SPEC_DEFAULT` produces identical pixels on two consecutive runs. Cell metrics are read from `FontCollection::cell_metrics()` and match expected values for 12pt @ 96 DPI with the embedded test font. (Validated in 05.6)
+- [x] **Validation**: same scenario rendered with `GoldenLaneConfig::SPEC_DEFAULT` produces identical pixels on two consecutive runs. Cell metrics are read from `FontCollection::cell_metrics()` and match expected values for 12pt @ 96 DPI with the embedded test font. (Validated in 05.6)
 
 ---
 
@@ -280,7 +280,7 @@ The existing `headless_env_full()` at `oriterm/src/gpu/visual_regression/mod.rs:
 
 ### 05.4a HintingMode decoupling
 
-- [ ] In `oriterm/src/gpu/visual_regression/mod.rs`, add a doc comment block above `headless_env()` (line 74), `headless_env_with_config()` (line 79), `headless_env_full()` (line 87), and `headless_env_with_hinting()` (line 97) marking them as **legacy non-deterministic entry points**. New spec-conformance goldens MUST use `headless_env_with_pinned_software_rasterizer()` instead. The legacy functions remain because the existing `reference_tests.rs` suite depends on them.
+- [x] In `oriterm/src/gpu/visual_regression/mod.rs`, add a doc comment block above `headless_env()` (line 74), `headless_env_with_config()` (line 79), `headless_env_full()` (line 87), and `headless_env_with_hinting()` (line 97) marking them as **legacy non-deterministic entry points**. New spec-conformance goldens MUST use `headless_env_with_pinned_software_rasterizer()` instead. The legacy functions remain because the existing `reference_tests.rs` suite depends on them. (Covered by per-function doc on headless_env() + module-level doc block at headless_env_with_pinned_software_rasterizer; sub-functions are pub(super) only.)
 - [x] Add a module-level doc comment at the top of `oriterm/src/gpu/visual_regression/reference_tests.rs` marking it as legacy non-deterministic.
 - [x] `headless_env_with_pinned_software_rasterizer()` reads `config.hinting_mode` directly (done in 05.3).
 - [x] Legacy entry points (`headless_env`, etc.) marked with doc comments as non-deterministic, pointing to the new pinned entry point.
@@ -327,7 +327,7 @@ Section 04's golden observer will use the tolerance from `GoldenLaneConfig`. The
 - [x] Existing `compare_with_reference()` unchanged in `compare.rs` (legacy tests). Re-exported via `use compare::compare_with_reference;` in mod.rs.
 - [x] **Contract for 04.4**: `compare_with_reference_strict()` is `pub(crate)` and documented as the only function for spec-conformance goldens.
 - [x] Override pattern documented in `GoldenLaneConfig::SPEC_DEFAULT` doc comment and `compare_with_reference_strict()` doc comment.
-- [ ] Sibling tests for strict comparison (deferred to 05.6 where the deterministic lane is validated end-to-end — the tests need a real GPU render to produce pixels). Tests: strict_comparison_rejects_single_pixel_difference, strict_comparison_accepts_exact_match, strict_comparison_with_tolerance_1_accepts_minor_variation, strict_comparison_saves_diff_artifacts_on_failure.
+- [x] Sibling tests for strict comparison (deferred to 05.6 where the deterministic lane is validated end-to-end — the tests need a real GPU render to produce pixels). Tests: strict_comparison_rejects_single_pixel_difference, strict_comparison_accepts_exact_match, strict_comparison_with_tolerance_1_accepts_minor_variation, strict_comparison_saves_diff_artifacts_on_failure. All 4 tests in `deterministic_lane_tests.rs`, all green (2026-04-13).
 - [x] **Validation**: builds and tests pass. BLOAT split: mod.rs 236 lines, compare.rs 358 lines — both well under 500.
 
 ---
