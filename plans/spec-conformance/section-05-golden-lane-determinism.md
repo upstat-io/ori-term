@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Golden Lane Determinism"
-status: complete
+status: in-progress
 reviewed: true
 goal: "Make the canonical golden image lane reproducible across runs and machines by pinning a software rasterizer via `force_fallback_adapter: true` (primary) with `DeviceType::Cpu` validation (secondary), pinning hinting mode to grayscale alpha, disabling subpixel positioning, deriving cell metrics from `FontCollection::cell_metrics()` (the SSOT), and tightening tolerance to exact-or-tiny per-pixel matching with failure diagnostics (per-channel max difference, mismatch count/percentage, `_actual.png` + `_diff.png` artifacts)."
 success_criteria:
@@ -55,7 +55,7 @@ sections:
     status: complete
   - id: "05.N"
     title: "Completion Checklist"
-    status: complete
+    status: in-progress
 ---
 
 # Section 05: Golden Lane Determinism
@@ -426,6 +426,11 @@ The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/six
 - [x] **[TPR-05-002-codex][iter4][medium]** `with_config()` must wire viewport dimensions to the core `SpecHarness`. Fixed on 2026-04-13: added explicit step 5 in 05.3's implementation checklist: "Constructs the core `SpecHarness` using `SpecHarness::with_size(config.viewport_rows as usize, config.viewport_cols as usize)` — making `GoldenLaneConfig`'s viewport dimensions the authoritative source for the harness grid size."
 - [x] **[TPR-05-003-codex][iter4][low]** Drop the non-implementable field-absence test — field absence in a Rust struct is a compile-time property, not testable at runtime. Fixed on 2026-04-13: replaced the "negative test" checklist item in 05.2 with a design invariant: the absence of `cell_width_px`/`cell_height_px` must be documented in the struct's doc comment as a `LEAK:shadow-home` guard, not asserted in a test.
 - [x] **[TPR-05-001-codex][iter4][medium]** Fix adapter validation test sketch — test only logged adapter info and skipped, asserting nothing. Fixed on 2026-04-13: updated the 05.6 adapter test to assert that when `force_fallback_adapter: true` succeeds the adapter name (lowercased) contains one of the known software rasterizer strings ("llvmpipe", "lavapipe", "warp", "swiftshader", "mesa software", "cpu"). Uses observable-behavior assertion rather than the unreliable `DeviceType::Cpu` field.
+- [x] **[TPR-05-001-codex][iter5][medium]** Cover the cached render reuse branch (`content_changed=false`) in determinism proof. Fixed on 2026-04-13: added `cached_render_reuse_branch_matches_full_render()` test in `deterministic_lane_cached_tests.rs` — renders with `content_changed=true` then `content_changed=false`, asserts byte-identical pixels.
+- [x] **[TPR-05-002-codex][iter5][medium]** Section 05 frontmatter set to `complete` while TPR/hygiene checkboxes still unchecked. Fixed on 2026-04-13: reverted frontmatter and 05.N to `in-progress`; reverted overview and index to `In Progress`. Will flip to `complete` after TPR + hygiene both pass clean.
+- [x] **[TPR-05-003-codex][iter5][low]** Section 04 status inconsistent across index (`Not Started`) and overview (`Complete`) vs section file (`in-progress`). Fixed on 2026-04-13: synced both to `In Progress`.
+- [x] **[TPR-05-001-gemini][iter5][low]** Gate test module `mod` declaration with cfg attribute. Rejected: the existing `resize_stress.rs` uses the identical pattern (unconditional `mod` declaration + inner `#![cfg(all(test, feature = "gpu-tests"))]`). This IS the codebase convention. Clippy/build are clean.
+- [x] **[TPR-05-002-gemini][iter5][informational]** Extract opaque boolean to named variable in test code. Non-actionable (informational severity). Consistent with existing test patterns in `resize_stress.rs`.
 
 ---
 

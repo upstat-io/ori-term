@@ -99,7 +99,7 @@ fire-and-forget vs request/response, separate abstractions
 ---
 
 ### Section 04: Verification Chain Harness + Pilots + Coverage Report + Cataloging Safety Net
-**File:** `section-04-verification-chain-harness.md` | **Status:** Not Started
+**File:** `section-04-verification-chain-harness.md` | **Status:** In Progress
 
 ```
 verification chain, test ladder, harness foundation, MVP framework
@@ -122,7 +122,7 @@ section 04 to 05 coupling, 04.4 04.5 04.7 blocked until 05.6 lands
 ---
 
 ### Section 05: Golden Lane Determinism
-**File:** `section-05-golden-lane-determinism.md` | **Status:** Complete
+**File:** `section-05-golden-lane-determinism.md` | **Status:** In Progress
 
 ```
 GPU determinism, software rasterizer, llvmpipe, pinned adapter
