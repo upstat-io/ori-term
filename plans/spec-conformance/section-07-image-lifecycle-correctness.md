@@ -10,7 +10,7 @@ success_criteria:
   - "`ImageCache::remap_placements(mapping)` exists and translates placement `StableRowIndex` values through a reflow mapping so images follow their content rows"
   - "Image placement regression matrix: 3 protocols x 2 sizing modes x 7 mutations (incl. reflow) = 42 scenarios, all pass"
   - "`Term::resize` invokes `on_resize` AND `remap_placements` (when reflow occurs) on both primary and alt image caches"
-  - "Cell-metric plumbing wired: `ImageConfig` carries `cell_width`/`cell_height`, app sends updated metrics through mux to `Term::set_cell_dimensions` on font-size/DPI changes"
+  - "Cell-metric plumbing wired: new `PaneIoCommand::SetCellDimensions` variant (NOT extending ImageConfig — static config vs runtime state separation), app sends updated metrics to ALL panes through mux to `Term::set_cell_dimensions` on font-size/DPI changes"
   - "Placement lifecycle methods extracted into `cache/lifecycle.rs` to keep `cache/mod.rs` under 500 lines"
   - "New cache tests in `cache/tests.rs` per test-organization.md"
   - "At least one negative rendering pin: `RenderableContent::images` does NOT contain a removed placement after resize"
@@ -150,9 +150,10 @@ Per CLAUDE.md TDD discipline, failing tests are written FIRST.
 - [ ] `on_resize_fixed_pixels_out_of_bounds_removed()` — FixedPixels placement at col=8, new_cols=8, removed
 
 **Reflow remapping tests:**
-- [ ] `remap_placements_updates_stable_row_index_after_reflow()` — place image, build a `ReflowMapping` that moves row 5 → row 10, call `remap_placements`, assert placement's `cell_row` updated
-- [ ] `remap_placements_removes_placement_when_source_row_evicted_by_reflow()` — place image at row that reflow merged/eliminated, assert placement removed
-- [ ] `remap_placements_handles_row_split()` — single source row split into 2 new rows by reflow, placement maps to first new row
+- [ ] `remap_placements_updates_stable_row_index_after_reflow()` — place image, build a `ReflowMapping` that moves row 5 → output row 10, call `remap_placements`, assert placement's `cell_row` updated to `StableRowIndex(old_total_evicted + 10)`
+- [ ] `remap_placements_skips_already_evicted_placement()` — place image at StableRowIndex below old_total_evicted (already evicted), assert no panic (checked_sub prevents underflow), placement unchanged
+- [ ] `remap_placements_handles_unwrap()` — soft-wrapped continuation line unwrapped into single row by width increase, both source rows map to same output row, placement on continuation row remaps correctly
+- [ ] `remap_placements_handles_row_split()` — single source row split into 2 new rows by width decrease, placement maps to first new row
 - [ ] `remap_placements_preserves_kitty_deferred_images()` — images with no placements survive remap unchanged
 
 **Negative rendering pin:**
@@ -184,33 +185,44 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
 
 - [ ] Define `ReflowMapping` struct in `grid/resize/mod.rs`:
   ```rust
-  /// Maps old absolute row indices to new row ranges after reflow.
+  /// Maps old absolute row indices to result row indices after reflow.
   /// Built during `reflow_cells` with O(1) per-row overhead.
+  ///
+  /// IMPORTANT: wrapped source rows contribute content to the pending
+  /// `out_row` without finalizing it (line 362-367: finalization only
+  /// happens for non-wrapped rows). So a wrapped row's mapping points
+  /// to the result row where its content WILL land once the next
+  /// non-wrapped row finalizes the pending out_row.
   #[derive(Debug, Clone)]
   pub struct ReflowMapping {
-      /// For each source row index: (new_start_abs, new_end_abs) — half-open range.
-      /// A source row that was merged into its predecessor has an empty range.
-      pub rows: Vec<(usize, usize)>,
-      /// Old total_evicted (before reflow) — needed to convert StableRowIndex → old abs row.
+      /// For each source row index: the result row index where its
+      /// first cell was written. For wrapped rows, this is the index
+      /// of the pending out_row (which may not be finalized yet —
+      /// use `pending_output_row` to track the current out_row's
+      /// eventual position). Never empty — every source row maps
+      /// to exactly one output row.
+      pub first_output_row: Vec<usize>,
+      /// Old total_evicted (before reflow) — needed to convert
+      /// StableRowIndex → old absolute row index.
       pub old_total_evicted: u64,
-      /// New total_evicted (after reflow) — needed to convert new abs row → StableRowIndex.
-      pub new_total_evicted: u64,
   }
   ```
-- [ ] Modify `reflow_cells()` (at `resize/mod.rs:303`) to build the `rows` vec:
-  - At the top of the loop (`for (src_idx, src_row) in all_rows.iter().enumerate()`), record `let out_start = result.len();`
-  - After the source row is fully processed (either appended to result or merged), record `let out_end = result.len();`
-  - Push `(out_start, out_end)` to the mapping vec
+- [ ] Modify `reflow_cells()` (at `resize/mod.rs:303`) to build the mapping:
+  - Track `pending_output_row = result.len()` — the index the current `out_row` will have when finalized
+  - At the START of each source row's processing: record `first_output_row.push(pending_output_row + out_col_contribution)` where `out_col_contribution` accounts for whether we're mid-row (content will land on `pending_output_row`) or if `reflow_row_cells` pushed result rows mid-processing
+  - **Key insight**: when `reflow_row_cells` fills `out_row` and pushes it to result mid-row, `pending_output_row` must be updated to `result.len()`. Track this by comparing `result.len()` before and after `reflow_row_cells`
+  - For each source row: `first_output_row.push(result.len() - if_just_pushed_else_pending)`
+  - The simplest correct approach: record `result.len()` before calling `reflow_row_cells`, then record `result.len()` after. If result grew, the source row's content started on a prior output row. Map to the row where the first cell landed.
   - Return the mapping alongside existing return values
-- [ ] Modify `reflow_cols()` to thread the mapping through `apply_reflow_result()`:
-  - `apply_reflow_result` adjusts `total_evicted` if scrollback rows were dropped during trim — capture both old and new `total_evicted` values for the mapping
+- [ ] Capture `old_total_evicted = self.total_evicted` BEFORE `scrollback.clear()` in `apply_reflow_result` — this is the conversion base for StableRowIndex → old absolute row
+- [ ] Handle scrollback overflow in `apply_reflow_result`: when `self.scrollback.push(row)` evicts an old row (ring buffer at capacity), increment `self.total_evicted`. Currently this is NOT done (confirmed: line 271 pushes without tracking eviction). This is a pre-existing bug affecting ALL StableRowIndex users, not just images.
 - [ ] Modify `Grid::resize()` return type: `pub fn resize(...) -> Option<ReflowMapping>`:
-  - Return `Some(mapping)` when `reflow: true` and column count changed (reflow actually ran)
-  - Return `None` when `reflow: false` or column count unchanged (no reflow)
-- [ ] Export `ReflowMapping` from `grid/mod.rs` (add to `pub use resize::ReflowMapping;`)
+  - Return `Some(mapping)` when `reflow: true` and column count changed
+  - Return `None` when `reflow: false` or column count unchanged
+- [ ] Export `ReflowMapping` from `grid/mod.rs`
 - [ ] Sibling tests in `grid/resize/tests.rs`:
-  - `reflow_mapping_tracks_row_split()` — 80-col grid with a 120-char wrapped line, resize to 60 cols, verify the source row maps to 2 new rows
-  - `reflow_mapping_tracks_row_merge()` — 40-col grid with two short lines that fit on one 80-col line, resize to 80, verify both source rows map to same new row
+  - `reflow_mapping_tracks_row_split()` — 80-col grid with a 120-char wrapped (WRAP flag set) line, resize to 60 cols, verify split
+  - `reflow_mapping_tracks_unwrap()` — 40-col grid with a soft-wrapped continuation line (WRAP flag on first row), resize to 80, verify both source rows map to the SAME output row (unwrap, not merge of independent lines)
   - `reflow_mapping_none_when_no_reflow()` — resize with `reflow: false`, verify `None` returned
   - `reflow_mapping_none_when_cols_unchanged()` — resize with same cols but different rows, verify `None` returned
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
@@ -236,12 +248,12 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
 ### remap_placements (reflow-aware row remapping)
 
 - [ ] Add `pub(crate) fn remap_placements(&mut self, mapping: &ReflowMapping)`:
-  - For each placement, convert `cell_row: StableRowIndex` to old absolute row: `old_abs = cell_row.0 - mapping.old_total_evicted`
-  - Look up in `mapping.rows[old_abs]` → `(new_start, new_end)`
-  - If range is empty (source row was merged away): remove the placement
-  - If range is non-empty: update `cell_row = StableRowIndex(mapping.new_total_evicted + new_start as u64)`
-  - If `old_abs` is out of range (row was evicted before reflow): leave placement unchanged (already handled by `prune_scrollback`)
-  - After processing all placements, `prune_if_orphaned` for any removed placements
+  - For each placement, convert `cell_row: StableRowIndex` to old absolute row using `checked_sub`: `let Some(old_abs) = cell_row.0.checked_sub(mapping.old_total_evicted) else { continue; }` — if underflow, the placement was already evicted before reflow; skip it (prune_scrollback will clean it up)
+  - If `old_abs as usize >= mapping.first_output_row.len()`: skip (out of range — row added after mapping was built)
+  - Look up `new_output_row = mapping.first_output_row[old_abs as usize]`
+  - Update `cell_row = StableRowIndex(mapping.old_total_evicted + new_output_row as u64)` — use `old_total_evicted` as the base, NOT `new_total_evicted`, because `first_output_row` indices are relative to the pre-eviction result array
+  - **Never remove a placement because its mapping range is "empty"** — in the reflow algorithm, wrapped rows contribute to a pending `out_row` without finalizing it, so an empty range means "absorbed into pending row", NOT "deleted". Every source row maps to exactly one output row via `first_output_row`.
+  - After processing, `prune_if_orphaned` for any removed placements (only from underflow/out-of-range skips)
   - Mark `dirty = true` if any placements changed
 - [ ] Unit tests from 07.2 now pass for reflow remapping scenarios
 
@@ -257,15 +269,18 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
   ```rust
   let mapping = self.grid.resize(new_lines, new_cols, reflow);
   ```
-- [ ] After grid resize + scrollback prune, call `on_resize` on primary cache:
+- [ ] **Operation ordering is critical**: `remap_placements` MUST run BEFORE `prune_scrollback`, because remap translates old StableRowIndex values to new ones — if prune runs first, it compares unmapped (old) cell_row values against the post-reflow eviction boundary and incorrectly deletes placements whose content survived reflow.
   ```rust
-  self.image_cache.on_resize(new_cols, new_lines);
-  ```
-- [ ] If reflow produced a mapping, call `remap_placements`:
-  ```rust
+  // 1. Remap FIRST (translate old StableRowIndex → new)
   if let Some(ref mapping) = mapping {
       self.image_cache.remap_placements(mapping);
   }
+  // 2. THEN prune scrollback (now using correctly remapped row indices)
+  if new_primary > prev_primary {
+      self.image_cache.prune_scrollback(StableRowIndex(new_primary as u64));
+  }
+  // 3. THEN remove column-out-of-bounds
+  self.image_cache.on_resize(new_cols, new_lines);
   ```
 - [ ] For the alt image cache — use the same condition as alt grid resize (`if let Some(alt) = &mut self.alt_grid`), matching alt grid EXISTENCE, NOT alt screen active:
   ```rust
@@ -291,27 +306,32 @@ This subsection adds the row-remap infrastructure that makes reflow-aware image 
 
 This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `image_config.rs:17`) gets called in production when font size or DPI changes. Currently it has zero production callers.
 
-**Approach**: Extend `ImageConfig` with `cell_width`/`cell_height` fields. This is the cleanest path — `SetImageConfig` is already the command for image-related config, cell dimensions are logically grouped with image rendering, and the embedded + daemon mode paths are already built.
+**Approach**: Add a NEW `PaneIoCommand::SetCellDimensions { width: u16, height: u16 }` variant — do NOT extend `ImageConfig`. `ImageConfig` represents user TOML configuration (enabled, memory_limit, max_single, animation_enabled). Cell dimensions are runtime state derived from font rasterization — mixing them into `ImageConfig` would mean a config reload (`apply_image_changes` in `config_reload/mod.rs:338`) overwrites runtime cell metrics with stale/zero values from the TOML config struct, violating SSOT by conflating static config with hardware/font state.
 
-- [ ] Add `cell_width: u16` and `cell_height: u16` to `ImageConfig` in `oriterm_mux/src/backend/mod.rs`
-- [ ] Update `MuxPdu::SetImageConfig` in `oriterm_mux/src/protocol/messages.rs` to include the two new fields
-- [ ] Update `PaneIoCommand::SetImageConfig` handler in `oriterm_mux/src/pane/io_thread/handler.rs`:
+- [ ] Add `SetCellDimensions { width: u16, height: u16 }` variant to `PaneIoCommand` in `oriterm_mux/src/pane/io_thread/commands/mod.rs`
+- [ ] Update `fmt::Debug` for the new variant
+- [ ] Add `MuxPdu::SetCellDimensions { pane_id: PaneId, width: u16, height: u16 }` in `oriterm_mux/src/protocol/messages.rs`
+- [ ] Add handler in `oriterm_mux/src/pane/io_thread/handler.rs`:
   ```rust
-  self.terminal.set_cell_dimensions(config.cell_width, config.cell_height);
+  PaneIoCommand::SetCellDimensions { width, height } => {
+      self.terminal.set_cell_dimensions(width, height);
+  }
   ```
-- [ ] In `oriterm/src/app/chrome/resize.rs` `sync_grid_layout()`: after resizing panes, also send updated cell metrics:
+- [ ] Add `set_cell_dimensions(pane_id, width, height)` method to `MuxBackend` trait and implement for embedded + daemon backends
+- [ ] In `oriterm/src/app/chrome/resize.rs` `sync_grid_layout()`: after `resize_all_panes`, send cell metrics to EVERY pane affected by this window's renderer metrics (not just the active pane — split and floating panes share the same font/DPI):
   ```rust
   let cell = renderer.cell_metrics();
-  let mut config = self.config.terminal.image_config();
-  config.cell_width = cell.width.round() as u16;
-  config.cell_height = cell.height.round() as u16;
-  mux.set_image_config(pane_id, config);
+  let w = cell.width.round() as u16;
+  let h = cell.height.round() as u16;
+  for pane_id in all_pane_ids_in_window {
+      mux.set_cell_dimensions(pane_id, w, h);
+  }
   ```
-- [ ] In `oriterm/src/app/mod.rs` `handle_dpi_change()`: after font re-rasterization, send updated cell metrics through the same path
-- [ ] Update all existing `ImageConfig` construction sites (6 call sites in app layer) to include cell dimensions — use 0 as initial value before font rasterization completes, or pass actual metrics if the renderer is already initialized
+- [ ] In `oriterm/src/app/mod.rs` `handle_dpi_change()`: after font re-rasterization, send cell metrics to all panes in the affected window
+- [ ] **No zero-metric fallback**: `ImageConfig` construction sites (6 existing call sites) are NOT modified — they continue sending config-only data. Cell dimensions are sent SEPARATELY, only when the renderer has real metrics available (after font rasterization). This separation ensures config reloads never corrupt cell metrics.
 - [ ] Sibling test: `term_set_cell_dimensions_updates_fixed_pixels_coverage()` — already exists in `term/tests.rs`, verify it still passes
-- [ ] Integration test: place a FixedPixels sixel image, change cell dimensions via the mux command path, verify `cols`/`rows` updated
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green (including Windows cross-compile — `ImageConfig` is in the wire protocol)
+- [ ] Integration test: multi-pane scenario — place FixedPixels images in two split panes, send `SetCellDimensions` to both, verify both panes' coverage updated
+- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green (including Windows cross-compile — wire protocol change)
 - [ ] Close BUG-08-9 in `plans/bug-tracker/section-08-core-terminal.md`
 
 **Validation**: `set_cell_dimensions` now has a production caller. FixedPixels placements get correct coverage after font/DPI changes. BUG-08-9 resolved.
@@ -320,10 +340,31 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 
 ## 07.R Third Party Review Findings
 
-- [x] `[TPR-07-001-codex][high]` `plans/spec-conformance/section-07-image-lifecycle-correctness.md:211` — Fill the GAP in FixedPixels cell-metric plumbing before relying on resize ordering.
-  Resolved: Rescoped section to include full cell-metric plumbing in subsection 07.6 (app → mux → Term). BUG-08-9 filed and will be closed by 07.6. No more scoping out.
-- [x] `[TPR-07-002-codex][medium]` `plans/spec-conformance/section-07-image-lifecycle-correctness.md:6` — Resolve the DRIFT between the frontmatter contract and the blocked reflow scope.
-  Resolved: Rescoped section to include full reflow remapping in subsections 07.3 + 07.4 + 07.5. No more reflow scoping out — frontmatter, goal, success criteria, and body all agree.
+**Round 1 (pre-rescoping):**
+- [x] `[TPR-07-001-codex][high]` — Fill the GAP in FixedPixels cell-metric plumbing.
+  Resolved: Rescoped section to include full cell-metric plumbing in 07.6. BUG-08-9 filed.
+- [x] `[TPR-07-002-codex][medium]` — Resolve frontmatter/body DRIFT on reflow scope.
+  Resolved: Rescoped to include full reflow remapping in 07.3/07.4/07.5.
+
+**Round 2 (post-rescoping):**
+- [x] `[TPR-07-001-codex][high]` — Redesign ReflowMapping around real wrapped-row merges.
+  Resolved: Rewritten 07.3 to use `first_output_row` per source row, accounting for wrapped rows' pending `out_row` accumulation. Removed empty-range merge semantics.
+- [x] `[TPR-07-002-codex][high]` — Fan cell-metric updates out to every resized pane.
+  Resolved: 07.6 now sends metrics to ALL panes in the window, not just active pane. Multi-pane integration test added.
+- [x] `[TPR-07-003-codex][medium]` — Delete the 0x0 cell-metric fallback.
+  Resolved: Separated `SetCellDimensions` from `ImageConfig`. No zero-metric fallback. Renderer-free config paths don't touch cell metrics.
+- [x] `[TPR-07-001-gemini][high]` — Fix silent total_evicted drops in apply_reflow_result.
+  Resolved: Added checklist item in 07.3 to increment `total_evicted` when `scrollback.push()` evicts (pre-existing bug fix).
+- [x] `[TPR-07-002-gemini][high]` — Correct StableRowIndex calculation base in remap_placements.
+  Resolved: 07.4 uses `old_total_evicted` as base, not `new_total_evicted`.
+- [x] `[TPR-07-003-gemini][high]` — Run remap_placements before prune_scrollback on resize.
+  Resolved: 07.5 ordering is now: remap → prune → on_resize.
+- [x] `[TPR-07-004-gemini][medium]` — Do not remove placements when source row range is empty.
+  Resolved: 07.4 uses `first_output_row` — every source row maps to exactly one output row. No empty-range removal.
+- [x] `[TPR-07-005-gemini][medium]` — Prevent underflow when calculating old_abs for remapping.
+  Resolved: 07.4 uses `checked_sub` with `continue` on underflow.
+- [x] `[TPR-07-006-gemini][medium]` — Separate cell metrics from static ImageConfig.
+  Resolved: 07.6 uses new `PaneIoCommand::SetCellDimensions` variant. `ImageConfig` unchanged.
 
 ---
 
@@ -340,24 +381,28 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [ ] 07.2: on_resize + remap tests initially FAIL
 - [ ] 07.2: Existing-handler scenarios pass — if any fail, file via `/add-bug`
 - [ ] 07.2: Negative rendering pin written
-- [ ] 07.3: `ReflowMapping` struct defined in `grid/resize/mod.rs`
-- [ ] 07.3: `reflow_cells()` builds row-range mapping with O(1) per-row overhead
+- [ ] 07.3: `ReflowMapping` struct defined with `first_output_row: Vec<usize>` and `old_total_evicted: u64`
+- [ ] 07.3: `reflow_cells()` builds mapping accounting for wrapped rows' pending out_row
+- [ ] 07.3: `apply_reflow_result` increments `total_evicted` on scrollback overflow (pre-existing bug fix)
 - [ ] 07.3: `Grid::resize()` returns `Option<ReflowMapping>`
-- [ ] 07.3: Grid reflow tests pass (row split, row merge, no-reflow cases)
+- [ ] 07.3: Grid reflow tests pass (row split, unwrap, no-reflow cases)
 - [ ] 07.4: `ImageCache::on_resize(new_cols, new_rows)` implemented in `lifecycle.rs`
 - [ ] 07.4: Uses `remove_placements_where` + targeted `prune_if_orphaned` (NOT full orphan sweep)
-- [ ] 07.4: `ImageCache::remap_placements(mapping)` implemented — translates StableRowIndex through ReflowMapping
+- [ ] 07.4: `ImageCache::remap_placements(mapping)` uses `checked_sub` for underflow prevention
+- [ ] 07.4: Never removes placements for "empty range" — wrapped rows map via `first_output_row`
+- [ ] 07.4: Uses `old_total_evicted` as StableRowIndex base (not new_total_evicted)
 - [ ] 07.4: All cache unit tests pass
 - [ ] 07.5: `Term::resize` captures `Option<ReflowMapping>` from `Grid::resize`
-- [ ] 07.5: Primary cache gets `on_resize` + `remap_placements` (when mapping present)
+- [ ] 07.5: Operation ordering: remap FIRST → prune scrollback → on_resize (column bounds)
 - [ ] 07.5: Alt cache gets `on_resize` only (alt grid never reflows)
 - [ ] 07.5: Alt cache condition: `if alt_image_cache exists` (matches alt grid existence, NOT active)
 - [ ] 07.5: Term-level tests pass including reflow remapping
-- [ ] 07.6: `ImageConfig` extended with `cell_width`/`cell_height`
+- [ ] 07.6: NEW `PaneIoCommand::SetCellDimensions` variant (NOT extending ImageConfig)
 - [ ] 07.6: IO thread handler calls `set_cell_dimensions`
-- [ ] 07.6: `sync_grid_layout()` sends cell metrics after resize
-- [ ] 07.6: `handle_dpi_change()` sends cell metrics after font re-rasterization
-- [ ] 07.6: All 6 existing `ImageConfig` construction sites updated
+- [ ] 07.6: `sync_grid_layout()` sends cell metrics to ALL panes in window (not just active)
+- [ ] 07.6: `handle_dpi_change()` sends cell metrics to ALL panes in affected window
+- [ ] 07.6: Existing 6 `ImageConfig` construction sites NOT modified (separation of concerns)
+- [ ] 07.6: Multi-pane integration test verifying both split panes get updated metrics
 - [ ] 07.6: Windows cross-compile green (wire protocol change)
 - [ ] 07.6: BUG-08-9 closed
 - [ ] **Matrix**: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios + self-verifying count
