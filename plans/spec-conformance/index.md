@@ -122,7 +122,7 @@ section 04 to 05 coupling, 04.4 04.5 04.7 blocked until 05.6 lands
 ---
 
 ### Section 05: Golden Lane Determinism
-**File:** `section-05-golden-lane-determinism.md` | **Status:** In Progress
+**File:** `section-05-golden-lane-determinism.md` | **Status:** Complete
 
 ```
 GPU determinism, software rasterizer, llvmpipe, pinned adapter

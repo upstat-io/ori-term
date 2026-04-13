@@ -1,7 +1,7 @@
 ---
 section: "05"
 title: "Golden Lane Determinism"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Make the canonical golden image lane reproducible across runs and machines by pinning a software rasterizer via `force_fallback_adapter: true` (primary) with `DeviceType::Cpu` validation (secondary), pinning hinting mode to grayscale alpha, disabling subpixel positioning, deriving cell metrics from `FontCollection::cell_metrics()` (the SSOT), and tightening tolerance to exact-or-tiny per-pixel matching with failure diagnostics (per-channel max difference, mismatch count/percentage, `_actual.png` + `_diff.png` artifacts)."
 success_criteria:
@@ -55,12 +55,12 @@ sections:
     status: complete
   - id: "05.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 05: Golden Lane Determinism
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Make the spec-conformance golden image lane reproducible across runs and machines. Section 04's visual pilots (04.4, 04.5) depend on this section for deterministic golden comparison. The current `oriterm/src/gpu/visual_regression/mod.rs` picks adapters non-deterministically via `pick_adapter()` in `oriterm/src/gpu/state/helpers.rs` (enumerate + first-discrete fallback), and uses `HintingMode::Full` (at `visual_regression/mod.rs:92`) which interacts with subpixel rasterization. Additionally, `subpixel_positioning: true` is hardcoded in both `visual_regression/spec_chain/visual_harness.rs:176` and `visual_regression/frame_input_helper.rs:89`, introducing another source of cross-run variation. This section pins everything: software rasterizer via `force_fallback_adapter: true` (primary) with `DeviceType::Cpu` validation (secondary), grayscale alpha hinting, disabled subpixel positioning, cell metrics derived from `FontCollection::cell_metrics()` (the SSOT), and exact-or-tiny per-pixel tolerance as the primary gate (with per-channel max difference, mismatch count/percentage, and `_actual.png` + `_diff.png` artifacts as diagnostic).
 
 **Success Criteria:**
@@ -74,7 +74,7 @@ sections:
 - [x] Failure diagnostics: per-channel max difference, mismatch count/percentage, `_actual.png` + `_diff.png` artifacts (no SSIM/ΔE computation)
 - [x] Existing visual_regression tests still pass (back-compat preserved)
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [ ] Connects to mission criterion: **Deterministic golden environment** (will check after Section 05 fully closes)
+- [x] Connects to mission criterion: **Deterministic golden environment** (Section 05 complete — 2026-04-13)
 
 **Context:** Pass 1 confirmed `oriterm/src/gpu/state/helpers.rs::pick_adapter` (called indirectly by `GpuState::new_headless` at `state/mod.rs:156` -> `try_init_headless` at `state/mod.rs:430`) enumerates adapters via `instance.enumerate_adapters(backends)` and picks the first discrete GPU (or any fallback). There is NO `PowerPreference` pin, NO `force_fallback_adapter`, and NO software-rasterizer preference -- headless selection is non-deterministic across machines. Pass 1 also confirmed `oriterm/src/gpu/visual_regression/mod.rs:92` defaults `headless_env_full()` to `HintingMode::Full`. Both produce variation across runs and machines: a CI runner on Mesa with llvmpipe will rasterize differently from a dev machine with NVIDIA, and `HintingMode::Full` interacts with subpixel positioning to produce slightly different glyph edges. Additionally, `subpixel_positioning: true` is hardcoded at `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs:176` and `oriterm/src/gpu/visual_regression/frame_input_helper.rs:89` -- even with grayscale alpha hinting, this introduces sub-pixel glyph offset variation.
 
@@ -460,10 +460,10 @@ The pilot test lives at `oriterm/src/gpu/visual_regression/spec_chain/pilots/six
 - [x] Alloc regression unchanged (5/5 pass — verified 2026-04-13)
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release (verified 2026-04-13)
 - [x] Plan annotation cleanup (zero stale annotations — verified 2026-04-13)
-- [ ] Section frontmatter `status` -> `complete` (will flip after TPR + hygiene pass clean)
+- [x] Section frontmatter `status` -> `complete` (TPR + hygiene both passed clean — 2026-04-13)
 - [x] `00-overview.md` Quick Reference + mission criteria updated (2026-04-13)
 - [x] `index.md` section 05 status updated (2026-04-13)
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [x] `/tpr-review` passed (final, full-section) — clean on iteration 3 (2026-04-13). 8 findings across 2 rounds, all fixed: cache-reuse test naming, decorative banners, plan status consistency, mission criterion, section 04 status sync.
+- [x] `/impl-hygiene-review` passed (2026-04-13) — zero critical/major findings. All code within scope, SSOT respected, test names compliant, file sizes under limit.
 
 **Exit Criteria:** Spec-conformance golden tests run reproducibly on Linux/x86_64 with the pinned software rasterizer (`force_fallback_adapter: true` primary, `DeviceType::Cpu` secondary), `HintingMode::None`, `subpixel_positioning: false`; reproducibility proof test produces 0-pixel diff on back-to-back runs; cell metrics derived from `FontCollection::cell_metrics()` (no shadow SSOT); existing visual_regression tests still pass unchanged.
