@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "05.2"
     title: "GoldenLaneConfig struct — font config only, cell metrics derived from SSOT"
-    status: not-started
+    status: complete
   - id: "05.3"
     title: "Add headless_env_with_pinned_software_rasterizer() entry point"
     status: not-started
@@ -187,7 +187,7 @@ sections:
 
 **SSOT discipline:** `FontCollection::cell_metrics()` at `oriterm/src/font/collection/mod.rs:249` is the SSOT for cell dimensions. It returns `CellMetrics { width: f32, height: f32, baseline: f32, ... }`. `GoldenLaneConfig` MUST NOT store independent cell metric values (`cell_width_px: u32`, `cell_height_px: u32`). That would be a `LEAK:shadow-home` -- a second source of truth that WILL drift. Instead, `GoldenLaneConfig` stores font configuration (size, DPI, hinting, glyph format) and the consumer constructs a `FontCollection` from these, then reads `cell_metrics()` from the result.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/golden_lane_config.rs`:
+- [x] Create `oriterm/src/gpu/visual_regression/golden_lane_config/mod.rs` (directory module with tests.rs, 6 tests):
   ```rust
   //! Configuration for the deterministic golden image lane.
   //!
@@ -246,10 +246,10 @@ sections:
       };
   }
   ```
-- [ ] Add `mod golden_lane_config;` to `oriterm/src/gpu/visual_regression/mod.rs` and `pub(super) use golden_lane_config::GoldenLaneConfig;` (or `pub(crate)` if needed by spec_chain modules).
-- [ ] Wire `GoldenLaneConfig` through `headless_env_with_pinned_software_rasterizer()` so the test caller can override defaults.
-- [ ] **Design invariant (no test needed)**: `GoldenLaneConfig` must never gain `cell_width_px` or `cell_height_px` fields — field absence is a compile-time property that cannot be asserted at runtime in Rust. Instead, document the invariant directly in the struct's doc comment: "Cell metrics (`cell_width_px`, `cell_height_px`) are intentionally absent. Construct a `FontCollection` from the font parameters in this struct and call `FontCollection::cell_metrics()` to obtain authoritative cell dimensions. Adding independent cell metric fields here would create a `LEAK:shadow-home` against `font/collection/mod.rs:249`."
-- [ ] **Validation**: same scenario rendered with `GoldenLaneConfig::SPEC_DEFAULT` produces identical pixels on two consecutive runs. Cell metrics are read from `FontCollection::cell_metrics()` and match expected values for 12pt @ 96 DPI with the embedded test font.
+- [x] Add `mod golden_lane_config;` to `oriterm/src/gpu/visual_regression/mod.rs` and `pub(crate) use golden_lane_config::GoldenLaneConfig;`.
+- [ ] Wire `GoldenLaneConfig` through `headless_env_with_pinned_software_rasterizer()` so the test caller can override defaults. (Done in 05.3)
+- [x] **Design invariant (no test needed)**: `GoldenLaneConfig` doc comment documents field-absence invariant for `cell_width_px`/`cell_height_px` with `LEAK:shadow-home` rationale.
+- [ ] **Validation**: same scenario rendered with `GoldenLaneConfig::SPEC_DEFAULT` produces identical pixels on two consecutive runs. Cell metrics are read from `FontCollection::cell_metrics()` and match expected values for 12pt @ 96 DPI with the embedded test font. (Validated in 05.6)
 
 ---
 
