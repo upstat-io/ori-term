@@ -13,7 +13,8 @@ use std::sync::Arc;
 use crate::color::Rgb;
 use crate::effect::Effect;
 use crate::effect::families::{
-    ClipboardSelection, HostEffect, HostRequest, NotificationSource, PtyEffect, UiEffect,
+    ClipboardSelection, HostEffect, HostRequest, NotificationSource, PresentationEffect, PtyEffect,
+    UiEffect,
 };
 use crate::effect::families::{format_clipboard_reply, format_color_reply};
 use crate::event::{ClipboardType, Event, EventListener};
@@ -47,6 +48,10 @@ pub struct LegacyEventSink<L: EventListener + Sync> {
     /// Notifications have no legacy `Event` variant, so they are queued
     /// here and drained by `drain_pending_notifications()`.
     pending_notifications: parking_lot::Mutex<Vec<DesktopNotificationRecord>>,
+    /// Secondary queue for `Presentation` effects (Mode 2026 begin/commit/abort).
+    /// Presentation effects have no legacy `Event` variant. Queued here for
+    /// observability (tests drain, production logs).
+    pending_presentation_effects: parking_lot::Mutex<Vec<PresentationEffect>>,
 }
 
 impl<L: EventListener + Sync> LegacyEventSink<L> {
@@ -55,6 +60,7 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
         Self {
             listener,
             pending_notifications: parking_lot::Mutex::new(Vec::new()),
+            pending_presentation_effects: parking_lot::Mutex::new(Vec::new()),
         }
     }
 
@@ -73,6 +79,14 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
     pub fn drain_pending_notifications(&self) -> Vec<DesktopNotificationRecord> {
         std::mem::take(&mut *self.pending_notifications.lock())
     }
+
+    /// Drain all queued presentation effects (Mode 2026 begin/commit/abort).
+    ///
+    /// Used by tests to verify that `Presentation` effects are observable
+    /// through the legacy adapter (not silently dropped).
+    pub fn drain_pending_presentation_effects(&self) -> Vec<PresentationEffect> {
+        std::mem::take(&mut *self.pending_presentation_effects.lock())
+    }
 }
 
 impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
@@ -86,11 +100,12 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
             Effect::Host(
                 HostEffect::VisualBell | HostEffect::AudioRequest(_) | HostEffect::PrintRequest(_),
             ) => return,
-            // No legacy Event variant for Presentation effects — log so they
-            // are observable (the full migration to direct Effect subscription
-            // is tracked in plans/effect-cutover/).
-            Effect::Presentation(ref p) => {
+            // No legacy Event variant for Presentation effects — queue for
+            // observability and log (the full migration to direct Effect
+            // subscription is tracked in plans/effect-cutover/).
+            Effect::Presentation(p) => {
                 log::info!("Presentation effect (no legacy Event route): {p:?}");
+                self.pending_presentation_effects.lock().push(p);
                 return;
             }
             Effect::Host(HostEffect::TitleSet { value: Some(t) }) => Event::Title(t),
@@ -185,6 +200,10 @@ impl<L: EventListener + Sync + std::fmt::Debug> std::fmt::Debug for LegacyEventS
             .field(
                 "pending_notifications",
                 &self.pending_notifications.lock().len(),
+            )
+            .field(
+                "pending_presentation_effects",
+                &self.pending_presentation_effects.lock().len(),
             )
             .finish()
     }

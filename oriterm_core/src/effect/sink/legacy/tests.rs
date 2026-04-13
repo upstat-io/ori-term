@@ -269,7 +269,7 @@ fn clear_pending_notifications_clears_queue() {
 }
 
 #[test]
-fn presentation_effects_logged_not_forwarded_as_event() {
+fn presentation_effects_queued_not_forwarded_as_event() {
     let listener = RecordingListener::default();
     let sink = LegacyEventSink::new(listener.clone());
 
@@ -278,12 +278,27 @@ fn presentation_effects_logged_not_forwarded_as_event() {
         snapshot_seqno: 1,
     }));
 
-    // Presentation effects are logged but NOT forwarded as legacy Events.
+    // Presentation effects are NOT forwarded as legacy Events.
     assert!(listener.events().is_empty());
+
+    // But they ARE queued for observability.
+    let effects = sink.drain_pending_presentation_effects();
+    assert_eq!(effects.len(), 2, "both presentation effects must be queued");
+    assert!(
+        matches!(effects[0], PresentationEffect::Begin),
+        "first effect must be Begin"
+    );
+    assert!(
+        matches!(effects[1], PresentationEffect::Commit { snapshot_seqno: 1 }),
+        "second effect must be Commit"
+    );
+
+    // Drain again — should be empty.
+    assert!(sink.drain_pending_presentation_effects().is_empty());
 }
 
 #[test]
-fn presentation_abort_logged_not_forwarded_as_event() {
+fn presentation_abort_queued_not_forwarded_as_event() {
     use crate::effect::families::SyncAbortReason;
 
     let listener = RecordingListener::default();
@@ -293,8 +308,21 @@ fn presentation_abort_logged_not_forwarded_as_event() {
         reason: SyncAbortReason::Timeout,
     }));
 
-    // Abort effect is logged but NOT forwarded as legacy Event.
+    // Abort effect is NOT forwarded as legacy Event.
     assert!(listener.events().is_empty());
+
+    // But it IS queued for observability.
+    let effects = sink.drain_pending_presentation_effects();
+    assert_eq!(effects.len(), 1, "abort effect must be queued");
+    assert!(
+        matches!(
+            effects[0],
+            PresentationEffect::Abort {
+                reason: SyncAbortReason::Timeout
+            }
+        ),
+        "queued effect must be Abort with Timeout reason"
+    );
 }
 
 #[test]
