@@ -9,6 +9,10 @@ mod headless;
 mod helpers;
 mod pipeline_cache;
 
+// Re-export for visual_regression/ consumers (deterministic golden lane).
+#[allow(unused_imports, reason = "used by visual_regression once 05.3 lands")]
+pub(crate) use helpers::AdapterPreference;
+
 use helpers::{
     build_surface_config, pick_adapter, request_device, select_alpha_mode, select_formats,
     select_present_mode,
@@ -67,6 +71,10 @@ pub struct GpuState {
     /// Vulkan pipeline cache (compiled shaders cached to disk across sessions).
     pub(super) pipeline_cache: Option<wgpu::PipelineCache>,
     pipeline_cache_path: Option<PathBuf>,
+    /// Adapter metadata (name, backend, device type) retained after init
+    /// for diagnostics and test assertions (e.g. verifying software rasterizer
+    /// selection in the deterministic golden lane).
+    adapter_info: wgpu::AdapterInfo,
 }
 
 impl GpuState {
@@ -381,6 +389,7 @@ impl GpuState {
         let (pipeline_cache, pipeline_cache_path) =
             pipeline_cache::load_pipeline_cache(&device, &info);
         let t_cache = t0.elapsed();
+        let adapter_info = info;
         drop(adapter);
 
         log::info!(
@@ -409,6 +418,7 @@ impl GpuState {
             dual_source_blending: dual_source,
             pipeline_cache,
             pipeline_cache_path,
+            adapter_info,
         })
     }
 

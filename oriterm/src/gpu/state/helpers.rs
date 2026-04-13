@@ -1,6 +1,67 @@
 //! Free-standing GPU helpers: adapter selection, format/alpha/present mode
 //! negotiation, surface config building, and GPU validation.
 
+/// Adapter selection preference for headless GPU initialization.
+///
+/// Controls how `pick_adapter_with_preference()` selects the wgpu adapter.
+/// `DiscreteOrFallback` preserves existing behavior (discrete GPU preferred).
+/// `SoftwareRasterizer` pins the software fallback for deterministic golden
+/// image comparison across machines.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[allow(
+    dead_code,
+    reason = "SoftwareRasterizer used only from headless test paths"
+)]
+pub(crate) enum AdapterPreference {
+    /// Current default — discrete GPU preferred, any fallback.
+    DiscreteOrFallback,
+    /// Software rasterizer (llvmpipe / WARP / swiftshader).
+    ///
+    /// PRIMARY: `force_fallback_adapter: true` via `instance.request_adapter()`.
+    /// SECONDARY: `enumerate_adapters()` + `DeviceType::Cpu` filter.
+    /// Returns `None` if neither mechanism finds a software adapter.
+    SoftwareRasterizer,
+}
+
+/// Select an adapter according to the given preference.
+///
+/// For `DiscreteOrFallback`, delegates to [`pick_adapter`]. For
+/// `SoftwareRasterizer`, uses `force_fallback_adapter: true` as the
+/// primary mechanism (wgpu-level contract, reliable across drivers),
+/// falling back to `enumerate_adapters()` + `DeviceType::Cpu` filter
+/// (unreliable on some drivers — WARP on Windows may report as
+/// `DiscreteGpu`/`Other`).
+#[allow(dead_code, reason = "used from headless test paths")]
+pub(crate) fn pick_adapter_with_preference(
+    instance: &wgpu::Instance,
+    backends: wgpu::Backends,
+    preference: AdapterPreference,
+) -> Option<wgpu::Adapter> {
+    match preference {
+        AdapterPreference::DiscreteOrFallback => pick_adapter(instance, None, backends),
+        AdapterPreference::SoftwareRasterizer => {
+            // PRIMARY: force_fallback_adapter is a wgpu-level contract.
+            let primary =
+                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    force_fallback_adapter: true,
+                    compatible_surface: None,
+                }));
+            if let Ok(adapter) = primary {
+                return Some(adapter);
+            }
+            // SECONDARY: enumerate + DeviceType::Cpu filter (unreliable
+            // on some drivers, but catches edge cases).
+            for a in pollster::block_on(instance.enumerate_adapters(backends)) {
+                if a.get_info().device_type == wgpu::DeviceType::Cpu {
+                    return Some(a);
+                }
+            }
+            None
+        }
+    }
+}
+
 /// Enumerate adapters and pick the best one.
 ///
 /// When `surface` is `Some`, only considers surface-compatible adapters.

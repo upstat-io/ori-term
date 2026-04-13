@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "05.1"
     title: "Add explicit adapter preference parameter to GpuState headless init"
-    status: not-started
+    status: complete
   - id: "05.2"
     title: "GoldenLaneConfig struct — font config only, cell metrics derived from SSOT"
     status: not-started
@@ -113,7 +113,7 @@ sections:
 
 **Critical design: `force_fallback_adapter: true` is the PRIMARY mechanism.** The `DeviceType::Cpu` filter from `enumerate_adapters()` is SECONDARY validation only. Rationale: `DeviceType::Cpu` is unreliable across drivers (WARP on Windows sometimes reports as `DiscreteGpu`/`Other`). `force_fallback_adapter: true` is a wgpu-level contract that reliably selects the software fallback when available.
 
-- [ ] Define an `AdapterPreference` enum in `oriterm/src/gpu/state/helpers.rs`:
+- [x] Define an `AdapterPreference` enum in `oriterm/src/gpu/state/helpers.rs`:
   ```rust
   /// Adapter selection preference for headless GPU initialization.
   #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -128,7 +128,7 @@ sections:
   }
   ```
   `state/mod.rs` re-exports `AdapterPreference` as `pub(crate)` so that `visual_regression/` code can pass the enum to `GpuState::new_headless_with_preference()`.
-- [ ] Add `pick_adapter_with_preference()` in `oriterm/src/gpu/state/helpers.rs` (keeping the original `pick_adapter()` unchanged for back-compat):
+- [x] Add `pick_adapter_with_preference()` in `oriterm/src/gpu/state/helpers.rs` (keeping the original `pick_adapter()` unchanged for back-compat):
   ```rust
   pub(crate) fn pick_adapter_with_preference(
       instance: &wgpu::Instance,
@@ -166,15 +166,16 @@ sections:
       }
   }
   ```
-- [ ] Add `GpuState::new_headless_with_preference(pref: AdapterPreference)` in `oriterm/src/gpu/state/headless.rs`. Preserve the existing `new_headless()` behavior (it calls `new_headless_with_preference(AdapterPreference::DiscreteOrFallback)`).
-- [ ] Refactor `GpuState::try_init_headless()` in `oriterm/src/gpu/state/headless.rs` to accept `AdapterPreference` and call `pick_adapter_with_preference()` instead of `pick_adapter()`.
-- [ ] Store `wgpu::AdapterInfo` on `GpuState` (or return it alongside headless init) so tests and diagnostics can inspect the selected adapter. Current `GpuState` drops the adapter after init.
-- [ ] Sibling tests in `oriterm/src/gpu/state/tests.rs`:
+- [x] Add `GpuState::new_headless_with_preference(pref: AdapterPreference)` in `oriterm/src/gpu/state/headless.rs`. Preserve the existing `new_headless()` behavior (it calls `new_headless_with_preference(AdapterPreference::DiscreteOrFallback)`).
+- [x] Refactor `GpuState::try_init_headless()` in `oriterm/src/gpu/state/headless.rs` to accept `AdapterPreference` and call `pick_adapter_with_preference()` instead of `pick_adapter()`.
+- [x] Store `wgpu::AdapterInfo` on `GpuState` (or return it alongside headless init) so tests and diagnostics can inspect the selected adapter. Added `adapter_info` field to `GpuState` and `adapter_info()` accessor. Both windowed and headless init paths store the info.
+- [x] Sibling tests in `oriterm/src/gpu/state/tests.rs` (5 new tests, 33 total, all pass):
   - `new_headless_default_picks_discrete_or_fallback()` -- existing behavior preserved
-  - `new_headless_with_software_preference_uses_force_fallback_primary()` -- asserts that when `force_fallback_adapter: true` finds an adapter, that adapter is used (validates the primary mechanism)
-  - `pick_adapter_software_rasterizer_returns_none_when_unavailable()` -- negative pin: on a system with no software rasterizer, returns `None` (not a panic)
-  - `pick_adapter_discrete_or_fallback_matches_original_behavior()` -- semantic pin: `DiscreteOrFallback` delegates to the original `pick_adapter()`
-- [ ] **Validation**: existing tests still pass; new entry point works on Linux (the canonical golden lane).
+  - `new_headless_with_software_preference_uses_force_fallback()` -- asserts software rasterizer name when available
+  - `pick_adapter_software_rasterizer_returns_none_when_unavailable()` -- negative pin: returns `None` (not a panic)
+  - `pick_adapter_discrete_or_fallback_matches_original()` -- semantic pin: `DiscreteOrFallback` delegates to the original `pick_adapter()`
+  - `headless_stores_adapter_info()` -- verifies adapter_info is retained
+- [x] **Validation**: all 33 state tests pass; existing tests still pass; `build-all.sh`, `clippy-all.sh`, `test-all.sh` green (verified 2026-04-13).
 
 ---
 
