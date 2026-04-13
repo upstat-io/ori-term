@@ -772,8 +772,8 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 01 | Catalog Bootstrap                                      | `section-01-catalog-bootstrap.md`                    | Complete    |
 | 02 | Tack-Conformance Absorption (Phase 0b — plan hygiene)  | `section-02-tack-absorption.md`                      | Complete    |
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Complete    |
-| 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Complete    |
-| 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Complete    |
+| 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | In Progress |
+| 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | In Progress |
 | 06 | Terminal Mode Plumbing (Mode 2026 + metadata registry) | `section-06-terminal-mode-plumbing.md`               | Not Started |
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Not Started |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Not Started |

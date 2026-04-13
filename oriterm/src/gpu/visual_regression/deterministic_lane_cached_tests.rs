@@ -67,6 +67,57 @@ fn cached_render_produces_identical_output_across_runs() {
     );
 }
 
+/// Verify the cache-reuse branch (`content_changed=false`) produces
+/// byte-identical output to the full render branch.
+///
+/// In production, steady-state frames (cursor blink, no content change)
+/// hit the `content_changed=false` path which skips content uploads and
+/// reuses the cached texture. This test ensures that path produces the
+/// same pixels as a full re-render.
+#[test]
+fn cached_render_reuse_branch_matches_full_render() {
+    let config = GoldenLaneConfig::SPEC_DEFAULT;
+    let Some((gpu, pipelines, mut renderer)) =
+        headless_env_with_pinned_software_rasterizer(&config)
+    else {
+        eprintln!("SKIP: software rasterizer unavailable");
+        return;
+    };
+
+    let cell = renderer.cell_metrics();
+    let cols: usize = 80;
+    let rows: usize = 24;
+    let w = (cell.width * cols as f32).ceil() as u32;
+    let h = (cell.height * rows as f32).ceil() as u32;
+
+    let mut input = FrameInput::test_grid(cols, rows, "Cache reuse determinism test 0123456789");
+    input.viewport = ViewportSize::new(w, h);
+    input.cell_size = cell;
+    input.subpixel_positioning = config.subpixel_positioning;
+    input.content.cursor.visible = false;
+
+    // First render: full content upload (content_changed=true).
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, true);
+    let target_full = renderer.render_frame_cached(&gpu, &pipelines, w, h, true);
+    let pixels_full = gpu
+        .read_render_target(&target_full)
+        .expect("readback (full) should succeed");
+
+    // Second render: cache reuse (content_changed=false) — the steady-state
+    // blink-only path. Skips content uploads, reuses the cached texture.
+    renderer.prepare(&input, &gpu, &pipelines, (0.0, 0.0), 1.0, false);
+    let target_reuse = renderer.render_frame_cached(&gpu, &pipelines, w, h, false);
+    let pixels_reuse = gpu
+        .read_render_target(&target_reuse)
+        .expect("readback (reuse) should succeed");
+
+    assert_eq!(
+        pixels_full, pixels_reuse,
+        "cache-reuse branch (content_changed=false) must produce identical output \
+         to full render (content_changed=true) for the same input"
+    );
+}
+
 // ── Subpixel positioning toggle semantic pin ─────────────────────
 
 /// Semantic pin: the deterministic lane correctly propagates
