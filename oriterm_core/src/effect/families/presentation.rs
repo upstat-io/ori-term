@@ -10,7 +10,7 @@ pub enum PresentationEffect {
     Begin,
     /// Commit buffered output as a single atomic frame.
     Commit { snapshot_seqno: u64 },
-    /// Abort synchronized update — discard buffered output.
+    /// Abort synchronized update — flush buffered output.
     Abort { reason: SyncAbortReason },
 }
 

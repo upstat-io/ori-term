@@ -269,7 +269,7 @@ fn clear_pending_notifications_clears_queue() {
 }
 
 #[test]
-fn presentation_effects_dropped_silently() {
+fn presentation_effects_logged_not_forwarded_as_event() {
     let listener = RecordingListener::default();
     let sink = LegacyEventSink::new(listener.clone());
 
@@ -278,6 +278,22 @@ fn presentation_effects_dropped_silently() {
         snapshot_seqno: 1,
     }));
 
+    // Presentation effects are logged but NOT forwarded as legacy Events.
+    assert!(listener.events().is_empty());
+}
+
+#[test]
+fn presentation_abort_logged_not_forwarded_as_event() {
+    use crate::effect::families::SyncAbortReason;
+
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Presentation(PresentationEffect::Abort {
+        reason: SyncAbortReason::Timeout,
+    }));
+
+    // Abort effect is logged but NOT forwarded as legacy Event.
     assert!(listener.events().is_empty());
 }
 

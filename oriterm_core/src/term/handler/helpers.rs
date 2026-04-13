@@ -18,40 +18,6 @@ pub(super) fn mode_report_value(is_set: bool) -> u8 {
     if is_set { 1 } else { 2 }
 }
 
-/// Map `NamedPrivateMode` to its CSI mode number.
-pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
-    match mode {
-        NamedPrivateMode::CursorKeys => 1,
-        NamedPrivateMode::ColumnMode => 3,
-        NamedPrivateMode::ReverseVideo => 5,
-        NamedPrivateMode::Origin => 6,
-        NamedPrivateMode::LineWrap => 7,
-        NamedPrivateMode::X10Mouse => 9,
-        NamedPrivateMode::BlinkingCursor => 12,
-        NamedPrivateMode::ShowCursor => 25,
-        NamedPrivateMode::EnableMode3 => 40,
-        NamedPrivateMode::ReverseWraparound => 45,
-        NamedPrivateMode::AltScreen => 47,
-        NamedPrivateMode::ReportMouseClicks => 1000,
-        NamedPrivateMode::ReportCellMouseMotion => 1002,
-        NamedPrivateMode::ReportAllMouseMotion => 1003,
-        NamedPrivateMode::ReportFocusInOut => 1004,
-        NamedPrivateMode::Utf8Mouse => 1005,
-        NamedPrivateMode::SgrMouse => 1006,
-        NamedPrivateMode::AlternateScroll => 1007,
-        NamedPrivateMode::UrxvtMouse => 1015,
-        NamedPrivateMode::UrgencyHints => 1042,
-        NamedPrivateMode::AltScreenOpt => 1047,
-        NamedPrivateMode::SaveCursor => 1048,
-        NamedPrivateMode::SwapScreenAndSetRestoreCursor => 1049,
-        NamedPrivateMode::BracketedPaste => 2004,
-        NamedPrivateMode::SyncUpdate => 2026,
-        NamedPrivateMode::SixelScrolling => 80,
-        NamedPrivateMode::SixelCursorRight => 8452,
-        NamedPrivateMode::Win32Input => 9001,
-    }
-}
-
 /// Map `NamedPrivateMode` to the corresponding `TermMode` flag, if supported.
 pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode> {
     match mode {
