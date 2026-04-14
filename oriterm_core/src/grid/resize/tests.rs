@@ -3060,3 +3060,71 @@ fn height_only_resize_ghosting() {
         );
     }
 }
+
+// ── ReflowMapping (section 07.3) ────────────────────────────────────
+
+/// Shrink reflow: single source row with 11-char content wraps into
+/// two output rows when new_cols < content length.
+#[test]
+fn reflow_mapping_tracks_row_split() {
+    let mut grid = Grid::new(3, 20);
+    write_row(&mut grid, 0, "hello world"); // 11 chars, fits in 20.
+    let mapping = grid
+        .resize(3, 6, true)
+        .expect("reflow should produce mapping");
+    // 3 source rows (from the original 20-wide visible rows).
+    assert_eq!(mapping.first_output_row.len(), 3);
+    // Row 0 had 11 chars of content → wraps across output rows 0 and 1
+    // (6 + 5). first cell landed on output row 0.
+    assert_eq!(mapping.first_output_row[0], 0);
+}
+
+/// Grow reflow: a soft-wrapped continuation row (WRAP on source row 0)
+/// unwraps into the same output row as its parent. Both source rows
+/// map to output row 0.
+#[test]
+fn reflow_mapping_tracks_unwrap() {
+    let mut grid = Grid::new(3, 10);
+    // Source row 0 is wrapped (10 chars + WRAP flag on last cell).
+    for (col, ch) in "helloworld".chars().enumerate() {
+        grid[Line(0)][Column(col)] = cell(ch);
+    }
+    grid[Line(0)][Column(9)].flags.insert(CellFlags::WRAP);
+    // Source row 1 continues with 5 chars of the same logical line.
+    write_row(&mut grid, 1, "again");
+
+    let mapping = grid
+        .resize(3, 20, true)
+        .expect("reflow should produce mapping");
+
+    assert_eq!(mapping.first_output_row.len(), 3);
+    // Row 0's content starts at output row 0. Row 1's content
+    // (continuation) also lands on output row 0 (unwrap).
+    assert_eq!(mapping.first_output_row[0], 0);
+    assert_eq!(
+        mapping.first_output_row[1], 0,
+        "wrapped continuation row must map to the same output row as its parent"
+    );
+}
+
+/// `reflow: false` path never runs reflow — mapping must be `None`
+/// even when both lines and cols change.
+#[test]
+fn reflow_mapping_none_when_no_reflow() {
+    let mut grid = Grid::new(5, 40);
+    write_row(&mut grid, 0, "content");
+    let mapping = grid.resize(10, 80, false);
+    assert!(mapping.is_none(), "reflow=false must not produce a mapping");
+}
+
+/// Column count unchanged — reflow is skipped entirely, mapping is `None`.
+#[test]
+fn reflow_mapping_none_when_cols_unchanged() {
+    let mut grid = Grid::new(5, 40);
+    write_row(&mut grid, 0, "content");
+    let mapping = grid.resize(10, 40, true);
+    assert!(
+        mapping.is_none(),
+        "same cols → no reflow → no mapping even when lines changed"
+    );
+}

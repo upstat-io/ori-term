@@ -269,16 +269,52 @@ fn clear_pending_notifications_clears_queue() {
 }
 
 #[test]
-fn presentation_effects_dropped_silently() {
+fn presentation_effects_counted_not_forwarded_as_event() {
     let listener = RecordingListener::default();
     let sink = LegacyEventSink::new(listener.clone());
+
+    assert_eq!(sink.presentation_effect_count(), 0, "count starts at zero");
 
     sink.push(Effect::Presentation(PresentationEffect::Begin));
     sink.push(Effect::Presentation(PresentationEffect::Commit {
         snapshot_seqno: 1,
     }));
 
+    // Presentation effects are NOT forwarded as legacy Events.
     assert!(listener.events().is_empty());
+
+    // But they ARE counted for observability (no unbounded queue growth).
+    assert_eq!(
+        sink.presentation_effect_count(),
+        2,
+        "both presentation effects must be counted"
+    );
+
+    // Reset and verify.
+    sink.reset_presentation_effect_count();
+    assert_eq!(sink.presentation_effect_count(), 0, "count resets to zero");
+}
+
+#[test]
+fn presentation_abort_counted_not_forwarded_as_event() {
+    use crate::effect::families::SyncAbortReason;
+
+    let listener = RecordingListener::default();
+    let sink = LegacyEventSink::new(listener.clone());
+
+    sink.push(Effect::Presentation(PresentationEffect::Abort {
+        reason: SyncAbortReason::Timeout,
+    }));
+
+    // Abort effect is NOT forwarded as legacy Event.
+    assert!(listener.events().is_empty());
+
+    // But it IS counted for observability.
+    assert_eq!(
+        sink.presentation_effect_count(),
+        1,
+        "abort effect must be counted"
+    );
 }
 
 #[test]

@@ -9,6 +9,7 @@
 //! migrate to subscribe to `Effect` directly (in `plans/effect-cutover/`).
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::color::Rgb;
 use crate::effect::Effect;
@@ -47,6 +48,10 @@ pub struct LegacyEventSink<L: EventListener + Sync> {
     /// Notifications have no legacy `Event` variant, so they are queued
     /// here and drained by `drain_pending_notifications()`.
     pending_notifications: parking_lot::Mutex<Vec<DesktopNotificationRecord>>,
+    /// Counter of `Presentation` effects received (Mode 2026 begin/commit/abort).
+    /// Presentation effects have no legacy `Event` variant — they are logged
+    /// and counted (not queued) to avoid unbounded memory growth in production.
+    presentation_effect_count: AtomicU32,
 }
 
 impl<L: EventListener + Sync> LegacyEventSink<L> {
@@ -55,6 +60,7 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
         Self {
             listener,
             pending_notifications: parking_lot::Mutex::new(Vec::new()),
+            presentation_effect_count: AtomicU32::new(0),
         }
     }
 
@@ -73,6 +79,20 @@ impl<L: EventListener + Sync> LegacyEventSink<L> {
     pub fn drain_pending_notifications(&self) -> Vec<DesktopNotificationRecord> {
         std::mem::take(&mut *self.pending_notifications.lock())
     }
+
+    /// Return the count of `Presentation` effects received since creation
+    /// (or since the last `reset_presentation_effect_count()` call).
+    ///
+    /// Used by tests to verify that effects are not silently dropped.
+    /// Production code only logs — no queue, no unbounded growth.
+    pub fn presentation_effect_count(&self) -> u32 {
+        self.presentation_effect_count.load(Ordering::Relaxed)
+    }
+
+    /// Reset the presentation-effect counter to zero.
+    pub fn reset_presentation_effect_count(&self) {
+        self.presentation_effect_count.store(0, Ordering::Relaxed);
+    }
 }
 
 impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
@@ -85,8 +105,16 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
             // No legacy Event variant for these — drop silently.
             Effect::Host(
                 HostEffect::VisualBell | HostEffect::AudioRequest(_) | HostEffect::PrintRequest(_),
-            )
-            | Effect::Presentation(_) => return,
+            ) => return,
+            // No legacy Event variant for Presentation effects — log and count
+            // (no queue to avoid unbounded growth). The full migration to direct
+            // Effect subscription is tracked in plans/effect-cutover/.
+            Effect::Presentation(ref p) => {
+                log::info!("Presentation effect (no legacy Event route): {p:?}");
+                self.presentation_effect_count
+                    .fetch_add(1, Ordering::Relaxed);
+                return;
+            }
             Effect::Host(HostEffect::TitleSet { value: Some(t) }) => Event::Title(t),
             Effect::Host(HostEffect::TitleSet { value: None }) => Event::ResetTitle,
             Effect::Host(HostEffect::IconNameSet { value: Some(n) }) => Event::IconName(n),
@@ -179,6 +207,10 @@ impl<L: EventListener + Sync + std::fmt::Debug> std::fmt::Debug for LegacyEventS
             .field(
                 "pending_notifications",
                 &self.pending_notifications.lock().len(),
+            )
+            .field(
+                "presentation_effect_count",
+                &self.presentation_effect_count.load(Ordering::Relaxed),
             )
             .finish()
     }

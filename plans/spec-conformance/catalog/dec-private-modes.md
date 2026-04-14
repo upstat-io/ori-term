@@ -1,5 +1,5 @@
 ---
-schema_version: "0.1-provisional"
+schema_version: "1.0"
 stack: dec
 title: "DEC Private Modes Catalog"
 owner_section: "01 (bootstrap), 09 (verification)"

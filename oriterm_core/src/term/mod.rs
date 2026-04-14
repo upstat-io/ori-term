@@ -331,8 +331,15 @@ impl<S: EffectSink> Term<S> {
 
     /// Reference to the active screen's image cache.
     ///
-    /// Returns the alternate image cache when `ALT_SCREEN` mode is active,
-    /// falling back to the primary cache if the alt cache was not allocated.
+    /// Mirrors [`Self::grid`]: returns `alt_image_cache` when
+    /// `ALT_SCREEN` is active, primary `image_cache` otherwise. The
+    /// semantic field convention is load-bearing: `image_cache` always
+    /// holds primary-screen placements, `alt_image_cache` always holds
+    /// alt-screen placements. `Term::resize` pairs `self.grid` with
+    /// `self.image_cache` and `self.alt_grid` with `self.alt_image_cache`
+    /// — that pairing is correct only when neither field is swapped,
+    /// so do NOT reintroduce the cache swap in `toggle_alt_common`
+    /// (see BUG-08-10 / TPR-07-001 round 6).
     pub fn image_cache(&self) -> &ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
             debug_assert!(
@@ -347,8 +354,7 @@ impl<S: EffectSink> Term<S> {
 
     /// Mutable reference to the active screen's image cache.
     ///
-    /// Returns the alternate image cache when `ALT_SCREEN` mode is active,
-    /// falling back to the primary cache if the alt cache was not allocated.
+    /// See [`Self::image_cache`] for the routing contract.
     pub fn image_cache_mut(&mut self) -> &mut ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
             debug_assert!(
@@ -454,27 +460,49 @@ impl<S: EffectSink> Term<S> {
         // Update DECCOLM default so CSI ? 3 l restores to window width.
         self.deccolm_default_cols = new_cols;
 
-        // Primary grid: reflow when caller permits. Prune image placements
-        // if rows evicted.
+        // Primary grid: reflow when caller permits. The resulting
+        // `ReflowMapping` (if reflow actually ran) lets us translate
+        // pre-reflow image-placement `StableRowIndex` values through
+        // the new row topology.
         let prev_primary = self.grid.total_evicted();
-        self.grid.resize(new_lines, new_cols, reflow);
+        let reflow_mapping = self.grid.resize(new_lines, new_cols, reflow);
         let new_primary = self.grid.total_evicted();
+
+        // Image-cache lifecycle ordering matters:
+        // 1. remap FIRST — translate placements' StableRowIndex values
+        //    through the new row topology. Must run before
+        //    prune_scrollback so that pruning compares mapped row
+        //    indices against the post-reflow eviction boundary.
+        // 2. prune_scrollback — drop placements whose (now-mapped)
+        //    row is below the new eviction boundary.
+        // 3. on_resize — drop placements whose starting column is
+        //    entirely outside the new grid width.
+        if let Some(ref mapping) = reflow_mapping {
+            self.image_cache.remap_placements(mapping);
+        }
         if new_primary > prev_primary {
             self.image_cache
                 .prune_scrollback(StableRowIndex(new_primary as u64));
         }
+        self.image_cache.on_resize(new_cols, new_lines);
 
-        // Alternate grid: no reflow (apps like vim handle their own layout).
-        // Alt grid has 0 scrollback capacity, so every scroll evicts.
-        // Skip if alt grid hasn't been allocated yet (no app has used alt screen).
+        // Alternate grid: no reflow (apps like vim handle their own
+        // layout). Alt grid has 0 scrollback capacity, so every scroll
+        // evicts. Skip if alt grid hasn't been allocated yet (no app
+        // has used alt screen). The alt image cache receives
+        // `on_resize` column-bounds handling whenever the alt grid
+        // exists — no remap is needed because the alt grid is resized
+        // with `reflow: false` and therefore never produces a
+        // `ReflowMapping`.
         if let Some(alt) = &mut self.alt_grid {
             let prev_alt = alt.total_evicted();
-            alt.resize(new_lines, new_cols, false);
+            let _alt_mapping = alt.resize(new_lines, new_cols, false);
             let new_alt = alt.total_evicted();
-            if new_alt > prev_alt {
-                if let Some(cache) = &mut self.alt_image_cache {
+            if let Some(cache) = &mut self.alt_image_cache {
+                if new_alt > prev_alt {
                     cache.prune_scrollback(StableRowIndex(new_alt as u64));
                 }
+                cache.on_resize(new_cols, new_lines);
             }
         }
 

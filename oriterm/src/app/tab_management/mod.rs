@@ -29,6 +29,7 @@ impl App {
             .map(PathBuf::from);
 
         let (rows, cols) = self.current_grid_dims();
+        let (cell_w, cell_h) = self.current_cell_dims();
         let theme = self
             .config
             .colors
@@ -53,6 +54,7 @@ impl App {
                 mux.set_pane_theme(pid, theme, palette);
                 mux.set_image_config(pid, self.config.terminal.image_config());
                 mux.set_bold_is_bright(pid, self.config.behavior.bold_is_bright);
+                mux.set_cell_dimensions(pid, cell_w, cell_h);
                 pid
             }
             Err(e) => {

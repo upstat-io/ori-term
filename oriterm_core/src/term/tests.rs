@@ -2399,3 +2399,212 @@ fn stress_resize_vte_output_between_resizes() {
         assert_eq!(buf.cells.len(), rows * cols);
     }
 }
+
+// ── Image lifecycle on resize (section 07.5) ──
+
+/// A placement whose starting column falls entirely outside the new
+/// grid width must be dropped by `Term::resize`.
+#[test]
+fn term_resize_removes_out_of_bounds_image_placement() {
+    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+    place_test_image(&mut term, 0, 90, 1, 10);
+    assert_eq!(term.image_cache().placement_count(), 1);
+
+    term.resize(24, 80, true);
+
+    assert_eq!(
+        term.image_cache().placement_count(),
+        0,
+        "placement starting at col=90 must be removed when new_cols=80"
+    );
+}
+
+/// The alt-screen image cache (when allocated) also gets column-bounds
+/// handling on resize. Alt grid never reflows, so only `on_resize`
+/// runs on the alt cache — no remap.
+#[test]
+fn term_resize_updates_alt_cache_when_alt_exists() {
+    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+    // Enter alt mode — allocates the alt cache and places us in it.
+    // While in alt mode, image_cache_mut() routes to the alt-screen's
+    // cache so the placement we make is the one the resize must clean.
+    term.swap_alt();
+    place_test_image(&mut term, 0, 90, 1, 10);
+    assert_eq!(
+        term.image_cache().placement_count(),
+        1,
+        "alt-mode placement should be visible before resize"
+    );
+
+    term.resize(24, 80, true);
+
+    assert_eq!(
+        term.image_cache().placement_count(),
+        0,
+        "alt-mode placement at col=90 must be removed when new_cols=80"
+    );
+}
+
+/// When reflow runs, `Term::resize` remaps placements through the
+/// `ReflowMapping` so they continue to point at the same content.
+/// A soft-wrapped continuation row unwraps into its parent on grow —
+/// the placement on the continuation row must follow the content.
+#[test]
+fn term_resize_remaps_image_placement_through_reflow() {
+    let mut term = Term::new(3, 10, 100, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Seed: row 0 wrapped ("helloworld"), row 1 continuation ("again").
+    use crate::cell::CellFlags;
+    for (col, ch) in "helloworld".chars().enumerate() {
+        term.grid_mut()[Line(0)][Column(col)] = crate::cell::Cell {
+            ch,
+            ..crate::cell::Cell::default()
+        };
+    }
+    term.grid_mut()[Line(0)][Column(9)]
+        .flags
+        .insert(CellFlags::WRAP);
+    for (col, ch) in "again".chars().enumerate() {
+        term.grid_mut()[Line(1)][Column(col)] = crate::cell::Cell {
+            ch,
+            ..crate::cell::Cell::default()
+        };
+    }
+
+    // Place image on the continuation row (stable row 1).
+    place_test_image(&mut term, 1, 0, 1, 2);
+    assert_eq!(
+        term.image_cache()
+            .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX))[0]
+            .cell_row
+            .0,
+        1
+    );
+
+    // Grow to 20 cols — unwrap collapses rows 0+1 into single output row 0.
+    term.resize(3, 20, true);
+
+    // The placement on stable row 1 should now be mapped to row 0
+    // (where the unwrapped content lives).
+    let placements = term
+        .image_cache()
+        .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
+    assert_eq!(placements.len(), 1);
+    assert_eq!(
+        placements[0].cell_row.0, 0,
+        "placement must follow unwrapped content onto output row 0"
+    );
+}
+
+/// Regression guard for TPR-07-001 / BUG-08-10.
+///
+/// After removing the image-cache swap from `toggle_alt_common`, the
+/// `image_cache` and `alt_image_cache` fields hold their semantic
+/// contents regardless of `ALT_SCREEN` mode: primary placements live
+/// in `self.image_cache`, alt placements live in `self.alt_image_cache`.
+/// This test bypasses the `image_cache()` accessor and reads the
+/// fields directly so it catches any future routing inversion the
+/// accessor might hide.
+#[test]
+fn term_resize_routes_each_grid_through_its_own_image_cache() {
+    let mut term = Term::new(24, 100, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Place in primary (image_cache_mut via primary mode → image_cache field).
+    place_test_image(&mut term, 0, 5, 1, 2);
+    assert_eq!(
+        term.image_cache.placement_count(),
+        1,
+        "primary field must hold the primary-mode placement"
+    );
+    assert!(
+        term.alt_image_cache.is_none(),
+        "alt cache not yet allocated"
+    );
+
+    // Enter alt, place there.
+    term.swap_alt();
+    place_test_image(&mut term, 0, 90, 1, 10); // col 90 — goes out of bounds on 80 resize.
+    assert_eq!(
+        term.image_cache.placement_count(),
+        1,
+        "primary field still has its 1 placement (NOT swapped)"
+    );
+    assert_eq!(
+        term.alt_image_cache.as_ref().unwrap().placement_count(),
+        1,
+        "alt field now holds the alt-mode placement (NOT swapped)"
+    );
+
+    // Resize while in alt mode — primary cache keeps its placement
+    // (primary grid's reflow mapping does NOT touch the alt cache),
+    // alt cache's col=90 placement is dropped by on_resize.
+    term.resize(24, 80, true);
+
+    assert_eq!(
+        term.image_cache.placement_count(),
+        1,
+        "primary placement at col=5 must survive — primary grid's reflow must not hit the alt cache"
+    );
+    assert_eq!(
+        term.alt_image_cache.as_ref().unwrap().placement_count(),
+        0,
+        "alt placement at col=90 must be removed by on_resize on the alt cache"
+    );
+}
+
+/// Isolation check: primary-mode and alt-mode placements do NOT leak
+/// into each other's cache. Regression for BUG-08-10 which allowed
+/// alt-mode placements to appear in primary after swap back.
+#[test]
+fn alt_image_cache_isolation_check() {
+    let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+
+    // Primary: place at col=5.
+    place_test_image(&mut term, 0, 5, 1, 2);
+    assert_eq!(term.image_cache().placement_count(), 1);
+
+    // Enter alt — alt cache newly allocated, empty.
+    term.swap_alt();
+    assert_eq!(
+        term.image_cache().placement_count(),
+        0,
+        "alt mode must not see the primary placement"
+    );
+
+    // Place in alt at col=10.
+    place_test_image(&mut term, 0, 10, 1, 2);
+    assert_eq!(term.image_cache().placement_count(), 1);
+
+    // Back to primary — primary should still only have its original.
+    term.swap_alt();
+    assert_eq!(
+        term.image_cache().placement_count(),
+        1,
+        "primary must still hold only its original placement — alt-mode placement must not leak"
+    );
+}
+
+/// `reflow: false` skips the remap step entirely — placements retain
+/// their original `cell_row` when reflow does not run.
+#[test]
+fn term_resize_without_reflow_skips_remap() {
+    let mut term = Term::new(3, 20, 100, Theme::default(), VoidEffectSink);
+    term.set_cell_dimensions(8, 16);
+    place_test_image(&mut term, 1, 0, 1, 2);
+
+    term.resize(5, 10, false);
+
+    let placements = term
+        .image_cache()
+        .placements_in_viewport(StableRowIndex(0), StableRowIndex(u64::MAX));
+    assert_eq!(placements.len(), 1);
+    assert_eq!(
+        placements[0].cell_row.0, 1,
+        "reflow=false must leave cell_row unchanged"
+    );
+}

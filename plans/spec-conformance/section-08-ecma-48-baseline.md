@@ -82,7 +82,7 @@ sections:
 - **plans/tack-conformance/section-06-tools-menu-scenarios.md** — covers ANSI status reports, SGR modes, character sets, ENQ/ACK — this section absorbs the in-flight work
 - **wezterm** `term/src/terminalstate/mod.rs` — DECLRMM cursor movement reference
 
-**Depends on:** Section 02 (the empty mapping file exists), Section 04 (SpecHarness + frozen catalog schema), Section 06 (mode metadata registry exists for any mode-related catalog rows).
+**Depends on:** Section 02 (the empty mapping file exists), Section 04 (SpecHarness + frozen catalog schema), Section 06 (Mode 2026 timeout wired + mode sync-point reduction complete for any mode-related catalog rows).
 
 ---
 

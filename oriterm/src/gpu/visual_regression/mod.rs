@@ -17,18 +17,25 @@
 //! cargo test -p oriterm -- visual_regression
 //! ```
 
+mod compare;
 mod core_tests;
 mod cursor_opacity_tests;
 mod decoration_tests;
+mod deterministic_lane_cached_tests;
+mod deterministic_lane_tests;
 mod dialog_helpers;
 mod edge_case_tests;
 mod frame_input_helper;
+mod golden_lane_config;
+pub(crate) use golden_lane_config::GoldenLaneConfig;
 mod main_window;
 mod meta_tests;
 mod multi_size;
 mod reference_tests;
 mod resize_stress;
 mod settings_dialog;
+#[cfg(test)]
+mod spec_chain;
 mod status_bar;
 mod tab_bar_brutal;
 mod tab_bar_icons;
@@ -39,11 +46,9 @@ mod weight_tests;
 
 use std::path::PathBuf;
 
-use image::{ImageBuffer, Rgba, RgbaImage};
-
 use super::frame_input::FrameInput;
 use super::pipelines::GpuPipelines;
-use super::state::GpuState;
+use super::state::{AdapterPreference, GpuState};
 use super::window_renderer::WindowRenderer;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
@@ -65,10 +70,16 @@ pub(super) fn reference_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/references")
 }
 
-/// Attempt to create a headless rendering environment with embedded font.
+/// **Legacy non-deterministic** headless rendering environment.
 ///
-/// Uses `FontSet::embedded()` for deterministic output regardless of system
-/// fonts. Returns `None` if no GPU adapter is available.
+/// Uses `FontSet::embedded()` and any available GPU adapter. Adapter
+/// selection is non-deterministic across machines (discrete GPU preferred).
+/// Defaults to `HintingMode::Full` with `subpixel_positioning: true`.
+///
+/// New spec-conformance goldens MUST use
+/// [`headless_env_with_pinned_software_rasterizer`] instead — it pins
+/// the software rasterizer, hinting mode, and subpixel positioning for
+/// reproducible output.
 pub(crate) fn headless_env() -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
     headless_env_with_config(TEST_FONT_SIZE_PT, TEST_DPI)
 }
@@ -111,6 +122,60 @@ pub(super) fn headless_env_with_hinting(
     )
     .ok()?;
     let renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    Some((gpu, pipelines, renderer))
+}
+
+/// Create a headless rendering environment pinned to a software rasterizer
+/// for deterministic golden image comparison.
+///
+/// This is the canonical entry point for spec-conformance golden tests.
+/// Uses `force_fallback_adapter: true` (primary) to select a software
+/// rasterizer (llvmpipe/WARP/swiftshader), reads font parameters from
+/// `config`, and derives cell metrics from `FontCollection::cell_metrics()`
+/// (the SSOT — no independent cell metric storage).
+///
+/// Returns `None` if no software rasterizer is available on the current
+/// platform. Tests should use the graceful skip protocol:
+///
+/// ```text
+/// let Some((gpu, pipelines, renderer)) =
+///     headless_env_with_pinned_software_rasterizer(&GoldenLaneConfig::SPEC_DEFAULT)
+/// else {
+///     eprintln!("SKIP: software rasterizer unavailable");
+///     return;
+/// };
+/// ```
+///
+/// **Legacy entry points** (`headless_env`, `headless_env_with_config`,
+/// `headless_env_full`, `headless_env_with_hinting`) remain for the existing
+/// visual regression test suite. New spec-conformance goldens MUST use this
+/// function instead.
+pub(crate) fn headless_env_with_pinned_software_rasterizer(
+    config: &GoldenLaneConfig,
+) -> Option<(GpuState, GpuPipelines, WindowRenderer)> {
+    let gpu = GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer).ok()?;
+
+    let info = gpu.adapter_info();
+    log::info!(
+        "deterministic lane: adapter={}, backend={:?}, device_type={:?}",
+        info.name,
+        info.backend,
+        info.device_type,
+    );
+
+    let pipelines = GpuPipelines::new(&gpu);
+    let font_collection = FontCollection::new(
+        FontSet::embedded(),
+        config.font_size_pt,
+        config.dpi,
+        config.glyph_format,
+        TEST_FONT_WEIGHT,
+        550,
+        config.hinting_mode,
+    )
+    .ok()?;
+    let mut renderer = WindowRenderer::new(&gpu, &pipelines, font_collection, None);
+    renderer.set_subpixel_positioning(config.subpixel_positioning);
     Some((gpu, pipelines, renderer))
 }
 
@@ -164,153 +229,13 @@ pub(super) fn render_to_pixels_with_opacity(
         .expect("pixel readback should succeed")
 }
 
-/// Compare rendered pixels against a reference PNG.
-///
-/// - `ORITERM_UPDATE_GOLDEN=1`: overwrites the reference and returns Ok.
-/// - If reference doesn't exist: saves `pixels` as the reference and passes.
-/// - If reference exists: compares with `PIXEL_TOLERANCE` and
-///   `MAX_MISMATCH_PERCENT`. On failure, saves `*_actual.png` and
-///   `*_diff.png` alongside the reference.
-///
-/// Returns `Ok(())` on match, `Err(message)` on mismatch.
-pub(super) fn compare_with_reference(
-    name: &str,
-    pixels: &[u8],
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    let ref_dir = reference_dir();
-    let ref_path = ref_dir.join(format!("{name}.png"));
-    let actual_path = ref_dir.join(format!("{name}_actual.png"));
-    let diff_path = ref_dir.join(format!("{name}_diff.png"));
-
-    let actual: RgbaImage =
-        ImageBuffer::from_raw(width, height, pixels.to_vec()).expect("pixel buffer size mismatch");
-
-    // CI safety: panic hard if someone accidentally sets
-    // ORITERM_UPDATE_GOLDEN in a CI environment. Overwriting goldens
-    // in CI silently masks pixel regressions.
-    if std::env::var("CI").is_ok() && std::env::var("ORITERM_UPDATE_GOLDEN").as_deref() == Ok("1") {
-        panic!(
-            "ORITERM_UPDATE_GOLDEN=1 is set in a CI environment (CI env var detected). \
-             This would silently overwrite reference goldens, masking pixel regressions. \
-             Unset ORITERM_UPDATE_GOLDEN before running GPU tests in CI."
-        );
-    }
-
-    // Regeneration mode: overwrite reference with current output.
-    if std::env::var("ORITERM_UPDATE_GOLDEN").as_deref() == Ok("1") {
-        std::fs::create_dir_all(&ref_dir).expect("failed to create reference dir");
-        actual
-            .save(&ref_path)
-            .expect("failed to save reference PNG");
-        eprintln!(
-            "golden updated: {} ({}×{})",
-            ref_path.display(),
-            width,
-            height,
-        );
-        // Clean up stale artifacts.
-        let _ = std::fs::remove_file(&actual_path);
-        let _ = std::fs::remove_file(&diff_path);
-        return Ok(());
-    }
-
-    if !ref_path.exists() {
-        std::fs::create_dir_all(&ref_dir).expect("failed to create reference dir");
-        actual
-            .save(&ref_path)
-            .expect("failed to save reference PNG");
-        eprintln!(
-            "reference saved: {} ({}×{}). Re-run to compare.",
-            ref_path.display(),
-            width,
-            height,
-        );
-        return Ok(());
-    }
-
-    let reference = image::open(&ref_path)
-        .expect("failed to open reference PNG")
-        .to_rgba8();
-
-    if reference.width() != width || reference.height() != height {
-        actual
-            .save(&actual_path)
-            .expect("failed to save actual PNG");
-        return Err(format!(
-            "size mismatch: reference is {}×{}, actual is {width}×{height}. Actual saved to {}",
-            reference.width(),
-            reference.height(),
-            actual_path.display(),
-        ));
-    }
-
-    let (mismatches, diff_img) = pixel_diff(&reference, &actual, PIXEL_TOLERANCE);
-
-    if mismatches > 0 {
-        let total = (width * height) as usize;
-        let pct = mismatches as f64 / total as f64 * 100.0;
-
-        if pct > MAX_MISMATCH_PERCENT {
-            actual
-                .save(&actual_path)
-                .expect("failed to save actual PNG");
-            diff_img.save(&diff_path).expect("failed to save diff PNG");
-
-            Err(format!(
-                "{mismatches}/{total} pixels differ ({pct:.2}%, threshold {MAX_MISMATCH_PERCENT}%). \
-                 tolerance=±{PIXEL_TOLERANCE}\n\
-                 actual: {}\n\
-                 diff:   {}",
-                actual_path.display(),
-                diff_path.display(),
-            ))
-        } else {
-            // Within threshold — clean up stale artifacts.
-            let _ = std::fs::remove_file(&actual_path);
-            let _ = std::fs::remove_file(&diff_path);
-            Ok(())
-        }
-    } else {
-        // Clean up any stale actual/diff from previous failures.
-        let _ = std::fs::remove_file(&actual_path);
-        let _ = std::fs::remove_file(&diff_path);
-        Ok(())
-    }
-}
-
-/// Compute per-pixel diff between two images.
-///
-/// Returns the number of mismatched pixels and a diff image where:
-/// - Matching pixels are transparent black.
-/// - Mismatched pixels are red with full alpha.
-pub(super) fn pixel_diff(
-    reference: &RgbaImage,
-    actual: &RgbaImage,
-    tolerance: u8,
-) -> (usize, RgbaImage) {
-    let w = reference.width();
-    let h = reference.height();
-    let mut diff = RgbaImage::new(w, h);
-    let mut count = 0;
-
-    for y in 0..h {
-        for x in 0..w {
-            let r = reference.get_pixel(x, y);
-            let a = actual.get_pixel(x, y);
-
-            let matches =
-                r.0.iter()
-                    .zip(a.0.iter())
-                    .all(|(&rv, &av)| (rv as i16 - av as i16).unsigned_abs() <= tolerance as u16);
-
-            if !matches {
-                diff.put_pixel(x, y, Rgba([255, 0, 0, 255]));
-                count += 1;
-            }
-        }
-    }
-
-    (count, diff)
-}
+// Re-export comparison functions from the `compare` submodule so sibling
+// modules can import them via `super::compare_with_reference` (matching the
+// import paths established before the split).
+use compare::compare_with_reference;
+#[allow(
+    unused_imports,
+    reason = "consumed by 04.4 golden observer + 05.6 validation tests"
+)]
+pub(crate) use compare::compare_with_reference_strict;
+use compare::pixel_diff;

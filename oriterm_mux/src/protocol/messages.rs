@@ -140,6 +140,19 @@ pub enum MuxPdu {
         enabled: bool,
     },
 
+    /// Update cell pixel dimensions for a pane so `FixedPixels` image
+    /// placements recompute their cell coverage after font or DPI
+    /// changes. Fire-and-forget. Separate from `SetImageConfig`
+    /// because cell metrics are runtime font state, not TOML config.
+    SetCellDimensions {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Cell width in physical pixels.
+        width: u16,
+        /// Cell height in physical pixels.
+        height: u16,
+    },
+
     /// Mark all grid lines dirty in a pane (forces full re-render).
     /// Fire-and-forget.
     MarkAllDirty {

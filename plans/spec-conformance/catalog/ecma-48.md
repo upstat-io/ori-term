@@ -1,5 +1,5 @@
 ---
-schema_version: "0.1-provisional"
+schema_version: "1.0"
 stack: ecma48
 title: "ECMA-48 Baseline Catalog"
 owner_section: "01 (bootstrap), 08 (verification)"

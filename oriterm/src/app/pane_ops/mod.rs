@@ -79,6 +79,7 @@ impl App {
         };
 
         let (approx_rows, approx_cols) = self.estimate_split_size(source_pane_id, direction);
+        let (cell_w, cell_h) = self.current_cell_dims();
 
         let theme = self
             .config
@@ -103,6 +104,7 @@ impl App {
                 mux.set_pane_theme(pid, theme, palette);
                 mux.set_image_config(pid, self.config.terminal.image_config());
                 mux.set_bold_is_bright(pid, self.config.behavior.bold_is_bright);
+                mux.set_cell_dimensions(pid, cell_w, cell_h);
                 log::info!("split pane: {source_pane_id:?} -> {pid:?} ({direction:?})");
                 pid
             }

@@ -28,6 +28,11 @@ sections:
 
 ## 07.1 Active Bugs
 
+- [x] `[BUG-07-013][medium]` **Nightly Windows CI failed — `new_headless_with_software_preference_uses_force_fallback` rejects "Microsoft Basic Render Driver" (a legitimate software rasterizer) because the assertion's KNOWN-name list is incomplete** — found by continue-roadmap.
+  Found: 2026-04-14 | Source: continue-roadmap (nightly CI failure triaged during spec-conformance Section 07 close-out)
+  Fixed: 2026-04-14 — Refactored `oriterm/src/gpu/state/tests.rs:553-579` to trust `adapter_info().device_type == wgpu::DeviceType::Cpu` as the primary authoritative signal (wgpu contract: CPU adapters ARE software rasterizers by definition), keeping the KNOWN-name string list as a defensive fallback for older wgpu versions that misreport device_type. Added `"microsoft basic render"` to the fallback list for completeness. Windows Dx12 reports `device_type=Cpu` for Microsoft Basic Render Driver, so the new primary path short-circuits before the string check. Verified locally via `cargo test -p oriterm --lib new_headless_with_software_preference -- --exact`. CI expected to pass on next nightly.
+  Impact: CI was failing on Windows when the llvmpipe/lavapipe runners were unavailable and fell back to Microsoft Basic Render Driver. The test was structurally too strict — it codified a hardcoded list of driver names instead of trusting the wgpu-reported device type.
+
 - [ ] `[BUG-07-011][low]` **`plans/spec-conformance/index.md` at 535 lines — approaching plan-audit BLOAT_RISK heuristic (500-line threshold)** — found by tpr-review during /review-plan Phase 4 on `plans/spec-conformance/section-02-tack-absorption.md`.
   Repro: `wc -l plans/spec-conformance/index.md` → `535`. `python3 .claude/skills/plan-audit/plan-audit.py plans/spec-conformance --verify --json | python3 -c "import json,sys;d=json.load(sys.stdin); [print(f) for f in d['findings'] if f.get('check')=='BLOAT_RISK' and 'index.md' in f.get('location','')]"` reports `major BLOAT_RISK plans/spec-conformance/index.md — 535 lines, at or near 500-line limit`.
   Subsystem: `plans/spec-conformance/index.md` (plan-hygiene — no code crate). Filed under section 07 per `/add-bug` subsystem mapping (plan-hygiene bugs that don't map to a code crate go in CI & Build alongside BUG-07-005 / BUG-07-006 / BUG-07-010).

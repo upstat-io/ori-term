@@ -35,9 +35,9 @@ Each criterion is concrete and testable. Together they prove the mission is comp
   - Closed when: (a) the `LegacyEventSink` adapter shim is the ONLY location that constructs the closure variants (verified by grep — see section 03.N gate), AND (b) a concrete follow-up plan directory exists at `plans/effect-cutover/` with an index, overview, and at least one section file describing the migration of each current legacy consumer to subscribe to `Effect::HostRequest` directly (the section's `reviewed: false` gate triggers when the cutover plan is picked up for implementation, not at Section 03 close-out). Filing the plan IS an in-scope deliverable of spec-conformance, NOT a deferral dodge — section 03.N explicitly requires the plan directory to exist before section 03 can be marked complete.
   - **Explicit anti-deferral**: "we'll file a plan someday" is not acceptable. The follow-up plan directory must be committed alongside the spec-conformance work that closes this mission criterion.
 - [ ] **Mode 2026 fully wired** — Both publication suppression AND the timeout-abort path are wired. `Processor::sync_timeout` and `stop_sync` are called from `oriterm_mux/src/pane/io_thread/mod.rs` with a documented timeout. Delivered by section 06.
-- [ ] **DEC mode metadata LEAK fixed** — The 5-sync-point LEAK across `NamedPrivateMode` consumers is collapsed into a single registry table. Mode metadata becomes data; behavior stays in match arms. Delivered by section 06.
+- [ ] **DEC mode metadata sync-point reduction** — The 6-sync-point LEAK across `NamedPrivateMode` consumers is reduced to 5 by eliminating the WASTE function `named_private_mode_number()` (replaced by `mode as u16` cast). Remaining 5 sync points enforced by compile-time exhaustive matches — no registry table needed (crate boundary violation per review). Delivered by section 06.
 - [ ] **Image lifecycle correct under resize/reflow/scrollback/alt-screen** — Image placements survive every grid transformation correctly. Documented invariants tested on a regression matrix. Delivered by section 07.
-- [ ] **Deterministic golden environment** — Canonical golden lane uses pinned software rasterizer (llvmpipe), grayscale alpha hinting, pinned cell metrics, exact-or-tiny pixel tolerance. Delivered by section 05.
+- [x] **Deterministic golden environment** — Canonical golden lane uses pinned software rasterizer (llvmpipe), grayscale alpha hinting, pinned cell metrics, exact-or-tiny pixel tolerance. Delivered by section 05. (Complete 2026-04-13)
 - [x] **`tack-conformance` plan absorbed and superseded** — `plans/tack-conformance/` carries supersede blockquotes in overview + index; index reroute frontmatter is `status: resolved`; overview frontmatter is `status: complete`; `section-09-verification.md` is flipped to `status: complete` with an explicit body-level absorption notice pointing at spec-conformance Section 23. Tack sections 01–08 are completed artifacts committed to `main` (shared `PtySession` infrastructure, pinned `ori_term.info`, scenario-catalog framework, test-menu + tools-menu scenario families, GPU goldens, full kf1–kf63 + cursor + editing + modified-key terminfo cross-check). Tack section 09 (final verification + archival) is absorbed by spec-conformance Section 23 (Cross-Stack Regression Sweep + Coverage CI). `plans/spec-conformance/catalog/_legacy-tack-mapping.md` exists with the tack-09 → spec-23 seed row. No `git mv` is run (citation-stability covenant). Delivered by section 02.
 - [ ] **`./test-all.sh` green** — All tests pass debug + release. No regressions in `oriterm_core/tests/alloc_regression.rs` or `oriterm/src/app/event_loop_helpers/tests.rs`.
 - [ ] **`./build-all.sh` green** — Cross-platform build succeeds (x86_64-pc-windows-gnu via WSL, native Linux, native macOS).
@@ -126,8 +126,8 @@ Effect type family (lives at oriterm_core::effect::Effect):
   │                                ColorQuery { index, reply: ResponseToken }
   ├─ Ui(UiEffect)              ── UI hints: CursorBlinkChanged, MouseCursorDirty
   └─ Presentation(PresentationEffect) ── Sync gates:
-                                   SyncBegin, SyncCommit { snapshot_seqno },
-                                   SyncAbort { reason: SyncAbortReason }
+                                   Begin, Commit { snapshot_seqno },
+                                   Abort { reason: SyncAbortReason }
 
 State observables (already exist in RenderableContent + Term):
   RenderableContent: cells, cursor, palette, mode bits, image placements,
@@ -156,7 +156,7 @@ The catalog is the single source of truth for what ori_term supports. The catalo
 
 This complements the existing SSOT discipline in `.claude/rules/impl-hygiene.md` (Single Source of Truth section). The catalog rows are the canonical home for "what is the spec contract for this sequence?"; consumers (test names, coverage reports, plan sections) query the catalog rather than maintaining parallel lists.
 
-The DEC mode handling LEAK (currently 4 sync points across `crates/vte/src/ansi/types.rs:226-295`, `types.rs:175`, `oriterm_core/src/term/handler/helpers.rs:22,56`, and `modes.rs:17-102`) is an existing SSOT violation and is fixed in section 02 — mode metadata becomes a single registry table that all consumers query.
+The DEC mode handling LEAK (6 sync points across `crates/vte/src/ansi/types.rs:226-295`, `types.rs:175`, `oriterm_core/src/term/handler/helpers.rs:22,56`, and `modes.rs:17-102`) is an existing SSOT violation — section 06 eliminates the WASTE function `named_private_mode_number()` (replaced by `mode as u16` cast), reducing to 5 sync points enforced by compile-time exhaustive matches.
 
 ### 3. Boundary-crossing effects are first-class, not afterthoughts
 
@@ -337,14 +337,14 @@ Phase 6 (final integration milestones — depend on every prior section)
 **Cross-section interactions (must be co-implemented):**
 
 - **Section 06 + Section 09**: The mode 2026 timeout-abort fix (section 06 adds the API call site in `oriterm_mux/src/pane/io_thread/mod.rs`) and the mode 2026 verification chain rows (section 09 enumerates them with their test ladders) must land together — the timeout test in the catalog is non-executable until the API call is wired.
-- **Section 06 + Section 08**: The mode metadata registry refactor (section 06 fixes the LEAK) and the ECMA-48 baseline mode rows (section 08 verifies the basic-mode subset) must land together — adding new modes in section 08 against the unfixed LEAK creates 5-sync-point drift bugs immediately.
+- **Section 06 + Section 08**: The mode metadata consolidation (section 06 eliminates the WASTE `named_private_mode_number()` function, reducing sync points from 6 to 5) and the ECMA-48 baseline mode rows (section 08 verifies the basic-mode subset) should land together — adding new modes in section 08 benefits from the cleaner sync-point structure.
 - **Section 07 + Section 21**: Image+resize/reflow correctness and notcurses-demo harness must land together. The `keller` scene resizes during the all-7-blitters test, and any image lifecycle bug breaks the scene's correctness criterion. Section 07 lands the fix; section 21 verifies it under harness stress before section 24 expects every scene to pass.
 - **Section 12 + Section 13**: Sixel and kitty graphics share `ImageCache`, `ImageTextureCache`, and the GPU image pipeline. A regression in either silently breaks the other. Cross-stack regression sweep (section 23) catches this in CI, but the per-section test ladders must include placement-survives-other-protocol scenarios.
 - **Section 02 sets up the absorption that 08 references**: Section 02 adds the supersede notice and creates the mapping-table file. Section 08 populates the mapping table with the actual catalog row → tack section IDs. Sections are co-implemented in the sense that 02's empty mapping table file is filled by 08, but they are SEPARATE sections (02 is plan-hygiene only, 08 is implementation work).
 - **Section 26.1 + Section 26.2 + Section 26.3 share `vector_raster`** (formerly 19.3/19.4/19.5 — moved to Section 26 per the Section 19 split): Section 26.1 builds `oriterm_core/src/vector_raster/` (Bresenham lines, midpoint circles, midpoint arcs, Catmull-Rom curves, even-odd fill polygon, stroke text). Section 26.2 (ReGIS) and Section 26.3 (Tek 4014) both rasterize their vector commands through this shared helper. Subsection 26.1 MUST land before 26.2 and 26.3 — it is the architectural joint that keeps both interpreters a reasonable size.
 - **Section 26 ↔ Section 05 ↔ Section 07**: Section 26's ReGIS and Tek 4014 interpreters commit rasterizer goldens (line/circle/arc/curve/fill primitives) to the deterministic lane defined in Section 05. They also push rasterized placements into `ImageCache`, so they inherit `ImageCache::on_resize` from Section 07. Section 26 MUST land after 05 + 07 + 08 all land.
 - **Section 20.1 + Section 03.1**: Section 20.1 requires `HostEffect::VisualBell` as a separate variant (not a flag). Section 03.1's type definition MUST include the variant up-front so Section 20.1 can emit it without a type extension cycle.
-- **Section 06 + Section 09.2 (stricter than the general 06+09 coupling)**: the Mode 2026 timeout-abort test `mode_2026_timeout_abort_test` in 09.2 is NON-EXECUTABLE until 06.1 wires `Processor::sync_timeout`/`stop_sync` AND 06.2 emits `PresentationEffect::SyncAbort`. The test will deadlock if run before 06 lands. 09's `depends_on` frontmatter already reflects this but the coupling note exists here so the dependency is front-and-center.
+- **Section 06 + Section 09.2 (stricter than the general 06+09 coupling)**: the Mode 2026 timeout-abort test `mode_2026_timeout_abort_test` in 09.2 is NON-EXECUTABLE until 06.1 wires `Processor::sync_timeout`/`stop_sync` AND 06.3 emits `PresentationEffect::Abort { reason: SyncAbortReason::Timeout }`. The test will deadlock if run before 06 lands. 09's `depends_on` frontmatter already reflects this but the coupling note exists here so the dependency is front-and-center.
 
 > **Canonical absorption-policy home.** This block is the single source of truth
 > for how the tack-conformance plan is superseded. Other files in the repository
@@ -514,12 +514,11 @@ Phase 1 — Foundation (5 narrow, focused sections, parallel after 03+04)
   ├─ 06 Terminal Mode Plumbing (control plane):
   │     - Mode 2026 timeout-abort wiring (call sync_timeout/stop_sync
   │       in oriterm_mux/src/pane/io_thread/mod.rs)
-  │     - Mode metadata registry: data-only consolidation of the 5-sync-
-  │       point LEAK across NamedPrivateMode + PrivateMode::new +
-  │       named_private_mode_number/_flag + apply_decset/_decrst
+  │     - Mode metadata sync-point reduction: eliminate WASTE function
+  │       named_private_mode_number() (replaced by mode as u16 cast),
+  │       reducing 6 sync points to 5 enforced by exhaustive matches
   │     - Behavior stays in match arms (per Codex Q4 pushback)
-  │  Gate: timeout-abort tests pass; adding a new mode requires touching
-  │        exactly one registry entry, not 5
+  │  Gate: timeout-abort tests pass; sync points reduced from 6 to 5
   │
   └─ 07 Image Lifecycle Correctness (graphics state):
         - image_cache resize/reflow handler (currently MISSING)
@@ -710,7 +709,7 @@ Per-section line estimates are approximate. Sections will be refined as their de
 | 03 Effect Boundary Migration                  | ~2,500                           | High       | 02          |
 | 04 Verification Chain Harness + Pilots + 04.8 Coverage Report + 04.9 Cataloging Safety Net | ~4,200 | High | 03 (hard) + 05 (soft: 04.4/04.5/04.7 gated on 05.6) |
 | 05 Golden Lane Determinism                    | ~1,500                           | Medium     | 04          |
-| 06 Terminal Mode Plumbing (timeout + registry)| ~1,500                           | Medium     | 04          |
+| 06 Terminal Mode Plumbing (timeout + sync-point reduction) | ~1,500              | Medium     | 04          |
 | 07 Image Lifecycle Correctness                | ~2,000                           | Medium     | 04          |
 | 08 ECMA-48 Baseline                           | ~4,000                           | Medium     | 02, 06      |
 | 09 DEC Private Modes (full)                   | ~2,000                           | Medium     | 06, 08      |
@@ -742,15 +741,15 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 
 | Finding                                                                                                   | Root Cause                                                                                                                                                            | Fix Location | Status      |
 |---                                                                                                        |---                                                                                                                                                                    |---           |---          |
-| Mode 2026 timeout-abort path completely unwired                                                           | `Processor::sync_timeout` and `stop_sync` exist in `crates/vte/src/ansi/processor.rs` but ori_term never calls them. App crashing mid-sync hangs the terminal forever. | Section 06   | Not Started |
+| Mode 2026 timeout-abort path completely unwired                                                           | `Processor::sync_timeout` and `stop_sync` exist in `crates/vte/src/ansi/processor.rs` but ori_term never calls them. App crashing mid-sync hangs the terminal forever. | Section 06   | Complete    |
 | `Term::pending_notifications` bypasses Event channel                                                      | `oriterm_core/src/term/shell_state.rs:218` exposes `drain_notifications()` outside the Event/Effect channel; raw interceptor pushes via `push_notification()`         | Section 03   | Complete    |
 | `Event::ClipboardLoad` and `Event::ColorRequest` carry closures at emission sites                        | `oriterm_core/src/event/mod.rs:46,50` — `Arc<dyn Fn(&str) -> String + Send + Sync>` and `Arc<dyn Fn(Rgb) -> String + Send + Sync>`. Handler files construct the closures inline; formatter logic leaks out of oriterm_core. Section 03 removes closure construction from the handler emission sites and routes through `HostRequest + ResponseToken`. The deprecated Event variants remain as thin shims emitted only by `LegacyEventSink` for a one-phase migration — a follow-up plan deletes the variants entirely. | Section 03   | Complete    |
 | Image cache has NO resize/reflow handler                                                                  | `oriterm_core/src/image/cache/mod.rs` has `prune_scrollback` and `remove_placements_in_region` but nothing for grid resize. Placements with out-of-bounds columns may persist after resize. | Section 07   | Not Started |
-| DEC mode handling LEAK across 5 sync points                                                               | `crates/vte/src/ansi/types.rs:226-295` (NamedPrivateMode), `types.rs:175` (PrivateMode::new), `oriterm_core/src/term/handler/helpers.rs:22,56` (named_private_mode_*), `modes.rs:17-102` (apply_decset/apply_decrst). Adding a new mode requires 5 edits. | Section 06   | Not Started |
-| GPU adapter NOT pinned                                                                                    | `oriterm/src/gpu/state/mod.rs:156` (`new_headless`) → `mod.rs:430` (`try_init_headless`) → `oriterm/src/gpu/state/helpers.rs:8` (`pick_adapter`) enumerates adapters via `instance.enumerate_adapters(backends)` and picks the first discrete GPU (or any fallback). There is no `PowerPreference` pin, no `force_fallback_adapter`, and no software-rasterizer preference — different GPU drivers → antialiasing differences → false-positive golden diffs. | Section 05   | Not Started |
-| `HintingMode::Full` hardcoded for golden tests                                                            | `oriterm/src/gpu/visual_regression/mod.rs:87` defaults to `HintingMode::Full`. Hinting interacts with subpixel rasterization and produces variation across runs.       | Section 05   | Not Started |
-| BLOAT: `oriterm/src/gpu/prepare/mod.rs` (504 lines)                                                       | Exceeds 500-line limit per `code-hygiene.md`. Section 04 will touch this file when extending the prepare phase to capture render-input observation hooks.              | Section 04   | Not Started |
-| BLOAT: `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506 lines)                                            | Exceeds 500-line limit. Section 04 will touch this file when extending dirty-skip logic for verification chain capture.                                                | Section 04   | Not Started |
+| DEC mode handling LEAK reduced from 6 to 5 sync points                                                   | `named_private_mode_number()` eliminated (WASTE — replaced by `mode as u16`). Remaining 5 sync points use exhaustive matches for compile-time enforcement. | Section 06   | Complete    |
+| GPU adapter NOT pinned                                                                                    | Fixed: `headless_env_with_pinned_software_rasterizer()` uses `force_fallback_adapter: true` (primary) + `DeviceType::Cpu` (secondary). `AdapterPreference::SoftwareRasterizer` in `state/helpers.rs`. | Section 05   | Complete    |
+| `HintingMode::Full` hardcoded for golden tests                                                            | Fixed: `GoldenLaneConfig::SPEC_DEFAULT` uses `HintingMode::None` (grayscale alpha). Legacy entry points unchanged for back-compat. | Section 05   | Complete    |
+| BLOAT: `oriterm/src/gpu/prepare/mod.rs` (504→395 lines)                                                   | Split completed by Section 04. Now under 500-line limit.                                                                                                                | Section 04   | Complete    |
+| BLOAT: `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506→378 lines)                                        | Split completed by Section 04. Now under 500-line limit.                                                                                                                | Section 04   | Complete    |
 | DECLRMM (left/right margins) recognized but not enforced                                                  | VTE parser recognizes the mode (`crates/vte/src/ansi/types.rs:226+`) but `oriterm_core/src/grid/mod.rs` has no left/right margin fields. Mode flag toggles a no-op flag. | Section 08   | Not Started |
 | 8-bit C1 controls not handled                                                                             | VTE parser only handles 7-bit ESC-prefixed C1 forms. CSI/DCS/APC with 8-bit introducers (0x9B, 0x90, 0x9F) are not detected.                                           | Section 08   | Not Started |
 | Octants (U+1CD00–U+1CDE5, Unicode 16) not implemented                                                     | `oriterm/src/gpu/builtin_glyphs/legacy_computing/` has sextants but no octants. Required by notcurses `keller`/`uniblock` blitter exhaustive tests.                    | Section 11   | Not Started |
@@ -772,9 +771,9 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 01 | Catalog Bootstrap                                      | `section-01-catalog-bootstrap.md`                    | Complete    |
 | 02 | Tack-Conformance Absorption (Phase 0b — plan hygiene)  | `section-02-tack-absorption.md`                      | Complete    |
 | 03 | Effect Boundary Migration                              | `section-03-effect-boundary-migration.md`            | Complete    |
-| 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Not Started |
-| 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Not Started |
-| 06 | Terminal Mode Plumbing (Mode 2026 + metadata registry) | `section-06-terminal-mode-plumbing.md`               | Not Started |
+| 04 | Verification Chain Harness + Pilots + Coverage Report  | `section-04-verification-chain-harness.md`           | Complete    |
+| 05 | Golden Lane Determinism                                | `section-05-golden-lane-determinism.md`              | Complete    |
+| 06 | Terminal Mode Plumbing (Mode 2026 + sync-point reduction) | `section-06-terminal-mode-plumbing.md`            | Complete    |
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Not Started |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Not Started |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Not Started |
@@ -796,13 +795,13 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 25 | Real-App FULL-PASS Milestone                           | `section-25-real-app-full-pass.md`                   | Not Started |
 | 26 | Historical VECTOR Stacks (vector_raster + ReGIS + Tek 4010/4014) | `section-26-historical-vector-stacks.md` | Not Started |
 
-## Catalog Row Schema (provisional — frozen by Section 04.7 pilots, post-05.6)
+## Catalog Row Schema (frozen v1.0 — 2026-04-13)
 
-This is a **strawman** catalog row template. Section 04.7's freeze lands AFTER Section 05.6's deterministic golden lane (see the Section 04 ↔ Section 05 coupling block at the top of `section-04-verification-chain-harness.md`). **Do not lock this schema until Section 05.6 lands.**
+Frozen by Section 04.7 after both pilots (04.5 sixel visual + 04.6 DA1 non-visual) passed green and Section 05's deterministic golden lane validated end-to-end. See `plans/spec-conformance/catalog/README.md` §Frozen Schema Reference for the full column definitions, ApexLayer/RungName enum values, verification status definitions, and row add/migrate workflows.
 
-### Column set (provisional → frozen by 04.7)
+### Column set (frozen v1.0)
 
-Every catalog row is a markdown table with this explicit column order. Section 04.7 may add columns surfaced by the pilots (`cell_metrics_pin`, `golden_env_config`, `pixel_tolerance_override`, etc.) — do NOT remove columns without migrating every catalog file in lockstep.
+Every catalog row is a markdown table with this explicit column order. The schema was frozen by Section 04.7 on 2026-04-13 after pilot validation. No columns were added beyond the original 10 — the pilots confirmed the provisional schema was sufficient. Do NOT remove or reorder columns without migrating every catalog file in lockstep.
 
 | Column             | Required | Content syntax                                                                                       |
 |---                 |---       |---                                                                                                   |

@@ -343,9 +343,9 @@ Create the new `effect` module with the family enum and sub-types. Pure type def
   ```rust
   #[derive(Debug, Clone, Copy)]
   pub enum PresentationEffect {
-      SyncBegin,
-      SyncCommit { snapshot_seqno: u64 },
-      SyncAbort { reason: SyncAbortReason },
+      Begin,
+      Commit { snapshot_seqno: u64 },
+      Abort { reason: SyncAbortReason },
   }
 
   #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -792,12 +792,12 @@ Effects are pushed into a queue (or forwarded immediately), but there is no defi
   /// Effects are NOT ordered relative to state changes — an effect
   /// pushed during VTE handling may be drained before or after the
   /// next snapshot publication. Consumers that need to correlate
-  /// effects with state must use `PresentationEffect::SyncCommit`
+  /// effects with state must use `PresentationEffect::Commit`
   /// which carries the `snapshot_seqno` at the time of commit.
   /// This is the ONLY synchronization point between the effect
   /// stream and the state stream.
   ```
-- [x] `SyncCommit { snapshot_seqno }` is NOT a generic ordering guarantee — it is a specific synchronization point for Mode 2026. General effect-state ordering is left intentionally relaxed because the IO thread produces snapshots asynchronously from effect emission.
+- [x] `Commit { snapshot_seqno }` is NOT a generic ordering guarantee — it is a specific synchronization point for Mode 2026. General effect-state ordering is left intentionally relaxed because the IO thread produces snapshots asynchronously from effect emission.
 
 ### 03.5f BLOAT watch items
 
@@ -952,7 +952,7 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 - [x] `Term::pending_notifications` bypass channel removed (field + push + direct clear); OSC 9/99/777 flow through Effect; thin `drain_notifications()` shim kept for back-compat
 - [x] `shell_state.rs` converted to directory module (`shell_state/mod.rs` + `shell_state/tests.rs`) per test-organization.md
 - [x] LegacyEventSink adapter routes Effect → existing Event for back-compat; `L: EventListener + Sync` bound; DesktopNotification queued in adapter's secondary `pending_notifications` (TPR-03-001); existing tests pass without modification
-- [x] Ordering contract documented on EffectSink trait (effects ordered relative to each other; NOT ordered relative to state; SyncCommit is the only sync point)
+- [x] Ordering contract documented on EffectSink trait (effects ordered relative to each other; NOT ordered relative to state; Commit is the only sync point)
 - [x] Reply-return path implemented: `PendingResponse` defined in `oriterm_core::effect` (core-owned, TPR-03-002), used by `PaneIoThread`, polled in `drain_commands()` / `handle_command()` (dormant during legacy phase; activates at cutover)
 - [x] No closures in handler files: `grep -rn 'Arc<dyn Fn\|Arc::new(move' oriterm_core/src/term/handler/` returns zero
 - [x] No new file exceeds 500 lines (split if needed; effect.rs, sink.rs, families/*.rs are all leaf files)

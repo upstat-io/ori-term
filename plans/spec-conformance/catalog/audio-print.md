@@ -1,5 +1,5 @@
 ---
-schema_version: "0.1-provisional"
+schema_version: "1.0"
 stack: audio_print
 title: "Audio + Print Catalog"
 owner_section: "01 (bootstrap), 20 (verification)"

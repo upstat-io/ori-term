@@ -207,6 +207,17 @@ pub fn dispatch_request(
             None
         }
 
+        MuxPdu::SetCellDimensions {
+            pane_id,
+            width,
+            height,
+        } => {
+            if let Some(pane) = ctx.panes.get(&pane_id) {
+                pane.send_io_command(PaneIoCommand::SetCellDimensions { width, height });
+            }
+            None
+        }
+
         MuxPdu::MarkAllDirty { pane_id } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
                 pane.send_io_command(PaneIoCommand::MarkAllDirty);

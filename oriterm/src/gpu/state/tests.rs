@@ -511,3 +511,147 @@ fn headless_does_not_use_dcomp() {
         }
     }
 }
+
+#[test]
+fn headless_stores_adapter_info() {
+    use super::GpuState;
+
+    match GpuState::new_headless() {
+        Ok(gpu) => {
+            let info = gpu.adapter_info();
+            assert!(!info.name.is_empty(), "adapter info should have a name");
+        }
+        Err(_) => {
+            eprintln!("skipped: no GPU adapter available");
+        }
+    }
+}
+
+// --- Adapter preference ---
+
+#[test]
+fn new_headless_default_picks_discrete_or_fallback() {
+    use super::GpuState;
+
+    // DiscreteOrFallback is the default — same behavior as new_headless().
+    match GpuState::new_headless() {
+        Ok(gpu) => {
+            assert_eq!(gpu.render_format(), TextureFormat::Rgba8UnormSrgb);
+            assert!(!gpu.adapter_info().name.is_empty());
+        }
+        Err(_) => {
+            eprintln!("skipped: no GPU adapter available");
+        }
+    }
+}
+
+#[test]
+fn new_headless_with_software_preference_uses_force_fallback() {
+    use super::GpuState;
+    use super::helpers::AdapterPreference;
+
+    match GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer) {
+        Ok(gpu) => {
+            let info = gpu.adapter_info();
+            let name = info.name.to_lowercase();
+
+            // Primary signal: wgpu reports `device_type == Cpu` for
+            // software rasterizers. This is the authoritative wgpu
+            // contract — any adapter the driver itself tags as CPU
+            // qualifies as a software rasterizer.
+            if info.device_type == wgpu::DeviceType::Cpu {
+                return;
+            }
+
+            // Fallback: some software rasterizers on older wgpu versions
+            // report `device_type == Other` but have recognizable names
+            // (llvmpipe on Linux when wgpu fails to parse the MESA
+            // device type, for example). Keep the string list as a
+            // defensive backstop.
+            const KNOWN: &[&str] = &[
+                "llvmpipe",
+                "lavapipe",
+                "warp",
+                "swiftshader",
+                "mesa software",
+                "microsoft basic render",
+                "cpu",
+            ];
+            assert!(
+                KNOWN.iter().any(|s| name.contains(s)),
+                "expected software rasterizer, got: {:?} (backend={:?}, device_type={:?})",
+                info.name,
+                info.backend,
+                info.device_type,
+            );
+        }
+        Err(_) => {
+            // No software rasterizer available — acceptable on some platforms.
+            eprintln!("SKIP: no software rasterizer available");
+        }
+    }
+}
+
+#[test]
+fn pick_adapter_software_rasterizer_returns_none_when_unavailable() {
+    use super::helpers::{AdapterPreference, pick_adapter_with_preference};
+
+    // This test validates the negative path: the function returns None
+    // (not a panic) when no software adapter exists. On systems WITH a
+    // software adapter, it returns Some — both outcomes are valid.
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        ..Default::default()
+    });
+    let result = pick_adapter_with_preference(
+        &instance,
+        wgpu::Backends::PRIMARY,
+        AdapterPreference::SoftwareRasterizer,
+    );
+    // We can't assert None (may have llvmpipe), but we CAN assert no panic.
+    if let Some(adapter) = result {
+        let info = adapter.get_info();
+        eprintln!(
+            "software adapter found: {} ({:?})",
+            info.name, info.device_type
+        );
+    } else {
+        eprintln!("no software adapter — negative path confirmed");
+    }
+}
+
+#[test]
+fn pick_adapter_discrete_or_fallback_matches_original() {
+    use super::helpers::{AdapterPreference, pick_adapter, pick_adapter_with_preference};
+
+    // Semantic pin: DiscreteOrFallback must delegate to pick_adapter.
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        ..Default::default()
+    });
+    let original = pick_adapter(&instance, None, wgpu::Backends::PRIMARY);
+    let via_pref = pick_adapter_with_preference(
+        &instance,
+        wgpu::Backends::PRIMARY,
+        AdapterPreference::DiscreteOrFallback,
+    );
+    match (original, via_pref) {
+        (Some(a), Some(b)) => {
+            assert_eq!(
+                a.get_info().name,
+                b.get_info().name,
+                "DiscreteOrFallback should pick the same adapter as pick_adapter",
+            );
+        }
+        (None, None) => {
+            eprintln!("skipped: no GPU adapter available");
+        }
+        (a, b) => {
+            panic!(
+                "adapter availability mismatch: original={}, via_pref={}",
+                a.is_some(),
+                b.is_some(),
+            );
+        }
+    }
+}
