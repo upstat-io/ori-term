@@ -686,25 +686,47 @@ fn partial_utf8_into_esc() {
 
 #[test]
 fn c1s() {
-    const INPUT: &[u8] = b"\x00\x1f\x80\x90\x98\x9b\x9c\x9d\x9e\x9fa";
+    // Non-sequence C1 bytes (0x80) are dispatched via execute().
+    // Sequence-introducing C1 bytes (0x90, 0x98, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F)
+    // transition the parser state instead of being dispatched as execute.
+    const INPUT: &[u8] = b"\x00\x1f\x80";
 
     let mut dispatcher = Dispatcher::default();
     let mut parser = Parser::new();
 
     parser.advance(&mut dispatcher, INPUT);
 
-    assert_eq!(dispatcher.dispatched.len(), 11);
+    assert_eq!(dispatcher.dispatched.len(), 3);
     assert_eq!(dispatcher.dispatched[0], Sequence::Execute(0));
     assert_eq!(dispatcher.dispatched[1], Sequence::Execute(31));
     assert_eq!(dispatcher.dispatched[2], Sequence::Execute(128));
-    assert_eq!(dispatcher.dispatched[3], Sequence::Execute(144));
-    assert_eq!(dispatcher.dispatched[4], Sequence::Execute(152));
-    assert_eq!(dispatcher.dispatched[5], Sequence::Execute(155));
-    assert_eq!(dispatcher.dispatched[6], Sequence::Execute(156));
-    assert_eq!(dispatcher.dispatched[7], Sequence::Execute(157));
-    assert_eq!(dispatcher.dispatched[8], Sequence::Execute(158));
-    assert_eq!(dispatcher.dispatched[9], Sequence::Execute(159));
-    assert_eq!(dispatcher.dispatched[10], Sequence::Print('a'));
+}
+
+/// C1 sequence introducers enter their respective states rather than
+/// being dispatched as execute events.
+#[test]
+fn c1_sequence_introducers_enter_states() {
+    // Each C1 byte tested in isolation to avoid state interference.
+    let cases: &[(u8, &str)] = &[
+        (0x90, "DcsEntry"),
+        (0x98, "SosPmApcString"),
+        (0x9B, "CsiEntry"),
+        (0x9D, "OscString"),
+        (0x9E, "SosPmApcString"),
+        (0x9F, "ApcString"),
+    ];
+    for &(byte, expected_state) in cases {
+        let mut d = Dispatcher::default();
+        let mut p = Parser::new();
+        p.advance(&mut d, &[byte]);
+        // Sequence introducers do not produce execute events.
+        assert!(
+            !d.dispatched.iter().any(|s| matches!(s, Sequence::Execute(b) if *b == byte)),
+            "C1 byte 0x{:02X} should enter {} state, not dispatch as Execute",
+            byte,
+            expected_state,
+        );
+    }
 }
 
 #[test]
@@ -807,4 +829,292 @@ fn execute_anywhere() {
     assert_eq!(dispatcher.dispatched.len(), 2);
     assert_eq!(dispatcher.dispatched[0], Sequence::Execute(0x18));
     assert_eq!(dispatcher.dispatched[1], Sequence::Execute(0x1A));
+}
+
+// ── 8-bit C1 control detection ──────────────────────────────────────
+
+/// 0x9B enters CSI state — `\x9b0m` dispatches SGR reset.
+#[test]
+fn c1_0x9b_enters_csi_state() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // 0x9B is invalid UTF-8 lead byte, triggers C1 detection in error path.
+    p.advance(&mut d, &[0x9B, b'0', b'm']);
+    assert_eq!(d.dispatched.len(), 1);
+    assert_eq!(d.dispatched[0], Sequence::Csi(vec![vec![0]], vec![], false, 'm'));
+}
+
+/// 0x90 enters DCS state — `\x90q...ST` dispatches DCS hook.
+#[test]
+fn c1_0x90_enters_dcs_state() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // DCS q (sixel introducer) followed by ESC \ (ST).
+    p.advance(&mut d, &[0x90, b'q', 0x1B, b'\\']);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::DcsHook(..))));
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::DcsUnhook)));
+}
+
+/// 0x9D enters OSC state — `\x9d0;title\x07` dispatches OSC with title.
+/// Uses BEL (0x07) as terminator because 0x9C conflicts with UTF-8
+/// continuation bytes inside OSC payloads.
+#[test]
+fn c1_0x9d_enters_osc_state() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9D, b'0', b';', b't', b'i', b't', b'l', b'e', 0x07]);
+    assert_eq!(d.dispatched.len(), 1);
+    match &d.dispatched[0] {
+        Sequence::Osc(params, _) => {
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0], b"0");
+            assert_eq!(params[1], b"title");
+        },
+        other => panic!("expected Osc, got {:?}", other),
+    }
+}
+
+/// 0x9F enters APC state — `\x9f...\x9c` captures APC content.
+#[test]
+fn c1_0x9f_enters_apc_state() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9F, b'h', b'i', 0x9C]);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcStart)));
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcPut(b'h'))));
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcPut(b'i'))));
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcEnd)));
+}
+
+/// 0x98 enters SOS discard state — `\x98...\x9c` discards content.
+#[test]
+fn c1_0x98_enters_sos_discard_state() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x98, b'x', b'y', 0x1B, b'\\']);
+    // SOS is discarded — no Osc, Csi, Dcs, Apc sequences dispatched.
+    // The ESC \ terminates, dispatching esc_dispatch for '\'.
+    for s in &d.dispatched {
+        assert!(!matches!(s, Sequence::Osc(..) | Sequence::Csi(..) | Sequence::DcsHook(..)));
+    }
+}
+
+/// 0x9E enters PM discard state — `\x9e...\x9c` discards content.
+#[test]
+fn c1_0x9e_enters_pm_discard_state() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9E, b'z', 0x1B, b'\\']);
+    for s in &d.dispatched {
+        assert!(!matches!(s, Sequence::Osc(..) | Sequence::Csi(..) | Sequence::DcsHook(..)));
+    }
+}
+
+/// 0x9C as ST terminates a DCS sequence mid-stream.
+#[test]
+fn c1_0x9c_terminates_dcs_sequence() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // Start DCS via ESC P, then terminate with 8-bit ST (0x9C).
+    p.advance(&mut d, &[0x1B, b'P', b'q', b'A', 0x9C]);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::DcsHook(..))));
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::DcsUnhook)));
+}
+
+/// 0x9C does NOT terminate an OSC sequence — it is treated as data.
+/// This is intentional: 0x9C is a valid UTF-8 continuation byte that
+/// appears in CJK characters (e.g., '末' = E6 9C AB). Matching upstream
+/// Alacritty VTE behavior.
+#[test]
+fn c1_0x9c_does_not_terminate_osc_sequence() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // Start OSC via ESC ], then 0x9C. OSC should absorb 0x9C as data, not terminate.
+    // Terminate with BEL to close the sequence.
+    p.advance(&mut d, &[0x1B, b']', b'0', b';', b'x', 0x9C, 0x07]);
+    assert_eq!(d.dispatched.len(), 1);
+    match &d.dispatched[0] {
+        Sequence::Osc(params, _) => {
+            assert_eq!(params.len(), 2);
+            // Payload includes the 0x9C byte as data.
+            assert_eq!(params[1], &[b'x', 0x9C]);
+        },
+        other => panic!("expected Osc, got {:?}", other),
+    }
+}
+
+/// 0x9C as ST terminates a SosPmApc string (via `anywhere` handler).
+#[test]
+fn c1_0x9c_terminates_sos_pm_string() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // ESC X (SOS) then 8-bit ST (0x9C), then ESC [ 0 m (CSI SGR).
+    // After ST, parser returns to ground and should process the CSI.
+    p.advance(&mut d, &[0x1B, b'X', b'a', 0x9C, 0x1B, b'[', b'0', b'm']);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::Csi(..))));
+}
+
+// ── C1 ground-state matrix: each byte from ground ───────────────────
+
+/// 0x9B from ground → CSI (duplicate of c1_0x9b_enters_csi_state for matrix).
+#[test]
+fn c1_matrix_ground_0x9b() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9B, b'1', b'A']);
+    assert_eq!(d.dispatched.len(), 1);
+    assert_eq!(d.dispatched[0], Sequence::Csi(vec![vec![1]], vec![], false, 'A'));
+}
+
+/// 0x90 from ground → DCS.
+#[test]
+fn c1_matrix_ground_0x90() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x90, b'q', 0x1B, b'\\']);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::DcsHook(..))));
+}
+
+/// 0x9D from ground → OSC (terminated by BEL).
+#[test]
+fn c1_matrix_ground_0x9d() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9D, b'0', b';', b'a', 0x07]);
+    assert_eq!(d.dispatched.len(), 1);
+    match &d.dispatched[0] {
+        Sequence::Osc(params, bell) => {
+            assert_eq!(params[0], b"0");
+            assert_eq!(params[1], b"a");
+            assert!(*bell);
+        },
+        other => panic!("expected Osc, got {:?}", other),
+    }
+}
+
+/// 0x9F from ground → APC.
+#[test]
+fn c1_matrix_ground_0x9f() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9F, b'z', 0x1B, b'\\']);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcStart)));
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcEnd)));
+}
+
+/// 0x98 from ground → SOS (discard).
+#[test]
+fn c1_matrix_ground_0x98() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x98, b'x', 0x1B, b'\\']);
+    for s in &d.dispatched {
+        assert!(!matches!(s, Sequence::Osc(..) | Sequence::Csi(..) | Sequence::DcsHook(..)));
+    }
+}
+
+/// 0x9E from ground → PM (discard).
+#[test]
+fn c1_matrix_ground_0x9e() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9E, b'w', 0x1B, b'\\']);
+    for s in &d.dispatched {
+        assert!(!matches!(s, Sequence::Osc(..) | Sequence::Csi(..) | Sequence::DcsHook(..)));
+    }
+}
+
+/// 0x9C from ground → no-op (ST on ground has nothing to terminate).
+#[test]
+fn c1_matrix_ground_0x9c() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // 0x9C on ground should be a no-op, then the CSI should parse normally.
+    p.advance(&mut d, &[0x9C, 0x1B, b'[', b'0', b'm']);
+    assert_eq!(d.dispatched.len(), 1);
+    assert!(matches!(&d.dispatched[0], Sequence::Csi(..)));
+}
+
+// ── C1 mid-sequence matrix: 0x9C as terminator ──────────────────────
+
+/// 0x9C terminates DCS passthrough (already supported, matrix coverage).
+#[test]
+fn c1_matrix_midseq_0x9c_in_dcs() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x1B, b'P', b'q', 0x9C]);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::DcsUnhook)));
+}
+
+/// 0x9C terminates APC string (already supported, matrix coverage).
+#[test]
+fn c1_matrix_midseq_0x9c_in_apc() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x1B, b'_', b'x', 0x9C]);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::ApcEnd)));
+}
+
+/// 0x9C inside OSC is treated as data, not as ST (UTF-8 safety).
+#[test]
+fn c1_matrix_midseq_0x9c_in_osc_is_data() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // 0x9C mid-OSC is kept as data, BEL terminates.
+    p.advance(&mut d, &[0x1B, b']', b'0', b';', b't', 0x9C, 0x07]);
+    match &d.dispatched[0] {
+        Sequence::Osc(params, _) => assert_eq!(params[1], &[b't', 0x9C]),
+        other => panic!("expected Osc, got {:?}", other),
+    }
+}
+
+/// 0x9C terminates SOS string (gap being fixed via `anywhere`).
+#[test]
+fn c1_matrix_midseq_0x9c_in_sos() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // ESC X (SOS), some data, 0x9C (ST), then verify ground state with a print.
+    p.advance(&mut d, &[0x1B, b'X', b'z', 0x9C, b'A']);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::Print('A'))));
+}
+
+/// 0x9C terminates PM string (gap being fixed via `anywhere`).
+#[test]
+fn c1_matrix_midseq_0x9c_in_pm() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x1B, b'^', b'z', 0x9C, b'B']);
+    assert!(d.dispatched.iter().any(|s| matches!(s, Sequence::Print('B'))));
+}
+
+// ── Negative pin: BSU/ESU 7-bit form not matched by 8-bit CSI ───────
+
+/// 8-bit CSI `\x9b?2026h` must NOT trigger sync update (BSU matcher
+/// expects 7-bit ESC [ form).
+#[test]
+fn bsu_esu_7bit_not_matched_by_8bit_csi() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    // Feed 8-bit CSI form of BSU: 0x9B ? 2 0 2 6 h.
+    // This should parse as a CSI sequence with private marker '?',
+    // param 2026, final 'h'. It should NOT be recognized as BSU.
+    p.advance(&mut d, &[0x9B, b'?', b'2', b'0', b'2', b'6', b'h']);
+    // If it were incorrectly recognized as BSU, the parser would enter
+    // sync mode. Verify we got a normal CSI dispatch instead.
+    assert_eq!(d.dispatched.len(), 1);
+    assert!(matches!(&d.dispatched[0], Sequence::Csi(..)));
+}
+
+// ── Semantic pin: 8-bit CSI SGR reset only works with C1 support ────
+
+/// `\x9b0m` resets SGR — this test ONLY passes when 8-bit C1 routing
+/// correctly enters CSI state from ground via the 0x9B byte.
+#[test]
+fn c1_csi_sgr_reset_only_passes_with_8bit_support() {
+    let mut d = Dispatcher::default();
+    let mut p = Parser::new();
+    p.advance(&mut d, &[0x9B, b'0', b'm']);
+    assert_eq!(d.dispatched.len(), 1);
+    // SGR 0 = param [0], no intermediates, final 'm'.
+    assert_eq!(d.dispatched[0], Sequence::Csi(vec![vec![0]], vec![], false, 'm'));
 }
