@@ -1283,8 +1283,6 @@ fn sr_within_margins_shifts_only_margin_band() {
     }
 }
 
-// --- Regression: full-band SL/SR (TPR-08-001-codex-r9) ---
-
 /// Regression: SL with `count == band_width` must clear the band rather
 /// than underflow `right - count`. Reproduced with full-width (no DECLRMM,
 /// left = 0, right = cols - 1).
@@ -1378,8 +1376,6 @@ fn sl_count_larger_than_band_clamps() {
         }
     }
 }
-
-// --- Regression: wide-char cleanup at band edges (TPR-08-003-{codex,gemini}-r9) ---
 
 use crate::cell::CellFlags;
 
@@ -1499,10 +1495,8 @@ fn dl_with_margins_cleans_wide_char_at_band_edge() {
     );
 }
 
-// --- Regression: iter-2 TPR findings ---
-
-/// Regression (TPR-08-001-codex iter 2): SR must extend occ when content
-/// shifts right even with the default (empty) template. Previously the
+/// Regression: SR must extend occ when content shifts right even with
+/// the default (empty) template. Previously the
 /// occ update was guarded by `!template.is_empty()`, so content that
 /// shifted past the pre-shift occ bound would become "invisible" to any
 /// renderer or scan that stops at `occ`.
@@ -1528,8 +1522,8 @@ fn sr_extends_occ_when_content_shifts_with_empty_template() {
     );
 }
 
-/// Regression (TPR-08-003-gemini iter 2): SL must preserve in-band
-/// wide-char pairs. Previously `clear_wide_char_at` at band edges would
+/// Regression: SL must preserve in-band wide-char pairs. Previously
+/// `clear_wide_char_at` at band edges would
 /// unconditionally destroy both halves, splitting pairs that lived
 /// entirely inside the band.
 ///
@@ -1576,8 +1570,8 @@ fn sl_preserves_inband_wide_char_pair_at_right_edge() {
     );
 }
 
-/// Regression (TPR-08-003-gemini iter 2): IL with DECLRMM must preserve
-/// in-band wide-char pairs. The partial copy at band edges must not
+/// Regression: IL with DECLRMM must preserve in-band wide-char pairs.
+/// The partial copy at band edges must not
 /// pre-clear pairs entirely inside the band.
 #[test]
 fn il_with_margins_preserves_inband_wide_char_pair() {

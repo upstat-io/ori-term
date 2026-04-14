@@ -1,20 +1,20 @@
 //! Headless GPU initialization (no window or surface required).
 //!
 //! Used for testing and offscreen rendering. Extracted from `state/mod.rs`
-//! to keep the parent file under the 500-line limit (§05.0 BLOAT split).
+//! to keep the parent file under the 500-line limit.
 //!
 //! This module is test-only (`new_headless` is `#[allow(dead_code)]` in the
 //! production build and only consumed by test harnesses). The file-level
 //! `#![allow(unsafe_code)]` exists specifically to permit `env::remove_var`
-//! in `sanitize_headless_env` — see BUG-06-013.
+//! in `sanitize_headless_env`.
 
 #![allow(
     unsafe_code,
     reason = "env::remove_var requires unsafe because it can race with concurrent readers. \
               Strictly scoped to this file because this module is test-only and the env \
               mutation is guarded by OnceLock + runs once per process before any wgpu \
-              thread starts probing surface extensions. Permanent fix for BUG-06-013 \
-              (wgpu adapter enumeration hangs on unresponsive Wayland/X11 sockets)."
+              thread starts probing surface extensions. Required so wgpu adapter \
+              enumeration does not hang on unresponsive Wayland/X11 sockets."
 )]
 
 use std::sync::OnceLock;
@@ -40,8 +40,6 @@ use super::{GpuInitError, GpuState};
 /// correctness. `new_headless` is test-only (consumers under
 /// `#[cfg(test)]` + `#[allow(dead_code)]` in the production build), so
 /// sanitizing the environment here does not affect the real application.
-///
-/// See BUG-06-013 in `plans/bug-tracker/section-06-rendering-perf.md`.
 #[allow(dead_code, reason = "called only from new_headless (test-only path)")]
 fn sanitize_headless_env() {
     static SANITIZED: OnceLock<()> = OnceLock::new();
