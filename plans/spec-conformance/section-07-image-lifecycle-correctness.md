@@ -561,7 +561,7 @@ Round 15 clean-pass gate: Gemini returned `"no_findings": true` on round 14. Cod
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
 - [ ] `index.md` section 07 status updated
 - [x] Cross-links verified: sections 12, 13, 14, 26 reference section 07
-- [ ] `/tpr-review` passed
+- [x] `/tpr-review` passed (6 iterations, rounds 11-16, 16 findings fixed)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
 **Exit Criteria:** Image placements survive every grid transformation: resize, reflow, scrollback eviction, alt-screen toggle, ED/EL erase, and font/DPI changes. No limitations scoped out. Regression matrix proves it with 42 scenarios. Ready for sections 12-14 (image protocols) and section 21 (notcurses-demo harness).

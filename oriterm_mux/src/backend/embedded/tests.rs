@@ -352,9 +352,8 @@ fn new_window_pane_cell_metrics_reach_io_thread() {
         std::thread::sleep(Duration::from_millis(50));
     }
 
-    // Send cell dimensions. The backend now only marks dirty if the
-    // pane exists (TPR-07-001-codex round 15 fix), so the dirty flag
-    // reflects a real command dispatch.
+    // Send cell dimensions. The backend only marks dirty if the
+    // pane exists, so the dirty flag reflects a real command dispatch.
     mux.set_cell_dimensions(pane_id, 12, 24);
     mux.clear_pane_snapshot_dirty(pane_id);
 
