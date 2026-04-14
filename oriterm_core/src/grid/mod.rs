@@ -151,6 +151,11 @@ impl Grid {
         self.right_margin = self.cols.saturating_sub(1);
     }
 
+    /// Whether horizontal margins are active (not full-width).
+    pub fn has_horizontal_margins(&self) -> bool {
+        self.left_margin > 0 || self.right_margin < self.cols.saturating_sub(1)
+    }
+
     /// Whether the cursor is inside the left/right margin band.
     ///
     /// Wrap-pending state (col == `right_margin` + 1) counts as "in band"

@@ -53,6 +53,13 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Reference rules: `.claude/rules/code-hygiene.md` §File Size.
   Note: Active work in `plans/spec-conformance/` Section 01 (Catalog Bootstrap) discovered and filed this bug while harvesting the Kitty APC `_G` dispatch arms (Section 01.11). Sections 12 (Sixel) and 13 (Kitty Graphics) will consume the fix.
 
+- [ ] `[BUG-08-12][high]` **Kitty keyboard mode persists after program exit — shell renders raw CSI u sequences instead of typed characters**
+  Repro: Run `notcurses-demo` (or any program that pushes Kitty keyboard protocol modes). After it exits and you return to the shell prompt, typed characters display as raw CSI u escape fragments like `0;1;100u7;1;97u` instead of the actual letters. Terminal is effectively unusable until `reset` is typed blind or the pane is killed. Other terminals (WezTerm, Ghostty) do not exhibit this.
+  Detail: The `keyboard_mode_stack` in `Term` retains pushed Kitty keyboard protocol flags after the child program exits. When the shell regains control, `TermMode::KITTY_KEYBOARD_PROTOCOL` is still set, so `key_encoding/mod.rs:118` routes all keypresses through the Kitty CSI u encoder (`key_encoding/kitty.rs`). The shell (bash/zsh) doesn't understand CSI u encoding and displays the raw parameter bytes. Root cause: no mechanism resets the keyboard mode stack when a subprocess terminates without sending `CSI < u` (pop). Programs may crash, be killed via SIGKILL, or simply forget to clean up. RIS (`ESC c`) does clear the stack (`esc.rs:50-51`), but nothing triggers RIS automatically on subprocess exit. Possible fixes: (1) shell integration resets keyboard mode stack on prompt detection, (2) detect when the direct child shell re-emits its prompt and auto-pop any modes the shell didn't push, (3) app-layer heuristic that pops keyboard modes when the pane's foreground process group changes.
+  Subsystem: `oriterm_core/src/term/handler/dcs.rs` (push/pop/set), `oriterm_core/src/term/mod.rs` (keyboard_mode_stack), `oriterm/src/key_encoding/mod.rs` (mode check at line 118)
+  Found: 2026-04-14 | Source: manual
+  Note: Active work in spec-conformance section-17 (Kitty Keyboard) and roadmap section-08 (Keyboard Input) touch this area.
+
 - [ ] `[BUG-08-11][medium]` **`term/tests.rs` combines tests for multiple submodules (2500+ lines) — violates test-organization.md**
   Repro: `wc -l oriterm_core/src/term/tests.rs` prints ~2570. Contains tests for `mod.rs`, `alt_screen.rs`, `image_config.rs`, `snapshot.rs`, and `resize.rs`.
   Subsystem: `oriterm_core/src/term/tests.rs`

@@ -134,10 +134,18 @@ pub struct Term<S: EffectSink> {
     saved_charset: Option<CharsetState>,
     /// DECSC-saved origin mode flag (active screen, restored by DECRC).
     saved_origin_mode: Option<bool>,
+    /// DECSC-saved left/right margins (active screen, restored by DECRC).
+    saved_margins: Option<(usize, usize)>,
+    /// DECSC-saved DECLRMM mode flag (active screen, restored by DECRC).
+    saved_left_right_margin_mode: Option<bool>,
     /// DECSC-saved charset state (inactive screen — swapped on alt screen toggle).
     inactive_saved_charset: Option<CharsetState>,
     /// DECSC-saved origin mode flag (inactive screen — swapped on alt screen toggle).
     inactive_saved_origin_mode: Option<bool>,
+    /// DECSC-saved left/right margins (inactive screen).
+    inactive_saved_margins: Option<(usize, usize)>,
+    /// DECSC-saved DECLRMM mode flag (inactive screen).
+    inactive_saved_left_right_margin_mode: Option<bool>,
     /// Window title (set by OSC 0/2).
     title: String,
     /// Icon name (set by OSC 0/1).
@@ -222,8 +230,12 @@ impl<S: EffectSink> Term<S> {
             charset: CharsetState::default(),
             saved_charset: None,
             saved_origin_mode: None,
+            saved_margins: None,
+            saved_left_right_margin_mode: None,
             inactive_saved_charset: None,
             inactive_saved_origin_mode: None,
+            inactive_saved_margins: None,
+            inactive_saved_left_right_margin_mode: None,
             title: String::new(),
             icon_name: String::new(),
             cwd: None,

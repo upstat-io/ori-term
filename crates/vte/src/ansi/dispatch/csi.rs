@@ -55,7 +55,9 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
 
     match (action, intermediates) {
         ('@', []) => handler.insert_blank(next_param_or(1) as usize),
+        ('@', [b' ']) => handler.scroll_left(next_param_or(1) as usize),
         ('A', []) => handler.move_up(next_param_or(1) as usize),
+        ('A', [b' ']) => handler.scroll_right(next_param_or(1) as usize),
         ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
         ('b', []) => {
             if let Some(c) = *preceding_char {
@@ -237,7 +239,16 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.restore_private_mode_values(&modes);
         },
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
-        ('s', []) => handler.save_cursor_position(),
+        ('s', []) => {
+            // CSI s / DECSLRM ambiguity: pass params to handler which
+            // knows whether mode 69 (DECLRMM) is active. VTE always
+            // pushes at least one default-0 param, so check values to
+            // detect "effectively no params" (both zero = implicit default).
+            let left = next_param_or(0);
+            let right = next_param_or(0);
+            let has_params = left != 0 || right != 0;
+            handler.decslrm_or_save_cursor(has_params, left, right);
+        },
         ('s', [b'?']) => {
             // XTSAVE: save private mode values.
             let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();

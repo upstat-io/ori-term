@@ -46,7 +46,7 @@ sections:
     status: complete
   - id: "08.5"
     title: "DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, save/restore, reset paths)"
-    status: not-started
+    status: in-progress
   - id: "08.6"
     title: "Implement 8-bit C1 control detection"
     status: not-started
@@ -250,10 +250,10 @@ This subsection handles the operations that are architecturally more complex tha
 
 ### 08.5a: IL/DL/ICH/DCH with horizontal margins (partial-width scroll)
 
-- [ ] **Partial-width scroll primitives** — Current `scroll_range_up` and `scroll_range_down` in `oriterm_core/src/grid/scroll/mod.rs:128-168` rotate full rows. When DECLRMM is active, IL/DL must scroll only the columns within `[left_margin, right_margin]` — content outside the margin band survives unchanged. This requires new primitives: `scroll_region_partial_up(row_range, col_range, count)` and `scroll_region_partial_down(row_range, col_range, count)` that operate on sub-row cell ranges. Reference: WezTerm's `scroll_up_within_margins` / `scroll_down_within_margins`.
-- [ ] **ICH/DCH within margins** — `insert_blank` and `delete_chars` in `oriterm_core/src/grid/editing/mod.rs` must shift cells only within `[left_margin, right_margin]` when DECLRMM is active. Cells outside the margin band are not affected.
-- [ ] **SL/SR within margins** — Scroll Left (`CSI Ps SP @`) and Scroll Right (`CSI Ps SP A`) shift content horizontally. When DECLRMM is active, SL/SR must operate within `[left_margin, right_margin]` using the same margin-constrained shift primitives as ICH/DCH. Content outside the margin band is not affected. These are implemented in 08.8b; this item ensures they respect margin constraints.
-- [ ] **Tests:**
+- [x] **Partial-width scroll primitives** — Added `scroll_partial_up` and `scroll_partial_down` to `oriterm_core/src/grid/scroll/mod.rs`. These cell-by-cell copy primitives operate on sub-row cell ranges using `split_at_mut` for safe non-overlapping mutable refs. `insert_lines` and `delete_lines` now dispatch to these when `has_horizontal_margins()` is true, falling back to O(1) rotation for full-width.
+- [x] **ICH/DCH within margins** — `insert_blank` and `delete_chars` in `oriterm_core/src/grid/editing/mod.rs` now compute `right_bound` from `right_margin + 1` when margins are active, constraining shifts to within the margin band.
+- [x] **SL/SR within margins** — Implemented `scroll_left` and `scroll_right` on Grid (`oriterm_core/src/grid/scroll/mod.rs`), VTE Handler trait methods (`crates/vte/src/ansi/handler.rs`), CSI dispatch entries (`('@', [b' '])` → SL, `('A', [b' '])` → SR in `crates/vte/src/ansi/dispatch/csi.rs`), and Term handler delegation (`oriterm_core/src/term/handler/mod.rs`). Both SL/SR respect DECLRMM margin band when active.
+- [x] **Tests:**
   - `il_with_margins_scrolls_only_margin_band()` — content outside margins survives
   - `dl_with_margins_scrolls_only_margin_band()` — content outside margins survives
   - `ich_within_margins_shifts_only_margin_band()` — insertion respects right boundary
@@ -263,12 +263,13 @@ This subsection handles the operations that are architecturally more complex tha
 
 ### 08.5b: CSI s / DECSLRM ambiguity
 
-- [ ] **Problem**: Plain `CSI s` (no `?` intermediate) is hard-coded as `save_cursor_position()` at `crates/vte/src/ansi/dispatch/csi.rs:240`. But DECSLRM (Set Left and Right Margins) uses the same sequence when mode 69 is active. The ambiguity exists ONLY for the zero-parameter form `CSI s`. With one or two parameters (`CSI Pl ; Pr s`), the sequence is always DECSLRM — no ambiguity. WezTerm resolves the zero-param case in terminal state (`mod.rs:2567-2579`): if DECLRMM is set, call `set_left_and_right_margins()` with defaults; else call `dec_save_cursor()`. With-params calls go directly to `set_left_and_right_margins(left, right)` with no mode check (`mod.rs:2318-2345`). Ghostty similarly dispatches with-params (1 or 2) directly to `left_and_right_margin` handler; zero-params defers to `left_and_right_margin_ambiguous` (`stream.zig:1696-1708`).
-- [ ] **Solution**: VTE dispatches ALL `CSI ... s` forms (zero-param and with-params) to a single `Handler::decslrm_or_save_cursor(params: &[u16])` method. The Term handler checks:
-  - **With params (1 or 2)**: always DECSLRM — call `grid.set_left_right_margins(left, right)`. If mode 69 is inactive, DECSLRM is a no-op (per WezTerm/Ghostty behavior).
-  - **Zero params**: if mode 69 active, call DECSLRM with defaults (1, cols); if mode 69 inactive, call `save_cursor_position()`.
-  **Do NOT hard-code mode state into the VTE crate** — VTE is a vendored parser that must not contain oriterm-specific terminal state (per crate-boundaries.md).
-- [ ] **Tests:**
+- [x] **Problem**: Plain `CSI s` (no `?` intermediate) was hard-coded as `save_cursor_position()` at `crates/vte/src/ansi/dispatch/csi.rs`. DECSLRM (Set Left and Right Margins) uses the same sequence when mode 69 is active. Resolved by routing all `CSI ... s` forms through a single handler method.
+- [x] **Solution**: VTE CSI dispatch routes all `('s', [])` forms to `Handler::decslrm_or_save_cursor(has_params, left, right)`. VTE param detection uses value-based check (`left != 0 || right != 0`) because VTE always pushes at least one default-0 param. The Term handler checks mode 69 and param presence:
+  - **With params**: always DECSLRM (no-op if mode 69 inactive, per WezTerm/Ghostty).
+  - **Zero params + mode 69 on**: DECSLRM with defaults (reset to full width).
+  - **Zero params + mode 69 off**: save cursor (backward compat).
+  No mode state in VTE crate — all dispatch logic in the Term handler (per crate-boundaries.md).
+- [x] **Tests:**
   - `csi_s_zero_params_mode_69_off_saves_cursor()` — the backward-compat case
   - `csi_s_zero_params_mode_69_on_sets_default_margins()` — DECSLRM with defaults (1, cols)
   - `csi_s_with_params_always_decslrm()` — `CSI 5 ; 20 s` sets margins regardless of mode 69
@@ -276,33 +277,33 @@ This subsection handles the operations that are architecturally more complex tha
 
 ### 08.5c: Save/restore margin state
 
-- [ ] **Problem**: `Grid::save_cursor` / `restore_cursor` at `oriterm_core/src/grid/navigation/mod.rs:188-203` stores only `Cursor`. The handler-level save at `oriterm_core/src/term/handler/mod.rs:301` saves cursor + charset + origin mode. **Neither saves left/right margin state.** Per DEC VT420 spec, DECSC/DECRC should save/restore the margin state (specifically whether DECLRMM was active and the margin values).
-- [ ] **Solution**: Extend the saved state (either in `Grid::saved_cursor` or in the handler-level save) to include `left_margin`, `right_margin`, and whether `LEFT_RIGHT_MARGIN` mode was set. Match WezTerm's behavior.
-- [ ] **Tests:**
+- [x] **Problem**: `Grid::save_cursor` / `restore_cursor` stored only Cursor. Handler-level save stored cursor + charset + origin mode. Neither saved margin state. Per DEC VT420 spec, DECSC/DECRC should save/restore margin state.
+- [x] **Solution**: Added `saved_margins: Option<(usize, usize)>` and `saved_left_right_margin_mode: Option<bool>` fields to Term (plus inactive variants for alt screen swap). `save_cursor_position` now saves margins + mode 69 flag. `restore_cursor_position` restores them. Alt screen toggle swaps saved margin state. RIS clears all saved margin state.
+- [x] **Tests:**
   - `save_restore_preserves_margin_state()` — set margins, save, change margins, restore, verify original margins
   - `save_restore_preserves_declrmm_mode_flag()` — mode 69 state round-trips
 
 ### 08.5d: Reset paths that must clear margins
 
-- [ ] **Problem**: Multiple reset operations should reset left/right margins to full width. Current code only resets vertical margins (scroll region). The following paths must also reset horizontal margins:
-  - **Disabling mode 69** (`DECRST ?69`) — already in 08.3, but verify margins are actually cleared (not just the flag)
-  - **DECCOLM** (mode 3 toggle) — `oriterm_core/src/term/handler/modes.rs` already resets scroll region; add horizontal margin reset
-  - **RIS (full reset)** — `oriterm_core/src/term/handler/mod.rs` or wherever hard reset lives
-  - **DECSTR (soft terminal reset)** — `CSI ! p` resets terminal state including margins (subsection 08.8b implements DECSTR; its reset path must clear horizontal margins)
-  - **DECALN** — alignment test resets margins
-  - **Resize** — `Grid::resize()` in `oriterm_core/src/grid/resize/mod.rs` should reset margins (margin column values may be invalid after a width change)
-- [ ] **Tests:**
+- [x] **Problem**: Multiple reset operations needed horizontal margin resets in addition to vertical scroll region resets. Verified and fixed all paths:
+  - **Disabling mode 69** (`DECRST ?69`) — already calls `reset_left_right_margins()` (from 08.3). Verified.
+  - **DECCOLM** (mode 3 toggle) — added `reset_left_right_margins()` to `apply_deccolm` in `modes.rs`.
+  - **RIS (full reset)** — `Grid::reset()` already resets margins (lines 249-250 in grid/mod.rs). Verified.
+  - **DECSTR (soft terminal reset)** — DECSTR is not yet implemented (deferred to 08.8b). When implemented, its reset path MUST call `reset_left_right_margins()`.
+  - **DECALN** — added `reset_left_right_margins()` to `decaln_impl` in `esc.rs`.
+  - **Resize** — `Grid::resize()` already resets margins in `finalize_resize` (from 08.4). Verified.
+- [x] **Tests:**
   - `decrst_69_resets_margins_to_full_width()` — disabling DECLRMM clears margins
   - `deccolm_resets_horizontal_margins()` — mode 3 toggle clears margins
   - `ris_resets_horizontal_margins()` — hard reset clears margins
   - `resize_resets_horizontal_margins()` — width change clears margins
-  - `decstr_resets_horizontal_margins()` — soft reset clears margins
+  - `decstr_resets_horizontal_margins()` — deferred to 08.8b (DECSTR not yet implemented)
   - `decaln_resets_horizontal_margins()` — alignment test clears margins
 
-- [ ] **spec_chain test** — `oriterm_core/tests/spec_chain/baseline/declrmm.rs` (new): at least one test driving DECLRMM through parser-dispatch-state apex. **Do NOT use the Renderable apex** — `observe_renderable` in `crates/oriterm_test_support/src/spec_chain/observers/renderable.rs:21-29` is currently a stub that unconditionally returns pass. Using it would give a false green rung 4. Use `ApexLayer::State` until the renderable observer has concrete assertions.
-- [ ] Update `catalog/dec-private-modes.md` row for DECLRMM (mode 69) to `verified`.
+- [x] **spec_chain test** — `oriterm_core/tests/spec_chain/baseline/declrmm.rs` wires DECLRMM through parser → dispatch → state. `declrmm_cuf_clamps_to_right_margin` drives `\x1b[?69h\x1b[6;41s\x1b[1;10H` setup + `\x1b[100C` test bytes and asserts cursor clamps to col 40 (right_margin). Fixed `RecordingHandler` in the spec_chain test harness — it was missing `decslrm_or_save_cursor`, `scroll_left`, and `scroll_right` delegations, causing these to fall through to the default Handler trait impls.
+- [x] Update `catalog/dec-private-modes.md` row for DECLRMM (mode 69) to `verified`.
 - [ ] **TPR checkpoint** — `/tpr-review` covering 08.3-08.5 (DECLRMM work). This is the largest implementation block and has the highest interaction surface.
-- [ ] **Validation**: tests pass; existing teseq cursor tests still pass; no alloc regression.
+- [x] **Validation**: tests pass; `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` all green (debug + release + Windows cross-compile); no alloc regression.
 
 ---
 

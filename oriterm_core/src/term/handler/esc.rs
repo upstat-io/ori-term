@@ -37,6 +37,10 @@ impl<S: EffectSink> Term<S> {
         self.saved_origin_mode = None;
         self.inactive_saved_charset = None;
         self.inactive_saved_origin_mode = None;
+        self.saved_margins = None;
+        self.saved_left_right_margin_mode = None;
+        self.inactive_saved_margins = None;
+        self.inactive_saved_left_right_margin_mode = None;
         self.palette = crate::color::Palette::for_theme(self.theme);
         self.cursor_shape = crate::grid::CursorShape::default();
         self.title.clear();
@@ -77,8 +81,9 @@ impl<S: EffectSink> Term<S> {
         let lines = grid.lines();
         let cols = grid.cols();
 
-        // Reset scroll region to full screen.
+        // Reset scroll region and horizontal margins to full screen.
         grid.set_scroll_region(1, None);
+        grid.reset_left_right_margins();
 
         // Fill every visible cell with 'E' and default attributes.
         let template = Cell::default();

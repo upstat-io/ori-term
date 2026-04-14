@@ -91,6 +91,11 @@ impl<S: EffectSink> Term<S> {
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
         );
+        std::mem::swap(&mut self.saved_margins, &mut self.inactive_saved_margins);
+        std::mem::swap(
+            &mut self.saved_left_right_margin_mode,
+            &mut self.inactive_saved_left_right_margin_mode,
+        );
         self.grid_mut().dirty_mut().mark_all();
     }
 }

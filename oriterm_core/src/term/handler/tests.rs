@@ -5885,3 +5885,204 @@ fn mode_69_decrqm_reports_correctly() {
         .expect("DECRQM should produce a PtyEffect::Write after DECSET");
     assert_eq!(response, "\x1b[?69;1$y", "mode 69 should report set (1)");
 }
+
+// --- CSI s / DECSLRM ambiguity (§08.5b) ---
+
+#[test]
+fn csi_s_zero_params_mode_69_off_saves_cursor() {
+    let mut t = term();
+    // Move cursor to (5, 10).
+    feed(&mut t, b"\x1b[6;11H");
+    assert_eq!(t.grid().cursor().line(), 5);
+    assert_eq!(t.grid().cursor().col(), Column(10));
+    // CSI s with no params, mode 69 OFF: should save cursor.
+    feed(&mut t, b"\x1b[s");
+    // Move cursor elsewhere.
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 0);
+    // Restore cursor: should go back to (5, 10).
+    feed(&mut t, b"\x1b[u");
+    assert_eq!(t.grid().cursor().line(), 5);
+    assert_eq!(t.grid().cursor().col(), Column(10));
+}
+
+#[test]
+fn csi_s_zero_params_mode_69_on_sets_default_margins() {
+    let mut t = term();
+    // Enable mode 69 (DECLRMM).
+    feed(&mut t, b"\x1b[?69h");
+    // Set non-default margins first.
+    t.grid_mut().set_left_right_margins(5, 20);
+    assert_eq!(t.grid().left_right_margins(), (5, 20));
+    // CSI s with no params, mode 69 ON: should reset margins to full width.
+    feed(&mut t, b"\x1b[s");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI s with mode 69 ON should reset margins to full width"
+    );
+}
+
+#[test]
+fn csi_s_with_params_always_decslrm() {
+    let mut t = term();
+    // Enable mode 69.
+    feed(&mut t, b"\x1b[?69h");
+    // CSI 5 ; 20 s — should set margins to (4, 19) in 0-based.
+    feed(&mut t, b"\x1b[5;20s");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (4, 19),
+        "CSI 5;20 s with mode 69 ON should set margins"
+    );
+}
+
+#[test]
+fn csi_s_with_params_mode_69_off_is_noop() {
+    let mut t = term();
+    // Mode 69 OFF (default).
+    // Move cursor to (3, 7) and save it explicitly first.
+    feed(&mut t, b"\x1b[4;8H");
+    feed(&mut t, b"\x1b7"); // DECSC saves cursor.
+    assert_eq!(t.grid().cursor().line(), 3);
+    // Now try CSI 5 ; 20 s — with params but mode 69 OFF: should be no-op.
+    feed(&mut t, b"\x1b[5;20s");
+    // Margins should stay at full width.
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI 5;20 s with mode 69 OFF should be no-op"
+    );
+    // Also verify cursor was NOT saved by this — move cursor, restore,
+    // and check we get back the DECSC save, not a CSI s save.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b8"); // DECRC restores.
+    assert_eq!(
+        t.grid().cursor().line(),
+        3,
+        "cursor should restore to DECSC save, not CSI s"
+    );
+}
+
+// --- Save/restore margin state (§08.5c) ---
+
+#[test]
+fn save_restore_preserves_margin_state() {
+    let mut t = term();
+    // Enable mode 69 and set non-default margins.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[5;40s"); // DECSLRM: left=5, right=40 → (4, 39) 0-based.
+    assert_eq!(t.grid().left_right_margins(), (4, 39));
+    // DECSC: save cursor (includes margins).
+    feed(&mut t, b"\x1b7");
+    // Change margins.
+    feed(&mut t, b"\x1b[10;60s"); // left=10, right=60 → (9, 59).
+    assert_eq!(t.grid().left_right_margins(), (9, 59));
+    // DECRC: restore cursor (should restore margins too).
+    feed(&mut t, b"\x1b8");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (4, 39),
+        "DECRC should restore saved margins"
+    );
+}
+
+#[test]
+fn save_restore_preserves_declrmm_mode_flag() {
+    use crate::term::TermMode;
+    let mut t = term();
+    // Enable mode 69.
+    feed(&mut t, b"\x1b[?69h");
+    assert!(t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    // DECSC: save (mode 69 is on).
+    feed(&mut t, b"\x1b7");
+    // Disable mode 69.
+    feed(&mut t, b"\x1b[?69l");
+    assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    // DECRC: restore — mode 69 should be re-enabled.
+    feed(&mut t, b"\x1b8");
+    assert!(
+        t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECRC should restore DECLRMM mode flag"
+    );
+}
+
+// --- Reset paths that clear margins (§08.5d) ---
+
+#[test]
+fn decrst_69_resets_margins_to_full_width() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // DECRST ?69: disable DECLRMM → margins must reset to full width.
+    feed(&mut t, b"\x1b[?69l");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "DECRST 69 must reset margins to full width"
+    );
+}
+
+#[test]
+fn deccolm_resets_horizontal_margins() {
+    let mut t = term();
+    // Enable mode 40 (allow DECCOLM) first.
+    feed(&mut t, b"\x1b[?40h");
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // DECSET ?3 (132-column mode) triggers DECCOLM reset.
+    feed(&mut t, b"\x1b[?3h");
+    let cols = t.grid().cols();
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, cols - 1),
+        "DECCOLM must reset horizontal margins"
+    );
+}
+
+#[test]
+fn ris_resets_horizontal_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // RIS (ESC c): full terminal reset.
+    feed(&mut t, b"\x1bc");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "RIS must reset horizontal margins"
+    );
+}
+
+#[test]
+fn resize_resets_horizontal_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // Resize the grid.
+    t.grid_mut().resize(24, 120, false);
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, 119),
+        "resize must reset horizontal margins"
+    );
+}
+
+#[test]
+fn decaln_resets_horizontal_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // DECALN (ESC # 8): alignment test.
+    feed(&mut t, b"\x1b#8");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "DECALN must reset horizontal margins"
+    );
+}

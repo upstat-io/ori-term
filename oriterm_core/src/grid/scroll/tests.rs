@@ -1094,3 +1094,191 @@ fn scroll_region_at_screen_edges() {
     grid.set_scroll_region(20, Some(24));
     assert_eq!(grid.scroll_region, 19..24);
 }
+
+// --- IL/DL with DECLRMM horizontal margins ---
+
+/// Helper: fill each row with a distinct ASCII char ('0' for row 0, etc.)
+fn grid_with_row_chars(lines: usize, cols: usize) -> Grid {
+    let mut grid = Grid::new(lines, cols);
+    for line in 0..lines {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        let ch = (b'0' + line as u8) as char;
+        for _ in 0..cols {
+            grid.put_char(ch);
+        }
+    }
+    // Reset cursor to top-left for test setup.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid
+}
+
+#[test]
+fn il_with_margins_scrolls_only_margin_band() {
+    let mut grid = grid_with_row_chars(5, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_lines(1);
+
+    // Row 0: completely unchanged (above cursor).
+    for col in 0..10 {
+        assert_eq!(grid[Line(0)][Column(col)].ch, '0', "row 0 col {col}");
+    }
+    // Row 1: margin band [2..7] blanked, outside preserved as '1'.
+    assert_eq!(grid[Line(1)][Column(0)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(1)].ch, '1');
+    for col in 2..=7 {
+        assert!(
+            grid[Line(1)][Column(col)].is_empty(),
+            "row 1 col {col} should be blank"
+        );
+    }
+    assert_eq!(grid[Line(1)][Column(8)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(9)].ch, '1');
+    // Row 2: margin band has '1' (from old row 1), outside stays '2'.
+    assert_eq!(grid[Line(2)][Column(0)].ch, '2');
+    assert_eq!(grid[Line(2)][Column(1)].ch, '2');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(2)][Column(col)].ch, '1', "row 2 col {col}");
+    }
+    assert_eq!(grid[Line(2)][Column(8)].ch, '2');
+    assert_eq!(grid[Line(2)][Column(9)].ch, '2');
+    // Row 3: margin band has '2' (from old row 2), outside stays '3'.
+    assert_eq!(grid[Line(3)][Column(0)].ch, '3');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(3)][Column(col)].ch, '2', "row 3 col {col}");
+    }
+    assert_eq!(grid[Line(3)][Column(9)].ch, '3');
+    // Row 4: margin band has '3' (from old row 3), outside stays '4'.
+    assert_eq!(grid[Line(4)][Column(0)].ch, '4');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(4)][Column(col)].ch, '3', "row 4 col {col}");
+    }
+    assert_eq!(grid[Line(4)][Column(9)].ch, '4');
+}
+
+#[test]
+fn dl_with_margins_scrolls_only_margin_band() {
+    let mut grid = grid_with_row_chars(5, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_lines(1);
+
+    // Row 0: unchanged.
+    for col in 0..10 {
+        assert_eq!(grid[Line(0)][Column(col)].ch, '0', "row 0 col {col}");
+    }
+    // Row 1: margin band has '2' (from old row 2), outside stays '1'.
+    assert_eq!(grid[Line(1)][Column(0)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(1)].ch, '1');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(1)][Column(col)].ch, '2', "row 1 col {col}");
+    }
+    assert_eq!(grid[Line(1)][Column(8)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(9)].ch, '1');
+    // Row 2: margin band has '3' (from old row 3), outside stays '2'.
+    assert_eq!(grid[Line(2)][Column(0)].ch, '2');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(2)][Column(col)].ch, '3', "row 2 col {col}");
+    }
+    assert_eq!(grid[Line(2)][Column(9)].ch, '2');
+    // Row 3: margin band has '4' (from old row 3), outside stays '3'.
+    assert_eq!(grid[Line(3)][Column(0)].ch, '3');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(3)][Column(col)].ch, '4', "row 3 col {col}");
+    }
+    assert_eq!(grid[Line(3)][Column(9)].ch, '3');
+    // Row 4: margin band blanked, outside stays '4'.
+    assert_eq!(grid[Line(4)][Column(0)].ch, '4');
+    for col in 2..=7 {
+        assert!(
+            grid[Line(4)][Column(col)].is_empty(),
+            "row 4 col {col} should be blank"
+        );
+    }
+    assert_eq!(grid[Line(4)][Column(9)].ch, '4');
+}
+
+// --- SL/SR with DECLRMM horizontal margins ---
+
+/// Helper: fill each row with column-index chars ('0' at col 0, '1' at col 1, etc.)
+fn grid_with_col_chars(lines: usize, cols: usize) -> Grid {
+    let mut grid = Grid::new(lines, cols);
+    for line in 0..lines {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        for col in 0..cols {
+            let ch = (b'0' + col as u8) as char;
+            grid.put_char(ch);
+        }
+    }
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid
+}
+
+#[test]
+fn sl_within_margins_shifts_only_margin_band() {
+    // 3 rows x 10 cols. Each row: '0123456789'.
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.scroll_left(2);
+
+    // All rows should show the same pattern:
+    // cols 0-1 unchanged, margin band shifted left by 2, cols 8-9 unchanged.
+    for line in 0..3 {
+        // Outside left margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0', "line {line} col 0");
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1', "line {line} col 1");
+        // Margin band shifted left by 2: col 2 gets old col 4, col 3 gets old col 5, etc.
+        assert_eq!(grid[Line(line)][Column(2)].ch, '4', "line {line} col 2");
+        assert_eq!(grid[Line(line)][Column(3)].ch, '5', "line {line} col 3");
+        assert_eq!(grid[Line(line)][Column(4)].ch, '6', "line {line} col 4");
+        assert_eq!(grid[Line(line)][Column(5)].ch, '7', "line {line} col 5");
+        // Rightmost 2 cells in band are blanked.
+        assert!(
+            grid[Line(line)][Column(6)].is_empty(),
+            "line {line} col 6 should be blank"
+        );
+        assert!(
+            grid[Line(line)][Column(7)].is_empty(),
+            "line {line} col 7 should be blank"
+        );
+        // Outside right margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8', "line {line} col 8");
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9', "line {line} col 9");
+    }
+}
+
+#[test]
+fn sr_within_margins_shifts_only_margin_band() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.scroll_right(2);
+
+    for line in 0..3 {
+        // Outside left margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0', "line {line} col 0");
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1', "line {line} col 1");
+        // Leftmost 2 cells in band are blanked.
+        assert!(
+            grid[Line(line)][Column(2)].is_empty(),
+            "line {line} col 2 should be blank"
+        );
+        assert!(
+            grid[Line(line)][Column(3)].is_empty(),
+            "line {line} col 3 should be blank"
+        );
+        // Margin band shifted right by 2: col 4 gets old col 2, col 5 gets old col 3, etc.
+        assert_eq!(grid[Line(line)][Column(4)].ch, '2', "line {line} col 4");
+        assert_eq!(grid[Line(line)][Column(5)].ch, '3', "line {line} col 5");
+        assert_eq!(grid[Line(line)][Column(6)].ch, '4', "line {line} col 6");
+        assert_eq!(grid[Line(line)][Column(7)].ch, '5', "line {line} col 7");
+        // Outside right margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8', "line {line} col 8");
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9', "line {line} col 9");
+    }
+}
