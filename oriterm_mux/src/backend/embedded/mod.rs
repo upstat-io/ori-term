@@ -150,7 +150,7 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
-    fn pane_mode(&self, pane_id: PaneId) -> Option<u32> {
+    fn pane_mode(&self, pane_id: PaneId) -> Option<u64> {
         self.panes.get(&pane_id).map(Pane::mode)
     }
 

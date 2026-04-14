@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "08.3"
     title: "DECLRMM mode plumbing (VTE types + TermMode + mode reporting)"
-    status: not-started
+    status: complete
   - id: "08.4"
     title: "DECLRMM grid enforcement (margin fields + cursor movement)"
     status: not-started
@@ -188,17 +188,17 @@ Before the grid can enforce left/right margins, the mode plumbing must exist end
 
 **Why a separate subsection from grid enforcement:** Mode plumbing is a prerequisite for grid enforcement. Attempting both in one subsection creates an untestable intermediate state — the mode flag would exist but nothing would observe it, or the grid fields would exist but the mode couldn't be toggled. Splitting lets each subsection be independently testable.
 
-- [ ] **VTE type layer** — Add `LeftRightMargin = 69` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs:226`. Add `69 => Self::Named(NamedPrivateMode::LeftRightMargin)` mapping in `PrivateMode::new()` at `types.rs:177-204`.
-- [ ] **TermMode flag** — Add `const LEFT_RIGHT_MARGIN = 1 << 32` to `TermMode` bitflags in `oriterm_core/src/term/mode/mod.rs:14`. All 32 bits of the current `u32` representation are fully occupied by real mode flags (bits 0-31). Computed unions like `ANY_MOUSE` are ORs of existing bits — they do NOT occupy reclaimable bit positions. The ONLY viable approach is to widen `TermMode` from `u32` to `u64` (change `bitflags! { pub struct TermMode: u32` to `u64`). This is a mechanical change — all downstream code uses the bitflags API, not raw bit manipulation.
-- [ ] **named_private_mode_flag** — Add `NamedPrivateMode::LeftRightMargin => Some(TermMode::LEFT_RIGHT_MARGIN)` mapping in `oriterm_core/src/term/handler/helpers.rs:22-51`. This is the exhaustive match — adding the variant without updating it is a compile error.
-- [ ] **DECSET/DECRST handler** — Add `NamedPrivateMode::LeftRightMargin` arms to the `set_private_mode` and `unset_private_mode` match blocks in `oriterm_core/src/term/handler/modes.rs`. Setting mode 69 inserts the flag; unsetting removes it AND resets left/right margins to full width (see 08.5 for the reset path details).
-- [ ] **Mode reporting** — Verify `status_report_private_mode` in `oriterm_core/src/term/handler/status.rs:108` correctly reports mode 69 state via the existing `named_private_mode_flag` lookup (should work automatically once the flag mapping exists).
-- [ ] **Tests — TDD, failing first:**
+- [x] **VTE type layer** — Add `LeftRightMargin = 69` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs:226`. Add `69 => Self::Named(NamedPrivateMode::LeftRightMargin)` mapping in `PrivateMode::new()` at `types.rs:177-204`.
+- [x] **TermMode flag** — Add `const LEFT_RIGHT_MARGIN = 1 << 32` to `TermMode` bitflags in `oriterm_core/src/term/mode/mod.rs:14`. All 32 bits of the current `u32` representation are fully occupied by real mode flags (bits 0-31). Computed unions like `ANY_MOUSE` are ORs of existing bits — they do NOT occupy reclaimable bit positions. The ONLY viable approach is to widen `TermMode` from `u32` to `u64` (change `bitflags! { pub struct TermMode: u32` to `u64`). This is a mechanical change — all downstream code uses the bitflags API, not raw bit manipulation.
+- [x] **named_private_mode_flag** — Add `NamedPrivateMode::LeftRightMargin => Some(TermMode::LEFT_RIGHT_MARGIN)` mapping in `oriterm_core/src/term/handler/helpers.rs:22-51`. This is the exhaustive match — adding the variant without updating it is a compile error.
+- [x] **DECSET/DECRST handler** — Add `NamedPrivateMode::LeftRightMargin` arms to the `set_private_mode` and `unset_private_mode` match blocks in `oriterm_core/src/term/handler/modes.rs`. Setting mode 69 inserts the flag; unsetting removes it AND resets left/right margins to full width (see 08.5 for the reset path details).
+- [x] **Mode reporting** — Verify `status_report_private_mode` in `oriterm_core/src/term/handler/status.rs:108` correctly reports mode 69 state via the existing `named_private_mode_flag` lookup (should work automatically once the flag mapping exists).
+- [x] **Tests — TDD, failing first:**
   - `mode_69_set_inserts_left_right_margin_flag()` — feed `\x1b[?69h`, assert `TermMode::LEFT_RIGHT_MARGIN` is set
   - `mode_69_reset_removes_left_right_margin_flag()` — feed `\x1b[?69l`, assert flag removed
   - `mode_69_decrqm_reports_correctly()` — feed `\x1b[?69$p`, assert reply contains mode-set/reset value
   - `mode_69_survives_named_private_mode_flag_exhaustive_test()` — the existing exhaustive test in `oriterm_core/src/term/handler/tests.rs:5125` must pass with the new variant
-- [ ] **Validation**: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green. The exhaustive mode-flag sync test passes.
+- [x] **Validation**: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` green. The exhaustive mode-flag sync test passes.
 
 ---
 

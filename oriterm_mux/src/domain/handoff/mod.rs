@@ -16,7 +16,7 @@
 
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::mpsc;
 
 use oriterm_core::effect::LegacyEventSink;
@@ -98,7 +98,7 @@ pub fn adopt_pane(
 
     // 2. Shared atomics — same shape as LocalDomain::spawn_pane.
     let io_grid_dirty = Arc::new(AtomicBool::new(false));
-    let mode_cache = Arc::new(AtomicU32::new(oriterm_core::TermMode::default().bits()));
+    let mode_cache = Arc::new(AtomicU64::new(oriterm_core::TermMode::default().bits()));
     let shutdown = Arc::new(AtomicBool::new(false));
     let io_selection_dirty = Arc::new(AtomicBool::new(false));
     let write_stalled = Arc::new(AtomicBool::new(false));

@@ -146,11 +146,13 @@ pub trait MuxBackend {
 
     // -- Mode query --
 
-    /// Terminal mode bits for a pane (raw `u32`).
+    /// Terminal mode bits for a pane (raw `u64`).
     ///
     /// In embedded mode, reads the lock-free atomic cache.
-    /// In daemon mode, reads from the cached snapshot.
-    fn pane_mode(&self, pane_id: PaneId) -> Option<u32>;
+    /// In daemon mode, reads from the cached snapshot. Widened to
+    /// `u64` in plan `plans/spec-conformance/section-08` §08.3 for
+    /// DECLRMM (mode 69 = bit 32).
+    fn pane_mode(&self, pane_id: PaneId) -> Option<u64>;
 
     // -- Theme + palette + cursor operations --
 

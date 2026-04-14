@@ -412,7 +412,7 @@ macro_rules! muxbackend_contract_tests {
         fn contract_mode_query() {
             let mut ctx = $factory();
             let pid = ctx.pane_id;
-            let bracketed_paste_bit = 1u32 << 13;
+            let bracketed_paste_bit = 1u64 << 13;
 
             // Use printf to emit the DECSET sequence through the shell's
             // stdout, ensuring the terminal emulator processes it.

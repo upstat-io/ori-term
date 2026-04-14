@@ -107,7 +107,7 @@ impl MuxBackend for MuxClient {
         self.dirty_panes.insert(pane_id);
     }
 
-    fn pane_mode(&self, pane_id: PaneId) -> Option<u32> {
+    fn pane_mode(&self, pane_id: PaneId) -> Option<u64> {
         self.pane_snapshots.get(&pane_id).map(|s| s.modes)
     }
 

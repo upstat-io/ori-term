@@ -47,6 +47,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::ReverseVideo => Some(TermMode::REVERSE_VIDEO),
         NamedPrivateMode::EnableMode3 => Some(TermMode::ENABLE_MODE_3),
         NamedPrivateMode::Win32Input => Some(TermMode::WIN32_INPUT),
+        NamedPrivateMode::LeftRightMargin => Some(TermMode::LEFT_RIGHT_MARGIN),
         NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }
