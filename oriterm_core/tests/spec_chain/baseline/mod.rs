@@ -10,6 +10,10 @@
 //! - `tack_section_06` — converts the `t) tools` sub-menu scenarios
 //!   (status reports, SGR modes, character sets, ENQ/ACK) into
 //!   protocol-level verification chain tests.
+//! - `declrmm` — DECLRMM (mode 69) spec_chain coverage, driving the
+//!   mode flag + margin set + CUF movement through parser → dispatch
+//!   → state to verify cursor clamping at `right_margin`.
 
+mod declrmm;
 mod tack_section_05;
 mod tack_section_06;

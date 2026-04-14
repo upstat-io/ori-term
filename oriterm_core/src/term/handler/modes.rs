@@ -212,8 +212,9 @@ impl<S: EffectSink> Term<S> {
             self.grid_mut().resize(lines, new_cols, false);
         }
 
-        // Reset scroll region first so goto_origin_aware uses the full screen.
+        // Reset scroll/margin regions so goto_origin_aware uses the full screen.
         self.grid_mut().set_scroll_region(1, None);
+        self.grid_mut().reset_left_right_margins();
         // Clear screen and images (matching clear_screen handler).
         self.selection_dirty = true;
         self.grid_mut()

@@ -183,6 +183,8 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(set_horizontal_tabstop);
     delegate_other!(scroll_up, rows: usize);
     delegate_other!(scroll_down, rows: usize);
+    delegate_other!(scroll_left, cols: usize);
+    delegate_other!(scroll_right, cols: usize);
     delegate_other!(insert_blank_lines, count: usize);
     delegate_other!(delete_lines, count: usize);
     delegate_other!(erase_chars, count: usize);
@@ -190,6 +192,7 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(move_backward_tabs, count: u16);
     delegate_other!(move_forward_tabs, count: u16);
     delegate_other!(save_cursor_position);
+    delegate_other!(decslrm_or_save_cursor, has_params: bool, left: u16, right: u16);
     delegate_other!(restore_cursor_position);
     delegate_other!(clear_line, mode: vte::ansi::LineClearMode);
     delegate_other!(clear_screen, mode: vte::ansi::ClearMode);
