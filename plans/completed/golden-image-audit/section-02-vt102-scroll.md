@@ -92,24 +92,16 @@ The existing `assert_vt102_screen_structure()` function has match arms only for 
 - [x] `[TPR-02-004][low]` `oriterm_core/tests/vttest.rs:1` — Section 02 expands the VTTest
   integration test file to 956 lines even though the repo's hard file-size limit excludes only
   sibling `tests.rs` files, and this section explicitly acknowledges the file is not exempt.
-  Evidence: Fresh `wc -l` shows `oriterm_core/tests/vttest.rs` at 956 lines. `CLAUDE.md` and
   `.claude/rules/code-hygiene.md` set a hard 500-line limit for non-`tests.rs` files, and this
   section's hygiene note says the file is "not exempt from the 500-line limit" while still
   accepting more code in it.
-  Impact: The section is marked complete while carrying an admitted standards violation, leaving
   future VTTest work concentrated in an oversized monolith and normalizing further rule bypass.
   Resolved: Accepted finding. Tracked as bug in `plans/bug-tracker/` on 2026-04-03. Plan is archived; fix will happen via bug tracker.
 - [x] `[TPR-02-001][medium]` `oriterm_core/tests/vttest.rs:793-842` — Structural assertions only cover screens 2-5; second-round screens 08-12 and regression-guard screens 13-14 fall through `_ => {}` with no semantic checks. A future breakage in the fixed path can be re-approved by snapshot churn alone.
-  Evidence: `assert_vt102_screen_structure()` match arms end at screen 5; screens 8-14 hit catch-all.
-  Impact: Defeats the purpose of the golden image audit — broken rendering can pass tests silently.
   Resolved: All 14 screens now have structural assertions. Implemented on 2026-04-02.
 - [x] `[TPR-02-002][medium]` `plans/golden-image-audit/section-02-vt102-scroll.md` — Plan metadata says Section 02 is `not-started` and describes an unresolved scroll-region IL/DL bug, but code already has DECCOLM/Mode-40 fix with passing regression test `vttest_deccolm_resizes_to_132_with_mode_40`. Plan drift will mislead future resume/review work.
-  Evidence: Section frontmatter `status: not-started`; code has the fix at `oriterm_core/src/term/handler/modes.rs`.
-  Impact: Resume tooling will re-diagnose an already-fixed issue or duplicate work.
   Resolved: Plan reframed on 2026-04-02. Section 02.1 marked complete with root cause documented. 02.2 (fix work) removed as OBE. Frontmatter updated to `in-progress`.
 - [x] `[TPR-02-003][medium]` `plans/golden-image-audit/index.md`, `plans/golden-image-audit/00-overview.md`, `plans/golden-image-audit/section-01-decscnm.md`, `plans/golden-image-audit/section-02-vt102-scroll.md` — The follow-up plan sync is still incomplete. The index and overview still advertise Section 02 as `Not Started` and still describe an IL/DL bug in `grid/scroll/mod.rs`, Section 01's body still says `Status: Not Started` and "DECSCNM is completely unimplemented", and this section's `Remaining work` paragraph still claims screens 1 and 8-14 have no assertions even though this commit added them.
-  Evidence: `index.md` lines 37-45, `00-overview.md` lines 4 and 96-130, `section-01-decscnm.md` lines 36-39, `section-02-vt102-scroll.md` lines 35-37.
-  Impact: Resume/review tooling still gets contradictory scope and status data, so the section cannot truthfully claim TPR-02-002 is fully resolved yet.
   Resolved: All stale text updated on 2026-04-02. Section 01 body says Complete, Section 02 index/overview say In Progress, Known Bugs table shows Fixed, Remaining work paragraph updated.
 
 ---
