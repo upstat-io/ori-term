@@ -42,28 +42,55 @@ impl Grid {
         self.move_cursor_line((line + count).min(bottom));
     }
 
-    /// CUF: move cursor right by `count` columns, clamped to the last column.
+    /// CUF: move cursor right by `count` columns, clamped to the right
+    /// margin when cursor is within the DECLRMM band, or to the last
+    /// column otherwise.
     pub fn move_forward(&mut self, count: usize) {
         let col = self.cursor.col().0;
-        let last = self.cols - 1;
-        self.move_cursor_col(Column((col + count).min(last)));
+        let bound = if self.cursor_in_margin_band() {
+            self.right_margin
+        } else {
+            self.cols - 1
+        };
+        self.move_cursor_col(Column((col + count).min(bound)));
     }
 
-    /// CUB: move cursor left by `count` columns, clamped to column 0.
+    /// CUB: move cursor left by `count` columns, clamped to the left
+    /// margin when cursor is within the DECLRMM band, or to column 0
+    /// otherwise.
     pub fn move_backward(&mut self, count: usize) {
         let col = self.cursor.col().0;
-        self.move_cursor_col(Column(col.saturating_sub(count)));
+        let bound = if self.cursor_in_margin_band() {
+            self.left_margin
+        } else {
+            0
+        };
+        self.move_cursor_col(Column(col.saturating_sub(count).max(bound)));
     }
 
     /// CUP: set cursor to absolute `(line, col)`, clamped to grid bounds.
+    ///
+    /// When cursor is within the DECLRMM margin band, the column is
+    /// clamped to `[left_margin, right_margin]`.
     pub fn move_to(&mut self, line: usize, col: Column) {
         self.move_cursor_line(line.min(self.lines - 1));
-        self.move_cursor_col(Column(col.0.min(self.cols - 1)));
+        let max_col = if self.cursor_in_margin_band() {
+            self.right_margin
+        } else {
+            self.cols - 1
+        };
+        self.move_cursor_col(Column(col.0.min(max_col)));
     }
 
-    /// CHA: set cursor column to `col`, clamped to the last column.
+    /// CHA: set cursor column to `col`, clamped to `[left_margin,
+    /// right_margin]` when cursor is within the DECLRMM band.
     pub fn move_to_column(&mut self, col: Column) {
-        self.move_cursor_col(Column(col.0.min(self.cols - 1)));
+        let (lo, hi) = if self.cursor_in_margin_band() {
+            (self.left_margin, self.right_margin)
+        } else {
+            (0, self.cols - 1)
+        };
+        self.move_cursor_col(Column(col.0.clamp(lo, hi)));
     }
 
     /// VPA: set cursor line to `line`, clamped to the last line.
@@ -71,26 +98,42 @@ impl Grid {
         self.move_cursor_line(line.min(self.lines - 1));
     }
 
-    /// CR: move cursor to column 0.
+    /// CR: move cursor to `left_margin` when within the DECLRMM margin
+    /// band, or to column 0 otherwise.
     pub fn carriage_return(&mut self) {
-        self.move_cursor_col(Column(0));
+        let target = if self.cursor_in_margin_band() {
+            self.left_margin
+        } else {
+            0
+        };
+        self.move_cursor_col(Column(target));
     }
 
     /// BS: move cursor left by one column.
     ///
     /// If the cursor is in wrap-pending state (col >= cols), snaps to the
-    /// last column. Otherwise moves left by one, clamped at column 0.
+    /// last column. Otherwise moves left by one, clamped at `left_margin`
+    /// when within the DECLRMM band or column 0 otherwise.
     pub fn backspace(&mut self) {
         let col = self.cursor.col().0;
         let cols = self.cols;
 
         if col >= cols {
-            // Wrap-pending: snap to last column.
-            self.move_cursor_col(Column(cols - 1));
-        } else if col > 0 {
-            self.move_cursor_col(Column(col - 1));
+            let snap = if self.cursor_in_margin_band() {
+                self.right_margin
+            } else {
+                cols - 1
+            };
+            self.move_cursor_col(Column(snap));
         } else {
-            // Already at column 0: no-op.
+            let bound = if self.cursor_in_margin_band() {
+                self.left_margin
+            } else {
+                0
+            };
+            if col > bound {
+                self.move_cursor_col(Column(col - 1));
+            }
         }
     }
 
@@ -128,37 +171,44 @@ impl Grid {
         self.linefeed();
     }
 
-    /// HT: advance cursor to the next tab stop, or end of line.
+    /// HT: advance cursor to the next tab stop, or the right bound.
+    ///
+    /// When cursor is within the DECLRMM margin band, tab stops beyond
+    /// `right_margin` are unreachable; HT stops at `right_margin`.
     pub fn tab(&mut self) {
         let col = self.cursor.col().0;
-        let last = self.cols - 1;
+        let in_band = self.cursor_in_margin_band();
+        let right_bound = if in_band {
+            self.right_margin
+        } else {
+            self.cols - 1
+        };
 
-        // Search forward for the next tab stop.
-        for c in (col + 1)..self.cols {
-            if self.tab_stops[c] {
+        for c in (col + 1)..=right_bound {
+            if c < self.cols && self.tab_stops[c] {
                 self.move_cursor_col(Column(c));
                 return;
             }
         }
-        // No tab stop found: move to last column.
-        self.move_cursor_col(Column(last));
+        self.move_cursor_col(Column(right_bound));
     }
 
-    /// CBT: move cursor to the previous tab stop, or column 0.
+    /// CBT: move cursor to the previous tab stop, or the left bound.
+    ///
+    /// When cursor is within the DECLRMM margin band, tab stops before
+    /// `left_margin` are unreachable; CBT stops at `left_margin`.
     pub fn tab_backward(&mut self) {
-        // Clamp to cols so wrap-pending (col == cols) or any out-of-range
-        // value never indexes past the tab_stops array.
         let col = self.cursor.col().0.min(self.cols);
+        let in_band = self.cursor_in_margin_band();
+        let left_bound = if in_band { self.left_margin } else { 0 };
 
-        // Search backward for the previous tab stop.
-        for c in (0..col).rev() {
+        for c in (left_bound..col).rev() {
             if self.tab_stops[c] {
                 self.move_cursor_col(Column(c));
                 return;
             }
         }
-        // No tab stop found: move to column 0.
-        self.move_cursor_col(Column(0));
+        self.move_cursor_col(Column(left_bound));
     }
 
     /// HTS: set a tab stop at the current cursor column.
