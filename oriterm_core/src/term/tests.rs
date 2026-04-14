@@ -2499,7 +2499,8 @@ fn term_resize_remaps_image_placement_through_reflow() {
     );
 }
 
-/// Regression guard: removing the image-cache swap from `toggle_alt_common`.
+/// Regression guard: image-cache field isolation after alt-screen toggle.
+/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.5
 ///
 /// After removing the image-cache swap from `toggle_alt_common`, the
 /// `image_cache` and `alt_image_cache` fields hold their semantic
@@ -2557,7 +2558,8 @@ fn term_resize_routes_each_grid_through_its_own_image_cache() {
 }
 
 /// Isolation check: primary-mode and alt-mode placements do NOT leak
-/// into each other's cache. Regression guard: the old cache-swap
+/// into each other's cache. Regression guard for the image-cache
+/// field isolation fix (spec-conformance §07.5): the old cache-swap
 /// allowed alt-mode placements to appear in primary after swap back.
 #[test]
 fn alt_image_cache_isolation_check() {

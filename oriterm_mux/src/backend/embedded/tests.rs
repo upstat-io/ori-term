@@ -322,9 +322,14 @@ fn new_window_pane_cell_metrics_reach_io_thread() {
     let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
     // Wait for the initial shell-startup snapshot burst to settle.
+    // Crucially, consume the initial snapshot via `refresh_pane_snapshot`
+    // so `has_new()` returns false. Without this, `poll_events()` would
+    // re-mark the pane dirty from the unconsumed spawn snapshot, making
+    // the post-command dirty assertion a false positive.
     let settle = Instant::now() + Duration::from_secs(2);
     while Instant::now() < settle {
         mux.poll_events();
+        mux.refresh_pane_snapshot(pane_id);
         mux.clear_pane_snapshot_dirty(pane_id);
         std::thread::sleep(Duration::from_millis(50));
     }
