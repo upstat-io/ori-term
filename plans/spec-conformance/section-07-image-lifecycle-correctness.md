@@ -488,6 +488,12 @@ Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, 
 - [x] `[TPR-07-002-gemini][low]` `oriterm/src/app/cell_metrics/tests.rs:62` — Add missing provenance link to font_size_change_without_grid_change_still_fires_broadcast.
   Resolved: Same fix as [TPR-07-001-codex] (agreement).
 
+**Round 15 (re-review after round 14 fixes):**
+- [x] `[TPR-07-001-codex][low]` `oriterm_core/src/term/mod.rs:1` — Split term/mod.rs below the hard 500-line source-file limit.
+  Resolved: Fixed on 2026-04-14. Extracted `resize()` method into `term/resize.rs` (85 lines). `term/mod.rs` is now 452 lines. Removed unused `StableRowIndex` import from mod.rs and `TermMode` from resize.rs.
+
+Round 15 clean-pass gate: Gemini returned `"no_findings": true` on round 14. Codex surfaced only a BLOAT finding (523 lines → 452 after split). All findings resolved.
+
 ---
 
 ## 07.N Completion Checklist
