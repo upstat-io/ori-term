@@ -38,6 +38,24 @@ impl App {
         // Resize panes in the moved tab to fit the destination window.
         self.resize_all_panes();
 
+        // Seed moved panes with the destination window's cell metrics.
+        // `broadcast_cell_metrics_to_window`'s short-circuit would
+        // skip these panes if the destination's cached dims match the
+        // newly-computed ones (TPR-07-001-codex round 7).
+        let moved_pane_ids: Vec<oriterm_mux::PaneId> = self
+            .session
+            .get_tab(tab_id)
+            .map(crate::session::Tab::all_panes)
+            .unwrap_or_default();
+        let dest_winit_id = self.windows.iter().find_map(|(winit_id, ctx)| {
+            (ctx.window.session_window_id() == dest_window).then_some(*winit_id)
+        });
+        if let Some(winit_id) = dest_winit_id {
+            for pid in moved_pane_ids {
+                self.seed_pane_with_window_cell_metrics(winit_id, pid);
+            }
+        }
+
         // Mark the destination window dirty.
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pane_cache.invalidate_all();

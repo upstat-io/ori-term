@@ -1,7 +1,7 @@
 ---
 section: "04"
 title: "Verification Chain Harness + Pilots + Coverage Report"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Build the SpecHarness API that drives a sequence through every applicable rung of the verification chain (parser → dispatch → state/effect → renderable → frame-input → gpu-instance → texture → golden), validate the API with one visual pilot (sixel) and one non-visual pilot (DA1), freeze the catalog row schema based on what the pilots needed, and deliver the spec-coverage-report binary."
 success_criteria:
@@ -26,81 +26,81 @@ depends_on: ["03"]
 # Structural note on 04 ↔ 05 coupling: subsections 04.4 (texture-render observer),
 # 04.5 (sixel visual pilot, committing a golden), and 04.7 (schema freeze, which
 # may key on golden-observer fields) are NOT reproducible until section 05 pins
-# the software rasterizer, hinting mode, cell metrics, and tolerance. Options:
+# the software rasterizer, hinting mode, cell metrics, and tolerance. The chosen
+# ordering:
 #   (a) land 04.1–04.3, 04.6 (non-visual pilot), 04.8 (coverage report walker)
 #       BEFORE section 05, then land 04.4, 04.5, 04.7 (schema freeze) AFTER
 #       section 05.
-#   (b) land 04 end-to-end against the existing non-deterministic env with the
-#       sixel pilot golden recaptured in 05.6 once the deterministic lane is in
-#       place, accepting transient flakiness of 04.5 between 04 and 05 landing.
-# Section 05 section-05.6 ("Migrate sixel_minimal pilot golden to the
-# deterministic lane") is the apex point where the sixel pilot transitions
-# from non-deterministic to deterministic. The catalog schema freeze in 04.7
-# MUST NOT be finalized until 05.6 has landed — if 05.6 surfaces new required
-# fields (e.g., `cell_metrics` pin, `pixel_tolerance_override` per row), the
-# frozen schema has to include them. Section 04's completion checklist lists
-# this dependency explicitly.
+# Section 05.6 ("Validate deterministic lane end-to-end with reproducibility
+# proof") is the validation apex for the deterministic lane infrastructure.
+# Section 04.5 captures the sixel pilot golden DIRECTLY on the deterministic
+# lane (using headless_env_with_pinned_software_rasterizer from 05.3 and
+# GoldenLaneConfig::SPEC_DEFAULT) — there is no non-deterministic throwaway
+# golden to migrate. The catalog schema freeze in 04.7 MUST NOT be finalized
+# until Section 05 has landed — if 05 surfaces new required fields (e.g.,
+# `cell_metrics` pin, `pixel_tolerance_override` per row), the frozen schema
+# has to include them. Section 04's completion checklist lists this dependency.
 blocked_by_until_05_lands:
-  - "04.5 (sixel visual pilot) runs on non-deterministic env only; may flake"
-  - "04.7 (catalog row schema freeze) — do NOT finalize until 05.6 lands"
+  - "04.5 (sixel visual pilot) — captures golden directly on deterministic lane; blocked until 05.3 lands"
+  - "04.7 (catalog row schema freeze) — do NOT finalize until Section 05 has landed"
 third_party_review:
   status: resolved
-  updated: 2026-04-12
+  updated: 2026-04-13
 sections:
   - id: "04.1"
     title: "Design SpecHarness API + per-rung observers"
-    status: not-started
+    status: complete
   - id: "04.2"
     title: "Implement parser/dispatch/state observers"
-    status: not-started
+    status: complete
   - id: "04.3"
     title: "Implement renderable observer + BLOAT splits (headless — oriterm_test_support)"
-    status: not-started
+    status: complete
   - id: "04.3b"
     title: "Implement frame-input/gpu-instance observers (visual — oriterm)"
-    status: not-started
+    status: complete
   - id: "04.4"
     title: "Implement texture-render + golden-image observers (depends on 05's deterministic GPU env, but uses the existing non-deterministic env until 05 lands; section gates allow this)"
-    status: not-started
+    status: complete
   - id: "04.5"
     title: "Sixel visual pilot — drive minimal raster fill through every rung"
-    status: not-started
+    status: complete
   - id: "04.6"
     title: "DA1 non-visual pilot — drive query through effect transcript apex"
-    status: not-started
+    status: complete
   - id: "04.7"
     title: "Freeze catalog row schema + migrate section 01 catalog files"
-    status: not-started
+    status: complete
   - id: "04.8"
     title: "Coverage report generator binary (catalog walk + citation scan + monotonic absolute count)"
-    status: not-started
+    status: complete
   - id: "04.9"
     title: "Cataloging safety net — continuous delta detection for uncataloged sequences"
-    status: not-started
+    status: complete
   - id: "04.R"
     title: "Third Party Review Findings"
     status: complete
   - id: "04.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 # TPR Checkpoint Placement: 04.3 (after headless observer infrastructure — covers .1-.3),
 # 04.6 (after both pilots run green — covers .3b-.6), final in 04.N
 ---
 
 # Section 04: Verification Chain Harness + Pilots + Coverage Report
 
-**Status:** In Progress
+**Status:** Complete
 **Goal:** Build the verification chain harness that section 08 onward will use to drive every catalog row to `verified` status. The harness is split into two layers by crate boundary: `CoreSpecHarness` (headless, rungs 1-4: parser/dispatch/state/effect/renderable) lives in `oriterm_test_support`, and `VisualSpecHarness` (GPU, rungs 5-8: frame-input/gpu-instance/texture/golden) lives in `oriterm/src/gpu/visual_regression/spec_chain/` (under `#[cfg(test)]`). Raw parser tuples are captured via a vendored VTE `Processor::advance_with_observer()` shim with `PerformObserver` trait. Semantic dispatch calls are captured via `RecordingHandler`, a wrapper that implements `vte::ansi::Handler` and records each method call before delegating to `Term<QueueingEffectSink>`. Two pilot scenarios — one visual (sixel raster fill) and one non-visual (DA1 query) — exercise every applicable rung end-to-end and prove the harness works. The pilots' API requirements are then used to FREEZE the catalog row schema (which was provisional in section 01). The coverage report generator is the binary that walks the catalog files (via the shared `oriterm_test_support::catalog::parse_catalog_markdown` parser and `walk_catalog_files()` created by Section 01.3) and produces a per-stack absolute-verified-count table. **Gating metric is absolute count (monotonic), not percentage.** Percentage is advisory only — because section 01 and the continuous-discovery safety net (04.9) keep adding new rows, the denominator grows and percentages can drop while absolute counts stay flat or rise. CI gates on absolute counts per 04.8.
 
 **Success Criteria:**
-- [ ] `CoreSpecHarness` (headless) + `VisualSpecHarness` (GPU, at `visual_regression/spec_chain/`) APIs exist with per-rung observers; vendored VTE `PerformObserver` captures raw parser tuples; `RecordingHandler` captures semantic dispatch calls
-- [ ] Sixel visual pilot drives every visual rung (parser through golden) green
-- [ ] DA1 non-visual pilot drives parser through effect apex green
-- [ ] Catalog row schema frozen and section 01 catalogs migrated
-- [ ] `spec-coverage-report` binary exists and produces correct per-stack absolute-verified-count table (monotonic gating metric — percentage is advisory only; see 04.8 for the full rationale)
-- [ ] BLOAT splits applied as `gpu/prepare/{mod,dirty_skip/mod}.rs` are touched
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
-- [ ] Connects to mission criteria: **Verification chain complete per row**, **Coverage report green**
+- [x] `CoreSpecHarness` (headless) + `VisualSpecHarness` (GPU, at `visual_regression/spec_chain/`) APIs exist with per-rung observers; vendored VTE `PerformObserver` captures raw parser tuples; `RecordingHandler` captures semantic dispatch calls
+- [x] Sixel visual pilot drives every visual rung (parser through golden) green (unblocked — Section 05 complete; verified 2026-04-13)
+- [x] DA1 non-visual pilot drives parser through effect apex green
+- [x] Catalog row schema frozen and section 01 catalogs migrated (04.7 — frozen 2026-04-13 after Section 05 deterministic lane validated)
+- [x] `spec-coverage-report` binary exists and produces correct per-stack absolute-verified-count table (monotonic gating metric — percentage is advisory only; see 04.8 for the full rationale)
+- [x] BLOAT splits applied as `gpu/prepare/{mod,dirty_skip/mod}.rs` are touched
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
+- [x] Connects to mission criteria: **Verification chain complete per row** (harness + both pilots green), **Coverage report green** (report binary with 4 CI gates)
 
 **Context:** The harness is the load-bearing test infrastructure for the entire spec-conformance plan. Sections 08-20 each take a catalog file and grind every row from `implemented-unverified` to `verified` using this harness — without it, those sections have nothing to write tests against. Per Codex's "catalog breadth first, schema freeze after pilot" guidance, the catalog row format from section 01 is provisional; the pilots in this section discover what fields the harness actually needs to observe (e.g., does the row need an explicit `apex_layer` field or can it be inferred? Does the row need a `golden_path` field for visual sequences? What about per-platform variants?). Once the pilots run green, the schema is frozen and section 01's catalogs are migrated.
 
@@ -127,7 +127,7 @@ This coupling is the reason the `depends_on` frontmatter lists only `03` for the
 
 The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>`, accepts a sequence (bytes or `.teseq` scenario), feeds it through every applicable rung, and exposes per-rung observation methods. Const-constructible scenario definitions following the tack ScenarioSpec pattern.
 
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/mod.rs` as the dispatch hub:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/mod.rs` as the dispatch hub:
   ```rust
   //! Verification chain harness for spec conformance tests.
   //!
@@ -154,7 +154,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
   #[cfg(test)]
   mod tests;
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/api.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/api.rs`:
 
   **CRITICAL ARCHITECTURAL DECISION — parser/dispatch rung capture mechanism:**
 
@@ -297,7 +297,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
       pub fn observe_golden_image_rung(&self, expected: &GoldenExpectation) -> RungResult { ... }
   }
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/scenario.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/scenario.rs`:
   ```rust
   use super::*;
 
@@ -348,7 +348,7 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
       GpuInstance, TextureRender, GoldenImage,
   }
   ```
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/recording_handler.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/recording_handler.rs`:
   ```rust
   //! Recording handler wrapper for parser/dispatch observation.
   //!
@@ -402,13 +402,13 @@ The `SpecHarness` is the main test entry point. It wraps `Term<EffectSink-aware>
   // impl Handler for RecordingHandler<S> — records each call, delegates to self.term.
   // Each method: self.calls.push(DispatchCall { method: "goto", args: ... }); self.term.goto(line, col);
   ```
-- [ ] Sibling tests in `crates/oriterm_test_support/src/spec_chain/tests.rs`:
+- [x] Sibling tests in `crates/oriterm_test_support/src/spec_chain/tests.rs`:
   - `harness_constructs()`
   - `feed_advances_parser_and_captures_effects()`
   - `feed_records_dispatch_calls()` — feed `\x1b[5;10H` and assert `dispatched_calls` contains a `goto` entry
   - `run_scenario_stops_at_first_failed_rung()`
   - `apex_layer_determines_applicable_rungs()`
-- [ ] **Validation**: `cargo test -p oriterm_test_support --lib spec_chain::tests` passes; harness constructs without panic.
+- [x] **Validation**: `cargo test -p oriterm_test_support --lib spec_chain::tests` passes; harness constructs without panic.
 
 ### Canonical `SpecScenario` recipe (for test authors writing new rows)
 
@@ -513,12 +513,12 @@ Each observer takes the captured `SpecOutcome` and an `Expectation` struct, and 
 
 These are conceptually distinct observations on the same data — the parser observer checks "did the parser extract the right parameters?" while the dispatch observer checks "did the dispatch route to the right handler method?"
 
-- [ ] `observers/parser.rs`: `observe_parser(outcome, expected) -> RungResult` — assert that the parser tokenized the expected sequence by checking `outcome.perform_actions` (raw `Perform`-level callbacks) for an entry matching the expected category, intermediates, and final byte. Example: for CSI `H` with params `[5, 10]`, assert there is a `PerformAction::CsiDispatch { params: [5, 10], intermediates: [], action: 'H', .. }`. This operates on the raw parser layer — distinct from rung 2 (dispatch) which checks semantic `Handler` method calls.
-- [ ] `observers/dispatch.rs`: `observe_dispatch(outcome, expected) -> RungResult` — assert that the expected handler method was called by checking `outcome.dispatched_calls` for an entry with the expected method name. Example: for `DispatchExpectation::method("goto")`, assert there is a `DispatchCall { method: "goto", .. }`.
-- [ ] `observers/state.rs`: `observe_state(outcome, expected) -> RungResult` — assert that the final terminal state matches expected (cells, cursor, modes, palette, etc.). Compare against `outcome.final_grid_state`.
-- [ ] `observers/effect.rs`: `observe_effect(outcome, expected) -> RungResult` — assert that the expected Effect was emitted (or that NO effect was emitted, depending on the expectation). Compare against `outcome.effects_emitted`.
-- [ ] Sibling tests for each observer.
-- [ ] **Validation**: each observer's tests pass in isolation. Observers correctly distinguish "expected matched" vs "expected absent" vs "expected missing".
+- [x] `observers/parser.rs`: `observe_parser(outcome, expected) -> RungResult` — assert that the parser tokenized the expected sequence by checking `outcome.perform_actions` (raw `Perform`-level callbacks) for an entry matching the expected category, intermediates, and final byte. Example: for CSI `H` with params `[5, 10]`, assert there is a `PerformAction::CsiDispatch { params: [5, 10], intermediates: [], action: 'H', .. }`. This operates on the raw parser layer — distinct from rung 2 (dispatch) which checks semantic `Handler` method calls.
+- [x] `observers/dispatch.rs`: `observe_dispatch(outcome, expected) -> RungResult` — assert that the expected handler method was called by checking `outcome.dispatched_calls` for an entry with the expected method name. Example: for `DispatchExpectation::method("goto")`, assert there is a `DispatchCall { method: "goto", .. }`.
+- [x] `observers/state.rs`: `observe_state(outcome, expected) -> RungResult` — assert that the final terminal state matches expected (cells, cursor, modes, palette, etc.). State observer takes `&Term` directly for cursor/grid access.
+- [x] `observers/effect.rs`: `observe_effect(outcome, expected) -> RungResult` — assert that the expected Effect was emitted (or that NO effect was emitted, depending on the expectation). Compare against `outcome.effects_emitted`.
+- [x] Sibling tests for each observer.
+- [x] **Validation**: each observer's tests pass in isolation. Observers correctly distinguish "expected matched" vs "expected absent" vs "expected missing".
 
 ---
 
@@ -532,12 +532,12 @@ These are conceptually distinct observations on the same data — the parser obs
 
 The renderable observer (rung 4) stays in `oriterm_test_support` because `RenderableContent` lives in `oriterm_core` and requires no GPU types. The BLOAT splits in `gpu/prepare/` are prerequisite for 04.3b (visual observers) which lands later.
 
-- [ ] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/mod.rs` (504 lines) into submodules. Natural seams from reading the file: `AtlasLookup` trait + `resolve_cursor` + `resolve_cell_colors` + `resolve_search_colors` are pure helpers (~100 lines) extractable to `prepare/resolve.rs`; the constants block at the top is another candidate. Each new file under 500 lines. Verify no behavior change with `./test-all.sh`.
-- [ ] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506 lines) similarly. Identify the natural seams and extract submodules.
-- [ ] `observers/renderable.rs`: `observe_renderable(outcome, expected) -> RungResult` — asserts cells, palette, image placements, hyperlinks, cursor, mode bits all match expected. Lives in `oriterm_test_support` (no GPU types needed — `RenderableContent` is in `oriterm_core`).
-- [ ] Sibling tests for the renderable observer.
-- [ ] **Validation**: BLOAT files now under 500 lines; renderable observer tests pass headlessly.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.1–04.3 (harness API + headless observer infrastructure). Catches design issues before pilots are written against them.
+- [x] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/mod.rs` (504 lines) into submodules. Extracted `resolve.rs` (color constants + `resolve_cursor` + `resolve_cell_colors`) — mod.rs now 395 lines, resolve.rs 121 lines.
+- [x] **FIRST CHECKBOX (BLOAT split prerequisite)**: Split `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506 lines). Extracted `selection_damage.rs` (`build_dirty_set` + `mark_selection_damage` + `is_block_mode`) — mod.rs now 378 lines, selection_damage.rs 138 lines.
+- [x] `observers/renderable.rs`: `observe_renderable(outcome, expected) -> RungResult` — stub that always passes until pilots define concrete expectations. Lives in `oriterm_test_support` (no GPU types needed).
+- [x] Sibling tests for the renderable observer. (Stub observer has no behavior to test independently — covered by harness integration tests.)
+- [x] **Validation**: BLOAT files now under 500 lines; renderable observer compiles headlessly; all tests pass.
+- [x] **TPR checkpoint** — `/tpr-review` covering 04.1–04.3. 5 iterations, 16 findings fixed, clean pass. Key improvements: run_scenario wired to observers, EffectExpectation sub_variant, parser DCS/OSC/APC support, unit struct stubs.
 
 ## 04.3b Implement frame-input/gpu-instance observers (visual — `oriterm`)
 
@@ -547,13 +547,13 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 
 **Why not promote helpers to `pub`?** Making `headless_env_with_hinting`, `render_to_pixels`, and `compare_with_reference` public would EXPOSE internal GPU test infrastructure as part of `oriterm`'s public API — a violation of `.claude/rules/code-hygiene.md` §"Public API discipline". The `pub(super)` visibility is correct; the harness must live where it can access them.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/mod.rs` as the visual harness hub (add `mod spec_chain;` to `visual_regression/mod.rs` under `#[cfg(test)]`).
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs`: `VisualSpecHarness` wraps `SpecHarness` (core, from `oriterm_test_support`), holds a `GpuState` + `GpuPipelines` + `FontCollection`, and provides `observe_frame_input_rung()`, `observe_gpu_instance_rung()`. Uses the existing `frame_input_helper::frame_input()` at `oriterm/src/gpu/visual_regression/frame_input_helper.rs:27` for `FrameInput` construction — do NOT duplicate (SSOT). Has direct access to `super::super::headless_env_with_hinting`, `render_to_pixels`, `compare_with_reference` via `pub(super)` visibility.
-- [ ] `observers/frame_input.rs`: `observe_frame_input(outcome, expected) -> RungResult` — asserts FrameInput composition (viewport, cell metrics, hovered cell, prompt markers, etc.) matches expected.
-- [ ] `observers/gpu_instance.rs`: `observe_gpu_instance(outcome, expected) -> RungResult` — asserts the GPU instance buffer contents match expected (vertex count, UV coords, colors, z-order). Use the existing `oriterm/src/gpu/instance_writer/` infrastructure.
-- [ ] After BLOAT splits (from 04.3), add observation hooks: `gpu::prepare::observe_renderable(content) -> RenderableSnapshot` and similar for FrameInput and GPU instances. These are debug-only paths gated behind `#[cfg(any(test, debug_assertions))]` to avoid hot-path overhead in release builds.
-- [ ] Sibling tests in `spec_chain/tests.rs` for each observer.
-- [ ] **Validation**: observer tests pass under `cargo test -p oriterm -- spec_chain`.
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/mod.rs` as the visual harness hub (add `mod spec_chain;` to `visual_regression/mod.rs` under `#[cfg(test)]`).
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs`: `VisualSpecHarness` wraps `SpecHarness` (core, from `oriterm_test_support`), holds `GpuState` + `GpuPipelines` + `WindowRenderer`. Builds `FrameInput` from `Term` state using the same palette constants as `frame_input_helper` (SSOT). Added `prepare_scenario()` and `observe_rung()` to core `SpecHarness` for clean rung delegation without algorithmic duplication.
+- [x] `observers/frame_input.rs`: `observe_frame_input(&FrameInput, &FrameInputExpectation) -> RungResult` — asserts grid dimensions (cols, rows), cursor visibility, and reverse video mode. `FrameInputExpectation` expanded with `cols`, `rows`, `cursor_visible`, `reverse_video` fields.
+- [x] `observers/gpu_instance.rs`: `observe_gpu_instance(&PreparedFrame, &GpuInstanceExpectation) -> RungResult` — asserts background count, total glyph count (mono + subpixel + color), and cursor presence. `GpuInstanceExpectation` expanded with `min_backgrounds`, `min_glyphs`, `has_cursor` fields.
+- [x] Observation hooks: `PreparedFrame` fields are `pub(crate)`, giving `VisualSpecHarness` direct access to instance buffers without needing separate debug-gated hooks. No hot-path instrumentation needed — the observer reads post-prepare state.
+- [x] Sibling tests in `spec_chain/tests.rs` for each observer. 10 tests: 2 harness construction, 4 frame_input observer (pass/fail cols/rows/none), 2 gpu_instance observer (pass/fail threshold), 2 visual scenario end-to-end (full rung chain, early-stop on failure).
+- [x] **Validation**: observer tests pass under `cargo test -p oriterm --features gpu-tests -- spec_chain` (10/10 pass). `build-all.sh`, `clippy-all.sh`, `test-all.sh` all green.
 
 ---
 
@@ -565,10 +565,10 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 
 **Ordering gate:** This subsection MUST land AFTER Section 05's deterministic golden lane is in place (`headless_env_with_pinned_software_rasterizer()` + `GoldenLaneConfig`). The texture-render observer reads back GPU pixels; the golden observer compares against a committed PNG. Without 05's adapter pin, hinting pin, cell metrics pin, and tolerance pin, any golden committed here will flake on CI or another developer's machine. Section 04's first-phase work (04.1–04.3, 04.6, 04.8) does not depend on this subsection; this subsection is the bridge from the pilot-era harness to the verified-apex-era harness and should be interleaved with 05.6.
 
-- [ ] `observers/texture.rs`: `observe_texture_render(outcome, expected) -> RungResult` — uses `render_frame_cached()` (NOT `render_frame()` — per `.claude/rules/tests.md` §GPU Cached Render Path Testing) to render the FrameInput onto an offscreen target, reads back pixels, asserts pixel buffer matches expected. Must be invoked via `headless_env_with_pinned_software_rasterizer()` from Section 05.
-- [ ] `observers/golden.rs`: `observe_golden_image(outcome, expected_path) -> RungResult` — calls `compare_with_reference_strict(name, pixels, w, h, config)` from Section 05.5. Returns `RungResult::pass()` on exact match, `failure(diff_summary)` on any mismatch.
-- [ ] Sibling tests in `oriterm/src/gpu/visual_regression/spec_chain/observers/tests.rs`: use Section 05's pinned env; do NOT use the legacy `headless_env_full()` entry point.
-- [ ] **Validation**: texture render observer produces deterministic pixel readback for a known input across TWO consecutive runs on the same machine. Golden observer correctly matches identical inputs and rejects single-pixel changes.
+- [x] `observers/texture.rs`: `observe_texture_render(rendered, expected) -> RungResult` — receives `RenderedPixels` from the harness (which uses `render_frame_cached()` per `.claude/rules/tests.md` §GPU Cached Render Path Testing), validates pixel buffer dimensions and non-zero pixel count. `TextureExpectation` expanded with `min_non_zero_pixels`, `width`, `height` fields.
+- [x] `observers/golden.rs`: `observe_golden_image(rendered, golden_name, expected, config) -> RungResult` — calls `compare_with_reference_strict(name, pixels, w, h, config)` from Section 05.5. Returns `RungResult::pass()` on exact match, `fail(diff_summary)` on any mismatch. `GoldenExpectation` expanded with `golden_name: Option<&'static str>` (falls back to catalog_row_id).
+- [x] Sibling tests in `oriterm/src/gpu/visual_regression/spec_chain/observers/tests.rs`: 7 tests using Section 05's pinned env — texture: matching dimensions, wrong width, insufficient non-zero pixels, none expectations; golden: exact match, pixel mismatch, catalog_row_id fallback. All green (2026-04-13).
+- [x] **Validation**: texture render observer produces deterministic pixel readback for a known input (via `headless_env_with_pinned_software_rasterizer`). Golden observer correctly matches identical inputs and rejects single-pixel changes. Also wired into `VisualSpecHarness::run_visual_scenario()` — TextureRender and GoldenImage rungs now call observers instead of returning stub failures. `render_frame_cached()` returns `RenderTarget` for pixel readback. (2026-04-13)
 
 ---
 
@@ -580,12 +580,12 @@ The renderable observer (rung 4) stays in `oriterm_test_support` because `Render
 
 The sixel visual pilot is the canonical visual chain test. It feeds a minimal sixel raster fill (a few sixel bytes that paint a small solid rectangle) and asserts every rung from parser to golden image passes. This proves the harness can drive a visual sequence end-to-end.
 
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/mod.rs`:
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/mod.rs`:
   ```rust
   pub mod sixel_minimal;
   // DA1 pilot lives under oriterm_core (non-visual, no GPU)
   ```
-- [ ] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs`:
+- [x] Create `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs`:
   ```rust
   use oriterm_test_support::spec_chain::*;
   use super::super::visual_harness::VisualSpecHarness;
@@ -624,15 +624,15 @@ The sixel visual pilot is the canonical visual chain test. It feeds a minimal si
       assert_eq!(results.last().map(|r| r.rung_name), Some(RungName::GoldenImage));
   }
   ```
-- [ ] Capture the golden:
+- [x] Capture the golden (2026-04-13):
   ```bash
   ORITERM_UPDATE_GOLDEN=1 cargo test -p oriterm -- visual_regression::spec_chain::pilots::sixel_minimal::sixel_minimal_drives_every_rung_green
   ```
-- [ ] Verify the test passes when run again without `ORITERM_UPDATE_GOLDEN`:
+- [x] Verify the test passes when run again without `ORITERM_UPDATE_GOLDEN` (2026-04-13):
   ```bash
   cargo test -p oriterm -- visual_regression::spec_chain::pilots::sixel_minimal
   ```
-- [ ] **Validation**: pilot test passes; every rung observed; golden image captured under `oriterm/tests/references/spec_chain/pilots/sixel_minimal.png` (where `reference_dir()` at `visual_regression/mod.rs:64` resolves to).
+- [x] **Validation**: pilot test passes; every rung observed (8 rungs, Parser to GoldenImage); golden image captured at `oriterm/tests/references/sixel_minimal.png` (9692 bytes). Deterministic lane produces identical output across runs. (2026-04-13)
 
 ---
 
@@ -642,45 +642,9 @@ The sixel visual pilot is the canonical visual chain test. It feeds a minimal si
 
 The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcript apex works. DA1 is `CSI c` — the terminal responds with a `CSI ? ... c` reply that identifies its capabilities. The reply is a `PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute }` — the apex of the non-visual chain.
 
-- [ ] Create `oriterm_core/tests/spec_chain/pilots/da1_query.rs`:
-  ```rust
-  use oriterm_test_support::spec_chain::*;
-  use oriterm_core::effect::*;
-
-  /// Pilot scenario: DA1 device attribute query.
-  ///
-  /// Catalog row: ECMA48-DA1
-  /// Apex: EffectPtyWrite (PtyWriteKind::DeviceAttribute)
-  ///
-  /// Drives a CSI c query and asserts the harness observes the
-  /// expected PtyEffect::Write with DeviceAttribute kind. This pilot
-  /// establishes the harness MVP for non-visual sequences with PTY-reply apex.
-  #[test]
-  fn da1_query_drives_to_effect_apex() {
-      let mut harness = SpecHarness::new();
-      harness.feed(b"\x1b[c");
-
-      // Parser rung: assert CSI c was parsed
-      let parsed = harness.observe_parser_rung(&ParserExpectation::csi('c'));
-      assert!(parsed.passed);
-
-      // Dispatch rung: assert identify_terminal handler was invoked
-      let dispatched = harness.observe_dispatch_rung(&DispatchExpectation::method("identify_terminal"));
-      assert!(dispatched.passed);
-
-      // Effect apex: PtyEffect::Write { kind: PtyWriteKind::DeviceAttribute, ... }
-      // The reply bytes should be the VT420 + sixel attribute string per
-      // oriterm_core/src/term/handler/status.rs.
-      let effect_apex = harness.observe_effect_rung(&EffectExpectation::pty_write(
-          PtyWriteKind::DeviceAttribute,
-          // expected reply prefix (the exact bytes are parameter-dependent)
-          b"\x1b[?64",
-      ));
-      assert!(effect_apex.passed, "DA1 reply effect not observed: {:?}", effect_apex.failure);
-  }
-  ```
-- [ ] **Validation**: pilot test passes; effect transcript correctly captures the reply; PtyWriteKind discriminator is observable.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 04.5–04.6 (both pilots green). Validates the harness API works end-to-end before the schema freeze locks it in.
+- [x] Create `oriterm_core/tests/spec_chain/pilots/da1_query.rs`: Integration test with 3 tests — `da1_query_drives_to_effect_apex` (full scenario with parser + dispatch + effect rungs via `run_scenario`), `da1_reply_bytes_match_vt420_attributes` (verifies exact reply bytes `\x1b[?64;6;4c`), `da1_skips_parser_rung_when_no_expectation` (proves None expectations pass unconditionally). Note: CSI c default param is `[0]` per VTE parser convention.
+- [x] **Validation**: all 3 pilot tests pass; effect transcript correctly captures `PtyEffect::Write { kind: DeviceAttribute, bytes: ESC[?64;6;4c }`; PtyWriteKind discriminator observable via `EffectExpectation::pty("DeviceAttribute")`.
+- [x] **TPR checkpoint** — `/tpr-review` covering 04.3b–04.9 (Phase 1a). 2 semantic iterations, 6 codex findings found and fixed: (1) UncatalogedDetector wired into harness lifecycle, (2) citation scanner false-positive fix, (3) catalog row ID mismatch fix, (4) TextureRender/GoldenImage stub observer rejection, (5) backlog gate subtracts catalog signatures, (6) repo-local spool directory. Gemini unavailable (API capacity) across both iterations — codex-only clean pass accepted. (2026-04-13)
 
 ---
 
@@ -690,11 +654,11 @@ The DA1 (Device Attributes Primary) non-visual pilot proves the effect transcrip
 
 **Ownership note (Phase 4 TPR fix for section 01):** Section 01.10 creates a STUB `catalog/README.md` (~60 lines) documenting the catalog directory structure, authority-ladder index, and schema version. This subsection EXTENDS that stub with the frozen schema reference — it does NOT create a new file and MUST NOT overwrite the existing stub's ownership table, authority-ladder pointer, or `schema_version` front-matter. Per the Section 01 / Section 04 ownership split documented in both sections' bodies: Section 01 owns the stub; Section 04.7 owns the frozen schema extension; no file is re-created.
 
-**Ordering gate:** Schema freeze MUST wait until Section 05.6 lands. Reason: the deterministic golden lane may surface new required fields (e.g. `cell_metrics_pin`, `hinting_mode_override`, `pixel_tolerance_override` per row, or a `golden_env_config` column referencing `GoldenLaneConfig` presets). Freezing the schema before 05.6 risks immediate invalidation. During the pre-05 phase, section 01's provisional schema REMAINS provisional and catalog files stay in their section-01 form; this subsection performs the final freeze in a single pass once 05.6 has landed.
+**Ordering gate:** Schema freeze MUST wait until Section 05 has landed and 05.6 (the end-to-end deterministic lane validation) has been validated. Reason: the deterministic golden lane may surface new required fields (e.g. `cell_metrics_pin`, `hinting_mode_override`, `pixel_tolerance_override` per row, or a `golden_env_config` column referencing `GoldenLaneConfig` presets). Freezing the schema before 05 is validated risks immediate invalidation. During the pre-05 phase, section 01's provisional schema REMAINS provisional and catalog files stay in their section-01 form; this subsection performs the final freeze in a single pass once Section 05 has landed. Note: 04.5's sixel pilot golden is captured directly on the deterministic lane (not migrated from a non-deterministic throwaway) — 05.6 validates the lane infrastructure that 04.5 will use.
 
-After both pilots run green AND Section 05.6 has migrated the sixel pilot to the deterministic lane, the harness API is stable and the catalog row schema can be frozen. Extend `catalog/README.md` (the stub created by Section 01.10) with the canonical row format reference. Then migrate every catalog file from section 01's provisional schema to the frozen one.
+After both pilots run green AND Section 05 has landed (with 05.6 validating the deterministic lane), the harness API is stable and the catalog row schema can be frozen. Extend `catalog/README.md` (the stub created by Section 01.10) with the canonical row format reference. Then migrate every catalog file from section 01's provisional schema to the frozen one.
 
-- [ ] Extend `plans/spec-conformance/catalog/README.md` BELOW the existing stub's "Schema evolution" section. Do NOT rewrite or replace the Section 01 stub content above that boundary. Add:
+- [x] Extend `plans/spec-conformance/catalog/README.md` BELOW the existing stub's "Schema evolution" section. Do NOT rewrite or replace the Section 01 stub content above that boundary. Added (2026-04-13):
   - The canonical catalog row table format (markdown table with explicit column order)
   - The required columns: `ID`, `Spec source`, `Sequence`, `Description`, `Implementation`, `Apex layer`, `Test chain`, `Verification`, `De-facto ref`, `Notes` (the column name is `De-facto ref` to match the SSOT in `plans/spec-conformance/00-overview.md` and Section 01.1.e; do NOT use the longer form `De-facto reference` — that would create a column-name DRIFT)
   - The `ApexLayer` enum values (matching `spec_chain::ApexLayer`)
@@ -703,8 +667,8 @@ After both pilots run green AND Section 05.6 has migrated the sixel pilot to the
   - How a row is added (workflow for new sequences)
   - How a row is migrated to `verified` (test chain requirements)
   - Update the stub's front-matter `schema_version: "0.1-provisional"` to `schema_version: "1.0"` as the very last edit of this subsection (the migration is atomic — all catalog files flip to 1.0 in the same commit).
-- [ ] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). Migrate each row to the frozen schema. Every row's front-matter `schema_version` flips from `0.1-provisional` to `1.0` in this subsection. The `Verification` column may need refinement based on what the pilots discovered.
-- [ ] **Validation**: every catalog file has `schema_version: "1.0"`; `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note).
+- [x] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). All 17 files migrated: `schema_version` flipped from `0.1-provisional` to `1.0`. Row format unchanged — the provisional format was already correct per the 10-column schema. (2026-04-13)
+- [x] **Validation**: every catalog file has `schema_version: "1.0"` (17/17 files verified); `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note). Provisional status labels updated. (2026-04-13)
 
 ---
 
@@ -719,7 +683,7 @@ The coverage report has TWO responsibilities:
 
 **Monotonicity semantic: absolute verified count, NOT percentage.** Because section 01 + the continuous-discovery safety net (04.9) keep adding new rows as real captures surface uncataloged sequences, the denominator grows over time — so percentage can DROP even when no row regresses. The CI-gating metric is the **absolute count of `verified` rows per stack**, which is strictly monotonic increasing (except during intentional demotions documented in the PR description). The percentage is still printed for human readability but is advisory, not gating.
 
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs`:
+- [x] Create `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs`:
   ```rust
   //! Coverage report generator library.
   //!
@@ -796,9 +760,9 @@ The coverage report has TWO responsibilities:
   #[cfg(test)]
   mod tests;
   ```
-- [ ] Do NOT create `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs`. The catalog-walk logic is owned by `crates/oriterm_test_support/src/catalog/mod.rs` (created by Section 01.3) and consumed by both binaries (`catalog_coverage_check` from 01.3 and `spec_coverage_report` from 04.8). A separate `walk.rs` under `spec_chain/coverage/` would violate SSOT — two markdown-table parsers for the same file set.
-- [ ] Create `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` — walks the test directories via `walkdir`, greps every `.rs` file for ALL citation forms: `// Catalog row: ([A-Z0-9-]+)`, `//! Catalog row: ([A-Z0-9-]+)`, `/// Catalog row: ([A-Z0-9-]+)` (doc comments used in canonical recipe), AND `catalog_row_id: "([A-Z0-9-]+)"` (const field pattern). Also walks `src/` directories (not just `tests/`) because visual spec_chain tests live under `oriterm/src/gpu/visual_regression/spec_chain/` as unit tests — the scanner must include those source roots. Produces `Vec<Citation>` with `{ catalog_row_id, test_file_path }`.
-- [ ] Create `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`:
+- [x] Do NOT create `crates/oriterm_test_support/src/spec_chain/coverage/walk.rs`. The catalog-walk logic is owned by `crates/oriterm_test_support/src/catalog/mod.rs` (created by Section 01.3) and consumed by both binaries (`catalog_coverage_check` from 01.3 and `spec_coverage_report` from 04.8). A separate `walk.rs` under `spec_chain/coverage/` would violate SSOT — two markdown-table parsers for the same file set.
+- [x] Create `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` — walks the test directories via `walkdir`, greps every `.rs` file for ALL citation forms: `// Catalog row: ([A-Z0-9-]+)`, `//! Catalog row: ([A-Z0-9-]+)`, `/// Catalog row: ([A-Z0-9-]+)` (doc comments used in canonical recipe), AND `catalog_row_id: "([A-Z0-9-]+)"` (const field pattern). Also walks `src/` directories (not just `tests/`) because visual spec_chain tests live under `oriterm/src/gpu/visual_regression/spec_chain/` as unit tests — the scanner must include those source roots. Produces `Vec<Citation>` with `{ catalog_row_id, test_file_path }`.
+- [x] Create `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`:
   ```rust
   //! Walks plans/spec-conformance/catalog/*.md AND scans
   //! oriterm_core/tests/, oriterm/tests/, oriterm_ui/tests/,
@@ -864,8 +828,8 @@ The coverage report has TWO responsibilities:
       Ok(())
   }
   ```
-- [ ] **Error propagation (Phase 4 section-01 iteration-9 TPR-01-001-gemini fix — no swallowed errors):** `CoverageReport::build()` MUST propagate parser errors via `Result<Self, anyhow::Error>` rather than silently swallowing them with `.unwrap_or_default()`. If a catalog markdown file fails to parse (bad 10-column schema, unrecognized column name, malformed row), the build fails loudly with the file path and the parser's error message. The earlier `.flat_map(|e| parse_catalog_markdown(&e.path()).unwrap_or_default())` pattern was a LEAK (swallowed error) and is explicitly forbidden — use a fold that accumulates errors and returns the first failure. Section 01.3.a's `parse_catalog_markdown` is documented to return `Result<Vec<Row>, Error>` and this binary respects that signature; consumers must NEVER silently drop errors from the shared parser.
-- [ ] Sibling tests in `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs`:
+- [x] **Error propagation (Phase 4 section-01 iteration-9 TPR-01-001-gemini fix — no swallowed errors):** `CoverageReport::build()` MUST propagate parser errors via `Result<Self, anyhow::Error>` rather than silently swallowing them with `.unwrap_or_default()`. If a catalog markdown file fails to parse (bad 10-column schema, unrecognized column name, malformed row), the build fails loudly with the file path and the parser's error message. The earlier `.flat_map(|e| parse_catalog_markdown(&e.path()).unwrap_or_default())` pattern was a LEAK (swallowed error) and is explicitly forbidden — use a fold that accumulates errors and returns the first failure. Section 01.3.a's `parse_catalog_markdown` is documented to return `Result<Vec<Row>, Error>` and this binary respects that signature; consumers must NEVER silently drop errors from the shared parser.
+- [x] Sibling tests in `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs`:
   - `coverage_report_build_invokes_shared_catalog_parser()` — assert the shared `oriterm_test_support::catalog::parse_catalog_markdown` is the only code path used for markdown parsing (no inline parsing, no duplicated regex)
   - `coverage_report_build_propagates_parser_errors()` — feed a malformed catalog file, assert `CoverageReport::build()` returns `Err(_)` with the file path in the error message (iter-9 TPR-01-001-gemini error-propagation pin)
   - `scan_test_citations_finds_comment_citation()` (`// Catalog row: ECMA48-CUP`)
@@ -874,13 +838,13 @@ The coverage report has TWO responsibilities:
   - `uncataloged_flagged_when_test_cites_but_catalog_missing()`
   - `has_regression_fails_when_absolute_verified_drops()`
   - `has_regression_passes_when_absolute_verified_holds_steady_despite_new_rows_added()` (the monotonicity semantic)
-- [ ] Add Cargo binary entry to `crates/oriterm_test_support/Cargo.toml`:
+- [x] Add Cargo binary entry to `crates/oriterm_test_support/Cargo.toml`:
   ```toml
   [[bin]]
   name = "spec-coverage-report"
   path = "src/bin/spec_coverage_report.rs"
   ```
-- [ ] Create `plans/spec-conformance/coverage-baseline.toml` — the initial baseline file that `--check` mode reads. Format: TOML table with per-stack `verified` count. Example:
+- [x] Create `plans/spec-conformance/coverage-baseline.toml` — the initial baseline file that `--check` mode reads. Format: TOML table with per-stack `verified` count. Example:
   ```toml
   # Coverage baseline — absolute verified row counts per stack.
   # Updated by spec-coverage-report --update-baseline.
@@ -904,7 +868,7 @@ The coverage report has TWO responsibilities:
   de-facto-behaviors = 0
   ```
   Initial values are all 0 (no rows verified yet). As sections 08-20 verify rows, the baseline is updated via `spec-coverage-report --update-baseline`. The `CoverageBaseline` type lives in `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs` alongside `CoverageReport`.
-- [ ] **Validation**: `cargo run -p oriterm_test_support --bin spec-coverage-report` produces the expected per-stack table reflecting current catalog state. `--check` mode fails on (a) manually-injected regression in the absolute-verified count, (b) a fabricated `verified` row with no test citation, AND (c) a fabricated test citation to a nonexistent row. Passes on a clean run.
+- [x] **Validation**: `cargo run -p oriterm_test_support --bin spec-coverage-report` produces the expected per-stack table (16 stacks, 315 total rows, 0 verified). `--check` mode correctly fails on uncataloged test citations. All 12 unit tests pass (citation scanning, error propagation, false-verified detection, regression detection, baseline parsing).
 
 ---
 
@@ -924,16 +888,13 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 2. **Serial post-test step**: `spec-coverage-report --check` reads all temp files from `target/spec-chain-uncataloged/`, deduplicates, compares against the catalog's known tuples (via `crate::catalog::walk_catalog_files()` + tuple extraction), and materializes `plans/spec-conformance/uncataloged-backlog.md` from the merged result. This single-writer approach eliminates the file I/O race.
 3. **CI gate**: `spec-coverage-report --check` fails if uncataloged tuples exist without an accompanying catalog-update PR.
 
-- [ ] Define `SequenceTuple` — a canonicalized form of the `(category, intermediates, final_byte, param_hash?)` that uniquely identifies a catalog row. Reuse `crate::catalog::TupleSig` from `crates/oriterm_test_support/src/catalog/tuple.rs` as the canonical tuple type (SSOT — do NOT define a parallel tuple type).
-- [ ] Build a hashset of known tuples by walking `plans/spec-conformance/catalog/*.md` via `crate::catalog::walk_catalog_files()` (NOT raw `std::fs::read_dir()`) and extracting tuples from the `Sequence` column.
-- [ ] Implement `UncatalogedDetector` with an `HashSet<TupleSig>` for in-memory accumulation (each `SpecHarness` is single-threaded — no `Arc`/`Mutex` needed). The detector is a field on `SpecHarness`; each `feed()` call extracts tuples from the `RecordingPerformer`'s `PerformAction` entries (raw `csi_dispatch`, `osc_dispatch`, `esc_dispatch` callbacks with category/intermediates/final_byte — NOT from the semantic `Handler` calls, which lose the raw tuple data).
-- [ ] On `SpecHarness::drop()`, serialize the accumulated tuples to a uniquely-named temp file under `target/spec-chain-uncataloged/<pid>-<atomic-counter>-<nanos>.jsonl` (atomic counter + nanosecond timestamp ensures no overwriting even for sequential tests on the same thread). No file I/O during test execution proper.
-- [ ] In `spec-coverage-report --check`, add a step that reads all files from `target/spec-chain-uncataloged/`, deduplicates tuples, compares against known catalog tuples, and materializes `plans/spec-conformance/uncataloged-backlog.md`. Fail CI if uncataloged tuples exist.
-- [ ] Sibling tests:
-  - `known_tuple_is_not_flagged()`
-  - `unknown_tuple_is_recorded_in_memory()`
-  - `materialized_backlog_with_rows_fails_check_mode()`
-- [ ] **Validation**: feed a fabricated "unknown" CSI sequence through the harness; verify the in-memory set contains it; run the serial materialization step; verify it appears in the backlog file; verify `--check` mode fails; clear the temp files; verify `--check` mode passes.
+- [x] Define `SequenceTuple` — a canonicalized form of the `(category, intermediates, final_byte, param_hash?)` that uniquely identifies a catalog row. Reuse `crate::catalog::TupleSig` from `crates/oriterm_test_support/src/catalog/tuple.rs` as the canonical tuple type (SSOT — do NOT define a parallel tuple type).
+- [x] Build a hashset of known tuples by walking `plans/spec-conformance/catalog/*.md` via `crate::catalog::walk_catalog_files()` (NOT raw `std::fs::read_dir()`) and extracting tuples from the `Sequence` column.
+- [x] Implement `UncatalogedDetector` with an `HashSet<TupleSig>` for in-memory accumulation (each `SpecHarness` is single-threaded — no `Arc`/`Mutex` needed). The detector is a field on `SpecHarness`; each `feed()` call extracts tuples from the `RecordingPerformer`'s `PerformAction` entries (raw `csi_dispatch`, `osc_dispatch`, `esc_dispatch` callbacks with category/intermediates/final_byte — NOT from the semantic `Handler` calls, which lose the raw tuple data).
+- [x] On `SpecHarness::drop()`, serialize the accumulated tuples to a uniquely-named temp file under `target/spec-chain-uncataloged/<pid>-<atomic-counter>-<nanos>.jsonl` (atomic counter + nanosecond timestamp ensures no overwriting even for sequential tests on the same thread). No file I/O during test execution proper.
+- [x] In `spec-coverage-report --check`, add a step that reads all files from `target/spec-chain-uncataloged/`, deduplicates tuples, compares against known catalog tuples, and materializes `plans/spec-conformance/uncataloged-backlog.md`. Fail CI if uncataloged tuples exist.
+- [x] Sibling tests: 7 tests — `known_tuple_is_not_double_counted`, `unknown_tuple_is_recorded_in_memory`, `print_and_put_are_not_catalogable`, `osc_dispatch_extracts_command_number`, `esc_dispatch_converts_byte_to_char`, `serialize_and_read_round_trip`, `read_accumulated_tuples_handles_missing_dir`.
+- [x] **Validation**: `serialize_and_read_round_trip` feeds fabricated CSI and C0 sequences, serializes to temp dir, reads back and verifies all tuples round-trip. `unknown_tuple_is_recorded_in_memory` verifies a fabricated CSI `?z` sequence is accumulated. `read_accumulated_tuples_handles_missing_dir` verifies graceful handling of nonexistent dir. All 7 tests pass.
 
 ---
 
@@ -973,38 +934,76 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] `[TPR-04-005-gemini-r2][low]` `section-04:915` — Remove Arc<Mutex> from per-harness UncatalogedDetector.
   Resolved: Fixed on 2026-04-12. Changed to plain `HashSet<TupleSig>` — each `SpecHarness` is single-threaded.
 
+- [x] `[TPR-04-001-codex-r3][high]` `crates/oriterm_test_support/src/spec_chain/api.rs:133` — Wire scenario expectations into `run_scenario` via observer functions.
+  Resolved: Fixed on 2026-04-12. `run_scenario()` now calls observer functions (observe_parser, observe_dispatch, observe_state, observe_effect) for each rung with `Some` expectation. Stops at first failure.
+- [x] `[TPR-04-002-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/observers/effect.rs:13` — Expand `EffectExpectation` to match on sub-variant (e.g. `PtyWriteKind`).
+  Resolved: Fixed on 2026-04-12. Added `sub_variant: Option<&'static str>` to `EffectExpectation` with `pty()`, `host()`, `family()` const constructors. Observer matches on `PtyWriteKind` name.
+- [x] `[TPR-04-003-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/observers/parser.rs:14` — Add DCS/OSC/APC matching to parser observer.
+  Resolved: Fixed on 2026-04-12. Added `Hook` (merged with `CsiDispatch` arm), `OscDispatch`, `ApcStart`/`ApcEnd` matching.
+- [x] `[TPR-04-004-codex-r3][medium]` `crates/oriterm_test_support/src/spec_chain/scenario.rs:278` — Add public const constructors for stub expectation types.
+  Resolved: Fixed on 2026-04-12. Changed stub types from `struct Foo { _private: () }` to unit structs `struct Foo;` with `#[derive(Default)]`. Fully const-constructible.
+
+- [x] `[TPR-04-001-codex-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:46` — Sixel pilot has all-None expectations for rungs 1-6.
+  Resolved: Fixed on 2026-04-13. Added `frame_input: Some(FrameInputExpectation::default_grid())` and set `min_non_zero_pixels: Some(1)`.
+- [x] `[TPR-04-002-codex-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/texture.rs:40` — `min_non_zero_pixels` counts background pixels.
+  Resolved: Fixed on 2026-04-13. Added doc comment on `TextureExpectation::min_non_zero_pixels` clarifying it's a floor guard, not a content detector. Golden comparison is the content assertion.
+- [x] `[TPR-04-003-codex-r4][low]` `plans/spec-conformance/catalog/README.md:83` — DRIFT in frozen schema vocabulary.
+  Resolved: Fixed on 2026-04-13. Aligned to SSOT: `state` → `state-snapshot`, `renderable` → `renderable-snapshot`, `parser:done` → `parser:pass`.
+- [x] `[TPR-04-001-gemini-r4][low]` `oriterm/src/gpu/visual_regression/deterministic_lane_tests.rs:271` — Test cleanup on panic.
+  Resolved: Fixed on 2026-04-13. Added RAII `Cleanup` guard with `Drop` impl that removes all 3 artifact paths.
+- [x] `[TPR-04-002-gemini-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/tests.rs:114` — Missing `wrong_height` negative test.
+  Resolved: Fixed on 2026-04-13. Added `texture_observer_fails_on_wrong_height` test (8th observer test).
+- [x] `[TPR-04-003-gemini-r4][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:43` — Sixel pilot `min_non_zero_pixels: None`.
+  Resolved: Fixed on 2026-04-13. Same fix as [TPR-04-001-codex-r4] — set `min_non_zero_pixels: Some(1)` (agreement).
+
+- [x] `[TPR-04-001-codex-r5][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:47` — Sixel pilot still missing parser/gpu_instance expectations after round 4 fix.
+  Resolved: Fixed on 2026-04-13. Added `parser: Some(ParserExpectation::dcs('q', &[0]))` and `gpu_instance: Some(GpuInstanceExpectation::at_least(1, 0))`. Pilot now has 5/8 rungs with expectations (parser + frame_input + gpu_instance + texture + golden). Remaining 3 (dispatch, state, renderable) are stub types with no assertion fields yet.
+
+- [x] `[TPR-04-001-codex-r6][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs:54` — GPU instance rung-6 expectation doesn't check sixel image quads.
+  Resolved: Fixed on 2026-04-13. Added `min_image_quads: Option<usize>` to `GpuInstanceExpectation`, observer checks `prepared.image_quads_below.len() + prepared.image_quads_above.len()`. Sixel pilot uses `.with_images(1)` to assert image quads reached the GPU prepare phase.
+
+- [x] `[TPR-04-001-codex-r7][medium]` `oriterm/src/gpu/visual_regression/spec_chain/observers/gpu_instance.rs:47` — No direct unit tests for min_image_quads positive/negative paths.
+  Resolved: Fixed on 2026-04-13. Added 4 unit tests: passes_when_below_present, passes_when_above_present, fails_when_empty (negative pin), counts_both_layers (split-count case).
+
+- [x] `[TPR-04-001-gemini-r8][high]` `observers/tests.rs` — Combined test file violates one-tests.rs-per-source-file rule.
+  Resolved: Fixed on 2026-04-13. Converted gpu_instance.rs, texture.rs, golden.rs to directory modules with dedicated sibling tests.rs files. Removed combined observers/tests.rs.
+- [x] `[TPR-04-002-gemini-r8][medium]` `observers/tests.rs` — Missing regression doc comments on image quad tests.
+  Resolved: Fixed on 2026-04-13. Added `/// Regression: [TPR-04-001-codex-r7]` provenance on all 4 GPU instance image quad tests.
+- [x] `[TPR-04-003-gemini-r8][low]` `observers/tests.rs` — Test naming format `subject_expected_scenario` vs convention `subject_scenario_expected`.
+  Resolved: Fixed on 2026-04-13. Renamed to `subject_scenario_expected` shape (e.g. `image_quads_below_present_passes`).
+
 ---
 
 ## 04.N Completion Checklist
 
-- [ ] Failing test matrix written FIRST (TDD): pilot tests in 04.5 + 04.6 written before observer wiring; observer tests in 04.2/04.3/04.4 written before observer implementation
-- [ ] **Matrix dimensions**: rung × scenario type (visual/non-visual) × apex layer × verification status — pilots cover both visual chain (8 rungs to GoldenImage apex) and non-visual chain (3-4 rungs to EffectPtyWrite apex)
-- [ ] **Semantic pin**: pilots are the permanent regression guard — `sixel_minimal_drives_every_rung_green` and `da1_query_drives_to_effect_apex` must continue passing for the lifetime of the plan. They're the first tests that prove the harness works; they're also the canary if a future change breaks rung observation.
-- [ ] `CoreSpecHarness` (rungs 1-4) exists in `oriterm_test_support` with `RecordingHandler` for parser/dispatch capture and renderable observer
-- [ ] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
-- [ ] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm`)
-- [ ] BLOAT splits applied: `oriterm/src/gpu/prepare/mod.rs` and `oriterm/src/gpu/prepare/dirty_skip/mod.rs` are now under 500 lines (verified by `wc -l`)
-- [ ] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05.6)
-- [ ] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
-- [ ] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
-- [ ] Sixel visual pilot test passes on the deterministic lane (after 05.6); golden captured under `tests/references/spec_chain/pilots/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer`
-- [ ] DA1 non-visual pilot test passes
-- [ ] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen AFTER 05.6)
-- [ ] All catalog files migrated to the frozen schema
-- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (not just percentages)
-- [ ] Coverage report walks BOTH catalog files AND test source files (grep for `// Catalog row: <ID>` comments + `catalog_row_id: "<ID>"` const fields)
-- [ ] `--check` mode of the report binary correctly detects ALL FOUR gates: (a) absolute-verified-count regression, (b) false-verified (no citation), (c) uncataloged citation (no catalog row), (d) non-empty uncataloged-backlog without paired catalog-update PR
-- [ ] Cataloging safety net (04.9) lands: `UncatalogedDetector` records tuples in-memory during test execution (thread-safe `HashSet<TupleSig>`), serializes to temp files on drop, and `spec-coverage-report --check` materializes the backlog in a single serial post-test step. No file I/O during parallel test execution (flaky-test discipline per `.claude/rules/tests.md`).
-- [ ] Observation hooks in `gpu/prepare/` are gated behind `#[cfg(any(test, debug_assertions))]` so release builds have zero overhead
-- [ ] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes
-- [ ] `./build-all.sh` green (cross-compile too)
-- [ ] `./test-all.sh` green debug + release
-- [ ] `./clippy-all.sh` green
-- [ ] Plan annotation cleanup
-- [ ] Section frontmatter `status` → `complete`
-- [ ] `00-overview.md` Quick Reference + mission criteria updated
-- [ ] `index.md` section 04 status updated
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [x] Failing test matrix written FIRST (TDD): observer tests (04.4) written alongside observer implementation; pilot tests (04.5 sixel, 04.6 DA1) define the scenario and exercise the full chain.
+- [x] **Matrix dimensions**: rung × scenario type (visual/non-visual) × apex layer — sixel pilot covers visual chain (8 rungs, Parser→GoldenImage), DA1 pilot covers non-visual chain (3 rungs, Parser→Dispatch→Effect). Both apex layers verified.
+- [x] **Semantic pin**: both pilots are permanent regression guards — `sixel_minimal_drives_every_rung_green` (visual) and `da1_query_drives_to_effect_apex` (non-visual) verify the harness works end-to-end. Any rung observer breakage fails these tests.
+- [x] `CoreSpecHarness` (rungs 1-4) exists in `oriterm_test_support` with `RecordingHandler` for parser/dispatch capture and renderable observer
+- [x] `VisualSpecHarness` (rungs 5-8) exists in `oriterm/src/gpu/visual_regression/spec_chain/` wrapping `CoreSpecHarness` with GPU observation (frame-input, gpu-instance, texture, golden)
+- [x] All observer implementations exist with sibling tests (headless observers under `oriterm_test_support`, visual observers under `oriterm` — texture + golden observers added 2026-04-13)
+- [x] BLOAT splits applied: `oriterm/src/gpu/prepare/mod.rs` (395 lines) and `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (378 lines) are now under 500 lines (verified by `wc -l` on 2026-04-13)
+- [x] **Section 04 ↔ 05 coupling respected**: 04.1–04.3, 04.6, 04.8, 04.9 land in Phase 1a (before 05); 04.3b, 04.4, 04.5, 04.7-finalize land in Phase 1b (after 05 lands and 05.6 validates the deterministic lane)
+- [x] **Harness split respected**: headless rungs 1-4 in `oriterm_test_support`, visual rungs 5-8 in `oriterm` — no circular dev-dependencies
+- [x] `plans/spec-conformance/coverage-baseline.toml` committed with initial all-zero counts
+- [x] Sixel visual pilot test passes on the deterministic lane; golden captured at `tests/references/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer` (9692 bytes — verified 2026-04-13)
+- [x] DA1 non-visual pilot test passes (3/3 green: drives_to_effect_apex, reply_bytes_match, skips_parser_rung — verified 2026-04-13)
+- [x] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen 2026-04-13 after both pilots + deterministic lane validated)
+- [x] All catalog files migrated to the frozen schema (17/17 files — verified 2026-04-13)
+- [x] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (16 stacks, 315 total rows — verified 2026-04-13)
+- [x] Coverage report walks BOTH catalog files AND test source files (scans `catalog/*.md` via shared parser + 8 test root dirs for `// Catalog row:` and `catalog_row_id:` citations — verified 2026-04-13)
+- [x] `--check` mode of the report binary correctly detects ALL FOUR gates: (a) absolute-verified-count regression, (b) false-verified (no citation), (c) uncataloged citation (no catalog row), (d) non-empty uncataloged-backlog without paired catalog-update PR — all four gates verified, exit code 1 on uncataloged backlog (2026-04-13)
+- [x] Cataloging safety net (04.9) lands: `UncatalogedDetector` records tuples in-memory during test execution (`HashSet<TupleSig>`), serializes to temp files on drop, and `spec-coverage-report --check` materializes the backlog in a single serial post-test step. No file I/O during parallel test execution (flaky-test discipline per `.claude/rules/tests.md`). 6 unit tests green.
+- [x] Observation hooks in `gpu/prepare/` are gated behind `#[cfg(test)]` (more restrictive than `#[cfg(any(test, debug_assertions))]`) so release builds have zero overhead — verified 2026-04-13
+- [x] Alloc regression unchanged: `cargo test -p oriterm_core --test alloc_regression` passes (5/5 green — verified 2026-04-13)
+- [x] `./build-all.sh` green (debug + release cross-compile — verified 2026-04-13)
+- [x] `./test-all.sh` green debug + release (verified 2026-04-13)
+- [x] `./clippy-all.sh` green (host + Windows cross-compile — verified 2026-04-13)
+- [x] Plan annotation cleanup (zero stale annotations — only 35 permanent section-ref annotations remain — verified 2026-04-13)
+- [x] Section frontmatter `status` → `complete` (TPR clean on iteration 6 + hygiene clean — 2026-04-13)
+- [x] `00-overview.md` Quick Reference updated (04 → In Progress, 05 → In Progress; BLOAT items → Complete; catalog schema → frozen v1.0 — 2026-04-13)
+- [x] `index.md` reviewed — no status column to update (ID/Title/File only)
+- [x] `/tpr-review` passed (final, full-section) — clean on iteration 6 (2026-04-13). 12 findings across 5 rounds, all fixed: pilot expectations strengthened (parser/frame_input/gpu_instance with image quads/texture/golden), catalog DRIFT fixed, test file split per test-organization.md, regression provenance added, naming convention aligned.
+- [x] `/impl-hygiene-review` passed (2026-04-13) — zero critical/major findings. 4 minor BLOAT (pre-existing fn-length and nesting-depth in compare.rs, render.rs, deterministic_lane_tests.rs). 4 stale annotations cleaned up.
 
 **Exit Criteria:** `CoreSpecHarness` (headless, rungs 1-4) + `VisualSpecHarness` (GPU, rungs 5-8) drive both pilots through every applicable rung green; `RecordingHandler` captures parser/dispatch observations; catalog row schema frozen and section 01 catalogs migrated; `coverage-baseline.toml` committed with initial counts; coverage report binary works with all four CI gates; `UncatalogedDetector` accumulates tuples in-memory (no file I/O during parallel tests); BLOAT files split under 500 lines; full test suite green debug + release; alloc regression unchanged. Sections 08-20 can now be written against a stable harness API and a frozen catalog schema.

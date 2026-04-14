@@ -12,6 +12,33 @@ use crate::index::Column;
 use super::Grid;
 use super::row::Row;
 
+/// Maps old absolute row indices to result row indices after reflow.
+///
+/// Built during `reflow_cells` with O(1) per-row overhead. Consumed by
+/// `ImageCache::remap_placements` to translate cache-coordinate
+/// placement `StableRowIndex` values across a reflow operation.
+///
+/// For each source row, `first_output_row[src_idx]` gives the output
+/// row index where that source row's first cell landed. Wrapped source
+/// rows may share the same output row as their neighbors (unwrap case),
+/// and a single source row may span multiple output rows (wrap case) —
+/// the mapping always records the FIRST landing row for consistent
+/// placement remapping.
+///
+/// `old_total_evicted` is captured BEFORE `scrollback.clear()` so
+/// consumers can convert `StableRowIndex(X)` → old absolute row via
+/// `X.checked_sub(old_total_evicted)`.
+#[derive(Debug, Clone)]
+pub struct ReflowMapping {
+    /// Per source row: the output row index where that row's first cell
+    /// landed. Always `all_rows.len()` long after reflow — every source
+    /// row maps to exactly one output row.
+    pub first_output_row: Vec<usize>,
+    /// Old `total_evicted` value (pre-reflow). Subtract from
+    /// `StableRowIndex.0` to get the pre-reflow absolute row index.
+    pub old_total_evicted: u64,
+}
+
 impl Grid {
     /// Resize the grid to new dimensions.
     ///
@@ -19,35 +46,49 @@ impl Grid {
     /// new column width (cell-by-cell rewriting). When false, rows are simply
     /// truncated or extended (for alternate screen).
     ///
+    /// Returns `Some(ReflowMapping)` when reflow actually occurred (column
+    /// count changed AND `reflow` was true) so consumers (e.g.
+    /// `ImageCache::remap_placements`) can translate row-indexed state
+    /// through the reflow. Returns `None` when no reflow occurred.
+    ///
     /// Resets scroll region, clamps cursor, and marks everything dirty.
-    pub fn resize(&mut self, new_lines: usize, new_cols: usize, reflow: bool) {
+    pub fn resize(
+        &mut self,
+        new_lines: usize,
+        new_cols: usize,
+        reflow: bool,
+    ) -> Option<ReflowMapping> {
         if new_cols == 0 || new_lines == 0 {
-            return;
+            return None;
         }
         if new_cols == self.cols && new_lines == self.lines {
-            return;
+            return None;
         }
 
-        if reflow && new_cols != self.cols {
+        let mapping = if reflow && new_cols != self.cols {
             if new_cols > self.cols {
                 // Growing cols: reflow first (unwrap), then adjust rows.
-                self.reflow_cols(new_cols);
+                let m = self.reflow_cols(new_cols);
                 self.cols = new_cols;
                 Self::reset_tab_stops(&mut self.tab_stops, new_cols);
                 self.resize_rows(new_lines);
+                m
             } else {
                 // Shrinking cols: adjust rows first, then reflow (wrap).
                 self.resize_rows(new_lines);
-                self.reflow_cols(new_cols);
+                let m = self.reflow_cols(new_cols);
                 self.cols = new_cols;
                 Self::reset_tab_stops(&mut self.tab_stops, new_cols);
+                m
             }
         } else {
             self.resize_no_reflow(new_cols, new_lines);
-        }
+            None
+        };
 
         // Reset scroll region, clamp cursor, mark dirty.
         self.finalize_resize();
+        mapping
     }
 
     /// Resize without text reflow (for alt screen or same-width changes).
@@ -188,11 +229,20 @@ impl Grid {
     ///
     /// Handles both growing (unwrapping) and shrinking (re-wrapping).
     /// Cursor position is tracked through the reflow.
-    fn reflow_cols(&mut self, new_cols: usize) {
+    ///
+    /// Returns `Some(ReflowMapping)` with the per-source-row output-row
+    /// mapping when reflow actually runs. Returns `None` only when
+    /// `old_cols == new_cols` or `new_cols == 0` (no-op guards).
+    fn reflow_cols(&mut self, new_cols: usize) -> Option<ReflowMapping> {
         let old_cols = self.cols;
         if old_cols == new_cols || new_cols == 0 {
-            return;
+            return None;
         }
+
+        // Capture BEFORE collect_all_rows + apply_reflow_result — the
+        // mapping's old_total_evicted must reflect the state that
+        // pre-reflow StableRowIndex values were computed against.
+        let old_total_evicted = self.total_evicted as u64;
 
         // Collect all rows: scrollback (oldest first) then visible.
         let (all_rows, visible_start) = self.collect_all_rows();
@@ -206,14 +256,15 @@ impl Grid {
         let history_boundary = visible_start.saturating_sub(self.resize_pushed);
 
         // Reflow cells into new-width rows.
-        let (result, new_cursor_abs, new_cursor_col, new_history_boundary) = reflow_cells(
-            &all_rows,
-            old_cols,
-            new_cols,
-            cursor_abs,
-            cursor_col,
-            history_boundary,
-        );
+        let (result, new_cursor_abs, new_cursor_col, new_history_boundary, first_output_row) =
+            reflow_cells(
+                &all_rows,
+                old_cols,
+                new_cols,
+                cursor_abs,
+                cursor_col,
+                history_boundary,
+            );
 
         // Distribute into scrollback + visible, update cursor.
         self.apply_reflow_result(
@@ -223,6 +274,11 @@ impl Grid {
             new_cursor_col,
             new_history_boundary,
         );
+
+        Some(ReflowMapping {
+            first_output_row,
+            old_total_evicted,
+        })
     }
 
     /// Collect all rows (scrollback oldest-first + visible) for reflow.
@@ -269,7 +325,16 @@ impl Grid {
         if total > self.lines {
             let sb_count = total - self.lines;
             for row in result.drain(..sb_count) {
-                self.scrollback.push(row);
+                // Track evictions so StableRowIndex values produced after
+                // reflow remain valid (mirrors `shrink_rows`). Without
+                // this, a ring-buffer eviction silently drops a row but
+                // leaves `total_evicted` unchanged, shifting all future
+                // StableRowIndex computations by the dropped row count —
+                // breaking image placements, selection anchors, and any
+                // other eviction-stable state that survives reflow.
+                if self.scrollback.push(row).is_some() {
+                    self.total_evicted += 1;
+                }
             }
             // Overflow = scrollback rows beyond the real history boundary.
             self.resize_pushed = sb_count.saturating_sub(new_history_boundary);
@@ -294,8 +359,12 @@ impl Grid {
 
 /// Reflow all rows from old column width to new column width.
 ///
-/// Returns (reflowed rows, new cursor abs, new cursor col, new history boundary).
-/// `history_boundary` is the source row index where real scrollback history ends.
+/// Returns (reflowed rows, new cursor abs, new cursor col, new history
+/// boundary, `first_output_row`). `history_boundary` is the source row
+/// index where real scrollback history ends. `first_output_row[i]` is
+/// the output row index where source row `i`'s first cell landed —
+/// always populated with one entry per source row for use by
+/// `ReflowMapping`.
 #[expect(
     clippy::too_many_arguments,
     reason = "reflow state: source rows, dimensions, cursor position, history boundary"
@@ -307,12 +376,13 @@ fn reflow_cells(
     cursor_abs: usize,
     cursor_col: usize,
     history_boundary: usize,
-) -> (Vec<Row>, usize, usize, usize) {
+) -> (Vec<Row>, usize, usize, usize, Vec<usize>) {
     let mut new_cursor_abs = 0usize;
     let mut new_cursor_col = 0usize;
     let mut new_history_boundary = 0usize;
     let mut history_tracked = false;
     let mut result: Vec<Row> = Vec::with_capacity(all_rows.len());
+    let mut first_output_row: Vec<usize> = Vec::with_capacity(all_rows.len());
     let mut out_row = Row::new(new_cols);
     let mut out_col = 0usize;
 
@@ -334,6 +404,22 @@ fn reflow_cells(
         } else {
             src_row.content_len()
         };
+
+        // Record where this source row's first cell will land in the
+        // output. The pending `out_row` becomes `result[result.len()]`
+        // when pushed. If `out_col == new_cols`, the pending row is
+        // full and the first cell of this source row will trigger an
+        // immediate push, so the first cell actually lands at
+        // `result.len() + 1`. Empty source rows (`content_len == 0`)
+        // write no cells, so they map to `result.len()` — the index
+        // where the pending out_row (still being shared) will land
+        // when pushed by the end-of-row finalize.
+        let first_row = if content_len == 0 || out_col < new_cols {
+            result.len()
+        } else {
+            result.len() + 1
+        };
+        first_output_row.push(first_row);
 
         reflow_row_cells(
             src_row,
@@ -376,7 +462,13 @@ fn reflow_cells(
         result.push(out_row);
     }
 
-    (result, new_cursor_abs, new_cursor_col, new_history_boundary)
+    (
+        result,
+        new_cursor_abs,
+        new_cursor_col,
+        new_history_boundary,
+        first_output_row,
+    )
 }
 
 /// Reflow cells from a single source row into the output.

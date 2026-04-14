@@ -22,6 +22,7 @@ pub use cursor::{Cursor, CursorShape};
 pub use dirty::{DirtyIter, DirtyLine, DirtyTracker};
 pub use editing::{DisplayEraseMode, LineEraseMode};
 pub use navigation::TabClearMode;
+pub use resize::ReflowMapping;
 pub use ring::ScrollbackBuffer;
 pub use row::Row;
 pub use stable_index::StableRowIndex;

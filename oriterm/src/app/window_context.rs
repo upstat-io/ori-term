@@ -101,6 +101,13 @@ pub(crate) struct WindowContext {
     /// Previous frame's text blink opacity — detects blink changes that
     /// require a full content cache re-render (not just cursor overlay).
     pub(super) prev_text_blink_opacity: f32,
+    /// Last `(cell_w, cell_h)` broadcast to panes via
+    /// `App::broadcast_cell_metrics_to_window`. `None` before the first
+    /// broadcast. Used by `sync_grid_layout` / `handle_dpi_change` to
+    /// short-circuit redundant broadcasts that would otherwise mark
+    /// every pane dirty + invalidate pushed snapshots on every
+    /// interactive-resize tick (TPR-07-002-gemini, 2026-04-13).
+    pub(super) last_broadcast_cell_dims: Option<(u16, u16)>,
 }
 
 impl WindowContext {
@@ -148,6 +155,7 @@ impl WindowContext {
             damage: DamageSet::default(),
             ui_stale: true,
             prev_text_blink_opacity: 1.0,
+            last_broadcast_cell_dims: None,
         }
     }
 

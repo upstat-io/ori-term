@@ -142,6 +142,21 @@ fn scroll_display_missing_pane_is_noop() {
     mux.scroll_display(bogus, 5);
 }
 
+/// `set_cell_dimensions` on a non-existent pane is a no-op (no panic).
+///
+/// The actual command routing is verified by
+/// `test_set_cell_dimensions_command_updates_fixed_pixels_coverage` in
+/// `pane::io_thread::tests`. This test confirms the EmbeddedMux method
+/// handles missing panes gracefully — section 07.6 calls this method
+/// from multiple pane-creation call sites and from window-wide
+/// broadcasts, so it must never panic on a stale pane id.
+#[test]
+fn set_cell_dimensions_missing_pane_is_noop() {
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let bogus = PaneId::from_raw(999);
+    mux.set_cell_dimensions(bogus, 8, 16);
+}
+
 /// `search_set_query` on a non-existent pane is a no-op (no panic).
 ///
 /// The actual search command handling is verified by

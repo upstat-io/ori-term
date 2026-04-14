@@ -943,6 +943,30 @@ fn test_set_theme_command() {
     );
 }
 
+/// `SetCellDimensions` command is plumbed to `Term::set_cell_dimensions`
+/// without panicking, and flags the grid dirty so the main thread pulls
+/// a fresh snapshot. The underlying Term-level recomputation (cell
+/// coverage for `FixedPixels` placements) is verified in
+/// `oriterm_core::image::cache::tests` — this test covers only the
+/// mux-layer plumbing.
+#[test]
+fn test_set_cell_dimensions_command_marks_dirty() {
+    use std::sync::atomic::Ordering;
+
+    let mut t = make_sync_thread();
+    t.grid_dirty.store(false, Ordering::Release);
+
+    t.handle_command(PaneIoCommand::SetCellDimensions {
+        width: 16,
+        height: 32,
+    });
+
+    assert!(
+        t.grid_dirty.load(Ordering::Acquire),
+        "SetCellDimensions must flag grid_dirty so the main thread re-reads the snapshot"
+    );
+}
+
 /// SetCursorShape command changes the cursor shape.
 #[test]
 fn test_set_cursor_shape_command() {
@@ -1798,5 +1822,381 @@ fn multiple_pending_responses_polled_independently() {
         t.pending_responses.len(),
         1,
         "one fulfilled response removed, one unfulfilled retained"
+    );
+}
+
+// --- Section 06.5: Sync timeout + edge case test matrix ---
+//
+// BSU = \x1b[?2026h (begin synchronized update)
+// ESU = \x1b[?2026l (end synchronized update / commit)
+//
+// These tests exercise handle_sync_timeout() directly (synchronous)
+// except run_loop_sync_timeout_fires which uses the spawned run() loop.
+
+/// Helper: generic sync thread builder for any EffectSink.
+fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
+    sink: S,
+) -> (PaneIoThread<S>, Arc<AtomicU32>) {
+    let wakeup_count = Arc::new(AtomicU32::new(0));
+    let wakeup_clone = Arc::clone(&wakeup_count);
+    let term = Term::new(24, 80, 1000, Theme::default(), sink);
+    let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let thread = PaneIoThread {
+        terminal: term,
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::new(AtomicBool::new(false)),
+        wakeup: Arc::new(move || {
+            wakeup_clone.fetch_add(1, Ordering::Relaxed);
+        }),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        double_buffer: SnapshotDoubleBuffer::new(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
+    };
+    (thread, wakeup_count)
+}
+
+/// Semantic pin: timeout flushes buffered writes (bytes are replayed, not discarded).
+#[test]
+fn sync_timeout_aborts_and_flushes_buffered_writes() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode (BSU).
+    t.handle_bytes(b"\x1b[?2026h");
+    assert!(
+        t.processor.sync_bytes_count() > 0 || t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "BSU should activate sync mode"
+    );
+
+    // Send visible content while in sync mode — goes into sync buffer.
+    t.handle_bytes(b"hello");
+
+    // Trigger timeout-abort: replays buffered bytes, publishes snapshot.
+    t.handle_sync_timeout();
+
+    // 1. Sync buffer must be empty after abort.
+    assert_eq!(
+        t.processor.sync_bytes_count(),
+        0,
+        "sync buffer must be cleared"
+    );
+
+    // 2. Snapshot must contain the buffered "hello" (replayed, not discarded).
+    let mut consumer = oriterm_core::RenderableContent::default();
+    assert!(
+        t.double_buffer.swap_front(&mut consumer),
+        "snapshot must be published"
+    );
+    let text: String = consumer
+        .cells
+        .iter()
+        .filter(|c| c.ch != ' ' && c.ch != '\0')
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        text.contains("hello"),
+        "replayed bytes must appear in snapshot, got: {text:?}"
+    );
+
+    // 3. grid_dirty was set.
+    assert!(
+        !t.grid_dirty.load(Ordering::Acquire),
+        "grid_dirty should be cleared after produce_snapshot"
+    );
+
+    // 4. Wakeup fired.
+    assert!(wakeup_count.load(Ordering::Relaxed) > 0, "wakeup must fire");
+
+    // 5. snapshot_seqno advanced by exactly 1.
+    let seqno = t.double_buffer.seqno();
+    assert_eq!(seqno, 1, "snapshot_seqno should advance by 1");
+}
+
+/// Semantic pin: timeout emits PresentationEffect::Abort effect.
+#[test]
+fn sync_timeout_emits_abort_effect() {
+    use oriterm_core::effect::sink::EffectSink;
+    use oriterm_core::effect::{Effect, PresentationEffect, QueueingEffectSink, SyncAbortReason};
+
+    let sink = QueueingEffectSink::new();
+    let (mut t, _wakeup) = make_sync_thread_generic(sink);
+
+    // Enter sync mode + buffer content.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.handle_bytes(b"test");
+
+    // Trigger timeout.
+    t.handle_sync_timeout();
+
+    // Drain effects and find the Abort.
+    let mut effects = Vec::new();
+    t.terminal.effect_sink().drain_into(&mut effects);
+
+    let has_abort = effects.iter().any(|e| {
+        matches!(
+            e,
+            Effect::Presentation(PresentationEffect::Abort {
+                reason: SyncAbortReason::Timeout
+            })
+        )
+    });
+    assert!(
+        has_abort,
+        "Abort effect must be emitted on timeout, got: {effects:?}"
+    );
+}
+
+/// Timeout-abort runs post-parse housekeeping (mode_cache reflects replayed bytes).
+#[test]
+fn sync_timeout_runs_post_parse_housekeeping() {
+    let (mut t, _wakeup) = make_sync_thread_with_wakeup();
+
+    // Verify cursor is visible initially.
+    assert!(
+        t.terminal.mode().contains(TermMode::SHOW_CURSOR),
+        "cursor should be visible initially"
+    );
+
+    // Enter sync mode, hide cursor within sync buffer.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.handle_bytes(b"\x1b[?25l");
+
+    // The mode_cache should NOT reflect the hide yet (still in sync buffer).
+    let cached_mode = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
+    assert!(
+        cached_mode.contains(TermMode::SHOW_CURSOR),
+        "mode_cache should not update while bytes are buffered in sync mode"
+    );
+
+    // Trigger timeout — replays bytes including the hide-cursor sequence.
+    t.handle_sync_timeout();
+
+    // After housekeeping, mode_cache must reflect the cursor-hide from replayed bytes.
+    let cached_mode_after = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
+    assert!(
+        !cached_mode_after.contains(TermMode::SHOW_CURSOR),
+        "mode_cache must reflect cursor hidden after timeout replay"
+    );
+}
+
+/// Resize command during active sync — buffered bytes replay correctly after timeout.
+#[test]
+fn resize_during_sync_timeout() {
+    let (mut t, _wakeup) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + buffer content.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.handle_bytes(b"resize");
+
+    // Resize while sync is active.
+    t.process_resize(40, 100);
+
+    // Trigger timeout.
+    t.handle_sync_timeout();
+
+    // Snapshot must be coherent — no crash, grid dimensions match resize.
+    let mut consumer = oriterm_core::RenderableContent::default();
+    assert!(t.double_buffer.swap_front(&mut consumer));
+
+    assert_eq!(t.terminal.grid().lines(), 40);
+    assert_eq!(t.terminal.grid().cols(), 100);
+}
+
+/// Alt screen swap in replayed bytes — mode_cache reflects ALT_SCREEN after timeout.
+#[test]
+fn alt_screen_swap_in_replayed_bytes() {
+    let (mut t, _wakeup) = make_sync_thread_with_wakeup();
+
+    // Confirm not in alt screen.
+    assert!(
+        !t.terminal.mode().contains(TermMode::ALT_SCREEN),
+        "should start in primary screen"
+    );
+
+    // Enter sync mode, switch to alt screen within sync buffer.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.handle_bytes(b"\x1b[?1049h");
+
+    // Trigger timeout.
+    t.handle_sync_timeout();
+
+    // Alt screen must be active after replay.
+    assert!(
+        t.terminal.mode().contains(TermMode::ALT_SCREEN),
+        "alt screen must be active after replayed bytes"
+    );
+    let cached_mode = TermMode::from_bits_truncate(t.mode_cache.load(Ordering::Acquire));
+    assert!(
+        cached_mode.contains(TermMode::ALT_SCREEN),
+        "mode_cache must reflect alt screen after timeout replay"
+    );
+}
+
+/// Wakeup fires exactly once on timeout (no double-publish).
+#[test]
+fn no_double_publish_on_timeout() {
+    let (mut t, wakeup_count) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + buffer content.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.handle_bytes(b"content");
+
+    assert_eq!(
+        wakeup_count.load(Ordering::Relaxed),
+        0,
+        "no wakeup before timeout"
+    );
+
+    // Trigger timeout.
+    t.handle_sync_timeout();
+
+    assert_eq!(
+        wakeup_count.load(Ordering::Relaxed),
+        1,
+        "wakeup must fire exactly once on timeout"
+    );
+}
+
+/// Nested BSU in sync buffer — stop_sync unconditionally clears buffer and unsets mode.
+#[test]
+fn nested_bsu_in_sync_buffer() {
+    let (mut t, _wakeup) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode + buffer content + nested BSU.
+    t.handle_bytes(b"\x1b[?2026h");
+    t.handle_bytes(b"before");
+    t.handle_bytes(b"\x1b[?2026h"); // nested BSU
+    t.handle_bytes(b"after");
+
+    // Trigger timeout — stop_sync replays ALL bytes then unconditionally clears.
+    t.handle_sync_timeout();
+
+    // After timeout, sync buffer must be empty.
+    assert_eq!(
+        t.processor.sync_bytes_count(),
+        0,
+        "stop_sync must clear sync buffer even with nested BSU"
+    );
+
+    // Terminal must NOT be in sync mode.
+    assert!(
+        !t.terminal.mode().contains(TermMode::SYNC_UPDATE),
+        "sync mode must be unset after stop_sync"
+    );
+
+    // Snapshot must contain both "before" and "after".
+    let mut consumer = oriterm_core::RenderableContent::default();
+    assert!(t.double_buffer.swap_front(&mut consumer));
+    let text: String = consumer
+        .cells
+        .iter()
+        .filter(|c| c.ch != ' ' && c.ch != '\0')
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        text.contains("before") && text.contains("after"),
+        "all buffered bytes must be replayed, got: {text:?}"
+    );
+}
+
+/// Max buffer overflow — VTE overflow path fires and processes bytes.
+#[test]
+fn sync_abort_after_max_buffer_overflow() {
+    let (mut t, _wakeup) = make_sync_thread_with_wakeup();
+
+    // Enter sync mode.
+    t.handle_bytes(b"\x1b[?2026h");
+
+    // Feed >1 MiB of data to trigger VTE's overflow path.
+    // SYNC_BUFFER_SIZE in VTE is 2 MiB; advance_sync() at processor.rs:210
+    // triggers overflow when the buffer exceeds that limit.
+    let large_data = vec![b'X'; 2 * 1024 * 1024 + 1];
+    t.handle_bytes(&large_data);
+
+    // The overflow should have triggered stop_sync_internal internally.
+    // Sync buffer should be empty after overflow.
+    assert_eq!(
+        t.processor.sync_bytes_count(),
+        0,
+        "sync buffer must be cleared after overflow"
+    );
+}
+
+/// Spawned run-loop test: the real crossbeam select! deadline arm fires.
+#[test]
+fn run_loop_sync_timeout_fires() {
+    let (handle, shutdown) = spawn_pair_with_flag();
+    let byte_tx = handle.byte_sender();
+
+    // Send BSU + visible content via the byte channel.
+    byte_tx.send(b"\x1b[?2026h".to_vec()).unwrap();
+    byte_tx.send(b"timeout_test".to_vec()).unwrap();
+
+    // Wait >150ms for the sync timeout to fire in the run loop.
+    std::thread::sleep(Duration::from_millis(300));
+
+    // The pane's snapshot should now reflect the buffered content.
+    let mut consumer = oriterm_core::RenderableContent::default();
+    // Give the IO thread a moment to publish.
+    for _ in 0..10 {
+        if handle.double_buffer().swap_front(&mut consumer) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let text: String = consumer
+        .cells
+        .iter()
+        .filter(|c| c.ch != ' ' && c.ch != '\0')
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        text.contains("timeout_test"),
+        "sync timeout must fire in run loop and publish buffered content, got: {text:?}"
+    );
+
+    // Clean shutdown.
+    shutdown.store(true, Ordering::Release);
+    handle.send_command(PaneIoCommand::Shutdown);
+}
+
+/// Negative pin: timeout arm must NOT fire when not in sync mode.
+#[test]
+fn no_timeout_when_not_in_sync() {
+    let (mut t, _wakeup) = make_sync_thread_with_wakeup();
+
+    // No BSU sent — processor.sync_timeout().sync_timeout() returns None.
+    let deadline = t.processor.sync_timeout().sync_timeout();
+    assert!(
+        deadline.is_none(),
+        "sync_timeout must return None when not in sync mode"
+    );
+
+    // Send normal bytes — no timeout should activate.
+    t.handle_bytes(b"normal output");
+
+    // Verify still no sync deadline.
+    let deadline_after = t.processor.sync_timeout().sync_timeout();
+    assert!(
+        deadline_after.is_none(),
+        "sync_timeout must still be None after normal bytes"
+    );
+
+    // Sync buffer must remain empty.
+    assert_eq!(
+        t.processor.sync_bytes_count(),
+        0,
+        "sync buffer must be empty when not in sync mode"
     );
 }

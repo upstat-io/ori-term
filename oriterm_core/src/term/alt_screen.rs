@@ -68,8 +68,17 @@ impl<S: EffectSink> Term<S> {
         }
     }
 
-    /// Common alt screen toggle: flip flag, swap keyboard stacks, swap
-    /// image caches, mark dirty.
+    /// Common alt screen toggle: flip flag, swap keyboard stacks, mark
+    /// dirty.
+    ///
+    /// `grid` / `alt_grid` and `image_cache` / `alt_image_cache` are
+    /// NOT swapped — they stay in their semantic fields. `grid()` /
+    /// `image_cache()` route by [`TermMode::ALT_SCREEN`] to return the
+    /// active screen's state. Historically this function also swapped
+    /// the image-cache field contents, but that created a structural
+    /// inversion where `self.image_cache` held the alt cache in alt
+    /// mode and the primary grid was paired with the wrong cache in
+    /// `Term::resize` (see BUG-08-10, TPR-07-001 round 6).
     fn toggle_alt_common(&mut self) {
         self.mode.toggle(TermMode::ALT_SCREEN);
         std::mem::swap(
@@ -82,10 +91,6 @@ impl<S: EffectSink> Term<S> {
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
         );
-        // Swap image caches. Alt cache is guaranteed Some after ensure_alt_grid.
-        let alt_cache = self.alt_image_cache.take().unwrap();
-        let primary_cache = std::mem::replace(&mut self.image_cache, alt_cache);
-        self.alt_image_cache = Some(primary_cache);
         self.grid_mut().dirty_mut().mark_all();
     }
 }

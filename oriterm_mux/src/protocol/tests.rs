@@ -164,6 +164,7 @@ fn msg_type_roundtrip_all() {
         MsgType::SpawnPane,
         MsgType::ListPanes,
         MsgType::SetImageConfig,
+        MsgType::SetCellDimensions,
         MsgType::RequestNewTab,
         MsgType::SetPanePriority,
         MsgType::HelloAck,
@@ -1152,6 +1153,33 @@ fn roundtrip_set_image_config_disabled() {
             memory_limit: 0,
             max_single: 0,
             animation_enabled: false,
+        },
+    );
+}
+
+// -- SetCellDimensions roundtrip --
+
+#[test]
+fn roundtrip_set_cell_dimensions() {
+    let pdu = MuxPdu::SetCellDimensions {
+        pane_id: PaneId::from_raw(7),
+        width: 8,
+        height: 16,
+    };
+    assert!(pdu.is_fire_and_forget());
+    roundtrip(42, pdu);
+}
+
+#[test]
+fn roundtrip_set_cell_dimensions_zero_metrics_rejected_by_term_but_survive_wire() {
+    // The wire codec must not reject zero metrics — validation is the
+    // consumer's responsibility (Term::set_cell_dimensions clamps to 1).
+    roundtrip(
+        43,
+        MuxPdu::SetCellDimensions {
+            pane_id: PaneId::from_raw(1),
+            width: 0,
+            height: 0,
         },
     );
 }

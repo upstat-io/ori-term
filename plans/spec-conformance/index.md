@@ -81,7 +81,7 @@ git history preservation, --follow, no rename churn
 ---
 
 ### Section 03: Effect Boundary Migration
-**File:** `section-03-effect-boundary-migration.md` | **Status:** Not Started
+**File:** `section-03-effect-boundary-migration.md` | **Status:** Complete
 
 ```
 Effect type, EffectSink, oriterm_core::effect, production interface
@@ -99,7 +99,7 @@ fire-and-forget vs request/response, separate abstractions
 ---
 
 ### Section 04: Verification Chain Harness + Pilots + Coverage Report + Cataloging Safety Net
-**File:** `section-04-verification-chain-harness.md` | **Status:** Not Started
+**File:** `section-04-verification-chain-harness.md` | **Status:** Complete
 
 ```
 verification chain, test ladder, harness foundation, MVP framework
@@ -122,7 +122,7 @@ section 04 to 05 coupling, 04.4 04.5 04.7 blocked until 05.6 lands
 ---
 
 ### Section 05: Golden Lane Determinism
-**File:** `section-05-golden-lane-determinism.md` | **Status:** Not Started
+**File:** `section-05-golden-lane-determinism.md` | **Status:** Complete
 
 ```
 GPU determinism, software rasterizer, llvmpipe, pinned adapter
@@ -139,18 +139,24 @@ animation clock, blink phase, locale, LANG
 ---
 
 ### Section 06: Terminal Mode Plumbing
-**File:** `section-06-terminal-mode-plumbing.md` | **Status:** Not Started
+**File:** `section-06-terminal-mode-plumbing.md` | **Status:** Complete
 
 ```
 mode 2026, sync output, synchronized output, presentation gates
 Processor::sync_timeout, Processor::stop_sync, timeout-abort
 oriterm_mux/src/pane/io_thread/mod.rs, sync_bytes_count
 publication suppression, snapshot_seqno
-mode metadata registry, NamedPrivateMode SSOT, LEAK fix, 5 sync points
-crates/vte/src/ansi/types.rs:226, types.rs:175, helpers.rs:22, helpers.rs:56
-modes.rs:17, mode behavior in match arms, data registry only
-mode entry, registry table, single source of truth
-nested BSU, max-buffer-bytes, sync abort
+crossbeam_channel select! deadline-aware, default(timeout) arm
+StdSyncHandler::sync_timeout, Option<Instant>, no duplicated state
+post_parse_housekeeping extraction, shared normal + timeout path
+PresentationEffect::Abort, SyncAbortReason::Timeout
+Abort docstring flush not discard, stop_sync replays bytes
+LegacyEventSink drops Presentation effects, silent drop fix
+named_private_mode_number elimination, mode as u16, WASTE removal
+NamedPrivateMode 6 sync points, compile-time exhaustive match guard
+named_private_mode_flag retained, crate boundary, no registry in vte
+resize during sync, alt-screen swap during sync, double-publish prevention
+nested BSU, max-buffer-bytes, sync abort, SYNC_UPDATE_TIMEOUT 150ms
 ```
 
 ---
@@ -159,14 +165,21 @@ nested BSU, max-buffer-bytes, sync abort
 **File:** `section-07-image-lifecycle-correctness.md` | **Status:** Not Started
 
 ```
-image lifecycle, image_cache resize, image+reflow, ImagePlacement
-StableRowIndex, image cache reflow handler
-oriterm_core/src/image/cache/mod.rs, prune_scrollback
-remove_placements_in_region, on_resize, on_reflow
-alt-screen swap, alt_image_cache, image cache swap
-ED/EL erase, scrollback eviction
-image+resize regression matrix, every image protocol × every grid mutation
-notcurses keller scene, image lifecycle stress test
+image lifecycle, image_cache resize, ImagePlacement, PlacementSizing
+StableRowIndex, reflow remapping, ReflowMapping struct
+oriterm_core/src/image/cache/mod.rs, cache/lifecycle.rs extraction
+oriterm_core/src/grid/resize/mod.rs, reflow_cells first_output_row mapping
+prune_scrollback, remove_placements_in_region, on_resize, remap_placements
+update_cell_coverage, FixedPixels, CellCount, sizing modes
+cell-metric plumbing, set_cell_dimensions, ImageConfig extension
+app → mux → Term cell dimensions, sync_grid_layout, handle_dpi_change
+alt-screen swap, alt_image_cache, alt cache existence condition
+ED/EL erase, scrollback eviction, column out-of-bounds removal
+reflow row split, reflow row merge, total_evicted adjustment
+image+resize+reflow regression matrix, 3 protocols x 2 sizing x 7 mutations = 42
+cache/tests.rs new test file, negative rendering pin
+Kitty placeholder U+10EEEE cell-attachment, section 13 owns
+notcurses keller scene, BUG-08-9 resolved
 ```
 
 ---

@@ -81,6 +81,21 @@ impl App {
         // Drain mux notifications from the move.
         self.pump_mux_events();
 
+        // Seed torn-off panes with the new window's cell metrics.
+        // `broadcast_cell_metrics_to_window`'s short-circuit would
+        // skip these panes if the new window's cached dims match the
+        // source window's (they usually do on same-DPI tear-offs).
+        // Per-pane seed is surgical — no other pane gets re-dirtied
+        // (TPR-07-001-codex round 7).
+        let torn_pane_ids: Vec<oriterm_mux::PaneId> = self
+            .session
+            .get_tab(tab_id)
+            .map(crate::session::Tab::all_panes)
+            .unwrap_or_default();
+        for pid in torn_pane_ids {
+            self.seed_pane_with_window_cell_metrics(new_winit_id, pid);
+        }
+
         // Sync tab bars on both windows and refresh platform hit test rects.
         self.sync_tab_bar_for_window(source_winit_id);
         self.sync_tab_bar_for_window(new_winit_id);

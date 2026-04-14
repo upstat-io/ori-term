@@ -15,9 +15,7 @@ use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::term::{Term, TermMode};
 
-use super::helpers::{
-    crate_version_number, mode_report_value, named_private_mode_flag, named_private_mode_number,
-};
+use super::helpers::{crate_version_number, mode_report_value, named_private_mode_flag};
 
 /// Build the SGR parameter string for the current cursor attributes.
 ///
@@ -110,7 +108,7 @@ impl<S: EffectSink> Term<S> {
     pub(super) fn status_report_private_mode(&mut self, mode: PrivateMode) {
         let (num, value) = match mode {
             PrivateMode::Named(named) => {
-                let num = named_private_mode_number(named);
+                let num = named as u16;
                 let flag = named_private_mode_flag(named);
                 let value = flag.map_or(0, |f| mode_report_value(self.mode.contains(f)));
                 (num, value)

@@ -23,7 +23,7 @@ pub(super) fn frame_input_with_blink(
     cell: CellMetrics,
     text_blink_opacity: f32,
 ) -> FrameInput {
-    let mut input = frame_input(session, cell);
+    let mut input = frame_input(session, cell, true);
     input.text_blink_opacity = text_blink_opacity;
     input
 }
@@ -38,7 +38,7 @@ pub(super) fn assert_golden(
     renderer: &mut WindowRenderer,
 ) {
     let cell = renderer.cell_metrics();
-    let input = frame_input(session, cell);
+    let input = frame_input(session, cell, true);
     let w = input.viewport.width;
     let h = input.viewport.height;
 

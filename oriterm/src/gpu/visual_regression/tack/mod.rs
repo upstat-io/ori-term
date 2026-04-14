@@ -77,7 +77,7 @@ fn run_tack_scenario_golden(spec: &ScenarioSpec, cols: u16, rows: u16) {
     // Borrow &live.session only — never move live.session out. The
     // _terminfo sibling field in LiveSession is pub(super) and must
     // stay alive until live.finish() runs.
-    let input = frame_input(&live.session, cell);
+    let input = frame_input(&live.session, cell, true);
     let w = input.viewport.width;
     let h = input.viewport.height;
     let pixels = render_to_pixels(&gpu, &pipelines, &mut renderer, &input);

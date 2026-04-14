@@ -3,6 +3,12 @@
 //! Each test renders a specific character set or style combination and
 //! compares against a golden PNG. Covers ASCII, ligatures, box drawing,
 //! block elements, braille, CJK, combining marks, powerline, and mixed styles.
+//!
+//! This module uses the **legacy non-deterministic** visual_regression env
+//! (`headless_env`, `headless_env_full`) with `HintingMode::Full` and any
+//! available GPU adapter. New golden tests for spec conformance MUST use
+//! `headless_env_with_pinned_software_rasterizer` (see Section 05).
+//! These tests remain on the legacy env for historical back-compat only.
 
 use oriterm_core::CellFlags;
 

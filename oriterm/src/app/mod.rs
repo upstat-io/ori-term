@@ -8,6 +8,7 @@
 mod chrome;
 #[cfg(all(test, feature = "gpu-tests"))]
 pub(crate) use chrome::compute_window_layout;
+mod cell_metrics;
 mod clipboard_ops;
 pub(crate) mod config_reload;
 mod constructors;
@@ -387,6 +388,20 @@ impl App {
         if let Some(pane_id) = self.active_pane_id_for_window(winit_id) {
             if let Some(mux) = self.mux.as_mut() {
                 mux.mark_all_dirty(pane_id);
+            }
+        }
+
+        // Propagate the new cell metrics to every pane in the
+        // affected window so `FixedPixels` image placements refresh
+        // their cell coverage. Re-read through `self.windows` because
+        // we no longer hold the `ctx` borrow (mux access above
+        // required relinquishing it).
+        if let Some(ctx) = self.windows.get(&winit_id) {
+            if let Some(renderer) = ctx.renderer.as_ref() {
+                let cell = renderer.cell_metrics();
+                let cell_w = cell.width.round().max(1.0) as u16;
+                let cell_h = cell.height.round().max(1.0) as u16;
+                self.broadcast_cell_metrics_to_window(winit_id, cell_w, cell_h);
             }
         }
     }
