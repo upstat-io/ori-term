@@ -29,7 +29,7 @@ inspired_by:
   - "ghostty `src/lib_vt.zig` — CSI s / DECSLRM ambiguity resolution (explicit ambiguous action)"
 depends_on: ["02", "04", "06"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-14
 sections:
   - id: "08.1"
@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "08.2"
     title: "Convert tack section 06 scenarios to spec verification chains"
-    status: in-progress
+    status: complete
   - id: "08.3"
     title: "DECLRMM mode plumbing (VTE types + TermMode + mode reporting)"
     status: not-started
@@ -171,7 +171,10 @@ Tack section 06 (TOOLS_MENU_INVENTORY) covers ANSI status reports (DA1/DA2/DA3, 
   4. Add a row to `_legacy-tack-mapping.md`
 - [x] **Validation**: every tack section 06 scenario has a corresponding spec_chain test (tack section 06 is fully complete — all subsections 06.0-06.N are landed).
 - [x] **OSC row ownership audit**: After converting all tack section 05/06 scenarios, audit which basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) now have spec_chain coverage from the conversion. Any rows NOT covered by tack scenarios remain owned by Section 10 (OSC Suite) — update catalog notes if needed to clarify ownership.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 08.1-08.2 (tack absorption work). Catches conversion errors before the gap-fix subsections proceed.
+- [x] **TPR checkpoint** — `/tpr-review` covering 08.1-08.2 (tack absorption work). Catches conversion errors before the gap-fix subsections proceed.
+  Completed: 2026-04-14. Five rounds: rounds 1-4 surfaced 5/1/1/2 findings (all fixed in commits e1b36466 → ddcd0bd1 → dd7ee902 → c12636f3 → 193a2dab); round 5 clean pass (`no_findings: true` from both codex and gemini).
+
+**Tooling retrospective (2026-04-14):** Per-subsection `/improve-tooling` retrospective surfaced the TPR resolution-note format drift pattern — rounds 3, 4, and 5 of 08.2's TPR review were all triaging the same class of finding (leftover `Evidence:`/`Impact:`/`Required plan update:`/`Basis:` lines under resolved `- [x]` entries). New tool: `scripts/check-tpr-resolution-format.sh` (commit 89baf8d0) lints for this drift and supports `--fix`. Running `--fix` across all plan files (commit eb04574b) stripped 228 lines of pre-existing drift across 29 sections. Going forward, this linter prevents the round-3-to-5 churn from recurring.
 
 **Implementation notes (2026-04-14):** Six scenario families (`tools_menu_inventory`, `status_reports_inventory`, `status_reports`, `sgr_modes`, `character_sets`, `enq_ack`) → six spec_chain modules under `oriterm_core/tests/spec_chain/baseline/tack_section_06/`. Twelve new catalog rows driven to `verified`: `ECMA48-CSI-DA2`, `ECMA48-CSI-DA3`, `ECMA48-CSI-DSR-5`, `ECMA48-CSI-DSR-6` (status_reports_inventory — DA1 already covered by pilot); `ECMA48-SGR-0`, `ECMA48-SGR-1`, `ECMA48-SGR-4`, `ECMA48-SGR-7` (sgr_modes — four most-distinctive modes on tack's 80-mode grid; remaining 76 owned by `tack_cap_xcheck`); `ECMA48-ESC-0`, `ECMA48-ESC-B`, `ECMA48-C0-SO`, `ECMA48-C0-SI` (character_sets — SCS designation + SO/SI bank switching + preview-pane end-to-end render). Three families contribute zero new rows: `tools_menu_inventory` (inventory sentinel, no protocol bytes), `status_reports` (helper module only), `enq_ack` (blocked on BUG-08-6 — ECMA48-C0-ENQ remains `missing`). OSC row ownership audit: tack scenarios drive zero OSC rows — all basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) remain owned by Section 10. 26 new spec_chain tests, all green on host + Windows cross-compile.
 
