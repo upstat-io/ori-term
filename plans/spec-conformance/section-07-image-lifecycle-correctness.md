@@ -468,6 +468,12 @@ Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, 
 - [x] `[TPR-07-003-codex][low]` `oriterm_mux/src/backend/embedded/tests.rs:147` — Fix the DRIFTed io-thread test reference.
   Resolved: Fixed on 2026-04-14. Doc comment updated from `test_set_cell_dimensions_command_updates_fixed_pixels_coverage` (non-existent) to `test_set_cell_dimensions_command_marks_dirty` (actual test name).
 
+**Round 12 (re-review after round 11 fixes):**
+- [x] `[TPR-07-001-codex][medium]` `oriterm_mux/src/backend/embedded/tests.rs:324` — Consume the initial snapshot before claiming IO-thread coverage.
+  Resolved: Fixed on 2026-04-14. Added `refresh_pane_snapshot()` call during settle phase to consume the initial spawn snapshot. Without this, `has_new()` stayed true from the unconsumed spawn snapshot and `poll_events()` re-marked the pane dirty on the old snapshot — false positive. Now the only way dirty gets set after the settle is from a NEW IO-thread snapshot triggered by the `SetCellDimensions` command.
+- [x] `[TPR-07-002-codex][low]` `oriterm_core/src/term/tests.rs:2502` — Restore plan references in regression test doc comments.
+  Resolved: Fixed on 2026-04-14. Restored `See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.5` provenance in both `term_resize_routes_each_grid_through_its_own_image_cache` and `alt_image_cache_isolation_check` doc comments per `.claude/rules/tests.md` §Regression Discipline.
+
 ---
 
 ## 07.N Completion Checklist
