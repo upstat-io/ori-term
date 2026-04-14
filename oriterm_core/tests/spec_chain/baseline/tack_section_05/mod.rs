@@ -1,6 +1,6 @@
 //! Spec_chain conversions for tack section 05 (`n) begin testing`) scenarios.
 //!
-//! The legacy plan `plans/tack-conformance/section-05-test-menu-scenarios.md`
+//! The original tack-conformance plan
 //! exercised the begin-testing submenu through real PTY navigation against
 //! tack v1.08. Each scenario family is converted here into a standalone
 //! protocol-level spec_chain test driving the catalog row(s) the scenario
