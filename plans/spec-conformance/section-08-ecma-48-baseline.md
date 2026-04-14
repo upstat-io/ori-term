@@ -17,6 +17,7 @@ success_criteria:
   - "**Mixed separator negative pin documented**: `38:2::255;128;64` (mixed colon+semicolon) behavior is documented as unsupported with a negative-pin test asserting the failure mode"
   - "**Empty subparameter negative pin documented**: `::` vs `:0:` indistinguishability at dispatch time is documented with a negative-pin test"
   - "**BSU/ESU 7-bit only acknowledged**: sync-update path (`BSU_CSI`/`ESU_CSI` in `crates/vte/src/ansi/mod.rs:47-50`) uses 7-bit CSI only; if 8-bit C1 routing is added globally this path stays 7-bit-only; documented with a NOTE pin"
+  - "**All remaining Section-08-owned catalog rows verified**: SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM — each has a spec_chain test and its catalog row is `verified`"
   - "`plans/spec-conformance/catalog/_legacy-tack-mapping.md` is populated: every catalog row driven to `verified` in this section has a row in the mapping table linking it to the legacy tack section that originally covered it"
   - "All existing teseq tests pass without modification"
   - "All existing tack tests pass without modification"
@@ -93,6 +94,7 @@ sections:
 - [ ] `_legacy-tack-mapping.md` populated
 - [ ] Existing tack and teseq tests pass
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
+- [ ] All 14 remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR)
 - [ ] Connects to mission criterion: **Verification chain complete per row** (baseline subset)
 
 **Context:** The ECMA-48 baseline is the gate for Phase 3 stacks. Sixel needs SGR + cursor + scrollback + DECSDM. Kitty needs OSC parsing + grid integration. Mouse needs CSI encoding. Without baseline correctness, every subsequent section would fight through baseline bugs. Per Codex Q5, this section also populates `_legacy-tack-mapping.md` (created empty by section 02) as it converts tack scenarios into spec verification chains. The mapping table preserves traceability without renaming files.
@@ -165,8 +167,7 @@ Tack section 06 (TOOLS_MENU_INVENTORY) covers ANSI status reports (DA1/DA2/DA3, 
   2. Write a `spec_chain` test
   3. Update the catalog row's verification status
   4. Add a row to `_legacy-tack-mapping.md`
-- [ ] For tack section 06 work that hasn't landed yet (06.0.b, 06.0.c, 06.1-06.7), wait for it to land before converting (or coordinate with the in-flight work to absorb directly).
-- [ ] **Validation**: every landed tack section 06 scenario has a corresponding spec_chain test.
+- [ ] **Validation**: every tack section 06 scenario has a corresponding spec_chain test (tack section 06 is fully complete — all subsections 06.0-06.N are landed).
 - [ ] **TPR checkpoint** — `/tpr-review` covering 08.1-08.2 (tack absorption work). Catches conversion errors before the gap-fix subsections proceed.
 
 ---
@@ -423,7 +424,12 @@ The catalog assigns 11 additional rows to Section 08 that have `status: missing`
 **DCS rows (1):**
 - [ ] `ECMA48-DCS-DECRQSS-DECSLRM` — DECRQSS for DECSLRM (query left/right margin values). Depends on 08.3-08.5 (DECLRMM plumbing). Verify the DECRQSS handler can report DECSLRM state. Add spec_chain test. Update catalog.
 
-- [ ] **Validation**: all 11 catalog rows updated from `missing` to `verified` (or `implemented-unverified` if only handler exists without full verification chain). No Section-08-owned rows remain at `missing`.
+**xterm-ctlseqs rows (3):**
+- [ ] `XT-DECSLRM` — Set Left and Right Margins (`CSI Ps ; Ps s`). Already implemented by 08.5b (CSI s ambiguity resolution). Update catalog row from `stub` to `verified` once 08.5b work lands.
+- [ ] `XT-PUSHSGR` — Push current SGR attributes onto stack (`CSI # {`). Not dispatched in `csi::dispatch`. Implement handler (add `('{', [b'#'])` arm), add SGR attribute stack to `Term` or `Grid`, add spec_chain test. Update catalog.
+- [ ] `XT-POPSGR` — Pop SGR attributes from stack (`CSI # }`). Pair with XTPUSHSGR. Add `('}', [b'#'])` arm, pop from stack, apply attrs. Add spec_chain test. Update catalog.
+
+- [ ] **Validation**: all 14 catalog rows (11 ECMA-48 + 3 xterm) updated from `missing`/`stub` to `verified`. No Section-08-owned rows remain at `missing` or `stub`.
 
 ---
 
@@ -460,6 +466,14 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   Resolved: Fixed on 2026-04-14. Updated catalog row to Section 08 ownership; updated Section 09 context to note DECLRMM moved to Section 08.
 - [x] `[TPR-08-003-codex-r2][low]` `section-08:444` — TPR-08-001 resolved note referenced nonexistent "08.5e" instead of "08.8b".
   Resolved: Fixed on 2026-04-14. Corrected to 08.8b.
+- [x] `[TPR-08-001-codex-r3][high]` `catalog/xterm-ctlseqs.md:23,31,32` — Three xterm catalog rows (XT-DECSLRM, XT-PUSHSGR, XT-POPSGR) owned by Section 08 but not in 08.8b.
+  Resolved: Fixed on 2026-04-14. Added all 3 xterm rows to 08.8b. Updated row count from 11 to 14 throughout.
+- [x] `[TPR-08-002-codex-r3][medium]` `section-08:168` — Stale wait-for-tack-06 guidance (tack section 06 is complete).
+  Resolved: Fixed on 2026-04-14. Removed wait-for-landing instructions; tack section 06 is fully complete.
+- [x] `[TPR-08-001-gemini-r3][low]` `section-08:168` — Same as TPR-08-002-codex-r3 (stale tack section 06 wait).
+  Resolved: Fixed on 2026-04-14. Same fix as TPR-08-002-codex-r3.
+- [x] `[TPR-08-002-gemini-r3][medium]` `section-08 success criteria` — 08.8b catalog rows missing from success criteria.
+  Resolved: Fixed on 2026-04-14. Added to both frontmatter and markdown success criteria blocks.
 
 ---
 
@@ -479,7 +493,7 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [ ] **Semantic pins**: DECLRMM cursor-constrained tests, 8-bit C1 state-transition tests, and colon-separator tests are the regression guards for new behavior
 - [ ] **Negative pins**: CSI s with params when mode 69 inactive, BSU/ESU 7-bit-only scope, mixed separator failure mode, empty subparam indistinguishability, cursor outside margin band not constrained
 - [ ] Tack section 05 scenarios converted to spec_chain tests
-- [ ] Tack section 06 scenarios converted (landed parts; remaining absorbed as they land)
+- [ ] Tack section 06 scenarios converted (all subsections complete and landed)
 - [ ] DECLRMM mode plumbing complete (VTE types, TermMode flag, mode reporting)
 - [ ] DECLRMM grid enforcement complete (margin fields, cursor movement, wrap behavior)
 - [ ] DECLRMM extended operations complete (partial-width scroll, CSI s ambiguity, save/restore, reset paths)
@@ -488,7 +502,7 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [ ] ISO 8613-6 colon-separated SGR subparameter forms verified (38/48/58, both `2` truecolor and `5` indexed variants)
 - [ ] Mixed separator and empty subparam negative pins documented
 - [ ] BSU/ESU 7-bit-only NOTE pin documented
-- [ ] Remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM)
+- [ ] Remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR)
 - [ ] `_legacy-tack-mapping.md` populated
 - [ ] All existing tack tests pass without modification
 - [ ] All existing teseq tests pass without modification
@@ -502,4 +516,4 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [ ] `/tpr-review` passed (final, full-section)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
-**Exit Criteria:** ECMA-48 baseline catalog row subset is `verified`; DECLRMM full mode plumbing + grid enforcement + extended operations verified; CSI s / DECSLRM ambiguity resolved (zero-param form only per WezTerm/Ghostty); save/restore includes margin state; reset paths clear margins; 8-bit C1 controls verified; REP edge cases verified; ISO 8613-6 SGR colon forms verified with negative pins for known limitations; all Section-08-owned catalog rows (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM) verified; legacy tack mapping populated; existing tack + teseq tests still pass; ready for Phase 3 stacks to depend on baseline correctness.
+**Exit Criteria:** ECMA-48 baseline catalog row subset is `verified`; DECLRMM full mode plumbing + grid enforcement + extended operations verified; CSI s / DECSLRM ambiguity resolved (zero-param form only per WezTerm/Ghostty); save/restore includes margin state; reset paths clear margins; 8-bit C1 controls verified; REP edge cases verified; ISO 8613-6 SGR colon forms verified with negative pins for known limitations; all Section-08-owned catalog rows (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR) verified; legacy tack mapping populated; existing tack + teseq tests still pass; ready for Phase 3 stacks to depend on baseline correctness.
