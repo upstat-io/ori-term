@@ -162,15 +162,11 @@ impl Grid {
         let template = Cell::from(self.cursor.template.bg);
 
         for row_idx in self.scroll_region.clone() {
-            // Clean wide-char pairs straddling the band edges BEFORE shift:
-            // base at right with spacer at right+1 gets orphaned, and the
-            // spacer at left may lose its base outside the band.
-            if left + 1 < self.cols {
-                self.clear_wide_char_at(row_idx, left);
-            }
-            if right < self.cols {
-                self.clear_wide_char_at(row_idx, right);
-            }
+            // Clean wide-char pairs straddling the band edges BEFORE shift.
+            // `fix_wide_boundaries` only clears orphaned halves OUTSIDE
+            // [left, right+1), so in-band pairs are preserved — unlike
+            // `clear_wide_char_at` which would destroy both halves.
+            self.fix_wide_boundaries(row_idx, left, right + 1);
 
             let row = &mut self.rows[row_idx];
             let cells = row.as_mut_slice();
@@ -186,13 +182,17 @@ impl Grid {
             for cell in &mut cells[right + 1 - count..=right] {
                 cell.reset(&template);
             }
-            // Preserve existing occ as upper bound; extend only if BCE fill
-            // introduces non-default content reaching into the band edge.
-            if !template.is_empty() {
-                let cols = row.cols();
-                let new_occ = row.occ().max(right + 1).min(cols);
-                row.set_occ(new_occ);
-            }
+            // Extend occ to the band's right edge: any non-empty cell
+            // that was in the shifted range (its post-shift position is
+            // somewhere in [left, right-count]) or any BCE fill with a
+            // non-default template (at [right-count+1, right]) now
+            // occupies the band. The bound `right + 1` is tight (the
+            // band's rightmost column + 1) and avoids pessimizing
+            // beyond the band. If old occ was already >= right + 1
+            // (content beyond the band), it is preserved.
+            let cols = row.cols();
+            let new_occ = row.occ().max(right + 1).min(cols);
+            row.set_occ(new_occ);
         }
         self.dirty.mark_range(self.scroll_region.clone());
     }
@@ -221,12 +221,7 @@ impl Grid {
 
         for row_idx in self.scroll_region.clone() {
             // Clean wide-char pairs straddling the band edges BEFORE shift.
-            if left + 1 < self.cols {
-                self.clear_wide_char_at(row_idx, left);
-            }
-            if right < self.cols {
-                self.clear_wide_char_at(row_idx, right);
-            }
+            self.fix_wide_boundaries(row_idx, left, right + 1);
 
             let row = &mut self.rows[row_idx];
             let cells = row.as_mut_slice();
@@ -241,13 +236,13 @@ impl Grid {
             for cell in &mut cells[left..left + count] {
                 cell.reset(&template);
             }
-            // Preserve existing occ as upper bound; extend only if BCE fill
-            // introduces non-default content.
-            if !template.is_empty() {
-                let cols = row.cols();
-                let new_occ = row.occ().max(right + 1).min(cols);
-                row.set_occ(new_occ);
-            }
+            // Extend occ to the band's right edge — see scroll_left for
+            // the full rationale. Non-empty cells that shifted right
+            // now occupy higher columns up to `right`; this bound
+            // captures that without pessimizing past the band.
+            let cols = row.cols();
+            let new_occ = row.occ().max(right + 1).min(cols);
+            row.set_occ(new_occ);
         }
         self.dirty.mark_range(self.scroll_region.clone());
     }
@@ -279,19 +274,16 @@ impl Grid {
         let right = col_range.end - 1;
 
         // Clean wide-char pairs straddling the band edges in every affected
-        // row BEFORE any copy/clear, so shifted cells never carry stale
-        // WIDE_CHAR/WIDE_CHAR_SPACER flags into their new position and the
-        // untouched neighbor outside the band loses its orphaned partner.
+        // row BEFORE any copy/clear. `fix_wide_boundaries` only clears
+        // orphaned halves OUTSIDE the band — in-band pairs are preserved.
         for row_idx in row_range.clone() {
-            if left + 1 < self.cols {
-                self.clear_wide_char_at(row_idx, left);
-            }
-            if right < self.cols {
-                self.clear_wide_char_at(row_idx, right);
-            }
+            self.fix_wide_boundaries(row_idx, left, right + 1);
         }
 
-        // Copy cells upward within the column range.
+        // Copy cells upward within the column range. `IndexMut<Column>`
+        // on Row automatically bumps `occ` to `col + 1` for each write,
+        // so by the time the copy loop finishes, `dst_row.occ()` is at
+        // least `right + 1` — no explicit set_occ call needed here.
         for offset in 0..len - count {
             let dst = row_range.start + offset;
             let src = dst + count;
@@ -301,27 +293,14 @@ impl Grid {
             for col in col_range.clone() {
                 dst_row[Column(col)] = src_row[Column(col)].clone();
             }
-            // Preserve old occ as upper bound; extend only if copied content
-            // reaches into the band edge via a non-empty cell.
-            if dst_row.occ() < right + 1 {
-                let new_occ = dst_row.occ().max(right + 1).min(dst_row.cols());
-                // Only extend when source row actually had content at the band edge.
-                if !src_row[Column(right)].is_empty() {
-                    dst_row.set_occ(new_occ);
-                }
-            }
         }
 
-        // Clear the bottom `count` rows' column range.
+        // Clear the bottom `count` rows' column range. `IndexMut` on
+        // `row[Column(col)]` bumps occ automatically during reset.
         for row_idx in (row_range.end - count)..row_range.end {
             let row = &mut self.rows[row_idx];
             for col in col_range.clone() {
                 row[Column(col)].reset(&template);
-            }
-            if !template.is_empty() {
-                let cols = row.cols();
-                let new_occ = row.occ().max(right + 1).min(cols);
-                row.set_occ(new_occ);
             }
         }
 
@@ -354,18 +333,15 @@ impl Grid {
         let right = col_range.end - 1;
 
         // Clean wide-char pairs straddling the band edges in every affected
-        // row BEFORE any copy/clear.
+        // row BEFORE any copy/clear. `fix_wide_boundaries` only clears
+        // orphaned halves OUTSIDE the band — in-band pairs are preserved.
         for row_idx in row_range.clone() {
-            if left + 1 < self.cols {
-                self.clear_wide_char_at(row_idx, left);
-            }
-            if right < self.cols {
-                self.clear_wide_char_at(row_idx, right);
-            }
+            self.fix_wide_boundaries(row_idx, left, right + 1);
         }
 
         // Copy cells downward within the column range (iterate in reverse
-        // to avoid overwriting source data).
+        // to avoid overwriting source data). `IndexMut` bumps occ on
+        // each write, so no explicit set_occ is needed.
         for offset in (0..len - count).rev() {
             let src = row_range.start + offset;
             let dst = src + count;
@@ -375,22 +351,14 @@ impl Grid {
             for col in col_range.clone() {
                 dst_row[Column(col)] = src_row[Column(col)].clone();
             }
-            if dst_row.occ() < right + 1 && !src_row[Column(right)].is_empty() {
-                let new_occ = dst_row.occ().max(right + 1).min(dst_row.cols());
-                dst_row.set_occ(new_occ);
-            }
         }
 
-        // Clear the top `count` rows' column range.
+        // Clear the top `count` rows' column range. `IndexMut` on
+        // `row[Column(col)]` bumps occ automatically during reset.
         for row_idx in row_range.start..row_range.start + count {
             let row = &mut self.rows[row_idx];
             for col in col_range.clone() {
                 row[Column(col)].reset(&template);
-            }
-            if !template.is_empty() {
-                let cols = row.cols();
-                let new_occ = row.occ().max(right + 1).min(cols);
-                row.set_occ(new_occ);
             }
         }
 

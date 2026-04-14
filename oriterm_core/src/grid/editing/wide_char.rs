@@ -13,7 +13,12 @@ impl Grid {
     /// Fix wide char pairs split by an erase of `[start..end)`.
     ///
     /// Clears orphaned halves OUTSIDE the range. Call BEFORE resetting.
-    pub(super) fn fix_wide_boundaries(&mut self, line: usize, start: usize, end: usize) {
+    ///
+    /// This is the correct helper for band-aware cleanup (unlike
+    /// `clear_wide_char_at` which clears both halves unconditionally):
+    /// it leaves in-band pairs intact and only removes the partner that
+    /// would be orphaned by destroying the range `[start..end)`.
+    pub(in crate::grid) fn fix_wide_boundaries(&mut self, line: usize, start: usize, end: usize) {
         let cols = self.cols;
         if start > 0
             && start < cols
@@ -43,7 +48,7 @@ impl Grid {
     ///
     /// If the cell is a wide char spacer, clears the preceding wide char.
     /// If the cell is a wide char, clears its trailing spacer.
-    pub(in crate::grid) fn clear_wide_char_at(&mut self, line: usize, col: usize) {
+    pub(super) fn clear_wide_char_at(&mut self, line: usize, col: usize) {
         let cols = self.cols;
 
         if col >= cols {

@@ -1498,3 +1498,118 @@ fn dl_with_margins_cleans_wide_char_at_band_edge() {
         "orphaned wide-char base outside left margin must be cleaned by DL",
     );
 }
+
+// --- Regression: iter-2 TPR findings ---
+
+/// Regression (TPR-08-001-codex iter 2): SR must extend occ when content
+/// shifts right even with the default (empty) template. Previously the
+/// occ update was guarded by `!template.is_empty()`, so content that
+/// shifted past the pre-shift occ bound would become "invisible" to any
+/// renderer or scan that stops at `occ`.
+#[test]
+fn sr_extends_occ_when_content_shifts_with_empty_template() {
+    let mut grid = Grid::new(3, 10);
+    // Put 'X' at col 2 (sparse row; occ = 3, template is default/empty).
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.put_char('X');
+    grid.set_left_right_margins(2, 8);
+    grid.scroll_right(2);
+    // 'X' should have moved to col 4 and stay visible via cell data.
+    assert_eq!(
+        grid[Line(0)][Column(4)].ch,
+        'X',
+        "shifted content must remain present at its new column",
+    );
+    // Negative pin: col 2 (vacated by SR with empty template) must be empty.
+    assert!(
+        grid[Line(0)][Column(2)].is_empty(),
+        "vacated cell must be empty after SR",
+    );
+}
+
+/// Regression (TPR-08-003-gemini iter 2): SL must preserve in-band
+/// wide-char pairs. Previously `clear_wide_char_at` at band edges would
+/// unconditionally destroy both halves, splitting pairs that lived
+/// entirely inside the band.
+///
+/// This test places a pair at a RIGHT band edge (base at `right_margin - 1`,
+/// spacer at `right_margin`) — both inside the band. The fix:
+/// `fix_wide_boundaries(row, left, right + 1)` only clears halves
+/// OUTSIDE `[left, right+1)`, preserving in-band pairs.
+#[test]
+fn sl_preserves_inband_wide_char_pair_at_right_edge() {
+    let mut grid = Grid::new(3, 10);
+    grid.set_left_right_margins(2, 6);
+    // Wide char at (0, 5) — base at col 5, spacer at col 6 = right_margin.
+    // Both inside the band [2, 6].
+    place_wide_char(&mut grid, 0, 5);
+    assert!(
+        grid[Line(0)][Column(5)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "precondition: base at col 5",
+    );
+    assert!(
+        grid[Line(0)][Column(6)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "precondition: spacer at col 6",
+    );
+    // SL by 1: content in [2, 6] shifts left. Pair should shift together
+    // to (cols 4, 5). Before the fix, `clear_wide_char_at(row, right=6)`
+    // would see the spacer and pre-clear the base at col 5 — destroying
+    // the pair BEFORE the shift.
+    grid.scroll_left(1);
+    // After SL: pair should now be at cols (4, 5) — BOTH halves intact.
+    assert!(
+        grid[Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "in-band wide-char base must survive SL with shift",
+    );
+    assert!(
+        grid[Line(0)][Column(5)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "in-band wide-char spacer must survive SL with shift",
+    );
+}
+
+/// Regression (TPR-08-003-gemini iter 2): IL with DECLRMM must preserve
+/// in-band wide-char pairs. The partial copy at band edges must not
+/// pre-clear pairs entirely inside the band.
+#[test]
+fn il_with_margins_preserves_inband_wide_char_pair() {
+    let mut grid = Grid::new(5, 10);
+    grid.set_left_right_margins(2, 6);
+    // Pair entirely in-band at (0, 3).
+    place_wide_char(&mut grid, 0, 3);
+    assert!(
+        grid[Line(0)][Column(3)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+    // IL(1) at cursor (0, 2): content in row 0's band copies to row 1.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_lines(1);
+    // Row 1 now holds what was row 0's band. The pair must have survived.
+    assert!(
+        grid[Line(1)][Column(3)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "in-band wide-char base must survive IL copy",
+    );
+    assert!(
+        grid[Line(1)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "in-band wide-char spacer must survive IL copy",
+    );
+}
