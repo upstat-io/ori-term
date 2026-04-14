@@ -28,8 +28,7 @@ use super::App;
 /// previously-recorded `(cell_w, cell_h)` differs from the new one.
 /// Extracted from [`App::broadcast_cell_metrics_to_window`] so the
 /// short-circuit rule can be unit-tested without standing up a full
-/// `App` / window / mux fixture (TPR-07-002-codex / TPR-07-001-gemini
-/// round 7, 2026-04-13).
+/// `App` / window / mux fixture.
 fn cell_metric_broadcast_needed(last: Option<(u16, u16)>, new: (u16, u16)) -> bool {
     last != Some(new)
 }
@@ -44,7 +43,7 @@ fn cell_metric_broadcast_needed(last: Option<(u16, u16)>, new: (u16, u16)) -> bo
 /// means a test on this helper catches regressions that would remove
 /// either half — a "remove the assignment" refactor would fail
 /// `try_claim_broadcast_updates_cache_on_claim`, not just the
-/// decision test (TPR-07-003-gemini round 8, 2026-04-13).
+/// decision test.
 fn try_claim_broadcast(cached: &mut Option<(u16, u16)>, new: (u16, u16)) -> bool {
     if !cell_metric_broadcast_needed(*cached, new) {
         return false;
@@ -88,7 +87,6 @@ impl App {
         // Short-circuit + cache-update are fused in `try_claim_broadcast`
         // so a future refactor that removes the cache assignment (or
         // the decision guard) fails `try_claim_broadcast_*` tests.
-        // Per TPR-07-002-gemini (2026-04-13) the motivation is that
         // `sync_grid_layout` fires on every layout pass (including
         // every tick of an interactive drag-resize); unconditional
         // broadcast would insert every pane into `snapshot_dirty` and
@@ -129,7 +127,7 @@ impl App {
     /// and the destination window's short-circuit cache may skip a
     /// full broadcast. Per-pane seeding is surgical: the new pane
     /// gets the destination metrics without re-dirtying every other
-    /// pane in the window (TPR-07-001-codex round 7, 2026-04-13).
+    /// pane in the window.
     ///
     /// Returns early if `winit_id` has no context or no renderer yet.
     pub(in crate::app) fn seed_pane_with_window_cell_metrics(

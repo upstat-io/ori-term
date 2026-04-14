@@ -4,8 +4,7 @@
 //! integration of `broadcast_cell_metrics_to_window` (App → session →
 //! mux) requires a full `App` fixture, which is exercised by GPU /
 //! end-to-end test suites. The helper extraction keeps the
-//! short-circuit rule unit-testable independent of that scaffolding
-//! (TPR-07-002-codex / TPR-07-001-gemini round 7).
+//! short-circuit rule unit-testable independent of that scaffolding.
 
 use super::{cell_metric_broadcast_needed, try_claim_broadcast};
 

@@ -186,8 +186,8 @@ fn apply_mutation_and_observe(
     }
 
     // The placement was made in primary mode (lives in the primary
-    // `image_cache` field). After the TPR-07-001 round-6 fix, the two
-    // caches are semantically isolated: `image_cache()` in alt mode
+    // `image_cache` field). The two caches are semantically isolated:
+    // `image_cache()` in alt mode
     // returns the (empty) alt cache, not the primary. Swap back to
     // primary before observing so `image_cache()` returns the cache
     // that owns the placement under test.

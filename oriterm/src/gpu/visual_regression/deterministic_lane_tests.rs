@@ -113,8 +113,7 @@ fn deterministic_lane_selects_software_adapter() {
 
     // Primary signal: `device_type == Cpu` is wgpu's authoritative tag
     // for software rasterizers. Mirrors the logic in
-    // `gpu::state::tests::new_headless_with_software_preference_uses_force_fallback`
-    // (BUG-07-013, 2026-04-14).
+    // `gpu::state::tests::new_headless_with_software_preference_uses_force_fallback`.
     if info.device_type == wgpu::DeviceType::Cpu {
         return;
     }

@@ -106,7 +106,7 @@ pub(crate) struct WindowContext {
     /// broadcast. Used by `sync_grid_layout` / `handle_dpi_change` to
     /// short-circuit redundant broadcasts that would otherwise mark
     /// every pane dirty + invalidate pushed snapshots on every
-    /// interactive-resize tick (TPR-07-002-gemini, 2026-04-13).
+    /// interactive-resize tick.
     pub(super) last_broadcast_cell_dims: Option<(u16, u16)>,
 }
 
