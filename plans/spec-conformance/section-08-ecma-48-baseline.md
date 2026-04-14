@@ -527,12 +527,9 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-002-gemini-r5][low]` `oriterm_core/tests/spec_chain/baseline/tack_section_06/status_reports_inventory.rs:221` — GAP: Missing negative clamp for DSR-6.
   Resolved: Fixed on 2026-04-14. Added `dsr_6_does_not_emit_device_status` negative pin that asserts `CSI 6 n` must not emit a `DeviceStatus` effect, symmetric to the pre-existing `dsr_5_does_not_emit_cursor_report`.
 - [x] `[TPR-08-001-codex-r6][medium]` `plans/spec-conformance/catalog/ecma-48.md:49-50` — Align the ESC-B and ESC-0 catalog citations with the actual G-bank tests (round 2 follow-up).
-  Evidence: ECMA48-ESC-B's `state:` column cited `esc_g3_ascii_designates_without_panic` which uses `ApexLayer::Dispatch` (only runs parser+dispatch rungs — not a state pin). ESC ) B (G1 ASCII) had no spec_chain test. ECMA48-ESC-0's new G3 test was not cited in its row.
   Resolved: Fixed on 2026-04-14. (1) Added `esc_g1_ascii_designates_without_panic` spec_chain test to cover G1 ASCII designation. (2) Corrected ECMA48-ESC-B citations so the `state:` column cites `esc_g0_ascii_round_trip` (the only ASCII test with `ApexLayer::State`) and added a note row cataloging all four per-G-bank pins. (3) Corrected ECMA48-ESC-0 citations so the `state:` column cites state-apex tests and the prose cites the G3 test alongside G2.
-  Evidence: The matrix has `dsr_5_does_not_emit_cursor_report` negative pin, but DSR-6 lacks a symmetrical negative clamp proving it doesn't mistakenly emit a `DeviceStatus` effect.
-  Impact: Incomplete matrix squeeze — a regression routing `CSI 6 n` to `DeviceStatus` could pass the positive pins.
-  Required plan update: Add `dsr_6_does_not_emit_device_status` negative pin to `status_reports_inventory.rs`.
-  Basis: direct_file_inspection. Confidence: high.
+- [x] `[TPR-08-001-codex-r7][low]` `section-08 §08.R` — Keep DSR-6 evidence attached to the DSR-6 finding (round 3 follow-up).
+  Resolved: Fixed on 2026-04-14. When the r6 finding was appended to §08.R, the original DSR-6 (r5) Evidence/Impact/Required-plan-update/Basis lines were left orphaned between the r6 resolution and the next block. Removed the orphan lines; the DSR-6 finding's canonical body now lives in its Resolved note, consistent with all other resolved findings in this block (per `/tpr-review` "Resolution format" — title + Resolved line only). The r6 finding now has its own Resolved note and no body drift.
 
 ---
 
