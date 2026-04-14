@@ -283,6 +283,41 @@ fn esc_g2_ascii_designates_without_panic() {
     }
 }
 
+/// `ESC ) B` designates ASCII to G1.
+///
+/// Matrix cell for G1 ASCII; ECMA48-ESC-B's catalog claim covers
+/// G0-G3, so all four G-bank designations need their own pin.
+#[test]
+fn esc_g1_ascii_designates_without_panic() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-ESC-B",
+        bytes: b"\x1b)B",
+        apex_layer: ApexLayer::Dispatch,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'B',
+                params: &[],
+                intermediates: b")",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("configure_charset")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
 /// `ESC + B` designates ASCII to G3.
 ///
 /// Matrix cell for G3; completes `ECMA48-ESC-B`'s G0-G3 claim.
