@@ -6269,3 +6269,148 @@ fn decaln_resets_horizontal_margins() {
         "DECALN must reset horizontal margins"
     );
 }
+
+// ── REP (CSI Ps b) edge cases — §08.7 ──────────────────────────────
+
+/// REP with no preceding graphic character is a no-op.
+///
+/// Spec: ECMA-48 §8.3.103
+#[test]
+fn rep_no_preceding_char_is_noop() {
+    let mut t = term();
+    // No prior graphic character; issue REP 3.
+    feed(&mut t, b"\x1b[3b");
+
+    let grid = t.grid();
+    // Grid should be entirely blank.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+    // Cursor should not have moved.
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+/// REP after CR repeats the preceding graphic character (de-facto
+/// behavior matching xterm, alacritty, wezterm, ghostty).
+///
+/// The VTE parser tracks `preceding_char` as the last printed graphic
+/// character. C0 controls (including CR) do not clear it. This matches
+/// all major terminal emulators.
+#[test]
+fn rep_after_cr_repeats_preceding() {
+    let mut t = term();
+    // Print 'A', CR, REP 3 — all in one feed (preceding_char is per-Processor).
+    feed(&mut t, b"A\r\x1b[3b");
+
+    let grid = t.grid();
+    // REP repeats 'A' 3 times starting from cursor position (col 0).
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, 'A');
+    // Cursor at col 3 after printing 3 chars.
+    assert_eq!(grid.cursor().col(), Column(3));
+}
+
+/// REP after a wide character repeats the wide character.
+///
+/// Spec: ECMA-48 §8.3.103 — repeats "the graphic character".
+/// CJK ideograph '漢' (U+6F22, width 2).
+#[test]
+fn rep_after_wide_char_repeats_wide() {
+    use crate::cell::CellFlags;
+
+    let mut t = term();
+    // '漢' U+6F22 (3-byte UTF-8: E6 BC A2) + REP 2 in one feed call
+    // (preceding_char is per-Processor, and feed() creates a fresh one).
+    feed(&mut t, b"\xe6\xbc\xa2\x1b[2b");
+
+    let grid = t.grid();
+    // Original wide char at cols 0-1.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, '漢');
+    assert!(
+        grid[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    // First repeat at cols 2-3.
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, '漢');
+    assert!(
+        grid[crate::index::Line(0)][Column(2)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    // Second repeat at cols 4-5.
+    assert_eq!(grid[crate::index::Line(0)][Column(4)].ch, '漢');
+    assert!(
+        grid[crate::index::Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    // 3 wide chars × 2 columns = 6 columns, cursor at col 6.
+    assert_eq!(grid.cursor().col(), Column(6));
+}
+
+/// REP uses the current SGR state, not the SGR at print time.
+///
+/// Spec: ECMA-48 §8.3.103 — "the effect of REP is as if the graphic
+/// character were present in the data stream Ps times." The character
+/// is present NOW, so it inherits the current SGR, not the original.
+#[test]
+fn rep_uses_current_sgr_not_original() {
+    let mut t = term();
+    // Print 'A' (default fg), set SGR 31 (red fg), then REP 2.
+    feed(&mut t, b"A\x1b[31m\x1b[2b");
+
+    let grid = t.grid();
+    // Original 'A' at col 0 has default fg.
+    let a_orig = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(a_orig.ch, 'A');
+    // Repeated 'A' at col 1 has red fg (SGR 31 was active during REP).
+    let a_rep = &grid[crate::index::Line(0)][Column(1)];
+    assert_eq!(a_rep.ch, 'A');
+    assert_eq!(
+        a_rep.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
+    // Original and repeated chars have different fg.
+    assert_ne!(a_orig.fg, a_rep.fg);
+}
+
+/// REP at the right margin triggers auto-wrap.
+#[test]
+fn rep_at_right_margin_wraps() {
+    // Use a narrow terminal so we can test wrapping easily.
+    let (mut t, _rec) = term_with_recorder_sized(3, 10);
+    // Move cursor to col 8, print 'X', then REP 3.
+    // Col 8: 'X' printed, cursor at 9. REP 3: col 9, wrap to 0, col 1.
+    feed(&mut t, b"\x1b[1;9H");
+    feed(&mut t, b"X\x1b[3b");
+
+    let grid = t.grid();
+    // 'X' at col 8 (original).
+    assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, 'X');
+    // 'X' at col 9 (first repeat, fills last column).
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, 'X');
+    // After wrapping to line 1: 'X' at cols 0, 1.
+    assert_eq!(grid[crate::index::Line(1)][Column(0)].ch, 'X');
+    assert_eq!(grid[crate::index::Line(1)][Column(1)].ch, 'X');
+}
+
+/// CSI 0 b repeats once (Ps=0 treated as default=1 per ECMA-48 §5.4).
+///
+/// Negative pin: verifies that 0 is not treated literally as "repeat 0
+/// times" but mapped to the default of 1.
+#[test]
+fn rep_count_zero_repeats_once() {
+    let mut t = term();
+    feed(&mut t, b"A\x1b[0b");
+
+    let grid = t.grid();
+    // Original 'A' at col 0.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    // One repeat at col 1.
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'A');
+    // No further repeats.
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+    assert_eq!(grid.cursor().col(), Column(2));
+}
