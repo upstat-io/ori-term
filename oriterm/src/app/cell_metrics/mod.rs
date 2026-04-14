@@ -22,6 +22,18 @@ use crate::session::TabId;
 
 use super::App;
 
+/// Pure decision helper for the broadcast short-circuit.
+///
+/// Returns `true` when a broadcast should actually fire — i.e. when the
+/// previously-recorded `(cell_w, cell_h)` differs from the new one.
+/// Extracted from [`App::broadcast_cell_metrics_to_window`] so the
+/// short-circuit rule can be unit-tested without standing up a full
+/// `App` / window / mux fixture (TPR-07-002-codex / TPR-07-001-gemini
+/// round 7, 2026-04-13).
+fn cell_metric_broadcast_needed(last: Option<(u16, u16)>, new: (u16, u16)) -> bool {
+    last != Some(new)
+}
+
 impl App {
     /// Send the given cell metrics to every pane across every tab in
     /// the given winit window.
@@ -64,7 +76,7 @@ impl App {
         let Some(ctx) = self.windows.get(&winit_id) else {
             return;
         };
-        if ctx.last_broadcast_cell_dims == Some((cell_w, cell_h)) {
+        if !cell_metric_broadcast_needed(ctx.last_broadcast_cell_dims, (cell_w, cell_h)) {
             return;
         }
 
@@ -95,4 +107,35 @@ impl App {
             ctx.last_broadcast_cell_dims = Some((cell_w, cell_h));
         }
     }
+
+    /// Seed a specific pane with a window's current cell metrics.
+    ///
+    /// Used when a pane crosses a window boundary (tab move, tear-off)
+    /// and the destination window's short-circuit cache may skip a
+    /// full broadcast. Per-pane seeding is surgical: the new pane
+    /// gets the destination metrics without re-dirtying every other
+    /// pane in the window (TPR-07-001-codex round 7, 2026-04-13).
+    ///
+    /// Returns early if `winit_id` has no context or no renderer yet.
+    pub(in crate::app) fn seed_pane_with_window_cell_metrics(
+        &mut self,
+        winit_id: WindowId,
+        pane_id: PaneId,
+    ) {
+        let Some(ctx) = self.windows.get(&winit_id) else {
+            return;
+        };
+        let Some(renderer) = ctx.renderer.as_ref() else {
+            return;
+        };
+        let cell = renderer.cell_metrics();
+        let cell_w = cell.width.round().max(1.0) as u16;
+        let cell_h = cell.height.round().max(1.0) as u16;
+        if let Some(mux) = self.mux.as_mut() {
+            mux.set_cell_dimensions(pane_id, cell_w, cell_h);
+        }
+    }
 }
+
+#[cfg(test)]
+mod tests;

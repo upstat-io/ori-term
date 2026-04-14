@@ -420,6 +420,14 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 - [x] `[TPR-07-002-gemini][medium]` `oriterm/src/app/chrome/resize.rs:135` — Prevent unconditional cell metrics broadcast from dirtying all pane snapshots.
   Resolved: Fixed on 2026-04-13. Added `WindowContext::last_broadcast_cell_dims: Option<(u16, u16)>` and short-circuit in `App::broadcast_cell_metrics_to_window`: if the new `(cell_w, cell_h)` equals the last broadcast dims, return early without dirtying any pane or issuing `set_cell_dimensions` IPC. On first broadcast (field is `None`) and on any change, the broadcast runs and the field is updated. `sync_grid_layout` and `handle_dpi_change` callers are unchanged — the short-circuit lives at the canonical broadcast site (SSOT).
 
+**Round 7 (post-round-6 TPR):**
+- [x] `[TPR-07-001-codex][medium]` `oriterm/src/app/cell_metrics.rs:67` — Invalidate cached broadcast state when a window gains panes.
+  Resolved: Fixed on 2026-04-13. Added `App::seed_pane_with_window_cell_metrics` helper that sends the destination window's current cell metrics to a specific pane. Wired into `move_tab_to_window` (oriterm/src/app/tab_management/move_ops.rs) and `tear_off_tab` (oriterm/src/app/tab_drag/tear_off.rs) — after panes move across a window boundary, each moved pane is seeded with the destination window's metrics. Per-pane seeding is surgical (no broadcast, no other pane re-dirtied), which matters when source and destination windows share metrics (the short-circuit would skip a full rebroadcast in that case).
+- [x] `[TPR-07-002-codex][low]` `oriterm/src/app/cell_metrics.rs:51` — Add regression test for broadcast short-circuit.
+  Resolved: Same fix as [TPR-07-001-gemini] round 7 (agreement — both reviewers flagged the same test gap).
+- [x] `[TPR-07-001-gemini][medium]` `oriterm/src/app/cell_metrics.rs:57` — Missing regression test for cell metric broadcast short-circuit.
+  Resolved: Fixed on 2026-04-13. Extracted `cell_metric_broadcast_needed(last, new) -> bool` as a pure decision helper and added `oriterm/src/app/cell_metrics/tests.rs` with 6 unit tests: `first_broadcast_always_fires`, `identical_dims_short_circuit`, `width_change_fires`, `height_change_fires`, `both_axis_change_fires`, `negative_pin_degenerate_dims_short_circuit`. The short-circuit rule is now pinned by a test — a future refactor that reverts the guard will fail `identical_dims_short_circuit`.
+
 ---
 
 ## 07.N Completion Checklist
