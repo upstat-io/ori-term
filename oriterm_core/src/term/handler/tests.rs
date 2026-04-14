@@ -5158,6 +5158,7 @@ fn decset_decrst_flag_sync() {
         NamedPrivateMode::SixelScrolling,
         NamedPrivateMode::SixelCursorRight,
         NamedPrivateMode::Win32Input,
+        NamedPrivateMode::LeftRightMargin,
     ];
 
     for variant in flag_variants {
@@ -5818,4 +5819,69 @@ fn decscnm_reset_disables_reverse_video() {
     assert!(t.mode().contains(TermMode::REVERSE_VIDEO));
     feed(&mut t, b"\x1b[?5l");
     assert!(!t.mode().contains(TermMode::REVERSE_VIDEO));
+}
+
+// --- DECLRMM (mode 69) plumbing tests (§08.3) ---
+
+#[test]
+fn mode_69_set_inserts_left_right_margin_flag() {
+    use crate::term::TermMode;
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b[?69h");
+    assert!(
+        t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECSET ?69 must set LEFT_RIGHT_MARGIN flag"
+    );
+}
+
+#[test]
+fn mode_69_reset_removes_left_right_margin_flag() {
+    use crate::term::TermMode;
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    assert!(t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b[?69l");
+    assert!(
+        !t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECRST ?69 must clear LEFT_RIGHT_MARGIN flag"
+    );
+}
+
+#[test]
+fn mode_69_decrqm_reports_correctly() {
+    use crate::effect::Effect;
+    use crate::effect::sink::EffectSink;
+
+    let mut t = super::test_helpers::term_with_effect_sink();
+
+    // Mode 69 defaults to reset (2).
+    feed(&mut t, b"\x1b[?69$p");
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+    let response = effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, .. }) => {
+                Some(String::from_utf8_lossy(bytes).to_string())
+            }
+            _ => None,
+        })
+        .expect("DECRQM should produce a PtyEffect::Write");
+    assert_eq!(response, "\x1b[?69;2$y", "mode 69 should report reset (2)");
+
+    // Enable mode 69, then query again — should report set (1).
+    feed(&mut t, b"\x1b[?69h\x1b[?69$p");
+    effects.clear();
+    t.effect_sink().drain_into(&mut effects);
+    let response = effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, .. }) => {
+                Some(String::from_utf8_lossy(bytes).to_string())
+            }
+            _ => None,
+        })
+        .expect("DECRQM should produce a PtyEffect::Write after DECSET");
+    assert_eq!(response, "\x1b[?69;1$y", "mode 69 should report set (1)");
 }

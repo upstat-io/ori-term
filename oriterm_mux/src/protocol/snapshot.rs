@@ -203,7 +203,7 @@ pub struct PaneSnapshot {
     /// | 24  | `REVERSE_WRAP` (mode 45) |
     /// | 25  | `MOUSE_URXVT` (mode 1015) |
     /// | 26  | `MOUSE_X10` (mode 9) |
-    pub modes: u32,
+    pub modes: u64,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: u32,
     /// Current scroll position (0 = bottom, `scrollback_len` = top).

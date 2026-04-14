@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Lock-free mode cache: store and load round-trip.
 #[test]
 fn mode_cache_round_trip() {
-    let cache = Arc::new(AtomicU32::new(0));
+    let cache = Arc::new(AtomicU64::new(0));
 
     // Simulate IO thread updating mode bits.
     cache.store(0x1234, Ordering::Release);

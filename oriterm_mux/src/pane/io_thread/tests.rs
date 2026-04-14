@@ -1,7 +1,7 @@
 //! Tests for PaneIoThread and PaneIoHandle.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use oriterm_core::effect::VoidEffectSink;
@@ -19,7 +19,7 @@ fn make_term() -> Term<VoidEffectSink> {
 fn make_pair() -> (PaneIoThread<VoidEffectSink>, PaneIoHandle) {
     new_with_handle(IoThreadConfig {
         terminal: make_term(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::new(AtomicBool::new(false)),
         wakeup: Arc::new(|| {}),
         grid_dirty: Arc::new(AtomicBool::new(false)),
@@ -36,7 +36,7 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (thread, mut handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::clone(&shutdown),
         wakeup: Arc::new(|| {}),
         grid_dirty: Arc::new(AtomicBool::new(false)),
@@ -70,7 +70,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         wakeup: Arc::new(|| {}),
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
@@ -84,8 +84,8 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
 }
 
 /// Helper: create a sync thread with a wakeup counter for testing.
-fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU32>) {
-    let wakeup_count = Arc::new(AtomicU32::new(0));
+fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU64>) {
+    let wakeup_count = Arc::new(AtomicU64::new(0));
     let wakeup_clone = Arc::clone(&wakeup_count);
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
@@ -100,7 +100,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU3
         }),
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty,
@@ -136,7 +136,7 @@ fn shutdown_via_command() {
 fn shutdown_via_channel_disconnect() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
+    let mode_cache = Arc::new(AtomicU64::new(TermMode::default().bits()));
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
 
@@ -180,7 +180,7 @@ fn command_delivery_ordering() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (thread, handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::clone(&shutdown),
         wakeup: Arc::new(|| {}),
         grid_dirty: Arc::new(AtomicBool::new(false)),
@@ -210,7 +210,7 @@ fn command_delivery_ordering() {
 fn byte_delivery_parses_vte() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    let mode_cache = Arc::new(AtomicU32::new(TermMode::default().bits()));
+    let mode_cache = Arc::new(AtomicU64::new(TermMode::default().bits()));
 
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
@@ -368,7 +368,7 @@ fn handle_bytes_chunked_drains_commands() {
         wakeup: Arc::new(|| {}),
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
@@ -598,7 +598,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         wakeup: Arc::new(|| {}),
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
@@ -1836,8 +1836,8 @@ fn multiple_pending_responses_polled_independently() {
 /// Helper: generic sync thread builder for any EffectSink.
 fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
     sink: S,
-) -> (PaneIoThread<S>, Arc<AtomicU32>) {
-    let wakeup_count = Arc::new(AtomicU32::new(0));
+) -> (PaneIoThread<S>, Arc<AtomicU64>) {
+    let wakeup_count = Arc::new(AtomicU64::new(0));
     let wakeup_clone = Arc::clone(&wakeup_count);
     let term = Term::new(24, 80, 1000, Theme::default(), sink);
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
@@ -1852,7 +1852,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         }),
         processor: vte::ansi::Processor::new(),
         raw_parser: vte::Parser::new(),
-        mode_cache: Arc::new(AtomicU32::new(TermMode::default().bits())),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         double_buffer: SnapshotDoubleBuffer::new(),
         snapshot_buf: Default::default(),
         grid_dirty: Arc::new(AtomicBool::new(false)),
