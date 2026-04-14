@@ -474,6 +474,12 @@ Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, 
 - [x] `[TPR-07-002-codex][low]` `oriterm_core/src/term/tests.rs:2502` — Restore plan references in regression test doc comments.
   Resolved: Fixed on 2026-04-14. Restored `See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.5` provenance in both `term_resize_routes_each_grid_through_its_own_image_cache` and `alt_image_cache_isolation_check` doc comments per `.claude/rules/tests.md` §Regression Discipline.
 
+**Round 13 (re-review after round 12 fixes):**
+- [x] `[TPR-07-001-codex][medium]` `oriterm/src/app/cell_metrics/tests.rs:54` — Cover the app-layer window-wide cell-metric broadcast path.
+  Resolved: Fixed on 2026-04-14. Extracted `collect_window_pane_ids(session, window_id) -> Vec<PaneId>` from `broadcast_cell_metrics_to_window` to make the session enumeration testable without a full App fixture. Added 3 unit tests: `collect_window_pane_ids_spans_all_tabs` (2 tabs, verifies both panes returned), `collect_window_pane_ids_empty_window` (no tabs → empty), `collect_window_pane_ids_missing_window` (bogus window ID → empty). `broadcast_cell_metrics_to_window` now calls the extracted helper.
+- [x] `[TPR-07-002-codex][low]` `oriterm_mux/src/backend/embedded/tests.rs:180` — Add provenance links to the new regression tests.
+  Resolved: Fixed on 2026-04-14. Added `/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N` to all 5 new regression tests per `.claude/rules/tests.md` §Regression Discipline.
+
 ---
 
 ## 07.N Completion Checklist
