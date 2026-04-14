@@ -615,10 +615,14 @@ fn cha_clamps_to_right_margin_under_decom_declrmm() {
 
 #[test]
 fn cha_col_1_lands_at_left_margin_under_decom_declrmm() {
-    // Negative pin: the regression that tests previously hid — `CSI 1 G`
-    // should land at left_margin under DECOM+DECLRMM, NOT at column 0.
-    // Before the fix, `col=1` coincidentally worked via the grid-level
-    // margin clamp while `col > 1` was silently broken.
+    // Positive edge-case pin: `CSI 1 G` (col=0 zero-based) under
+    // DECOM+DECLRMM must resolve to `left_margin`. This test does NOT
+    // distinguish the pre-fix and post-fix code paths — with col=0,
+    // the pre-fix `Grid::move_to_column` clamp to `[left_margin,
+    // right_margin]` coincidentally also landed at `left_margin`. The
+    // true regression guard for the offset is
+    // `cha_offsets_by_left_margin_when_declrmm_on_decom_on` (col=5 →
+    // col=14), which fails on the pre-fix clamp path.
     let mut t = term();
     feed(&mut t, b"\x1b[?69h");
     feed(&mut t, b"\x1b[11;40s");

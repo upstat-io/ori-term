@@ -45,7 +45,7 @@ sections:
     title: "DECLRMM grid enforcement (margin fields + cursor movement)"
     status: complete
   - id: "08.5"
-    title: "DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, save/restore, reset paths)"
+    title: "DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)"
     status: in-progress
   - id: "08.6"
     title: "Implement 8-bit C1 control detection"
@@ -242,11 +242,11 @@ With mode 69 plumbed, implement the actual left/right margin enforcement in the 
 
 ---
 
-## 08.5 DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, save/restore, reset paths)
+## 08.5 DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)
 
 **File(s):** `oriterm_core/src/grid/scroll/mod.rs`, `oriterm_core/src/grid/navigation/mod.rs`, `crates/vte/src/ansi/dispatch/csi.rs`, `oriterm_core/src/term/handler/modes.rs`, `oriterm_core/src/term/handler/mod.rs`, sibling tests
 
-This subsection handles the operations that are architecturally more complex than simple cursor movement: partial-width scrolling for IL/DL under margins, the CSI s / DECSLRM sequence ambiguity, save/restore of margin state, and all reset paths that must clear margins.
+This subsection handles the operations that are architecturally more complex than simple cursor movement: partial-width scrolling for IL/DL under margins, the CSI s / DECSLRM sequence ambiguity, the DECSC/DECRC save-set scope (which per DEC STD 070 §5.6.1 excludes margins and DECLRMM mode — see 08.5c for the correct contract), and all reset paths that must clear margins.
 
 ### 08.5a: IL/DL/ICH/DCH with horizontal margins (partial-width scroll)
 
@@ -575,6 +575,13 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-005-codex-r11][medium]` `plans/spec-conformance/section-08-ecma-48-baseline.md:88` + `:547` + `plans/spec-conformance/catalog/dec-private-modes.md:49` — Plan success criteria, historical round-9 resolution note, and catalog DECLRMM row still described the superseded "DECSC/DECRC save/restore margin state" contract.
   Resolved: Fixed on 2026-04-14. Updated the §08 success-criterion bullet at line 88 to state the correct DEC STD 070 §5.6.1 save set (cursor + attributes + charsets + wrap + DECOM — margins and DECLRMM NOT saved). Appended a "**Superseded by round 11**" note to the `[TPR-08-004-gemini-r9]` historical entry so the audit trail remains but the current contract is clearly documented. Rewrote the DEC-DECLRMM catalog row's DECSC/DECRC note in `catalog/dec-private-modes.md:49` to match the shipped code: DECSC/DECRC do NOT save/restore margin state or the DECLRMM mode flag. Gemini iter-2 re-review did not complete (~23 min watchdog timeout after completing file reads and `cargo build --target x86_64-pc-windows-gnu`); codex iter-2 surfaced this finding solo.
 
+### Round 11 iteration 3 (2026-04-14)
+
+- [x] `[TPR-08-006-codex-r11][medium]` `plans/spec-conformance/section-08-ecma-48-baseline.md:48` + `:245` + `:249` + `:600` — 08.5 subsection title + intro paragraph + N-checklist line still described the subsection as covering "save/restore, reset paths" rather than the corrected DECSC/DECRC save-set scope.
+  Resolved: Fixed on 2026-04-14. Renamed the 08.5 subsection across four surfaces (frontmatter `sections[].title`, the `## 08.5` heading, the 08.5 introductory paragraph, and the 08.N completion-checklist bullet) to `DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)`. The intro paragraph now explicitly states that the DECSC/DECRC scope excludes margins and DECLRMM per DEC STD 070 §5.6.1 and cross-references 08.5c for the correct contract.
+- [x] `[TPR-08-007-codex-r11][low]` `oriterm_core/src/term/handler/tests.rs:617` — `cha_col_1_lands_at_left_margin_under_decom_declrmm` was labeled in its doc comment (and in the r11 iter-1 resolution for `[TPR-08-003-codex-r11]`) as "a negative pin for the pre-fix behavior", but the pre-fix `Grid::move_to_column` margin clamp also landed `col=0` at `left_margin` — the test does not distinguish the pre-fix and post-fix code paths.
+  Resolved: Fixed on 2026-04-14. Rewrote the test's doc comment to accurately describe it as a positive edge-case pin for `col=0` (which BOTH code paths resolve to `left_margin`), and to cross-reference `cha_offsets_by_left_margin_when_declrmm_on_decom_on` as the true regression guard that fails on the pre-fix clamp path (col=5 would land at col=10 pre-fix vs col=14 post-fix). The broader 6-cell DECLRMM × DECOM matrix was always the load-bearing coverage; the col=1 pin is useful as a boundary case but was over-claimed.
+
 ---
 
 ## 08.N Completion Checklist
@@ -597,7 +604,7 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [ ] Tack section 06 scenarios converted (all subsections complete and landed)
 - [ ] DECLRMM mode plumbing complete (VTE types, TermMode flag, mode reporting)
 - [ ] DECLRMM grid enforcement complete (margin fields, cursor movement, wrap behavior)
-- [ ] DECLRMM extended operations complete (partial-width scroll, CSI s ambiguity, save/restore, reset paths)
+- [ ] DECLRMM extended operations complete (partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)
 - [ ] 8-bit C1 controls detected and verified
 - [ ] REP edge cases verified
 - [ ] ISO 8613-6 colon-separated SGR subparameter forms verified (38/48/58, both `2` truecolor and `5` indexed variants)
