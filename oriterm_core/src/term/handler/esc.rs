@@ -37,10 +37,9 @@ impl<S: EffectSink> Term<S> {
         self.saved_origin_mode = None;
         self.inactive_saved_charset = None;
         self.inactive_saved_origin_mode = None;
-        self.saved_margins = None;
         self.saved_left_right_margin_mode = None;
-        self.inactive_saved_margins = None;
         self.inactive_saved_left_right_margin_mode = None;
+        // `saved_margins` is Grid-owned and cleared by Grid::reset (called above).
         self.palette = crate::color::Palette::for_theme(self.theme);
         self.cursor_shape = crate::grid::CursorShape::default();
         self.title.clear();

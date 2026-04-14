@@ -44,6 +44,8 @@ pub struct Grid {
     cursor: Cursor,
     /// DECSC/DECRC saved cursor.
     saved_cursor: Option<Cursor>,
+    /// DECSC/DECRC saved left/right margins (VT420 spec — `(left, right)` 0-based inclusive).
+    saved_margins: Option<(usize, usize)>,
     /// Tab stop at each column (true = stop).
     tab_stops: Vec<bool>,
     /// DECSTBM scroll region: top (inclusive) .. bottom (exclusive).
@@ -91,6 +93,7 @@ impl Grid {
             lines,
             cursor: Cursor::new(),
             saved_cursor: None,
+            saved_margins: None,
             tab_stops,
             scroll_region: 0..lines,
             scrollback: ScrollbackBuffer::new(max_scrollback),
@@ -244,6 +247,7 @@ impl Grid {
         }
         self.cursor = Cursor::new();
         self.saved_cursor = None;
+        self.saved_margins = None;
         Self::reset_tab_stops(&mut self.tab_stops, self.cols);
         self.scroll_region = 0..self.lines;
         self.left_margin = 0;

@@ -43,7 +43,7 @@ impl Grid {
     ///
     /// If the cell is a wide char spacer, clears the preceding wide char.
     /// If the cell is a wide char, clears its trailing spacer.
-    pub(super) fn clear_wide_char_at(&mut self, line: usize, col: usize) {
+    pub(in crate::grid) fn clear_wide_char_at(&mut self, line: usize, col: usize) {
         let cols = self.cols;
 
         if col >= cols {

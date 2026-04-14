@@ -1282,3 +1282,219 @@ fn sr_within_margins_shifts_only_margin_band() {
         assert_eq!(grid[Line(line)][Column(9)].ch, '9', "line {line} col 9");
     }
 }
+
+// --- Regression: full-band SL/SR (TPR-08-001-codex-r9) ---
+
+/// Regression: SL with `count == band_width` must clear the band rather
+/// than underflow `right - count`. Reproduced with full-width (no DECLRMM,
+/// left = 0, right = cols - 1).
+#[test]
+fn sl_full_band_no_margins_clears_without_panic() {
+    let mut grid = grid_with_col_chars(3, 10);
+    // No DECLRMM — full width band [0, 9], width = 10.
+    grid.scroll_left(10);
+    for line in 0..3 {
+        for col in 0..10 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank after full-band SL",
+            );
+        }
+    }
+}
+
+/// Regression: SL with `count == band_width` under DECLRMM clears only
+/// the band, leaving cells outside the margins intact.
+#[test]
+fn sl_full_band_with_margins_clears_band_only() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    // band_width = 6, count = 6.
+    grid.scroll_left(6);
+    for line in 0..3 {
+        // Outside margins: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0');
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1');
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8');
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9');
+        // Margin band: cleared.
+        for col in 2..=7 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank",
+            );
+        }
+    }
+}
+
+#[test]
+fn sr_full_band_no_margins_clears_without_panic() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.scroll_right(10);
+    for line in 0..3 {
+        for col in 0..10 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank after full-band SR",
+            );
+        }
+    }
+}
+
+#[test]
+fn sr_full_band_with_margins_clears_band_only() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.scroll_right(6);
+    for line in 0..3 {
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0');
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1');
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8');
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9');
+        for col in 2..=7 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank",
+            );
+        }
+    }
+}
+
+/// Regression: SL count >= band_width clamps without overshoot.
+#[test]
+fn sl_count_larger_than_band_clamps() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(3, 6); // band_width = 4.
+    grid.scroll_left(100); // should clamp to 4.
+    for line in 0..3 {
+        // Outside margins: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0');
+        assert_eq!(grid[Line(line)][Column(2)].ch, '2');
+        assert_eq!(grid[Line(line)][Column(7)].ch, '7');
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9');
+        // Margin band: cleared.
+        for col in 3..=6 {
+            assert!(grid[Line(line)][Column(col)].is_empty());
+        }
+    }
+}
+
+// --- Regression: wide-char cleanup at band edges (TPR-08-003-{codex,gemini}-r9) ---
+
+use crate::cell::CellFlags;
+
+/// Helper: place a wide char (base + spacer) at columns `col` and `col+1`.
+fn place_wide_char(grid: &mut Grid, line: usize, col: usize) {
+    grid.cursor_mut().set_line(line);
+    grid.cursor_mut().set_col(Column(col));
+    // U+597D (好) is width 2.
+    grid.put_char('\u{597d}');
+}
+
+/// Regression: SL must not leave an orphaned wide-char spacer at the
+/// right margin + 1 when the base inside the band is shifted away.
+///
+/// Margins must be set AFTER placing the wide char because `put_char`
+/// under DECLRMM wraps at `right_margin + 1`, so placing a wide char at
+/// col `right_margin` would trigger wrap (the pair can't fit in-band).
+/// Setting margins after the place operation creates the straddling
+/// configuration the cleanup must handle.
+#[test]
+fn sl_cleans_wide_char_pair_straddling_right_margin_plus_one() {
+    let mut grid = Grid::new(3, 10);
+    // Place wide char at (0, 6) WITHOUT margins: base at 6, spacer at 7.
+    place_wide_char(&mut grid, 0, 6);
+    assert!(
+        grid[Line(0)][Column(6)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(7)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+    // NOW set margins so the pair straddles the band edge.
+    grid.set_left_right_margins(2, 6);
+    // SL by 1: base at col 6 gets overwritten. The spacer at col 7
+    // (outside the band) would be orphaned without cleanup.
+    grid.scroll_left(1);
+    assert!(
+        !grid[Line(0)][Column(7)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "orphaned wide-char spacer at col 7 (outside right margin) must be cleaned",
+    );
+}
+
+/// Regression: SR must not leave an orphaned wide-char base at left
+/// margin - 1 when the spacer inside the band is shifted away.
+#[test]
+fn sr_cleans_wide_char_pair_straddling_left_margin() {
+    let mut grid = Grid::new(3, 10);
+    // Place wide char at (0, 1) WITHOUT margins: base at 1, spacer at 2.
+    place_wide_char(&mut grid, 0, 1);
+    assert!(
+        grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(2)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+    // NOW set margins so the pair straddles the left band edge.
+    grid.set_left_right_margins(2, 6);
+    // SR by 1: col 2's content gets overwritten by col 3's content. The
+    // base at col 1 (outside left margin) would be orphaned without cleanup.
+    grid.scroll_right(1);
+    assert!(
+        !grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "orphaned wide-char base at col 1 (outside left margin) must be cleaned",
+    );
+}
+
+/// Regression: IL with DECLRMM must not leave orphaned wide-char flags
+/// when a wide char straddles a band edge.
+#[test]
+fn il_with_margins_cleans_wide_char_at_band_edge() {
+    let mut grid = Grid::new(5, 10);
+    // Wide char at (1, 6) WITHOUT margins: base in band-to-be at 6, spacer at 7.
+    place_wide_char(&mut grid, 1, 6);
+    grid.set_left_right_margins(2, 6);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_lines(1);
+    // Row 1's margin band was blanked. Col 6 is now blank; col 7 spacer
+    // (outside band) would be orphaned without cleanup.
+    assert!(
+        !grid[Line(1)][Column(7)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "orphaned wide-char spacer outside right margin must be cleaned by IL",
+    );
+}
+
+/// Regression: DL with DECLRMM must not leave orphaned wide-char flags
+/// when a wide char straddles a band edge.
+#[test]
+fn dl_with_margins_cleans_wide_char_at_band_edge() {
+    let mut grid = Grid::new(5, 10);
+    // Wide char at (0, 1) WITHOUT margins: base at 1 (to-be-outside), spacer at 2 (inside).
+    place_wide_char(&mut grid, 0, 1);
+    grid.set_left_right_margins(2, 6);
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_lines(1);
+    // Row 0 got row 1's content in the margin band. Col 2 is overwritten;
+    // the base at col 1 would be orphaned without cleanup.
+    assert!(
+        !grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "orphaned wide-char base outside left margin must be cleaned by DL",
+    );
+}
