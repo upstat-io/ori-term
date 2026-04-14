@@ -85,6 +85,73 @@ strings are reference templates for wrapper implementation.)
 Do NOT rely on gemini noticing the skill on its own — the activation
 phrase is load-bearing and MUST be present on every invocation.
 
+## Reviewer Hygiene Preamble (MANDATORY — gemini; recommended — codex)
+
+Beyond the activation phrase, every gemini prompt MUST include hygiene
+guidance. Empirically (from the 2026-04-14 §08.5 round-11 TPR run),
+gemini without these constraints will (a) dump scratch files in the
+repo root, tripping the worktree-guard, and (b) attempt to read
+end-to-end multi-thousand-line diff files, stalling past the watchdog
+threshold. Codex is less prone to these behaviors but including the
+same guidance costs nothing.
+
+MANDATORY gemini hygiene preamble (place between the activation phrase
+and the grounding block):
+
+    Do NOT create scratch files (diff.txt, scope_diff.txt, etc.) in
+    the repo root — use `/home/eric/.gemini/tmp/ori-term/` or `/tmp`
+    for intermediate work. The worktree-guard will fail the round if
+    tracked files are modified or untracked files appear in the repo
+    root during review.
+
+    Keep review focused. For non-trivial commit ranges:
+    - Run `git diff <range> --stat` first to see the file list, NOT
+      the full diff. Read targeted hunks via `git show <commit>`
+      or ranged file reads.
+    - Skip redundant workspace gates — `./build-all.sh`,
+      `./clippy-all.sh`, `./test-all.sh`, and
+      `cargo build --target x86_64-pc-windows-gnu` have already been
+      verified at commit time by lefthook. A `cargo test -p <crate>`
+      smoke on the crates the commit touches is sufficient.
+
+**Why this is load-bearing:** the first round-11 iteration consumed
+an infra retry because gemini wrote `diff.txt` + `diff_core.txt` +
+`scope_diff.txt` to the repo root and the worktree-guard rejected
+the envelope. The second iteration's gemini-side stall was caused
+by reading a 3500-line diff file across two 2000-line read_file
+calls, then running a cargo build that was already verified, then
+entering a composition phase that never completed before the 23-min
+watchdog fired. Both are fully prevented by the preamble above.
+
+## Plan/Code Consistency Verification (MANDATORY — both reviewers)
+
+Every reviewer prompt MUST ask the reviewer to verify that plan text
+describing the changed behavior matches the shipped code. Without this
+explicit instruction, reviewers default to code-only review and plan
+metadata drift is caught only by side effects (e.g., codex happened to
+grep for old strings during expansion). The §08.5 round-11 run
+surfaced three separate metadata-drift findings
+(`[TPR-08-005/006/007]`) that could have been caught in a single
+earlier iteration had the prompt asked.
+
+MANDATORY plan-consistency clause (append to the "What to focus on"
+or "Scope" section of every reviewer prompt):
+
+    Plan/code consistency: the commits in scope change observable
+    behavior (e.g., remove a feature, flip a semantic, rename an
+    invariant). Verify that the owning plan's success criteria,
+    subsection titles, N-checklist bullets, resolved-finding notes,
+    and any catalog rows the commits cite still describe the CURRENT
+    behavior, NOT the superseded one. Historical TPR resolution
+    notes may describe superseded intermediate states — those are
+    allowed as long as a "Superseded by round N" annotation is
+    present. File a finding for any surface that describes behavior
+    the code no longer implements.
+
+This clause is independent of the grounding block; grounding scopes
+the finding vocabulary, plan-consistency scopes the surface of
+review. Both are required.
+
 ## Mandatory Grounding Block (both reviewers)
 
 **Every reviewer prompt — codex and gemini — MUST contain a "Grounding
