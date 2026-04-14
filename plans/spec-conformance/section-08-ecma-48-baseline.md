@@ -12,7 +12,7 @@ success_criteria:
   - "**DECLRMM full mode plumbing + grid enforcement implemented**: VTE layer has `NamedPrivateMode::LeftRightMargin` variant (mode 69) with `PrivateMode::new` mapping; `TermMode` has `LEFT_RIGHT_MARGIN` flag; `named_private_mode_flag` maps it; `status_report_private_mode` reports it; `Grid` has `left_margin: usize` and `right_margin: usize` fields; CSI s / DECSLRM ambiguity resolved (state-dependent dispatch); CUF/CUB/CHA/ICH/DCH/IL/DL/CR/NEL/IND/RI/cursor-wrap/reverse-wrap respect margins; `goto_origin_aware` is column-aware under DECOM+DECLRMM; save/restore includes margin state; reset/resize/disable-mode-69 clears margins; the corresponding catalog row in `catalog/dec-private-modes.md` is `verified`"
   - "**8-bit C1 controls handled**: VTE parser in `crates/vte/src/lib.rs:advance_ground()` detects 0x9B (CSI), 0x90 (DCS), 0x9D (OSC), 0x9F (APC), 0x98 (SOS), 0x9E (PM), 0x9C (ST) as C1 introducers — entering the same parser states as their 7-bit ESC-prefixed equivalents; the corresponding catalog rows are `verified`"
   - "**REP edge cases handled**: REP (CSI Ps b) with no preceding character is a no-op (per ECMA-48 sect.8.3.103); REP after a wide character repeats the wide character; the catalog rows are `verified`"
-  - "**ISO 8613-6 truecolor SGR forms verified**: the `SGR 38 : 2 : <colorspace-id> : r : g : b : ...` and `SGR 48 : 2 : ...` colon-separated subparameter forms (per ISO 8613-6 sect.7) are parsed AND handled the same way as the xterm semi-colon variant. Both separators (`;` and `:`) work per the ECMA-48 sect.5.4.2 subparameter rules. The colorspace-id is ignored (per xterm de-facto) but MUST be tolerated. Catalog rows for both `SGR-38-2-ISO8613-6` and `SGR-38-2-XTERM` are `verified`."
+  - "**ISO 8613-6 truecolor SGR forms verified**: the `SGR 38 : 2 : <colorspace-id> : r : g : b : ...` and `SGR 48 : 2 : ...` colon-separated subparameter forms (per ISO 8613-6 sect.7) are parsed AND handled the same way as the xterm semi-colon variant. Both separators (`;` and `:`) work per the ECMA-48 sect.5.4.2 subparameter rules. The colorspace-id is ignored (per xterm de-facto) but MUST be tolerated. Catalog rows `ECMA48-SGR-38`, `ECMA48-SGR-48`, and `ECMA48-SGR-58` are `verified` (both semicolon and colon separator variants confirmed within each row)."
   - "**ISO 8613-6 indexed color forms verified**: `SGR 38 : 5 : <index>` and `SGR 48 : 5 : <index>` forms verified in addition to the `SGR 38 ; 5 ; index` xterm form. Underline color colon forms (SGR 58 : 2 : ... and SGR 58 : 5 : ...) verified."
   - "**Mixed separator negative pin documented**: `38:2::255;128;64` (mixed colon+semicolon) behavior is documented as unsupported with a negative-pin test asserting the failure mode"
   - "**Empty subparameter negative pin documented**: `::` vs `:0:` indistinguishability at dispatch time is documented with a negative-pin test"
@@ -441,7 +441,7 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 ## 08.R Third Party Review Findings
 
 - [x] `[TPR-08-001-codex][high]` `plans/spec-conformance/section-08-ecma-48-baseline.md:6` — Cover the catalog rows Section 08 already owns (ECMA48-SGR-53/55/73/74/75, ECMA48-CSI-DECSTR/DECSED/DECSEL/SL/SR, ECMA48-DCS-DECRQSS-DECSLRM).
-  Resolved: Fixed on 2026-04-14. Added subsection 08.5e covering all 11 missing catalog rows assigned to Section 08.
+  Resolved: Fixed on 2026-04-14. Added subsection 08.8b covering all 11 missing catalog rows assigned to Section 08.
 - [x] `[TPR-08-002-codex][high]` `plans/spec-conformance/section-08-ecma-48-baseline.md:250` — Restrict CSI s ambiguity to zero-parameter form only; with-params dispatches directly to DECSLRM.
   Resolved: Fixed on 2026-04-14. Rewrote 08.5b to match WezTerm/Ghostty behavior: zero-param CSI s is the only ambiguous case; with-params goes directly to DECSLRM. Removed Option 2 (parameterized dispatch).
 - [x] `[TPR-08-003-codex][medium]` `plans/spec-conformance/section-08-ecma-48-baseline.md:280` — Renderable rung (observe_renderable) is a stub that unconditionally returns pass; don't claim verification through it.
@@ -454,6 +454,12 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   Resolved: Fixed on 2026-04-14. Same fix as [TPR-08-005-codex].
 - [x] `[TPR-08-002-gemini][high]` `plans/spec-conformance/section-08-ecma-48-baseline.md:250` — Same as [TPR-08-002-codex]: CSI s ambiguity must use single handler, not parameterized dispatch.
   Resolved: Fixed on 2026-04-14. Same fix as [TPR-08-002-codex].
+- [x] `[TPR-08-001-codex-r2][medium]` `section-08:15` — Stale ISO 8613-6 row IDs in frontmatter success criteria.
+  Resolved: Fixed on 2026-04-14. Updated to reference actual catalog rows ECMA48-SGR-38/48/58.
+- [x] `[TPR-08-002-codex-r2][medium]` `catalog/dec-private-modes.md:49` — DECLRMM ownership conflict (catalog said Section 09, plan says Section 08).
+  Resolved: Fixed on 2026-04-14. Updated catalog row to Section 08 ownership; updated Section 09 context to note DECLRMM moved to Section 08.
+- [x] `[TPR-08-003-codex-r2][low]` `section-08:444` — TPR-08-001 resolved note referenced nonexistent "08.5e" instead of "08.8b".
+  Resolved: Fixed on 2026-04-14. Corrected to 08.8b.
 
 ---
 
