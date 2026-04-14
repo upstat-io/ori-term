@@ -5964,8 +5964,8 @@ fn csi_s_with_params_mode_69_off_is_noop() {
     );
 }
 
-/// Regression (TPR-08-002-codex-r9): `CSI 0;0 s` has TWO explicit params
-/// (a semicolon was parsed) and must be treated as DECSLRM regardless of
+/// Regression: `CSI 0;0 s` has TWO explicit params (a semicolon was
+/// parsed) and must be treated as DECSLRM regardless of
 /// parameter values. With mode 69 OFF, this must be a no-op (like any
 /// parameterized DECSLRM when DECLRMM is inactive), NOT save cursor.
 ///
@@ -6000,8 +6000,8 @@ fn csi_s_zero_zero_params_mode_69_off_is_noop_not_save_cursor() {
     );
 }
 
-/// Regression (TPR-08-002-codex-r9): `CSI 0;0 s` with mode 69 ON is
-/// treated as DECSLRM with explicit default values, which per DEC STD
+/// Regression: `CSI 0;0 s` with mode 69 ON is treated as DECSLRM with
+/// explicit default values, which per DEC STD
 /// 070 resets margins to full width.
 #[test]
 fn csi_s_zero_zero_params_mode_69_on_resets_margins() {

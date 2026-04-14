@@ -1288,8 +1288,6 @@ fn dch_within_margins_shifts_only_margin_band() {
     assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, '9');
 }
 
-// --- Regression: ICH/DCH no-op when cursor outside margin band (TPR-08-001-gemini-r9) ---
-
 /// Regression: ICH with cursor left of `left_margin` must be a no-op.
 /// Previously the shift range started at `col` (the cursor) and extended
 /// to `right_margin + 1`, mutating cells BEFORE `left_margin` — outside
