@@ -48,9 +48,13 @@ fn negative_pin_degenerate_dims_short_circuit() {
 }
 
 /// Regression: a font-size change that does NOT alter grid cols/rows
-/// must still trigger a cell-metric broadcast. `sync_grid_layout` sends
-/// cell metrics unconditionally — this test pins that the decision logic
-/// fires when only cell pixel dims change (grid dims held constant).
+/// must still trigger a cell-metric broadcast. This pins the decision
+/// helper: changed pixel dims fire even when grid cols/rows are constant.
+///
+/// The full broadcast fanout (`broadcast_cell_metrics_to_window` →
+/// `mux.set_cell_dimensions` for all panes) is verified at the mux
+/// level by `both_split_panes_receive_updated_metrics_after_font_change`
+/// in `oriterm_mux::backend::embedded::tests`.
 #[test]
 fn font_size_change_without_grid_change_still_fires_broadcast() {
     // Simulate: grid stays at 80x24, but font changed 8x16 → 10x20.

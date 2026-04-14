@@ -25,7 +25,7 @@ inspired_by:
 depends_on: ["04"]
 third_party_review:
   status: resolved
-  updated: 2026-04-13
+  updated: 2026-04-14
 sections:
   - id: "07.1"
     title: "Research reference impls and extract lifecycle submodule"
@@ -459,6 +459,14 @@ Round 9 clean-pass gate: Gemini returned `"no_findings": true` (fully clean). Co
   Resolved: Fixed on 2026-04-14. BUG-09-3 title rewritten from "No integration test for cell-metric broadcast short-circuit + cross-window pane seeding" to "No integration test for cross-window pane seeding". Short-circuit integration test concern removed from the Detail/Impact/Proposed-fix blocks. Reviewer line changed from "codex + gemini (agreement)" to "codex" only. A separate Note cross-references the `try_claim_broadcast` R8 fix that addressed the short-circuit concern inline.
 
 Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, all fixed in this round. All 10 TPR rounds for Section 07 now resolved. Section 07 TPR gate clean for close-out.
+
+**Round 11 (Section 07.N close-out):**
+- [x] `[TPR-07-001-codex][medium]` `oriterm_mux/src/backend/embedded/tests.rs:180` — Close the GAP between claimed and actual mux integration coverage.
+  Resolved: Fixed on 2026-04-14. Added `new_window_pane_cell_metrics_reach_io_thread` test that clears the synchronous dirty flag, polls until the IO thread produces a new snapshot, proving the command reaches the handler. Updated doc comments on dispatch-level tests to document the layered testing strategy (Term → IO thread → backend).
+- [x] `[TPR-07-002-codex][medium]` `oriterm/src/app/cell_metrics/tests.rs:50` — Close the GAP in window-wide broadcast coverage.
+  Resolved: Fixed on 2026-04-14. Updated test doc comment to reference the mux-level multi-pane tests (`both_split_panes_receive_updated_metrics_after_font_change`) that verify the broadcast fanout. Decision helper and broadcast dispatch are tested at separate layers.
+- [x] `[TPR-07-003-codex][low]` `oriterm_mux/src/backend/embedded/tests.rs:147` — Fix the DRIFTed io-thread test reference.
+  Resolved: Fixed on 2026-04-14. Doc comment updated from `test_set_cell_dimensions_command_updates_fixed_pixels_coverage` (non-existent) to `test_set_cell_dimensions_command_marks_dirty` (actual test name).
 
 ---
 
