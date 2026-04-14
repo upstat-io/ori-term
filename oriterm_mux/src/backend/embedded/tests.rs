@@ -145,7 +145,7 @@ fn scroll_display_missing_pane_is_noop() {
 /// `set_cell_dimensions` on a non-existent pane is a no-op (no panic).
 ///
 /// The actual command routing is verified by
-/// `test_set_cell_dimensions_command_updates_fixed_pixels_coverage` in
+/// `test_set_cell_dimensions_command_marks_dirty` in
 /// `pane::io_thread::tests`. This test confirms the EmbeddedMux method
 /// handles missing panes gracefully — section 07.6 calls this method
 /// from multiple pane-creation call sites and from window-wide
@@ -178,8 +178,15 @@ fn search_active_missing_pane() {
 // -- Cell-metric multi-pane integration --
 
 /// Regression: a newly created pane (simulating a split) receives cell
-/// metrics without needing a grid resize first. Verifies the pane-creation
-/// → `set_cell_dimensions` path works end-to-end through the IO thread.
+/// metrics without needing a grid resize first.
+///
+/// Tests the backend dispatch layer: `EmbeddedMux::set_cell_dimensions`
+/// enqueues the command to the correct pane and marks it snapshot-dirty.
+/// The IO-thread handler (`PaneIoCommand::SetCellDimensions`) is tested
+/// separately by `test_set_cell_dimensions_command_marks_dirty` in
+/// `pane::io_thread::tests`, and the Term-level recomputation is tested
+/// by `update_cell_coverage_recalculates_fixed_pixel_placements` in
+/// `oriterm_core::image::tests`.
 #[cfg(unix)]
 #[test]
 fn split_pane_receives_cell_metrics_without_resize() {
@@ -219,8 +226,10 @@ fn split_pane_receives_cell_metrics_without_resize() {
 }
 
 /// Regression: after a font change, BOTH panes in a split receive
-/// updated cell metrics. Verifies that `set_cell_dimensions` dispatches
-/// correctly to multiple panes.
+/// updated cell metrics. Verifies the backend dispatch fans out to
+/// multiple panes correctly. IO-thread processing is verified by
+/// `new_window_pane_cell_metrics_reach_io_thread` and the unit test
+/// `test_set_cell_dimensions_command_marks_dirty`.
 #[cfg(unix)]
 #[test]
 fn both_split_panes_receive_updated_metrics_after_font_change() {
@@ -262,6 +271,11 @@ fn both_split_panes_receive_updated_metrics_after_font_change() {
 
 /// Regression: a pane in a new window receives cell metrics immediately
 /// on creation — before any resize or DPI event arrives.
+///
+/// Tests the backend dispatch layer (same coverage scope as
+/// `split_pane_receives_cell_metrics_without_resize`). The IO-thread
+/// end-to-end path is verified by the companion test
+/// `new_window_pane_cell_metrics_reach_io_thread`.
 #[cfg(unix)]
 #[test]
 fn new_window_pane_receives_cell_metrics_on_creation() {
@@ -283,6 +297,61 @@ fn new_window_pane_receives_cell_metrics_on_creation() {
     assert!(
         mux.is_pane_snapshot_dirty(pane_id),
         "new-window pane must be dirty after initial cell metric seeding"
+    );
+
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
+}
+
+/// End-to-end verification: `SetCellDimensions` is processed by the
+/// IO thread (not just enqueued). After clearing the synchronous dirty
+/// flag set by `EmbeddedMux::set_cell_dimensions`, we poll until the
+/// IO thread produces a NEW snapshot — proving the command reached the
+/// handler and triggered `grid_dirty`.
+#[cfg(unix)]
+#[test]
+fn new_window_pane_cell_metrics_reach_io_thread() {
+    use std::time::{Duration, Instant};
+
+    use oriterm_core::Theme;
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+
+    // Wait for the initial shell-startup snapshot burst to settle.
+    let settle = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < settle {
+        mux.poll_events();
+        mux.clear_pane_snapshot_dirty(pane_id);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // Send cell dimensions and immediately clear the synchronous dirty
+    // flag. The IO thread hasn't processed the command yet (it runs on
+    // a separate thread and poll_events hasn't been called).
+    mux.set_cell_dimensions(pane_id, 12, 24);
+    mux.clear_pane_snapshot_dirty(pane_id);
+
+    // Poll until the IO thread processes SetCellDimensions, sets
+    // grid_dirty, and produces a new snapshot. poll_events detects the
+    // new snapshot via has_new_snapshot and re-sets snapshot_dirty.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut io_processed = false;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if mux.is_pane_snapshot_dirty(pane_id) {
+            io_processed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        io_processed,
+        "IO thread must process SetCellDimensions and produce a new snapshot"
     );
 
     mux.close_pane(pane_id);
