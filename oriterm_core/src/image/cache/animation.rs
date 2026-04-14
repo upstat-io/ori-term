@@ -4,6 +4,7 @@
 //! Kitty `a=animate`). Only images visible in the viewport are animated
 //! to save CPU/GPU.
 
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,6 +13,29 @@ use crate::grid::StableRowIndex;
 
 use super::super::{AnimationState, CompositionMode, ImageData, ImageError, ImageId};
 use super::ImageCache;
+
+/// Apply a specific frame's data to the image, setting `dirty`.
+///
+/// Takes disjoint field references so callers can hold a simultaneous
+/// borrow on `animations` (the borrow checker can't see inside `&mut
+/// self` method calls).
+fn apply_frame(
+    animation_frames: &HashMap<ImageId, Vec<Arc<Vec<u8>>>>,
+    images: &mut HashMap<ImageId, ImageData>,
+    dirty: &mut bool,
+    id: ImageId,
+    frame_idx: usize,
+) {
+    let Some(frames) = animation_frames.get(&id) else {
+        return;
+    };
+    let Some(img) = images.get_mut(&id) else {
+        return;
+    };
+    let idx = frame_idx.min(frames.len() - 1);
+    img.data = frames[idx].clone();
+    *dirty = true;
+}
 
 impl ImageCache {
     /// Enable or disable animation. When disabled, animated images show
@@ -22,17 +46,19 @@ impl ImageCache {
         }
         self.animation_enabled = enabled;
         if !enabled {
-            // Reset all animations to frame 0.
+            // Reset all animation states to frame 0 and collect IDs
+            // that need their image data updated.
             for (id, state) in &mut self.animations {
                 if state.current_frame != 0 {
                     state.current_frame = 0;
                     state.loops_completed = 0;
-                    if let Some(frames) = self.animation_frames.get(id) {
-                        if let Some(img) = self.images.get_mut(id) {
-                            img.data = frames[0].clone();
-                        }
-                    }
-                    self.dirty = true;
+                    apply_frame(
+                        &self.animation_frames,
+                        &mut self.images,
+                        &mut self.dirty,
+                        *id,
+                        0,
+                    );
                 }
             }
         }
@@ -96,11 +122,7 @@ impl ImageCache {
             .keys()
             .filter(|id| {
                 self.placements.iter().any(|p| {
-                    if p.image_id != **id {
-                        return false;
-                    }
-                    let bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
-                    p.cell_row <= viewport_bottom && bottom >= viewport_top
+                    p.image_id == **id && p.intersects_viewport(viewport_top, viewport_bottom)
                 })
             })
             .copied()
@@ -121,18 +143,16 @@ impl ImageCache {
             let elapsed = now.duration_since(frame_start);
             let frame_dur = state.current_duration();
 
-            if elapsed >= frame_dur {
-                // Advance frame.
-                if state.advance() {
-                    if let Some(frames) = self.animation_frames.get(&id) {
-                        if let Some(img) = self.images.get_mut(&id) {
-                            let idx = state.current_frame.min(frames.len() - 1);
-                            img.data = frames[idx].clone();
-                            self.dirty = true;
-                        }
-                    }
-                    self.frame_starts.insert(id, now);
-                }
+            if elapsed >= frame_dur && state.advance() {
+                let frame = state.current_frame;
+                apply_frame(
+                    &self.animation_frames,
+                    &mut self.images,
+                    &mut self.dirty,
+                    id,
+                    frame,
+                );
+                self.frame_starts.insert(id, now);
             }
 
             // Compute deadline for this image's next frame switch.
@@ -258,18 +278,23 @@ impl ImageCache {
 
     /// Jump to a specific frame (Kitty `r=` or `c=` in `a=a`).
     pub(crate) fn set_current_frame(&mut self, id: ImageId, frame_idx: usize) {
-        if let Some(state) = self.animations.get_mut(&id) {
+        let should_apply = self.animations.get_mut(&id).is_some_and(|state| {
             if frame_idx < state.total_frames {
                 state.current_frame = frame_idx;
-                // Update the image data to show this frame.
-                if let Some(frames) = self.animation_frames.get(&id) {
-                    if let Some(img) = self.images.get_mut(&id) {
-                        img.data = frames[frame_idx].clone();
-                        self.dirty = true;
-                    }
-                }
-                self.frame_starts.insert(id, Instant::now());
+                true
+            } else {
+                false
             }
+        });
+        if should_apply {
+            apply_frame(
+                &self.animation_frames,
+                &mut self.images,
+                &mut self.dirty,
+                id,
+                frame_idx,
+            );
+            self.frame_starts.insert(id, Instant::now());
         }
     }
 }
