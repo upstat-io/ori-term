@@ -502,34 +502,22 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   Resolved: Fixed on 2026-04-14. Added 08.8b matrix to 08.N.
 - [x] `[TPR-08-001-codex-r5][medium]` `oriterm_core/tests/spec_chain/baseline/tack_section_06/status_reports_inventory.rs:50,126` — LEAK: Drive the actual DA2 and DA3 fixture bytes through spec_chain.
   Resolved: Fixed on 2026-04-14. Added `da2_query_explicit_zero_param_drives_to_effect_apex`, `da3_query_explicit_zero_param_drives_to_effect_apex`, and `da2_explicit_and_implicit_zero_replies_match` to pin the verbatim `CSI > 0 c` / `CSI = 0 c` fixture forms and prove explicit/implicit-zero equivalence.
-  Evidence: Tack fixtures model DA2/DA3 as `CSI > 0 c` / `CSI = 0 c` (explicit-0 param) per `crates/oriterm_test_support/src/tack_framework/scenarios/status_reports/tests.rs:25-27`, but the conversion hardcodes normalized `\x1b[>c` / `\x1b[=c` (implicit-0).
-  Impact: A regression in explicit-0 DA2/DA3 handling could hide behind a green 08.2 conversion; the test stops being a faithful replay of the tack scenario.
-  Required plan update: Add matrix cells for `CSI > 0 c` and `CSI = 0 c` (explicit-0 form) alongside the existing implicit-0 tests.
-  Basis: direct_file_inspection. Confidence: high.
 - [x] `[TPR-08-002-codex-r5][medium]` `plans/spec-conformance/catalog/ecma-48.md:49-50` — DRIFT: Split the charset designation rows or cover the missing charset cells.
   Resolved: Fixed on 2026-04-14. Added G2/G3 coverage (`esc_g2_dec_special_graphics_designates_without_panic`, `esc_g3_dec_special_graphics_designates_without_panic`, `esc_g2_ascii_designates_without_panic`, `esc_g3_ascii_designates_without_panic`) and a negative pin (`esc_g1_dec_graphics_is_inert_before_so`) proving `ESC ) 0` is inert on G0 rendering until SO fires. Updated catalog cells for `ECMA48-ESC-B` and `ECMA48-ESC-0` to cite the G2/G3 tests.
-  Evidence: `ECMA48-ESC-B` and `ECMA48-ESC-0` are now marked `verified` for `ESC ( / ) / * / +` (all four banks G0–G3), but `character_sets.rs` only exercises `ESC ( 0`, `ESC ) 0`, and `ESC ( B`. The module lacks a negative pin proving `ESC ) 0` remains inert until SO activates G1.
-  Impact: Verification metadata overstates what 08.2 pinned — bugs in G2/G3 designation or the "designated-but-not-active" path can ship while the row reads as fully verified.
-  Required plan update: Add spec_chain tests for `ESC * 0` (G2), `ESC + 0` (G3), `ESC * B` (G2 ASCII), `ESC + B` (G3 ASCII); add negative pin proving `ESC ) 0` without SO keeps ASCII glyph rendering.
-  Basis: direct_file_inspection. Confidence: high.
 - [x] `[TPR-08-003-codex-r5][low]` `oriterm_core/tests/spec_chain/baseline/tack_section_06/{tools_menu_inventory,status_reports,enq_ack}.rs` — GAP: Replace zero-row stub no-op tests with meaningful assertions.
   Resolved: Fixed on 2026-04-14. Deleted empty `#[test]` functions from `tools_menu_inventory.rs` and `status_reports.rs` (pure documentation modules now — rustdoc-only). Replaced `enq_ack.rs` empty test with `ecma48_c0_enq_catalog_row_still_missing_pending_bug_08_6` — a load-bearing regression guard that reads the catalog and fails when ENQ's status flips away from `missing`, forcing the BUG-08-6 implementer to land the real spec_chain test here.
-  Evidence: All three stub files contain bare passing `#[test]` shells with no assertions — violates `.claude/rules/tests.md` §Test Hygiene Rule 1 ("every test file must contain at least one assertion"). The BUG-08-6 citation in `enq_ack.rs` is documentation only, not a load-bearing guard.
-  Impact: Files can never fail if their documented rationale drifts; they don't actually protect the zero-row decisions.
-  Required plan update: Delete empty `#[test]` functions from `tools_menu_inventory.rs` and `status_reports.rs` (pure documentation modules); replace `enq_ack.rs` empty test with a regression guard asserting `ECMA48-C0-ENQ` catalog row still has `status: missing` (forces reopening this file when BUG-08-6 is fixed).
-  Basis: direct_file_inspection. Confidence: high.
 - [x] `[TPR-08-001-gemini-r5][medium]` `oriterm_core/tests/spec_chain/baseline/tack_section_06/tools_menu_inventory.rs:22` — GAP: Empty tests violate No Orphan Tests hygiene rule.
   Resolved: Fixed on 2026-04-14. Same fix as [TPR-08-003-codex-r5]. Both reviewers flagged the same hygiene violation; the single fix addresses both.
-  Evidence: Dummy `#[test]` functions with empty bodies in `tools_menu_inventory.rs`, `status_reports.rs`, `enq_ack.rs` violate `.claude/rules/tests.md` §Test Hygiene Rule 1.
-  Impact: Fails test hygiene standard; empty tests provide false confidence.
-  Required plan update: Same as [TPR-08-003-codex-r5] (overlaps on diagnosis; single fix covers both).
-  Basis: direct_file_inspection. Confidence: high.
 - [x] `[TPR-08-002-gemini-r5][low]` `oriterm_core/tests/spec_chain/baseline/tack_section_06/status_reports_inventory.rs:221` — GAP: Missing negative clamp for DSR-6.
   Resolved: Fixed on 2026-04-14. Added `dsr_6_does_not_emit_device_status` negative pin that asserts `CSI 6 n` must not emit a `DeviceStatus` effect, symmetric to the pre-existing `dsr_5_does_not_emit_cursor_report`.
 - [x] `[TPR-08-001-codex-r6][medium]` `plans/spec-conformance/catalog/ecma-48.md:49-50` — Align the ESC-B and ESC-0 catalog citations with the actual G-bank tests (round 2 follow-up).
   Resolved: Fixed on 2026-04-14. (1) Added `esc_g1_ascii_designates_without_panic` spec_chain test to cover G1 ASCII designation. (2) Corrected ECMA48-ESC-B citations so the `state:` column cites `esc_g0_ascii_round_trip` (the only ASCII test with `ApexLayer::State`) and added a note row cataloging all four per-G-bank pins. (3) Corrected ECMA48-ESC-0 citations so the `state:` column cites state-apex tests and the prose cites the G3 test alongside G2.
 - [x] `[TPR-08-001-codex-r7][low]` `section-08 §08.R` — Keep DSR-6 evidence attached to the DSR-6 finding (round 3 follow-up).
-  Resolved: Fixed on 2026-04-14. When the r6 finding was appended to §08.R, the original DSR-6 (r5) Evidence/Impact/Required-plan-update/Basis lines were left orphaned between the r6 resolution and the next block. Removed the orphan lines; the DSR-6 finding's canonical body now lives in its Resolved note, consistent with all other resolved findings in this block (per `/tpr-review` "Resolution format" — title + Resolved line only). The r6 finding now has its own Resolved note and no body drift.
+  Resolved: Fixed on 2026-04-14. Removed the orphan DSR-6 lines that had drifted under the r6 finding. (The r7 note previously claimed block-wide consistency; that claim was only partially true and was addressed in full by TPR-08-001-codex-r8 + TPR-08-001-gemini-r8 below.)
+- [x] `[TPR-08-001-codex-r8][low]` `section-08 §08.R` — Limit the r7 resolution note to the cleanup this commit actually performed (round 4 follow-up).
+  Resolved: Fixed on 2026-04-14. Same fix as [TPR-08-001-gemini-r8] (both reviewers flagged the same drift between r7's claim and the block's actual state).
+- [x] `[TPR-08-001-gemini-r8][medium]` `section-08 §08.R` — Remove non-canonical body lines from remaining r5 findings in §08.R (round 4 follow-up).
+  Resolved: Fixed on 2026-04-14. Removed the trailing `Evidence:` / `Impact:` / `Required plan update:` / `Basis:` lines from all four r5 resolved findings (`TPR-08-001-codex-r5`, `TPR-08-002-codex-r5`, `TPR-08-003-codex-r5`, `TPR-08-001-gemini-r5`). Every resolved finding in §08.R now follows the canonical "title + Resolved line only" format. Updated the r7 resolution note to reference this round-4 clean-up instead of making the overstated block-wide-consistency claim.
 
 ---
 
