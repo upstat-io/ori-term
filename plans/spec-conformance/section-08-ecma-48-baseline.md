@@ -8,7 +8,7 @@ success_criteria:
   - "Every row in `catalog/ecma-48.md` covered by tack-conformance section 05 (test menu) is `verified` (uses the spec_chain harness from section 04)"
   - "Every row in `catalog/ecma-48.md` covered by tack-conformance section 06 (tools menu) is `verified`"
   - "Every basic ANSI mode (IRM, LNM) and basic DEC private mode (1, 5, 6, 7, 12, 25, 47, 1049, 2004) row in `catalog/dec-private-modes.md` is `verified`"
-  - "Every basic OSC row (0, 1, 2, 4, 7, 10, 11, 12, 52) is `verified` in `catalog/osc.md`"
+  - "Every basic OSC row (0, 1, 2, 4, 7, 10, 11, 12, 52) is `verified` in `catalog/osc.md` — these rows are verified by converting tack section 06's direct-VTE cap cross-checks into spec_chain tests (subsections 08.1-08.2). If any basic OSC rows are NOT covered by tack section 05/06 scenarios, they are deferred to Section 10 (OSC Suite) which owns the full OSC stack."
   - "**DECLRMM full mode plumbing + grid enforcement implemented**: VTE layer has `NamedPrivateMode::LeftRightMargin` variant (mode 69) with `PrivateMode::new` mapping; `TermMode` has `LEFT_RIGHT_MARGIN` flag; `named_private_mode_flag` maps it; `status_report_private_mode` reports it; `Grid` has `left_margin: usize` and `right_margin: usize` fields; CSI s / DECSLRM ambiguity resolved (state-dependent dispatch); CUF/CUB/CHA/ICH/DCH/IL/DL/CR/NEL/IND/RI/cursor-wrap/reverse-wrap respect margins; `goto_origin_aware` is column-aware under DECOM+DECLRMM; save/restore includes margin state; reset/resize/disable-mode-69 clears margins; the corresponding catalog row in `catalog/dec-private-modes.md` is `verified`"
   - "**8-bit C1 controls handled**: VTE parser in `crates/vte/src/lib.rs:advance_ground()` detects 0x9B (CSI), 0x90 (DCS), 0x9D (OSC), 0x9F (APC), 0x98 (SOS), 0x9E (PM), 0x9C (ST) as C1 introducers — entering the same parser states as their 7-bit ESC-prefixed equivalents; the corresponding catalog rows are `verified`"
   - "**REP edge cases handled**: REP (CSI Ps b) with no preceding character is a no-op (per ECMA-48 sect.8.3.103); REP after a wide character repeats the wide character; the catalog rows are `verified`"
@@ -69,7 +69,7 @@ sections:
     title: "Completion Checklist"
     status: not-started
 # TPR Checkpoint Placement: 08.2 (after tack absorption work — covers .1-.2),
-# 08.5 (after DECLRMM — covers .3-.5), 08.8 (after gap fixes — covers .6-.8),
+# 08.5 (after DECLRMM — covers .3-.5), 08.8 (after gap fixes — covers .6-.8b),
 # final in 08.N
 ---
 
@@ -211,6 +211,8 @@ With mode 69 plumbed, implement the actual left/right margin enforcement in the 
 - [ ] **RI (reverse_index)** — When DECLRMM active and cursor is at the top of the scroll region, reverse scroll should respect left/right margins (content outside the margin band survives).
 - [ ] **Cursor wrap** — When DECLRMM active and cursor reaches `right_margin`, auto-wrap wraps to `left_margin` of the next line (not column 0).
 - [ ] **Reverse wrap** — When DECLRMM active and mode 45 set, BS at `left_margin` wraps to `right_margin` of the previous line.
+- [ ] **HT (horizontal tab)** — When DECLRMM active, tab stops beyond `right_margin` are not reachable; HT stops at `right_margin`.
+- [ ] **CBT (cursor backward tab)** — When DECLRMM active, backward tab stops before `left_margin` are not reachable; CBT stops at `left_margin`.
 - [ ] **Tests — TDD, failing first — write ALL tests before implementing any movement logic:**
   - `cuf_respects_right_margin_under_declrmm()` — cursor stops at right_margin
   - `cub_respects_left_margin_under_declrmm()` — cursor stops at left_margin
@@ -224,6 +226,8 @@ With mode 69 plumbed, implement the actual left/right margin enforcement in the 
   - `cursor_outside_margin_band_not_constrained()` — cursor positioned outside [left, right] is NOT constrained by margins (WezTerm behavior)
 - [ ] **Negative pins:**
   - `cuf_without_declrmm_ignores_margins()` — margins set but mode 69 off = no effect
+  - `ht_stops_at_right_margin_under_declrmm()` — tab doesn't cross right margin
+  - `cbt_stops_at_left_margin_under_declrmm()` — backward tab doesn't cross left margin
   - `declrmm_does_not_affect_vertical_scroll_region()` — DECSTBM still works independently
 - [ ] **File size gate**: `handler/mod.rs` is at 490 lines. Any DECLRMM logic added to handler/mod.rs must NOT push it over 500 lines. If it would, extract margin-related handler methods into `oriterm_core/src/term/handler/margins.rs` (new submodule) FIRST.
 - [ ] **Validation**: tests pass; existing teseq cursor tests still pass; no alloc regression.
@@ -240,11 +244,14 @@ This subsection handles the operations that are architecturally more complex tha
 
 - [ ] **Partial-width scroll primitives** — Current `scroll_range_up` and `scroll_range_down` in `oriterm_core/src/grid/scroll/mod.rs:128-168` rotate full rows. When DECLRMM is active, IL/DL must scroll only the columns within `[left_margin, right_margin]` — content outside the margin band survives unchanged. This requires new primitives: `scroll_region_partial_up(row_range, col_range, count)` and `scroll_region_partial_down(row_range, col_range, count)` that operate on sub-row cell ranges. Reference: WezTerm's `scroll_up_within_margins` / `scroll_down_within_margins`.
 - [ ] **ICH/DCH within margins** — `insert_blank` and `delete_chars` in `oriterm_core/src/grid/editing/mod.rs` must shift cells only within `[left_margin, right_margin]` when DECLRMM is active. Cells outside the margin band are not affected.
+- [ ] **SL/SR within margins** — Scroll Left (`CSI Ps SP @`) and Scroll Right (`CSI Ps SP A`) shift content horizontally. When DECLRMM is active, SL/SR must operate within `[left_margin, right_margin]` using the same margin-constrained shift primitives as ICH/DCH. Content outside the margin band is not affected. These are implemented in 08.8b; this item ensures they respect margin constraints.
 - [ ] **Tests:**
   - `il_with_margins_scrolls_only_margin_band()` — content outside margins survives
   - `dl_with_margins_scrolls_only_margin_band()` — content outside margins survives
   - `ich_within_margins_shifts_only_margin_band()` — insertion respects right boundary
   - `dch_within_margins_shifts_only_margin_band()` — deletion fills from right boundary
+  - `sl_within_margins_shifts_only_margin_band()` — scroll left respects margin band
+  - `sr_within_margins_shifts_only_margin_band()` — scroll right respects margin band
 
 ### 08.5b: CSI s / DECSLRM ambiguity
 
@@ -273,6 +280,7 @@ This subsection handles the operations that are architecturally more complex tha
   - **Disabling mode 69** (`DECRST ?69`) — already in 08.3, but verify margins are actually cleared (not just the flag)
   - **DECCOLM** (mode 3 toggle) — `oriterm_core/src/term/handler/modes.rs` already resets scroll region; add horizontal margin reset
   - **RIS (full reset)** — `oriterm_core/src/term/handler/mod.rs` or wherever hard reset lives
+  - **DECSTR (soft terminal reset)** — `CSI ! p` resets terminal state including margins (subsection 08.8b implements DECSTR; its reset path must clear horizontal margins)
   - **DECALN** — alignment test resets margins
   - **Resize** — `Grid::resize()` in `oriterm_core/src/grid/resize/mod.rs` should reset margins (margin column values may be invalid after a width change)
 - [ ] **Tests:**
@@ -280,6 +288,7 @@ This subsection handles the operations that are architecturally more complex tha
   - `deccolm_resets_horizontal_margins()` — mode 3 toggle clears margins
   - `ris_resets_horizontal_margins()` — hard reset clears margins
   - `resize_resets_horizontal_margins()` — width change clears margins
+  - `decstr_resets_horizontal_margins()` — soft reset clears margins
   - `decaln_resets_horizontal_margins()` — alignment test clears margins
 
 - [ ] **spec_chain test** — `oriterm_core/tests/spec_chain/baseline/declrmm.rs` (new): at least one test driving DECLRMM through parser-dispatch-state apex. **Do NOT use the Renderable apex** — `observe_renderable` in `crates/oriterm_test_support/src/spec_chain/observers/renderable.rs:21-29` is currently a stub that unconditionally returns pass. Using it would give a false green rung 4. Use `ApexLayer::State` until the renderable observer has concrete assertions.
@@ -474,6 +483,18 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   Resolved: Fixed on 2026-04-14. Same fix as TPR-08-002-codex-r3.
 - [x] `[TPR-08-002-gemini-r3][medium]` `section-08 success criteria` — 08.8b catalog rows missing from success criteria.
   Resolved: Fixed on 2026-04-14. Added to both frontmatter and markdown success criteria blocks.
+- [x] `[TPR-08-001-codex-r4][high]` `section-08 success criteria` — Basic OSC ownership ambiguity with Section 10.
+  Resolved: Fixed on 2026-04-14. Clarified in success criteria that basic OSC rows are verified via tack conversion (08.1-08.2); uncovered rows defer to Section 10.
+- [x] `[TPR-08-002-codex-r4][low]` `catalog/xterm-ctlseqs.md:23` — XT-DECSLRM ownership note still references Section 09/06.
+  Resolved: Fixed on 2026-04-14. Updated to reference Section 08 subsection 08.5b.
+- [x] `[TPR-08-001-gemini-r4][high]` `section-08 08.5d` — DECSTR missing from margin-clearing reset paths.
+  Resolved: Fixed on 2026-04-14. Added DECSTR to 08.5d reset list + test.
+- [x] `[TPR-08-002-gemini-r4][high]` `section-08 08.5a` — SL/SR not integrated with margin-constrained shift operations.
+  Resolved: Fixed on 2026-04-14. Added SL/SR to 08.5a with tests.
+- [x] `[TPR-08-003-gemini-r4][medium]` `section-08 08.4` — HT/CBT not in margin-constrained movement list.
+  Resolved: Fixed on 2026-04-14. Added HT/CBT to 08.4 with tests.
+- [x] `[TPR-08-004-gemini-r4][low]` `section-08 08.N` — Missing matrix dimensions for 08.8b.
+  Resolved: Fixed on 2026-04-14. Added 08.8b matrix to 08.N.
 
 ---
 
@@ -490,6 +511,7 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   - C1 controls: C1 byte (0x90/0x98/0x9B/0x9C/0x9D/0x9E/0x9F) x context (ground/mid-sequence)
   - REP edge cases: preceding state (none/CR/wide/SGR-change/at-margin) x count (0/1/N)
   - SGR colon forms: color target (38/48/58) x color mode (2/5) x separator (semicolon/colon)
+  - 08.8b remaining rows: operation (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, PUSHSGR, POPSGR) x margin-state (active/inactive where applicable)
 - [ ] **Semantic pins**: DECLRMM cursor-constrained tests, 8-bit C1 state-transition tests, and colon-separator tests are the regression guards for new behavior
 - [ ] **Negative pins**: CSI s with params when mode 69 inactive, BSU/ESU 7-bit-only scope, mixed separator failure mode, empty subparam indistinguishability, cursor outside margin band not constrained
 - [ ] Tack section 05 scenarios converted to spec_chain tests
