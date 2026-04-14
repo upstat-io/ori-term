@@ -586,6 +586,15 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 
 - **No findings.** Both codex (192s) and gemini (67s) returned `no_findings: true` on iter-4. Commit range `8808d5c5..b7245ced` verified clean across all round-11 surfaces (DECSC/DECRC scope, absolute CUP/HVP, CHA DECOM offset, headless sanitize merge, plan metadata alignment, 08.5 subsection rename, CHA col_1 test doc correction). §08.5 TPR checkpoint closed.
 
+**Tooling retrospective (08.5):** improvements committed in
+`da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
+preamble — scratch-file discipline, `git diff --stat` first,
+skip-redundant-workspace-gates — plus a plan/code consistency clause
+for both reviewers) and `a6c396ac` (new
+`scripts/check-plan-subsection-sync.py` that catches drift between
+plan frontmatter subsection titles and body `## {id}` headings, the
+exact trap behind `[TPR-08-006-codex-r11]`).
+
 ---
 
 ## 08.N Completion Checklist
