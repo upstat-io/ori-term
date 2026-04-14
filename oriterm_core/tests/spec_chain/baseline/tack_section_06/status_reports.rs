@@ -25,8 +25,7 @@
 //! `mod.rs` is complete: a future reader searching for "where is tack
 //! `status_reports` converted?" lands here and sees the helper-only
 //! classification immediately.
-
-#[test]
-fn status_reports_helpers_contribute_zero_protocol_rows() {
-    // Presence-documents the deliberate zero-row status.
-}
+//!
+//! No `#[test]` functions live here — empty-body tests violate
+//! `.claude/rules/tests.md` §Test Hygiene Rule 1. The `//!` rustdoc
+//! is the artifact; `mod.rs` pulls this file into the module tree.

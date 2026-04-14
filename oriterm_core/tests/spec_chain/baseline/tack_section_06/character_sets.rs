@@ -174,6 +174,149 @@ fn esc_g0_ascii_round_trip() {
     );
 }
 
+// --- G2 / G3 designation (catalog row claims G0-G3 coverage) --------------
+
+/// `ESC * 0` designates DEC Special Graphics to G2.
+///
+/// The `ECMA48-ESC-0` catalog row covers the full `ESC ( / ) / * / +`
+/// family (G0-G3). G0 and G1 are pinned above; this test covers G2 so
+/// the catalog verification claim is honest across all four banks.
+/// Activation of G2 is via single-shift (`ESC N`) or LS2 — not
+/// tested here; designation itself is the catalog contract.
+#[test]
+fn esc_g2_dec_special_graphics_designates_without_panic() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-ESC-0",
+        bytes: b"\x1b*0",
+        apex_layer: ApexLayer::Dispatch,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: '0',
+                params: &[],
+                intermediates: b"*",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("configure_charset")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
+/// `ESC + 0` designates DEC Special Graphics to G3.
+///
+/// Matrix cell for G3; completes the catalog's G0-G3 claim.
+#[test]
+fn esc_g3_dec_special_graphics_designates_without_panic() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-ESC-0",
+        bytes: b"\x1b+0",
+        apex_layer: ApexLayer::Dispatch,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: '0',
+                params: &[],
+                intermediates: b"+",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("configure_charset")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
+/// `ESC * B` designates ASCII to G2.
+///
+/// Matrix cell for `ECMA48-ESC-B` — covers G2 so the catalog's
+/// G0-G3 claim is honest.
+#[test]
+fn esc_g2_ascii_designates_without_panic() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-ESC-B",
+        bytes: b"\x1b*B",
+        apex_layer: ApexLayer::Dispatch,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'B',
+                params: &[],
+                intermediates: b"*",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("configure_charset")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
+/// `ESC + B` designates ASCII to G3.
+///
+/// Matrix cell for G3; completes `ECMA48-ESC-B`'s G0-G3 claim.
+#[test]
+fn esc_g3_ascii_designates_without_panic() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-ESC-B",
+        bytes: b"\x1b+B",
+        apex_layer: ApexLayer::Dispatch,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'B',
+                params: &[],
+                intermediates: b"+",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("configure_charset")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
 // --- SO / SI (bank switching) ---------------------------------------------
 
 /// `SO` (`0x0E`) activates G1 as the working GL charset.
@@ -297,6 +440,28 @@ fn preview_pane_renders_box_drawing_after_g1_dec_graphics() {
 }
 
 // --- Negative pin ---------------------------------------------------------
+
+/// Negative pin: `ESC ) 0` must be inert on G0 rendering until `SO` fires.
+///
+/// Designating DEC Special Graphics to G1 (`ESC ) 0`) must NOT change
+/// what `q` looks like while G0 is still the active charset. Only
+/// after `SO` activates G1 does `q` translate to `─`. Without this
+/// pin, a regression that eagerly applied a G1 designation to the
+/// active-charset translation layer would pass the positive
+/// `preview_pane_renders_box_drawing_after_g1_dec_graphics` pin
+/// above (which feeds the full `ESC ) 0 SO q` sequence).
+#[test]
+fn esc_g1_dec_graphics_is_inert_before_so() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b)0q"); // G1 designated, G0 still active
+
+    let cell = &harness.term().grid()[oriterm_core::Line(0)][oriterm_core::Column(0)];
+    assert_eq!(
+        cell.ch, 'q',
+        "ESC ) 0 alone (no SO) must leave G0 active, so `q` renders as `q`; got {:?}",
+        cell.ch
+    );
+}
 
 /// Negative pin: `ESC ( B` (ASCII) in a fresh harness must NOT render `q` as `─`.
 ///

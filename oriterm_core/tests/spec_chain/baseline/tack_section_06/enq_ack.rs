@@ -37,12 +37,44 @@
 //! spec_chain test driving `ECMA48-C0-ENQ` (parser Execute 0x05,
 //! dispatch to a new `answerback`/`enquiry` method, effect
 //! `PtyWriteKind::Other` with the empty answerback byte string) will
-//! land here.
+//! land here, replacing the regression guard below.
+//!
+//! The test in this module is a **load-bearing regression guard**
+//! against BUG-08-6, not a tautology. When the catalog row
+//! `ECMA48-C0-ENQ` is flipped from `status: missing` to any other
+//! value (i.e. someone implemented ENQ), the assertion below will
+//! fail, forcing whoever fixes BUG-08-6 to open this file and
+//! replace the guard with the real spec_chain test the module
+//! rustdoc describes. Without this pin, BUG-08-6 could be silently
+//! closed without the corresponding spec_chain coverage ever landing.
 
+/// Regression guard: ECMA48-C0-ENQ catalog row must stay `missing` until BUG-08-6 is fixed.
+///
+/// Reads the catalog markdown directly and asserts the ENQ row's
+/// verification-status column still reads `missing`. When BUG-08-6
+/// is resolved, the catalog row's status will flip (to `verified`
+/// or similar), this assertion will fail, and the failing test
+/// reminds the implementer that the spec_chain coverage for this
+/// family needs to land here — not just the implementation
+/// elsewhere.
 #[test]
-fn enq_ack_contributes_zero_protocol_rows_pending_bug_08_6() {
-    // Presence-documents the deliberate zero-row status and the
-    // blocker (BUG-08-6). Presence in the test run keeps this file
-    // part of the rustdoc corpus so the blocker reference stays
-    // discoverable via `cargo doc` and file search.
+fn ecma48_c0_enq_catalog_row_still_missing_pending_bug_08_6() {
+    let catalog = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../plans/spec-conformance/catalog/ecma-48.md"
+    ))
+    .expect("catalog/ecma-48.md must exist");
+
+    let row = catalog
+        .lines()
+        .find(|l| l.starts_with("| ECMA48-C0-ENQ "))
+        .expect("ECMA48-C0-ENQ row must exist in catalog/ecma-48.md");
+
+    assert!(
+        row.contains("| missing |"),
+        "ECMA48-C0-ENQ is no longer marked `missing` in the catalog — \
+         BUG-08-6 has been fixed. Replace this regression guard with a \
+         real spec_chain test driving the ENQ probe, per the module \
+         rustdoc. Row line:\n  {row}"
+    );
 }
