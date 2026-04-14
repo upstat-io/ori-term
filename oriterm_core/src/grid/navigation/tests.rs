@@ -738,14 +738,22 @@ fn cub_respects_left_margin_under_declrmm() {
 }
 
 #[test]
-fn cha_relative_to_left_margin_under_decom_declrmm() {
+fn cha_grid_level_does_not_clamp_by_margins() {
+    // Grid::move_to_column is the absolute primitive for CHA. Margin
+    // semantics (DECOM offset + `[left_margin, right_margin]` clamp)
+    // are enforced at the Term layer in `Term::goto_col`. At the Grid
+    // layer, CHA is pure absolute positioning bounded only by the
+    // physical column count.
     let mut grid = grid_with_margins(24, 80, 10, 70);
     grid.cursor_mut().set_col(Column(15));
-    // CHA col=1 (0-based col=0) goes to left_margin when origin mode is
-    // handled at the Term layer. At the Grid layer, move_to_column clamps
-    // to [left_margin, right_margin] when cursor is within the band.
+
+    // Target col=0 must land at 0 — NOT the left margin.
     grid.move_to_column(Column(0));
-    assert_eq!(grid.cursor().col(), Column(10));
+    assert_eq!(grid.cursor().col(), Column(0));
+
+    // Target col=75 must land at 75 — NOT clamped to the right margin.
+    grid.move_to_column(Column(75));
+    assert_eq!(grid.cursor().col(), Column(75));
 }
 
 #[test]
@@ -757,11 +765,35 @@ fn cr_goes_to_left_margin_under_declrmm() {
 }
 
 #[test]
-fn cup_clamps_to_margin_band() {
+fn cup_ignores_horizontal_margins() {
+    // CUP/HVP are absolute addressing. Even with DECLRMM margins active
+    // and the cursor starting inside the band, a CUP target outside the
+    // band must land at the requested column, NOT be clamped to the
+    // right margin. Reference: DEC STD 070 §4.6.10 (CUP is absolute
+    // unless DECOM is set, in which case the Term layer applies the
+    // offset before reaching `Grid::move_to`).
     let mut grid = grid_with_margins(24, 80, 10, 70);
     grid.cursor_mut().set_col(Column(15));
+
+    // Target col=75 is outside `[10, 70]` — must land at 75.
     grid.move_to(5, Column(75));
-    assert_eq!(grid.cursor().col(), Column(70));
+    assert_eq!(
+        grid.cursor().col(),
+        Column(75),
+        "CUP must NOT be clamped to right_margin when cursor starts inside the band",
+    );
+
+    // Target col=2 is outside `[10, 70]` on the left side — must land at 2.
+    grid.move_to(5, Column(2));
+    assert_eq!(
+        grid.cursor().col(),
+        Column(2),
+        "CUP must NOT be clamped up to left_margin when target is outside the band",
+    );
+
+    // Target col=79 (last column) is in-bounds.
+    grid.move_to(5, Column(79));
+    assert_eq!(grid.cursor().col(), Column(79));
 }
 
 #[test]

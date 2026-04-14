@@ -111,7 +111,7 @@ impl<S: EffectSink> Term<S> {
     /// `set_scrolling_region`, and DECSET/DECRST origin-mode toggling.
     pub(super) fn goto_origin_aware(&mut self, line: i32, col: usize) {
         let origin = self.mode.contains(TermMode::ORIGIN);
-        let lrm = self.mode.contains(TermMode::LEFT_RIGHT_MARGIN);
+        let resolved_col = self.origin_aware_col(col);
         let grid = self.grid_mut();
         let region_start = grid.scroll_region().start;
         let region_end = grid.scroll_region().end;
@@ -125,13 +125,35 @@ impl<S: EffectSink> Term<S> {
         let line = cmp::max(0, line) as usize;
         let line = cmp::min(line + offset, max_line);
 
+        grid.move_to(line, resolved_col);
+    }
+
+    /// Resolve an incoming column parameter to an absolute screen column,
+    /// applying DECOM + DECLRMM offset/clamp when appropriate.
+    ///
+    /// This is the canonical column-resolution point for horizontal
+    /// positioning sequences (CUP/HVP column axis, CHA, HPA). Callers
+    /// pass the raw 0-based column parameter from the escape sequence;
+    /// this helper returns the absolute column where the cursor should
+    /// land.
+    ///
+    /// - `ORIGIN && LEFT_RIGHT_MARGIN`: treat `col` as relative to the
+    ///   left margin, offset and clamp to the margin band.
+    /// - Otherwise: treat `col` as absolute, clamp to the last column.
+    ///
+    /// Centralizing this logic ensures CUP/HVP (via `goto_origin_aware`)
+    /// and CHA/HPA (via `Handler::goto_col`) stay in sync — future
+    /// changes to DECOM semantics land in one place.
+    pub(super) fn origin_aware_col(&self, col: usize) -> Column {
+        let origin = self.mode.contains(TermMode::ORIGIN);
+        let lrm = self.mode.contains(TermMode::LEFT_RIGHT_MARGIN);
+        let grid = self.grid();
         let (left, right) = grid.left_right_margins();
-        let col = if origin && lrm {
+        if origin && lrm {
             Column((col + left).min(right))
         } else {
             Column(col.min(grid.cols().saturating_sub(1)))
-        };
-        grid.move_to(line, col);
+        }
     }
 
     /// Convert a grid line (0-based visible row) to a `StableRowIndex`.
