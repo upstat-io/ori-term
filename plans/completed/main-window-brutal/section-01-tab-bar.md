@@ -311,24 +311,16 @@ Write golden tests proving every visual change. These tests render the tab bar t
 <!-- Reserved for Codex or other external reviewers. -->
 
 - [x] `[TPR-01-001][high]` `oriterm/src/app/tab_management/mod.rs:447` — Modified indicator not wired in production. `TabEntry` construction never calls `.with_modified(true)` because `Pane` has no `is_modified()` API yet. The modified dot only renders in golden tests, never in the real app.
-  Evidence: Production path builds entries with only `.with_icon(icon)`. Plan line 212 documents the gap explicitly.
-  Impact: Modified indicator is test-only today; users will never see it until pane modification tracking is implemented.
   Resolved: Fixed on 2026-03-29 — added `has_unseen_output` bool to `Pane`, surfaced through `PaneSnapshot`, wired `MuxBackend` trait methods (`set_unseen_output`/`mark_output_seen`), set on `PaneOutput` for non-active panes, cleared on tab switch, wired `.with_modified()` in `build_tab_entries()`.
 - [x] `[TPR-01-002][medium]` `.verify-results/` scratch files committed to repo — `.gitignore` missing pattern for `plans/roadmap/.verify-results/`.
   Resolved: Fixed on 2026-03-29 — added gitignore pattern and removed tracked files.
 - [x] `[TPR-01-003][low]` `plans/main-window-brutal/section-01-tab-bar.md:47`, `index.md:23`, `00-overview.md:171` — Plan bookkeeping stale: body says "Not Started" but frontmatter says "in-progress"; index and overview not updated.
   Resolved: Fixed on 2026-03-29 — updated all three locations to reflect "In Progress".
 - [x] `[TPR-01-004][high]` `oriterm/src/app/mux_pump/mod.rs:82`, `oriterm/src/app/tab_management/mod.rs:355`, `oriterm_mux/src/backend/embedded/mod.rs:297` — Embedded-mode modified badge is still not wired to live UI state. `PaneOutput` sets `has_unseen_output`, but it never rebuilds the tab bar, and the flag mutations do not dirty or refresh the cached snapshots that `build_tab_entries()` reads.
-  Evidence: `PaneOutput` only calls `mux.set_unseen_output(id)` and marks the window dirty; `sync_tab_bar_from_mux()` rebuilds from `mux.pane_snapshot(pid)`; `EmbeddedMux::{set_unseen_output,mark_output_seen}` mutate only `Pane` and never touch `snapshot_dirty`/`snapshot_cache`.
-  Impact: In embedded mode the modified dot does not reliably appear on background output and can remain stale after a tab is activated.
   Resolved: Fixed on 2026-03-29 — added `MuxBackend::has_unseen_output()` that reads directly from Pane in embedded mode (bypasses snapshot cache), `build_tab_entries()` now uses this method, and `PaneOutput` handler calls `sync_tab_bar_from_mux()` for background panes.
 - [x] `[TPR-01-005][high]` `oriterm_mux/src/backend/mod.rs:198`, `oriterm_mux/src/backend/client/rpc_methods.rs:33`, `oriterm_mux/src/server/mod.rs:268`, `oriterm_mux/src/server/snapshot.rs:205` — Daemon-mode modified badge propagation is still missing. `MuxClient` inherits the trait's no-op `set_unseen_output`/`mark_output_seen`, while the server only pushes snapshots from `pane.has_unseen_output()` and never sets that flag during `PaneOutput`. <!-- blocked-by:34 -->
-  Evidence: The only flag mutators are `Pane::{set_unseen_output,mark_output_seen}`; no daemon/server path calls them, and client `poll_events()` only marks panes dirty for rendering.
-  Impact: The modified indicator remains permanently false in daemon mode even though the plan now claims full production wiring.
   Resolved: Accepted, blocked by Section 34 (IPC Protocol + Daemon Mode, 0% started). The daemon server cannot track per-client focus state without a `FocusPane` PDU, which is a Section 34 responsibility. The `MuxBackend::has_unseen_output()` trait default reads from the pushed snapshot, so daemon mode will work once the server sets the flag (Section 34 scope). Tracked as a blocked item there.
 - [x] `[TPR-01-006][medium]` [`oriterm/src/app/tab_management/mod.rs`](/home/eric/projects/ori_term/oriterm/src/app/tab_management/mod.rs#L415) — The production modified badge only inspects `Tab::active_pane()`, so unseen output in any other pane of a split/floating tab is ignored.
-  Evidence: `build_tab_entries()` resolves `pane_id` from `Tab::active_pane()` and calls `mux.has_unseen_output(pid)` for that single pane only, while [`Tab::all_panes()`](/home/eric/projects/ori_term/oriterm/src/session/tab/mod.rs#L177) already exposes the full tab membership.
-  Impact: Inactive multi-pane tabs fail to show the modified dot when background output arrives in a non-active pane, so the tab-strip signal is incomplete for split layouts.
   Resolved: Fixed on 2026-03-29 — `build_tab_entries()` now checks `tab.all_panes().iter().any(|pid| mux.has_unseen_output(pid))` instead of only the active pane.
 
 ---

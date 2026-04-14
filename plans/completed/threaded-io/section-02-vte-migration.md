@@ -255,13 +255,10 @@ Transfer `Term<MuxEventProxy>` ownership from `Arc<FairMutex>` to the IO thread.
 <!-- Reserved for Codex or other external reviewers. -->
 
 - [x] `[TPR-02-001][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:87` — the blocking receive path bypasses the section's 64 KB chunking guarantee.
-  Evidence: `process_pending_bytes()` slices queued byte messages at `MAX_PARSE_CHUNK` and drains commands between slices, but the idle-path `select!` arm still calls `self.handle_bytes(&bytes)` directly. The first post-idle PTY read can therefore arrive as one forwarded 1 MB buffer from `PtyEventLoop` and monopolize the IO thread until the whole buffer is parsed, delaying queued resize/copy/search commands instead of checking them every 64 KB as the section claims.
   Resolved: Extracted `handle_bytes_chunked()` method and updated `select!` arm to call it on 2026-03-31.
 - [x] `[TPR-02-002][medium]` `oriterm_mux/src/pane/io_thread/tests.rs:182`, `oriterm_mux/src/pane/io_thread/tests.rs:213`, `oriterm_mux/src/pane/io_thread/tests.rs:280` — the new Section 02 tests do not verify the behaviors they claim to pin.
-  Evidence: `handle_bytes_advances_vte()` and `handle_bytes_shell_integration()` only assert that the shutdown flag was set after the thread exited; they never inspect cell attributes or prompt markers. `process_pending_bytes_chunks_with_commands()` likewise never observes inter-chunk command servicing, so it passes even though `run()` currently bypasses chunking on the blocking receive path (see TPR-02-001).
   Resolved: Rewrote all VTE tests to use synchronous `handle_bytes()` and verify actual state (cell attrs, prompt markers, mode cache, shutdown-via-drain) on 2026-03-31.
 - [x] `[TPR-02-003][low]` `plans/threaded-io/index.md:38`, `plans/threaded-io/00-overview.md:225`, `plans/threaded-io/section-02-vte-migration.md:34` — Section 02 bookkeeping is still stale.
-  Evidence: the section frontmatter marks Section 02 `in-progress` and 02.1-02.3 `complete`, but the human-readable status line in the section body and both plan summary files still say `Not Started`.
   Resolved: Updated all three files to reflect In Progress status on 2026-03-31.
 - [x] `[TPR-02-004][medium]` `oriterm_mux/src/pane/io_thread/tests.rs:271` — `handle_bytes_chunked_drains_commands()` still does not prove inter-chunk command servicing.
   Validation: the test pre-queues `Shutdown`, feeds a 200 KB buffer, then only asserts that the shutdown flag is set afterwards. That same assertion still passes if `drain_commands()` runs only after the final chunk, or if the parser consumes the whole buffer before noticing shutdown, so the blocking-path regression fixed in `oriterm_mux/src/pane/io_thread/mod.rs:87` can reappear without tripping this test.
