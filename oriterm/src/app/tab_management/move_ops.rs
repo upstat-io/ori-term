@@ -41,7 +41,7 @@ impl App {
         // Seed moved panes with the destination window's cell metrics.
         // `broadcast_cell_metrics_to_window`'s short-circuit would
         // skip these panes if the destination's cached dims match the
-        // newly-computed ones (TPR-07-001-codex round 7).
+        // newly-computed ones.
         let moved_pane_ids: Vec<oriterm_mux::PaneId> = self
             .session
             .get_tab(tab_id)

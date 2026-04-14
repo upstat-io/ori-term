@@ -338,8 +338,7 @@ impl<S: EffectSink> Term<S> {
     /// alt-screen placements. `Term::resize` pairs `self.grid` with
     /// `self.image_cache` and `self.alt_grid` with `self.alt_image_cache`
     /// — that pairing is correct only when neither field is swapped,
-    /// so do NOT reintroduce the cache swap in `toggle_alt_common`
-    /// (see BUG-08-10 / TPR-07-001 round 6).
+    /// so do NOT reintroduce the cache swap in `toggle_alt_common`.
     pub fn image_cache(&self) -> &ImageCache {
         if self.mode.contains(TermMode::ALT_SCREEN) {
             debug_assert!(

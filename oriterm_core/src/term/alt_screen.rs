@@ -78,7 +78,7 @@ impl<S: EffectSink> Term<S> {
     /// the image-cache field contents, but that created a structural
     /// inversion where `self.image_cache` held the alt cache in alt
     /// mode and the primary grid was paired with the wrong cache in
-    /// `Term::resize` (see BUG-08-10, TPR-07-001 round 6).
+    /// `Term::resize`.
     fn toggle_alt_common(&mut self) {
         self.mode.toggle(TermMode::ALT_SCREEN);
         std::mem::swap(

@@ -2499,7 +2499,7 @@ fn term_resize_remaps_image_placement_through_reflow() {
     );
 }
 
-/// Regression guard for TPR-07-001 / BUG-08-10.
+/// Regression guard: removing the image-cache swap from `toggle_alt_common`.
 ///
 /// After removing the image-cache swap from `toggle_alt_common`, the
 /// `image_cache` and `alt_image_cache` fields hold their semantic
@@ -2557,8 +2557,8 @@ fn term_resize_routes_each_grid_through_its_own_image_cache() {
 }
 
 /// Isolation check: primary-mode and alt-mode placements do NOT leak
-/// into each other's cache. Regression for BUG-08-10 which allowed
-/// alt-mode placements to appear in primary after swap back.
+/// into each other's cache. Regression guard: the old cache-swap
+/// allowed alt-mode placements to appear in primary after swap back.
 #[test]
 fn alt_image_cache_isolation_check() {
     let mut term = Term::new(24, 80, 1000, Theme::default(), VoidEffectSink);
