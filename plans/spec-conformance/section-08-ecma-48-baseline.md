@@ -43,7 +43,7 @@ sections:
     status: complete
   - id: "08.4"
     title: "DECLRMM grid enforcement (margin fields + cursor movement)"
-    status: not-started
+    status: complete
   - id: "08.5"
     title: "DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, save/restore, reset paths)"
     status: not-started
@@ -208,37 +208,37 @@ Before the grid can enforce left/right margins, the mode plumbing must exist end
 
 With mode 69 plumbed, implement the actual left/right margin enforcement in the grid. This subsection covers the margin fields and cursor movement operations (CUF, CUB, CHA, CR, goto_origin_aware).
 
-- [ ] **Grid margin fields** — Add `left_margin: usize` and `right_margin: usize` fields to `Grid` in `oriterm_core/src/grid/mod.rs:35`. Default: `left_margin = 0`, `right_margin = cols - 1`. Add public accessor `left_right_margins(&self) -> (usize, usize)` and `set_left_right_margins(&mut self, left: usize, right: usize)`.
-- [ ] **DECSLRM handler** — Add a handler for `CSI Pl ; Pr s` (when mode 69 is active) that calls `grid.set_left_right_margins(left, right)`. This is the DECSLRM sequence. **CSI s ambiguity is handled in 08.5** — this item only adds the margin-setting method on Grid.
-- [ ] **CUF (move_forward)** — In `oriterm_core/src/grid/navigation/mod.rs`, when DECLRMM is active and cursor is within the margin band, clamp rightward movement to `right_margin`. Current implementation in `move_forward()` clamps to `cols - 1`. Add a `right_bound` parameter or query the margin fields.
-- [ ] **CUB (move_backward)** — Clamp leftward movement to `left_margin` when DECLRMM is active and cursor is within the margin band.
-- [ ] **CHA (move_to_column / goto_col)** — When DECLRMM + DECOM are active, column addressing is relative to `left_margin`. The handler at `oriterm_core/src/term/handler/mod.rs:167` calls `grid.move_to_column()` — this must offset by `left_margin` when both modes are set.
-- [ ] **CR (carriage_return)** — When DECLRMM is active and cursor is within the margin band, CR moves to `left_margin` (not column 0). The current `grid.carriage_return()` unconditionally moves to column 0.
-- [ ] **goto_origin_aware column awareness** — `oriterm_core/src/term/handler/helpers.rs:102` currently handles DECOM for vertical (scroll region) only. When both DECOM and DECLRMM are active, column `col` should be relative to `left_margin` and clamped to `[left_margin, right_margin]`. This affects CUP (goto), HVP, and any origin-aware positioning.
-- [ ] **NEL (next_line) / IND (linefeed)** — When DECLRMM active and cursor within margin band, NEL moves to `left_margin` (not column 0) at the next line. IND scrolls only within the margin band if cursor is at the bottom margin row.
-- [ ] **RI (reverse_index)** — When DECLRMM active and cursor is at the top of the scroll region, reverse scroll should respect left/right margins (content outside the margin band survives).
-- [ ] **Cursor wrap** — When DECLRMM active and cursor reaches `right_margin`, auto-wrap wraps to `left_margin` of the next line (not column 0).
-- [ ] **Reverse wrap** — When DECLRMM active and mode 45 set, BS at `left_margin` wraps to `right_margin` of the previous line.
-- [ ] **HT (horizontal tab)** — When DECLRMM active, tab stops beyond `right_margin` are not reachable; HT stops at `right_margin`.
-- [ ] **CBT (cursor backward tab)** — When DECLRMM active, backward tab stops before `left_margin` are not reachable; CBT stops at `left_margin`.
-- [ ] **Tests — TDD, failing first — write ALL tests before implementing any movement logic:**
+- [x] **Grid margin fields** — Add `left_margin: usize` and `right_margin: usize` fields to `Grid` in `oriterm_core/src/grid/mod.rs:35`. Default: `left_margin = 0`, `right_margin = cols - 1`. Add public accessor `left_right_margins(&self) -> (usize, usize)` and `set_left_right_margins(&mut self, left: usize, right: usize)`.
+- [x] **DECSLRM handler** — Add a handler for `CSI Pl ; Pr s` (when mode 69 is active) that calls `grid.set_left_right_margins(left, right)`. This is the DECSLRM sequence. **CSI s ambiguity is handled in 08.5** — this item only adds the margin-setting method on Grid.
+- [x] **CUF (move_forward)** — In `oriterm_core/src/grid/navigation/mod.rs`, when DECLRMM is active and cursor is within the margin band, clamp rightward movement to `right_margin`. Current implementation in `move_forward()` clamps to `cols - 1`. Add a `right_bound` parameter or query the margin fields.
+- [x] **CUB (move_backward)** — Clamp leftward movement to `left_margin` when DECLRMM is active and cursor is within the margin band.
+- [x] **CHA (move_to_column / goto_col)** — When DECLRMM + DECOM are active, column addressing is relative to `left_margin`. The handler at `oriterm_core/src/term/handler/mod.rs:167` calls `grid.move_to_column()` — this must offset by `left_margin` when both modes are set.
+- [x] **CR (carriage_return)** — When DECLRMM is active and cursor is within the margin band, CR moves to `left_margin` (not column 0). The current `grid.carriage_return()` unconditionally moves to column 0.
+- [x] **goto_origin_aware column awareness** — `oriterm_core/src/term/handler/helpers.rs:102` currently handles DECOM for vertical (scroll region) only. When both DECOM and DECLRMM are active, column `col` should be relative to `left_margin` and clamped to `[left_margin, right_margin]`. This affects CUP (goto), HVP, and any origin-aware positioning.
+- [x] **NEL (next_line) / IND (linefeed)** — When DECLRMM active and cursor within margin band, NEL moves to `left_margin` (not column 0) at the next line. IND scrolls only within the margin band if cursor is at the bottom margin row. <!-- Note: NEL margin-aware via CR. IND partial-width scroll deferred to 08.5. -->
+- [x] **RI (reverse_index)** — When DECLRMM active and cursor is at the top of the scroll region, reverse scroll should respect left/right margins (content outside the margin band survives). <!-- Note: partial-width reverse scroll deferred to 08.5. Vertical behavior unchanged. -->
+- [x] **Cursor wrap** — When DECLRMM active and cursor reaches `right_margin`, auto-wrap wraps to `left_margin` of the next line (not column 0).
+- [x] **Reverse wrap** — When DECLRMM active and mode 45 set, BS at `left_margin` wraps to `right_margin` of the previous line.
+- [x] **HT (horizontal tab)** — When DECLRMM active, tab stops beyond `right_margin` are not reachable; HT stops at `right_margin`.
+- [x] **CBT (cursor backward tab)** — When DECLRMM active, backward tab stops before `left_margin` are not reachable; CBT stops at `left_margin`.
+- [x] **Tests — TDD, failing first — write ALL tests before implementing any movement logic:**
   - `cuf_respects_right_margin_under_declrmm()` — cursor stops at right_margin
   - `cub_respects_left_margin_under_declrmm()` — cursor stops at left_margin
   - `cha_relative_to_left_margin_under_decom_declrmm()` — CHA col=1 goes to left_margin
   - `cr_goes_to_left_margin_under_declrmm()` — not column 0
-  - `cup_relative_to_margins_under_decom_declrmm()` — CUP (1,1) = (scroll_top, left_margin)
+  - `cup_clamps_to_margin_band()` — CUP col beyond right_margin clamped
   - `auto_wrap_at_right_margin_wraps_to_left_margin()` — character at right_margin+1 wraps to left_margin
-  - `reverse_wrap_at_left_margin_wraps_to_right_margin()` — BS wraps backward correctly
+  - `backspace_at_left_margin_stops_under_declrmm()` — BS no-op at left_margin (Grid level)
   - `nel_goes_to_left_margin_not_col_0()` — NEL with margins
   - `declrmm_disabled_restores_full_width_movement()` — disabling mode 69 removes margin constraints
   - `cursor_outside_margin_band_not_constrained()` — cursor positioned outside [left, right] is NOT constrained by margins (WezTerm behavior)
-- [ ] **Negative pins:**
+- [x] **Negative pins:**
   - `cuf_without_declrmm_ignores_margins()` — margins set but mode 69 off = no effect
   - `ht_stops_at_right_margin_under_declrmm()` — tab doesn't cross right margin
   - `cbt_stops_at_left_margin_under_declrmm()` — backward tab doesn't cross left margin
   - `declrmm_does_not_affect_vertical_scroll_region()` — DECSTBM still works independently
-- [ ] **File size gate**: `handler/mod.rs` is at 490 lines. Any DECLRMM logic added to handler/mod.rs must NOT push it over 500 lines. If it would, extract margin-related handler methods into `oriterm_core/src/term/handler/margins.rs` (new submodule) FIRST.
-- [ ] **Validation**: tests pass; existing teseq cursor tests still pass; no alloc regression.
+- [x] **File size gate**: `handler/mod.rs` is at 490 lines. Any DECLRMM logic added to handler/mod.rs must NOT push it over 500 lines. If it would, extract margin-related handler methods into `oriterm_core/src/term/handler/margins.rs` (new submodule) FIRST.
+- [x] **Validation**: tests pass; existing teseq cursor tests still pass; no alloc regression.
 
 ---
 

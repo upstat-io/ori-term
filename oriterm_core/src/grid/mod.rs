@@ -59,6 +59,10 @@ pub struct Grid {
     /// `scroll_up` and `erase_display(All)` to remove them before the
     /// shell redraws after SIGWINCH. Not incremented by height changes.
     resize_pushed: usize,
+    /// DECLRMM left margin column (inclusive, 0-based). Default: 0.
+    left_margin: usize,
+    /// DECLRMM right margin column (inclusive, 0-based). Default: cols - 1.
+    right_margin: usize,
     /// Tracks which rows have changed since last drain.
     dirty: DirtyTracker,
 }
@@ -93,6 +97,8 @@ impl Grid {
             display_offset: 0,
             total_evicted: 0,
             resize_pushed: 0,
+            left_margin: 0,
+            right_margin: cols.saturating_sub(1),
             dirty: DirtyTracker::new(lines, cols),
         }
     }
@@ -121,6 +127,37 @@ impl Grid {
     #[cfg(test)]
     pub(crate) fn tab_stops(&self) -> &[bool] {
         &self.tab_stops
+    }
+
+    /// Left/right margin bounds (inclusive, 0-based).
+    pub fn left_right_margins(&self) -> (usize, usize) {
+        (self.left_margin, self.right_margin)
+    }
+
+    /// Set DECLRMM left/right margins.
+    ///
+    /// `left` and `right` are 0-based inclusive columns. Silently ignored
+    /// if `left >= right` or `right >= cols`.
+    pub fn set_left_right_margins(&mut self, left: usize, right: usize) {
+        if left < right && right < self.cols {
+            self.left_margin = left;
+            self.right_margin = right;
+        }
+    }
+
+    /// Reset left/right margins to full width.
+    pub fn reset_left_right_margins(&mut self) {
+        self.left_margin = 0;
+        self.right_margin = self.cols.saturating_sub(1);
+    }
+
+    /// Whether the cursor is inside the left/right margin band.
+    ///
+    /// Wrap-pending state (col == `right_margin` + 1) counts as "in band"
+    /// so that auto-wrap targets `left_margin`, not column 0.
+    pub fn cursor_in_margin_band(&self) -> bool {
+        let col = self.cursor.col().0;
+        col >= self.left_margin && col <= self.right_margin + 1
     }
 
     /// Total lines: visible + scrollback history.
@@ -204,6 +241,8 @@ impl Grid {
         self.saved_cursor = None;
         Self::reset_tab_stops(&mut self.tab_stops, self.cols);
         self.scroll_region = 0..self.lines;
+        self.left_margin = 0;
+        self.right_margin = self.cols.saturating_sub(1);
         self.total_evicted += self.scrollback.len();
         self.scrollback.clear();
         self.display_offset = 0;

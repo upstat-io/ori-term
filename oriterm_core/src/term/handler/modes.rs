@@ -181,12 +181,8 @@ impl<S: EffectSink> Term<S> {
             }
             NamedPrivateMode::Win32Input => self.mode.remove(TermMode::WIN32_INPUT),
             NamedPrivateMode::LeftRightMargin => {
-                // Clearing mode 69 disables DECLRMM; grid-level margin
-                // reset (left_margin = 0, right_margin = cols - 1) lives
-                // in §08.4 once the grid fields exist. For now, clearing
-                // the flag is sufficient — DECSLRM handler checks the
-                // flag before consulting margins.
                 self.mode.remove(TermMode::LEFT_RIGHT_MARGIN);
+                self.grid_mut().reset_left_right_margins();
             }
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(false);

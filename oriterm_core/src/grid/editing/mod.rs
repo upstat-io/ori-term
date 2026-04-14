@@ -112,24 +112,26 @@ impl Grid {
         loop {
             let line = self.cursor.line();
             let col = self.cursor.col().0;
+            let in_band = self.cursor_in_margin_band();
+            let right_edge = if in_band { self.right_margin + 1 } else { cols };
+            let wrap_col = if in_band { self.left_margin } else { 0 };
 
-            // If a pending wrap is active and we're at the last column, wrap now.
-            if col >= cols {
-                self.rows[line][Column(cols - 1)].flags |= CellFlags::WRAP;
+            // If a pending wrap is active, wrap now.
+            if col >= right_edge {
+                let mark_col = (right_edge - 1).min(cols - 1);
+                self.rows[line][Column(mark_col)].flags |= CellFlags::WRAP;
                 self.linefeed();
-                self.cursor.set_col(Column(0));
+                self.cursor.set_col(Column(wrap_col));
                 continue;
             }
 
-            // For wide chars at the last column, wrap instead of splitting.
-            // Mark the boundary cell as LEADING_WIDE_CHAR_SPACER so reflow,
-            // selection, and search skip it (avoids spurious spaces).
-            if width == 2 && col + 1 >= cols {
+            // For wide chars at the last position in the band, wrap.
+            if width == 2 && col + 1 >= right_edge {
                 let boundary = &mut self.rows[line][Column(col)];
                 boundary.ch = ' ';
                 boundary.flags = CellFlags::LEADING_WIDE_CHAR_SPACER | CellFlags::WRAP;
                 self.linefeed();
-                self.cursor.set_col(Column(0));
+                self.cursor.set_col(Column(wrap_col));
                 continue;
             }
 
