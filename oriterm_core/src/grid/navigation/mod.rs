@@ -70,27 +70,25 @@ impl Grid {
 
     /// CUP: set cursor to absolute `(line, col)`, clamped to grid bounds.
     ///
-    /// When cursor is within the DECLRMM margin band, the column is
-    /// clamped to `[left_margin, right_margin]`.
+    /// CUP/HVP are absolute addressing — they bypass horizontal margins
+    /// entirely. DECOM (origin mode) shifts the addressable origin to
+    /// `(scroll_top, left_margin)` at the `Term` layer via
+    /// `Term::goto_origin_aware`, which translates incoming coordinates
+    /// before reaching this function. By the time we are here, `line`
+    /// and `col` are already absolute screen positions, so only
+    /// grid-bound clamping applies.
     pub fn move_to(&mut self, line: usize, col: Column) {
         self.move_cursor_line(line.min(self.lines - 1));
-        let max_col = if self.cursor_in_margin_band() {
-            self.right_margin
-        } else {
-            self.cols - 1
-        };
-        self.move_cursor_col(Column(col.0.min(max_col)));
+        self.move_cursor_col(Column(col.0.min(self.cols - 1)));
     }
 
-    /// CHA: set cursor column to `col`, clamped to `[left_margin,
-    /// right_margin]` when cursor is within the DECLRMM band.
+    /// CHA: set cursor column to absolute `col`, clamped to grid bounds.
+    ///
+    /// CHA/HPA are absolute addressing — margins are NOT enforced here.
+    /// The DECOM+DECLRMM offset (`col += left_margin`) is applied at the
+    /// `Term` layer in `Term::goto_col` before reaching this function.
     pub fn move_to_column(&mut self, col: Column) {
-        let (lo, hi) = if self.cursor_in_margin_band() {
-            (self.left_margin, self.right_margin)
-        } else {
-            (0, self.cols - 1)
-        };
-        self.move_cursor_col(Column(col.0.clamp(lo, hi)));
+        self.move_cursor_col(Column(col.0.min(self.cols - 1)));
     }
 
     /// VPA: set cursor line to `line`, clamped to the last line.
@@ -234,19 +232,21 @@ impl Grid {
         }
     }
 
-    /// DECSC: save cursor position, template, and left/right margins.
+    /// DECSC: save cursor position and template.
     ///
-    /// Per DEC VT420 §5.9.3, DECSC saves the active position AND the
-    /// left/right margins. The margin values are saved here (Grid state);
-    /// the DECLRMM mode flag is saved at the `Term` layer alongside
-    /// charset and origin-mode flags (Term state).
+    /// Per DEC STD 070 §5.6.1 and cross-verified against wezterm, alacritty,
+    /// and ghostty, the DECSC save set is the cursor position, character
+    /// attributes, charset state, wrap flag, and DECOM flag. DECLRMM margins
+    /// are NOT saved — margin state is scoped to the screen (alt vs primary),
+    /// not to the cursor save/restore pair, and is toggled via RIS, DECSTR,
+    /// DECCOLM, DECALN, resize, or explicit mode reset.
     pub fn save_cursor(&mut self) {
         self.saved_cursor = Some(self.cursor.clone());
-        self.saved_margins = Some((self.left_margin, self.right_margin));
     }
 
-    /// DECRC: restore cursor (and margins) from saved state, or reset
-    /// to origin if nothing was saved.
+    /// DECRC: restore cursor position and template from saved state, or
+    /// reset to origin if nothing was saved. Does not touch margins or
+    /// DECLRMM mode (see `save_cursor` for the save-set rationale).
     pub fn restore_cursor(&mut self) {
         let old_line = self.cursor.line();
         self.dirty.mark(old_line);
@@ -254,9 +254,6 @@ impl Grid {
             self.cursor = saved.clone();
         } else {
             self.cursor = super::cursor::Cursor::new();
-        }
-        if let Some((left, right)) = self.saved_margins {
-            self.set_left_right_margins(left, right);
         }
         self.dirty.mark(self.cursor.line());
     }

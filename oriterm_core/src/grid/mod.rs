@@ -43,9 +43,13 @@ pub struct Grid {
     /// Current cursor position and template.
     cursor: Cursor,
     /// DECSC/DECRC saved cursor.
+    ///
+    /// Per DEC STD 070 §5.6.1 and cross-verified against wezterm, alacritty,
+    /// and ghostty, the DECSC save set is the cursor position, character
+    /// attributes, charset state, wrap flag, and DECOM flag. DECLRMM margins
+    /// are NOT saved — margin state is scoped to the screen (alt vs primary),
+    /// not to the cursor save/restore pair.
     saved_cursor: Option<Cursor>,
-    /// DECSC/DECRC saved left/right margins (VT420 spec — `(left, right)` 0-based inclusive).
-    saved_margins: Option<(usize, usize)>,
     /// Tab stop at each column (true = stop).
     tab_stops: Vec<bool>,
     /// DECSTBM scroll region: top (inclusive) .. bottom (exclusive).
@@ -93,7 +97,6 @@ impl Grid {
             lines,
             cursor: Cursor::new(),
             saved_cursor: None,
-            saved_margins: None,
             tab_stops,
             scroll_region: 0..lines,
             scrollback: ScrollbackBuffer::new(max_scrollback),
@@ -247,7 +250,6 @@ impl Grid {
         }
         self.cursor = Cursor::new();
         self.saved_cursor = None;
-        self.saved_margins = None;
         Self::reset_tab_stops(&mut self.tab_stops, self.cols);
         self.scroll_region = 0..self.lines;
         self.left_margin = 0;

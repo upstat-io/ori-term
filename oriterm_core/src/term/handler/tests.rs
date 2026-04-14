@@ -547,6 +547,86 @@ fn cha_overflow_clamps_to_last_column() {
     assert_eq!(t.grid().cursor().col(), Column(79));
 }
 
+// --- CHA under DECOM + DECLRMM matrix ---
+// DEC STD 070 §4.6.10: CHA is absolute addressing unless DECOM is set.
+// With DECOM active, the column parameter is relative to the left margin
+// (when DECLRMM is also set) and clamped to the right margin.
+// Matrix dimensions: 2 DECLRMM states x 2 DECOM states = 4 cells.
+
+#[test]
+fn cha_absolute_when_declrmm_off_decom_off() {
+    let mut t = term();
+    // Both modes off (default): CHA 5 → col 4.
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(t.grid().cursor().col(), Column(4));
+}
+
+#[test]
+fn cha_absolute_when_declrmm_on_decom_off() {
+    let mut t = term();
+    // DECLRMM on, DECOM off, left margin = 10.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s"); // DECSLRM: left=10, right=39 (0-based).
+    // CHA 5 under DECOM off is ABSOLUTE — must land at col 4, NOT col 14.
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(4),
+        "CHA with DECOM off must be absolute even with DECLRMM active",
+    );
+}
+
+#[test]
+fn cha_absolute_when_declrmm_off_decom_on() {
+    let mut t = term();
+    // DECOM on without DECLRMM: no left margin to offset by, so CHA is
+    // still absolute (left_margin is 0 by default).
+    feed(&mut t, b"\x1b[?6h");
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(t.grid().cursor().col(), Column(4));
+}
+
+#[test]
+fn cha_offsets_by_left_margin_when_declrmm_on_decom_on() {
+    let mut t = term();
+    // DECLRMM on with left margin 10, DECOM on.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s"); // DECSLRM: left=10, right=39 (0-based).
+    feed(&mut t, b"\x1b[?6h"); // DECOM on.
+    // CHA 5: relative to left margin, so col = (5-1)+10 = 14.
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(14),
+        "CHA with DECOM+DECLRMM must offset by left_margin: col=5 → (5-1)+10=14",
+    );
+}
+
+#[test]
+fn cha_clamps_to_right_margin_under_decom_declrmm() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s"); // left=10, right=39 (0-based).
+    feed(&mut t, b"\x1b[?6h");
+    // CHA 100: (100-1)+10 = 109, clamped to right=39.
+    feed(&mut t, b"\x1b[100G");
+    assert_eq!(t.grid().cursor().col(), Column(39));
+}
+
+#[test]
+fn cha_col_1_lands_at_left_margin_under_decom_declrmm() {
+    // Negative pin: the regression that tests previously hid — `CSI 1 G`
+    // should land at left_margin under DECOM+DECLRMM, NOT at column 0.
+    // Before the fix, `col=1` coincidentally worked via the grid-level
+    // margin clamp while `col > 1` was silently broken.
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s");
+    feed(&mut t, b"\x1b[?6h");
+    feed(&mut t, b"\x1b[1G");
+    assert_eq!(t.grid().cursor().col(), Column(10));
+}
+
 // --- CNL / CPL tests ---
 
 #[test]
@@ -6018,46 +6098,91 @@ fn csi_s_zero_zero_params_mode_69_on_resets_margins() {
     );
 }
 
-// --- Save/restore margin state (§08.5c) ---
+// --- DECSC/DECRC scope: margins + DECLRMM are NOT in the save set ---
+// Per DEC STD 070 §5.6.1 and cross-verified against wezterm / alacritty /
+// ghostty: the DECSC save set is cursor position + attributes + charsets +
+// wrap flag + DECOM flag. Left/right margins and the DECLRMM mode flag are
+// NOT saved. Reset paths (RIS, DECSTR, DECCOLM, DECALN, resize, explicit
+// DECRST ?69) handle margin clearing — DECSC/DECRC do not touch margins.
 
 #[test]
-fn save_restore_preserves_margin_state() {
+fn decrc_does_not_restore_horizontal_margins() {
+    // Negative pin: after DECSC saves the cursor, a subsequent DECSLRM
+    // change to the margins must SURVIVE a DECRC — the margins are not
+    // part of the save set.
     let mut t = term();
-    // Enable mode 69 and set non-default margins.
     feed(&mut t, b"\x1b[?69h");
     feed(&mut t, b"\x1b[5;40s"); // DECSLRM: left=5, right=40 → (4, 39) 0-based.
     assert_eq!(t.grid().left_right_margins(), (4, 39));
-    // DECSC: save cursor (includes margins).
-    feed(&mut t, b"\x1b7");
-    // Change margins.
-    feed(&mut t, b"\x1b[10;60s"); // left=10, right=60 → (9, 59).
+    feed(&mut t, b"\x1b7"); // DECSC
+    feed(&mut t, b"\x1b[10;60s"); // change margins to (9, 59).
     assert_eq!(t.grid().left_right_margins(), (9, 59));
-    // DECRC: restore cursor (should restore margins too).
-    feed(&mut t, b"\x1b8");
+    feed(&mut t, b"\x1b8"); // DECRC
     assert_eq!(
         t.grid().left_right_margins(),
-        (4, 39),
-        "DECRC should restore saved margins"
+        (9, 59),
+        "DECRC must NOT restore saved margins (margins are not in the DECSC save set)"
     );
 }
 
 #[test]
-fn save_restore_preserves_declrmm_mode_flag() {
+fn decrc_does_not_restore_declrmm_mode_flag() {
     use crate::term::TermMode;
+    // Negative pin: DECSC with mode 69 on, then DECRST ?69 turns it off.
+    // DECRC must leave mode 69 OFF — the mode flag is not part of the
+    // save set.
     let mut t = term();
-    // Enable mode 69.
     feed(&mut t, b"\x1b[?69h");
     assert!(t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
-    // DECSC: save (mode 69 is on).
-    feed(&mut t, b"\x1b7");
-    // Disable mode 69.
-    feed(&mut t, b"\x1b[?69l");
+    feed(&mut t, b"\x1b7"); // DECSC
+    feed(&mut t, b"\x1b[?69l"); // disable DECLRMM
     assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
-    // DECRC: restore — mode 69 should be re-enabled.
-    feed(&mut t, b"\x1b8");
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert!(
+        !t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECRC must NOT resurrect DECLRMM mode (mode 69 is not in the DECSC save set)"
+    );
+}
+
+#[test]
+fn decrc_does_not_enable_declrmm_after_disabled_save() {
+    use crate::term::TermMode;
+    // Symmetric negative pin: DECSC with mode 69 off, then enable it.
+    // DECRC must leave mode 69 ON — the restore cannot resurrect the
+    // saved off-state either direction.
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b7"); // DECSC with mode 69 off
+    feed(&mut t, b"\x1b[?69h"); // enable DECLRMM
+    feed(&mut t, b"\x1b8"); // DECRC
     assert!(
         t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
-        "DECRC should restore DECLRMM mode flag"
+        "DECRC must not toggle DECLRMM mode off from the save slot"
+    );
+}
+
+#[test]
+fn decsc_decrc_restores_cursor_position_and_origin() {
+    // Positive pin: verify that DECSC/DECRC DO restore the state that
+    // IS in the save set (cursor, origin mode) — regression guard
+    // ensuring the scope removal did not break the actual contract.
+    use crate::term::TermMode;
+    let mut t = term();
+    feed(&mut t, b"\x1b[?6h"); // DECOM on.
+    feed(&mut t, b"\x1b[5;10H"); // CUP under DECOM (origin-relative).
+    let saved_line = t.grid().cursor().line();
+    let saved_col = t.grid().cursor().col();
+    feed(&mut t, b"\x1b7"); // DECSC
+    // Move and toggle DECOM.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b[?6l");
+    assert!(!t.mode().contains(TermMode::ORIGIN));
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert_eq!(t.grid().cursor().line(), saved_line);
+    assert_eq!(t.grid().cursor().col(), saved_col);
+    assert!(
+        t.mode().contains(TermMode::ORIGIN),
+        "DECRC must restore DECOM flag (DECOM IS in the save set)",
     );
 }
 

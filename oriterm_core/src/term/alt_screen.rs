@@ -85,18 +85,14 @@ impl<S: EffectSink> Term<S> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
-        // DECSC sidecar state is per-screen (VT220 spec).
-        // `saved_margins` lives on Grid itself (per SSOT — Grid owns its
-        // margin state), so it is automatically per-screen via the
-        // primary/alt grid split in `Term::{grid, alt_grid}`.
+        // DECSC sidecar state is per-screen (VT220 spec). DECLRMM is
+        // NOT in the DECSC save set (see `Grid::save_cursor`), so there
+        // is nothing margin-related to swap here — the primary/alt grid
+        // split in `Term::{grid, alt_grid}` carries its own margin state.
         std::mem::swap(&mut self.saved_charset, &mut self.inactive_saved_charset);
         std::mem::swap(
             &mut self.saved_origin_mode,
             &mut self.inactive_saved_origin_mode,
-        );
-        std::mem::swap(
-            &mut self.saved_left_right_margin_mode,
-            &mut self.inactive_saved_left_right_margin_mode,
         );
         self.grid_mut().dirty_mut().mark_all();
     }

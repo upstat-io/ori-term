@@ -68,7 +68,6 @@ impl GpuState {
     /// default format for render target compatibility.
     #[allow(dead_code, reason = "headless GPU for testing")]
     pub fn new_headless() -> Result<Self, GpuInitError> {
-        sanitize_headless_env();
         Self::new_headless_with_preference(AdapterPreference::DiscreteOrFallback)
     }
 
@@ -77,10 +76,18 @@ impl GpuState {
     /// `SoftwareRasterizer` selects a software fallback (llvmpipe / WARP /
     /// swiftshader) for deterministic golden image comparison. Returns
     /// `Err(GpuInitError)` if no matching adapter is found.
+    ///
+    /// Every public headless entrypoint funnels through this function so the
+    /// `sanitize_headless_env()` guard runs once per process regardless of
+    /// which constructor the caller reached. Placing the call in only the
+    /// default `new_headless()` would leave the software-rasterizer and
+    /// explicit-preference callers (visual-regression lane + state/tests.rs)
+    /// exposed to the Wayland/X11 probe-hang condition.
     #[allow(dead_code, reason = "headless GPU for testing")]
     pub fn new_headless_with_preference(
         preference: AdapterPreference,
     ) -> Result<Self, GpuInitError> {
+        sanitize_headless_env();
         Self::try_init_headless(wgpu::Backends::PRIMARY, preference)
             .or_else(|| Self::try_init_headless(wgpu::Backends::SECONDARY, preference))
             .ok_or(GpuInitError)
