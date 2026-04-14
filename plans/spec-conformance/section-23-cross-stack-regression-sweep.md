@@ -11,6 +11,7 @@ success_criteria:
   - "Coverage report `--check` mode ALSO fails CI when: (a) the cataloging safety net (04.9) finds uncataloged sequences in committed captures, (b) a row is marked `verified` in the catalog but no test cites the row ID, or (c) a test cites a row ID that doesn't exist in any catalog file."
   - "Per-platform apex matrix runs the OS-dependent layers (clipboard, audio, etc.) on each platform — Linux x86_64 is the canonical lane (gating); macOS and Windows are smoke (non-gating, but still run)"
   - "Lands once Phase 3 has produced ~3 verified stacks (so the report has something meaningful to display)"
+  - "Legacy external-tool-dependent test suites (teseq, tack, vttest) are deleted once the spec verification chain fully covers their scenarios. Zero external binary dependencies remain for test execution."
   - "All existing CI workflows continue to pass"
   - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release"
   - "Section's mission criterion connection: contributes to **Cross-stack regression sweep green** AND **Coverage report green**"
@@ -33,6 +34,9 @@ sections:
     status: not-started
   - id: "23.4"
     title: "Verify per-stack binary runs under 150s"
+    status: not-started
+  - id: "23.5"
+    title: "Remove external-tool-dependent legacy test suites"
     status: not-started
   - id: "23.R"
     title: "Third Party Review Findings"
@@ -159,6 +163,39 @@ OS-dependent apex layers (clipboard, audio, focus, kitty file/shm transports, ti
 
 ---
 
+## 23.5 Remove external-tool-dependent legacy test suites
+
+**Goal:** Once the spec verification chain fully covers every scenario that tack, vttest, and teseq currently test, delete the legacy test files and their external-tool dependencies. The spec-conformance verification chain is self-contained Rust — no platform-specific binaries, no graceful-skip logic, runs identically on Linux/macOS/Windows.
+
+**Legacy test suites to remove:**
+
+| Suite | Test file | External binary | Platform |
+|-------|-----------|-----------------|----------|
+| teseq | `oriterm_core/tests/teseq/` | `reseq` (from `teseq` package) | Linux only |
+| tack | `oriterm_core/tests/tack/` | `tack` | Linux only |
+| vttest | `oriterm_core/tests/vttest/` | `vttest` | Linux only |
+
+**Pre-removal gate (all must be true):**
+- [ ] Every catalog row that cites a teseq scenario has `verified` status in the coverage report (the spec chain test covers it end-to-end)
+- [ ] Every catalog row that cites a tack scenario has `verified` status
+- [ ] Every catalog row that cites a vttest scenario has `verified` status
+- [ ] The `_legacy-tack-mapping.md` table shows `covered` for every row that was originally tested by tack
+- [ ] `spec-coverage-report --check` passes with the legacy suites removed (no coverage regression)
+
+**Cleanup steps:**
+- [ ] Remove `oriterm_core/tests/teseq/` directory and all snapshot fixtures
+- [ ] Remove `oriterm_core/tests/tack/` directory
+- [ ] Remove `oriterm_core/tests/vttest/` directory
+- [ ] Remove `PtySession` helper code that is exclusively used by legacy suites (keep shared helpers still used by spec chain)
+- [ ] Remove `ScenarioRunner::available()`, `tack_version_supported()`, and other external-tool gate functions that become dead code
+- [ ] Remove teseq/tack/vttest references from `CLAUDE.md` Commands section and `.claude/rules/tests.md`
+- [ ] Remove `sudo apt install teseq` instructions from docs
+- [ ] Update `test-all.sh` if it has explicit teseq/tack/vttest invocations
+- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green — no dead code warnings from removed imports
+- [ ] **Validation**: `cargo test --workspace` passes on all three platforms without any external tool installed. Zero `SKIP:` messages in test output.
+
+---
+
 ## 23.R Third Party Review Findings
 
 - None.
@@ -174,6 +211,7 @@ OS-dependent apex layers (clipboard, audio, focus, kitty file/shm transports, ti
 - [ ] Per-stack test binaries all under 150s
 - [ ] Coverage report `--check` fails CI on regression
 - [ ] Per-platform apex matrix runs on macOS / Linux / Windows
+- [ ] Legacy test suites (teseq, tack, vttest) removed — zero external tool dependencies
 - [ ] All existing CI workflows still pass
 - [ ] Alloc regression unchanged
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
