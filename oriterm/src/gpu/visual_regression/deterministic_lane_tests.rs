@@ -110,12 +110,24 @@ fn deterministic_lane_selects_software_adapter() {
 
     let info = gpu.adapter_info();
     let name_lower = info.name.to_lowercase();
+
+    // Primary signal: `device_type == Cpu` is wgpu's authoritative tag
+    // for software rasterizers. Mirrors the logic in
+    // `gpu::state::tests::new_headless_with_software_preference_uses_force_fallback`
+    // (BUG-07-013, 2026-04-14).
+    if info.device_type == wgpu::DeviceType::Cpu {
+        return;
+    }
+
+    // Fallback: older wgpu versions or edge-case drivers may report a
+    // non-Cpu device_type for recognizable software rasterizers.
     const KNOWN: &[&str] = &[
         "llvmpipe",
         "lavapipe",
         "warp",
         "swiftshader",
         "mesa software",
+        "microsoft basic render",
         "cpu",
     ];
     assert!(

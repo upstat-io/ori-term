@@ -448,6 +448,18 @@ This subsection wires the end-to-end path so `Term::set_cell_dimensions` (at `im
 
 Round 9 clean-pass gate: Gemini returned `"no_findings": true` (fully clean). Codex surfaced only the two low-severity plan/metadata inconsistencies above, fixed in this round. Section 07's TPR gate is now satisfied for close-out — no actionable findings remain.
 
+**Round 10 (post-round-9 TPR + CI fix):**
+- [x] `[TPR-07-001-codex][low]` `plans/bug-tracker/00-overview.md:40` — Reconcile the Section 07 bug counts.
+  Resolved: Fixed on 2026-04-14. Overview row for Section 07 (CI & Build) updated from `12 | 6` to `13 | 7` to match actual content of `section-07-ci-build.md` (13 BUG-07-NNN entries total, 7 open, 6 closed including BUG-07-013 which was added + resolved same-commit in R10).
+- [x] `[TPR-07-002-codex][low]` `oriterm/src/gpu/visual_regression/deterministic_lane_tests.rs:111` — Align the deterministic-lane software-adapter assertion with the state test.
+  Resolved: Fixed on 2026-04-14. Applied the same `device_type == Cpu` primary + KNOWN-name fallback refactor from `new_headless_with_software_preference_uses_force_fallback` to the sibling `deterministic_lane_selects_software_adapter`. Added `"microsoft basic render"` to its KNOWN-name list. BUG-07-013 resolution updated to note both tests were fixed in the same pass.
+- [x] `[TPR-07-003-codex][low]` `plans/bug-tracker/section-07-ci-build.md:33` — Fix the recorded verification command for BUG-07-013.
+  Resolved: Fixed on 2026-04-14. BUG-07-013 resolution updated to record the actual command used (`cargo test -p oriterm --lib new_headless_with_software_preference`, filter-match — not `-- --exact`). Also cross-referenced the successful nightly CI run (24374936218) that confirmed the fix across all platforms.
+- [x] `[TPR-07-001-gemini][low]` `plans/bug-tracker/section-09-session.md:30` — Remove resolved short-circuit issue from BUG-09-3.
+  Resolved: Fixed on 2026-04-14. BUG-09-3 title rewritten from "No integration test for cell-metric broadcast short-circuit + cross-window pane seeding" to "No integration test for cross-window pane seeding". Short-circuit integration test concern removed from the Detail/Impact/Proposed-fix blocks. Reviewer line changed from "codex + gemini (agreement)" to "codex" only. A separate Note cross-references the `try_claim_broadcast` R8 fix that addressed the short-circuit concern inline.
+
+Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, all fixed in this round. All 10 TPR rounds for Section 07 now resolved. Section 07 TPR gate clean for close-out.
+
 ---
 
 ## 07.N Completion Checklist
