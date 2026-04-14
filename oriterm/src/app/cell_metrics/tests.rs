@@ -53,6 +53,7 @@ fn negative_pin_degenerate_dims_short_circuit() {
 /// Regression: a font-size change that does NOT alter grid cols/rows
 /// must still trigger a cell-metric broadcast. This pins the decision
 /// helper: changed pixel dims fire even when grid cols/rows are constant.
+/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 ///
 /// The full broadcast fanout (`broadcast_cell_metrics_to_window` →
 /// `mux.set_cell_dimensions` for all panes) is verified at the mux

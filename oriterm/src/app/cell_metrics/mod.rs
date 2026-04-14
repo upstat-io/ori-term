@@ -18,8 +18,8 @@
 use oriterm_mux::PaneId;
 use winit::window::WindowId;
 
+use crate::session::SessionRegistry;
 use crate::session::id::WindowId as SessionWindowId;
-use crate::session::{SessionRegistry, TabId};
 
 use super::App;
 
@@ -35,9 +35,8 @@ pub(in crate::app) fn collect_window_pane_ids(
     let Some(session_window) = session.get_window(session_wid) else {
         return Vec::new();
     };
-    let tab_ids: Vec<TabId> = session_window.tabs().to_vec();
     let mut pane_ids = Vec::new();
-    for tab_id in tab_ids {
+    for &tab_id in session_window.tabs() {
         if let Some(tab) = session.get_tab(tab_id) {
             pane_ids.extend(tab.all_panes());
         }
