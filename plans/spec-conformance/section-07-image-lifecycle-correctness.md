@@ -494,6 +494,16 @@ Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, 
 
 Round 15 clean-pass gate: Gemini returned `"no_findings": true` on round 14. Codex surfaced only a BLOAT finding (523 lines → 452 after split). All findings resolved.
 
+**Round 16 (re-review after round 15 fixes):**
+- [x] `[TPR-07-001-codex][medium]` `oriterm_mux/src/backend/embedded/mod.rs:195` — Guard snapshot dirty behind a live pane lookup.
+  Resolved: Fixed on 2026-04-14. Moved `snapshot_dirty.insert(pane_id)` inside the `if let Some(pane)` block in `set_cell_dimensions`. Missing-pane calls no longer create phantom dirty entries.
+- [x] `[TPR-07-002-codex][low]` `oriterm_mux/src/backend/embedded/tests.rs:347` — Make the IO thread proof command specific.
+  Resolved: Acknowledged timing limitation in test doc comment. The snapshot API does not expose cell dimensions, so distinguishing cell-dim snapshots from shell-output snapshots is not feasible. The synchronous unit test `test_set_cell_dimensions_command_marks_dirty` verifies the IO-thread handler deterministically.
+- [x] `[TPR-07-001-gemini][medium]` `oriterm_core/src/term/tests.rs:1` — Split combined term tests into per-module tests.rs files.
+  Resolved: Filed as BUG-08-11 (medium) in `plans/bug-tracker/section-08-core-terminal.md`. This is a pre-existing organizational debt requiring large-scope refactoring (converting 4+ submodules into directory modules) — tracked for dedicated `/fix-bug` work.
+- [x] `[TPR-07-002-gemini][low]` `oriterm_mux/src/backend/embedded/tests.rs:333` — Unconditional test sleep causes fixed 2-second execution delay.
+  Resolved: Fixed on 2026-04-14. Added early-break condition to settle loop: breaks after 4 consecutive polls (200ms) with no new snapshot, avoiding the full 2s wait when the PTY settles quickly.
+
 ---
 
 ## 07.N Completion Checklist

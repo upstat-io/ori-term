@@ -312,6 +312,13 @@ fn new_window_pane_receives_cell_metrics_on_creation() {
 /// IO thread produces a NEW snapshot — proving the command reached the
 /// handler and triggered `grid_dirty`.
 /// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
+///
+/// Note: this test cannot distinguish a snapshot triggered by
+/// `SetCellDimensions` from one triggered by late shell output — the
+/// snapshot API does not expose cell dimensions. The 2s settle period
+/// plus early-break mitigation make false positives unlikely in practice.
+/// The IO-thread handler is verified by the synchronous unit test
+/// `test_set_cell_dimensions_command_marks_dirty` in `io_thread/tests`.
 #[cfg(unix)]
 #[test]
 fn new_window_pane_cell_metrics_reach_io_thread() {
@@ -327,20 +334,27 @@ fn new_window_pane_cell_metrics_reach_io_thread() {
 
     // Wait for the initial shell-startup snapshot burst to settle.
     // Crucially, consume the initial snapshot via `refresh_pane_snapshot`
-    // so `has_new()` returns false. Without this, `poll_events()` would
-    // re-mark the pane dirty from the unconsumed spawn snapshot, making
-    // the post-command dirty assertion a false positive.
-    let settle = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < settle {
+    // so `has_new()` returns false. Break early once two consecutive
+    // polls show no new snapshot (PTY quiescent).
+    let settle_deadline = Instant::now() + Duration::from_secs(2);
+    let mut consecutive_quiet = 0u32;
+    while Instant::now() < settle_deadline {
         mux.poll_events();
-        mux.refresh_pane_snapshot(pane_id);
+        if mux.refresh_pane_snapshot(pane_id).is_some() {
+            consecutive_quiet = 0;
+        } else {
+            consecutive_quiet += 1;
+            if consecutive_quiet >= 4 {
+                break; // 4 × 50ms = 200ms with no new snapshot → settled
+            }
+        }
         mux.clear_pane_snapshot_dirty(pane_id);
         std::thread::sleep(Duration::from_millis(50));
     }
 
-    // Send cell dimensions and immediately clear the synchronous dirty
-    // flag. The IO thread hasn't processed the command yet (it runs on
-    // a separate thread and poll_events hasn't been called).
+    // Send cell dimensions. The backend now only marks dirty if the
+    // pane exists (TPR-07-001-codex round 15 fix), so the dirty flag
+    // reflects a real command dispatch.
     mux.set_cell_dimensions(pane_id, 12, 24);
     mux.clear_pane_snapshot_dirty(pane_id);
 
