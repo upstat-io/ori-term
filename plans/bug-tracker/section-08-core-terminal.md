@@ -53,6 +53,13 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Reference rules: `.claude/rules/code-hygiene.md` §File Size.
   Note: Active work in `plans/spec-conformance/` Section 01 (Catalog Bootstrap) discovered and filed this bug while harvesting the Kitty APC `_G` dispatch arms (Section 01.11). Sections 12 (Sixel) and 13 (Kitty Graphics) will consume the fix.
 
+- [ ] `[BUG-08-11][medium]` **`term/tests.rs` combines tests for multiple submodules (2500+ lines) — violates test-organization.md**
+  Repro: `wc -l oriterm_core/src/term/tests.rs` prints ~2570. Contains tests for `mod.rs`, `alt_screen.rs`, `image_config.rs`, `snapshot.rs`, and `resize.rs`.
+  Subsystem: `oriterm_core/src/term/tests.rs`
+  Found: 2026-04-14 | Source: tpr-review
+  Reviewer: gemini (TPR-07-001-gemini round 15 during spec-conformance Section 07 close-out)
+  Proposed fix: Convert `alt_screen.rs`, `image_config.rs`, `snapshot.rs`, and `resize.rs` to directory modules. Extract their tests from `term/tests.rs` into per-module `tests.rs` files. Verify with `./test-all.sh`.
+
 - [x] `[BUG-08-10][high]` **`Term::image_cache()` / `image_cache_mut()` return the inactive cache in `ALT_SCREEN` mode — alt-mode placements leak into primary after `swap_alt` back** — found by continue-roadmap.
   Found: 2026-04-13 | Source: continue-roadmap
   Fixed: 2026-04-13 — Resolved as part of spec-conformance Section 07 round-6 TPR triage (TPR-07-001 codex+gemini agreement). The deeper issue was that `toggle_alt_common` swapped `image_cache`/`alt_image_cache` field contents but did NOT swap `grid`/`alt_grid`, leaving `Term::resize` pairing the primary grid with whichever cache happened to be in the `image_cache` field regardless of semantic ownership. Root-cause fix: remove the image-cache field swap from `toggle_alt_common` entirely. The fields now carry their semantic contents at all times — `image_cache` = primary, `alt_image_cache` = alt. `image_cache()` / `image_cache_mut()` route by `ALT_SCREEN` mode (mirroring `grid()` / `grid_mut()`) to return the active screen's cache without touching field contents. Regression test `term_resize_routes_each_grid_through_its_own_image_cache` reads the fields directly to prevent future routing inversions; `alt_image_cache_isolation_check` verifies primary/alt placements no longer leak across swaps.

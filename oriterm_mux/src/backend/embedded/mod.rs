@@ -191,8 +191,8 @@ impl MuxBackend for EmbeddedMux {
     fn set_cell_dimensions(&mut self, pane_id: PaneId, width: u16, height: u16) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetCellDimensions { width, height });
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn open_search(&mut self, pane_id: PaneId) {
