@@ -52,7 +52,7 @@ sections:
     status: complete
   - id: "08.7"
     title: "Verify REP edge cases"
-    status: not-started
+    status: complete
   - id: "08.8"
     title: "Verify ISO 8613-6 SGR colon-separated subparameter forms (truecolor + indexed + underline color)"
     status: not-started
@@ -367,16 +367,16 @@ REP (CSI Ps b) repeats the preceding graphic character N times. Edge cases per E
 - REP after a wide character repeats the wide character (occupies 2 columns per repeat)
 - REP after a SGR change uses the current SGR state (not the SGR at the time of the original character)
 
-- [ ] Read the existing REP handler in ori_term (search for `repeat_preceding` or `repeat` in `oriterm_core/src/term/handler/`). Verify it implements the edge cases correctly. If not, fix.
-- [ ] **Tests — TDD, spec_chain format:**
-  - `rep_no_preceding_char_is_noop()` — feed `\x1b[3b` with no prior graphic char, assert grid unchanged
-  - `rep_after_cr_is_noop()` — feed `A\r\x1b[3b`, assert no repeated chars
-  - `rep_after_wide_char_repeats_wide()` — feed a CJK character + `\x1b[3b`, assert 3 wide chars (6 columns occupied)
-  - `rep_uses_current_sgr_not_original()` — feed `A\x1b[31m\x1b[3b`, assert repeated chars have red foreground (SGR 31)
-  - `rep_at_right_margin_wraps()` — repeating at the edge triggers auto-wrap
-  - **Negative pin**: `rep_count_zero_repeats_once()` — `CSI 0 b` should repeat 1 time (per spec, Ps defaults to 1)
-- [ ] Update catalog row for REP to `verified`.
-- [ ] **Validation**: tests pass.
+- [x] Read the existing REP handler in ori_term (search for `repeat_preceding` or `repeat` in `oriterm_core/src/term/handler/`). Verify it implements the edge cases correctly. If not, fix. **Audit result**: REP handler at `csi.rs:62-69` correctly handles no-preceding-char, Ps=0→1 mapping, and uses `handler.input(c)` which inherits current SGR and handles wide chars. No fixes needed.
+- [x] **Tests — TDD, handler test format** (spec_chain `StateExpectation` only supports cursor position, not grid content; used handler test pattern instead):
+  - `rep_no_preceding_char_is_noop()` — verified
+  - `rep_after_cr_repeats_preceding()` — changed from plan's "is_noop" expectation: de-facto behavior across xterm/alacritty/wezterm is that C0 controls do NOT clear `preceding_char`. CR between char and REP still repeats the char. Documented deviation.
+  - `rep_after_wide_char_repeats_wide()` — verified (CJK '漢' repeated at 2-col width)
+  - `rep_uses_current_sgr_not_original()` — verified (SGR 31 red on repeated chars)
+  - `rep_at_right_margin_wraps()` — verified (wraps to next line)
+  - **Negative pin**: `rep_count_zero_repeats_once()` — verified (Ps=0 maps to 1)
+- [x] Update catalog row for REP to `verified`.
+- [x] **Validation**: tests pass.
 
 ---
 
