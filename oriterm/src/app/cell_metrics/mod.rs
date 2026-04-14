@@ -18,9 +18,32 @@
 use oriterm_mux::PaneId;
 use winit::window::WindowId;
 
-use crate::session::TabId;
+use crate::session::id::WindowId as SessionWindowId;
+use crate::session::{SessionRegistry, TabId};
 
 use super::App;
+
+/// Collect all pane IDs across all tabs in a session window.
+///
+/// Extracted from [`App::broadcast_cell_metrics_to_window`] so the
+/// window → tabs → panes enumeration can be unit-tested without a full
+/// `App` / GPU / display-server fixture.
+pub(in crate::app) fn collect_window_pane_ids(
+    session: &SessionRegistry,
+    session_wid: SessionWindowId,
+) -> Vec<PaneId> {
+    let Some(session_window) = session.get_window(session_wid) else {
+        return Vec::new();
+    };
+    let tab_ids: Vec<TabId> = session_window.tabs().to_vec();
+    let mut pane_ids = Vec::new();
+    for tab_id in tab_ids {
+        if let Some(tab) = session.get_tab(tab_id) {
+            pane_ids.extend(tab.all_panes());
+        }
+    }
+    pane_ids
+}
 
 /// Pure decision helper for the broadcast short-circuit.
 ///
@@ -98,20 +121,8 @@ impl App {
             return;
         }
 
-        // Collect all pane IDs up front to avoid holding both a session
-        // reference and a mux reference at the same time.
         let session_wid = ctx.window.session_window_id();
-        let Some(session_window) = self.session.get_window(session_wid) else {
-            return;
-        };
-        let tab_ids: Vec<TabId> = session_window.tabs().to_vec();
-
-        let mut pane_ids: Vec<PaneId> = Vec::new();
-        for tab_id in tab_ids {
-            if let Some(tab) = self.session.get_tab(tab_id) {
-                pane_ids.extend(tab.all_panes());
-            }
-        }
+        let pane_ids = collect_window_pane_ids(&self.session, session_wid);
 
         let Some(mux) = self.mux.as_mut() else {
             return;

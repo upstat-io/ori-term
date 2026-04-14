@@ -179,6 +179,7 @@ fn search_active_missing_pane() {
 
 /// Regression: a newly created pane (simulating a split) receives cell
 /// metrics without needing a grid resize first.
+/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 ///
 /// Tests the backend dispatch layer: `EmbeddedMux::set_cell_dimensions`
 /// enqueues the command to the correct pane and marks it snapshot-dirty.
@@ -230,6 +231,7 @@ fn split_pane_receives_cell_metrics_without_resize() {
 /// multiple panes correctly. IO-thread processing is verified by
 /// `new_window_pane_cell_metrics_reach_io_thread` and the unit test
 /// `test_set_cell_dimensions_command_marks_dirty`.
+/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 #[cfg(unix)]
 #[test]
 fn both_split_panes_receive_updated_metrics_after_font_change() {
@@ -271,6 +273,7 @@ fn both_split_panes_receive_updated_metrics_after_font_change() {
 
 /// Regression: a pane in a new window receives cell metrics immediately
 /// on creation — before any resize or DPI event arrives.
+/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 ///
 /// Tests the backend dispatch layer (same coverage scope as
 /// `split_pane_receives_cell_metrics_without_resize`). The IO-thread
@@ -308,6 +311,7 @@ fn new_window_pane_receives_cell_metrics_on_creation() {
 /// flag set by `EmbeddedMux::set_cell_dimensions`, we poll until the
 /// IO thread produces a NEW snapshot — proving the command reached the
 /// handler and triggered `grid_dirty`.
+/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N
 #[cfg(unix)]
 #[test]
 fn new_window_pane_cell_metrics_reach_io_thread() {
