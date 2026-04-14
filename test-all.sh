@@ -9,12 +9,20 @@ echo "=== cargo test --workspace --features oriterm/gpu-tests ==="
 cargo test --workspace --features oriterm/gpu-tests
 
 # Section 01.3 catalog coverage gate — fails on schema drift, Phase 2
-# Finding J anti-LEAK, Phase 2 Finding L bootstrap verification, and
-# line-number-primary Implementation citations.
+# Finding J anti-LEAK, and line-number-primary Implementation citations.
+#
+# Runs in Normal mode (the post-Section-04.7 mode). The original
+# `--bootstrap-mode` invocation was a Section 01 gate that forbade any
+# `verified` row; it was explicitly bounded to "until Section 04.7
+# freezes the schema" (see `CheckMode::Bootstrap` rustdoc and
+# `--bootstrap-mode` CLI help). Section 08+ verification work
+# legitimately drives rows to `verified`, so the real-catalog check now
+# uses Normal mode. The `--bootstrap-mode` API itself is still validated
+# via the fixture-injection smoke test below.
 echo ""
-echo "=== catalog_coverage_check --check --bootstrap-mode (real catalog) ==="
+echo "=== catalog_coverage_check --check (real catalog, Normal mode) ==="
 if [ -d plans/spec-conformance/catalog ]; then
-    cargo run --quiet -p oriterm_test_support --bin catalog_coverage_check -- check --bootstrap-mode
+    cargo run --quiet -p oriterm_test_support --bin catalog_coverage_check -- check
 
     echo ""
     echo "=== sanity check: catalog::tests module is present in the runnable set ==="

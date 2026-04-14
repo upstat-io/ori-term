@@ -30,7 +30,11 @@
 | Catalog row ID / handoff                    | Legacy tack section                                                      | Conversion status   |
 |---                                          |---                                                                       |---                  |
 | *(section 02 handoff — not a catalog row)*  | `plans/tack-conformance/section-09-verification.md`                      | `absorbed-by-spec-23` |
-| *(section 08 populates as it goes)*         |                                                                          |                     |
+| `ECMA48-C0-BEL`                             | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`acs`/`graphic_rendition` — combined `(bel)` probe on tack v1.08) | `converted` |
+| `ECMA48-CSI-CUP`                            | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`cursor_movement` — `clear` cap = `\E[H\E[2J`)                    | `converted` |
+| `ECMA48-CSI-ED`                             | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`cursor_movement` — `clear` cap = `\E[H\E[2J`)                    | `converted` |
+| `DEC-DECAWM`                                | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`modes` — `am` cap, internally exercised by tack)                 | `converted` |
+| `DEC-DECREVWRAP`                            | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`modes` — `bw` cap, internally exercised by tack)                 | `converted` |
 
 ### Status vocabulary
 

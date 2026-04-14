@@ -34,7 +34,7 @@ third_party_review:
 sections:
   - id: "08.1"
     title: "Convert tack section 05 scenarios to spec verification chains"
-    status: not-started
+    status: complete
   - id: "08.2"
     title: "Convert tack section 06 scenarios to spec verification chains"
     status: not-started
@@ -144,15 +144,17 @@ Example conversion trace for a tack-covered row (hypothetical CUP row from tack 
 
 For each scenario family in `plans/tack-conformance/section-05-test-menu-scenarios.md`, write corresponding `spec_chain` tests that drive the same sequence through every applicable rung and verify the catalog row. The tack scenario families in section 05 live under `crates/oriterm_test_support/src/tack_framework/scenarios/` in these directories: `modes/`, `acs/`, `cursor_movement/`, `graphic_rendition/`, `color/`, `padding/`.
 
-- [ ] Read `plans/tack-conformance/section-05-test-menu-scenarios.md` to enumerate every scenario family tack section 05 covers.
-- [ ] Read each scenario family directory under `crates/oriterm_test_support/src/tack_framework/scenarios/` to extract the fixture byte sequences (in `mod.rs`) and test assertions (in `tests.rs`).
-- [ ] For each scenario family, for each exercised catalog row:
+- [x] Read `plans/tack-conformance/section-05-test-menu-scenarios.md` to enumerate every scenario family tack section 05 covers.
+- [x] Read each scenario family directory under `crates/oriterm_test_support/src/tack_framework/scenarios/` to extract the fixture byte sequences (in `mod.rs`) and test assertions (in `tests.rs`).
+- [x] For each scenario family, for each exercised catalog row:
   1. Identify the catalog row(s) in `catalog/ecma-48.md` (or `catalog/dec-private-modes.md`/`catalog/osc.md`) that the scenario verifies
   2. Write a `spec_chain` test in `oriterm_core/tests/spec_chain/baseline/tack_section_05/<scenario_name>.rs` following the pattern in `oriterm_core/tests/spec_chain/pilots/da1_query.rs`
   3. Update the catalog row's `Verification` to `verified` and `Test chain` to list the new test
   4. Add a row to `catalog/_legacy-tack-mapping.md`: `| <catalog row> | tack-conformance/section-05 (<scenario>) | converted |`
-- [ ] Register all new test modules in `oriterm_core/tests/spec_chain/main.rs` (add `mod baseline;` path).
-- [ ] **Validation**: every tack section 05 scenario has a corresponding spec_chain test; coverage report shows the converted rows as `verified`; original tack tests still pass.
+- [x] Register all new test modules in `oriterm_core/tests/spec_chain/main.rs` (add `mod baseline;` path).
+- [x] **Validation**: every tack section 05 scenario has a corresponding spec_chain test; coverage report shows the converted rows as `verified`; original tack tests still pass.
+
+**Implementation notes (2026-04-14):** Six scenario families (`acs`, `graphic_rendition`, `cursor_movement`, `modes`, `color`, `padding`) → six spec_chain modules under `oriterm_core/tests/spec_chain/baseline/tack_section_05/`. Five new catalog rows driven to `verified`: `ECMA48-C0-BEL` (acs/graphic_rendition), `ECMA48-CSI-CUP`, `ECMA48-CSI-ED` (cursor_movement via `clear` cap), `DEC-DECAWM`, `DEC-DECREVWRAP` (modes via `am`/`bw`). Three families contribute zero new ECMA-48 rows against tack v1.08 + `extra/ori_term.info`: `graphic_rendition` (combined screen with `acs`, no SGR sample text emitted), `color` (only numeric terminfo caps `colors`/`pairs` exercised — no protocol-row mapping), `padding` (only DA1 probe — already covered by the `da1_query` pilot; `rs1` reported as absent in our terminfo). Each "no new rows" finding is documented as a negative-pin test + module rustdoc so the absence is visible to future readers and the legacy mapping table is honest.
 
 ---
 
