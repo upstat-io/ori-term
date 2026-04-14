@@ -552,23 +552,37 @@ fn new_headless_with_software_preference_uses_force_fallback() {
 
     match GpuState::new_headless_with_preference(AdapterPreference::SoftwareRasterizer) {
         Ok(gpu) => {
-            // When a software adapter is available, verify its name contains
-            // a known software rasterizer identifier.
-            let name = gpu.adapter_info().name.to_lowercase();
+            let info = gpu.adapter_info();
+            let name = info.name.to_lowercase();
+
+            // Primary signal: wgpu reports `device_type == Cpu` for
+            // software rasterizers. This is the authoritative wgpu
+            // contract — any adapter the driver itself tags as CPU
+            // qualifies as a software rasterizer.
+            if info.device_type == wgpu::DeviceType::Cpu {
+                return;
+            }
+
+            // Fallback: some software rasterizers on older wgpu versions
+            // report `device_type == Other` but have recognizable names
+            // (llvmpipe on Linux when wgpu fails to parse the MESA
+            // device type, for example). Keep the string list as a
+            // defensive backstop.
             const KNOWN: &[&str] = &[
                 "llvmpipe",
                 "lavapipe",
                 "warp",
                 "swiftshader",
                 "mesa software",
+                "microsoft basic render",
                 "cpu",
             ];
             assert!(
                 KNOWN.iter().any(|s| name.contains(s)),
                 "expected software rasterizer, got: {:?} (backend={:?}, device_type={:?})",
-                gpu.adapter_info().name,
-                gpu.adapter_info().backend,
-                gpu.adapter_info().device_type,
+                info.name,
+                info.backend,
+                info.device_type,
             );
         }
         Err(_) => {
