@@ -463,6 +463,9 @@ GitHub Actions, .github/workflows/spec-conformance.yml
 per-platform apex matrix, OS-dependent apices
 clipboard, audio, focus, kitty file/shm transports
 title, shell integration, platform-specific verification
+legacy test removal, teseq removal, tack removal, vttest removal
+external tool dependency elimination, zero SKIP messages
+self-contained tests, no platform-specific binaries
 ```
 
 ---

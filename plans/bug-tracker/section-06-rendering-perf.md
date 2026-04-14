@@ -99,6 +99,12 @@ sections:
   - **Repro**: Press Ctrl+Shift+P to toggle a floating pane. The pane content is transparent — you can see the main terminal grid behind it.
   - **Found**: 2026-03-31 — manual, user report.
 
+- [ ] `[BUG-06-012][high]` **notcurses-demo reports ~5 FPS drops that did not occur before Section 07 work**
+  Repro: Run `notcurses-demo` in oriterm. Observe FPS counter — reports ~5 frame drops during playback that were not present before the Section 07 image lifecycle commits (2026-04-12 to 2026-04-14).
+  Subsystem: `oriterm_core/src/image/cache/`, `oriterm_mux/src/backend/embedded/mod.rs`
+  Found: 2026-04-14 | Source: manual
+  Note: Overall quality and performance improved, but the FPS drops are a regression. Suspect candidates: snapshot_dirty guard change (13 methods now skip insert for nonexistent panes — could cause missed refreshes), apply_frame extraction (branch ordering change), or animation intersects_viewport predicate refactor. Active work in spec-conformance section 07 (now complete) and section 21 (notcurses-demo harness) touches this area.
+
 - [ ] `[BUG-06-011][medium]` **Settings dialog golden image mismatch — `settings_appearance_clean_96dpi`**
   Repro: `cargo test -p oriterm --lib gpu::visual_regression::settings_dialog::settings_appearance_clean_96dpi`
   Subsystem: `oriterm/src/gpu/visual_regression/settings_dialog/`
