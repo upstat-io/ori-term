@@ -1,7 +1,7 @@
 ---
 section: "08"
 title: "ECMA-48 Baseline (absorbs in-flight tack-conformance work)"
-status: not-started
+status: in-progress
 reviewed: true
 goal: "Drive the row subset of catalog/{ecma-48,xterm-ctlseqs,dec-private-modes,osc}.md that the existing tack-conformance work covers from `implemented-unverified` to `verified`, populate the legacy tack mapping table, and add new baseline rows for gaps tack didn't cover (DECLRMM full mode plumbing + grid enforcement, REP edge cases, 8-bit C1 controls, ISO 8613-6 SGR colon forms)."
 success_criteria:
@@ -64,7 +64,7 @@ sections:
     status: not-started
   - id: "08.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "08.N"
     title: "Completion Checklist"
     status: not-started
@@ -75,7 +75,7 @@ sections:
 
 # Section 08: ECMA-48 Baseline
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Establish ECMA-48 + xterm extensions baseline conformance for the row subset that tack-conformance already covers (sections 01-06 of that plan), then close gaps tack didn't cover: DECLRMM full mode plumbing + grid enforcement, 8-bit C1 control detection, REP edge cases, and ISO 8613-6 SGR colon forms. This section is the entry point for Phase 3 — every Phase 3 stack section depends on baseline correctness.
 
 **Success Criteria:**
