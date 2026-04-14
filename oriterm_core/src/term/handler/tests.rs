@@ -6414,3 +6414,161 @@ fn rep_count_zero_repeats_once() {
     assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
     assert_eq!(grid.cursor().col(), Column(2));
 }
+
+// ── ISO 8613-6 SGR colon-separated subparameter forms — §08.8 ───────
+
+const RGB_255_128_64: vte::ansi::Color = vte::ansi::Color::Spec(vte::ansi::Rgb {
+    r: 255,
+    g: 128,
+    b: 64,
+});
+const INDEXED_123: vte::ansi::Color = vte::ansi::Color::Indexed(123);
+
+// Matrix: 3 targets (fg=38, bg=48, underline=58) × 2 modes (truecolor=2, indexed=5) × 2 separators
+
+#[test]
+fn sgr_38_semicolon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38;2;255;128;64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_38_colon_truecolor_no_colorspace() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2::255:128:64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_38_colon_truecolor_with_colorspace() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2:0:255:128:64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_38_semicolon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38;5;123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].fg, INDEXED_123);
+}
+
+#[test]
+fn sgr_38_colon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:5:123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].fg, INDEXED_123);
+}
+
+#[test]
+fn sgr_48_semicolon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48;2;255;128;64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].bg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_48_colon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:2::255:128:64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].bg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_48_semicolon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48;5;123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].bg, INDEXED_123);
+}
+
+#[test]
+fn sgr_48_colon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:5:123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].bg, INDEXED_123);
+}
+
+#[test]
+fn sgr_58_semicolon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58;2;255;128;64mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(RGB_255_128_64));
+}
+
+#[test]
+fn sgr_58_colon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:2::255:128:64mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(RGB_255_128_64));
+}
+
+#[test]
+fn sgr_58_semicolon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58;5;123mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(INDEXED_123));
+}
+
+#[test]
+fn sgr_58_colon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:5:123mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(INDEXED_123));
+}
+
+/// Mixed colon+semicolon separators produce incomplete params.
+/// `38:2::255;128;64` splits as `[38,2,0,255]` + `[128]` + `[64]` — the
+/// colon group has only 3 values after the mode byte, not enough for RGB.
+#[test]
+fn sgr_38_mixed_separators_does_not_parse() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2::255;128;64mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert_ne!(
+        cell.fg, RGB_255_128_64,
+        "mixed separators must not produce correct RGB"
+    );
+}
+
+/// `38:2::R:G:B` and `38:2:0:R:G:B` are indistinguishable at dispatch
+/// time because the VTE parser represents `::` as `:0:`.
+#[test]
+fn sgr_38_double_colon_vs_zero_indistinguishable() {
+    let mut t1 = term();
+    feed(&mut t1, b"\x1b[38:2::255:128:64mA");
+    let mut t2 = term();
+    feed(&mut t2, b"\x1b[38:2:0:255:128:64mA");
+    assert_eq!(
+        t1.grid()[crate::index::Line(0)][Column(0)].fg,
+        t2.grid()[crate::index::Line(0)][Column(0)].fg,
+        "empty colorspace-id (::) and explicit zero (:0:) must produce identical color"
+    );
+    assert_eq!(
+        t1.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}

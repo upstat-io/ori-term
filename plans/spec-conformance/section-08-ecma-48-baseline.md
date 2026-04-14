@@ -55,7 +55,7 @@ sections:
     status: complete
   - id: "08.8"
     title: "Verify ISO 8613-6 SGR colon-separated subparameter forms (truecolor + indexed + underline color)"
-    status: not-started
+    status: complete
   - id: "08.9"
     title: "Populate _legacy-tack-mapping.md as rows are verified"
     status: not-started
@@ -395,39 +395,21 @@ ECMA-48 sect.5.4.2 allows subparameters separated by `:` (colon) in addition to 
 3. Documenting and pinning the mixed-separator failure mode
 4. Documenting the empty-subparam indistinguishability
 
-- [ ] **Verify existing code** — Read `handle_colon_rgb` at `csi.rs:371-377` carefully. It skips the colorspace-id when `params.len() > 4` (by setting `rgb_start = 2`). Verify this handles:
-  - `38:2::255:128:64` (empty colorspace-id) — the VTE parser represents the leading `:2:` as subparams `[38, 2, 0, 255, 128, 64]` or `[38, 2, ?, 255, 128, 64]`; verify the empty value becomes 0 and the skip logic handles it
-  - `38:2:0:255:128:64` (explicit colorspace-id=0) — same path, colorspace-id ignored
-  - `38:5:123` (indexed color colon form) — verify `parse_sgr_color` handles `5` branch
-- [ ] **Test cases — TDD, failing first:**
-  - `sgr_38_semicolon_truecolor()` — `CSI 38;2;255;128;64 m` — already working, regression pin
-  - `sgr_38_colon_truecolor_no_colorspace()` — `CSI 38:2::255:128:64 m` — verify accepted
-  - `sgr_38_colon_truecolor_with_colorspace()` — `CSI 38:2:0:255:128:64 m` — verify accepted, colorspace-id ignored
-  - `sgr_48_colon_truecolor()` — `CSI 48:2::255:128:64 m` — background variant
-  - `sgr_38_semicolon_indexed()` — `CSI 38;5;123 m` — already working, regression pin
-  - `sgr_38_colon_indexed()` — `CSI 38:5:123 m` — verify accepted
-  - `sgr_48_colon_indexed()` — `CSI 48:5:123 m` — verify accepted
-  - `sgr_58_colon_truecolor()` — `CSI 58:2::255:128:64 m` — underline color truecolor colon form
-  - `sgr_58_colon_indexed()` — `CSI 58:5:123 m` — underline color indexed colon form
-  - `sgr_58_semicolon_truecolor()` — `CSI 58;2;255;128;64 m` — underline color semicolon form (regression pin)
-  - **Negative pin — mixed separators**: `sgr_38_mixed_separators_does_not_parse()` — `CSI 38:2::255;128;64 m` (mixed colon+semicolon). The VTE parser splits on `;` at the top level, so `38:2::255` becomes one param group and `128` and `64` become separate params. `handle_colon_rgb` receives only `[2, 0, 255]` — not enough for RGB. Assert this either produces no color change or produces a wrong color (document whichever behavior occurs). This is a known limitation, NOT a bug to fix.
-  - **Negative pin — empty subparam indistinguishability**: `sgr_38_double_colon_vs_zero_indistinguishable()` — `38:2::255:128:64` vs `38:2:0:255:128:64` should produce the same color (both arrive as `[38, 2, 0, 255, 128, 64]` at dispatch time because `::` and `:0:` are indistinguishable). Assert both produce `Rgb(255, 128, 64)`.
-- [ ] **Matrix dimensions**: 3 color targets (fg=38, bg=48, underline=58) x 2 color modes (truecolor=2, indexed=5) x 2 separator forms (semicolon, colon) = 12 positive cells, plus 2 negative pins. The 12 positive tests are:
-  1. `sgr_38_semicolon_truecolor` (fg, 2, semicolon)
-  2. `sgr_38_colon_truecolor_no_colorspace` (fg, 2, colon)
-  3. `sgr_38_semicolon_indexed` (fg, 5, semicolon)
-  4. `sgr_38_colon_indexed` (fg, 5, colon)
-  5. `sgr_48_semicolon_truecolor` (bg, 2, semicolon)
-  6. `sgr_48_colon_truecolor` (bg, 2, colon)
-  7. `sgr_48_semicolon_indexed` (bg, 5, semicolon)
-  8. `sgr_48_colon_indexed` (bg, 5, colon)
-  9. `sgr_58_semicolon_truecolor` (underline, 2, semicolon)
-  10. `sgr_58_colon_truecolor` (underline, 2, colon)
-  11. `sgr_58_semicolon_indexed` (underline, 5, semicolon)
-  12. `sgr_58_colon_indexed` (underline, 5, colon)
-- [ ] Update catalog rows in `catalog/ecma-48.md`: `ECMA48-SGR-38`, `ECMA48-SGR-48`, `ECMA48-SGR-58` all to `verified` (these are the actual catalog row IDs; the ISO 8613-6 colon forms are variant behaviors within the same rows, not separate catalog entries).
+- [x] **Verify existing code** — Read `handle_colon_rgb` at `csi.rs:392-398` carefully. `handle_colon_rgb` skips colorspace-id when `params.len() > 4` (rgb_start=2). `parse_sgr_color` handles mode 2 (truecolor) and mode 5 (indexed). All forms verified correct:
+  - `38:2::255:128:64` → `[38, 2, 0, 255, 128, 64]`, len=5 > 4, skip index 1 → Rgb(255,128,64) ✓
+  - `38:2:0:255:128:64` → identical params, same result ✓
+  - `38:5:123` → `[38, 5, 123]`, len=2 ≤ 4, rgb_start=1 → Indexed(123) ✓
+- [x] **Test cases — all 14 pass (12 positive matrix + 2 negative pins):**
+  - `sgr_38_semicolon_truecolor`, `sgr_38_colon_truecolor_no_colorspace`, `sgr_38_colon_truecolor_with_colorspace`
+  - `sgr_38_semicolon_indexed`, `sgr_38_colon_indexed`
+  - `sgr_48_semicolon_truecolor`, `sgr_48_colon_truecolor`, `sgr_48_semicolon_indexed`, `sgr_48_colon_indexed`
+  - `sgr_58_semicolon_truecolor`, `sgr_58_colon_truecolor`, `sgr_58_semicolon_indexed`, `sgr_58_colon_indexed`
+  - **Negative pin**: `sgr_38_mixed_separators_does_not_parse` — mixed colon+semicolon fails (incomplete param group)
+  - **Negative pin**: `sgr_38_double_colon_vs_zero_indistinguishable` — `::` and `:0:` produce identical color
+- [x] **Matrix dimensions**: 3 × 2 × 2 = 12 positive + 2 negative = 14 tests. All pass.
+- [x] Update catalog rows in `catalog/ecma-48.md`: `ECMA48-SGR-38`, `ECMA48-SGR-48`, `ECMA48-SGR-58` all to `verified`.
 - [ ] **TPR checkpoint** — `/tpr-review` covering 08.6-08.8b (gap fixes). Catches parser/handler interaction issues.
-- [ ] **Validation**: both separator forms work; negative pins document known limitations; existing SGR tests unchanged.
+- [x] **Validation**: both separator forms work; negative pins document known limitations; existing SGR tests unchanged.
 
 ---
 
