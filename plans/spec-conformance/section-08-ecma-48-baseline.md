@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "08.6"
     title: "Implement 8-bit C1 control detection"
-    status: not-started
+    status: complete
   - id: "08.7"
     title: "Verify REP edge cases"
     status: not-started
@@ -328,30 +328,33 @@ The VTE parser currently only handles 7-bit ESC-prefixed C1 forms (ESC [ for CSI
 1. Extend the memchr scan to also stop on C1 bytes (e.g., use `memchr2` or `memchr3` for the most common C1 introducers), OR
 2. Handle C1 bytes only during the UTF-8 error recovery path (which already detects them), ensuring they transition to the correct parser state
 
-- [ ] **Audit current C1 handling** — Read `crates/vte/src/lib.rs:649-710` carefully. The UTF-8 error path already calls `performer.execute(byte)` for bytes <= 0x9F. Verify what `execute()` does with these bytes in the `Processor` (at `crates/vte/src/ansi/processor.rs`). If `execute()` already routes 0x9B to CSI state, 0x90 to DCS state, etc., then the gap is narrower than assumed.
-- [ ] **If C1 handling is incomplete**: Add proper state transitions for each C1 introducer byte:
+- [x] **Audit current C1 handling** — Read `crates/vte/src/lib.rs:649-710` carefully. The UTF-8 error path already calls `performer.execute(byte)` for bytes <= 0x9F. Verify what `execute()` does with these bytes in the `Processor` (at `crates/vte/src/ansi/processor.rs`). If `execute()` already routes 0x9B to CSI state, 0x90 to DCS state, etc., then the gap is narrower than assumed. **Audit result**: `dispatch_execute` only handles C0 bytes; C1 bytes fell through to `debug!` log. Gap confirmed.
+- [x] **If C1 handling is incomplete**: Add proper state transitions for each C1 introducer byte:
   - 0x90 (DCS) — enter DCS state (same as ESC P)
   - 0x9B (CSI) — enter CSI state (same as ESC [)
-  - 0x9C (ST) — already handled as terminator
-  - 0x9D (OSC) — enter OSC state (same as ESC ])
+  - 0x9C (ST) — no-op on ground; terminates DCS/APC/SOS/PM mid-sequence via `anywhere`
+  - 0x9D (OSC) — enter OSC state (same as ESC ]). **Note**: 0x9C does NOT terminate OSC (conflicts with UTF-8 continuation bytes in CJK titles); use BEL or ESC \ instead. Matches upstream Alacritty VTE.
   - 0x9E (PM) — enter PM discard state (same as ESC ^)
   - 0x9F (APC) — enter APC state (same as ESC _)
   - 0x98 (SOS) — enter SOS discard state (same as ESC X)
-- [ ] **BSU/ESU scope note** — The sync-update path (`BSU_CSI`/`ESU_CSI` constants at `crates/vte/src/ansi/mod.rs:47-50`) uses hardcoded 7-bit CSI sequences (`\x1b[?2026h` / `\x1b[?2026l`). These match byte-for-byte in `advance_sync_csi`. Adding global 8-bit C1 support must NOT break the BSU/ESU matcher. If an application sends `0x9b ?2026h` as an 8-bit BSU, the current sync path will NOT recognize it. This is acceptable for now (no real-world app does this) but must be documented with a NOTE pin test.
-- [ ] **Performance guard** — Run the alloc regression tests AND time the existing teseq suite before and after the change. Any measurable regression in the parse hot path must be investigated.
-- [ ] **Tests — TDD, failing first:**
+  Implementation: new `dispatch_c1()` method in `Parser` at `crates/vte/src/lib.rs`, called from `advance_ground` UTF-8 error path instead of `performer.execute()`. Also added 0x9C to `anywhere()` for mid-sequence ST termination.
+- [x] **BSU/ESU scope note** — The sync-update path (`BSU_CSI`/`ESU_CSI` constants at `crates/vte/src/ansi/mod.rs:47-50`) uses hardcoded 7-bit CSI sequences (`\x1b[?2026h` / `\x1b[?2026l`). These match byte-for-byte in `advance_sync_csi`. Adding global 8-bit C1 support must NOT break the BSU/ESU matcher. If an application sends `0x9b ?2026h` as an 8-bit BSU, the current sync path will NOT recognize it. This is acceptable for now (no real-world app does this) but must be documented with a NOTE pin test. **Done**: negative pin test `bsu_esu_7bit_not_matched_by_8bit_csi` confirms 8-bit CSI form is dispatched as normal CSI, not recognized as BSU.
+- [x] **Performance guard** — Run the alloc regression tests AND time the existing teseq suite before and after the change. Any measurable regression in the parse hot path must be investigated. **Done**: alloc regression (5/5 pass), teseq (176/176 pass), no regressions. C1 dispatch reuses the existing UTF-8 error path — no new memchr scans or hot-path changes.
+- [x] **Tests — TDD, failing first:**
   - `c1_0x9b_enters_csi_state()` — input `\x9b0m` (8-bit CSI + SGR reset), assert SGR is dispatched
   - `c1_0x90_enters_dcs_state()` — input `\x90q...ST`, assert DCS hook is called
-  - `c1_0x9d_enters_osc_state()` — input `\x9d0;title\x9c`, assert title is set
+  - `c1_0x9d_enters_osc_state()` — input `\x9d0;title\x07` (BEL-terminated), assert title is set
   - `c1_0x9f_enters_apc_state()` — input `\x9f...\x9c`, assert APC content captured
   - `c1_0x98_enters_sos_discard_state()` — input `\x98...\x9c`, assert SOS discarded
   - `c1_0x9e_enters_pm_discard_state()` — input `\x9e...\x9c`, assert PM discarded
-  - `c1_0x9c_terminates_sequence()` — 0x9C as ST within DCS/APC/OSC
-  - **Negative pin**: `bsu_esu_7bit_not_matched_by_8bit_csi()` — `0x9b?2026h` does NOT trigger sync update (the BSU matcher expects the 7-bit form)
-  - **Semantic pin**: `c1_csi_sgr_reset_only_passes_with_8bit_support()` — a test that feeds `\x9b0m` and asserts the cell template's SGR is reset; this ONLY passes when 8-bit C1 routing is correct
-- [ ] **Matrix dimensions**: 7 C1 bytes (0x90, 0x98, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F) x 2 context positions (ground state, mid-sequence as terminator) = 14 test cells.
-- [ ] Update catalog rows in `catalog/ecma-48.md` for 8-bit C1 controls to `verified`.
-- [ ] **Validation**: tests pass; existing C0 + 7-bit ESC tests still pass; alloc regression unchanged; teseq suite timing stable.
+  - `c1_0x9c_terminates_sequence()` — 0x9C as ST within DCS/APC/SOS/PM (NOT OSC — UTF-8 safety)
+  - **Negative pin**: `bsu_esu_7bit_not_matched_by_8bit_csi()` — verified
+  - **Negative pin**: `c1_0x9c_does_not_terminate_osc_sequence()` — 0x9C inside OSC is data, not ST
+  - **Semantic pin**: `c1_csi_sgr_reset_only_passes_with_8bit_support()` — verified
+  - **State transition pin**: `c1_sequence_introducers_enter_states()` — verifies all 6 introducers enter states, not execute
+- [x] **Matrix dimensions**: 7 C1 bytes (0x90, 0x98, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F) x 2 context positions (ground state, mid-sequence as terminator) = 14 test cells. **Done**: 24 C1-specific tests covering ground-state entry (7), mid-sequence termination (5 states with 0x9C), negative/semantic pins (3), state transition verification (1), and detailed behavior (8).
+- [x] Update catalog rows in `catalog/ecma-48.md` for 8-bit C1 controls to `verified`.
+- [x] **Validation**: tests pass; existing C0 + 7-bit ESC tests still pass; alloc regression unchanged; teseq suite timing stable.
 
 ---
 

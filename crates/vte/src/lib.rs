@@ -491,6 +491,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.reset_params();
                 self.state = State::Escape
             },
+            0x9C => self.state = State::Ground,
             _ => (),
         }
     }
@@ -681,9 +682,8 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
 
                 match err.error_len() {
                     Some(len) => {
-                        // Execute C1 escapes or emit replacement character.
                         if len == 1 && bytes[valid_bytes] <= 0x9F {
-                            performer.execute(bytes[valid_bytes]);
+                            self.dispatch_c1(performer, bytes[valid_bytes]);
                         } else {
                             performer.print('�');
                         }
@@ -714,6 +714,38 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                     },
                 }
             },
+        }
+    }
+
+    /// Dispatch an 8-bit C1 control byte (0x80–0x9F) detected during UTF-8
+    /// error recovery. Sequence introducers transition the parser state;
+    /// other C1 bytes are dispatched via `execute()`.
+    #[inline]
+    fn dispatch_c1<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        match byte {
+            0x90 => {
+                self.reset_params();
+                self.state = State::DcsEntry;
+            },
+            0x98 => self.state = State::SosPmApcString,
+            0x9B => {
+                self.reset_params();
+                self.state = State::CsiEntry;
+            },
+            0x9C => {
+                // ST on ground is a no-op (nothing to terminate).
+            },
+            0x9D => {
+                self.osc_raw.clear();
+                self.osc_num_params = 0;
+                self.state = State::OscString;
+            },
+            0x9E => self.state = State::SosPmApcString,
+            0x9F => {
+                performer.apc_start();
+                self.state = State::ApcString;
+            },
+            _ => performer.execute(byte),
         }
     }
 
