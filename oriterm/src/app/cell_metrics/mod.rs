@@ -34,6 +34,25 @@ fn cell_metric_broadcast_needed(last: Option<(u16, u16)>, new: (u16, u16)) -> bo
     last != Some(new)
 }
 
+/// Combined decision + state-update helper.
+///
+/// Returns `true` if a broadcast should fire AND updates `cached` to
+/// the new dims. Returns `false` (and leaves `cached` unchanged) when
+/// `new` matches the already-cached dims.
+///
+/// Pinning both the decision AND the state update in one function
+/// means a test on this helper catches regressions that would remove
+/// either half — a "remove the assignment" refactor would fail
+/// `try_claim_broadcast_updates_cache_on_claim`, not just the
+/// decision test (TPR-07-003-gemini round 8, 2026-04-13).
+fn try_claim_broadcast(cached: &mut Option<(u16, u16)>, new: (u16, u16)) -> bool {
+    if !cell_metric_broadcast_needed(*cached, new) {
+        return false;
+    }
+    *cached = Some(new);
+    true
+}
+
 impl App {
     /// Send the given cell metrics to every pane across every tab in
     /// the given winit window.
@@ -66,17 +85,18 @@ impl App {
         cell_w: u16,
         cell_h: u16,
     ) {
-        // Short-circuit when nothing changed. Per TPR-07-002-gemini
-        // (2026-04-13): `sync_grid_layout` fires on every layout pass
-        // including every tick of an interactive drag-resize. If we
-        // broadcast unconditionally, every pane gets inserted into
-        // `snapshot_dirty` and (in daemon mode) has its pushed
-        // snapshot invalidated via IPC on every tick — O(N panes × M
-        // resize events) of wasted work when font/DPI haven't changed.
-        let Some(ctx) = self.windows.get(&winit_id) else {
+        // Short-circuit + cache-update are fused in `try_claim_broadcast`
+        // so a future refactor that removes the cache assignment (or
+        // the decision guard) fails `try_claim_broadcast_*` tests.
+        // Per TPR-07-002-gemini (2026-04-13) the motivation is that
+        // `sync_grid_layout` fires on every layout pass (including
+        // every tick of an interactive drag-resize); unconditional
+        // broadcast would insert every pane into `snapshot_dirty` and
+        // invalidate pushed IPC snapshots on every tick.
+        let Some(ctx) = self.windows.get_mut(&winit_id) else {
             return;
         };
-        if !cell_metric_broadcast_needed(ctx.last_broadcast_cell_dims, (cell_w, cell_h)) {
+        if !try_claim_broadcast(&mut ctx.last_broadcast_cell_dims, (cell_w, cell_h)) {
             return;
         }
 
@@ -100,11 +120,6 @@ impl App {
         };
         for pane_id in pane_ids {
             mux.set_cell_dimensions(pane_id, cell_w, cell_h);
-        }
-
-        // Record the broadcast so subsequent identical calls short-circuit.
-        if let Some(ctx) = self.windows.get_mut(&winit_id) {
-            ctx.last_broadcast_cell_dims = Some((cell_w, cell_h));
         }
     }
 
