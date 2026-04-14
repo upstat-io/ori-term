@@ -21,12 +21,9 @@
 //! see immediately that the family was deliberately left without a
 //! protocol test (with the reason). Without this file, the absence
 //! would look like an oversight.
-
-#[test]
-fn tools_menu_inventory_contributes_zero_protocol_rows() {
-    // No assertion body needed — the purpose of this test is to
-    // document the deliberate zero-row status via its presence + name
-    // and force CI to re-run this file (keeping the documentation
-    // alive under rustdoc + test harness discovery) if any future
-    // commit renames the tools_menu_inventory family.
-}
+//!
+//! No `#[test]` functions live here — empty-body tests violate
+//! `.claude/rules/tests.md` §Test Hygiene Rule 1 ("every test file
+//! must contain at least one assertion"). The module's `//!` rustdoc
+//! is the documentation artifact; `mod.rs` pulls this file into the
+//! crate's module tree so the rustdoc is discoverable via `cargo doc`.

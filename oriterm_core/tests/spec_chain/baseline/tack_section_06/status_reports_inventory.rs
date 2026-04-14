@@ -75,6 +75,91 @@ fn da2_query_drives_to_effect_apex() {
     }
 }
 
+/// DA2 with explicit-zero param (`CSI > 0 c`) drives the same path.
+///
+/// Tack's `status_reports_inventory` fixtures label this probe as
+/// `(CSI > 0 c)` (per `crates/oriterm_test_support/src/tack_framework/scenarios/status_reports/tests.rs:25-27`),
+/// not the implicit-zero `CSI > c` form. This matrix cell pins the
+/// verbatim tack byte sequence so a regression that accidentally
+/// routes explicit-zero to a different handler can't hide behind
+/// the implicit-zero green.
+#[test]
+fn da2_query_explicit_zero_param_drives_to_effect_apex() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DA2",
+        bytes: b"\x1b[>0c",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'c',
+                params: &[0],
+                intermediates: b">",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("identify_terminal")),
+            effect: Some(EffectExpectation::pty("DeviceAttribute")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
+/// Explicit-zero and implicit-zero DA2 forms emit identical replies.
+///
+/// Proves the two forms are behaviorally equivalent at the effect
+/// layer — a regression that reported a different value for one
+/// form would fail here.
+#[test]
+fn da2_explicit_and_implicit_zero_replies_match() {
+    let mut h_implicit = SpecHarness::new();
+    h_implicit.feed(b"\x1b[>c");
+    let reply_implicit = h_implicit
+        .outcome()
+        .effects_emitted
+        .iter()
+        .find_map(|eff| match eff {
+            Effect::Pty(PtyEffect::Write { bytes, kind })
+                if *kind == PtyWriteKind::DeviceAttribute =>
+            {
+                Some(bytes.clone())
+            }
+            _ => None,
+        })
+        .expect("implicit-zero DA2 should emit a reply");
+
+    let mut h_explicit = SpecHarness::new();
+    h_explicit.feed(b"\x1b[>0c");
+    let reply_explicit = h_explicit
+        .outcome()
+        .effects_emitted
+        .iter()
+        .find_map(|eff| match eff {
+            Effect::Pty(PtyEffect::Write { bytes, kind })
+                if *kind == PtyWriteKind::DeviceAttribute =>
+            {
+                Some(bytes.clone())
+            }
+            _ => None,
+        })
+        .expect("explicit-zero DA2 should emit a reply");
+
+    assert_eq!(
+        reply_implicit, reply_explicit,
+        "DA2 implicit-0 (`CSI > c`) and explicit-0 (`CSI > 0 c`) must emit identical replies"
+    );
+}
+
 /// DA2 reply bytes start with `ESC [ > 0 ;` (terminal type 0).
 ///
 /// Confirms the effect transcript contains the DA2-specific prefix,
@@ -124,6 +209,43 @@ fn da3_query_drives_to_effect_apex() {
     let scenario = SpecScenario {
         catalog_row_id: "ECMA48-CSI-DA3",
         bytes: b"\x1b[=c",
+        apex_layer: ApexLayer::EffectPtyWrite,
+        setup: b"",
+        expectations: ScenarioExpectations {
+            parser: Some(ParserExpectation {
+                action: 'c',
+                params: &[0],
+                intermediates: b"=",
+                osc_command: None,
+            }),
+            dispatch: Some(DispatchExpectation::method("identify_terminal")),
+            effect: Some(EffectExpectation::pty("DeviceAttribute")),
+            ..ScenarioExpectations::default()
+        },
+    };
+
+    let mut harness = SpecHarness::new();
+    let results = harness.run_scenario(&scenario);
+    for r in &results {
+        assert!(
+            r.passed,
+            "rung {:?} failed: {}",
+            r.rung_name,
+            r.failure.as_deref().unwrap_or("(no message)")
+        );
+    }
+}
+
+/// DA3 with explicit-zero param (`CSI = 0 c`) drives the same path.
+///
+/// Matrix cell pairing: tack's fixture labels DA3 as `(CSI = 0 c)`
+/// (explicit-zero). Pins the verbatim form so regressions in the
+/// explicit-zero path can't hide behind the implicit-zero green.
+#[test]
+fn da3_query_explicit_zero_param_drives_to_effect_apex() {
+    let scenario = SpecScenario {
+        catalog_row_id: "ECMA48-CSI-DA3",
+        bytes: b"\x1b[=0c",
         apex_layer: ApexLayer::EffectPtyWrite,
         setup: b"",
         expectations: ScenarioExpectations {
@@ -312,6 +434,39 @@ fn dsr_6_reply_is_one_one_at_default_cursor() {
 }
 
 // --- Negative pins ---------------------------------------------------------
+
+/// Negative pin: DSR 6 must emit `CursorReport`, NOT `DeviceStatus`.
+///
+/// Matrix pair with `dsr_5_does_not_emit_cursor_report`. Without
+/// this pin, a regression that routed `CSI 6 n` to the
+/// `DeviceStatus` kind (instead of `CursorReport`) would pass the
+/// positive DSR 6 pin above — the positive pin only checks presence
+/// of a `CursorReport`, not absence of a `DeviceStatus`.
+#[test]
+fn dsr_6_does_not_emit_device_status() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[6n");
+
+    let device_status_replies: Vec<_> = harness
+        .outcome()
+        .effects_emitted
+        .iter()
+        .filter(|eff| {
+            matches!(
+                eff,
+                Effect::Pty(PtyEffect::Write {
+                    kind: PtyWriteKind::DeviceStatus,
+                    ..
+                })
+            )
+        })
+        .collect();
+
+    assert!(
+        device_status_replies.is_empty(),
+        "DSR 6 must not emit a DeviceStatus effect; got: {device_status_replies:?}"
+    );
+}
 
 /// Negative pin: DSR 5 must emit `DeviceStatus`, NOT `CursorReport`.
 ///
