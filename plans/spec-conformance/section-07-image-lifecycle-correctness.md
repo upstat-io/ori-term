@@ -1,7 +1,7 @@
 ---
 section: "07"
 title: "Image Lifecycle Correctness"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Add the missing resize handler, reflow-aware placement remapping, and cell-metric plumbing so image placements survive every grid transformation correctly: scrollback eviction, grid resize, column reflow, alt-screen toggle, ED/EL erase, and font-size/DPI changes."
 success_criteria:
@@ -50,7 +50,7 @@ sections:
     status: complete
   - id: "07.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 07: Image Lifecycle Correctness
@@ -557,11 +557,11 @@ Round 15 clean-pass gate: Gemini returned `"no_findings": true` on round 14. Cod
 - [x] Alloc regression unchanged
 - [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
 - [x] Plan annotation cleanup (19 stale annotations removed in c2e4e5b1)
-- [ ] Section frontmatter `status` → `complete`
-- [ ] `00-overview.md` Quick Reference + mission criteria updated
-- [ ] `index.md` section 07 status updated
+- [x] Section frontmatter `status` → `complete`
+- [x] `00-overview.md` Quick Reference + mission criteria updated
+- [x] `index.md` section 07 status updated
 - [x] Cross-links verified: sections 12, 13, 14, 26 reference section 07
 - [x] `/tpr-review` passed (6 iterations, rounds 11-16, 16 findings fixed)
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [x] `/impl-hygiene-review` passed (3 findings fixed in 0d721104: snapshot_dirty guard, apply_frame DRY, intersects_viewport)
 
 **Exit Criteria:** Image placements survive every grid transformation: resize, reflow, scrollback eviction, alt-screen toggle, ED/EL erase, and font/DPI changes. No limitations scoped out. Regression matrix proves it with 42 scenarios. Ready for sections 12-14 (image protocols) and section 21 (notcurses-demo harness).

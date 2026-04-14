@@ -162,7 +162,7 @@ nested BSU, max-buffer-bytes, sync abort, SYNC_UPDATE_TIMEOUT 150ms
 ---
 
 ### Section 07: Image Lifecycle Correctness
-**File:** `section-07-image-lifecycle-correctness.md` | **Status:** Not Started
+**File:** `section-07-image-lifecycle-correctness.md` | **Status:** Complete
 
 ```
 image lifecycle, image_cache resize, ImagePlacement, PlacementSizing
