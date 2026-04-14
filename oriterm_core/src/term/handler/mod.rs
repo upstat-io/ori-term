@@ -309,12 +309,12 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn save_cursor_position(&mut self) {
+        // Grid::save_cursor saves cursor + left/right margins (per VT420).
         self.grid_mut().save_cursor();
         // VT220 spec: DECSC also saves charset state and origin mode flag.
         self.saved_charset = Some(self.charset.clone());
         self.saved_origin_mode = Some(self.mode.contains(TermMode::ORIGIN));
-        // DEC VT420: DECSC also saves margin state.
-        self.saved_margins = Some(self.grid().left_right_margins());
+        // DECLRMM mode flag is Term-level (mode flags live in TermMode).
         self.saved_left_right_margin_mode = Some(self.mode.contains(TermMode::LEFT_RIGHT_MARGIN));
     }
 
@@ -354,10 +354,9 @@ impl<S: EffectSink> Handler for Term<S> {
                 self.mode.remove(TermMode::ORIGIN);
             }
         }
-        // DEC VT420: DECRC also restores margin state.
-        if let Some((left, right)) = self.saved_margins {
-            self.grid_mut().set_left_right_margins(left, right);
-        }
+        // DEC VT420: DECRC also restores margin values (done in
+        // Grid::restore_cursor per SSOT) and the DECLRMM mode flag
+        // (Term-level mode).
         if let Some(lrm) = self.saved_left_right_margin_mode {
             if lrm {
                 self.mode.insert(TermMode::LEFT_RIGHT_MARGIN);

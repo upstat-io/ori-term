@@ -1287,3 +1287,65 @@ fn dch_within_margins_shifts_only_margin_band() {
     assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, '8');
     assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, '9');
 }
+
+// --- Regression: ICH/DCH no-op when cursor outside margin band (TPR-08-001-gemini-r9) ---
+
+/// Regression: ICH with cursor left of `left_margin` must be a no-op.
+/// Previously the shift range started at `col` (the cursor) and extended
+/// to `right_margin + 1`, mutating cells BEFORE `left_margin` — outside
+/// the margin band in violation of ECMA-48/DECLRMM semantics.
+#[test]
+fn ich_with_cursor_left_of_left_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(5, 8);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_blank(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(
+            grid[crate::index::Line(0)][Column(col)].ch,
+            expected,
+            "col {col} must be unchanged when cursor is outside band",
+        );
+    }
+}
+
+#[test]
+fn ich_with_cursor_right_of_right_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(2, 5);
+    grid.cursor_mut().set_col(Column(8));
+    grid.insert_blank(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(grid[crate::index::Line(0)][Column(col)].ch, expected);
+    }
+}
+
+#[test]
+fn dch_with_cursor_left_of_left_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(5, 8);
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_chars(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(
+            grid[crate::index::Line(0)][Column(col)].ch,
+            expected,
+            "col {col} must be unchanged when cursor is outside band",
+        );
+    }
+}
+
+#[test]
+fn dch_with_cursor_right_of_right_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(2, 5);
+    grid.cursor_mut().set_col(Column(8));
+    grid.delete_chars(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(grid[crate::index::Line(0)][Column(col)].ch, expected);
+    }
+}

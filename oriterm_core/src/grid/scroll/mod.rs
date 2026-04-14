@@ -155,21 +155,44 @@ impl Grid {
             (0, self.cols.saturating_sub(1))
         };
         let band_width = right + 1 - left;
+        if band_width == 0 {
+            return;
+        }
         let count = count.min(band_width);
         let template = Cell::from(self.cursor.template.bg);
 
         for row_idx in self.scroll_region.clone() {
+            // Clean wide-char pairs straddling the band edges BEFORE shift:
+            // base at right with spacer at right+1 gets orphaned, and the
+            // spacer at left may lose its base outside the band.
+            if left + 1 < self.cols {
+                self.clear_wide_char_at(row_idx, left);
+            }
+            if right < self.cols {
+                self.clear_wide_char_at(row_idx, right);
+            }
+
             let row = &mut self.rows[row_idx];
             let cells = row.as_mut_slice();
-            // Shift cells left within the band.
-            for col in left..=right - count {
-                cells.swap(col, col + count);
+            // Shift cells left within the band. Skip when count == band_width
+            // (no cells to preserve — pure clear path). `right - count` would
+            // underflow in that case when left == 0.
+            if count < band_width {
+                for col in left..=right - count {
+                    cells.swap(col, col + count);
+                }
             }
             // Clear the rightmost `count` cells in the band.
             for cell in &mut cells[right + 1 - count..=right] {
                 cell.reset(&template);
             }
-            row.set_occ(row.cols());
+            // Preserve existing occ as upper bound; extend only if BCE fill
+            // introduces non-default content reaching into the band edge.
+            if !template.is_empty() {
+                let cols = row.cols();
+                let new_occ = row.occ().max(right + 1).min(cols);
+                row.set_occ(new_occ);
+            }
         }
         self.dirty.mark_range(self.scroll_region.clone());
     }
@@ -190,21 +213,41 @@ impl Grid {
             (0, self.cols.saturating_sub(1))
         };
         let band_width = right + 1 - left;
+        if band_width == 0 {
+            return;
+        }
         let count = count.min(band_width);
         let template = Cell::from(self.cursor.template.bg);
 
         for row_idx in self.scroll_region.clone() {
+            // Clean wide-char pairs straddling the band edges BEFORE shift.
+            if left + 1 < self.cols {
+                self.clear_wide_char_at(row_idx, left);
+            }
+            if right < self.cols {
+                self.clear_wide_char_at(row_idx, right);
+            }
+
             let row = &mut self.rows[row_idx];
             let cells = row.as_mut_slice();
-            // Shift cells right within the band.
-            for col in ((left + count)..=right).rev() {
-                cells.swap(col, col - count);
+            // Shift cells right within the band. Skip when count == band_width
+            // (pure clear path).
+            if count < band_width {
+                for col in ((left + count)..=right).rev() {
+                    cells.swap(col, col - count);
+                }
             }
             // Clear the leftmost `count` cells in the band.
             for cell in &mut cells[left..left + count] {
                 cell.reset(&template);
             }
-            row.set_occ(row.cols());
+            // Preserve existing occ as upper bound; extend only if BCE fill
+            // introduces non-default content.
+            if !template.is_empty() {
+                let cols = row.cols();
+                let new_occ = row.occ().max(right + 1).min(cols);
+                row.set_occ(new_occ);
+            }
         }
         self.dirty.mark_range(self.scroll_region.clone());
     }
@@ -231,6 +274,22 @@ impl Grid {
             return;
         }
         let template = Cell::from(self.cursor.template.bg);
+        let left = col_range.start;
+        // `col_range` is half-open; the last column in the band.
+        let right = col_range.end - 1;
+
+        // Clean wide-char pairs straddling the band edges in every affected
+        // row BEFORE any copy/clear, so shifted cells never carry stale
+        // WIDE_CHAR/WIDE_CHAR_SPACER flags into their new position and the
+        // untouched neighbor outside the band loses its orphaned partner.
+        for row_idx in row_range.clone() {
+            if left + 1 < self.cols {
+                self.clear_wide_char_at(row_idx, left);
+            }
+            if right < self.cols {
+                self.clear_wide_char_at(row_idx, right);
+            }
+        }
 
         // Copy cells upward within the column range.
         for offset in 0..len - count {
@@ -242,7 +301,15 @@ impl Grid {
             for col in col_range.clone() {
                 dst_row[Column(col)] = src_row[Column(col)].clone();
             }
-            dst_row.set_occ(dst_row.cols());
+            // Preserve old occ as upper bound; extend only if copied content
+            // reaches into the band edge via a non-empty cell.
+            if dst_row.occ() < right + 1 {
+                let new_occ = dst_row.occ().max(right + 1).min(dst_row.cols());
+                // Only extend when source row actually had content at the band edge.
+                if !src_row[Column(right)].is_empty() {
+                    dst_row.set_occ(new_occ);
+                }
+            }
         }
 
         // Clear the bottom `count` rows' column range.
@@ -251,7 +318,11 @@ impl Grid {
             for col in col_range.clone() {
                 row[Column(col)].reset(&template);
             }
-            row.set_occ(row.cols());
+            if !template.is_empty() {
+                let cols = row.cols();
+                let new_occ = row.occ().max(right + 1).min(cols);
+                row.set_occ(new_occ);
+            }
         }
 
         self.dirty.mark_range(row_range);
@@ -279,6 +350,19 @@ impl Grid {
             return;
         }
         let template = Cell::from(self.cursor.template.bg);
+        let left = col_range.start;
+        let right = col_range.end - 1;
+
+        // Clean wide-char pairs straddling the band edges in every affected
+        // row BEFORE any copy/clear.
+        for row_idx in row_range.clone() {
+            if left + 1 < self.cols {
+                self.clear_wide_char_at(row_idx, left);
+            }
+            if right < self.cols {
+                self.clear_wide_char_at(row_idx, right);
+            }
+        }
 
         // Copy cells downward within the column range (iterate in reverse
         // to avoid overwriting source data).
@@ -291,7 +375,10 @@ impl Grid {
             for col in col_range.clone() {
                 dst_row[Column(col)] = src_row[Column(col)].clone();
             }
-            dst_row.set_occ(dst_row.cols());
+            if dst_row.occ() < right + 1 && !src_row[Column(right)].is_empty() {
+                let new_occ = dst_row.occ().max(right + 1).min(dst_row.cols());
+                dst_row.set_occ(new_occ);
+            }
         }
 
         // Clear the top `count` rows' column range.
@@ -300,7 +387,11 @@ impl Grid {
             for col in col_range.clone() {
                 row[Column(col)].reset(&template);
             }
-            row.set_occ(row.cols());
+            if !template.is_empty() {
+                let cols = row.cols();
+                let new_occ = row.occ().max(right + 1).min(cols);
+                row.set_occ(new_occ);
+            }
         }
 
         self.dirty.mark_range(row_range);

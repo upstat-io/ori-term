@@ -234,13 +234,19 @@ impl Grid {
         }
     }
 
-    /// DECSC: save cursor position and template.
+    /// DECSC: save cursor position, template, and left/right margins.
+    ///
+    /// Per DEC VT420 §5.9.3, DECSC saves the active position AND the
+    /// left/right margins. The margin values are saved here (Grid state);
+    /// the DECLRMM mode flag is saved at the `Term` layer alongside
+    /// charset and origin-mode flags (Term state).
     pub fn save_cursor(&mut self) {
         self.saved_cursor = Some(self.cursor.clone());
+        self.saved_margins = Some((self.left_margin, self.right_margin));
     }
 
-    /// DECRC: restore cursor from saved state, or reset to origin if
-    /// nothing was saved.
+    /// DECRC: restore cursor (and margins) from saved state, or reset
+    /// to origin if nothing was saved.
     pub fn restore_cursor(&mut self) {
         let old_line = self.cursor.line();
         self.dirty.mark(old_line);
@@ -248,6 +254,9 @@ impl Grid {
             self.cursor = saved.clone();
         } else {
             self.cursor = super::cursor::Cursor::new();
+        }
+        if let Some((left, right)) = self.saved_margins {
+            self.set_left_right_margins(left, right);
         }
         self.dirty.mark(self.cursor.line());
     }

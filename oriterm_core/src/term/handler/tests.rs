@@ -5964,6 +5964,60 @@ fn csi_s_with_params_mode_69_off_is_noop() {
     );
 }
 
+/// Regression (TPR-08-002-codex-r9): `CSI 0;0 s` has TWO explicit params
+/// (a semicolon was parsed) and must be treated as DECSLRM regardless of
+/// parameter values. With mode 69 OFF, this must be a no-op (like any
+/// parameterized DECSLRM when DECLRMM is inactive), NOT save cursor.
+///
+/// Before the fix, `has_params` was computed from parameter VALUES only
+/// (`left != 0 || right != 0`), so `CSI 0;0 s` with all-zero values was
+/// collapsed into the save-cursor branch — a behavioral divergence from
+/// WezTerm/Ghostty for a legal DECSLRM default-request sequence.
+#[test]
+fn csi_s_zero_zero_params_mode_69_off_is_noop_not_save_cursor() {
+    let mut t = term();
+    // DECSC explicitly so we can tell whether `CSI 0;0 s` overwrote it.
+    feed(&mut t, b"\x1b[4;8H"); // cursor at (3, 7)
+    feed(&mut t, b"\x1b7"); // DECSC
+    assert_eq!(t.grid().cursor().line(), 3);
+    // Mode 69 is OFF by default. `CSI 0;0 s` has params (semicolon seen)
+    // → must route to DECSLRM → must be a no-op (mode 69 inactive).
+    feed(&mut t, b"\x1b[0;0s");
+    // Margins unchanged (still full width).
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI 0;0 s with mode 69 OFF must be a no-op",
+    );
+    // Cursor saved-state unchanged — DECRC should restore the DECSC save,
+    // not a save cursor triggered spuriously by `CSI 0;0 s`.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert_eq!(
+        t.grid().cursor().line(),
+        3,
+        "DECRC should restore DECSC save; CSI 0;0 s must not overwrite the save slot",
+    );
+}
+
+/// Regression (TPR-08-002-codex-r9): `CSI 0;0 s` with mode 69 ON is
+/// treated as DECSLRM with explicit default values, which per DEC STD
+/// 070 resets margins to full width.
+#[test]
+fn csi_s_zero_zero_params_mode_69_on_resets_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    // Explicit defaults: left=1 (1-based) = 0 (0-based), right=cols.
+    // VT `0` in DECSLRM means "use default" per DEC STD 070 §4.6.10.
+    feed(&mut t, b"\x1b[0;0s");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI 0;0 s with mode 69 ON should reset margins to full width",
+    );
+}
+
 // --- Save/restore margin state (§08.5c) ---
 
 #[test]

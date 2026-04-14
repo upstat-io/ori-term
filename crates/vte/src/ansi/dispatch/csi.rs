@@ -241,12 +241,22 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
         ('s', []) => {
             // CSI s / DECSLRM ambiguity: pass params to handler which
-            // knows whether mode 69 (DECLRMM) is active. VTE always
-            // pushes at least one default-0 param, so check values to
-            // detect "effectively no params" (both zero = implicit default).
+            // knows whether mode 69 (DECLRMM) is active.
+            //
+            // VTE always pushes at least one default-0 param before CSI
+            // dispatch (see `action_csi_dispatch` in lib.rs), so
+            // `params.is_empty()` is never true. To distinguish
+            // explicit-params from no-params, use BOTH arity (a semicolon
+            // was seen → `params.len() > 1`) AND non-default values (at
+            // least one explicit non-zero param). This correctly treats
+            // `CSI 0;0 s` as DECSLRM (has-params) while still treating
+            // `CSI s` as zero-params. `CSI 0 s` is indistinguishable
+            // from `CSI s` at the parser level, and both mean "use
+            // defaults" per ECMA-48 §5.4.2.
+            let arity = params.len();
             let left = next_param_or(0);
             let right = next_param_or(0);
-            let has_params = left != 0 || right != 0;
+            let has_params = arity > 1 || left != 0;
             handler.decslrm_or_save_cursor(has_params, left, right);
         },
         ('s', [b'?']) => {

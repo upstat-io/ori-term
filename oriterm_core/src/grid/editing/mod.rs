@@ -247,6 +247,14 @@ impl Grid {
             return;
         }
 
+        // DECLRMM constraint: when margins are active, ICH must be a no-op
+        // if the cursor is outside the margin band (per ECMA-48 §8.3.64 and
+        // WezTerm/Ghostty behavior). Operating on cells outside the band
+        // would violate the margin invariant.
+        if self.has_horizontal_margins() && (col < self.left_margin || col > self.right_margin) {
+            return;
+        }
+
         // Right boundary: right_margin + 1 when margins active, else cols.
         let right_bound = if self.has_horizontal_margins() {
             (self.right_margin + 1).min(cols)
@@ -323,6 +331,13 @@ impl Grid {
         let template = Cell::from(self.cursor.template.bg);
 
         if col >= cols {
+            return;
+        }
+
+        // DECLRMM constraint: when margins are active, DCH must be a no-op
+        // if the cursor is outside the margin band. Operating on cells
+        // outside the band would violate the margin invariant.
+        if self.has_horizontal_margins() && (col < self.left_margin || col > self.right_margin) {
             return;
         }
 
