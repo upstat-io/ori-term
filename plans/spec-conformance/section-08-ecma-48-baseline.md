@@ -2,7 +2,7 @@
 section: "08"
 title: "ECMA-48 Baseline (absorbs in-flight tack-conformance work)"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Drive the row subset of catalog/{ecma-48,xterm-ctlseqs,dec-private-modes,osc}.md that the existing tack-conformance work covers from `implemented-unverified` to `verified`, populate the legacy tack mapping table, and add new baseline rows for gaps tack didn't cover (DECLRMM full mode plumbing + grid enforcement, REP edge cases, 8-bit C1 controls, ISO 8613-6 SGR colon forms)."
 success_criteria:
   - "Every row in `catalog/ecma-48.md` covered by tack-conformance section 05 (test menu) is `verified` (uses the spec_chain harness from section 04)"
@@ -17,7 +17,7 @@ success_criteria:
   - "**Mixed separator negative pin documented**: `38:2::255;128;64` (mixed colon+semicolon) behavior is documented as unsupported with a negative-pin test asserting the failure mode"
   - "**Empty subparameter negative pin documented**: `::` vs `:0:` indistinguishability at dispatch time is documented with a negative-pin test"
   - "**BSU/ESU 7-bit only acknowledged**: sync-update path (`BSU_CSI`/`ESU_CSI` in `crates/vte/src/ansi/mod.rs:47-50`) uses 7-bit CSI only; if 8-bit C1 routing is added globally this path stays 7-bit-only; documented with a NOTE pin"
-  - "**All remaining Section-08-owned catalog rows verified**: SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM — each has a spec_chain test and its catalog row is `verified`"
+  - "**All 14 remaining Section-08-owned catalog rows verified**: SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR — each has a spec_chain test and its catalog row is `verified`"
   - "`plans/spec-conformance/catalog/_legacy-tack-mapping.md` is populated: every catalog row driven to `verified` in this section has a row in the mapping table linking it to the legacy tack section that originally covered it"
   - "All existing teseq tests pass without modification"
   - "All existing tack tests pass without modification"
@@ -113,7 +113,7 @@ sections:
 
 The phrase "convert tack scenario X to a spec_chain test" in 08.1/08.2 has a precise meaning. Follow these rules exactly:
 
-1. **Source bytes**: The bytes fed to the `SpecHarness` come from the tack scenario's **FIXTURE/TRANSCRIPT** (the raw PTY input captured for that scenario), NOT from the scenario's rendered snapshot or grid-text expectation. Look in `crates/oriterm_test_support/src/tack_framework/scenarios/<family>/` for a `mod.rs` containing the fixture byte sequences the scenario feeds. If the scenario is parameterized (e.g. multiple cases in one file), emit one spec_chain test per parameterized case.
+1. **Source bytes**: The bytes fed to the `SpecHarness` come from the tack scenario's **FIXTURE/TRANSCRIPT** (the raw PTY input captured for that scenario), NOT from the scenario's rendered snapshot or grid-text expectation. Look in `crates/oriterm_test_support/src/tack_framework/scenarios/<family>/` — each scenario family has a `mod.rs` with constants, a `tests.rs` with test functions, and potentially fixture/transcript data embedded as byte literals or loaded from files. Read the scenario's test function to identify the exact byte sequence it feeds to the PTY. If the raw bytes are not directly available as a constant, derive them from the test's `PtySession::write()` / `session.send()` calls. If the scenario is parameterized (e.g. multiple cases in one file), emit one spec_chain test per parameterized case.
 2. **One tack scenario maps to one or more catalog rows**: A single tack scenario may exercise multiple catalog rows (e.g. the `status_reports_inventory` scenario covers DA1 + DA2 + DA3 + DSR). Each exercised row gets its own spec_chain test — do NOT bundle multiple rows into one test. The per-row granularity is required so the citation scanner can cross-check each row independently.
 3. **Mapping record**: Every converted row gets a row in `plans/spec-conformance/catalog/_legacy-tack-mapping.md` with the catalog row ID, the originating tack scenario path, and a `converted` status marker. The mapping file is the permanent audit trail.
 4. **Assertion port**: If the tack scenario asserted against grid text (e.g. `assert_grid_line(...)`), the spec_chain test ports that assertion into the `StateExpectation` apex. If the tack scenario asserted against emitted events (e.g. `assert_event("ClipboardLoad")`), the spec_chain test ports that into the `EffectExpectation` apex via `PtyEffect::Write`, `HostEffect::*`, or `HostRequest::*` as appropriate (see Section 03 for the Effect type family).
@@ -168,6 +168,7 @@ Tack section 06 (TOOLS_MENU_INVENTORY) covers ANSI status reports (DA1/DA2/DA3, 
   3. Update the catalog row's verification status
   4. Add a row to `_legacy-tack-mapping.md`
 - [ ] **Validation**: every tack section 06 scenario has a corresponding spec_chain test (tack section 06 is fully complete — all subsections 06.0-06.N are landed).
+- [ ] **OSC row ownership audit**: After converting all tack section 05/06 scenarios, audit which basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) now have spec_chain coverage from the conversion. Any rows NOT covered by tack scenarios remain owned by Section 10 (OSC Suite) — update catalog notes if needed to clarify ownership.
 - [ ] **TPR checkpoint** — `/tpr-review` covering 08.1-08.2 (tack absorption work). Catches conversion errors before the gap-fix subsections proceed.
 
 ---
@@ -414,7 +415,7 @@ ECMA-48 sect.5.4.2 allows subparameters separated by `:` (colon) in addition to 
 
 **File(s):** Various handler files in `oriterm_core/src/term/handler/`, `crates/vte/src/ansi/dispatch/csi.rs`, sibling tests, catalog files
 
-The catalog assigns 11 additional rows to Section 08 that have `status: missing` and are not covered by any other subsection. These must be implemented/verified or explicitly rehomed before the section can be marked complete.
+The catalog assigns 14 additional rows to Section 08 (11 in `catalog/ecma-48.md` + 3 in `catalog/xterm-ctlseqs.md`) that have `status: missing` or `stub` and are not covered by other subsections. These must be implemented/verified before the section can be marked complete.
 
 **SGR rows (5):**
 - [ ] `ECMA48-SGR-53` — Overlined. Verify `oriterm_core` handles SGR 53 (set overline) and SGR 55 (reset overline). Add spec_chain test. Update catalog row to `verified`.
@@ -504,9 +505,9 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [ ] **Matrix dimensions documented**:
   - Tack conversion: tack scenario x catalog row x verification rung
   - DECLRMM mode plumbing: mode operation (set/reset/query) x sync-point (flag/handler/reporting)
-  - DECLRMM grid enforcement: cursor operation (CUF/CUB/CHA/CR/CUP/NEL/IND/RI/wrap/reverse-wrap) x margin state (active/inactive) x cursor position (inside/outside margin band)
-  - DECLRMM extended: edit operation (IL/DL/ICH/DCH) x margin state x content-outside-margin-survives
-  - DECLRMM reset paths: reset trigger (DECRST-69/DECCOLM/RIS/DECALN/resize) x margin-cleared
+  - DECLRMM grid enforcement: cursor operation (CUF/CUB/CHA/CR/CUP/NEL/IND/RI/wrap/reverse-wrap/HT/CBT) x margin state (active/inactive) x cursor position (inside/outside margin band)
+  - DECLRMM extended: edit operation (IL/DL/ICH/DCH/SL/SR) x margin state x content-outside-margin-survives
+  - DECLRMM reset paths: reset trigger (DECRST-69/DECCOLM/RIS/DECSTR/DECALN/resize) x margin-cleared
   - CSI s ambiguity: form (zero-param/with-params) x mode 69 state (on/off)
   - C1 controls: C1 byte (0x90/0x98/0x9B/0x9C/0x9D/0x9E/0x9F) x context (ground/mid-sequence)
   - REP edge cases: preceding state (none/CR/wide/SGR-change/at-margin) x count (0/1/N)
