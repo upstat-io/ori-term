@@ -46,7 +46,7 @@ sections:
     status: complete
   - id: "08.5"
     title: "DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)"
-    status: in-progress
+    status: complete
   - id: "08.6"
     title: "Implement 8-bit C1 control detection"
     status: not-started
@@ -581,6 +581,10 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   Resolved: Fixed on 2026-04-14. Renamed the 08.5 subsection across four surfaces (frontmatter `sections[].title`, the `## 08.5` heading, the 08.5 introductory paragraph, and the 08.N completion-checklist bullet) to `DECLRMM extended operations (IL/DL partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)`. The intro paragraph now explicitly states that the DECSC/DECRC scope excludes margins and DECLRMM per DEC STD 070 §5.6.1 and cross-references 08.5c for the correct contract.
 - [x] `[TPR-08-007-codex-r11][low]` `oriterm_core/src/term/handler/tests.rs:617` — `cha_col_1_lands_at_left_margin_under_decom_declrmm` was labeled in its doc comment (and in the r11 iter-1 resolution for `[TPR-08-003-codex-r11]`) as "a negative pin for the pre-fix behavior", but the pre-fix `Grid::move_to_column` margin clamp also landed `col=0` at `left_margin` — the test does not distinguish the pre-fix and post-fix code paths.
   Resolved: Fixed on 2026-04-14. Rewrote the test's doc comment to accurately describe it as a positive edge-case pin for `col=0` (which BOTH code paths resolve to `left_margin`), and to cross-reference `cha_offsets_by_left_margin_when_declrmm_on_decom_on` as the true regression guard that fails on the pre-fix clamp path (col=5 would land at col=10 pre-fix vs col=14 post-fix). The broader 6-cell DECLRMM × DECOM matrix was always the load-bearing coverage; the col=1 pin is useful as a boundary case but was over-claimed.
+
+### Round 11 iteration 4 (2026-04-14) — CLEAN PASS
+
+- **No findings.** Both codex (192s) and gemini (67s) returned `no_findings: true` on iter-4. Commit range `8808d5c5..b7245ced` verified clean across all round-11 surfaces (DECSC/DECRC scope, absolute CUP/HVP, CHA DECOM offset, headless sanitize merge, plan metadata alignment, 08.5 subsection rename, CHA col_1 test doc correction). §08.5 TPR checkpoint closed.
 
 ---
 
