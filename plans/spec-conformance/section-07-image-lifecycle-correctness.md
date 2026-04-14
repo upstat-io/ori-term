@@ -480,6 +480,14 @@ Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, 
 - [x] `[TPR-07-002-codex][low]` `oriterm_mux/src/backend/embedded/tests.rs:180` — Add provenance links to the new regression tests.
   Resolved: Fixed on 2026-04-14. Added `/// See: plans/spec-conformance/section-07-image-lifecycle-correctness.md §07.N` to all 5 new regression tests per `.claude/rules/tests.md` §Regression Discipline.
 
+**Round 14 (re-review after round 13 fixes):**
+- [x] `[TPR-07-001-codex][low]` `oriterm/src/app/cell_metrics/tests.rs:62` — Add the missing provenance link to the font-size broadcast regression test.
+  Resolved: Fixed on 2026-04-14. Added `/// See:` provenance to `font_size_change_without_grid_change_still_fires_broadcast`.
+- [x] `[TPR-07-001-gemini][low]` `oriterm/src/app/cell_metrics/mod.rs:38` — Remove unnecessary vector allocation when iterating tabs.
+  Resolved: Fixed on 2026-04-14. Replaced `let tab_ids: Vec<TabId> = session_window.tabs().to_vec()` with direct `for &tab_id in session_window.tabs()` — no borrow conflict since the helper only borrows `session` immutably.
+- [x] `[TPR-07-002-gemini][low]` `oriterm/src/app/cell_metrics/tests.rs:62` — Add missing provenance link to font_size_change_without_grid_change_still_fires_broadcast.
+  Resolved: Same fix as [TPR-07-001-codex] (agreement).
+
 ---
 
 ## 07.N Completion Checklist
