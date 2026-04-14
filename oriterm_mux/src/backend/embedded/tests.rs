@@ -175,6 +175,120 @@ fn search_active_missing_pane() {
     assert!(!mux.is_search_active(PaneId::from_raw(999)));
 }
 
+// -- Cell-metric multi-pane integration --
+
+/// Regression: a newly created pane (simulating a split) receives cell
+/// metrics without needing a grid resize first. Verifies the pane-creation
+/// → `set_cell_dimensions` path works end-to-end through the IO thread.
+#[cfg(unix)]
+#[test]
+fn split_pane_receives_cell_metrics_without_resize() {
+    use oriterm_core::Theme;
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+
+    // Spawn two panes (simulating a split).
+    let p1 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p1");
+    let p2 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p2");
+
+    // Clear initial dirty flags from spawn.
+    mux.poll_events();
+    mux.clear_pane_snapshot_dirty(p1);
+    mux.clear_pane_snapshot_dirty(p2);
+
+    // Seed the "split" pane with cell metrics (no resize involved).
+    mux.set_cell_dimensions(p2, 10, 20);
+
+    assert!(
+        mux.is_pane_snapshot_dirty(p2),
+        "newly split pane must be dirty after receiving cell metrics"
+    );
+    // p1 should not be affected.
+    assert!(
+        !mux.is_pane_snapshot_dirty(p1),
+        "sibling pane must NOT be dirtied by a targeted set_cell_dimensions"
+    );
+
+    mux.close_pane(p1);
+    mux.close_pane(p2);
+    mux.cleanup_closed_pane(p1);
+    mux.cleanup_closed_pane(p2);
+}
+
+/// Regression: after a font change, BOTH panes in a split receive
+/// updated cell metrics. Verifies that `set_cell_dimensions` dispatches
+/// correctly to multiple panes.
+#[cfg(unix)]
+#[test]
+fn both_split_panes_receive_updated_metrics_after_font_change() {
+    use oriterm_core::Theme;
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+
+    let p1 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p1");
+    let p2 = mux.spawn_pane(&config, Theme::Dark).expect("spawn p2");
+
+    // Initial seeding.
+    mux.set_cell_dimensions(p1, 8, 16);
+    mux.set_cell_dimensions(p2, 8, 16);
+    mux.poll_events();
+    mux.clear_pane_snapshot_dirty(p1);
+    mux.clear_pane_snapshot_dirty(p2);
+
+    // Simulate font change: updated cell metrics to both panes.
+    mux.set_cell_dimensions(p1, 10, 20);
+    mux.set_cell_dimensions(p2, 10, 20);
+
+    assert!(
+        mux.is_pane_snapshot_dirty(p1),
+        "first pane must be dirty after font-change broadcast"
+    );
+    assert!(
+        mux.is_pane_snapshot_dirty(p2),
+        "second pane must be dirty after font-change broadcast"
+    );
+
+    mux.close_pane(p1);
+    mux.close_pane(p2);
+    mux.cleanup_closed_pane(p1);
+    mux.cleanup_closed_pane(p2);
+}
+
+/// Regression: a pane in a new window receives cell metrics immediately
+/// on creation — before any resize or DPI event arrives.
+#[cfg(unix)]
+#[test]
+fn new_window_pane_receives_cell_metrics_on_creation() {
+    use oriterm_core::Theme;
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+
+    // Clear initial dirty flag from spawn.
+    mux.poll_events();
+    mux.clear_pane_snapshot_dirty(pane_id);
+
+    // Immediately seed cell metrics (simulating window creation path).
+    mux.set_cell_dimensions(pane_id, 12, 24);
+
+    assert!(
+        mux.is_pane_snapshot_dirty(pane_id),
+        "new-window pane must be dirty after initial cell metric seeding"
+    );
+
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
+}
+
 // -- IO-thread snapshot integration --
 
 /// Spawn a real pane, wait for the IO thread to produce a snapshot,

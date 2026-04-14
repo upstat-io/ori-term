@@ -47,6 +47,20 @@ fn negative_pin_degenerate_dims_short_circuit() {
     assert!(!cell_metric_broadcast_needed(Some((1, 1)), (1, 1)));
 }
 
+/// Regression: a font-size change that does NOT alter grid cols/rows
+/// must still trigger a cell-metric broadcast. `sync_grid_layout` sends
+/// cell metrics unconditionally — this test pins that the decision logic
+/// fires when only cell pixel dims change (grid dims held constant).
+#[test]
+fn font_size_change_without_grid_change_still_fires_broadcast() {
+    // Simulate: grid stays at 80x24, but font changed 8x16 → 10x20.
+    let prior = Some((8, 16));
+    assert!(
+        cell_metric_broadcast_needed(prior, (10, 20)),
+        "cell metric change (font-size change) must fire even when grid cols/rows are unchanged"
+    );
+}
+
 // ── try_claim_broadcast: decision + state update fused ────────────
 
 /// First broadcast (cache is None) claims the slot AND updates the cache.

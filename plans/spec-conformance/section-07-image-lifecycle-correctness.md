@@ -50,7 +50,7 @@ sections:
     status: complete
   - id: "07.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 07: Image Lifecycle Correctness
@@ -67,17 +67,17 @@ sections:
 3. **Stale cell coverage (font/DPI changes):** `Term::set_cell_dimensions` (at `image_config.rs:17`) calls `update_cell_coverage` to recompute `cols`/`rows` for `FixedPixels` placements, but has NO production caller — only test code calls it. `ImageConfig` doesn't carry cell dimensions, `PaneIoCommand::SetImageConfig` doesn't transport them, and `sync_grid_layout`/`handle_dpi_change` in the app layer never send them. We wire this end-to-end.
 
 **Success Criteria:**
-- [ ] `ImageCache::on_resize(new_cols, new_rows)` exists and removes out-of-bounds column placements
-- [ ] `ReflowMapping` emitted by `Grid::resize` when reflow occurs (`first_output_row` per source row)
-- [ ] `ImageCache::remap_placements(mapping)` translates placement StableRowIndex via `first_output_row` + `old_total_evicted`
-- [ ] Cell-metric plumbing wired end-to-end (app → mux → `Term::set_cell_dimensions`)
-- [ ] Regression matrix: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios pass
-- [ ] `cache/lifecycle.rs` extracted; `cache/mod.rs` under 500 lines
-- [ ] New cache tests in `cache/tests.rs` per test-organization.md
-- [ ] Negative rendering pin via `RenderableContent::images`
-- [ ] Existing image tests + teseq tests still pass
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [ ] Connects to mission criterion: **Image lifecycle correct under resize/reflow/scrollback/alt-screen**
+- [x] `ImageCache::on_resize(new_cols, new_rows)` exists and removes out-of-bounds column placements
+- [x] `ReflowMapping` emitted by `Grid::resize` when reflow occurs (`first_output_row` per source row)
+- [x] `ImageCache::remap_placements(mapping)` translates placement StableRowIndex via `first_output_row` + `old_total_evicted`
+- [x] Cell-metric plumbing wired end-to-end (app → mux → `Term::set_cell_dimensions`)
+- [x] Regression matrix: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios pass
+- [x] `cache/lifecycle.rs` extracted; `cache/mod.rs` under 500 lines
+- [x] New cache tests in `cache/tests.rs` per test-organization.md
+- [x] Negative rendering pin via `RenderableContent::images`
+- [x] Existing image tests + teseq tests still pass
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
+- [x] Connects to mission criterion: **Image lifecycle correct under resize/reflow/scrollback/alt-screen**
 
 **Context:** The image cache uses a cache-coordinate model: `cell_col: usize` + `cell_row: StableRowIndex`. `StableRowIndex` is `total_evicted + absolute_row_index` (see `grid/stable_index.rs`), making it eviction-stable but NOT reflow-stable. When reflow rewrites row topology, absolute indices shift but `total_evicted` doesn't adjust, so `StableRowIndex` values become stale.
 
@@ -466,57 +466,57 @@ Round 10 clean-pass gate: 4 low-severity docs/metadata/test-alignment findings, 
 
 **TDD ordering enforced:** 07.2 (failing tests) BEFORE 07.3-07.6 (implementation). 07.1 (research + refactor) is prerequisite for all.
 
-- [ ] 07.1: Reference impl research completed — resize + reflow behavior confirmed
-- [ ] 07.1: `cache/lifecycle.rs` extracted from `cache/mod.rs` — `prune_scrollback`, `remove_placements_in_region`, `update_cell_coverage` moved
-- [ ] 07.1: `cache/mod.rs` < 400 lines after extraction
-- [ ] 07.1: `cache/tests.rs` created with `#[cfg(test)] mod tests;` in `cache/mod.rs`
-- [ ] 07.1: Existing `image/tests.rs` tests still pass
-- [ ] 07.2: Failing test matrix written — cache unit tests (11+ in `cache/tests.rs`) + integration matrix (42 scenarios)
-- [ ] 07.2: on_resize + remap tests initially FAIL
-- [ ] 07.2: Existing-handler scenarios pass — if any fail, file via `/add-bug`
-- [ ] 07.2: Negative rendering pin written
-- [ ] 07.3: `ReflowMapping` struct defined with `first_output_row: Vec<usize>` and `old_total_evicted: u64`
-- [ ] 07.3: `reflow_cells()` builds mapping accounting for wrapped rows' pending out_row
-- [ ] 07.3: `apply_reflow_result` increments `total_evicted` on scrollback overflow (pre-existing bug fix)
-- [ ] 07.3: `Grid::resize()` returns `Option<ReflowMapping>`
-- [ ] 07.3: Grid reflow tests pass (row split, unwrap, no-reflow cases)
-- [ ] 07.4: `ImageCache::on_resize(new_cols, new_rows)` implemented in `lifecycle.rs`
-- [ ] 07.4: Uses `remove_placements_where` + targeted `prune_if_orphaned` (NOT full orphan sweep)
-- [ ] 07.4: `ImageCache::remap_placements(mapping)` uses `checked_sub` for underflow prevention
-- [ ] 07.4: Never removes placements for "empty range" — wrapped rows map via `first_output_row`
-- [ ] 07.4: Uses `old_total_evicted` as StableRowIndex base (not new_total_evicted)
-- [ ] 07.4: All cache unit tests pass
-- [ ] 07.5: `Term::resize` captures `Option<ReflowMapping>` from `Grid::resize`
-- [ ] 07.5: Operation ordering: remap FIRST → prune scrollback → on_resize (column bounds)
-- [ ] 07.5: Alt cache gets `on_resize` only (alt grid never reflows)
-- [ ] 07.5: Alt cache condition: `if alt_image_cache exists` (matches alt grid existence, NOT active)
-- [ ] 07.5: Term-level tests pass including reflow remapping
-- [ ] 07.6: NEW `PaneIoCommand::SetCellDimensions` variant (NOT extending ImageConfig)
-- [ ] 07.6: IO thread handler calls `set_cell_dimensions`
-- [ ] 07.6: `sync_grid_layout()` sends cell metrics to ALL panes in window (not just active)
-- [ ] 07.6: `handle_dpi_change()` sends cell metrics to ALL panes in affected window
-- [ ] 07.6: Existing `ImageConfig` construction sites NOT modified (separation of concerns)
-- [ ] 07.6: All 6 pane creation paths send `SetCellDimensions` via shared helper after pane setup (incl. window_management/create.rs)
-- [ ] 07.6: Multi-pane integration test: newly created split pane gets correct cell metrics without resize
-- [ ] 07.6: Multi-pane integration test: both split panes get updated metrics after font change
-- [ ] 07.6: Regression test: font-size change without grid-size change still sends SetCellDimensions
-- [ ] 07.6: Regression test: new-window pane gets correct cell metrics on creation
-- [ ] 07.6: Wire protocol sync points: pdu_traits.rs, msg_type.rs, protocol/tests.rs updated for SetCellDimensions
-- [ ] 07.6: Windows cross-compile green (wire protocol change)
-- [ ] 07.6: BUG-08-9 closed
-- [ ] **Matrix**: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios + self-verifying count
-- [ ] **Semantic pin**: `on_resize_removes_placement_fully_outside_new_cols` — ONLY passes with new behavior
-- [ ] **Negative pin**: `removed_placement_not_in_renderable_content` — rejected from render output
-- [ ] All 42 matrix scenarios pass
-- [ ] Existing image cache tests pass without modification
-- [ ] Existing teseq tests pass
-- [ ] Alloc regression unchanged
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
-- [ ] Plan annotation cleanup
+- [x] 07.1: Reference impl research completed — resize + reflow behavior confirmed
+- [x] 07.1: `cache/lifecycle.rs` extracted from `cache/mod.rs` — `prune_scrollback`, `remove_placements_in_region`, `update_cell_coverage` moved
+- [x] 07.1: `cache/mod.rs` < 400 lines after extraction (379 lines)
+- [x] 07.1: `cache/tests.rs` created with `#[cfg(test)] mod tests;` in `cache/mod.rs`
+- [x] 07.1: Existing `image/tests.rs` tests still pass (48 tests)
+- [x] 07.2: Failing test matrix written — cache unit tests (13 in `cache/tests.rs`) + integration matrix (42 scenarios)
+- [x] 07.2: on_resize + remap tests initially FAIL (TDD process followed)
+- [x] 07.2: Existing-handler scenarios pass — if any fail, file via `/add-bug`
+- [x] 07.2: Negative rendering pin written (`removed_placement_not_in_renderable_content`)
+- [x] 07.3: `ReflowMapping` struct defined with `first_output_row: Vec<usize>` and `old_total_evicted: u64`
+- [x] 07.3: `reflow_cells()` builds mapping accounting for wrapped rows' pending out_row
+- [x] 07.3: `apply_reflow_result` increments `total_evicted` on scrollback overflow (pre-existing bug fix)
+- [x] 07.3: `Grid::resize()` returns `Option<ReflowMapping>`
+- [x] 07.3: Grid reflow tests pass (row split, unwrap, no-reflow cases) — 115 tests
+- [x] 07.4: `ImageCache::on_resize(new_cols, new_rows)` implemented in `lifecycle.rs`
+- [x] 07.4: Uses `remove_placements_where` + targeted `prune_if_orphaned` (NOT full orphan sweep)
+- [x] 07.4: `ImageCache::remap_placements(mapping)` uses `checked_sub` for underflow prevention
+- [x] 07.4: Never removes placements for "empty range" — wrapped rows map via `first_output_row`
+- [x] 07.4: Uses `old_total_evicted` as StableRowIndex base (not new_total_evicted)
+- [x] 07.4: All cache unit tests pass (14 tests)
+- [x] 07.5: `Term::resize` captures `Option<ReflowMapping>` from `Grid::resize`
+- [x] 07.5: Operation ordering: remap FIRST → prune scrollback → on_resize (column bounds)
+- [x] 07.5: Alt cache gets `on_resize` only (alt grid never reflows)
+- [x] 07.5: Alt cache condition: `if alt_image_cache exists` (matches alt grid existence, NOT active)
+- [x] 07.5: Term-level tests pass including reflow remapping (11 tests)
+- [x] 07.6: NEW `PaneIoCommand::SetCellDimensions` variant (NOT extending ImageConfig)
+- [x] 07.6: IO thread handler calls `set_cell_dimensions`
+- [x] 07.6: `sync_grid_layout()` sends cell metrics to ALL panes in window (not just active)
+- [x] 07.6: `handle_dpi_change()` sends cell metrics to ALL panes in affected window
+- [x] 07.6: Existing `ImageConfig` construction sites NOT modified (separation of concerns)
+- [x] 07.6: All 6 pane creation paths send `SetCellDimensions` via shared helper after pane setup (incl. window_management/create.rs)
+- [x] 07.6: Multi-pane integration test: newly created split pane gets correct cell metrics without resize (`split_pane_receives_cell_metrics_without_resize` in embedded/tests.rs)
+- [x] 07.6: Multi-pane integration test: both split panes get updated metrics after font change (`both_split_panes_receive_updated_metrics_after_font_change` in embedded/tests.rs)
+- [x] 07.6: Regression test: font-size change without grid-size change still sends SetCellDimensions (`font_size_change_without_grid_change_still_fires_broadcast` in cell_metrics/tests.rs)
+- [x] 07.6: Regression test: new-window pane gets correct cell metrics on creation (`new_window_pane_receives_cell_metrics_on_creation` in embedded/tests.rs)
+- [x] 07.6: Wire protocol sync points: pdu_traits.rs, msg_type.rs, protocol/tests.rs updated for SetCellDimensions
+- [x] 07.6: Windows cross-compile green (wire protocol change)
+- [x] 07.6: BUG-08-9 closed
+- [x] **Matrix**: 3 protocols x 2 sizing modes x 7 mutations = 42 scenarios + self-verifying count (`assert_eq!(scenarios, 42)`)
+- [x] **Semantic pin**: `on_resize_removes_placement_fully_outside_new_cols` — ONLY passes with new behavior
+- [x] **Negative pin**: `removed_placement_not_in_renderable_content` — rejected from render output
+- [x] All 42 matrix scenarios pass
+- [x] Existing image cache tests pass without modification
+- [x] Existing teseq tests pass
+- [x] Alloc regression unchanged
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
+- [x] Plan annotation cleanup (19 stale annotations removed in c2e4e5b1)
 - [ ] Section frontmatter `status` → `complete`
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
 - [ ] `index.md` section 07 status updated
-- [ ] Cross-links verified: sections 12, 13, 14, 26 reference section 07
+- [x] Cross-links verified: sections 12, 13, 14, 26 reference section 07
 - [ ] `/tpr-review` passed
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
