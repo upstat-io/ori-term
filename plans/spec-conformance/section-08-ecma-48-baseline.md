@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "08.2"
     title: "Convert tack section 06 scenarios to spec verification chains"
-    status: not-started
+    status: in-progress
   - id: "08.3"
     title: "DECLRMM mode plumbing (VTE types + TermMode + mode reporting)"
     status: not-started
@@ -164,14 +164,16 @@ For each scenario family in `plans/tack-conformance/section-05-test-menu-scenari
 
 Tack section 06 (TOOLS_MENU_INVENTORY) covers ANSI status reports (DA1/DA2/DA3, DSR, DECRQM), SGR modes, character set banks, ENQ/ACK. The scenario families live under `crates/oriterm_test_support/src/tack_framework/scenarios/` in: `tools_menu_inventory/`, `status_reports_inventory/`, `status_reports/`, `sgr_modes/`, `character_sets/`, `enq_ack/`.
 
-- [ ] For each tack section 06 scenario family:
+- [x] For each tack section 06 scenario family:
   1. Identify the catalog row(s)
   2. Write a `spec_chain` test
   3. Update the catalog row's verification status
   4. Add a row to `_legacy-tack-mapping.md`
-- [ ] **Validation**: every tack section 06 scenario has a corresponding spec_chain test (tack section 06 is fully complete — all subsections 06.0-06.N are landed).
-- [ ] **OSC row ownership audit**: After converting all tack section 05/06 scenarios, audit which basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) now have spec_chain coverage from the conversion. Any rows NOT covered by tack scenarios remain owned by Section 10 (OSC Suite) — update catalog notes if needed to clarify ownership.
+- [x] **Validation**: every tack section 06 scenario has a corresponding spec_chain test (tack section 06 is fully complete — all subsections 06.0-06.N are landed).
+- [x] **OSC row ownership audit**: After converting all tack section 05/06 scenarios, audit which basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) now have spec_chain coverage from the conversion. Any rows NOT covered by tack scenarios remain owned by Section 10 (OSC Suite) — update catalog notes if needed to clarify ownership.
 - [ ] **TPR checkpoint** — `/tpr-review` covering 08.1-08.2 (tack absorption work). Catches conversion errors before the gap-fix subsections proceed.
+
+**Implementation notes (2026-04-14):** Six scenario families (`tools_menu_inventory`, `status_reports_inventory`, `status_reports`, `sgr_modes`, `character_sets`, `enq_ack`) → six spec_chain modules under `oriterm_core/tests/spec_chain/baseline/tack_section_06/`. Twelve new catalog rows driven to `verified`: `ECMA48-CSI-DA2`, `ECMA48-CSI-DA3`, `ECMA48-CSI-DSR-5`, `ECMA48-CSI-DSR-6` (status_reports_inventory — DA1 already covered by pilot); `ECMA48-SGR-0`, `ECMA48-SGR-1`, `ECMA48-SGR-4`, `ECMA48-SGR-7` (sgr_modes — four most-distinctive modes on tack's 80-mode grid; remaining 76 owned by `tack_cap_xcheck`); `ECMA48-ESC-0`, `ECMA48-ESC-B`, `ECMA48-C0-SO`, `ECMA48-C0-SI` (character_sets — SCS designation + SO/SI bank switching + preview-pane end-to-end render). Three families contribute zero new rows: `tools_menu_inventory` (inventory sentinel, no protocol bytes), `status_reports` (helper module only), `enq_ack` (blocked on BUG-08-6 — ECMA48-C0-ENQ remains `missing`). OSC row ownership audit: tack scenarios drive zero OSC rows — all basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) remain owned by Section 10. 26 new spec_chain tests, all green on host + Windows cross-compile.
 
 ---
 
