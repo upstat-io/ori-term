@@ -186,34 +186,23 @@ fn check_with_workspace_root_runs_dispatch_coverage() {
     );
 }
 
-#[test]
-fn real_catalog_passes_bootstrap_mode_check() {
-    let repo_root = std::env::var("CARGO_MANIFEST_DIR")
-        .ok()
-        .and_then(|mpd| {
-            std::path::PathBuf::from(mpd)
-                .parent()?
-                .parent()
-                .map(std::path::Path::to_path_buf)
-        })
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let catalog_dir = repo_root.join("plans/spec-conformance/catalog");
-    if !catalog_dir.exists() {
-        eprintln!(
-            "SKIP real_catalog_passes_bootstrap_mode_check: {} missing",
-            catalog_dir.display()
-        );
-        return;
-    }
-    let report = check(&catalog_dir, CheckMode::Bootstrap, None).expect("real catalog parses");
-    assert!(
-        !report.has_findings(),
-        "real catalog bootstrap check has findings: {:?}",
-        report.findings
-    );
-    assert!(report.files_scanned > 0);
-    assert!(report.rows_total > 0);
-}
+// The original `real_catalog_passes_bootstrap_mode_check` test was a
+// Section 01 gate that asserted the real catalog had zero `verified`
+// rows (because bootstrap mode forbids them). The comment on
+// `CheckMode::Bootstrap` explicitly bounds its lifetime: "Used by
+// Section 01's gate until Section 04.7 freezes the schema."
+//
+// Section 04.7 froze the schema, and Section 08+ now drives rows to
+// `verified` as the verification-chain harness lands. Asserting the
+// real catalog still passes bootstrap mode is incompatible with the
+// catalog's intended evolution — it would break on every future
+// verification.
+//
+// The fixture-based `check_rejects_verified_status_in_bootstrap_mode`
+// test above still exercises the bootstrap-mode rejection API itself,
+// and `check_with_workspace_root_runs_dispatch_coverage` runs the real
+// catalog through Normal mode (the post-bootstrap mode), so the
+// real-catalog smoke coverage is preserved.
 
 // -------- Fixture helpers --------------------------------------------------
 
