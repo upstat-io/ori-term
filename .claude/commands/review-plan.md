@@ -91,7 +91,15 @@ Read file: /tmp/plan-audit-output.json
 - Auto-fixed: list what was corrected
 - Remaining findings (not auto-fixable): verbatim list with location and message — these are passed to the agent
 
-Report to the user: "Phase 1: N findings (X critical, Y major, Z minor), M auto-fixed. Running /tp-help..."
+Report to the user: "Phase 1: N findings (X critical, Y major, Z minor), M auto-fixed. Running intelligence pre-query..."
+
+### Step 3.5: CONDITIONAL — Intelligence pre-query
+
+Follow the canonical intel-summary injection protocol:
+
+@.claude/skills/dual-tpr/compose-intel-summary.md
+
+Pass results into subsequent steps as intelligence context. Report to the user: "Intelligence pre-query complete. Running /tp-help..."
 
 ### Step 4: Phase 2 — `/tp-help` Blind Spot Analysis
 

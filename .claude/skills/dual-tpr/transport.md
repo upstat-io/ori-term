@@ -50,12 +50,14 @@ Every dual-source review wrapper follows this pattern:
 ## Codex prompt preamble
 
 The codex prompt MUST include the literal keyword `envelope-only`
-somewhere in its first 500 characters. This triggers the Step 0 mode
+somewhere in its first 500 characters. For skill-dispatch modes
+(`review-work`, `review-plan`), this triggers the Step 0 mode
 branch in `.codex/skills/review-work/SKILL.md` or
 `.codex/skills/review-plan/SKILL.md` and dispatches to envelope-only
-mode.
+mode. For custom objective mode, it signals the output contract
+(raw JSON final message) even though no skill is dispatched.
 
-Recommended preamble (first line of the prompt):
+Recommended preamble for skill-dispatch modes:
 
     Run the /review-work skill in envelope-only mode. Emit the JSON
     envelope per .claude/skills/dual-tpr/findings-schema.json; do NOT
@@ -63,14 +65,20 @@ Recommended preamble (first line of the prompt):
 
 (Substitute `review-plan` for `review-work` as appropriate.)
 
+Recommended preamble for custom objective mode:
+
+    You are performing a third-party review in envelope-only mode.
+    Do NOT activate any skill. Follow these instructions directly.
+
 ## Gemini prompt preamble — EXPLICIT ACTIVATION REQUIRED
 
 Per Phase 2 empirical research, gemini skills are discovered from
 `.gemini/skills/<name>/SKILL.md` but are NOT auto-activated by
-description matching. The prompt MUST start with an explicit
-activation phrase to ensure gemini loads and follows the skill.
+description matching. For skill-dispatch modes, the prompt MUST start
+with an explicit activation phrase to ensure gemini loads and follows
+the skill.
 
-MANDATORY first line of every gemini prompt:
+MANDATORY first line for skill-dispatch modes:
 
     Activate the review-work skill and follow its instructions exactly.
 
@@ -83,7 +91,28 @@ review-plan wrapper uses the review-plan phrasing. Both literal
 strings are reference templates for wrapper implementation.)
 
 Do NOT rely on gemini noticing the skill on its own — the activation
-phrase is load-bearing and MUST be present on every invocation.
+phrase is load-bearing and MUST be present on every skill-dispatch
+invocation.
+
+For custom objective mode, the gemini prompt does NOT activate a skill.
+Instead it gives the objective directly with inline envelope instructions
+including the mandatory sentinel markers. See `tpr-review/SKILL.md`
+§"Prompt templates for custom mode" for the canonical template.
+
+## Custom Objective Mode
+
+Custom objective mode is used when `/tpr-review` is invoked with freeform
+ARGS (not `--skill review-plan` and not empty). In this mode:
+
+- Neither reviewer activates a fixed skill — the objective is given inline
+- Both reviewers still receive the grounding block (CLAUDE.md, rules files)
+- Both reviewers still emit envelopes (the schema is mode-independent)
+- The `--skill` parameter to the transport is `custom` for logging
+- The loop semantics are identical to code/plan modes — fix findings,
+  re-run until both reviewers return zero actionable findings (consensus)
+
+This enables `/tpr-review` to review ANYTHING — skills, docs, designs,
+tooling, processes — not just code or plans.
 
 ## Reviewer Hygiene Preamble (MANDATORY — gemini; recommended — codex)
 
@@ -154,20 +183,38 @@ review. Both are required.
 
 ## Mandatory Grounding Block (both reviewers)
 
-**Every reviewer prompt — codex and gemini — MUST contain a "Grounding
-— read these files FIRST" section between the activation preamble and
-the scope hint.** The grounding block is identical for both reviewers
-and lists the project rule files that scope the finding vocabulary.
+**Every reviewer prompt — codex and gemini — MUST contain a grounding
+section between the activation preamble and the scope hint.** The
+grounding block is identical for both reviewers.
 
-Canonical grounding template:
+### Dynamic Rules Brief (preferred)
+
+The grounding block is now dynamically composed via a two-step process:
+
+1. **Classify** — `scripts/rules-for-review.py` maps changed files to
+   subsystems and resolves which rule files are relevant.
+2. **Compose** — a Sonnet subagent reads the classified rule files and
+   the diff, then composes a ~200-400 line **Rules Brief** containing
+   only the specific rules, invariants, and finding vocabulary relevant
+   to this review.
+
+The Rules Brief is injected INLINE into both prompts under a
+`## Rules — these apply to this review` header. This replaces the old
+static "read these files in full" file list. Reviewers consume the
+inline content as part of the prompt — no need to go read separate files.
+
+After the inline brief, a "For full rule details, also read:" section
+lists the critical file paths from the classifier for optional deep dives.
+
+See `.claude/skills/dual-tpr/compose-rules-brief.md` for the Sonnet
+subagent prompt template. See `/tpr-review` SKILL.md Step 1.5 for
+integration into the review loop.
+
+### Static Fallback
+
+If the classifier or Sonnet agent fails, fall back to the static core:
 
     ## Grounding — read these files FIRST before reviewing
-
-    Before you look at any of the changed code, read these files in
-    full so your findings are scoped to the project's actual rules.
-    Every finding must use the finding categories and architectural
-    vocabulary defined in impl-hygiene.md (LEAK, DRIFT, GAP, WASTE,
-    EXPOSURE, BLOAT, NOTE).
 
     1. CLAUDE.md (project root)
     2. .claude/rules/impl-hygiene.md
@@ -181,14 +228,14 @@ Canonical grounding template:
        oriterm_ipc.md, oriterm.md — the live inventory can be
        discovered with `ls .claude/rules/*.md`).
 
-**Why this is load-bearing:** Without grounding, reviewers produce
+**Why grounding is load-bearing:** Without it, reviewers produce
 findings against unknown conventions — generic "this looks odd"
 noise instead of precise category-tagged findings that match the
 project's actual rules. Grounded reviewers emit findings like
 `LEAK:scattered-knowledge at dual-invoke-with-retry.sh:99`; ungrounded
 reviewers emit findings like "this function could be clearer".
 
-Wrappers that skip the grounding block should be treated as buggy
+Wrappers that skip grounding entirely should be treated as buggy
 and their envelopes treated with extra scrutiny by the consuming
 Claude instance.
 
@@ -248,8 +295,8 @@ Wrappers should:
 
 ## Wrapper loop semantics
 
-`/tpr-review` and `/review-work` use the 10-iteration find+fix+rerun
-loop. Each iteration:
+`/tpr-review` (all three modes: review-work, review-plan, custom) and
+`/review-work` use the 10-iteration find+fix+rerun loop. Each iteration:
 1. Runs the dual-source transport (both reviewers per round, max
    3 infra retries per reviewer)
 2. Claude reads the merged findings

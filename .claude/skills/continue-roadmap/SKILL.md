@@ -17,12 +17,19 @@ Resume work on the ori_term roadmap at `plans/roadmap/`, picking up where we lef
 - No args: Auto-detect first incomplete item sequentially (00 → 01 → ...)
 - `section-4`, `4`, or `modules`: Continue Section 4 (Modules)
 - Any section number or keyword: Use `plans/roadmap/index.md` to find sections by keyword
+### Examples
+
+```
+/continue-roadmap                            # Resume where you left off
+/continue-roadmap section-5                  # Focus on Section 5
+```
 
 ## Finding Sections by Topic
 
 Use `plans/roadmap/index.md` to find sections by keyword. The index contains searchable keyword clusters for each section.
 
 ---
+
 
 ## Workflow
 
@@ -212,7 +219,7 @@ After the scanner identifies the focus section, **check its frontmatter for `rev
 
 ### Step 1.9: Third Party Review Triage Gate
 
-After identifying the focus section, **check its frontmatter for `third_party_review.status: findings`**. This means an external reviewer (e.g. Codex) has recorded unresolved findings in the section's `## {NN}.R Third Party Review Findings` block.
+After identifying the focus section, **check its frontmatter for `third_party_review.status: findings`**. This means the dual-source `/tpr-review` (Codex + Gemini) has recorded unresolved findings in the section's `## {NN}.R Third Party Review Findings` block. Findings may be tagged `-codex` or `-gemini` (single-reviewer) or carry `agreement: true` (both reviewers flagged the same location/title).
 
 **If `third_party_review.status` is `findings`:**
 
@@ -309,6 +316,8 @@ git status --short
    - **Run /commit-push (Recommended)** — commit and push all pending changes before continuing
    - **Proceed anyway** — continue with a dirty working tree (user accepts the risk of mixing work)
 
+**CRITICAL: NEVER discard uncommitted changes.** Do NOT use `git checkout --`, `git restore`, `git reset --hard`, `git clean`, or ANY destructive git command to "clean up" the working tree. The user runs parallel Claude sessions — uncommitted files are active work from other sessions. If `/commit-push` would include files from other sessions, that is acceptable (dirty commit). Lost work is never acceptable. Stage only your specific files with `git add <file1> <file2>` instead of `git add -A` when other dirty files exist.
+
 **Why:** This gate runs after TPR triage (Step 1.9) so that serious bugs surfaced by third-party review are fixed before the commit prompt. Committing before TPR triage would lock in code that may need immediate changes. After TPR fixes are applied, a clean working tree ensures the next section's work is cleanly separable in git history.
 
 ### Step 2: Determine Focus Section
@@ -353,6 +362,8 @@ Example:
 
 **Planned work requirement**: A `<!-- blocked-by:X -->` tag is ONLY valid if Section X contains a concrete `- [ ]` item whose completion will resolve the blocker. Adding a `blocked-by` reference to a section that has no planned resolution work is creating an unplanned blocker — which is not allowed (see Step 2.6). If no such item exists in Section X, you must add one before tagging.
 
+**Scope relevance requirement**: A `<!-- blocked-by:X -->` tag on a close-out item (TPR, hygiene review, tooling sweep) is ONLY valid if the blocker affects the **section's own scope**. A blocker from a different subsystem, different bug fix, or different code path does NOT block the section's close-out — it blocks that other item's close-out. Before accepting any blocker on a close-out item, verify: "Does this blocker affect the code that THIS section's TPR/hygiene would review?" If not, the blocker annotation is wrong — remove it and proceed with close-out. Separate bug fixes (e.g., `fix-BUG-XX-NNN`) have their own TPR/hygiene gates in their own fix sections; their blockers do not propagate to the parent section's close-out unless the bug is in the section's own code.
+
 **No prose-only blockers**: `<!-- blocked: some description -->` without a section reference is a temporary annotation only. Step 2.6 will convert these to either (a) planned subsections in the current plan, or (b) `blocked-by:X` references pointing to concrete plan items. Prose-only blockers cannot persist across `/continue-roadmap` invocations.
 
 This ensures:
@@ -361,16 +372,49 @@ This ensures:
 - When reviewing a blocked item, `grep 'blocked-by:'` shows what prerequisite is missing
 - **Every blocker has a resolution path** — no open-ended blockers accumulate silently
 
+### Step 2.1: CONDITIONAL — Intelligence Context for Focus Section
+
+After determining the focus section in Step 2, optionally query the intelligence graph for cross-language context relevant to this section's domain. This step runs at most ONCE per section focus within the current conversation session — if the focus section hasn't changed since the last query in this session, skip (the results are still in Claude's context). No cross-session persistence is needed; a new session starts fresh.
+
+Follow the canonical intel-summary injection protocol:
+
+@.claude/skills/dual-tpr/compose-intel-summary.md
+
+**Continue-roadmap extension** (per SSOT Step F — per-section reconnaissance):
+
+1. **Extract query terms** from the focus section's frontmatter:
+   - Use the `title` field as the primary search term (always valid for `search` queries)
+   - Use the `goal` field for additional context keywords
+   - **Preset mapping is opportunistic**: `.claude/rules/intelligence.md` §Subsystem Mapping maps *file path patterns* (e.g., `crates/$1/`) to presets, not section titles. If the section title clearly maps to a subsystem (e.g., "ARC Optimization" → `ori-arc`, "Type Inference" → `ori-inference`), use the preset. Otherwise, `search "<title>"` is sufficient.
+
+2. **Skip condition**: If the section title indicates infrastructure or tooling work (e.g., contains "CLI", "Tooling", "Testing Framework", "Build System", "Documentation") rather than a compiler/language feature, skip this step — cross-compiler intelligence has low relevance for project-specific infrastructure.
+
+3. **Run domain-specific queries** on top of the SSOT base set:
+   - `scripts/intel-query.sh --human search "<title keywords>" --limit 5`
+   - If a preset was identified: `scripts/intel-query.sh --human <preset> --limit 5`
+   - If the section body contains concrete file paths or symbol names, also use `file-symbols`, `callers`/`callees`, `similar` per Step C of the SSOT.
+
+5. Hold results as "Cross-language context for Section {NN}:" — use when making design decisions within the section. Do NOT inject into every subsection prompt; reference as needed.
+
+6. **Discovery, not replacement**: Intelligence results are pointers to investigate, not authoritative claims. Before using any result to influence design decisions or plan text, verify it against the referenced source code or issue (per `.claude/rules/intelligence.md`).
+
+If unavailable or empty, skip silently. Section work proceeds normally.
+
 ### Step 2.5: Blocker Chain Resolution
 
 When the scanner shows blocked items, analyze the blocker chain:
 
 1. Read the **Blocker summary** and **Blocker chain** from scanner output
-2. Classify each blocker:
+2. **Validate blocker scope** (MANDATORY — do NOT skip). For each `<!-- blocked-by:X -->` annotation:
+   - Read the annotation's parenthetical explanation (if any)
+   - Ask: "Does blocker X affect code that THIS section's work touches?" If the blocker references a different subsystem, different bug fix, or different code path — the annotation is **scope-mismatched** and must be removed. Separate bug fixes have their own close-out gates; their blockers do not cascade to the parent section.
+   - If the annotation references "clean TPR for fix-BUG-XX-NNN" but fix-BUG-XX-NNN is in a different subsystem — the section's TPR reviews the section's code, not the bug fix's code. Remove the blocker.
+   - **NEVER accept a blocker at face value.** Always read the explanation, verify the scope, and remove invalid blockers before proceeding. Accepting a scope-mismatched blocker is how close-out gets skipped entirely.
+3. Classify each **validated** blocker:
    - **READY**: All its dependencies are `[complete]` — can start implementing now
    - **IN PROGRESS**: Section already being worked on — progress will eventually unblock
    - **WAITING**: Has incomplete dependencies — blocked itself, can't start yet
-3. Build and present a blocker tree in the summary:
+4. Build and present a blocker tree in the summary:
    ```
    Blocker Tree:
    ├─ Section 18: Const Generics [not-started] — READY (deps satisfied: 2 [complete])
@@ -466,16 +510,17 @@ Present to the user:
 - [count of blocked items, with "blocked by N sections" note]
 ```
 
-### Step 5: Ask What to Do
+### Step 5: Decide What to Do
 
-Use AskUserQuestion with options. The options depend on the blocker state:
+**Default behavior: start the next unblocked task immediately.** Do NOT ask for confirmation to proceed with each checkbox — the plan IS the approval. Execute what the plan says to do.
 
-**When there are unblocked items:**
-1. **Start next task (Recommended)** — Begin implementing the first unblocked item
-2. **Show task details** — See more context about the task (read spec, find related code)
-3. **Pick different task** — Choose a specific unblocked task from this section
-4. **Tackle a blocker** — Work on a READY blocker to unblock items (ranked by impact: most items unblocked first)
-5. **Switch sections** — Work on a different section
+**Only ask the user (via AskUserQuestion) when:**
+- ALL remaining items are blocked (no unblocked work exists) — present blocker options
+- The plan item is genuinely ambiguous (multiple valid design approaches, unclear requirements)
+- You need domain knowledge the plan doesn't provide
+- You want to switch sections (user should confirm)
+
+**When there are unblocked items:** Begin implementing the first unblocked item immediately. No menu of options needed.
 
 **When ALL remaining items are blocked:**
 1. **Resolve impediments (Recommended if any exist)** — If Step 2.6 identified fixable impediments, plan and implement them to unblock items in the current section
@@ -485,12 +530,14 @@ Use AskUserQuestion with options. The options depend on the blocker state:
 
 ### Step 5.5: Subsection Pacing
 
-**After the user chooses to start work**, ask how they want to pace the section using AskUserQuestion:
+**Before starting the first subsection**, ask how the user wants to pace the section using AskUserQuestion:
 
 1. **Full section** — Run all subsections continuously without pausing
 2. **Subsection-by-subsection (Recommended)** — Pause after completing each subsection for review before continuing to the next
 
 **Why:** This gives the user control over execution granularity. Large sections can produce significant changes — pausing between subsections allows review, course-correction, and incremental commits.
+
+**IMPORTANT: This pacing question is asked ONCE per section, not per subsection or per checkbox.** Within a subsection, execute all checkboxes autonomously without asking for confirmation. Between subsections, the pacing choice determines whether to pause or continue.
 
 **Subsection close-out is MANDATORY regardless of pacing choice.** Whether the user picked "Full section" or "Subsection-by-subsection", every subsection close-out MUST include the per-subsection `/improve-tooling` retrospective BEFORE moving to the next subsection. The pacing choice only controls whether you pause for user review — it does NOT skip the retrospective. Pacing determines who reviews; the retrospective determines whether tooling grows.
 
@@ -499,14 +546,14 @@ Use AskUserQuestion with options. The options depend on the blocker state:
 1. All subsection tasks are `[x]` and the subsection's behavior is verified.
 2. Update the subsection's `status` in section frontmatter to `complete`.
 3. **Run `/improve-tooling` retrospectively on THIS subsection** — invoke the skill in per-subsection mode (see `.claude/skills/improve-tooling/SKILL.md` "Per-Subsection Workflow"). Reflect on this subsection's debugging journey: which `diagnostics/` scripts you ran, where you added `dbg!`/`tracing` calls, where output was hard to interpret, where test failures gave unhelpful messages, where you ran the same command sequence repeatedly. Forward-look: what tool/log/diagnostic would shorten the next regression in this code path by 10 minutes? Implement every accepted improvement NOW (zero deferral). Commit each via SEPARATE `/commit-push` using a valid conventional-commit type (e.g., `build(diagnostics): add X to Y.sh — surfaced by {plan}/section-{NN}.M retrospective` — use `build` for dev/diagnostic scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs; do NOT use `tools(...)` — the lefthook commit-msg hook rejects any type outside the standard set `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`). Verify each improvement against the original friction. If genuinely no gaps, document briefly: "Retrospective {NN}.M: no tooling gaps". Mandatory even when nothing felt painful — that is exactly when blind spots accumulate. **Do NOT batch this to section close** — pain memory has already decayed by then.
-4. `/commit-push` for the subsection's implementation work (separate from any tooling commits in step 3).
+4. **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check`. If temp files detected (debug dumps, one-off test scripts, editor backups), run `diagnostics/repo-hygiene.sh --clean` to remove them before committing. This keeps the worktree free of detritus that obscures real changes in `git status`.
+5. `/commit-push` for the subsection's implementation work (separate from any tooling commits in step 3).
 
 **Then** apply the pacing choice:
 - If user chose "Full section", proceed directly to the next subsection (the close-out above already ran).
-- If user chose "Subsection-by-subsection", present a brief status update including the retrospective outcome ("Retrospective {NN}.M: 2 improvements committed: {commits}" OR "Retrospective {NN}.M: no gaps") and use AskUserQuestion with:
-  1. **Continue to next subsection** — Proceed to the next incomplete subsection
-  2. **Run /commit-push and continue** — Commit any remaining changes, then proceed
-  3. **Stop here** — End work for now (run `/commit-push` first if there are changes)
+- If user chose "Subsection-by-subsection", present a brief status update including the retrospective outcome ("Retrospective {NN}.M: 2 improvements committed: {commits}" OR "Retrospective {NN}.M: no gaps") and ask: "Continue to next subsection, or stop here?"
+
+**Mandatory close-out steps (TPR, hygiene, improve-tooling sweep) are NEVER subject to user confirmation.** They are required by the completion checklist — just run them. Do not ask "Should I run /tpr-review now?" or "Ready for /impl-hygiene-review?" — execute them as part of the close-out workflow.
 
 ### Step 6: Execute Work
 
@@ -838,6 +885,7 @@ When completing a roadmap item:
   - [ ] Update `00-overview.md` effort table and Quick Reference table
   - [ ] Update `index.md` section status and Quick Reference table
   - [ ] If plan complete: run "Plan Completion Frontmatter Gate" (see below), then move to `plans/completed/`
+- [ ] **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check`. If temp files detected, run `--clean` to remove debug dumps, scratch scripts, editor backups, and other detritus before final commit.
 - [ ] Run `/commit-push` — NEVER commit directly with `git commit`
 
 ---

@@ -23,8 +23,10 @@ same repair_envelope module).
 Outcome codes (stderr first line on failure):
     missing_envelope    — no agent_message item found in the JSONL
     parse_fail          — agent_message text is not valid JSON
-    schema_violation    — JSON parses but fails schema validation
-                          (even after repair attempt)
+    schema_violation    — [RESCUED: no longer causes exit(1)]
+                          JSON parses but fails schema validation even after
+                          repair. Now rescued — envelope written to stdout
+                          with RESCUED warnings on stderr.
     failed_partial      — validates but status != "complete"
 """
 
@@ -42,11 +44,32 @@ from envelope_invariants import validate_envelope_invariants  # noqa: E402
 from repair_envelope import repair_envelope  # noqa: E402
 
 
+def _flush_advisory(deferred):
+    """Flush deferred advisory lines to stderr.
+
+    REPAIR lines are emitted AFTER the primary output (envelope on stdout, or
+    category line on stderr) so they can't corrupt `head -1 parse-error`
+    extraction in dual-invoke-with-retry.sh. The stderr-first-line-is-category
+    contract is load-bearing: the retry classifier uses the first stderr line
+    to decide whether a failure is terminal. Prior to this indirection, a
+    REPAIR that was followed by a schema violation corrupted the category to
+    `codex_REPAIR: applied N auto-repair(s) to codex envelope:` which matched
+    no classifier entry and was retried by accident. Kept symmetric with
+    parse-gemini.py's _flush_advisory.
+    """
+    for msg in deferred:
+        print(msg, file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--jsonl", required=True)
     ap.add_argument("--schema", required=True)
     args = ap.parse_args()
+
+    # deferred_advisory accumulates REPAIR lines that would otherwise corrupt
+    # the stderr-first-line-is-category contract (see _flush_advisory).
+    deferred_advisory = []
 
     try:
         import jsonschema
@@ -90,49 +113,64 @@ def main():
 
     # Repair layer: normalize common schema violations before validation.
     # Symmetric with parse-gemini.py — both parsers use the same repair module.
+    # REPAIR lines are deferred to `deferred_advisory` so they don't violate
+    # the stderr-first-line-is-category contract (see _flush_advisory).
     envelope, repairs = repair_envelope(
         envelope, default_reviewer="codex", default_skill="review-work",
     )
     if repairs:
-        print(
-            f"REPAIR: applied {len(repairs)} auto-repair(s) to codex envelope:",
-            file=sys.stderr,
+        deferred_advisory.append(
+            f"REPAIR: applied {len(repairs)} auto-repair(s) to codex envelope:"
         )
         for r in repairs:
-            print(f"  REPAIR: {r}", file=sys.stderr)
+            deferred_advisory.append(f"  REPAIR: {r}")
+
+    # Rescue mode: when schema or invariant validation fails AFTER repair,
+    # accept the envelope rather than failing. Symmetric with parse-gemini.py.
+    rescued = False
 
     # Validate against schema (structural — OpenAI-compatible subset)
     try:
         jsonschema.validate(envelope, schema)
     except jsonschema.ValidationError as e:
-        print("schema_violation", file=sys.stderr)
-        print(f"{e.message}", file=sys.stderr)
+        rescued = True
+        deferred_advisory.append(
+            f"RESCUED: schema validation failed after repair — accepting "
+            f"envelope as-is. Violation: {e.message}"
+        )
         if repairs:
-            print(
-                f"(repair layer applied {len(repairs)} fix(es) but envelope "
-                f"still fails validation)",
-                file=sys.stderr,
+            deferred_advisory.append(
+                f"RESCUED: repair layer had applied {len(repairs)} fix(es) but "
+                f"envelope still fails validation"
             )
-        sys.exit(1)
 
     # Validate code-level invariants (regex patterns, length limits, conditional
     # requirements that can't be expressed in the OpenAI Structured Outputs subset).
     # See envelope_invariants.py and BUG-08-003 for the rationale.
     invariant_error = validate_envelope_invariants(envelope)
     if invariant_error is not None:
-        print("schema_violation", file=sys.stderr)
-        print(invariant_error, file=sys.stderr)
-        sys.exit(1)
+        rescued = True
+        deferred_advisory.append(
+            f"RESCUED: invariant validation failed — {invariant_error}. "
+            f"Accepting envelope to avoid review failure."
+        )
 
     # Check status field
     if envelope.get("status") != "complete":
         print("failed_partial", file=sys.stderr)
         print(f"envelope status: {envelope.get('status')}", file=sys.stderr)
+        _flush_advisory(deferred_advisory)
         sys.exit(1)
 
     # Success — print envelope to stdout
+    if rescued:
+        deferred_advisory.insert(0,
+            "RESCUED: codex envelope accepted despite schema/invariant "
+            "violations — content preserved to avoid review failure"
+        )
     json.dump(envelope, sys.stdout, indent=2)
     sys.stdout.write("\n")
+    _flush_advisory(deferred_advisory)
     sys.exit(0)
 
 

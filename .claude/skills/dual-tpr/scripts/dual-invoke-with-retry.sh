@@ -4,8 +4,9 @@
 # Usage: same args as dual-invoke.sh
 #
 # Retry policy:
-#   - 3 attempts per reviewer per round
-#   - Exponential backoff: 1s, 2s, 4s between attempts
+#   - 5 attempts per reviewer per round (was 3; raised for capacity errors)
+#   - Default backoff: 1s, 2s, 4s, 30s, 60s between attempts
+#   - Capacity-aware backoff: 30s, 60s, 120s, 120s, 120s for API capacity errors
 #   - Retries are SEPARATE from the wrapper's semantic iteration budget
 #   - On failure: returns the failure category as the last line of stderr,
 #     leaves $RUN intact for postmortem, exits 1
@@ -14,13 +15,22 @@
 #   - dual-invoke.sh exits 0 (both reviewers exited cleanly)
 #   - parse-codex.py succeeds on $RUN/codex.jsonl
 #   - parse-gemini.py succeeds on $RUN/gemini.jsonl
-#   - worktree-guard.sh compare passes (no dirty files)
+#
+# Worktree drift check (informational, non-blocking by default):
+#   - worktree-guard.sh compare runs AFTER parsers succeed
+#   - Drift is logged as a WARNING, not a failure — the user regularly runs
+#     parallel agents and their edits should not kill the review round
+#   - Only escalated to terminal failure with ORI_TPR_STRICT_WORKTREE=1
+#   - Drift details saved to $RUN/worktree-drift.txt for user triage
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MAX_RETRIES=3
-BACKOFFS=(1 2 4)
+MAX_RETRIES=5
+BACKOFFS=(1 2 4 30 60)
+# Capacity-specific backoff: much longer delays for API capacity errors.
+# The short 1/2/4s default backoffs just hammer a capacity-limited API.
+CAPACITY_BACKOFFS=(30 60 120 120 120)
 
 # Pass through all args to dual-invoke.sh; we also need RUN and SCHEMA to know
 # where outputs go and which schema to validate against.
@@ -43,9 +53,16 @@ done
 # retry wrapper must ALSO skip parsing its (absent) JSONL output.
 # Default is `both` so every existing caller (§04/§05 wrappers)
 # runs unchanged.
-REVIEWERS="${ORI_TPR_REVIEWERS:-both}"
-if [[ "$REVIEWERS" != "codex" && "$REVIEWERS" != "gemini" && "$REVIEWERS" != "both" ]]; then
-  echo "invalid ORI_TPR_REVIEWERS: $REVIEWERS (must be codex|gemini|both)" >&2
+#
+# ORIGINAL_REVIEWERS captures the operator's explicit choice (or the default
+# `both`) and is immutable across attempts. EFFECTIVE_REVIEWERS is recomputed
+# per attempt by the selective-retry logic (2026-04-11 fix) — on attempt 2+
+# it may be narrowed to ONLY the reviewers that failed on the prior attempt
+# so successful reviewers aren't wastefully re-run. See the selective-retry
+# block in the main loop below for the full rationale.
+ORIGINAL_REVIEWERS="${ORI_TPR_REVIEWERS:-both}"
+if [[ "$ORIGINAL_REVIEWERS" != "codex" && "$ORIGINAL_REVIEWERS" != "gemini" && "$ORIGINAL_REVIEWERS" != "both" ]]; then
+  echo "invalid ORI_TPR_REVIEWERS: $ORIGINAL_REVIEWERS (must be codex|gemini|both)" >&2
   exit 2
 fi
 
@@ -69,8 +86,13 @@ fi
 #
 # Terminal categories — deterministic, retry will produce the same result:
 #
-#   dirty_worktree                 — reviewer modified tracked files, will do
-#                                    so again on retry (BUG-08-002 fix).
+#   dirty_worktree                 — tracked-file drift detected AND
+#                                    ORI_TPR_STRICT_WORKTREE=1 was set.
+#                                    Without strict mode, drift is a non-
+#                                    blocking warning (not a failure at all).
+#                                    (Post-2026-04-12: default changed from
+#                                    terminal to informational — user runs
+#                                    parallel agents whose edits are expected).
 #   codex_missing_dependency       — jsonschema Python module not installed
 #                                    on this host; won't install itself on
 #                                    retry (TPR-04-002-codex fix).
@@ -91,17 +113,12 @@ fi
 #
 # Retryable categories — could be transient, worth another attempt:
 #
-#   gemini_schema_violation        — gemini emitted JSON that fails schema
-#                                    validation even after the repair layer
-#                                    (repair_envelope.py) attempted to fix
-#                                    common violations. Previously terminal,
-#                                    reclassified as retryable because a fresh
-#                                    gemini invocation may produce different
-#                                    output that IS repairable. The 3-attempt
-#                                    budget bounds the cost for systematic
-#                                    failures. Codex schema_violation remains
-#                                    terminal because codex's JSON compliance
-#                                    is more reliable.
+#   gemini_schema_violation        — [EFFECTIVELY DEAD CODE as of 2026-04-13]
+#                                    parse-gemini.py now RESCUES schema-invalid
+#                                    envelopes (exits 0 with RESCUED warnings)
+#                                    instead of emitting this category. Kept in
+#                                    the classifier as a safety net in case a
+#                                    future parser change re-introduces it.
 #   launch_or_exit_fail            — dual-invoke.sh returned non-zero. This
 #                                    collapses ALL launch-time failures into
 #                                    one category because dual-invoke.sh
@@ -143,9 +160,9 @@ fi
 #                                    the retry will surface the same category
 #                                    three times and the operator will see it.
 #
-# Why this is the symmetric form of BUG-08-002: the dirty_worktree fix added
-# a single-case `break`. This generalizes that to a classifier so we don't
-# burn 3 attempts on every newly-discovered deterministic failure mode. The
+# Why this is the symmetric form of the original dirty_worktree fix: the
+# original fix added a single-case `break`. This generalizes that to a
+# classifier so we don't burn 3 attempts on deterministic failure modes. The
 # categories listed above are the RESULT of auditing what parse-codex.py and
 # parse-gemini.py actually emit — earlier iterations of this function
 # invented category names (`codex_invalid_*`, `codex_authentication_*`,
@@ -166,46 +183,208 @@ is_terminal_failure() {
     gemini_missing_envelope)       return 0 ;;
     gemini_missing_json_block)     return 0 ;;
     gemini_failed_partial)         return 0 ;;
+    *_api_auth)                    return 0 ;;  # authentication errors won't self-heal
     *) return 1 ;;
   esac
+}
+
+# extract_failure_category — read the first NON-advisory line of a parse-error
+# file and prefix it with the reviewer name. Skip lines starting with
+# "WARNING:" or "REPAIR:" / "  REPAIR:" (advisory output from the parsers).
+# This is defense-in-depth: parse-codex.py and parse-gemini.py both buffer
+# their advisory lines and flush them AFTER the category (2026-04-11 fix), so
+# the first line SHOULD already be the category. This function is a belt-and-
+# suspenders check that survives future parser regressions — if either parser
+# ever re-introduces a pre-category advisory line, the retry classifier still
+# gets the real category instead of being mangled by e.g.
+# `gemini_WARNING: sentinel-less fallback ...`.
+extract_failure_category() {
+  local reviewer="$1"
+  local parse_error_file="$2"
+  local category
+  # awk: print the first line that doesn't start with WARNING:, REPAIR:, or
+  # "  REPAIR:", then exit. If no such line exists, print empty string.
+  category=$(awk '
+    /^WARNING:/ { next }
+    /^REPAIR:/  { next }
+    /^  REPAIR:/ { next }
+    { print; exit }
+  ' "$parse_error_file" 2>/dev/null)
+  printf '%s_%s' "$reviewer" "${category:-unknown_failure}"
+}
+
+# extract_jsonl_api_error — extract the API error message from a reviewer's
+# JSONL stream. Gemini (and codex) emit a {"type":"result","status":"error",
+# "error":{"message":"..."}} event when the API rejects the request. This
+# function extracts that message so the retry classifier can distinguish
+# capacity errors from other failures — the only information previously
+# available was the generic "launch_or_exit_fail" category because stderr
+# was discarded (now captured in $RUN/<reviewer>.stderr).
+#
+# Returns: the error message on stdout, or empty string if no error event found.
+extract_jsonl_api_error() {
+  local jsonl_file="$1"
+  [[ -f "$jsonl_file" ]] || return 0
+  python3 -c "
+import json, sys
+with open('$jsonl_file') as f:
+    for line in f:
+        line = line.strip()
+        if not line: continue
+        try:
+            obj = json.loads(line)
+            if obj.get('type') == 'result' and obj.get('status') == 'error':
+                err = obj.get('error', {})
+                print(err.get('message', ''), end='')
+                sys.exit(0)
+        except: pass
+" 2>/dev/null || true
+}
+
+# is_capacity_error — returns 0 (true) if the failure looks like an API
+# capacity/rate-limit error. These need much longer backoff (30-120s) instead
+# of the default 1-4s.
+IS_CAPACITY_FAILURE=false
+is_capacity_error() {
+  local category="$1"
+  [[ "$category" == *"_api_capacity"* ]] && return 0
+  return 1
 }
 
 ATTEMPT=0
 FAILURE=""
 while [[ $ATTEMPT -lt $MAX_RETRIES ]]; do
   ATTEMPT=$((ATTEMPT + 1))
-  echo "[$(date +%s)] attempt $ATTEMPT/$MAX_RETRIES" >> "$RUN/round.log"
+  FAILURE=""  # Reset for this attempt — stale value from prior attempt must not leak
+
+  # ── Selective retry: narrow to failing reviewers only ─────────────
+  #
+  # On attempt 2+, if the operator asked for BOTH reviewers, narrow the retry
+  # to ONLY the reviewers that still lack a valid envelope. Preserving a
+  # successful reviewer's attempt-N envelope across retries saves substantial
+  # wall time on the common failure mode (gemini schema violations while codex
+  # succeeds). Codex invocations take ~5-10 minutes each, so re-running codex
+  # on a gemini-only failure roughly doubles the total review wall time.
+  #
+  # Success detection: a reviewer is "done" if its envelope file is non-empty.
+  # parse-codex.py and parse-gemini.py both emit the envelope to stdout ONLY
+  # on success — on failure they exit before any stdout write, leaving the
+  # redirected envelope file empty. The parse-error file may be non-empty even
+  # on success because the advisory-flush pattern (2026-04-11 fix) writes
+  # REPAIR/WARNING lines to stderr AFTER the envelope is on stdout, so
+  # parse-error size is NOT a reliable success discriminant. Only
+  # envelope.json size is.
+  #
+  # Operator filter composition: if the operator explicitly set
+  # ORI_TPR_REVIEWERS=codex (or gemini), narrowing is a no-op — the attempt
+  # already runs only the chosen reviewer.
+  #
+  # Both-successful edge case: if both envelopes are valid but the wrapper
+  # reached this point anyway, the failure category must have been
+  # dirty_worktree in strict mode or a future category that somehow leaves
+  # both envelopes untouched. Fall through to running both on the retry —
+  # conservative default that matches pre-fix behavior.
+  EFFECTIVE_REVIEWERS="$ORIGINAL_REVIEWERS"
+  if [[ $ATTEMPT -gt 1 && "$ORIGINAL_REVIEWERS" == "both" ]]; then
+    CODEX_OK=0
+    GEMINI_OK=0
+    if [[ -s "$RUN/codex.envelope.json" ]]; then
+      CODEX_OK=1
+    fi
+    if [[ -s "$RUN/gemini.envelope.json" ]]; then
+      GEMINI_OK=1
+    fi
+
+    if [[ $CODEX_OK -eq 1 && $GEMINI_OK -eq 0 ]]; then
+      EFFECTIVE_REVIEWERS="gemini"
+    elif [[ $CODEX_OK -eq 0 && $GEMINI_OK -eq 1 ]]; then
+      EFFECTIVE_REVIEWERS="codex"
+    else
+      # Both failed (common case on transient network) OR both succeeded
+      # (edge case — fall through to retry both rather than hit a dead end).
+      EFFECTIVE_REVIEWERS="both"
+    fi
+  fi
+
+  if [[ "$EFFECTIVE_REVIEWERS" == "$ORIGINAL_REVIEWERS" ]]; then
+    echo "[$(date +%s)] attempt $ATTEMPT/$MAX_RETRIES (reviewers=$EFFECTIVE_REVIEWERS)" >> "$RUN/round.log"
+  else
+    echo "[$(date +%s)] attempt $ATTEMPT/$MAX_RETRIES (selective retry: narrowed from $ORIGINAL_REVIEWERS to $EFFECTIVE_REVIEWERS — preserving prior-attempt success)" >> "$RUN/round.log"
+  fi
 
   # Snapshot worktree before reviewer run
   "$SCRIPT_DIR/worktree-guard.sh" snapshot "$RUN/worktree-before.txt"
 
-  # Launch reviewers per ORI_TPR_REVIEWERS filter (default: both). Parser
-  # calls are gated by the same filter — skipping an absent JSONL file
-  # would otherwise produce a spurious "missing_envelope" failure.
-  if ! "$SCRIPT_DIR/dual-invoke.sh" "${ARGS[@]}"; then
+  # Launch reviewers per EFFECTIVE_REVIEWERS. dual-invoke.sh reads
+  # ORI_TPR_REVIEWERS from the environment — exporting it ONLY for this
+  # sub-command call scopes the narrowing to the retry iteration without
+  # polluting our own shell state.
+  if ! ORI_TPR_REVIEWERS="$EFFECTIVE_REVIEWERS" "$SCRIPT_DIR/dual-invoke.sh" "${ARGS[@]}"; then
     # Check if failure was due to watchdog killing a stalled reviewer
     if [[ -f "$RUN/codex.stalled" || -f "$RUN/gemini.stalled" ]]; then
-      local stalled_reviewers=""
+      stalled_reviewers=""
       [[ -f "$RUN/codex.stalled" ]] && stalled_reviewers="codex"
       [[ -f "$RUN/gemini.stalled" ]] && stalled_reviewers="${stalled_reviewers:+$stalled_reviewers+}gemini"
       FAILURE="reviewer_stalled_${stalled_reviewers}"
     else
+      # Extract API error from JSONL to refine the generic launch_or_exit_fail.
+      # The error message IS in the JSONL result event even though stderr was
+      # previously discarded. Now we capture both (stderr to $RUN/*.stderr,
+      # JSONL error here) for defense in depth.
       FAILURE="launch_or_exit_fail"
+      for reviewer in codex gemini; do
+        api_err=$(extract_jsonl_api_error "$RUN/${reviewer}.jsonl")
+        if [[ -n "$api_err" ]]; then
+          echo "[$(date +%s)] ${reviewer} API error: $api_err" >> "$RUN/round.log"
+          if [[ "$api_err" == *"No capacity"* || "$api_err" == *"rate limit"* || "$api_err" == *"overloaded"* || "$api_err" == *"quota"* ]]; then
+            FAILURE="${reviewer}_api_capacity"
+            IS_CAPACITY_FAILURE=true
+          elif [[ "$api_err" == *"authentication"* || "$api_err" == *"unauthorized"* || "$api_err" == *"permission"* ]]; then
+            FAILURE="${reviewer}_api_auth"
+          else
+            FAILURE="${reviewer}_api_error"
+          fi
+        fi
+      done
     fi
     echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
-  elif [[ ( "$REVIEWERS" == "codex" || "$REVIEWERS" == "both" ) ]] && ! "$SCRIPT_DIR/parse-codex.py" --jsonl "$RUN/codex.jsonl" --schema "$SCHEMA" > "$RUN/codex.envelope.json" 2> "$RUN/codex.parse-error"; then
-    FAILURE="codex_$(head -1 "$RUN/codex.parse-error")"
+  elif [[ ( "$EFFECTIVE_REVIEWERS" == "codex" || "$EFFECTIVE_REVIEWERS" == "both" ) ]] && ! "$SCRIPT_DIR/parse-codex.py" --jsonl "$RUN/codex.jsonl" --schema "$SCHEMA" > "$RUN/codex.envelope.json" 2> "$RUN/codex.parse-error"; then
+    FAILURE="$(extract_failure_category codex "$RUN/codex.parse-error")"
     echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
-  elif [[ ( "$REVIEWERS" == "gemini" || "$REVIEWERS" == "both" ) ]] && ! "$SCRIPT_DIR/parse-gemini.py" --jsonl "$RUN/gemini.jsonl" --schema "$SCHEMA" > "$RUN/gemini.envelope.json" 2> "$RUN/gemini.parse-error"; then
-    FAILURE="gemini_$(head -1 "$RUN/gemini.parse-error")"
-    echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
-  elif ! "$SCRIPT_DIR/worktree-guard.sh" compare "$RUN/worktree-before.txt" 2> "$RUN/worktree-error"; then
-    FAILURE="dirty_worktree"
+  elif [[ ( "$EFFECTIVE_REVIEWERS" == "gemini" || "$EFFECTIVE_REVIEWERS" == "both" ) ]] && ! "$SCRIPT_DIR/parse-gemini.py" --jsonl "$RUN/gemini.jsonl" --schema "$SCHEMA" > "$RUN/gemini.envelope.json" 2> "$RUN/gemini.parse-error"; then
+    FAILURE="$(extract_failure_category gemini "$RUN/gemini.parse-error")"
     echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
   else
-    # All checks passed
-    echo "[$(date +%s)] round succeeded on attempt $ATTEMPT" >> "$RUN/round.log"
-    exit 0
+    # ── Launch + parse succeeded — run worktree guard as INFORMATIONAL check ──
+    #
+    # Post-2026-04-12 fix: worktree drift is NO LONGER a failure condition by
+    # default. The user regularly runs parallel agents whose edits produce drift
+    # that is NOT a reviewer violation. Drift is logged as a warning and saved
+    # to $RUN/worktree-drift.txt for the skill layer to surface if desired.
+    #
+    # ORI_TPR_STRICT_WORKTREE=1 restores the old terminal behavior for contexts
+    # where the user is NOT running parallel work and wants strict enforcement.
+    if ! "$SCRIPT_DIR/worktree-guard.sh" compare "$RUN/worktree-before.txt" "$RUN/worktree-after.txt" 2> "$RUN/worktree-drift.txt"; then
+      if [[ "${ORI_TPR_STRICT_WORKTREE:-0}" == "1" ]]; then
+        # Strict mode: treat drift as terminal failure (old behavior)
+        FAILURE="dirty_worktree"
+        echo "[$(date +%s)] dirty_worktree on attempt $ATTEMPT (ORI_TPR_STRICT_WORKTREE=1 — escalated to terminal)" >> "$RUN/round.log"
+      else
+        # Default: warn and continue — drift is expected from parallel work
+        echo "[$(date +%s)] WARNING: worktree drift detected during run (non-blocking — assumed parallel agent or user edits)" >> "$RUN/round.log"
+        if [[ -s "$RUN/worktree-drift.txt" ]]; then
+          echo "--- drift details ---" >> "$RUN/round.log"
+          cat "$RUN/worktree-drift.txt" >> "$RUN/round.log"
+          echo "--- end drift details ---" >> "$RUN/round.log"
+        fi
+      fi
+    fi
+
+    # If no failure was set (either no drift, or drift was non-blocking), succeed
+    if [[ -z "$FAILURE" ]]; then
+      echo "[$(date +%s)] round succeeded on attempt $ATTEMPT" >> "$RUN/round.log"
+      exit 0
+    fi
   fi
 
   # Generalized terminal-failure classifier (BUG-08-006). Originally only
@@ -219,8 +398,13 @@ while [[ $ATTEMPT -lt $MAX_RETRIES ]]; do
   fi
 
   if [[ $ATTEMPT -lt $MAX_RETRIES ]]; then
-    BACKOFF=${BACKOFFS[$((ATTEMPT - 1))]}
-    echo "[$(date +%s)] sleeping ${BACKOFF}s before retry" >> "$RUN/round.log"
+    if is_capacity_error "$FAILURE"; then
+      BACKOFF=${CAPACITY_BACKOFFS[$((ATTEMPT - 1))]}
+      echo "[$(date +%s)] capacity error — sleeping ${BACKOFF}s before retry (capacity-aware backoff)" >> "$RUN/round.log"
+    else
+      BACKOFF=${BACKOFFS[$((ATTEMPT - 1))]}
+      echo "[$(date +%s)] sleeping ${BACKOFF}s before retry" >> "$RUN/round.log"
+    fi
     sleep "$BACKOFF"
   fi
 done
