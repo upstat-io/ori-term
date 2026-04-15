@@ -61,7 +61,7 @@ sections:
     status: not-started
   - id: "08.8b"
     title: "Verify remaining Section-08-owned catalog rows"
-    status: not-started
+    status: complete
   - id: "08.R"
     title: "Third Party Review Findings"
     status: complete
@@ -420,28 +420,28 @@ ECMA-48 sect.5.4.2 allows subparameters separated by `:` (colon) in addition to 
 The catalog assigns 14 additional rows to Section 08 (11 in `catalog/ecma-48.md` + 3 in `catalog/xterm-ctlseqs.md`) that have `status: missing` or `stub` and are not covered by other subsections. These must be implemented/verified before the section can be marked complete.
 
 **SGR rows (5):**
-- [ ] `ECMA48-SGR-53` — Overlined. Verify `oriterm_core` handles SGR 53 (set overline) and SGR 55 (reset overline). Add spec_chain test. Update catalog row to `verified`.
-- [ ] `ECMA48-SGR-55` — Not overlined (reset for SGR 53). Covered by the same implementation as SGR 53.
-- [ ] `ECMA48-SGR-73` — Superscript. Verify handler exists or implement. Add spec_chain test. Update catalog.
-- [ ] `ECMA48-SGR-74` — Subscript. Verify handler exists or implement. Add spec_chain test. Update catalog.
-- [ ] `ECMA48-SGR-75` — Neither superscript nor subscript (reset). Covered by same implementation as 73/74.
+- [x] `ECMA48-SGR-53` — Overlined. Added `Attr::Overline`, `CellFlags::OVERLINE` (bit 16), SGR dispatch `[53]`, and `sgr::apply` handler. Tests: `sgr_53_sets_overline`, `sgr_55_resets_overline`. CellFlags widened from u16 to u32 (no Cell size change — fills alignment padding).
+- [x] `ECMA48-SGR-55` — Not overlined (reset for SGR 53). Covered by `Attr::CancelOverline` + `sgr_55_resets_overline` test.
+- [x] `ECMA48-SGR-73` — Superscript. Added `Attr::Superscript`, `CellFlags::SUPERSCRIPT` (bit 17), SGR dispatch `[73]`. Mutually exclusive with subscript. Tests: `sgr_73_sets_superscript`, `sgr_73_clears_subscript`.
+- [x] `ECMA48-SGR-74` — Subscript. Added `Attr::Subscript`, `CellFlags::SUBSCRIPT` (bit 18), SGR dispatch `[74]`. Test: `sgr_74_sets_subscript`.
+- [x] `ECMA48-SGR-75` — Neither superscript nor subscript (reset). Added `Attr::CancelSuperSubscript`. Test: `sgr_75_resets_super_subscript`.
 
 **CSI rows (4):**
-- [ ] `ECMA48-CSI-DECSTR` — Soft Terminal Reset. Verify the DECSTR handler exists and resets the correct terminal state. Add spec_chain test. Update catalog.
-- [ ] `ECMA48-CSI-DECSED` — Selective Erase in Display. Verify handler. Add spec_chain test. Update catalog.
-- [ ] `ECMA48-CSI-DECSEL` — Selective Erase in Line. Verify handler. Add spec_chain test. Update catalog.
-- [ ] `ECMA48-CSI-SL` — Scroll Left (CSI Ps SP @). Verify handler or implement. Add spec_chain test. Update catalog.
-- [ ] `ECMA48-CSI-SR` — Scroll Right (CSI Ps SP A). Verify handler or implement. Add spec_chain test. Update catalog.
+- [x] `ECMA48-CSI-DECSTR` — Soft Terminal Reset. Wired `('p', [b'!'])` in `csi::dispatch` to `handler.reset_state()`. Test: `decstr_resets_terminal_state`.
+- [x] `ECMA48-CSI-DECSED` — Selective Erase in Display. Added `('J', [b'?'])` dispatch (maps to `clear_screen` — DECSCA protection not yet implemented, so same behavior as ED). Test: `decsed_below_clears_from_cursor`.
+- [x] `ECMA48-CSI-DECSEL` — Selective Erase in Line. Added `('K', [b'?'])` dispatch. Test: `decsel_right_clears_to_end_of_line`.
+- [x] `ECMA48-CSI-SL` — Scroll Left (CSI Ps SP @). Already implemented. Test: `scroll_left_shifts_content`.
+- [x] `ECMA48-CSI-SR` — Scroll Right (CSI Ps SP A). Already implemented. Test: `scroll_right_shifts_content`.
 
 **DCS rows (1):**
-- [ ] `ECMA48-DCS-DECRQSS-DECSLRM` — DECRQSS for DECSLRM (query left/right margin values). Depends on 08.3-08.5 (DECLRMM plumbing). Verify the DECRQSS handler can report DECSLRM state. Add spec_chain test. Update catalog.
+- [x] `ECMA48-DCS-DECRQSS-DECSLRM` — Added DECSLRM query (`b"s"` arm) to `status_decrqss` at `status.rs`. Reports 1-based left;right margins. Test: `decrqss_decslrm_reports_margins`.
 
 **xterm-ctlseqs rows (3):**
-- [ ] `XT-DECSLRM` — Set Left and Right Margins (`CSI Ps ; Ps s`). Already implemented by 08.5b (CSI s ambiguity resolution). Update catalog row from `stub` to `verified` once 08.5b work lands.
-- [ ] `XT-PUSHSGR` — Push current SGR attributes onto stack (`CSI # {`). Not dispatched in `csi::dispatch`. Implement handler (add `('{', [b'#'])` arm), add SGR attribute stack to `Term` or `Grid`, add spec_chain test. Update catalog.
-- [ ] `XT-POPSGR` — Pop SGR attributes from stack (`CSI # }`). Pair with XTPUSHSGR. Add `('}', [b'#'])` arm, pop from stack, apply attrs. Add spec_chain test. Update catalog.
+- [x] `XT-DECSLRM` — Already implemented by 08.5 (CSI s ambiguity resolution). Catalog updated.
+- [x] `XT-PUSHSGR` — Added `push_sgr()`/`pop_sgr()` to Handler trait, CSI dispatch `('{', [b'#'])` / `('}', [b'#'])`, `SgrSnapshot` struct + `sgr_stack: Vec<SgrSnapshot>` on Grid (max 10 entries). Test: `xtpushsgr_saves_and_restores_sgr`.
+- [x] `XT-POPSGR` — Paired with PUSHSGR. Test: `xtpopsgr_on_empty_stack_is_noop`.
 
-- [ ] **Validation**: all 14 catalog rows (11 ECMA-48 + 3 xterm) updated from `missing`/`stub` to `verified`. No Section-08-owned rows remain at `missing` or `stub`.
+- [x] **Validation**: all 15 catalog rows implemented/verified with 14 new tests. No Section-08-owned rows remain at `missing` or `stub`.
 
 ---
 

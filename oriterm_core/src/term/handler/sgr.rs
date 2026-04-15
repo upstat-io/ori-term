@@ -55,6 +55,21 @@ pub(super) fn apply(template: &mut Cell, attr: &Attr) {
         Attr::CancelReverse => template.flags.remove(CellFlags::INVERSE),
         Attr::CancelHidden => template.flags.remove(CellFlags::HIDDEN),
         Attr::CancelStrike => template.flags.remove(CellFlags::STRIKETHROUGH),
+        Attr::Overline => template.flags.insert(CellFlags::OVERLINE),
+        Attr::CancelOverline => template.flags.remove(CellFlags::OVERLINE),
+        Attr::Superscript => {
+            template.flags.remove(CellFlags::SUBSCRIPT);
+            template.flags.insert(CellFlags::SUPERSCRIPT);
+        }
+        Attr::Subscript => {
+            template.flags.remove(CellFlags::SUPERSCRIPT);
+            template.flags.insert(CellFlags::SUBSCRIPT);
+        }
+        Attr::CancelSuperSubscript => {
+            template
+                .flags
+                .remove(CellFlags::SUPERSCRIPT | CellFlags::SUBSCRIPT);
+        }
         Attr::Foreground(color) => template.fg = *color,
         Attr::Background(color) => template.bg = *color,
         Attr::UnderlineColor(color) => template.set_underline_color(*color),

@@ -180,6 +180,16 @@ pub enum Attr {
     CancelHidden,
     /// Cancel strikeout.
     CancelStrike,
+    /// Overlined text (SGR 53).
+    Overline,
+    /// Cancel overline (SGR 55).
+    CancelOverline,
+    /// Superscript (SGR 73).
+    Superscript,
+    /// Subscript (SGR 74).
+    Subscript,
+    /// Cancel superscript/subscript (SGR 75).
+    CancelSuperSubscript,
     /// Set indexed foreground color.
     Foreground(Color),
     /// Set indexed background color.

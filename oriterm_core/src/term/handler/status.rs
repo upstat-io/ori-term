@@ -223,6 +223,11 @@ impl<S: EffectSink> Term<S> {
                 let sgr = build_sgr_string(t.flags, t.fg, t.bg);
                 format!("\x1bP1$r{sgr}m\x1b\\")
             }
+            // DECSLRM: left/right margins.
+            b"s" => {
+                let (left, right) = self.grid().left_right_margins();
+                format!("\x1bP1$r{};{}s\x1b\\", left + 1, right + 1)
+            }
             // Unrecognized query: report invalid.
             _ => {
                 debug!(

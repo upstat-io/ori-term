@@ -426,6 +426,14 @@ impl<S: EffectSink> Handler for Term<S> {
         self.esc_reset_state();
     }
 
+    fn push_sgr(&mut self) {
+        self.grid_mut().push_sgr();
+    }
+
+    fn pop_sgr(&mut self) {
+        self.grid_mut().pop_sgr();
+    }
+
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let template = &mut self.grid_mut().cursor_mut().template;
