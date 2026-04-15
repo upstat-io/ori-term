@@ -295,6 +295,11 @@ impl Grid {
         });
     }
 
+    /// Clear DECSC saved cursor state (used by DECSTR soft reset).
+    pub fn clear_saved_cursor(&mut self) {
+        self.saved_cursor = None;
+    }
+
     /// Clear the XTPUSHSGR stack (used by DECSTR soft reset).
     pub fn clear_sgr_stack(&mut self) {
         self.sgr_stack.clear();
