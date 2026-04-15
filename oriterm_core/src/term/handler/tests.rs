@@ -6717,13 +6717,19 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
     // Enter alt screen (swaps primary keyboard stack to inactive).
     feed(&mut t, b"\x1b[?1049h");
     assert!(t.keyboard_mode_stack().is_empty());
-    // Seed alt-screen state (scroll region, keyboard mode) BEFORE DECSTR
-    // so we can assert the single DECSTR clears alt state too. DECSTR
-    // drops ALT_SCREEN; we re-enter later to inspect the alt grid.
-    feed(&mut t, b"\x1b[5;15r");
+    // Seed alt-screen state (scroll region, margins, cursor, saved cursor,
+    // SGR stack, keyboard mode) BEFORE DECSTR so a single DECSTR must
+    // clear ALL alt-grid surfaces. DECSTR drops ALT_SCREEN; we re-enter
+    // later (without DECSTR) to inspect the alt grid.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[2;30s"); // alt margins
+    feed(&mut t, b"\x1b[5;15r"); // alt scroll region
+    feed(&mut t, b"\x1b[8;15H\x1b7"); // alt cursor + DECSC
+    feed(&mut t, b"\x1b[1m\x1b[#{"); // alt SGR stack push
     feed(&mut t, b"\x1b[>3u");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert_eq!(t.grid().scroll_region(), &(4..15));
+    assert_eq!(t.grid().left_right_margins(), (1, 29));
 
     // DECSTR while on alt screen.
     feed(&mut t, b"\x1b[!p");
@@ -6778,13 +6784,50 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
         "DECSTR must clear primary keyboard mode stack"
     );
     // Re-enter alt screen to inspect alt-grid state — DO NOT fire DECSTR
-    // again (that would drop ALT_SCREEN and re-check primary).
+    // again (that would drop ALT_SCREEN and re-check primary). Verify
+    // all alt-grid surfaces were cleared: cursor, margins, scroll region,
+    // saved cursor (via DECRC no-op), SGR stack (via XTPOPSGR no-op),
+    // keyboard mode stack.
     feed(&mut t, b"\x1b[?1049h");
     let alt_lines = t.grid().lines();
+    let alt_cols = t.grid().cols();
+    assert_eq!(t.grid().cursor().line(), 0, "DECSTR must clear alt cursor");
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(0),
+        "DECSTR must clear alt cursor"
+    );
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, alt_cols - 1),
+        "DECSTR must clear alt margins"
+    );
     assert_eq!(
         t.grid().scroll_region(),
         &(0..alt_lines),
         "DECSTR must clear alt scroll region"
+    );
+    // DECRC on alt screen must NOT resurrect the pre-DECSTR saved cursor.
+    feed(&mut t, b"\x1b8");
+    assert_eq!(
+        t.grid().cursor().line(),
+        0,
+        "DECSTR must clear alt saved cursor"
+    );
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(0),
+        "DECSTR must clear alt saved cursor"
+    );
+    // XTPOPSGR on alt screen must NOT resurrect the pre-DECSTR bold.
+    feed(&mut t, b"\x1b[#}");
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD),
+        "DECSTR must clear alt SGR stack"
     );
     assert!(
         t.keyboard_mode_stack().is_empty(),
