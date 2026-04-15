@@ -427,7 +427,7 @@ The catalog assigns 14 additional rows to Section 08 (11 in `catalog/ecma-48.md`
 - [x] `ECMA48-SGR-75` — Neither superscript nor subscript (reset). Added `Attr::CancelSuperSubscript`. Test: `sgr_75_resets_super_subscript`.
 
 **CSI rows (4):**
-- [x] `ECMA48-CSI-DECSTR` — Soft Terminal Reset. Wired `('p', [b'!'])` in `csi::dispatch` to `handler.reset_state()`. Test: `decstr_resets_terminal_state`.
+- [x] `ECMA48-CSI-DECSTR` — Soft Terminal Reset. Wired `('p', [b'!'])` in `csi::dispatch` to `handler.decstr()`. Tests: `decstr_resets_terminal_state`, `decstr_clears_saved_cursor`, `decstr_clears_sgr_stack`, `decstr_clears_primary_state_when_fired_on_alt_screen`.
 - [x] `ECMA48-CSI-DECSED` — Selective Erase in Display. Added `('J', [b'?'])` dispatch (maps to `clear_screen` — DECSCA protection not yet implemented, so same behavior as ED). Test: `decsed_below_clears_from_cursor`.
 - [x] `ECMA48-CSI-DECSEL` — Selective Erase in Line. Added `('K', [b'?'])` dispatch. Test: `decsel_right_clears_to_end_of_line`.
 - [x] `ECMA48-CSI-SL` — Scroll Left (CSI Ps SP @). Already implemented. Test: `scroll_left_shifts_content`.
