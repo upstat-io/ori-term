@@ -110,6 +110,8 @@ impl Grid {
     /// `dirty.mark_all()` explicitly if needed.
     fn finalize_resize(&mut self) {
         self.scroll_region = 0..self.lines;
+        self.left_margin = 0;
+        self.right_margin = self.cols.saturating_sub(1);
 
         let max_line = self.lines.saturating_sub(1);
         let max_col = self.cols.saturating_sub(1);

@@ -30,7 +30,24 @@
 | Catalog row ID / handoff                    | Legacy tack section                                                      | Conversion status   |
 |---                                          |---                                                                       |---                  |
 | *(section 02 handoff — not a catalog row)*  | `plans/tack-conformance/section-09-verification.md`                      | `absorbed-by-spec-23` |
-| *(section 08 populates as it goes)*         |                                                                          |                     |
+| `ECMA48-C0-BEL`                             | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`acs`/`graphic_rendition` — combined `(bel)` probe on tack v1.08) | `converted` |
+| `ECMA48-CSI-CUP`                            | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`cursor_movement` — `clear` cap = `\E[H\E[2J`)                    | `converted` |
+| `ECMA48-CSI-ED`                             | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`cursor_movement` — `clear` cap = `\E[H\E[2J`)                    | `converted` |
+| `DEC-DECAWM`                                | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`modes` — `am` cap, internally exercised by tack)                 | `converted` |
+| `DEC-DECREVWRAP`                            | `plans/tack-conformance/section-05-test-menu-scenarios.md` (`modes` — `bw` cap, internally exercised by tack)                 | `converted` |
+| `ECMA48-C0-SO`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`character_sets` — SO/SI bank switch used by tack's DEC-graphics preview)                           | `converted` |
+| `ECMA48-C0-SI`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`character_sets` — SO/SI matrix pair)                                                                | `converted` |
+| `ECMA48-ESC-B`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`character_sets` — ASCII round-trip after DEC-graphics designation)                                  | `converted` |
+| `ECMA48-ESC-0`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`character_sets` — DEC Special Graphics designation to G0/G1 + preview render of `q`→`─`)            | `converted` |
+| `ECMA48-CSI-DA2`                            | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`status_reports_inventory` — `da2` sub-test)                                                         | `converted` |
+| `ECMA48-CSI-DA3`                            | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`status_reports_inventory` — `da3` sub-test)                                                         | `converted` |
+| `ECMA48-CSI-DSR-5`                          | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`status_reports_inventory` — `dsr_status` sub-test)                                                  | `converted` |
+| `ECMA48-CSI-DSR-6`                          | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`status_reports_inventory` — `dsr_cpr` sub-test)                                                     | `converted` |
+| `ECMA48-SGR-0`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`sgr_modes` — Mode 0 reset label on tack's 80-mode grid)                                             | `converted` |
+| `ECMA48-SGR-1`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`sgr_modes` — Mode 1 bold label on tack's 80-mode grid)                                              | `converted` |
+| `ECMA48-SGR-4`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`sgr_modes` — Mode 4 underline label on tack's 80-mode grid)                                         | `converted` |
+| `ECMA48-SGR-7`                              | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`sgr_modes` — Mode 7 reverse/inverse label on tack's 80-mode grid)                                   | `converted` |
+| `ECMA48-C0-ENQ`                             | `plans/tack-conformance/section-06-tools-menu-scenarios.md` (`enq_ack` — blocked on BUG-08-6; ENQ dispatch missing in `Performer::execute`)                       | `pending`   |
 
 ### Status vocabulary
 

@@ -27,7 +27,7 @@ fn cell(ch: char) -> WireCell {
 }
 
 /// Build a WireCell with a character and custom flags.
-fn cell_with_flags(ch: char, flags: u16) -> WireCell {
+fn cell_with_flags(ch: char, flags: u32) -> WireCell {
     WireCell {
         ch,
         fg: WHITE,
@@ -128,7 +128,7 @@ fn stable_row_to_viewport_out_of_range() {
 #[test]
 fn redirect_spacer_base_cell() {
     // col 0: wide char, col 1: spacer
-    let wide_char_spacer_bit: u16 = 1 << 9;
+    let wide_char_spacer_bit: u32 = 1 << 9;
     let snap = test_snapshot(
         vec![vec![
             cell_with_flags('漢', 1 << 8), // WIDE_CHAR
@@ -177,8 +177,8 @@ fn word_boundaries_simple() {
 
 #[test]
 fn word_boundaries_with_wide_char() {
-    let wide = 1u16 << 8;
-    let spacer = 1u16 << 9;
+    let wide = 1u32 << 8;
+    let spacer = 1u32 << 9;
     // "a漢b" → 4 cells: [a] [漢(wide)] [spacer] [b]
     let snap = test_snapshot(
         vec![vec![
@@ -213,7 +213,7 @@ fn logical_line_start_no_wrap() {
 
 #[test]
 fn logical_line_start_with_wrap() {
-    let wrap = 1u16 << 10;
+    let wrap = 1u32 << 10;
     let snap = test_snapshot(
         vec![
             vec![cell('a'), cell_with_flags('b', wrap)], // row 0 wraps
@@ -231,7 +231,7 @@ fn logical_line_start_with_wrap() {
 
 #[test]
 fn logical_line_end_with_wrap() {
-    let wrap = 1u16 << 10;
+    let wrap = 1u32 << 10;
     let snap = test_snapshot(
         vec![
             vec![cell('a'), cell_with_flags('b', wrap)], // row 0 wraps

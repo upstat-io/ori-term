@@ -710,3 +710,189 @@ fn tab_stop_at_right_margin_no_wrap() {
     // No tab stop past 79; cursor stays at 79.
     assert_eq!(grid.cursor().col(), Column(79));
 }
+
+// ── DECLRMM (left/right margin mode) tests ──────────────────────────
+
+fn grid_with_margins(lines: usize, cols: usize, left: usize, right: usize) -> Grid {
+    let mut grid = Grid::new(lines, cols);
+    grid.set_left_right_margins(left, right);
+    grid
+}
+
+// Positive pins
+
+#[test]
+fn cuf_respects_right_margin_under_declrmm() {
+    let mut grid = grid_with_margins(24, 80, 5, 70);
+    grid.cursor_mut().set_col(Column(60));
+    grid.move_forward(20);
+    assert_eq!(grid.cursor().col(), Column(70));
+}
+
+#[test]
+fn cub_respects_left_margin_under_declrmm() {
+    let mut grid = grid_with_margins(24, 80, 5, 70);
+    grid.cursor_mut().set_col(Column(10));
+    grid.move_backward(20);
+    assert_eq!(grid.cursor().col(), Column(5));
+}
+
+#[test]
+fn cha_grid_level_does_not_clamp_by_margins() {
+    // Grid::move_to_column is the absolute primitive for CHA. Margin
+    // semantics (DECOM offset + `[left_margin, right_margin]` clamp)
+    // are enforced at the Term layer in `Term::goto_col`. At the Grid
+    // layer, CHA is pure absolute positioning bounded only by the
+    // physical column count.
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    grid.cursor_mut().set_col(Column(15));
+
+    // Target col=0 must land at 0 — NOT the left margin.
+    grid.move_to_column(Column(0));
+    assert_eq!(grid.cursor().col(), Column(0));
+
+    // Target col=75 must land at 75 — NOT clamped to the right margin.
+    grid.move_to_column(Column(75));
+    assert_eq!(grid.cursor().col(), Column(75));
+}
+
+#[test]
+fn cr_goes_to_left_margin_under_declrmm() {
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    grid.cursor_mut().set_col(Column(40));
+    grid.carriage_return();
+    assert_eq!(grid.cursor().col(), Column(10));
+}
+
+#[test]
+fn cup_ignores_horizontal_margins() {
+    // CUP/HVP are absolute addressing. Even with DECLRMM margins active
+    // and the cursor starting inside the band, a CUP target outside the
+    // band must land at the requested column, NOT be clamped to the
+    // right margin. Reference: DEC STD 070 §4.6.10 (CUP is absolute
+    // unless DECOM is set, in which case the Term layer applies the
+    // offset before reaching `Grid::move_to`).
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    grid.cursor_mut().set_col(Column(15));
+
+    // Target col=75 is outside `[10, 70]` — must land at 75.
+    grid.move_to(5, Column(75));
+    assert_eq!(
+        grid.cursor().col(),
+        Column(75),
+        "CUP must NOT be clamped to right_margin when cursor starts inside the band",
+    );
+
+    // Target col=2 is outside `[10, 70]` on the left side — must land at 2.
+    grid.move_to(5, Column(2));
+    assert_eq!(
+        grid.cursor().col(),
+        Column(2),
+        "CUP must NOT be clamped up to left_margin when target is outside the band",
+    );
+
+    // Target col=79 (last column) is in-bounds.
+    grid.move_to(5, Column(79));
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
+#[test]
+fn auto_wrap_at_right_margin_wraps_to_left_margin() {
+    let mut grid = grid_with_margins(3, 80, 10, 14);
+    grid.cursor_mut().set_col(Column(10));
+    grid.cursor_mut().set_line(0);
+    // Write 6 chars: fills cols 10..14, then the 6th should wrap to left_margin on next line.
+    for ch in ['A', 'B', 'C', 'D', 'E', 'F'] {
+        grid.put_char(ch);
+    }
+    assert_eq!(grid.cursor().line(), 1);
+    assert_eq!(grid.cursor().col(), Column(11));
+}
+
+#[test]
+fn nel_goes_to_left_margin_not_col_0() {
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    grid.cursor_mut().set_col(Column(40));
+    grid.next_line();
+    assert_eq!(grid.cursor().col(), Column(10));
+}
+
+#[test]
+fn declrmm_disabled_restores_full_width_movement() {
+    let mut grid = Grid::new(24, 80);
+    grid.set_left_right_margins(10, 70);
+    grid.cursor_mut().set_col(Column(15));
+    grid.move_forward(100);
+    assert_eq!(grid.cursor().col(), Column(70));
+    // Reset margins (simulates mode 69 clear).
+    grid.reset_left_right_margins();
+    grid.cursor_mut().set_col(Column(15));
+    grid.move_forward(100);
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
+#[test]
+fn cursor_outside_margin_band_not_constrained() {
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    // Place cursor outside the margin band (col 2 < left_margin 10).
+    grid.cursor_mut().set_col(Column(2));
+    grid.move_forward(100);
+    // Cursor outside band: should clamp to cols-1, not right_margin.
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
+#[test]
+fn backspace_at_left_margin_stops_under_declrmm() {
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(10));
+    grid.backspace();
+    // At left_margin: no-op at Grid level (reverse wrap handled by Term).
+    assert_eq!(grid.cursor().line(), 1);
+    assert_eq!(grid.cursor().col(), Column(10));
+}
+
+// Negative pins
+
+#[test]
+fn cuf_without_declrmm_ignores_margins() {
+    let mut grid = Grid::new(24, 80);
+    // Margins at defaults (0, 79) = full width, so no constraint.
+    grid.cursor_mut().set_col(Column(10));
+    grid.move_forward(100);
+    assert_eq!(grid.cursor().col(), Column(79));
+}
+
+#[test]
+fn ht_stops_at_right_margin_under_declrmm() {
+    let mut grid = grid_with_margins(24, 80, 5, 20);
+    grid.cursor_mut().set_col(Column(10));
+    grid.tab();
+    // Next tab stop at col 16, which is within [5, 20].
+    assert_eq!(grid.cursor().col(), Column(16));
+    // Tab again: next stop at 24, but that exceeds right_margin 20.
+    grid.tab();
+    assert_eq!(grid.cursor().col(), Column(20));
+}
+
+#[test]
+fn cbt_stops_at_left_margin_under_declrmm() {
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    grid.cursor_mut().set_col(Column(15));
+    grid.tab_backward();
+    // Previous tab stop at col 8, which is before left_margin 10.
+    assert_eq!(grid.cursor().col(), Column(10));
+}
+
+#[test]
+fn declrmm_does_not_affect_vertical_scroll_region() {
+    let mut grid = grid_with_margins(24, 80, 10, 70);
+    // 1-based params: top=6, bottom=20 → 0-based region 5..20.
+    grid.set_scroll_region(6, Some(20));
+    grid.cursor_mut().set_line(10);
+    grid.cursor_mut().set_col(Column(40));
+    grid.move_up(100);
+    assert_eq!(grid.cursor().line(), 5);
+    grid.move_down(100);
+    assert_eq!(grid.cursor().line(), 19);
+}

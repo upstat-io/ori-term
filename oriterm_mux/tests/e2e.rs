@@ -529,7 +529,7 @@ fn test_pane_mode() {
     client.send_input(pane_id, b"printf '\\033[?2004h'\n");
 
     // Poll until the mode bit is set (avoids flaky fixed timeouts).
-    let bracketed_paste_bit = 1u32 << 13;
+    let bracketed_paste_bit = 1u64 << 13;
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();

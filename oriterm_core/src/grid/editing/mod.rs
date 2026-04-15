@@ -112,24 +112,26 @@ impl Grid {
         loop {
             let line = self.cursor.line();
             let col = self.cursor.col().0;
+            let in_band = self.cursor_in_margin_band();
+            let right_edge = if in_band { self.right_margin + 1 } else { cols };
+            let wrap_col = if in_band { self.left_margin } else { 0 };
 
-            // If a pending wrap is active and we're at the last column, wrap now.
-            if col >= cols {
-                self.rows[line][Column(cols - 1)].flags |= CellFlags::WRAP;
+            // If a pending wrap is active, wrap now.
+            if col >= right_edge {
+                let mark_col = (right_edge - 1).min(cols - 1);
+                self.rows[line][Column(mark_col)].flags |= CellFlags::WRAP;
                 self.linefeed();
-                self.cursor.set_col(Column(0));
+                self.cursor.set_col(Column(wrap_col));
                 continue;
             }
 
-            // For wide chars at the last column, wrap instead of splitting.
-            // Mark the boundary cell as LEADING_WIDE_CHAR_SPACER so reflow,
-            // selection, and search skip it (avoids spurious spaces).
-            if width == 2 && col + 1 >= cols {
+            // For wide chars at the last position in the band, wrap.
+            if width == 2 && col + 1 >= right_edge {
                 let boundary = &mut self.rows[line][Column(col)];
                 boundary.ch = ' ';
                 boundary.flags = CellFlags::LEADING_WIDE_CHAR_SPACER | CellFlags::WRAP;
                 self.linefeed();
-                self.cursor.set_col(Column(0));
+                self.cursor.set_col(Column(wrap_col));
                 continue;
             }
 
@@ -221,7 +223,10 @@ impl Grid {
 
     /// Insert `count` blank cells at the cursor, shifting existing cells right.
     ///
-    /// Cells that shift past the right edge are lost.
+    /// Cells that shift past the right edge are lost. When DECLRMM
+    /// horizontal margins are active, the shift is constrained to
+    /// `[cursor_col, right_margin]` — cells beyond the right margin
+    /// are untouched.
     pub fn insert_blank(&mut self, count: usize) {
         if count == 0 {
             return;
@@ -242,7 +247,26 @@ impl Grid {
             return;
         }
 
-        let count = count.min(cols - col);
+        // DECLRMM constraint: when margins are active, ICH must be a no-op
+        // if the cursor is outside the margin band (per ECMA-48 §8.3.64 and
+        // WezTerm/Ghostty behavior). Operating on cells outside the band
+        // would violate the margin invariant.
+        if self.has_horizontal_margins() && (col < self.left_margin || col > self.right_margin) {
+            return;
+        }
+
+        // Right boundary: right_margin + 1 when margins active, else cols.
+        let right_bound = if self.has_horizontal_margins() {
+            (self.right_margin + 1).min(cols)
+        } else {
+            cols
+        };
+
+        if col >= right_bound {
+            return;
+        }
+
+        let count = count.min(right_bound - col);
 
         // Clean the partner of any wide char pair at the insertion point,
         // then strip the cell's own wide flag so the shifted copy doesn't
@@ -252,11 +276,16 @@ impl Grid {
             .flags
             .remove(CellFlags::WIDE_CHAR | CellFlags::WIDE_CHAR_SPACER);
 
+        // Clean wide char at the right boundary (cell being pushed off).
+        if right_bound < cols {
+            self.clear_wide_char_at(line, right_bound.saturating_sub(1));
+        }
+
         let row = &mut self.rows[line];
         let cells = row.as_mut_slice();
 
-        // Shift cells right by swapping (no allocation).
-        for i in (col + count..cols).rev() {
+        // Shift cells right by swapping within [col, right_bound).
+        for i in (col + count..right_bound).rev() {
             cells.swap(i, i - count);
         }
 
@@ -265,22 +294,26 @@ impl Grid {
             cell.reset(&template);
         }
 
-        // Fix wide char base pushed to the right edge (spacer fell off-screen).
-        if cells[cols - 1].flags.contains(CellFlags::WIDE_CHAR) {
-            cells[cols - 1].ch = ' ';
-            cells[cols - 1].flags.remove(CellFlags::WIDE_CHAR);
+        // Fix wide char base pushed to the right boundary (spacer fell off).
+        if right_bound > 0 && cells[right_bound - 1].flags.contains(CellFlags::WIDE_CHAR) {
+            cells[right_bound - 1].ch = ' ';
+            cells[right_bound - 1].flags.remove(CellFlags::WIDE_CHAR);
         }
 
         // Cells shifted right: occ grows by at most `count`, capped at cols.
         row.set_occ((row.occ() + count).min(cols));
 
-        // Content shifts from cursor to right edge.
-        self.dirty.mark_cols(line, col, cols.saturating_sub(1));
+        // Content shifts from cursor to right boundary.
+        self.dirty
+            .mark_cols(line, col, right_bound.saturating_sub(1));
     }
 
     /// Delete `count` cells at the cursor, shifting remaining cells left.
     ///
-    /// New cells at the right edge are blank.
+    /// New cells at the right edge are blank. When DECLRMM horizontal
+    /// margins are active, the shift is constrained to
+    /// `[cursor_col, right_margin]` — cells beyond the right margin
+    /// are untouched and blanks fill from the right margin.
     pub fn delete_chars(&mut self, count: usize) {
         if count == 0 {
             return;
@@ -301,12 +334,30 @@ impl Grid {
             return;
         }
 
-        let count = count.min(cols - col);
+        // DECLRMM constraint: when margins are active, DCH must be a no-op
+        // if the cursor is outside the margin band. Operating on cells
+        // outside the band would violate the margin invariant.
+        if self.has_horizontal_margins() && (col < self.left_margin || col > self.right_margin) {
+            return;
+        }
+
+        // Right boundary: right_margin + 1 when margins active, else cols.
+        let right_bound = if self.has_horizontal_margins() {
+            (self.right_margin + 1).min(cols)
+        } else {
+            cols
+        };
+
+        if col >= right_bound {
+            return;
+        }
+
+        let count = count.min(right_bound - col);
 
         // Clean wide char pair at the cursor so stale flags don't persist.
         self.clear_wide_char_at(line, col);
         // Spacer at first shifted position: its base is in the delete zone.
-        if col + count < cols
+        if col + count < right_bound
             && self.rows[line][Column(col + count)]
                 .flags
                 .contains(CellFlags::WIDE_CHAR_SPACER)
@@ -320,25 +371,23 @@ impl Grid {
         let row = &mut self.rows[line];
         let cells = row.as_mut_slice();
 
-        // Shift cells left by swapping (no allocation).
-        for i in col..cols - count {
+        // Shift cells left by swapping within [col, right_bound).
+        for i in col..right_bound - count {
             cells.swap(i, i + count);
         }
 
-        // Reset the vacated right cells in-place.
-        for cell in &mut cells[cols - count..cols] {
+        // Reset the vacated cells at the right end of the band.
+        for cell in &mut cells[right_bound - count..right_bound] {
             cell.reset(&template);
         }
 
         if !template.is_empty() {
-            // BCE: fill cells at [cols-count..cols] are dirty.
             row.set_occ(cols);
         }
-        // else: Content shifted left; existing occ remains a valid upper
-        // bound. Fill cells are empty and don't extend the dirty range.
 
-        // Content shifts from cursor to right edge.
-        self.dirty.mark_cols(line, col, cols.saturating_sub(1));
+        // Content shifts from cursor to right boundary.
+        self.dirty
+            .mark_cols(line, col, right_bound.saturating_sub(1));
     }
 
     // Erase operations (`erase_display`, `erase_line`, `erase_chars`) are

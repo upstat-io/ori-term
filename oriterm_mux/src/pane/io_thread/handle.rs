@@ -7,7 +7,7 @@
 
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::thread::JoinHandle;
 
 use crossbeam_channel::Sender;
@@ -91,7 +91,7 @@ pub struct IoThreadConfig<S: EffectSink + 'static> {
     /// The terminal state machine — transferred to the IO thread.
     pub terminal: Term<S>,
     /// Lock-free mode cache (shared with main thread).
-    pub mode_cache: Arc<AtomicU32>,
+    pub mode_cache: Arc<AtomicU64>,
     /// Shutdown flag (shared with reader/writer threads).
     pub shutdown: Arc<AtomicBool>,
     /// Wakeup callback — signals the main thread on new state.

@@ -70,7 +70,6 @@ Add one test that renders 3 frames in one function to make cross-frame assertion
 ## 03.R Third Party Review Findings
 
 - [x] `[TPR-03-001][medium]` `plans/golden-image-audit/section-03-text-blink-tests.md:4-28`, `plans/golden-image-audit/00-overview.md:94-130`, `plans/golden-image-audit/index.md:50-58` — Section 03's implementation and checklist are in progress, but the surrounding plan artifacts still advertise the work as "Not Started."
-  Evidence: The section frontmatter says `status: in-progress` and the implementation/checklist items are checked off, yet the section body still says `**Status:** Not Started`, and both the plan overview and index list Section 03 as `Not Started`.
   Resolved: All status text synced to In Progress / Complete on 2026-04-02.
 
 ---

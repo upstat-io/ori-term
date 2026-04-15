@@ -1212,3 +1212,138 @@ fn erase_chars_zero_no_dirty() {
     grid.erase_chars(0);
     assert!(!grid.dirty().is_any_dirty());
 }
+
+// --- ICH/DCH with DECLRMM horizontal margins ---
+
+/// Helper: fill row 0 with column-index chars ('0'..'9').
+fn grid_with_col_index_row(cols: usize) -> Grid {
+    let mut grid = Grid::new(3, cols);
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    for col in 0..cols {
+        let ch = (b'0' + col as u8) as char;
+        grid.put_char(ch);
+    }
+    grid.cursor_mut().set_line(0);
+    grid
+}
+
+#[test]
+fn ich_within_margins_shifts_only_margin_band() {
+    let mut grid = grid_with_col_index_row(10);
+    // Margins [2, 7]. Cursor at col 3.
+    grid.set_left_right_margins(2, 7);
+    grid.cursor_mut().set_col(Column(3));
+    grid.insert_blank(2);
+
+    // Cols 0-2: unchanged.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, '0');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, '1');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, '2');
+    // Cols 3-4: blanked (inserted).
+    assert!(
+        grid[crate::index::Line(0)][Column(3)].is_empty(),
+        "col 3 should be blank"
+    );
+    assert!(
+        grid[crate::index::Line(0)][Column(4)].is_empty(),
+        "col 4 should be blank"
+    );
+    // Cols 5-7: old cols 3-5 shifted right ('3', '4', '5').
+    assert_eq!(grid[crate::index::Line(0)][Column(5)].ch, '3');
+    assert_eq!(grid[crate::index::Line(0)][Column(6)].ch, '4');
+    assert_eq!(grid[crate::index::Line(0)][Column(7)].ch, '5');
+    // Cols 8-9: unchanged (outside right margin).
+    assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, '8');
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, '9');
+}
+
+#[test]
+fn dch_within_margins_shifts_only_margin_band() {
+    let mut grid = grid_with_col_index_row(10);
+    // Margins [2, 7]. Cursor at col 3.
+    grid.set_left_right_margins(2, 7);
+    grid.cursor_mut().set_col(Column(3));
+    grid.delete_chars(2);
+
+    // Cols 0-2: unchanged.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, '0');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, '1');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, '2');
+    // Cols 3-5: old cols 5-7 shifted left ('5', '6', '7').
+    assert_eq!(grid[crate::index::Line(0)][Column(3)].ch, '5');
+    assert_eq!(grid[crate::index::Line(0)][Column(4)].ch, '6');
+    assert_eq!(grid[crate::index::Line(0)][Column(5)].ch, '7');
+    // Cols 6-7: blanked (vacated).
+    assert!(
+        grid[crate::index::Line(0)][Column(6)].is_empty(),
+        "col 6 should be blank"
+    );
+    assert!(
+        grid[crate::index::Line(0)][Column(7)].is_empty(),
+        "col 7 should be blank"
+    );
+    // Cols 8-9: unchanged (outside right margin).
+    assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, '8');
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, '9');
+}
+
+/// Regression: ICH with cursor left of `left_margin` must be a no-op.
+/// Previously the shift range started at `col` (the cursor) and extended
+/// to `right_margin + 1`, mutating cells BEFORE `left_margin` — outside
+/// the margin band in violation of ECMA-48/DECLRMM semantics.
+#[test]
+fn ich_with_cursor_left_of_left_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(5, 8);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_blank(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(
+            grid[crate::index::Line(0)][Column(col)].ch,
+            expected,
+            "col {col} must be unchanged when cursor is outside band",
+        );
+    }
+}
+
+#[test]
+fn ich_with_cursor_right_of_right_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(2, 5);
+    grid.cursor_mut().set_col(Column(8));
+    grid.insert_blank(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(grid[crate::index::Line(0)][Column(col)].ch, expected);
+    }
+}
+
+#[test]
+fn dch_with_cursor_left_of_left_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(5, 8);
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_chars(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(
+            grid[crate::index::Line(0)][Column(col)].ch,
+            expected,
+            "col {col} must be unchanged when cursor is outside band",
+        );
+    }
+}
+
+#[test]
+fn dch_with_cursor_right_of_right_margin_is_noop() {
+    let mut grid = grid_with_col_index_row(10);
+    grid.set_left_right_margins(2, 5);
+    grid.cursor_mut().set_col(Column(8));
+    grid.delete_chars(3);
+    for col in 0..10 {
+        let expected = (b'0' + col as u8) as char;
+        assert_eq!(grid[crate::index::Line(0)][Column(col)].ch, expected);
+    }
+}

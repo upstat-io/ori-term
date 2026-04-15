@@ -655,3 +655,39 @@ fn pick_adapter_discrete_or_fallback_matches_original() {
         }
     }
 }
+
+/// Regression: both public headless entrypoints must funnel through
+/// `sanitize_headless_env()` so the Wayland/X11 probe-hang guard fires
+/// regardless of which constructor the caller reaches. Before the fix,
+/// only `new_headless()` sanitized — callers that reached
+/// `new_headless_with_preference()` directly (visual-regression
+/// software-rasterizer lane + `GpuState::new_headless_with_preference`
+/// callers in this test file) bypassed the guard.
+#[test]
+fn both_headless_entrypoints_unset_display_env() {
+    use super::GpuState;
+    use super::helpers::AdapterPreference;
+
+    // Exercise the preference entrypoint first so the OnceLock inside
+    // `sanitize_headless_env` is known-fired before we assert — otherwise
+    // a hypothetical regression that only runs sanitization from
+    // `new_headless()` would be hidden by a prior successful run in the
+    // same process.
+    let _ = GpuState::new_headless_with_preference(AdapterPreference::DiscreteOrFallback);
+    let _ = GpuState::new_headless();
+
+    // SAFETY: these reads are the complement of the `env::remove_var`
+    // calls in `sanitize_headless_env`. The sanitizer only fires from
+    // background test threads if some other test installed them, but
+    // Cargo's default test harness runs tests in the same process we are
+    // in, so after either entrypoint above returns, any stale
+    // WAYLAND_DISPLAY / DISPLAY must already be cleared.
+    assert!(
+        std::env::var_os("WAYLAND_DISPLAY").is_none(),
+        "sanitize_headless_env must clear WAYLAND_DISPLAY via either entrypoint",
+    );
+    assert!(
+        std::env::var_os("DISPLAY").is_none(),
+        "sanitize_headless_env must clear DISPLAY via either entrypoint",
+    );
+}

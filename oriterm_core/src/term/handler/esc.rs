@@ -68,6 +68,33 @@ impl<S: EffectSink> Term<S> {
             .push(Effect::Host(HostEffect::TitleSet { value: None }));
     }
 
+    /// DECSTR (CSI ! p): Soft Terminal Reset.
+    ///
+    /// Resets modes, SGR attributes, cursor position, scroll region,
+    /// tab stops, and charsets. Does NOT clear screen contents,
+    /// scrollback, title, palette, or image caches — that is RIS (ESC c).
+    pub(super) fn soft_reset(&mut self) {
+        debug!("DECSTR: soft terminal reset");
+
+        self.selection_dirty = true;
+
+        let grid = self.grid_mut();
+        grid.cursor_mut().template = Cell::default();
+        grid.cursor_mut().set_line(0);
+        grid.cursor_mut().set_col(Column(0));
+        grid.set_scroll_region(0, None);
+        let cols = grid.cols();
+        grid.set_left_right_margins(0, cols.saturating_sub(1));
+        grid.clear_sgr_stack();
+
+        self.mode = TermMode::default();
+        self.charset = CharsetState::default();
+        self.saved_charset = None;
+        self.saved_origin_mode = None;
+        self.cursor_shape = crate::grid::CursorShape::default();
+        self.keyboard_mode_stack.clear();
+    }
+
     /// DECALN (ESC # 8): DEC Screen Alignment Test.
     ///
     /// Fills all visible cells with 'E' (default attributes), resets
@@ -77,8 +104,9 @@ impl<S: EffectSink> Term<S> {
         let lines = grid.lines();
         let cols = grid.cols();
 
-        // Reset scroll region to full screen.
+        // Reset scroll region and horizontal margins to full screen.
         grid.set_scroll_region(1, None);
+        grid.reset_left_right_margins();
 
         // Fill every visible cell with 'E' and default attributes.
         let template = Cell::default();

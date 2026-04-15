@@ -78,14 +78,17 @@ impl<S: EffectSink> Term<S> {
     /// the image-cache field contents, but that created a structural
     /// inversion where `self.image_cache` held the alt cache in alt
     /// mode and the primary grid was paired with the wrong cache in
-    /// `Term::resize` (see BUG-08-10, TPR-07-001 round 6).
+    /// `Term::resize`.
     fn toggle_alt_common(&mut self) {
         self.mode.toggle(TermMode::ALT_SCREEN);
         std::mem::swap(
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
-        // DECSC sidecar state is per-screen (VT220 spec).
+        // DECSC sidecar state is per-screen (VT220 spec). DECLRMM is
+        // NOT in the DECSC save set (see `Grid::save_cursor`), so there
+        // is nothing margin-related to swap here — the primary/alt grid
+        // split in `Term::{grid, alt_grid}` carries its own margin state.
         std::mem::swap(&mut self.saved_charset, &mut self.inactive_saved_charset);
         std::mem::swap(
             &mut self.saved_origin_mode,

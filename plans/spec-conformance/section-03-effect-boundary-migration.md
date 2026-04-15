@@ -912,24 +912,18 @@ Per Codex Round 2 ("production interface, not test-only ... migration via Legacy
 <!-- Full-section dual-source TPR review (Codex + Gemini), 2026-04-12. -->
 
 - [x] `[TPR-03-001-codex][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:159` — GAP: Wake the IO thread when a ResponseToken is fulfilled.
-  Evidence: `ResponseToken::fulfill()` only stores into the slot. The IO thread blocks in `crossbeam_channel::select!` on cmd/byte channels. No wake path triggers when a host consumer fulfills a token, so idle OSC 52 / color query replies have unbounded latency.
-  Impact: Dormant during legacy phase (LegacyEventSink handles round-trip via closures). Activates at effect-cutover.
   Resolved: Fixed on 2026-04-12. Updated `plans/effect-cutover/section-01-migrate-mux-consumer.md` §01.3 to require a concrete IO thread wake mechanism from token fulfillment + idle-query latency test. No code change needed — code is dormant by design; the plan update ensures the wake mechanism ships with the cutover.
 
 - [x] `[TPR-03-002-codex][low]` `oriterm_core/src/term/handler/osc.rs:110` — GAP: OSC 52 `s` select buffer collapsed to `Primary`, making `ClipboardSelection::Select` dead state.
-  Evidence: Both `osc_clipboard_store()` and `osc_clipboard_load()` mapped `b's'` to `ClipboardSelection::Primary`. The `Select` variant was defined but never emitted — SSOT drift in the boundary type.
   Resolved: Fixed on 2026-04-12. Changed `b's'` → `ClipboardSelection::Select` in both handlers. Added 3 tests: `store_primary_selection`, `store_select_buffer`, `load_select_buffer`. Legacy adapter `Primary | Select => Selection` preserves back-compat.
 
 - [x] `[TPR-03-001-gemini][low]` `oriterm_core/src/effect/response.rs:19` — GAP: PendingResponse has no unit test in oriterm_core.
-  Evidence: PendingResponse is defined in `oriterm_core::effect::response` but only tested in downstream `oriterm_mux`. Test boundary leakage — core behavior verified exclusively by a downstream crate.
   Resolved: Fixed on 2026-04-12. Added 3 unit tests in `oriterm_core/src/effect/tests.rs`: `pending_response_returns_none_when_unfulfilled`, `pending_response_returns_effect_when_fulfilled`, `pending_response_returns_none_after_drain`.
 
 - [x] `[TPR-03-001-codex-r2][low]` `plans/spec-conformance/section-03-effect-boundary-migration.md:959` — DRIFT: Follow-up artifact gate claims "reviewed section file" but cutover section has `reviewed: false`.
-  Evidence: 03.N checklist item claims "at least one reviewed section file" but `plans/effect-cutover/section-01-migrate-mux-consumer.md` has `reviewed: false`.
   Resolved: Fixed on 2026-04-12. Updated checklist wording to reflect actual state — the follow-up artifact EXISTS with content; the `reviewed: false` gate triggers when the cutover plan is picked up for implementation, not at Section 03 close-out.
 
 - [x] `[TPR-03-001-codex-r3][low]` `plans/spec-conformance/00-overview.md:35` — DRIFT: Mission criterion still says "reviewed section" after 03.N gate was updated.
-  Evidence: `00-overview.md:35` still requires "at least one reviewed section" for the follow-up artifact — inconsistent with the updated 03.N checklist.
   Resolved: Fixed on 2026-04-12. Synchronized `00-overview.md` mission criterion to match the 03.N policy: "at least one section file" with note that `reviewed: false` gate triggers at cutover time.
 
 ---

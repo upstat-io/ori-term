@@ -165,7 +165,8 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn goto_col(&mut self, col: usize) {
-        self.grid_mut().move_to_column(Column(col));
+        let target = self.origin_aware_col(col);
+        self.grid_mut().move_to_column(target);
     }
     fn move_up(&mut self, count: usize) {
         self.grid_mut().move_up(count);
@@ -253,6 +254,16 @@ impl<S: EffectSink> Handler for Term<S> {
         self.grid_mut().scroll_down(count);
     }
 
+    fn scroll_left(&mut self, count: usize) {
+        self.selection_dirty = true;
+        self.grid_mut().scroll_left(count);
+    }
+
+    fn scroll_right(&mut self, count: usize) {
+        self.selection_dirty = true;
+        self.grid_mut().scroll_right(count);
+    }
+
     fn reverse_index(&mut self) {
         self.selection_dirty = true;
         self.grid_mut().reverse_index();
@@ -299,14 +310,42 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn save_cursor_position(&mut self) {
+        // DEC STD 070 §5.6.1 save set: cursor position + character attributes
+        // + charset state + wrap flag + DECOM flag. DECLRMM mode and the
+        // margin values are NOT saved — see Grid::save_cursor docs.
         self.grid_mut().save_cursor();
-        // VT220 spec: DECSC also saves charset state and origin mode flag.
         self.saved_charset = Some(self.charset.clone());
         self.saved_origin_mode = Some(self.mode.contains(TermMode::ORIGIN));
     }
+
+    fn decslrm_or_save_cursor(&mut self, has_params: bool, left: u16, right: u16) {
+        if has_params {
+            // With params: always DECSLRM. No-op if mode 69 inactive.
+            if self.mode.contains(TermMode::LEFT_RIGHT_MARGIN) {
+                let cols = self.grid().cols();
+                let l = (left.max(1) as usize).saturating_sub(1);
+                let r = if right == 0 {
+                    cols.saturating_sub(1)
+                } else {
+                    (right as usize).saturating_sub(1)
+                };
+                self.grid_mut().set_left_right_margins(l, r);
+            }
+        } else if self.mode.contains(TermMode::LEFT_RIGHT_MARGIN) {
+            // Zero params + mode 69 active: DECSLRM with defaults (full width).
+            self.grid_mut().reset_left_right_margins();
+        } else {
+            // Zero params + mode 69 inactive: save cursor (backward compat).
+            self.save_cursor_position();
+        }
+    }
+
     fn restore_cursor_position(&mut self) {
+        // DECRC restores the same state DECSC saved: cursor + attributes +
+        // charset + DECOM flag. DECLRMM mode and margin values are NOT in
+        // the restore set (see `save_cursor_position` for the save-set
+        // rationale).
         self.grid_mut().restore_cursor();
-        // VT220 spec: DECRC also restores charset state and origin mode flag.
         if let Some(charset) = self.saved_charset.take() {
             self.charset = charset;
             self.saved_charset = Some(self.charset.clone());
@@ -385,6 +424,18 @@ impl<S: EffectSink> Handler for Term<S> {
     }
     fn reset_state(&mut self) {
         self.esc_reset_state();
+    }
+
+    fn decstr(&mut self) {
+        self.soft_reset();
+    }
+
+    fn push_sgr(&mut self) {
+        self.grid_mut().push_sgr();
+    }
+
+    fn pop_sgr(&mut self) {
+        self.grid_mut().pop_sgr();
     }
 
     #[inline]

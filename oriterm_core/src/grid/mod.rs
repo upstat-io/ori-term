@@ -16,6 +16,9 @@ pub mod stable_index;
 
 use std::ops::{Index, IndexMut, Range};
 
+use vte::ansi::Color;
+
+use crate::cell::CellFlags;
 use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
@@ -43,6 +46,12 @@ pub struct Grid {
     /// Current cursor position and template.
     cursor: Cursor,
     /// DECSC/DECRC saved cursor.
+    ///
+    /// Per DEC STD 070 §5.6.1 and cross-verified against wezterm, alacritty,
+    /// and ghostty, the DECSC save set is the cursor position, character
+    /// attributes, charset state, wrap flag, and DECOM flag. DECLRMM margins
+    /// are NOT saved — margin state is scoped to the screen (alt vs primary),
+    /// not to the cursor save/restore pair.
     saved_cursor: Option<Cursor>,
     /// Tab stop at each column (true = stop).
     tab_stops: Vec<bool>,
@@ -59,8 +68,27 @@ pub struct Grid {
     /// `scroll_up` and `erase_display(All)` to remove them before the
     /// shell redraws after SIGWINCH. Not incremented by height changes.
     resize_pushed: usize,
+    /// DECLRMM left margin column (inclusive, 0-based). Default: 0.
+    left_margin: usize,
+    /// DECLRMM right margin column (inclusive, 0-based). Default: cols - 1.
+    right_margin: usize,
     /// Tracks which rows have changed since last drain.
     dirty: DirtyTracker,
+    /// XTPUSHSGR/XTPOPSGR attribute stack (max 10 entries per xterm).
+    sgr_stack: Vec<SgrSnapshot>,
+}
+
+/// Saved SGR state for XTPUSHSGR/XTPOPSGR.
+///
+/// Only captures SGR-relevant attributes (flags, colors, underline color).
+/// Hyperlinks (OSC 8) and zerowidth marks are NOT saved — they live
+/// outside SGR scope per xterm convention.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SgrSnapshot {
+    flags: CellFlags,
+    fg: Color,
+    bg: Color,
+    underline_color: Option<Color>,
 }
 
 impl Grid {
@@ -93,7 +121,10 @@ impl Grid {
             display_offset: 0,
             total_evicted: 0,
             resize_pushed: 0,
+            left_margin: 0,
+            right_margin: cols.saturating_sub(1),
             dirty: DirtyTracker::new(lines, cols),
+            sgr_stack: Vec::new(),
         }
     }
 
@@ -121,6 +152,42 @@ impl Grid {
     #[cfg(test)]
     pub(crate) fn tab_stops(&self) -> &[bool] {
         &self.tab_stops
+    }
+
+    /// Left/right margin bounds (inclusive, 0-based).
+    pub fn left_right_margins(&self) -> (usize, usize) {
+        (self.left_margin, self.right_margin)
+    }
+
+    /// Set DECLRMM left/right margins.
+    ///
+    /// `left` and `right` are 0-based inclusive columns. Silently ignored
+    /// if `left >= right` or `right >= cols`.
+    pub fn set_left_right_margins(&mut self, left: usize, right: usize) {
+        if left < right && right < self.cols {
+            self.left_margin = left;
+            self.right_margin = right;
+        }
+    }
+
+    /// Reset left/right margins to full width.
+    pub fn reset_left_right_margins(&mut self) {
+        self.left_margin = 0;
+        self.right_margin = self.cols.saturating_sub(1);
+    }
+
+    /// Whether horizontal margins are active (not full-width).
+    pub fn has_horizontal_margins(&self) -> bool {
+        self.left_margin > 0 || self.right_margin < self.cols.saturating_sub(1)
+    }
+
+    /// Whether the cursor is inside the left/right margin band.
+    ///
+    /// Wrap-pending state (col == `right_margin` + 1) counts as "in band"
+    /// so that auto-wrap targets `left_margin`, not column 0.
+    pub fn cursor_in_margin_band(&self) -> bool {
+        let col = self.cursor.col().0;
+        col >= self.left_margin && col <= self.right_margin + 1
     }
 
     /// Total lines: visible + scrollback history.
@@ -204,10 +271,44 @@ impl Grid {
         self.saved_cursor = None;
         Self::reset_tab_stops(&mut self.tab_stops, self.cols);
         self.scroll_region = 0..self.lines;
+        self.left_margin = 0;
+        self.right_margin = self.cols.saturating_sub(1);
         self.total_evicted += self.scrollback.len();
         self.scrollback.clear();
         self.display_offset = 0;
+        self.sgr_stack.clear();
         self.dirty.mark_all();
+    }
+
+    /// Push current cursor template SGR state onto the XTPUSHSGR stack.
+    pub fn push_sgr(&mut self) {
+        const MAX_SGR_STACK: usize = 10;
+        if self.sgr_stack.len() >= MAX_SGR_STACK {
+            return;
+        }
+        let t = &self.cursor.template;
+        self.sgr_stack.push(SgrSnapshot {
+            flags: t.flags,
+            fg: t.fg,
+            bg: t.bg,
+            underline_color: t.extra.as_ref().and_then(|e| e.underline_color),
+        });
+    }
+
+    /// Clear the XTPUSHSGR stack (used by DECSTR soft reset).
+    pub fn clear_sgr_stack(&mut self) {
+        self.sgr_stack.clear();
+    }
+
+    /// Pop SGR state from the XTPUSHSGR stack and apply to cursor template.
+    pub fn pop_sgr(&mut self) {
+        if let Some(snap) = self.sgr_stack.pop() {
+            let t = &mut self.cursor.template;
+            t.flags = snap.flags;
+            t.fg = snap.fg;
+            t.bg = snap.bg;
+            t.set_underline_color(snap.underline_color);
+        }
     }
 
     /// Initialize tab stops every 8 columns.

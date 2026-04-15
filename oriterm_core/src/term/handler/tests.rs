@@ -547,6 +547,90 @@ fn cha_overflow_clamps_to_last_column() {
     assert_eq!(t.grid().cursor().col(), Column(79));
 }
 
+// --- CHA under DECOM + DECLRMM matrix ---
+// DEC STD 070 §4.6.10: CHA is absolute addressing unless DECOM is set.
+// With DECOM active, the column parameter is relative to the left margin
+// (when DECLRMM is also set) and clamped to the right margin.
+// Matrix dimensions: 2 DECLRMM states x 2 DECOM states = 4 cells.
+
+#[test]
+fn cha_absolute_when_declrmm_off_decom_off() {
+    let mut t = term();
+    // Both modes off (default): CHA 5 → col 4.
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(t.grid().cursor().col(), Column(4));
+}
+
+#[test]
+fn cha_absolute_when_declrmm_on_decom_off() {
+    let mut t = term();
+    // DECLRMM on, DECOM off, left margin = 10.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s"); // DECSLRM: left=10, right=39 (0-based).
+    // CHA 5 under DECOM off is ABSOLUTE — must land at col 4, NOT col 14.
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(4),
+        "CHA with DECOM off must be absolute even with DECLRMM active",
+    );
+}
+
+#[test]
+fn cha_absolute_when_declrmm_off_decom_on() {
+    let mut t = term();
+    // DECOM on without DECLRMM: no left margin to offset by, so CHA is
+    // still absolute (left_margin is 0 by default).
+    feed(&mut t, b"\x1b[?6h");
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(t.grid().cursor().col(), Column(4));
+}
+
+#[test]
+fn cha_offsets_by_left_margin_when_declrmm_on_decom_on() {
+    let mut t = term();
+    // DECLRMM on with left margin 10, DECOM on.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s"); // DECSLRM: left=10, right=39 (0-based).
+    feed(&mut t, b"\x1b[?6h"); // DECOM on.
+    // CHA 5: relative to left margin, so col = (5-1)+10 = 14.
+    feed(&mut t, b"\x1b[5G");
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(14),
+        "CHA with DECOM+DECLRMM must offset by left_margin: col=5 → (5-1)+10=14",
+    );
+}
+
+#[test]
+fn cha_clamps_to_right_margin_under_decom_declrmm() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s"); // left=10, right=39 (0-based).
+    feed(&mut t, b"\x1b[?6h");
+    // CHA 100: (100-1)+10 = 109, clamped to right=39.
+    feed(&mut t, b"\x1b[100G");
+    assert_eq!(t.grid().cursor().col(), Column(39));
+}
+
+#[test]
+fn cha_col_1_lands_at_left_margin_under_decom_declrmm() {
+    // Positive edge-case pin: `CSI 1 G` (col=0 zero-based) under
+    // DECOM+DECLRMM must resolve to `left_margin`. This test does NOT
+    // distinguish the pre-fix and post-fix code paths — with col=0,
+    // the pre-fix `Grid::move_to_column` clamp to `[left_margin,
+    // right_margin]` coincidentally also landed at `left_margin`. The
+    // true regression guard for the offset is
+    // `cha_offsets_by_left_margin_when_declrmm_on_decom_on` (col=5 →
+    // col=14), which fails on the pre-fix clamp path.
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[11;40s");
+    feed(&mut t, b"\x1b[?6h");
+    feed(&mut t, b"\x1b[1G");
+    assert_eq!(t.grid().cursor().col(), Column(10));
+}
+
 // --- CNL / CPL tests ---
 
 #[test]
@@ -5158,6 +5242,7 @@ fn decset_decrst_flag_sync() {
         NamedPrivateMode::SixelScrolling,
         NamedPrivateMode::SixelCursorRight,
         NamedPrivateMode::Win32Input,
+        NamedPrivateMode::LeftRightMargin,
     ];
 
     for variant in flag_variants {
@@ -5818,4 +5903,855 @@ fn decscnm_reset_disables_reverse_video() {
     assert!(t.mode().contains(TermMode::REVERSE_VIDEO));
     feed(&mut t, b"\x1b[?5l");
     assert!(!t.mode().contains(TermMode::REVERSE_VIDEO));
+}
+
+// --- DECLRMM (mode 69) plumbing tests (§08.3) ---
+
+#[test]
+fn mode_69_set_inserts_left_right_margin_flag() {
+    use crate::term::TermMode;
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b[?69h");
+    assert!(
+        t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECSET ?69 must set LEFT_RIGHT_MARGIN flag"
+    );
+}
+
+#[test]
+fn mode_69_reset_removes_left_right_margin_flag() {
+    use crate::term::TermMode;
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    assert!(t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b[?69l");
+    assert!(
+        !t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECRST ?69 must clear LEFT_RIGHT_MARGIN flag"
+    );
+}
+
+#[test]
+fn mode_69_decrqm_reports_correctly() {
+    use crate::effect::Effect;
+    use crate::effect::sink::EffectSink;
+
+    let mut t = super::test_helpers::term_with_effect_sink();
+
+    // Mode 69 defaults to reset (2).
+    feed(&mut t, b"\x1b[?69$p");
+    let mut effects = Vec::new();
+    t.effect_sink().drain_into(&mut effects);
+    let response = effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, .. }) => {
+                Some(String::from_utf8_lossy(bytes).to_string())
+            }
+            _ => None,
+        })
+        .expect("DECRQM should produce a PtyEffect::Write");
+    assert_eq!(response, "\x1b[?69;2$y", "mode 69 should report reset (2)");
+
+    // Enable mode 69, then query again — should report set (1).
+    feed(&mut t, b"\x1b[?69h\x1b[?69$p");
+    effects.clear();
+    t.effect_sink().drain_into(&mut effects);
+    let response = effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Pty(crate::effect::PtyEffect::Write { bytes, .. }) => {
+                Some(String::from_utf8_lossy(bytes).to_string())
+            }
+            _ => None,
+        })
+        .expect("DECRQM should produce a PtyEffect::Write after DECSET");
+    assert_eq!(response, "\x1b[?69;1$y", "mode 69 should report set (1)");
+}
+
+// --- CSI s / DECSLRM ambiguity (§08.5b) ---
+
+#[test]
+fn csi_s_zero_params_mode_69_off_saves_cursor() {
+    let mut t = term();
+    // Move cursor to (5, 10).
+    feed(&mut t, b"\x1b[6;11H");
+    assert_eq!(t.grid().cursor().line(), 5);
+    assert_eq!(t.grid().cursor().col(), Column(10));
+    // CSI s with no params, mode 69 OFF: should save cursor.
+    feed(&mut t, b"\x1b[s");
+    // Move cursor elsewhere.
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 0);
+    // Restore cursor: should go back to (5, 10).
+    feed(&mut t, b"\x1b[u");
+    assert_eq!(t.grid().cursor().line(), 5);
+    assert_eq!(t.grid().cursor().col(), Column(10));
+}
+
+#[test]
+fn csi_s_zero_params_mode_69_on_sets_default_margins() {
+    let mut t = term();
+    // Enable mode 69 (DECLRMM).
+    feed(&mut t, b"\x1b[?69h");
+    // Set non-default margins first.
+    t.grid_mut().set_left_right_margins(5, 20);
+    assert_eq!(t.grid().left_right_margins(), (5, 20));
+    // CSI s with no params, mode 69 ON: should reset margins to full width.
+    feed(&mut t, b"\x1b[s");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI s with mode 69 ON should reset margins to full width"
+    );
+}
+
+#[test]
+fn csi_s_with_params_always_decslrm() {
+    let mut t = term();
+    // Enable mode 69.
+    feed(&mut t, b"\x1b[?69h");
+    // CSI 5 ; 20 s — should set margins to (4, 19) in 0-based.
+    feed(&mut t, b"\x1b[5;20s");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (4, 19),
+        "CSI 5;20 s with mode 69 ON should set margins"
+    );
+}
+
+#[test]
+fn csi_s_with_params_mode_69_off_is_noop() {
+    let mut t = term();
+    // Mode 69 OFF (default).
+    // Move cursor to (3, 7) and save it explicitly first.
+    feed(&mut t, b"\x1b[4;8H");
+    feed(&mut t, b"\x1b7"); // DECSC saves cursor.
+    assert_eq!(t.grid().cursor().line(), 3);
+    // Now try CSI 5 ; 20 s — with params but mode 69 OFF: should be no-op.
+    feed(&mut t, b"\x1b[5;20s");
+    // Margins should stay at full width.
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI 5;20 s with mode 69 OFF should be no-op"
+    );
+    // Also verify cursor was NOT saved by this — move cursor, restore,
+    // and check we get back the DECSC save, not a CSI s save.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b8"); // DECRC restores.
+    assert_eq!(
+        t.grid().cursor().line(),
+        3,
+        "cursor should restore to DECSC save, not CSI s"
+    );
+}
+
+/// Regression: `CSI 0;0 s` has TWO explicit params (a semicolon was
+/// parsed) and must be treated as DECSLRM regardless of
+/// parameter values. With mode 69 OFF, this must be a no-op (like any
+/// parameterized DECSLRM when DECLRMM is inactive), NOT save cursor.
+///
+/// Before the fix, `has_params` was computed from parameter VALUES only
+/// (`left != 0 || right != 0`), so `CSI 0;0 s` with all-zero values was
+/// collapsed into the save-cursor branch — a behavioral divergence from
+/// WezTerm/Ghostty for a legal DECSLRM default-request sequence.
+#[test]
+fn csi_s_zero_zero_params_mode_69_off_is_noop_not_save_cursor() {
+    let mut t = term();
+    // DECSC explicitly so we can tell whether `CSI 0;0 s` overwrote it.
+    feed(&mut t, b"\x1b[4;8H"); // cursor at (3, 7)
+    feed(&mut t, b"\x1b7"); // DECSC
+    assert_eq!(t.grid().cursor().line(), 3);
+    // Mode 69 is OFF by default. `CSI 0;0 s` has params (semicolon seen)
+    // → must route to DECSLRM → must be a no-op (mode 69 inactive).
+    feed(&mut t, b"\x1b[0;0s");
+    // Margins unchanged (still full width).
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI 0;0 s with mode 69 OFF must be a no-op",
+    );
+    // Cursor saved-state unchanged — DECRC should restore the DECSC save,
+    // not a save cursor triggered spuriously by `CSI 0;0 s`.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert_eq!(
+        t.grid().cursor().line(),
+        3,
+        "DECRC should restore DECSC save; CSI 0;0 s must not overwrite the save slot",
+    );
+}
+
+/// Regression: `CSI 0;0 s` with mode 69 ON is treated as DECSLRM with
+/// explicit default values, which per DEC STD
+/// 070 resets margins to full width.
+#[test]
+fn csi_s_zero_zero_params_mode_69_on_resets_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    // Explicit defaults: left=1 (1-based) = 0 (0-based), right=cols.
+    // VT `0` in DECSLRM means "use default" per DEC STD 070 §4.6.10.
+    feed(&mut t, b"\x1b[0;0s");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "CSI 0;0 s with mode 69 ON should reset margins to full width",
+    );
+}
+
+// --- DECSC/DECRC scope: margins + DECLRMM are NOT in the save set ---
+// Per DEC STD 070 §5.6.1 and cross-verified against wezterm / alacritty /
+// ghostty: the DECSC save set is cursor position + attributes + charsets +
+// wrap flag + DECOM flag. Left/right margins and the DECLRMM mode flag are
+// NOT saved. Reset paths (RIS, DECSTR, DECCOLM, DECALN, resize, explicit
+// DECRST ?69) handle margin clearing — DECSC/DECRC do not touch margins.
+
+#[test]
+fn decrc_does_not_restore_horizontal_margins() {
+    // Negative pin: after DECSC saves the cursor, a subsequent DECSLRM
+    // change to the margins must SURVIVE a DECRC — the margins are not
+    // part of the save set.
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[5;40s"); // DECSLRM: left=5, right=40 → (4, 39) 0-based.
+    assert_eq!(t.grid().left_right_margins(), (4, 39));
+    feed(&mut t, b"\x1b7"); // DECSC
+    feed(&mut t, b"\x1b[10;60s"); // change margins to (9, 59).
+    assert_eq!(t.grid().left_right_margins(), (9, 59));
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (9, 59),
+        "DECRC must NOT restore saved margins (margins are not in the DECSC save set)"
+    );
+}
+
+#[test]
+fn decrc_does_not_restore_declrmm_mode_flag() {
+    use crate::term::TermMode;
+    // Negative pin: DECSC with mode 69 on, then DECRST ?69 turns it off.
+    // DECRC must leave mode 69 OFF — the mode flag is not part of the
+    // save set.
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    assert!(t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b7"); // DECSC
+    feed(&mut t, b"\x1b[?69l"); // disable DECLRMM
+    assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert!(
+        !t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECRC must NOT resurrect DECLRMM mode (mode 69 is not in the DECSC save set)"
+    );
+}
+
+#[test]
+fn decrc_does_not_enable_declrmm_after_disabled_save() {
+    use crate::term::TermMode;
+    // Symmetric negative pin: DECSC with mode 69 off, then enable it.
+    // DECRC must leave mode 69 ON — the restore cannot resurrect the
+    // saved off-state either direction.
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::LEFT_RIGHT_MARGIN));
+    feed(&mut t, b"\x1b7"); // DECSC with mode 69 off
+    feed(&mut t, b"\x1b[?69h"); // enable DECLRMM
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert!(
+        t.mode().contains(TermMode::LEFT_RIGHT_MARGIN),
+        "DECRC must not toggle DECLRMM mode off from the save slot"
+    );
+}
+
+#[test]
+fn decsc_decrc_restores_cursor_position_and_origin() {
+    // Positive pin: verify that DECSC/DECRC DO restore the state that
+    // IS in the save set (cursor, origin mode) — regression guard
+    // ensuring the scope removal did not break the actual contract.
+    use crate::term::TermMode;
+    let mut t = term();
+    feed(&mut t, b"\x1b[?6h"); // DECOM on.
+    feed(&mut t, b"\x1b[5;10H"); // CUP under DECOM (origin-relative).
+    let saved_line = t.grid().cursor().line();
+    let saved_col = t.grid().cursor().col();
+    feed(&mut t, b"\x1b7"); // DECSC
+    // Move and toggle DECOM.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b[?6l");
+    assert!(!t.mode().contains(TermMode::ORIGIN));
+    feed(&mut t, b"\x1b8"); // DECRC
+    assert_eq!(t.grid().cursor().line(), saved_line);
+    assert_eq!(t.grid().cursor().col(), saved_col);
+    assert!(
+        t.mode().contains(TermMode::ORIGIN),
+        "DECRC must restore DECOM flag (DECOM IS in the save set)",
+    );
+}
+
+// --- Reset paths that clear margins (§08.5d) ---
+
+#[test]
+fn decrst_69_resets_margins_to_full_width() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // DECRST ?69: disable DECLRMM → margins must reset to full width.
+    feed(&mut t, b"\x1b[?69l");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "DECRST 69 must reset margins to full width"
+    );
+}
+
+#[test]
+fn deccolm_resets_horizontal_margins() {
+    let mut t = term();
+    // Enable mode 40 (allow DECCOLM) first.
+    feed(&mut t, b"\x1b[?40h");
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // DECSET ?3 (132-column mode) triggers DECCOLM reset.
+    feed(&mut t, b"\x1b[?3h");
+    let cols = t.grid().cols();
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, cols - 1),
+        "DECCOLM must reset horizontal margins"
+    );
+}
+
+#[test]
+fn ris_resets_horizontal_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // RIS (ESC c): full terminal reset.
+    feed(&mut t, b"\x1bc");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "RIS must reset horizontal margins"
+    );
+}
+
+#[test]
+fn resize_resets_horizontal_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // Resize the grid.
+    t.grid_mut().resize(24, 120, false);
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, 119),
+        "resize must reset horizontal margins"
+    );
+}
+
+#[test]
+fn decaln_resets_horizontal_margins() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    assert_eq!(t.grid().left_right_margins(), (5, 40));
+    // DECALN (ESC # 8): alignment test.
+    feed(&mut t, b"\x1b#8");
+    assert_eq!(
+        t.grid().left_right_margins(),
+        (0, t.grid().cols() - 1),
+        "DECALN must reset horizontal margins"
+    );
+}
+
+// ── REP (CSI Ps b) edge cases — §08.7 ──────────────────────────────
+
+/// REP with no preceding graphic character is a no-op.
+///
+/// Spec: ECMA-48 §8.3.103
+#[test]
+fn rep_no_preceding_char_is_noop() {
+    let mut t = term();
+    // No prior graphic character; issue REP 3.
+    feed(&mut t, b"\x1b[3b");
+
+    let grid = t.grid();
+    // Grid should be entirely blank.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+    // Cursor should not have moved.
+    assert_eq!(grid.cursor().col(), Column(0));
+}
+
+/// REP after CR repeats the preceding graphic character (de-facto
+/// behavior matching xterm, alacritty, wezterm, ghostty).
+///
+/// The VTE parser tracks `preceding_char` as the last printed graphic
+/// character. C0 controls (including CR) do not clear it. This matches
+/// all major terminal emulators.
+#[test]
+fn rep_after_cr_repeats_preceding() {
+    let mut t = term();
+    // Print 'A', CR, REP 3 — all in one feed (preceding_char is per-Processor).
+    feed(&mut t, b"A\r\x1b[3b");
+
+    let grid = t.grid();
+    // REP repeats 'A' 3 times starting from cursor position (col 0).
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, 'A');
+    // Cursor at col 3 after printing 3 chars.
+    assert_eq!(grid.cursor().col(), Column(3));
+}
+
+/// REP after a wide character repeats the wide character.
+///
+/// Spec: ECMA-48 §8.3.103 — repeats "the graphic character".
+/// CJK ideograph '漢' (U+6F22, width 2).
+#[test]
+fn rep_after_wide_char_repeats_wide() {
+    use crate::cell::CellFlags;
+
+    let mut t = term();
+    // '漢' U+6F22 (3-byte UTF-8: E6 BC A2) + REP 2 in one feed call
+    // (preceding_char is per-Processor, and feed() creates a fresh one).
+    feed(&mut t, b"\xe6\xbc\xa2\x1b[2b");
+
+    let grid = t.grid();
+    // Original wide char at cols 0-1.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, '漢');
+    assert!(
+        grid[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    // First repeat at cols 2-3.
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, '漢');
+    assert!(
+        grid[crate::index::Line(0)][Column(2)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    // Second repeat at cols 4-5.
+    assert_eq!(grid[crate::index::Line(0)][Column(4)].ch, '漢');
+    assert!(
+        grid[crate::index::Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    // 3 wide chars × 2 columns = 6 columns, cursor at col 6.
+    assert_eq!(grid.cursor().col(), Column(6));
+}
+
+/// REP uses the current SGR state, not the SGR at print time.
+///
+/// Spec: ECMA-48 §8.3.103 — "the effect of REP is as if the graphic
+/// character were present in the data stream Ps times." The character
+/// is present NOW, so it inherits the current SGR, not the original.
+#[test]
+fn rep_uses_current_sgr_not_original() {
+    let mut t = term();
+    // Print 'A' (default fg), set SGR 31 (red fg), then REP 2.
+    feed(&mut t, b"A\x1b[31m\x1b[2b");
+
+    let grid = t.grid();
+    // Original 'A' at col 0 has default fg.
+    let a_orig = &grid[crate::index::Line(0)][Column(0)];
+    assert_eq!(a_orig.ch, 'A');
+    // Repeated 'A' at col 1 has red fg (SGR 31 was active during REP).
+    let a_rep = &grid[crate::index::Line(0)][Column(1)];
+    assert_eq!(a_rep.ch, 'A');
+    assert_eq!(
+        a_rep.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
+    // Original and repeated chars have different fg.
+    assert_ne!(a_orig.fg, a_rep.fg);
+}
+
+/// REP at the right margin triggers auto-wrap.
+#[test]
+fn rep_at_right_margin_wraps() {
+    // Use a narrow terminal so we can test wrapping easily.
+    let (mut t, _rec) = term_with_recorder_sized(3, 10);
+    // Move cursor to col 8, print 'X', then REP 3.
+    // Col 8: 'X' printed, cursor at 9. REP 3: col 9, wrap to 0, col 1.
+    feed(&mut t, b"\x1b[1;9H");
+    feed(&mut t, b"X\x1b[3b");
+
+    let grid = t.grid();
+    // 'X' at col 8 (original).
+    assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, 'X');
+    // 'X' at col 9 (first repeat, fills last column).
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, 'X');
+    // After wrapping to line 1: 'X' at cols 0, 1.
+    assert_eq!(grid[crate::index::Line(1)][Column(0)].ch, 'X');
+    assert_eq!(grid[crate::index::Line(1)][Column(1)].ch, 'X');
+}
+
+/// CSI 0 b repeats once (Ps=0 treated as default=1 per ECMA-48 §5.4).
+///
+/// Negative pin: verifies that 0 is not treated literally as "repeat 0
+/// times" but mapped to the default of 1.
+#[test]
+fn rep_count_zero_repeats_once() {
+    let mut t = term();
+    feed(&mut t, b"A\x1b[0b");
+
+    let grid = t.grid();
+    // Original 'A' at col 0.
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    // One repeat at col 1.
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'A');
+    // No further repeats.
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+    assert_eq!(grid.cursor().col(), Column(2));
+}
+
+// ── ISO 8613-6 SGR colon-separated subparameter forms — §08.8 ───────
+
+const RGB_255_128_64: vte::ansi::Color = vte::ansi::Color::Spec(vte::ansi::Rgb {
+    r: 255,
+    g: 128,
+    b: 64,
+});
+const INDEXED_123: vte::ansi::Color = vte::ansi::Color::Indexed(123);
+
+// Matrix: 3 targets (fg=38, bg=48, underline=58) × 2 modes (truecolor=2, indexed=5) × 2 separators
+
+#[test]
+fn sgr_38_semicolon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38;2;255;128;64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_38_colon_truecolor_no_colorspace() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2::255:128:64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_38_colon_truecolor_with_colorspace() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2:0:255:128:64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_38_semicolon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38;5;123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].fg, INDEXED_123);
+}
+
+#[test]
+fn sgr_38_colon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:5:123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].fg, INDEXED_123);
+}
+
+#[test]
+fn sgr_48_semicolon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48;2;255;128;64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].bg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_48_colon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:2::255:128:64mA");
+    assert_eq!(
+        t.grid()[crate::index::Line(0)][Column(0)].bg,
+        RGB_255_128_64
+    );
+}
+
+#[test]
+fn sgr_48_semicolon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48;5;123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].bg, INDEXED_123);
+}
+
+#[test]
+fn sgr_48_colon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:5:123mA");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].bg, INDEXED_123);
+}
+
+#[test]
+fn sgr_58_semicolon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58;2;255;128;64mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(RGB_255_128_64));
+}
+
+#[test]
+fn sgr_58_colon_truecolor() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:2::255:128:64mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(RGB_255_128_64));
+}
+
+#[test]
+fn sgr_58_semicolon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58;5;123mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(INDEXED_123));
+}
+
+#[test]
+fn sgr_58_colon_indexed() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[58:5:123mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    let extra = cell.extra.as_ref().expect("CellExtra allocated");
+    assert_eq!(extra.underline_color, Some(INDEXED_123));
+}
+
+/// Mixed colon+semicolon separators produce incomplete params.
+/// `38:2::255;128;64` splits as `[38,2,0,255]` + `[128]` + `[64]` — the
+/// colon group has only 3 values after the mode byte, not enough for RGB.
+#[test]
+fn sgr_38_mixed_separators_does_not_parse() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2::255;128;64mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert_ne!(
+        cell.fg, RGB_255_128_64,
+        "mixed separators must not produce correct RGB"
+    );
+}
+
+/// `38:2::R:G:B` and `38:2:0:R:G:B` are indistinguishable at dispatch
+/// time because the VTE parser represents `::` as `:0:`.
+#[test]
+fn sgr_38_double_colon_vs_zero_indistinguishable() {
+    let mut t1 = term();
+    feed(&mut t1, b"\x1b[38:2::255:128:64mA");
+    let mut t2 = term();
+    feed(&mut t2, b"\x1b[38:2:0:255:128:64mA");
+    assert_eq!(
+        t1.grid()[crate::index::Line(0)][Column(0)].fg,
+        t2.grid()[crate::index::Line(0)][Column(0)].fg,
+        "empty colorspace-id (::) and explicit zero (:0:) must produce identical color"
+    );
+    assert_eq!(
+        t1.grid()[crate::index::Line(0)][Column(0)].fg,
+        RGB_255_128_64
+    );
+}
+
+// ── Section 08.8b: remaining catalog rows ───────────────────────────
+
+// SGR 53/55 — overline
+
+#[test]
+fn sgr_53_sets_overline() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[53mA");
+    assert!(
+        t.grid()[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::OVERLINE)
+    );
+}
+
+#[test]
+fn sgr_55_resets_overline() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[53m\x1b[55mA");
+    assert!(
+        !t.grid()[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::OVERLINE)
+    );
+}
+
+// SGR 73/74/75 — superscript/subscript
+
+#[test]
+fn sgr_73_sets_superscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[73mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::SUPERSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUBSCRIPT));
+}
+
+#[test]
+fn sgr_74_sets_subscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[74mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::SUBSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUPERSCRIPT));
+}
+
+#[test]
+fn sgr_73_clears_subscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[74m\x1b[73mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::SUPERSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUBSCRIPT));
+}
+
+#[test]
+fn sgr_75_resets_super_subscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[73m\x1b[75mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(!cell.flags.contains(CellFlags::SUPERSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUBSCRIPT));
+}
+
+// DECSTR — soft terminal reset (CSI ! p)
+
+#[test]
+fn decstr_resets_terminal_state() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[1m\x1b[31m");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[!p");
+    assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+}
+
+// DECSED — selective erase in display (CSI ? J)
+
+#[test]
+fn decsed_below_clears_from_cursor() {
+    let mut t = term();
+    feed(&mut t, b"ABCDE\x1b[1;3H\x1b[?J");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'B');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+}
+
+// DECSEL — selective erase in line (CSI ? K)
+
+#[test]
+fn decsel_right_clears_to_end_of_line() {
+    let mut t = term();
+    feed(&mut t, b"ABCDE\x1b[1;3H\x1b[?K");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'B');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(3)].ch, ' ');
+}
+
+// SL — scroll left (CSI Ps SP @)
+
+#[test]
+fn scroll_left_shifts_content() {
+    let (mut t, _rec) = term_with_recorder_sized(3, 10);
+    feed(&mut t, b"ABCDEFGHIJ");
+    feed(&mut t, b"\x1b[2 @");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'C');
+    assert_eq!(grid[crate::index::Line(0)][Column(7)].ch, 'J');
+    assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, ' ');
+}
+
+// SR — scroll right (CSI Ps SP A)
+
+#[test]
+fn scroll_right_shifts_content() {
+    let (mut t, _rec) = term_with_recorder_sized(3, 10);
+    feed(&mut t, b"ABCDEFGHIJ");
+    feed(&mut t, b"\x1b[2 A");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, 'H');
+}
+
+// DECRQSS for DECSLRM
+
+#[test]
+fn decrqss_decslrm_reports_margins() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    feed(&mut t, b"\x1bP$qs\x1b\\");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("6;41s")),
+        "DECRQSS DECSLRM should report 1-based margins 6;41: {events:?}"
+    );
+}
+
+// XTPUSHSGR / XTPOPSGR (CSI # { / CSI # })
+
+#[test]
+fn xtpushsgr_saves_and_restores_sgr() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[1m\x1b[31m");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[#{");
+    feed(&mut t, b"\x1b[0m");
+    assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[#}");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    assert_eq!(
+        t.grid().cursor().template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
+}
+
+#[test]
+fn xtpopsgr_on_empty_stack_is_noop() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[1m");
+    feed(&mut t, b"\x1b[#}");
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
 }

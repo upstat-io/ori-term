@@ -137,6 +137,18 @@ pub struct ImagePlacement {
     pub sizing: PlacementSizing,
 }
 
+impl ImagePlacement {
+    /// Whether this placement overlaps the viewport row range `[top, bottom]`.
+    pub(crate) fn intersects_viewport(
+        &self,
+        viewport_top: StableRowIndex,
+        viewport_bottom: StableRowIndex,
+    ) -> bool {
+        let bottom = StableRowIndex(self.cell_row.0 + self.rows.saturating_sub(1) as u64);
+        self.cell_row <= viewport_bottom && bottom >= viewport_top
+    }
+}
+
 /// Errors from image operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImageError {

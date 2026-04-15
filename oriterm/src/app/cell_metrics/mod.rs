@@ -18,9 +18,31 @@
 use oriterm_mux::PaneId;
 use winit::window::WindowId;
 
-use crate::session::TabId;
+use crate::session::SessionRegistry;
+use crate::session::id::WindowId as SessionWindowId;
 
 use super::App;
+
+/// Collect all pane IDs across all tabs in a session window.
+///
+/// Extracted from [`App::broadcast_cell_metrics_to_window`] so the
+/// window → tabs → panes enumeration can be unit-tested without a full
+/// `App` / GPU / display-server fixture.
+pub(in crate::app) fn collect_window_pane_ids(
+    session: &SessionRegistry,
+    session_wid: SessionWindowId,
+) -> Vec<PaneId> {
+    let Some(session_window) = session.get_window(session_wid) else {
+        return Vec::new();
+    };
+    let mut pane_ids = Vec::new();
+    for &tab_id in session_window.tabs() {
+        if let Some(tab) = session.get_tab(tab_id) {
+            pane_ids.extend(tab.all_panes());
+        }
+    }
+    pane_ids
+}
 
 /// Pure decision helper for the broadcast short-circuit.
 ///
@@ -28,8 +50,7 @@ use super::App;
 /// previously-recorded `(cell_w, cell_h)` differs from the new one.
 /// Extracted from [`App::broadcast_cell_metrics_to_window`] so the
 /// short-circuit rule can be unit-tested without standing up a full
-/// `App` / window / mux fixture (TPR-07-002-codex / TPR-07-001-gemini
-/// round 7, 2026-04-13).
+/// `App` / window / mux fixture.
 fn cell_metric_broadcast_needed(last: Option<(u16, u16)>, new: (u16, u16)) -> bool {
     last != Some(new)
 }
@@ -44,7 +65,7 @@ fn cell_metric_broadcast_needed(last: Option<(u16, u16)>, new: (u16, u16)) -> bo
 /// means a test on this helper catches regressions that would remove
 /// either half — a "remove the assignment" refactor would fail
 /// `try_claim_broadcast_updates_cache_on_claim`, not just the
-/// decision test (TPR-07-003-gemini round 8, 2026-04-13).
+/// decision test.
 fn try_claim_broadcast(cached: &mut Option<(u16, u16)>, new: (u16, u16)) -> bool {
     if !cell_metric_broadcast_needed(*cached, new) {
         return false;
@@ -88,7 +109,6 @@ impl App {
         // Short-circuit + cache-update are fused in `try_claim_broadcast`
         // so a future refactor that removes the cache assignment (or
         // the decision guard) fails `try_claim_broadcast_*` tests.
-        // Per TPR-07-002-gemini (2026-04-13) the motivation is that
         // `sync_grid_layout` fires on every layout pass (including
         // every tick of an interactive drag-resize); unconditional
         // broadcast would insert every pane into `snapshot_dirty` and
@@ -100,20 +120,8 @@ impl App {
             return;
         }
 
-        // Collect all pane IDs up front to avoid holding both a session
-        // reference and a mux reference at the same time.
         let session_wid = ctx.window.session_window_id();
-        let Some(session_window) = self.session.get_window(session_wid) else {
-            return;
-        };
-        let tab_ids: Vec<TabId> = session_window.tabs().to_vec();
-
-        let mut pane_ids: Vec<PaneId> = Vec::new();
-        for tab_id in tab_ids {
-            if let Some(tab) = self.session.get_tab(tab_id) {
-                pane_ids.extend(tab.all_panes());
-            }
-        }
+        let pane_ids = collect_window_pane_ids(&self.session, session_wid);
 
         let Some(mux) = self.mux.as_mut() else {
             return;
@@ -129,7 +137,7 @@ impl App {
     /// and the destination window's short-circuit cache may skip a
     /// full broadcast. Per-pane seeding is surgical: the new pane
     /// gets the destination metrics without re-dirtying every other
-    /// pane in the window (TPR-07-001-codex round 7, 2026-04-13).
+    /// pane in the window.
     ///
     /// Returns early if `winit_id` has no context or no renderer yet.
     pub(in crate::app) fn seed_pane_with_window_cell_metrics(

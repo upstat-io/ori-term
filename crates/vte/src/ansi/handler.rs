@@ -104,6 +104,12 @@ pub trait Handler {
     /// Scroll down `rows` rows.
     fn scroll_down(&mut self, _: usize) {}
 
+    /// SL: scroll left `count` columns.
+    fn scroll_left(&mut self, _: usize) {}
+
+    /// SR: scroll right `count` columns.
+    fn scroll_right(&mut self, _: usize) {}
+
     /// Insert `count` blank lines.
     fn insert_blank_lines(&mut self, _: usize) {}
 
@@ -131,6 +137,17 @@ pub trait Handler {
     /// Save current cursor position.
     fn save_cursor_position(&mut self) {}
 
+    /// CSI s ambiguity: either DECSLRM (Set Left and Right Margins) or
+    /// save cursor, depending on mode 69 state and parameter presence.
+    ///
+    /// - With params: always DECSLRM (no-op if mode 69 inactive).
+    /// - Zero params: DECSLRM defaults if mode 69 active, else save cursor.
+    fn decslrm_or_save_cursor(&mut self, _has_params: bool, _left: u16, _right: u16) {
+        // Default: save cursor (backward-compat for handlers that don't
+        // override this method).
+        self.save_cursor_position();
+    }
+
     /// Restore cursor position.
     fn restore_cursor_position(&mut self) {}
 
@@ -146,8 +163,11 @@ pub trait Handler {
     /// Set tab stops at every `interval`.
     fn set_tabs(&mut self, _interval: u16) {}
 
-    /// Reset terminal state.
+    /// Reset terminal state (RIS — ESC c).
     fn reset_state(&mut self) {}
+
+    /// Soft terminal reset (DECSTR — CSI ! p).
+    fn decstr(&mut self) {}
 
     /// Reverse Index.
     ///
@@ -155,6 +175,12 @@ pub trait Handler {
     /// preceding line. If the active position is at the top margin, a scroll
     /// down is performed.
     fn reverse_index(&mut self) {}
+
+    /// Push current SGR attributes onto stack (XTPUSHSGR, CSI # {).
+    fn push_sgr(&mut self) {}
+
+    /// Pop SGR attributes from stack (XTPOPSGR, CSI # }).
+    fn pop_sgr(&mut self) {}
 
     /// Set a terminal attribute.
     fn terminal_attribute(&mut self, _attr: Attr) {}

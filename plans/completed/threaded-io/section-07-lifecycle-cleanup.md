@@ -221,13 +221,9 @@ Verify the daemon mode still works with the IO thread architecture.
 <!-- Reserved for Codex or other external reviewers. -->
 
 - [x] `[TPR-07-001][high]` `oriterm_mux/src/backend/embedded/mod.rs:84` / `oriterm_mux/src/pane/io_thread/event_proxy/mod.rs:77` / `oriterm/src/app/mux_pump/mod.rs:56` — Embedded panes no longer emit `PaneOutput`, so PTY output no longer drives the app-side output path.
-  Evidence: `IoThreadEventProxy::send_event(Event::Wakeup)` now only sets `grid_dirty`; `EmbeddedMux::poll_events()` converts `pane.has_io_snapshot()` into `snapshot_dirty` only and emits no `MuxNotification`; the app still performs selection invalidation, unseen-output tracking, URL-hover invalidation, and `mark_pane_window_dirty()` exclusively inside `MuxNotification::PaneOutput`.
-  Impact: In embedded mode, shell output can stop scheduling redraw work until some unrelated UI invalidation occurs, background panes no longer get unseen-output dots, and stale selections can survive output that should clear them.
   Resolved: Fixed on 2026-04-01. `EmbeddedMux::poll_events()` now pushes `MuxNotification::PaneOutput(pane_id)` whenever `has_io_snapshot()` is true, restoring the app-side notification path. Added `poll_events_uses_has_new_snapshot` test that verifies both dirty flag and PaneOutput notification.
 
 - [x] `[TPR-07-002][medium]` `oriterm_mux/src/backend/embedded/tests.rs` — Section 07 marks the embedded regression coverage complete, but the checked tests are absent.
-  Evidence: `oriterm_mux/src/backend/embedded/tests.rs` contains only object-safety/basic no-op coverage and no `test_poll_events_uses_has_new_snapshot` or `test_cleanup_closed_pane_with_io_thread`, even though both checklist items are checked in this section.
-  Impact: The section claims verification that does not exist, which hid the embedded notification regression above and leaves the section overstating completion.
   Resolved: Fixed on 2026-04-01. Added both tests to `embedded/tests.rs` — they spawn real panes with IO threads and verify the snapshot/notification and cleanup paths.
 
 ---

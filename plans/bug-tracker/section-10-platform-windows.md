@@ -18,6 +18,13 @@ Bugs in Windows-specific platform integration: DWM, ConPTY, title bar, named pip
   Found: 2026-03-31 | Source: manual
   Note: Roadmap section 05c (window chrome) covers this area.
 
+- [ ] `[BUG-10-2][medium]` **notcurses-demo requires `strace -f -o /dev/null -D` workaround to launch on WSL**
+  Repro: Run `notcurses-demo` directly in WSL — it fails or hangs. Workaround: `strace -f -o /dev/null -D notcurses-demo`. This is a known WSL issue where ConPTY interferes with the terminal capabilities that notcurses probes at startup. The `strace` wrapper changes the child's PTY/pipe topology enough to bypass the issue.
+  Subsystem: `oriterm_mux/src/pty/`, ConPTY layer (Windows/WSL)
+  Impact: ori_term should provide a better UX for WSL users than requiring external workarounds. If ori_term's own ConPTY handling or future raw-pipe bypass can eliminate this class of issue, WSL users get a first-class experience.
+  Found: 2026-04-14 | Source: manual
+  Note: Roadmap section 52 (Native PTY Layer) and section 53 (Raw Pipe Bypass for VT-Native Shells) directly target ConPTY avoidance for WSL. Section 53's raw pipe transport — bypassing ConPTY entirely for VT-native children — may resolve this class of issue by eliminating ConPTY's VT mangling from the path. Verify once section 53 is implemented.
+
 ## Resolved Bugs
 
 (none yet)

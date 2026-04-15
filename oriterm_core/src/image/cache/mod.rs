@@ -295,10 +295,9 @@ impl ImageCache {
         top_row: StableRowIndex,
         bottom_row: StableRowIndex,
     ) -> impl Iterator<Item = &ImagePlacement> {
-        self.placements.iter().filter(move |p| {
-            let placement_bottom = StableRowIndex(p.cell_row.0 + p.rows.saturating_sub(1) as u64);
-            p.cell_row <= bottom_row && placement_bottom >= top_row
-        })
+        self.placements
+            .iter()
+            .filter(move |p| p.intersects_viewport(top_row, bottom_row))
     }
 
     /// Convenience wrapper returning a new `Vec` of visible placements.

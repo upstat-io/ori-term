@@ -39,9 +39,9 @@ pub enum WireColor {
 
 /// Cell SGR flags as raw bits.
 ///
-/// Maps 1:1 to `oriterm_core::CellFlags` bits. Using raw `u16` avoids
+/// Maps 1:1 to `oriterm_core::CellFlags` bits. Using raw `u32` avoids
 /// coupling the wire format to the bitflags type.
-pub type WireCellFlags = u16;
+pub type WireCellFlags = u32;
 
 /// A single terminal cell on the wire.
 ///
@@ -203,7 +203,7 @@ pub struct PaneSnapshot {
     /// | 24  | `REVERSE_WRAP` (mode 45) |
     /// | 25  | `MOUSE_URXVT` (mode 1015) |
     /// | 26  | `MOUSE_X10` (mode 9) |
-    pub modes: u32,
+    pub modes: u64,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: u32,
     /// Current scroll position (0 = bottom, `scrollback_len` = top).

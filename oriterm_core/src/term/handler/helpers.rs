@@ -47,6 +47,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::ReverseVideo => Some(TermMode::REVERSE_VIDEO),
         NamedPrivateMode::EnableMode3 => Some(TermMode::ENABLE_MODE_3),
         NamedPrivateMode::Win32Input => Some(TermMode::WIN32_INPUT),
+        NamedPrivateMode::LeftRightMargin => Some(TermMode::LEFT_RIGHT_MARGIN),
         NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }
@@ -67,26 +68,35 @@ pub(super) fn crate_version_number() -> usize {
 }
 
 impl<S: EffectSink> Term<S> {
-    /// Try reverse wraparound: if cursor is at column 0 and the previous
-    /// line was soft-wrapped, move cursor to the last column of that line.
+    /// Try reverse wraparound: if cursor is at the left edge (column 0 or
+    /// `left_margin` under DECLRMM) and the previous line was soft-wrapped,
+    /// move cursor to the right edge of that line.
     ///
     /// Returns `true` if the wrap happened, `false` if no-op.
     pub(super) fn try_reverse_wrap(&mut self) -> bool {
         let grid = self.grid_mut();
-        if grid.cursor().col().0 != 0 {
+        let col = grid.cursor().col().0;
+        let (left, right) = grid.left_right_margins();
+        let in_band = grid.cursor_in_margin_band();
+        let edge = if in_band { left } else { 0 };
+        if col != edge {
             return false;
         }
         let line = grid.cursor().line();
         if line == 0 {
             return false;
         }
-        let last_col = grid.cols().saturating_sub(1);
+        let wrap_col = if in_band {
+            right
+        } else {
+            grid.cols().saturating_sub(1)
+        };
         let prev = line - 1;
-        let wrapped = grid[Line(prev as i32)][Column(last_col)]
+        let wrapped = grid[Line(prev as i32)][Column(wrap_col)]
             .flags
             .contains(CellFlags::WRAP);
         if wrapped {
-            grid.move_to(prev, Column(last_col));
+            grid.move_to(prev, Column(wrap_col));
             true
         } else {
             false
@@ -101,6 +111,7 @@ impl<S: EffectSink> Term<S> {
     /// `set_scrolling_region`, and DECSET/DECRST origin-mode toggling.
     pub(super) fn goto_origin_aware(&mut self, line: i32, col: usize) {
         let origin = self.mode.contains(TermMode::ORIGIN);
+        let resolved_col = self.origin_aware_col(col);
         let grid = self.grid_mut();
         let region_start = grid.scroll_region().start;
         let region_end = grid.scroll_region().end;
@@ -113,8 +124,36 @@ impl<S: EffectSink> Term<S> {
 
         let line = cmp::max(0, line) as usize;
         let line = cmp::min(line + offset, max_line);
-        let col = Column(col.min(grid.cols().saturating_sub(1)));
-        grid.move_to(line, col);
+
+        grid.move_to(line, resolved_col);
+    }
+
+    /// Resolve an incoming column parameter to an absolute screen column,
+    /// applying DECOM + DECLRMM offset/clamp when appropriate.
+    ///
+    /// This is the canonical column-resolution point for horizontal
+    /// positioning sequences (CUP/HVP column axis, CHA, HPA). Callers
+    /// pass the raw 0-based column parameter from the escape sequence;
+    /// this helper returns the absolute column where the cursor should
+    /// land.
+    ///
+    /// - `ORIGIN && LEFT_RIGHT_MARGIN`: treat `col` as relative to the
+    ///   left margin, offset and clamp to the margin band.
+    /// - Otherwise: treat `col` as absolute, clamp to the last column.
+    ///
+    /// Centralizing this logic ensures CUP/HVP (via `goto_origin_aware`)
+    /// and CHA/HPA (via `Handler::goto_col`) stay in sync — future
+    /// changes to DECOM semantics land in one place.
+    pub(super) fn origin_aware_col(&self, col: usize) -> Column {
+        let origin = self.mode.contains(TermMode::ORIGIN);
+        let lrm = self.mode.contains(TermMode::LEFT_RIGHT_MARGIN);
+        let grid = self.grid();
+        let (left, right) = grid.left_right_margins();
+        if origin && lrm {
+            Column((col + left).min(right))
+        } else {
+            Column(col.min(grid.cols().saturating_sub(1)))
+        }
     }
 
     /// Convert a grid line (0-based visible row) to a `StableRowIndex`.

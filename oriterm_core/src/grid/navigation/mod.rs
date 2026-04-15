@@ -42,26 +42,51 @@ impl Grid {
         self.move_cursor_line((line + count).min(bottom));
     }
 
-    /// CUF: move cursor right by `count` columns, clamped to the last column.
+    /// CUF: move cursor right by `count` columns, clamped to the right
+    /// margin when cursor is within the DECLRMM band, or to the last
+    /// column otherwise.
     pub fn move_forward(&mut self, count: usize) {
         let col = self.cursor.col().0;
-        let last = self.cols - 1;
-        self.move_cursor_col(Column((col + count).min(last)));
+        let bound = if self.cursor_in_margin_band() {
+            self.right_margin
+        } else {
+            self.cols - 1
+        };
+        self.move_cursor_col(Column((col + count).min(bound)));
     }
 
-    /// CUB: move cursor left by `count` columns, clamped to column 0.
+    /// CUB: move cursor left by `count` columns, clamped to the left
+    /// margin when cursor is within the DECLRMM band, or to column 0
+    /// otherwise.
     pub fn move_backward(&mut self, count: usize) {
         let col = self.cursor.col().0;
-        self.move_cursor_col(Column(col.saturating_sub(count)));
+        let bound = if self.cursor_in_margin_band() {
+            self.left_margin
+        } else {
+            0
+        };
+        self.move_cursor_col(Column(col.saturating_sub(count).max(bound)));
     }
 
     /// CUP: set cursor to absolute `(line, col)`, clamped to grid bounds.
+    ///
+    /// CUP/HVP are absolute addressing — they bypass horizontal margins
+    /// entirely. DECOM (origin mode) shifts the addressable origin to
+    /// `(scroll_top, left_margin)` at the `Term` layer via
+    /// `Term::goto_origin_aware`, which translates incoming coordinates
+    /// before reaching this function. By the time we are here, `line`
+    /// and `col` are already absolute screen positions, so only
+    /// grid-bound clamping applies.
     pub fn move_to(&mut self, line: usize, col: Column) {
         self.move_cursor_line(line.min(self.lines - 1));
         self.move_cursor_col(Column(col.0.min(self.cols - 1)));
     }
 
-    /// CHA: set cursor column to `col`, clamped to the last column.
+    /// CHA: set cursor column to absolute `col`, clamped to grid bounds.
+    ///
+    /// CHA/HPA are absolute addressing — margins are NOT enforced here.
+    /// The DECOM+DECLRMM offset (`col += left_margin`) is applied at the
+    /// `Term` layer in `Term::goto_col` before reaching this function.
     pub fn move_to_column(&mut self, col: Column) {
         self.move_cursor_col(Column(col.0.min(self.cols - 1)));
     }
@@ -71,26 +96,42 @@ impl Grid {
         self.move_cursor_line(line.min(self.lines - 1));
     }
 
-    /// CR: move cursor to column 0.
+    /// CR: move cursor to `left_margin` when within the DECLRMM margin
+    /// band, or to column 0 otherwise.
     pub fn carriage_return(&mut self) {
-        self.move_cursor_col(Column(0));
+        let target = if self.cursor_in_margin_band() {
+            self.left_margin
+        } else {
+            0
+        };
+        self.move_cursor_col(Column(target));
     }
 
     /// BS: move cursor left by one column.
     ///
     /// If the cursor is in wrap-pending state (col >= cols), snaps to the
-    /// last column. Otherwise moves left by one, clamped at column 0.
+    /// last column. Otherwise moves left by one, clamped at `left_margin`
+    /// when within the DECLRMM band or column 0 otherwise.
     pub fn backspace(&mut self) {
         let col = self.cursor.col().0;
         let cols = self.cols;
 
         if col >= cols {
-            // Wrap-pending: snap to last column.
-            self.move_cursor_col(Column(cols - 1));
-        } else if col > 0 {
-            self.move_cursor_col(Column(col - 1));
+            let snap = if self.cursor_in_margin_band() {
+                self.right_margin
+            } else {
+                cols - 1
+            };
+            self.move_cursor_col(Column(snap));
         } else {
-            // Already at column 0: no-op.
+            let bound = if self.cursor_in_margin_band() {
+                self.left_margin
+            } else {
+                0
+            };
+            if col > bound {
+                self.move_cursor_col(Column(col - 1));
+            }
         }
     }
 
@@ -128,37 +169,44 @@ impl Grid {
         self.linefeed();
     }
 
-    /// HT: advance cursor to the next tab stop, or end of line.
+    /// HT: advance cursor to the next tab stop, or the right bound.
+    ///
+    /// When cursor is within the DECLRMM margin band, tab stops beyond
+    /// `right_margin` are unreachable; HT stops at `right_margin`.
     pub fn tab(&mut self) {
         let col = self.cursor.col().0;
-        let last = self.cols - 1;
+        let in_band = self.cursor_in_margin_band();
+        let right_bound = if in_band {
+            self.right_margin
+        } else {
+            self.cols - 1
+        };
 
-        // Search forward for the next tab stop.
-        for c in (col + 1)..self.cols {
-            if self.tab_stops[c] {
+        for c in (col + 1)..=right_bound {
+            if c < self.cols && self.tab_stops[c] {
                 self.move_cursor_col(Column(c));
                 return;
             }
         }
-        // No tab stop found: move to last column.
-        self.move_cursor_col(Column(last));
+        self.move_cursor_col(Column(right_bound));
     }
 
-    /// CBT: move cursor to the previous tab stop, or column 0.
+    /// CBT: move cursor to the previous tab stop, or the left bound.
+    ///
+    /// When cursor is within the DECLRMM margin band, tab stops before
+    /// `left_margin` are unreachable; CBT stops at `left_margin`.
     pub fn tab_backward(&mut self) {
-        // Clamp to cols so wrap-pending (col == cols) or any out-of-range
-        // value never indexes past the tab_stops array.
         let col = self.cursor.col().0.min(self.cols);
+        let in_band = self.cursor_in_margin_band();
+        let left_bound = if in_band { self.left_margin } else { 0 };
 
-        // Search backward for the previous tab stop.
-        for c in (0..col).rev() {
+        for c in (left_bound..col).rev() {
             if self.tab_stops[c] {
                 self.move_cursor_col(Column(c));
                 return;
             }
         }
-        // No tab stop found: move to column 0.
-        self.move_cursor_col(Column(0));
+        self.move_cursor_col(Column(left_bound));
     }
 
     /// HTS: set a tab stop at the current cursor column.
@@ -185,12 +233,20 @@ impl Grid {
     }
 
     /// DECSC: save cursor position and template.
+    ///
+    /// Per DEC STD 070 §5.6.1 and cross-verified against wezterm, alacritty,
+    /// and ghostty, the DECSC save set is the cursor position, character
+    /// attributes, charset state, wrap flag, and DECOM flag. DECLRMM margins
+    /// are NOT saved — margin state is scoped to the screen (alt vs primary),
+    /// not to the cursor save/restore pair, and is toggled via RIS, DECSTR,
+    /// DECCOLM, DECALN, resize, or explicit mode reset.
     pub fn save_cursor(&mut self) {
         self.saved_cursor = Some(self.cursor.clone());
     }
 
-    /// DECRC: restore cursor from saved state, or reset to origin if
-    /// nothing was saved.
+    /// DECRC: restore cursor position and template from saved state, or
+    /// reset to origin if nothing was saved. Does not touch margins or
+    /// DECLRMM mode (see `save_cursor` for the save-set rationale).
     pub fn restore_cursor(&mut self) {
         let old_line = self.cursor.line();
         self.dirty.mark(old_line);

@@ -101,6 +101,7 @@ fn all_flags_are_distinct() {
         TermMode::REVERSE_VIDEO,
         TermMode::ENABLE_MODE_3,
         TermMode::WIN32_INPUT,
+        TermMode::LEFT_RIGHT_MARGIN,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).
@@ -180,9 +181,11 @@ fn reverse_video_set_and_clear() {
 }
 
 #[test]
-fn term_mode_size_is_4_bytes() {
-    // Structural regression guard: TermMode is a u32 bitflags.
-    // If this assertion breaks, a flag was added that doesn't fit in u32
-    // or the representation was changed — both require explicit review.
-    assert_eq!(size_of::<TermMode>(), 4, "TermMode should be 4 bytes (u32)");
+fn term_mode_size_is_8_bytes() {
+    // Structural regression guard: TermMode is a u64 bitflags.
+    // Widened from u32 in plan `plans/spec-conformance/section-08` §08.3
+    // to carry DECLRMM (mode 69 = bit 32). If this assertion breaks, a
+    // flag overflowed u64 or the representation was changed — both
+    // require explicit review.
+    assert_eq!(size_of::<TermMode>(), 8, "TermMode should be 8 bytes (u64)");
 }

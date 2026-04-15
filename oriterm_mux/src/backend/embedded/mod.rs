@@ -150,36 +150,36 @@ impl MuxBackend for EmbeddedMux {
         }
     }
 
-    fn pane_mode(&self, pane_id: PaneId) -> Option<u32> {
+    fn pane_mode(&self, pane_id: PaneId) -> Option<u64> {
         self.panes.get(&pane_id).map(Pane::mode)
     }
 
     fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetTheme(theme, Box::new(palette)));
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetCursorShape(shape));
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn set_bold_is_bright(&mut self, pane_id: PaneId, enabled: bool) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetBoldIsBright(enabled));
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn mark_all_dirty(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::MarkAllDirty);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn set_image_config(&mut self, pane_id: PaneId, config: ImageConfig) {
@@ -191,31 +191,31 @@ impl MuxBackend for EmbeddedMux {
     fn set_cell_dimensions(&mut self, pane_id: PaneId, width: u16, height: u16) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::SetCellDimensions { width, height });
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn open_search(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.open_search();
             pane.send_io_command(PaneIoCommand::OpenSearch);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn close_search(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.close_search();
             pane.send_io_command(PaneIoCommand::CloseSearch);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn search_set_query(&mut self, pane_id: PaneId, query: String) {
         if let Some(pane) = self.panes.get_mut(&pane_id) {
             pane.send_io_command(PaneIoCommand::SearchSetQuery(query));
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn search_next_match(&mut self, pane_id: PaneId) {
@@ -224,8 +224,8 @@ impl MuxBackend for EmbeddedMux {
                 search.next_match();
             }
             pane.send_io_command(PaneIoCommand::SearchNextMatch);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn search_prev_match(&mut self, pane_id: PaneId) {
@@ -234,8 +234,8 @@ impl MuxBackend for EmbeddedMux {
                 search.prev_match();
             }
             pane.send_io_command(PaneIoCommand::SearchPrevMatch);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn is_search_active(&self, pane_id: PaneId) -> bool {
@@ -275,29 +275,29 @@ impl MuxBackend for EmbeddedMux {
     fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::ScrollDisplay(delta));
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn scroll_to_bottom(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::ScrollToBottom);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::ScrollToPreviousPrompt);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn scroll_to_next_prompt(&mut self, pane_id: PaneId) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.send_io_command(PaneIoCommand::ScrollToNextPrompt);
+            self.snapshot_dirty.insert(pane_id);
         }
-        self.snapshot_dirty.insert(pane_id);
     }
 
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {

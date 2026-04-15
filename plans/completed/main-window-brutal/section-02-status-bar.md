@@ -307,8 +307,6 @@ Write golden tests rendering the status bar through the real GPU pipeline.
 <!-- Reserved for Codex or other external reviewers. -->
 
 - [x] `[TPR-02-001][low]` [`plans/main-window-brutal/index.md`](/home/eric/projects/ori_term/plans/main-window-brutal/index.md#L38), [`plans/main-window-brutal/00-overview.md`](/home/eric/projects/ori_term/plans/main-window-brutal/00-overview.md#L159), [`plans/main-window-brutal/00-overview.md`](/home/eric/projects/ori_term/plans/main-window-brutal/00-overview.md#L174), [`plans/main-window-brutal/section-02-status-bar.md`](/home/eric/projects/ori_term/plans/main-window-brutal/section-02-status-bar.md#L41) — Section 02 bookkeeping is still stale even though the widget and its verification now exist in the tree.
-  Evidence: The current repo contains [`StatusBarWidget`](/home/eric/projects/ori_term/oriterm_ui/src/widgets/status_bar/mod.rs#L81), its dedicated tests, and passing GPU goldens, but the plan index/body still say "Not Started" and the overview still lists "No status bar exists" as an unfixed bug.
-  Impact: Plan navigation and review state no longer match repository reality, which makes future plan resumption and completion gating unreliable.
   Resolved: Fixed on 2026-03-29 — updated index.md, 00-overview.md (bug table + quick reference), and section body status to reflect "In Progress".
 
 ---

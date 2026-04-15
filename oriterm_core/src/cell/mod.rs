@@ -15,7 +15,7 @@ use vte::ansi::Color;
 bitflags! {
     /// Per-cell attribute flags (SGR and internal).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct CellFlags: u16 {
+    pub struct CellFlags: u32 {
         const BOLD              = 1 << 0;
         const DIM               = 1 << 1;
         const ITALIC            = 1 << 2;
@@ -27,16 +27,19 @@ bitflags! {
         const WIDE_CHAR                 = 1 << 8;
         const WIDE_CHAR_SPACER          = 1 << 9;
         const WRAP                      = 1 << 10;
+        const CURLY_UNDERLINE   = 1 << 11;
+        const DOTTED_UNDERLINE  = 1 << 12;
+        const DASHED_UNDERLINE  = 1 << 13;
+        const DOUBLE_UNDERLINE  = 1 << 14;
         /// Padding cell before a wide char that wrapped to the next line.
         ///
         /// Inserted at `cols - 1` when a wide char can't fit and wraps.
         /// Skipped during text extraction, selection, search, and reflow
         /// to avoid spurious spaces.
         const LEADING_WIDE_CHAR_SPACER  = 1 << 15;
-        const CURLY_UNDERLINE   = 1 << 11;
-        const DOTTED_UNDERLINE  = 1 << 12;
-        const DASHED_UNDERLINE  = 1 << 13;
-        const DOUBLE_UNDERLINE  = 1 << 14;
+        const OVERLINE          = 1 << 16;
+        const SUPERSCRIPT       = 1 << 17;
+        const SUBSCRIPT         = 1 << 18;
 
         /// Union of all underline variants for mutual exclusion.
         const ALL_UNDERLINES = Self::UNDERLINE.bits()
