@@ -3,16 +3,17 @@ section: "09"
 title: "DEC Private Modes (full)"
 status: not-started
 reviewed: false
-goal: "Drive the subset of rows in `catalog/dec-private-modes.md` that Section 09 OWNS from `implemented-unverified` to `verified`: flag-toggle + DECRQM verification for modes 9, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1047, 1048, 2004, 80, 8452, 9001 (flag-only; 9001 encoding apex is Section 17's scope), plus the two MISSING modes (66/DECNKM, 67/DECBKM) implementation. Mode 2031 (color scheme update notification) is implemented here. Mode 2026 core-layer DECSET/DECRST + DECRQM plumbing is verified here; its publication/commit/abort apex tests belong to Section 06. Mode 1016 is blocked by Section 16 (MISSING catalog row, SGR-pixel encoding is mouse-protocol work). Mode 1007 and 1042 stay at `implemented-unverified` — 1007's wheel-to-arrow apex test belongs to Section 16; 1042's host-notification wiring is not in this section's scope. Mode 2 (DECANM/VT52) is blocked by Section 19."
+goal: "Drive the subset of rows in `catalog/dec-private-modes.md` that Section 09 OWNS to `verified` status (state-rung + DECRQM-rung only): modes 9, 1000, 1002, 1003, 1005, 1006, 1015, 1047, 1048, 80, 8452 — these rows' verification chain tops out at the state/effect-mode-state rung, so flag-toggle + DECRQM fully verifies them. Plus the three implementation sub-deliverables: Mode 2031 (full implementation + verification), Mode 66/DECNKM (MISSING implementation), Mode 67/DECBKM (MISSING implementation with cross-crate key encoding). Mode 2026 gets core-layer plumbing verification (flag + DECRQM) only — its apex is Section 06's. Modes that have apexes beyond flag-state (1004 focus encoding, 1007 wheel-to-arrow, 1016 SGR-pixel, 9001 Win32 encoding, 1042 host-notification, 2 DECANM) stay at their current catalog status; Section 09 adds flag-toggle + DECRQM test coverage for those where the mode bit already exists but does NOT promote their catalog verification status — promotion waits for the owning section's apex work."
 success_criteria:
-  - "Flag-toggle + DECRQM verification landed for every Section 09-owned row: modes 9, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1047, 1048, 2004, 80, 8452, 9001 (flag only). Each row reaches `verified` for the DECSET/DECRST state-rung and the DECRQM reporting rung."
-  - "Mode 2026 core-layer plumbing verified: DECSET/DECRST toggles `TermMode::SYNC_UPDATE`, DECRQM returns correct set/reset value. NOTE: apex publication/commit/abort tests are owned by Section 06 (already `complete`) via mux-level harness at `oriterm_mux/src/pane/io_thread/tests.rs` — this section does NOT re-verify them."
-  - "Mode 2031 (color scheme update notification) is `verified` — new `NamedPrivateMode::ColorSchemeUpdate` variant added, hooks into existing `Term::set_theme(Theme)` path, emits `CSI ? 997 ; Ps n` when mode 2031 is enabled and theme changes."
-  - "Mode 66 (DECNKM) IMPLEMENTED — new NamedPrivateMode variant, reconciled with existing DECKPAM/DECKPNM ESC =/ESC > path, shares `TermMode::APP_KEYPAD` flag."
-  - "Mode 67 (DECBKM) IMPLEMENTED — new NamedPrivateMode variant, new `TermMode::DECBKM` flag, cross-crate backspace encoding updated in `oriterm/src/key_encoding/legacy.rs`."
+  - "Flag-toggle + DECRQM verification landed for EVERY Section 09-owned row AND every mode the section touches for flag coverage (includes: 9, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1042, 1047, 1048, 80, 8452, 9001, 2026). Rows promoted to `verified`: 9, 1000, 1002, 1003, 1005, 1006, 1015, 1047, 1048, 80, 8452 (state-rung apexes). Rows whose catalog status is NOT promoted by Section 09 (see goal and exclusion block): 1004 (apex is Section 16), 1007 (apex is Section 16), 1016 (Section 16), 1042 (host-notification deferred), 9001 (encoding is Section 17), 2 (Section 19), 2026 (apex is Section 06)."
+  - "Mode 2026 core-layer plumbing verified: DECSET/DECRST toggles `TermMode::SYNC_UPDATE`, DECRQM returns correct set/reset value. NOTE: apex publication/commit/abort tests are owned by Section 06 (already `complete`) via mux-level harness at `oriterm_mux/src/pane/io_thread/tests.rs` — this section does NOT re-verify them and does NOT promote `catalog/mode-2026.md` rows."
+  - "Mode 2031 (color scheme update notification) is `verified` — new `NamedPrivateMode::ColorSchemeUpdate` variant added, hooks into existing `Term::set_theme(Theme)` path, emits `CSI ? 997 ; Ps n` when mode 2031 is enabled and theme changes. Catalog row for mode 2031 added to `catalog/dec-private-modes.md`."
+  - "Mode 66 (DECNKM) IMPLEMENTED — new NamedPrivateMode variant, reconciled with existing DECKPAM/DECKPNM ESC =/ESC > path, shares `TermMode::APP_KEYPAD` flag. Catalog row `DEC-DECNKM` promoted from `missing` to `verified`."
+  - "Mode 67 (DECBKM) IMPLEMENTED — new NamedPrivateMode variant, new `TermMode::DECBKM` flag, cross-crate backspace encoding updated in `oriterm/src/key_encoding/legacy.rs`. Catalog row `DEC-DECBKM` promoted from `missing` to `verified`."
   - "Every mode touched by this section has DECRQM query/response verified via `status_report_private_mode()` at `oriterm_core/src/term/handler/status.rs:117`."
   - "All new `NamedPrivateMode` variants (ColorSchemeUpdate, DecNumericKeypad, DecBackarrowKey) added to the `decset_decrst_flag_sync()` sync test at `oriterm_core/src/term/handler/tests.rs:5213`."
-  - "Cross-reference links land: the rows Section 09 does NOT own (mode 2026 apex → Section 06; mode 1007 wheel-to-arrow apex → Section 16; mode 1016 → Section 16; mode 9001 encoding apex → Section 17; mode 2 → Section 19; mode 1042 host-notification → explicitly deferred to a future section filed via /add-bug) are cross-linked from this section's body."
+  - "Cross-reference links land in this section's body: excluded rows link to their owning section (06 for mode-2026 apex; 16 for 1004 encoding/1007 wheel-to-arrow/1016 SGR-pixel; 17 for 9001 encoding; 19 for mode 2; deferred bug for 1042 host-notification)."
+  - "Mode 1042 host-notification gap filed as a bug via `/add-bug` (Subsystem: Core Terminal / Effect boundary — `HostEffect::UrgencyHint` variant + host-adapter wiring)."
   - "All existing teseq mode tests pass without modification."
   - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release."
   - "Section's mission criterion connection: contributes to **Verification chain complete per row** mission criterion for the Section 09-owned row subset only. Does NOT claim ownership of the **Mode 2026 fully wired** criterion — that's Section 06's contribution."
@@ -29,7 +30,7 @@ sections:
     title: "Verify implemented DEC private mode flag toggles + DECRQM"
     status: not-started
   - id: "09.2"
-    title: "Verify Mode 2026 sync output (suppression + commit + abort)"
+    title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM)"
     status: not-started
   - id: "09.3"
     title: "Implement + verify Mode 2031 color scheme update notification"
@@ -133,7 +134,8 @@ sections:
 
 - [ ] **DECRQM cross-cutting validation:** For every mode with a `NamedPrivateMode` variant, assert that `CSI ? Ps $ p` returns `\x1b[?Ps;1$y` when set and `\x1b[?Ps;2$y` when reset. For modes without a `TermMode` flag mapping (`SaveCursor`, `ColumnMode`), `named_private_mode_flag` returns `None` and DECRQM returns `0` (not recognized) — document this deviation if xterm reports these differently.
 
-- [ ] **Catalog update:** Update catalog rows that reach `verified` via this section's work: `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-FOCUS-IN-OUT` (flag only), `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`, `DEC-DECSCNM` (if not covered by 08), `DEC-BRACKETED-PASTE` (if not covered by 08). Rows that stay unchanged per row ownership cross-reference: `DEC-ALT-SCROLL` (→16), `DEC-URGENCY-HINTS` (→deferred bug), `DEC-WIN32-INPUT` (→17), `DEC-DECANM` (→19), `DEC-SGR-PIXEL-MOUSE` (→16).
+- [ ] **Catalog update — rows promoted to `verified` by Section 09:** `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`, `DEC-DECSCNM` (if not covered by 08), `DEC-BRACKETED-PASTE` (if not covered by 08). These rows have apex `effect-mode-state` — flag-toggle + DECRQM fully verifies them.
+- [ ] **Catalog: rows NOT promoted by Section 09** (flag coverage added but apex is owned elsewhere, so catalog status stays unchanged): `DEC-FOCUS-IN-OUT` (stays `implemented-unverified` — focus encoding apex is Section 16), `DEC-ALT-SCROLL` (stays `stub` — wheel-to-arrow apex is Section 16), `DEC-URGENCY-HINTS` (stays `stub` — host-notification deferred to bug), `DEC-WIN32-INPUT` (stays `stub` — ConPTY encoding apex is Section 17), `DEC-DECANM` (stays `missing` — VT52 is Section 19), `DEC-SGR-PIXEL-MOUSE` (stays `missing` — 1016 is Section 16). `DEC-SYNC-UPDATE`/`catalog/mode-2026.md` rows stay at their current status (owned by Section 06 apex). This section adds DECSET/DECRST + DECRQM test coverage for these rows without changing their catalog verification status.
 
 - [ ] **Validation:** all tests pass; no existing tests regressed.
 
@@ -280,6 +282,24 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
   Basis: direct_file_inspection. Confidence: high.
   Resolved: Fixed on 2026-04-15. Completion checklist now has an "Excluded rows stay at current status" item that explicitly lists DECANM, 1016, 1007 apex, 9001 encoding, 1042, and mode-2026 apex rows with their owning sections. Exit criteria updated similarly. Also added `<!-- blocked-by:16 -->` tag in the section body for mode 1016.
 
+**Iteration 2 (2026-04-15 — post-fix re-review; gemini transport failed 3x, codex verified iter-1 resolutions + surfaced 2 new findings):**
+
+- [x] `[TPR-09-001-codex-i2][high]` `plans/spec-conformance/section-09-dec-private-modes.md:6` — Reconcile ownership/status contradictions across Section 09 row lists.
+  Evidence: Goal at line 6 and success criteria at line 8 still listed modes 1004 and 9001 as Section 09-owned "verified" rows, while exclusion block at line 80 said focus encoding is owned by 16 and 9001 encoding is owned by 17. 09.1 catalog-update list at line 136 and completion checklist at line 297 still included DEC-FOCUS-IN-OUT as a Section 09-owned verified row. Catalog status language also mismatched — catalog has DEC-ALT-SCROLL as `stub` (not `implemented-unverified`).
+  Impact: Section 09 had no single executable ownership story. Implementer could overclaim `verified` status for externally-owned apexes.
+  Required plan update: Make goal, success criteria, 09.1 catalog-update bullets, 09.N checklist, and exit criteria all match the row-ownership table and current catalog.
+  Basis: direct_file_inspection. Confidence: high.
+  Resolved: Fixed on 2026-04-15. Split the catalog-update into two items: "rows promoted to `verified` by Section 09" (only those with apex `effect-mode-state`) and "rows NOT promoted by Section 09" (DEC-FOCUS-IN-OUT, DEC-ALT-SCROLL, DEC-URGENCY-HINTS, DEC-WIN32-INPUT, DEC-DECANM, DEC-SGR-PIXEL-MOUSE). Goal rewritten to distinguish the Section 09-promoted row subset from rows where Section 09 adds flag coverage but does NOT promote the catalog status (because apex is owned elsewhere). Completion checklist updated similarly. Catalog status language now matches catalog file verbatim (`stub` stays `stub`, `implemented-unverified` stays `implemented-unverified`, `missing` stays `missing`).
+
+- [x] `[TPR-09-002-codex-i2][medium]` `plans/spec-conformance/section-09-dec-private-modes.md:32` — Retitle subsection 09.2 to match its narrowed core-layer-only scope.
+  Evidence: Frontmatter `sections:` entry for 09.2 at line 32 still said "Verify Mode 2026 sync output (suppression + commit + abort)", but the subsection body at line 142 and scope block at 146-151 explicitly limit 09.2 to DECSET/DECRST + DECRQM and defer Begin/Commit/Abort to Section 06.
+  Impact: Section inventory advertised the exact mux-level work iteration 1 removed.
+  Required plan update: Rename 09.2 entry in frontmatter `sections:` list to match the body.
+  Basis: direct_file_inspection. Confidence: high.
+  Resolved: Fixed on 2026-04-15. Frontmatter 09.2 entry updated to "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM)".
+
+**Iteration 2 gemini transport:** failed all 3 attempts (rc=1; attempt 1 stuck at `[init]+[msg.user]` 491s; attempt 2 tool-result error 264s; attempt 3 tool-result error 303s). Codex succeeded on all 3 attempts and its diagnostics verified iteration 1 resolutions against actual code (`oriterm_core/src/term/handler/tests.rs:5190-5245`, `status.rs:100-145`, `handler/mod.rs:300-330`, `crates/vte/src/ansi/types.rs:160-315`, `oriterm/src/app/mouse_report/mod.rs:150-220`, `oriterm/src/key_encoding/legacy.rs:150-240`). A third iteration will re-run BOTH reviewers to confirm gemini clean after transport recovers.
+
 ---
 
 ## 09.N Completion Checklist
@@ -294,8 +314,9 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
 - [ ] **DECRQM cross-cutting**: every mode verified or implemented by this section has its DECRQM query/response tested
 - [ ] **Sync point**: all new `NamedPrivateMode` variants (ColorSchemeUpdate, DecNumericKeypad, DecBackarrowKey) added to `decset_decrst_flag_sync()` at `oriterm_core/src/term/handler/tests.rs:5213`
 - [ ] **Sync point**: all new `NamedPrivateMode` variants handled in `status_report_private_mode()` (automatic via `named_private_mode_flag()` delegation — but verify)
-- [ ] **Section 09-owned rows verified** (see 09.1 "Catalog update" item for the complete list): `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-FOCUS-IN-OUT` (flag only), `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`. Rows NOT owned by Section 09 stay at their current status.
-- [ ] **Excluded rows stay at current status** — Section 09 does NOT mark the following as `verified`: `DEC-DECANM` (→ Section 19), `DEC-SGR-PIXEL-MOUSE` (→ Section 16), `DEC-ALT-SCROLL` (apex → Section 16), `DEC-WIN32-INPUT` (encoding → Section 17), `DEC-URGENCY-HINTS` (host notification → deferred bug), `catalog/mode-2026.md` rows (apex → Section 06)
+- [ ] **Section 09-promoted rows** (reach `verified` via flag + DECRQM; apex = `effect-mode-state`): `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`.
+- [ ] **Section 09-implemented + verified rows** (new catalog rows or promoted from `missing`): `DEC-DECNKM` (mode 66), `DEC-DECBKM` (mode 67), new mode 2031 row (ColorSchemeUpdate).
+- [ ] **Rows NOT promoted by Section 09** (flag coverage added but catalog status stays unchanged — apex owned elsewhere): `DEC-FOCUS-IN-OUT` (stays `implemented-unverified`; apex → 16), `DEC-ALT-SCROLL` (stays `stub`; apex → 16), `DEC-URGENCY-HINTS` (stays `stub`; → deferred bug), `DEC-WIN32-INPUT` (stays `stub`; encoding → 17), `DEC-DECANM` (stays `missing`; → 19), `DEC-SGR-PIXEL-MOUSE` (stays `missing`; → 16), `catalog/mode-2026.md` rows (stay at current status; apex → 06).
 - [ ] Mode 2026 core-layer plumbing verified (flag + DECRQM only — apex remains Section 06's)
 - [ ] Mode 2031 color scheme update verified (using existing `Theme` type, NOT a new `ColorScheme` type)
 - [ ] Mode 66 (DECNKM) implemented and reconciled with DECKPAM/DECKPNM
