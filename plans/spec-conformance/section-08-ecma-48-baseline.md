@@ -58,7 +58,7 @@ sections:
     status: complete
   - id: "08.9"
     title: "Populate _legacy-tack-mapping.md as rows are verified"
-    status: not-started
+    status: complete
   - id: "08.8b"
     title: "Verify remaining Section-08-owned catalog rows"
     status: complete
@@ -451,8 +451,8 @@ The catalog assigns 14 additional rows to Section 08 (11 in `catalog/ecma-48.md`
 
 This file was created empty in section 02. As 08.1-08.8 verify catalog rows that originated from tack scenarios, populate the mapping.
 
-- [ ] After every catalog row drives from `implemented-unverified` to `verified` in this section, add a row to `_legacy-tack-mapping.md` linking the row ID to the original tack section.
-- [ ] **Validation**: `_legacy-tack-mapping.md` has one entry per tack-originated catalog row that this section verified.
+- [x] After every catalog row drives from `implemented-unverified` to `verified` in this section, add a row to `_legacy-tack-mapping.md` linking the row ID to the original tack section. **Result**: All tack-originated catalog rows were already populated by 08.1 (section 05 scenarios) and 08.2 (section 06 scenarios). Subsections 08.3-08.8b verified NEW rows (DECLRMM, C1, REP, SGR colon forms, SGR 53/55/73-75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, PUSHSGR, POPSGR) that did not originate from tack — no additional tack mapping entries needed.
+- [x] **Validation**: `_legacy-tack-mapping.md` has 18 entries covering all tack-originated rows. No tack-originated rows remain unmapped.
 
 ---
 
