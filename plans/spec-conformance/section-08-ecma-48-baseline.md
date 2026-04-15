@@ -626,6 +626,11 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-001-codex-r12i8][medium]` `oriterm_core/src/term/handler/tests.rs:6780` — Alt-grid pin covered only scroll region + keyboard stack; missed cursor, margins, saved cursor, SGR stack.
   Resolved: Fixed on 2026-04-14. Extended the test to seed ALL alt-grid surfaces before DECSTR: cursor, DECLRMM margins, scroll region, saved cursor (via DECSC), SGR stack (via XTPUSHSGR with bold template), and keyboard mode. Post-DECSTR alt re-entry now asserts all six surfaces are reset. Gemini returned clean (no findings) this iteration.
 
+### Round 12 iteration 9 (2026-04-14)
+
+- [x] `[TPR-08-001-codex-r12i9][medium]` `oriterm_core/src/term/handler/tests.rs:6727` — Alt-side CUP / DECSC / XTPUSHSGR seed setup was not asserted before DECSTR, making post-DECSTR assertions vacuously satisfied if setup silently broke.
+  Resolved: Fixed on 2026-04-14. Added pre-DECSTR assertions that alt cursor moved to (7, 14), that the template has bold set from XTPUSHSGR. Gemini returned clean (no findings) this iteration.
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,

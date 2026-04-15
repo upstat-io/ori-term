@@ -6730,6 +6730,22 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert_eq!(t.grid().scroll_region(), &(4..15));
     assert_eq!(t.grid().left_right_margins(), (1, 29));
+    // Verify alt-side CUP / DECSC / XTPUSHSGR setup actually mutated state
+    // — otherwise the post-DECSTR assertions would be vacuously satisfied.
+    assert_eq!(t.grid().cursor().line(), 7, "alt CUP should move cursor");
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(14),
+        "alt CUP should move cursor"
+    );
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD),
+        "alt SGR bold seed should set bold on template"
+    );
 
     // DECSTR while on alt screen.
     feed(&mut t, b"\x1b[!p");
