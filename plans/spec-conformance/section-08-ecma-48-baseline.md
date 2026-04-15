@@ -611,6 +611,11 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-001-codex-r12i5][medium]` `oriterm_core/src/term/handler/tests.rs:6702` — Cross-screen DECSTR test only pinned cursor state, not margins or keyboard mode stacks.
   Resolved: Fixed on 2026-04-14. Extended `decstr_clears_primary_state_when_fired_on_alt_screen` to also pin: (1) primary margins cleared via DECLRMM setup + post-DECSTR assertion, (2) primary keyboard_mode_stack cleared, (3) alt keyboard_mode_stack cleared (verified by re-entering alt screen and inspecting). Verified the test catches regressions by temporarily removing `self.inactive_keyboard_mode_stack.clear()` — test failed with "DECSTR must clear alt keyboard mode stack".
 
+### Round 12 iteration 6 (2026-04-14)
+
+- [x] `[TPR-08-001-codex-r12i6][medium]` + `[TPR-08-001-gemini-r12i6][medium]` `oriterm_core/src/term/handler/tests.rs:6700` — Test doc mentions scroll region reset but no assertion pins it (agreement).
+  Resolved: Fixed on 2026-04-14. Both reviewers independently flagged the same test gap. Added `assert_eq!(t.grid().scroll_region(), &(0..lines), ...)` for primary after DECSTR, and additionally seeded an alt scroll region then fired DECSTR again to pin the alt-side reset.
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,
