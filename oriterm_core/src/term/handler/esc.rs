@@ -1,6 +1,7 @@
 //! ESC sequence handler implementations.
 //!
-//! Handles RIS (full reset) and DECALN (screen alignment test).
+//! Handles RIS (full reset), DECALN (screen alignment test), DECSC/DECRC
+//! (cursor save/restore), and DECSLRM (left/right margin set).
 //! Methods are called by the `vte::ansi::Handler` trait impl on `Term<S>`.
 
 use log::debug;
@@ -141,5 +142,52 @@ impl<S: EffectSink> Term<S> {
 
         // Home the cursor.
         self.goto_origin_aware(0, 0);
+    }
+
+    /// DECSC (ESC 7): save cursor position + attributes + charset + wrap + DECOM.
+    ///
+    /// Per DEC STD 070 §5.6.1, the save set includes cursor position,
+    /// character attributes, charset state, wrap flag, and DECOM flag.
+    /// DECLRMM mode and margin values are NOT saved.
+    pub(super) fn save_cursor_impl(&mut self) {
+        self.grid_mut().save_cursor();
+        self.saved_charset = Some(self.charset.clone());
+        self.saved_origin_mode = Some(self.mode.contains(TermMode::ORIGIN));
+    }
+
+    /// DECRC (ESC 8): restore cursor position + attributes + charset + DECOM.
+    pub(super) fn restore_cursor_impl(&mut self) {
+        self.grid_mut().restore_cursor();
+        if let Some(charset) = self.saved_charset.take() {
+            self.charset = charset;
+            self.saved_charset = Some(self.charset.clone());
+        }
+        if let Some(origin) = self.saved_origin_mode {
+            if origin {
+                self.mode.insert(TermMode::ORIGIN);
+            } else {
+                self.mode.remove(TermMode::ORIGIN);
+            }
+        }
+    }
+
+    /// CSI s: DECSLRM (if mode 69 active) or save cursor (backward compat).
+    pub(super) fn decslrm_or_save_cursor_impl(&mut self, has_params: bool, left: u16, right: u16) {
+        if has_params {
+            if self.mode.contains(TermMode::LEFT_RIGHT_MARGIN) {
+                let cols = self.grid().cols();
+                let l = (left.max(1) as usize).saturating_sub(1);
+                let r = if right == 0 {
+                    cols.saturating_sub(1)
+                } else {
+                    (right as usize).saturating_sub(1)
+                };
+                self.grid_mut().set_left_right_margins(l, r);
+            }
+        } else if self.mode.contains(TermMode::LEFT_RIGHT_MARGIN) {
+            self.grid_mut().reset_left_right_margins();
+        } else {
+            self.save_cursor_impl();
+        }
     }
 }
