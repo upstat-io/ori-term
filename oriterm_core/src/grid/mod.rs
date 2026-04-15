@@ -15,11 +15,10 @@ pub mod scroll;
 pub mod stable_index;
 
 use std::ops::{Index, IndexMut, Range};
-use std::sync::Arc;
 
 use vte::ansi::Color;
 
-use crate::cell::{CellExtra, CellFlags};
+use crate::cell::CellFlags;
 use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
@@ -80,12 +79,16 @@ pub struct Grid {
 }
 
 /// Saved SGR state for XTPUSHSGR/XTPOPSGR.
+///
+/// Only captures SGR-relevant attributes (flags, colors, underline color).
+/// Hyperlinks (OSC 8) and zerowidth marks are NOT saved — they live
+/// outside SGR scope per xterm convention.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SgrSnapshot {
     flags: CellFlags,
     fg: Color,
     bg: Color,
-    extra: Option<Arc<CellExtra>>,
+    underline_color: Option<Color>,
 }
 
 impl Grid {
@@ -288,8 +291,13 @@ impl Grid {
             flags: t.flags,
             fg: t.fg,
             bg: t.bg,
-            extra: t.extra.clone(),
+            underline_color: t.extra.as_ref().and_then(|e| e.underline_color),
         });
+    }
+
+    /// Clear the XTPUSHSGR stack (used by DECSTR soft reset).
+    pub fn clear_sgr_stack(&mut self) {
+        self.sgr_stack.clear();
     }
 
     /// Pop SGR state from the XTPUSHSGR stack and apply to cursor template.
@@ -299,7 +307,7 @@ impl Grid {
             t.flags = snap.flags;
             t.fg = snap.fg;
             t.bg = snap.bg;
-            t.extra = snap.extra;
+            t.set_underline_color(snap.underline_color);
         }
     }
 

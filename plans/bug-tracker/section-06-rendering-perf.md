@@ -135,6 +135,13 @@ sections:
   Found: 2026-04-12 | Source: continue-roadmap
   Note: Produces actual + diff PNGs at `oriterm/tests/references/settings_appearance_clean_96dpi_{actual,diff}.png`. May be a pixel-level drift from font/layout changes rather than a functional regression.
 
+- [ ] `[BUG-06-014][medium]` **SGR 53/73/74 flags stored on cells but not rendered — no visual effect for overline, superscript, subscript**
+  Repro: Feed `\x1b[53mOverlined\x1b[0m` or `\x1b[73mSuperscript\x1b[0m` — flag is set on cell (verified by handler tests) but GPU decoration pipeline has no consumer for OVERLINE/SUPERSCRIPT/SUBSCRIPT CellFlags. HTML export also does not emit these attributes.
+  Subsystem: `oriterm/src/gpu/prepare/decorations.rs`, `oriterm_core/src/selection/html/`
+  Found: 2026-04-14 | Source: tpr-review
+  Reviewer: codex
+  Note: Active work in spec-conformance Section 08 added the flags but rendering is the GPU layer's responsibility (owned by oriterm crate, not oriterm_core). Overline requires a decoration line above the glyph baseline. Superscript/subscript require vertical glyph offset and size reduction — may need font pipeline changes.
+
 ---
 
 ## 06.R Third Party Review Findings

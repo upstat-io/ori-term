@@ -408,7 +408,7 @@ ECMA-48 sect.5.4.2 allows subparameters separated by `:` (colon) in addition to 
   - **Negative pin**: `sgr_38_double_colon_vs_zero_indistinguishable` — `::` and `:0:` produce identical color
 - [x] **Matrix dimensions**: 3 × 2 × 2 = 12 positive + 2 negative = 14 tests. All pass.
 - [x] Update catalog rows in `catalog/ecma-48.md`: `ECMA48-SGR-38`, `ECMA48-SGR-48`, `ECMA48-SGR-58` all to `verified`.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 08.6-08.8b (gap fixes). Catches parser/handler interaction issues.
+- [x] **TPR checkpoint** — `/tpr-review` covering 08.6-08.8b (gap fixes). Round 12: 4 codex findings (DECSTR→RIS fix, XTPUSHSGR hyperlink leak fix, DECRQSS SGR drift fix, rendering gap filed as BUG-06-014). 6 gemini findings (4 informational confirmations, 2 theoretical — UTF-8 C1 encoding and O(N^2) dense-invalid-UTF-8 not actionable). All actionable findings fixed.
 - [x] **Validation**: both separator forms work; negative pins document known limitations; existing SGR tests unchanged.
 
 ---
@@ -570,6 +570,17 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 ### Round 11 iteration 4 (2026-04-14) — CLEAN PASS
 
 - **No findings.** Both codex (192s) and gemini (67s) returned `no_findings: true` on iter-4. Commit range `8808d5c5..b7245ced` verified clean across all round-11 surfaces (DECSC/DECRC scope, absolute CUP/HVP, CHA DECOM offset, headless sanitize merge, plan metadata alignment, 08.5 subsection rename, CHA col_1 test doc correction). §08.5 TPR checkpoint closed.
+
+### Round 12 (2026-04-14 — 08.6-08.8b TPR checkpoint)
+
+- [x] `[TPR-08-001-codex-r12][high]` `crates/vte/src/ansi/dispatch/csi.rs:227` — DECSTR routed to RIS (full reset) instead of soft reset.
+  Resolved: Fixed on 2026-04-14. Added `Handler::decstr()` method + `Term::soft_reset()` (resets modes/SGR/cursor/scroll region/margins/sgr_stack but NOT screen contents, title, palette, or scrollback). `CSI ! p` now dispatches to `decstr()`, `ESC c` (RIS) stays on `reset_state()`.
+- [x] `[TPR-08-002-codex-r12][medium]` `oriterm_core/src/grid/mod.rs:291` — XTPUSHSGR snapshot captured hyperlink + zerowidth from CellExtra, not just underline color.
+  Resolved: Fixed on 2026-04-14. Changed `SgrSnapshot` to store only `underline_color: Option<Color>` instead of `extra: Option<Arc<CellExtra>>`. Push extracts underline_color from CellExtra; pop restores via `set_underline_color()`. Hyperlinks and zerowidth marks are no longer affected by push/pop.
+- [x] `[TPR-08-003-codex-r12][medium]` `oriterm_core/src/term/handler/status.rs:24` — DECRQSS SGR reporting missing overline/superscript/subscript flags.
+  Resolved: Fixed on 2026-04-14. Added `CellFlags::OVERLINE` → `"53"`, `CellFlags::SUPERSCRIPT` → `"73"`, `CellFlags::SUBSCRIPT` → `"74"` to `build_sgr_string()`.
+- [x] `[TPR-08-004-codex-r12][medium]` `oriterm/src/gpu/prepare/decorations.rs:68` — New OVERLINE/SUPERSCRIPT/SUBSCRIPT flags not consumed by GPU renderer or HTML export.
+  Resolved: Filed as BUG-06-014 (rendering gap, medium severity). The flags are correctly stored on cells and reported via DECRQSS, but rendering requires GPU shader/font pipeline work that belongs in the rendering subsystem, not Section 08.
 
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene

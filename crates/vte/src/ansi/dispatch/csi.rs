@@ -224,7 +224,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('n', []) => handler.device_status(next_param_or(0) as usize),
         ('P', []) => handler.delete_chars(next_param_or(1) as usize),
-        ('p', [b'!']) => handler.reset_state(),
+        ('p', [b'!']) => handler.decstr(),
         ('p', [b'$']) => {
             let mode = next_param_or(0);
             handler.report_mode(Mode::new(mode));
