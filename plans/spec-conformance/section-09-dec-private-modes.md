@@ -1,7 +1,7 @@
 ---
 section: "09"
 title: "DEC Private Modes (full)"
-status: not-started
+status: in-progress
 reviewed: false
 goal: "Drive the subset of rows in `catalog/dec-private-modes.md` that Section 09 OWNS to `verified` status (state-rung + DECRQM-rung only): modes 9, 1000, 1002, 1003, 1005, 1006, 1015, 1047, 1048, 80, 8452 — these rows' verification chain tops out at the state/effect-mode-state rung, so flag-toggle + DECRQM fully verifies them. Plus the three implementation sub-deliverables: Mode 2031 (full implementation + verification), Mode 66/DECNKM (MISSING implementation), Mode 67/DECBKM (MISSING implementation with cross-crate key encoding). Mode 2026 gets core-layer plumbing verification (flag + DECRQM) only — its apex is Section 06's. Modes that have apexes beyond flag-state (1004 focus encoding, 1007 wheel-to-arrow, 1016 SGR-pixel, 9001 Win32 encoding, 1042 host-notification, 2 DECANM) stay at their current catalog status; Section 09 adds flag-toggle + DECRQM test coverage for those where the mode bit already exists but does NOT promote their catalog verification status — promotion waits for the owning section's apex work."
 success_criteria:
@@ -23,7 +23,7 @@ inspired_by:
   - "kitty docs — mode 2031 color scheme notification reference"
 depends_on: ["03", "06", "08"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: "2026-04-15"
 sections:
   - id: "09.1"
@@ -40,7 +40,7 @@ sections:
     status: not-started
   - id: "09.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "09.N"
     title: "Completion Checklist"
     status: not-started
