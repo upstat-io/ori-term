@@ -6697,17 +6697,35 @@ fn decstr_clears_sgr_stack() {
 
 /// DECSTR while on alt screen must reset BOTH grids. After DECSTR drops
 /// ALT_SCREEN, the primary grid becomes active and its prior state
-/// (cursor, margins, saved cursor) must be cleared.
+/// (cursor, margins, scroll region, saved cursor, keyboard mode stack)
+/// must all be cleared.
 #[test]
 fn decstr_clears_primary_state_when_fired_on_alt_screen() {
     let mut t = term();
-    // On primary: move cursor, save via DECSC.
+    // On primary: set margins (DECLRMM), scroll region, keyboard mode,
+    // move cursor, save via DECSC.
+    feed(&mut t, b"\x1b[?69h");
+    feed(&mut t, b"\x1b[6;41s");
+    feed(&mut t, b"\x1b[3;20r");
+    feed(&mut t, b"\x1b[>1u");
     feed(&mut t, b"\x1b[10;20H\x1b7");
-    // Enter alt screen (CSI ? 1049 h).
+    let (pre_left, pre_right) = t.grid().left_right_margins();
+    assert_eq!(pre_left, 5);
+    assert_eq!(pre_right, 40);
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+
+    // Enter alt screen (swaps primary keyboard stack to inactive).
     feed(&mut t, b"\x1b[?1049h");
+    assert!(t.keyboard_mode_stack().is_empty());
+    // Push a mode on alt screen too.
+    feed(&mut t, b"\x1b[>3u");
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+
     // DECSTR while on alt screen.
     feed(&mut t, b"\x1b[!p");
-    // DECSTR should have dropped ALT_SCREEN — cursor at (0,0) of primary.
+
+    // DECSTR should have dropped ALT_SCREEN — primary grid is active.
+    // Cursor at (0,0), margins cleared, both keyboard stacks empty.
     let grid = t.grid();
     assert_eq!(
         grid.cursor().line(),
@@ -6731,6 +6749,27 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
         grid.cursor().col(),
         Column(0),
         "DECSTR must clear primary saved cursor"
+    );
+
+    // Primary margins must be cleared too.
+    let (post_left, post_right) = t.grid().left_right_margins();
+    assert_eq!(post_left, 0, "DECSTR must clear primary left margin");
+    assert_eq!(
+        post_right,
+        t.grid().cols() - 1,
+        "DECSTR must clear primary right margin"
+    );
+
+    // Both keyboard mode stacks must be empty.
+    assert!(
+        t.keyboard_mode_stack().is_empty(),
+        "DECSTR must clear primary keyboard mode stack"
+    );
+    // Re-enter alt screen to inspect the alt stack — it was cleared too.
+    feed(&mut t, b"\x1b[?1049h");
+    assert!(
+        t.keyboard_mode_stack().is_empty(),
+        "DECSTR must clear alt keyboard mode stack"
     );
 }
 

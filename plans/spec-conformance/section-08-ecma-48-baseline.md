@@ -606,6 +606,11 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
   Resolved: Fixed on 2026-04-14. Added `decstr_clears_primary_state_when_fired_on_alt_screen` which enters alt screen, fires DECSTR, verifies primary cursor at (0,0), and verifies DECRC does not resurrect the pre-DECSTR saved cursor.
 - **Note on gemini contract violation**: Gemini wrote `oriterm_core/src/term/handler/bug_repro.rs` during its review, violating the read-only contract. The transport's dirty_worktree guard correctly flagged this and terminated the round. The findings were still valid (the file was gemini's repro scaffolding); the file was cleaned up manually. Gemini's skill instructions should be audited to ensure it does not write files to the source tree — TODO for a future dual-tpr-gemini session.
 
+### Round 12 iteration 5 (2026-04-14)
+
+- [x] `[TPR-08-001-codex-r12i5][medium]` `oriterm_core/src/term/handler/tests.rs:6702` — Cross-screen DECSTR test only pinned cursor state, not margins or keyboard mode stacks.
+  Resolved: Fixed on 2026-04-14. Extended `decstr_clears_primary_state_when_fired_on_alt_screen` to also pin: (1) primary margins cleared via DECLRMM setup + post-DECSTR assertion, (2) primary keyboard_mode_stack cleared, (3) alt keyboard_mode_stack cleared (verified by re-entering alt screen and inspecting). Verified the test catches regressions by temporarily removing `self.inactive_keyboard_mode_stack.clear()` — test failed with "DECSTR must clear alt keyboard mode stack".
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,
