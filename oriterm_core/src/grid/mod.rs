@@ -300,6 +300,11 @@ impl Grid {
         self.saved_cursor = None;
     }
 
+    /// Number of entries on the XTPUSHSGR stack.
+    pub fn sgr_stack_len(&self) -> usize {
+        self.sgr_stack.len()
+    }
+
     /// Clear the XTPUSHSGR stack (used by DECSTR soft reset).
     pub fn clear_sgr_stack(&mut self) {
         self.sgr_stack.clear();
