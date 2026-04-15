@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fn-rename.py — Batch test function renamer for Ori compiler.
+fn-rename.py — Batch test function renamer for ori_term.
 
 Renames test functions, optionally adding /// doc comments with
 provenance information. Designed to work with hygiene-lint.py's
@@ -211,7 +211,7 @@ def load_from_lint_stdin() -> list[Rename]:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fn-rename",
-        description="Batch test function renamer for Ori compiler hygiene.",
+        description="Batch test function renamer for ori_term hygiene.",
     )
 
     mode = p.add_mutually_exclusive_group(required=True)

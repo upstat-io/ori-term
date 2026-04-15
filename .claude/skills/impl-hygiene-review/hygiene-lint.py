@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-hygiene-lint.py — Static analysis for Ori compiler hygiene rules.
+hygiene-lint.py — Static analysis for ori_term hygiene rules.
 
 Runs deterministic, pattern-based hygiene checks that don't require
 AI judgment. Complements the /impl-hygiene-review skill by handling
@@ -976,7 +976,7 @@ def report_summary(findings: list[Finding]) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hygiene-lint",
-        description="Static analysis for Ori compiler hygiene rules.",
+        description="Static analysis for ori_term hygiene rules.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"Available checks: {', '.join(sorted(ALL_CHECK_IDS))}",
     )

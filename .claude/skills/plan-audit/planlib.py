@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared plan parsing library for Ori compiler plan tooling.
+"""Shared plan parsing library for ori_term plan tooling.
 
 SSOT for plan file discovery, YAML frontmatter parsing, checkbox extraction,
 and section/subsection data models. Consumers:

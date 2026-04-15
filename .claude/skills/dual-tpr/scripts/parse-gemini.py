@@ -119,7 +119,9 @@ FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
 # ONE of the markers below. All other fields (schema_version, status,
 # scope_actually_reviewed, etc.) are filled in by repair_envelope.py
 # downstream, so the guard does NOT check for them.
-_ENVELOPE_SKILLS = frozenset(("tpr-review", "review-work", "review-plan", "tp-help"))
+_ENVELOPE_SKILLS = frozenset(
+    ("tpr-review", "review-work", "review-plan", "tp-help", "custom")
+)
 _ENVELOPE_REVIEWERS = frozenset(("codex", "gemini"))
 
 
@@ -203,6 +205,19 @@ def main():
         action="store_true",
         help="Dump raw assistant text to stdout without sentinel/schema "
         "validation. Use when default mode fails with missing_begin_sentinel.",
+    )
+    # --default-skill threads the transport's actual review mode into the
+    # repair layer so a missing/invalid `skill` field in a custom or
+    # review-plan run is NOT silently rewritten to "review-work" (which
+    # would misclassify envelope provenance in downstream reports). The
+    # transport (dual-invoke-with-retry.sh) passes the active --skill
+    # verbatim; falls back to "review-work" only when the caller does not
+    # supply one (backward-compatible with legacy invocations).
+    ap.add_argument(
+        "--default-skill",
+        default="review-work",
+        help="skill name used as fallback when the envelope omits/mangles "
+        "the 'skill' field (matches the transport's active --skill)",
     )
     args = ap.parse_args()
 
@@ -311,7 +326,7 @@ def main():
                 f"JSON block(s) but none matched review-envelope shape "
                 f"(need no_findings, scope_actually_reviewed, "
                 f"reviewer in {{codex,gemini}}, or findings-list + skill in "
-                f"{{tpr-review,review-work,review-plan,tp-help}})",
+                f"{{tpr-review,review-work,review-plan,tp-help,custom}})",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -350,7 +365,7 @@ def main():
     # so they don't violate the stderr-first-line-is-category contract — see
     # the sentinel-less WARNING comment above.
     envelope, repairs = repair_envelope(
-        envelope, default_reviewer="gemini", default_skill="review-work",
+        envelope, default_reviewer="gemini", default_skill=args.default_skill,
     )
     if repairs:
         deferred_advisory.append(

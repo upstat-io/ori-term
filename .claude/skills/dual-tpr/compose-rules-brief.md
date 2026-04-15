@@ -28,7 +28,7 @@ actual values.
 
 ```
 You are composing a **rules brief** for external code reviewers (Codex and
-Gemini) who are about to review changes to the Ori compiler. Your job is to
+Gemini) who are about to review changes to the ori_term. Your job is to
 read the relevant rule files and produce a focused, actionable summary that
 the reviewers will use as their grounding context.
 

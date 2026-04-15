@@ -12,9 +12,31 @@
 #     leaves $RUN intact for postmortem, exits 1
 #
 # Success criteria (all must hold):
-#   - dual-invoke.sh exits 0 (both reviewers exited cleanly)
-#   - parse-codex.py succeeds on $RUN/codex.jsonl
-#   - parse-gemini.py succeeds on $RUN/gemini.jsonl
+#   - Every active reviewer (per ORI_TPR_REVIEWERS) produced a valid envelope
+#     AS PARSED by parse-codex.py / parse-gemini.py. dual-invoke.sh's exit
+#     code is NO LONGER the authoritative success signal — a non-zero exit
+#     from dual-invoke only means at least one reviewer had a non-zero
+#     process exit; the PARTNER may still have produced a valid envelope.
+#     (Fix: per-reviewer independent parsing — 2026-04-15.)
+#
+# Per-reviewer independence (2026-04-15):
+#   Prior to this change, the wrapper used a sequential if/elif/elif/else
+#   cascade that short-circuited parsing as soon as any step failed:
+#     1. dual-invoke.sh exits non-zero → SKIP all parsers
+#     2. parse-codex.py fails         → SKIP parse-gemini.py
+#   Either cascade left the partner reviewer's envelope file missing even
+#   when its JSONL held a perfect envelope. On attempt 2, the selective-
+#   retry logic (see below) uses `[[ -s <reviewer>.envelope.json ]]` as its
+#   preservation signal — a missing envelope forces EFFECTIVE_REVIEWERS to
+#   fall back to "both", and dual-invoke.sh's launch-time `rm -f` then wipes
+#   the successful reviewer's jsonl/exit/envelope state. Net effect: the
+#   operator saw a clean reviewer being needlessly re-invoked, paying the
+#   full codex wall-time (~5-10 min) twice even though attempt 1's output
+#   was intact.
+#   The fix is to parse both reviewers INDEPENDENTLY after launch, materializing
+#   each reviewer's envelope on its own merits. Only after both parses
+#   complete do we classify the round's outcome. The selective-retry logic
+#   is UNCHANGED — it was already correct, just starved of inputs.
 #
 # Worktree drift check (informational, non-blocking by default):
 #   - worktree-guard.sh compare runs AFTER parsers succeed
@@ -36,17 +58,29 @@ CAPACITY_BACKOFFS=(30 60 120 120 120)
 # where outputs go and which schema to validate against.
 RUN=""
 SCHEMA=""
+# SKILL is extracted so we can thread the transport's active review mode
+# into parse-codex.py / parse-gemini.py as --default-skill. Without this,
+# the parsers silently rewrite missing/invalid envelope `skill` fields to
+# "review-work" regardless of what the transport is actually running,
+# corrupting downstream provenance for `review-plan`, `tp-help`, or
+# `custom` rounds (TPR-XX-001).
+SKILL=""
 ARGS=("$@")
 for ((i=0; i<${#ARGS[@]}; i++)); do
   if [[ "${ARGS[$i]}" == "--run" ]]; then
     RUN="${ARGS[$((i+1))]}"
   elif [[ "${ARGS[$i]}" == "--schema" ]]; then
     SCHEMA="${ARGS[$((i+1))]}"
+  elif [[ "${ARGS[$i]}" == "--skill" ]]; then
+    SKILL="${ARGS[$((i+1))]}"
   fi
 done
 
 [[ -z "$RUN" ]] && { echo "missing --run arg" >&2; exit 2; }
 [[ -z "$SCHEMA" ]] && { echo "missing --schema arg" >&2; exit 2; }
+# SKILL falls back to review-work only when the caller omits --skill
+# (legacy / bare invocations). All first-party callers pass --skill.
+[[ -z "$SKILL" ]] && SKILL="review-work"
 
 # ORI_TPR_REVIEWERS runtime toggle (§07.2, moved from §08.2). When a
 # reviewer is excluded, dual-invoke.sh skips launching it — so the
@@ -66,16 +100,69 @@ if [[ "$ORIGINAL_REVIEWERS" != "codex" && "$ORIGINAL_REVIEWERS" != "gemini" && "
   exit 2
 fi
 
+# ── Global circuit breaker (2026-04-15) ──────────────────────────────
+#
+# Before we commit to the operator's reviewer selection, consult the
+# per-reviewer circuit breaker (state lives under $HOME/.cache/ori-tpr-circuit/
+# — global per user, persists across Claude sessions and worktrees). If a
+# reviewer has tripped its API/transport failure threshold within the
+# sliding window, it is parked for 1 hour — skip it and use only the
+# surviving reviewer. If BOTH are tripped, fail loud with a clear message
+# so the operator can choose to wait or `reset all`.
+#
+# ORI_TPR_CIRCUIT_OFF=1 bypasses the breaker entirely (escape hatch for
+# diagnostics). Otherwise the narrowing is silent and invisible to callers
+# that already tolerate single-reviewer mode via ORI_TPR_REVIEWERS.
+if [[ "${ORI_TPR_CIRCUIT_OFF:-0}" != "1" ]]; then
+  CB="$SCRIPT_DIR/circuit-breaker.sh"
+  CODEX_TRIPPED=0
+  GEMINI_TRIPPED=0
+  CODEX_CHECK="$("$CB" check codex 2>/dev/null)" || CODEX_TRIPPED=1
+  GEMINI_CHECK="$("$CB" check gemini 2>/dev/null)" || GEMINI_TRIPPED=1
+
+  case "$ORIGINAL_REVIEWERS" in
+    both)
+      if [[ $CODEX_TRIPPED -eq 1 && $GEMINI_TRIPPED -eq 1 ]]; then
+        echo "circuit_breaker_both_tripped: $CODEX_CHECK / $GEMINI_CHECK" >&2
+        echo "Both reviewers are in timeout. Wait for expiry or run:" >&2
+        echo "  $CB reset all" >&2
+        exit 1
+      elif [[ $CODEX_TRIPPED -eq 1 ]]; then
+        echo "[$(date +%s)] circuit-breaker: codex tripped ($CODEX_CHECK), narrowing to gemini-only" >> "$RUN/round.log"
+        ORIGINAL_REVIEWERS="gemini"
+      elif [[ $GEMINI_TRIPPED -eq 1 ]]; then
+        echo "[$(date +%s)] circuit-breaker: gemini tripped ($GEMINI_CHECK), narrowing to codex-only" >> "$RUN/round.log"
+        ORIGINAL_REVIEWERS="codex"
+      fi
+      ;;
+    codex)
+      if [[ $CODEX_TRIPPED -eq 1 ]]; then
+        echo "circuit_breaker_tripped: codex $CODEX_CHECK (operator requested codex-only; no fallback possible)" >&2
+        echo "Wait for expiry or run: $CB reset codex" >&2
+        exit 1
+      fi
+      ;;
+    gemini)
+      if [[ $GEMINI_TRIPPED -eq 1 ]]; then
+        echo "circuit_breaker_tripped: gemini $GEMINI_CHECK (operator requested gemini-only; no fallback possible)" >&2
+        echo "Wait for expiry or run: $CB reset gemini" >&2
+        exit 1
+      fi
+      ;;
+  esac
+fi
+
 # is_terminal_failure: classify a failure category as either terminal (no
 # retry) or retryable (worth another attempt). Returns 0 (true) for terminal,
 # 1 (false) for retryable.
 #
 # The failure category is formed by `dual-invoke-with-retry.sh` as either
-# `launch_or_exit_fail` (dual-invoke.sh exited non-zero, meaning one or both
-# reviewer subprocesses failed to run cleanly), or `<reviewer>_<first-stderr-
-# line>` where <first-stderr-line> is the authoritative failure category
-# emitted by `parse-codex.py` or `parse-gemini.py`. This classifier must stay
-# in sync with the parsers' emitted category list — the canonical source is:
+# `launch_or_exit_fail` (legacy — kept for backward compat with historical
+# round.log entries; the new per-reviewer parse always refines to a specific
+# category), or `<reviewer>_<first-stderr-line>` where <first-stderr-line> is
+# the authoritative failure category emitted by `parse-codex.py` or
+# `parse-gemini.py`. This classifier must stay in sync with the parsers'
+# emitted category list — the canonical source is:
 #
 #   parse-codex.py:  missing_dependency | missing_envelope | parse_fail |
 #                    schema_violation | failed_partial
@@ -119,19 +206,25 @@ fi
 #                                    instead of emitting this category. Kept in
 #                                    the classifier as a safety net in case a
 #                                    future parser change re-introduces it.
-#   launch_or_exit_fail            — dual-invoke.sh returned non-zero. This
-#                                    collapses ALL launch-time failures into
-#                                    one category because dual-invoke.sh
-#                                    discards reviewer stderr (`2>/dev/null`).
-#                                    We cannot distinguish a deterministic
-#                                    OpenAI 400 schema rejection from a
-#                                    transient network failure at this layer,
-#                                    so we retry. The 3-attempt budget bounds
-#                                    the waste for deterministic cases.
+#   launch_or_exit_fail            — legacy category. Pre-2026-04-15 this was
+#                                    emitted whenever dual-invoke.sh returned
+#                                    non-zero. After the per-reviewer
+#                                    independence fix, the wrapper always
+#                                    refines to a specific <reviewer>_<cat>
+#                                    using the reviewer's JSONL + parser
+#                                    output, so launch_or_exit_fail should no
+#                                    longer be produced. Kept in the classifier
+#                                    as a safety net in case the per-reviewer
+#                                    classifier ever fails to produce a
+#                                    category.
 #   codex_parse_fail               — codex emitted text that isn't JSON.
 #                                    Could be mid-stream truncation (transient)
 #                                    or a model output bug (deterministic).
 #                                    Retry to distinguish.
+#   codex_missing_jsonl            — codex.jsonl is empty or absent. Typically
+#                                    means the codex subprocess crashed before
+#                                    emitting anything. Usually transient.
+#   gemini_missing_jsonl           — same as codex_missing_jsonl.
 #   gemini_parse_fail              — same as codex_parse_fail.
 #   gemini_missing_terminator      — assistant content present but no
 #                                    result/success event; could be a
@@ -241,6 +334,21 @@ with open('$jsonl_file') as f:
 " 2>/dev/null || true
 }
 
+# classify_api_error — map an API error message to a specific failure
+# category. Shared between codex and gemini so both reviewers route through
+# the same capacity/auth/error taxonomy. Returns the category via stdout.
+classify_api_error() {
+  local reviewer="$1"
+  local api_err="$2"
+  if [[ "$api_err" == *"No capacity"* || "$api_err" == *"rate limit"* || "$api_err" == *"overloaded"* || "$api_err" == *"quota"* ]]; then
+    printf '%s_api_capacity' "$reviewer"
+  elif [[ "$api_err" == *"authentication"* || "$api_err" == *"unauthorized"* || "$api_err" == *"permission"* ]]; then
+    printf '%s_api_auth' "$reviewer"
+  else
+    printf '%s_api_error' "$reviewer"
+  fi
+}
+
 # is_capacity_error — returns 0 (true) if the failure looks like an API
 # capacity/rate-limit error. These need much longer backoff (30-120s) instead
 # of the default 1-4s.
@@ -248,6 +356,86 @@ IS_CAPACITY_FAILURE=false
 is_capacity_error() {
   local category="$1"
   [[ "$category" == *"_api_capacity"* ]] && return 0
+  return 1
+}
+
+# classify_reviewer_outcome — inspect a single reviewer's post-launch state
+# and attempt to parse its JSONL into an envelope. Runs INDEPENDENTLY of the
+# other reviewer so a failure on one side never prevents envelope
+# materialization on the other. This is the core of the 2026-04-15
+# per-reviewer independence fix.
+#
+# Arguments:
+#   $1 — reviewer name (codex|gemini)
+#   $2 — path to reviewer's jsonl file
+#   $3 — path to reviewer's parse-error file
+#   $4 — path to reviewer's envelope.json output file
+#   $5 — path to reviewer's stalled marker file (if present, reviewer was
+#        killed by watchdog and must NOT be retried)
+#
+# On success: sets parser-produced envelope.json, returns 0.
+# On failure: truncates envelope.json to zero bytes (so selective-retry's
+# `-s` preservation check correctly returns false), prints the failure
+# category to stdout, returns 1.
+#
+# Why truncate on failure: parse-*.py writes to stdout ONLY on success (they
+# exit before any stdout write on failure). But if a PRIOR attempt wrote a
+# valid envelope and THIS attempt's jsonl is stale/bad, the stale envelope
+# from the prior attempt could still be on disk. dual-invoke.sh's launch-time
+# `rm -f` handles this for the re-launch case, but when parse-*.py fails on
+# pre-existing content we must clear it ourselves so selective-retry doesn't
+# mistake the stale file for a fresh success.
+classify_reviewer_outcome() {
+  local reviewer="$1"
+  local jsonl="$2"
+  local parse_err="$3"
+  local envelope="$4"
+  local stalled_marker="$5"
+
+  # Case 1: watchdog killed this reviewer → terminal stall.
+  if [[ -f "$stalled_marker" ]]; then
+    : > "$envelope"
+    printf 'reviewer_stalled_%s' "$reviewer"
+    return 1
+  fi
+
+  # Case 2: jsonl missing or empty → reviewer subprocess crashed before
+  # emitting anything. Cannot parse. Retryable (usually transient).
+  if [[ ! -s "$jsonl" ]]; then
+    : > "$envelope"
+    printf '%s_missing_jsonl' "$reviewer"
+    return 1
+  fi
+
+  # Case 3: attempt the parse. On success, envelope.json is written and we
+  # return 0. On failure, classify via API error (preferred, richer) or
+  # parser-reported category (fallback).
+  if "$SCRIPT_DIR/parse-${reviewer}.py" --jsonl "$jsonl" --schema "$SCHEMA" \
+      --default-skill "$SKILL" > "$envelope" 2> "$parse_err"; then
+    return 0
+  fi
+
+  # Parse failed. Clear the envelope so -s preservation check returns false.
+  : > "$envelope"
+
+  # Try to refine using the JSONL-level API error event — this is the most
+  # specific classification when the reviewer's API call itself was
+  # rejected. If present, it overrides the parser-reported category because
+  # API errors (capacity/auth) dictate retry strategy (backoff, terminal).
+  local api_err
+  api_err=$(extract_jsonl_api_error "$jsonl")
+  if [[ -n "$api_err" ]]; then
+    local cat
+    cat=$(classify_api_error "$reviewer" "$api_err")
+    if [[ "$cat" == *"_api_capacity" ]]; then
+      IS_CAPACITY_FAILURE=true
+    fi
+    printf '%s' "$cat"
+    return 1
+  fi
+
+  # Fallback: use the parser's own first-line category.
+  extract_failure_category "$reviewer" "$parse_err"
   return 1
 }
 
@@ -274,6 +462,15 @@ while [[ $ATTEMPT -lt $MAX_RETRIES ]]; do
   # REPAIR/WARNING lines to stderr AFTER the envelope is on stdout, so
   # parse-error size is NOT a reliable success discriminant. Only
   # envelope.json size is.
+  #
+  # CRITICAL dependency on per-reviewer independence (2026-04-15): this
+  # detection ONLY works because the main loop now parses each reviewer
+  # independently, so a successful reviewer's envelope is ALWAYS materialized
+  # on disk even if its partner failed. Before the per-reviewer fix, a
+  # launch-level failure of one reviewer prevented the partner's envelope
+  # from ever being written — this check would then return 0 for the partner
+  # even though its JSONL held valid output, forcing EFFECTIVE_REVIEWERS to
+  # "both" and wiping the good JSONL at dual-invoke.sh's launch-time `rm -f`.
   #
   # Operator filter composition: if the operator explicitly set
   # ORI_TPR_REVIEWERS=codex (or gemini), narrowing is a no-op — the attempt
@@ -315,46 +512,74 @@ while [[ $ATTEMPT -lt $MAX_RETRIES ]]; do
   # Snapshot worktree before reviewer run
   "$SCRIPT_DIR/worktree-guard.sh" snapshot "$RUN/worktree-before.txt"
 
-  # Launch reviewers per EFFECTIVE_REVIEWERS. dual-invoke.sh reads
-  # ORI_TPR_REVIEWERS from the environment — exporting it ONLY for this
-  # sub-command call scopes the narrowing to the retry iteration without
-  # polluting our own shell state.
-  if ! ORI_TPR_REVIEWERS="$EFFECTIVE_REVIEWERS" "$SCRIPT_DIR/dual-invoke.sh" "${ARGS[@]}"; then
-    # Check if failure was due to watchdog killing a stalled reviewer
-    if [[ -f "$RUN/codex.stalled" || -f "$RUN/gemini.stalled" ]]; then
-      stalled_reviewers=""
-      [[ -f "$RUN/codex.stalled" ]] && stalled_reviewers="codex"
-      [[ -f "$RUN/gemini.stalled" ]] && stalled_reviewers="${stalled_reviewers:+$stalled_reviewers+}gemini"
-      FAILURE="reviewer_stalled_${stalled_reviewers}"
-    else
-      # Extract API error from JSONL to refine the generic launch_or_exit_fail.
-      # The error message IS in the JSONL result event even though stderr was
-      # previously discarded. Now we capture both (stderr to $RUN/*.stderr,
-      # JSONL error here) for defense in depth.
-      FAILURE="launch_or_exit_fail"
-      for reviewer in codex gemini; do
-        api_err=$(extract_jsonl_api_error "$RUN/${reviewer}.jsonl")
-        if [[ -n "$api_err" ]]; then
-          echo "[$(date +%s)] ${reviewer} API error: $api_err" >> "$RUN/round.log"
-          if [[ "$api_err" == *"No capacity"* || "$api_err" == *"rate limit"* || "$api_err" == *"overloaded"* || "$api_err" == *"quota"* ]]; then
-            FAILURE="${reviewer}_api_capacity"
-            IS_CAPACITY_FAILURE=true
-          elif [[ "$api_err" == *"authentication"* || "$api_err" == *"unauthorized"* || "$api_err" == *"permission"* ]]; then
-            FAILURE="${reviewer}_api_auth"
-          else
-            FAILURE="${reviewer}_api_error"
-          fi
-        fi
-      done
+  # ── Step 1: launch reviewers ───────────────────────────────────────
+  #
+  # dual-invoke.sh reads ORI_TPR_REVIEWERS from the environment — exporting it
+  # ONLY for this sub-command call scopes the narrowing to the retry iteration
+  # without polluting our own shell state. We DO NOT gate subsequent steps on
+  # dual-invoke.sh's exit code (2026-04-15 per-reviewer independence fix): a
+  # non-zero exit means AT LEAST ONE reviewer had a non-zero process exit, but
+  # the PARTNER may still have produced a valid envelope. The per-reviewer
+  # parse step below handles both success and failure cases uniformly.
+  DUAL_INVOKE_RC=0
+  ORI_TPR_REVIEWERS="$EFFECTIVE_REVIEWERS" "$SCRIPT_DIR/dual-invoke.sh" "${ARGS[@]}" || DUAL_INVOKE_RC=$?
+  if [[ $DUAL_INVOKE_RC -ne 0 ]]; then
+    echo "[$(date +%s)] dual-invoke.sh returned rc=$DUAL_INVOKE_RC (partial-success path — parsers will classify per reviewer)" >> "$RUN/round.log"
+  fi
+
+  # ── Step 2: parse each active reviewer INDEPENDENTLY ───────────────
+  #
+  # Per-reviewer independence (2026-04-15 fix): parse both reviewers' output
+  # regardless of dual-invoke.sh's exit code and regardless of whether the
+  # sibling reviewer succeeded or failed. Each reviewer's parse produces its
+  # own envelope on success or its own failure category on failure. Only
+  # AFTER both parses complete do we classify the round's overall outcome.
+  #
+  # This is load-bearing for selective-retry correctness: if codex succeeded
+  # but gemini's API call was rejected at launch time, codex.jsonl holds a
+  # valid envelope but dual-invoke.sh exits non-zero. Prior to this fix the
+  # wrapper skipped ALL parsers in that case, leaving codex.envelope.json
+  # empty and forcing attempt 2 to retry both reviewers (wasting ~10 min of
+  # codex compute). Now codex.envelope.json is written on attempt 1 exactly
+  # when codex's output was valid, regardless of gemini's fate.
+  CODEX_OK=1
+  GEMINI_OK=1
+  CODEX_FAIL_CAT=""
+  GEMINI_FAIL_CAT=""
+
+  if [[ "$EFFECTIVE_REVIEWERS" == "codex" || "$EFFECTIVE_REVIEWERS" == "both" ]]; then
+    CODEX_OK=0
+    if CODEX_FAIL_CAT=$(classify_reviewer_outcome codex \
+        "$RUN/codex.jsonl" "$RUN/codex.parse-error" \
+        "$RUN/codex.envelope.json" "$RUN/codex.stalled"); then
+      CODEX_OK=1
+      CODEX_FAIL_CAT=""
     fi
-    echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
-  elif [[ ( "$EFFECTIVE_REVIEWERS" == "codex" || "$EFFECTIVE_REVIEWERS" == "both" ) ]] && ! "$SCRIPT_DIR/parse-codex.py" --jsonl "$RUN/codex.jsonl" --schema "$SCHEMA" > "$RUN/codex.envelope.json" 2> "$RUN/codex.parse-error"; then
-    FAILURE="$(extract_failure_category codex "$RUN/codex.parse-error")"
-    echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
-  elif [[ ( "$EFFECTIVE_REVIEWERS" == "gemini" || "$EFFECTIVE_REVIEWERS" == "both" ) ]] && ! "$SCRIPT_DIR/parse-gemini.py" --jsonl "$RUN/gemini.jsonl" --schema "$SCHEMA" > "$RUN/gemini.envelope.json" 2> "$RUN/gemini.parse-error"; then
-    FAILURE="$(extract_failure_category gemini "$RUN/gemini.parse-error")"
-    echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT" >> "$RUN/round.log"
-  else
+  fi
+
+  if [[ "$EFFECTIVE_REVIEWERS" == "gemini" || "$EFFECTIVE_REVIEWERS" == "both" ]]; then
+    GEMINI_OK=0
+    if GEMINI_FAIL_CAT=$(classify_reviewer_outcome gemini \
+        "$RUN/gemini.jsonl" "$RUN/gemini.parse-error" \
+        "$RUN/gemini.envelope.json" "$RUN/gemini.stalled"); then
+      GEMINI_OK=1
+      GEMINI_FAIL_CAT=""
+    fi
+  fi
+
+  # ── Step 3: classify round outcome ─────────────────────────────────
+  #
+  # ROUND_OK iff every ACTIVE reviewer (per EFFECTIVE_REVIEWERS) succeeded.
+  # For narrowed retries (codex-only or gemini-only), the other reviewer's
+  # envelope was preserved from a prior attempt and is trusted on disk.
+  ROUND_OK=0
+  case "$EFFECTIVE_REVIEWERS" in
+    both)   [[ $CODEX_OK -eq 1 && $GEMINI_OK -eq 1 ]] && ROUND_OK=1 ;;
+    codex)  [[ $CODEX_OK -eq 1 ]]                       && ROUND_OK=1 ;;
+    gemini) [[ $GEMINI_OK -eq 1 ]]                      && ROUND_OK=1 ;;
+  esac
+
+  if [[ $ROUND_OK -eq 1 ]]; then
     # ── Launch + parse succeeded — run worktree guard as INFORMATIONAL check ──
     #
     # Post-2026-04-12 fix: worktree drift is NO LONGER a failure condition by
@@ -382,9 +607,36 @@ while [[ $ATTEMPT -lt $MAX_RETRIES ]]; do
 
     # If no failure was set (either no drift, or drift was non-blocking), succeed
     if [[ -z "$FAILURE" ]]; then
-      echo "[$(date +%s)] round succeeded on attempt $ATTEMPT" >> "$RUN/round.log"
+      echo "[$(date +%s)] round succeeded on attempt $ATTEMPT (codex_ok=$CODEX_OK gemini_ok=$GEMINI_OK)" >> "$RUN/round.log"
+      # Reset circuit-breaker fail counters for every reviewer that delivered
+      # a valid envelope this round. Success within the window clears the
+      # sliding-window count (but does NOT clear an active timeout — that
+      # still runs its full duration).
+      if [[ "${ORI_TPR_CIRCUIT_OFF:-0}" != "1" ]]; then
+        [[ $CODEX_OK -eq 1 ]]  && "$SCRIPT_DIR/circuit-breaker.sh" success codex  2>/dev/null || true
+        [[ $GEMINI_OK -eq 1 ]] && "$SCRIPT_DIR/circuit-breaker.sh" success gemini 2>/dev/null || true
+      fi
       exit 0
     fi
+  else
+    # ── Round failed — pick a representative FAILURE category ─────────
+    #
+    # Prefer codex's category when both failed (consistent with pre-fix
+    # ordering: the old elif-chain checked codex before gemini). This only
+    # affects the round.log label and the terminal-failure classifier's
+    # retry decision — the per-reviewer envelopes/categories are preserved
+    # on disk for selective retry to pick up on the next attempt.
+    if [[ $CODEX_OK -eq 0 && -n "$CODEX_FAIL_CAT" ]]; then
+      FAILURE="$CODEX_FAIL_CAT"
+    elif [[ $GEMINI_OK -eq 0 && -n "$GEMINI_FAIL_CAT" ]]; then
+      FAILURE="$GEMINI_FAIL_CAT"
+    else
+      # Defensive fallback: neither reviewer reported a category but ROUND_OK
+      # is 0. Shouldn't happen after the per-reviewer refactor, but keep the
+      # legacy launch_or_exit_fail label so round.log stays parseable.
+      FAILURE="launch_or_exit_fail"
+    fi
+    echo "[$(date +%s)] $FAILURE on attempt $ATTEMPT (codex_ok=$CODEX_OK gemini_ok=$GEMINI_OK codex_cat=${CODEX_FAIL_CAT:-n/a} gemini_cat=${GEMINI_FAIL_CAT:-n/a})" >> "$RUN/round.log"
   fi
 
   # Generalized terminal-failure classifier (BUG-08-006). Originally only
@@ -411,4 +663,29 @@ done
 
 echo "infra_retries_exhausted: ${FAILURE:-unknown_failure}" >&2
 echo "postmortem dir: $RUN" >&2
+
+# Record failures against the circuit breaker. circuit-breaker.sh filters
+# out non-api/transport categories internally, so we can pass the last
+# iteration's categories unconditionally. This is what eventually trips
+# the per-reviewer 1-hour timeout after 3 such failures in a sliding
+# 1-hour window.
+if [[ "${ORI_TPR_CIRCUIT_OFF:-0}" != "1" ]]; then
+  if [[ -n "${CODEX_FAIL_CAT:-}" ]]; then
+    "$SCRIPT_DIR/circuit-breaker.sh" fail codex "$CODEX_FAIL_CAT" 2>>"$RUN/round.log" || true
+  fi
+  if [[ -n "${GEMINI_FAIL_CAT:-}" ]]; then
+    "$SCRIPT_DIR/circuit-breaker.sh" fail gemini "$GEMINI_FAIL_CAT" 2>>"$RUN/round.log" || true
+  fi
+  # launch_or_exit_fail has no reviewer prefix — attribute to whichever
+  # reviewer(s) were active this round so the breaker can still react.
+  if [[ "${FAILURE:-}" == "launch_or_exit_fail" ]]; then
+    case "$EFFECTIVE_REVIEWERS" in
+      both|codex)  "$SCRIPT_DIR/circuit-breaker.sh" fail codex  launch_or_exit_fail 2>>"$RUN/round.log" || true ;;
+    esac
+    case "$EFFECTIVE_REVIEWERS" in
+      both|gemini) "$SCRIPT_DIR/circuit-breaker.sh" fail gemini launch_or_exit_fail 2>>"$RUN/round.log" || true ;;
+    esac
+  fi
+fi
+
 exit 1
