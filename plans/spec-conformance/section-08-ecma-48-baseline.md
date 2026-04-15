@@ -79,23 +79,23 @@ sections:
 **Goal:** Establish ECMA-48 + xterm extensions baseline conformance for the row subset that tack-conformance already covers (sections 01-06 of that plan), then close gaps tack didn't cover: DECLRMM full mode plumbing + grid enforcement, 8-bit C1 control detection, REP edge cases, and ISO 8613-6 SGR colon forms. This section is the entry point for Phase 3 — every Phase 3 stack section depends on baseline correctness.
 
 **Success Criteria:**
-- [ ] Every tack-covered row in `catalog/ecma-48.md` is `verified`
-- [ ] Basic ANSI/DEC modes verified
-- [ ] Basic OSC rows verified
-- [ ] DECLRMM full mode plumbing implemented (VTE types, TermMode flag, mode reporting)
-- [ ] DECLRMM grid enforcement implemented (margin fields, cursor movement, extended operations)
-- [ ] CSI s / DECSLRM ambiguity resolved
-- [ ] DECSC/DECRC save set matches DEC STD 070 §5.6.1 (cursor + attributes + charsets + wrap + DECOM — margins and DECLRMM are NOT saved); reset/resize/disable-mode-69 clears margins
-- [ ] 8-bit C1 controls handled; rows verified
-- [ ] REP edge cases verified
-- [ ] ISO 8613-6 colon-separated SGR subparameter forms verified (38/48/58, truecolor + indexed)
-- [ ] Mixed separator and empty subparameter negative pins documented
-- [ ] BSU/ESU 7-bit-only scope documented
-- [ ] `_legacy-tack-mapping.md` populated
-- [ ] Existing tack and teseq tests pass
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [ ] All 14 remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR)
-- [ ] Connects to mission criterion: **Verification chain complete per row** (baseline subset)
+- [x] Every tack-covered row in `catalog/ecma-48.md` is `verified`
+- [x] Basic ANSI/DEC modes verified
+- [x] Basic OSC rows verified
+- [x] DECLRMM full mode plumbing implemented (VTE types, TermMode flag, mode reporting)
+- [x] DECLRMM grid enforcement implemented (margin fields, cursor movement, extended operations)
+- [x] CSI s / DECSLRM ambiguity resolved
+- [x] DECSC/DECRC save set matches DEC STD 070 §5.6.1 (cursor + attributes + charsets + wrap + DECOM — margins and DECLRMM are NOT saved); reset/resize/disable-mode-69 clears margins
+- [x] 8-bit C1 controls handled; rows verified
+- [x] REP edge cases verified
+- [x] ISO 8613-6 colon-separated SGR subparameter forms verified (38/48/58, truecolor + indexed)
+- [x] Mixed separator and empty subparameter negative pins documented
+- [x] BSU/ESU 7-bit-only scope documented
+- [x] `_legacy-tack-mapping.md` populated
+- [x] Existing tack and teseq tests pass
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
+- [x] All 14 remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR)
+- [x] Connects to mission criterion: **Verification chain complete per row** (baseline subset)
 
 **Context:** The ECMA-48 baseline is the gate for Phase 3 stacks. Sixel needs SGR + cursor + scrollback + DECSDM. Kitty needs OSC parsing + grid integration. Mouse needs CSI encoding. Without baseline correctness, every subsequent section would fight through baseline bugs. Per Codex Q5, this section also populates `_legacy-tack-mapping.md` (created empty by section 02) as it converts tack scenarios into spec verification chains. The mapping table preserves traceability without renaming files.
 
@@ -660,8 +660,8 @@ exact trap behind `[TPR-08-006-codex-r11]`).
 
 ## 08.N Completion Checklist
 
-- [ ] Failing test matrix written FIRST (TDD) for each subsection
-- [ ] **Matrix dimensions documented**:
+- [x] Failing test matrix written FIRST (TDD) for each subsection
+- [x] **Matrix dimensions documented**:
   - Tack conversion: tack scenario x catalog row x verification rung
   - DECLRMM mode plumbing: mode operation (set/reset/query) x sync-point (flag/handler/reporting)
   - DECLRMM grid enforcement: cursor operation (CUF/CUB/CHA/CR/CUP/NEL/IND/RI/wrap/reverse-wrap/HT/CBT) x margin state (active/inactive) x cursor position (inside/outside margin band)
@@ -672,26 +672,26 @@ exact trap behind `[TPR-08-006-codex-r11]`).
   - REP edge cases: preceding state (none/CR/wide/SGR-change/at-margin) x count (0/1/N)
   - SGR colon forms: color target (38/48/58) x color mode (2/5) x separator (semicolon/colon)
   - 08.8b remaining rows: operation (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, PUSHSGR, POPSGR) x margin-state (active/inactive where applicable)
-- [ ] **Semantic pins**: DECLRMM cursor-constrained tests, 8-bit C1 state-transition tests, and colon-separator tests are the regression guards for new behavior
-- [ ] **Negative pins**: CSI s with params when mode 69 inactive, BSU/ESU 7-bit-only scope, mixed separator failure mode, empty subparam indistinguishability, cursor outside margin band not constrained
-- [ ] Tack section 05 scenarios converted to spec_chain tests
-- [ ] Tack section 06 scenarios converted (all subsections complete and landed)
-- [ ] DECLRMM mode plumbing complete (VTE types, TermMode flag, mode reporting)
-- [ ] DECLRMM grid enforcement complete (margin fields, cursor movement, wrap behavior)
-- [ ] DECLRMM extended operations complete (partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)
-- [ ] 8-bit C1 controls detected and verified
-- [ ] REP edge cases verified
-- [ ] ISO 8613-6 colon-separated SGR subparameter forms verified (38/48/58, both `2` truecolor and `5` indexed variants)
-- [ ] Mixed separator and empty subparam negative pins documented
-- [ ] BSU/ESU 7-bit-only NOTE pin documented
-- [ ] Remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR)
-- [ ] `_legacy-tack-mapping.md` populated
-- [ ] All existing tack tests pass without modification
-- [ ] All existing teseq tests pass without modification
-- [ ] Alloc regression unchanged
-- [ ] `handler/mod.rs` still under 500 lines (or extracted to submodule)
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
-- [ ] Plan annotation cleanup
+- [x] **Semantic pins**: DECLRMM cursor-constrained tests, 8-bit C1 state-transition tests, and colon-separator tests are the regression guards for new behavior
+- [x] **Negative pins**: CSI s with params when mode 69 inactive, BSU/ESU 7-bit-only scope, mixed separator failure mode, empty subparam indistinguishability, cursor outside margin band not constrained
+- [x] Tack section 05 scenarios converted to spec_chain tests
+- [x] Tack section 06 scenarios converted (all subsections complete and landed)
+- [x] DECLRMM mode plumbing complete (VTE types, TermMode flag, mode reporting)
+- [x] DECLRMM grid enforcement complete (margin fields, cursor movement, wrap behavior)
+- [x] DECLRMM extended operations complete (partial-width scroll, CSI s ambiguity, DECSC/DECRC scope, reset paths)
+- [x] 8-bit C1 controls detected and verified
+- [x] REP edge cases verified
+- [x] ISO 8613-6 colon-separated SGR subparameter forms verified (38/48/58, both `2` truecolor and `5` indexed variants)
+- [x] Mixed separator and empty subparam negative pins documented
+- [x] BSU/ESU 7-bit-only NOTE pin documented
+- [x] Remaining Section-08-owned catalog rows verified (SGR 53/55/73/74/75, DECSTR, DECSED, DECSEL, SL, SR, DECRQSS-DECSLRM, XT-DECSLRM, XT-PUSHSGR, XT-POPSGR)
+- [x] `_legacy-tack-mapping.md` populated
+- [x] All existing tack tests pass without modification
+- [x] All existing teseq tests pass without modification
+- [x] Alloc regression unchanged
+- [x] `handler/mod.rs` still under 500 lines (or extracted to submodule)
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release
+- [x] Plan annotation cleanup
 - [ ] Section frontmatter `status` -> `complete`
 - [ ] `00-overview.md` Quick Reference + mission criteria updated
 - [ ] `index.md` section 08 status updated
