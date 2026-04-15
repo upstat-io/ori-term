@@ -631,6 +631,11 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-001-codex-r12i9][medium]` `oriterm_core/src/term/handler/tests.rs:6727` — Alt-side CUP / DECSC / XTPUSHSGR seed setup was not asserted before DECSTR, making post-DECSTR assertions vacuously satisfied if setup silently broke.
   Resolved: Fixed on 2026-04-14. Added pre-DECSTR assertions that alt cursor moved to (7, 14), that the template has bold set from XTPUSHSGR. Gemini returned clean (no findings) this iteration.
 
+### Round 12 iteration 10 (2026-04-14)
+
+- [x] `[TPR-08-001-codex-r12i10][medium]` + `[TPR-08-001-gemini-r12i10][medium]` `oriterm_core/src/term/handler/tests.rs:6733` — Pre-DECSTR assertions verified active state (live cursor + template) but not the saved state populated by DECSC/XTPUSHSGR. Vacuous-pass hole still open (agreement).
+  Resolved: Fixed on 2026-04-14. Per gemini's prescription: before DECSTR, exercise DECSC/DECRC roundtrip (move to (0,0), DECRC, assert restores to (7,14)) and XTPUSHSGR/XTPOPSGR roundtrip (clear SGR, assert template is not-bold, XTPOPSGR, assert restores bold). Then re-establish the seed state with DECSC + XTPUSHSGR so DECSTR has work to clear. The pre-DECSTR proof-of-population assertions now actively test the saved state, not just the active state.
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,

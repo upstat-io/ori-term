@@ -6724,28 +6724,52 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
     feed(&mut t, b"\x1b[?69h");
     feed(&mut t, b"\x1b[2;30s"); // alt margins
     feed(&mut t, b"\x1b[5;15r"); // alt scroll region
-    feed(&mut t, b"\x1b[8;15H\x1b7"); // alt cursor + DECSC
-    feed(&mut t, b"\x1b[1m\x1b[#{"); // alt SGR stack push
+    feed(&mut t, b"\x1b[8;15H\x1b7"); // alt cursor + DECSC (saves cursor)
+    feed(&mut t, b"\x1b[1m\x1b[#{"); // alt SGR bold + XTPUSHSGR (pushes bold)
     feed(&mut t, b"\x1b[>3u");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert_eq!(t.grid().scroll_region(), &(4..15));
     assert_eq!(t.grid().left_right_margins(), (1, 29));
-    // Verify alt-side CUP / DECSC / XTPUSHSGR setup actually mutated state
-    // — otherwise the post-DECSTR assertions would be vacuously satisfied.
-    assert_eq!(t.grid().cursor().line(), 7, "alt CUP should move cursor");
+    // Verify the alt-side DECSC saved-cursor slot ACTUALLY populated by
+    // moving away and DECRC-restoring back. Without this round-trip,
+    // post-DECSTR DECRC == (0,0) would pass even if DECSC silently no-op'd.
+    feed(&mut t, b"\x1b[1;1H"); // move cursor to (0,0)
+    feed(&mut t, b"\x1b8"); // DECRC — should restore to (7, 14)
+    assert_eq!(
+        t.grid().cursor().line(),
+        7,
+        "alt DECSC must have populated saved cursor"
+    );
     assert_eq!(
         t.grid().cursor().col(),
         Column(14),
-        "alt CUP should move cursor"
+        "alt DECSC must have populated saved cursor"
     );
+    // Verify the alt-side XTPUSHSGR stack ACTUALLY populated by clearing
+    // bold then XTPOPSGR — should restore bold. Without this round-trip,
+    // post-DECSTR XTPOPSGR == not-bold would pass even if XTPUSHSGR no-op'd.
+    feed(&mut t, b"\x1b[0m"); // clear SGR
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD),
+        "SGR reset should clear bold from template"
+    );
+    feed(&mut t, b"\x1b[#}"); // XTPOPSGR — should restore bold
     assert!(
         t.grid()
             .cursor()
             .template
             .flags
             .contains(crate::cell::CellFlags::BOLD),
-        "alt SGR bold seed should set bold on template"
+        "alt XTPUSHSGR must have populated SGR stack"
     );
+    // Re-establish the seed state for DECSTR to clear: DECSC the current
+    // (7, 14) cursor + push bold back onto stack.
+    feed(&mut t, b"\x1b7");
+    feed(&mut t, b"\x1b[#{");
 
     // DECSTR while on alt screen.
     feed(&mut t, b"\x1b[!p");
