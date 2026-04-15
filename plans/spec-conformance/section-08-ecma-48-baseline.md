@@ -589,6 +589,13 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-002-codex-r12i2][low]` `plans/spec-conformance/catalog/ecma-48.md:198` + `catalog/xterm-ctlseqs.md:31` — Stale catalog docs still described pre-round-12 behavior.
   Resolved: Fixed on 2026-04-14. Updated DECSTR catalog row to reference `handler.decstr()` → `Term::soft_reset()`. Updated XTPUSHSGR catalog row to note underline_color-only snapshot (not full CellExtra).
 
+### Round 12 iteration 3 (2026-04-14)
+
+- [x] `[TPR-08-001-codex-r12i3][medium]` `oriterm_core/src/term/handler/esc.rs:88` — DECSTR must clear saved cursor on BOTH screens + clear inactive_saved_charset/origin_mode.
+  Resolved: Fixed on 2026-04-14. Added `alt.clear_saved_cursor()` + `alt.clear_sgr_stack()` for `alt_grid` and cleared `inactive_saved_charset` / `inactive_saved_origin_mode`. Per WezTerm `terminalstate/mod.rs:1273-1276`.
+- [x] `[TPR-08-002-codex-r12i3][low]` + `[TPR-08-001-gemini-r12i3][high]` `oriterm_core/src/term/handler/tests.rs:6649` — Missing regression pins for DECSTR clearing saved cursor and SGR stack.
+  Resolved: Fixed on 2026-04-14. Added `decstr_clears_saved_cursor` (pins ESC 7 / CSI ! p / ESC 8 → cursor does NOT resurrect) and `decstr_clears_sgr_stack` (pins CSI # { / CSI ! p / CSI # } → SGR stack does NOT resurrect). Both reviewers flagged the same test gap.
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,

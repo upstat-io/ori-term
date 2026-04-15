@@ -6655,6 +6655,46 @@ fn decstr_resets_terminal_state() {
     assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
 }
 
+/// DECSTR must clear the DECSC saved cursor — `ESC 7 / CSI ! p / ESC 8`
+/// must NOT resurrect the pre-reset cursor position.
+#[test]
+fn decstr_clears_saved_cursor() {
+    let mut t = term();
+    // Move cursor to (5, 10), save via DECSC (ESC 7).
+    feed(&mut t, b"\x1b[6;11H\x1b7");
+    // Move cursor away, then DECSTR (soft reset).
+    feed(&mut t, b"\x1b[1;1H\x1b[!p");
+    // DECRC (ESC 8) must NOT restore the saved position — saved_cursor is cleared.
+    feed(&mut t, b"\x1b8");
+    let grid = t.grid();
+    assert_eq!(grid.cursor().line(), 0, "DECSTR must clear saved cursor");
+    assert_eq!(
+        grid.cursor().col(),
+        Column(0),
+        "DECSTR must clear saved cursor"
+    );
+}
+
+/// DECSTR must clear the XTPUSHSGR stack — `CSI # { / CSI ! p / CSI # }`
+/// must NOT resurrect the pre-reset SGR state.
+#[test]
+fn decstr_clears_sgr_stack() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    // Set bold, push SGR stack.
+    feed(&mut t, b"\x1b[1m\x1b[#{");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    // Soft reset.
+    feed(&mut t, b"\x1b[!p");
+    assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    // Pop SGR stack — must be a no-op (stack cleared by DECSTR).
+    feed(&mut t, b"\x1b[#}");
+    assert!(
+        !t.grid().cursor().template.flags.contains(CellFlags::BOLD),
+        "DECSTR must clear XTPUSHSGR stack"
+    );
+}
+
 // DECSED — selective erase in display (CSI ? J)
 
 #[test]

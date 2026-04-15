@@ -88,10 +88,20 @@ impl<S: EffectSink> Term<S> {
         grid.clear_saved_cursor();
         grid.clear_sgr_stack();
 
+        // Clear saved cursor on the inactive screen too — ori_term keeps
+        // DECSC state per screen. Per WezTerm (terminalstate/mod.rs:1273-1276),
+        // DECSTR clears saved cursor on both alt and primary screens.
+        if let Some(alt) = &mut self.alt_grid {
+            alt.clear_saved_cursor();
+            alt.clear_sgr_stack();
+        }
+
         self.mode = TermMode::default();
         self.charset = CharsetState::default();
         self.saved_charset = None;
         self.saved_origin_mode = None;
+        self.inactive_saved_charset = None;
+        self.inactive_saved_origin_mode = None;
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
     }
