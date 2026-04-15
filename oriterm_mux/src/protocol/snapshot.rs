@@ -39,9 +39,9 @@ pub enum WireColor {
 
 /// Cell SGR flags as raw bits.
 ///
-/// Maps 1:1 to `oriterm_core::CellFlags` bits. Using raw `u16` avoids
+/// Maps 1:1 to `oriterm_core::CellFlags` bits. Using raw `u32` avoids
 /// coupling the wire format to the bitflags type.
-pub type WireCellFlags = u16;
+pub type WireCellFlags = u32;
 
 /// A single terminal cell on the wire.
 ///

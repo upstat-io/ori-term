@@ -6572,3 +6572,186 @@ fn sgr_38_double_colon_vs_zero_indistinguishable() {
         RGB_255_128_64
     );
 }
+
+// ── Section 08.8b: remaining catalog rows ───────────────────────────
+
+// SGR 53/55 — overline
+
+#[test]
+fn sgr_53_sets_overline() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[53mA");
+    assert!(
+        t.grid()[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::OVERLINE)
+    );
+}
+
+#[test]
+fn sgr_55_resets_overline() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[53m\x1b[55mA");
+    assert!(
+        !t.grid()[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::OVERLINE)
+    );
+}
+
+// SGR 73/74/75 — superscript/subscript
+
+#[test]
+fn sgr_73_sets_superscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[73mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::SUPERSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUBSCRIPT));
+}
+
+#[test]
+fn sgr_74_sets_subscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[74mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::SUBSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUPERSCRIPT));
+}
+
+#[test]
+fn sgr_73_clears_subscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[74m\x1b[73mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::SUPERSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUBSCRIPT));
+}
+
+#[test]
+fn sgr_75_resets_super_subscript() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[73m\x1b[75mA");
+    let cell = &t.grid()[crate::index::Line(0)][Column(0)];
+    assert!(!cell.flags.contains(CellFlags::SUPERSCRIPT));
+    assert!(!cell.flags.contains(CellFlags::SUBSCRIPT));
+}
+
+// DECSTR — soft terminal reset (CSI ! p)
+
+#[test]
+fn decstr_resets_terminal_state() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[1m\x1b[31m");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[!p");
+    assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+}
+
+// DECSED — selective erase in display (CSI ? J)
+
+#[test]
+fn decsed_below_clears_from_cursor() {
+    let mut t = term();
+    feed(&mut t, b"ABCDE\x1b[1;3H\x1b[?J");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'B');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+}
+
+// DECSEL — selective erase in line (CSI ? K)
+
+#[test]
+fn decsel_right_clears_to_end_of_line() {
+    let mut t = term();
+    feed(&mut t, b"ABCDE\x1b[1;3H\x1b[?K");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, 'B');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(3)].ch, ' ');
+}
+
+// SL — scroll left (CSI Ps SP @)
+
+#[test]
+fn scroll_left_shifts_content() {
+    let (mut t, _rec) = term_with_recorder_sized(3, 10);
+    feed(&mut t, b"ABCDEFGHIJ");
+    feed(&mut t, b"\x1b[2 @");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'C');
+    assert_eq!(grid[crate::index::Line(0)][Column(7)].ch, 'J');
+    assert_eq!(grid[crate::index::Line(0)][Column(8)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, ' ');
+}
+
+// SR — scroll right (CSI Ps SP A)
+
+#[test]
+fn scroll_right_shifts_content() {
+    let (mut t, _rec) = term_with_recorder_sized(3, 10);
+    feed(&mut t, b"ABCDEFGHIJ");
+    feed(&mut t, b"\x1b[2 A");
+    let grid = t.grid();
+    assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(1)].ch, ' ');
+    assert_eq!(grid[crate::index::Line(0)][Column(2)].ch, 'A');
+    assert_eq!(grid[crate::index::Line(0)][Column(9)].ch, 'H');
+}
+
+// DECRQSS for DECSLRM
+
+#[test]
+fn decrqss_decslrm_reports_margins() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[?69h");
+    t.grid_mut().set_left_right_margins(5, 40);
+    feed(&mut t, b"\x1bP$qs\x1b\\");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("6;41s")),
+        "DECRQSS DECSLRM should report 1-based margins 6;41: {events:?}"
+    );
+}
+
+// XTPUSHSGR / XTPOPSGR (CSI # { / CSI # })
+
+#[test]
+fn xtpushsgr_saves_and_restores_sgr() {
+    use crate::cell::CellFlags;
+    let mut t = term();
+    feed(&mut t, b"\x1b[1m\x1b[31m");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[#{");
+    feed(&mut t, b"\x1b[0m");
+    assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[#}");
+    assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    assert_eq!(
+        t.grid().cursor().template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
+}
+
+#[test]
+fn xtpopsgr_on_empty_stack_is_noop() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[1m");
+    feed(&mut t, b"\x1b[#}");
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
+}

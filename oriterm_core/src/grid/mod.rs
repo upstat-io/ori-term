@@ -15,7 +15,11 @@ pub mod scroll;
 pub mod stable_index;
 
 use std::ops::{Index, IndexMut, Range};
+use std::sync::Arc;
 
+use vte::ansi::Color;
+
+use crate::cell::{CellExtra, CellFlags};
 use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
@@ -71,6 +75,17 @@ pub struct Grid {
     right_margin: usize,
     /// Tracks which rows have changed since last drain.
     dirty: DirtyTracker,
+    /// XTPUSHSGR/XTPOPSGR attribute stack (max 10 entries per xterm).
+    sgr_stack: Vec<SgrSnapshot>,
+}
+
+/// Saved SGR state for XTPUSHSGR/XTPOPSGR.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SgrSnapshot {
+    flags: CellFlags,
+    fg: Color,
+    bg: Color,
+    extra: Option<Arc<CellExtra>>,
 }
 
 impl Grid {
@@ -106,6 +121,7 @@ impl Grid {
             left_margin: 0,
             right_margin: cols.saturating_sub(1),
             dirty: DirtyTracker::new(lines, cols),
+            sgr_stack: Vec::new(),
         }
     }
 
@@ -257,7 +273,34 @@ impl Grid {
         self.total_evicted += self.scrollback.len();
         self.scrollback.clear();
         self.display_offset = 0;
+        self.sgr_stack.clear();
         self.dirty.mark_all();
+    }
+
+    /// Push current cursor template SGR state onto the XTPUSHSGR stack.
+    pub fn push_sgr(&mut self) {
+        const MAX_SGR_STACK: usize = 10;
+        if self.sgr_stack.len() >= MAX_SGR_STACK {
+            return;
+        }
+        let t = &self.cursor.template;
+        self.sgr_stack.push(SgrSnapshot {
+            flags: t.flags,
+            fg: t.fg,
+            bg: t.bg,
+            extra: t.extra.clone(),
+        });
+    }
+
+    /// Pop SGR state from the XTPUSHSGR stack and apply to cursor template.
+    pub fn pop_sgr(&mut self) {
+        if let Some(snap) = self.sgr_stack.pop() {
+            let t = &mut self.cursor.template;
+            t.flags = snap.flags;
+            t.fg = snap.fg;
+            t.bg = snap.bg;
+            t.extra = snap.extra;
+        }
     }
 
     /// Initialize tab stops every 8 columns.

@@ -126,6 +126,18 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
 
             handler.clear_screen(mode);
         },
+        ('J', [b'?']) => {
+            let mode = match next_param_or(0) {
+                0 => ClearMode::Below,
+                1 => ClearMode::Above,
+                2 => ClearMode::All,
+                _ => {
+                    unhandled!();
+                    return;
+                },
+            };
+            handler.clear_screen(mode);
+        },
         ('K', []) => {
             let mode = match next_param_or(0) {
                 0 => LineClearMode::Right,
@@ -137,6 +149,18 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
                 },
             };
 
+            handler.clear_line(mode);
+        },
+        ('K', [b'?']) => {
+            let mode = match next_param_or(0) {
+                0 => LineClearMode::Right,
+                1 => LineClearMode::Left,
+                2 => LineClearMode::All,
+                _ => {
+                    unhandled!();
+                    return;
+                },
+            };
             handler.clear_line(mode);
         },
         ('k', [b' ']) => {
@@ -200,6 +224,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('n', []) => handler.device_status(next_param_or(0) as usize),
         ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+        ('p', [b'!']) => handler.reset_state(),
         ('p', [b'$']) => {
             let mode = next_param_or(0);
             handler.report_mode(Mode::new(mode));
@@ -294,6 +319,8 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('u', []) => handler.restore_cursor_position(),
         ('X', []) => handler.erase_chars(next_param_or(1) as usize),
         ('Z', []) => handler.move_backward_tabs(next_param_or(1)),
+        ('{', [b'#']) => handler.push_sgr(),
+        ('}', [b'#']) => handler.pop_sgr(),
         _ => unhandled!(),
     }
 }
@@ -325,6 +352,11 @@ fn attrs_from_sgr_parameters<H: Handler>(handler: &mut H, params: &mut ParamsIte
             [27] => Some(Attr::CancelReverse),
             [28] => Some(Attr::CancelHidden),
             [29] => Some(Attr::CancelStrike),
+            [53] => Some(Attr::Overline),
+            [55] => Some(Attr::CancelOverline),
+            [73] => Some(Attr::Superscript),
+            [74] => Some(Attr::Subscript),
+            [75] => Some(Attr::CancelSuperSubscript),
             [30] => Some(Attr::Foreground(Color::Named(NamedColor::Black))),
             [31] => Some(Attr::Foreground(Color::Named(NamedColor::Red))),
             [32] => Some(Attr::Foreground(Color::Named(NamedColor::Green))),

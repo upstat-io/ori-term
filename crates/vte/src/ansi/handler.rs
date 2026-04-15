@@ -173,6 +173,12 @@ pub trait Handler {
     /// down is performed.
     fn reverse_index(&mut self) {}
 
+    /// Push current SGR attributes onto stack (XTPUSHSGR, CSI # {).
+    fn push_sgr(&mut self) {}
+
+    /// Pop SGR attributes from stack (XTPOPSGR, CSI # }).
+    fn pop_sgr(&mut self) {}
+
     /// Set a terminal attribute.
     fn terminal_attribute(&mut self, _attr: Attr) {}
 
