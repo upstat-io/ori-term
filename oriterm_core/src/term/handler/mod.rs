@@ -426,6 +426,10 @@ impl<S: EffectSink> Handler for Term<S> {
         self.esc_reset_state();
     }
 
+    fn decstr(&mut self) {
+        self.soft_reset();
+    }
+
     fn push_sgr(&mut self) {
         self.grid_mut().push_sgr();
     }

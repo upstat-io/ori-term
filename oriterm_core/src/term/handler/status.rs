@@ -48,6 +48,15 @@ fn build_sgr_string(flags: CellFlags, fg: Color, bg: Color) -> String {
     if flags.contains(CellFlags::STRIKETHROUGH) {
         params.push("9".to_string());
     }
+    if flags.contains(CellFlags::OVERLINE) {
+        params.push("53".to_string());
+    }
+    if flags.contains(CellFlags::SUPERSCRIPT) {
+        params.push("73".to_string());
+    }
+    if flags.contains(CellFlags::SUBSCRIPT) {
+        params.push("74".to_string());
+    }
 
     push_color_params(&mut params, fg, true);
     push_color_params(&mut params, bg, false);

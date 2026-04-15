@@ -163,8 +163,11 @@ pub trait Handler {
     /// Set tab stops at every `interval`.
     fn set_tabs(&mut self, _interval: u16) {}
 
-    /// Reset terminal state.
+    /// Reset terminal state (RIS — ESC c).
     fn reset_state(&mut self) {}
+
+    /// Soft terminal reset (DECSTR — CSI ! p).
+    fn decstr(&mut self) {}
 
     /// Reverse Index.
     ///
