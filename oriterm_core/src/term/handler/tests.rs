@@ -6662,6 +6662,21 @@ fn decstr_clears_saved_cursor() {
     let mut t = term();
     // Move cursor to (5, 10), save via DECSC (ESC 7).
     feed(&mut t, b"\x1b[6;11H\x1b7");
+    // Roundtrip proof: move away, DECRC, assert restoration proves DECSC populated.
+    feed(&mut t, b"\x1b[1;1H");
+    feed(&mut t, b"\x1b8");
+    assert_eq!(
+        t.grid().cursor().line(),
+        5,
+        "DECSC must have populated saved cursor (roundtrip proof)"
+    );
+    assert_eq!(
+        t.grid().cursor().col(),
+        Column(10),
+        "DECSC must have populated saved cursor (roundtrip proof)"
+    );
+    // Re-save the restored position so DECSTR has work to clear.
+    feed(&mut t, b"\x1b7");
     // Move cursor away, then DECSTR (soft reset).
     feed(&mut t, b"\x1b[1;1H\x1b[!p");
     // DECRC (ESC 8) must NOT restore the saved position — saved_cursor is cleared.
@@ -6684,6 +6699,24 @@ fn decstr_clears_sgr_stack() {
     // Set bold, push SGR stack.
     feed(&mut t, b"\x1b[1m\x1b[#{");
     assert!(t.grid().cursor().template.flags.contains(CellFlags::BOLD));
+    // Roundtrip proof: clear bold, pop, assert bold restored — proves push populated.
+    feed(&mut t, b"\x1b[0m");
+    assert!(
+        !t.grid().cursor().template.flags.contains(CellFlags::BOLD),
+        "SGR reset should clear bold from template"
+    );
+    feed(&mut t, b"\x1b[#}");
+    assert!(
+        t.grid().cursor().template.flags.contains(CellFlags::BOLD),
+        "XTPUSHSGR must have populated SGR stack (roundtrip proof)"
+    );
+    // Re-push the restored bold so DECSTR has work to clear.
+    feed(&mut t, b"\x1b[#{");
+    assert_eq!(
+        t.grid().sgr_stack_len(),
+        1,
+        "XTPUSHSGR reseed must succeed before DECSTR"
+    );
     // Soft reset.
     feed(&mut t, b"\x1b[!p");
     assert!(!t.grid().cursor().template.flags.contains(CellFlags::BOLD));
@@ -6770,6 +6803,11 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
     // (7, 14) cursor + push bold back onto stack.
     feed(&mut t, b"\x1b7");
     feed(&mut t, b"\x1b[#{");
+    assert_eq!(
+        t.grid().sgr_stack_len(),
+        1,
+        "XTPUSHSGR reseed must succeed before DECSTR"
+    );
 
     // DECSTR while on alt screen.
     feed(&mut t, b"\x1b[!p");

@@ -29,7 +29,7 @@ inspired_by:
   - "ghostty `src/lib_vt.zig` — CSI s / DECSLRM ambiguity resolution (explicit ambiguous action)"
 depends_on: ["02", "04", "06"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-14
 sections:
   - id: "08.1"
@@ -638,9 +638,12 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 
 ### Round 12 iteration 11 (cap reached — 3 findings filed for next session)
 
-- [ ] `[TPR-08-001-codex-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6733` — Assert that the post-roundtrip XTPUSHSGR reseed (`\x1b[#{` at line 6762) actually succeeds by checking `sgr_stack.len()` before DECSTR (the re-push after pop is unverified).
-- [ ] `[TPR-08-001-gemini-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6658` — Apply the same vacuous-pass fix (DECSC/DECRC roundtrip proof) to the simpler `decstr_clears_saved_cursor` test.
-- [ ] `[TPR-08-002-gemini-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6670` — Apply the same vacuous-pass fix (XTPUSHSGR/XTPOPSGR roundtrip proof) to the simpler `decstr_clears_sgr_stack` test.
+- [x] `[TPR-08-001-codex-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6733` — Assert that the post-roundtrip XTPUSHSGR reseed (`\x1b[#{` at line 6762) actually succeeds by checking `sgr_stack.len()` before DECSTR (the re-push after pop is unverified).
+  Resolved: Fixed on 2026-04-14. Added `sgr_stack_len()` accessor to Grid and assertion confirming reseed push succeeded before DECSTR.
+- [x] `[TPR-08-001-gemini-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6658` — Apply the same vacuous-pass fix (DECSC/DECRC roundtrip proof) to the simpler `decstr_clears_saved_cursor` test.
+  Resolved: Fixed on 2026-04-14. Added DECSC/DECRC roundtrip proof: move away, DECRC, assert restores to (5,10), then re-save before DECSTR.
+- [x] `[TPR-08-002-gemini-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6670` — Apply the same vacuous-pass fix (XTPUSHSGR/XTPOPSGR roundtrip proof) to the simpler `decstr_clears_sgr_stack` test.
+  Resolved: Fixed on 2026-04-14. Added XTPUSHSGR/XTPOPSGR roundtrip proof: clear bold, pop, assert bold restored, then re-push + assert `sgr_stack_len() == 1` before DECSTR.
 
 **Note**: These are all test-thoroughness improvements for the DECSTR regression suite. The core code bugs (DECSTR soft reset, cross-screen grid clearing, XTPUSHSGR scope narrowing, DECRQSS SGR reporting) were all fixed in earlier iterations. These 3 findings will be picked up when the section-close process resumes.
 
