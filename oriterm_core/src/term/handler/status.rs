@@ -48,6 +48,15 @@ fn build_sgr_string(flags: CellFlags, fg: Color, bg: Color) -> String {
     if flags.contains(CellFlags::STRIKETHROUGH) {
         params.push("9".to_string());
     }
+    if flags.contains(CellFlags::OVERLINE) {
+        params.push("53".to_string());
+    }
+    if flags.contains(CellFlags::SUPERSCRIPT) {
+        params.push("73".to_string());
+    }
+    if flags.contains(CellFlags::SUBSCRIPT) {
+        params.push("74".to_string());
+    }
 
     push_color_params(&mut params, fg, true);
     push_color_params(&mut params, bg, false);
@@ -222,6 +231,11 @@ impl<S: EffectSink> Term<S> {
                 let t = self.grid().cursor().template();
                 let sgr = build_sgr_string(t.flags, t.fg, t.bg);
                 format!("\x1bP1$r{sgr}m\x1b\\")
+            }
+            // DECSLRM: left/right margins.
+            b"s" => {
+                let (left, right) = self.grid().left_right_margins();
+                format!("\x1bP1$r{};{}s\x1b\\", left + 1, right + 1)
             }
             // Unrecognized query: report invalid.
             _ => {

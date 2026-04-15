@@ -15,7 +15,7 @@ mod selection;
 mod shutdown;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use std::thread::JoinHandle;
@@ -87,7 +87,7 @@ pub struct PaneParts {
     /// terminal handoff path in Section 03.9).
     pub pty: Box<dyn PtyLifecycle + Send>,
     /// Lock-free mode bits cache (shared with IO thread).
-    pub mode_cache: Arc<AtomicU32>,
+    pub mode_cache: Arc<AtomicU64>,
     /// Terminal IO thread handle (owns command + byte channels).
     pub io_handle: PaneIoHandle,
     /// Shared selection-dirty flag (passed to IO thread).
@@ -137,7 +137,7 @@ pub struct Pane {
     ///
     /// Shared with the IO thread — the IO thread writes after each VTE parse,
     /// the main thread reads for mouse reporting and cursor style.
-    mode_cache: Arc<AtomicU32>,
+    mode_cache: Arc<AtomicU64>,
     /// Last known window title (from OSC 0/2).
     title: String,
     /// Icon name (from OSC 0/1) for tab icons.
@@ -258,7 +258,7 @@ impl Pane {
     ///
     /// Updated by the IO thread after each VTE chunk; read by the main
     /// thread for mouse reporting and cursor style without locking.
-    pub fn mode(&self) -> u32 {
+    pub fn mode(&self) -> u64 {
         self.mode_cache.load(Ordering::Acquire)
     }
 

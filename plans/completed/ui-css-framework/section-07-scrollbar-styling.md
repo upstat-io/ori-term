@@ -505,8 +505,6 @@ Prefer scene-level assertions over raw pixel offsets where possible:
 ### Open Findings
 
 - [x] `[TPR-07-014][medium]` `oriterm_ui/src/widgets/scroll/mod.rs:313` — `ScrollWidget` still handles scrollbar hover/drag/capture through raw `on_input()` mouse branches instead of the controller pipeline required by `CLAUDE.md`.
-  Evidence: `ScrollWidget` processes `MouseDown`/`MouseMove`/`MouseUp` directly in `on_input()` and owns manual drag/hover state (`v_bar`/`h_bar`) even though the repo rule explicitly says scroll thumbs must go through event controllers, not raw event methods.
-  Impact: Section 07 is marked complete while the primary settings-page scrollbar remains a framework exception, so hover/active behavior is not unified with the rest of the UI system.
   Resolved 2026-03-25: accepted. Concrete implementation tasks added as §07.7 "ScrollWidget Controller Migration." The scrollbar overlay is not in the hit-test tree (it exists only in paint), so a custom Capture-phase controller with shared geometry is needed. Standard ScrubController in Bubble/Target phase would not fire for scrollbar clicks because the child widget is always the hit-test target.
 
 - [x] `[TPR-07-015][low]` `oriterm_ui/src/widgets/menu/widget_impl.rs:142` — Wheel scrolling while the cursor is over the menu scrollbar repopulates `hovered` with the row behind the bar, so menu hover feedback can disagree with pointer location.

@@ -221,7 +221,6 @@ Collate evidence from 07.1-07.4 against every mission success criterion in `00-o
 ## 07.R Third Party Review Findings
 
 - [x] `[TPR-07-001][low]` [plans/teseq-conformance/section-07-verification.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-07-verification.md#L12) — Section 07's headline success criteria and test matrix carried incorrect counts.
-  Evidence: original plan had `171 .teseq + 5 pure-Rust` but actual counts are `168 .teseq + 7 pure-Rust + 1 scenario-variant = 176`.
   Resolution: Fixed during /review-plan Mode A review. Success criteria, test matrix, completion checklist, and exit criteria all updated to `168 .teseq + 7 pure-Rust + 1 variant = 176`. Test matrix restructured with Variant column and per-family counts verified against `find` and `cargo test --list`.
 
 - [ ] `[TPR-07-002][low]` [plans/teseq-conformance/section-07-verification.md](/home/eric/projects/ori_term/plans/teseq-conformance/section-07-verification.md#L115) — The skip-path audit no longer enumerates every test that bypasses the family `run_scenario()` helper.

@@ -16,7 +16,7 @@ mod response_poll;
 pub(crate) mod snapshot;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 use std::{fmt, io};
@@ -64,7 +64,7 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// Raw VTE parser for shell integration sequences (OSC 7, 133, etc.).
     raw_parser: vte::Parser,
     /// Lock-free mode cache (updated after parsing, read by main thread).
-    mode_cache: Arc<AtomicU32>,
+    mode_cache: Arc<AtomicU64>,
     /// Double buffer for transferring snapshots to the main thread.
     double_buffer: SnapshotDoubleBuffer,
     /// Work buffer for snapshot production — reused across frames.

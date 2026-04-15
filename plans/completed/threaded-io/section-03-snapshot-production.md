@@ -268,10 +268,8 @@ Ensure the main thread is woken after a new snapshot is published. The wakeup mu
 <!-- Reserved for Codex or other external reviewers. -->
 
 - [x] `[TPR-03-001][medium]` `oriterm_mux/src/pane/io_thread/mod.rs:75`, `oriterm_mux/src/pane/io_thread/mod.rs:87`, `oriterm_mux/src/pane/io_thread/mod.rs:207` — the blocking receive path can drop the final parsed frame on shutdown.
-  Evidence: when the idle `select!` arm receives PTY bytes, it only calls `handle_bytes_chunked(&bytes)` and then ends the loop iteration. Snapshot publication happens later via `maybe_produce_snapshot()` at the top of the next iteration. If `Shutdown` is queued while that byte batch is being parsed, the next iteration exits in `drain_commands()` before `maybe_produce_snapshot()` runs, so the bytes that were just parsed never get flipped into `SnapshotDoubleBuffer` and no post-publish wakeup is sent.
   **Fix:** Added `self.maybe_produce_snapshot()` before `return` in both the `drain_commands()` shutdown check and the `select!` Shutdown arm. Test: `shutdown_flushes_final_snapshot`.
 - [x] `[TPR-03-002][low]` `plans/threaded-io/section-03-snapshot-production.md:34`, `plans/threaded-io/section-03-snapshot-production.md:37`, `plans/threaded-io/section-04-render-migration.md:55`, `plans/threaded-io/section-04-render-migration.md:59` — Section 03 is marked complete with "main thread reads the latest published snapshot" even though that consumer path is still deferred to Section 04.
-  Evidence: the current tree adds `PaneIoHandle::double_buffer()` but no `Pane`/`EmbeddedMux`/daemon caller reads it. Section 04 still owns the first real integration steps (`Pane::swap_io_snapshot(...)` and the `refresh_pane_snapshot()` rewrite). That makes the Section 03 status/body overstate what is actually finished today.
   **Fix:** Updated exit criteria to clarify that `swap_front()` is available but no production consumer reads it yet — section 04 wires the consumer.
 
 ---

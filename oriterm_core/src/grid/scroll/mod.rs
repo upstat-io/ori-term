@@ -1,13 +1,16 @@
 //! Scroll region management and scroll operations.
 //!
 //! Provides `set_scroll_region` (DECSTBM), `scroll_up`, `scroll_down`,
-//! `insert_lines`, and `delete_lines`. All operations use O(1) rotation
-//! of existing row allocations and fill new rows with BCE background.
+//! `insert_lines`, `delete_lines`, `scroll_left` (SL), and `scroll_right`
+//! (SR). Full-row operations use O(1) rotation; partial-width operations
+//! (when DECLRMM margins are active) use cell-by-cell copy within the
+//! margin band.
 
 use std::mem;
 use std::ops::Range;
 
 use crate::cell::Cell;
+use crate::index::Column;
 
 use super::Grid;
 use super::row::Row;
@@ -98,28 +101,268 @@ impl Grid {
     /// lines down within the scroll region.
     ///
     /// Only operates if the cursor is inside the scroll region. Lines
-    /// pushed past the bottom of the region are lost.
+    /// pushed past the bottom of the region are lost. When DECLRMM
+    /// horizontal margins are active, only cells within the margin band
+    /// are scrolled — content outside margins is untouched.
     pub fn insert_lines(&mut self, count: usize) {
         let line = self.cursor.line();
         if line < self.scroll_region.start || line >= self.scroll_region.end {
             return;
         }
         let range = line..self.scroll_region.end;
-        self.scroll_range_down(range, count);
+        if self.has_horizontal_margins() {
+            let col_range = self.left_margin..self.right_margin + 1;
+            self.scroll_partial_down(range, col_range, count);
+        } else {
+            self.scroll_range_down(range, count);
+        }
     }
 
     /// DL: delete `count` lines at the cursor, pulling remaining lines
     /// up within the scroll region.
     ///
     /// Only operates if the cursor is inside the scroll region. Blank
-    /// lines appear at the bottom of the region.
+    /// lines appear at the bottom of the region. When DECLRMM
+    /// horizontal margins are active, only cells within the margin band
+    /// are scrolled — content outside margins is untouched.
     pub fn delete_lines(&mut self, count: usize) {
         let line = self.cursor.line();
         if line < self.scroll_region.start || line >= self.scroll_region.end {
             return;
         }
         let range = line..self.scroll_region.end;
-        self.scroll_range_up(range, count);
+        if self.has_horizontal_margins() {
+            let col_range = self.left_margin..self.right_margin + 1;
+            self.scroll_partial_up(range, col_range, count);
+        } else {
+            self.scroll_range_up(range, count);
+        }
+    }
+
+    /// SL: scroll the content within the scroll region left by `count`
+    /// columns.
+    ///
+    /// When DECLRMM margins are active, only cells within the margin
+    /// band are shifted. Blank cells fill from the right margin.
+    /// Cells outside the margin band are untouched.
+    pub fn scroll_left(&mut self, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let (left, right) = if self.has_horizontal_margins() {
+            (self.left_margin, self.right_margin)
+        } else {
+            (0, self.cols.saturating_sub(1))
+        };
+        let band_width = right + 1 - left;
+        if band_width == 0 {
+            return;
+        }
+        let count = count.min(band_width);
+        let template = Cell::from(self.cursor.template.bg);
+
+        for row_idx in self.scroll_region.clone() {
+            // Clean wide-char pairs straddling the band edges BEFORE shift.
+            // `fix_wide_boundaries` only clears orphaned halves OUTSIDE
+            // [left, right+1), so in-band pairs are preserved — unlike
+            // `clear_wide_char_at` which would destroy both halves.
+            self.fix_wide_boundaries(row_idx, left, right + 1);
+
+            let row = &mut self.rows[row_idx];
+            let cells = row.as_mut_slice();
+            // Shift cells left within the band. Skip when count == band_width
+            // (no cells to preserve — pure clear path). `right - count` would
+            // underflow in that case when left == 0.
+            if count < band_width {
+                for col in left..=right - count {
+                    cells.swap(col, col + count);
+                }
+            }
+            // Clear the rightmost `count` cells in the band.
+            for cell in &mut cells[right + 1 - count..=right] {
+                cell.reset(&template);
+            }
+            // Extend occ to the band's right edge: any non-empty cell
+            // that was in the shifted range (its post-shift position is
+            // somewhere in [left, right-count]) or any BCE fill with a
+            // non-default template (at [right-count+1, right]) now
+            // occupies the band. The bound `right + 1` is tight (the
+            // band's rightmost column + 1) and avoids pessimizing
+            // beyond the band. If old occ was already >= right + 1
+            // (content beyond the band), it is preserved.
+            let cols = row.cols();
+            let new_occ = row.occ().max(right + 1).min(cols);
+            row.set_occ(new_occ);
+        }
+        self.dirty.mark_range(self.scroll_region.clone());
+    }
+
+    /// SR: scroll the content within the scroll region right by `count`
+    /// columns.
+    ///
+    /// When DECLRMM margins are active, only cells within the margin
+    /// band are shifted. Blank cells fill from the left margin.
+    /// Cells outside the margin band are untouched.
+    pub fn scroll_right(&mut self, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let (left, right) = if self.has_horizontal_margins() {
+            (self.left_margin, self.right_margin)
+        } else {
+            (0, self.cols.saturating_sub(1))
+        };
+        let band_width = right + 1 - left;
+        if band_width == 0 {
+            return;
+        }
+        let count = count.min(band_width);
+        let template = Cell::from(self.cursor.template.bg);
+
+        for row_idx in self.scroll_region.clone() {
+            // Clean wide-char pairs straddling the band edges BEFORE shift.
+            self.fix_wide_boundaries(row_idx, left, right + 1);
+
+            let row = &mut self.rows[row_idx];
+            let cells = row.as_mut_slice();
+            // Shift cells right within the band. Skip when count == band_width
+            // (pure clear path).
+            if count < band_width {
+                for col in ((left + count)..=right).rev() {
+                    cells.swap(col, col - count);
+                }
+            }
+            // Clear the leftmost `count` cells in the band.
+            for cell in &mut cells[left..left + count] {
+                cell.reset(&template);
+            }
+            // Extend occ to the band's right edge — see scroll_left for
+            // the full rationale. Non-empty cells that shifted right
+            // now occupy higher columns up to `right`; this bound
+            // captures that without pessimizing past the band.
+            let cols = row.cols();
+            let new_occ = row.occ().max(right + 1).min(cols);
+            row.set_occ(new_occ);
+        }
+        self.dirty.mark_range(self.scroll_region.clone());
+    }
+
+    /// Scroll cells within a column range UP across a row range.
+    ///
+    /// For each affected row, cells in `col_range` move up by `count`
+    /// rows. The bottom `count` rows' column ranges are cleared with
+    /// BCE background. Content outside `col_range` is untouched.
+    ///
+    /// Used by DL when DECLRMM horizontal margins are active.
+    fn scroll_partial_up(
+        &mut self,
+        row_range: Range<usize>,
+        col_range: Range<usize>,
+        count: usize,
+    ) {
+        let len = row_range.end - row_range.start;
+        if len == 0 || col_range.is_empty() {
+            return;
+        }
+        let count = count.min(len);
+        if count == 0 {
+            return;
+        }
+        let template = Cell::from(self.cursor.template.bg);
+        let left = col_range.start;
+        // `col_range` is half-open; the last column in the band.
+        let right = col_range.end - 1;
+
+        // Clean wide-char pairs straddling the band edges in every affected
+        // row BEFORE any copy/clear. `fix_wide_boundaries` only clears
+        // orphaned halves OUTSIDE the band — in-band pairs are preserved.
+        for row_idx in row_range.clone() {
+            self.fix_wide_boundaries(row_idx, left, right + 1);
+        }
+
+        // Copy cells upward within the column range. `IndexMut<Column>`
+        // on Row automatically bumps `occ` to `col + 1` for each write,
+        // so by the time the copy loop finishes, `dst_row.occ()` is at
+        // least `right + 1` — no explicit set_occ call needed here.
+        for offset in 0..len - count {
+            let dst = row_range.start + offset;
+            let src = dst + count;
+            let (lo, hi) = self.rows.split_at_mut(src);
+            let dst_row = &mut lo[dst];
+            let src_row = &hi[0];
+            for col in col_range.clone() {
+                dst_row[Column(col)] = src_row[Column(col)].clone();
+            }
+        }
+
+        // Clear the bottom `count` rows' column range. `IndexMut` on
+        // `row[Column(col)]` bumps occ automatically during reset.
+        for row_idx in (row_range.end - count)..row_range.end {
+            let row = &mut self.rows[row_idx];
+            for col in col_range.clone() {
+                row[Column(col)].reset(&template);
+            }
+        }
+
+        self.dirty.mark_range(row_range);
+    }
+
+    /// Scroll cells within a column range DOWN across a row range.
+    ///
+    /// For each affected row, cells in `col_range` move down by `count`
+    /// rows. The top `count` rows' column ranges are cleared with BCE
+    /// background. Content outside `col_range` is untouched.
+    ///
+    /// Used by IL when DECLRMM horizontal margins are active.
+    fn scroll_partial_down(
+        &mut self,
+        row_range: Range<usize>,
+        col_range: Range<usize>,
+        count: usize,
+    ) {
+        let len = row_range.end - row_range.start;
+        if len == 0 || col_range.is_empty() {
+            return;
+        }
+        let count = count.min(len);
+        if count == 0 {
+            return;
+        }
+        let template = Cell::from(self.cursor.template.bg);
+        let left = col_range.start;
+        let right = col_range.end - 1;
+
+        // Clean wide-char pairs straddling the band edges in every affected
+        // row BEFORE any copy/clear. `fix_wide_boundaries` only clears
+        // orphaned halves OUTSIDE the band — in-band pairs are preserved.
+        for row_idx in row_range.clone() {
+            self.fix_wide_boundaries(row_idx, left, right + 1);
+        }
+
+        // Copy cells downward within the column range (iterate in reverse
+        // to avoid overwriting source data). `IndexMut` bumps occ on
+        // each write, so no explicit set_occ is needed.
+        for offset in (0..len - count).rev() {
+            let src = row_range.start + offset;
+            let dst = src + count;
+            let (lo, hi) = self.rows.split_at_mut(dst);
+            let src_row = &lo[src];
+            let dst_row = &mut hi[0];
+            for col in col_range.clone() {
+                dst_row[Column(col)] = src_row[Column(col)].clone();
+            }
+        }
+
+        // Clear the top `count` rows' column range. `IndexMut` on
+        // `row[Column(col)]` bumps occ automatically during reset.
+        for row_idx in row_range.start..row_range.start + count {
+            let row = &mut self.rows[row_idx];
+            for col in col_range.clone() {
+                row[Column(col)].reset(&template);
+            }
+        }
+
+        self.dirty.mark_range(row_range);
     }
 
     /// Scroll a range of rows up by `count` using O(1) rotation.

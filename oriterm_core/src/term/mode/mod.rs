@@ -10,8 +10,12 @@ bitflags! {
     ///
     /// Modes are toggled by DECSET (`CSI ? n h`), DECRST (`CSI ? n l`),
     /// SM (`CSI n h`), and RM (`CSI n l`) escape sequences.
+    ///
+    /// Represented as `u64` because bits 0-31 are fully allocated and
+    /// DECLRMM (mode 69) requires bit 32. Widened in plan
+    /// `plans/spec-conformance/section-08` §08.3.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct TermMode: u32 {
+    pub struct TermMode: u64 {
         /// DECTCEM — cursor visible.
         const SHOW_CURSOR        = 1;
         /// DECCKM — application cursor keys.
@@ -83,6 +87,12 @@ bitflags! {
         /// When set, key events should be encoded as Win32 keyboard input
         /// records (`CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`) instead of VT text.
         const WIN32_INPUT            = 1 << 31;
+        /// DECLRMM (mode 69) — left/right margin mode enabled.
+        ///
+        /// When set, DECSLRM (`CSI Pl ; Pr s`) establishes horizontal
+        /// margins and cursor-movement operations respect them. See
+        /// `plans/spec-conformance/section-08` §08.3 / §08.4.
+        const LEFT_RIGHT_MARGIN      = 1 << 32;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()

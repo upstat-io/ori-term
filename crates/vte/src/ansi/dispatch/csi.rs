@@ -55,7 +55,9 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
 
     match (action, intermediates) {
         ('@', []) => handler.insert_blank(next_param_or(1) as usize),
+        ('@', [b' ']) => handler.scroll_left(next_param_or(1) as usize),
         ('A', []) => handler.move_up(next_param_or(1) as usize),
+        ('A', [b' ']) => handler.scroll_right(next_param_or(1) as usize),
         ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
         ('b', []) => {
             if let Some(c) = *preceding_char {
@@ -124,6 +126,18 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
 
             handler.clear_screen(mode);
         },
+        ('J', [b'?']) => {
+            let mode = match next_param_or(0) {
+                0 => ClearMode::Below,
+                1 => ClearMode::Above,
+                2 => ClearMode::All,
+                _ => {
+                    unhandled!();
+                    return;
+                },
+            };
+            handler.clear_screen(mode);
+        },
         ('K', []) => {
             let mode = match next_param_or(0) {
                 0 => LineClearMode::Right,
@@ -135,6 +149,18 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
                 },
             };
 
+            handler.clear_line(mode);
+        },
+        ('K', [b'?']) => {
+            let mode = match next_param_or(0) {
+                0 => LineClearMode::Right,
+                1 => LineClearMode::Left,
+                2 => LineClearMode::All,
+                _ => {
+                    unhandled!();
+                    return;
+                },
+            };
             handler.clear_line(mode);
         },
         ('k', [b' ']) => {
@@ -198,6 +224,7 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         },
         ('n', []) => handler.device_status(next_param_or(0) as usize),
         ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+        ('p', [b'!']) => handler.decstr(),
         ('p', [b'$']) => {
             let mode = next_param_or(0);
             handler.report_mode(Mode::new(mode));
@@ -237,7 +264,26 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.restore_private_mode_values(&modes);
         },
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
-        ('s', []) => handler.save_cursor_position(),
+        ('s', []) => {
+            // CSI s / DECSLRM ambiguity: pass params to handler which
+            // knows whether mode 69 (DECLRMM) is active.
+            //
+            // VTE always pushes at least one default-0 param before CSI
+            // dispatch (see `action_csi_dispatch` in lib.rs), so
+            // `params.is_empty()` is never true. To distinguish
+            // explicit-params from no-params, use BOTH arity (a semicolon
+            // was seen → `params.len() > 1`) AND non-default values (at
+            // least one explicit non-zero param). This correctly treats
+            // `CSI 0;0 s` as DECSLRM (has-params) while still treating
+            // `CSI s` as zero-params. `CSI 0 s` is indistinguishable
+            // from `CSI s` at the parser level, and both mean "use
+            // defaults" per ECMA-48 §5.4.2.
+            let arity = params.len();
+            let left = next_param_or(0);
+            let right = next_param_or(0);
+            let has_params = arity > 1 || left != 0;
+            handler.decslrm_or_save_cursor(has_params, left, right);
+        },
         ('s', [b'?']) => {
             // XTSAVE: save private mode values.
             let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();
@@ -273,6 +319,8 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
         ('u', []) => handler.restore_cursor_position(),
         ('X', []) => handler.erase_chars(next_param_or(1) as usize),
         ('Z', []) => handler.move_backward_tabs(next_param_or(1)),
+        ('{', [b'#']) => handler.push_sgr(),
+        ('}', [b'#']) => handler.pop_sgr(),
         _ => unhandled!(),
     }
 }
@@ -304,6 +352,11 @@ fn attrs_from_sgr_parameters<H: Handler>(handler: &mut H, params: &mut ParamsIte
             [27] => Some(Attr::CancelReverse),
             [28] => Some(Attr::CancelHidden),
             [29] => Some(Attr::CancelStrike),
+            [53] => Some(Attr::Overline),
+            [55] => Some(Attr::CancelOverline),
+            [73] => Some(Attr::Superscript),
+            [74] => Some(Attr::Subscript),
+            [75] => Some(Attr::CancelSuperSubscript),
             [30] => Some(Attr::Foreground(Color::Named(NamedColor::Black))),
             [31] => Some(Attr::Foreground(Color::Named(NamedColor::Red))),
             [32] => Some(Attr::Foreground(Color::Named(NamedColor::Green))),

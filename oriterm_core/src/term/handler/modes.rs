@@ -101,6 +101,9 @@ impl<S: EffectSink> Term<S> {
                 self.mode.insert(TermMode::ENABLE_MODE_3);
             }
             NamedPrivateMode::Win32Input => self.mode.insert(TermMode::WIN32_INPUT),
+            NamedPrivateMode::LeftRightMargin => {
+                self.mode.insert(TermMode::LEFT_RIGHT_MARGIN);
+            }
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(true);
             }
@@ -177,6 +180,10 @@ impl<S: EffectSink> Term<S> {
                 self.mode.remove(TermMode::ENABLE_MODE_3);
             }
             NamedPrivateMode::Win32Input => self.mode.remove(TermMode::WIN32_INPUT),
+            NamedPrivateMode::LeftRightMargin => {
+                self.mode.remove(TermMode::LEFT_RIGHT_MARGIN);
+                self.grid_mut().reset_left_right_margins();
+            }
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(false);
             }
@@ -205,8 +212,9 @@ impl<S: EffectSink> Term<S> {
             self.grid_mut().resize(lines, new_cols, false);
         }
 
-        // Reset scroll region first so goto_origin_aware uses the full screen.
+        // Reset scroll/margin regions so goto_origin_aware uses the full screen.
         self.grid_mut().set_scroll_region(1, None);
+        self.grid_mut().reset_left_right_margins();
         // Clear screen and images (matching clear_screen handler).
         self.selection_dirty = true;
         self.grid_mut()

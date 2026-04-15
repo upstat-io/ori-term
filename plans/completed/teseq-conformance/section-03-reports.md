@@ -692,19 +692,10 @@ ori_term implements `status_report_mode()` for ANSI (non-private) mode queries. 
 
 - [x] `[TPR-03-001][medium]` `.github/workflows/auto-release.yml:335` — website roadmap rebuild detection regressed from push-wide to tip-commit-only.
   Resolved: Fixed on 2026-04-05. Changed `fetch-depth: 0` and diff range to `github.event.before..HEAD` to cover multi-commit pushes.
-  Evidence: the old `notify-website.yml` triggered on any push touching `plans/roadmap/**`, but the consolidated job now checks only `git diff --name-only HEAD~1` after a `fetch-depth: 2` checkout.
-  Impact: a multi-commit push where an earlier commit edits roadmap files but the tip commit does not will skip `oriterm-roadmap-updated`, leaving the website's roadmap content stale.
-  Required plan update: diff the full pushed range (`github.event.before..github.sha`) or equivalent push payload data, then re-verify the consolidated notification behavior.
 - [x] `[TPR-03-002][low]` `plans/teseq-conformance/section-03-reports.md:4` — Section 03 plan state is internally inconsistent.
   Resolved: Fixed on 2026-04-05. Updated body banner to match frontmatter status.
-  Evidence: the frontmatter still says `status: in-progress`, the body still says `**Status:** Not Started`, and the completion checklist claims the frontmatter was already switched to `complete`.
-  Impact: downstream readers cannot trust the section status, and the checklist records plan-sync work that the file state does not actually reflect.
-  Required plan update: reconcile the frontmatter, body status banner, and completion checklist after TPR resolution so the section advertises one coherent state.
 - [x] `[TPR-03-003][low]` `oriterm_core/tests/teseq/harness/assertions.rs:151` — `analyze_response()` treats a failed `teseq` subprocess as success.
   Resolved: Fixed on 2026-04-05. Added `output.status.success()` check, returns `Err` with stderr on non-zero exit.
-  Evidence: the helper waits for the child process and returns `Ok(stdout)` without checking `output.status.success()`.
-  Impact: when `teseq` exits non-zero, the debug helper can silently return partial or empty output instead of surfacing the failure, which makes response-analysis debugging misleading.
-  Required plan update: return an `Err` on non-zero exit status and add coverage for the failing-subprocess path.
 - [x] `[TPR-03-004][medium]` `.github/workflows/auto-release.yml:342` — roadmap-only pushes still dispatch the `oriterm-release-published` website event.
   Resolved: Fixed on 2026-04-05. Gated `oriterm-release-published` dispatch on `needs.publish.result == 'success'`; roadmap event remains unconditional within the job.
 - [x] `[TPR-03-005][low]` `oriterm_core/tests/teseq/csi_reports.rs:262` / `oriterm_core/tests/teseq/harness/assertions.rs:155` — the non-zero-exit fix in `analyze_response()` is still unpinned by a regression test.

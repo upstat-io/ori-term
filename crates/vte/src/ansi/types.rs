@@ -185,6 +185,7 @@ impl PrivateMode {
             40 => Self::Named(NamedPrivateMode::EnableMode3),
             45 => Self::Named(NamedPrivateMode::ReverseWraparound),
             47 => Self::Named(NamedPrivateMode::AltScreen),
+            69 => Self::Named(NamedPrivateMode::LeftRightMargin),
             1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
             1002 => Self::Named(NamedPrivateMode::ReportCellMouseMotion),
             1003 => Self::Named(NamedPrivateMode::ReportAllMouseMotion),
@@ -257,6 +258,11 @@ pub enum NamedPrivateMode {
     ReverseWraparound = 45,
     /// Legacy alt screen (no cursor save/restore).
     AltScreen = 47,
+    /// DECLRMM — left/right margin mode enable (DEC VT420).
+    ///
+    /// CSI ? 69 h -> enable DECSLRM (`CSI Pl ; Pr s`) horizontal margins.
+    /// CSI ? 69 l -> disable; horizontal margins reset to full width.
+    LeftRightMargin = 69,
     ReportMouseClicks = 1000,
     ReportCellMouseMotion = 1002,
     ReportAllMouseMotion = 1003,

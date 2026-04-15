@@ -146,7 +146,6 @@ vttest must be available in CI for the structural tests to run. The golden image
 - [x] `[TPR-06-001][medium]` `oriterm_core/tests/vttest/menu6.rs:10` — Section 06.2 is
   marked complete for DA/DSR structural assertions, but the current menu 6 test path is still
   snapshot-only.
-  Evidence: `walk_menu6_subscreens()` only records `insta::assert_snapshot!`, and
   `run_menu6_reports()` never checks for DA/DSR strings or even that exercised sub-items produced
   non-blank report screens.
   Resolved: Added structural assertions on 2026-04-03. `walk_menu6_subscreens()` now asserts

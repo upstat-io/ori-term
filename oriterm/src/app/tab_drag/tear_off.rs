@@ -85,8 +85,7 @@ impl App {
         // `broadcast_cell_metrics_to_window`'s short-circuit would
         // skip these panes if the new window's cached dims match the
         // source window's (they usually do on same-DPI tear-offs).
-        // Per-pane seed is surgical — no other pane gets re-dirtied
-        // (TPR-07-001-codex round 7).
+        // Per-pane seed is surgical — no other pane gets re-dirtied.
         let torn_pane_ids: Vec<oriterm_mux::PaneId> = self
             .session
             .get_tab(tab_id)

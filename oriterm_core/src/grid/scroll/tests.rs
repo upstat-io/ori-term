@@ -1094,3 +1094,516 @@ fn scroll_region_at_screen_edges() {
     grid.set_scroll_region(20, Some(24));
     assert_eq!(grid.scroll_region, 19..24);
 }
+
+// --- IL/DL with DECLRMM horizontal margins ---
+
+/// Helper: fill each row with a distinct ASCII char ('0' for row 0, etc.)
+fn grid_with_row_chars(lines: usize, cols: usize) -> Grid {
+    let mut grid = Grid::new(lines, cols);
+    for line in 0..lines {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        let ch = (b'0' + line as u8) as char;
+        for _ in 0..cols {
+            grid.put_char(ch);
+        }
+    }
+    // Reset cursor to top-left for test setup.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid
+}
+
+#[test]
+fn il_with_margins_scrolls_only_margin_band() {
+    let mut grid = grid_with_row_chars(5, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_lines(1);
+
+    // Row 0: completely unchanged (above cursor).
+    for col in 0..10 {
+        assert_eq!(grid[Line(0)][Column(col)].ch, '0', "row 0 col {col}");
+    }
+    // Row 1: margin band [2..7] blanked, outside preserved as '1'.
+    assert_eq!(grid[Line(1)][Column(0)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(1)].ch, '1');
+    for col in 2..=7 {
+        assert!(
+            grid[Line(1)][Column(col)].is_empty(),
+            "row 1 col {col} should be blank"
+        );
+    }
+    assert_eq!(grid[Line(1)][Column(8)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(9)].ch, '1');
+    // Row 2: margin band has '1' (from old row 1), outside stays '2'.
+    assert_eq!(grid[Line(2)][Column(0)].ch, '2');
+    assert_eq!(grid[Line(2)][Column(1)].ch, '2');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(2)][Column(col)].ch, '1', "row 2 col {col}");
+    }
+    assert_eq!(grid[Line(2)][Column(8)].ch, '2');
+    assert_eq!(grid[Line(2)][Column(9)].ch, '2');
+    // Row 3: margin band has '2' (from old row 2), outside stays '3'.
+    assert_eq!(grid[Line(3)][Column(0)].ch, '3');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(3)][Column(col)].ch, '2', "row 3 col {col}");
+    }
+    assert_eq!(grid[Line(3)][Column(9)].ch, '3');
+    // Row 4: margin band has '3' (from old row 3), outside stays '4'.
+    assert_eq!(grid[Line(4)][Column(0)].ch, '4');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(4)][Column(col)].ch, '3', "row 4 col {col}");
+    }
+    assert_eq!(grid[Line(4)][Column(9)].ch, '4');
+}
+
+#[test]
+fn dl_with_margins_scrolls_only_margin_band() {
+    let mut grid = grid_with_row_chars(5, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_lines(1);
+
+    // Row 0: unchanged.
+    for col in 0..10 {
+        assert_eq!(grid[Line(0)][Column(col)].ch, '0', "row 0 col {col}");
+    }
+    // Row 1: margin band has '2' (from old row 2), outside stays '1'.
+    assert_eq!(grid[Line(1)][Column(0)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(1)].ch, '1');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(1)][Column(col)].ch, '2', "row 1 col {col}");
+    }
+    assert_eq!(grid[Line(1)][Column(8)].ch, '1');
+    assert_eq!(grid[Line(1)][Column(9)].ch, '1');
+    // Row 2: margin band has '3' (from old row 3), outside stays '2'.
+    assert_eq!(grid[Line(2)][Column(0)].ch, '2');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(2)][Column(col)].ch, '3', "row 2 col {col}");
+    }
+    assert_eq!(grid[Line(2)][Column(9)].ch, '2');
+    // Row 3: margin band has '4' (from old row 3), outside stays '3'.
+    assert_eq!(grid[Line(3)][Column(0)].ch, '3');
+    for col in 2..=7 {
+        assert_eq!(grid[Line(3)][Column(col)].ch, '4', "row 3 col {col}");
+    }
+    assert_eq!(grid[Line(3)][Column(9)].ch, '3');
+    // Row 4: margin band blanked, outside stays '4'.
+    assert_eq!(grid[Line(4)][Column(0)].ch, '4');
+    for col in 2..=7 {
+        assert!(
+            grid[Line(4)][Column(col)].is_empty(),
+            "row 4 col {col} should be blank"
+        );
+    }
+    assert_eq!(grid[Line(4)][Column(9)].ch, '4');
+}
+
+// --- SL/SR with DECLRMM horizontal margins ---
+
+/// Helper: fill each row with column-index chars ('0' at col 0, '1' at col 1, etc.)
+fn grid_with_col_chars(lines: usize, cols: usize) -> Grid {
+    let mut grid = Grid::new(lines, cols);
+    for line in 0..lines {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        for col in 0..cols {
+            let ch = (b'0' + col as u8) as char;
+            grid.put_char(ch);
+        }
+    }
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid
+}
+
+#[test]
+fn sl_within_margins_shifts_only_margin_band() {
+    // 3 rows x 10 cols. Each row: '0123456789'.
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.scroll_left(2);
+
+    // All rows should show the same pattern:
+    // cols 0-1 unchanged, margin band shifted left by 2, cols 8-9 unchanged.
+    for line in 0..3 {
+        // Outside left margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0', "line {line} col 0");
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1', "line {line} col 1");
+        // Margin band shifted left by 2: col 2 gets old col 4, col 3 gets old col 5, etc.
+        assert_eq!(grid[Line(line)][Column(2)].ch, '4', "line {line} col 2");
+        assert_eq!(grid[Line(line)][Column(3)].ch, '5', "line {line} col 3");
+        assert_eq!(grid[Line(line)][Column(4)].ch, '6', "line {line} col 4");
+        assert_eq!(grid[Line(line)][Column(5)].ch, '7', "line {line} col 5");
+        // Rightmost 2 cells in band are blanked.
+        assert!(
+            grid[Line(line)][Column(6)].is_empty(),
+            "line {line} col 6 should be blank"
+        );
+        assert!(
+            grid[Line(line)][Column(7)].is_empty(),
+            "line {line} col 7 should be blank"
+        );
+        // Outside right margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8', "line {line} col 8");
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9', "line {line} col 9");
+    }
+}
+
+#[test]
+fn sr_within_margins_shifts_only_margin_band() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.scroll_right(2);
+
+    for line in 0..3 {
+        // Outside left margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0', "line {line} col 0");
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1', "line {line} col 1");
+        // Leftmost 2 cells in band are blanked.
+        assert!(
+            grid[Line(line)][Column(2)].is_empty(),
+            "line {line} col 2 should be blank"
+        );
+        assert!(
+            grid[Line(line)][Column(3)].is_empty(),
+            "line {line} col 3 should be blank"
+        );
+        // Margin band shifted right by 2: col 4 gets old col 2, col 5 gets old col 3, etc.
+        assert_eq!(grid[Line(line)][Column(4)].ch, '2', "line {line} col 4");
+        assert_eq!(grid[Line(line)][Column(5)].ch, '3', "line {line} col 5");
+        assert_eq!(grid[Line(line)][Column(6)].ch, '4', "line {line} col 6");
+        assert_eq!(grid[Line(line)][Column(7)].ch, '5', "line {line} col 7");
+        // Outside right margin: unchanged.
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8', "line {line} col 8");
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9', "line {line} col 9");
+    }
+}
+
+/// Regression: SL with `count == band_width` must clear the band rather
+/// than underflow `right - count`. Reproduced with full-width (no DECLRMM,
+/// left = 0, right = cols - 1).
+#[test]
+fn sl_full_band_no_margins_clears_without_panic() {
+    let mut grid = grid_with_col_chars(3, 10);
+    // No DECLRMM — full width band [0, 9], width = 10.
+    grid.scroll_left(10);
+    for line in 0..3 {
+        for col in 0..10 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank after full-band SL",
+            );
+        }
+    }
+}
+
+/// Regression: SL with `count == band_width` under DECLRMM clears only
+/// the band, leaving cells outside the margins intact.
+#[test]
+fn sl_full_band_with_margins_clears_band_only() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    // band_width = 6, count = 6.
+    grid.scroll_left(6);
+    for line in 0..3 {
+        // Outside margins: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0');
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1');
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8');
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9');
+        // Margin band: cleared.
+        for col in 2..=7 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank",
+            );
+        }
+    }
+}
+
+#[test]
+fn sr_full_band_no_margins_clears_without_panic() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.scroll_right(10);
+    for line in 0..3 {
+        for col in 0..10 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank after full-band SR",
+            );
+        }
+    }
+}
+
+#[test]
+fn sr_full_band_with_margins_clears_band_only() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(2, 7);
+    grid.scroll_right(6);
+    for line in 0..3 {
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0');
+        assert_eq!(grid[Line(line)][Column(1)].ch, '1');
+        assert_eq!(grid[Line(line)][Column(8)].ch, '8');
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9');
+        for col in 2..=7 {
+            assert!(
+                grid[Line(line)][Column(col)].is_empty(),
+                "line {line} col {col} should be blank",
+            );
+        }
+    }
+}
+
+/// Regression: SL count >= band_width clamps without overshoot.
+#[test]
+fn sl_count_larger_than_band_clamps() {
+    let mut grid = grid_with_col_chars(3, 10);
+    grid.set_left_right_margins(3, 6); // band_width = 4.
+    grid.scroll_left(100); // should clamp to 4.
+    for line in 0..3 {
+        // Outside margins: unchanged.
+        assert_eq!(grid[Line(line)][Column(0)].ch, '0');
+        assert_eq!(grid[Line(line)][Column(2)].ch, '2');
+        assert_eq!(grid[Line(line)][Column(7)].ch, '7');
+        assert_eq!(grid[Line(line)][Column(9)].ch, '9');
+        // Margin band: cleared.
+        for col in 3..=6 {
+            assert!(grid[Line(line)][Column(col)].is_empty());
+        }
+    }
+}
+
+use crate::cell::CellFlags;
+
+/// Helper: place a wide char (base + spacer) at columns `col` and `col+1`.
+fn place_wide_char(grid: &mut Grid, line: usize, col: usize) {
+    grid.cursor_mut().set_line(line);
+    grid.cursor_mut().set_col(Column(col));
+    // U+597D (好) is width 2.
+    grid.put_char('\u{597d}');
+}
+
+/// Regression: SL must not leave an orphaned wide-char spacer at the
+/// right margin + 1 when the base inside the band is shifted away.
+///
+/// Margins must be set AFTER placing the wide char because `put_char`
+/// under DECLRMM wraps at `right_margin + 1`, so placing a wide char at
+/// col `right_margin` would trigger wrap (the pair can't fit in-band).
+/// Setting margins after the place operation creates the straddling
+/// configuration the cleanup must handle.
+#[test]
+fn sl_cleans_wide_char_pair_straddling_right_margin_plus_one() {
+    let mut grid = Grid::new(3, 10);
+    // Place wide char at (0, 6) WITHOUT margins: base at 6, spacer at 7.
+    place_wide_char(&mut grid, 0, 6);
+    assert!(
+        grid[Line(0)][Column(6)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(7)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+    // NOW set margins so the pair straddles the band edge.
+    grid.set_left_right_margins(2, 6);
+    // SL by 1: base at col 6 gets overwritten. The spacer at col 7
+    // (outside the band) would be orphaned without cleanup.
+    grid.scroll_left(1);
+    assert!(
+        !grid[Line(0)][Column(7)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "orphaned wide-char spacer at col 7 (outside right margin) must be cleaned",
+    );
+}
+
+/// Regression: SR must not leave an orphaned wide-char base at left
+/// margin - 1 when the spacer inside the band is shifted away.
+#[test]
+fn sr_cleans_wide_char_pair_straddling_left_margin() {
+    let mut grid = Grid::new(3, 10);
+    // Place wide char at (0, 1) WITHOUT margins: base at 1, spacer at 2.
+    place_wide_char(&mut grid, 0, 1);
+    assert!(
+        grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(2)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+    // NOW set margins so the pair straddles the left band edge.
+    grid.set_left_right_margins(2, 6);
+    // SR by 1: col 2's content gets overwritten by col 3's content. The
+    // base at col 1 (outside left margin) would be orphaned without cleanup.
+    grid.scroll_right(1);
+    assert!(
+        !grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "orphaned wide-char base at col 1 (outside left margin) must be cleaned",
+    );
+}
+
+/// Regression: IL with DECLRMM must not leave orphaned wide-char flags
+/// when a wide char straddles a band edge.
+#[test]
+fn il_with_margins_cleans_wide_char_at_band_edge() {
+    let mut grid = Grid::new(5, 10);
+    // Wide char at (1, 6) WITHOUT margins: base in band-to-be at 6, spacer at 7.
+    place_wide_char(&mut grid, 1, 6);
+    grid.set_left_right_margins(2, 6);
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_lines(1);
+    // Row 1's margin band was blanked. Col 6 is now blank; col 7 spacer
+    // (outside band) would be orphaned without cleanup.
+    assert!(
+        !grid[Line(1)][Column(7)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "orphaned wide-char spacer outside right margin must be cleaned by IL",
+    );
+}
+
+/// Regression: DL with DECLRMM must not leave orphaned wide-char flags
+/// when a wide char straddles a band edge.
+#[test]
+fn dl_with_margins_cleans_wide_char_at_band_edge() {
+    let mut grid = Grid::new(5, 10);
+    // Wide char at (0, 1) WITHOUT margins: base at 1 (to-be-outside), spacer at 2 (inside).
+    place_wide_char(&mut grid, 0, 1);
+    grid.set_left_right_margins(2, 6);
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_lines(1);
+    // Row 0 got row 1's content in the margin band. Col 2 is overwritten;
+    // the base at col 1 would be orphaned without cleanup.
+    assert!(
+        !grid[Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "orphaned wide-char base outside left margin must be cleaned by DL",
+    );
+}
+
+/// Regression: SR must extend occ when content shifts right even with
+/// the default (empty) template. Previously the
+/// occ update was guarded by `!template.is_empty()`, so content that
+/// shifted past the pre-shift occ bound would become "invisible" to any
+/// renderer or scan that stops at `occ`.
+#[test]
+fn sr_extends_occ_when_content_shifts_with_empty_template() {
+    let mut grid = Grid::new(3, 10);
+    // Put 'X' at col 2 (sparse row; occ = 3, template is default/empty).
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.put_char('X');
+    grid.set_left_right_margins(2, 8);
+    grid.scroll_right(2);
+    // 'X' should have moved to col 4 and stay visible via cell data.
+    assert_eq!(
+        grid[Line(0)][Column(4)].ch,
+        'X',
+        "shifted content must remain present at its new column",
+    );
+    // Negative pin: col 2 (vacated by SR with empty template) must be empty.
+    assert!(
+        grid[Line(0)][Column(2)].is_empty(),
+        "vacated cell must be empty after SR",
+    );
+}
+
+/// Regression: SL must preserve in-band wide-char pairs. Previously
+/// `clear_wide_char_at` at band edges would
+/// unconditionally destroy both halves, splitting pairs that lived
+/// entirely inside the band.
+///
+/// This test places a pair at a RIGHT band edge (base at `right_margin - 1`,
+/// spacer at `right_margin`) — both inside the band. The fix:
+/// `fix_wide_boundaries(row, left, right + 1)` only clears halves
+/// OUTSIDE `[left, right+1)`, preserving in-band pairs.
+#[test]
+fn sl_preserves_inband_wide_char_pair_at_right_edge() {
+    let mut grid = Grid::new(3, 10);
+    grid.set_left_right_margins(2, 6);
+    // Wide char at (0, 5) — base at col 5, spacer at col 6 = right_margin.
+    // Both inside the band [2, 6].
+    place_wide_char(&mut grid, 0, 5);
+    assert!(
+        grid[Line(0)][Column(5)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "precondition: base at col 5",
+    );
+    assert!(
+        grid[Line(0)][Column(6)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "precondition: spacer at col 6",
+    );
+    // SL by 1: content in [2, 6] shifts left. Pair should shift together
+    // to (cols 4, 5). Before the fix, `clear_wide_char_at(row, right=6)`
+    // would see the spacer and pre-clear the base at col 5 — destroying
+    // the pair BEFORE the shift.
+    grid.scroll_left(1);
+    // After SL: pair should now be at cols (4, 5) — BOTH halves intact.
+    assert!(
+        grid[Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "in-band wide-char base must survive SL with shift",
+    );
+    assert!(
+        grid[Line(0)][Column(5)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "in-band wide-char spacer must survive SL with shift",
+    );
+}
+
+/// Regression: IL with DECLRMM must preserve in-band wide-char pairs.
+/// The partial copy at band edges must not
+/// pre-clear pairs entirely inside the band.
+#[test]
+fn il_with_margins_preserves_inband_wide_char_pair() {
+    let mut grid = Grid::new(5, 10);
+    grid.set_left_right_margins(2, 6);
+    // Pair entirely in-band at (0, 3).
+    place_wide_char(&mut grid, 0, 3);
+    assert!(
+        grid[Line(0)][Column(3)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[Line(0)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+    // IL(1) at cursor (0, 2): content in row 0's band copies to row 1.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_lines(1);
+    // Row 1 now holds what was row 0's band. The pair must have survived.
+    assert!(
+        grid[Line(1)][Column(3)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR),
+        "in-band wide-char base must survive IL copy",
+    );
+    assert!(
+        grid[Line(1)][Column(4)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER),
+        "in-band wide-char spacer must survive IL copy",
+    );
+}

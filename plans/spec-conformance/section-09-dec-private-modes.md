@@ -45,7 +45,7 @@ sections:
 
 **Success Criteria:** see frontmatter.
 
-**Context:** Section 08 verifies the basic mode subset (1, 5, 6, 7, 12, 25, 47, 1049, 2004 — the modes tack covers). This section drives the remainder: 1000-1003 mouse, 1004 focus, 1005 UTF-8 mouse, 1006 SGR mouse, 1007 alternate scroll, 1015 URXVT mouse, 1016 SGR pixels, 1042 urgency hints, 1047 alt screen, 1048 save cursor only, 2026 sync, 2031 color scheme update, 8452 sixel cursor right, 9001 Win32 input, plus any obscure modes section 01 cataloged.
+**Context:** Section 08 verifies the basic mode subset (1, 5, 6, 7, 12, 25, 47, 1049, 2004 — the modes tack covers) AND DECLRMM (mode 69) including full grid enforcement, CSI s / DECSLRM ambiguity, and save/restore/reset paths. This section drives the remainder: 1000-1003 mouse, 1004 focus, 1005 UTF-8 mouse, 1006 SGR mouse, 1007 alternate scroll, 1015 URXVT mouse, 1016 SGR pixels, 1042 urgency hints, 1047 alt screen, 1048 save cursor only, 2026 sync, 2031 color scheme update, 8452 sixel cursor right, 9001 Win32 input, plus any obscure modes section 01 cataloged. (Note: DECLRMM was moved from Section 09 to Section 08 because it's a baseline correctness prerequisite for Phase 3 stacks.)
 
 **Reference implementations:**
 - **xterm** `ctlseqs.html` — definitive numbered-mode reference

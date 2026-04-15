@@ -12,3 +12,6 @@
 # Python bytecode from .claude/skills/*/ helper scripts (plan-audit, etc.)
 .claude/**/__pycache__/
 .claude/**/*.pyc
+
+# Claude scheduled-task lock file (local-only runtime state).
+.claude/scheduled_tasks.lock
