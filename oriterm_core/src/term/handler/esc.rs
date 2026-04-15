@@ -78,22 +78,13 @@ impl<S: EffectSink> Term<S> {
 
         self.selection_dirty = true;
 
-        let grid = self.grid_mut();
-        grid.cursor_mut().template = Cell::default();
-        grid.cursor_mut().set_line(0);
-        grid.cursor_mut().set_col(Column(0));
-        grid.set_scroll_region(0, None);
-        let cols = grid.cols();
-        grid.set_left_right_margins(0, cols.saturating_sub(1));
-        grid.clear_saved_cursor();
-        grid.clear_sgr_stack();
-
-        // Clear saved cursor on the inactive screen too — ori_term keeps
-        // DECSC state per screen. Per WezTerm (terminalstate/mod.rs:1273-1276),
-        // DECSTR clears saved cursor on both alt and primary screens.
+        // Reset state on BOTH screens. `self.mode = TermMode::default()`
+        // below drops ALT_SCREEN, so the primary grid becomes active on
+        // return — it must be reset regardless of which screen was active
+        // when DECSTR fired. Per WezTerm (terminalstate/mod.rs:1273-1276).
+        Self::soft_reset_grid(&mut self.grid);
         if let Some(alt) = &mut self.alt_grid {
-            alt.clear_saved_cursor();
-            alt.clear_sgr_stack();
+            Self::soft_reset_grid(alt);
         }
 
         self.mode = TermMode::default();
@@ -104,6 +95,22 @@ impl<S: EffectSink> Term<S> {
         self.inactive_saved_origin_mode = None;
         self.cursor_shape = crate::grid::CursorShape::default();
         self.keyboard_mode_stack.clear();
+        self.inactive_keyboard_mode_stack.clear();
+    }
+
+    /// Reset SGR-relevant state on a single grid (DECSTR scope).
+    ///
+    /// Resets cursor position, template (SGR), scroll region, margins,
+    /// saved cursor, and SGR stack. Does NOT touch screen contents.
+    fn soft_reset_grid(grid: &mut crate::grid::Grid) {
+        grid.cursor_mut().template = Cell::default();
+        grid.cursor_mut().set_line(0);
+        grid.cursor_mut().set_col(Column(0));
+        grid.set_scroll_region(0, None);
+        let cols = grid.cols();
+        grid.set_left_right_margins(0, cols.saturating_sub(1));
+        grid.clear_saved_cursor();
+        grid.clear_sgr_stack();
     }
 
     /// DECALN (ESC # 8): DEC Screen Alignment Test.
