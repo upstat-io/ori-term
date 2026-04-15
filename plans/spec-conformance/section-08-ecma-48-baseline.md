@@ -29,7 +29,7 @@ inspired_by:
   - "ghostty `src/lib_vt.zig` — CSI s / DECSLRM ambiguity resolution (explicit ambiguous action)"
 depends_on: ["02", "04", "06"]
 third_party_review:
-  status: resolved
+  status: findings
   updated: 2026-04-14
 sections:
   - id: "08.1"
@@ -635,6 +635,14 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 
 - [x] `[TPR-08-001-codex-r12i10][medium]` + `[TPR-08-001-gemini-r12i10][medium]` `oriterm_core/src/term/handler/tests.rs:6733` — Pre-DECSTR assertions verified active state (live cursor + template) but not the saved state populated by DECSC/XTPUSHSGR. Vacuous-pass hole still open (agreement).
   Resolved: Fixed on 2026-04-14. Per gemini's prescription: before DECSTR, exercise DECSC/DECRC roundtrip (move to (0,0), DECRC, assert restores to (7,14)) and XTPUSHSGR/XTPOPSGR roundtrip (clear SGR, assert template is not-bold, XTPOPSGR, assert restores bold). Then re-establish the seed state with DECSC + XTPUSHSGR so DECSTR has work to clear. The pre-DECSTR proof-of-population assertions now actively test the saved state, not just the active state.
+
+### Round 12 iteration 11 (cap reached — 3 findings filed for next session)
+
+- [ ] `[TPR-08-001-codex-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6733` — Assert that the post-roundtrip XTPUSHSGR reseed (`\x1b[#{` at line 6762) actually succeeds by checking `sgr_stack.len()` before DECSTR (the re-push after pop is unverified).
+- [ ] `[TPR-08-001-gemini-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6658` — Apply the same vacuous-pass fix (DECSC/DECRC roundtrip proof) to the simpler `decstr_clears_saved_cursor` test.
+- [ ] `[TPR-08-002-gemini-r12i11][medium]` `oriterm_core/src/term/handler/tests.rs:6670` — Apply the same vacuous-pass fix (XTPUSHSGR/XTPOPSGR roundtrip proof) to the simpler `decstr_clears_sgr_stack` test.
+
+**Note**: These are all test-thoroughness improvements for the DECSTR regression suite. The core code bugs (DECSTR soft reset, cross-screen grid clearing, XTPUSHSGR scope narrowing, DECRQSS SGR reporting) were all fixed in earlier iterations. These 3 findings will be picked up when the section-close process resumes.
 
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
