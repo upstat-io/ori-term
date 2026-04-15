@@ -6695,6 +6695,45 @@ fn decstr_clears_sgr_stack() {
     );
 }
 
+/// DECSTR while on alt screen must reset BOTH grids. After DECSTR drops
+/// ALT_SCREEN, the primary grid becomes active and its prior state
+/// (cursor, margins, saved cursor) must be cleared.
+#[test]
+fn decstr_clears_primary_state_when_fired_on_alt_screen() {
+    let mut t = term();
+    // On primary: move cursor, save via DECSC.
+    feed(&mut t, b"\x1b[10;20H\x1b7");
+    // Enter alt screen (CSI ? 1049 h).
+    feed(&mut t, b"\x1b[?1049h");
+    // DECSTR while on alt screen.
+    feed(&mut t, b"\x1b[!p");
+    // DECSTR should have dropped ALT_SCREEN — cursor at (0,0) of primary.
+    let grid = t.grid();
+    assert_eq!(
+        grid.cursor().line(),
+        0,
+        "DECSTR must reset cursor on primary"
+    );
+    assert_eq!(
+        grid.cursor().col(),
+        Column(0),
+        "DECSTR must reset cursor on primary"
+    );
+    // DECRC must NOT resurrect the pre-DECSTR saved cursor.
+    feed(&mut t, b"\x1b8");
+    let grid = t.grid();
+    assert_eq!(
+        grid.cursor().line(),
+        0,
+        "DECSTR must clear primary saved cursor"
+    );
+    assert_eq!(
+        grid.cursor().col(),
+        Column(0),
+        "DECSTR must clear primary saved cursor"
+    );
+}
+
 // DECSED — selective erase in display (CSI ? J)
 
 #[test]

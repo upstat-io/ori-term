@@ -596,6 +596,16 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-002-codex-r12i3][low]` + `[TPR-08-001-gemini-r12i3][high]` `oriterm_core/src/term/handler/tests.rs:6649` — Missing regression pins for DECSTR clearing saved cursor and SGR stack.
   Resolved: Fixed on 2026-04-14. Added `decstr_clears_saved_cursor` (pins ESC 7 / CSI ! p / ESC 8 → cursor does NOT resurrect) and `decstr_clears_sgr_stack` (pins CSI # { / CSI ! p / CSI # } → SGR stack does NOT resurrect). Both reviewers flagged the same test gap.
 
+### Round 12 iteration 4 (2026-04-14)
+
+- [x] `[TPR-08-001-gemini-r12i4][high]` `oriterm_core/src/term/handler/esc.rs:94` — DECSTR on alt screen leaves primary grid state intact.
+  Resolved: Fixed on 2026-04-14. Refactored `soft_reset` to reset BOTH `self.grid` AND `self.alt_grid` via new `soft_reset_grid()` helper. Previously, `grid_mut()` returned alt_grid when ALT_SCREEN was active, so the primary grid (which became active after `mode = default()` dropped ALT_SCREEN) retained stale cursor/margins/saved_cursor. New test `decstr_clears_primary_state_when_fired_on_alt_screen` pins the cross-screen behavior.
+- [x] `[TPR-08-001-codex-r12i4][medium]` `oriterm_core/src/term/handler/esc.rs:106` — DECSTR leaves inactive_keyboard_mode_stack untouched.
+  Resolved: Fixed on 2026-04-14. Added `self.inactive_keyboard_mode_stack.clear()` alongside the active stack. Matches RIS behavior in `esc_reset_state`.
+- [x] `[TPR-08-002-gemini-r12i4][high]` `oriterm_core/src/term/handler/tests.rs:6658` — Missing matrix tests for cross-screen DECSTR.
+  Resolved: Fixed on 2026-04-14. Added `decstr_clears_primary_state_when_fired_on_alt_screen` which enters alt screen, fires DECSTR, verifies primary cursor at (0,0), and verifies DECRC does not resurrect the pre-DECSTR saved cursor.
+- **Note on gemini contract violation**: Gemini wrote `oriterm_core/src/term/handler/bug_repro.rs` during its review, violating the read-only contract. The transport's dirty_worktree guard correctly flagged this and terminated the round. The findings were still valid (the file was gemini's repro scaffolding); the file was cleaned up manually. Gemini's skill instructions should be audited to ensure it does not write files to the source tree — TODO for a future dual-tpr-gemini session.
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,
