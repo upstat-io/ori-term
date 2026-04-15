@@ -582,6 +582,13 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-004-codex-r12][medium]` `oriterm/src/gpu/prepare/decorations.rs:68` — New OVERLINE/SUPERSCRIPT/SUBSCRIPT flags not consumed by GPU renderer or HTML export.
   Resolved: Filed as BUG-06-014 (rendering gap, medium severity). The flags are correctly stored on cells and reported via DECRQSS, but rendering requires GPU shader/font pipeline work that belongs in the rendering subsystem, not Section 08.
 
+### Round 12 iteration 2 (2026-04-14) — section-close re-run
+
+- [x] `[TPR-08-001-codex-r12i2][medium]` `oriterm_core/src/term/handler/esc.rs:76` — DECSTR soft_reset must clear DECSC saved cursor state.
+  Resolved: Fixed on 2026-04-14. Added `grid.clear_saved_cursor()` to `soft_reset()`. Prevents `ESC 7 / CSI ! p / ESC 8` from resurrecting pre-reset cursor state.
+- [x] `[TPR-08-002-codex-r12i2][low]` `plans/spec-conformance/catalog/ecma-48.md:198` + `catalog/xterm-ctlseqs.md:31` — Stale catalog docs still described pre-round-12 behavior.
+  Resolved: Fixed on 2026-04-14. Updated DECSTR catalog row to reference `handler.decstr()` → `Term::soft_reset()`. Updated XTPUSHSGR catalog row to note underline_color-only snapshot (not full CellExtra).
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,

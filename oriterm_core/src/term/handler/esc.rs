@@ -85,6 +85,7 @@ impl<S: EffectSink> Term<S> {
         grid.set_scroll_region(0, None);
         let cols = grid.cols();
         grid.set_left_right_margins(0, cols.saturating_sub(1));
+        grid.clear_saved_cursor();
         grid.clear_sgr_stack();
 
         self.mode = TermMode::default();
