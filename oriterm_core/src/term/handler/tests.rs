@@ -6717,9 +6717,13 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
     // Enter alt screen (swaps primary keyboard stack to inactive).
     feed(&mut t, b"\x1b[?1049h");
     assert!(t.keyboard_mode_stack().is_empty());
-    // Push a mode on alt screen too.
+    // Seed alt-screen state (scroll region, keyboard mode) BEFORE DECSTR
+    // so we can assert the single DECSTR clears alt state too. DECSTR
+    // drops ALT_SCREEN; we re-enter later to inspect the alt grid.
+    feed(&mut t, b"\x1b[5;15r");
     feed(&mut t, b"\x1b[>3u");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
+    assert_eq!(t.grid().scroll_region(), &(4..15));
 
     // DECSTR while on alt screen.
     feed(&mut t, b"\x1b[!p");
@@ -6773,16 +6777,14 @@ fn decstr_clears_primary_state_when_fired_on_alt_screen() {
         t.keyboard_mode_stack().is_empty(),
         "DECSTR must clear primary keyboard mode stack"
     );
-    // Re-enter alt screen to inspect the alt stack — it was cleared too.
-    // Seed an alt scroll region first so we can also pin the alt reset.
+    // Re-enter alt screen to inspect alt-grid state — DO NOT fire DECSTR
+    // again (that would drop ALT_SCREEN and re-check primary).
     feed(&mut t, b"\x1b[?1049h");
-    feed(&mut t, b"\x1b[5;15r");
-    feed(&mut t, b"\x1b[!p");
-    let lines = t.grid().lines();
+    let alt_lines = t.grid().lines();
     assert_eq!(
         t.grid().scroll_region(),
-        &(0..lines),
-        "DECSTR on alt screen must clear alt scroll region"
+        &(0..alt_lines),
+        "DECSTR must clear alt scroll region"
     );
     assert!(
         t.keyboard_mode_stack().is_empty(),

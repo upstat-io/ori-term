@@ -616,6 +616,11 @@ This file was created empty in section 02. As 08.1-08.8 verify catalog rows that
 - [x] `[TPR-08-001-codex-r12i6][medium]` + `[TPR-08-001-gemini-r12i6][medium]` `oriterm_core/src/term/handler/tests.rs:6700` — Test doc mentions scroll region reset but no assertion pins it (agreement).
   Resolved: Fixed on 2026-04-14. Both reviewers independently flagged the same test gap. Added `assert_eq!(t.grid().scroll_region(), &(0..lines), ...)` for primary after DECSTR, and additionally seeded an alt scroll region then fired DECSTR again to pin the alt-side reset.
 
+### Round 12 iteration 7 (2026-04-14)
+
+- [x] `[TPR-08-001-codex-r12i7][medium]` + `[TPR-08-001-gemini-r12i7][high]` `oriterm_core/src/term/handler/tests.rs:6780` — The "alt pin" fired a second DECSTR inside the alt block, which dropped ALT_SCREEN and re-checked primary grid (agreement).
+  Resolved: Fixed on 2026-04-14. Restructured the test: seed alt scroll region + keyboard mode BEFORE the first DECSTR so a single DECSTR must clear both grids. After DECSTR, re-enter alt screen (no second DECSTR) and assert against `t.grid()` which now correctly returns the alt_grid. Verified by temporarily disabling the `alt_grid` soft reset in `soft_reset()` — test failed with `left: 4..15, right: 0..24`, confirming the assertion pins alt-grid state.
+
 **Tooling retrospective (08.5):** improvements committed in
 `da70fdbe` (dual-tpr `transport.md` gains a mandatory gemini hygiene
 preamble — scratch-file discipline, `git diff --stat` first,
