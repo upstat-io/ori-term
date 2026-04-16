@@ -74,6 +74,20 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
   Reviewer: gemini (TPR-07-001-gemini round 15 during spec-conformance Section 07 close-out)
   Proposed fix: Convert `alt_screen.rs`, `image_config.rs`, `snapshot.rs`, and `resize.rs` to directory modules. Extract their tests from `term/tests.rs` into per-module `tests.rs` files. Verify with `./test-all.sh`.
 
+- [ ] `[BUG-08-14][medium]` **Mode 1042 (urgency hints): flag toggle works but BEL-to-window-manager-hint path is missing**
+  Repro: `printf '\x1b[?1042h'` then `printf '\a'` — expected: window manager urgency hint; actual: no effect beyond existing visual bell.
+  Detail: `TermMode::URGENCY_HINTS` flag toggles correctly via DECSET/DECRST and DECRQM reports correctly. But no `HostEffect::UrgencyHint` variant exists, and the BEL handler (`oriterm_core/src/term/handler/mod.rs`) does not check mode 1042 to conditionally emit a host-adapter urgency hint. Need: (1) new Effect variant for urgency hint, (2) mode-1042-gated emission in the BEL handler, (3) app-layer host-adapter wiring to platform window-manager urgency API.
+  Subsystem: `oriterm_core/src/term/handler/mod.rs` (BEL handler), `oriterm_core/src/effect.rs`, `oriterm/src/app/mux_pump/mod.rs`
+  Found: 2026-04-15 | Source: continue-roadmap
+  Note: Active work in spec-conformance Section 09 touches mode 1042 flag verification.
+
+- [ ] `[BUG-08-15][medium]` **Mode 1007 (alt-scroll): wheel-to-arrow app-shell apex has no owning roadmap section**
+  Repro: `printf '\x1b[?1049h\x1b[?1007h'` then scroll mouse wheel — expected: arrow key sequences sent to PTY; actual: works (Tier-2 gate at `mouse_report/mod.rs:196`), but no spec-conformance section owns end-to-end verification.
+  Detail: The `should_translate_wheel_to_arrows(mode, shift_held)` function (extracted by Section 09.1) correctly gates wheel-to-arrow translation. Bridge tests verify the parser→flag→decision path. But catalog row `DEC-ALT-SCROLL` stays `stub` because no roadmap section owns the full app-shell integration apex (actual mouse wheel event → pane write). Section 09 verified the core-layer flag toggle + DECRQM + the bridge cell; the remaining gap is the app-shell integration test that proves a real mouse wheel event flows through `handle_mouse_wheel()` Tier 2 into the PTY.
+  Subsystem: `oriterm/src/app/mouse_report/mod.rs` (Tier-2 wheel-to-arrow), catalog `DEC-ALT-SCROLL`
+  Found: 2026-04-15 | Source: continue-roadmap
+  Note: Section 09.1 bridge cell covers the pure-function decision path; this bug tracks the integration apex.
+
 - [x] `[BUG-08-10][high]` **`Term::image_cache()` / `image_cache_mut()` return the inactive cache in `ALT_SCREEN` mode — alt-mode placements leak into primary after `swap_alt` back** — found by continue-roadmap.
   Found: 2026-04-13 | Source: continue-roadmap
   Fixed: 2026-04-13 — Resolved as part of spec-conformance Section 07 round-6 TPR triage (TPR-07-001 codex+gemini agreement). The deeper issue was that `toggle_alt_common` swapped `image_cache`/`alt_image_cache` field contents but did NOT swap `grid`/`alt_grid`, leaving `Term::resize` pairing the primary grid with whichever cache happened to be in the `image_cache` field regardless of semantic ownership. Root-cause fix: remove the image-cache field swap from `toggle_alt_common` entirely. The fields now carry their semantic contents at all times — `image_cache` = primary, `alt_image_cache` = alt. `image_cache()` / `image_cache_mut()` route by `ALT_SCREEN` mode (mirroring `grid()` / `grid_mut()`) to return the active screen's cache without touching field contents. Regression test `term_resize_routes_each_grid_through_its_own_image_cache` reads the fields directly to prevent future routing inversions; `alt_image_cache_isolation_check` verifies primary/alt placements no longer leak across swaps.
