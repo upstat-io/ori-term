@@ -29,10 +29,10 @@ inspired_by:
 depends_on: ["03", "06", "08"]
 third_party_review:
   status: resolved
-  updated: "2026-04-15"
-  iteration_count: 5
-  total_items: 19
-  note: "19 TPR items total across 5 iterations (iter-1: 5 items / 3 codex + 2 gemini; iter-2: 2 codex-only items, gemini transport failed 3x; iter-3: 5 codex-only items, gemini API capacity failures across 3 attempts; iter-3b: 4 codex-only verification findings catching propagation regressions from iter-3 fixes; iter-3c: 3 codex-only findings catching consistency drift from iter-3b partial propagation). All 19 items [x] in 09.R. Codex-solo passes were best-effort clean per /tpr-review Transport Failure Handling Option 1 — retry dual-source when gemini API capacity recovers."
+  updated: "2026-04-16"
+  iteration_count: 6
+  total_items: 20
+  note: "20 TPR items total across 6 iterations (iter-1: 5 items / 3 codex + 2 gemini; iter-2: 2 codex-only items, gemini transport failed 3x; iter-3: 5 codex-only items, gemini API capacity failures across 3 attempts; iter-3b: 4 codex-only verification findings catching propagation regressions from iter-3 fixes; iter-3c: 3 codex-only findings catching consistency drift from iter-3b partial propagation; iter-4: 1 codex-only finding — backend pane_mode bridge test gap). All 20 items [x] in 09.R. Codex-solo passes were best-effort clean per /tpr-review Transport Failure Handling Option 1 — retry dual-source when gemini API capacity recovers."
 sections:
   - id: "09.0"
     title: "Test file split (optional maintainability refactor)"
@@ -531,6 +531,15 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
   Resolved: Fixed on 2026-04-15. Rewrote goal clause ("Mode 1007 has no current apex owner and is filed as a deferred bug"), row-ownership table entry ("no current owning section"), and Section-16 boundary paragraph ("The mode 1007 alt-scroll app-shell apex has no current owning section — see the row-ownership table"). No non-TPR 1007+Section 16 co-occurrences remain outside the `09.R` TPR block.
 
 **Iteration 3c transport note:** second codex-solo verification pass (gemini still unavailable). Codex read 23 files for verification. All 3 iter-3c findings were consistency drift from iter-3b's partial propagation — no new structural concerns. The plan is now verified internally consistent across frontmatter / body / 09.N / 09.R with all iter-3 and iter-3b fixes properly propagated.
+
+**Iteration 4 (2026-04-16 — /tpr-review post-completion review):**
+
+- [x] `[TPR-09-001-codex][high]` `plans/spec-conformance/section-09-dec-private-modes.md:562` — Reopen the pane_mode bridge deliverable for modes 66 and 67.
+  Evidence: io_thread bridge tests (`:2276`, `:2298`, `:2321`) verify mode_cache propagation but stop there. The downstream consumers — `EmbeddedMux::pane_mode()` at `oriterm_mux/src/backend/embedded/mod.rs:153` and `ClientMux::pane_mode()` at `oriterm_mux/src/backend/client/rpc_methods.rs:110` — had no DECBKM-specific test coverage.
+  Impact: False confidence that the full parser → mode_cache → backend pane_mode() path was verified.
+  Required plan update: Add backend-level bridge tests for mode 67 DECBKM.
+  Basis: direct_file_inspection. Confidence: high.
+  Resolved: Fixed on 2026-04-16. Added 3 tests in `oriterm_mux/src/backend/embedded/tests.rs`: `pane_mode_reflects_decbkm_set` (set bridge), `pane_mode_clears_decbkm_on_reset` (reset bridge), `pane_mode_returns_none_for_missing_pane` (negative pin). Uses `printf` shell command to emit escape sequences through PTY output path for realistic end-to-end coverage.
 
 ---
 
