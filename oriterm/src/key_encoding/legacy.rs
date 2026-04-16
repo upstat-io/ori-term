@@ -177,12 +177,12 @@ fn encode_simple_named(named: NamedKey, mods: Modifiers, mode: TermMode) -> Vec<
             }
         }
         NamedKey::Backspace => {
-            // Ctrl+Backspace sends 0x08 (BS); plain sends 0x7f (DEL).
-            let byte = if mods.contains(Modifiers::CONTROL) {
-                0x08
-            } else {
-                0x7f
-            };
+            // DECBKM (mode 67) inverts backspace polarity. Ctrl XORs it.
+            // Default (DECBKM reset): plain→DEL(0x7f), Ctrl→BS(0x08).
+            // DECBKM set: plain→BS(0x08), Ctrl→DEL(0x7f).
+            let ctrl = mods.contains(Modifiers::CONTROL);
+            let decbkm = mode.contains(TermMode::DECBKM);
+            let byte = if ctrl ^ decbkm { 0x08 } else { 0x7f };
             if mods.contains(Modifiers::ALT) {
                 vec![0x1b, byte]
             } else {

@@ -107,6 +107,8 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::ColorSchemeUpdate => {
                 self.mode.insert(TermMode::COLOR_SCHEME_UPDATE);
             }
+            NamedPrivateMode::DecNumericKeypad => self.mode.insert(TermMode::APP_KEYPAD),
+            NamedPrivateMode::DecBackarrowKey => self.mode.insert(TermMode::DECBKM),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(true);
             }
@@ -190,6 +192,8 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::ColorSchemeUpdate => {
                 self.mode.remove(TermMode::COLOR_SCHEME_UPDATE);
             }
+            NamedPrivateMode::DecNumericKeypad => self.mode.remove(TermMode::APP_KEYPAD),
+            NamedPrivateMode::DecBackarrowKey => self.mode.remove(TermMode::DECBKM),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(false);
             }

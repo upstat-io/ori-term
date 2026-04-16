@@ -185,6 +185,8 @@ impl PrivateMode {
             40 => Self::Named(NamedPrivateMode::EnableMode3),
             45 => Self::Named(NamedPrivateMode::ReverseWraparound),
             47 => Self::Named(NamedPrivateMode::AltScreen),
+            66 => Self::Named(NamedPrivateMode::DecNumericKeypad),
+            67 => Self::Named(NamedPrivateMode::DecBackarrowKey),
             69 => Self::Named(NamedPrivateMode::LeftRightMargin),
             1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
             1002 => Self::Named(NamedPrivateMode::ReportCellMouseMotion),
@@ -246,6 +248,18 @@ pub enum NamedPrivateMode {
     ReverseVideo = 5,
     Origin = 6,
     LineWrap = 7,
+    /// DECNKM — numeric/application keypad mode (DEC STD 070).
+    ///
+    /// CSI ? 66 h -> application keypad mode (same as ESC =, DECKPAM).
+    /// CSI ? 66 l -> numeric keypad mode (same as ESC >, DECKPNM).
+    ///
+    /// Shares the same `TermMode::APP_KEYPAD` flag as ESC =/ESC >.
+    DecNumericKeypad = 66,
+    /// DECBKM — backarrow key mode.
+    ///
+    /// CSI ? 67 h -> Backspace sends BS (0x08).
+    /// CSI ? 67 l -> Backspace sends DEL (0x7F, default).
+    DecBackarrowKey = 67,
     /// X10 mouse reporting -- press only, no release, no modifiers.
     X10Mouse = 9,
     /// DECNRCM / enable mode 3 — gate for DECCOLM (mode 3).
