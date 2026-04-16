@@ -49,6 +49,7 @@ impl Widget for StubWidget {
     fn paint(&self, _ctx: &mut DrawCtx<'_>) {}
 }
 
+#[cfg(debug_assertions)]
 /// Container that yields two separate children, but visits one of them
 /// twice by holding two copies with the same WidgetId.
 struct DoubleVisitContainer {
@@ -57,6 +58,7 @@ struct DoubleVisitContainer {
     child_b: StubWidget,
 }
 
+#[cfg(debug_assertions)]
 impl Widget for DoubleVisitContainer {
     fn id(&self) -> WidgetId {
         self.id
@@ -81,6 +83,7 @@ impl Widget for DoubleVisitContainer {
 
 // -- Double-visit detection in pre-paint --
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "visited child")]
 fn double_visit_in_prepare_widget_tree_panics() {
@@ -109,6 +112,7 @@ fn double_visit_in_prepare_widget_tree_panics() {
 
 // -- Lifecycle ordering: WidgetAdded-first --
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "before WidgetAdded")]
 fn lifecycle_before_widget_added_panics() {
@@ -174,6 +178,7 @@ fn register_without_drain_delivers_widget_added_on_next_frame() {
 
 // -- Unregistered widget assertion --
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "unregistered widget")]
 fn lifecycle_to_unregistered_widget_panics() {

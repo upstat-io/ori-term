@@ -204,7 +204,7 @@ PtySession, ScenarioRunner, TOOLS_MENU_INVENTORY
 ---
 
 ### Section 09: DEC Private Modes (full)
-**File:** `section-09-dec-private-modes.md` | **Status:** Not Started
+**File:** `section-09-dec-private-modes.md` | **Status:** In Progress
 
 ```
 DEC private modes, DECSET, DECRST, ?Ps h, ?Ps l

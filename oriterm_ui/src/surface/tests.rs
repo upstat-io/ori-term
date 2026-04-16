@@ -99,6 +99,7 @@ fn lifecycle_transition_returns_new_state() {
     assert_eq!(s, SurfaceLifecycle::Visible);
 }
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "invalid lifecycle transition")]
 fn lifecycle_invalid_transition_panics() {

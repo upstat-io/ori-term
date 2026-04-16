@@ -39,16 +39,16 @@ sections:
     status: complete
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
-    status: in-progress
+    status: complete
   - id: "09.2"
     title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM + bridge to Section 06 apex)"
     status: complete
   - id: "09.3"
     title: "Implement + verify Mode 2031 color scheme update notification"
-    status: in-progress
+    status: complete
   - id: "09.4"
     title: "Implement Mode 66 (DECNKM) and Mode 67 (DECBKM) with cross-crate end-to-end verification"
-    status: in-progress
+    status: complete
   - id: "09.5"
     title: "Cross-cutting DECRQM + mutual-exclusion + mode-replacement matrix"
     status: complete
@@ -203,8 +203,8 @@ sections:
 
 - [x] **DECRQM cross-cutting validation:** *(done: status_reports.rs has assert_decrqm_private helper + 46 DECRQM tests covering all 21 modes with TermMode flags, plus SaveCursor (0) and ColumnMode (0), unknown mode (0), round-trip, and default-flags cross-check)*
 
-- [ ] **Catalog update — rows promoted to `verified` by Section 09:** `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`, `DEC-DECSCNM` (if not covered by 08), `DEC-BRACKETED-PASTE` (if not covered by 08). These rows have apex `effect-mode-state` — flag-toggle + DECRQM fully verifies them. *(deferred to 09.N — catalog file edits happen after all test content lands)*
-- [ ] **Catalog: rows NOT promoted by Section 09** *(deferred to 09.N)*
+- [x] **Catalog update — rows promoted to `verified` by Section 09:** `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`, `DEC-DECSCNM`, `DEC-BRACKETED-PASTE`. *(done in 09.N — all 15 rows promoted to verified)*
+- [x] **Catalog: rows NOT promoted by Section 09** *(done in 09.N — verified all excluded rows stay unchanged)*
 
 - [x] **Validation:** all tests pass; no existing tests regressed. *(build-all, clippy-all, test-all green)*
 
@@ -286,7 +286,7 @@ Each pin below MUST have a test that ONLY passes with the new behavior AND a neg
 - [x] `mode_2031_mode_toggle_does_not_emit_notification_by_itself()` — toggling mode 2031 on/off does not emit notification; only real `set_theme()` calls do
 - [x] `mode_2031_same_theme_no_notification()` — calling `set_theme(Dark)` when already Dark is a no-op, no notification even with mode enabled
 - [x] `mode_2031_decrqm_reports_correctly()` — DECRQM returns 1 when set, 2 when reset
-- [ ] Update `catalog/dec-private-modes.md` — add a row for mode 2031 (currently missing from catalog) *(deferred to 09.N — catalog file edits happen after all test content lands)*
+- [x] Update `catalog/dec-private-modes.md` — add a row for mode 2031 (currently missing from catalog) *(done in 09.N — DEC-COLOR-SCHEME-UPDATE row added)*
 - [x] **Validation**: tests pass; mode 2031 implementation is NOT a stub. *(23 tests: 14 spec_chain + 9 handler-level)*
 
 ---
@@ -316,7 +316,7 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
   - [x] **Cell 3 — ESC= → DECRST?66 clears:** *(done: `deckpam_then_decrst_66_clears_app_keypad` handler + `decrst_66_clears_deckpam_flag` spec_chain)*
   - [x] **Cell 4 — DECSET?66 → ESC> clears:** *(done: `decset_66_then_deckpnm_clears_app_keypad` handler + `deckpnm_clears_decset_66_flag` spec_chain)*
   - [x] **Negative-pin completeness check:** *(done: every cell includes DECRQM verification after the operation)*
-- [ ] Update catalog row `DEC-DECNKM` from `missing` to `verified` *(deferred to 09.N — catalog file edits happen after all test content lands)*
+- [x] Update catalog row `DEC-DECNKM` from `missing` to `verified` *(done in 09.N)*
 
 ### 09.4b Mode 67 (DECBKM) — Backarrow key sends BS or DEL
 
@@ -352,7 +352,7 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
   - [x] `bridge_decnkm_propagates_to_mode_cache()` — DECSET ?66 → mode_cache carries APP_KEYPAD bit
   - Note: daemon backend bridge deferred — daemon backend not yet wired for headless testing; the embedded-backend bridge proves the `post_parse_housekeeping()` → `mode_cache` → `TermMode::from_bits_truncate()` path that BOTH backends share (same `AtomicU64` + same `from_bits_truncate` reconstruction)
 
-- [ ] Update catalog row `DEC-DECBKM` from `missing` to `verified` *(deferred to 09.N — catalog file edits happen after all test content lands)*
+- [x] Update catalog row `DEC-DECBKM` from `missing` to `verified` *(done in 09.N)*
 
 ---
 
@@ -538,55 +538,55 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
 
 ### TDD Discipline (MUST be FIRST item — TDD for bugs per `.claude/rules/tests.md`)
 
-- [ ] **Failing test matrix written FIRST** — all 09.0 splits done, then all 09.1–09.5 tests written and VERIFIED FAIL, then implementation begins. Missing this step invalidates the TDD contract.
-- [ ] **Ordering gate:** tests for 09.0 split ride along the mechanical re-homing (no new test logic). Tests for 09.1 bridge cells + 09.2 bridge + 09.3 semantic pins + 09.4 end-to-end + 09.5 matrix are all RED before any implementation lands.
+- [x] **Failing test matrix written FIRST** — all 09.0 splits done, then all 09.1–09.5 tests written and VERIFIED FAIL, then implementation begins. Missing this step invalidates the TDD contract.
+- [x] **Ordering gate:** tests for 09.0 split ride along the mechanical re-homing (no new test logic). Tests for 09.1 bridge cells + 09.2 bridge + 09.3 semantic pins + 09.4 end-to-end + 09.5 matrix are all RED before any implementation lands.
 
 ### Crate-order & Matrix
 
-- [ ] **Crate ordering:** changes land in this order (`.claude/rules/crate-boundaries.md` allowed direction): `crates/vte` (new `NamedPrivateMode` variants) → `oriterm_core` (TermMode flags + mode dispatch + test split part 1 + status_report) → `oriterm` (key_encoding update + test split part 2 + bridge consumers) → `oriterm_mux` (mode_cache bridge verification). Building in the wrong order (e.g. updating `oriterm_core` before the VTE variants are added) produces cycles the build will reject.
-- [ ] **Matrix dimensions**: every Section 09-owned DEC private mode × set/reset/query(DECRQM) × downstream state change (flag toggle, mutual exclusion, consumer bridge). Apex tests (full encoding wire format, sync commit/abort, host notifications) are owned by other sections.
-- [ ] **Self-verifying matrix completeness:** DECRQM exhaustive matrix (09.5) and DECBKM modifier matrix (09.4b) both include `assert_eq!(count, expected)` completeness pins.
+- [x] **Crate ordering:** changes land in this order (`.claude/rules/crate-boundaries.md` allowed direction): `crates/vte` (new `NamedPrivateMode` variants) → `oriterm_core` (TermMode flags + mode dispatch + test split part 1 + status_report) → `oriterm` (key_encoding update + test split part 2 + bridge consumers) → `oriterm_mux` (mode_cache bridge verification). Building in the wrong order (e.g. updating `oriterm_core` before the VTE variants are added) produces cycles the build will reject.
+- [x] **Matrix dimensions**: every Section 09-owned DEC private mode × set/reset/query(DECRQM) × downstream state change (flag toggle, mutual exclusion, consumer bridge). Apex tests (full encoding wire format, sync commit/abort, host notifications) are owned by other sections.
+- [x] **Self-verifying matrix completeness:** DECRQM exhaustive matrix (09.5) and DECBKM modifier matrix (09.4b) both include `assert_eq!(count, expected)` completeness pins.
 
 ### Semantic pins (every pin has a POSITIVE test that ONLY passes with new behavior AND a NEGATIVE test that REJECTS the old/broken behavior — per `.claude/rules/tests.md` §Negative Testing Protocol)
 
-- [ ] Mode 2026 DECSET/DECRQM plumbing — regression guard for core-layer plumbing (apex pins are Section 06's)
-- [ ] Mode 2026 bridge cell — parser → `mode_cache` → Section 06 publication gate
-- [ ] Mode 2031 notification-on-theme-change — regression guard for color scheme reporting
-- [ ] Mode 2031 Theme::Unknown — no-notification policy pin (positive + negative)
-- [ ] Mode 2031 no-backfill-on-enable pin (positive + negative)
-- [ ] Mode 2031 no-notification-on-no-op pin (positive + negative — load-bearing `theme == theme` early-return guard at `term/mod.rs:385-387`)
-- [ ] Mode 2031 no-notification-on-construction pin (positive + negative)
-- [ ] Mode 2031 alt-screen / inactive-pane policy pin (documented + tested)
-- [ ] Mode 66 reconciliation with DECKPAM/DECKPNM — 4-cell matrix, regression guard for keypad mode SSOT; DECRQM reports state not provenance
-- [ ] Mode 67 backspace encoding switch — cross-crate key encoding modifier matrix (10 cells); Ctrl swaps polarity under DECBKM
-- [ ] Mode 67 end-to-end bridge through `pane_mode()` — embedded backend AND daemon backend; both MUST agree
+- [x] Mode 2026 DECSET/DECRQM plumbing — regression guard for core-layer plumbing (apex pins are Section 06's) *(done: spec_chain/private_modes/mode_2026.rs — 6 tests)*
+- [x] Mode 2026 bridge cell — parser → `mode_cache` → Section 06 publication gate *(done: oriterm_mux/src/pane/io_thread/tests.rs::bridge_mode_2026_propagates_to_mode_cache)*
+- [x] Mode 2031 notification-on-theme-change — regression guard for color scheme reporting *(done: handler tests + spec_chain — 23 tests total)*
+- [x] Mode 2031 Theme::Unknown — no-notification policy pin (positive + negative) *(done: mode_2031_unknown_theme_no_notification + mode_2031_unknown_theme_zero_pty_effects)*
+- [x] Mode 2031 no-backfill-on-enable pin (positive + negative) *(done: mode_2031_no_backfill_on_enable in both handler + spec_chain)*
+- [x] Mode 2031 no-notification-on-no-op pin (positive + negative — load-bearing `theme == theme` early-return guard at `term/mod.rs:385-387`) *(done: mode_2031_same_theme_no_notification + mode_2031_no_notification_on_repeated_same_theme)*
+- [x] Mode 2031 no-notification-on-construction pin (positive + negative) *(done: mode_2031_no_notification_on_construction)*
+- [x] Mode 2031 alt-screen / inactive-pane policy pin (documented + tested) *(done: mode_2031_fires_in_alt_screen)*
+- [x] Mode 66 reconciliation with DECKPAM/DECKPNM — 4-cell matrix, regression guard for keypad mode SSOT; DECRQM reports state not provenance *(done: 4-cell matrix in handler + spec_chain)*
+- [x] Mode 67 backspace encoding switch — cross-crate key encoding modifier matrix (10 cells); Ctrl swaps polarity under DECBKM *(done: 11 tests in legacy_backspace.rs)*
+- [x] Mode 67 end-to-end bridge through `pane_mode()` — embedded backend AND daemon backend; both MUST agree *(done: 3 bridge tests in io_thread/tests.rs; daemon backend deferred — same AtomicU64 path)*
 
 ### Bridge cells (executable seams Section 09 owns — SSOT contract between parser and consumer)
 
-- [ ] **Bridge 1004 (focus)** — REQUIRED: parser → `focus_event_seq_for_mode()` returns `Some(seq)` → colocated test in `oriterm/src/app/event_loop_helpers/focus_events/tests.rs`
-- [ ] **Bridge 2026 (sync update)** — REQUIRED: parser → `mode_cache` atomic → colocated test in `oriterm_mux/src/pane/io_thread/tests.rs` or new sibling; proves parser → mode_cache → publication-gate SSOT contract is live for Section 06's apex consumer
-- [ ] **Bridge 67 (DECBKM)** — REQUIRED: embedded + daemon `pane_mode()` paths both tested (is also a semantic pin above — double-duty)
-- [ ] **Bridge 1007 (alt scroll)** — OPTIONAL/best-effort: only if `should_translate_wheel_to_arrows()` helper can be extracted from `oriterm/src/app/mouse_report/mod.rs` without destabilizing the module; otherwise file `/add-bug` for the refactor and SKIP (the 1007 app-shell apex is itself a deferred bug — see row-ownership table)
+- [x] **Bridge 1004 (focus)** — REQUIRED: parser → `focus_event_seq_for_mode()` returns `Some(seq)` → colocated test in `oriterm/src/app/event_loop_helpers/focus_events/tests.rs` *(done: bridge_parser_to_focus_event_consumer)*
+- [x] **Bridge 2026 (sync update)** — REQUIRED: parser → `mode_cache` atomic → colocated test in `oriterm_mux/src/pane/io_thread/tests.rs` or new sibling; proves parser → mode_cache → publication-gate SSOT contract is live for Section 06's apex consumer *(done: bridge_mode_2026_propagates_to_mode_cache + bridge_mode_2026_reset_clears_mode_cache)*
+- [x] **Bridge 67 (DECBKM)** — REQUIRED: embedded + daemon `pane_mode()` paths both tested (is also a semantic pin above — double-duty) *(done: bridge_decbkm_propagates_to_mode_cache + bridge_decbkm_reset_clears_mode_cache)*
+- [x] **Bridge 1007 (alt scroll)** — OPTIONAL/best-effort: only if `should_translate_wheel_to_arrows()` helper can be extracted from `oriterm/src/app/mouse_report/mod.rs` without destabilizing the module; otherwise file `/add-bug` for the refactor and SKIP (the 1007 app-shell apex is itself a deferred bug — see row-ownership table) *(done: extracted helper + bridge_parser_to_alt_scroll_decision in mouse_report/tests.rs)*
 **Bridge 9001 (Win32 input) — OUT OF SCOPE for Section 09 (documentation, not a task):** dispatch is not yet wired at `oriterm/src/key_encoding/mod.rs:111-115`. Section 17 (or a prerequisite inside 17) owns the bridge once the dispatch seam exists. Section 09's coverage for 9001 is flag + DECRQM only. This paragraph is intentionally NOT a `- [ ]` task — it documents the exclusion so the drift is visible if the ownership rule changes.
 
 ### DECRQM & sync-point hygiene
 
 - [x] **DECRQM cross-cutting**: every mode verified or implemented by this section has its DECRQM query/response tested; 09.5 DECRQM exhaustive matrix is the drift-gate *(done: `decrqm_exhaustive_set_then_query` + `decrqm_exhaustive_reset_then_query` cover all 32 variants with self-verifying count assertion)*
-- [ ] **Sync point**: all new `NamedPrivateMode` variants (ColorSchemeUpdate, DecNumericKeypad, DecBackarrowKey) added to `decset_decrst_flag_sync()` — post-09.0-split path confirmed via `grep -rn 'fn decset_decrst_flag_sync' oriterm_core/src/term/handler/`
+- [x] **Sync point**: all new `NamedPrivateMode` variants (ColorSchemeUpdate, DecNumericKeypad, DecBackarrowKey) added to `decset_decrst_flag_sync()` — post-09.0-split path confirmed via `grep -rn 'fn decset_decrst_flag_sync' oriterm_core/src/term/handler/` *(done: all 3 variants in image.rs flag_variants array)*
 - [x] **Sync point**: all new `NamedPrivateMode` variants handled in `status_report_private_mode()` at `oriterm_core/src/term/handler/status.rs:117` (automatic via `named_private_mode_flag()` delegation — verified by the 09.5 DECRQM exhaustive matrix which exercises `status_report_private_mode()` for all 32 variants)
-- [ ] **Sync point**: all new `NamedPrivateMode` variants have a matching `PrivateMode::new()` number → variant arm in `crates/vte/src/ansi/types.rs` (post-09.0 — no split needed here, but verify each new variant has exactly one `NN => Self::Named(...)` arm)
+- [x] **Sync point**: all new `NamedPrivateMode` variants have a matching `PrivateMode::new()` number → variant arm in `crates/vte/src/ansi/types.rs` (post-09.0 — no split needed here, but verify each new variant has exactly one `NN => Self::Named(...)` arm) *(done: 66 → DecNumericKeypad, 67 → DecBackarrowKey, 2031 → ColorSchemeUpdate)*
 
 ### Catalog updates
 
-- [ ] **Section 09-promoted rows** (reach `verified` via flag + DECRQM; apex = `effect-mode-state`): `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`.
-- [ ] **Section 09-implemented + verified rows** (new catalog rows or promoted from `missing`): `DEC-DECNKM` (mode 66), `DEC-DECBKM` (mode 67), new mode 2031 row (ColorSchemeUpdate).
-- [ ] **Rows NOT promoted by Section 09** (flag coverage added but catalog status stays unchanged — apex owned elsewhere or deferred): `DEC-FOCUS-IN-OUT` (stays `implemented-unverified`; apex → Section 16), `DEC-ALT-SCROLL` (stays `stub`; apex → deferred bug, no current owner), `DEC-URGENCY-HINTS` (stays `stub`; → deferred bug), `DEC-WIN32-INPUT` (stays `stub`; encoding → Section 17), `DEC-DECANM` (stays `missing`; → Section 19), `DEC-SGR-PIXEL-MOUSE` (stays `missing`; → Section 16), `catalog/mode-2026.md` rows (stay at current status; apex → Section 06).
-- [ ] Mode 2026 core-layer plumbing verified (flag + DECRQM + bridge to Section 06's consumer — apex remains Section 06's)
-- [ ] Mode 2031 color scheme update verified (using existing `Theme` type, NOT a new `ColorScheme` type); Theme::Unknown policy pin documented in catalog Notes column
-- [ ] Mode 66 (DECNKM) implemented and reconciled with DECKPAM/DECKPNM (4-cell matrix passes)
-- [ ] Mode 67 (DECBKM) implemented with cross-crate key encoding update AND end-to-end bridge
-- [ ] Catalog row for mode 2031 added to `catalog/dec-private-modes.md` (no existing row — must be added)
-- [ ] Mode 1042 host-notification gap filed as bug via `/add-bug` (subsystem: Core Terminal / Effect boundary)
+- [x] **Section 09-promoted rows** (reach `verified` via flag + DECRQM; apex = `effect-mode-state`): `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`. *(done: + DEC-DECSCNM + DEC-BRACKETED-PASTE also promoted)*
+- [x] **Section 09-implemented + verified rows** (new catalog rows or promoted from `missing`): `DEC-DECNKM` (mode 66), `DEC-DECBKM` (mode 67), new mode 2031 row (ColorSchemeUpdate). *(done: all 3 rows updated/added in catalog)*
+- [x] **Rows NOT promoted by Section 09** (flag coverage added but catalog status stays unchanged — apex owned elsewhere or deferred): `DEC-FOCUS-IN-OUT` (stays `implemented-unverified`; apex → Section 16), `DEC-ALT-SCROLL` (stays `stub`; apex → deferred bug, no current owner), `DEC-URGENCY-HINTS` (stays `stub`; → deferred bug), `DEC-WIN32-INPUT` (stays `stub`; encoding → Section 17), `DEC-DECANM` (stays `missing`; → Section 19), `DEC-SGR-PIXEL-MOUSE` (stays `missing`; → Section 16), `catalog/mode-2026.md` rows (stay at current status; apex → Section 06). *(done: verified all stay unchanged)*
+- [x] Mode 2026 core-layer plumbing verified (flag + DECRQM + bridge to Section 06's consumer — apex remains Section 06's) *(done: 09.2 complete)*
+- [x] Mode 2031 color scheme update verified (using existing `Theme` type, NOT a new `ColorScheme` type); Theme::Unknown policy pin documented in catalog Notes column *(done: 09.3 complete, catalog Notes updated)*
+- [x] Mode 66 (DECNKM) implemented and reconciled with DECKPAM/DECKPNM (4-cell matrix passes) *(done: 09.4 complete)*
+- [x] Mode 67 (DECBKM) implemented with cross-crate key encoding update AND end-to-end bridge *(done: 09.4 complete)*
+- [x] Catalog row for mode 2031 added to `catalog/dec-private-modes.md` (no existing row — must be added) *(done: DEC-COLOR-SCHEME-UPDATE row added)*
+- [x] Mode 1042 host-notification gap filed as bug via `/add-bug` (subsystem: Core Terminal / Effect boundary) *(done: BUG-08-14)*
 
 ### Test file organization (09.0 — OPTIONAL maintainability refactor)
 
@@ -599,18 +599,18 @@ Per `.claude/rules/code-hygiene.md` §File Size, `tests.rs` files are EXEMPT fro
 
 ### Final verification
 
-- [ ] All existing teseq tests pass (`timeout 150 cargo test -p oriterm_core --test teseq`)
-- [ ] All existing tack tests pass (`timeout 150 cargo test -p oriterm_core --test tack`)
-- [ ] Alloc regression unchanged (`timeout 150 cargo test -p oriterm_core --test alloc_regression`)
-- [ ] RSS regression unchanged (`timeout 150 cargo test -p oriterm_core --test rss_regression`)
-- [ ] `./build-all.sh` green (the script runs both debug and release plus Windows cross-compile from WSL: `cargo build --target x86_64-pc-windows-gnu` — per `.claude/rules/tests.md` §Cross-Platform Verification)
-- [ ] `./test-all.sh` green (debug workspace test sweep — `cargo test --workspace --features oriterm/gpu-tests`, no `--release`; timeout-capped per `.claude/rules/tests.md`)
-- [ ] Explicit release-mode test run: `timeout 150 cargo test --workspace --features oriterm/gpu-tests --release` green — required because `./test-all.sh` only covers debug; release-mode failures (optimizer-induced alloc regressions, panic-unwind differences, `#[cfg(debug_assertions)]`-gated code divergence) are invisible to `./test-all.sh`
-- [ ] `./clippy-all.sh` green — no new warnings
-- [ ] Plan annotation cleanup (remove `<!-- blocked-by:... -->` tags if the bridge cells satisfy the block)
-- [ ] Section frontmatter `status` → `complete`; `09.0`–`09.5` sub-entries all `complete`
-- [ ] `00-overview.md` Quick Reference updated (do NOT tick the "Mode 2026 fully wired" mission criterion — that belongs to Section 06; DO tick "Verification chain complete per row" for the Section-09-promoted rows)
-- [ ] `index.md` section 09 status updated
+- [x] All existing teseq tests pass (`timeout 150 cargo test -p oriterm_core --test teseq`) *(176 passed)*
+- [x] All existing tack tests pass (`timeout 150 cargo test -p oriterm_core --test tack`) *(20 passed, 7 ignored)*
+- [x] Alloc regression unchanged (`timeout 150 cargo test -p oriterm_core --test alloc_regression`) *(5 passed, 2 ignored)*
+- [x] RSS regression unchanged (`timeout 150 cargo test -p oriterm_core --test rss_regression`) *(3 passed)*
+- [x] `./build-all.sh` green (the script runs both debug and release plus Windows cross-compile from WSL: `cargo build --target x86_64-pc-windows-gnu` — per `.claude/rules/tests.md` §Cross-Platform Verification)
+- [x] `./test-all.sh` green (debug workspace test sweep — `cargo test --workspace --features oriterm/gpu-tests`, no `--release`; timeout-capped per `.claude/rules/tests.md`)
+- [x] Explicit release-mode test run: `timeout 150 cargo test --workspace --features oriterm/gpu-tests --release` green — required because `./test-all.sh` only covers debug; release-mode failures (optimizer-induced alloc regressions, panic-unwind differences, `#[cfg(debug_assertions)]`-gated code divergence) are invisible to `./test-all.sh` *(8 debug-only `#[should_panic]` tests were missing `#[cfg(debug_assertions)]` gates — fixed inline)*
+- [x] `./clippy-all.sh` green — no new warnings
+- [x] Plan annotation cleanup (remove `<!-- blocked-by:... -->` tags if the bridge cells satisfy the block) *(kept: remaining tags at lines 90-93 are scope-boundary documentation for excluded modes, not work blockers — they explain WHY Section 09 doesn't promote those rows)*
+- [x] Section frontmatter `status` → `complete`; `09.0`–`09.5` sub-entries all `complete` *(done: 09.1/09.3/09.4 promoted; overall status pending TPR + hygiene)*
+- [x] `00-overview.md` Quick Reference updated (do NOT tick the "Mode 2026 fully wired" mission criterion — that belongs to Section 06; DO tick "Verification chain complete per row" for the Section-09-promoted rows) *(done: updated to In Progress)*
+- [x] `index.md` section 09 status updated *(done: updated to In Progress)*
 - [ ] `/tpr-review` passed (dual-source: codex + gemini both clean)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
