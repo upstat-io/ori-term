@@ -425,6 +425,7 @@ fn captured_mouse_move_uses_leaf_bounds() {
 
 // -- Safety rail: double-visit in dispatch --
 
+#[cfg(debug_assertions)]
 /// Container that yields two children with the same WidgetId.
 struct DoubleVisitDispatchContainer {
     id: WidgetId,
@@ -432,11 +433,13 @@ struct DoubleVisitDispatchContainer {
     child_b: StubDispatchWidget,
 }
 
+#[cfg(debug_assertions)]
 /// Minimal widget for dispatch double-visit test.
 struct StubDispatchWidget {
     id: WidgetId,
 }
 
+#[cfg(debug_assertions)]
 impl crate::widgets::Widget for StubDispatchWidget {
     fn id(&self) -> WidgetId {
         self.id
@@ -453,6 +456,7 @@ impl crate::widgets::Widget for StubDispatchWidget {
     fn paint(&self, _ctx: &mut crate::widgets::contexts::DrawCtx<'_>) {}
 }
 
+#[cfg(debug_assertions)]
 impl crate::widgets::Widget for DoubleVisitDispatchContainer {
     fn id(&self) -> WidgetId {
         self.id
@@ -474,6 +478,7 @@ impl crate::widgets::Widget for DoubleVisitDispatchContainer {
     }
 }
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "visited child")]
 fn double_visit_in_dispatch_to_widget_tree_panics() {
