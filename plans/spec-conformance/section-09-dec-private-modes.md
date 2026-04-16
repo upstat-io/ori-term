@@ -36,7 +36,7 @@ third_party_review:
 sections:
   - id: "09.0"
     title: "Test file split (optional maintainability refactor)"
-    status: not-started
+    status: complete
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
     status: not-started
@@ -117,34 +117,34 @@ sections:
 
 **Target file 1:** `oriterm_core/src/term/handler/tests.rs` (7015 lines). Convert the file-module into a directory-module (`oriterm_core/src/term/handler/tests/` — legal because parent `handler/mod.rs` carries `#[cfg(test)] mod tests;` per test-organization rule 3). Move existing test bodies into topical submodules:
 
-- [ ] Create `oriterm_core/src/term/handler/tests/mod.rs` as the test module root (declares submodules only; no test bodies — mirrors the `lib.rs` index role from code-hygiene.md §Module Roles).
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_mouse.rs` — mouse-tracking-mode tests (modes 9, 1000, 1002, 1003) and mouse-encoding-mode tests (1005, 1006, 1015). Private-modes content for 09.1 mouse cells lands here.
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_screen.rs` — alt-screen + save-cursor + reverse-video + origin/wrap tests (modes 5, 6, 7, 45, 47, 1047, 1048). 09.1 screen-related cells land here.
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_sync.rs` — mode 2026 core-layer plumbing tests. 09.2 cells land here.
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_theme.rs` — mode 2031 color-scheme-update tests. 09.3 cells land here.
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_keyboard.rs` — DECNKM (66) and DECBKM (67) core-layer flag tests. 09.4 core cells land here.
-- [ ] Create `oriterm_core/src/term/handler/tests/status_reports.rs` — DECRQM + DSR + DA tests. 09.5 DECRQM cross-cutting cells land here.
-- [ ] Distribute the existing 7015 lines of `tests.rs` into the correct submodules by topical concern. This is mechanical re-homing — no test body change. Every existing test keeps the same name and semantics; only its module path changes.
-- [ ] After distribution, the empty `tests.rs` file is DELETED (directory module replaces it).
+- [x] Create `oriterm_core/src/term/handler/tests/mod.rs` as the test module root (declares submodules only; no test bodies — mirrors the `lib.rs` index role from code-hygiene.md §Module Roles). *(done: commit 408a0d8a)*
+- [x] Create `oriterm_core/src/term/handler/tests/private_modes_mouse.rs` — mouse-tracking-mode tests (modes 9, 1000, 1002, 1003) and mouse-encoding-mode tests (1005, 1006, 1015). Private-modes content for 09.1 mouse cells lands here. *(done: commit 408a0d8a)*
+- [x] Create `oriterm_core/src/term/handler/tests/private_modes_screen.rs` — alt-screen + save-cursor + reverse-video + origin/wrap tests (modes 5, 6, 7, 45, 47, 1047, 1048). 09.1 screen-related cells land here. *(done: commit 408a0d8a)*
+- [x] Create `oriterm_core/src/term/handler/tests/private_modes_sync.rs` — mode 2026 core-layer plumbing tests. 09.2 cells land here. *(done: commit 408a0d8a)*
+- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_theme.rs` — mode 2031 color-scheme-update tests. 09.3 cells land here. *(deferred: will be created by 09.3 when it adds content)*
+- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_keyboard.rs` — DECNKM (66) and DECBKM (67) core-layer flag tests. 09.4 core cells land here. *(deferred: will be created by 09.4 when it adds content)*
+- [x] Create `oriterm_core/src/term/handler/tests/status_reports.rs` — DECRQM + DSR + DA tests. 09.5 DECRQM cross-cutting cells land here. *(done: commit 408a0d8a)*
+- [x] Distribute the existing 7015 lines of `tests.rs` into the correct submodules by topical concern. This is mechanical re-homing — no test body change. Every existing test keeps the same name and semantics; only its module path changes. *(done: 12 topical submodules — core, dcs, esc, image, modes, osc, sgr + the 4 plan-named files above + mod.rs)*
+- [x] After distribution, the empty `tests.rs` file is DELETED (directory module replaces it). *(done: commit 408a0d8a)*
 
 **Target file 2:** `oriterm/src/key_encoding/tests.rs` (1801 lines). Same maintainability-driven split pattern:
 
-- [ ] Create `oriterm/src/key_encoding/tests/mod.rs`.
-- [ ] Create `oriterm/src/key_encoding/tests/legacy_backspace.rs` — Backspace / modified Backspace tests. 09.4b cells land here.
-- [ ] Create `oriterm/src/key_encoding/tests/application_keypad.rs` — DECKPAM / DECKPNM / mode 66 integration cells (09.4a integration).
-- [ ] Create `oriterm/src/key_encoding/tests/kitty_precedence.rs` — kitty-mode precedence tests (existing content).
-- [ ] Create `oriterm/src/key_encoding/tests/modifier_matrix.rs` — Alt/Ctrl/Shift/Meta modifier-encoding tests. 09.4b modifier cells land here.
-- [ ] Create `oriterm/src/key_encoding/tests/win32.rs` — Win32 input-mode encoding tests (keeps parity with `oriterm/src/key_encoding/win32.rs`).
-- [ ] Distribute the existing 1801 lines into the correct submodules. Mechanical re-homing only.
+- [x] Create `oriterm/src/key_encoding/tests/mod.rs`. *(done: shared helpers + re-exports + 6 submodule declarations)*
+- [x] Create `oriterm/src/key_encoding/tests/legacy_backspace.rs` — Backspace / modified Backspace tests. 09.4b cells land here. *(done: 2 tests)*
+- [x] Create `oriterm/src/key_encoding/tests/application_keypad.rs` — DECKPAM / DECKPNM / mode 66 integration cells (09.4a integration). *(done: 12 tests)*
+- [x] Create `oriterm/src/key_encoding/tests/kitty_precedence.rs` — kitty-mode precedence tests (existing content). *(done: 86 tests)*
+- [x] Create `oriterm/src/key_encoding/tests/modifier_matrix.rs` — Alt/Ctrl/Shift/Meta modifier-encoding tests. 09.4b modifier cells land here. *(done: 38 tests)*
+- [x] Create `oriterm/src/key_encoding/tests/win32.rs` — Win32 input-mode encoding tests (keeps parity with `oriterm/src/key_encoding/win32.rs`). *(done: 2 tests)*
+- [x] Distribute the existing 1801 lines into the correct submodules. Mechanical re-homing only. *(done: 167 tests total, identical to pre-split baseline; added legacy_core.rs (27 tests) beyond the 5 planned files)*
 
 **Validation for 09.0:**
 
-- [ ] `./build-all.sh` green after each split step (catch compile errors early).
-- [ ] `./test-all.sh` green after the split — identical pass count as before (`diff` of `cargo test -p oriterm_core 2>&1 | grep "test result"` before/after).
-- [ ] Every new `tests/*.rs` file is ≤ the test-file sanity ceiling (tests.rs is exempt from the 500-line limit per code-hygiene.md, but we target ≤ 1500 per split file so future growth has headroom).
-- [ ] `./clippy-all.sh` green — no new warnings from the move.
-- [ ] No inline `#[cfg(test)] mod tests { ... }` introduced (per test-organization.md rule 1).
-- [ ] Import style inside split files follows test-organization.md §Import Style: `super::` for parent-module items, `crate::` for cross-module items, grouped stdlib → external → internal.
+- [x] `./build-all.sh` green after each split step (catch compile errors early).
+- [x] `./test-all.sh` green after the split — identical pass count as before (`diff` of `cargo test -p oriterm_core 2>&1 | grep "test result"` before/after).
+- [x] Every new `tests/*.rs` file is ≤ the test-file sanity ceiling (tests.rs is exempt from the 500-line limit per code-hygiene.md, but we target ≤ 1500 per split file so future growth has headroom). *(largest: kitty_precedence.rs ~750 lines)*
+- [x] `./clippy-all.sh` green — no new warnings from the move.
+- [x] No inline `#[cfg(test)] mod tests { ... }` introduced (per test-organization.md rule 1).
+- [x] Import style inside split files follows test-organization.md §Import Style: `super::` for parent-module items, `crate::` for cross-module items, grouped stdlib → external → internal.
 
 ---
 
@@ -606,10 +606,10 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
 
 Per `.claude/rules/code-hygiene.md` §File Size, `tests.rs` files are EXEMPT from the 500-line limit — 09.0 is a maintainability-driven refactor, not a rule-compliance prerequisite. The checklist below applies ONLY if 09.0 is executed. If 09.0 is skipped (because the added test surface is small enough to land cleanly in the existing files), mark this whole block as N/A with a brief note explaining the judgment.
 
-- [ ] (If 09.0 executed) `oriterm_core/src/term/handler/tests.rs` is DELETED; directory module `oriterm_core/src/term/handler/tests/` is in place
-- [ ] (If 09.0 executed) `oriterm/src/key_encoding/tests.rs` is DELETED; directory module `oriterm/src/key_encoding/tests/` is in place
-- [ ] No new inline `#[cfg(test)] mod tests { ... }` blocks introduced anywhere in the section's changes (test-organization.md rule 1 — applies regardless of 09.0)
-- [ ] No new source file (non-`tests.rs`) exceeds the 500-line limit; `tests.rs` files remain exempt per code-hygiene.md §File Size, but post-09.0 submodule files are kept under ~1500 lines as a maintainability target (not a hard rule)
+- [x] (If 09.0 executed) `oriterm_core/src/term/handler/tests.rs` is DELETED; directory module `oriterm_core/src/term/handler/tests/` is in place *(done: commit 408a0d8a — 12 submodules)*
+- [x] (If 09.0 executed) `oriterm/src/key_encoding/tests.rs` is DELETED; directory module `oriterm/src/key_encoding/tests/` is in place *(done: 7 submodules, 167 tests)*
+- [x] No new inline `#[cfg(test)] mod tests { ... }` blocks introduced anywhere in the section's changes (test-organization.md rule 1 — applies regardless of 09.0)
+- [x] No new source file (non-`tests.rs`) exceeds the 500-line limit; `tests.rs` files remain exempt per code-hygiene.md §File Size, but post-09.0 submodule files are kept under ~1500 lines as a maintainability target (not a hard rule) *(largest split file: kitty_precedence.rs ~750 lines)*
 
 ### Final verification
 
