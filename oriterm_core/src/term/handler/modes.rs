@@ -104,6 +104,9 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::LeftRightMargin => {
                 self.mode.insert(TermMode::LEFT_RIGHT_MARGIN);
             }
+            NamedPrivateMode::ColorSchemeUpdate => {
+                self.mode.insert(TermMode::COLOR_SCHEME_UPDATE);
+            }
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(true);
             }
@@ -183,6 +186,9 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::LeftRightMargin => {
                 self.mode.remove(TermMode::LEFT_RIGHT_MARGIN);
                 self.grid_mut().reset_left_right_margins();
+            }
+            NamedPrivateMode::ColorSchemeUpdate => {
+                self.mode.remove(TermMode::COLOR_SCHEME_UPDATE);
             }
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(false);

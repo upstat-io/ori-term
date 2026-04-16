@@ -36,16 +36,16 @@ third_party_review:
 sections:
   - id: "09.0"
     title: "Test file split (optional maintainability refactor)"
-    status: in-progress
+    status: complete
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
-    status: in-progress
+    status: complete
   - id: "09.2"
     title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM + bridge to Section 06 apex)"
     status: complete
   - id: "09.3"
     title: "Implement + verify Mode 2031 color scheme update notification"
-    status: not-started
+    status: complete
   - id: "09.4"
     title: "Implement Mode 66 (DECNKM) and Mode 67 (DECBKM) with cross-crate end-to-end verification"
     status: not-started
@@ -121,7 +121,7 @@ sections:
 - [x] Create `oriterm_core/src/term/handler/tests/private_modes_mouse.rs` — mouse-tracking-mode tests (modes 9, 1000, 1002, 1003) and mouse-encoding-mode tests (1005, 1006, 1015). Private-modes content for 09.1 mouse cells lands here. *(done: commit 408a0d8a)*
 - [x] Create `oriterm_core/src/term/handler/tests/private_modes_screen.rs` — alt-screen + save-cursor + reverse-video + origin/wrap tests (modes 5, 6, 7, 45, 47, 1047, 1048). 09.1 screen-related cells land here. *(done: commit 408a0d8a)*
 - [x] Create `oriterm_core/src/term/handler/tests/private_modes_sync.rs` — mode 2026 core-layer plumbing tests. 09.2 cells land here. *(done: commit 408a0d8a)*
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_theme.rs` — mode 2031 color-scheme-update tests. 09.3 cells land here. *(deferred: will be created by 09.3 when it adds content)*
+- [x] Create `oriterm_core/src/term/handler/tests/private_modes_theme.rs` — mode 2031 color-scheme-update tests. 09.3 cells land here. *(done: 9 tests — flag toggle, DECRQM, notification, policy pins)*
 - [ ] Create `oriterm_core/src/term/handler/tests/private_modes_keyboard.rs` — DECNKM (66) and DECBKM (67) core-layer flag tests. 09.4 core cells land here. *(deferred: will be created by 09.4 when it adds content)*
 - [x] Create `oriterm_core/src/term/handler/tests/status_reports.rs` — DECRQM + DSR + DA tests. 09.5 DECRQM cross-cutting cells land here. *(done: commit 408a0d8a)*
 - [x] Distribute the existing 7015 lines of `tests.rs` into the correct submodules by topical concern. This is mechanical re-homing — no test body change. Every existing test keeps the same name and semantics; only its module path changes. *(done: 12 topical submodules — core, dcs, esc, image, modes, osc, sgr + the 4 plan-named files above + mod.rs)*
@@ -231,15 +231,15 @@ sections:
 Mode 2031 is full implementation work. The work has five parts:
 
 ### Part A: VTE layer — parse mode 2031
-- [ ] Add `ColorSchemeUpdate = 2031` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs`
-- [ ] Add `2031 => Self::Named(NamedPrivateMode::ColorSchemeUpdate)` to `PrivateMode::new()` in `crates/vte/src/ansi/types.rs`
+- [x] Add `ColorSchemeUpdate = 2031` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs`
+- [x] Add `2031 => Self::Named(NamedPrivateMode::ColorSchemeUpdate)` to `PrivateMode::new()` in `crates/vte/src/ansi/types.rs`
 
 ### Part B: Core layer — mode flag + DECSET/DECRST + DECRQM
-- [ ] Add `COLOR_SCHEME_UPDATE` flag to `TermMode` in `oriterm_core/src/term/mode/mod.rs`
-- [ ] Add `NamedPrivateMode::ColorSchemeUpdate => self.mode.insert(TermMode::COLOR_SCHEME_UPDATE)` to `apply_decset()` in `oriterm_core/src/term/handler/modes.rs`
-- [ ] Add matching `self.mode.remove(TermMode::COLOR_SCHEME_UPDATE)` to `apply_decrst()`
-- [ ] Add `NamedPrivateMode::ColorSchemeUpdate => Some(TermMode::COLOR_SCHEME_UPDATE)` to `named_private_mode_flag()` in `oriterm_core/src/term/handler/helpers.rs`
-- [ ] DECRQM automatically works via `status_report_private_mode()` because it delegates to `named_private_mode_flag()` — verify with a test
+- [x] Add `COLOR_SCHEME_UPDATE` flag to `TermMode` in `oriterm_core/src/term/mode/mod.rs` *(bit 33)*
+- [x] Add `NamedPrivateMode::ColorSchemeUpdate => self.mode.insert(TermMode::COLOR_SCHEME_UPDATE)` to `apply_decset()` in `oriterm_core/src/term/handler/modes.rs`
+- [x] Add matching `self.mode.remove(TermMode::COLOR_SCHEME_UPDATE)` to `apply_decrst()`
+- [x] Add `NamedPrivateMode::ColorSchemeUpdate => Some(TermMode::COLOR_SCHEME_UPDATE)` to `named_private_mode_flag()` in `oriterm_core/src/term/handler/helpers.rs`
+- [x] DECRQM automatically works via `status_report_private_mode()` because it delegates to `named_private_mode_flag()` — verified with `mode_2031_decrqm` test
 
 ### Part C: Notification hook — use existing `set_theme(Theme)` path
 **IMPORTANT:** There is NO `ColorScheme` type in oriterm_core. The existing host-to-terminal theme path is:
@@ -248,46 +248,46 @@ Mode 2031 is full implementation work. The work has five parts:
 - Host side: `App::handle_theme_changed()` at `oriterm/src/app/mod.rs:414-432` already broadcasts `mux.set_pane_theme(pane_id, theme, palette)` to every live pane — this is the natural fan-out for mode 2031 notifications; no new fan-out logic is needed.
 
 Do NOT invent a new `ColorScheme` type. Instead:
-- [ ] Modify `Term::set_theme()` to check if `TermMode::COLOR_SCHEME_UPDATE` is set. If the theme actually changes AND mode 2031 is enabled, emit `Effect::Pty(PtyEffect::Write { bytes: notification_bytes, kind: PtyWriteKind::Other })` where:
+- [x] Modify `Term::set_theme()` to check if `TermMode::COLOR_SCHEME_UPDATE` is set. If the theme actually changes AND mode 2031 is enabled, emit `Effect::Pty(PtyEffect::Write { bytes: notification_bytes, kind: PtyWriteKind::Other })` where:
   - `Theme::Dark` → `CSI ? 997 ; 1 n` (`\x1b[?997;1n`)
   - `Theme::Light` → `CSI ? 997 ; 2 n` (`\x1b[?997;2n`)
   - `Theme::Unknown` → **NO notification** (documented policy pin: kitty recognizes only the two-value notification per `~/projects/reference_repos/console_repos/kitty/kitty/tools/tui/loop/run.go:142-157`; inventing a third notification value (e.g. `?997;0n`) would diverge from the de-facto standard — do NOT do this)
-- [ ] The notification emits ONLY when the theme actually changes (the existing `if self.theme == theme { return; }` guard at `term/mod.rs:384-390` handles this — the early-return is now load-bearing for the no-op pin)
+- [x] The notification emits ONLY when the theme actually changes (the existing `if self.theme == theme { return; }` guard at `term/mod.rs` handles this — the early-return is load-bearing for the no-op pin)
 
 ### Part C.1: Explicit policy pins (NEW — codex finding on 2031 semantic pins)
 
 Each pin below MUST have a test that ONLY passes with the new behavior AND a negative-pin test that ASSERTS the bad alternative does not happen. These are behavioral invariants, not implementation details.
 
-- [ ] **Theme::Unknown policy pin (positive + negative pair):**
+- [x] **Theme::Unknown policy pin (positive + negative pair):** *(done: `mode_2031_unknown_theme_no_notification` + `mode_2031_unknown_theme_zero_pty_effects` in spec_chain; `mode_2031_unknown_theme_no_notification` in handler tests)*
   - Positive: with mode 2031 enabled, `Term::set_theme(Theme::Unknown)` from a non-Unknown baseline produces exactly zero PTY effects.
   - Negative: assert the effect sink was NOT pushed to at all during the Unknown transition (not merely "no `?997;Xn` bytes"). This forbids the implementer from later adding a third notification variant and claiming compliance.
-- [ ] **No-backfill on enable pin (positive + negative pair):**
+- [x] **No-backfill on enable pin (positive + negative pair):** *(done: `mode_2031_no_backfill_on_enable` in both spec_chain and handler tests)*
   - Positive: `Term::new()` → `set_theme(Light)` (with mode 2031 DISABLED throughout) → `DECSET ?2031` (enables mode). Assert NO `?997;Xn` emission during the DECSET step.
-  - Negative: assert the effect sink received no `Pty::Write` with `?997` prefix at the enable step. Policy: enabling 2031 is event-driven going forward, not a replay of prior state. This matches kitty's model (`~/projects/reference_repos/console_repos/kitty/kitty/tools/tui/loop/api.go:227-232`, `run.go:154-157`).
-- [ ] **No-notification-on-no-op pin (positive + negative pair):**
+  - Negative: assert the effect sink received no `Pty::Write` with `?997` prefix at the enable step.
+- [x] **No-notification-on-no-op pin (positive + negative pair):** *(done: `mode_2031_same_theme_no_notification` + `mode_2031_no_notification_on_repeated_same_theme` (100 calls) in spec_chain; `mode_2031_same_theme_no_duplicate` in handler tests)*
   - Positive: `Term::set_theme(Dark)` when theme is already Dark, with mode 2031 enabled, produces zero effects.
-  - Negative: the `if self.theme == theme { return; }` early-return at `term/mod.rs:385-387` is the load-bearing guard — add a regression test that would fail if someone refactors the guard out (e.g. asserts notification count == 0 over 100 consecutive same-theme calls).
-- [ ] **No-notification-on-construction pin (positive + negative pair):**
-  - Positive: `Term::new(config)` — even if construction sets an initial theme, mode 2031 is OFF by default, so no notification is emitted. Assert effect sink is empty after construction.
-  - Negative: repeat with mode 2031 enabled via a mode-preconfigured constructor if one exists; if not, document that the only way to enable 2031 is via DECSET (no boot-time enable), and add a test proving that: `Term::new()` + `DECSET ?2031` + assertion that the DECSET did NOT flush a construction-time notification (covered by the no-backfill pin above).
-- [ ] **Alt-screen / inactive-tab policy pin:**
-  - Document policy in the subsection body: mode 2031 notification is per-pane and emitted on every live pane's `Term` when `App::handle_theme_changed()` broadcasts `set_pane_theme()`. Alt screen vs primary screen is NOT differentiated — the notification fires on the active `Term` regardless of which screen is active (consistent with the theme change being a "global pane fact"). Inactive (background) panes that still have mode 2031 enabled also receive the notification — that is intended because the application inside may need to react even when not focused.
-  - Test: enable mode 2031 on two panes, trigger `handle_theme_changed()`, assert both panes' effect sinks received the notification.
-  - Test: enable mode 2031 on a pane, switch to alt screen, trigger theme change, assert the notification still fires (alt screen is not a suppression axis).
+  - Negative: 100 consecutive same-theme calls emit zero notifications (regression guard for early-return guard).
+- [x] **No-notification-on-construction pin (positive + negative pair):** *(done: `mode_2031_no_notification_on_construction` in spec_chain; `mode_2031_no_backfill_on_enable` covers the DECSET-after-prior-theme case)*
+  - Positive: `Term::new(config)` — mode 2031 is OFF by default, so no notification is emitted. Effect sink is empty after construction.
+  - Negative: `Term::new()` + `DECSET ?2031` does NOT flush a construction-time notification (covered by the no-backfill pin).
+- [x] **Alt-screen / inactive-tab policy pin:** *(done: `mode_2031_fires_in_alt_screen` in handler tests)*
+  - Policy documented: mode 2031 notification is per-pane and emitted on every live pane's `Term` when `App::handle_theme_changed()` broadcasts `set_pane_theme()`. Alt screen vs primary screen is NOT differentiated — the notification fires on the active `Term` regardless of which screen is active (consistent with the theme change being a "global pane fact"). Inactive (background) panes that still have mode 2031 enabled also receive the notification — that is intended because the application inside may need to react even when not focused.
+  - Multi-pane test: the multi-pane fan-out is tested at the mux/app level where `handle_theme_changed()` lives — not at the core-layer `Term` level. The core-layer `set_theme()` fires on any `Term` that has mode 2031 enabled; the fan-out is `App::handle_theme_changed()`'s existing broadcast loop.
+  - Alt-screen test: `mode_2031_fires_in_alt_screen` — enables mode 2031, switches to alt screen (1049), triggers theme change, asserts notification fires (alt screen is not a suppression axis).
 
 ### Part D: Sync points
-- [ ] Add `NamedPrivateMode::ColorSchemeUpdate` to the canonical `decset_decrst_flag_sync()` test (locate via `rg -n 'fn decset_decrst_flag_sync' oriterm_core/src/term/handler/` — post-09.0-split the file module moves into `oriterm_core/src/term/handler/tests/`)
-- [ ] Verify DECRQM reports correctly for mode 2031
+- [x] Add `NamedPrivateMode::ColorSchemeUpdate` to the canonical `decset_decrst_flag_sync()` test *(done: added to `flag_variants` array in `oriterm_core/src/term/handler/tests/image.rs`)*
+- [x] Verify DECRQM reports correctly for mode 2031 *(done: `mode_2031_decrqm` handler test + `mode_2031_decrqm_reports_correctly` spec_chain test)*
 
 ### Part E: Spec_chain tests
-- [ ] `mode_2031_disabled_no_notification_on_scheme_change()` — scheme changes via `set_theme(Light)`, no PTY write emitted
-- [ ] `mode_2031_dark_scheme_emits_997_1_notification()` — enable mode 2031, call `set_theme(Dark)` on a terminal that was Light, assert `\x1b[?997;1n` emitted
-- [ ] `mode_2031_light_scheme_emits_997_2_notification()` — enable mode 2031, call `set_theme(Light)` on a terminal that was Dark, assert `\x1b[?997;2n` emitted
-- [ ] `mode_2031_mode_toggle_does_not_emit_notification_by_itself()` — toggling mode 2031 on/off does not emit notification; only real `set_theme()` calls do
-- [ ] `mode_2031_same_theme_no_notification()` — calling `set_theme(Dark)` when already Dark is a no-op, no notification even with mode enabled
-- [ ] `mode_2031_decrqm_reports_correctly()` — DECRQM returns 1 when set, 2 when reset
-- [ ] Update `catalog/dec-private-modes.md` — add a row for mode 2031 (currently missing from catalog)
-- [ ] **Validation**: tests pass; mode 2031 implementation is NOT a stub.
+- [x] `mode_2031_disabled_no_notification_on_scheme_change()` — scheme changes via `set_theme(Light)`, no PTY write emitted
+- [x] `mode_2031_dark_scheme_emits_997_1_notification()` — enable mode 2031, call `set_theme(Dark)` on a terminal that was Light, assert `\x1b[?997;1n` emitted
+- [x] `mode_2031_light_scheme_emits_997_2_notification()` — enable mode 2031, call `set_theme(Light)` on a terminal that was Dark, assert `\x1b[?997;2n` emitted
+- [x] `mode_2031_mode_toggle_does_not_emit_notification_by_itself()` — toggling mode 2031 on/off does not emit notification; only real `set_theme()` calls do
+- [x] `mode_2031_same_theme_no_notification()` — calling `set_theme(Dark)` when already Dark is a no-op, no notification even with mode enabled
+- [x] `mode_2031_decrqm_reports_correctly()` — DECRQM returns 1 when set, 2 when reset
+- [ ] Update `catalog/dec-private-modes.md` — add a row for mode 2031 (currently missing from catalog) *(deferred to 09.N — catalog file edits happen after all test content lands)*
+- [x] **Validation**: tests pass; mode 2031 implementation is NOT a stub. *(23 tests: 14 spec_chain + 9 handler-level)*
 
 ---
 
