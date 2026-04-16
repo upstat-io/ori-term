@@ -39,7 +39,7 @@ sections:
     status: in-progress
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
-    status: complete
+    status: in-progress
   - id: "09.2"
     title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM + bridge to Section 06 apex)"
     status: not-started
