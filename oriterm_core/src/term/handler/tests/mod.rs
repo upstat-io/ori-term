@@ -19,6 +19,7 @@ mod esc;
 mod image;
 mod modes;
 mod osc;
+mod private_modes_keyboard;
 mod private_modes_mouse;
 mod private_modes_screen;
 mod private_modes_sync;

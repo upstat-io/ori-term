@@ -25,6 +25,10 @@ pub(super) fn app_keypad_mode() -> TermMode {
     TermMode::default() | TermMode::APP_KEYPAD
 }
 
+pub(super) fn decbkm_mode() -> TermMode {
+    TermMode::default() | TermMode::DECBKM
+}
+
 pub(super) fn win32_input_mode() -> TermMode {
     TermMode::default() | TermMode::WIN32_INPUT
 }

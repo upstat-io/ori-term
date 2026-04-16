@@ -2264,3 +2264,76 @@ fn bridge_mode_2026_reset_clears_mode_cache() {
         "SYNC_UPDATE must be cleared from mode_cache after DECRST ?2026"
     );
 }
+
+// ── DECBKM (mode 67) bridge cells ──────────────────────────────────
+
+/// Bridge cell: `CSI ? 67 h` propagates `TermMode::DECBKM` into `mode_cache`.
+///
+/// Section 09.4b: proves the parser → `post_parse_housekeeping()` →
+/// `mode_cache` SSOT contract is live for mode 67. Without this bridge,
+/// the key encoder on the main thread would never see DECBKM.
+#[test]
+fn bridge_decbkm_propagates_to_mode_cache() {
+    let mut t = make_sync_thread();
+
+    let initial_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        initial_bits & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be absent from mode_cache before DECSET"
+    );
+
+    t.handle_bytes(b"\x1b[?67h");
+
+    let updated_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_ne!(
+        updated_bits & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be present in mode_cache after DECSET ?67"
+    );
+}
+
+/// Bridge cell: `CSI ? 67 l` clears `TermMode::DECBKM` from `mode_cache`.
+#[test]
+fn bridge_decbkm_reset_clears_mode_cache() {
+    let mut t = make_sync_thread();
+
+    t.handle_bytes(b"\x1b[?67h");
+    assert_ne!(
+        t.mode_cache.load(Ordering::Acquire) & TermMode::DECBKM.bits(),
+        0,
+        "precondition: DECBKM must be set"
+    );
+
+    t.handle_bytes(b"\x1b[?67l");
+
+    let final_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        final_bits & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be cleared from mode_cache after DECRST ?67"
+    );
+}
+
+/// Bridge cell: `CSI ? 66 h` propagates `TermMode::APP_KEYPAD` into
+/// `mode_cache` (DECNKM shares the same flag as ESC =/ESC >).
+#[test]
+fn bridge_decnkm_propagates_to_mode_cache() {
+    let mut t = make_sync_thread();
+
+    let initial_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        initial_bits & TermMode::APP_KEYPAD.bits(),
+        0,
+        "APP_KEYPAD must be absent from mode_cache before DECSET ?66"
+    );
+
+    t.handle_bytes(b"\x1b[?66h");
+
+    let updated_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_ne!(
+        updated_bits & TermMode::APP_KEYPAD.bits(),
+        0,
+        "APP_KEYPAD must be present in mode_cache after DECSET ?66"
+    );
+}

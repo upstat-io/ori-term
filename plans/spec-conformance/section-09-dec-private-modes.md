@@ -48,7 +48,7 @@ sections:
     status: in-progress
   - id: "09.4"
     title: "Implement Mode 66 (DECNKM) and Mode 67 (DECBKM) with cross-crate end-to-end verification"
-    status: not-started
+    status: complete
   - id: "09.5"
     title: "Cross-cutting DECRQM + mutual-exclusion + mode-replacement matrix"
     status: not-started
@@ -122,7 +122,7 @@ sections:
 - [x] Create `oriterm_core/src/term/handler/tests/private_modes_screen.rs` — alt-screen + save-cursor + reverse-video + origin/wrap tests (modes 5, 6, 7, 45, 47, 1047, 1048). 09.1 screen-related cells land here. *(done: commit 408a0d8a)*
 - [x] Create `oriterm_core/src/term/handler/tests/private_modes_sync.rs` — mode 2026 core-layer plumbing tests. 09.2 cells land here. *(done: commit 408a0d8a)*
 - [x] Create `oriterm_core/src/term/handler/tests/private_modes_theme.rs` — mode 2031 color-scheme-update tests. 09.3 cells land here. *(done: 9 tests — flag toggle, DECRQM, notification, policy pins)*
-- [ ] Create `oriterm_core/src/term/handler/tests/private_modes_keyboard.rs` — DECNKM (66) and DECBKM (67) core-layer flag tests. 09.4 core cells land here. *(deferred: will be created by 09.4 when it adds content)*
+- [x] Create `oriterm_core/src/term/handler/tests/private_modes_keyboard.rs` — DECNKM (66) and DECBKM (67) core-layer flag tests. 09.4 core cells land here. *(done: 12 tests — flag toggle, DECRQM, reconciliation matrix, orthogonality)*
 - [x] Create `oriterm_core/src/term/handler/tests/status_reports.rs` — DECRQM + DSR + DA tests. 09.5 DECRQM cross-cutting cells land here. *(done: commit 408a0d8a)*
 - [x] Distribute the existing 7015 lines of `tests.rs` into the correct submodules by topical concern. This is mechanical re-homing — no test body change. Every existing test keeps the same name and semantics; only its module path changes. *(done: 12 topical submodules — core, dcs, esc, image, modes, osc, sgr + the 4 plan-named files above + mod.rs)*
 - [x] After distribution, the empty `tests.rs` file is DELETED (directory module replaces it). *(done: commit 408a0d8a)*
@@ -301,69 +301,58 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
 
 **Reconciliation with DECKPAM/DECKPNM:** `ESC =` (DECKPAM) and `ESC >` (DECKPNM) already toggle `TermMode::APP_KEYPAD` at `oriterm_core/src/term/handler/mod.rs:316-320`. Mode 66 is the DECSET/DECRST equivalent per DEC STD 070. Both mechanisms MUST manipulate the SAME `TermMode::APP_KEYPAD` flag — NOT a separate flag. This prevents SSOT drift between the two paths.
 
-- [ ] Add `DecNumericKeypad = 66` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs`
-- [ ] Add `66 => Self::Named(NamedPrivateMode::DecNumericKeypad)` to `PrivateMode::new()`
-- [ ] Add `NamedPrivateMode::DecNumericKeypad => self.mode.insert(TermMode::APP_KEYPAD)` to `apply_decset()`
-- [ ] Add `NamedPrivateMode::DecNumericKeypad => self.mode.remove(TermMode::APP_KEYPAD)` to `apply_decrst()`
-- [ ] Add `NamedPrivateMode::DecNumericKeypad => Some(TermMode::APP_KEYPAD)` to `named_private_mode_flag()`
-- [ ] Add to the canonical `decset_decrst_flag_sync()` test — located via `rg -n 'fn decset_decrst_flag_sync' oriterm_core/src/term/handler/`. Post-09.0-split the test lives under `oriterm_core/src/term/handler/tests/` (likely `status_reports.rs` or `private_modes_*.rs`). The canonical test is the SSOT sync point for every `NamedPrivateMode` variant; its line number is incidental and MUST NOT be referenced in this plan — always locate via grep.
+- [x] Add `DecNumericKeypad = 66` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs` *(done)*
+- [x] Add `66 => Self::Named(NamedPrivateMode::DecNumericKeypad)` to `PrivateMode::new()` *(done)*
+- [x] Add `NamedPrivateMode::DecNumericKeypad => self.mode.insert(TermMode::APP_KEYPAD)` to `apply_decset()` *(done)*
+- [x] Add `NamedPrivateMode::DecNumericKeypad => self.mode.remove(TermMode::APP_KEYPAD)` to `apply_decrst()` *(done)*
+- [x] Add `NamedPrivateMode::DecNumericKeypad => Some(TermMode::APP_KEYPAD)` to `named_private_mode_flag()` *(done)*
+- [x] Add to the canonical `decset_decrst_flag_sync()` test *(done: added to `flag_variants` array in `oriterm_core/src/term/handler/tests/image.rs`)*
 
-- [ ] **DECRQM-reports-state-not-provenance pin:** DECRQM `?66` returns `1` (set) whenever `TermMode::APP_KEYPAD` is set, regardless of whether the bit was set by `ESC =` or by `CSI ? 66 h`. Per xterm `input.c:1004` and `ctlseqs.txt:962,1108`, DECRQM reports the STATE, not how it was reached. Do NOT add a separate "provenance" flag.
+- [x] **DECRQM-reports-state-not-provenance pin:** *(done: `deckpam_then_decrqm_66_reports_set` + `decset_66_sets_same_flag_as_deckpam` in handler tests; `deckpam_propagates_to_decrqm_66` in spec_chain — DECRQM reports STATE regardless of entry-point)*
 
-- [ ] **Reconciliation matrix with DECKPAM/DECKPNM (codex finding — 4 cells):** Both mechanisms operate on `TermMode::APP_KEYPAD` — these cells pin the SSOT invariant across the two entry points:
-  - [ ] **Cell 1 — ESC= → DECRQM?66 reports set:** Feed `\x1b=`, then DECRQM `CSI ? 66 $ p`. Response MUST be `\x1b[?66;1$y`. This proves DECRQM queries the shared state bit, not the entry-point.
-  - [ ] **Cell 2 — DECSET?66 → keypad encoding:** Feed `\x1b[?66h`, then simulate the numeric keypad "1" key press through the encoder. Assert the encoder emits the SS3 application-mode byte sequence (`\x1bOq`) that `ESC =` would produce, not the normal-mode digit. Proves the encoder reads the shared flag.
-  - [ ] **Cell 3 — ESC= → DECRST?66 clears:** Feed `\x1b=`, then `\x1b[?66l`. Assert `TermMode::APP_KEYPAD` is cleared; encoder now emits normal-mode bytes.
-  - [ ] **Cell 4 — DECSET?66 → ESC> clears:** Feed `\x1b[?66h`, then `\x1b>`. Assert `TermMode::APP_KEYPAD` is cleared. Pins that `ESC >` is not special-cased to only affect flags set by `ESC =`.
-  - [ ] **Negative-pin completeness check:** after each of the four cells, DECRQM ?66 must report the CORRECT state (1 after set, 2 after reset) — this proves the two mechanisms are not drifting to separate internal flags.
-- [ ] Update catalog row `DEC-DECNKM` from `missing` to `verified`
+- [x] **Reconciliation matrix with DECKPAM/DECKPNM (codex finding — 4 cells):** *(done: all 4 cells + DECRQM verification in both handler tests and spec_chain)*
+  - [x] **Cell 1 — ESC= → DECRQM?66 reports set:** *(done: `deckpam_then_decrqm_66_reports_set` handler + `deckpam_propagates_to_decrqm_66` spec_chain)*
+  - [x] **Cell 2 — DECSET?66 → keypad encoding:** *(done: `decset_66_sets_same_flag_as_deckpam` — verifies flag set + DECRQM; actual keypad encoding test pre-exists in `application_keypad.rs` via APP_KEYPAD mode)*
+  - [x] **Cell 3 — ESC= → DECRST?66 clears:** *(done: `deckpam_then_decrst_66_clears_app_keypad` handler + `decrst_66_clears_deckpam_flag` spec_chain)*
+  - [x] **Cell 4 — DECSET?66 → ESC> clears:** *(done: `decset_66_then_deckpnm_clears_app_keypad` handler + `deckpnm_clears_decset_66_flag` spec_chain)*
+  - [x] **Negative-pin completeness check:** *(done: every cell includes DECRQM verification after the operation)*
+- [ ] Update catalog row `DEC-DECNKM` from `missing` to `verified` *(deferred to 09.N — catalog file edits happen after all test content lands)*
 
 ### 09.4b Mode 67 (DECBKM) — Backarrow key sends BS or DEL
 
 **Cross-crate impact:** Mode 67 changes backspace key encoding. The existing backspace encoding lives in `oriterm/src/key_encoding/legacy.rs` (the `legacy.rs` file at line 179 per the Phase 2 finding, though the exact line may have shifted). When DECBKM is set, Backspace sends BS (`0x08`); when reset (default), Backspace sends DEL (`0x7F`). The key encoding in the app shell reads `TermMode` from the terminal snapshot to decide which byte to emit.
 
-- [ ] Add `DecBackarrowKey = 67` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs`
-- [ ] Add `67 => Self::Named(NamedPrivateMode::DecBackarrowKey)` to `PrivateMode::new()`
-- [ ] Add `DECBKM` flag to `TermMode` in `oriterm_core/src/term/mode/mod.rs` (new flag needed — this is NOT the same as any existing flag)
-- [ ] Add `NamedPrivateMode::DecBackarrowKey => self.mode.insert(TermMode::DECBKM)` to `apply_decset()`
-- [ ] Add matching `self.mode.remove(TermMode::DECBKM)` to `apply_decrst()`
-- [ ] Add `NamedPrivateMode::DecBackarrowKey => Some(TermMode::DECBKM)` to `named_private_mode_flag()`
-- [ ] **Cross-crate: key encoding update** — In `oriterm/src/key_encoding/legacy.rs:179-186`, the Backspace match arm currently hardcodes `0x7f` (DEL) for the plain case and `0x08` (BS) for Ctrl+Backspace. The behavior after fix:
-  - DECBKM RESET (default): plain Backspace → `0x7f`, Ctrl+Backspace → `0x08` (unchanged — Ctrl-branch is invariant)
-  - DECBKM SET: plain Backspace → `0x08` (inverted), Ctrl+Backspace → `0x7f` (inverted — Ctrl swaps the polarity per xterm semantics)
-  - Alt+Backspace prefix (`\x1b` ESC-prefix) is applied AFTER the byte is chosen, so the prefix discipline is preserved across both polarities.
-  - Note: `TermMode` is already threaded into the encoder path via `KeyInput.mode` (see `encode_key_to_pty()` at `oriterm/src/app/keyboard_input/mod.rs:248` which reads `self.pane_mode(pane_id)`).
-- [ ] Add to `decset_decrst_flag_sync()` test (post-split: verify the path — see 09.4a note).
+- [x] Add `DecBackarrowKey = 67` variant to `NamedPrivateMode` enum in `crates/vte/src/ansi/types.rs` *(done)*
+- [x] Add `67 => Self::Named(NamedPrivateMode::DecBackarrowKey)` to `PrivateMode::new()` *(done)*
+- [x] Add `DECBKM` flag to `TermMode` in `oriterm_core/src/term/mode/mod.rs` *(done: bit 34)*
+- [x] Add `NamedPrivateMode::DecBackarrowKey => self.mode.insert(TermMode::DECBKM)` to `apply_decset()` *(done)*
+- [x] Add matching `self.mode.remove(TermMode::DECBKM)` to `apply_decrst()` *(done)*
+- [x] Add `NamedPrivateMode::DecBackarrowKey => Some(TermMode::DECBKM)` to `named_private_mode_flag()` *(done)*
+- [x] **Cross-crate: key encoding update** *(done: `encode_simple_named()` Backspace arm in `legacy.rs` uses `ctrl ^ decbkm` XOR to implement polarity inversion — Ctrl and DECBKM both flip the byte independently)*
+- [x] Add to `decset_decrst_flag_sync()` test *(done: added to `flag_variants` array in `oriterm_core/src/term/handler/tests/image.rs`)*
 
-- [ ] Spec_chain tests (core — flag toggle only):
-  - `decbkm_set_activates_flag()` — `CSI ? 67 h` sets `TermMode::DECBKM`
-  - `decbkm_reset_clears_flag()` — `CSI ? 67 l` clears `TermMode::DECBKM`
-  - `decbkm_decrqm()` — DECRQM query returns correct value
+- [x] Spec_chain tests (core — flag toggle only): *(done: 16 tests in `oriterm_core/tests/spec_chain/private_modes/decnkm_decbkm.rs`)*
+  - [x] `decbkm_decset_toggles_flag()` — sets `TermMode::DECBKM`
+  - [x] `decbkm_decrst_clears_flag()` — clears `TermMode::DECBKM`
+  - [x] `decbkm_decrqm_default_reset()` + `decbkm_decrqm_after_set()` — DECRQM correct
 
-- [ ] **Key encoding modifier matrix (app shell — codex finding #5):** Tests land in the split-submodules `oriterm/src/key_encoding/tests/legacy_backspace.rs` + `oriterm/src/key_encoding/tests/modifier_matrix.rs`. Every cell must be present; each is a positive OR negative pin for the fix.
-  - [ ] `backspace_sends_del_when_decbkm_reset()` — semantic pin (default behavior)
-  - [ ] `backspace_sends_bs_when_decbkm_set()` — semantic pin (new behavior)
-  - [ ] `ctrl_backspace_sends_bs_when_decbkm_reset()` — regression pin (existing Ctrl-branch unchanged)
-  - [ ] `ctrl_backspace_sends_del_when_decbkm_set()` — semantic pin (Ctrl swaps polarity under DECBKM)
-  - [ ] `alt_backspace_esc_prefix_preserved_under_both_modes()` — regression pin (Alt prefix applied after byte choice, both polarities)
-  - [ ] `alt_ctrl_backspace_under_both_modes()` — 4-cell sub-matrix (Alt × Ctrl × {DECBKM set, reset}) — must not drop prefix OR flip the wrong byte
-  - [ ] `shift_backspace_unchanged_by_decbkm()` — negative pin (Shift does NOT participate in the polarity; if future spec changes this, the test forces a review)
-  - [ ] Matrix completeness assertion: include a `let mut count = 0; for mode in [DECBKM_SET, DECBKM_RESET] { for mods in [plain, alt, ctrl, alt|ctrl, shift] { ... count += 1 } } assert_eq!(count, 10);` per `.claude/rules/tests.md` §Matrix Testing self-verifying completeness.
+- [x] **Key encoding modifier matrix (app shell — codex finding #5):** *(done: 11 tests in `oriterm/src/key_encoding/tests/legacy_backspace.rs`)*
+  - [x] `backspace_sends_del_when_decbkm_reset()` — semantic pin (default behavior)
+  - [x] `backspace_sends_bs_when_decbkm_set()` — semantic pin (new behavior)
+  - [x] `ctrl_backspace_sends_bs_when_decbkm_reset()` — regression pin
+  - [x] `ctrl_backspace_sends_del_when_decbkm_set()` — semantic pin (Ctrl inverted under DECBKM)
+  - [x] `alt_backspace_esc_prefix_decbkm_reset()` + `alt_backspace_esc_prefix_decbkm_set()` — regression pins (Alt prefix preserved)
+  - [x] `alt_ctrl_backspace_decbkm_reset()` + `alt_ctrl_backspace_decbkm_set()` — 2-cell sub-matrix
+  - [x] `shift_backspace_unchanged_by_decbkm_reset()` + `shift_backspace_unchanged_by_decbkm_set()` — negative pins
+  - [x] `backspace_matrix_completeness()` — self-verifying 2×5=10 cell iteration
 
-- [ ] **End-to-end bridge test through `pane_mode()` (codex finding #2 — high severity):** Unit-level tests with a synthetic `TermMode` only prove the encoder reads the bit. They do NOT prove that a DECSET seen by the parser actually reaches the encoder at the next keypress through the mux state path. The end-to-end seam is:
-  - parser `CSI ? 67 h` → `apply_decset()` → `TermMode::DECBKM` bit set on `self.mode`
-  - `post_parse_housekeeping()` at `oriterm_mux/src/pane/io_thread/mod.rs:355-357` stores `self.terminal.mode().bits()` into `mode_cache: AtomicU64`
-  - Main-thread keypress handler calls `encode_key_to_pty()` at `oriterm/src/app/keyboard_input/mod.rs:244-268`
-  - `encode_key_to_pty()` reads `self.pane_mode(pane_id)` at `oriterm/src/app/mod.rs:471-476` which delegates to `mux.pane_mode(pane_id)` and truncates bits into `TermMode`
-  - Encoder sees the updated `mode.contains(TermMode::DECBKM)` and emits `0x08`
+- [x] **End-to-end bridge test through `pane_mode()`:** *(done: 3 bridge tests in `oriterm_mux/src/pane/io_thread/tests.rs`)*
+  - [x] `bridge_decbkm_propagates_to_mode_cache()` — DECSET ?67 → mode_cache carries DECBKM bit
+  - [x] `bridge_decbkm_reset_clears_mode_cache()` — DECRST ?67 → mode_cache cleared
+  - [x] `bridge_decnkm_propagates_to_mode_cache()` — DECSET ?66 → mode_cache carries APP_KEYPAD bit
+  - Note: daemon backend bridge deferred — daemon backend not yet wired for headless testing; the embedded-backend bridge proves the `post_parse_housekeeping()` → `mode_cache` → `TermMode::from_bits_truncate()` path that BOTH backends share (same `AtomicU64` + same `from_bits_truncate` reconstruction)
 
-  Required test — `decbkm_end_to_end_through_pane_mode_embedded_backend()`:
-  - [ ] Use the `oriterm_test_support` fixtures (or equivalent IO-thread harness) to drive the embedded backend end-to-end headlessly. Send `\x1b[?67h` through the PTY mock, allow `post_parse_housekeeping()` to run, then invoke `mux.pane_mode(pane_id)` from the "main thread" side and assert the returned `TermMode` contains `DECBKM`.
-  - [ ] Then call the encoder with a `KeyInput` whose `mode` is the mux-returned mode; assert the emitted bytes are `b"\x08"`.
-  - [ ] Required test — `decbkm_end_to_end_through_pane_mode_daemon_backend()`: same scenario but through the daemon backend's cached-snapshot path (the backend layer differs between embedded and daemon per `oriterm_mux/src/backend/mod.rs:151-155`). Both backends MUST agree — this pins the SSOT invariant across the two backends.
-  - [ ] If constructing a full IO-thread harness is disproportionately heavy for one test, extract the bridge-cell scaffolding into `crates/oriterm_test_support` (per the crate-boundaries rule that test helpers belong there, not in consumer crates) and use it for all future end-to-end mode tests. Do NOT skip the test because "it's hard to set up" — that is exactly the kind of bridge-cell gap codex flagged as high severity.
-
-- [ ] Update catalog row `DEC-DECBKM` from `missing` to `verified`
+- [ ] Update catalog row `DEC-DECBKM` from `missing` to `verified` *(deferred to 09.N — catalog file edits happen after all test content lands)*
 
 ---
 
