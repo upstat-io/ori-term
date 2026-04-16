@@ -479,7 +479,7 @@ fn cleanup_closed_pane_with_io_thread() {
 /// `CSI ? 67 h`. Proves the full path: VTE parser -> `post_parse_housekeeping()`
 /// -> `mode_cache` -> `Pane::mode()` -> `EmbeddedMux::pane_mode()`.
 ///
-/// Closes the test gap identified by `[TPR-09-001-codex]` — io_thread bridge
+/// Closes the test gap identified by `` — io_thread bridge
 /// tests stopped at `mode_cache`; this test verifies the downstream consumer.
 ///
 /// Uses `printf` to emit the escape sequence from the shell process to the
