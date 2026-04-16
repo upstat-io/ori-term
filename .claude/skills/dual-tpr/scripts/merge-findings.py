@@ -44,16 +44,20 @@ SEVERITY_ORDER = {"critical": 4, "high": 3, "major": 2, "medium": 2, "minor": 1,
 
 
 def load_envelope(path):
-    """Load an envelope file, returning empty findings if missing or invalid."""
+    """Load an envelope file, returning empty findings if missing.
+
+    If the file exists but is corrupt (invalid JSON, I/O error), raise
+    immediately — swallowing the error would silently degrade a dual-source
+    review into single-agent mode. The setup contract
+    (step-1-round-setup.md:522) treats a missing file as valid ONLY when
+    a reviewer was intentionally skipped by the circuit breaker.
+    """
     if not path or not os.path.isfile(path):
         return {"findings": [], "no_findings": True, "_skipped": True}
-    try:
-        with open(path) as f:
-            env = json.load(f)
-        env["_skipped"] = False
-        return env
-    except (json.JSONDecodeError, OSError):
-        return {"findings": [], "no_findings": True, "_skipped": True}
+    with open(path) as f:
+        env = json.load(f)
+    env["_skipped"] = False
+    return env
 
 
 def max_severity(findings):
@@ -209,15 +213,20 @@ def main():
             gemini_only += 1
 
     # Count informational findings (non-actionable observations).
-    # Count unique informational findings: for agreements, count once (not twice).
-    seen_informational = set()
+    # A unique (location, title) pair is only informational if the MAX
+    # severity across all entries for that pair is informational. If one
+    # reviewer says "high" and the other says "informational" for the same
+    # (location, title), the finding is actionable — not informational.
+    pair_max_severity = {}
     for entry in merged:
-        sev = entry["finding"].get("severity", "")
-        if sev == "informational":
-            key = (entry["finding"]["location"], entry["finding"]["title"])
-            if key not in seen_informational:
-                seen_informational.add(key)
-                informational += 1
+        key = (entry["finding"]["location"], entry["finding"]["title"])
+        sev = entry["finding"].get("severity", "informational")
+        rank = SEVERITY_ORDER.get(sev, 0)
+        if key not in pair_max_severity or rank > pair_max_severity[key]:
+            pair_max_severity[key] = rank
+    for _key, rank in pair_max_severity.items():
+        if rank == 0:  # 0 = informational
+            informational += 1
 
     codex_total = len(codex_env.get("findings", []))
     gemini_total = len(gemini_env.get("findings", []))
