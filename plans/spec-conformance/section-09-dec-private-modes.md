@@ -36,16 +36,16 @@ third_party_review:
 sections:
   - id: "09.0"
     title: "Test file split (optional maintainability refactor)"
-    status: complete
+    status: in-progress
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
-    status: complete
+    status: in-progress
   - id: "09.2"
     title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM + bridge to Section 06 apex)"
     status: complete
   - id: "09.3"
     title: "Implement + verify Mode 2031 color scheme update notification"
-    status: complete
+    status: in-progress
   - id: "09.4"
     title: "Implement Mode 66 (DECNKM) and Mode 67 (DECBKM) with cross-crate end-to-end verification"
     status: not-started
