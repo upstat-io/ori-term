@@ -482,15 +482,18 @@ The evidence packet is INFORMATIONAL, not authoritative — reviewers expand sco
 
 ### 3. Invoke the dual-source transport in the background
 
-The transport launches both reviewers in parallel, handles infra retries (5 attempts per reviewer; default backoff `1s / 2s / 4s / 30s / 60s`; capacity-aware backoff `30s / 60s / 120s / 120s / 120s` when the API reports capacity errors — see `dual-invoke-with-retry.sh` for the SSOT schedule), runs the schema validators, and applies the dirty-worktree guard. A full round typically takes 5-15 minutes — BOTH reviewers running concurrently, so wall time is roughly `max(codex_walltime, gemini_walltime)`, not the sum.
+The transport launches both reviewers in parallel via two per-reviewer `supervisor.sh` processes. Each supervisor handles its own infra retries independently (5 attempts per reviewer; default backoff `1s / 2s / 4s / 30s / 60s`; capacity-aware backoff `30s / 60s / 120s / 120s / 120s` — SSOT in `lib-retry.sh`), runs the schema validator via `classify_reviewer_outcome`, and fires the circuit-breaker the moment it gives up. A full round typically takes 5-15 minutes — BOTH supervisors running concurrently, so wall time is roughly `max(codex_supervisor, gemini_supervisor)`, not the sum. Crucially, a fast-failing reviewer (e.g. gemini hitting 5 capacity errors in 2 minutes) exhausts its retries on its own clock without blocking the partner — gemini's give-up fires the circuit-breaker at T+2min, codex finishes at T+15min as normal, and the next `/tpr-review` round's `one-round.sh` pre-check auto-restricts to codex-only.
 
 Running the transport in the Bash foreground either hits the 2-minute tool timeout or gets auto-backgrounded with output truncated. Always use `run_in_background: true`. The `.claude/hooks/block-banned-commands.sh` hook explicitly allows backgrounded codex and gemini commands.
 
 The `--skill` parameter controls the transport log label. Default: `review-work`. If `ARGS` contains `--skill review-plan`, use `review-plan`. For custom objective mode, use `custom`.
 
+All dual-source consumers (`/tpr-review`, `/tp-help`, `/review-work`, `/review-plan`) route through the canonical SSOT `one-round.sh`. For envelope-mode consumers this is a thin passthrough to `dual-invoke-with-retry.sh` *plus* a shared circuit-breaker pre-check that trips cross-skill — so a gemini-degraded state recorded by a prior `/tp-help` run auto-restricts this round's `ORI_TPR_REVIEWERS` before the transport is even launched. Calling `dual-invoke-with-retry.sh` directly bypasses the pre-check and is disallowed for first-party callers.
+
 ```
 Bash (run_in_background: true):
-  .claude/skills/dual-tpr/scripts/dual-invoke-with-retry.sh \
+  .claude/skills/dual-tpr/scripts/one-round.sh \
+    --mode envelope \
     --run "$RUN" \
     --skill {skill_name} \
     --codex-prompt "$RUN/codex.prompt.md" \
