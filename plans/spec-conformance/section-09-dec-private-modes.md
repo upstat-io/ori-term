@@ -36,7 +36,7 @@ third_party_review:
 sections:
   - id: "09.0"
     title: "Test file split (optional maintainability refactor)"
-    status: complete
+    status: in-progress
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
     status: not-started
@@ -57,7 +57,7 @@ sections:
     status: complete
   - id: "09.N"
     title: "Completion Checklist"
-    status: not-started
+    status: in-progress
 ---
 
 # Section 09: DEC Private Modes (full)
