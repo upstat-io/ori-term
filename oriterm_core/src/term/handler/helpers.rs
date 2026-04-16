@@ -5,6 +5,7 @@
 
 use std::cmp;
 
+use unicode_width::UnicodeWidthChar;
 use vte::ansi::{ClearMode, LineClearMode, NamedPrivateMode};
 
 use crate::cell::CellFlags;
@@ -251,5 +252,55 @@ impl<S: EffectSink> Term<S> {
             self.image_cache_mut()
                 .prune_scrollback(StableRowIndex(new_evicted as u64));
         }
+    }
+
+    /// Printable character input: charset translation, width handling, wrapping.
+    #[inline]
+    pub(super) fn input_char(&mut self, c: char) {
+        self.selection_dirty = true;
+
+        if !self.mode.contains(TermMode::LINE_WRAP) {
+            let cols = self.grid().cols();
+            if self.grid().cursor().col().0 >= cols {
+                self.grid_mut().cursor_mut().set_col(Column(cols - 1));
+            }
+        }
+
+        if c as u32 <= 0x7E
+            && c as u32 >= 0x20
+            && !self.mode.contains(TermMode::INSERT)
+            && self.charset.is_ascii()
+            && self.grid_mut().put_char_ascii(c)
+        {
+            return;
+        }
+
+        let c = self.charset.translate(c);
+        let width = match UnicodeWidthChar::width(c) {
+            Some(width) => width,
+            None => return,
+        };
+        if width == 0 {
+            self.grid_mut().push_zerowidth(c);
+            return;
+        }
+
+        if width == 2 && !self.mode.contains(TermMode::LINE_WRAP) {
+            let col = self.grid().cursor().col().0;
+            let cols = self.grid().cols();
+            if col + 1 >= cols {
+                self.grid_mut().cursor_mut().set_col(Column(cols));
+                return;
+            }
+        }
+
+        let prev = self.grid().total_evicted();
+        let insert = self.mode.contains(TermMode::INSERT);
+        let grid = self.grid_mut();
+        if insert {
+            grid.insert_blank(width);
+        }
+        grid.put_char(c);
+        self.prune_images_if_evicted(prev);
     }
 }
