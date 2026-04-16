@@ -200,6 +200,7 @@ impl PrivateMode {
             1049 => Self::Named(NamedPrivateMode::SwapScreenAndSetRestoreCursor),
             2004 => Self::Named(NamedPrivateMode::BracketedPaste),
             2026 => Self::Named(NamedPrivateMode::SyncUpdate),
+            2031 => Self::Named(NamedPrivateMode::ColorSchemeUpdate),
             80 => Self::Named(NamedPrivateMode::SixelScrolling),
             8452 => Self::Named(NamedPrivateMode::SixelCursorRight),
             9001 => Self::Named(NamedPrivateMode::Win32Input),
@@ -281,6 +282,12 @@ pub enum NamedPrivateMode {
     BracketedPaste = 2004,
     /// The mode is handled automatically by [`Processor`](super::Processor).
     SyncUpdate = 2026,
+    /// Mode 2031 — color scheme update notification.
+    ///
+    /// When set, the terminal emits `CSI ? 997 ; Ps n` to the child
+    /// process whenever the host color scheme changes:
+    /// `Ps = 1` → dark, `Ps = 2` → light. Per kitty semantics.
+    ColorSchemeUpdate = 2031,
     /// ConPTY win32-input mode (`CSI ? 9001 h/l`).
     ///
     /// When set, the hosting terminal should encode keys as

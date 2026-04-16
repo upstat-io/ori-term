@@ -22,5 +22,6 @@ mod osc;
 mod private_modes_mouse;
 mod private_modes_screen;
 mod private_modes_sync;
+mod private_modes_theme;
 mod sgr;
 mod status_reports;

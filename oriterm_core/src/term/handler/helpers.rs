@@ -49,6 +49,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::EnableMode3 => Some(TermMode::ENABLE_MODE_3),
         NamedPrivateMode::Win32Input => Some(TermMode::WIN32_INPUT),
         NamedPrivateMode::LeftRightMargin => Some(TermMode::LEFT_RIGHT_MARGIN),
+        NamedPrivateMode::ColorSchemeUpdate => Some(TermMode::COLOR_SCHEME_UPDATE),
         NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }

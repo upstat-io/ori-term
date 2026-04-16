@@ -225,6 +225,7 @@ fn decset_decrst_flag_sync() {
         NamedPrivateMode::SixelCursorRight,
         NamedPrivateMode::Win32Input,
         NamedPrivateMode::LeftRightMargin,
+        NamedPrivateMode::ColorSchemeUpdate,
     ];
 
     for variant in flag_variants {

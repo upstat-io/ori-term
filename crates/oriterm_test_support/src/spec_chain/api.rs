@@ -217,6 +217,22 @@ impl SpecHarness {
     pub fn term(&self) -> &Term<QueueingEffectSink> {
         self.handler.term()
     }
+
+    /// Mutably borrow the inner `Term` (for calling methods like `set_theme()`).
+    pub fn term_mut(&mut self) -> &mut Term<QueueingEffectSink> {
+        self.handler.term_mut()
+    }
+
+    /// Drain any pending effects from the `Term`'s effect sink into the outcome.
+    ///
+    /// Call after `term_mut()` operations that push effects (e.g. `set_theme()`
+    /// with mode 2031 enabled) so they appear in `outcome().effects_emitted`.
+    pub fn drain_effects(&mut self) {
+        self.handler
+            .term()
+            .effect_sink()
+            .drain_into(&mut self.outcome.effects_emitted);
+    }
 }
 
 impl Default for SpecHarness {
