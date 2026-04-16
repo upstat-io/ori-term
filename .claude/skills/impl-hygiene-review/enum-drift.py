@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-enum-drift.py — Cross-file enum coverage analyzer for Ori compiler.
+enum-drift.py — Cross-file enum coverage analyzer for ori_term.
 
 Finds all variants of key IR enums (CanExpr, ExprKind, TypeTag, etc.),
 locates every match expression on those enums across the codebase, and
@@ -509,7 +509,7 @@ def report_summary(
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="enum-drift",
-        description="Cross-file enum coverage analyzer for Ori compiler.",
+        description="Cross-file enum coverage analyzer for ori_term.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"Known enums: {', '.join(sorted(KNOWN_ENUMS.keys()))}",
     )

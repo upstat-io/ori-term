@@ -50,12 +50,14 @@ Every dual-source review wrapper follows this pattern:
 ## Codex prompt preamble
 
 The codex prompt MUST include the literal keyword `envelope-only`
-somewhere in its first 500 characters. This triggers the Step 0 mode
+somewhere in its first 500 characters. For skill-dispatch modes
+(`review-work`, `review-plan`), this triggers the Step 0 mode
 branch in `.codex/skills/review-work/SKILL.md` or
 `.codex/skills/review-plan/SKILL.md` and dispatches to envelope-only
-mode.
+mode. For custom objective mode, it signals the output contract
+(raw JSON final message) even though no skill is dispatched.
 
-Recommended preamble (first line of the prompt):
+Recommended preamble for skill-dispatch modes:
 
     Run the /review-work skill in envelope-only mode. Emit the JSON
     envelope per .claude/skills/dual-tpr/findings-schema.json; do NOT
@@ -63,14 +65,20 @@ Recommended preamble (first line of the prompt):
 
 (Substitute `review-plan` for `review-work` as appropriate.)
 
+Recommended preamble for custom objective mode:
+
+    You are performing a third-party review in envelope-only mode.
+    Do NOT activate any skill. Follow these instructions directly.
+
 ## Gemini prompt preamble — EXPLICIT ACTIVATION REQUIRED
 
 Per Phase 2 empirical research, gemini skills are discovered from
 `.gemini/skills/<name>/SKILL.md` but are NOT auto-activated by
-description matching. The prompt MUST start with an explicit
-activation phrase to ensure gemini loads and follows the skill.
+description matching. For skill-dispatch modes, the prompt MUST start
+with an explicit activation phrase to ensure gemini loads and follows
+the skill.
 
-MANDATORY first line of every gemini prompt:
+MANDATORY first line for skill-dispatch modes:
 
     Activate the review-work skill and follow its instructions exactly.
 
@@ -83,114 +91,139 @@ review-plan wrapper uses the review-plan phrasing. Both literal
 strings are reference templates for wrapper implementation.)
 
 Do NOT rely on gemini noticing the skill on its own — the activation
-phrase is load-bearing and MUST be present on every invocation.
+phrase is load-bearing and MUST be present on every skill-dispatch
+invocation.
 
-## Reviewer Hygiene Preamble (MANDATORY — gemini; recommended — codex)
+For custom objective mode, the gemini prompt does NOT activate a skill.
+Instead it gives the objective directly with inline envelope instructions
+including the mandatory sentinel markers. See `tpr-review/SKILL.md`
+§"Prompt templates for custom mode" for the canonical template.
 
-Beyond the activation phrase, every gemini prompt MUST include hygiene
-guidance. Empirically (from the 2026-04-14 §08.5 round-11 TPR run),
-gemini without these constraints will (a) dump scratch files in the
-repo root, tripping the worktree-guard, and (b) attempt to read
-end-to-end multi-thousand-line diff files, stalling past the watchdog
-threshold. Codex is less prone to these behaviors but including the
-same guidance costs nothing.
+## Custom Objective Mode
 
-MANDATORY gemini hygiene preamble (place between the activation phrase
-and the grounding block):
+Custom objective mode is used when `/tpr-review` is invoked with freeform
+ARGS (not `--skill review-plan` and not empty). In this mode:
 
-    Do NOT create scratch files (diff.txt, scope_diff.txt, etc.) in
-    the repo root — use `/home/eric/.gemini/tmp/ori-term/` or `/tmp`
-    for intermediate work. The worktree-guard will fail the round if
-    tracked files are modified or untracked files appear in the repo
-    root during review.
+- Neither reviewer activates a fixed skill — the objective is given inline
+- Both reviewers still receive the grounding block (CLAUDE.md, rules files)
+- Both reviewers still emit envelopes (the schema is mode-independent)
+- The `--skill` parameter to the transport is `custom` for logging
+- The loop semantics are identical to code/plan modes — fix findings,
+  re-run until both reviewers return zero actionable findings (consensus)
 
-    Keep review focused. For non-trivial commit ranges:
-    - Run `git diff <range> --stat` first to see the file list, NOT
-      the full diff. Read targeted hunks via `git show <commit>`
-      or ranged file reads.
-    - Skip redundant workspace gates — `./build-all.sh`,
-      `./clippy-all.sh`, `./test-all.sh`, and
-      `cargo build --target x86_64-pc-windows-gnu` have already been
-      verified at commit time by lefthook. A `cargo test -p <crate>`
-      smoke on the crates the commit touches is sufficient.
-
-**Why this is load-bearing:** the first round-11 iteration consumed
-an infra retry because gemini wrote `diff.txt` + `diff_core.txt` +
-`scope_diff.txt` to the repo root and the worktree-guard rejected
-the envelope. The second iteration's gemini-side stall was caused
-by reading a 3500-line diff file across two 2000-line read_file
-calls, then running a cargo build that was already verified, then
-entering a composition phase that never completed before the 23-min
-watchdog fired. Both are fully prevented by the preamble above.
-
-## Plan/Code Consistency Verification (MANDATORY — both reviewers)
-
-Every reviewer prompt MUST ask the reviewer to verify that plan text
-describing the changed behavior matches the shipped code. Without this
-explicit instruction, reviewers default to code-only review and plan
-metadata drift is caught only by side effects (e.g., codex happened to
-grep for old strings during expansion). The §08.5 round-11 run
-surfaced three separate metadata-drift findings
-(`[TPR-08-005/006/007]`) that could have been caught in a single
-earlier iteration had the prompt asked.
-
-MANDATORY plan-consistency clause (append to the "What to focus on"
-or "Scope" section of every reviewer prompt):
-
-    Plan/code consistency: the commits in scope change observable
-    behavior (e.g., remove a feature, flip a semantic, rename an
-    invariant). Verify that the owning plan's success criteria,
-    subsection titles, N-checklist bullets, resolved-finding notes,
-    and any catalog rows the commits cite still describe the CURRENT
-    behavior, NOT the superseded one. Historical TPR resolution
-    notes may describe superseded intermediate states — those are
-    allowed as long as a "Superseded by round N" annotation is
-    present. File a finding for any surface that describes behavior
-    the code no longer implements.
-
-This clause is independent of the grounding block; grounding scopes
-the finding vocabulary, plan-consistency scopes the surface of
-review. Both are required.
+This enables `/tpr-review` to review ANYTHING — skills, docs, designs,
+tooling, processes — not just code or plans.
 
 ## Mandatory Grounding Block (both reviewers)
 
-**Every reviewer prompt — codex and gemini — MUST contain a "Grounding
-— read these files FIRST" section between the activation preamble and
-the scope hint.** The grounding block is identical for both reviewers
-and lists the project rule files that scope the finding vocabulary.
+**Every reviewer prompt — codex and gemini — MUST contain a grounding
+section between the activation preamble and the scope hint.** The
+grounding block is identical for both reviewers.
 
-Canonical grounding template:
+The orchestrator does NOT pre-summarize rules. Codex and gemini have
+full filesystem access and are capable of reading the rule files
+themselves — pre-composing a brief burns orchestrator context, risks
+staleness against the canonical files, and duplicates work the
+reviewers can do in parallel.
+
+Both prompts MUST contain this block verbatim (or with additional
+rule files appended when the diff touches a specialized subsystem):
 
     ## Grounding — read these files FIRST before reviewing
 
-    Before you look at any of the changed code, read these files in
-    full so your findings are scoped to the project's actual rules.
-    Every finding must use the finding categories and architectural
-    vocabulary defined in impl-hygiene.md (LEAK, DRIFT, GAP, WASTE,
-    EXPOSURE, BLOAT, NOTE).
+    Before you review anything, read these rule files in full. This
+    grounding is MANDATORY — a review written without reading the
+    rules produces generic noise instead of project-native findings.
 
-    1. CLAUDE.md (project root)
-    2. .claude/rules/impl-hygiene.md
-    3. .claude/rules/code-hygiene.md
-    4. .claude/rules/tests.md
-    5. .claude/rules/test-organization.md
-    6. .claude/rules/crate-boundaries.md
-    7. Any per-crate rule file under .claude/rules/oriterm*.md
-       whose `paths:` glob covers the files under review
-       (oriterm_core.md, oriterm_ui.md, oriterm_mux.md,
-       oriterm_ipc.md, oriterm.md — the live inventory can be
-       discovered with `ls .claude/rules/*.md`).
+    1. CLAUDE.md (project root) — correctness, no deferral, phase purity
+    2. .claude/rules/impl-hygiene.md — finding vocabulary (LEAK, DRIFT,
+       GAP, WASTE, EXPOSURE, BLOAT, NOTE), SSOT, algorithmic DRY
+    3. .claude/rules/tests.md — matrix testing, semantic/negative pins
+    4. .claude/rules/compiler.md — architecture, phase boundaries
+    5. Any other `.claude/rules/*.md` file relevant to the changed
+       paths (e.g. `arc.md` for ARC/memory, `parse.md` for parser,
+       `registry.md` for type-system, `codegen-rules.md` for codegen).
+       Identify these from the diff yourself — do not rely on the
+       orchestrator to pre-filter.
 
-**Why this is load-bearing:** Without grounding, reviewers produce
+    Every finding MUST use the vocabulary from `impl-hygiene.md`
+    (LEAK / DRIFT / GAP / WASTE / EXPOSURE / BLOAT / NOTE) and cite
+    the specific rule anchor (TR-2, NR-1, RL-2, etc.) it violates.
+    Generic "this looks odd" feedback is not useful.
+
+Skills invoking the transport may append subsystem-specific rule
+files to item 5 when the changed paths clearly point at one
+subsystem — but the orchestrator must NOT read, summarize, or
+synthesize those files. The reviewers do that work.
+
+**Why grounding is load-bearing:** Without it, reviewers produce
 findings against unknown conventions — generic "this looks odd"
 noise instead of precise category-tagged findings that match the
 project's actual rules. Grounded reviewers emit findings like
 `LEAK:scattered-knowledge at dual-invoke-with-retry.sh:99`; ungrounded
 reviewers emit findings like "this function could be clearer".
 
-Wrappers that skip the grounding block should be treated as buggy
+Wrappers that skip grounding entirely should be treated as buggy
 and their envelopes treated with extra scrutiny by the consuming
 Claude instance.
+
+## Reviewer Circuit Breaker (global, cross-session)
+
+`dual-invoke-with-retry.sh` consults a per-reviewer circuit breaker BEFORE
+each round. State lives under `$HOME/.cache/ori-tpr-circuit/` — global per
+user, shared across Claude sessions, skills, and worktrees (the failing
+resource is the API, not the workspace).
+
+**Trip condition:** 3 api/transport failures for the same reviewer inside a
+sliding 1-hour window → reviewer parked for 1 hour.
+
+**Counted categories** (via `circuit-breaker.sh fail`):
+
+- `<reviewer>_api_capacity`, `<reviewer>_api_auth`, `<reviewer>_api_error`
+- `<reviewer>_missing_jsonl` (subprocess crashed before any output)
+- `reviewer_stalled_<r>` (watchdog killed a hung reviewer)
+- `launch_or_exit_fail` (legacy catch-all; attributed to both active reviewers)
+
+**NOT counted** (semantic/content failures — the reviewer's output is the
+problem, not infra): parse_fail, schema_violation, missing_envelope,
+missing_*_sentinel, failed_partial, missing_dependency, dirty_worktree.
+
+**Behavior when tripped:**
+
+- `ORI_TPR_REVIEWERS=both` — the retry wrapper narrows to the surviving
+  reviewer and continues normally. The merger and consumer skills see
+  single-reviewer output, which they already handle.
+- `ORI_TPR_REVIEWERS=codex` or `=gemini` (explicit single-reviewer) — the
+  wrapper fails loud with a reset instruction; there is no fallback the
+  operator can have forbidden without meaning to.
+- Both tripped — the wrapper fails loud; operator waits or runs
+  `circuit-breaker.sh reset all`.
+
+**Reset behavior:**
+
+- On a successful round, the fails counter is cleared for each reviewer
+  that produced a valid envelope (but an active timeout still runs its
+  full 1 hour — a tripped reviewer cannot have reset itself because it
+  was skipped).
+- On natural timeout expiry, `check` clears both the timeout sentinel
+  and the fails counter so a fresh window starts.
+- Manual override: `circuit-breaker.sh reset {codex|gemini|all}`.
+
+**Tuning env (all optional):**
+
+- `ORI_TPR_CIRCUIT_OFF=1` — disable the breaker entirely (diagnostics)
+- `ORI_TPR_CIRCUIT_THRESHOLD` — fails that trip the breaker (default 3)
+- `ORI_TPR_CIRCUIT_WINDOW_SEC` — sliding-window length (default 3600)
+- `ORI_TPR_CIRCUIT_TIMEOUT_SEC` — timeout duration (default 3600)
+- `ORI_TPR_CIRCUIT_DIR` — state directory (default `$HOME/.cache/ori-tpr-circuit`)
+
+**Observability:** `.claude/skills/dual-tpr/scripts/circuit-breaker.sh status`
+prints a two-line summary suitable for the skill-layer polling protocol.
+
+**Why it exists:** repeated API capacity / stall failures waste both wall
+time (each round is 5-20 minutes) and quota (both reviewers' retries burn
+provider quota). When one provider is clearly degraded, the pipeline is
+better off running single-reviewer than hammering both in lockstep.
 
 ## Finding Verification Contract (Claude-side)
 
@@ -233,9 +266,13 @@ See Section 02 (`section-02-transport.md`) for the full scripts contract.
 ## Failure handling
 
 The transport layer (Section 02) handles infra retries internally —
-3 retries per reviewer per round with exponential backoff (1s, 2s, 4s).
-After 3 retries, `dual-invoke-with-retry.sh` exits non-zero and prints
-the failure category and postmortem directory path.
+5 attempts per reviewer per round with default backoff
+(1s, 2s, 4s, 30s, 60s) and a capacity-aware schedule
+(30s, 60s, 120s, 120s, 120s) when the API reports capacity errors.
+After the attempts are exhausted, `dual-invoke-with-retry.sh` exits
+non-zero and prints the failure category and postmortem directory path.
+See `.claude/skills/dual-tpr/scripts/dual-invoke-with-retry.sh` for the
+SSOT schedule.
 
 Wrappers should:
 - On success: proceed to parse + merge + write
@@ -248,10 +285,10 @@ Wrappers should:
 
 ## Wrapper loop semantics
 
-`/tpr-review` and `/review-work` use the 10-iteration find+fix+rerun
-loop. Each iteration:
+`/tpr-review` (all three modes: review-work, review-plan, custom) and
+`/review-work` use the 10-iteration find+fix+rerun loop. Each iteration:
 1. Runs the dual-source transport (both reviewers per round, max
-   3 infra retries per reviewer)
+   5 infra attempts per reviewer)
 2. Claude reads the merged findings
 3. If zero actionable findings: clean pass, exit loop
 4. Otherwise: Claude fixes findings, commits, re-runs (increment

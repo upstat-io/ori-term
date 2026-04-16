@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-hygiene-fix.py — Batch auto-fixer orchestrator for Ori compiler hygiene.
+hygiene-fix.py — Batch auto-fixer orchestrator for ori_term hygiene.
 
 Runs the auto-fixable checks from hygiene-lint.py and applies fixes.
 This is the "fix everything mechanical" command that runs before AI
@@ -81,7 +81,7 @@ def main() -> int:
 
     p = argparse.ArgumentParser(
         prog="hygiene-fix",
-        description="Batch auto-fixer for Ori compiler hygiene.",
+        description="Batch auto-fixer for ori_term hygiene.",
         epilog=f"Fixable checks: {', '.join(FIXABLE_CHECKS.keys())}",
     )
     p.add_argument("--checks", metavar="CHECKS",

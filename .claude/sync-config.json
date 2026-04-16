@@ -3,7 +3,9 @@
   "project_type": "rust",
   "project_name": "ori_term",
   "substitutions": {
-    "$comment": "Defaults for project_type='rust' are applied automatically from rust.json. Add overrides here; they win."
+    "$comment": "Defaults for project_type='rust' are applied automatically from rust.json. Add overrides here; they win.",
+    "Ori compiler roadmap": "ori_term roadmap",
+    "Ori compiler": "ori_term"
   },
   "include": {
     "$comment": "What to pull from canonical. If a category is missing, defaults to 'all tailorable + all portable from that category'.",
@@ -20,7 +22,9 @@
       "tp-help",
       "review-work",
       "verify-tpr",
-      "dual-tpr"
+      "dual-tpr",
+      "review-plan",
+      "commit-push"
     ],
     "rules": [
       "impl-hygiene.md",
@@ -33,9 +37,7 @@
       "shell_lex.py"
     ],
     "commands": [
-      "review-plan.md",
       "review-work.md",
-      "commit-push.md",
       "pr-main.md",
       "tp-help.md",
       "independent-review.md",

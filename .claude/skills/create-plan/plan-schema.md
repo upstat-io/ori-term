@@ -253,6 +253,9 @@ depends_on: ["{NN}"]     # Other sections required first
 third_party_review:
   status: none           # none | findings | resolved
   updated: null          # YYYY-MM-DD when last touched
+# Note: Intelligence Reconnaissance is an UNNUMBERED structural block
+# (like Goal, Context, Reference implementations, Depends on). It does
+# NOT appear in this `sections:` list — only numbered {NN}.X subsections do.
 sections:
   - id: "{NN}.1"
     title: "{Subsection}"
@@ -312,17 +315,58 @@ test failures, or design flaws. 2-4 sentences.}
 
 ---
 
-<!-- ── MANDATORY SUBSECTION STRUCTURE ──
-EVERY subsection ({NN}.1, {NN}.2, ...) MUST end with a **Subsection close-out**
-block containing the per-subsection `/improve-tooling` retrospective. This is
-non-negotiable: pain memory decays within hours, so the look-back must fire
-while the subsection's debugging journey is still hot — NOT at section close.
+## Intelligence Reconnaissance
 
-The close-out block goes AFTER the subsection's implementation/validation
-tasks and BEFORE the `---` separator. See {NN}.1 below for the canonical form;
-every subsequent subsection in this section MUST repeat the same close-out
-shape (only the subsection ID changes). Plans that omit the per-subsection
-close-out will fail `/continue-roadmap` validation.
+Queries run {YYYY-MM-DD}:
+
+- `scripts/intel-query.sh --human <preset>` — {one-line outcome}. For compiler sections use the matching preset per `.claude/rules/intelligence.md` §Subsystem Mapping (`ori-arc`, `ori-inference`, `ori-codegen`, `ori-patterns`, `ori-diagnostics`). For non-compiler plans (meta-tooling, docs, build scripts) use `search "<key terms>"` — no preset applies.
+- `scripts/intel-query.sh --human file-symbols "<path-fragment>" --repo ori` — {one-line outcome} (skip for non-Rust targets; the Ori code-symbol index is Rust-only today)
+- `scripts/intel-query.sh --human callers "<symbol>" --repo ori` — {one-line outcome} (blast radius for every public API the section changes)
+- `scripts/intel-query.sh --human similar "<symbol>" --repo rust,swift,koka --limit 5` — {one-line outcome} (cross-repo prior art for design decisions)
+
+Results summary (≤500 chars) [ori]: {bounded paragraph citing blast radius, cross-repo prior art, relevant symbols. Use `[ori]` for Ori-repo claims, `[rust#N]` / `[swift#N]` / `[koka#N]` / etc. for cross-repo issue citations, and `[repo:path]` for symbol results — the same grammar used by `compose-intel-summary.md` Step D (lines 64-82) and by §07's hook injection. Maximum 5 bullets, 500 characters. If the graph is unavailable, record the unavailability state as freeform prose (e.g. `"Graph was unavailable at YYYY-MM-DD when this section was authored"`) — do NOT silently omit the block; the block MUST still exist with the date and a note about unavailability so the validator recognizes it as intentional rather than forgotten.}
+
+See `.claude/skills/dual-tpr/compose-intel-summary.md` for the full query protocol (SSOT — do NOT `@`-include in plan files; plan markdown is not harness-expanded, so the include would be a dead literal).
+
+---
+
+<!-- == MANDATORY SECTION STRUCTURE ==
+Every PLAN_SECTION file has TWO mandatory structural features that are
+NOT captured by the numbered {NN}.X subsection sequence alone:
+
+1. **Unnumbered `## Intelligence Reconnaissance` block** — placed after
+   the section framing (Goal / Success Criteria / Context / Reference
+   implementations / Depends on) and BEFORE `## {NN}.1`. Records the
+   literal `scripts/intel-query.sh` commands the author ran, a
+   ≤500-char results summary (using the same `[ori]` / `[repo#N]`
+   citation grammar as `.claude/skills/dual-tpr/compose-intel-summary.md`
+   Step D, lines 64-82), and the date. Coexists with §07's runtime hook:
+   the hook omits the summary entirely when graph is unavailable; the
+   plan-resident block records unavailability as freeform prose. Enforced
+   by `python -m scripts.plan_corpus check` — the validator gates
+   severity on the section's `status` field:
+     - status: not-started → Severity.HIGH (ERROR under --strict-recon)
+     - status: in-progress → Severity.MEDIUM (WARNING, no on-edit escalation)
+     - status: complete    → exempt
+
+2. **Per-subsection close-out blocks** — EVERY numbered subsection
+   ({NN}.1, {NN}.2, ...) MUST end with a `**Subsection close-out**`
+   block containing the per-subsection `/improve-tooling`
+   retrospective and `/sync-claude` doc sync BEFORE the `---`
+   separator. Pain memory decays within hours, so the look-back fires
+   while the debugging journey is hot — NOT at section close.
+
+SCOPE: The recon-block mandate applies ONLY to FileClass.PLAN_SECTION
+(files matching `plans/*/section-*.md` excluding `plans/roadmap/` and
+`plans/bug-tracker/`). Roadmap sections already use `## {NN}.0` for
+substantive content; fix-BUG-*.md files use a separate `1. Root Cause
+/ 2. TDD / ...` template that runs recon through /fix-bug Phase 1.
+
+Plans that omit either feature will fail `/continue-roadmap`
+validation. This comment is the only authoritative enumeration of
+section-level structural invariants; `create-plan/SKILL.md` cites
+this schema file and does NOT re-assert the invariants
+(per `impl-hygiene.md` §SSOT).
 -->
 
 ## {NN}.1 {Subsection Title}
@@ -366,6 +410,22 @@ and how it fits into the section's overall goal.}
         {NN}.1: no tooling gaps — relied on existing scripts X, Y." Do not
         silently skip. See `.claude/skills/improve-tooling/SKILL.md`
         "Per-Subsection Workflow" for the full protocol.
+  - [ ] **Run `/sync-claude` on THIS subsection** — check whether the code
+        changes in {NN}.1 invalidated any claims in CLAUDE.md,
+        `.claude/rules/*.md`, or `canon.md`. Three quick questions: (1) Did I
+        add/rename/remove any public API, type, variant, or function? → Check
+        the relevant rules file. (2) Did I add/change any command, env var, or
+        script? → Check CLAUDE.md §Commands. (3) Did I change any pipeline
+        phase behavior or output invariant? → Check `canon.md`. If all three
+        are "no," document briefly: "Claude artifact sync {NN}.1: no
+        API/command/phase changes — artifacts current." Fix any drift NOW and
+        commit via `/commit-push` (e.g., `docs(rules): update typeck.md —
+        new desugar added in {NN}.1`). Do not silently skip.
+  - [ ] **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check` and
+        clean any temp/scratch files (debug dumps, one-off test scripts, editor
+        backups) that accumulated during this subsection. If files are found,
+        run `diagnostics/repo-hygiene.sh --clean` to remove them. This keeps the
+        worktree free of detritus that obscures real changes in `git status`.
 
 ---
 
@@ -419,6 +479,8 @@ acceptable interim if {condition}.
         `build(diagnostics): ... — surfaced by {plan}/section-{NN}.2
         retrospective` (or `test(...)`, `chore(...)`, etc — see {NN}.1's
         close-out for the type rules).
+  - [ ] **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check` and
+        clean any detected temp files (see {NN}.1's close-out for details).
 
 ### {Sub-topic within the subsection}
 
@@ -441,7 +503,7 @@ What breaks if only one lands. Be specific about the failure mode.}
 
 ## {NN}.R Third Party Review Findings
 
-<!-- Reserved for Codex or other external reviewers.
+<!-- Reserved for the dual-source `/tpr-review` (Codex + Gemini) and other external reviewers. Findings may be tagged `-codex`, `-gemini`, or carry `agreement: true` when both reviewers flagged the same location/title.
 If unresolved findings exist here:
 - section frontmatter `status` must be `in-progress`
 - `third_party_review.status` must be `findings`
@@ -473,9 +535,11 @@ When all findings are triaged:
   - [ ] `index.md` section status updated
   - [ ] Cross-links to other plans updated if this section resolved external blockers (`<!-- resolved-by: ... -->`)
   - [ ] Next section's `depends_on` verified — no stale assumptions from this section's work
-- [ ] `/tpr-review` passed (final, full-section) — independent Codex review found no critical or major issues (or all findings triaged)
+- [ ] `/tpr-review` passed (final, full-section) — independent dual-source review (Codex + Gemini) found no critical or major issues (or all findings from both reviewers triaged)
 - [ ] `/impl-hygiene-review` passed — implementation hygiene review found no critical or major findings (or all findings triaged and fixed). MUST run AFTER `/tpr-review` is clean.
 - [ ] `/improve-tooling` **section-close sweep** — MANDATORY safety net after both reviews are clean. The PRIMARY tooling capture happens per-subsection (see each subsection's close-out block above) — by section close those captures should already be committed. The sweep does TWO things: (1) **Verify** every subsection in this section has either an "improvements made" entry (with commits) or a documented "no gaps" negative finding from its own per-subsection retrospective; if any subsection skipped its retrospective, STOP and run it now — the sweep cannot substitute for missed per-subsection captures. (2) **Look for cross-subsection patterns** invisible at per-item scope: command sequences repeated when transitioning between *different* subsections, integration test failures with worse messages than within-subsection failures, mental cross-referencing across files no tool combined, instrumentation that only became obvious after seeing all subsections together. Add ONLY new items that emerged from these cross-cutting patterns — do not duplicate per-subsection findings. Implement immediately (zero deferral), commit separately using a valid conventional-commit type (`build(diagnostics): add X — surfaced by section-{NN} close sweep` — use `build` for dev/diagnostic scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs; the lefthook commit-msg hook rejects any non-standard type), verify against the original scenario. Most sweeps produce zero new findings when per-subsection captures are thorough — that is the expected, healthy outcome and must be documented: "Section-close sweep: per-subsection retrospectives covered everything; no cross-subsection patterns required new tooling." Do not silently skip.
+- [ ] `/sync-claude` **section-close doc sync** — MANDATORY after `/improve-tooling` sweep. Run `/sync-claude` across ALL commits in the section (use `git diff --name-only <section-start>..HEAD` to identify changed crates). Map each changed crate to its rules file (see `/sync-claude` §Step 2 mapping table), verify CLAUDE.md §Commands/§Key Paths/§Feature Flags, verify `canon.md` if any pipeline phase was touched, verify `ori-syntax.md` if prelude/keywords/operators changed. Fix any drift NOW and commit via `/commit-push` (e.g., `docs(rules): update typeck.md — section {NN} changes`). Per-subsection `/sync-claude` captures should have caught most drift already — this sweep verifies nothing was missed and catches cumulative drift invisible at per-subsection scope. If no drift found, document: "Claude artifact sync section {NN}: per-subsection syncs covered everything; no additional drift." Do not silently skip.
+- [ ] **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check`. If temp files detected, run `--clean` to remove debug dumps, scratch scripts, editor backups, and other detritus before final commit.
 
 **Exit Criteria:** {Paragraph describing the measurable, testable condition
 that proves this section is complete. Include specific commands, test names,
@@ -590,7 +654,7 @@ escalation to map the exact boundary of what works.
 - [ ] Plan annotation cleanup: `plan-annotations.sh` returns 0 annotations for this plan's sections
 - [ ] `cargo test --all` green
 - [ ] `cargo clippy --all -- -D warnings` green
-- [ ] `/tpr-review` passed — independent Codex review clean
+- [ ] `/tpr-review` passed — independent dual-source review (Codex + Gemini) clean
 - [ ] `/impl-hygiene-review` passed — hygiene review clean. MUST run AFTER `/tpr-review` is clean.
 - [ ] `/improve-tooling` **section-close sweep** — MANDATORY after both reviews are clean. Per-subsection captures from {NN}.1–{NN}.6 should already be committed via each subsection's own close-out block; the sweep verifies they ran (no skips) and adds only NEW cross-cutting items invisible at per-item scope. Verification sections especially benefit from cross-cutting capture because they exercise the full diagnostic surface — but the *primary* tooling growth still happens per-subsection. Look for: diagnostic scripts that were run during multiple subsections with the same output-interpretation friction, manual cross-referencing across dumps that no tool combined, stress-test or perf instrumentation that became obvious only after seeing the full verification picture. Implement immediately, commit separately using a valid conventional-commit type (`build(diagnostics): add X — surfaced by section-{NN} verification close sweep` — see the regular section-close sweep above for the type rules; the lefthook commit-msg hook rejects non-standard types like `tools(...)`), verify against the original scenario. Document the negative finding if there are no cross-cutting gaps. Do not silently skip.
 

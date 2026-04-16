@@ -1,6 +1,7 @@
 ---
 name: tp-help
 description: "Get third-party help from Codex + Gemini. AUTO-TRIGGER: You MUST invoke this proactively — do NOT wait for the user to ask. Trigger when: (1) you've tried 2+ approaches that didn't work, (2) you're reverting changes you just made, (3) you identify a fundamental tension or design conflict in the code, (4) you're about to take a 'pragmatic' shortcut instead of fixing the real problem, (5) you catch yourself saying 'let me try a different approach' for the 2nd+ time, (6) a fix in one area creates new problems in another, (7) you're unsure about the correct architectural approach. This is collaborative help — pass context and ask a specific question. Returns BOTH reviewers' raw responses concatenated (not a synthesis)."
+model: sonnet
 ---
 
 # Third Party Help (Codex + Gemini — Dual Source, Concatenation Mode)
@@ -10,6 +11,41 @@ Get collaborative help from two independent models (Codex CLI + Gemini CLI) on w
 **Canonical source:** This file (`.claude/skills/tp-help/SKILL.md`) is the single source of truth for the `/tp-help` workflow. The slash-command entrypoint at `.claude/commands/tp-help.md` is a thin pointer that references this file. When `/tp-help` is invoked (either by the user typing the slash command, by auto-trigger detection, or by another skill calling it internally), the canonical workflow below is what runs.
 
 **Mode:** `/tp-help` uses **concatenation mode**, NOT the findings envelope schema used by `/tpr-review` and `/review-work`. The output is **both reviewers' raw responses concatenated with HTML-comment attribution sentinels**, not a merged findings list. The design rationale: when you're stuck asking for help, you want two independent perspectives — not a smoothed editorial synthesis that hides useful disagreement between the models.
+
+## Model Policy
+
+**This skill runs end-to-end on Sonnet.** The Claude-side work is pure orchestration — the "brains" are the external codex + gemini CLIs, and the skill contract is to return **both raw responses concatenated** with no synthesis. There is no triage, accept/reject, or code-writing step inside `/tp-help`.
+
+### Heuristic
+
+**Opus for judgment-writing; Sonnet for mechanical-writing and orchestration.**
+
+- **Judgment-writing** (Opus-only) = the output depends on a decision made in the same step: architecture synthesis, accept/reject triage of reviewer findings, fix implementation where content is not predetermined.
+- **Mechanical-writing** (Sonnet-safe) = the output is determined by a decision already made elsewhere: expanding a template, filing by a static routing rule, flipping a boolean frontmatter field, reformatting parser output.
+- **Orchestration** (Sonnet-safe) = shell launches, JSONL parsing, polling, merging envelopes by deterministic rule.
+
+"Any file mutation = Opus" is the wrong rule — it burns Opus on template expansion and frontmatter flips. The correct rule is "any *judgment* = Opus"; mechanical mutations are safe under it.
+
+### Callers
+
+`/tp-help` is invoked by `/fix-bug` (Phase 1.75 design consensus), `/create-plan` (Step 6B third-party consultation, Step 8B architecture sanity check), `/review-plan` (Step 4 blind spot analysis), and proactive auto-trigger conditions. The model policy is the same regardless of caller: Sonnet end-to-end, raw concat return. The *caller* decides what model consumes the concatenated output.
+
+### Phase table
+
+| Phase | Model | Rationale |
+|---|---|---|
+| Step 1 — Build Context Package | Sonnet | File reads + template assembly |
+| Step 2 — Create the Scratch Dir and Snapshot the Worktree | Sonnet | Shell (orchestration) |
+| Step 3 — Write Both Reviewer Prompts | Sonnet | Mechanical-writing: static HARD RULES + grounding + adversarial framing; rule files cited, not summarized |
+| Step 4 — Launch `dual-invoke.sh` in the Background | Sonnet | Shell launch (orchestration) |
+| Step 4.5 — Polling Protocol | Sonnet | JSONL tailing against `status-check.sh` (orchestration) |
+| Step 5 — Parse Both Responses with the Raw Parsers | Sonnet | Python parser wrappers (orchestration) |
+| Step 6 — Worktree-Guard Compare | Sonnet | Shell diff against SSOT helper (orchestration) |
+| Step 7 — Concatenate with HTML-Comment Sentinel Attribution | Sonnet | Mechanical-writing: helper-sourced sentinel format from `tp-help-sentinels.sh` |
+| Step 8 — Apply the Answer | **Caller's session model** | Synthesis of reviewer outputs is the caller's responsibility |
+| Step 9 — Brief the User | **Caller's session model** | User-facing framing lives in the caller |
+
+If the caller needs Opus-grade synthesis of the reviewer output, Opus runs in the *caller* — never inside `/tp-help`.
 
 ## MANDATORY AUTO-TRIGGER — Do NOT Wait for User
 
@@ -95,6 +131,11 @@ Gather the relevant context for the question. Be specific — both Codex and Gem
 - The two approaches you're deciding between
 - The spec section that defines expected behavior
 - Recent git diff showing what you changed
+Additionally, enrich the context packet with intelligence-graph signals. Follow the canonical intel-summary injection protocol:
+
+@.claude/skills/dual-tpr/compose-intel-summary.md
+
+Per SSOT Step F — /tp-help uses `callers`/`callees`/`similar` on the discussed symbols to provide precise cross-file dependency and prior-art context.
 
 ### Step 2: Create the Scratch Dir and Snapshot the Worktree
 
@@ -111,7 +152,7 @@ Bash:
 
 ### Step 3: Write Both Reviewer Prompts
 
-**Step 3a — Codex prompt (HARD RULES + adversarial framing + Mandatory Grounding Block).** Write the full context package to `$RUN/codex.prompt.md`. The prompt MUST include FOUR blocks before the question, in this exact order: (1) the HARD RULES read-only enforcement preamble, (2) the adversarial consultation framing, (3) the Mandatory Grounding Block instructing codex to read CLAUDE.md and the project rules FIRST, and (4) the question context.
+**Step 3a — Codex prompt (HARD RULES + adversarial framing + Grounding Block).** Write the full context package to `$RUN/codex.prompt.md`. The prompt MUST include FOUR blocks before the question, in this exact order: (1) the HARD RULES read-only enforcement preamble, (2) the adversarial consultation framing, (3) the static Grounding Block listing rule files the reviewer must read, and (4) the question context. The orchestrator does NOT pre-summarize the rule files — codex reads them directly.
 
 **Why these blocks are non-negotiable:**
 - **HARD RULES preamble** — Codex runs under `--full-auto` which gives it unrestricted file-editing authority. The `.codex/skills/tp-help/SKILL.md` file provides skill-level read-only enforcement, but the prompt-level HARD RULES are the belt to the skill-file's suspenders. On 2026-04-09, a `/tp-help` run WITHOUT prompt-level HARD RULES resulted in Codex editing `section-07-enum-repr.md` and `plan-schema.md` during a read-only consultation — the worktree guard caught and reverted the drift, but the edit should never have happened. `worktree-guard.sh` is post-hoc **detection**, not **prevention**. Both layers (skill file + prompt HARD RULES) are now mandatory.

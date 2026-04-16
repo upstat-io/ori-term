@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # hygiene-lint.sh — wrapper around hygiene-lint.py
 #
-# Static analysis for Ori compiler hygiene rules. Runs all deterministic,
+# Static analysis for ori_term hygiene rules. Runs all deterministic,
 # pattern-based checks (file length, function length, test naming, banners,
 # commented code, etc.) that don't require AI judgment.
 #

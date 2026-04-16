@@ -108,6 +108,33 @@ Spending time checking out old commits to see if something "was already broken" 
 
 After investigation, assess whether this bug is a **point fix** (inline bug fix) or requires a **plan** (architectural change, cross-system redesign, multi-section work).
 
+#### Severity Reclassification — MANDATORY CHECK
+
+Before scope assessment, **re-evaluate the bug's severity** based on what Phase 1 investigation revealed. The original severity from `/add-bug` was assigned with limited information — now you have root cause analysis, blast radius, and affected code paths.
+
+**Reclassify upward when ANY of these are true:**
+- **Blast radius is wider than expected** — the bug affects more code paths, types, or features than the original entry described
+- **Root cause is in a complexity-elevated subsystem** (AIMS, CodeGen, LLVM, AOT, Runtime) but severity was rated `medium` or `low` — elevate to at least `high`
+- **Silent corruption** — the bug produces wrong results without error/crash (more dangerous than a crash)
+- **Cross-crate root cause** — the bug's fix requires changes in 3+ crates, indicating systemic scope
+- **Downstream cascade** — fixing this bug would surface or interfere with other known bugs
+- **Data loss risk** — the bug could cause incorrect compilation output that goes undetected at runtime
+
+**Reclassify downward when:**
+- Investigation reveals the bug is narrower than initially described (affects fewer cases, has natural guardrails)
+- The "bug" is actually expected behavior per spec — mark OBE instead of reclassifying
+
+**How to reclassify:**
+1. Update the bug entry in `plans/bug-tracker/section-{NN}-*.md` — change the severity tag: `[{old}→{new}]` with a note: `Reclassified {date}: {one-line reason based on Phase 1 findings}`
+2. Update the fix section frontmatter `severity:` field (if the fix section already exists from a prior attempt)
+3. **Apply the new severity's treatment going forward** — this is the critical part. A bug reclassified from `medium` to `high` now gets mandatory Plan TPR (Phase 2.5). A bug in a complexity-elevated subsystem reclassified from `low` to `high` gets the full elevated treatment. The reclassified severity governs ALL downstream gates.
+
+**The reclassification IS the investigation's deliverable** — it's not bureaucratic overhead. The original severity was a guess; the reclassified severity is informed by root cause analysis. All downstream decisions (Plan TPR gate, scaling rules, review intensity) flow from the *current* severity, not the original.
+
+**In autopilot mode**: reclassify autonomously based on the criteria above. No `AskUserQuestion` needed — the criteria are objective.
+
+#### Scope Assessment
+
 **Point fix criteria** (ALL must be true):
 - Root cause is localized to 1-3 files
 - Fix does not require redesigning an existing subsystem
@@ -121,10 +148,10 @@ After investigation, assess whether this bug is a **point fix** (inline bug fix)
 - Fix naturally belongs as a roadmap section or plan with multiple phases
 - You cannot write a TDD matrix because the fix approach itself is unclear
 
-**If point fix** → proceed to Phase 2.
+**If point fix** → proceed to Phase 1.6 (Create Fix Section File).
 
 **If plan needed** → escalate:
-1. **Do NOT proceed to Phase 2.** Do NOT write code. Do NOT create a fix section file.
+1. **Do NOT proceed to Phase 1.6.** Do NOT write code. Do NOT create a fix section file.
 2. **Run `/create-plan`** — create a proper plan for this work. The plan IS the deliverable.
 3. **Update the bug entry** in the section file — add a note: `Escalated to plan: plans/{plan-name}/`. Do NOT mark it `[x]` — it is not fixed, it is planned.
 4. **Report the escalation** to the user:
@@ -137,7 +164,7 @@ After investigation, assess whether this bug is a **point fix** (inline bug fix)
 5. **Stop.** This bug is done for `/fix-bug`. The plan will be worked separately.
 
 **If blocked/latent** (prerequisite feature doesn't exist yet):
-1. **Do NOT proceed to Phase 2.** The bug cannot be fixed because the infrastructure doesn't exist.
+1. **Do NOT proceed to Phase 1.6.** The bug cannot be fixed because the infrastructure doesn't exist.
 2. **Update the bug entry** — add a note explaining the blocker: `Blocked: {reason — e.g., "wgpu 24.x does not expose the surface format negotiation hook required to fix this on Windows"}`. Do NOT mark it `[x]`.
 3. **Report the blocker:**
    ```
@@ -161,11 +188,34 @@ When NOT in autopilot mode, invoke `/create-plan` normally per the escalation pr
 
 Autopilot means autonomous, not reckless. Correctly identifying that a bug needs a plan and deferring the plan creation to the interactive user IS the correct autonomous decision. The key: always return to the caller — never just "document and stop."
 
+### Phase 1.6: Create Fix Section File — IMMEDIATELY After Scope Confirmation
+
+**Create the fix section file NOW** — do NOT wait for `/tp-help` consensus. The fix file is the first user-visible artifact and must exist as soon as the investigation is complete and scope is confirmed.
+
+Create `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` using the template in [fix-section-template.md](fix-section-template.md). Fill in everything known so far:
+
+- **Frontmatter**: all fields (bug ID, title, severity, status: `in-progress`, goal, subsystem, etc.)
+- **§1 Root Cause Analysis**: populated from Phase 1 investigation findings (symptom, proximate cause, root cause, blast radius, affected files)
+- **§1.5 Fix Consensus**: leave as `Pending — /tp-help consensus in Phase 1.75`
+- **§2 TDD Matrix**: skeleton with section headers — fill in after consensus
+- **§2.5 Fix Plan TPR Findings**: leave as gate placeholder — fill in during Phase 2.5 (or mark "Skipped" if gate criteria not met)
+- **§3 Implementation**: skeleton with proposed approach from Phase 1 — may be revised by consensus
+- **§R TPR Findings**: empty (populated during Phase 5)
+- **§4 Completion Checklist**: full template from the fix-section-template
+
+**Why this is here and not later:** The previous workflow created the fix file at Phase 2 (after `/tp-help` consensus), which meant no visible plan artifact existed for potentially 30+ minutes of investigation and consensus work. The user had no way to see progress or verify the investigation findings were being captured. Moving file creation to immediately after scope confirmation ensures:
+1. The investigation's root cause analysis is persisted immediately (not held only in Claude's context)
+2. The user can read the fix plan and course-correct before `/tp-help` runs
+3. If the session is interrupted, the investigation work isn't lost
+4. Phase 1.75 (`/tp-help`) updates §1.5 of an existing file rather than creating the whole file from scratch
+
+**Set frontmatter `status: in-progress`** — the fix is now actively being worked, even though implementation hasn't started. The file transitions from `in-progress` to `complete` at Phase 5.
+
 ### Phase 1.75: Fix Consensus (via /tp-help) — MANDATORY GATE
 
-**Before writing the fix section file, get independent dual-source consensus on the proposed fix approach.** This catches wrong-approach errors BEFORE they are locked into the fix section, the test matrix, or the implementation.
+**Before writing tests or code, get independent dual-source consensus on the proposed fix approach.** This catches wrong-approach errors BEFORE they are locked into the test matrix or the implementation. The fix section file already exists (Phase 1.6) — this phase fills in its §1.5 Fix Consensus section.
 
-This is NOT `/tp-help`'s usual "stuck help" use case — it is **design consensus**. You have investigation + root cause (Phase 1) + a confirmed point-fix scope (Phase 1.5) + a proposed approach. You are about to commit to it in writing. Get Codex and Gemini to independently pressure-test the approach before you lock it in. The `/tp-help` skill has an explicit carve-out for this calling context (see its "What Does NOT Trigger This" → "Exception — design consensus mode").
+This is NOT `/tp-help`'s usual "stuck help" use case — it is **design consensus**. You have investigation + root cause (Phase 1) + a confirmed point-fix scope (Phase 1.5) + a written fix plan (Phase 1.6) + a proposed approach. You are about to commit to implementation. Get Codex and Gemini to independently pressure-test the approach before you lock it in. The `/tp-help` skill has an explicit carve-out for this calling context (see its "What Does NOT Trigger This" → "Exception — design consensus mode").
 
 **Skip only when:** Phase 1.5 escalated to `/create-plan` or marked blocked. Plans get their own review loops; blocked bugs have nothing to review. EVERY other bug — including "trivial" one-liners — runs through consensus. What looks trivial often has architectural implications you would want flagged.
 
@@ -188,17 +238,78 @@ This is NOT `/tp-help`'s usual "stuck help" use case — it is **design consensu
    - **Interactive mode**: escalate via `AskUserQuestion` with a summary of the deadlock — Claude's position, reviewers' positions, the specific disagreement, and why Claude cannot reconcile. The user breaks the tie.
    - **Autopilot mode**: document the deadlock in § 1.5 Fix Consensus → "Round 3" entry ("AUTOPILOT DEADLOCK"), then proceed with Claude's best-grounded approach. The deadlock MUST be flagged in the `/fix-next-bug` final session report so the user can audit after the autopilot run ends. Do NOT use `AskUserQuestion` (autopilot rule).
 
-6. **Document consensus in the fix section file** (§ 1.5 Fix Consensus, per the template). The content is captured NOW; the file itself is written in Phase 2.
+6. **Update the fix section file's §1.5 Fix Consensus** with the consensus outcome (per the template). The fix file already exists from Phase 1.6 — fill in the consensus section now.
 
 **Interaction with Phase 1.5**: If `/tp-help` reveals the bug is actually systemic (requires architectural change across 4+ files, new abstractions, cross-crate redesign), **return to Phase 1.5** and re-assess. A consensus round that surfaces plan-escalation criteria is a WIN — cheaper than discovering it mid-implementation. Follow Phase 1.5's escalation protocol exactly — including the autopilot exception (which marks `Escalated: requires plan` instead of invoking `/create-plan`).
 
 **Runtime expectation**: `/tp-help` is ~10–15 min per round (dominated by gemini wall time). Budget 10–45 min for Phase 1.75 depending on whether reconciliation rounds are needed. This is deliberately expensive — one saved bad-approach cycle (where tests encode the wrong semantics and the fix has to be reverted) pays for many consensus calls.
 
-### Phase 2: Create the Fix Section File
+### Phase 2: Finalize the Fix Section File
 
-Create `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` using the template in [fix-section-template.md](fix-section-template.md). This file is the plan section for this bug fix — it documents the investigation, drives the TDD process, and tracks completion.
+The fix section file (`plans/bug-tracker/fix-BUG-{section}-{ordinal}.md`) already exists from Phase 1.6. After `/tp-help` consensus (Phase 1.75), finalize it:
 
-**IMPORTANT:** Write the fix file BEFORE writing any code. The fix file is the plan; the plan comes before the implementation.
+1. **Update §1.5 Fix Consensus** — already done in Phase 1.75 step 6
+2. **Fill in §2 TDD Matrix** — design the test matrix based on the agreed approach. List all tests that will be written in Phase 3.
+3. **Fill in §3 Implementation** — write the concrete implementation plan based on the consensus-agreed approach. Include code sketches.
+4. **Verify §1 Root Cause Analysis** is still accurate after consensus — if `/tp-help` revealed new affected files or a refined root cause, update §1.
+
+**IMPORTANT:** The fix file must be complete BEFORE writing any code. The file is the plan; the plan comes before the implementation.
+
+### Phase 2.5: Fix Plan TPR — Adversarial Plan Review
+
+**After the fix section is finalized (Phase 2) but BEFORE writing tests or code, run an adversarial `/tpr-review` on the fix PLAN itself.** This is a fundamentally different review from Phase 1.75's `/tp-help` — it stress-tests the plan for edge cases, downstream impacts, and TDD gaps rather than helping converge on an approach.
+
+**Why both `/tp-help` AND Plan TPR exist — they catch different failure classes:**
+
+| Gate | Mode | Catches | Incentive |
+|------|------|---------|-----------|
+| Phase 1.75 `/tp-help` | **Consultative** — "help me find the right approach" | Wrong direction entirely, missed alternatives | Converge to agreement |
+| Phase 2.5 Plan TPR | **Adversarial** — "try to break this plan" | Edge cases in TDD matrix, downstream impacts, missed interactions, architectural risks | Find flaws |
+
+A plan that survives collaborative consensus can still have fatal flaws that only surface under adversarial scrutiny. Catching these at the plan stage costs 20-45 min; catching them at Phase 5 (after implementation) costs hours of rework.
+
+#### Trigger Gate: Severity + Subsystem Complexity
+
+Plan TPR is **not always mandatory** — it is gated by bug severity AND subsystem complexity:
+
+**MANDATORY (always run Plan TPR) when ANY of these are true:**
+- Bug severity is `critical` or `high`
+- Bug is in a **complexity-elevated subsystem** (regardless of severity):
+
+| Subsystem | Crate/Path Pattern | Why Elevated |
+|-----------|-------------------|--------------|
+| **AIMS** | `crates/$1/`, `crates/$1/src/rc/` | 7-dimension lattice, interprocedural fixpoints, pass ordering dependencies, RC invariants |
+| **CodeGen** | `crates/$1/src/codegen/` | IR generation touches types, ABI, optimization levels; silent wrong-output bugs |
+| **LLVM integration** | `crates/$1/` (broadly) | Debug/release divergence (FastISel vs SelectionDAG), LLVM pass interactions |
+| **AOT** | `crates/$1/tests/aot/`, AOT compilation paths | End-to-end: type system → IR → LLVM → linking → runtime; failures can be anywhere in the chain |
+| **Runtime** | `crates/$1/` | FFI boundary, RC internals, platform-specific behavior; bugs here corrupt memory silently |
+
+The rationale: these subsystems have inherently high *approach risk* — even a "medium" severity bug (limited user impact) can require a fix with tricky edge cases, deep pass interactions, and non-obvious downstream effects. The severity rating captures *impact*; the subsystem gate captures *fix complexity*. Both dimensions matter.
+
+**SKIP (Plan TPR not required) when ALL of these are true:**
+- Bug severity is `medium` or `low`
+- Bug is NOT in a complexity-elevated subsystem
+- `/tp-help` consensus (Phase 1.75) converged in round 1 with agreement (no divergence)
+
+When skipped, record in the fix section's §2.5: `Plan TPR: Skipped — {severity} severity, non-elevated subsystem, round-1 consensus.`
+
+#### How to Run Plan TPR
+
+1. **Invoke `/tpr-review`** with the fix section file as the review target. The reviewers should examine:
+   - §1 Root Cause Analysis — is the root cause correctly identified? Any missed contributing factors?
+   - §1.5 Fix Consensus — did consensus miss anything? Are the rejected alternatives truly inferior?
+   - §2 TDD Matrix — are there missing cells? Edge cases not covered? Interaction tests missing?
+   - §3 Implementation — will this approach actually fix the root cause? What could go wrong? Downstream impacts?
+
+2. **Handle findings** — fix issues in the plan (update TDD matrix, refine implementation approach, add missing edge cases). Re-run Plan TPR if findings were significant (architectural-level concerns, not just missing test cases).
+
+3. **Update §2.5 Plan TPR Findings** in the fix section with the findings and resolutions.
+
+4. **Proceed to Phase 3** only when Plan TPR is clean (no unresolved findings).
+
+**In autopilot mode**: Plan TPR runs the same way — it's non-interactive. If findings require a decision, apply the most correct fix per CLAUDE.md's One Rule.
+
+**Runtime expectation**: ~20–45 min per round (standard `/tpr-review` timing). Budget one round for most bugs; complex bugs with significant findings may need a second round after plan revisions.
 
 ### Phase 3: TDD — Write Tests First
 
@@ -218,7 +329,12 @@ Update the fix section: check off each test as written, note test file paths.
 3. If tests need modification after the fix, either the tests were wrong or the fix was wrong — investigate
 4. **Run the full suite**: `timeout 150 cargo test --all`
 5. **If test-all reveals new failures unrelated to this fix** — invoke `/add-bug` for each one immediately. These are bugs your fix surfaced (interference) or pre-existing bugs you're now seeing. File them, don't ignore them.
-6. **Commit via `/commit-push`** — NEVER commit directly with `git commit`. All changes must be committed before review.
+6. **Capability regression check — MANDATORY.** Ask: "Did this fix **disable, remove, or weaken** any existing capability — an optimization, analysis pass, feature, or code path — to achieve soundness?" If YES:
+   - The disabled capability MUST have a concrete re-enablement path tracked as a `- [ ]` checkbox in the owning plan (e.g., `plans/repr-opt/`, `plans/perf-engineering/`). If no owning plan exists, create a bug-tracker entry via `/add-bug` with the re-enablement scope.
+   - The fix section's §3 Implementation MUST document: (a) what was disabled, (b) why (the soundness argument), (c) the tracked re-enablement item (plan path + section + checkbox text).
+   - Any `#[ignore]`'d tests MUST reference the re-enablement item so they are un-ignored when the capability returns.
+   - **A fix that disables a capability without tracking re-enablement is a deferral** — it violates CLAUDE.md §Zero Deferral. "Fixed the bug" is not complete when the fix regressed a design goal. The tracking artifact IS part of the fix.
+7. **Commit via `/commit-push`** — NEVER commit directly with `git commit`. All changes must be committed before review.
 
 Update the fix section: check off implementation tasks, note any discoveries.
 
@@ -227,14 +343,16 @@ Update the fix section: check off implementation tasks, note any discoveries.
 Work through the completion checklist in order. **Reviews MUST complete before bug closure** — a bug marked resolved before TPR/hygiene is a premature closure that hides unfinished work from `/fix-next-bug` and `/review-bugs`.
 
 1. **Verify all matrix items** — tests, builds, leak checks
-2. **Run `/tpr-review`** — independent third-party review of the fix
-3. **Handle TPR findings** — fix any issues found, re-run until clean
-4. **Run `/impl-hygiene-review`** — AFTER TPR is clean
+2. **Run `/tpr-review`** (Phase 5 — code review) — independent third-party review of the **implementation**. This is distinct from Plan TPR (Phase 2.5) which reviewed the plan. Both TPR phases can surface findings, but they review different artifacts.
+3. **Handle code TPR findings** — fix any issues found, re-run until clean
+4. **Run `/impl-hygiene-review`** — AFTER code TPR is clean
 5. **Run `/improve-tooling` retrospectively** — MANDATORY at fix close, AFTER both reviews are clean. Bug fixes are the richest source of tooling gaps because you've just spent time fighting the diagnostic surface during root cause analysis. Reflect on: which `diagnostics/` scripts you ran, where you added ad-hoc `dbg!`/`tracing` calls (and what each one was looking for), where the original failure message was unhelpful, where matrix tests were tedious because helpers were missing, what instrumentation would have made the bug obvious in 1 minute instead of 30. Capture every gap you noticed. Implement every accepted improvement NOW (zero deferral) and commit each via SEPARATE `/commit-push` using a valid conventional-commit type (e.g., `build(diagnostics): add --bb-level RC tracking — surfaced by BUG-XX-NNN retrospective` — use `build` for dev/diagnostic scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs; do NOT use `tools(...)` — the lefthook commit-msg hook rejects any type outside the standard set `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`). The retrospective is mandatory even when nothing felt painful — this is exactly when blind spots accumulate. See `.claude/skills/improve-tooling/SKILL.md` "Retrospective Mode" for the full look-back protocol.
-6. **Update the bug entry** in the section file — mark `- [x]` with resolution details using the canonical format from `plans/bug-tracker/00-overview.md`
-7. **Update the fix section** — set status to `complete`, fill in exit criteria
-8. **Update the overview** — adjust open bug count in `plans/bug-tracker/00-overview.md`
-9. **Final commit gate** — run `/commit-push` to commit the closure artifacts (bug entry, fix section status, overview count). A fix reported as complete but with uncommitted closure updates creates drift between the tracker and git history.
+6. **Capability regression gate** — if Phase 4 step 6 identified a disabled capability, verify BEFORE closure: (a) the re-enablement `- [ ]` item exists in the owning plan, (b) the fix section §3 documents the soundness argument + re-enablement path, (c) any `#[ignore]`'d tests reference the re-enablement item. A fix that closes without these artifacts is incomplete — the regression is untracked.
+7. **Update the bug entry** in the section file — mark `- [x]` with resolution details using the canonical format from `plans/bug-tracker/00-overview.md`
+8. **Update the fix section** — set status to `complete`, fill in exit criteria
+9. **Update the overview** — adjust open bug count in `plans/bug-tracker/00-overview.md`
+10. **`/sync-claude` doc sync** — MANDATORY. Bug fixes often touch code paths documented in `CLAUDE.md`, `.claude/rules/*.md`, or `canon.md`. Run `/sync-claude` to verify all Claude artifacts are consistent with the code changes. Especially critical when the fix: (a) adds/removes/renames a public API, enum variant, or command, (b) changes pipeline phase boundaries or pass ordering, (c) modifies the spec or grammar, (d) touches a subsystem whose rules file (`arc.md`, `codegen-rules.md`, `repr.md`, etc.) describes the affected code path. A fix that changes codegen behavior without updating `codegen-rules.md` is a DRIFT violation waiting to happen.
+11. **Final commit gate** — run `/commit-push` to commit the closure artifacts (bug entry, fix section status, overview count, any doc sync updates). A fix reported as complete but with uncommitted closure updates creates drift between the tracker and git history.
 
 ### Phase 6: Report
 
@@ -242,24 +360,29 @@ Report the fix to the user:
 ```
 Fixed: [BUG-{section}-{ordinal}][{severity}] {title}
   Fix section: plans/bug-tracker/fix-BUG-{section}-{ordinal}.md
+  Reclassified: {yes — {old}→{new}: {reason} | no}
   Tests added: {count} ({test file paths})
   Files changed: {list}
   Consensus: {converged | converged after N rounds | deadlocked (autopilot — proceeded with Claude's approach)}
-  TPR: {passed | findings resolved}
+  Plan TPR: {passed | findings resolved | skipped — {reason}}
+  Code TPR: {passed | findings resolved}
   Hygiene: {passed | findings resolved}
 ```
 
 ## Scaling Rules
 
-### Simple bugs (1-2 files, obvious fix)
+### Simple bugs (1-2 files, obvious fix, non-elevated subsystem)
 - The fix section is still MANDATORY — but sections 1-3 can be brief
 - TDD matrix can be smaller if the bug is narrowly scoped — but semantic + negative pins are ALWAYS required
-- **TPR and hygiene review are MANDATORY for ALL severities** — per CLAUDE.md Fix Completeness, a fix is not done until `/tpr-review` passed and `/impl-hygiene-review` passed, with no severity carve-out. The investigation/TDD phases scale down for simple bugs; the review gates do not.
+- **Plan TPR (Phase 2.5) may be SKIPPED** — only when: severity is medium/low AND subsystem is not complexity-elevated AND `/tp-help` converged in round 1. See Phase 2.5 gate criteria.
+- **Code TPR (Phase 5) and hygiene review are MANDATORY for ALL severities** — per CLAUDE.md Fix Completeness, a fix is not done until `/tpr-review` passed and `/impl-hygiene-review` passed, with no severity carve-out. The investigation/TDD phases scale down for simple bugs; the Phase 5 review gates do not.
 
-### Complex bugs (3+ files, architectural)
+### Complex bugs (3+ files, architectural, or complexity-elevated subsystem)
 - Full investigation with reference terminal emulators and GUI frameworks
 - Multiple design approaches with tradeoffs documented
-- TPR checkpoints during implementation if it spans multiple logical steps
+- **Severity reclassification at Phase 1.5** — investigation often reveals the bug is worse than initially rated. Reclassify upward when blast radius, subsystem complexity, or silent corruption risk warrants it. The reclassified severity governs all downstream gates.
+- **Plan TPR (Phase 2.5) is MANDATORY** — complexity-elevated subsystems always trigger it; critical/high severity always triggers it
+- Code TPR (Phase 5) checkpoints during implementation if it spans multiple logical steps
 - Consider whether the fix belongs in a proper plan section instead of a bug fix
 
 ### Clusters (multiple related bugs)
@@ -284,6 +407,8 @@ Do NOT gloss over these as "not my bug" or "separate issue" — file them via `/
 - **`/fix-next-bug`** — orchestrates picking bugs from the tracker and invoking this skill in priority order
 - **`/review-bugs`** — triages bugs; recommends `/fix-bug` for selected bugs
 - **`/create-plan`** — MANDATORY in interactive mode when Phase 1.5 determines the bug needs a plan. In autopilot mode, `/create-plan` is NOT invoked (it requires interactive approval gates) — instead the bug is marked `Escalated: requires plan` per Phase 1.5's autopilot exception.
+- **`/tp-help`** — called in Phase 1.75 for consultative design consensus before tests/implementation
+- **`/tpr-review`** — called in **two distinct phases**: Phase 2.5 (adversarial plan review — gated by severity + subsystem complexity) and Phase 5 (adversarial code review — mandatory for ALL severities). These are different review targets: plan vs. implementation.
 - **`/commit-push`** — used in Phase 4 to commit changes before review
-- **`/tpr-review`** — called during completion checklist
-- **`/impl-hygiene-review`** — called during completion checklist, AFTER TPR
+- **`/impl-hygiene-review`** — called during Phase 5 completion checklist, AFTER code TPR
+- **`/improve-tooling`** — called during Phase 5 completion checklist, AFTER both reviews are clean

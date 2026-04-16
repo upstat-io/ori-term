@@ -1,62 +1,39 @@
 ---
 name: tpr-review
-description: "Run an independent dual-source (codex + gemini) third-party review of your work in parallel, then fix findings and re-run until BOTH reviewers come back clean — TRIGGER proactively after completing ANY non-trivial work: bug fixes, new features, refactors, multi-file changes, grid / VTE / renderer changes, widget framework changes, GPU render path changes, test additions, plan implementations, or anything touching correctness-sensitive code in ori_term. When in doubt, run it. The cost of an unnecessary review is near zero; the cost of a missed bug is high."
+description: "Run an independent dual-source (codex + gemini) third-party review in parallel, then fix findings and re-run until BOTH reviewers come back clean (full consensus). Reviews ANYTHING — code, plans, skills, docs, designs, tooling, processes, or any custom objective. TRIGGER proactively after completing ANY non-trivial work, OR when you want iterative improvement driven by multi-agent consensus. When in doubt, run it. The cost of an unnecessary review is near zero; the cost of a missed bug is high."
 ---
 
 # Dual-Source TPR Review (Codex + Gemini)
 
-Run BOTH the Codex CLI AND the Gemini CLI non-interactively in parallel to perform independent review passes, merge their findings with reviewer tagging, then fix any findings and re-run until BOTH reviewers return zero actionable findings. Codex and Gemini each have their own context, rules, and skills — they figure out scope on their own.
+Run BOTH the Codex CLI AND the Gemini CLI non-interactively in parallel to perform independent review passes, merge findings with reviewer tagging, verify each finding against the actual code, fix, and re-run until BOTH reviewers return zero actionable findings AND thoroughness is judged sufficient (full consensus).
 
-**Two reviewer skill modes** (selected via `ARGS`):
-- **Default (`review-work`)**: reviewers use their `review-work` skill — code-oriented review
-- **Plan review (`--skill review-plan`)**: reviewers use their `review-plan` skill — plan-oriented review (mission criteria, cross-section coherence, executability). Invoked by `/review-plan`.
+**This is a GENERAL-PURPOSE third-party review.** The name is "TPR" — Third-Party Review — not "Third-Party Code Review." It reviews ANYTHING: code, plans, skills, docs, designs, tooling, processes, or any custom objective. The loop runs until full consensus across all agents.
+
+**Three reviewer modes** (selected via `ARGS`):
+- **Default (`review-work`)**: no ARGS, or explicit `--skill review-work` — reviewers use their `review-work` skill.
+- **Plan review (`--skill review-plan`)**: reviewers use their `review-plan` skill. Invoked by `/review-plan`.
+- **Custom objective** (any other ARGS): ARGS text becomes the reviewer's objective directly.
 
 This wrapper is built on the Section 02 dual-source transport utility. All launching, parsing, schema validation, worktree-guarding, and infra retry logic lives in `.claude/skills/dual-tpr/scripts/` — this skill is purely the **semantic** fix-and-re-run loop that consumes merged findings. See `.claude/skills/dual-tpr/transport.md` for the transport contract.
 
-## Step 0 — MANDATORY: Re-read CLAUDE.md
+## How this skill runs
 
-**Before doing ANYTHING else, re-read the entire project CLAUDE.md.** This is non-negotiable. Even if you believe it is in memory, you MUST physically read it with the Read tool. Context compression may have dropped critical rules. Do this every single time this skill runs.
+SKILL.md is a thin loop coordinator. Each round of the loop dispatches two sub-agents:
 
-```
-Read CLAUDE.md (the project root one)
-```
+- **Setup sub-agent (Sonnet)** — reads `step-1-round-setup.md`, runs Steps 0–4 + polling + merge, writes `merged.json`.
+- **Triage sub-agent (Opus)** — reads `step-2-round-triage.md`, verifies findings, judges thoroughness, files + fixes + commits, writes `triage.json`.
 
-## ABSOLUTE: You May NEVER Reason Out of Findings
+The coordinator itself only reads the small `triage.json` output to decide loop continuation. The full reviewer prompts, envelopes, merge logic, verification-against-code, and fix implementation never touch the coordinator's context.
 
-**There is NO circumstance under which you may dismiss, rationalize, scope-note, or defer a TPR finding.** The ONLY valid responses to a finding are:
+After the loop exits (clean pass, cap hit, or transport failure), the coordinator dispatches a **final-report sub-agent (Sonnet)** that reads all round artifacts and writes the user-facing summary.
 
-1. **Fix it NOW** — write code, write tests, verify, commit
-2. **Create a plan and execute it** — if too large for inline fix, create concrete implementation steps, then implement them
-3. **AskUserQuestion** — if genuinely blocked (need user decision, missing domain knowledge)
+**Model policy:** setup and final-report on Sonnet; triage on Opus. The triage agent's Opus dispatch is non-negotiable because Gemini confabulation detection requires independent verification against code — a weaker model silently accepts bad findings. The full rationale lives in `step-2-round-triage.md` §"Trust tiers (set verification depth, not pass/fail)" and in `.claude/rules/impl-hygiene.md` §"No Side Logic" (LOWER trust for gemini = mandatory FULL verification; HIGH trust for codex = spot-check). The invoker's session model is irrelevant; the dispatch boundary enforces the split.
 
-**BANNED responses to findings — using ANY of these is a violation:**
-- "Pre-existing issue" / "was already broken"
-- "Architectural limitation" / "requires major refactor"
-- "Out of scope" / "not a §03 deliverable"
-- "Conservative/safe" / "only precision loss"
-- "Not a regression" / "not introduced by this work"
-- "Future improvement" / "tracked for later"
-- "Scoped as known limitation"
-- Marking `[x] Resolved:` with an explanation instead of a code fix
+## Finding-handling policy — SSOT reference
 
-**The size of the fix is irrelevant.** If the correct fix requires cross-crate refactoring across 10 files, that IS the work. "Requires architectural change" is not a reason to skip — it IS the work.
+Finding handling is entirely the triage sub-agent's responsibility. The canonical home for that policy — "You May NEVER Reason Out of Findings", banned response list, and "Correct Architectural Solutions Only" — lives in `step-2-round-triage.md` §ABSOLUTE blocks. The coordinator (this file) restates none of it; it dispatches the triage sub-agent, reads the resulting `triage.json`, and branches the loop. This single source of truth exists to prevent coordinator and triage semantics from drifting independently (the prior version duplicated the policy here, which is exactly the `impl-hygiene.md` §Algorithmic DRY violation this refactor eliminated).
 
-**"Future improvement" requires a concrete artifact.** If you ever say something will be tracked, you MUST in the same response create: a bug-tracker entry (`/add-bug`), plan section `- [ ]` item, or roadmap checkbox. Ask yourself: "When would this get done? Who would find it?" If nobody/never, fix it now.
-
-## ABSOLUTE: Correct Architectural Solutions Only
-
-**Before fixing ANY finding, read `.claude/rules/impl-hygiene.md`.** This is non-negotiable. The hygiene rules define SSOT (Single Source of Truth), No Side Logic, canonical homes, phase boundaries, and finding categories (LEAK, DRIFT, GAP, etc.). Every fix must respect these principles.
-
-**Fixes must be the correct, proper architectural solution — never quick fixes, workarounds, counters, flags, or hacks.** Specifically:
-
-- **SSOT**: if the finding reveals scattered knowledge or duplicated dispatch, the fix is to establish/use the canonical home — not to patch each copy
-- **No Side Logic**: if logic lives outside its canonical home, the fix is to move it — not to add another copy that "works"
-- **Canonical Homes**: every behavioral decision has exactly ONE file that defines it. If a fix would create a second source of truth, it is wrong
-- **Crate Boundaries**: fixes must not bleed responsibilities across crate boundaries. If fixing a widget bug requires adding GPU-specific logic to `oriterm_ui`, that's the wrong fix — `oriterm_ui` must stay headless-testable (see `.claude/rules/crate-boundaries.md` litmus test). Per-crate ownership lives in the per-crate rules under `.claude/rules/oriterm*.md`.
-- **Canonical Homes in ori_term**: grid / VTE / terminfo behavior lives in `oriterm_core`; widget / interaction / animation / compositor lives in `oriterm_ui`; pane lifecycle / PTY / snapshot buffer lives in `oriterm_mux`; app shell / GPU / font pipeline / session model lives in `oriterm`. Fixes that hardcode the same knowledge in a second crate are LEAKs. Check `.claude/rules/crate-boundaries.md` Ownership table.
-- **Enforcement**: when a fix adds a new variant, sync point, or dispatch arm, it MUST have enforcement (exhaustive match, exhaustiveness test, or architecture test in `oriterm/tests/architecture.rs`) to prevent future drift
-
-**The "quick fix" test**: if your fix would not survive a code review by someone who has read `impl-hygiene.md`, it's wrong. The correct fix may touch 10 files across 3 crates — that IS the fix. A workaround that passes tests is not a fix.
+**Coordinator contract:** if `triage.round_summary` is missing or empty, that is a protocol violation — escalate to the user via `AskUserQuestion` rather than continuing silently (see the loop state machine below). The coordinator does NOT reinterpret or second-guess the triage sub-agent's accept/reject/fix disposition; its job is dispatch + branch, not policy.
 
 ## When to Trigger — Bias Toward Running
 
@@ -65,538 +42,198 @@ Read CLAUDE.md (the project root one)
 - New features or feature extensions
 - Refactors or code reorganization
 - Multi-file changes (2+ files)
-- Any change to `oriterm_core` (grid, VTE handler, reflow, selection, search, terminfo)
-- Any change to `oriterm_ui` (widgets, WindowRoot, interaction, pipeline, animation, test harness)
-- Any change to `oriterm_mux` (pane lifecycle, IO thread, snapshot double-buffer, PTY, mux backend)
-- Any change to `oriterm` (app shell, winit event loop, GPU rendering, session model, font pipeline, config)
-- Any change to the GPU render path (`render_frame_cached`, atlas, compositor, shaders)
-- Any change touching `#[cfg(target_os = ...)]` branches
-- Test matrix additions, teseq / tack / vttest / visual-regression additions
+- Any change to compiler crates, codegen, type checking, evaluation, ARC/AIMS pipeline
+- Test matrix additions or test infrastructure changes
 - Plan section implementations
-- Changes to color detection, unicode width, raw mode, signal handling, or panic recovery
+- Stdlib or registry changes
+- Changes to error handling or diagnostics
 
-**Also run when:**
-- You're unsure whether the change warrants review (default: run it)
-- The work involved multiple steps or non-obvious decisions
-- The change touches code paths shared across subsystems
-- You fixed something that was interfering with other code
+**Also run when** unsure whether a change warrants review (default: run it), work involved multiple steps or non-obvious decisions, the change touches code paths shared across subsystems, or you fixed something that was interfering with other code.
+
+**Run with a custom objective when** the user wants iterative improvement of any artifact, multi-agent consensus on quality, or the subject is not code or a plan.
 
 **The only time NOT to run:** purely cosmetic single-line changes (typo fixes, comment edits, formatting-only).
 
-## Loop Protocol — MANDATORY
+## Loop State Machine (authoritative contract)
+
+Infra retries are invisible to `iteration_counter` — they happen inside `dual-invoke-with-retry.sh` and either resolve (round continues) or exhaust (user escalation, counter untouched).
 
 ```
-+---------------------------------------------------------+
-|              DUAL-SOURCE TPR REVIEW LOOP                |
-|                                                         |
-|  0. CLAUDE re-reads CLAUDE.md (MANDATORY)               |
-|        |                                                |
-|  1. TRANSPORT launches BOTH reviewers in parallel:      |
-|     - codex exec (envelope-only mode)                   |
-|     - gemini  (skill activation per ARGS)               |
-|     Infra retries (3 per reviewer, exp. backoff)        |
-|     are INSIDE the transport — they do NOT consume      |
-|     semantic iterations.                                |
-|        |                                                |
-|  2. CLAUDE merges findings via merge-findings.py        |
-|        |                                                |
-|  3. Zero actionable findings? --YES--> DONE (clean)     |
-|        |                                                |
-|       NO                                                |
-|        |                                                |
-|  4. CLAUDE files findings in plan/bug-tracker           |
-|  5. CLAUDE fixes each finding (code + tests)            |
-|  6. CLAUDE commits fixes via /commit-push               |
-|        |                                                |
-|  7. Go to step 1 (BOTH reviewers re-review fixed code)  |
-|                                                         |
-+---------------------------------------------------------+
-```
+run_id = <generated e.g. /tmp/tpr-abc123>
+iteration_counter = 0                # finding-fixing rounds (cap: 10)
+thoroughness_reject_counter = 0      # consecutive WASTED rounds (cap: 3)
+strengthened_language_required = false
+loop_started_at = now()              # unix seconds — global walltime anchor
+loop_max_walltime = env("ORI_TPR_LOOP_MAX_WALLTIME", default=2700)  # 45 min
+# persist state (incl. loop_started_at) to {run_id}/state.json for sub-agents
 
-**Three actors:**
-- **Codex** (external reviewer #1): runs `.codex/skills/{skill_name}/SKILL.md` in envelope-only mode. Does NOT fix anything. Default: `review-work`; plan review: `review-plan`.
-- **Gemini** (external reviewer #2): runs `.gemini/skills/{skill_name}/SKILL.md`. Does NOT fix anything. Can issue `google_web_search` for external claim verification. Default: `review-work`; plan review: `review-plan`.
-- **Claude** (you): reads merged findings, fixes the code/plan, commits, re-invokes the transport.
+while iteration_counter < 10 and thoroughness_reject_counter < 3:
+    # ── GLOBAL WALLTIME CAP (hard ceiling, ALL rounds combined) ─
+    # The per-reviewer stall/walltime caps in dual-invoke.sh bound a single
+    # reviewer invocation. This cap bounds the ENTIRE /tpr-review loop —
+    # setup + triage + final-report across every round. Users rely on /tpr-
+    # review being a bounded operation; without this cap, 3-4 slow rounds
+    # can silently consume 2+ hours. Default 45 min. Overridable only via
+    # env at invocation time. The cap fires BEFORE the next round's setup
+    # dispatch so we never start a round we can't finish in the remaining
+    # budget.
+    elapsed = now() - loop_started_at
+    if elapsed >= loop_max_walltime:
+        break  # exit loop; final-report sub-agent will render the walltime cap
+    round_n = iteration_counter + thoroughness_reject_counter  # monotonic
+    mkdir -p {run_id}/round-{round_n}/
 
-**A round succeeds only when BOTH reviewers complete cleanly AND the merged finding list contains zero actionable findings.** Filing findings without fixing and re-running is deferral. Fixing findings without re-running BOTH reviewers to confirm clean is incomplete. A partial re-run (only one reviewer) is NOT a valid clean pass.
+    # ── SETUP DISPATCH (Sonnet) ─────────────────────────────
+    Agent({
+      subagent_type: "general-purpose",
+      model: "sonnet",
+      description: "tpr-review round setup",
+      prompt: `
+        Read .claude/skills/tpr-review/step-1-round-setup.md and execute it.
+        run_id: {run_id}
+        round_n: {round_n}
+        args: {ARGS}            # empty | "--skill review-plan" | custom objective text
+        strengthened_language_required: {strengthened_language_required}
+        Read the run-state from {run_id}/state.json.
+        Write merged findings to {run_id}/round-{round_n}/merged.json and a short
+        summary to stdout. If the transport fails, return an escalation payload.
+      `
+    })
 
-**Maximum semantic iterations: 10.** Infra retries inside `dual-invoke-with-retry.sh` do NOT count against this budget — the budget is for finding-fixing rounds, not transport failures. If after 10 semantic cycles findings are still surfacing, surface the remaining merged findings to the user via `AskUserQuestion`.
+    # Read the tiny summary, not the full merged.json
+    setup_out = tail -3 of the Sonnet agent's stdout
 
-### Loop State Machine
+    if setup_out indicates transport failure:
+        surface failure + {run_id} to user via AskUserQuestion (per Transport
+        Failure Handling in step-1-round-setup.md)
+        EXIT  # no counter increment
 
-The loop protocol above is an illustrative diagram; the state machine below is the authoritative contract. Infra retries are invisible to `iteration_counter` — they happen inside step `dual-invoke-with-retry.sh` and either resolve (round continues) or exhaust (user escalation, counter untouched).
+    # ── TRIAGE DISPATCH (Opus) ──────────────────────────────
+    Agent({
+      subagent_type: "general-purpose",
+      model: "opus",
+      description: "tpr-review round triage",
+      prompt: `
+        Read .claude/skills/tpr-review/step-2-round-triage.md and execute it.
+        run_id: {run_id}
+        round_n: {round_n}
+        Read merged findings from {run_id}/round-{round_n}/merged.json.
+        Read run-state from {run_id}/state.json.
+        Verify each finding against the actual code (Gemini trust tier LOWER —
+        full verification; Codex HIGH — spot-check). Judge thoroughness. File
+        findings, fix them, commit via /commit-push. Write the outcome to
+        {run_id}/round-{round_n}/triage.json per the schema in step-2.
+      `
+    })
 
-```
-iteration_counter = 0
-while iteration_counter < 10:
-    RUN = scratch-dir.sh
-    write codex.prompt.md and gemini.prompt.md into RUN
-    if dual-invoke-with-retry.sh fails:
-        # infra retries (3 per reviewer, 1s/2s/4s backoff) already
-        # exhausted inside the transport — do NOT increment, do NOT
-        # retry the semantic loop
-        surface failure category + $RUN to user via AskUserQuestion
+    # Read only triage.json (small — a handful of fields + round_summary markdown)
+    triage = read {run_id}/round-{round_n}/triage.json
+
+    # ── USER-FACING ROUND RENDER (MANDATORY) ────────────────
+    # Print triage.round_summary verbatim to the user BEFORE the decision
+    # branches below. This is the only place the user sees per-finding
+    # disposition between rounds; the coordinator deliberately does not
+    # read merged.json, so if round_summary is missing or truncated the
+    # user cannot track progress across rounds. If triage.round_summary
+    # is absent, that is a contract violation by the triage sub-agent —
+    # escalate rather than continuing silently.
+    if "round_summary" not in triage or triage.round_summary is empty:
+        surface contract violation to user via AskUserQuestion
         EXIT
-    else:
-        # both envelopes passed parser + schema + worktree-guard
-        merged = merge-findings.py(codex.envelope.json, gemini.envelope.json)
-        if merged.summary.actionable == 0:
-            CLEAN PASS — exit with iteration_counter for the report
-            # (informational findings are non-actionable — they don't block clean pass)
-        for each actionable finding in merged (severity != "informational"):
-            file into owning plan TPR block or bug-tracker
-            fix the code
-            run `timeout 150 cargo test --all`
-        commit via /commit-push
+    print triage.round_summary
+
+    if triage.actionable_after_triage == 0 and triage.thoroughness_ok:
+        # CLEAN PASS — exit (final-report sub-agent will re-render a
+        # consolidated summary; the per-round print above is still
+        # shown so the user sees the last round's details immediately)
+        break
+
+    if triage.get("exit_clean") is True:
+        # CONVERGENCE GATE (step-2 §6c.1) — the triage agent has
+        # fixed this round's findings AND judged the loop has
+        # converged on LOW-only cosmetic residue. The remaining
+        # fixes are committed; continuing would burn rounds on
+        # polishing polish. Exit clean; final-report will frame
+        # the exit as "converged on cosmetics" instead of
+        # "zero findings." The convergence rationale is in
+        # triage.convergence_rationale and audited in round_summary.
+        break
+
+    if triage.actionable_after_triage == 0 and not triage.thoroughness_ok:
+        # Pure waste — zero findings + thin review
+        thoroughness_reject_counter += 1
+        strengthened_language_required = true
+        # iteration_counter NOT incremented — nothing was fixed
+        persist state; continue
+
+    if triage.actionable_after_triage > 0:
+        # Findings filed and fixed by the triage agent
         iteration_counter += 1
-# After 10 semantic iterations without a clean pass:
-surface remaining merged findings to user via AskUserQuestion
+        thoroughness_reject_counter = 0   # findings = progress
+        strengthened_language_required = not triage.thoroughness_ok
+        persist state; continue
+
+# ── EXIT ────────────────────────────────────────────────────
+# Determine exit_reason so the final-report sub-agent renders the right
+# Branch in its output schema (see step-3-final-report.md §Output Schema).
+# Check order matters — the global walltime cap is the only cap that fires
+# mid-iteration, so it wins over the two mid-loop caps even if one would
+# nominally have also fired on the same iteration.
+elapsed = now() - loop_started_at
+if elapsed >= loop_max_walltime:
+    exit_reason = "global_walltime_cap"
+elif iteration_counter >= 10:
+    exit_reason = "max_iterations_reached"
+elif thoroughness_reject_counter >= 3:
+    exit_reason = "max_thoroughness_rejections_reached"
+elif last_triage.get("exit_clean") is True:
+    exit_reason = "converged"
+else:
+    exit_reason = "clean"
+persist exit_reason + elapsed to {run_id}/state.json
+
+# Dispatch final-report sub-agent (Sonnet) — reads all round artifacts,
+# writes the user-facing summary, frames cap-hit escalations per
+# step-3-final-report.md.
+Agent({
+  subagent_type: "general-purpose",
+  model: "sonnet",
+  description: "tpr-review final report",
+  prompt: `
+    Read .claude/skills/tpr-review/step-3-final-report.md and execute it.
+    run_id: {run_id}
+    exit_reason: {exit_reason}         # clean | converged | max_iterations_reached
+                                       # | max_thoroughness_rejections_reached
+                                       # | global_walltime_cap
+    loop_elapsed_seconds: {elapsed}
+    loop_max_walltime: {loop_max_walltime}
+    Read run-state from {run_id}/state.json and every
+    {run_id}/round-*/triage.json file.
+    Emit the final user-facing summary. If a cap was hit, frame the
+    escalation and output the AskUserQuestion payload the coordinator
+    should present.
+  `
+})
 ```
 
 **Invariants:**
-- `iteration_counter` increments ONLY after a successful round that found actionable findings AND those findings were fixed AND the commit landed. Any earlier exit (infra failure, clean pass) skips the increment.
-- Infra retries (inside the transport) and semantic iterations (this loop) are **orthogonal budgets**. One cannot consume the other. A transient network hiccup burning 3 infra retries still leaves the 10-iteration semantic budget untouched.
-- A clean pass on any iteration is a terminal state: the report includes `iteration_counter` at exit so "clean on iteration 1" vs "clean on iteration 3 after fixing N findings" are distinguishable in the final output.
-- The 10-iteration cap is a **user-facing stopping rule**, not a correctness guarantee — if findings keep surfacing, that is signal, not noise, and the user decides whether to continue, abandon, or dig into a recurring finding.
+- `iteration_counter` increments ONLY after a successful round that found actionable findings AND those findings were fixed AND the commit landed.
+- `thoroughness_reject_counter` increments ONLY on the zero-findings + thin-review cell. Resets to zero on any round that produces actionable findings.
+- `strengthened_language_required` tracks the depth of the last round, independent of finding count. Set true after any thin round, cleared only after a thorough round.
+- **Findings are NEVER discarded on a thin review.** The fix path runs unconditionally when findings exist; the thin signal propagates via the flag, not by throwing away data.
+- Infra retries (transport), finding-fixing iterations, and thoroughness-reject iterations are three orthogonal budgets.
+- Maximum semantic iterations: 10. Maximum thoroughness-reject iterations: 3 (consecutive). Hitting either cap escalates to user via AskUserQuestion.
+- Thoroughness judgment is Opus's call (in the triage sub-agent), not a static threshold.
 
-## Steps (Per Iteration)
+## AskUserQuestion on escalation (MANDATORY)
 
-### 1. Create a per-run scratch directory
+When the final-report sub-agent emits an escalation payload (cap hit, transport failure, or triage agent's own `"escalate": true`), the coordinator MUST invoke `AskUserQuestion` with the payload's `question` + `options` verbatim. Never dump escalations as prose.
 
-```
-Bash:
-  RUN=$(.claude/skills/dual-tpr/scripts/scratch-dir.sh)
-  echo "$RUN"
-```
+## Files in this skill
 
-Each semantic iteration gets a fresh `$RUN` (e.g. `/tmp/ori-tpr-XXXXXXXX`). Reuse across iterations is forbidden — a stale envelope from the previous round would corrupt the merge.
+- `SKILL.md` (this file) — loop coordinator + model policy + triggers + absolute rules.
+- `step-1-round-setup.md` — Sonnet sub-agent protocol: Steps 0–4 + polling + merge + thoroughness re-review directive + transport failure handling.
+- `step-2-round-triage.md` — Opus sub-agent protocol: Step 5 (verify) + Step 6 (thoroughness) + Step 7 (file + fix + commit) + merged finding format.
+- `step-3-final-report.md` — Sonnet sub-agent protocol: final report + user escalation framing.
 
-### 2. Write both reviewer prompts
-
-The codex and gemini prompts share the same evidence packet but differ in their activation preamble. See `.claude/skills/dual-tpr/transport.md` for the canonical preambles.
-
-**Reviewer skill selection** — default is `review-work` (code review). When invoked from a plan-review context (e.g. `/review-plan`), use `review-plan` preambles instead. The caller communicates this via `ARGS`:
-- Default (`review-work`): use preambles below as-is
-- Plan-review (`review-plan`): substitute `review-plan` for `review-work` in both preambles — see `transport.md` §Codex/Gemini preamble sections
-
-- **Codex prompt** MUST include the literal keyword `envelope-only` in its first 500 characters — this dispatches `.codex/skills/review-work/SKILL.md` (or `.codex/skills/review-plan/SKILL.md` for plan review) into envelope-only mode.
-- **Gemini prompt** MUST start with the literal activation phrase `Activate the review-work skill and follow its instructions exactly.` (or `Activate the review-plan skill and follow its instructions exactly.` for plan review) — gemini does NOT auto-activate from description matching; the phrase is load-bearing.
-
-#### Mandatory Grounding Block
-
-**Every reviewer prompt MUST contain a "Grounding — read these files FIRST" section before the scope hint.** Without this grounding, reviewers produce findings against unknown conventions — generic "this looks odd" noise instead of precise `LEAK:scattered-knowledge at path:line` findings that match the project's actual rules.
-
-The grounding block is IDENTICAL for both reviewers and MUST list ALL project rule files, then the relevant per-crate rule files:
-
-1. `CLAUDE.md` (project root) — correctness above all, no deferral, stabilization discipline, Bug Discipline, workspace layout
-2. `.claude/rules/impl-hygiene.md` — SSOT, No Side Logic, finding categories (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE), canonical homes, algorithmic DRY, test-function naming
-3. `.claude/rules/code-hygiene.md` — file organization (500-line limit), error handling, formatting, function size, public-API discipline
-4. `.claude/rules/tests.md` — matrix testing, interaction testing, cross-platform verification, negative pin protocol, regression discipline, performance invariants
-5. `.claude/rules/test-organization.md` — sibling `tests.rs` pattern
-6. `.claude/rules/crate-boundaries.md` — per-crate ownership and allowed dependency direction
-7. Every per-crate rule file under `.claude/rules/oriterm*.md` whose `paths:` glob covers any file in scope (`oriterm_core.md`, `oriterm_ui.md`, `oriterm_mux.md`, `oriterm_ipc.md`, `oriterm.md`). Run `ls .claude/rules/*.md` if you're unsure of the live inventory — the list evolves.
-
-Write both prompts to the scratch dir:
-
-```
-Bash:
-  cat > "$RUN/codex.prompt.md" <<'PROMPT'
-  Run the /{skill_name} skill in envelope-only mode. Emit the JSON
-  envelope per .claude/skills/dual-tpr/findings-schema.json; do NOT
-  write findings to plan files.
-  # NOTE: {skill_name} is review-work (default) or review-plan (plan review)
-
-  ## Grounding — read these files FIRST before reviewing
-
-  Before you look at any of the changed code, read these files in full
-  so your findings are scoped to the project's actual rules. Every
-  finding must use the finding categories and architectural vocabulary
-  defined in impl-hygiene.md (LEAK, DRIFT, GAP, WASTE, etc.).
-
-  1. CLAUDE.md (project root)
-  2. .claude/rules/impl-hygiene.md
-  3. .claude/rules/code-hygiene.md
-  4. .claude/rules/tests.md
-  5. .claude/rules/test-organization.md
-  6. .claude/rules/crate-boundaries.md
-  7. Any .claude/rules/oriterm*.md per-crate rule file whose `paths:`
-     glob covers files in scope (oriterm_core.md, oriterm_ui.md,
-     oriterm_mux.md, oriterm_ipc.md, oriterm.md). Run
-     `ls .claude/rules/*.md` to see the live inventory.
-
-  ## Scope: <scope hint — e.g. "HEAD~5..HEAD", a plan section name, or explicit files>
-
-  <evidence packet: what changed, why, what to look for>
-  PROMPT
-
-  cat > "$RUN/gemini.prompt.md" <<'PROMPT'
-  Activate the {skill_name} skill and follow its instructions exactly.
-  Emit the JSON envelope per .claude/skills/dual-tpr/findings-schema.json;
-  do NOT write findings to plan files.
-  # NOTE: {skill_name} is review-work (default) or review-plan (plan review)
-
-  ## Grounding — read these files FIRST before reviewing
-
-  Before you look at any of the changed code, read these files in full
-  so your findings are scoped to the project's actual rules. Every
-  finding must use the finding categories and architectural vocabulary
-  defined in impl-hygiene.md (LEAK, DRIFT, GAP, WASTE, etc.).
-
-  1. CLAUDE.md (project root)
-  2. .claude/rules/impl-hygiene.md
-  3. .claude/rules/code-hygiene.md
-  4. .claude/rules/tests.md
-  5. .claude/rules/test-organization.md
-  6. .claude/rules/crate-boundaries.md
-  7. Any .claude/rules/oriterm*.md per-crate rule file whose `paths:`
-     glob covers files in scope (oriterm_core.md, oriterm_ui.md,
-     oriterm_mux.md, oriterm_ipc.md, oriterm.md).
-
-  ## Scope: <same scope hint>
-
-  <evidence packet: same>
-  PROMPT
-```
-
-The evidence packet is INFORMATIONAL, not authoritative — reviewers expand scope as they see fit. The GROUNDING block, in contrast, is AUTHORITATIVE — reviewers that skip it produce noise and their envelopes should be treated with extra scrutiny.
-
-### 3. Invoke the dual-source transport in the background
-
-The transport launches both reviewers in parallel, handles infra retries (3 per reviewer, exponential backoff 1s / 2s / 4s), runs the schema validators, and applies the dirty-worktree guard. A full round typically takes 5-15 minutes — BOTH reviewers running concurrently, so wall time is roughly `max(codex_walltime, gemini_walltime)`, not the sum.
-
-Running the transport in the Bash foreground either hits the 2-minute tool timeout or gets auto-backgrounded with output truncated. Always use `run_in_background: true`. The `.claude/hooks/block-banned-commands.sh` hook explicitly allows backgrounded codex and gemini commands.
-
-The `--skill` parameter controls both the transport log label and which reviewer preambles were used. Default: `review-work`. If `ARGS` contains `--skill review-plan`, use `review-plan` instead.
-
-```
-Bash (run_in_background: true):
-  .claude/skills/dual-tpr/scripts/dual-invoke-with-retry.sh \
-    --run "$RUN" \
-    --skill {skill_name} \
-    --codex-prompt "$RUN/codex.prompt.md" \
-    --gemini-prompt "$RUN/gemini.prompt.md" \
-    --schema .claude/skills/dual-tpr/findings-schema.json
-```
-
-**DO NOT:**
-- Run the transport in the Bash foreground.
-- Set a `timeout:` parameter on the Bash call.
-- Wrap the transport in an Agent subagent — the subagent cannot itself be backgrounded, so it reintroduces the foreground cap.
-- Poll `$RUN/*.envelope.json` or `$RUN/merged.json` — those files use atomic-write semantics and reading them mid-stream can see a partial file.
-- Add a trailing `echo "transport_exit=$?"` (or any other trailing command). The bash script's overall exit code is the exit code of the LAST executed command — a trailing echo ALWAYS exits 0 and masks the transport's real failure (BUG-08-007). The task notification's reported exit code is the source of truth.
-
-### Polling Protocol — Canonical SSOT
-
-**Protocol lives in `.claude/skills/dual-tpr/polling-protocol.md` — `@`-included below. Follow it verbatim.**
-
-`/tp-help`, `/tpr-review`, `/review-work`, and any future dual-source consumer share a single canonical polling protocol. It lives in one file and is expanded here via `@`-include so updates propagate automatically. Prior to 2026-04-08, each skill inlined its own copy — they drifted (tpr-review + review-work used identical text, tp-help had slight wording drift) and produced poor real-time visibility (silent 5-min periods from `sleep 300` backgrounded polls, relative "T+N min" timestamps without absolute anchors). Consolidation into `polling-protocol.md` is the SSOT fix per `impl-hygiene.md` §SSOT / §Algorithmic DRY.
-
-@.claude/skills/dual-tpr/polling-protocol.md
-
-**After the protocol above**, move to Step 4 (merge envelopes on success).
-
-### 4. On success: merge both envelopes
-
-When the completion notification arrives AND the transport exited 0, both envelopes passed parser + schema + worktree-guard validation (the transport is responsible for all of those checks). Run the merger:
-
-```
-Bash:
-  .claude/skills/dual-tpr/scripts/merge-findings.py \
-    --codex "$RUN/codex.envelope.json" \
-    --gemini "$RUN/gemini.envelope.json" \
-    --section "<NN>" \
-    --out "$RUN/merged.json"
-```
-
-`<NN>` is the owning plan-section number (e.g. `04`), or `XX` if no owning plan exists. Then read `$RUN/merged.json`. Each entry has:
-
-- `id` — reviewer-tagged, e.g. `[TPR-04-001-codex]` / `[TPR-04-002-gemini]`
-- `reviewer` — `codex` or `gemini`
-- `agreement` — `true` if a matching `(location, title)` exists in the other reviewer's envelope; `false` otherwise
-- `agreement_partner_id` — partner tag when `agreement: true`; `null` otherwise
-- `finding` — original finding object (severity, location, title, evidence, impact, basis, confidence, optional citations)
-
-The `summary` block reports `codex_findings`, `gemini_findings`, `agreements`, `codex_only`, `gemini_only`.
-
-### 5. Classify merged findings (and VERIFY each one independently)
-
-**Reviewer findings are hypotheses, not facts.** For every actionable finding, Claude MUST independently verify the claim against the actual code BEFORE acting on it — regardless of which reviewer produced it.
-
-#### Verification protocol (mandatory for every finding)
-
-For each merged finding:
-
-1. **Read the cited code** — open the file at the cited line number, read the surrounding context (not just the one line)
-2. **Confirm the claim matches reality** — does the code actually say what the finding claims? Does it actually behave the way the finding describes?
-3. **Trace the reasoning** — if the finding says "X is unreachable" / "Y is broken" / "Z is missing", prove it by walking the code yourself. Grep for the symbol, follow the call chain, check the test coverage.
-4. **Check the required_plan_update** — does the proposed fix actually address the root cause, or is it a surface patch that would leave the underlying issue?
-
-If verification proves the finding is wrong, mark it `[x]` with a verification note explaining what you checked and what you found — this is the ONLY valid way to reject a finding. Rejecting without verification is banned; accepting without verification is banned.
-
-#### Trust tiers (set verification depth, not pass/fail)
-
-Both reviewers can be wrong. The trust tier sets how deep the verification goes:
-
-- **Codex: HIGH trust.** Codex tends to cite accurate file/line numbers and its claims usually match the code. Spot-check each finding: read the cited lines, confirm the specific claim, move on if it holds.
-- **Gemini: LOWER trust.** Gemini is more prone to confabulation — invented line numbers, misquoted code, claims about behavior that don't match reality, and "positive observations" that reframe correct code as findings. Every gemini finding needs FULL verification: read the cited file in full (not just the cited line), trace the code path end-to-end, and confirm against what the code actually does. This is especially important for:
-  - Claims about untested code paths (gemini may miss the test that covers it)
-  - Claims about architectural issues (gemini may not have read the canonical home)
-  - Claims involving specific line numbers (gemini sometimes invents them)
-  - Positive confirmations (e.g. "the fix is correctly done") — only useful if actually correct
-
-Never treat gemini's `citations` URLs as authoritative — if gemini cites a spec or external doc, verify the claim independently instead of trusting the URL as truth.
-
-#### Actionability
-
-After verification confirms a finding is real:
-
-- **Actionable finding**: real code issue — bug, hygiene violation, missing test, incorrect behavior, file size limit exceeded, precision regression, dead code path, etc. Must be fixed.
-- **Non-actionable observation**: style preference or observation that isn't a defect, precision loss, or dead code. Note it but don't block the loop on it.
-- **Informational finding** (`severity: "informational"`): non-actionable by definition. The reviewer had no actionable findings but wanted to note an observation. Treat as non-actionable — do not fix, do not block the loop. The merge summary's `actionable` count already excludes these.
-
-**IMPORTANT: Err on the side of "actionable"** (after verification). The following are ALWAYS actionable:
-- Dead code paths (code that can never execute)
-- Precision regressions (over-approximation that loses optimization opportunities)
-- Missing tests for plumbed-through data
-- Name collisions or aliasing that cause incorrect behavior
-- Pipeline gaps where data is computed but never consumed
-
-**Agreement is a priority signal, not a filter.** When an entry has `agreement: true`, both reviewers independently flagged the same `(location, title)` — the strongest possible signal, so prioritize these fixes. When an entry is tagged `-codex` or `-gemini` only (`agreement: false`), the finding is STILL real after verification — provenance is not severity. Single-reviewer findings get fixed just like agreement findings.
-
-**Agreement is not a substitute for verification.** Two reviewers can be wrong about the same thing — agreement amplifies the hypothesis but doesn't prove it. Verify the claim against the code even when both reviewers flagged it.
-
-### 6. If Zero Actionable Findings -> Clean Pass (EXIT)
-
-Report to the user:
-- "Dual-source TPR review passed clean — both reviewers returned zero actionable findings."
-- Iteration count (e.g. "clean on iteration 1" or "clean on iteration 3 after fixing N findings").
-- Merge summary from the final iteration (`codex_findings`, `gemini_findings`, `agreements`).
-- **This is the ONLY clean exit from the loop.**
-
-### 7. If Actionable Findings Exist -> Fix and Re-run
-
-#### 7a. File Findings
-
-For each validated finding, decide where it lives:
-
-1. **Is there an owning plan section?** — check whether an active plan (roadmap or reroute) has a section covering the affected code.
-2. **If yes** — record the entry (or both halves of an agreement) in that section's `## {NN}.R Third Party Review Findings` block using the reviewer-tagged IDs from `merge-findings.py` verbatim:
-   ```md
-   - [ ] `[TPR-04-001-codex][high]` `oriterm_core/src/grid/mod.rs:218` — Reset damage tracker on resize.
-     Evidence: ... Impact: ... Required plan update: ...
-     Basis: fresh_verification. Confidence: high.
-   - [ ] `[TPR-04-001-gemini][high]` `oriterm_core/src/grid/mod.rs:218` — Reset damage tracker on resize.
-     Evidence: ... Impact: ... Required plan update: ...
-     Basis: direct_file_inspection. Confidence: high. Citations: [{url: "...", description: "..."}]
-   ```
-   Update plan metadata (`third_party_review.status: findings`, `updated: {today}`).
-
-3. **If no owning plan exists** — file as a bug in `plans/bug-tracker/` under the appropriate subsystem section using the **canonical `BUG-{section}-{ordinal}` format — no reviewer suffix**. Reviewer provenance lives in the body, not the ID. This is the SSOT contract enforced by `.claude/skills/add-bug/SKILL.md:75`, `plans/bug-tracker/00-overview.md:41`, `.claude/commands/review-work.md:108`, and consumed by `/fix-bug BUG-XX-NNN`, `/review-bugs`, and `fix-BUG-XX-NNN.md` filenames. Suffixed IDs would create a shadow bug-ID home that breaks all of those downstream consumers.
-
-   **For an agreement finding** (both reviewers flagged the same `(location, title)`), file ONE BUG entry covering both reviewers' observations — the agreement doesn't require two bug entries:
-   ```md
-   - [ ] `[BUG-{section}-{ordinal}][{severity}]` **{Short title}** — found by tpr-review (dual-source).
-     Repro: {evidence summary from both reviewers}
-     Subsystem: {crate/file path}
-     Found: {YYYY-MM-DD} | Source: tpr-review | Reviewers: codex + gemini (agreement)
-     Fix: `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` (via `/fix-bug`)
-   ```
-
-   **For a single-reviewer finding** (only one reviewer flagged it — `agreement: false`), file ONE BUG entry and note which reviewer surfaced it:
-   ```md
-   - [ ] `[BUG-{section}-{ordinal}][{severity}]` **{Short title}** — found by tpr-review.
-     Repro: {evidence from the single reviewer}
-     Subsystem: {crate/file path}
-     Found: {YYYY-MM-DD} | Source: tpr-review | Reviewer: codex
-     Fix: `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` (via `/fix-bug`)
-   ```
-
-   Each BUG entry gets ONE ordinal regardless of how many reviewers found it — the ordinal space belongs to the subsystem section, not the reviewers. This preserves the canonical `BUG-XX-NNN` ID shape that all downstream tooling expects.
-
-Subsystem mapping (by ori_term crate ownership — see `plans/bug-tracker/00-overview.md` for the authoritative section table, and `.claude/rules/crate-boundaries.md` for crate ownership):
-- `oriterm_ui/src/widgets/` (buttons, tab bar, dialogs, etc.) -> section-01 (UI Widgets)
-- Settings dialog -> section-02 (Settings Dialog)
-- `oriterm_ui/src/window_root/`, `interaction/`, `pipeline/`, `animation/`, `testing/` -> section-03 (UI Framework)
-- `oriterm/src/font/`, swash/skrifa glyph pipeline -> section-04 (Fonts)
-- `oriterm/src/config/` -> section-05 (Config)
-- `oriterm/src/gpu/` (cached render path, atlas, compositor, shaders, perf invariants) -> section-06 (Rendering & Perf)
-- `.github/`, `build-all.sh`, `test-all.sh`, `clippy-all.sh`, cross-compile -> section-07 (CI & Build)
-- `oriterm_core/` (grid, VTE handler, reflow, selection, search, teseq / tack / vttest conformance) -> section-08 (Core Terminal)
-- `oriterm/src/session/` (tabs, split trees, floating layer, nav, layout compute) -> section-09 (Session & Tab/Window)
-- `#[cfg(windows)]` branches, ConPTY, `x86_64-pc-windows-gnu` cross-compile -> section-10 (Platform Windows)
-- `oriterm_mux/` (IO thread, snapshot buffer, PTY, mux backend), `oriterm_ipc/` -> section-11 (Mux & Pane I/O)
-- `docs/`, `.claude/`, `plans/` -> file under whichever section has the closest topic, or create a new section following the `section-NN-<topic>.md` convention and update `00-overview.md`
-
-#### 7b. Fix Each Finding — branch by destination
-
-**YOU (Claude) fix the code.** Actual implementation — not just filing, not scope notes, not rationalizations. CODE CHANGES. **The fix path differs based on where the finding was filed in Step 7a** — plan-owned findings are fixed inline; bug-tracker findings hand off to `/fix-bug`. Do NOT conflate the two paths — bug-tracker findings that skip the `/fix-bug` handoff bypass the mandatory TDD matrix, TPR review, and hygiene review per `.claude/skills/fix-bug/SKILL.md` and `CLAUDE.md` §"Bug fix rigor with `/fix-bug`".
-
-##### 7b-i. Plan-owned findings (filed in `## {NN}.R Third Party Review Findings`)
-
-Fix inline with the same rigor as the owning plan section:
-
-- **Read `.claude/rules/impl-hygiene.md` before fixing** — SSOT, canonical homes, no side logic, phase boundaries. Every fix must be the correct architectural solution.
-- Read the affected code and understand the issue
-- Identify the **canonical home** for the knowledge/logic involved — the fix must respect it
-- Follow TDD when appropriate (failing test -> fix -> test passes)
-- Run `timeout 150 cargo test --all` after fixes
-- **Self-check**: would this fix survive `/impl-hygiene-review`? If it introduces scattered knowledge, duplicated dispatch, or a shadow source of truth, it's wrong — find the proper architectural fix
-- Mark the filed TPR finding as `[x]` resolved in the plan with a note referencing the code fix:
-  ```md
-  - [x] `[TPR-04-001-codex][high]` ...
-    Resolved: Fixed on YYYY-MM-DD. [description of CODE fix].
-  - [x] `[TPR-04-001-gemini][high]` ...
-    Resolved: Fixed on YYYY-MM-DD. Same fix as [TPR-04-001-codex] (agreement).
-  ```
-
-##### 7b-ii. Bug-tracker findings (filed in `plans/bug-tracker/section-NN-*.md`)
-
-**DO NOT fix inline. Hand off to `/fix-bug BUG-{section}-{ordinal}` for each bug.**
-
-The `/fix-bug` skill creates a fix-section file (`plans/bug-tracker/fix-BUG-{section}-{ordinal}.md`) with full plan-section rigor: investigation, root cause analysis, TDD matrix (semantic + negative pins), implementation, and a completion checklist that includes `test-all.sh`, `/tpr-review`, and `/impl-hygiene-review`. This rigor is non-negotiable per `CLAUDE.md` §"Bug fix rigor with `/fix-bug`": "No ad-hoc bug fixes — every bug gets a fix section, even 'obvious' ones."
-
-For each bug-tracker entry filed in Step 7a:
-1. Invoke the Skill tool: `Skill: fix-bug BUG-{section}-{ordinal}`
-2. Wait for `/fix-bug` to complete its workflow (which includes its own commit via `/commit-push` AND updates the bug-tracker entry to `[x]` resolved per `.claude/skills/fix-bug/SKILL.md:169` "Update the bug entry")
-3. **Verify — do not re-edit.** After `/fix-bug` returns, check that the bug-tracker entry is already `[x]` and uses the canonical `Resolved: Fixed on YYYY-MM-DD` + `Fix: plans/bug-tracker/fix-BUG-XX-NNN.md` form from `plans/bug-tracker/00-overview.md:52`. If the entry is correctly updated, the wrapper's job is done for that bug — **do NOT re-author or edit the entry**. Bug-entry closure is `/fix-bug`'s canonical responsibility; duplicating it in the wrapper is a LEAK (scattered knowledge).
-4. If the entry is somehow NOT updated after `/fix-bug` returns (rare — would indicate a bug in `/fix-bug` itself), file a follow-up bug against `/fix-bug` rather than patching the entry manually. Manual patches create drift from the canonical form.
-
-**Why the wrapper must not edit the entry**: `.claude/skills/fix-bug/SKILL.md` owns bug-entry-closure logic as a single source of truth. If the wrapper re-edits the entry after `/fix-bug` completes, it creates a second copy of closure logic that can drift from the canonical form (as a prior version of this wrapper did — see `plans/dual-tpr-gemini/section-05-review-work.md §05.R [TPR-05-003-codex]`). The wrapper's contract is: invoke `/fix-bug`, then verify its output — nothing more.
-
-**Why the hand-off matters**: skipping `/fix-bug` leaves no fix-section record, no TDD matrix, no TPR validation, and no hygiene review for the bug. It also leaves `/review-bugs` to report the lifecycle gap, and breaks `/fix-next-bug` autopilot which expects fix-sections to exist. The canonical contract exists precisely because bug-tracker bugs are often cross-cutting and benefit from the extra investigation rigor that a fix-section provides.
-
-**If a bug-tracker finding genuinely requires zero investigation** (a typo fix or a single-line change with obvious root cause), the `/fix-bug` skill itself handles this efficiently — it still produces a fix-section, but the investigation/TDD phases are lightweight. The fix-section is the permanent record, not a gate.
-
-#### 7c. Commit Fixes
-
-Run `/commit-push` to commit the fixes. The commit message should reference the reviewer-tagged TPR IDs fixed (e.g. `fix(arc): release iterator on early break — [TPR-04-001-codex] [TPR-04-001-gemini]`).
-
-#### 7d. Re-run the Dual-Source Transport (GO TO STEP 1)
-
-Go back to Step 1. BOTH reviewers re-review the FIXED code to confirm the issues are actually resolved and no new issues were introduced by the fixes. **This re-run is not optional, and a partial re-run (only one reviewer) is not a valid clean pass.**
-
-### 8. After Max Iterations (10) — User Escalation
-
-If after 10 semantic iterations findings are still surfacing, surface the remaining merged findings to the user via `AskUserQuestion`:
-- Summary of semantic iterations run
-- Count of findings per iteration (shows whether progress is being made)
-- The current merged finding list (from the latest `$RUN/merged.json`)
-- Ask: should we continue past the 10-iteration cap, file remaining findings and stop, or dig into a specific finding that keeps recurring?
-
-## Transport Failure Handling
-
-If `dual-invoke-with-retry.sh` exits non-zero, the transport has exhausted its 3 internal infra retries and the round cannot proceed. The script prints the failure category on the last line of stderr and preserves the postmortem files under `$RUN` for inspection.
-
-**DO NOT silently retry the semantic loop on infra failure.** The 10-iteration budget is for finding-fixing rounds, not transport failures. Incrementing the semantic counter on a transport failure hides real infrastructure bugs and falsely claims iteration progress — the state machine invariant above forbids it.
-
-### Failure taxonomy
-
-The transport reports one of these categories on its stderr tail (prefixed `infra_retries_exhausted:`):
-
-| Category | Meaning |
-|---|---|
-| `launch_or_exit_fail` | Either reviewer process failed to start or exited non-zero on all 3 attempts (includes crashes, missing CLI, auth errors) |
-| `codex_*` | `parse-codex.py` rejected the codex JSONL stream on all 3 attempts. Suffix is the parser's first error line (`codex_schema_violation`, `codex_missing_envelope`, `codex_parse_error`, etc.) |
-| `gemini_*` | `parse-gemini.py` rejected the gemini stream-json on all 3 attempts. Suffix is the parser's first error line (`gemini_missing_terminator`, `gemini_no_begin`, `gemini_no_end`, `gemini_parse_error`, etc.) |
-| `dirty_worktree` | `worktree-guard.sh compare` detected tracked-file modifications during the reviewer run on all 3 attempts. The reviewer violated its read-only contract. |
-| `unknown_failure` | Fallback — the script exhausted retries without recording a specific category (rare; investigate round.log) |
-
-### Escalation procedure
-
-When the transport fails, surface the failure to the user via `AskUserQuestion` with:
-
-1. **Failure category** — the literal string from the transport stderr tail, including suffix if any
-2. **Postmortem directory** — the `$RUN` path so the user can inspect it directly
-3. **Files to inspect in `$RUN`:**
-   - `round.log` — orchestration timeline (every attempt, every backoff, every failure category)
-   - `codex.jsonl` / `gemini.jsonl` — raw reviewer output streams (may be empty if launch failed)
-   - `codex.envelope.json` / `gemini.envelope.json` — parsed envelopes (absent if parse failed)
-   - `codex.parse-error` / `gemini.parse-error` — parser error output (first line = failure reason)
-   - `worktree-error` — diff of tracked files modified during the reviewer run (present only on `dirty_worktree`)
-   - `codex.exit` / `gemini.exit` — reviewer exit codes
-   - `codex.walltime` / `gemini.walltime` — wall time per reviewer (useful when one hung)
-4. **Recommended user actions:**
-   - **Triage the failure** — open `$RUN/round.log` first, then the specific files indicated by the category (e.g. `codex.parse-error` for a `codex_*` failure). Fix the root cause (the prompt, a reviewer bug, a transport bug, a dirty reviewer skill) and re-run `/tpr-review`.
-   - **Retry immediately** — if the failure is a known-transient cloud outage and the user wants Claude to launch another round as-is. Use this sparingly; most transport failures reflect real infrastructure bugs worth triaging.
-   - **Abandon the review** — if the review cannot proceed (e.g. reviewer CLI is offline, credentials missing, persistent schema violation). Log the failure category + `$RUN` path in any owning plan's working notes so the operator can follow up later, then stop.
-
-### What NOT to do on transport failure
-
-- Do NOT retry the semantic loop silently (violates the state machine invariant).
-- Do NOT fabricate a clean pass to unblock the user — a transport failure is a real signal and must be surfaced.
-- Do NOT delete `$RUN` before the user triages — the postmortem is the evidence trail.
-- Do NOT rewrite the prompts and retry without telling the user — if the prompt needs changing, that is a user decision.
-
-## Merged Finding Format
-
-This section specifies how merged findings are written into the owning plan's `## {NN}.R Third Party Review Findings` block (or the bug-tracker, if there is no owning plan). Claude produces these entries in Step 7a above; the format is load-bearing because future `/tpr-review` runs, `/review-bugs`, and plan audits depend on it.
-
-### Ordinal numbering is independent per reviewer
-
-`merge-findings.py` assigns ordinals by **insertion order within each reviewer's envelope**, independently. The first finding in the codex envelope is `-001-codex`, the first in the gemini envelope is `-001-gemini`. There is NO shared ordinal space: `[TPR-04-001-codex]` and `[TPR-04-001-gemini]` are not required to be the same finding — the `agreement: true` flag from the merger is the authoritative cross-reference.
-
-### Agreement case — both reviewers flagged the same (location, title)
-
-When `merge-findings.py` reports `agreement: true`, both halves are filed adjacent with a cross-reference annotation. Both entries point at each other via the `Agreement:` line so the plan's TPR block preserves the independence contract while still making the convergence visible:
-
-```md
-- [ ] `[TPR-04-001-codex][high]` `oriterm/src/gpu/window_renderer/render.rs:218` — Clamp copy extent to destination size in `render_frame_cached`.
-  Evidence: When the prepared viewport is larger than the surface texture target, `copy_texture_to_texture` is called with the source extent, which panics on size mismatch during interactive resize. Reproduced via `oriterm/src/gpu/visual_regression/resize_stress.rs::resize_mid_frame`.
-  Impact: GPU-thread panic during interactive resize; terminal window crashes.
-  Required plan update: Clamp the copy extent to `min(source, destination)` in `render_frame_cached`; verify via `cargo test -p oriterm --test resize_stress`.
-  Basis: fresh_verification. Confidence: high.
-  Agreement: [TPR-04-001-gemini] (both reviewers flagged this location/title)
-- [ ] `[TPR-04-001-gemini][high]` `oriterm/src/gpu/window_renderer/render.rs:218` — Clamp copy extent to destination size in `render_frame_cached`.
-  Evidence: The cached render path calls `copy_texture_to_texture` with the full prepared viewport size, but the destination texture was reconfigured to a smaller size mid-frame. Confirmed against wezterm's `cache_texture` pattern which uses `min(src, dst)` for the copy extent.
-  Impact: Same as above (agreement finding).
-  Required plan update: Same as above.
-  Basis: direct_file_inspection. Confidence: high.
-  Citations: [{url: "https://github.com/wezterm/wezterm/blob/main/wezterm-gui/src/termwindow/render.rs", description: "wezterm's equivalent cached-render copy pattern, for cross-reference"}]
-  Agreement: [TPR-04-001-codex] (both reviewers flagged this location/title)
-```
-
-**Why both halves are filed** — filing only the codex half would erase the gemini reviewer's independent observation (and its citations), which violates the dual-source independence contract. Filing only the gemini half would erase the codex finding's ordinal continuity. Both are recorded; the `Agreement:` cross-reference makes the convergence clear to any human or tool auditing the block.
-
-### Gemini-only case — a finding with no codex counterpart
-
-```md
-- [ ] `[TPR-04-002-gemini][medium]` `oriterm/src/config/loader.rs:42` — Replace `println!` debug line with `log::debug!`.
-  Evidence: The config loader emits a `println!` on successful reload to report the config path. `println!` writes to stdout, which is the same fd the terminal uses for its own output and causes visual glitches when the config is reloaded while a pane is rendering. The project convention per CLAUDE.md §Coding Standards is to use `log` macros, never `println!` debugging.
-  Impact: Stray bytes injected into the terminal output stream on every config reload; a user-visible rendering glitch.
-  Required plan update: Switch to `log::debug!("config reloaded from {path:?}")` and remove the `println!`.
-  Basis: inference. Confidence: medium. (Gemini-only finding — no codex counterpart.)
-```
-
-**Why single-tag is still actionable** — per Step 5 (Classify), provenance is not severity. A gemini-only finding gets fixed the same way as an agreement finding; the tag is audit metadata, not a filter.
-
-### Codex-only case — symmetric to gemini-only
-
-```md
-- [ ] `[TPR-04-003-codex][low]` `oriterm_ui/src/widgets/button.rs:142` — Tighten focus-ring inset for tiny buttons.
-  Evidence: The current focus-ring rect is computed with a fixed 2-pixel inset; on buttons narrower than 10 pixels, the ring clips into the text. Reference: ratatui's `Block` widget uses a proportional inset instead.
-  Impact: Visual-polish regression on narrow tab-bar buttons; trivial fix.
-  Required plan update: Update `button.rs:142` to use `inset = min(2, width / 5)` for the focus ring.
-  Basis: direct_file_inspection. Confidence: high. (Codex-only finding — no gemini counterpart.)
-```
-
-### Resolution format — always preserve the reviewer tag
-
-When a finding is fixed (Step 7b), mark the entry `[x]` and append a `Resolved:` line referencing the code fix. For agreement findings, both halves are resolved together — the second resolution can reference the first rather than duplicating the fix description:
-
-```md
-- [x] `[TPR-04-001-codex][high]` ...
-  Resolved: Fixed on 2026-04-07 in commit abc123. Clamped copy extent in `render_frame_cached`; verified via `cargo test -p oriterm --test resize_stress`.
-- [x] `[TPR-04-001-gemini][high]` ...
-  Resolved: Fixed on 2026-04-07 in commit abc123. Same fix as [TPR-04-001-codex] (agreement).
-```
-
-**NEVER delete a resolved finding.** Mark it `[x]` with a resolution note — deletion erases the audit trail and invites re-filing by the next review pass.
-
-## Final Report (After Loop Exits)
-
-Tell the user:
-- Total semantic iterations run
-- For each iteration: merged summary (`codex_findings` / `gemini_findings` / `agreements`)
-- Findings surfaced and fixed per iteration
-- Final status: `clean`, `max iterations reached with N remaining findings`, or `aborted due to transport failure`
-- Where each finding was filed (plan TPR section or bug-tracker)
+None of the `step-*.md` files are registered as skills. They are reference documents read by dispatched Agents.

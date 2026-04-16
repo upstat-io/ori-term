@@ -5,7 +5,6 @@
 //! appropriate grid/cursor/mode operation.
 
 use log::debug;
-use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
     Attr, CharsetIndex, ClearMode, CursorStyle, Handler, Hyperlink as VteHyperlink, KeyboardModes,
     KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedMode, PrivateMode, Rgb,
@@ -16,7 +15,6 @@ use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, HostEffect};
 use crate::grid::editing::{DisplayEraseMode, LineEraseMode};
 use crate::grid::navigation::TabClearMode;
-use crate::index::Column;
 
 use super::{Term, TermMode};
 
@@ -29,73 +27,10 @@ mod osc;
 mod sgr;
 mod status;
 
-// VTE Handler trait impl — a dispatch table mapping escape sequences to
-// helper methods in submodules (helpers, dcs, esc, modes, osc, sgr, status,
-// image). Each method is a thin delegation; logic lives in the submodule.
-//
-// Rust requires a single `impl Trait` block, so this file is exempt from
-// the 500-line split rule (it's a pure dispatch table with no logic).
-
 impl<S: EffectSink> Handler for Term<S> {
     #[inline]
     fn input(&mut self, c: char) {
-        self.selection_dirty = true;
-
-        // DECAWM off: when cursor is at wrap-pending position (past last
-        // column), snap it back to the last column. The next character
-        // overwrites the last cell instead of wrapping to the next line.
-        if !self.mode.contains(TermMode::LINE_WRAP) {
-            let cols = self.grid().cols();
-            if self.grid().cursor().col().0 >= cols {
-                self.grid_mut().cursor_mut().set_col(Column(cols - 1));
-            }
-        }
-
-        // Fast path: ASCII printable (0x20–0x7E), no charset mapping, no
-        // INSERT mode. Skips charset.translate(), UnicodeWidthChar::width(),
-        // insert_blank(), and image pruning. The grid's put_char_ascii
-        // skips the range check (we already verified it) and writes the cell
-        // directly. If put_char_ascii declines (wrap pending, wide cell at
-        // cursor), we fall through to the full slow path which handles
-        // wrapping + linefeed + image pruning correctly.
-        if c as u32 <= 0x7E
-            && c as u32 >= 0x20
-            && !self.mode.contains(TermMode::INSERT)
-            && self.charset.is_ascii()
-            && self.grid_mut().put_char_ascii(c)
-        {
-            return;
-        }
-
-        let c = self.charset.translate(c);
-        let width = match UnicodeWidthChar::width(c) {
-            Some(width) => width,
-            None => return,
-        };
-        if width == 0 {
-            self.grid_mut().push_zerowidth(c);
-            return;
-        }
-
-        // Wide char at last column with DECAWM off: doesn't fit, skip it.
-        // Cursor stays at wrap-pending so subsequent narrow chars overwrite.
-        if width == 2 && !self.mode.contains(TermMode::LINE_WRAP) {
-            let col = self.grid().cursor().col().0;
-            let cols = self.grid().cols();
-            if col + 1 >= cols {
-                self.grid_mut().cursor_mut().set_col(Column(cols));
-                return;
-            }
-        }
-
-        let prev = self.grid().total_evicted();
-        let insert = self.mode.contains(TermMode::INSERT);
-        let grid = self.grid_mut();
-        if insert {
-            grid.insert_blank(width);
-        }
-        grid.put_char(c);
-        self.prune_images_if_evicted(prev);
+        self.input_char(c);
     }
 
     fn backspace(&mut self) {
@@ -310,53 +245,15 @@ impl<S: EffectSink> Handler for Term<S> {
     }
 
     fn save_cursor_position(&mut self) {
-        // DEC STD 070 §5.6.1 save set: cursor position + character attributes
-        // + charset state + wrap flag + DECOM flag. DECLRMM mode and the
-        // margin values are NOT saved — see Grid::save_cursor docs.
-        self.grid_mut().save_cursor();
-        self.saved_charset = Some(self.charset.clone());
-        self.saved_origin_mode = Some(self.mode.contains(TermMode::ORIGIN));
+        self.save_cursor_impl();
     }
 
     fn decslrm_or_save_cursor(&mut self, has_params: bool, left: u16, right: u16) {
-        if has_params {
-            // With params: always DECSLRM. No-op if mode 69 inactive.
-            if self.mode.contains(TermMode::LEFT_RIGHT_MARGIN) {
-                let cols = self.grid().cols();
-                let l = (left.max(1) as usize).saturating_sub(1);
-                let r = if right == 0 {
-                    cols.saturating_sub(1)
-                } else {
-                    (right as usize).saturating_sub(1)
-                };
-                self.grid_mut().set_left_right_margins(l, r);
-            }
-        } else if self.mode.contains(TermMode::LEFT_RIGHT_MARGIN) {
-            // Zero params + mode 69 active: DECSLRM with defaults (full width).
-            self.grid_mut().reset_left_right_margins();
-        } else {
-            // Zero params + mode 69 inactive: save cursor (backward compat).
-            self.save_cursor_position();
-        }
+        self.decslrm_or_save_cursor_impl(has_params, left, right);
     }
 
     fn restore_cursor_position(&mut self) {
-        // DECRC restores the same state DECSC saved: cursor + attributes +
-        // charset + DECOM flag. DECLRMM mode and margin values are NOT in
-        // the restore set (see `save_cursor_position` for the save-set
-        // rationale).
-        self.grid_mut().restore_cursor();
-        if let Some(charset) = self.saved_charset.take() {
-            self.charset = charset;
-            self.saved_charset = Some(self.charset.clone());
-        }
-        if let Some(origin) = self.saved_origin_mode {
-            if origin {
-                self.mode.insert(TermMode::ORIGIN);
-            } else {
-                self.mode.remove(TermMode::ORIGIN);
-            }
-        }
+        self.restore_cursor_impl();
     }
 
     fn set_mode(&mut self, mode: Mode) {
