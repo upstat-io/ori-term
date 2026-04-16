@@ -5,5 +5,6 @@
 //! pipeline.
 
 mod decnkm_decbkm;
+mod matrix;
 mod mode_2026;
 mod mode_2031;

@@ -51,7 +51,7 @@ sections:
     status: in-progress
   - id: "09.5"
     title: "Cross-cutting DECRQM + mutual-exclusion + mode-replacement matrix"
-    status: not-started
+    status: complete
   - id: "09.R"
     title: "Third Party Review Findings"
     status: complete
@@ -362,23 +362,23 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
 
 **File(s):** `oriterm_core/src/term/handler/tests/status_reports.rs` (post-09.0-split) and `oriterm_core/tests/spec_chain/private_modes/matrix.rs` (new).
 
-- [ ] **DECRQM exhaustive matrix:** Iterate every `NamedPrivateMode` variant (`NamedPrivateMode::*` — the compile-time enum enumerates the full set), and for each variant:
-  - [ ] DECSET the mode, then DECRQM — expect `1` (set) when `named_private_mode_flag()` returns `Some`; expect `0` (not recognized) when it returns `None` (`SaveCursor`, `ColumnMode` — modes without a TermMode flag mapping).
-  - [ ] DECRST the mode, then DECRQM — expect `2` (reset) when flag-mapped; `0` otherwise.
-  - [ ] The matrix iteration uses a closure over the variant list; the test asserts the iteration count equals the compile-time variant count (per `.claude/rules/tests.md` §Matrix Testing self-verifying completeness). A new variant without a matching DECRQM response fails the count assertion.
+- [x] **DECRQM exhaustive matrix:** Iterate every `NamedPrivateMode` variant (`NamedPrivateMode::*` — the compile-time enum enumerates the full set), and for each variant: *(done: `decrqm_exhaustive_set_then_query` + `decrqm_exhaustive_reset_then_query` in `oriterm_core/tests/spec_chain/private_modes/matrix.rs` — 32 variants, self-verifying count assertion, mode 2026 handled via BSU+DECRQM+ESU single-feed workaround)*
+  - [x] DECSET the mode, then DECRQM — expect `1` (set) when `named_private_mode_flag()` returns `Some`; expect `0` (not recognized) when it returns `None` (`SaveCursor`, `ColumnMode` — modes without a TermMode flag mapping).
+  - [x] DECRST the mode, then DECRQM — expect `2` (reset) when flag-mapped; `0` otherwise.
+  - [x] The matrix iteration uses a closure over the variant list; the test asserts the iteration count equals the compile-time variant count (per `.claude/rules/tests.md` §Matrix Testing self-verifying completeness). A new variant without a matching DECRQM response fails the count assertion.
 
-- [ ] **Mutual-exclusion matrix — mouse tracking modes:** 4×4 matrix (9, 1000, 1002, 1003) × {enable, then enable the other} — for each pair (A, B) where A≠B:
-  - [ ] DECSET A, then DECSET B — assert only B's bit is set; A's bit is cleared (mutual exclusion via `mode.remove(TermMode::ANY_MOUSE)` before `mode.insert(specific)` at `modes.rs::apply_decset()`).
-  - [ ] DECSET A, then DECRST B — assert A's bit is UNCHANGED (DECRST on a different mouse-mode bit must not affect A).
-  - [ ] 12 cells total (4×3 pairs for exclusion + 4 same-mode for idempotence — DECSET A + DECSET A = A remains set).
+- [x] **Mutual-exclusion matrix — mouse tracking modes:** 4×4 matrix (9, 1000, 1002, 1003) × {enable, then enable the other} — for each pair (A, B) where A≠B: *(done: `mouse_tracking_mutual_exclusion_matrix` (16 cells) + `mouse_tracking_decrst_cross_mode_preserves_active` (12 cells) in matrix.rs)*
+  - [x] DECSET A, then DECSET B — assert only B's bit is set; A's bit is cleared (mutual exclusion via `mode.remove(TermMode::ANY_MOUSE)` before `mode.insert(specific)` at `modes.rs::apply_decset()`).
+  - [x] DECSET A, then DECRST B — assert A's bit is UNCHANGED (DECRST on a different mouse-mode bit must not affect A).
+  - [x] 12 cells total (4×3 pairs for exclusion + 4 same-mode for idempotence — DECSET A + DECSET A = A remains set).
 
-- [ ] **Mutual-exclusion matrix — mouse encoding modes:** 3×3 (1005, 1006, 1015) — same shape as above. Assert encoding modes are mutually exclusive among themselves AND orthogonal to tracking modes.
+- [x] **Mutual-exclusion matrix — mouse encoding modes:** 3×3 (1005, 1006, 1015) — same shape as above. Assert encoding modes are mutually exclusive among themselves AND orthogonal to tracking modes. *(done: `mouse_encoding_mutual_exclusion_matrix` (9 cells) + `mouse_encoding_decrst_cross_mode_preserves_active` (6 cells) + `encoding_orthogonal_to_tracking` in matrix.rs)*
 
-- [ ] **Orthogonality pin — tracking × encoding × focus × alt-scroll:** DECSET `?1000` + `?1006` + `?1004` + `?1007` all on simultaneously. Assert every bit is present in `mode`. Then DECSET `?1002` — assert 1000 cleared, 1006 preserved, 1004 preserved, 1007 preserved. This is a regression pin against the class of bug where "clearing tracking" accidentally clears related bits.
+- [x] **Orthogonality pin — tracking × encoding × focus × alt-scroll:** DECSET `?1000` + `?1006` + `?1004` + `?1007` all on simultaneously. Assert every bit is present in `mode`. Then DECSET `?1002` — assert 1000 cleared, 1006 preserved, 1004 preserved, 1007 preserved. This is a regression pin against the class of bug where "clearing tracking" accidentally clears related bits. *(done: `orthogonality_pin_tracking_encoding_focus_alt_scroll` in matrix.rs)*
 
-- [ ] **SaveCursor / ColumnMode DECRQM deviation pin:** Document (and pin) that `SaveCursor` (1048) and `ColumnMode` (3) have NO `TermMode` flag mapping — they trigger side effects (cursor save/restore, column mode change) without a persistent state bit. `named_private_mode_flag()` returns `None` for these; DECRQM returns `0` (not recognized). Cross-check against xterm: xterm reports these as `3` or `4` (permanently set / permanently reset) — document the deviation in `catalog/dec-private-modes.md` Notes column OR promote a bug via `/add-bug` if the deviation is unintentional. Decision required at implementation time.
+- [x] **SaveCursor / ColumnMode DECRQM deviation pin:** Document (and pin) that `SaveCursor` (1048) and `ColumnMode` (3) have NO `TermMode` flag mapping — they trigger side effects (cursor save/restore, column mode change) without a persistent state bit. `named_private_mode_flag()` returns `None` for these; DECRQM returns `0` (not recognized). Deviation from xterm documented in test comments (xterm reports 3/4 for these modes; ori_term reports 0). Decision: document the deviation as intentional — these modes have no persistent state bit by design (side-effect-only modes). *(done: `save_cursor_decrqm_returns_zero` + `column_mode_decrqm_returns_zero` + `unknown_mode_decrqm_returns_zero` in matrix.rs)*
 
-- [ ] **Validation:** every variant in `NamedPrivateMode` is covered by at least one cell; the self-verifying count assertion matches the variant count.
+- [x] **Validation:** every variant in `NamedPrivateMode` is covered by at least one cell; the self-verifying count assertion matches the variant count. *(done: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` all green)*
 
 ---
 
@@ -571,9 +571,9 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
 
 ### DECRQM & sync-point hygiene
 
-- [ ] **DECRQM cross-cutting**: every mode verified or implemented by this section has its DECRQM query/response tested; 09.5 DECRQM exhaustive matrix is the drift-gate
+- [x] **DECRQM cross-cutting**: every mode verified or implemented by this section has its DECRQM query/response tested; 09.5 DECRQM exhaustive matrix is the drift-gate *(done: `decrqm_exhaustive_set_then_query` + `decrqm_exhaustive_reset_then_query` cover all 32 variants with self-verifying count assertion)*
 - [ ] **Sync point**: all new `NamedPrivateMode` variants (ColorSchemeUpdate, DecNumericKeypad, DecBackarrowKey) added to `decset_decrst_flag_sync()` — post-09.0-split path confirmed via `grep -rn 'fn decset_decrst_flag_sync' oriterm_core/src/term/handler/`
-- [ ] **Sync point**: all new `NamedPrivateMode` variants handled in `status_report_private_mode()` at `oriterm_core/src/term/handler/status.rs:117` (automatic via `named_private_mode_flag()` delegation — but verify with a dedicated exhaustive iteration test in 09.5)
+- [x] **Sync point**: all new `NamedPrivateMode` variants handled in `status_report_private_mode()` at `oriterm_core/src/term/handler/status.rs:117` (automatic via `named_private_mode_flag()` delegation — verified by the 09.5 DECRQM exhaustive matrix which exercises `status_report_private_mode()` for all 32 variants)
 - [ ] **Sync point**: all new `NamedPrivateMode` variants have a matching `PrivateMode::new()` number → variant arm in `crates/vte/src/ansi/types.rs` (post-09.0 — no split needed here, but verify each new variant has exactly one `NN => Self::Named(...)` arm)
 
 ### Catalog updates
