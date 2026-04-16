@@ -36,13 +36,13 @@ third_party_review:
 sections:
   - id: "09.0"
     title: "Test file split (optional maintainability refactor)"
-    status: in-progress
+    status: complete
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
-    status: in-progress
+    status: complete
   - id: "09.2"
     title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM + bridge to Section 06 apex)"
-    status: not-started
+    status: complete
   - id: "09.3"
     title: "Implement + verify Mode 2031 color scheme update notification"
     status: not-started
@@ -216,11 +216,11 @@ sections:
 
 **Scope:** Section 09 verifies ONLY the core-layer DECSET/DECRST + DECRQM plumbing for mode 2026. The Begin/Commit/Abort apex tests (`snapshot_seqno` advancement, `PresentationEffect::Begin|Commit|Abort`, publication suppression, timeout-abort) are owned by **Section 06** (`status: complete`) and live at `oriterm_mux/src/pane/io_thread/tests.rs`. Section 09 does NOT duplicate them. See the row ownership cross-reference block above.
 
-- [ ] `mode_2026_decset_toggles_flag`: `CSI ? 2026 h` sets `TermMode::SYNC_UPDATE`; `CSI ? 2026 l` clears it. This is core-layer only — it does NOT exercise the mux sync buffer.
-- [ ] `mode_2026_decrqm`: DECRQM query (`CSI ? 2026 $ p`) returns `\x1b[?2026;1$y` when set and `\x1b[?2026;2$y` when reset. Verify via `status_report_private_mode()` delegation to `named_private_mode_flag()`.
-- [ ] **Bridge cell (NEW) to Section 06 consumer:** parser `CSI ? 2026 h` → `post_parse_housekeeping()` at `oriterm_mux/src/pane/io_thread/mod.rs:337-362` publishes the updated `TermMode::SYNC_UPDATE` bit into `mode_cache` (`AtomicU64`). The mux-level consumer at `maybe_produce_snapshot()` reads this bit to gate publication. Colocated test in `oriterm_mux/src/pane/io_thread/tests.rs` (existing file — owned by Section 06, but the bridge cell is a Section 09 responsibility): feed `\x1b[?2026h` through the IO thread, assert `mode_cache.load(Ordering::Acquire) & TermMode::SYNC_UPDATE.bits() != 0` AFTER `post_parse_housekeeping()` returns. This proves the parser → mode_cache → publication-gate SSOT contract is live. Section 06's apex tests (publication suppression + commit + timeout-abort) continue to be Section 06's scope; Section 09 owns only the bridge that proves the same bit Section 06's consumer reads is the bit Section 09's parser writes. If the test file is too crowded to add this cell, extract a new `oriterm_mux/src/pane/io_thread/tests_mode_2026_bridge.rs` sibling per the test-organization rule.
-- [ ] Catalog note: `catalog/mode-2026.md` rows are owned by Section 06 for the apex verification; Section 09 does not update row statuses there. If the catalog has a core-layer plumbing row separate from the apex rows (check before editing), update it; otherwise leave all mode-2026 catalog rows for Section 06 to manage.
-- [ ] **Validation**: flag toggle, DECRQM, and bridge-cell tests pass; Section 06's apex tests continue to pass without modification.
+- [x] `mode_2026_decset_toggles_flag`: `CSI ? 2026 h` sets `TermMode::SYNC_UPDATE`; `CSI ? 2026 l` clears it. This is core-layer only — it does NOT exercise the mux sync buffer. *(done: `oriterm_core/tests/spec_chain/private_modes/mode_2026.rs` — `mode_2026_decset_toggles_flag`, `mode_2026_decrst_clears_flag`, `mode_2026_round_trip_toggle`, `mode_2026_does_not_touch_unrelated_flags`)*
+- [x] `mode_2026_decrqm`: DECRQM query (`CSI ? 2026 $ p`) returns `\x1b[?2026;1$y` when set and `\x1b[?2026;2$y` when reset. Verify via `status_report_private_mode()` delegation to `named_private_mode_flag()`. *(done: `mode_2026_decrqm_default_reset`, `mode_2026_decrqm_after_set` — DECRQM-after-set feeds BSU+DECRQM+ESU in one call to work around VTE sync buffering in the persistent-Processor SpecHarness)*
+- [x] **Bridge cell (NEW) to Section 06 consumer:** parser `CSI ? 2026 h` → `post_parse_housekeeping()` at `oriterm_mux/src/pane/io_thread/mod.rs:337-362` publishes the updated `TermMode::SYNC_UPDATE` bit into `mode_cache` (`AtomicU64`). *(done: `oriterm_mux/src/pane/io_thread/tests.rs` — `bridge_mode_2026_propagates_to_mode_cache` + `bridge_mode_2026_reset_clears_mode_cache`)*
+- [x] Catalog note: `catalog/mode-2026.md` rows are owned by Section 06 for the apex verification; Section 09 does not update row statuses there. *(confirmed: no core-layer-only catalog rows exist; all mode-2026 rows are apex-level, owned by Section 06)*
+- [x] **Validation**: flag toggle, DECRQM, and bridge-cell tests pass; Section 06's apex tests continue to pass without modification. *(done: `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` all green)*
 
 ---
 
