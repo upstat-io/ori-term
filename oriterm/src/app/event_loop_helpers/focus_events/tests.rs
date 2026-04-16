@@ -110,3 +110,43 @@ fn focus_event_seq_for_mode_only_checks_the_focus_in_out_flag() {
     assert_eq!(focus_event_seq_for_mode(no_focus, true), None);
     assert_eq!(focus_event_seq_for_mode(no_focus, false), None);
 }
+
+// ----- Bridge cell: parser → mode flag → emission decision -----
+
+/// Feed raw bytes through the VTE processor into a handler.
+fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(term, bytes);
+}
+
+/// Bridge cell: CSI ? 1004 h parsed through a real Term produces
+/// the FOCUS_IN_OUT mode flag, which `focus_event_seq_for_mode`
+/// then correctly maps to focus event sequences. This test verifies
+/// the full path from parser to consumer.
+#[test]
+fn bridge_parser_to_focus_event_consumer() {
+    let mut term = oriterm_core::term::Term::new(
+        24,
+        80,
+        0,
+        oriterm_core::Theme::default(),
+        oriterm_core::effect::VoidEffectSink,
+    );
+
+    // Before DECSET 1004: no focus events emitted.
+    let mode = term.mode();
+    assert_eq!(focus_event_seq_for_mode(mode, true), None);
+    assert_eq!(focus_event_seq_for_mode(mode, false), None);
+
+    // DECSET 1004: the parser-produced mode enables focus emission.
+    feed(&mut term, b"\x1b[?1004h");
+    let mode = term.mode();
+    assert_eq!(focus_event_seq_for_mode(mode, true), Some(FOCUS_IN_SEQ));
+    assert_eq!(focus_event_seq_for_mode(mode, false), Some(FOCUS_OUT_SEQ));
+
+    // DECRST 1004: disables focus emission.
+    feed(&mut term, b"\x1b[?1004l");
+    let mode = term.mode();
+    assert_eq!(focus_event_seq_for_mode(mode, true), None);
+    assert_eq!(focus_event_seq_for_mode(mode, false), None);
+}

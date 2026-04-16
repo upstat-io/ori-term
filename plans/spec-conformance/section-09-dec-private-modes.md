@@ -39,7 +39,7 @@ sections:
     status: in-progress
   - id: "09.1"
     title: "Verify implemented DEC private mode flag toggles + DECRQM (with bridge cells for externally-owned rows)"
-    status: not-started
+    status: complete
   - id: "09.2"
     title: "Verify Mode 2026 core-layer plumbing (DECSET/DECRST + DECRQM + bridge to Section 06 apex)"
     status: not-started
@@ -169,47 +169,44 @@ sections:
 
 **Checklist:**
 
-- [ ] **Mouse tracking modes (9, 1000, 1002, 1003) — mutual exclusion matrix:** For each of the 4 tracking modes:
-  - [ ] DECSET sets the correct `TermMode` flag and clears other `ANY_MOUSE` bits. DECRST clears the flag. DECRQM returns correct set/reset value.
-  - [ ] **Replacement cells (sibling-reset):** `DECSET ?9` then `DECSET ?1002` — the 9 bit is cleared, only 1002 is set; `DECSET ?1003` then `DECRST ?1000` — the 1000 bit was never set so 1003 stays set (not cleared by `DECRST` on the other bit); `DECSET ?1002` then `DECSET ?1003` — only 1003 remains; `DECSET ?1003` then `DECSET ?9` — only 9 remains. Assert DECRQM reports the correct single "set" bit at every step. These cells catch the class of bug where switching one mouse tracking mode silently leaves an old bit set.
+- [x] **Mouse tracking modes (9, 1000, 1002, 1003) — mutual exclusion matrix:** For each of the 4 tracking modes:
+  - [x] DECSET sets the correct `TermMode` flag and clears other `ANY_MOUSE` bits. DECRST clears the flag. DECRQM returns correct set/reset value. *(done: private_modes_mouse.rs + status_reports.rs)*
+  - [x] **Replacement cells (sibling-reset):** *(done: x10_mouse_clears_other_tracking, mode_1000_clears_x10, x10_then_1002_only_1002_remains, mode_1003_then_9_only_9_remains, decrst_1000_preserves_active_1003, decrst_9_preserves_active_1000)*
 
-- [ ] **Mouse encoding modes (1005, 1006, 1015) — mutual exclusion + replacement matrix:** DECSET sets the correct encoding flag (`MOUSE_UTF8`, `MOUSE_SGR`, `MOUSE_URXVT`) and clears `ANY_MOUSE_ENCODING`. DECRST clears the flag. DECRQM works.
-  - [ ] **Parallel sync point risk** (per `.claude/rules/impl-hygiene.md` §Registration Sync Points): `DECSET ?1005` → `DECSET ?1006` should clear 1005; `DECSET ?1006` → `DECSET ?1015` should clear 1006; round-robin all three. Verify tracking-mode state is untouched — switching encoding must NOT clear `MOUSE_REPORT_CLICK` / `MOUSE_DRAG` / `MOUSE_MOTION`.
+- [x] **Mouse encoding modes (1005, 1006, 1015) — mutual exclusion + replacement matrix:** *(done: private_modes_mouse.rs)*
+  - [x] **Parallel sync point risk:** *(done: existing round-robin tests + encoding_replacement_preserves_tracking)*
 
-- [ ] **Tracking × encoding interaction cells:** `DECSET ?1000` + `DECSET ?1006` — both tracking AND encoding bits set simultaneously (the common case). Then `DECSET ?1002` — expect 1000 cleared (tracking replaced), 1006 preserved (encoding orthogonal). Then `DECSET ?1005` — expect 1006 cleared (encoding replaced), 1002 preserved.
+- [x] **Tracking × encoding interaction cells:** *(done: tracking_and_encoding_coexist, tracking_replacement_preserves_encoding, encoding_replacement_preserves_tracking)*
 
-- [ ] **Focus events (1004) — flag toggle + bridge cell to Section 16 consumer:**
+- [x] **Focus events (1004) — flag toggle + bridge cell to Section 16 consumer:**
   - Core-layer: DECSET sets `TermMode::FOCUS_IN_OUT`. DECRST clears it. DECRQM works.
   - **Bridge cell (NEW):** parser `CSI ? 1004 h` → `mode.contains(TermMode::FOCUS_IN_OUT)` returns true → `focus_event_seq_for_mode(mode, true)` at `oriterm/src/app/event_loop_helpers/focus_events/mod.rs:45-69` returns `Some(FOCUS_IN_SEQ)`. Colocated test in `oriterm/src/app/event_loop_helpers/focus_events/tests.rs` — takes a `TermMode` built by feeding `\x1b[?1004h` through a real `Term`, asserts `focus_event_seq_for_mode(term.mode(), true) == Some(b"\x1b[I")` and `(term.mode(), false) == Some(b"\x1b[O")`. This proves the parser → consumer SSOT contract is live. Section 16's 16.5 owns the full `App::send_focus_event()` integration apex; Section 09 owns the bridge.
   - Note: the apex catalog row `DEC-FOCUS-IN-OUT` stays `implemented-unverified` until Section 16 lands the `send_focus_event()` app-shell integration test. Section 09 does NOT update this catalog row's verification status.
 
-- [ ] **Alternate scroll (1007) — flag toggle + core-layer bridge cell:**
-  - Core-layer: DECSET/DECRST toggles `TermMode::ALTERNATE_SCROLL` correctly. DECRQM returns correct value.
-  - **Bridge cell (NEW — optional, best-effort):** parser `CSI ? 1007 h` + `CSI ? 1049 h` (alt screen) → the `handle_mouse_wheel()` Tier-2 condition at `oriterm/src/app/mouse_report/mod.rs:181` reads `mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)` when checked against the post-parse mode. If the Tier-2 gate can be extracted into a pure helper (`should_translate_wheel_to_arrows(mode, shift_held) -> bool`) without destabilizing `mouse_report/mod.rs`, add a colocated test proving `true` for `ALT_SCREEN | ALTERNATE_SCROLL` with no shift, `false` when tracking mode is also set (tracking beats alt-scroll per Tier-1 short-circuit at `mouse_report/mod.rs:150`). If extraction is non-trivial or destabilizes the module, file `/add-bug` for the refactor and SKIP the bridge cell in Section 09 — the app-shell apex is already filed as a deferred bug (see row-ownership table), so Section 09 does NOT block on this bridge.
-  - **Interaction cell (core-layer, always required):** `DECSET ?1000` + `DECSET ?1007` (both tracking and alt-scroll enabled) — assert both `TermMode::MOUSE_REPORT_CLICK` and `TermMode::ALTERNATE_SCROLL` bits coexist after parsing. This pins the mutual-state invariant at the core level without depending on the app-shell consumer.
-  - Note: **catalog row `DEC-ALT-SCROLL` stays `stub`** — verification requires the app-shell apex that Section 09 filed as a deferred bug. Section 09 does NOT update this catalog row's verification status.
+- [x] **Alternate scroll (1007) — flag toggle + core-layer bridge cell:**
+  - [x] Core-layer: DECSET/DECRST toggles `TermMode::ALTERNATE_SCROLL` correctly. DECRQM returns correct value. *(done: private_modes_sync.rs + status_reports.rs)*
+  - [x] **Bridge cell:** Extracted `should_translate_wheel_to_arrows(mode, shift_held) -> bool` as pure function from `mouse_report/mod.rs`. Bridge test `bridge_parser_to_alt_scroll_decision` in `mouse_report/tests.rs` feeds escape sequences through real Term, verifies decision path. *(done)*
+  - [x] **Interaction cell:** *(done: alternate_scroll_coexists_with_mouse_tracking in private_modes_sync.rs)*
+  - Note: **catalog row `DEC-ALT-SCROLL` stays `stub`** — app-shell integration apex filed as BUG-08-15.
 
-- [ ] **Urgency hints (1042) flag-only verification:** DECSET/DECRST toggles `TermMode::URGENCY_HINTS`. DECRQM works. Note: **catalog row `DEC-URGENCY-HINTS` stays `stub`** — the BEL-to-window-manager-hint path requires a `HostEffect::UrgencyHint` variant and host-adapter wiring which is NOT in Section 09's scope. Section 09 does NOT update this catalog row's verification status. File the missing wiring as a bug via `/add-bug` during 09.1 implementation if not already tracked. (There is NO bridge cell here because the consumer — host adapter wiring — does not exist yet; the gap itself is the bug to file.)
+- [x] **Urgency hints (1042) flag-only verification:** *(done: private_modes_sync.rs + status_reports.rs DECRQM; BUG-08-14 filed for missing host-adapter wiring)*
 
-- [ ] **Alt screen variants (47, 1047, 1048):** Verify mode flag set/clear, DECRQM, and downstream behavior (screen swap for 47/1047, cursor save/restore for 1048). 1049 is already verified by Section 08 — skip.
+- [x] **Alt screen variants (47, 1047, 1048):** *(done: private_modes_screen.rs has mode_47_*, mode_1047_*, mode_1048_* + DECRQM in status_reports.rs)*
 
-- [ ] **Sixel modes (80, 8452):** DECSET/DECRST toggles `TermMode::SIXEL_SCROLLING` and `TermMode::SIXEL_CURSOR_RIGHT`. DECRQM works.
+- [x] **Sixel modes (80, 8452):** *(done: private_modes_sync.rs + status_reports.rs DECRQM)*
 
-- [ ] **Win32 input (9001) — flag toggle + DECRQM only:**
-  - Core-layer: DECSET/DECRST toggles `TermMode::WIN32_INPUT`. DECRQM returns correct set/reset value.
-  - **Bridge cell NOT in Section 09 scope:** Per `oriterm/src/key_encoding/mod.rs:111-115`, Win32 input dispatch is "not yet wired here" — the encoder body exists in `win32.rs` but no dispatch path reads `TermMode::WIN32_INPUT` at keypress time. A bridge cell that tries to observe the Win32 branch being selected is not executable against current code. Section 17 (Kitty Keyboard Protocol) owns BOTH the dispatch wiring AND the encoding apex; Section 17 (or a prerequisite subsection inside Section 17) is responsible for landing the bridge once the dispatch seam exists. Section 09 limits itself to the core-layer flag/DECRQM contract.
-  - Note: **catalog row `DEC-WIN32-INPUT` stays `stub`** — dispatch seam + ConPTY encoding apex are Section 17's scope. Section 09 does NOT update this catalog row's verification status.
+- [x] **Win32 input (9001) — flag toggle + DECRQM only:** *(done: private_modes_sync.rs + status_reports.rs DECRQM)*
 
-- [ ] **Column mode gate (40) and column mode (3):** Verify EnableMode3 flag and DECCOLM side effects (screen clear, margin reset, cursor home). These were partially tested in Section 08 — verify anything not yet covered.
+- [x] **Column mode gate (40) and column mode (3):** *(done: modes.rs has DECCOLM tests; private_modes_sync.rs has enable_mode_3 toggle; status_reports.rs has DECRQM for both)*
 
-- [ ] **Reverse video (5):** Verify `TermMode::REVERSE_VIDEO` toggle + DECRQM. (May already be covered by Section 08.)
+- [x] **Reverse video (5):** *(done: private_modes_screen.rs decscnm_* + private_modes_sync.rs + status_reports.rs DECRQM)*
 
-- [ ] **DECRQM cross-cutting validation:** For every mode with a `NamedPrivateMode` variant, assert that `CSI ? Ps $ p` returns `\x1b[?Ps;1$y` when set and `\x1b[?Ps;2$y` when reset. For modes without a `TermMode` flag mapping (`SaveCursor`, `ColumnMode`), `named_private_mode_flag` returns `None` and DECRQM returns `0` (not recognized) — document this deviation if xterm reports these differently.
+- [x] **DECRQM cross-cutting validation:** *(done: status_reports.rs has assert_decrqm_private helper + 46 DECRQM tests covering all 21 modes with TermMode flags, plus SaveCursor (0) and ColumnMode (0), unknown mode (0), round-trip, and default-flags cross-check)*
 
-- [ ] **Catalog update — rows promoted to `verified` by Section 09:** `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`, `DEC-DECSCNM` (if not covered by 08), `DEC-BRACKETED-PASTE` (if not covered by 08). These rows have apex `effect-mode-state` — flag-toggle + DECRQM fully verifies them.
-- [ ] **Catalog: rows NOT promoted by Section 09** (flag coverage added but apex is owned elsewhere or deferred, so catalog status stays unchanged): `DEC-FOCUS-IN-OUT` (stays `implemented-unverified` — focus encoding apex is Section 16), `DEC-ALT-SCROLL` (stays `stub` — wheel-to-arrow apex is a deferred bug, no current section owner), `DEC-URGENCY-HINTS` (stays `stub` — host-notification deferred to bug), `DEC-WIN32-INPUT` (stays `stub` — ConPTY encoding apex is Section 17), `DEC-DECANM` (stays `missing` — VT52 is Section 19), `DEC-SGR-PIXEL-MOUSE` (stays `missing` — 1016 is Section 16). `DEC-SYNC-UPDATE`/`catalog/mode-2026.md` rows stay at their current status (owned by Section 06 apex). This section adds DECSET/DECRST + DECRQM test coverage for these rows without changing their catalog verification status.
+- [ ] **Catalog update — rows promoted to `verified` by Section 09:** `DEC-X10-MOUSE`, `DEC-MOUSE-CLICKS`, `DEC-MOUSE-DRAG`, `DEC-MOUSE-MOTION`, `DEC-UTF8-MOUSE`, `DEC-SGR-MOUSE`, `DEC-URXVT-MOUSE`, `DEC-ALT-SCREEN-47`, `DEC-ALT-SCREEN-1047`, `DEC-SAVE-CURSOR-1048`, `DEC-SIXEL-SCROLLING`, `DEC-SIXEL-CURSOR-RIGHT`, `DEC-DECNRCM`, `DEC-DECSCNM` (if not covered by 08), `DEC-BRACKETED-PASTE` (if not covered by 08). These rows have apex `effect-mode-state` — flag-toggle + DECRQM fully verifies them. *(deferred to 09.N — catalog file edits happen after all test content lands)*
+- [ ] **Catalog: rows NOT promoted by Section 09** *(deferred to 09.N)*
 
-- [ ] **Validation:** all tests pass; no existing tests regressed.
+- [x] **Validation:** all tests pass; no existing tests regressed. *(build-all, clippy-all, test-all green)*
 
 ---
 

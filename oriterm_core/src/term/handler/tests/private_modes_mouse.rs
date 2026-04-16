@@ -194,3 +194,120 @@ fn decrst_9_preserves_active_1000() {
     feed(&mut t, b"\x1b[?9l");
     assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
 }
+
+// --- X10 mouse (mode 9) ---
+
+#[test]
+fn x10_mouse_decset_sets_flag() {
+    let mut t = term();
+    assert!(!t.mode().contains(TermMode::MOUSE_X10));
+
+    feed(&mut t, b"\x1b[?9h");
+    assert!(t.mode().contains(TermMode::MOUSE_X10));
+}
+
+#[test]
+fn x10_mouse_decrst_clears_flag() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?9h");
+    assert!(t.mode().contains(TermMode::MOUSE_X10));
+
+    feed(&mut t, b"\x1b[?9l");
+    assert!(!t.mode().contains(TermMode::MOUSE_X10));
+}
+
+#[test]
+fn x10_mouse_clears_other_tracking() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // Setting X10 (mode 9) should clear mode 1000.
+    feed(&mut t, b"\x1b[?9h");
+    assert!(t.mode().contains(TermMode::MOUSE_X10));
+    assert!(!t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+}
+
+#[test]
+fn mode_1000_clears_x10() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?9h");
+    assert!(t.mode().contains(TermMode::MOUSE_X10));
+
+    // Setting mode 1000 should clear X10.
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+    assert!(!t.mode().contains(TermMode::MOUSE_X10));
+}
+
+#[test]
+fn x10_then_1002_only_1002_remains() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?9h");
+    assert!(t.mode().contains(TermMode::MOUSE_X10));
+
+    feed(&mut t, b"\x1b[?1002h");
+    assert!(!t.mode().contains(TermMode::MOUSE_X10));
+    assert!(t.mode().contains(TermMode::MOUSE_DRAG));
+}
+
+#[test]
+fn mode_1003_then_9_only_9_remains() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1003h");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+
+    feed(&mut t, b"\x1b[?9h");
+    assert!(!t.mode().contains(TermMode::MOUSE_MOTION));
+    assert!(t.mode().contains(TermMode::MOUSE_X10));
+}
+
+// --- Tracking × encoding orthogonality ---
+
+#[test]
+fn tracking_and_encoding_coexist() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1000h");
+    feed(&mut t, b"\x1b[?1006h");
+
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+}
+
+#[test]
+fn tracking_replacement_preserves_encoding() {
+    let mut t = term();
+    // Set tracking 1000 + encoding SGR.
+    feed(&mut t, b"\x1b[?1000h");
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+
+    // Replace tracking with 1002 — encoding (SGR) must be preserved.
+    feed(&mut t, b"\x1b[?1002h");
+    assert!(!t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+    assert!(t.mode().contains(TermMode::MOUSE_DRAG));
+    assert!(
+        t.mode().contains(TermMode::MOUSE_SGR),
+        "Switching mouse tracking mode must not clear encoding mode"
+    );
+}
+
+#[test]
+fn encoding_replacement_preserves_tracking() {
+    let mut t = term();
+    // Set tracking 1002 + encoding SGR.
+    feed(&mut t, b"\x1b[?1002h");
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_DRAG));
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+
+    // Replace encoding with UTF-8 — tracking (1002) must be preserved.
+    feed(&mut t, b"\x1b[?1005h");
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR));
+    assert!(t.mode().contains(TermMode::MOUSE_UTF8));
+    assert!(
+        t.mode().contains(TermMode::MOUSE_DRAG),
+        "Switching mouse encoding mode must not clear tracking mode"
+    );
+}
