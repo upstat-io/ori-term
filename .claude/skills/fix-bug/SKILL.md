@@ -295,14 +295,8 @@ When skipped, record in the fix section's §2.5: `Plan TPR: Skipped — {severit
 
 #### How to Run Plan TPR
 
-1. **Invoke `/tpr-review`** with the fix section file as the review target. The reviewers should examine:
-   - §1 Root Cause Analysis — is the root cause correctly identified? Any missed contributing factors?
-   - §1.5 Fix Consensus — did consensus miss anything? Are the rejected alternatives truly inferior?
-   - §2 TDD Matrix — are there missing cells? Edge cases not covered? Interaction tests missing?
-   - §3 Implementation — will this approach actually fix the root cause? What could go wrong? Downstream impacts?
-
-2. **Handle findings** — fix issues in the plan (update TDD matrix, refine implementation approach, add missing edge cases). Re-run Plan TPR if findings were significant (architectural-level concerns, not just missing test cases).
-
+1. **Invoke `/tpr-review`** via the `Skill` tool (NOT via `Agent`) with the fix section file as the review target: `Skill({skill: "tpr-review"})`. Using Agent would swallow all round summaries.
+2. **Handle findings** — fix issues in the plan. Re-run Plan TPR if findings were significant.
 3. **Update §2.5 Plan TPR Findings** in the fix section with the findings and resolutions.
 
 4. **Proceed to Phase 3** only when Plan TPR is clean (no unresolved findings).
@@ -344,10 +338,10 @@ Update the fix section: check off implementation tasks, note any discoveries. **
 
 Work through the completion checklist in order. **Reviews MUST complete before bug closure** — a bug marked resolved before TPR/hygiene is a premature closure that hides unfinished work from `/fix-next-bug` and `/review-bugs`.
 
-**FOREGROUND MANDATORY — ALL nested skill invocations.** When invoking `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling`, `/sync-claude`, or `/commit-push` below, their internal Agent dispatches MUST run in the foreground (do NOT set `run_in_background: true`). The completion checklist is sequential — each step's result informs the next. No independent work to parallelize.
+**FOREGROUND MANDATORY — ALL nested skill invocations** (`/tpr-review`, `/impl-hygiene-review`, `/improve-tooling`, `/sync-claude`, `/commit-push`). "Nested skill invocation" means: invoke via the **`Skill` tool**, NOT via `Agent`. An `Agent` dispatch (even foreground/non-background) runs the skill as a sub-agent, swallowing all intermediate output — round summaries, progress updates, and findings become invisible to the user until the Agent returns its final result. `Skill({skill: "tpr-review"})` runs the coordinator inline in the current context so per-round summaries are printed in real time.
 
 1. **Verify all matrix items** — tests, builds, leak checks as specified in the fix section's completion checklist
-2. **Run `/tpr-review`** (Phase 5 — code review) — independent third-party review of the **implementation**. This is distinct from Plan TPR (Phase 2.5) which reviewed the plan. Both TPR phases can surface findings, but they review different artifacts.
+2. **Invoke `/tpr-review`** via the `Skill` tool (Phase 5 — code review): `Skill({skill: "tpr-review"})` — independent third-party review of the **implementation**. NOT via Agent — see FOREGROUND MANDATORY note above.
 3. **Handle code TPR findings** — fix any issues found, re-run until clean
 4. **Run `/impl-hygiene-review`** — AFTER code TPR is clean
 5. **Run `/improve-tooling` retrospectively** — MANDATORY at fix close, AFTER both reviews are clean. Bug fixes are the richest source of tooling gaps because you've just spent time fighting the diagnostic surface during root cause analysis. Reflect on: which `diagnostics/` scripts you ran, where you added ad-hoc `dbg!`/`tracing` calls (and what each one was looking for), where the original failure message was unhelpful, where matrix tests were tedious because helpers were missing, what instrumentation would have made the bug obvious in 1 minute instead of 30. Capture every gap you noticed. Implement every accepted improvement NOW (zero deferral) and commit each via SEPARATE `/commit-push` using a valid conventional-commit type (e.g., `build(diagnostics): add --bb-level RC tracking — surfaced by BUG-XX-NNN retrospective` — use `build` for dev/diagnostic scripts, `test` for test-harness, `chore` for general tooling, `ci` for CI, `docs` for tool docs; do NOT use `tools(...)` — the lefthook commit-msg hook rejects any type outside the standard set `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`). The retrospective is mandatory even when nothing felt painful — this is exactly when blind spots accumulate. See `.claude/skills/improve-tooling/SKILL.md` "Retrospective Mode" for the full look-back protocol.
