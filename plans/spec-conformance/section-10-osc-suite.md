@@ -37,6 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
+  rounds_completed: 3
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -173,6 +174,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - `oriterm_core/src/term/renderable/mod.rs` (expose `mouse_cursor_icon` on `RenderableContent`)
 - `crates/vte/src/ansi/handler.rs` (add `iterm2_set_mark`, `iterm2_remote_host`, `iterm2_current_dir`, `iterm2_copy`, `iterm2_report_cell_size`, `iterm2_set_user_var`, `iterm2_shell_integration_version` default methods)
 - `crates/vte/src/ansi/dispatch/osc.rs` (refactor the `b"1337"` arm into a key=value sub-dispatcher)
+- `crates/oriterm_test_support/src/spec_chain/recording_handler.rs` (**REGISTRATION SYNC**: for every new `Handler::iterm2_*` method added to `crates/vte/src/ansi/handler.rs`, a matching delegate arm must be added here — same pattern as the existing `iterm2_file` arm at line 317. Missing arms mean the SpecHarness silently drops the new methods and spec_chain tests cannot observe them. This file is also updated in 10.7 when Term overrides land.)
 - `oriterm_mux/src/pane/io_thread/response_poll.rs` (remove the `#[allow(dead_code)]` gate; add the activation call in `PaneIoThread::drain_events` or equivalent)
 - `oriterm_mux/src/pane/io_thread/mod.rs` (inject the clock source for `set_command_start` timing tests)
 
@@ -182,12 +184,12 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - [ ] **Renderable stub regression pin** — `observers/tests.rs` test that constructs a `RenderableExpectation { hyperlink_at: Some((row, col, "http://example.com")) }` against a `Term` whose cell at (row, col) has a DIFFERENT URI. With the stub, the test passes; with the completed observer, the test fails. Commit the NEGATIVE test first, then complete the observer; the test flips from pass→fail, and THEN we invert the assertion so the final committed test is the semantic pin that requires the observer to actually check.
 - [ ] **Term mouse cursor icon pin** — test `term_set_mouse_cursor_icon_stores_icon` at `oriterm_core/src/term/tests.rs` that (i) starts `Term` with `mouse_cursor_icon == None`, (ii) calls `Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Pointer)`, (iii) asserts `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Failing RED before the override is added.
 - [ ] **OSC 1337 sub-dispatcher parse pin** — test in `crates/vte/src/ansi/dispatch/tests.rs` (if missing, create) that feeds `\x1b]1337;SetMark\x1b\\` and asserts `Handler::iterm2_set_mark` was called. RED before the sub-dispatcher refactor lands.
-- [ ] **Response-poll activation pin** — test `response_poll_emits_pty_write_on_fulfill` in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (new) that pushes a `HostRequest::ClipboardLoad` through `PaneIoThread::register_host_request_response`, calls `ResponseToken::fulfill("hello")`, polls, and asserts a `PtyEffect::Write` with the base64-encoded reply appears on the sink. RED until the `#[allow(dead_code)]` gate is removed and `register_host_request_response` is called from the live path.
+- [ ] **Response-poll activation pin** — test `response_poll_emits_pty_write_on_fulfill` in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (if `response_poll.rs` is converted to a directory module) OR in `oriterm_mux/src/pane/io_thread/tests.rs` (if kept flat) — that pushes a `HostRequest::ClipboardLoad` through `PaneIoThread::register_host_request_response`, calls `ResponseToken::fulfill("hello")`, polls, and asserts a `PtyEffect::Write` with the base64-encoded reply appears on the sink. RED until the `#[allow(dead_code)]` gate is removed and `register_host_request_response` is called from the live path. (See Files block note on `response_poll.rs` directory conversion.)
 - [ ] **Injectable clock pin** — test `command_duration_uses_injected_clock` that constructs `Term` with a deterministic clock (`Arc<dyn Fn() -> Instant + Send + Sync>`), feeds `OSC 133;C` then (advance clock 1.5s) `OSC 133;D`, asserts `HostEffect::CommandComplete { duration: 1500ms }`. Without the injectable clock, the assertion is flaky (wall-clock elapsed). RED until the clock is injected.
 
 **Implementation:**
 
-- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that attaches a `RawInterceptor` wrapper. In `feed_with_mux()`, run the raw `vte::Parser` with a borrowed `RawInterceptor` on the bytes FIRST, then run the high-level `Processor::advance_with_observer` on the SAME bytes. This matches the production order in `oriterm_mux/src/pane/io_thread/mod.rs::handle_bytes()` which runs `self.raw_parser.advance(&mut interceptor, bytes)` before `self.processor.advance(&mut self.terminal, bytes)`. The harness MUST mirror this order exactly — running the interceptor AFTER the processor would be wrong and untestable via the TDD failing-then-passing pair.
+- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that enables a `feed_with_mux()` path. **`RawInterceptor` is `pub(crate)` in `oriterm_mux` and cannot be accessed from `crates/oriterm_test_support` directly** — the harness must go through a test hook. Two valid approaches: **(A, preferred)** add a `pub(crate)` function `advance_raw_interceptor(term: &mut Term<S>, bytes: &[u8])` exported as `#[cfg(test)]` from `oriterm_mux::shell_integration` (or as a crate-level test helper in `oriterm_mux/src/lib.rs` under `#[cfg(test)] pub fn`); OR **(B)** duplicate the OSC dispatch logic that `RawInterceptor` performs (osc7 / osc9 / osc133 / etc.) in a `TestInterceptor` type within `oriterm_test_support` that mirrors production behavior. Option A is preferred because Option B creates an SSOT DRIFT risk. Whichever approach is chosen, `feed_with_mux()` MUST run the interceptor dispatch FIRST on the bytes, then run the high-level `Processor::advance_with_observer` on the SAME bytes — matching the production order in `oriterm_mux/src/pane/io_thread/mod.rs::handle_bytes()` (`self.raw_parser.advance(&mut interceptor, bytes)` before `self.processor.advance(&mut self.terminal, bytes)`). The harness MUST mirror this order exactly.
 - [ ] Complete `observe_renderable` to check every field in `RenderableExpectation`:
   - `cells: Option<Vec<(row, col, ch)>>` — cell contents at specific positions.
   - `hyperlink_at: Option<(row, col, expected_uri: String)>` — assert cell's hyperlink URI matches.
@@ -266,17 +268,17 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Files:**
 - `oriterm_core/tests/spec_chain/osc/clipboard.rs` (new)
-- `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (new — direct tests of the activated polling path)
+- `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (new — direct tests of the activated polling path). **Note**: `response_poll.rs` is currently a flat file, not a directory module. Per `.claude/rules/test-organization.md §Sibling tests.rs Pattern`, tests must live in a sibling `tests.rs`. This requires converting `response_poll.rs` → `response_poll/mod.rs` + `response_poll/tests.rs` before the test file can be created. The conversion is a 10.2 implementation prerequisite. Alternatively, place the tests in the existing `oriterm_mux/src/pane/io_thread/tests.rs` under a dedicated `#[cfg(test)]` section, which avoids the directory module conversion.
 - Catalog update: `plans/spec-conformance/catalog/osc.md` (rows OSC-52-STORE, OSC-52-LOAD)
 
 **Tests (TDD — RED first):**
 
-- [ ] `osc52_store_clipboard_c` — feed `\x1b]52;c;SGVsbG8=\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` is NOT emitted (this is a store, not a load), and assert the legacy `Event::ClipboardStore` (via the `LegacyEventSink` adapter) records the decoded `"Hello"` string with `selection: Clipboard`. For the Effect-side assertion, verify the effect family is `Effect::Host(HostEffect::ClipboardStore { .. })` or the equivalent store-side variant named in Section 03's type (verify `oriterm_core/src/effect/families/host.rs` exact variant name — the test cites the variant by path).
-- [ ] `osc52_store_clipboard_s` — same shape, `s` (selection) clipboard character, assert `selection: Selection`.
+- [ ] `osc52_store_clipboard_c` — feed `\x1b]52;c;SGVsbG8=\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` is NOT emitted (this is a store, not a load), and assert the Effect-side variant is `Effect::Host(HostEffect::ClipboardStore { selection: ClipboardSelection::Clipboard, text: "Hello" })` — the exact variant path is `oriterm_core::effect::families::host::{HostEffect, ClipboardSelection}` (confirmed in `oriterm_core/src/effect/families/host.rs:34,108-114`). **No `LegacyEventSink` assertion here** — spec_chain tests use `QueueingEffectSink`; asserting on `Event::ClipboardStore` via `LegacyEventSink` would test the wrong sink path.
+- [ ] `osc52_store_clipboard_s` — same shape, `s` (selection) clipboard character, assert `selection: ClipboardSelection::Select` (NOT `Selection` — the enum variant at `oriterm_core/src/effect/families/host.rs:114` is `Select`, not `Selection`).
 - [ ] `osc52_store_clipboard_p` — `p` (primary) clipboard character.
 - [ ] `osc52_store_clipboard_q` — `q` (secondary) clipboard character, if supported; else negative pin that this character is dropped.
 - [ ] `osc52_load_request_fires_hostrequest` — feed `\x1b]52;c;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { selection: Clipboard, clipboard_char: b'c', terminator: "\x1b\\", reply: <ResponseToken> })` is on the transcript. This is the SPEC-CHAIN assertion scope boundary — the spec_chain harness asserts the HostRequest was emitted; it does NOT simulate the IO thread's polling loop (that lives in `oriterm_mux::PaneIoThread`, which is a separate crate layer). The ResponseToken fulfillment → PtyEffect::Write round-trip is tested in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (listed in the Files block), NOT in the spec_chain test. No `harness.poll_pending_responses()` helper is added to `SpecHarness` — doing so would force `oriterm_test_support` to depend on `oriterm_mux`'s internal `PaneIoThread`, which violates the crate boundary (see `.claude/rules/crate-boundaries.md` §crates/oriterm_test_support).
-- [ ] `response_poll_roundtrip_emits_pty_write` (**in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs`**, NOT in spec_chain) — construct a `PaneIoThread` (or the minimal stub thereof that holds `pending_responses`), call `register_host_request_response(request)` with a `HostRequest::ClipboardLoad { clipboard_char: b'c', terminator: "\x1b\\", reply }`, fulfill the `ResponseToken` with `reply.fulfill("example-text".into())`, call `poll_pending_responses()`, and assert the effect sink received `Effect::Pty(PtyEffect::Write { bytes })` where `bytes == format_clipboard_reply("example-text", b'c', "\x1b\\")` (base64-encoded). Uses `format_clipboard_reply` from `oriterm_core/src/effect/families/host_request.rs` — DO NOT re-implement the reply format inline (LEAK).
+- [ ] `response_poll_roundtrip_emits_pty_write` (**in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs`** if directory module conversion happened, OR in `oriterm_mux/src/pane/io_thread/tests.rs` if `response_poll.rs` stays flat — NOT in spec_chain) — construct a `PaneIoThread` (or the minimal stub thereof that holds `pending_responses`), call `register_host_request_response(request)` with a `HostRequest::ClipboardLoad { clipboard_char: b'c', terminator: "\x1b\\", reply }`, fulfill the `ResponseToken` with `reply.fulfill("example-text".into())`, call `poll_pending_responses()`, and assert the effect sink received `Effect::Pty(PtyEffect::Write { bytes })` where `bytes == format_clipboard_reply("example-text", b'c', "\x1b\\")` (base64-encoded). Uses `format_clipboard_reply` from `oriterm_core/src/effect/families/host_request.rs` — DO NOT re-implement the reply format inline (LEAK).
 - [ ] **Semantic pin** — `osc52_response_token_requires_fulfillment` — negative test: emit the load request, do NOT fulfill the token, advance the harness ten ticks. Assert NO `PtyEffect::Write` is emitted. This pins the requirement that the terminal waits for fulfillment rather than emitting an empty reply.
 - [ ] `osc52_load_with_s_and_p_selections` — load with `s` and `p` characters; assert the correct `ClipboardSelection` in the `HostRequest`.
 - [ ] `osc52_store_invalid_base64_dropped` — feed `\x1b]52;c;!!!invalid-base64!!!\x1b\\`, assert no `HostEffect::ClipboardStore` is emitted (store path rejects invalid base64; confirm behavior matches `oriterm_core/src/term/handler/tests/osc.rs::osc52_clipboard_load` pattern) OR assert a specific error/drop behavior — whichever the current dispatcher at `oriterm_core/src/term/handler/osc.rs::osc_clipboard_store` produces. If the current behavior is "accept garbage and store it", file `/add-bug` and document the observed behavior as the current catalog deviation.
@@ -418,7 +420,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Tests:**
 
-- [ ] `osc104_zero_args_resets_all_256_palette` — pre-populate palette: set indices 0..256 to custom colors via OSC 4 at setup. Feed `\x1b]104\x1b\\`. Assert every index 0..256 matches the initial theme palette (compare against `Theme::default().palette()`).
+- [ ] `osc104_zero_args_resets_all_256_palette` — pre-populate palette: set indices 0..256 to custom colors via OSC 4 at setup. Feed `\x1b]104\x1b\\`. Assert every index 0..256 matches the initial theme palette (compare against `Palette::for_theme(Theme::default())` — `Theme` has no `.palette()` method; use `oriterm_core::color::palette::Palette::for_theme(oriterm_core::theme::Theme::default())`).
 - [ ] `osc104_specific_indices_resets_only_those` — set indices 0, 5, 10 to custom colors. Feed `\x1b]104;5;10\x1b\\`. Assert index 0 is still the custom color; indices 5 and 10 are restored to theme defaults; indices 1–4, 6–9, 11–255 are at theme defaults (no collateral damage).
 - [ ] `osc104_invalid_index_dropped` — feed `\x1b]104;999;abc\x1b\\`, assert the `parse_number` failure path at `dispatch/osc.rs:231-234` routes to `unhandled` and no palette entry is mutated.
 - [ ] `osc110_resets_default_foreground` — set OSC 10 to red, feed `\x1b]110\x1b\\`. Assert default fg matches theme default fg (queryable via `term.palette().foreground()` — NOT `Term::color()`, which does not exist; the Palette API is at `oriterm_core/src/color/palette/mod.rs:253`).
@@ -452,7 +454,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc1337_remote_host` — feed `\x1b]1337;RemoteHost=user@host.example.com\x1b\\`, assert `term.remote_host() == Some("user@host.example.com")`.
 - [ ] `osc1337_current_dir` — feed `\x1b]1337;CurrentDir=/path/to/dir\x1b\\`, assert `term.cwd() == Some("/path/to/dir")`. SSOT with OSC 7 + OSC 133 (scope clarification H).
 - [ ] `osc1337_copy` — feed `\x1b]1337;Copy=:SGVsbG8=\x1b\\` (the `Copy=<b64>` form), assert `Effect::Host(HostEffect::ClipboardStore { .. })` (or the equivalent store variant) with the decoded text.
-- [ ] `osc1337_report_cell_size` — feed `\x1b]1337;ReportCellSize\x1b\\`, assert `Effect::Pty(PtyEffect::Write { bytes: ... })` with the expected reply format `OSC 1337 ; ReportCellSize=<H>;<W> ST` using the Term's current cell dimensions (pulled from the harness's terminal size or from a new `Term::cell_size_pixels()` if cell pixel sizes are available at the core level).
+- [ ] `osc1337_report_cell_size` — feed `\x1b]1337;ReportCellSize\x1b\\`, assert `Effect::Pty(PtyEffect::Write { bytes: ... })` with the expected reply format `OSC 1337 ; ReportCellSize=<H>;<W> ST` using the Term's current cell dimensions from `term.cell_pixel_height()` and `term.cell_pixel_width()` — `Term` already has `cell_pixel_width: u16` and `cell_pixel_height: u16` fields (at `oriterm_core/src/term/mod.rs:201,203`); expose public accessors if not already present. Do NOT create a new `Term::cell_size_pixels()` method — the existing fields are the SSOT.
 - [ ] `osc1337_set_user_var` — feed `\x1b]1337;SetUserVar=MY_VAR=SGVsbG8=\x1b\\`, assert `term.user_var("MY_VAR") == Some("Hello")`.
 - [ ] `osc1337_shell_integration_version` — feed `\x1b]1337;ShellIntegrationVersion=5\x1b\\`, assert `term.shell_integration_version() == Some("5")`.
 - [ ] `osc1337_file_still_routes_to_iterm2_file` — feed a minimal `\x1b]1337;File=name=test.png;:<tiny-png-bytes>\x1b\\`, assert `Handler::iterm2_file` is still called (regression guard: the sub-dispatcher refactor from 10.0 must preserve Section 14's image path).
@@ -653,6 +655,44 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Evidence: Plan pin: "set term.cwd() via OSC 7. Feed OSC 1337 ; CurrentDir=<different-path>. Assert new path." Reverse direction absent.
   Impact: A future regression where OSC 1337 writes a separate CWD field not overwritten by OSC 7 would go undetected.
   Required plan update: symmetrical direction B test added (OSC 1337 first, then OSC 7 overwrites) per `.claude/rules/tests.md §Matrix Clamping` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+<!-- Round 3 findings (2026-04-17) -->
+
+- [x] `[TPR-10-14-codex][high]` `oriterm_mux/src/shell_integration/interceptor.rs:20` — `RawInterceptor` is `pub(crate)`, not accessible from `crates/oriterm_test_support`; 10.0 plan instruction to attach it directly in `SpecHarness` would not compile.
+  Evidence: `pub(crate) struct RawInterceptor<'a, S: EffectSink>` — crate-private visibility in `oriterm_mux`.
+  Impact: Any 10.0 implementation following the plan as written would fail to compile when `oriterm_test_support` tries to access `RawInterceptor`.
+  Required plan update: 10.0 implementation bullet rewritten to require a `#[cfg(test)]` test hook exported from `oriterm_mux` (Option A) or a `TestInterceptor` mirroring production behavior (Option B), with Option A preferred to avoid SSOT DRIFT (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-15-codex][high]` `crates/oriterm_test_support/src/spec_chain/recording_handler.rs:317` — `recording_handler.rs` not listed in 10.0/10.7 Files blocks; new `Handler::iterm2_*` methods added there would not be forwarded/recorded by `RecordingHandler`, causing spec_chain tests to silently miss the new dispatch.
+  Evidence: `fn iterm2_file(&mut self, params: &[&[u8]]) { self.record_other("iterm2_file"); ... }` — only `iterm2_file` is wired; no other `iterm2_*` arms exist.
+  Impact: Spec_chain tests for `iterm2_set_mark`, `iterm2_remote_host`, etc. would pass even when dispatch is broken, because `RecordingHandler` would not see the new methods.
+  Required plan update: `recording_handler.rs` added to 10.0 Files list with an explicit REGISTRATION SYNC note; implementation bullet added requiring delegate arms for every new `Handler::iterm2_*` method (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-16-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:276` — `osc52_store_clipboard_s` asserts `selection: Selection` but actual enum variant is `ClipboardSelection::Select`.
+  Evidence: `pub enum ClipboardSelection { Clipboard, Primary, Select, }` at `oriterm_core/src/effect/families/host.rs:108-114` — variant is `Select`, not `Selection`.
+  Impact: An implementer following the plan would write `ClipboardSelection::Selection` which fails to compile.
+  Required plan update: corrected to `ClipboardSelection::Select`; also removed the `LegacyEventSink` assertion reference (spec_chain uses `QueueingEffectSink`) (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-17-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:269` — Test path `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` requires a directory module but `response_poll.rs` is a flat file.
+  Evidence: `ls oriterm_mux/src/pane/io_thread/` shows `response_poll.rs` as a flat file, not a directory. Per `.claude/rules/test-organization.md §Sibling tests.rs Pattern`, tests must be in a sibling `tests.rs` — which requires `response_poll/mod.rs + response_poll/tests.rs`.
+  Impact: The plan implies tests can be created at the path without noting the directory conversion prerequisite; implementers would either skip the conversion (silently placing tests in the wrong file) or not realize the conversion is required.
+  Required plan update: Files block updated with a note explaining the directory module conversion requirement; alternative of using existing `io_thread/tests.rs` documented (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-18-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:421` — Plan cites `Theme::default().palette()` but `Theme` has no `.palette()` method; correct API is `Palette::for_theme(Theme::default())`.
+  Evidence: `oriterm_core/src/theme/mod.rs` — `Theme` has only `is_dark()` and `Default`; `Palette::for_theme(theme: Theme) -> Self` is in `oriterm_core/src/color/palette/mod.rs:179`.
+  Impact: An implementer following the plan would write `Theme::default().palette()` which fails to compile.
+  Required plan update: corrected to `Palette::for_theme(Theme::default())` with full type paths cited (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-19-gemini][low]` `plans/spec-conformance/section-10-osc-suite.md:455` — `osc1337_report_cell_size` test plan references a hypothetical `Term::cell_size_pixels()` that does not exist when `Term` already has `cell_pixel_width` and `cell_pixel_height` fields.
+  Evidence: `oriterm_core/src/term/mod.rs:201,203` — `cell_pixel_width: u16` and `cell_pixel_height: u16` fields exist; no `cell_size_pixels()` method present.
+  Impact: Implementer may create an unnecessary new accessor instead of using the existing fields; "if available" hedge implies uncertainty where there is none.
+  Required plan update: test plan updated to reference `term.cell_pixel_height()` / `term.cell_pixel_width()` accessors (expose if not already public); SSOT note added against creating a new aggregating method (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
 ---
