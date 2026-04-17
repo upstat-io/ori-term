@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 7
+  rounds_completed: 8
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -176,11 +176,13 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - `crates/vte/src/ansi/dispatch/osc.rs` (refactor the `b"1337"` arm into a key=value sub-dispatcher)
 - `crates/oriterm_test_support/src/spec_chain/recording_handler.rs` (**REGISTRATION SYNC**: for every new `Handler::iterm2_*` method added to `crates/vte/src/ansi/handler.rs`, a matching delegate arm must be added here — same pattern as the existing `iterm2_file` arm at line 317. Missing arms mean the SpecHarness silently drops the new methods and spec_chain tests cannot observe them. This file is also updated in 10.7 when Term overrides land.)
 - `oriterm_mux/src/pane/io_thread/response_poll.rs` (remove the `#[allow(dead_code)]` gate; add the activation call in `PaneIoThread::drain_events` or equivalent)
-- `oriterm_mux/src/pane/io_thread/mod.rs` (inject the clock source for `set_command_start` timing tests)
+- `oriterm_core/src/term/shell_state/mod.rs` (modify `finish_command` signature to accept `now: Option<Instant>` — Option A timing seam)
+- `oriterm_mux/src/shell_integration/interceptor.rs` (update call sites of `finish_command` to pass `None`; this file is the caller of `Term::finish_command()`)
+- `oriterm_mux/tests/spec_chain/` (new directory — mux-intercepted OSC spec_chain tests: OSC 7, OSC 9/99/777, OSC 133/633 tests live here, NOT in `oriterm_core/tests/spec_chain/osc/`)
 
 **Tests (written FIRST per `.claude/rules/tests.md` §TDD for Bugs — VERIFIED RED before implementation):**
 
-- [ ] **Failing test matrix written FIRST** — `spec_chain/tests.rs` harness tests that feed OSC 133;A through `SpecHarness::feed()` MUST fail in a way that proves the high-level processor drops the sequence (the test fails because the expected state change does not occur). After 10.0 lands `SpecHarness::with_mux_layer()`, the same scenario routed through `feed_with_mux()` passes. This failing-then-passing pair is the TDD proof that the `mux_layer` is actually running.
+- [ ] **Failing test matrix written FIRST** — write a test in `oriterm_mux/tests/spec_chain/` that feeds OSC 133;A through `SpecHarness::feed()` (high-level processor only) and verifies it drops the sequence (expected state change does NOT occur). Then write a second test that runs both the `RawInterceptor` and `SpecHarness::feed()` in production order (interceptor first, then Processor) and verifies the state change DOES occur. This RED→GREEN pair is the TDD proof that the mux interceptor is load-bearing. Both tests live in `oriterm_mux/tests/spec_chain/` — NOT in `oriterm_core/tests/spec_chain/` or in `SpecHarness` itself (see crate-boundary constraint).
 - [ ] **Renderable stub regression pin** — `observers/tests.rs` test that constructs a `RenderableExpectation { hyperlink_at: Some((row, col, "http://example.com")) }` against a `Term` whose cell at (row, col) has a DIFFERENT URI. With the stub, the test passes; with the completed observer, the test fails. Commit the NEGATIVE test first, then complete the observer; the test flips from pass→fail, and THEN we invert the assertion so the final committed test is the semantic pin that requires the observer to actually check.
 - [ ] **Term mouse cursor icon pin** — test `term_set_mouse_cursor_icon_stores_icon` at `oriterm_core/src/term/tests.rs` that (i) starts `Term` with `mouse_cursor_icon == None`, (ii) calls `Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Pointer)`, (iii) asserts `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Failing RED before the override is added.
 - [ ] **OSC 1337 sub-dispatcher parse pin** — test in `crates/vte/src/ansi/dispatch/tests.rs` (if missing, create) that feeds `\x1b]1337;SetMark\x1b\\` and asserts `Handler::iterm2_set_mark` was called. RED before the sub-dispatcher refactor lands.
@@ -189,7 +191,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 **Implementation:**
 
-- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that enables a `feed_with_mux()` path. **`RawInterceptor` is `pub(crate)` in `oriterm_mux` and cannot be accessed from `crates/oriterm_test_support` directly** — the harness must go through a test hook. **CRATE BOUNDARY CONSTRAINT (per `.claude/rules/crate-boundaries.md`):** `crates/oriterm_test_support` depends only on `oriterm_core`; adding an `oriterm_mux` dependency to it is NOT permitted. Two valid approaches: **(A, preferred — crate-boundary safe)** place the mux-intercepted OSC spec_chain tests in `oriterm_mux/tests/spec_chain/` (where `oriterm_mux` has full access to its own `pub(crate)` types), using a test helper within `oriterm_mux` that constructs a `RawInterceptor + Term` pair and runs both parsers in production order. This keeps `oriterm_test_support` dependency-clean. **(B, alternative — SSOT DRIFT risk)** duplicate the OSC dispatch logic that `RawInterceptor` performs (osc7 / osc9 / osc133 / etc.) in a `TestInterceptor` type within `oriterm_test_support` that mirrors production behavior. Option B is ONLY acceptable if Option A (putting tests in `oriterm_mux`) is structurally impractical. **DO NOT** add `oriterm_mux` as a dependency of `oriterm_test_support` — this violates the allowed dependency direction and creates a cycle. Whichever approach is chosen, the test harness MUST run the interceptor dispatch FIRST on the bytes, then run the high-level `Processor::advance_with_observer` on the SAME bytes — matching the production order in `oriterm_mux/src/pane/io_thread/mod.rs::handle_bytes()` (`self.raw_parser.advance(&mut interceptor, bytes)` before `self.processor.advance(&mut self.terminal, bytes)`). The harness MUST mirror this order exactly.
+- [ ] Create `oriterm_mux/tests/spec_chain/` integration test directory for mux-intercepted OSC tests. Add a `spec_chain_helper` module inside `oriterm_mux/tests/spec_chain/mod.rs` that constructs a `RawInterceptor + Term` pair and runs both parsers in production order: `raw_parser.advance(&mut interceptor, bytes)` first, then `processor.advance(&mut term, bytes)`. This is the mux-layer test harness — it has full `pub(crate)` access to `RawInterceptor` because the tests live inside the `oriterm_mux` crate. `crates/oriterm_test_support` (`SpecHarness`) requires NO modification — no `mux_layer`, no `feed_with_mux()`, no new dependency. The `SpecHarness` remains mux-free.
 - [ ] Complete `observe_renderable` to check every field in `RenderableExpectation`:
   - `cells: Option<Vec<(row, col, ch)>>` — cell contents at specific positions.
   - `hyperlink_at: Option<(row, col, expected_uri: String)>` — assert cell's hyperlink URI matches.
@@ -221,7 +223,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 - [ ] All five TDD matrix tests transition RED → GREEN.
 - [ ] The OSC 133;A scenario routed through `SpecHarness::feed()` still fails (proves the high-level processor really drops OSC 133, not just our test setup).
-- [ ] The same scenario through `SpecHarness::feed_with_mux()` passes (proves the mux layer runs).
+- [ ] The mux-layer test in `oriterm_mux/tests/spec_chain/` that runs both parsers in production order passes (proves the mux interceptor is load-bearing). The `SpecHarness` in `oriterm_core/tests/spec_chain/` has no `feed_with_mux()` method — this validation lives in the mux test module, not in `SpecHarness`.
 - [ ] `renderable.rs` NO LONGER contains `RungResult::pass(RungName::Renderable)` as the only return — grep for the string `"Stub: always passes"` returns zero matches.
 - [ ] `grep -rn '#\[allow(dead_code, reason = \"dormant during legacy phase'` in `oriterm_mux/` returns zero matches (the gate is removed).
 - [ ] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green.
@@ -242,7 +244,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - [ ] Spec_chain test `osc8_basic_attach` — feed `\x1b]8;;https://example.com\x1b\\Hello\x1b]8;;\x1b\\` (set URI, text, clear URI). Assert cells 0..5 of current row carry `hyperlink_uri == Some("https://example.com")`; subsequent cells after the clear carry `hyperlink_uri == None`. Uses the completed `observe_renderable` from 10.0 with `hyperlink_at: Some((row, 0, "https://example.com"))` + a negative assertion at (row, 5).
 - [ ] `osc8_with_id` — feed `\x1b]8;id=foo;https://example.com\x1b\\X\x1b]8;;\x1b\\`. Assert cell 0 has the URI. **Important apex constraint:** `RenderableCell` at `oriterm_core/src/term/renderable/mod.rs` only carries `hyperlink_uri: Option<String>` — the hyperlink `id` is NOT exposed on the renderable surface. To verify the `id` is preserved in cell metadata, use the **state rung apex** (read `grid[row][col].hyperlink()` via `Term` directly) rather than `observe_renderable`. Verify that `cell.hyperlink().unwrap().id == Some("foo")` at the state rung. Then test that two separate attach/clear cycles with the same `id` both carry `id == Some("foo")` (confirming `id` does not get cleared between cycles). The renderable rung assertion covers only the URI presence; the state rung assertion covers the `id`.
 - [ ] `osc8_survives_reflow` — place hyperlinked text at row 0. Resize grid from 80 to 40 columns. Assert the wrapped cells (now spread across row 0 and row 1) ALL carry the same URI. (This catches the reflow-drops-metadata regression pattern from the alacritty / wezterm code history.)
-- [ ] `osc8_survives_scrollback` — place hyperlinked text, then feed enough newlines that the row scrolls into `Grid::scrollback`. Assert the scrollback row still carries the URI on every cell. Uses `grid.scrollback()[...]` via the completed renderable observer.
+- [ ] `osc8_survives_scrollback` — place hyperlinked text, then feed enough newlines that the row scrolls into `Grid::scrollback`. Assert the scrollback row still carries the URI on every cell. **Uses the STATE RUNG** (`term.grid().scrollback()[row][col].hyperlink()`) to inspect scrollback cells directly — `RenderableContent` does NOT expose individual scrollback rows (it has `scrollback_len: usize` for the count but no per-cell scrollback access). Do NOT use `observe_renderable` for this assertion — only viewport cells are visible through that rung.
 - [ ] `osc8_terminator_cancels_attachment` — feed text, `OSC 8 ; ; uri ST`, text-A, `OSC 8 ; ; ST`, text-B. Assert text-B cells have `hyperlink_uri == None` (the empty URI terminates the attachment).
 - [ ] `osc8_malformed_uri_dropped` — feed `\x1b]8;; BROKEN URI WITH SPACES \x1b\\X\x1b]8;;\x1b\\` and assert the cell carries the URI as-is (whitespace is not syntactically restricted in OSC 8 params — the terminal does not validate; it records). Negative pin: feed truncated `\x1b]8;;\x1b` (no ST) and assert no URI is attached (parser aborts on timeout / sequence boundary).
 - [ ] `osc8_alt_screen_toggle_clears` — enter alt screen, attach hyperlink, leave alt screen. Assert primary screen cells are unaffected (alt-screen hyperlinks do NOT bleed).
@@ -300,10 +302,10 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ## 10.3 OSC 9 / 99 / 777 desktop notifications
 
 **Files:**
-- `oriterm_core/tests/spec_chain/osc/notifications.rs` (new)
+- `oriterm_mux/tests/spec_chain/osc/notifications.rs` (new — mux layer test; OSC 9/99/777 are interceptor-handled, NOT high-level-processor-routed)
 - Catalog updates: `catalog/osc.md` rows OSC-9, and newly-added OSC-99 + OSC-777 rows (they are `missing` today); `catalog/shell-integration.md` rows SHINT-OSC-9-NOTIFY, SHINT-OSC-777-NOTIFY
 
-**Tests (via `SpecHarness::feed_with_mux()` — these OSCs route through the RawInterceptor, NOT the high-level processor):**
+**Tests (in `oriterm_mux/tests/spec_chain/` — these OSCs route through the RawInterceptor, NOT the high-level processor; must NOT be placed in `oriterm_core/tests/spec_chain/osc/`):**
 
 - [ ] `osc9_simple_body_fires_notification` — feed `\x1b]9;Build complete\x1b\\`, assert `Effect::Host(HostEffect::DesktopNotification { source: NotificationSource::Osc9, title: "", body: "Build complete" })`. OSC 9 has no title field (Growl-style).
 - [ ] `osc99_body_fires_notification_osc99_source` — feed `\x1b]99;kitty payload\x1b\\`, assert `source: NotificationSource::Osc99`. Per the interceptor at `shell_integration/interceptor.rs:124-128`, OSC 9 and 99 share the `handle_notification_simple` code path — 10.3 pins the discriminator so a future refactor cannot collapse them.
@@ -331,12 +333,12 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ## 10.4 OSC 133 semantic prompt + OSC 633 VS Code shell integration
 
 **Files:**
-- `oriterm_core/tests/spec_chain/osc/shell_integration.rs` (new)
+- `oriterm_mux/tests/spec_chain/osc/shell_integration.rs` (new — mux layer test; OSC 133 + 633 are interceptor-handled)
 - `oriterm_mux/src/shell_integration/interceptor.rs` (extend to dispatch OSC 633 sub-commands — currently NOT dispatched)
 - `crates/vte/src/ansi/dispatch/osc.rs` (route OSC 633 if any part of it needs the high-level processor; otherwise leave to the raw interceptor)
 - Catalog updates: `catalog/osc.md` OSC-133, OSC-633 (both currently `missing`); `catalog/shell-integration.md` SHINT-OSC-133-PROMPT, SHINT-OSC-633-VSCODE
 
-**Tests (via `SpecHarness::feed_with_mux()` — OSC 133 + 633 are interceptor-handled):**
+**Tests (in `oriterm_mux/tests/spec_chain/` — OSC 133 + 633 are interceptor-handled, NOT high-level-processor-routed):**
 
 ### OSC 133 (Final Term semantic prompt)
 
@@ -486,15 +488,15 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ## 10.8 Basic OSC rows (0/1/2/4/7/10/11/12/52) — inherited from Section 08
 
 **Files:**
-- `oriterm_core/tests/spec_chain/osc/basic.rs` (new — covers OSC 0/1/2)
-- `oriterm_core/tests/spec_chain/osc/palette.rs` (new — covers OSC 4 set/query)
-- `oriterm_core/tests/spec_chain/osc/cwd.rs` (new — covers OSC 7 via `feed_with_mux`)
-- `oriterm_core/tests/spec_chain/osc/default_colors.rs` (new — covers OSC 10/11/12 set/query)
+- `oriterm_core/tests/spec_chain/osc/basic.rs` (new — covers OSC 0/1/2 via `SpecHarness::feed()`)
+- `oriterm_core/tests/spec_chain/osc/palette.rs` (new — covers OSC 4 set/query via `SpecHarness::feed()`)
+- `oriterm_mux/tests/spec_chain/osc/cwd.rs` (new — covers OSC 7 via mux-layer test; OSC 7 is interceptor-handled, NOT high-level-processor-routed)
+- `oriterm_core/tests/spec_chain/osc/default_colors.rs` (new — covers OSC 10/11/12 set/query via `SpecHarness::feed()`)
 - Catalog updates: `catalog/osc.md` rows OSC-0, OSC-1, OSC-2, OSC-4-SET, OSC-4-QUERY, OSC-7, OSC-10-SET, OSC-10-QUERY, OSC-11-SET, OSC-11-QUERY, OSC-12-SET, OSC-12-QUERY; `catalog/shell-integration.md` row SHINT-OSC-7-CWD
 
 **Scope pin from 08:** `section-08-ecma-48-baseline.md:179` recorded zero OSC coverage from tack; all rows below start at `implemented-unverified` / `stub` and end `verified` here.
 
-**Tests (via `SpecHarness::feed()` for OSC 0/1/2/4/10/11/12 — routed through high-level processor — and `feed_with_mux()` for OSC 7):**
+**Tests (via `SpecHarness::feed()` for OSC 0/1/2/4/10/11/12 — routed through high-level processor; and via `oriterm_mux/tests/spec_chain/` for OSC 7 — interceptor-handled):**
 
 ### OSC 0 / 1 / 2 (title + icon name)
 
@@ -515,13 +517,13 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### OSC 7 (CWD — INTERCEPTOR path)
 
-- [ ] `osc7_file_uri_sets_cwd` — feed `\x1b]7;file:///home/user/project\x1b\\` via `feed_with_mux`. Assert `term.cwd() == Some("/home/user/project")`. Uses the parse_osc7_path logic in `interceptor.rs:173-187`.
+- [ ] `osc7_file_uri_sets_cwd` — (in `oriterm_mux/tests/spec_chain/osc/cwd.rs`) feed `\x1b]7;file:///home/user/project\x1b\\` through the mux-layer harness (run `RawInterceptor` + `Processor` in production order). Assert `term.cwd() == Some("/home/user/project")`. Uses the parse_osc7_path logic in `interceptor.rs:173-187`. NOT in `SpecHarness::feed()` — the high-level processor drops OSC 7.
 - [ ] `osc7_file_uri_with_hostname` — feed `file://myhost.example.com/path/to/dir`, assert cwd is `/path/to/dir` (hostname stripped per interceptor.rs).
 - [ ] `osc7_percent_decoded` — feed `file:///home/user/my%20folder`, assert cwd is `/home/user/my folder` (percent_decode in interceptor.rs:199-220).
 - [ ] `osc7_emits_host_effect_cwd_set` — assert `Effect::Host(HostEffect::CwdSet { cwd: "/home/user/project" })` on the transcript.
 - [ ] `osc7_relative_path_passed_through` — feed `\x1b]7;relative/path\x1b\\`. Per `strip_uri_suffix`, this passes through unchanged. Assert `cwd == Some("relative/path")`. Verify this matches production behavior; if the interceptor rejects non-URI paths in production, update the test accordingly.
 - [ ] `osc7_via_high_level_processor_drops` — negative pin. Feed the same OSC 7 bytes via `feed()` (no mux). Assert cwd is UNCHANGED. This pins the interceptor-only path.
-- [ ] **OSC 7 double-dispatch remediation (LEAK:duplicated-dispatch):** The `b"7"` arm in `crates/vte/src/ansi/dispatch/osc.rs:69-87` calls `handler.set_working_directory()` which is a no-op default on `Term` (confirmed: `Term` does not override this method). The interceptor at `oriterm_mux/src/shell_integration/interceptor.rs:37` handles OSC 7 canonically with full URI parsing. The high-level `b"7"` arm is therefore vestigial — it calls a no-op and provides no value. The interceptor comment (`interceptor.rs:6-8`) acknowledges this: "OSC 7 is also handled here instead of through the high-level `Handler::set_working_directory`, which stores the raw URI." Section 10.8 MUST remove the `b"7"` arm from `osc.rs` OR add a `// SSOT: CWD is handled by RawInterceptor; this arm is intentionally empty for parity` comment WITH an `assert!(!reachable)` / `debug_assert` semantic — leaving it silently calling a no-op creates a second apparent dispatch path that confuses future readers and could be mistakenly "fixed" to re-implement CWD logic in the wrong layer. Preferred fix: remove the arm and handle the `set_working_directory` default body more explicitly.
+- [ ] **OSC 7 double-dispatch remediation (LEAK:duplicated-dispatch):** The `b"7"` arm in `crates/vte/src/ansi/dispatch/osc.rs:69-87` calls `handler.set_working_directory()` which is a no-op default on `Term` (confirmed: `Term` does not override this method). The interceptor at `oriterm_mux/src/shell_integration/interceptor.rs:37` handles OSC 7 canonically with full URI parsing. The high-level `b"7"` arm is therefore vestigial — it calls a no-op and provides no value. The interceptor module doc (`interceptor.rs:6-9`) acknowledges this: "OSC 7 is also handled here (with proper URI parsing and percent-decoding) because `Term` does NOT override `Handler::set_working_directory` — the high-level handler default is a no-op. The interceptor is therefore the sole canonical path for CWD updates from OSC 7 (SSOT: `Term::set_cwd`)." Section 10.8 MUST remove the `b"7"` arm from `osc.rs` OR add a `// SSOT: CWD is handled by RawInterceptor; this arm is intentionally empty for parity` comment WITH an `assert!(!reachable)` / `debug_assert` semantic — leaving it silently calling a no-op creates a second apparent dispatch path that confuses future readers and could be mistakenly "fixed" to re-implement CWD logic in the wrong layer. Preferred fix: remove the arm and handle the `set_working_directory` default body more explicitly.
 
 ### OSC 10 / 11 / 12 (default colors)
 
@@ -734,6 +736,32 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Evidence: "This test belongs to the CSI window operations section, not the OSC matrix — move it to the appropriate section or cite it as a cross-reference here without duplicating ownership." — no clear ownership decision made.
   Impact: Future implementers may place the test in 10.8 under the impression it is an OSC test, duplicating ownership with the CSI section.
   Required plan update: item rewritten to a firm cross-reference-only note: this test is NOT Section 10's responsibility; the CSI window ops section owns it (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+<!-- Round 8 findings (2026-04-17) -->
+
+- [x] `[TPR-10-38-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:192` — Implementation instruction `Add SpecHarness::with_mux_layer(self) -> Self` still present, contradicting Option A (mux tests in `oriterm_mux/tests/spec_chain/`); plus downstream subsections 10.3, 10.4, 10.8 still referenced `feed_with_mux()`.
+  Evidence: Line 192 opened with "Add SpecHarness::with_mux_layer(self) -> Self…" — this API cannot exist per crate-boundary rules; `oriterm_test_support` depends only on `oriterm_core`.
+  Impact: An implementer following the instruction would attempt to add an `oriterm_mux` dependency to `oriterm_test_support`, producing a compile error and a dependency cycle.
+  Required plan update: Implementation instruction rewritten to describe mux-layer integration test directory setup only; all `feed_with_mux()` references in 10.0, 10.3, 10.4, 10.8 removed or replaced with `oriterm_mux/tests/spec_chain/` references (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-39-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:245` — `osc8_survives_scrollback` assigned to renderable rung; `RenderableContent` does not expose individual scrollback rows, only `scrollback_len: usize`.
+  Evidence: `oriterm_core/src/term/renderable/mod.rs:128-168` — `RenderableContent` struct has `cells: Vec<RenderableCell>` (viewport only) and `scrollback_len: usize` (count only), no per-cell scrollback access.
+  Impact: The test as written would fail to compile because `observe_renderable` cannot inspect scrollback cells.
+  Required plan update: Test rewritten to use state rung (`term.grid().scrollback()[row][col].hyperlink()`) for scrollback assertions; note added explaining renderable rung is viewport-only (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-40-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:179` — 10.0 Files block listed `oriterm_mux/src/pane/io_thread/mod.rs` for clock injection; actual timing seam is in `shell_state/mod.rs` (finish_command signature) and `interceptor.rs` (caller update).
+  Evidence: `oriterm_core/src/term/shell_state/mod.rs:205` — `fn finish_command(&mut self) -> Option<Duration>` — this is the function to modify for Option A clock injection; `io_thread/mod.rs` is a caller but not the seam.
+  Impact: An implementer would modify `io_thread/mod.rs` looking for the seam, not find it, and likely implement the wrong approach.
+  Required plan update: 10.0 Files block updated to cite `oriterm_core/src/term/shell_state/mod.rs` (signature change) and `oriterm_mux/src/shell_integration/interceptor.rs` (caller update); `oriterm_mux/tests/spec_chain/` added as the new mux integration test home (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-41-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:524` — OSC 7 remediation note quoted an outdated interceptor comment: "which stores the raw URI" — the actual comment says the high-level handler is a no-op.
+  Evidence: `oriterm_mux/src/shell_integration/interceptor.rs:6-9`: "OSC 7 is also handled here (with proper URI parsing and percent-decoding) because Term does NOT override Handler::set_working_directory — the high-level handler default is a no-op."
+  Impact: An implementer reading the quoted text would believe the high-level handler stores a URI, when it is actually a no-op. This contradicts the correct SSOT rationale.
+  Required plan update: Quoted text updated to match the actual interceptor module doc verbatim (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
 <!-- Round 7 findings (2026-04-17) -->
