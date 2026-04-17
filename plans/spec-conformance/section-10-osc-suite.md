@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 13
+  rounds_completed: 14
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -347,7 +347,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc133_a_sets_prompt_state` — feed `\x1b]133;A\x1b\\`. Assert `term.prompt_state() == PromptState::PromptStart` AND `term.prompt_mark_pending() == true`. Matches interceptor.rs:92-94.
 - [ ] `osc133_b_sets_command_state` — feed `\x1b]133;B\x1b\\`. Assert `prompt_state == CommandStart` AND `command_start_mark_pending() == true`.
 - [ ] `osc133_c_sets_output_state` — feed `\x1b]133;C\x1b\\`. Assert `prompt_state == OutputStart` AND `output_start_mark_pending() == true`. **CLOCK NOTE**: The interceptor's `b'C'` arm calls `self.term.set_command_start(std::time::Instant::now())` — there is NO injectable clock seam for this step; the start time is always a live wall-clock `Instant`. The Option A seam (`finish_command(now: Option<Instant>)`) only covers the D step where the duration is computed. Do NOT assert the specific `Instant` value stored — just assert the prompt-state transitions. The non-deterministic wall-clock issue at the C step is accepted: the meaningful determinism is at the D step (duration calculation), which uses the Option A seam.
-- [ ] `osc133_d_clears_state_and_emits_command_complete` — SCOPE-CLARIFIED per scope clarification D above. After C (clock at t0) and D (clock at t0 + 1.5s), assert:
+- [ ] `osc133_d_clears_state_and_emits_command_complete` — SCOPE-CLARIFIED per scope clarification D above. **Test setup**: feed `OSC 133;C` (brings `prompt_state` to `OutputStart`; wall-clock `Instant::now()` is stored — there is no injectable seam for C). Then call `term.set_command_start(t0)` directly to overwrite the stored instant with a known `t0` (Option A seam: `finish_command(now: Option<Instant>)` only covers the D step). Then feed `OSC 133;D` with `spec_chain_helper` passing `Some(t0 + Duration::from_millis(1500))` as the `now` argument to `finish_command`. Assert:
   - `term.prompt_state() == PromptState::None` (interceptor.rs:106-107 sets it).
   - `Effect::Host(HostEffect::CommandComplete { duration: Duration::from_millis(1500) })` is on the transcript (interceptor.rs:108-111).
   - `term.prompt_markers().last()` still has its A/B/C fields populated (D does NOT mutate the existing marker; it closes out the command lifecycle).
@@ -484,7 +484,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Validation:**
 
-- [ ] All 14 tests green (7 behavioral + `osc1337_file_still_routes_to_iterm2_file` + `osc1337_unknown_key_dropped` + `osc1337_user_vars_cap_evicts_oldest` + 2 CWD SSOT semantic pins + `osc1337_copy_invalid_base64_dropped` + `osc1337_set_user_var_invalid_base64_dropped`).
+- [ ] All 14 tests green: `osc1337_set_mark`, `osc1337_remote_host`, `osc1337_current_dir`, `osc1337_copy`, `osc1337_report_cell_size`, `osc1337_set_user_var`, `osc1337_shell_integration_version` (7 behavioral) + `osc1337_file_still_routes_to_iterm2_file` + `osc1337_unknown_key_dropped` + `osc1337_user_vars_cap_evicts_oldest` + `osc1337_ssot_cwd_direction_a` (OSC 7 → OSC 1337 overwrite) + `osc1337_ssot_cwd_direction_b` (OSC 1337 → OSC 7 overwrite) (2 CWD SSOT semantic pins) + `osc1337_copy_invalid_base64_dropped` + `osc1337_set_user_var_invalid_base64_dropped` (2 negative pins) = 14 total.
 - [ ] OSC 1337 `File=` path unchanged; Section 14 can build on top without touching the sub-dispatcher.
 - [ ] **TPR checkpoint 3** — `/tpr-review` covering 10.4–10.7 + ownership cross-check against Section 14.
 
@@ -527,7 +527,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc7_percent_decoded` — feed `file:///home/user/my%20folder`, assert cwd is `/home/user/my folder` (percent_decode in interceptor.rs:199-220).
 - [ ] `osc7_emits_host_effect_cwd_set` — assert `Effect::Host(HostEffect::CwdSet { cwd: "/home/user/project" })` on the transcript.
 - [ ] `osc7_relative_path_passed_through` — feed `\x1b]7;relative/path\x1b\\`. Per `strip_uri_suffix`, this passes through unchanged. Assert `cwd == Some("relative/path")`. Verify this matches production behavior; if the interceptor rejects non-URI paths in production, update the test accordingly.
-- [ ] `osc7_via_high_level_processor_drops` — negative pin. Feed the same OSC 7 bytes via `feed()` (no mux). Assert cwd is UNCHANGED. This pins the interceptor-only path.
+- [ ] `osc7_via_high_level_processor_drops` — negative pin (lives in `oriterm_mux/src/shell_integration/tests.rs`). Run ONLY `Processor::advance(&mut term, osc7_bytes)` WITHOUT calling `raw_parser.advance(&mut interceptor, osc7_bytes)` first. Assert cwd is UNCHANGED. This pins the interceptor-only path. NOTE: Do NOT use `SpecHarness::feed()` here — `oriterm_test_support` is NOT in `oriterm_mux`'s `[dev-dependencies]` (only `tempfile = "3"` is listed). Use `Processor::advance` directly (same pattern as `osc9_via_processor_without_mux_drops` in 10.3).
 - [ ] **OSC 7 double-dispatch remediation (LEAK:duplicated-dispatch):** The `b"7"` arm in `crates/vte/src/ansi/dispatch/osc.rs:69-87` calls `handler.set_working_directory()` which is a no-op default on `Term` (confirmed: `Term` does not override this method). The interceptor at `oriterm_mux/src/shell_integration/interceptor.rs:37` handles OSC 7 canonically with full URI parsing. The high-level `b"7"` arm is therefore vestigial — it calls a no-op and provides no value. The interceptor module doc (`interceptor.rs:6-9`) acknowledges this: "OSC 7 is also handled here (with proper URI parsing and percent-decoding) because `Term` does NOT override `Handler::set_working_directory` — the high-level handler default is a no-op. The interceptor is therefore the sole canonical path for CWD updates from OSC 7 (SSOT: `Term::set_cwd`)." Section 10.8 MUST remove the `b"7"` arm from `osc.rs` OR add a `// SSOT: CWD is handled by RawInterceptor; this arm is intentionally empty for parity` comment WITH an `assert!(!reachable)` / `debug_assert` semantic — leaving it silently calling a no-op creates a second apparent dispatch path that confuses future readers and could be mistakenly "fixed" to re-implement CWD logic in the wrong layer. Preferred fix: remove the arm and handle the `set_working_directory` default body more explicitly.
 
 ### OSC 10 / 11 / 12 (default colors)
@@ -989,6 +989,38 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Required plan update: Two negative pin tests added to 10.7: `osc1337_copy_invalid_base64_dropped` and `osc1337_set_user_var_invalid_base64_dropped`; 10.7 validation count updated from 12 to 14 (FIXED).
   Basis: direct_file_inspection. Confidence: medium.
 
+<!-- Round 14 findings (2026-04-17) -->
+
+- [x] `[TPR-10-64-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:350` — `osc133_d_clears_state_and_emits_command_complete` test description implied C step uses injectable timestamp, contradicting the CLOCK NOTE that C always uses wall-clock `Instant::now()`.
+  Evidence: "After C (clock at t0) and D (clock at t0 + 1.5s), assert:" — implies C step can be controlled at t0, but the interceptor's C arm calls `set_command_start(Instant::now())` with no injectable seam.
+  Impact: An implementer following the test description would attempt to inject t0 at the C step, find no seam, and either produce a flaky test or incorrectly modify the interceptor.
+  Required plan update: D test setup rewritten to call `term.set_command_start(t0)` directly after C to overwrite the stored instant, making duration computation deterministic via Option A seam (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-65-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:530` — `osc7_via_high_level_processor_drops` negative pin said "Feed the same OSC 7 bytes via `feed()` (no mux)"; `oriterm_test_support` is not in `oriterm_mux`'s `[dev-dependencies]`, so `SpecHarness::feed()` is unavailable in the mux test context.
+  Evidence: Line 530: "negative pin. Feed the same OSC 7 bytes via `feed()` (no mux)." — `oriterm_mux/Cargo.toml` [dev-dependencies] only lists `tempfile = "3"`.
+  Impact: An implementer following the plan would write a test that fails to compile due to missing `oriterm_test_support` dev-dependency.
+  Required plan update: Negative pin rewritten to use `Processor::advance(&mut term, osc7_bytes)` directly, with a NOTE matching the pattern used for `osc9_via_processor_without_mux_drops` in 10.3 (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-66-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:1063` — Exit criteria said "spec_chain harness routes OSC 7/9/99/133/633/777 through the real production interceptor path", which is imprecise — there is no `mux_layer` on SpecHarness; the mechanism is `oriterm_mux/src/shell_integration/tests.rs` sibling unit-test `spec_chain_helper`.
+  Evidence: "The spec_chain harness routes OSC 7/9/99/133/633/777 through the real production interceptor path." — wording implies SpecHarness has mux routing capability, contradicting the adopted solution.
+  Impact: A reader may believe SpecHarness has been extended with a mux_layer, contradicting the crate-boundary constraint that `oriterm_test_support` must stay mux-free.
+  Required plan update: Exit criteria rewritten to name the adopted mechanism: mux-intercepted tests in `oriterm_mux/src/shell_integration/tests.rs` via sibling unit-test `spec_chain_helper`; high-level-processor tests in `oriterm_core/tests/spec_chain/osc/` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-67-gemini][medium]` `plans/spec-conformance/section-10-osc-suite.md:1017` — 10.N negative pins checklist was incomplete, omitting several key negative tests from subsections 10.1, 10.2, 10.5, 10.7, and 10.8.
+  Evidence: Checklist had only 5 negative pin items; subsections define 12+ negative pins including `osc7_via_high_level_processor_drops`, `osc52_store_clipboard_q`, `osc22_no_parameter_is_dropped`, `osc1337_copy_invalid_base64_dropped`, `osc1337_set_user_var_invalid_base64_dropped`, etc.
+  Impact: The completion checklist would be satisfied without verifying several mandatory negative tests, allowing regression paths to go undetected.
+  Required plan update: 10.N negative pins expanded to enumerate all 12 negative tests with test function names and subsection references (FIXED).
+  Basis: direct_file_inspection. Confidence: medium.
+
+- [x] `[TPR-10-68-gemini][low]` `plans/spec-conformance/section-10-osc-suite.md:487` — 10.7 validation block said "7 behavioral" without listing all 14 test names explicitly, making completeness verification harder.
+  Evidence: "All 14 tests green (7 behavioral + ...)" — "7 behavioral" is abbreviated without naming the 7 tests; a count mismatch would be invisible if a test was added or removed.
+  Impact: An implementer might stop at 12 tests believing the matrix is complete when 2 more are required, or miscount without explicit names.
+  Required plan update: 10.7 validation block updated with all 14 explicit test names enumerated (FIXED).
+  Basis: direct_file_inspection. Confidence: medium.
+
 ---
 
 ## 10.N Completion Checklist
@@ -1015,11 +1047,18 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   - [ ] OSC 1337 CurrentDir = OSC 7 = OSC 133 CWD = Term::cwd (10.7 SSOT pin).
   - [ ] Renderable observer is not a stub (10.1 semantic pin).
 - [ ] **Negative pins**:
-  - [ ] OSC 8 terminator cancels cell attachment (10.1).
-  - [ ] OSC 9 via high-level processor does NOT fire notification — mux-only (10.3).
-  - [ ] OSC 52 load without fulfillment does NOT emit reply (10.2).
-  - [ ] OSC 22 unknown icon does not mutate state (10.5).
-  - [ ] OSC 50 unknown shape does not mutate state (10.5).
+  - [ ] OSC 8 terminator cancels cell attachment (`osc8_terminator_cancels_attachment`, 10.1).
+  - [ ] OSC 8 renderable observer not a stub (`osc8_renderable_observer_not_stub` semantic pin, 10.1).
+  - [ ] OSC 52 `q` clipboard char dropped — no `ClipboardSelection::q` variant (`osc52_store_clipboard_q`, 10.2).
+  - [ ] OSC 52 load without fulfillment does NOT emit reply (`response_poll_token_requires_fulfillment`, 10.2).
+  - [ ] OSC 9 via high-level processor does NOT fire notification — mux-only (`osc9_via_processor_without_mux_drops`, 10.3).
+  - [ ] OSC 7 via high-level processor does NOT set cwd — interceptor-only (`osc7_via_high_level_processor_drops`, 10.8).
+  - [ ] OSC 22 no-parameter case is silently dropped (`osc22_no_parameter_is_dropped`, 10.5).
+  - [ ] OSC 22 unknown icon does not mutate state (`osc22_unknown_icon_is_dropped`, 10.5).
+  - [ ] OSC 22 does NOT affect text cursor shape (`osc22_does_not_affect_text_cursor_shape`, 10.5).
+  - [ ] OSC 50 unknown shape does not mutate state (`osc50_unknown_shape_dropped`, 10.5).
+  - [ ] OSC 1337 Copy invalid base64 is dropped (`osc1337_copy_invalid_base64_dropped`, 10.7).
+  - [ ] OSC 1337 SetUserVar invalid base64 is dropped (`osc1337_set_user_var_invalid_base64_dropped`, 10.7).
 - [ ] **Cross-pattern matrix**: every OSC that has SET and QUERY forms has both tested in the same subsection; every OSC that has SET and RESET forms has both tested.
 
 ### Rules weaving (per `.claude/rules/impl-hygiene.md` + `.claude/rules/code-hygiene.md` + `.claude/rules/crate-boundaries.md` + `.claude/rules/oriterm_core.md` + `.claude/rules/oriterm_mux.md`)
@@ -1060,4 +1099,4 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `/tpr-review` final (full-section) passed — dual-source codex + gemini, all findings resolved.
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean).
 
-**Exit Criteria:** Every OSC catalog row in `catalog/osc.md` is `verified` or `verified-with-deviation`. Every row in `catalog/shell-integration.md` is `verified`. The non-image rows of `catalog/iterm2.md` are `verified` and their ownership is cleanly assigned to Section 10. The spec_chain harness routes OSC 7/9/99/133/633/777 through the real production interceptor path. OSC 52 ResponseToken round-trip runs end-to-end through the activated `response_poll` path. OSC 22 has real Term state, not a no-op stub. OSC 133;D's behavior is documented and pinned against the actual `PromptMarker` data model. The OSC suite is conformance-complete and Section 14 can pick up the OSC 1337 sub-dispatcher without refactoring it.
+**Exit Criteria:** Every OSC catalog row in `catalog/osc.md` is `verified` or `verified-with-deviation`. Every row in `catalog/shell-integration.md` is `verified`. The non-image rows of `catalog/iterm2.md` are `verified` and their ownership is cleanly assigned to Section 10. Mux-intercepted OSC verification (OSC 7/9/99/133/633/777) lives in `oriterm_mux/src/shell_integration/tests.rs` (sibling unit-test module) via the mux-internal `spec_chain_helper` — `SpecHarness` stays mux-free and the integration test directory (`oriterm_mux/tests/`) contains NO `RawInterceptor`-using tests. High-level-processor OSC tests (0/1/2/4/8/10/11/12/22/50/52/104/110/111/112/1337 non-image) live in `oriterm_core/tests/spec_chain/osc/`. OSC 52 ResponseToken round-trip runs end-to-end through the activated `response_poll` path. OSC 22 has real Term state, not a no-op stub. OSC 133;D's behavior is documented and pinned against the actual `PromptMarker` data model. The OSC suite is conformance-complete and Section 14 can pick up the OSC 1337 sub-dispatcher without refactoring it.
