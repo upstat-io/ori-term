@@ -33,7 +33,7 @@ inspired_by:
   - "xterm `ctlseqs.html` — OSC 0/1/2/4/7/8/10/11/12/22/50/52/104/110/111/112/3/5/13/14/17/19"
   - "wezterm `escape-sequences.md` — de-facto OSC behavior reference across variants"
   - "alacritty `crates/vte/src/ansi/dispatch/osc.rs` (upstream) — dispatcher shape this section extends"
-depends_on: ["03", "08"]
+depends_on: ["03", "08", "effect-cutover"]
 third_party_review:
   status: findings_accepted_by_user
   updated: "2026-04-16"
