@@ -11,7 +11,7 @@ success_criteria:
   - "`SpecHarness` (crates/oriterm_test_support/src/spec_chain/api.rs) gains a `mux_layer` capability that runs `RawInterceptor::osc_dispatch` on the SAME bytes before the high-level processor — OSC 7 / 9 / 99 / 133 / 633 / 777 are verified against the REAL production path (`oriterm_mux/src/shell_integration/interceptor.rs`), not against the high-level `Processor` which drops them"
   - "`observe_renderable` (crates/oriterm_test_support/src/spec_chain/observers/renderable.rs) is no longer a stub — it asserts cell hyperlink URI, cursor position, cursor shape, palette entries, and damaged lines. Every OSC 8 subsection test exercises this observer with a scenario that would FAIL if the observer remained a stub (semantic pin against `RungResult::pass(rung)` stub-behavior)"
   - "OSC 8 hyperlink rows verified — cell-attached URI survives reflow, scroll into scrollback, copy (cell metadata), and alt-screen toggle; the OSC 8 terminator (empty URI) cancels the attachment on subsequent cells; `id=<id>` parameter is preserved but does not change attachment semantics (per gist:egmontkob)"
-  - "OSC 52 clipboard rows verified — both `c` / `s` / `p` / `q` clipboard characters, store and load; `HostRequest::ClipboardLoad` apex with `ResponseToken` round-trip is tested end-to-end through the activated `response_poll` path (section 10.2 removes the `#[allow(dead_code, reason = \"dormant during legacy phase\")]` gate on `PaneIoThread::register_host_request_response` and wires it into the IO thread for the spec_chain verification harness)"
+  - "OSC 52 clipboard rows verified — `c`, `s`, `p` clipboard characters (store and load); `q` is explicitly pinned as an unsupported/dropped character (no `ClipboardSelection::q` variant exists — see `oriterm_core/src/effect/families/host.rs:108-115`). `HostRequest::ClipboardLoad` apex with `ResponseToken` round-trip is tested end-to-end through the activated `response_poll` path (section 10.2 removes the `#[allow(dead_code, reason = \"dormant during legacy phase\")]` gate on `PaneIoThread::register_host_request_response` and wires it into the IO thread for the spec_chain verification harness)"
   - "OSC 9 / 99 / 777 desktop notification rows verified — `Effect::Host(HostEffect::DesktopNotification { source, title, body })` is observed with the correct `NotificationSource` discriminator (`Osc9`, `Osc99`, `Osc777`); empty-body and missing-title cases are pinned so `String::from_utf8_lossy` boundary behavior is stable"
   - "OSC 133 semantic prompt rows verified — OSC 133;A/B/C/D each drive the `PromptState` state machine correctly AND update `PromptMarker`. The plan explicitly documents (in 10.4 body) that OSC 133;D does NOT write a D-field into `PromptMarker` (the struct has only `prompt` / `command` / `output`) — D clears `prompt_state` and emits `HostEffect::CommandComplete`. Any Success Criteria that asserted D 'records a marker' is rewritten to match the actual data model. The `command_start`/`finish_command` timing path uses an INJECTABLE clock so the `HostEffect::CommandComplete { duration }` assertion is deterministic (no wall-clock reliance)"
   - "OSC 633 VS Code shell integration rows verified against the authoritative VS Code source at `https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/xterm/shellIntegrationAddon.ts` — every OSC 633 sub-command that VS Code emits is catalogued and tested; any sub-command not yet dispatched (OSC 633 is currently MISSING per `catalog/osc.md:56`) lands its dispatch arm in `crates/vte/src/ansi/dispatch/osc.rs` AND its handler in `oriterm_mux/src/shell_integration/interceptor.rs`"
@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 3
+  rounds_completed: 4
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -195,7 +195,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
   - `hyperlink_at: Option<(row, col, expected_uri: String)>` — assert cell's hyperlink URI matches.
   - `cursor_position: Option<(row, col)>` — assert cursor lives where expected.
   - `cursor_shape: Option<CursorShape>` — assert `Term::cursor_shape()` matches.
-  - `palette_index: Option<(index, expected_rgb: Rgb)>` — assert `Term::palette()[index]` matches.
+  - `palette_index: Option<(index, expected_rgb: Rgb)>` — assert `term.palette().color(index) == expected_rgb` (correct API: `Palette::color(index: usize) -> Rgb` at `oriterm_core/src/color/palette/mod.rs:282`; do NOT use `Term::palette()[index]` — `Palette` does not implement `Index`).
   - `mouse_cursor_icon: Option<CursorIcon>` — assert `Term::mouse_cursor_icon()` matches (WHERE: new state landed in this subsection).
   - `damaged_lines: Option<Vec<Line>>` — assert renderable content reports the expected damage set.
 - [ ] Extend `RenderableExpectation` in `scenario.rs` with the fields above; keep existing callers compatible by making fields `Option` with `#[derive(Default)]`.
@@ -215,7 +215,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
   - **Option A (preferred if effect-cutover is close):** Coordinate Section 10.2 implementation with the effect-cutover plan: migrate the pane IO thread to `QueueingEffectSink` first, then activate `register_host_request_response`. The response-poll test (`response_poll_emits_pty_write_on_fulfill`) only runs after the sink migration is in place.
   - **Option B (scope-bounded):** For spec_chain verification only, wire a test-only shim that injects fulfilled responses directly into the pane IO thread's `pending_responses` vec (bypassing the dead-code path) — this verifies the reply FORMAT without requiring the sink migration. Document clearly that end-to-end production behavior depends on effect-cutover.
   Whichever option is chosen, the 10.0/10.2 checklist MUST call out the dependency on the IO thread's effective sink type BEFORE writing tests that assume the round-trip works end-to-end through `PaneIoThread`.
-- [ ] Replace `std::time::Instant::now()` at `oriterm_mux/src/shell_integration/interceptor.rs:102` with a clock-source call routed through `Term` — `Term` grows an optional `clock: Arc<dyn Fn() -> Instant + Send + Sync>` field (default `Arc::new(Instant::now)` in production; tests inject a deterministic one). WHERE: clock field added in `oriterm_core/src/term/mod.rs`; `Term::set_command_start(start)` uses the clock's tick when `start` is `None` and the current design calls `Instant::now()` internally. Preserve production behavior by keeping a `Term::new_default_clock()` constructor; deterministic tests use `Term::with_clock(clock_fn)`.
+- [ ] Replace `std::time::Instant::now()` at `oriterm_mux/src/shell_integration/interceptor.rs:102` with a clock-source call routed through `Term` — `Term` grows an optional `clock: Arc<dyn Fn() -> Instant + Send + Sync>` field (default `Arc::new(Instant::now)` in production; tests inject a deterministic one). **CRITICAL — `#[derive(Debug)]` breakage:** `Arc<dyn Fn() -> Instant + Send + Sync>` does NOT implement `Debug`, but `Term` uses `#[derive(Debug)]` at `oriterm_core/src/term/mod.rs:113`. The clock field MUST be wrapped in a debuggable newtype — e.g. `struct ClockFn(Arc<dyn Fn() -> Instant + Send + Sync>)` with a manual `impl Debug for ClockFn { fn fmt(&self, f: ...) -> ... { write!(f, "ClockFn(...)") } }` — before adding it to `Term`. Alternatively, store `Option<Box<dyn Fn() -> Instant + Send + Sync>>` with a manual `Debug` impl on that specific field using `#[debug = "..."]` or a newtype wrapper. The implementation MUST keep `Term`'s `#[derive(Debug)]` compiling — a `Term` that doesn't implement `Debug` would break every existing test that uses `{:?}` formatting on `Term`. WHERE: clock field added in `oriterm_core/src/term/mod.rs`; `Term::set_command_start(start)` uses the clock's tick when `start` is `None` and the current design calls `Instant::now()` internally. Preserve production behavior by keeping a `Term::new_default_clock()` constructor; deterministic tests use `Term::with_clock(clock_fn)`.
 
 **Validation:**
 
@@ -273,10 +273,10 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Tests (TDD — RED first):**
 
-- [ ] `osc52_store_clipboard_c` — feed `\x1b]52;c;SGVsbG8=\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` is NOT emitted (this is a store, not a load), and assert the Effect-side variant is `Effect::Host(HostEffect::ClipboardStore { selection: ClipboardSelection::Clipboard, text: "Hello" })` — the exact variant path is `oriterm_core::effect::families::host::{HostEffect, ClipboardSelection}` (confirmed in `oriterm_core/src/effect/families/host.rs:34,108-114`). **No `LegacyEventSink` assertion here** — spec_chain tests use `QueueingEffectSink`; asserting on `Event::ClipboardStore` via `LegacyEventSink` would test the wrong sink path.
-- [ ] `osc52_store_clipboard_s` — same shape, `s` (selection) clipboard character, assert `selection: ClipboardSelection::Select` (NOT `Selection` — the enum variant at `oriterm_core/src/effect/families/host.rs:114` is `Select`, not `Selection`).
-- [ ] `osc52_store_clipboard_p` — `p` (primary) clipboard character.
-- [ ] `osc52_store_clipboard_q` — `q` (secondary) clipboard character, if supported; else negative pin that this character is dropped.
+- [ ] `osc52_store_clipboard_c` — feed `\x1b]52;c;SGVsbG8=\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` is NOT emitted (this is a store, not a load), and assert the Effect-side variant is `Effect::Host(HostEffect::ClipboardStore { selection: ClipboardSelection::Clipboard, data: "Hello".into() })` — the exact field name is `data: String` (NOT `text`), as confirmed at `oriterm_core/src/effect/families/host.rs:36`. The exact variant path is `oriterm_core::effect::families::host::{HostEffect, ClipboardSelection}`. **No `LegacyEventSink` assertion here** — spec_chain tests use `QueueingEffectSink`; asserting on `Event::ClipboardStore` via `LegacyEventSink` would test the wrong sink path.
+- [ ] `osc52_store_clipboard_s` — same shape, `s` (selection) clipboard character, assert `selection: ClipboardSelection::Select` (NOT `Selection` — the enum variant at `oriterm_core/src/effect/families/host.rs:114` is `Select`, not `Selection`), `data: <decoded>`.
+- [ ] `osc52_store_clipboard_p` — `p` (primary) clipboard character; assert `selection: ClipboardSelection::Primary`, `data: <decoded>`.
+- [ ] `osc52_store_clipboard_q` — NEGATIVE PIN: `q` is NOT a valid `ClipboardSelection` variant (`ClipboardSelection` at `oriterm_core/src/effect/families/host.rs:108-115` has only `Clipboard`, `Primary`, `Select`). Feed `\x1b]52;q;SGVsbG8=\x1b\\` and assert NO `HostEffect::ClipboardStore` is emitted (the OSC 52 handler must drop unknown clipboard characters). This is a negative pin, NOT a positive test for `q` support. The success criteria (frontmatter line 14) that claims `both 'c' / 's' / 'p' / 'q' clipboard characters` is corrected by this test: `q` is tested only as a DROPPED/invalid character, not as a supported selection type.
 - [ ] `osc52_load_request_fires_hostrequest` — feed `\x1b]52;c;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { selection: Clipboard, clipboard_char: b'c', terminator: "\x1b\\", reply: <ResponseToken> })` is on the transcript. This is the SPEC-CHAIN assertion scope boundary — the spec_chain harness asserts the HostRequest was emitted; it does NOT simulate the IO thread's polling loop (that lives in `oriterm_mux::PaneIoThread`, which is a separate crate layer). The ResponseToken fulfillment → PtyEffect::Write round-trip is tested in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (listed in the Files block), NOT in the spec_chain test. No `harness.poll_pending_responses()` helper is added to `SpecHarness` — doing so would force `oriterm_test_support` to depend on `oriterm_mux`'s internal `PaneIoThread`, which violates the crate boundary (see `.claude/rules/crate-boundaries.md` §crates/oriterm_test_support).
 - [ ] `response_poll_roundtrip_emits_pty_write` (**in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs`** if directory module conversion happened, OR in `oriterm_mux/src/pane/io_thread/tests.rs` if `response_poll.rs` stays flat — NOT in spec_chain) — construct a `PaneIoThread` (or the minimal stub thereof that holds `pending_responses`), call `register_host_request_response(request)` with a `HostRequest::ClipboardLoad { clipboard_char: b'c', terminator: "\x1b\\", reply }`, fulfill the `ResponseToken` with `reply.fulfill("example-text".into())`, call `poll_pending_responses()`, and assert the effect sink received `Effect::Pty(PtyEffect::Write { bytes })` where `bytes == format_clipboard_reply("example-text", b'c', "\x1b\\")` (base64-encoded). Uses `format_clipboard_reply` from `oriterm_core/src/effect/families/host_request.rs` — DO NOT re-implement the reply format inline (LEAK).
 - [ ] **Semantic pin** — `osc52_response_token_requires_fulfillment` — negative test: emit the load request, do NOT fulfill the token, advance the harness ten ticks. Assert NO `PtyEffect::Write` is emitted. This pins the requirement that the terminal waits for fulfillment rather than emitting an empty reply.
@@ -285,7 +285,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Catalog update:**
 
-- [ ] OSC-52-STORE in `catalog/osc.md` → `verified` with citations for all 4 clipboard characters (c/s/p/q).
+- [ ] OSC-52-STORE in `catalog/osc.md` → `verified` with citations for `c`, `s`, `p` clipboard characters (store); `q` documented as not supported (`ClipboardSelection` has no `q` variant — verified at `oriterm_core/src/effect/families/host.rs:108-115`).
 - [ ] OSC-52-LOAD in `catalog/osc.md` → `verified` with citation of the ResponseToken round-trip test.
 - [ ] `catalog/shell-integration.md` row SHINT-OSC-9-NOTIFY (cross-reference) remains pointing at `osc.md::OSC-9` (handled in 10.3).
 
@@ -389,6 +389,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc22_pointer_sets_cursor_icon` — feed `\x1b]22;pointer\x1b\\`, assert `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Uses the Term field + Handler override from 10.0.
 - [ ] `osc22_all_known_icons_matrix` — iterate through every known OSC 22 cursor name string. `cursor_icon 1.2.0` does NOT provide a `CursorIcon::all()` or iterator over variants (confirmed: the crate only exposes `CursorIcon::name()` and `FromStr` parsing). Instead, maintain a project-owned static slice of cursor name strings: `const OSC22_KNOWN_ICONS: &[(&str, CursorIcon)] = &[("pointer", CursorIcon::Pointer), ("crosshair", CursorIcon::Crosshair), ...]` covering the ~30 variants from the CSS Basic UI / xterm spec. Feed `OSC 22 ; <name> ST` for each entry; assert each is stored. Self-verifying completeness pin: `assert_eq!(count, OSC22_KNOWN_ICONS.len())` — the project-owned slice is the SSOT for which names are supported, and the count assertion proves every cell was visited.
 - [ ] `osc22_unknown_icon_is_dropped` — feed `\x1b]22;not-a-real-cursor\x1b\\`, assert `term.mouse_cursor_icon()` is UNCHANGED (the `CursorIcon::from_str` error path in the dispatcher at `crates/vte/src/ansi/dispatch/osc.rs:184` logs and drops — no state mutation).
+- [ ] `osc22_no_parameter_is_dropped` — **NEGATIVE PIN**: feed `\x1b]22\x1b\\` (no second parameter at all, so `params.len() == 1`). The dispatcher at `osc.rs:180` gates on `b"22" if params.len() == 2` — when only one param is present, the arm does NOT match and falls to `_ => unhandled(params)`. Assert `term.mouse_cursor_icon()` is UNCHANGED. This pins that a malformed OSC 22 with no cursor-name param is silently dropped, not panicked on.
 - [ ] `osc22_reset_behavior` — OSC 22 does not have a spec'd reset form. Document this in the catalog; pin behavior: passing an explicit "default" name (if `CursorIcon::Default` exists) restores the default.
 - [ ] **Semantic pin** — `osc22_does_not_affect_text_cursor_shape` — set `term.cursor_shape()` to `Beam` via OSC 50, then fire OSC 22 with `pointer`. Assert `term.cursor_shape() == Beam` (unchanged). Cross-reference scope clarification §I / blind-spot #5 — OSC 22 (mouse icon) and OSC 50 (text shape) are different fields.
 
@@ -501,7 +502,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc2_sets_only_title` — feed `\x1b]2;mytitle\x1b\\`, assert `title == "mytitle"` AND `icon_name` is UNCHANGED.
 - [ ] `osc0_empty_sets_empty_string` — feed `\x1b]0;\x1b\\`, assert both title and icon_name become the empty string `""`. **Important dispatch accuracy:** the `osc.rs` dispatcher's `b"0"` arm ALWAYS calls `handler.set_title(Some(text.clone()))` — it sends `Some("")` not `None` when the param is empty. There is NO `ResetTitle` path triggered by `OSC 0 ; ST`; `Event::ResetTitle` (now `HostEffect::TitleSet { value: None }`) is only emitted by other mechanisms (e.g. explicit reset via ESC c or the `TITLE_STACK_MAX_DEPTH` eviction path). Test assertions MUST reflect this: assert `term.title() == ""` not `term.title() == <original>`.
 - [ ] `osc0_bel_and_st_terminators_both_accepted` — feed `\x1b]0;t1\x07` (BEL) AND `\x1b]0;t2\x1b\\` (ST) in sequence. Assert both update the title; the dispatcher's `bell_terminated` parameter routes correctly.
-- [ ] `osc0_title_stack_via_csi_t` — xterm push/pop title uses **CSI 22;2t** (push) and **CSI 23;2t** (pop), NOT OSC. These are xterm window operations dispatched from `crates/vte/src/ansi/dispatch/csi.rs`, not from `osc.rs`. Test `ESC[22;2t` → push + `ESC[23;2t` → pop using the CSI rung, and assert the title stack is bounded at `TITLE_STACK_MAX_DEPTH` (4096 per `oriterm_core/src/term/mod.rs:82`). This test belongs to the CSI window operations section, not the OSC matrix — move it to the appropriate section or cite it as a cross-reference here without duplicating ownership.
+- [ ] **Cross-reference only — CSI 22;2t / 23;2t title stack**: xterm push/pop title uses **CSI 22;2t** (push) and **CSI 23;2t** (pop), dispatched from `crates/vte/src/ansi/dispatch/csi.rs`, NOT from `osc.rs`. This test does NOT belong in 10.8 and MUST NOT be placed here. The CSI window operations section (whichever roadmap section owns CSI window ops) owns this test. The cross-reference is noted here so the 10.8 reviewer knows to look for it elsewhere — Section 10.8 does NOT write this test. The title stack bound `TITLE_STACK_MAX_DEPTH = 4096` (at `oriterm_core/src/term/mod.rs:82`) is verified by the CSI section, not Section 10.
 
 ### OSC 4 (palette index)
 
@@ -659,6 +660,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 <!-- Round 3 findings (2026-04-17) -->
 
+
 - [x] `[TPR-10-14-codex][high]` `oriterm_mux/src/shell_integration/interceptor.rs:20` — `RawInterceptor` is `pub(crate)`, not accessible from `crates/oriterm_test_support`; 10.0 plan instruction to attach it directly in `SpecHarness` would not compile.
   Evidence: `pub(crate) struct RawInterceptor<'a, S: EffectSink>` — crate-private visibility in `oriterm_mux`.
   Impact: Any 10.0 implementation following the plan as written would fail to compile when `oriterm_test_support` tries to access `RawInterceptor`.
@@ -693,6 +695,44 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Evidence: `oriterm_core/src/term/mod.rs:201,203` — `cell_pixel_width: u16` and `cell_pixel_height: u16` fields exist; no `cell_size_pixels()` method present.
   Impact: Implementer may create an unnecessary new accessor instead of using the existing fields; "if available" hedge implies uncertainty where there is none.
   Required plan update: test plan updated to reference `term.cell_pixel_height()` / `term.cell_pixel_width()` accessors (expose if not already public); SSOT note added against creating a new aggregating method (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+<!-- Round 4 findings (2026-04-17) -->
+
+- [x] `[TPR-10-20-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:276` — `osc52_store_clipboard_c` assertion cites nonexistent field `text: "Hello"` on `ClipboardStore`; actual field name is `data`.
+  Evidence: `HostEffect::ClipboardStore { selection: ClipboardSelection, data: String }` at `oriterm_core/src/effect/families/host.rs:34-37` — field is `data`, not `text`.
+  Impact: Implementer writing `HostEffect::ClipboardStore { selection: ..., text: "Hello" }` gets a compile error.
+  Required plan update: corrected to `data: "Hello".into()`; `data` field name used consistently throughout 10.2 (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-21-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:14` — Success criteria claims `q` clipboard character is verified; `ClipboardSelection` has no `q` variant.
+  Evidence: `pub enum ClipboardSelection { Clipboard, Primary, Select }` at `oriterm_core/src/effect/families/host.rs:108-115` — only three variants, no `q`.
+  Impact: Section cannot reach `verified` status claiming `q` support that does not and cannot exist without adding a new enum variant.
+  Required plan update: success criteria corrected; `q` is now a NEGATIVE PIN (unsupported/dropped character), not a positive test; catalog update for `osc52_store_clipboard_q` revised accordingly (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-22-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:218` — 10.0 clock injection plan adds `Arc<dyn Fn() -> Instant + Send + Sync>` field to `Term`, which does not implement `Debug`, breaking `#[derive(Debug)]` on `Term`.
+  Evidence: `#[derive(Debug)]` at `oriterm_core/src/term/mod.rs:113`; `Arc<dyn Fn>` is not `Debug`.
+  Impact: Adding this field as-is would cause a compilation error and break all existing `{:?}` formatting on `Term`.
+  Required plan update: 10.0 implementation bullet updated to require a `ClockFn` newtype wrapper with manual `Debug` impl before adding the field to `Term` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-23-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:198` — 10.0 renderable observer plan uses `Term::palette()[index]` syntax; `Palette` does not implement `Index`.
+  Evidence: `Palette::color(index: usize) -> Rgb` at `oriterm_core/src/color/palette/mod.rs:282`; no `impl Index for Palette`.
+  Impact: Implementer writing `term.palette()[index]` gets a compile error; must use `term.palette().color(index)`.
+  Required plan update: corrected to `term.palette().color(index) == expected_rgb` with canonical API path cited (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-24-gemini][low]` `plans/spec-conformance/section-10-osc-suite.md:391` — OSC 22 test matrix missing negative pin for no-parameter case (`params.len() != 2`) — existing `osc22_unknown_icon_is_dropped` only covers `from_str` failure, not the arm-miss case.
+  Evidence: `b"22" if params.len() == 2` at `crates/vte/src/ansi/dispatch/osc.rs:180` — if `params.len() != 2`, the arm does not fire; no negative test pins this path.
+  Impact: A regression where the guard is removed (allowing malformed OSC 22 to proceed) would go undetected.
+  Required plan update: `osc22_no_parameter_is_dropped` test added as an explicit negative pin for the `params.len() == 1` case (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-25-gemini][low]` `plans/spec-conformance/section-10-osc-suite.md:504` — `osc0_title_stack_via_csi_t` test listed in 10.8 with ambiguous disposition ("move it or cite as cross-reference") without a firm decision, creating potential test ownership drift.
+  Evidence: "This test belongs to the CSI window operations section, not the OSC matrix — move it to the appropriate section or cite it as a cross-reference here without duplicating ownership." — no clear ownership decision made.
+  Impact: Future implementers may place the test in 10.8 under the impression it is an OSC test, duplicating ownership with the CSI section.
+  Required plan update: item rewritten to a firm cross-reference-only note: this test is NOT Section 10's responsibility; the CSI window ops section owns it (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
 ---
