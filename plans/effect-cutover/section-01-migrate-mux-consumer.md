@@ -245,7 +245,7 @@ Semantic + regression pins:
 - [ ] `./build-all.sh` (including Windows cross-compile) green.
 - [ ] `./test-all.sh` green.
 - [ ] `./clippy-all.sh` green (new `#[allow(dead_code, reason = ...)]` attributes include `reason` per `.claude/rules/code-hygiene.md` §Style).
-- [ ] Section 01.1 `status` → `complete` in frontmatter. 01.1 is the atomic swap + router commit. No intermediate landable state.
+- [ ] 01.1 implementation steps complete — all router code written, all TDD tests RED→GREEN, all construction sites migrated. **01.1 does NOT gate a commit on its own** — the commit gate is at 01.2 (see CRITICAL ATOMICITY CONSTRAINT above). The 01.1 status checklist items are PREREQUISITES for the single 01.1+01.2 shared commit, not a standalone commit boundary. `status: complete` in frontmatter for 01.1 is updated ONLY as part of updating 01.2's status in the same commit that lands both subsections together.
 
 ---
 
@@ -293,7 +293,7 @@ Semantic + regression pins:
 **Cleanup (hygiene items per `.claude/rules/impl-hygiene.md`):**
 
 - [ ] **[NOTE]** `response_wake_rx` wake-only arm intentionally has an empty body. Per `.claude/rules/impl-hygiene.md` §Defensive Code for Impossible States, this is NOT a code smell — the empty body IS the semantic: "continue loop, next iteration handles work." Add a single-line `// Woken by response fulfillment — next loop iteration drains.` comment explaining the intent.
-- [ ] **[DRIFT]** `ResponseToken<T>` now has two consumers that both take ownership conceptually: `register_host_request_response` (via `HostRequest` field) and `MuxEvent::HostClipboardLoad::reply` (via the cloned variant). Both views share the same `Arc<Mutex<Option<T>>>` slot — correct by construction. Pin this with a `#[test]` `response_token_is_shared_by_clone` at `oriterm_core/src/effect/families/host_request.rs` sibling tests that clones a token, fulfills one clone, and asserts the other clone sees `is_fulfilled() == true`.
+- [ ] **[DRIFT]** `ResponseToken<T>` now has two consumers that both take ownership conceptually: `register_host_request_response` (via `HostRequest` field) and `MuxEvent::HostClipboardLoad::reply` (via the cloned variant). Both views share the same `Arc<Mutex<Option<T>>>` slot — correct by construction. Pin this with a `#[test]` `response_token_is_shared_by_clone` placed in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (the new sibling test file created in 01.2 when `response_poll.rs` is converted to a directory module). Do NOT place this test at `oriterm_core/src/effect/families/host_request.rs` — that file is a flat file and per `.claude/rules/test-organization.md` §Sibling tests.rs Pattern, a flat file module cannot have a sibling `tests.rs`. If a sibling test in `oriterm_core` is desired in the future, convert `host_request.rs` to a directory module (`host_request/mod.rs` + `host_request/tests.rs`) — budget that as a separate task. For now, the `response_poll/tests.rs` location is valid because `response_poll/mod.rs` imports and uses `ResponseToken<T>` directly (it's the module that calls `token.fulfill()` via `PendingResponse`), making this test a natural regression pin for that module's semantics.
 
 **Validation:**
 
@@ -452,7 +452,7 @@ This subsection has three exit paths; it is **not** optional. Choose one and exe
 
 ### Ordering gate (crate dependency direction per `.claude/rules/crate-boundaries.md`)
 
-- [ ] Changes land in this order: 01.1 (atomic sink swap + router + new `MuxEvent`/`MuxNotification` variants — single commit; spans `oriterm_mux` **AND** `oriterm` AND `oriterm_core` — `oriterm` because `mux_pump/mod.rs` has an exhaustive `match` on `MuxNotification` requiring new stub arms; `oriterm_core` because 01.1 adds `#[allow(dead_code, reason = "removed in effect-cutover 01.3")]` to `LegacyEventSink` in `oriterm_core/src/effect/sink/legacy/mod.rs:45` — the effect TYPES themselves are pre-existing and unchanged, but the dead-code suppression must land in 01.1 immediately after the construction sites stop referencing the type) → 01.2 (idle-wake channel + response_poll activation + main-thread fulfill handlers — replaces 01.1 stub arms with real `MuxBackend::fulfill_host_request` calls; spans `oriterm_mux` + `oriterm`) → 01.3 (legacy deletions — spans `oriterm_core` + `oriterm_mux` + `oriterm` in a single commit because `LegacyEventSink` is referenced from `event_proxy/mod.rs`; compiler refuses any intermediate state) → 01.4 (daemon IPC audit — edits depend on chosen path).
+- [ ] Changes land in this order: **01.1+01.2 COMBINED** (single commit — atomic sink swap + router + MuxEvent/MuxNotification variants + idle-wake channel + response_poll activation + MuxBackend::fulfill_host_request + main-thread fulfill handlers; spans `oriterm_mux` AND `oriterm` AND `oriterm_core`. The 01.1 subsection documents implementation ordering WITHIN this combined commit: sink swap + router code + new enum variants + dead-code suppression attributes MUST be written first so that the 01.2 idle-wake additions compile against them. But all of this ships in a SINGLE git commit — NOT two commits, NOT 01.1 first then 01.2 second. See the CRITICAL ATOMICITY CONSTRAINT in 01.1 above.) → 01.3 (legacy deletions — spans `oriterm_core` + `oriterm_mux` + `oriterm` in a single commit because `LegacyEventSink` is referenced from `event_proxy/mod.rs`; compiler refuses any intermediate state) → 01.4 (daemon IPC audit — edits depend on chosen path).
 
 ### Matrix coverage
 
@@ -522,7 +522,7 @@ This subsection has three exit paths; it is **not** optional. Choose one and exe
 - [ ] All existing tack tests pass — `timeout 150 cargo test -p oriterm_core --test tack`.
 - [ ] Alloc regression unchanged — `timeout 150 cargo test -p oriterm_core --test alloc_regression`.
 - [ ] RSS regression unchanged — `timeout 150 cargo test -p oriterm_core --test rss_regression`.
-- [ ] Control-flow / event-loop purity unchanged — `timeout 150 cargo test -p oriterm --test main_window` (if the app-level tests cover the idle-wake path; otherwise manually verify `oriterm/src/app/event_loop_helpers/tests.rs::compute_control_flow` still asserts `ControlFlow::Wait` when the pending queue is empty).
+- [ ] Control-flow / event-loop purity unchanged — `timeout 150 cargo test -p oriterm event_loop_helpers` (runs all `#[test]` functions in `oriterm/src/app/event_loop_helpers/tests.rs`, including `compute_control_flow` which asserts `ControlFlow::Wait` when the pending queue is empty and no cursor blink is pending). Note: there is NO `--test main_window` cargo test target in the `oriterm` crate — do NOT use `cargo test -p oriterm --test main_window`; that path does not exist and will fail with "no test target named main_window".
 - [ ] No new `#[ignore]` annotations added in any touched test file — per `.claude/rules/tests.md` §Test Hygiene, `#[ignore]` budget is strict.
 
 ### Final verification
