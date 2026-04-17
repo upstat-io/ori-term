@@ -3,7 +3,7 @@ section: "10"
 title: "OSC Suite (full)"
 status: not-started
 reviewed: false
-goal: "Drive every row in `catalog/osc.md`, `catalog/shell-integration.md`, and the non-image rows of `catalog/iterm2.md` (SetMark, RemoteHost, CurrentDir, Copy, ReportCellSize, SetUserVar) from `implemented-unverified` / `stub` / `missing` to `verified`. Section 10 owns the ENTIRE OSC stack — Section 08's post-completion audit (`section-08 Implementation notes 2026-04-14`) recorded that tack scenarios drove ZERO OSC rows. Basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) stay owned by Section 10, NOT Section 08. This includes OSC 8 hyperlinks, OSC 22/50 cursor icon/shape, OSC 9/99/777 desktop notifications, OSC 104/110/111/112 color reset, OSC 133 semantic prompt, OSC 633 VS Code shell integration, and OSC 1337 non-image sub-ops. Section 10 also lands the prerequisites that make these rows testable: a spec_chain harness layer that routes through `oriterm_mux::shell_integration::RawInterceptor` (the production path for OSC 7/9/99/133/633/777), a completed renderable observer (OSC 8 cell-metadata assertions), a Term-level mouse-cursor-icon state (OSC 22), an extensible OSC 1337 sub-dispatcher (handed off to Section 14 for images), and the activation of the dormant `PendingResponse` polling path (OSC 52 ResponseToken round-trip)."
+goal: "Drive every row in `catalog/osc.md`, `catalog/shell-integration.md`, and the non-image rows of `catalog/iterm2.md` (SetMark, RemoteHost, CurrentDir, Copy, ReportCellSize, SetUserVar) from `implemented-unverified` / `stub` / `missing` to `verified`. Section 10 owns the ENTIRE OSC stack — Section 08's post-completion audit (`section-08 Implementation notes 2026-04-14`) recorded that tack scenarios drove ZERO OSC rows. Basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) stay owned by Section 10, NOT Section 08. This includes OSC 8 hyperlinks, OSC 22/50 cursor icon/shape, OSC 9/99/777 desktop notifications, OSC 104/110/111/112 color reset, OSC 133 semantic prompt, OSC 633 VS Code shell integration, and OSC 1337 non-image sub-ops. Section 10 also lands the prerequisites that make these rows testable: a spec_chain harness layer that routes through `oriterm_mux::shell_integration::RawInterceptor` (existing production path for OSC 7/9/99/133/777; OSC 633 dispatch is added by subsection 10.4), a completed renderable observer (OSC 8 cell-metadata assertions), a Term-level mouse-cursor-icon state (OSC 22), an extensible OSC 1337 sub-dispatcher (handed off to Section 14 for images), and the activation of the dormant `PendingResponse` polling path (OSC 52 ResponseToken round-trip)."
 success_criteria:
   - "Every row in `catalog/osc.md` is `verified` or `verified-with-deviation` (no `implemented-unverified`, no `stub`, no `missing`) — this includes the basic subset 08 left unverified (OSC 0/1/2/4/7/10/11/12/52) and the advanced subset (OSC 8/22/50/104/110/111/112/9/99/777/133/633 and the non-image OSC 1337 sub-ops)"
   - "Every row in `catalog/shell-integration.md` is `verified` (OSC-7-CWD, OSC-133 A/B/C/D, OSC-633 VS Code, OSC-1337-RemoteHost / CurrentDir / SetMark / SetUserVar / ReportCellSize shell-integration cross-refs, OSC-9/777 notification cross-refs)"
@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 8
+  rounds_completed: 9
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -111,7 +111,7 @@ These clarifications resolve the ambiguities reviewers surfaced during the /revi
 
 ### B. Spec_chain harness does NOT route mux-intercepted OSCs through the real production path
 
-`SpecHarness` at `crates/oriterm_test_support/src/spec_chain/api.rs:82-103` wraps `Processor::advance_with_observer` (high-level VTE processor). The production-path interceptor at `oriterm_mux/src/shell_integration/interceptor.rs` runs a SEPARATE raw `vte::Parser` on the SAME bytes BEFORE the high-level processor — this is the only path that sees OSC 7, OSC 9, OSC 99, OSC 133, OSC 633, and OSC 777 (the high-level `Processor::advance_with_observer` silently drops them per the interceptor's own module doc: *"The vte::ansi::Processor does not route OSC 133, OSC 9/99/777, or XTVERSION (CSI >q) to Handler trait methods"*).
+`SpecHarness` at `crates/oriterm_test_support/src/spec_chain/api.rs:82-103` wraps `Processor::advance_with_observer` (high-level VTE processor). The production-path interceptor at `oriterm_mux/src/shell_integration/interceptor.rs` runs a SEPARATE raw `vte::Parser` on the SAME bytes BEFORE the high-level processor — this is the only path that currently sees OSC 7, OSC 9, OSC 99, OSC 133, and OSC 777 (the high-level `Processor::advance_with_observer` silently drops them per the interceptor's own module doc: *"The vte::ansi::Processor does not route OSC 133, OSC 9/99/777, or XTVERSION (CSI >q) to Handler trait methods"*). OSC 633 is currently `MISSING` per `catalog/osc.md:56` — subsection **10.4** adds its dispatch arm to the interceptor.
 
 Consequence: verifying OSC 7/9/99/133/633/777 via `SpecHarness` without a `mux_layer` extension would test a dispatch path that DOES NOT RUN IN PRODUCTION. Subsection **10.0** lands the `mux_layer` first. Every subsection that verifies a mux-intercepted OSC MUST opt into that layer.
 
@@ -191,16 +191,17 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 **Implementation:**
 
-- [ ] Create `oriterm_mux/tests/spec_chain/` integration test directory for mux-intercepted OSC tests. Add a `spec_chain_helper` module inside `oriterm_mux/tests/spec_chain/mod.rs` that constructs a `RawInterceptor + Term` pair and runs both parsers in production order: `raw_parser.advance(&mut interceptor, bytes)` first, then `processor.advance(&mut term, bytes)`. This is the mux-layer test harness — it has full `pub(crate)` access to `RawInterceptor` because the tests live inside the `oriterm_mux` crate. `crates/oriterm_test_support` (`SpecHarness`) requires NO modification — no `mux_layer`, no `feed_with_mux()`, no new dependency. The `SpecHarness` remains mux-free.
+- [ ] Create `oriterm_mux/tests/spec_chain/` integration test directory for mux-intercepted OSC tests. Add a `spec_chain_helper` module inside `oriterm_mux/tests/spec_chain/mod.rs` that constructs a `RawInterceptor + Term` pair and runs both parsers in production order matching `PaneIoThread::handle_bytes`: (1) capture `evicted_before = term.grid().total_evicted()`, (2) `raw_parser.advance(&mut interceptor, bytes)`, (3) `processor.advance(&mut term, bytes)`, (4) call `post_parse_housekeeping(evicted_before)` (snapshot flip + eviction accounting — same housekeeping production always runs). This is the mux-layer test harness — it has full `pub(crate)` access to `RawInterceptor` because the tests live inside the `oriterm_mux` crate. `crates/oriterm_test_support` (`SpecHarness`) requires NO modification — no `mux_layer`, no `feed_with_mux()`, no new dependency. The `SpecHarness` remains mux-free.
 - [ ] Complete `observe_renderable` to check every field in `RenderableExpectation`:
-  - `cells: Option<Vec<(row, col, ch)>>` — cell contents at specific positions.
-  - `hyperlink_at: Option<(row, col, expected_uri: String)>` — assert cell's hyperlink URI matches.
-  - `cursor_position: Option<(row, col)>` — assert cursor lives where expected.
+  - `cells: Option<&'static [(usize, usize, char)]>` — cell contents at specific positions (`&'static` slice, const-constructible, preserves `Copy`).
+  - `hyperlink_at: Option<(usize, usize, &'static str)>` — assert cell's hyperlink URI matches (tuple of row, col, `&'static str` — const-constructible).
+  - `cursor_position: Option<(usize, usize)>` — assert cursor lives where expected.
   - `cursor_shape: Option<CursorShape>` — assert `Term::cursor_shape()` matches.
-  - `palette_index: Option<(index, expected_rgb: Rgb)>` — assert `term.palette().color(index) == expected_rgb` (correct API: `Palette::color(index: usize) -> Rgb` at `oriterm_core/src/color/palette/mod.rs:282`; do NOT use `Term::palette()[index]` — `Palette` does not implement `Index`).
+  - `palette_index: Option<(usize, Rgb)>` — assert `term.palette().color(index) == expected_rgb` (correct API: `Palette::color(index: usize) -> Rgb` at `oriterm_core/src/color/palette/mod.rs:282`; do NOT use `Term::palette()[index]` — `Palette` does not implement `Index`).
   - `mouse_cursor_icon: Option<CursorIcon>` — assert `Term::mouse_cursor_icon()` matches (WHERE: new state landed in this subsection).
-  - `damaged_lines: Option<Vec<Line>>` — assert renderable content reports the expected damage set.
-- [ ] Extend `RenderableExpectation` in `scenario.rs` with the fields above; keep existing callers compatible by making fields `Option` with `#[derive(Default)]`.
+  - `damaged_lines: Option<&'static [usize]>` — assert renderable content reports the expected damage set (`&'static` slice, const-constructible, preserves `Copy`).
+  - **Const-constructibility constraint**: ALL fields MUST be `Copy` and `const`-constructible — use `&'static` slices and `&'static str` instead of `Vec` and `String`. This preserves the `SpecScenario` const-constructible invariant (see `scenario.rs:12` module doc: *"Every field type is `const`-constructible. Slices use `&'static [u16]` / `&'static [u8]`. Expectation constructors are `const fn`."*). `Vec`/`String` fields ARE NOT permitted on `RenderableExpectation`.
+- [ ] Extend `RenderableExpectation` in `scenario.rs` with the fields above; keep existing callers compatible by making fields `Option` with `#[derive(Default)]`. Retain `#[derive(Copy, Clone, Debug, Default)]` — the new fields must all be `Copy`.
 - [ ] Add `mouse_cursor_icon: Option<CursorIcon>` to `Term<S>`; initialize to `None` in `Term::new()`; add `Term::mouse_cursor_icon(&self)` accessor + `Term::set_mouse_cursor_icon(&mut self, icon: Option<CursorIcon>)` mutator (per `.claude/rules/impl-hygiene.md` §SSOT — canonical home for this knowledge is `Term`).
 - [ ] Override `Handler::set_mouse_cursor_icon` on `Term` in `oriterm_core/src/term/handler/mod.rs` to call `Term::set_mouse_cursor_icon(Some(icon))`. WHERE: add next to the other `Handler` trait methods, grouped with cursor-shape handlers.
 - [ ] Expose `mouse_cursor_icon` on `RenderableContent` (`oriterm_core/src/term/renderable/mod.rs`) so the rendering consumer can query it. Include it in `renderable_content_into()` writeback (NO allocation — the field is `Option<CursorIcon>`, which is `Copy`).
@@ -736,6 +737,26 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Evidence: "This test belongs to the CSI window operations section, not the OSC matrix — move it to the appropriate section or cite it as a cross-reference here without duplicating ownership." — no clear ownership decision made.
   Impact: Future implementers may place the test in 10.8 under the impression it is an OSC test, duplicating ownership with the CSI section.
   Required plan update: item rewritten to a firm cross-reference-only note: this test is NOT Section 10's responsibility; the CSI window ops section owns it (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+<!-- Round 9 findings (2026-04-16) -->
+
+- [x] `[TPR-10-42-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:6` — Goal field and scope clarification B incorrectly claimed `RawInterceptor` is "the production path for OSC 7/9/99/133/633/777"; OSC 633 is currently MISSING per `catalog/osc.md:56` and is NOT handled by `RawInterceptor`.
+  Evidence: `oriterm_mux/src/shell_integration/interceptor.rs:39-45` — dispatch arms are `b"7"`, `b"133"`, `b"9" | b"99"`, `b"777"` only; no `b"633"` arm exists.
+  Impact: An implementer reading the goal would believe OSC 633 is on the existing interceptor path and skip the dispatch arm addition required in 10.4.
+  Required plan update: Goal field corrected to describe the interceptor as the existing path for OSC 7/9/99/133/777 only; 633 dispatch noted as work 10.4 adds. Scope clarification B updated to list the current interceptor codes accurately (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-43-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:194` — Proposed mux test helper specification omitted `post_parse_housekeeping(evicted_before)`, which production `handle_bytes()` always runs after both parser passes.
+  Evidence: `oriterm_mux/src/pane/io_thread/mod.rs:260-282` — `handle_bytes` captures `evicted_before`, runs raw_parser, runs processor, then calls `self.post_parse_housekeeping(evicted_before)` (snapshot flip + eviction accounting).
+  Impact: A test helper missing the housekeeping call would not produce any snapshot, making state-rung assertions invisible (no snapshot flip = stale front buffer reads stale data).
+  Required plan update: Implementation bullet updated to specify the 4-step production order: (1) capture evicted_before, (2) raw_parser.advance, (3) processor.advance, (4) post_parse_housekeeping(evicted_before) (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-44-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:196` — Proposed `RenderableExpectation` fields used `Vec<...>` and `String` types, which are not `Copy` and not const-constructible, violating the `SpecScenario` const-constructible invariant.
+  Evidence: `crates/oriterm_test_support/src/spec_chain/scenario.rs:11-12` — module doc: "Every field type is `const`-constructible. Slices use `&'static [u16]` / `&'static [u8]`." `RenderableExpectation` is `#[derive(Copy, Clone, Debug, Default)]`; `Vec`/`String` fields break `Copy`.
+  Impact: Adding `Vec`/`String` fields would remove `Copy` from `RenderableExpectation`, breaking all existing `const SpecScenario` declarations that embed it.
+  Required plan update: All `Vec` and `String` fields replaced with `&'static` slice / `&'static str` equivalents; const-constructibility constraint explicitly documented in the implementation bullet (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
 <!-- Round 8 findings (2026-04-17) -->
