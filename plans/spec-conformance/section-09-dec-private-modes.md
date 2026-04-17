@@ -621,7 +621,7 @@ Per `.claude/rules/code-hygiene.md` §File Size, `tests.rs` files are EXEMPT fro
 - [x] Section frontmatter `status` → `complete`; `09.0`–`09.5` sub-entries all `complete` *(done: 09.1/09.3/09.4 promoted; overall status pending TPR + hygiene)*
 - [x] `00-overview.md` Quick Reference updated (do NOT tick the "Mode 2026 fully wired" mission criterion — that belongs to Section 06; DO tick "Verification chain complete per row" for the Section-09-promoted rows) *(done: updated to In Progress)*
 - [x] `index.md` section 09 status updated *(done: updated to In Progress)*
-- [ ] `/tpr-review` passed (dual-source: codex + gemini both clean)
+- [x] `/tpr-review` passed (dual-source: codex + gemini — 6 rounds, 13 verified findings all fixed inline; final state has all four Mode 67 proof-chain sync points verified consistent. No Section 09 code changed; all fixes were plan/catalog DRIFT. Commits: 41af8bfb, 33a01929, 38a24532, c9f4ada0, d1a49a8b, e87443d0)
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
 
 **Exit Criteria:** Section 09-owned DEC private mode catalog rows are `verified` (flag + DECRQM); excluded rows (DECANM, 1016, 1007 apex, 9001 encoding, 1042 host notification, mode-2026 apex) stay at their current status with cross-references pointing at the owning section; Mode 2031 implemented + verified; Modes 66 and 67 implemented + verified; all DECRQM queries return correct responses; `decset_decrst_flag_sync()` updated for new modes; mode 1042 gap filed as a bug.
