@@ -1,8 +1,8 @@
 ---
 section: "01"
 title: "Migrate Mux Consumer from LegacyEventSink to QueueingEffectSink"
-status: not-started
-reviewed: false
+status: in-progress
+reviewed: true
 goal: "Replace `LegacyEventSink<IoThreadEventProxy>` with `QueueingEffectSink` as the IO thread's `Term<S>` effect sink so the IO thread subscribes to `Effect` directly. Route every `Effect` variant into the existing `MuxEvent` / `MuxNotification` stream and into `pending_responses` (for `HostRequest` variants) in the IO thread's own drain loop, add an idle-wake channel so a fulfilled `ResponseToken` immediately unblocks the `crossbeam_channel::select!` in `PaneIoThread::run`, and delete `IoThreadEventProxy`, `LegacyEventSink`, `Event::ClipboardLoad`, `Event::ColorRequest`, and the `Term::drain_notifications()` shim once all consumers are wired through `drain_into()`. This section unblocks spec-conformance Section 10.2 (which removes the `#[allow(dead_code)]` gate on `PaneIoThread::register_host_request_response` and activates the OSC 52 / OSC 10/11/12 `ResponseToken` round-trip)."
 success_criteria:
   - "`oriterm_mux/src/pane/io_thread/mod.rs` declares `PaneIoThread<QueueingEffectSink>` (not `PaneIoThread<LegacyEventSink<IoThreadEventProxy>>`); both `domain/local.rs::LocalDomain::spawn_pane` (current call site at `oriterm_mux/src/domain/local.rs:130-146`) and `domain/handoff/mod.rs::adopt_pane` construct `Term::new(..., QueueingEffectSink::new())` and no longer construct `LegacyEventSink::new(IoThreadEventProxy::new(..))` or `IoThreadEventProxy::new(..)` anywhere. The sink swap and the router activation land in the SAME commit (01.1) — there is NO intermediate state where effects are queued but unrouted (that would silently drop bells/title/CWD/clipboard in production; flagged by both TPR reviewers as a Broken-Window violation)."
