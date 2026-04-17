@@ -120,13 +120,62 @@ while iteration_counter < 5 and meta_only_streak < 2:
     iteration_counter += 1
 
 else:
-    exit_reason = "meta_cap_reached" if meta_only_streak >= 2 else "iter_cap_reached"
+    cap_reason = "meta_cap_reached" if meta_only_streak >= 2 else "iter_cap_reached"
+    # Cap fired without clean consensus. Escape hatch: ask the user what to do.
+    # Prose-options are banned here (§11.5) — use AskUserQuestion with four options.
+    # Note: when invoked from /review-plan, the outer dispatcher owns this prompt via
+    # its own Escalation handling (see review-plan/step-6-tpr.md Branch 2/3 options);
+    # this block runs for STANDALONE invocations of /tpr-review (mode != "review-plan"
+    # via /review-plan's Step 6).
+    user_choice = AskUserQuestion(
+        "Loop exited at {cap_reason} after {iteration_counter} rounds "
+        "with {len(ever_verified_findings)} verified findings filed as - [ ] items. "
+        "Reviewers are still producing findings (non-clean consensus). How do you want to proceed?",
+        options=[
+            {"key": "run-more", "label": "Run up to 3 more rounds (extend cap)"},
+            {"key": "accept-with-findings",
+             "label": "Accept current state — findings stay filed as - [ ] items in "
+                      "§NN.R (plan mode) or bug-tracker (non-plan); "
+                      "in plan mode also flip reviewed: true with a note explaining the cap exit"},
+            {"key": "escalate-to-plan",
+             "label": "Escalate outstanding findings to /create-plan (a new plan "
+                      "takes ownership of the findings)"},
+            {"key": "abort", "label": "Abort — leave everything as-is (reviewed stays false)"},
+        ],
+    )
+
+    if user_choice.key == "run-more":
+        # Extend the caps locally and continue the outer loop from the top.
+        iteration_cap_extension = 3
+        meta_cap_extension      = 1
+        continue_outer_loop(extend_iter=iteration_cap_extension,
+                            extend_meta=meta_cap_extension)
+    elif user_choice.key == "accept-with-findings":
+        exit_reason = f"user_accepted_at_{cap_reason}"
+    elif user_choice.key == "escalate-to-plan":
+        exit_reason = f"escalated_to_plan_at_{cap_reason}"
+        # Parent will invoke /create-plan with ever_verified_findings as mission input.
+    else:  # "abort"
+        exit_reason = cap_reason  # Preserve the original cap reason; no flip.
 
 emit_final_report(exit_reason, iteration_counter, last_actionable_count)
 
 if mode == "review-plan":
     write_plan_frontmatter(section_path, exit_reason, ever_verified_findings)  # §10
 ```
+
+**Semantics of the four choices at cap exit:**
+
+| Choice | `exit_reason` | `third_party_review.status` (plan mode) | `reviewed:` flip (plan mode, non-review-plan-parent) |
+|---|---|---|---|
+| `run-more` | loop continues | — (not yet at exit) | — |
+| `accept-with-findings` | `user_accepted_at_{iter\|meta}_cap_reached` | `findings` | `true` (see §10) |
+| `escalate-to-plan` | `escalated_to_plan_at_{iter\|meta}_cap_reached` | `escalated` | `false` (the new plan owns the findings) |
+| `abort` | `iter_cap_reached` / `meta_cap_reached` | `escalated` | `false` |
+
+The `accept-with-findings` choice is NOT deferral: all findings remain as `- [ ]` items in §NN.R (plan mode) or in the bug-tracker (non-plan modes). The user is acknowledging that rounds are no longer converging AND consciously owning the remaining findings via tracked checkbox items — this is distinct from the banned "pre-existing" / "future improvement" patterns in §7, which dismiss findings WITHOUT filing them. See §7 for the finding-handling contract that still applies.
+
+**When invoked from `/review-plan` (via `step-6-tpr.md`):** this `AskUserQuestion` block is NOT rendered by `/tpr-review` itself — the outer `/review-plan` parent owns the escalation UI per its `review-plan/SKILL.md` §Escalation handling. In that case `/tpr-review` writes its `final-report.json` with `status: max_iterations_reached` (or `max_thoroughness_rejections_reached`), `step-6-tpr.md` translates it into `{RUN_DIR}/tpr.json` (the orchestrator-owned scratch dir `/review-plan` created in its Step 1) with an `escalate: true` + `options` payload, and the parent invokes `AskUserQuestion` there. The flow and semantics are identical; only the owner of the prompt differs.
 
 ## §6 — Meta classification (AFTER verification)
 
@@ -162,11 +211,23 @@ Valid dispositions:
 
 The size of the fix is irrelevant. Cross-crate refactoring across 10 files is the work, not a reason to defer.
 
+**`accept-with-findings` at cap exit (§5) is NOT deferral.** The cap-exit escape hatch accepts current state only when (a) every verified finding has already been filed as a `- [ ]` item — in §NN.R for plan mode or the bug-tracker for non-plan modes — and (b) the user made the acceptance choice explicitly via `AskUserQuestion` (not buried in prose). The findings are TRACKED with concrete artifacts that downstream workflows (plan completion checklist, `/review-bugs`) will sweep. This is distinct from dismissing findings with the banned phrases above: dismissal silently drops findings; `accept-with-findings` files them AND records the cap-exit reason in `third_party_review.notes` (§10 step 3a) as a durable audit trail. Plan-mode `reviewed: true` in this case means "the plan's design is validated against implementation; open findings are owned by the plan's own completion gates" — it does NOT mean "zero findings outstanding."
+
 **Filing.** Plan-owned findings → append `- [ ]` items to that section's `## {NN}.R Third Party Review Findings` block, tagged `[TPR-{NN}-{ordinal}-{reviewer}][severity]`. Unowned findings → file to `plans/bug-tracker/` under the appropriate subsystem using `BUG-{NN}-{ordinal}` (no reviewer suffix — reviewer provenance in the body). Agreement findings file ONE bug entry, not two.
 
 ## §8 — Parallel dispatch (canonical template)
 
-Dispatch BOTH reviewers in a SINGLE assistant message. Foreground only — never `run_in_background: true`.
+**Step 8a — Create orchestrator-owned scratch dirs (ONE per reviewer) BEFORE dispatching.** The orchestrator owns these dirs so it can recover reviewer output from disk even when a sub-agent's return message is truncated or the sub-agent auto-backgrounds its internal Bash call. Per-invocation `mktemp -d` prevents cross-session collision (invariant I1). The prefix embeds the **repo name** (basename of the git worktree root) so parallel sessions running in different repos produce visually distinguishable scratch dirs when listing `/tmp/` — e.g., `tpr-round-ori_lang-a1b2c3d4` vs. `tpr-round-warpkit-e5f6g7h8`.
+
+```
+Bash: repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+Bash: codex_scratch="$(mktemp -d -t "tpr-round-${repo}-XXXXXXXX")"; echo "$codex_scratch"
+Bash: gemini_scratch="$(mktemp -d -t "tpr-round-${repo}-XXXXXXXX")"; echo "$gemini_scratch"
+```
+
+The `git rev-parse --show-toplevel` fallback to `pwd` covers non-git cwds (should not happen for a `/tpr-review` invocation, but the fallback keeps the command total and makes the template portable).
+
+**Step 8b — Dispatch BOTH reviewers in a SINGLE assistant message.** Foreground only on the Agent call itself — never `run_in_background: true`. Pass the scratch-dir paths from step 8a as the `{SCRATCH_DIR}` placeholder in each prompt.
 
 ```
 Agent({
@@ -174,7 +235,8 @@ Agent({
   model: "sonnet",
   description: "tpr-review codex reviewer round {N}",
   prompt: <contents of tp_agent_prompt.md with {REVIEWER}=codex,
-           {TRUST_TIER}=HIGH, {OBJECTIVE}=<obj>, {SCOPE}=<scope>>
+           {TRUST_TIER}=HIGH, {OBJECTIVE}=<obj>, {SCOPE}=<scope>,
+           {SCRATCH_DIR}=<codex_scratch from step 8a>>
 })
 
 Agent({
@@ -182,11 +244,24 @@ Agent({
   model: "sonnet",
   description: "tpr-review gemini reviewer round {N}",
   prompt: <contents of tp_agent_prompt.md with {REVIEWER}=gemini,
-           {TRUST_TIER}=LOWER, {OBJECTIVE}=<obj>, {SCOPE}=<scope>>
+           {TRUST_TIER}=LOWER, {OBJECTIVE}=<obj>, {SCOPE}=<scope>,
+           {SCRATCH_DIR}=<gemini_scratch from step 8a>>
 })
 ```
 
+**Step 8c — Remember the paths.** Keep `codex_scratch` and `gemini_scratch` in orchestrator state across the round so §9 stranded-report recovery can read `$scratch/{REVIEWER}-report.txt` if a sub-agent returns without an inline TPR-REPORT block.
+
 ## §9 — Failure handling
+
+**Stranded-report recovery (check BEFORE classifying a reviewer as failed).** A sub-agent's return message is the PRIMARY transport for its TPR-REPORT, but it is not the only one. Before declaring a reviewer `failed`, attempt disk recovery from the scratch dir created in §8 step 8a:
+
+1. Parse the reviewer's return message. If it contains a `<<<TPR-REPORT … TPR-REPORT>>>` block, use it directly — no recovery needed.
+2. If the return message has no report block (sub-agent truncated, auto-backgrounded its Bash call, or returned early for any reason), check `$scratch/{REVIEWER}-report.txt` on disk. The sub-agent is contractually required to write this file during Step 3 of `tp_agent_prompt.md`.
+3. If the disk file exists and contains a valid sentinel-delimited block, use it AS IF the sub-agent had returned it inline. Log the recovery path in the round summary so the coverage gap stays visible.
+4. If the disk file is missing or empty, fall back to `$scratch/{REVIEWER}-stdout.txt` (the teed CLI stdout) and attempt sentinel extraction directly. If that also lacks a sentinel, THEN the reviewer is `failed`.
+5. Only after all three recovery paths fail does the reviewer's `status` become `failed` and the retry/survivor policy below applies.
+
+The dual-path transport (inline return + disk persistence) eliminates the "stranded report" failure mode where a fully-completed reviewer CLI invocation produced a valid report that never reached the orchestrator because the sub-agent couldn't return inline. Recovery is NOT a retry — it's reading output that already exists.
 
 **One reviewer `status: failed`.** Retry that reviewer once (single tool call in a follow-up message; partner already completed). If retry fails, **survivor mode**: use only the surviving report, set `survivor_mode: true` in the round summary, continue.
 
@@ -226,9 +301,10 @@ After the loop terminates when `ARGS` began with `--skill review-plan <section-p
 1. Read the section file's YAML frontmatter.
 2. Set `third_party_review.status`:
    - `clean` if `exit_reason == "clean"` and zero verified findings across all rounds.
-   - `findings` if any verified findings occurred (even if all were fixed inline).
-   - `escalated` if `exit_reason` was `meta_cap_reached`, `iter_cap_reached`, or `both_reviewer_failure`.
+   - `findings` if any verified findings occurred (even if all were fixed inline), OR if `exit_reason` starts with `user_accepted_at_` (user explicitly accepted the non-converged state; findings remain filed as `- [ ]`).
+   - `escalated` if `exit_reason` was `meta_cap_reached`, `iter_cap_reached`, `both_reviewer_failure`, or `escalated_to_plan_at_*` (§5 terminal branches where the user did NOT accept-with-findings).
 3. Set `third_party_review.updated` to today's date (YYYY-MM-DD).
+3a. **When `exit_reason` starts with `user_accepted_at_`:** also set the section's top-level `reviewed: true` in the same Edit pass, AND append a `third_party_review.notes` line recording the cap type and round count, e.g. `notes: "user-accepted at iter_cap_reached after 5 rounds; 7 findings filed as - [ ] in §NN.R"`. This flip is authoritative — downstream `/review-plan` Step 7+8 MUST no-op when it sees `reviewed: true` already set (see `review-plan/step-7-8-verify.md`). Rationale: the user made an explicit, audited choice that the plan's design is sound despite open findings; those findings are now owned by the plan's own `- [ ]` checklist, not by the review pipeline.
 4. For `findings` status — append each accepted finding as `- [ ]` items under the section's `## {NN}.R Third Party Review Findings` block (create the block if missing):
 
    ```md
@@ -285,7 +361,7 @@ Required structure:
 
 4. **Spec-gate critical finding resolution** (§3) — when the synthetic SPEC-GATE finding requires a user decision (revert diff vs. approve proposal), use `AskUserQuestion` with `1. Revert the spec diff now` / `2. Pause while I create + approve a proposal` / `3. Cancel this /tpr-review invocation`.
 
-5. **Meta-cap or iter-cap exit escalation** (§5 state machine terminal branches) — when the loop exits without clean consensus, the final-report stage offers the user next-step choices (accept findings / run another tpr-review / escalate to a plan). Emit `AskUserQuestion`, not prose.
+5. **Meta-cap or iter-cap exit escalation** (§5 state machine terminal branches) — when the loop exits without clean consensus, the final-report stage MUST emit the four-option `AskUserQuestion` spelled out in §5's terminal `else` block: `run-more` (extend caps by 3/1), `accept-with-findings` (findings stay filed as `- [ ]`; in plan mode also flip `reviewed: true` per §10 step 3a), `escalate-to-plan` (hand findings to `/create-plan`), `abort` (leave state as-is). Prose options are banned — the harness renders `AskUserQuestion` as tappable options; prose invites the user to skip the prompt entirely. When invoked via `/review-plan`, the outer parent (`review-plan/SKILL.md` §Escalation handling) owns this prompt via `step-6-tpr.md` Branch 2/3 options — `/tpr-review` does not double-prompt in that case. Closed 2026-04-17 — design log entry in `.claude/skills/improve-tooling/tpr-review-design.md` §4.
 
 **Banned pattern**: prose like "1. Continue ... / 2. Exit ... / 3. Abort ..." as bullet text in the assistant message. This looks identical to round-summary prose and bypasses the harness's structured-choice UI.
 

@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Runs the deterministic tooling in this skill directory (`hygiene-lint.py`, `enum-drift.py`, etc.) and captures the output for downstream phases. No AI judgment required at this phase.
 
-Writes `/tmp/impl-hygiene-{run}/phase-0.json` with: tool outputs by name, auto-fixed count, surface findings that remained, and paths to raw logs.
+Writes `{run_id}/phase-0.json` (absolute path the coordinator created via `mktemp -d -t "impl-hygiene-${repo}-XXXXXXXX"`) with: tool outputs by name, auto-fixed count, surface findings that remained, and paths to raw logs.
 
 ---
 
@@ -50,8 +50,8 @@ Already integrated — classifies plan annotations as stale/active/orphan.
 #### 0d. Review tool output, apply auto-fixes
 
 1. Apply auto-fixes: `hygiene-fix.py --scope <review-paths> --apply`
-2. Review remaining findings — these feed into Phase 3 Pass 4 (skip manual checks already covered by tools)
-3. Tool-reported findings that need AI judgment (e.g., test-weak false positives, string-identity in legitimate contexts) get verified during Pass 4
+2. Review remaining findings — these feed into Phase 3 Pass 5 (skip manual checks already covered by tools)
+3. Tool-reported findings that need AI judgment (e.g., test-weak false positives, string-identity in legitimate contexts) get verified during Pass 5
 
-**After Phase 0**: Passes 1-3 of Phase 3 (LEAK/DRY/Boundary) proceed unchanged — these require AI judgment. Pass 4 (Surface Hygiene) is substantially shorter because the tools already caught the mechanical violations.
+**After Phase 0**: Passes 1-4 of Phase 3 (INVERTED-TDD/LEAK/DRY/Boundary) proceed unchanged — these require AI judgment. Pass 5 (Surface Hygiene) is substantially shorter because the tools already caught the mechanical violations.
 

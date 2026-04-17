@@ -165,6 +165,33 @@ The light path trades durability for speed. If mid-execution you realize the wor
 
 The heavy path is the default. The light path is an explicit opt-out for a narrow class of work. If you can't confidently answer "yes" to all three gate criteria and "no" to all hard blocks, Phase 1 is the answer. The cost of an unnecessary heavy plan is a few extra minutes of research; the cost of an unjustified light plan is shipping a skipped design step.
 
+### Phase 0.5: Plan Type Classification (REQUIRED AFTER FORK DECISION)
+
+Once Phase 0 has decided heavy path (or the user forced heavy path via override), **classify the plan's TYPE** before entering Phase 1. The type drives template selection, completion-checklist rigor, `reviewed:` frontmatter defaults, and subagent prompt constraints throughout the workflow. Classifying after the fact — after sections are already written — guarantees post-hoc cleanup (manual stripping of compiler rigor that doesn't apply, manual flipping of `reviewed:` defaults, manual removal of `§NN.R` blocks). Classifying up front is cheaper and prevents drift.
+
+**The three plan types:**
+
+| Type | Scope | Rigor | Use when |
+|---|---|---|---|
+| **`compiler`** | Touches `compiler/`, ``, `runtime/`, `tests/spec/`, `tests/valgrind/`, `tests/alive2/`, `tests/benchmarks/` — any correctness-critical source | Full compiler rigor: `/tpr-review`, `/impl-hygiene-review`, TPR checkpoints, matrix testing + semantic/negative pins, `§NN.R Third Party Review Findings` blocks, `/improve-tooling` per-subsection retrospectives, `/sync-claude` retrospectives, `/review-plan` final consensus. `reviewed: false` default. | Compiler features, bug fixes, codegen changes, AIMS/ARC work, type checker changes, spec-conformant library work. |
+| **`skill-infra-docs`** | Touches ONLY `.claude/`, `scripts/`, `diagnostics/`, `~/projects/lang_intelligence/` (sibling repo), `.codex/`, `.gemini/`, top-level workflow files, non-spec documentation, tooling/test-harness improvements | Reduced rigor: basic tests (if applicable), `plan_corpus check` clean, `cargo test --all` green (regression canary), `diagnostics/repo-hygiene.sh --check`. No TPR checkpoints, no §NN.R blocks, no matrix testing, no semantic/negative pins, no retrospective sweeps baked into every subsection, no `/review-plan` final consensus required. `reviewed: true` default (no pre-implementation re-review gate needed — these plans are low-correctness-risk). | Skill additions, rules updates, diagnostic-script improvements, `lang_intelligence` pipeline work, `.claude/hooks/` changes, doc-only plans, plan-schema/plan-audit tooling work. |
+| **`spec-grammar`** | Modifies `docs/spec/`, `grammar.ebnf`, `operator-rules.md`, or any spec-clause content | Spec-specialist rigor: mandatory `/create-draft-proposal` → `/review-draft-proposal` precursor (spec-grammar proposal gate per CLAUDE.md), plus `/sync-spec` + `/sync-grammar` + `/tpr-review` on aggregate changes. `reviewed: false` default (spec changes are correctness-critical). | Spec clause additions, grammar edits, operator-rule changes, new language features at the spec surface. |
+
+**Banned classifications:**
+- "Mixed plan" — if the work crosses type boundaries, it IS a `compiler` plan and takes the highest-rigor template. Do NOT split a coherent mission across two plans to avoid the higher rigor.
+- "I'll classify later" — classification MUST happen before Phase 1B Mission Expansion. Later classification produces post-hoc cleanup debt.
+
+**How to classify:**
+1. Look at the user's scope description and the list of files/directories the plan will touch.
+2. If ANY file under `compiler/`, ``, `runtime/`, or compiler test trees: type = `compiler`.
+3. Else if ANY file under `docs/spec/`, `grammar.ebnf`, or `operator-rules.md`: type = `spec-grammar`.
+4. Else (only `.claude/`, `scripts/`, `diagnostics/`, sibling infra repos, non-spec docs): type = `skill-infra-docs`.
+5. When in doubt between `compiler` and `skill-infra-docs`, pick `compiler`. Applying compiler rigor to skill work wastes time; applying skill rigor to compiler work ships skipped design steps.
+
+**Carry classification forward:** the plan type MUST appear in `00-overview.md` frontmatter as `plan_type: <compiler|skill-infra-docs|spec-grammar>`. This is machine-readable and drives template selection in Phase 4 section writing.
+
+**If the user force-invokes `/create-plan --type=<type>`:** skip the classification logic and use the user's declared type. This is an escape hatch for cases where the heuristic is wrong (e.g., "this TOUCHES `compiler/` via a docstring change only — take skill-infra-docs").
+
 ---
 
 ## Phase 1: Prerequisites
@@ -792,7 +819,26 @@ For each section, in order from 01 to N:
 **Step 11b: Launch the Sonnet subagent** (`model: "sonnet"`) with a prompt structured as:
 
 ```
+## CRITICAL SCOPE CONSTRAINT — READ FIRST (MANDATORY PREAMBLE)
+
+You are writing a PLAN DOCUMENT. This means:
+
+1. You write EXACTLY ONE file: `{plan_root}/{name}/section-{NN}-{slug}.md`.
+2. You DO NOT modify any other file. No edits to source code, scripts, rule files, CLAUDE.md, or sibling repos.
+3. You DO NOT run `git add`, `git commit`, or any destructive git command.
+4. Plans describe FORWARD-LOOKING work. All checkboxes in the section you write should be `- [ ]` (not-started), not `- [x]`. Subsection statuses should be `not-started`. Section status should be `not-started`.
+5. The work described in this plan will be EXECUTED later by `/continue-roadmap` or explicit implementation. You DO NOT pre-implement anything.
+
+Violations of this scope fence produce stranded commits in sibling repos, premature "complete" statuses in plans that haven't been approved yet, and post-hoc cleanup debt. If you find yourself writing code outside the plan file, STOP.
+
+---
+
 You are writing Section {NN} of a plan for the ori_term. You will WRITE the section file to disk using the Write tool.
+
+PLAN TYPE: {plan_type}  # one of: compiler | skill-infra-docs | spec-grammar
+  - If `compiler`: use the full Section File Template with TPR checkpoints, §NN.R block, matrix testing, semantic/negative pins, and the full compiler-rigor completion checklist. `reviewed: false` default.
+  - If `skill-infra-docs`: use the Skill/Infra/Docs Plan Variant template (see plan-schema.md §Skill/Infra/Docs Plan Variant). Omit §NN.R blocks, TPR checkpoints, matrix testing, semantic/negative pins, `/improve-tooling` per-subsection retrospectives, `/sync-claude` per-subsection retrospectives, and `/tpr-review` / `/impl-hygiene-review` / `/improve-tooling section-close sweep` / `/sync-claude section-close doc sync` items from the completion checklist. Keep practical verification (tests pass, plan-corpus check, repo-hygiene). `reviewed: true` default.
+  - If `spec-grammar`: full compiler rigor PLUS `/create-draft-proposal` → `/review-draft-proposal` precursor gate + `/sync-spec` + `/sync-grammar` + `/tpr-review` on aggregate. `reviewed: false` default.
 
 ARCHITECTURE (from 00-overview.md):
 {paste overview content}
@@ -809,14 +855,15 @@ SECTION REQUIREMENTS:
 - Files touched: {from research}
 - Depends on: {prior sections}
 
-TEMPLATE: Follow the format in .claude/skills/create-plan/plan-schema.md (read it).
+TEMPLATE: Follow the format in .claude/skills/create-plan/plan-schema.md (read it). Branch to the Skill/Infra/Docs Plan Variant OR full Section File Template based on PLAN TYPE above.
 
 RULES TO WEAVE IN: Read {list of applicable rule files} and embed applicable constraints into checklist items.
 
 Write the section file to: {plan_root}/{name}/section-{NN}-{slug}.md
+Return a 2-line summary: total lines + confirmation that all checkboxes are `- [ ]`.
 ```
 
-The subagent writes the file directly to disk and returns a summary.
+The subagent writes the file directly to disk and returns a summary. The main-agent MUST verify (Step 11c) that no files outside the plan directory were modified — if the subagent drifted, fix the plan file and revert any stray changes before proceeding to the next section.
 
 **Step 11c: Opus reviews the result.** The main agent reads the written section file and verifies:
 - File paths referenced in this section exist (spot-check with Glob)
@@ -847,18 +894,27 @@ If issues are found, either fix them directly or re-prompt the Sonnet agent with
 - **Success criteria**: Every section MUST have detailed success criteria — concrete, testable conditions that prove the section's work is done. Not "implement X" but "X produces Y when Z is run." Each criterion must connect upward to at least one mission success criterion in `00-overview.md`. A section without success criteria is not executable.
 - **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. The Sonnet agent reads the relevant rule files and embeds the applicable constraints directly into the section's tasks. For example: if a section adds an enum variant, the checklist item should say "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
 
-**Frontmatter includes:**
+**Frontmatter includes (all plan types):**
 - Section ID, title, status: not-started, goal, `success_criteria` list
-- `reviewed` field (see rules below)
+- `reviewed` field (default varies by plan type — see rules below)
 - `inspired_by` with actual reference implementations found
 - `depends_on` based on actual crate dependency chain AND section content dependencies
 - `third_party_review: { status: none, updated: null }`
-- `## {NN}.R Third Party Review Findings` block (empty, with `- None.`) before the completion checklist
-- **Section-level structural invariants** — see `.claude/skills/create-plan/plan-schema.md` "MANDATORY SECTION STRUCTURE" HTML comment for the two authoritative invariants: (1) unnumbered `## Intelligence Reconnaissance` block placed between section framing and `## {NN}.1` (PLAN_SECTION only; roadmap and bug-tracker sections are exempt); (2) per-subsection close-out blocks containing `/improve-tooling` + `/sync-claude` calls. `plan-schema.md` is the SSOT per `impl-hygiene.md` §SSOT; SKILL.md does NOT re-state the invariants — any drift between the two surfaces is a `DRIFT:scattered-knowledge` finding.
-- Completion checklist at the end — MUST include `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling` **section-close sweep**, AND `/sync-claude` **section-close doc sync** as final gates, in that order: TPR clean → hygiene clean → tooling sweep → doc sync. The `/improve-tooling` sweep is a SAFETY NET for tooling; the `/sync-claude` sweep is a SAFETY NET for doc accuracy across all commits in the section. Both are mandatory at every section close. See `plan-schema.md` for the exact wording.
+- **Section-level structural invariants** — see `.claude/skills/create-plan/plan-schema.md` "MANDATORY SECTION STRUCTURE" HTML comment for the authoritative invariants. `plan-schema.md` is the SSOT per `impl-hygiene.md` §SSOT; SKILL.md does NOT re-state the invariants — any drift between the two surfaces is a `DRIFT:scattered-knowledge` finding.
 
-**`reviewed` field rules:**
-- **ALL sections**: `reviewed: false` at creation — plans are written against research findings, not validated against implementation reality. `/continue-roadmap`'s pre-implementation gate (Step 1.7) will trigger a single-section `/review-plan` before work begins on each section, flipping it to `reviewed: true` after validation.
+**Frontmatter branches by plan type:**
+- **`compiler` / `spec-grammar`**: include `## {NN}.R Third Party Review Findings` block (empty, with `- None.`) before the completion checklist; include a `- id: "{NN}.R"` entry in the `sections:` frontmatter list.
+- **`skill-infra-docs`**: OMIT the `§NN.R` block entirely; OMIT the `- id: "{NN}.R"` frontmatter entry. Skill/infra plans don't undergo `/tpr-review` per Phase 0.5 classification, so there's no findings block to reserve.
+
+**Completion checklist branches by plan type:**
+- **`compiler`**: MUST include `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling` section-close sweep, and `/sync-claude` section-close doc sync as final gates, in that order (TPR → hygiene → tooling sweep → doc sync). Plus matrix testing verification, semantic/negative pin verification, and the plan-sync block. See `plan-schema.md` Section File Template for the exact wording.
+- **`skill-infra-docs`**: MUST include practical verification only — tests pass (if applicable), `plan_corpus check` clean, `cargo test --all` green (regression canary), `repo-hygiene.sh --check`. Plus the plan-sync block (status flips, overview updates). OMIT `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling` section-close sweep, `/sync-claude` section-close doc sync, matrix testing, semantic/negative pins. See `plan-schema.md` §Skill/Infra/Docs Plan Variant for the exact wording.
+- **`spec-grammar`**: MUST include all `compiler` items PLUS `/create-draft-proposal` → `/review-draft-proposal` precursor gate verification + `/sync-spec` + `/sync-grammar` + full-aggregate `/tpr-review`.
+
+**`reviewed` field rules (branches by plan type):**
+- **`compiler` plan sections**: `reviewed: false` at creation — plans are written against research findings, not validated against implementation reality. `/continue-roadmap`'s pre-implementation gate (Step 1.7) triggers a single-section `/review-plan` before work begins on each section, flipping it to `reviewed: true` after validation.
+- **`spec-grammar` plan sections**: `reviewed: false` at creation — same rationale as compiler.
+- **`skill-infra-docs` plan sections**: `reviewed: true` at creation — these plans are low-correctness-risk (no compiler invariants at stake) and don't undergo pre-implementation re-review. Flipping to `true` up front prevents unnecessary `/review-plan` cycles that would delay skill/infra execution.
 
 **After the Sonnet subagent writes each section**, Step 11c's verification pass (described above) is mandatory before proceeding to the next section. Do NOT skip the verification — the Sonnet subagent might hallucinate file paths or mis-reference prior sections, and the main Opus agent is the single authority catching these before the error propagates into subsequent sections.
 

@@ -549,6 +549,110 @@ is run, with 0 regressions in test suite A (N tests) and test suite B (M tests).
 
 ---
 
+## Skill/Infra/Docs Plan Variant
+
+When the plan's type (set at `/create-plan` Phase 0.5) is `skill-infra-docs`, the Section File Template above is too heavyweight. Skill/infra/docs plans do not alter compiler correctness invariants, do not need dual-source `/tpr-review` / `/impl-hygiene-review` gates, and do not benefit from matrix testing + semantic/negative pins the way compiler work does. Applying the full template to them produces post-creation cleanup debt — as experienced during `plan-bug-dag-ingestion` (2026-04-17) where 234 lines of compiler rigor had to be manually stripped across 6 sections after the plan was written.
+
+This variant section specifies the reductions. Use it only when `plan_type: skill-infra-docs` is set in `00-overview.md` frontmatter.
+
+### What stays the same
+
+- Directory layout (`index.md` + `00-overview.md` + `section-NN-*.md`)
+- Frontmatter shape (section ID, title, status, goal, `success_criteria`, `inspired_by`, `depends_on`, `third_party_review`, `sections:` list)
+- `## Intelligence Reconnaissance` block (mandatory for all PLAN_SECTION files — reconnaissance value is plan-type-independent)
+- Numbered subsection structure (`{NN}.1`, `{NN}.2`, …)
+- Completion subsection (`{NN}.N`)
+- Per-subsection tasks, code examples, context paragraphs, reference implementations, design decision blocks
+
+### What changes
+
+**Frontmatter differences:**
+- `reviewed: true` (default) — not `false`. Skill/infra plans are low-correctness-risk and don't undergo pre-implementation `/review-plan` re-review gating. Flipping to `true` up front prevents unnecessary review cycles that would delay execution.
+- No `- id: "{NN}.R"` entry in the `sections:` list — §NN.R Third Party Review Findings is compiler-rigor scaffolding that skill/infra plans don't use.
+- `third_party_review: { status: none, updated: null }` stays — it's schema-required, but its value remains `none` throughout the plan's life.
+
+**Body differences:**
+- **OMIT** the entire `## {NN}.R Third Party Review Findings` block (the `- None.` placeholder subsection between the last implementation subsection and the completion checklist). Skill/infra plans don't accumulate TPR findings, so reserving the block wastes template bytes.
+- **OMIT** `- [ ] **TPR checkpoint** — /tpr-review covering {NN}.1–{NN}.M` items from subsections. These exist for compiler-rigor plans with 3+ implementation subsections; skill/infra plans don't run `/tpr-review`.
+- **OMIT** per-subsection `/improve-tooling` retrospective + `/sync-claude` retrospective items from subsection close-out blocks. Skill/infra work is not correctness-critical; the tooling-retrospective ritual is overkill. Keep the `Update this subsection's status to complete` + `Repo hygiene check` items from close-outs.
+- **OMIT** matrix testing dimensions, semantic pins, and negative pins from success criteria and subsection tasks. Skill/infra tests are typically unit tests or end-to-end smoke tests, not type × pattern matrices.
+
+**Completion checklist differences (the big reduction):**
+
+Compiler template completion checklist (Section File Template §NN.N) has ~11 gates including `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling` section-close sweep, `/sync-claude` section-close doc sync. For skill/infra/docs plans, the completion checklist collapses to:
+
+```markdown
+## {NN}.N Completion Checklist
+
+- [ ] All implementation subsections ({NN}.1..{NN}.M) are `[x]` and status `complete`
+- [ ] All success criteria (section frontmatter) have corresponding `[x]` checkboxes
+- [ ] {domain-specific test command passes, e.g. `pytest tests/plan-audit/test_foo.py`}
+- [ ] `cargo test --all` green — regression canary (no compiler code was touched in this plan; any test failure indicates an unrelated regression that must be investigated)
+- [ ] `python -m scripts.plan_corpus check plans/{plan-name}/section-{NN}-*.md` returns exit 0
+- [ ] **Plan sync** — update plan metadata:
+  - [ ] This section's frontmatter `status` → `complete`, all subsection statuses → `complete`
+  - [ ] `00-overview.md` Quick Reference table: Section {NN} status → `Complete`
+  - [ ] `00-overview.md` mission success criteria: check off criteria satisfied by this section
+  - [ ] `index.md` Section {NN} status → `Complete`
+- [ ] **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check`; clean any detected temp/scratch files before final commit.
+
+**Exit Criteria:** {Practical measurable condition — e.g., "`pytest tests/foo.py` passes all N tests; `scripts/intel-query.sh <subcommand>` smoke test exits 0; `cargo test --all` green."}
+```
+
+**What is NOT present** compared to the full template:
+- `/tpr-review` passed (final, full-section) — OMITTED
+- `/impl-hygiene-review` passed — OMITTED
+- `/improve-tooling` section-close sweep — OMITTED
+- `/sync-claude` section-close doc sync — OMITTED
+- Plan annotation cleanup — OMITTED (skill/infra plans don't add code annotations)
+- Matrix testing verification — OMITTED
+- Semantic/negative pin verification — OMITTED
+- Intermediate TPR checkpoint findings — OMITTED (no TPR checkpoints exist)
+
+### Verification section (final section) variant
+
+If the plan includes a verification section (e.g., `section-NN-verification.md`), it is ALSO simpler than the full Verification Section Template below. Drop:
+- `## {NN}.4 Safety Verification` — compiler-safety concepts don't apply
+- `## {NN}.5 Performance Validation` — generally not load-bearing for skill work (include only if performance is actually a concern)
+- Any `/review-plan` final consensus subsection (`{NN}.6` in the full template) — `/review-plan` is optional for skill/infra/docs plans
+- `§NN.R` Third Party Review Findings — no TPR
+- `/tpr-review` / `/impl-hygiene-review` / `/improve-tooling` section-close sweep from the Completion Checklist
+
+Keep:
+- `## {NN}.1 Test Matrix` — but scope it to "functional coverage" rather than "type × pattern × feature" compiler matrix
+- `## {NN}.2 Behavioral Equivalence` — if the plan has an equivalence property to verify (e.g., full-rebuild vs incremental producing identical output)
+- `## {NN}.6 Documentation` — skill/infra plans often touch documentation; keep this subsection
+- Cross-plan review invalidation if the plan could invalidate other plans' `reviewed: true` state (use `python3 .claude/skills/plan-audit/plan-invalidate.py` — lightweight, no dual-source review needed)
+
+### When NOT to use this variant
+
+- If the plan touches compiler code even incidentally: use full Section File Template (plan type is `compiler`, not `skill-infra-docs`).
+- If the plan modifies test-gate behavior (`test-all.sh`, `clippy-all.sh`, pre-commit hooks that enforce correctness): use full template — these are correctness infrastructure.
+- If the plan is for spec/grammar work: use `spec-grammar` plan type with full rigor + spec-proposal gate.
+- If the user says "do this properly" or "use the full plan": user override beats the variant; use the full template even for skill/infra scope.
+
+### Example: skill/infra section completion checklist actually used in `plan-bug-dag-ingestion` (2026-04-17)
+
+```markdown
+## 01.N Completion Checklist
+
+- [ ] `scripts/plan_corpus/schemas.py`: `touches: list[str] | None = None` added to `PlanSectionSchema` and `FixBugSchema`
+- [ ] `scripts/plan_corpus/types.py`: `SourceKind.EXPLICIT_SUPERSEDES` and `SourceKind.EXPLICIT_REFERENCES` added
+- [ ] `scripts/plan_corpus/dag.py`: `_EDGE_KINDS` frozenset in place; classifiers filter to `EXPLICIT_DEPENDS_ON`
+- [ ] `pytest tests/plan-audit/test_export_json.py` green (5 tests)
+- [ ] `pytest tests/plan-audit/test_dag.py` green — no regression
+- [ ] `python -m scripts.plan_corpus docgen --check` returns exit 0
+- [ ] `cargo test --all` green — no regressions
+- [ ] **Plan sync** — status flips, overview updates, index.md update
+- [ ] **Repo hygiene check** — `diagnostics/repo-hygiene.sh --check` clean
+
+**Exit Criteria:** `python -m scripts.plan_corpus docgen --check` exits 0; `pytest tests/plan-audit/test_export_json.py` and `pytest tests/plan-audit/test_dag.py` green; `cargo test --all` green.
+```
+
+Notice: no `/tpr-review`, no `/impl-hygiene-review`, no `/improve-tooling` sweep, no `/sync-claude` sweep, no matrix testing, no §NN.R. This is what a skill/infra section close-out looks like when the variant is applied correctly at creation time rather than stripped after the fact.
+
+---
+
 ## Verification Section Template
 
 Every plan should include a verification section (typically the last section). This proves the system works as one cohesive whole.
@@ -827,6 +931,94 @@ Cite specific files from reference compilers/projects. Not "Rust does
 this" but "Rust's `rustc_codegen_llvm/mir/operand.rs` uses the
 `OperandValue` pattern where {description}." Include the path so the
 reference can be consulted.
+
+---
+
+## Bug Tracker Section Schema
+
+Bug entries live as markdown bullet items inside `plans/bug-tracker/section-NN-*.md` files. Each entry has a structured header + indented body. The body MAY carry **lifecycle markers** that route the bug to the correct workflow when scanners (`/continue-roadmap`'s `roadmap_scan.py`, `/fix-next-bug`'s `bug_queue_scan.py`) inventory it.
+
+### Section file structure
+
+Each `section-NN-*.md` file uses the `BugTrackerSectionSchema` frontmatter (defined in `scripts/plan_corpus/schemas.py`):
+
+```yaml
+---
+section: "04"
+title: "Codegen & LLVM"
+status: open                    # open | resolved
+goal: "Track and resolve all known codegen/LLVM bugs"
+sections: []                    # bug-tracker sections have flat structure
+---
+
+# Section 04: Codegen & LLVM
+
+## Open Bugs
+
+- [ ] `[BUG-04-NNN][severity]` **Title** ...
+  Repro: ...
+  Subsystem: ...
+  Found: YYYY-MM-DD | Source: <provenance>
+  {optional lifecycle markers — see below}
+
+## Resolved Bugs
+
+- [x] `[BUG-04-NNN][severity]` **Title**
+  Resolved: ... | Fix: plans/bug-tracker/fix-BUG-04-NNN.md
+```
+
+### Bug entry format (canonical, parsed by `plan_corpus.bug_markers`)
+
+```markdown
+- [{checkbox}] `[BUG-{section:02d}-{ordinal:03d}][{severity}]` **{Title}**
+  Repro: {test file path or minimal repro steps}
+  Subsystem: {crate/file path}
+  Found: {YYYY-MM-DD} | Source: {provenance}
+  {one or more optional lifecycle marker lines}
+```
+
+- `{checkbox}` is space (` `) for open, `x`/`X` for fixed.
+- `{severity}` is `critical | high | medium | low`. Reclassification syntax `[critical→medium]` or `[critical->medium]` is supported (RHS is the effective severity).
+- Backticks around `[BUG-...]` are preserved by convention but parser tolerates either.
+- Trailing text after the closing `**` of the title is permitted (e.g., `**Title** — found by tpr-review`).
+
+### Lifecycle markers (the routing-signal SSOT)
+
+Markers are scanned by `scripts/plan_corpus/bug_markers.py::classify_bug_exclusion`. Precedence (first match wins):
+
+| # | Marker | Routing | Auto-fixable? |
+|---|--------|---------|---------------|
+| 1 | `Superseded by: <plan-path>` | Use `/continue-roadmap <plan>` — the plan owns the fix | YES (auto-inserted from plan frontmatter `supersedes:` declaration by `/continue-roadmap` Step 2c) |
+| 2 | `Escalated to plan: <reason>` / `Escalated: <reason>` | User must `/create-plan` | NO |
+| 3 | `**Blocked**: <reason>` / `Blocked: <reason>` | Waiting on dependency; user resolves manually | NO |
+| 4 | `<!-- blocked-by:BUG-XX-NNN -->` | Cross-section blocker tag | NO |
+
+**`**BLOCKER**:` is NOT a lifecycle marker.** It's informational impact text describing what the bug blocks downstream (e.g. `**BLOCKER**: This blocks ~800 spec tests`). The substring distinction (`**BLOCKER**` vs `**Blocked**:`) is enforced by the SSOT regex (`BUG_BLOCKED_RE = r"(?im)^\s*\*{0,2}blocked\*{0,2}\s*:"`).
+
+### Bidirectional supersede invariant
+
+The `Superseded by:` marker has TWO endpoints that MUST agree:
+
+1. **Bug entry side**: the marker line in the bug-tracker section file.
+2. **Plan side**: the plan's `00-overview.md` frontmatter `supersedes:` field listing the corresponding `plans/bug-tracker/fix-BUG-XX-NNN.md` path.
+
+Either direction missing is `bug_marker_drift`:
+
+- **Missing bug-side marker** (plan claims, bug doesn't declare) — auto-fixed silently by `/continue-roadmap` Step 2c. The plan frontmatter is the authoritative SSOT; the bug-side marker is derived.
+- **Orphan bug-side marker** (bug declares, plan doesn't claim) — surfaced as info finding, NOT auto-fixed. User must reconcile.
+
+### Enforcement (referenced by `/continue-roadmap`)
+
+The schema is enforced at `/continue-roadmap` invocation time by:
+
+| Module | Role |
+|--------|------|
+| `scripts/plan_corpus/bug_markers.py` | Marker regex SSOT, `BugEntry` dataclass, `parse_bug_entries()`, `classify_bug_exclusion()`. Both `roadmap_scan.py` and `bug_queue_scan.py` import from here — duplicating regexes elsewhere is a `LEAK:algorithmic-duplication` violation. |
+| `scripts/plan_corpus/bug_validators.py` | Bidirectional drift detector (`find_supersede_drift()`), planned-edit generator (`plan_auto_fixes()`), idempotent applier (`apply_planned_edits()`). |
+| `roadmap_scan.py` Gate 1.6 | Computes drift report into `gates.bug_marker_drift` payload (auto-fix severity). |
+| `/continue-roadmap` workflow.md Step 2c | Sub-agent applies the planned edits inline via the Edit tool, then commits everything together in Step 2d. |
+
+To extend the marker vocabulary (e.g., add a future `Wontfix:` lifecycle state), edit `bug_markers.py`'s precedence list ONLY — both consumers and the auto-fix gate pick up the change automatically.
 
 ---
 

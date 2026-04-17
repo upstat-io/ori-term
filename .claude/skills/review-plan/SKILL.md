@@ -15,7 +15,7 @@ The parent does Step 1 inline, dispatches each of Steps 2–8 as an independent 
 - **Single-section mode** (file path): after the FULL pipeline clean pass, Step 7+8 flips `reviewed: true` on `{target_section}`. If unresolved issues remain, leaves `reviewed: false`.
 - **Whole-plan mode** (directory path): NEVER touch `reviewed` fields. Fix content issues only.
 
-## Step 1 — Path Normalization (parent, inline)
+## Step 1 — Path Normalization + Scratch Dir (parent, inline)
 
 Inspect `$ARGUMENTS`:
 
@@ -24,21 +24,32 @@ Inspect `$ARGUMENTS`:
 
 If the path does not exist, stop and report.
 
-Write `/tmp/review-plan-context.json`:
+**Create an orchestrator-owned scratch dir BEFORE any sub-agent dispatch** (matches `/tpr-review` §8 invariant I1 — per-invocation `mktemp -d` prevents cross-session collision; the `${repo}` prefix makes parallel sessions in different repos visually distinguishable in `/tmp/` listings):
+
+```bash
+repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+RUN_DIR="$(mktemp -d -t "review-plan-${repo}-XXXXXXXX")"
+echo "scratch dir: $RUN_DIR"
+```
+
+Write `$RUN_DIR/context.json`:
 
 ```json
 {
   "mode": "single-section | whole-plan",
   "plan_dir": "plans/foo",
-  "target_section": "plans/foo/section-03.md | null"
+  "target_section": "plans/foo/section-03.md | null",
+  "run_dir": "<absolute path from mktemp>"
 }
 ```
 
+Capture `$RUN_DIR` in orchestrator state and pass it to every sub-agent dispatch below as the `{RUN_DIR}` placeholder.
+
 ## Steps 2–8 — Sequential Sub-agent Dispatch
 
-Invoke six Agents in order. Each dispatch follows the same shape; only `description`, the step `.md` file, and model differ. After each Agent returns, read `/tmp/review-plan-{step}.json` for the summary + any escalation payload, then proceed.
+Invoke six Agents in order. Each dispatch follows the same shape; only `description`, the step `.md` file, and model differ. After each Agent returns, read `$RUN_DIR/{step}.json` for the summary + any escalation payload, then proceed.
 
-**Dispatch template** (substitute `<STEP>`, `<PROTOCOL_FILE>`, and `<MODEL>`):
+**Dispatch template** (substitute `<STEP>`, `<PROTOCOL_FILE>`, `<MODEL>`, and `$RUN_DIR`):
 
 ```
 Agent({
@@ -50,11 +61,14 @@ You are the sub-agent for /review-plan Step <STEP>. Read
 .claude/skills/review-plan/<PROTOCOL_FILE>
 in full and execute it end-to-end.
 
-Read these handoff files first for context:
-- /tmp/review-plan-context.json (plan mode, plan_dir, target_section)
-{for steps 3+: list /tmp/review-plan-*.json files from prior steps}
+Your orchestrator-owned scratch dir is: <RUN_DIR absolute path from Step 1>
+All read/write paths described in the protocol are relative to that dir.
 
-Write your own handoff to /tmp/review-plan-<STEP>.json per the protocol's
+Read these handoff files first for context:
+- <RUN_DIR>/context.json (plan mode, plan_dir, target_section)
+{for steps 3+: list <RUN_DIR>/*.json files from prior steps}
+
+Write your own handoff to <RUN_DIR>/<STEP>.json per the protocol's
 "Output" section. Never read CLAUDE.md unless the protocol explicitly
 requires it (only Step 5 does).
 
@@ -74,21 +88,22 @@ handoff JSON (escalate: true) and stop. The parent handles escalations.
 
 | Step | `<STEP>` | `<PROTOCOL_FILE>` | `<MODEL>` | Writes |
 |---|---|---|---|---|
-| 2 | `2-precheck` | `step-2-precheck.md` | `opus` | `/tmp/review-plan-precheck.json` |
-| 3 | `3-audit` | `step-3-audit.md` | `sonnet` | `/tmp/review-plan-audit.json` |
-| 4 | `4-blind-spots` | `step-4-blind-spots.md` | `sonnet` | `/tmp/review-plan-blind-spots.json` |
-| 5 | `5-editor` | `step-5-editor.md` | `opus` | `/tmp/review-plan-editor.json` |
-| 6 | `6-tpr` | `step-6-tpr.md` | `sonnet` | `/tmp/review-plan-tpr.json` |
-| 7+8 | `7-8-verify` | `step-7-8-verify.md` | `sonnet` | `/tmp/review-plan-verify.json` |
+| 2 | `2-precheck` | `step-2-precheck.md` | `opus` | `$RUN_DIR/precheck.json` |
+| 3 | `3-audit` | `step-3-audit.md` | `sonnet` | `$RUN_DIR/audit.json` |
+| 4 | `4-blind-spots` | `step-4-blind-spots.md` | `sonnet` | `$RUN_DIR/blind-spots.json` |
+| 5 | `5-editor` | `step-5-editor.md` | `opus` | `$RUN_DIR/editor.json` |
+| 6 | `6-tpr` | `step-6-tpr.md` | `sonnet` | `$RUN_DIR/tpr.json` |
+| 7+8 | `7-8-verify` | `step-7-8-verify.md` | `sonnet` | `$RUN_DIR/verify.json` |
 
 ## Escalation handling (MANDATORY)
 
-After each Agent returns, read `/tmp/review-plan-{step}.json`. If `"escalate": true`:
+After each Agent returns, read `$RUN_DIR/{step}.json`. If `"escalate": true`:
 
 1. Invoke `AskUserQuestion` with the sub-agent's `question` + `options` verbatim. Never dump as prose.
 2. When the user picks an option with a `next_skill`, invoke that skill with the provided arg.
 3. When the user picks `proceed` / `abort` / `leave-as-is`, honor that choice. If `abort`, stop the pipeline and emit a partial verdict at Step 9.
-4. Resume the next step only after the escalation resolves.
+4. **When the user picks an option with `applies_user_accepted: true`** (see `step-6-tpr.md` Branch 2/3 and `step-7-8-verify.md` cap-exit options), PATCH the handoff JSON file before resuming: read `$RUN_DIR/{step}.json`, add a top-level `"user_accepted": true` field and a `"user_accepted_option_key": "<selected key>"` field, write it back. This signals downstream steps (most importantly Step 7+8) that `reviewed: true` should be flipped despite `converged: false`. Record which step's handoff was patched in the Step 9 verdict (`### Review Status` row should show the cap-exit reason).
+5. Resume the next step only after the escalation resolves.
 
 Precheck is the most common escalation source; steps 3, 5, 6, and 7+8 can also escalate on non-convergence or human-judgment ambiguities. Every escalation-capable step's protocol file defines its own machine-readable escalation schema — see each `step-*.md` for the exact shape. Step 4 (blind-spots) never escalates.
 
@@ -97,7 +112,7 @@ Precheck is the most common escalation source; steps 3, 5, 6, and 7+8 can also e
 After Step 7+8 returns clean, run the invalidation detector inline on the parent:
 
 ```bash
-python3 .claude/skills/plan-audit/plan-invalidate.py {plan_dir} --json > /tmp/review-plan-invalidate.json
+python3 .claude/skills/plan-audit/plan-invalidate.py {plan_dir} --json > "$RUN_DIR/invalidate.json"
 ```
 
 Read the output. If `status == "clean"`, skip to Step 9.
@@ -126,7 +141,7 @@ Skip this step entirely if the review made only cosmetic/formatting changes (no 
 
 ## Step 9 — Present Verdict (parent, Opus)
 
-Read the `summary` line from each `/tmp/review-plan-*.json` (not the full handoffs) and synthesize:
+Read the `summary` line from each `$RUN_DIR/*.json` (not the full handoffs) and synthesize:
 
 ```
 ## Plan Review: {plan name}
@@ -166,7 +181,7 @@ Read the `summary` line from each `/tmp/review-plan-*.json` (not the full handof
 
 ## Critical Rules
 
-1. **Sequential phases** — each Agent completes before the next starts. Handoffs flow via `/tmp/*.json` files.
+1. **Sequential phases** — each Agent completes before the next starts. Handoffs flow via `$RUN_DIR/*.json` files (the orchestrator-owned scratch dir created in Step 1).
 2. **`reviewed` flip is LAST** — only in single-section mode, only after Step 6 converges clean. Handled by Step 7+8's agent, never inside the editor.
 3. **Whole-plan mode never touches `reviewed`** — not even to add missing ones.
 4. **NEVER scope down — always expand** — grow the plan if it doesn't fulfill its mission.

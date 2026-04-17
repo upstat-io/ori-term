@@ -2,7 +2,7 @@
 
 Read by an **Opus** sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. This is the one phase that genuinely requires Opus judgment — finding detection through multi-lens hygiene analysis (phase-boundary bleeding, SSOT violations, algorithmic DRY, data-flow traces).
 
-Consumes `/tmp/impl-hygiene-{run}/phase-{0,1,2}.json`. Writes `/tmp/impl-hygiene-{run}/phase-3.json` with: findings list (each with severity, category, file:line, evidence, proposed fix), plus a depth-of-analysis note so Phase 4 cross-check knows what to probe.
+Consumes `{run_id}/phase-{0,1,2}.json`. Writes `{run_id}/phase-3.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with: findings list (each with severity, category, file:line, evidence, proposed fix), plus a depth-of-analysis note so Phase 4 cross-check knows what to probe.
 
 ---
 
@@ -12,7 +12,30 @@ This is the "go deep" phase. Each review unit gets **multiple analysis passes**,
 
 For **each review unit** identified in Phase 2, spawn agents for the following passes. Passes within the same review unit run **sequentially** (each builds on the prior). Passes for **different review units** run in parallel.
 
-#### Pass 1: LEAK & SSOT Scan (Structural Pass)
+#### Pass 1: INVERTED-TDD Scan (Deliverable Integrity Pass)
+
+**Goal**: Find tests that pass because the deliverable they were designed to verify has been disabled, gated off, or exempted — the failure mode where the test suite lies.
+
+This pass MUST run first. It depends on the Phase 1 plan context: every plan section / fix-bug section has a stated **deliverable** (a validator, check, assertion, invariant, or behavioral guarantee). This pass cross-references that stated deliverable against the actual code path the deliverable is supposed to govern. INVERTED-TDD is the only category where Critical-by-default applies regardless of size — see `impl-hygiene.md` §Finding Categories → INVERTED-TDD for the seven subcategories and required `INVERTED-TDD:{subcategory}` call-out format.
+
+**Checklist:**
+- [ ] **Gated deliverable**: For every validator/check/invariant in the diff, scan for early-returns, feature-flag gates, `if empty { skip }`, `if !condition { return }`, or `#[cfg(...)]` near the enforcement site. Cross-reference the gate's input class against the owning plan's stated deliverable scope. If the gate disables the deliverable on the inputs the subsection was designed to catch, flag `INVERTED-TDD:gated-deliverable`.
+- [ ] **Widened exemption set**: For every validator/check, diff its exemption list (allow-list, skip-list, special-case branches) against the prior commit. Any growth without a spec citation (`Clause N.M`) in the commit message or doc comment proving the exemption is architecturally correct = `INVERTED-TDD:widened-exemption`.
+- [ ] **Goal drift**: For each fixed bug or completed subsection in scope, re-state the system invariant it serves (spec clause, `typeck.md §PC-*`, `aims-rules.md` lattice dimension, AIMS invariant, phase contract). If the through-line from deliverable → downstream consumer was not maintained — i.e., the fix optimized for local green tests rather than the invariant — flag `INVERTED-TDD:goal-drift`. Banned commit/plan/code phrases (any one is a Critical signal): "make tests pass", "pragmatic workaround", "gate failing path", "accept current state and proceed", "file bugs and proceed".
+- [ ] **Disabled negative pin**: For every `#compile_fail`, negative test, or assertion in the diff, check whether it was removed, weakened, or had its expected error narrowed. If yes without a spec change explaining why the negative behavior is no longer wrong, flag `INVERTED-TDD:disabled-negative-pin`.
+- [ ] **Known Failing Tests without anchor**: For every test moved into a "Known Failing Tests" / `#[ignore]` / `#skip` block, verify it has a concrete `<!-- blocked-by:path#item -->` pointer or equivalent `- [ ]` checkbox in the section/plan that will resolve it. No anchor = `INVERTED-TDD:moved-to-known-failing-without-anchor`.
+- [ ] **Blocker deferred via `/add-bug` only**: For every bug filed during the active subsection, classify whether it BLOCKS the subsection's stated deliverable. A blocker filed via `/add-bug` (instead of fixed via `/fix-bug` with full plan-section rigor) = `INVERTED-TDD:blocker-add-bug-only`. The right mode for blockers is `/fix-bug` NOW, then resume.
+- [ ] **Subsection complete with deliverable inert**: For every subsection marked `status: complete` in the diff, verify the subsection's stated deliverable (validator, check, enforcement) is ACTIVE on every input class it was designed to cover. If gated off, exempted, or short-circuited on any input the subsection was designed to catch = `INVERTED-TDD:subsection-complete-deliverable-inert`.
+
+**How to execute this pass:**
+1. From Phase 1 context, list every active plan section / fix-bug section in scope. For each, extract the stated deliverable (the noun the subsection produces — e.g., "PC-2 validator", "RC-balance check", "exhaustiveness diagnostic").
+2. For each deliverable, locate the implementing function(s) in the diff (`grep -nE 'fn (validate|check|assert|enforce|require)_' compiler/`). Read the full body.
+3. Apply each checkbox above to the implementing function and its callers.
+4. For each violation, emit a finding with the verbatim `INVERTED-TDD:{subcategory}` tag — Critical severity, no exceptions. Remediation per `impl-hygiene.md` §INVERTED-TDD: the architecturally-correct fix regardless of scope/effort/cost.
+
+**Why this pass runs first**: every later pass (LEAK, DRY, Boundary, Surface) assumes the deliverables under review are actually live. INVERTED-TDD violations invalidate that assumption — a "clean" LEAK pass on a code path whose validator is gated off is meaningless. Catch deliverable-integrity failures before structural review.
+
+#### Pass 2: LEAK & SSOT Scan (Structural Pass)
 
 **Goal**: Find all side logic, scattered knowledge, duplicated dispatch, and SSOT violations.
 
@@ -33,7 +56,7 @@ This pass reads the code structurally — it's looking for *where* logic lives r
 - [ ] **Enforcement exists**: for every canonical source, is there a compile-time (exhaustive match) or test-time (exhaustiveness test) mechanism that catches consumers falling out of sync?
 - [ ] **Architectural centers respected**: does this code correctly query from: registry (builtin behavior), type pool (type structure), AIMS (memory facts), repr-opt (representation)? Or does it re-derive what these centers already know?
 
-#### Pass 2: Algorithmic DRY Scan (Pattern Pass)
+#### Pass 3: Algorithmic DRY Scan (Pattern Pass)
 
 **Goal**: Find duplicated algorithms — functions with identical control-flow skeletons that differ only in types, operations, or field names.
 
@@ -54,7 +77,7 @@ This pass reads the code *comparatively* — it's looking for structural similar
 4. If >60% structural overlap across 5+ lines: flag as `LEAK:algorithmic-duplication`
 5. For cross-backend patterns, read the eval handler AND the LLVM emitter for the same feature — trace both paths
 
-#### Pass 3: Boundary & Flow Scan (Plumbing Pass)
+#### Pass 4: Boundary & Flow Scan (Plumbing Pass)
 
 **Goal**: Find boundary violations, data flow issues, error handling gaps, and type discipline problems.
 
@@ -118,7 +141,7 @@ This pass reads the code *across boundaries* — it's looking at how data crosse
 - [ ] **Layout computation**: Type layout computed once and cached, not recomputed per-consumer? Codegen queries layout facts, never re-derives from field types?
 - [ ] **Strategy dispatch coverage**: Strategy tables (e.g., DeriveStrategy) cover all IR variants? Test iterating ALL variants asserts each has a strategy entry?
 
-#### Pass 4: Surface Hygiene Scan (Polish Pass)
+#### Pass 5: Surface Hygiene Scan (Polish Pass)
 
 **Goal**: Find file organization violations, naming issues, comment problems, visibility leaks, and style violations.
 

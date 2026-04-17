@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Loads CLAUDE.md, `.claude/rules/*.md`, and active-plan context into a structured context packet the Phase 3 Opus agent consumes.
 
-Writes `/tmp/impl-hygiene-{run}/phase-1.json` summarizing which rules are in scope, the active plan (if any), and any rule frameworks (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE taxonomy) that apply to the review target.
+Writes `{run_id}/phase-1.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) summarizing which rules are in scope, the active plan (if any), and any rule frameworks (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE taxonomy) that apply to the review target.
 
 ---
 

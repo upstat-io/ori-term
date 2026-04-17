@@ -22,7 +22,7 @@ SKILL.md is a thin coordinator. The review runs as a pipeline of sub-agents, eac
 - **Phase 5** — formats findings into the report template.
 - **Phase 6** (CONDITIONAL) — authors a plan to address the findings when scope exceeds inline fixes. Skipped when findings are few or small enough to fix directly.
 
-The coordinator reads the tiny `/tmp/impl-hygiene-{run}/phase-N.json` summary from each sub-agent, not the full finding payloads. Main context stays under ~15K tokens per invocation.
+The coordinator reads the tiny `{run_id}/phase-N.json` summary from each sub-agent, not the full finding payloads. Main context stays under ~15K tokens per invocation. The `{run_id}` path is created once by the coordinator via `mktemp -d -t "impl-hygiene-${repo}-XXXXXXXX"` (matches `/tpr-review` §8 invariant I1) — parallel Claude sessions in different repos produce visually distinguishable scratch dirs.
 
 ## Target
 
@@ -66,28 +66,36 @@ Full project mode is the widest sweep. Use this when you want the complete lands
 
 ### Dependency map for expansion
 
+Mirrors `canon.md §1 Pipeline Overview` and the live Cargo dep graph. If any `.rs` file in a crate is touched, the whole crate is in scope; its downstream consumers also enter scope.
+
+"Consumed by" lists the **union** of Cargo dependents and pipeline-flow downstream (whichever is broader), so auto-expansion always picks the larger scope.
+
 ```
 ori_lexer      → consumed by: ori_parse
-ori_parse      → consumed by: ori_types
-ori_ir         → consumed by: ori_types, ori_eval, ori_llvm, ori_arc
+ori_parse      → consumed by: ori_types, ori_eval
+ori_ir         → consumed by: ori_types, ori_eval, ori_llvm, ori_arc, ori_canon, ori_repr
 ori_diagnostic → consumed by: all compiler crates
-ori_registry   → consumed by: ori_types, ori_eval, ori_llvm
-ori_types      → consumed by: ori_eval, ori_llvm, ori_arc
-ori_patterns   → consumed by: ori_eval
-ori_eval       → consumed by: oric
-ori_arc        → consumed by: ori_llvm
+ori_registry   → consumed by: ori_types, ori_eval, ori_llvm, ori_arc
+ori_types      → consumed by: ori_eval, ori_llvm, ori_arc, ori_canon, ori_repr, ori_compiler
+ori_patterns   → consumed by: ori_eval, ori_compiler
+ori_eval       → consumed by: ori_compiler, oric
+ori_arc        → consumed by: ori_llvm, ori_canon, ori_repr, oric
+ori_canon      → consumed by: ori_arc, ori_eval, ori_llvm, ori_compiler, oric
+ori_repr       → consumed by: ori_llvm, oric
 ori_llvm       → consumed by: oric
-ori_rt         → consumed by: ori_llvm (FFI contract)
+ori_compiler   → consumed by: (none — pure facade with no live Cargo edge today)
+ori_rt         → consumed by: ori_llvm (FFI contract), oric
 ```
 
-If any `.rs` file in a crate is touched, the whole crate is in scope; its downstream consumers also enter scope.
+**Pipeline-flow note**: `ori_canon` produces `CanExpr` that `ori_arc` lowers and `ori_eval` interprets, with `ori_llvm` consuming the realized ARC IR (`canon.md §1`). The reverse Cargo edge `ori_canon → ori_arc` (canon depends on arc for `decision_tree` primitives) is the one non-upstream edge documented in `canon.md §1` and tracked as a migration target; the `consumed by` list above expresses pipeline-flow downstream, which is what auto-expansion needs.
 
 ## Pipeline — Sequential Phase Dispatch
 
 ```
-run_id = /tmp/impl-hygiene-{generated}
+# Create orchestrator-owned scratch dir (matches /tpr-review §8 invariant I1):
+repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+run_id="$(mktemp -d -t "impl-hygiene-${repo}-XXXXXXXX")"
 scope = <resolved scope paths from target-mode parsing>
-mkdir -p {run_id}
 
 # Write initial context for sub-agents to read
 echo '{"scope": [...], "mode": "auto|path|commit|full", "run_id": "{run_id}"}' \

@@ -52,6 +52,23 @@ except ImportError:
     )
     sys.exit(2)
 
+# Plan-corpus SSOT for bug-entry markers + bidirectional supersede drift
+# detection. The package lives at scripts/plan_corpus/; this script lives at
+# .claude/skills/continue-roadmap/. Walking 3 parents from __file__ lands at
+# the repo root.
+_REPO_ROOT_FOR_IMPORT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT_FOR_IMPORT))
+from scripts.plan_corpus.bug_markers import (  # noqa: E402
+    parse_bug_entries as _ssot_parse_bug_entries,
+    BugEntry as _SsotBugEntry,
+)
+from scripts.plan_corpus.bug_validators import (  # noqa: E402
+    find_supersede_drift as _ssot_find_supersede_drift,
+    plan_auto_fixes as _ssot_plan_auto_fixes,
+    PlannedEdit as _SsotPlannedEdit,
+)
+
 
 # ─── Trace / debug channel ────────────────────────────────────────────────────
 
@@ -192,6 +209,41 @@ class Section:
         return None
 
     @property
+    def tpr_mismatch(self) -> str | None:
+        """Detect drift between `third_party_review.status` and the section's
+        `.R` finding checkboxes. Separate from `mismatch` because it reads
+        `tpr_findings` state (parsed from `.R` items), not the full-section
+        checkbox ratio.
+
+        Drift patterns:
+        - `status == "findings"` but every parsed finding is resolved (or
+          there are no parsed findings at all) — nothing to triage, should
+          flip to `resolved`. This is the loop pattern: the .R subsection
+          gets checked off but the frontmatter flag never gets flipped,
+          blocking every future `/continue-roadmap` on `tpr_findings` gate.
+        - `status == "resolved"` but one or more parsed findings are still
+          open — opposite drift: should flip back to `findings`.
+
+        Returned string is the mismatch description for `detect_all_mismatches`.
+        The auto-fix rule lives in workflow.md Step 2a.
+        """
+        open_findings = sum(1 for f in self.tpr_findings if not f.resolved)
+        total_findings = len(self.tpr_findings)
+        if self.tpr_status == "findings" and open_findings == 0:
+            if total_findings == 0:
+                return "third_party_review.status=findings but no TPR findings parsed (should be resolved or none)"
+            return (
+                f"third_party_review.status=findings but all "
+                f"{total_findings} findings resolved (should be resolved)"
+            )
+        if self.tpr_status == "resolved" and open_findings > 0:
+            return (
+                f"third_party_review.status=resolved but {open_findings} "
+                f"finding(s) still open (should be findings)"
+            )
+        return None
+
+    @property
     def sort_key(self) -> tuple:
         """Natural ordering so 07.0 < 07.1 < 07.3.A etc."""
         m = re.match(r"^\"?(\d+)\"?$", str(self.number))
@@ -223,6 +275,14 @@ class Bug:
     title: str
     lineno: int
     source_section: str  # bug-tracker section file name
+    # Lifecycle exclusion derived from body markers, parallel to
+    # bug_queue_scan.py's `excluded_reason` field. None = actionable;
+    # any string = excluded for that reason. Consumers (Gate 1.92,
+    # render_bug_tracker_relevance) MUST filter excluded bugs out of
+    # critical/high blockers — they are owned by another workflow
+    # (a plan for Superseded; the user's plan-creation step for
+    # Escalated; the dependency for Blocked / blocked-by).
+    excluded_reason: str | None = None
 
 
 @dataclass
@@ -336,6 +396,11 @@ BUG_RECLASS_RE = re.compile(
     r"\[(critical|high|medium|low)\s*(?:→|->)\s*(critical|high|medium|low)\]",
     re.IGNORECASE,
 )
+
+# Lifecycle marker regexes are defined ONCE in scripts/plan_corpus/bug_markers.py
+# (the canonical SSOT) and consumed by both this scanner and bug_queue_scan.py.
+# Defining them here would be a `LEAK:algorithmic-duplication` (impl-hygiene
+# §SSOT). To extend the marker vocabulary, edit bug_markers.py only.
 
 
 def read_text(path: Path) -> str:
@@ -654,34 +719,32 @@ def parse_fix_section(path: Path) -> FixSection | None:
 
 
 def parse_bug_tracker_bugs(plan: Plan) -> list[Bug]:
-    """Scan bug-tracker section-*.md files for `- [ ] BUG-XX-NNN ...` entries."""
+    """Scan bug-tracker section-*.md files for `- [ ] BUG-XX-NNN ...` entries.
+
+    Delegates parsing + lifecycle-marker classification + body-field
+    extraction to `scripts.plan_corpus.bug_markers.parse_bug_entries`,
+    then converts the SSOT `BugEntry` shape into the local `Bug` shape
+    used by Gate 1.92 (`_bug_tracker_relevance`). The local `Bug` carries
+    the subset of fields the gate needs (`id`, `severity`, `status`,
+    `title`, `lineno`, `source_section`, `excluded_reason`); the SSOT
+    `BugEntry` carries more (repro, subsystem, body_lines, supersede target).
+    """
     bugs: list[Bug] = []
     for section in plan.sections:
         try:
             text = read_text(section.path)
         except OSError:
             continue
-        for idx, line in enumerate(text.splitlines()):
-            m = BUG_TRACKER_ENTRY_RE.match(line)
-            if not m:
-                continue
-            checked_mark, bid_a, bid_b, desc = m.groups()
-            bid = bid_a or bid_b
-            # Reclassified severity (e.g. [critical→medium]) takes precedence
-            reclass_m = BUG_RECLASS_RE.search(line)
-            if reclass_m:
-                severity = reclass_m.group(2).lower()  # target severity
-            else:
-                sev_m = BUG_SEVERITY_RE.search(line) or BUG_SEVERITY_RE.search(desc)
-                severity = sev_m.group(1).lower() if sev_m else "unknown"
+        for entry in _ssot_parse_bug_entries(text, section.path.name):
             bugs.append(
                 Bug(
-                    id=bid,
-                    severity=severity,
-                    status="fixed" if checked_mark.lower() == "x" else "open",
-                    title=desc.strip().strip("*").strip(),
-                    lineno=idx + 1,
-                    source_section=section.path.name,
+                    id=entry.bug_id,
+                    severity=entry.severity,
+                    status=entry.status,
+                    title=entry.title,
+                    lineno=entry.lineno,
+                    source_section=entry.source_file,
+                    excluded_reason=entry.excluded_reason,
                 )
             )
     return bugs
@@ -916,12 +979,23 @@ def classify_blocker_readiness(
 
 
 def detect_all_mismatches(workspace: Workspace) -> list[tuple[str, str, str]]:
-    """Scan every plan for frontmatter/body mismatches. Returns (plan, section, desc)."""
+    """Scan every plan for frontmatter/body mismatches. Returns (plan, section, desc).
+
+    Emits two mismatch classes:
+    - checkbox-vs-status (Section.mismatch, Subsection.mismatch) — status field
+      contradicts the checkbox ratio
+    - TPR status drift (Section.tpr_mismatch) — third_party_review.status
+      contradicts the .R subsection's finding checkboxes
+    Both flow through Gate 1.5 `stale_frontmatter` and the workflow.md
+    Step 2a auto-fix table.
+    """
     out: list[tuple[str, str, str]] = []
     for plan in workspace.all_plans.values():
         for section in plan.sections:
             if section.mismatch:
                 out.append((plan.name, section.path.name, section.mismatch))
+            if section.tpr_mismatch:
+                out.append((plan.name, section.path.name, section.tpr_mismatch))
             for sub in section.subsections:
                 if sub.mismatch and sub.mismatch != "no-checkboxes":
                     out.append((plan.name, f"{section.path.name}#{sub.id}", sub.mismatch))
@@ -1424,11 +1498,20 @@ def _bug_tracker_relevance(ws: Workspace, section: Section) -> dict:
             "id": b.id, "severity": b.severity, "status": b.status,
             "title": b.title, "source_section": b.source_section, "lineno": b.lineno,
         }
+    # Filter out bugs that aren't actionable by `/fix-bug`: superseded
+    # (owned by a plan), escalated (waiting on plan creation), blocked
+    # (waiting on a dependency). These should not surface as critical-bug
+    # blockers in Gate 1.92 — the gate's premise is "must `/fix-bug` before
+    # continuing", which is wrong for these states. Without this filter,
+    # superseded bugs trigger the same ~230k-token waste that motivated the
+    # `Superseded by:` marker (see fix-bug-design.md §4 2026-04-16 incident).
     crit = [bucket(b) for b in ws.bug_tracker.bugs
             if b.severity == "critical" and b.status != "fixed"
+            and b.excluded_reason is None
             and _source_section_number(b.source_section) in tracker_sections]
     high = [bucket(b) for b in ws.bug_tracker.bugs
             if b.severity == "high" and b.status != "fixed"
+            and b.excluded_reason is None
             and _source_section_number(b.source_section) in tracker_sections]
     return {"critical": crit, "high": high}
 
@@ -1507,6 +1590,54 @@ def _build_gates(ws: Workspace) -> dict:
             "cleanup_plan": ws.focus_plan.name if ann_fires and ws.focus_plan else None,
         },
     }
+
+    # Gate 1.6 — bug marker drift (auto-fix, not blocking)
+    #
+    # Cross-checks plan frontmatter `supersedes:` declarations against
+    # bug-tracker entry `Superseded by:` markers. When a plan declares
+    # supersession but the bug entry lacks the marker, /fix-bug Phase 0
+    # can't detect the routing → re-triggers the ~170k-token Phase -1
+    # waste on each invocation. Auto-fix inserts the missing marker line
+    # into the bug entry body. Orphan markers (bug points at plan that
+    # doesn't claim it) are surfaced for manual review, not auto-fixed.
+    #
+    # See scripts/plan_corpus/bug_validators.py for the validator and
+    # workflow.md Step 2d for the application protocol.
+    plans_dir_for_drift = ws.repo_root / "plans"
+    if plans_dir_for_drift.is_dir():
+        drift_report = _ssot_find_supersede_drift(plans_dir_for_drift)
+        planned_edits = _ssot_plan_auto_fixes(drift_report)
+        drift_fires = bool(planned_edits) or bool(drift_report.orphan_markers)
+        gates["bug_marker_drift"] = {
+            "fires": drift_fires,
+            "severity": "auto-fix" if drift_fires else "none",
+            "payload": {
+                "missing_marker_count": len(planned_edits),
+                "orphan_marker_count": len(drift_report.orphan_markers),
+                "auto_fix_edits": [
+                    {
+                        "file": e.file_path,
+                        "bug_id": e.bug_id,
+                        "header_lineno": e.header_lineno,
+                        "insert_line": e.insert_line,
+                        "rationale": e.rationale,
+                    }
+                    for e in planned_edits
+                ],
+                "orphan_findings": [
+                    {
+                        "bug_id": f.bug_id,
+                        "file": f"plans/bug-tracker/{f.bug_section_file}",
+                        "lineno": f.bug_lineno,
+                        "declared_target": f.declared_target,
+                        "claiming_plans": f.plan_overview_supersedes,
+                    }
+                    for f in drift_report.orphan_markers
+                ],
+            },
+        }
+    else:
+        gates["bug_marker_drift"] = {"fires": False, "severity": "none", "payload": {}}
 
     # Gate 1.7 — unreviewed focus section
     #

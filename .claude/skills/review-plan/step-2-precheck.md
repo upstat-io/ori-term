@@ -4,7 +4,7 @@ Read by a Sonnet sub-agent dispatched from `/review-plan`. Not a registered skil
 
 ## Input
 
-Read `/tmp/review-plan-context.json` for `mode`, `plan_dir`, `target_section`.
+The parent orchestrator created a scratch dir via `mktemp -d -t "review-plan-${repo}-XXXXXXXX"` and passed its absolute path in the dispatch prompt as `{RUN_DIR}`. Read `{RUN_DIR}/context.json` for `mode`, `plan_dir`, `target_section`.
 
 ## What "effectively complete" means (mechanical rule)
 
@@ -37,7 +37,7 @@ If ANY of these conditions hold for a section, do NOT auto-flip; add the section
 
 ## Output
 
-Write `/tmp/review-plan-precheck.json`:
+Write `{RUN_DIR}/precheck.json`:
 
 ```json
 {

@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Uses `scripts/intel-query.sh` (blast radius, module inventory, cross-repo similarity) to build a landscape map of the review target before Phase 3 deep analysis.
 
-Writes `/tmp/impl-hygiene-{run}/phase-2.json` with: call graph edges for in-scope symbols, file-symbol inventory per crate, cross-repo equivalents for architectural patterns.
+Writes `{run_id}/phase-2.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with: call graph edges for in-scope symbols, file-symbol inventory per crate, cross-repo equivalents for architectural patterns.
 
 ---
 

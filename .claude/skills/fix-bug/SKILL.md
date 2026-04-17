@@ -58,7 +58,7 @@ Rules:
 
 ## Part 2: After the Handoff
 
-Read the handoff and act based on its status flags.
+Read the handoff and act based on its status flags. **Precedence (first match stops):** ERROR > Already resolved > **Superseded by** > Lifecycle markers > Resume mode > Phase -1 fresh start.
 
 **ERROR handoff (bug not found)**:
 - Report: "Bug `{ID}` not found in the tracker." If description was given, offer `/add-bug`.
@@ -67,12 +67,28 @@ Read the handoff and act based on its status flags.
 **`Already resolved: yes`**:
 - The entry is `- [x]`. It may have been fixed already. Report to user and stop.
 
-**Lifecycle markers present** (`Escalated:`, `Blocked:`, `<!-- blocked-by:`):
+**`Superseded by: <plan-path>` present** (HIGHEST priority after resolved):
+- **STOP IMMEDIATELY — do NOT execute Phase -1.** No CLAUDE.md re-read, no rules-file reads, no fix-section file read. The supersede declaration is the SSOT; everything else is fossil.
+- This branch exists specifically to prevent the ~170k-token waste of reading rules files (impl-hygiene.md, compiler.md, tests.md, types.md, typeck.md, canon.md, etc.) when the answer is "this bug isn't fixed by `/fix-bug` — it's fixed by a plan."
+- Report (concise — the plan has its own context, do NOT pre-load it):
+  ```
+  BUG-{section}-{ordinal} is superseded by plan `{plan-path}`.
+  The fix lands when that plan's sections complete. The fix-section file
+  (if present) is a fossil and its recovery playbook is obsolete.
+  ```
+- Use `AskUserQuestion` to offer routing (single question, three options):
+  1. **`Run /continue-roadmap on the plan` (Recommended)** — invoke `Skill: continue-roadmap {plan-name}` (where `{plan-name}` is the plan path's last segment). This is the canonical execution vehicle.
+  2. **`Just report — I'll decide what to do`** — emit the report and stop. No skill invocation.
+  3. **`Mark fix-section as superseded and continue`** — update `plans/bug-tracker/fix-BUG-XX-NNN.md` frontmatter (`status: superseded-by-plan`, add `superseded_by:` field) and the bug entry to ensure both ends of the supersede relationship are documented, then offer option 1 again. Useful when documentation drift is detected.
+- **Do NOT proceed to Phase -1 or any later phase under any option.** If the user picks option 1, dispatch `/continue-roadmap` and stop. If option 2, stop. If option 3, edit the file(s) and re-prompt with options 1+2.
+
+**Lifecycle markers present** (`Escalated:`, `**Blocked**:`, `Blocked:`, `<!-- blocked-by:` — note: `**BLOCKER**:` informational text is NOT a marker per workflow.md Step 3):
 - This bug is not actionable by `/fix-bug`. Report the markers to the user and stop.
 
 **Resume mode (`yes — pick up at Phase N`)**:
 - Skip Phases 0 through (N-1). Resume at Phase N using the existing fix section file.
 - Re-read the fix section file for full context before resuming.
+- **NOT applicable when Resume mode is `no — superseded`** — that means the fix file exists but is a fossil; route via the Superseded branch above.
 
 **Otherwise — proceed to Phase -1 with the handoff context.**
 

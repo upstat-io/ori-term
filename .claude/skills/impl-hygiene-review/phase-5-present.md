@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Formats the merged findings (Phase 3 + any Phase 4 additions/rejections) into the standard report template. Mechanical-writing — decisions are already made.
 
-Consumes `/tmp/impl-hygiene-{run}/phase-{3,4}.json`. Writes `/tmp/impl-hygiene-{run}/phase-5.json` with the final report text and a structured count of findings by category/severity.
+Consumes `{run_id}/phase-{3,4}.json`. Writes `{run_id}/phase-5.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with the final report text and a structured count of findings by category/severity.
 
 ---
 

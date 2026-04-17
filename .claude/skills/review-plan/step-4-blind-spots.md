@@ -4,7 +4,7 @@ Read by a Sonnet sub-agent dispatched from `/review-plan`. Not a registered skil
 
 ## Input
 
-Read `/tmp/review-plan-context.json` for `mode`, `plan_dir`, `target_section`.
+The parent orchestrator passed the scratch-dir path as `{RUN_DIR}`. Read `{RUN_DIR}/context.json` for `mode`, `plan_dir`, `target_section`.
 
 Read the plan to build context for /tp-help:
 
@@ -43,7 +43,7 @@ Each bullet must be ≤200 characters and reference something specific (a file, 
 
 ## Output
 
-Write `/tmp/review-plan-blind-spots.json`:
+Write `{RUN_DIR}/blind-spots.json`:
 
 ```json
 {

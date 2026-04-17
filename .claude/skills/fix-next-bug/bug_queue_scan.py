@@ -18,10 +18,21 @@ Priority order:
               < 05 runtime/arc < 06 stdlib < 07 tooling/cli < 08 spec/docs
     ordinal:  lower ordinal first within same section + severity
 
-Lifecycle exclusions (case-insensitive, matched against the entry body):
+Lifecycle exclusions (case-insensitive, matched against the entry body).
+Precedence (first match wins): Superseded > Escalated > Blocked > blocked-by.
+
+    - "Superseded by:" — bug is being fixed by a multi-section plan;
+      route via `/continue-roadmap <plan>`, not `/fix-bug`. The plan's
+      `00-overview.md` `supersedes:` frontmatter MUST point back to the
+      fix-section file for bidirectional discoverability.
     - "Escalated to plan:" / "Escalated:"
     - "Blocked:" / "**Blocked**:" / "**Blocked:**"
     - "<!-- blocked-by:"
+
+Note: `**BLOCKER**:` (informational impact text describing what the bug
+blocks downstream) is NOT a lifecycle marker. Only `**Blocked**:` (with
+trailing colon, followed by a reason text explaining why the bug cannot
+proceed) is. The substring distinction is load-bearing.
 
 Resolved bugs (`- [x]`) are skipped entirely; they never enter the
 candidate set.
@@ -47,6 +58,19 @@ import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Iterator
+
+# Plan-corpus SSOT for bug-entry markers + classifier. The package lives at
+# scripts/plan_corpus/; this script lives at .claude/skills/fix-next-bug/.
+# Walking 3 parents from __file__ lands at the repo root.
+_REPO_ROOT_FOR_IMPORT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT_FOR_IMPORT))
+from scripts.plan_corpus.bug_markers import (  # noqa: E402
+    classify_bug_exclusion,
+    extract_repro as _ssot_extract_repro,
+    extract_subsystem as _ssot_extract_subsystem,
+    normalize_severity as _ssot_normalize_severity,
+)
 
 
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -108,24 +132,17 @@ BUG_HEADER_RE = re.compile(
     r"\[(?P<severity>[^\]]+)\]` \*\*(?P<title>.+?)\*\*"
 )
 
-# Lifecycle marker patterns (case-insensitive, matched against body text).
-# We match on line boundaries where possible to avoid accidental substring
-# matches like "reblocked:" or narrative prose that mentions "escalated to"
-# without the colon form.
-ESCALATED_RE = re.compile(r"(?im)^\s*escalated(?:\s+to\s+plan)?\s*:")
-BLOCKED_RE = re.compile(r"(?im)^\s*\*{0,2}blocked\*{0,2}\s*:")
-BLOCKED_BY_COMMENT_RE = re.compile(r"<!--\s*blocked-by:", re.IGNORECASE)
+# Lifecycle marker regexes + classifier + severity normalizer are imported
+# from scripts/plan_corpus/bug_markers.py — the canonical SSOT. Defining
+# them here would be a `LEAK:algorithmic-duplication` (impl-hygiene §SSOT)
+# and silently desync against roadmap_scan.py. To extend the marker
+# vocabulary (e.g., add a new lifecycle state), edit bug_markers.py only;
+# this script picks up the change automatically.
 
 
 def normalize_severity(raw: str) -> str:
-    """Handle reclassification notation like `critical→medium` — use the
-    reclassified (current) severity for sort purposes."""
-    s = raw.strip().lower()
-    if "→" in s:
-        s = s.split("→")[-1].strip()
-    # Defensive: strip trailing annotations like "critical (reclassified)"
-    s = re.split(r"[\s(]", s, maxsplit=1)[0]
-    return s
+    """Thin wrapper preserving the prior public name; forwards to SSOT."""
+    return _ssot_normalize_severity(raw)
 
 
 def parse_section_file(path: Path) -> Iterator[Bug]:
@@ -173,23 +190,11 @@ def parse_section_file(path: Path) -> Iterator[Bug]:
 
         body_text = "\n".join(body_lines)
 
-        excluded_reason: str | None = None
-        if ESCALATED_RE.search(body_text):
-            excluded_reason = "Escalated to plan"
-        elif BLOCKED_RE.search(body_text):
-            excluded_reason = "Blocked"
-        elif BLOCKED_BY_COMMENT_RE.search(body_text):
-            excluded_reason = "Blocked (cross-section blocker tag)"
-
-        # Extract Repro and Subsystem (first occurrence of each).
-        repro: str | None = None
-        subsystem: str | None = None
-        for bl in body_lines:
-            s = bl.strip()
-            if repro is None and s.lower().startswith("repro:"):
-                repro = s.split(":", 1)[1].strip()
-            elif subsystem is None and s.lower().startswith("subsystem:"):
-                subsystem = s.split(":", 1)[1].strip()
+        # Lifecycle classifier delegates to plan_corpus SSOT — precedence
+        # ordering (Superseded > Escalated > Blocked > blocked-by) lives there.
+        excluded_reason = classify_bug_exclusion(body_text)
+        repro = _ssot_extract_repro(body_lines)
+        subsystem = _ssot_extract_subsystem(body_lines)
 
         yield Bug(
             bug_id=f"BUG-{section:02d}-{ordinal:03d}",

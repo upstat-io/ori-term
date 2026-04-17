@@ -6,12 +6,12 @@ You are the primary writer in the /review-plan pipeline. You have FULL AUTHORITY
 
 ## Input
 
-Read:
+The parent orchestrator passed the scratch-dir path as `{RUN_DIR}`. Read:
 
-- `/tmp/review-plan-context.json` — `mode`, `plan_dir`, `target_section`
-- `/tmp/review-plan-precheck.json` — flipped sections + any escalated ambiguities (for awareness)
-- `/tmp/review-plan-audit.json` — remaining findings (treat as authoritative — plan-audit.py is deterministic)
-- `/tmp/review-plan-blind-spots.json` — reviewer-surfaced blind spots, risks, cross-cutting concerns (treat as discovery pointers, not conclusions)
+- `{RUN_DIR}/context.json` — `mode`, `plan_dir`, `target_section`
+- `{RUN_DIR}/precheck.json` — flipped sections + any escalated ambiguities (for awareness)
+- `{RUN_DIR}/audit.json` — remaining findings (treat as authoritative — plan-audit.py is deterministic)
+- `{RUN_DIR}/blind-spots.json` — reviewer-surfaced blind spots, risks, cross-cutting concerns (treat as discovery pointers, not conclusions)
 
 ## Prerequisite reads
 
@@ -173,7 +173,7 @@ After editing, commit via `Skill: commit-push` with message like `feat(plans): a
 
 ## Output
 
-Write `/tmp/review-plan-editor.json`. The schema has two branches, keyed by `escalate`. Step 5 is an escalation-capable phase (listed in `review-plan/SKILL.md` §Escalation handling), so when `escalate: true` the payload MUST carry verbatim `question` + `options` fields the parent can feed directly into `AskUserQuestion` — prose-only escalations break the mechanical handoff contract.
+Write `{RUN_DIR}/editor.json`. The schema has two branches, keyed by `escalate`. Step 5 is an escalation-capable phase (listed in `review-plan/SKILL.md` §Escalation handling), so when `escalate: true` the payload MUST carry verbatim `question` + `options` fields the parent can feed directly into `AskUserQuestion` — prose-only escalations break the mechanical handoff contract.
 
 ### Branch A — `escalate: false` (normal exit)
 

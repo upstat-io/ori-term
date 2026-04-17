@@ -18,10 +18,11 @@ You are a sub-agent wrapping the **{REVIEWER}** CLI. Your job: write a small gro
 
 ## Step 1 — Write the inner prompt (small, grounded-by-reference)
 
-Create a unique per-invocation scratch dir via `mktemp -d`. Shared `/tmp` subdirectories collide across parallel Claude sessions. Capture the dir path in `$RUN` and reuse it through Steps 2 + 3.
+Create a unique per-invocation scratch dir via `mktemp -d` with a repo-name prefix (matches `/tpr-review` §8 invariant I1 — parallel Claude sessions in different repos produce visually distinguishable scratch dirs when listing `/tmp/`). Shared `/tmp` subdirectories collide across parallel Claude sessions. Capture the dir path in `$RUN` and reuse it through Steps 2 + 3.
 
 ```
-RUN="$(mktemp -d -t tp-help-XXXXXXXX)"
+repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+RUN="$(mktemp -d -t "tp-help-${repo}-XXXXXXXX")"
 echo "scratch dir: $RUN"
 cat > "$RUN/{REVIEWER}-prompt.md" << 'PROMPT_EOF'
 You are {REVIEWER}, asked to provide independent expert help on the

@@ -52,12 +52,13 @@ From the matching `- [ ]` or `- [x]` entry and its indented body, extract:
 
 ### Step 3: Check Status Flags
 
-Evaluate these flags for the handoff:
+Evaluate these flags for the handoff. **Precedence order (first match wins):** Superseded > Lifecycle markers > Existing fix file (Resume).
 
 1. **Already resolved**: Is the entry `- [x]`?
-2. **Lifecycle markers**: Does the body contain `Escalated to plan:`, `Escalated:`, `Blocked:`, `**Blocked**`, or `<!-- blocked-by:`? (scan the ENTIRE multi-line entry)
-3. **Existing fix file**: Does `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` exist? If yes, read its frontmatter (`status`, `severity`) and first ~20 lines to determine what phase was reached.
-4. **Resume mode**: If the fix file exists and has `status: in-progress`, this is a RESUME — not a fresh start.
+2. **Superseded by**: Does the body contain a `Superseded by:` line pointing at a plan path? Match the EXACT marker `Superseded by:` (case-sensitive, with the trailing colon and space). Capture the plan path. **ALSO** cross-check: grep `^supersedes:` (and the following `  - "plans/bug-tracker/fix-BUG-{section}-{ordinal}` lines) across all `plans/**/00-overview.md` files — if any plan declares this fix file as a supersede target, treat that as superseded even if the bug entry lacks the marker (the plan frontmatter is the SSOT; the bug entry should mirror it). If both checks find a target plan path, they MUST agree; mismatch is a documentation drift finding.
+3. **Lifecycle markers** (other than Superseded): Does the body contain `Escalated to plan:`, `Escalated:`, `**Blocked**:` (the marker — note trailing colon distinguishes it from `**BLOCKER**:` informational impact-statement text), `Blocked:`, or `<!-- blocked-by:`? Scan the ENTIRE multi-line entry. **DO NOT match `**BLOCKER**:`** (uppercase, no `**Blocked**:` substring with trailing colon-space-text-pattern); that prefix is informational impact-statement text used in many entries and is NOT a lifecycle marker. The marker test: `**Blocked**:` is followed by a reason explaining why the bug cannot proceed; `**BLOCKER**:` is followed by impact text describing what the bug blocks.
+4. **Existing fix file**: Does `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` exist? If yes, read its frontmatter (`status`, `severity`) and first ~20 lines to determine what phase was reached.
+5. **Resume mode**: If the fix file exists, has `status: in-progress`, AND no Superseded marker fired in step 2, this is a RESUME — not a fresh start. **If Superseded fired, force Resume mode to `no — superseded` regardless of the fix file's status** — superseded fix files are fossils, the plan supersedes them.
 
 ### Step 4: Check Active Plan Context
 
@@ -93,9 +94,10 @@ Return this EXACT format — every field must be present:
 
 **Status flags**:
 - Already resolved: {yes | no}
-- Lifecycle markers: {none | list them}
+- Superseded by: {none | `plans/{plan-name}/` — sourced from {bug-entry marker | plan frontmatter | both (must agree)}}
+- Lifecycle markers (other than Superseded): {none | list them}
 - Existing fix file: {plans/bug-tracker/fix-BUG-XX-NNN.md (status: {status}, reached phase: {N}) | none}
-- Resume mode: {yes — pick up at Phase {N} | no — fresh start}
+- Resume mode: {yes — pick up at Phase {N} | no — fresh start | no — superseded (forced; fix file is fossil)}
 
 **Active plan context**: {plan/section paths touching this subsystem, or "none"}
 
