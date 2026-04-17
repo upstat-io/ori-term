@@ -36,8 +36,8 @@ inspired_by:
 depends_on: ["03", "08", "effect-cutover"]
 third_party_review:
   status: findings_accepted_by_user
-  updated: "2026-04-16"
-  rounds_completed: 20
+  updated: "2026-04-17"
+  rounds_completed: 21
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -205,8 +205,8 @@ Per `.claude/rules/crate-boundaries.md` §`crates/vte`: *"Vendored fork of the u
   - `hyperlink_at: Option<(usize, usize, &'static str)>` — assert cell's hyperlink URI matches (tuple of row, col, `&'static str` — const-constructible).
   - `cursor_position: Option<(usize, usize)>` — assert cursor lives where expected.
   - `cursor_shape: Option<CursorShape>` — assert `Term::cursor_shape()` matches.
-  - `palette_index: Option<(usize, Rgb)>` — assert `term.palette().color(index) == expected_rgb` (correct API: `Palette::color(index: usize) -> Rgb` at `oriterm_core/src/color/palette/mod.rs:282`; do NOT use `Term::palette()[index]` — `Palette` does not implement `Index`).
-  - `mouse_cursor_icon: Option<CursorIcon>` — assert `Term::mouse_cursor_icon()` matches (WHERE: new state landed in this subsection).
+  - `palette_index: Option<(usize, Rgb)>` — **RUNG 4 APEX (use snapshot, not live state)**: call `term.renderable_content()` to build a `RenderableContent`, then assert `rc.palette_snapshot[index] == [expected_rgb.r, expected_rgb.g, expected_rgb.b]`. Do NOT use `term.palette().color(index)` directly — that is the Rung 3 (live-state) accessor and bypasses the snapshot path that the renderer actually uses. `palette_snapshot` is populated by `fill_palette_snapshot` in `renderable_content_into()` (`oriterm_core/src/term/snapshot.rs:181-188`), so asserting against the snapshot verifies that the renderable path correctly captures the palette mutation. (If `mouse_cursor_icon` is also being added to `RenderableContent` per line 215 below, use `rc.mouse_cursor_icon` from the same `renderable_content()` call rather than `term.mouse_cursor_icon()` directly — both for consistency and to ensure the renderable path captures the field.)
+  - `mouse_cursor_icon: Option<CursorIcon>` — **RUNG 4 APEX (use snapshot)**: assert `term.renderable_content().mouse_cursor_icon` (after `mouse_cursor_icon` is added to `RenderableContent` per line 215 below). Do NOT use `term.mouse_cursor_icon()` directly — use the snapshot field so Rung 4 validates the renderable path, not the live state rung. WHERE: new state landed in this subsection.
   - `damaged_lines: Option<&'static [usize]>` — assert renderable content reports the expected damage set (`&'static` slice, const-constructible, preserves `Copy`).
   - **Const-constructibility constraint**: ALL fields MUST be `Copy` and `const`-constructible — use `&'static` slices and `&'static str` instead of `Vec` and `String`. This preserves the `SpecScenario` const-constructible invariant (see `scenario.rs:12` module doc: *"Every field type is `const`-constructible. Slices use `&'static [u16]` / `&'static [u8]`. Expectation constructors are `const fn`."*). `Vec`/`String` fields ARE NOT permitted on `RenderableExpectation`.
 - [ ] Extend `RenderableExpectation` in `scenario.rs` with the fields above; keep existing callers compatible by making fields `Option` with `#[derive(Default)]`. Retain `#[derive(Copy, Clone, Debug, Default)]` — the new fields must all be `Copy`.
@@ -408,6 +408,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc22_no_parameter_is_dropped` — **NEGATIVE PIN**: feed `\x1b]22\x1b\\` (no second parameter at all, so `params.len() == 1`). The dispatcher at `osc.rs:180` gates on `b"22" if params.len() == 2` — when only one param is present, the arm does NOT match and falls to `_ => unhandled(params)`. Assert `term.mouse_cursor_icon()` is UNCHANGED. This pins that a malformed OSC 22 with no cursor-name param is silently dropped, not panicked on.
 - [ ] `osc22_reset_behavior` — OSC 22 does not have a spec'd reset form. Document this in the catalog; pin behavior: passing an explicit "default" name (if `CursorIcon::Default` exists) restores the default.
 - [ ] **Semantic pin** — `osc22_does_not_affect_text_cursor_shape` — set `term.cursor_shape()` to `Beam` via OSC 50, then fire OSC 22 with `pointer`. Assert `term.cursor_shape() == Beam` (unchanged). Cross-reference scope clarification §I / blind-spot #5 — OSC 22 (mouse icon) and OSC 50 (text shape) are different fields.
+- [ ] **GAP — daemon-mode `PaneSnapshot` transport**: `mouse_cursor_icon` is added to `Term` and `RenderableContent` (embedded path), but `PaneSnapshot` at `oriterm_mux/src/protocol/snapshot.rs:160` does NOT carry this field. In daemon mode the client renders from `PaneSnapshot` (wire protocol) and has no `Term` — it will not see cursor icon changes from OSC 22. Resolution: add `mouse_cursor_icon: Option<u8>` (wire-encoded as a `CursorIcon` index) to `PaneSnapshot`, populate it in `oriterm_mux/src/server/snapshot.rs` from `RenderableContent::mouse_cursor_icon`, and decode it in the daemon-client's `from_snapshot()` path. This task MUST land in the same subsection as the Term field addition (10.0) so the embedded and daemon paths stay in sync — do NOT defer to a later section as that creates a GAP where embedded and daemon clients render different cursor icons from the same terminal session.
 
 ### OSC 50 (cursor shape, URxvt legacy)
 
@@ -1176,6 +1177,20 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Impact: An implementer checking section metadata for prerequisites would not be alerted to the effect-cutover dependency, potentially starting 10.2 without the prerequisite in place.
   Required plan update: `depends_on` updated to include `"effect-cutover"` to match the documented dependency in the 10.2 body (FIXED).
   Basis: direct_file_inspection. Confidence: high.
+
+<!-- Round 21 findings (2026-04-17) -->
+
+- [ ] `[TPR-10-89-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:208` — `observe_renderable` plan uses Rung 3 (live-state) accessors for `palette_index` and `mouse_cursor_icon` instead of Rung 4 (`RenderableContent` snapshot) accessors.
+  Evidence: Line 208 directs `term.palette().color(index)` for `palette_index`, bypassing `RenderableContent::palette_snapshot`; line 209 directs `Term::mouse_cursor_icon()`, bypassing `RenderableContent::mouse_cursor_icon` (added at line 215). `RenderableContent` already has `palette_snapshot: Vec<[u8; 3]>` populated by `fill_palette_snapshot()` in `renderable_content_into()` (`oriterm_core/src/term/snapshot.rs:181-188`).
+  Impact: `observe_renderable` would test live `Term` state (Rung 3) not the renderable snapshot path (Rung 4). A bug in `fill_palette_snapshot` or the `mouse_cursor_icon` writeback path would produce a false-green Rung 4 result.
+  Required plan update: Rewritten to use `term.renderable_content()` snapshot path — `palette_snapshot[index]` and `rc.mouse_cursor_icon` from the snapshot (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [ ] `[TPR-10-90-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:403` — OSC 22 `mouse_cursor_icon` is added to `Term` and `RenderableContent` (embedded path) but `PaneSnapshot` (`oriterm_mux/src/protocol/snapshot.rs:160`) has no corresponding field, leaving a GAP in the daemon-mode transport path.
+  Evidence: `PaneSnapshot` struct (lines 160-188) carries `cwd`, `title`, `palette`, `cursor` but no `mouse_cursor_icon` field. In daemon mode the client renders from `PaneSnapshot` and has no `Term`. Daemon-mode clients would be blind to OSC 22 cursor icon changes.
+  Impact: Embedded and daemon mode clients render different cursor icons from the same terminal session — SSOT violation in the mux wire protocol.
+  Required plan update: GAP task added to 10.5 OSC 22 block directing `mouse_cursor_icon: Option<u8>` (wire-encoded) to be added to `PaneSnapshot`, populated in `oriterm_mux/src/server/snapshot.rs`, and decoded on the daemon-client side — same subsection as the Term field addition so the paths stay in sync (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
 
 ---
 
