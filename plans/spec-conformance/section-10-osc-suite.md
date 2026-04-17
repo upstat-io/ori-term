@@ -33,11 +33,11 @@ inspired_by:
   - "xterm `ctlseqs.html` — OSC 0/1/2/4/7/8/10/11/12/22/50/52/104/110/111/112/3/5/13/14/17/19"
   - "wezterm `escape-sequences.md` — de-facto OSC behavior reference across variants"
   - "alacritty `crates/vte/src/ansi/dispatch/osc.rs` (upstream) — dispatcher shape this section extends"
-depends_on: ["03", "08"]
+depends_on: ["03", "08", "effect-cutover"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 18
+  rounds_completed: 19
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -246,7 +246,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - [ ] Spec_chain test `osc8_basic_attach` — feed `\x1b]8;;https://example.com\x1b\\Hello\x1b]8;;\x1b\\` (set URI, text, clear URI). Assert cells 0..5 of current row carry `hyperlink_uri == Some("https://example.com")`; subsequent cells after the clear carry `hyperlink_uri == None`. Uses the completed `observe_renderable` from 10.0 with `hyperlink_at: Some((row, 0, "https://example.com"))` + a negative assertion at (row, 5).
 - [ ] `osc8_with_id` — feed `\x1b]8;id=foo;https://example.com\x1b\\X\x1b]8;;\x1b\\`. Assert cell 0 has the URI. **Important apex constraint:** `RenderableCell` at `oriterm_core/src/term/renderable/mod.rs` only carries `hyperlink_uri: Option<String>` — the hyperlink `id` is NOT exposed on the renderable surface. To verify the `id` is preserved in cell metadata, use the **state rung apex** (read `grid[row][col].hyperlink()` via `Term` directly) rather than `observe_renderable`. Verify that `cell.hyperlink().unwrap().id == Some("foo")` at the state rung. Then test that two separate attach/clear cycles with the same `id` both carry `id == Some("foo")` (confirming `id` does not get cleared between cycles). The renderable rung assertion covers only the URI presence; the state rung assertion covers the `id`.
 - [ ] `osc8_survives_reflow` — place hyperlinked text at row 0. Resize grid from 80 to 40 columns. Assert the wrapped cells (now spread across row 0 and row 1) ALL carry the same URI. (This catches the reflow-drops-metadata regression pattern from the alacritty / wezterm code history.)
-- [ ] `osc8_survives_scrollback` — place hyperlinked text, then feed enough newlines that the row scrolls into `Grid::scrollback`. Assert the scrollback row still carries the URI on every cell. **Uses the STATE RUNG** (`term.grid().scrollback()[row][col].hyperlink()`) to inspect scrollback cells directly — `RenderableContent` does NOT expose individual scrollback rows (it has `scrollback_len: usize` for the count but no per-cell scrollback access). Do NOT use `observe_renderable` for this assertion — only viewport cells are visible through that rung.
+- [ ] `osc8_survives_scrollback` — place hyperlinked text, then feed enough newlines that the row scrolls into `Grid::scrollback`. Assert the scrollback row still carries the URI on every cell. **Uses the STATE RUNG** via `ScrollbackBuffer::get(index)` — `ScrollbackBuffer` does NOT implement `Index` (no `[row]` bracket syntax); use `term.grid().scrollback().get(idx).unwrap()` to get a `&Row`, then index by `Column` via `row[Column(col)]` (Row implements `Index<Column>`, not `Index<usize>`). `RenderableContent` does NOT expose individual scrollback rows (it has `scrollback_len: usize` for the count but no per-cell scrollback access). Do NOT use `observe_renderable` for this assertion — only viewport cells are visible through that rung.
 - [ ] `osc8_terminator_cancels_attachment` — feed text, `OSC 8 ; ; uri ST`, text-A, `OSC 8 ; ; ST`, text-B. Assert text-B cells have `hyperlink_uri == None` (the empty URI terminates the attachment).
 - [ ] `osc8_malformed_uri_dropped` — feed `\x1b]8;; BROKEN URI WITH SPACES \x1b\\X\x1b]8;;\x1b\\` and assert the cell carries the URI as-is (whitespace is not syntactically restricted in OSC 8 params — the terminal does not validate; it records). Negative pin: feed truncated `\x1b]8;;\x1b` (no ST) and assert no URI is attached (parser aborts on timeout / sequence boundary).
 - [ ] `osc8_alt_screen_toggle_clears` — enter alt screen, attach hyperlink, leave alt screen. Assert primary screen cells are unaffected (alt-screen hyperlinks do NOT bleed).
@@ -354,9 +354,9 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   - `Effect::Host(HostEffect::CommandComplete { .. })` is on the transcript (interceptor.rs:108-111). Do NOT assert the exact duration value from the feed path (non-deterministic — the interceptor calls `finish_command(None)` which uses wall-clock elapsed). Assert only that the effect is present and that `duration >= Duration::ZERO`.
   - `term.prompt_markers().last()` still has its A/B/C fields populated (D does NOT mutate the existing marker; it closes out the command lifecycle). This assertion is only valid if the deferred-mark helpers were called during setup — see setup note above.
   - **NO D-field exists on `PromptMarker`** — the plan pins this by asserting `assert_matches!(term.prompt_markers().last().unwrap(), PromptMarker { prompt: _, command: Some(_), output: Some(_) })` (exhaustive match — if a future field is added, this test MUST be updated explicitly).
-- [ ] `osc133_a_without_b_does_not_record_command` — feed `OSC 133;A` then new prompt (A again). Assert TWO `PromptMarker`s exist with `command = None, output = None` on each.
-- [ ] `osc133_command_complete_without_c_is_noop` — feed `OSC 133;D` without a preceding C. Assert NO `HostEffect::CommandComplete` is emitted (interceptor.rs:107's `term.finish_command()` returns `None` when `command_start` is unset).
-- [ ] `osc133_full_lifecycle_records_markers` — feed A, type text, B, type command, C, type output, D. Assert the `prompt_markers` vec has one marker with all three of `prompt`, `command`, `output` set to distinct absolute rows.
+- [ ] `osc133_a_without_b_does_not_record_command` — feed `OSC 133;A`, then call `term.mark_prompt_row()` to flush the pending mark (required — the interceptor sets the pending flag, but the mark only lands when the helper is invoked), then feed `OSC 133;A` again and call `term.mark_prompt_row()` again. Assert TWO `PromptMarker`s exist with `command = None, output = None` on each. (Deferred-mark helpers must be called after each A feed; without them `prompt_markers` stays empty and the TWO-marker assertion fails for the wrong reason.)
+- [ ] `osc133_command_complete_without_c_is_noop` — feed `OSC 133;D` without a preceding C. Assert NO `HostEffect::CommandComplete` is emitted (interceptor.rs:107's `term.finish_command()` returns `None` when `command_start` is unset). No deferred-mark setup needed here — the assertion is about absence of an effect, not presence of a marker.
+- [ ] `osc133_full_lifecycle_records_markers` — feed A, call `term.mark_prompt_row()`; feed B (type text), call `term.mark_command_start_row()`; feed C (type command), call `term.mark_output_start_row()`; feed D (type output). Assert the `prompt_markers` vec has one marker with all three of `prompt`, `command`, `output` set to distinct absolute rows. (Deferred-mark helpers MUST be called after A/B/C respectively to flush pending flags into `PromptMarker` — mirrors the production `post_parse_housekeeping` path that is intentionally not callable from the sibling test module.)
 - [ ] **Semantic pin — CWD SSOT** — if Final Term OSC 133 parameters carry `cwd=<path>`, assert the CWD is written through `Term::set_cwd` (same function OSC 7 uses). NOT through a second CWD field. Cross-reference to scope clarification H. Currently the interceptor at `handle_osc133` does NOT parse `cwd=<path>` params; if the VS Code / Final Term spec requires it, 10.4 adds the parsing AND the SSOT assertion.
 
 ### OSC 633 (VS Code shell integration)
@@ -582,6 +582,15 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 - [ ] One test per variant — ~22 tests total (set + query + reset pairs).
 - [ ] Cross-reset consistency: set OSC 13, reset via OSC 113, verify it returns to default.
+- [ ] **Negative pins (MANDATORY per `.claude/rules/tests.md` §Negative Testing Protocol)**:
+  - `osc5_invalid_color_dropped` — feed `\x1b]5;NOT_A_COLOR\x1b\\`, assert no state mutation (special-color handler must drop invalid specs).
+  - `osc13_invalid_rgb_dropped` — feed `\x1b]13;GARBAGE\x1b\\`, assert `term.mouse_fg_color()` is unchanged.
+  - `osc14_invalid_rgb_dropped` — feed `\x1b]14;GARBAGE\x1b\\`, assert `term.mouse_bg_color()` is unchanged.
+  - `osc17_invalid_rgb_dropped` — feed `\x1b]17;GARBAGE\x1b\\`, assert `term.highlight_bg_color()` is unchanged.
+  - `osc19_invalid_rgb_dropped` — feed `\x1b]19;GARBAGE\x1b\\`, assert `term.highlight_fg_color()` is unchanged.
+  - `osc3_non_x11_platform_no_panic` — on non-X11 platforms (macOS, Windows), feed `\x1b]3;foo;bar\x1b\\`, assert no panic and no `HostEffect::SetX11Property` (if Option B state-only path is taken, assert only `x11_property` field access is gated by `#[cfg]`).
+  - `osc_l_empty_sets_empty_title` — feed `\x1b]l;\x1b\\` (OSC l alias for OSC 2), assert `term.title() == ""` and no panic (mirrors `osc0_empty_sets_empty_string` edge case for the alias).
+  - Add corresponding entries to the 10.N negative-pins checklist.
 - [ ] **Matrix completeness pin (SSOT: use catalog_row_id scanner, NOT function-name grep)** — use the existing `scan_test_citations` / `CoverageReport` infrastructure at `crates/oriterm_test_support/src/spec_chain/coverage/` (not a raw grep for function names). Every `SpecScenario` const in the OSC test files MUST declare `catalog_row_id: "OSC-<N>"` matching the corresponding catalog row ID. Run the coverage report (`cargo run -p oriterm_test_support --bin spec-coverage-report`) and assert every OSC catalog row has at least one citation. (Binary name is `spec-coverage-report` with hyphens, NOT `spec_coverage_report` with underscores — per `crates/oriterm_test_support/Cargo.toml:[[bin]]:name`.) Function-name grepping (`osc<N>`) would bypass this SSOT and create a second catalog-tracking mechanism that can drift from the canonical scanner.
 
 **Catalog updates:**
@@ -1130,6 +1139,32 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Impact: An implementer following the checklist as a completion gate would not realize these fields also need to land in `oriterm_core` before the downstream crates build on them.
   Required plan update: Checklist expanded to enumerate all Term fields this section adds, including `last_command_line` and the 10.9 OSC fields (FIXED).
   Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+<!-- Round 19 findings (2026-04-17) — survivor mode: codex only (gemini transport failure: no capacity both attempts) -->
+
+- [x] `[TPR-10-85-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:249` — `osc8_survives_scrollback` cited `term.grid().scrollback()[row][col]` as the access pattern; `ScrollbackBuffer` does NOT implement `Index` (only `.get(index) -> Option<&Row>`), and `Row` implements `Index<Column>` not `Index<usize>`, so `[col: usize]` on a row also fails to compile.
+  Evidence: `oriterm_core/src/grid/ring/mod.rs:90` — `pub fn get(&self, index: usize) -> Option<&Row>` — no `impl Index` on `ScrollbackBuffer`; `oriterm_core/src/grid/row/mod.rs:175` — `impl Index<Column> for Row` — takes `Column`, not `usize`.
+  Impact: An implementer following the plan would write `scrollback()[row][col]` which fails to compile at both dimensions.
+  Required plan update: Replaced `scrollback()[row][col]` with `scrollback().get(idx).unwrap()` for the row, then `row[Column(col)]` for the column; noted that `Column` is a newtype `Column(usize)` (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-86-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:357` — `osc133_a_without_b_does_not_record_command` and `osc133_full_lifecycle_records_markers` assert on `prompt_markers()` but did not mention calling the deferred-mark helpers (`term.mark_prompt_row()`, `term.mark_command_start_row()`, `term.mark_output_start_row()`) after each feed; without those calls `prompt_markers` remains empty and the assertions panic on `unwrap()` for the wrong reason.
+  Evidence: `oriterm_core/src/term/shell_state/mod.rs:56,80,94` — `pub fn mark_prompt_row(&mut self)` / `mark_command_start_row` / `mark_output_start_row` — these are the only paths that push to `prompt_markers`; the interceptor only sets pending flags.
+  Impact: A test written without the deferred-mark calls would fail at `prompt_markers().last().unwrap()` with the vec empty, masking the real test intent.
+  Required plan update: Deferred-mark helper calls added to both test bullets; explanatory note mirrors the existing D-test setup note (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-87-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:583` — 10.9 test block had no negative pins, violating `.claude/rules/tests.md` §Negative Testing Protocol (MANDATORY); no must-reject tests existed for malformed color specs, invalid RGB values, or platform-conditional OSC 3 behavior.
+  Evidence: 10.9 Tests block (lines 583-585) — only three bullets: count, cross-reset, completeness scan; no negative pins for invalid inputs.
+  Impact: A regression where the OSC 13/14/17/19 handlers accept garbage color specs would go undetected; OSC 3 on Windows could panic instead of no-op.
+  Required plan update: Seven negative pin tests added to 10.9 with explicit test names; entries noted for 10.N negative-pins checklist (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-88-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:36` — `depends_on: ["03", "08"]` does not list the effect-cutover plan, but Section 10.2's body explicitly states 10.2 CANNOT complete without the effect-cutover plan migrating the IO thread to `QueueingEffectSink`.
+  Evidence: Line 218: "Section 10 CANNOT simply remove the dead-code gate without also migrating the IO thread to `QueueingEffectSink`... Coordinate Section 10.2 implementation with the effect-cutover plan" — but `depends_on` at line 36 lists only `["03", "08"]`.
+  Impact: An implementer checking section metadata for prerequisites would not be alerted to the effect-cutover dependency, potentially starting 10.2 without the prerequisite in place.
+  Required plan update: `depends_on` updated to include `"effect-cutover"` to match the documented dependency in the 10.2 body (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
 
 ---
 
