@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 17
+  rounds_completed: 18
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -289,8 +289,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Catalog update:**
 
-- [ ] OSC-52-STORE in `catalog/osc.md` → `verified` with citations for `c`, `s`, `p` clipboard characters (store); `q` documented as not supported (`ClipboardSelection` has no `q` variant — verified at `oriterm_core/src/effect/families/host.rs:108-115`).
-- [ ] OSC-52-LOAD in `catalog/osc.md` → `verified` with citation of the ResponseToken round-trip test.
+- [ ] OSC-52-STORE in `catalog/osc.md` → `verified` with citations for `c`, `s`, `p` clipboard characters (store); `q` documented as not supported (`ClipboardSelection` has no `q` variant — verified at `oriterm_core/src/effect/families/host.rs:108-115`). **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "Emits `Event::ClipboardStore`" and `Apex layer` says `effect-clipboard` — these are stale. Rewrite `Implementation` to cite `HostEffect::ClipboardStore { selection, data }` via `QueueingEffectSink` (public path: `oriterm_core::effect::HostEffect`); rewrite `Apex layer` to `effect-host`; rewrite `Notes` to remove the old `Event::` wording. Do NOT mark the row `verified` while these cells still say `Event::ClipboardStore` — a DRIFT between the catalog and the actual code.
+- [ ] OSC-52-LOAD in `catalog/osc.md` → `verified` with citation of the ResponseToken round-trip test. **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "Emits `Event::ClipboardLoad` with a response-formatting closure" and the `Notes` wording is stale. Rewrite `Implementation` to cite `HostRequest::ClipboardLoad { selection, reply: ResponseToken }` via `QueueingEffectSink`; rewrite `Notes` to describe the `ResponseToken` fulfillment → `PtyEffect::Write` path via `PaneIoThread::poll_pending_responses`. Do NOT mark the row `verified` while the Implementation cell still references the old `Event::ClipboardLoad` closure path.
 - [ ] `catalog/shell-integration.md` row SHINT-OSC-9-NOTIFY (cross-reference) remains pointing at `osc.md::OSC-9` (handled in 10.3).
 
 **Validation:**
@@ -410,7 +410,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Catalog update:**
 
-- [ ] OSC-22 `catalog/osc.md` → `verified` (was `stub` — we added the Term field + override in 10.0, so the sequence now has observable state).
+- [ ] OSC-22 `catalog/osc.md` → `verified` (was `stub` — we added the Term field + override in 10.0, so the sequence now has observable state). **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "`Handler::set_mouse_cursor_icon` default impl" and `Apex layer` says `effect-host-notification` — both are stale (the no-op default is replaced by a real Term override and the effect is state, not a notification). Rewrite `Implementation` to cite `Term::set_mouse_cursor_icon` in `oriterm_core/src/term/handler/mod.rs`; rewrite `Apex layer` to `state-snapshot`; rewrite `Notes` to replace "effect is dropped" with the new state field description. Do NOT mark the row `verified` while these cells still describe the stub no-op.
 - [ ] OSC-50 `catalog/osc.md` → `verified` (was `implemented-unverified`).
 
 **Validation:**
@@ -545,8 +545,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Catalog updates:**
 
-- [ ] Every row named at the top of 10.8 is promoted from `implemented-unverified` / `stub` to `verified`.
-- [ ] `catalog/shell-integration.md` SHINT-OSC-7-CWD → `verified` (was `stub`; now the interceptor actually writes CWD).
+- [ ] Every row named at the top of 10.8 is promoted from `implemented-unverified` / `stub` to `verified`. **OSC-7 METADATA UPDATE REQUIRED**: The current `catalog/osc.md` OSC-7 `Implementation` cell reads "`osc::dispatch` (`crates/vte/src/ansi/dispatch/osc.rs`) — `b"7"` arm → `Handler::set_working_directory` default impl". After the 10.8 remediation removes the `b"7"` arm, this Implementation description is wrong. Rewrite it to cite the canonical path: `oriterm_mux/src/shell_integration/interceptor.rs` — `RawInterceptor::osc_dispatch` `b"7"` arm → `parse_osc7_path` → `Term::set_cwd`; rewrite `Notes` to state the high-level `b"7"` arm was removed (vestigial). Do NOT mark OSC-7 `verified` while the Implementation cell still describes the deleted high-level arm.
+- [ ] `catalog/shell-integration.md` SHINT-OSC-7-CWD → `verified` (was `stub`; now the interceptor actually writes CWD). Rewrite the SHINT-OSC-7-CWD `Implementation` cross-reference to point to the interceptor path (`oriterm_mux/src/shell_integration/interceptor.rs`) rather than the high-level arm.
 
 **Validation:**
 
@@ -1086,6 +1086,26 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Basis: fresh_verification | direct_file_inspection. Confidence: high.
 
 <!-- Round 17 findings (2026-04-17) — survivor mode: codex only (gemini transport failure: model not found / no capacity both attempts) -->
+
+<!-- Round 18 findings (2026-04-17) — survivor mode: codex only (gemini transport failure: model not found / no capacity both attempts) -->
+
+- [x] `[TPR-10-82-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:292` — 10.2 catalog update only says "→ verified" for OSC-52-STORE and OSC-52-LOAD, leaving stale `Implementation`/`Apex layer`/`Notes` cells in `catalog/osc.md` that still reference the old `Event::ClipboardStore` / `Event::ClipboardLoad` closure wording.
+  Evidence: `catalog/osc.md:31-32` — `Emits Event::ClipboardStore` / `Emits Event::ClipboardLoad with a response-formatting closure` — both cells reference the pre-Effect-boundary API that no longer reflects production code.
+  Impact: An implementer reading the catalog after 10.2 would see correct verification status but incorrect implementation description, causing confusion and potential DRIFT against future catalog consumers.
+  Required plan update: 10.2 catalog block extended with explicit CATALOG METADATA UPDATE steps to rewrite Implementation/Apex/Notes cells to the current `HostEffect::ClipboardStore` / `HostRequest::ClipboardLoad + ResponseToken` path before marking the rows `verified` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-83-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:548` — 10.8 catalog update only says "every row → verified" without explicitly updating the OSC-7 `Implementation` cell, which still cites the high-level `b"7"` arm that 10.8 removes.
+  Evidence: `catalog/osc.md:21` — `b"7"` arm → `Handler::set_working_directory` default impl` — this is the arm 10.8 deletes; if the catalog update omits rewriting this cell, it becomes a DRIFT finding.
+  Impact: The catalog row for OSC-7 would describe a dispatch path that no longer exists after Section 10 implementation, creating a false reference.
+  Required plan update: 10.8 catalog block extended with explicit OSC-7 METADATA UPDATE steps to rewrite Implementation/Notes to the interceptor-only path after the high-level arm is removed (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-84-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:413` — 10.5 catalog update only says "OSC-22 → verified" without updating the `Implementation` and `Apex layer` cells that still describe the stub no-op.
+  Evidence: `catalog/osc.md:29` — `Handler::set_mouse_cursor_icon default impl` / `Apex layer: effect-host-notification` — stale after 10.5 adds a real Term override.
+  Impact: The catalog row for OSC-22 would show `verified` status but incorrect implementation description referencing the deleted stub.
+  Required plan update: 10.5 catalog block extended with explicit METADATA UPDATE steps to rewrite Implementation/Apex/Notes cells to the `Term::set_mouse_cursor_icon` + `state-snapshot` path before promoting to `verified` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
 
 - [x] `[TPR-10-78-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:352` — `osc133_d_clears_state_and_emits_command_complete` test setup only fed `OSC 133;C`, but the marker assertions (`prompt_markers().last()` has A/B/C fields) require a full A→B→C lifecycle AND deferred mark helpers to have been invoked; with only C fed, `prompt_markers` is empty and the assertions would panic on `unwrap()`.
   Evidence: `oriterm_core/src/term/shell_state/mod.rs:56-103` — `mark_prompt_row()`, `mark_command_start_row()`, `mark_output_start_row()` are the only code paths that push entries to `prompt_markers`; they require the respective pending flags set by A/B/C AND explicit invocation (done by `post_parse_housekeeping` in production).
