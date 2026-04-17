@@ -27,8 +27,8 @@ success_criteria:
 depends_on:
   - "plans/spec-conformance/section-03-effect-boundary-migration.md"
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: 2026-04-17
 sections:
   - id: "01.1"
     title: "Sink swap + Effect→MuxEvent router (atomic — no intermediate commit where effects are queued but not routed)"
@@ -539,3 +539,31 @@ This subsection has three exit paths; it is **not** optional. Choose one and exe
 - [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean).
 
 **Exit Criteria:** The IO thread's `Term<S>` uses `QueueingEffectSink`. Every `Effect` variant is routed to `MuxEvent`/`MuxNotification` in one canonical match. `HostRequest` variants register `PendingResponse` entries and a fulfilled `ResponseToken` immediately wakes the IO thread's `select!` via a dedicated wake channel. `LegacyEventSink`, `IoThreadEventProxy`, `DesktopNotificationRecord`, `Event::ClipboardLoad`, `Event::ColorRequest`, and `Term::drain_notifications()` are deleted. Spec-conformance Section 10.2 is unblocked — it can write its OSC 52 round-trip test against already-live infrastructure.
+
+---
+
+## 01.R Third Party Review Findings
+
+> TPR ran 5 rounds (codex-only survivor mode after round 1 — gemini returned unfilled template consistently). All actionable findings were fixed inline. Status: `findings` (findings occurred across all 5 rounds; all fixed; user-accepted at iteration cap).
+
+- [x] [TPR-01-001-codex][high] Ordering gate sequences 01.1 → 01.2 as separate commits, contradicting atomicity constraint — Fixed R1: Added CRITICAL ATOMICITY CONSTRAINT block to 01.1 header
+- [x] [TPR-01-002-codex][high] `MuxBackend::fulfill_host_request` trait method missing; app layer reaching around trait boundary — Fixed R1: Added trait method + HostReply enum to 01.2 Files section
+- [x] [TPR-01-003-codex][medium] 01.3 deletion inventory incomplete (missing 7 LegacyEventSink usages) — Fixed R1: Expanded deletion inventory
+- [x] [TPR-01-004-codex][medium] `handle.rs` → directory module conversion not planned — Fixed R1: Added handle.rs → handle/mod.rs conversion step to 01.1
+- [x] [TPR-01-005-codex][medium] `response_poll_idle_wake_unblocks_select` test uses sleep instead of recv_timeout — Fixed R1: Rewrote test to use recv_timeout
+- [x] [TPR-01-006-codex][high] App-layer impl step calls `pane_handle.fulfill_clipboard_load` directly, bypassing MuxBackend — Fixed R2: Changed to `self.mux.fulfill_host_request()`
+- [x] [TPR-01-007-codex][high] Test uses fictional `TermCommand` API instead of real `byte_sender()` + `MuxEvent::PaneOutput` — Fixed R2: Rewrote test to use real APIs
+- [x] [TPR-01-008-codex][medium] Ordering gate missing `oriterm` from 01.1 commit scope — Fixed R2: Added oriterm to ordering gate
+- [x] [TPR-01-009-codex][medium] SSOT grep scope too broad (catches daemon formatter false positive) — Fixed R2: Scoped grep to `oriterm_mux/src/pane/` with daemon exception documented
+- [x] [TPR-01-010-codex][medium] Exhaustive match for new MuxNotification variants not documented for 01.1 — Fixed R3: Added stub arm documentation with exhaustive match requirement
+- [x] [TPR-01-011-codex][medium] Ordering gate missing `oriterm_core` from 01.1 commit scope — Fixed R3: Added oriterm_core to ordering gate for dead_code attribute
+- [x] [TPR-01-012-codex][low] Registration sync checklist missing daemon-side translators — Fixed R3: Expanded registration sync checklist with daemon files (client/notification.rs, server/notify/mod.rs)
+- [x] [TPR-01-013-codex][medium] File path references use flat-file form (`effect_router.rs`) instead of directory module form (`effect_router/mod.rs`) — Fixed R3: Corrected all file path references
+- [x] [TPR-01-014-codex][high] No atomicity guarantee — 01.1 and 01.2 presented as separate commits, creating Broken Window gap — Fixed R4: Added explicit CRITICAL ATOMICITY CONSTRAINT block
+- [x] [TPR-01-015-codex][high] Enum syntax uses tuple variants for struct variants (e.g. `Write(Other)`, `CursorBlinkChanged(true)`, `Abort(Timeout)`) — Fixed R4: Corrected all enum syntax to real API shapes
+- [x] [TPR-01-016-codex][high] Sync signal for test is wrong — `MuxEvent::PaneOutput` doesn't fire on OSC 52 requests — Fixed R4: Changed sync signal to `MuxEvent::HostClipboardLoad`
+- [x] [TPR-01-017-codex][medium] Cross-reference test name misaligned with Section 10 canonical name — Fixed R4: Aligned to `response_poll_roundtrip_emits_pty_write`
+- [x] [TPR-01-018-codex][high] Ordering gate still sequences 01.1 → 01.2 as separate commits via arrow notation despite atomicity constraint — Fixed R5: Rewrote ordering gate to say "01.1+01.2 COMBINED (single commit)"
+- [x] [TPR-01-019-codex][medium] 01.1 validation text says "Section 01.1 status → complete" as standalone commit gate — Fixed R5: Changed to prerequisite language, commit gate is at 01.2
+- [x] [TPR-01-020-codex][medium] `response_token_is_shared_by_clone` test placed at flat-file sibling (impossible) — Fixed R5: Relocated to `response_poll/tests.rs`
+- [x] [TPR-01-021-codex][medium] Completion checklist cites nonexistent `cargo test -p oriterm --test main_window` — Fixed R5: Replaced with `cargo test -p oriterm event_loop_helpers`
