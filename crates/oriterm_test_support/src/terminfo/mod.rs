@@ -239,9 +239,7 @@ pub fn infocmp_respects_terminfo_env() -> bool {
         cmd.env(name, value);
     }
     cmd.env_remove("TERMCAP");
-    cmd.output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+    cmd.output().is_ok_and(|out| out.status.success())
 }
 
 /// Write the embedded terminfo source to a scratch file inside

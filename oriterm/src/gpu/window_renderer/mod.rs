@@ -172,7 +172,7 @@ impl WindowRenderer {
         let color_atlas_bind_group =
             AtlasBindGroup::new(device, &pipelines.atlas_layout, color_atlas.view(), filter);
 
-        log::info!("window renderer init: total={:?}", t0.elapsed(),);
+        log::info!("window renderer init: total={:?}", t0.elapsed());
 
         Self {
             mode: RendererMode::Terminal,

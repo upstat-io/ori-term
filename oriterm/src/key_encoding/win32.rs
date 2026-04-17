@@ -28,7 +28,7 @@ pub(super) fn encode_win32(input: &KeyInput<'_>) -> Vec<u8> {
     };
     let control_state = control_key_state(input.mods, input.location);
 
-    format!("{CSI}{vk};{sc};{uc};{key_down};{control_state};1_",).into_bytes()
+    format!("{CSI}{vk};{sc};{uc};{key_down};{control_state};1_").into_bytes()
 }
 
 fn key_record_fields(input: &KeyInput<'_>) -> Option<(u16, u16, u16)> {
