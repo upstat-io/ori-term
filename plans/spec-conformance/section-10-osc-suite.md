@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 5
+  rounds_completed: 6
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -211,10 +211,10 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
   ```
   where `dispatch_iterm2_osc1337` is a new private function in the same file that parses the first parameter as `key[=value]` and routes to the appropriate `Handler::iterm2_*` method. The existing `File=` case goes through this dispatcher — it calls `handler.iterm2_file(&params[1..])` when the key is `File`. Preserves current behavior, adds extensibility.
 - [ ] Add default no-op methods to the `Handler` trait in `crates/vte/src/ansi/handler.rs` for every new sub-op: `iterm2_set_mark`, `iterm2_remote_host(path: &[u8])`, `iterm2_current_dir(path: &[u8])`, `iterm2_copy(data: &[u8])`, `iterm2_report_cell_size()`, `iterm2_set_user_var(name: &[u8], value: &[u8])`, `iterm2_shell_integration_version(version: &[u8])`. Defaults are empty bodies (drop semantics) — 10.7 overrides each on `Term`.
-- [ ] **Response-poll activation requires EffectSink migration (GAP):** `PaneIoThread::register_host_request_response` is gated with `#[allow(dead_code)]` because the IO thread currently uses `LegacyEventSink` whose `drain_into()` is a no-op — effects are forwarded immediately as legacy `Event`s. The `response_poll.rs` module doc explicitly states: "activates when consumers migrate to `QueueingEffectSink` (in `plans/effect-cutover/`)." Section 10 CANNOT simply remove the dead-code gate without also migrating the IO thread to `QueueingEffectSink`. Two valid approaches:
-  - **Option A (preferred if effect-cutover is close):** Coordinate Section 10.2 implementation with the effect-cutover plan: migrate the pane IO thread to `QueueingEffectSink` first, then activate `register_host_request_response`. The response-poll test (`response_poll_emits_pty_write_on_fulfill`) only runs after the sink migration is in place.
-  - **Option B (scope-bounded):** For spec_chain verification only, wire a test-only shim that injects fulfilled responses directly into the pane IO thread's `pending_responses` vec (bypassing the dead-code path) — this verifies the reply FORMAT without requiring the sink migration. Document clearly that end-to-end production behavior depends on effect-cutover.
-  Whichever option is chosen, the 10.0/10.2 checklist MUST call out the dependency on the IO thread's effective sink type BEFORE writing tests that assume the round-trip works end-to-end through `PaneIoThread`.
+- [ ] **Response-poll activation requires EffectSink migration (GAP):** `PaneIoThread::register_host_request_response` is gated with `#[allow(dead_code)]` because the IO thread currently uses `LegacyEventSink` whose `drain_into()` is a no-op — effects are forwarded immediately as legacy `Event`s. The `response_poll.rs` module doc explicitly states: "activates when consumers migrate to `QueueingEffectSink` (in `plans/effect-cutover/`)." Section 10 CANNOT simply remove the dead-code gate without also migrating the IO thread to `QueueingEffectSink`. **The success criteria (line 14) requires live `response_poll` path activation — Option B alone does NOT satisfy this criterion.** Two valid approaches:
+  - **Option A (REQUIRED for success criterion compliance):** Coordinate Section 10.2 implementation with the effect-cutover plan: migrate the pane IO thread to `QueueingEffectSink` first, then activate `register_host_request_response` by removing its dead-code gate. The success criterion "section 10.2 removes the `#[allow(dead_code)]` gate on `PaneIoThread::register_host_request_response` and wires it into the IO thread" requires this. The response-poll test (`response_poll_emits_pty_write_on_fulfill`) only runs after the sink migration is in place.
+  - **Option B (interim only — does NOT satisfy the success criterion):** For spec_chain verification of the reply FORMAT only, wire a test-only shim that injects fulfilled responses directly into the pane IO thread's `pending_responses` vec (bypassing the dead-code path). Option B may be used as an intermediate step while the effect-cutover plan lands, but the section is NOT complete until Option A's dead-code gate removal is done. Document clearly that end-to-end production behavior depends on effect-cutover and that Option B is a FORMAT-verification step only.
+  The 10.0/10.2 checklist MUST call out the dependency on the IO thread's effective sink type BEFORE writing tests that assume the round-trip works end-to-end through `PaneIoThread`. If effect-cutover is blocked at implementation time, file a GAP finding and escalate — do NOT mark 10.2 complete while the dead-code gate remains.
 - [ ] Make `HostEffect::CommandComplete { duration }` deterministic for testing by correcting the timing seam. **TIMING SEAM ANALYSIS (verified against code):** The duration is computed in `oriterm_core/src/term/shell_state/mod.rs:205-210`: `fn finish_command(&mut self) -> Option<Duration> { let start = self.command_start.take()?; let duration = start.elapsed(); ... }` — the call is `start.elapsed()` on an `Instant`, NOT `Instant::now()` at the interceptor. Two valid approaches to make this deterministic: **(A, preferred)** refactor `finish_command()` to accept an optional `now: Option<Instant>` parameter: `fn finish_command(&mut self, now: Option<Instant>) -> Option<Duration>`, computing `now.unwrap_or_else(Instant::now).duration_since(start)`. Production callers pass `None`; tests pass `Some(injected_instant)`. No `Arc<dyn Fn>` field needed, no `Debug` issue. **(B, alternative)** add a `clock: Option<Arc<dyn Fn() -> Instant + Send + Sync>>` field to `Term` — but this requires a `ClockFn` newtype wrapper with manual `Debug` impl (see the `#[derive(Debug)]` constraint at `oriterm_core/src/term/mod.rs:113`). Option A is preferred because it avoids the `Arc<dyn Fn>` / `Debug` complication entirely and the test-injection is at the exact right seam. **INCORRECT alternative (do NOT do this):** replacing `Instant::now()` at `oriterm_mux/src/shell_integration/interceptor.rs` — the interceptor calls `Term::set_command_start(Instant::now())` to SET the start time, but the DURATION is computed in `Term::finish_command()` via `start.elapsed()`. The interceptor is not the seam where the duration is measured.
 
 **Validation:**
@@ -254,7 +254,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Catalog update:**
 
-- [ ] Promote OSC-8 in `catalog/osc.md` from `implemented-unverified` → `verified`. Fill `Test chain` cell with `parser:passed dispatch:passed state:passed` + citation of `oriterm_core/tests/spec_chain/osc/hyperlinks.rs::{osc8_basic_attach, osc8_with_id, osc8_survives_reflow, osc8_survives_scrollback, osc8_terminator_cancels_attachment, osc8_malformed_uri_dropped, osc8_alt_screen_toggle_clears}`.
+- [ ] Promote OSC-8 in `catalog/osc.md` from `implemented-unverified` → `verified`. Fill `Test chain` cell with `parser:pass dispatch:pass state:pass` + citation of `oriterm_core/tests/spec_chain/osc/hyperlinks.rs::{osc8_basic_attach, osc8_with_id, osc8_survives_reflow, osc8_survives_scrollback, osc8_terminator_cancels_attachment, osc8_malformed_uri_dropped, osc8_alt_screen_toggle_clears}`. (Token schema: `pass` / `fail` / `pending` / `missing` — NOT `passed`.)
 
 **Validation:**
 
@@ -736,6 +736,26 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Required plan update: item rewritten to a firm cross-reference-only note: this test is NOT Section 10's responsibility; the CSI window ops section owns it (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
+<!-- Round 6 findings (2026-04-17) -->
+
+- [x] `[TPR-10-32-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:788` — Completion checklist crate-ordering item still routed mux-intercepted tests to `oriterm_core/tests/spec_chain/osc/*` and credited `SpecHarness mux_layer` to `oriterm_test_support`, conflicting with Round 5 fix that adopted Option A (tests in `oriterm_mux/tests/spec_chain/`).
+  Evidence: `crates/oriterm_test_support` depends only on `oriterm_core`; adding a mux_layer to it violates crate-boundary rules; yet the checklist item still named that crate as the destination for mux-intercepted tests.
+  Impact: An implementer following the checklist verbatim would place mux-intercepted OSC tests in `oriterm_core/tests/spec_chain/osc/*` without access to `RawInterceptor`, producing a non-compilable test module.
+  Required plan update: checklist rewritten to reflect Option A — `oriterm_mux/tests/spec_chain/` for interceptor-handled OSC tests; `oriterm_test_support` receives only renderable-observer + RenderableExpectation changes; `oriterm_core/tests/spec_chain/osc/*` gets high-level-processor tests only (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-33-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:214` — Option B described as an acceptable standalone path for spec_chain verification, contradicting success criteria that require live `#[allow(dead_code)]` gate removal on `PaneIoThread::register_host_request_response`.
+  Evidence: Success criteria (line 14): "section 10.2 removes the `#[allow(dead_code, reason = \"dormant during legacy phase\")]` gate on `PaneIoThread::register_host_request_response` and wires it into the IO thread"; Option B skips the gate removal, leaving production behavior dormant.
+  Impact: An implementer using Option B would satisfy the FORMAT verification test but NOT the success criterion; section would be incorrectly marked complete while the live activation remains gated.
+  Required plan update: Option B reclassified as an interim FORMAT-verification step only; Option A marked REQUIRED for success criterion compliance; escalation path added for when effect-cutover is blocked at implementation time (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-34-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:257` — Catalog test-chain token `parser:passed dispatch:passed state:passed` uses non-schema token `passed`; catalog schema uses `pass` / `fail` / `pending` / `missing`.
+  Evidence: `catalog/osc.md:16-34` — all existing test-chain entries use `parser:pending dispatch:pending state:pending`; no entry uses `passed`.
+  Impact: An implementer updating the catalog row would produce a malformed entry that does not conform to the schema, breaking any tooling that validates token values.
+  Required plan update: `passed` → `pass` throughout the planned catalog update instruction; schema token note added inline (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
 <!-- Round 5 findings (2026-04-17) -->
 
 - [x] `[TPR-10-26-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:192` — Preferred mux-layer approach (Option A) would require `oriterm_test_support` to call into `oriterm_mux`, violating crate boundary rules.
@@ -785,7 +805,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### Crate ordering (per `.claude/rules/crate-boundaries.md` allowed dependency direction)
 
-- [ ] Changes land in this order: `crates/vte` (new Handler trait methods + OSC 1337 sub-dispatcher) → `oriterm_core` (Term fields: `mouse_cursor_icon`, `remote_host`, `user_vars`, `shell_integration_version`; handler overrides) → `oriterm_mux` (remove `#[allow(dead_code)]` on `register_host_request_response`; wire live call site; interceptor extensions for OSC 633 + 1337 delegated rows where applicable) → `crates/oriterm_test_support` (SpecHarness `mux_layer` + completed renderable observer + new RenderableExpectation fields) → tests under `oriterm_core/tests/spec_chain/osc/*`.
+- [ ] Changes land in this order: `crates/vte` (new Handler trait methods + OSC 1337 sub-dispatcher) → `oriterm_core` (Term fields: `mouse_cursor_icon`, `remote_host`, `user_vars`, `shell_integration_version`; handler overrides) → `oriterm_mux` (remove `#[allow(dead_code)]` on `register_host_request_response`; wire live call site; interceptor extensions for OSC 633 + 1337 delegated rows where applicable; mux-intercepted OSC spec_chain tests land in `oriterm_mux/tests/spec_chain/`) → `crates/oriterm_test_support` (completed renderable observer + new `RenderableExpectation` fields; NO new `mux_layer` dependency per crate-boundary constraint — see 10.0 Option A) → high-level-processor OSC tests under `oriterm_core/tests/spec_chain/osc/*` (OSC 0/1/2/4/10/11/12/8/22/50/52/104/110/111/112/1337 non-image sub-ops).
 
 ### Matrix coverage
 
