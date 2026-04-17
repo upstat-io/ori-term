@@ -35,8 +35,8 @@ inspired_by:
   - "alacritty `crates/vte/src/ansi/dispatch/osc.rs` (upstream) — dispatcher shape this section extends"
 depends_on: ["03", "08"]
 third_party_review:
-  status: none
-  updated: null
+  status: findings
+  updated: "2026-04-17"
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -187,7 +187,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 **Implementation:**
 
-- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that attaches a `RawInterceptor` wrapper. In `feed()`, after the high-level `Processor::advance_with_observer` call, run a raw `vte::Parser` with a borrowed `RawInterceptor` on the same bytes. The ordering MUST match production (`pane/io_thread/mod.rs` runs the interceptor FIRST, then the processor — harness mirrors that).
+- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that attaches a `RawInterceptor` wrapper. In `feed_with_mux()`, run the raw `vte::Parser` with a borrowed `RawInterceptor` on the bytes FIRST, then run the high-level `Processor::advance_with_observer` on the SAME bytes. This matches the production order in `oriterm_mux/src/pane/io_thread/mod.rs::handle_bytes()` which runs `self.raw_parser.advance(&mut interceptor, bytes)` before `self.processor.advance(&mut self.terminal, bytes)`. The harness MUST mirror this order exactly — running the interceptor AFTER the processor would be wrong and untestable via the TDD failing-then-passing pair.
 - [ ] Complete `observe_renderable` to check every field in `RenderableExpectation`:
   - `cells: Option<Vec<(row, col, ch)>>` — cell contents at specific positions.
   - `hyperlink_at: Option<(row, col, expected_uri: String)>` — assert cell's hyperlink URI matches.
@@ -209,7 +209,10 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
   ```
   where `dispatch_iterm2_osc1337` is a new private function in the same file that parses the first parameter as `key[=value]` and routes to the appropriate `Handler::iterm2_*` method. The existing `File=` case goes through this dispatcher — it calls `handler.iterm2_file(&params[1..])` when the key is `File`. Preserves current behavior, adds extensibility.
 - [ ] Add default no-op methods to the `Handler` trait in `crates/vte/src/ansi/handler.rs` for every new sub-op: `iterm2_set_mark`, `iterm2_remote_host(path: &[u8])`, `iterm2_current_dir(path: &[u8])`, `iterm2_copy(data: &[u8])`, `iterm2_report_cell_size()`, `iterm2_set_user_var(name: &[u8], value: &[u8])`, `iterm2_shell_integration_version(version: &[u8])`. Defaults are empty bodies (drop semantics) — 10.7 overrides each on `Term`.
-- [ ] Remove `#[allow(dead_code, reason = "dormant during legacy phase...")]` from `PaneIoThread::register_host_request_response` at `oriterm_mux/src/pane/io_thread/response_poll.rs:33-36`. Wire the live call: inside the IO thread loop where effects are drained, match on `Effect::HostRequest(request)` and call `self.register_host_request_response(request.clone())` for `ClipboardLoad` and `ColorQuery` variants.
+- [ ] **Response-poll activation requires EffectSink migration (GAP):** `PaneIoThread::register_host_request_response` is gated with `#[allow(dead_code)]` because the IO thread currently uses `LegacyEventSink` whose `drain_into()` is a no-op — effects are forwarded immediately as legacy `Event`s. The `response_poll.rs` module doc explicitly states: "activates when consumers migrate to `QueueingEffectSink` (in `plans/effect-cutover/`)." Section 10 CANNOT simply remove the dead-code gate without also migrating the IO thread to `QueueingEffectSink`. Two valid approaches:
+  - **Option A (preferred if effect-cutover is close):** Coordinate Section 10.2 implementation with the effect-cutover plan: migrate the pane IO thread to `QueueingEffectSink` first, then activate `register_host_request_response`. The response-poll test (`response_poll_emits_pty_write_on_fulfill`) only runs after the sink migration is in place.
+  - **Option B (scope-bounded):** For spec_chain verification only, wire a test-only shim that injects fulfilled responses directly into the pane IO thread's `pending_responses` vec (bypassing the dead-code path) — this verifies the reply FORMAT without requiring the sink migration. Document clearly that end-to-end production behavior depends on effect-cutover.
+  Whichever option is chosen, the 10.0/10.2 checklist MUST call out the dependency on the IO thread's effective sink type BEFORE writing tests that assume the round-trip works end-to-end through `PaneIoThread`.
 - [ ] Replace `std::time::Instant::now()` at `oriterm_mux/src/shell_integration/interceptor.rs:102` with a clock-source call routed through `Term` — `Term` grows an optional `clock: Arc<dyn Fn() -> Instant + Send + Sync>` field (default `Arc::new(Instant::now)` in production; tests inject a deterministic one). WHERE: clock field added in `oriterm_core/src/term/mod.rs`; `Term::set_command_start(start)` uses the clock's tick when `start` is `None` and the current design calls `Instant::now()` internally. Preserve production behavior by keeping a `Term::new_default_clock()` constructor; deterministic tests use `Term::with_clock(clock_fn)`.
 
 **Validation:**
@@ -235,7 +238,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 **Tests (TDD — RED first):**
 
 - [ ] Spec_chain test `osc8_basic_attach` — feed `\x1b]8;;https://example.com\x1b\\Hello\x1b]8;;\x1b\\` (set URI, text, clear URI). Assert cells 0..5 of current row carry `hyperlink_uri == Some("https://example.com")`; subsequent cells after the clear carry `hyperlink_uri == None`. Uses the completed `observe_renderable` from 10.0 with `hyperlink_at: Some((row, 0, "https://example.com"))` + a negative assertion at (row, 5).
-- [ ] `osc8_with_id` — feed `\x1b]8;id=foo;https://example.com\x1b\\X\x1b]8;;\x1b\\`. Assert cell 0 has the URI AND the id is preserved in cell metadata. Per gist:egmontkob, `id` groups consecutive hyperlink segments; test that two separate attach/clear cycles with the same `id` render as a single logical hyperlink (cell flags consistent across both segments).
+- [ ] `osc8_with_id` — feed `\x1b]8;id=foo;https://example.com\x1b\\X\x1b]8;;\x1b\\`. Assert cell 0 has the URI. **Important apex constraint:** `RenderableCell` at `oriterm_core/src/term/renderable/mod.rs` only carries `hyperlink_uri: Option<String>` — the hyperlink `id` is NOT exposed on the renderable surface. To verify the `id` is preserved in cell metadata, use the **state rung apex** (read `grid[row][col].hyperlink()` via `Term` directly) rather than `observe_renderable`. Verify that `cell.hyperlink().unwrap().id == Some("foo")` at the state rung. Then test that two separate attach/clear cycles with the same `id` both carry `id == Some("foo")` (confirming `id` does not get cleared between cycles). The renderable rung assertion covers only the URI presence; the state rung assertion covers the `id`.
 - [ ] `osc8_survives_reflow` — place hyperlinked text at row 0. Resize grid from 80 to 40 columns. Assert the wrapped cells (now spread across row 0 and row 1) ALL carry the same URI. (This catches the reflow-drops-metadata regression pattern from the alacritty / wezterm code history.)
 - [ ] `osc8_survives_scrollback` — place hyperlinked text, then feed enough newlines that the row scrolls into `Grid::scrollback`. Assert the scrollback row still carries the URI on every cell. Uses `grid.scrollback()[...]` via the completed renderable observer.
 - [ ] `osc8_terminator_cancels_attachment` — feed text, `OSC 8 ; ; uri ST`, text-A, `OSC 8 ; ; ST`, text-B. Assert text-B cells have `hyperlink_uri == None` (the empty URI terminates the attachment).
@@ -493,9 +496,9 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc0_sets_title_and_icon` — feed `\x1b]0;myapp\x1b\\`, assert `term.title() == "myapp"` AND `term.icon_name() == "myapp"` (OSC 0 sets both).
 - [ ] `osc1_sets_only_icon_name` — feed `\x1b]1;myicon\x1b\\`, assert `icon_name == "myicon"` AND `title` is UNCHANGED (starts empty).
 - [ ] `osc2_sets_only_title` — feed `\x1b]2;mytitle\x1b\\`, assert `title == "mytitle"` AND `icon_name` is UNCHANGED.
-- [ ] `osc0_empty_resets` — feed `\x1b]0;\x1b\\`, assert both title and icon_name become empty and the `Event::ResetTitle` is emitted per the osc.rs dispatcher (`b"0"` arm calls `Term::set_title` with empty → reset path).
+- [ ] `osc0_empty_sets_empty_string` — feed `\x1b]0;\x1b\\`, assert both title and icon_name become the empty string `""`. **Important dispatch accuracy:** the `osc.rs` dispatcher's `b"0"` arm ALWAYS calls `handler.set_title(Some(text.clone()))` — it sends `Some("")` not `None` when the param is empty. There is NO `ResetTitle` path triggered by `OSC 0 ; ST`; `Event::ResetTitle` (now `HostEffect::TitleSet { value: None }`) is only emitted by other mechanisms (e.g. explicit reset via ESC c or the `TITLE_STACK_MAX_DEPTH` eviction path). Test assertions MUST reflect this: assert `term.title() == ""` not `term.title() == <original>`.
 - [ ] `osc0_bel_and_st_terminators_both_accepted` — feed `\x1b]0;t1\x07` (BEL) AND `\x1b]0;t2\x1b\\` (ST) in sequence. Assert both update the title; the dispatcher's `bell_terminated` parameter routes correctly.
-- [ ] `osc0_push_pop_title` — if xterm push/pop title is supported (OSC 22 / OSC 23 — xterm lineage, not iTerm2 OSC 22), test the stack bounded at `TITLE_STACK_MAX_DEPTH` (4096 per `oriterm_core/src/term/mod.rs:82`). If not dispatched, document and defer.
+- [ ] `osc0_title_stack_via_csi_t` — xterm push/pop title uses **CSI 22;2t** (push) and **CSI 23;2t** (pop), NOT OSC. These are xterm window operations dispatched from `crates/vte/src/ansi/dispatch/csi.rs`, not from `osc.rs`. Test `ESC[22;2t` → push + `ESC[23;2t` → pop using the CSI rung, and assert the title stack is bounded at `TITLE_STACK_MAX_DEPTH` (4096 per `oriterm_core/src/term/mod.rs:82`). This test belongs to the CSI window operations section, not the OSC matrix — move it to the appropriate section or cite it as a cross-reference here without duplicating ownership.
 
 ### OSC 4 (palette index)
 
@@ -513,6 +516,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc7_emits_host_effect_cwd_set` — assert `Effect::Host(HostEffect::CwdSet { cwd: "/home/user/project" })` on the transcript.
 - [ ] `osc7_relative_path_passed_through` — feed `\x1b]7;relative/path\x1b\\`. Per `strip_uri_suffix`, this passes through unchanged. Assert `cwd == Some("relative/path")`. Verify this matches production behavior; if the interceptor rejects non-URI paths in production, update the test accordingly.
 - [ ] `osc7_via_high_level_processor_drops` — negative pin. Feed the same OSC 7 bytes via `feed()` (no mux). Assert cwd is UNCHANGED. This pins the interceptor-only path.
+- [ ] **OSC 7 double-dispatch remediation (LEAK:duplicated-dispatch):** The `b"7"` arm in `crates/vte/src/ansi/dispatch/osc.rs:69-87` calls `handler.set_working_directory()` which is a no-op default on `Term` (confirmed: `Term` does not override this method). The interceptor at `oriterm_mux/src/shell_integration/interceptor.rs:37` handles OSC 7 canonically with full URI parsing. The high-level `b"7"` arm is therefore vestigial — it calls a no-op and provides no value. The interceptor comment (`interceptor.rs:6-8`) acknowledges this: "OSC 7 is also handled here instead of through the high-level `Handler::set_working_directory`, which stores the raw URI." Section 10.8 MUST remove the `b"7"` arm from `osc.rs` OR add a `// SSOT: CWD is handled by RawInterceptor; this arm is intentionally empty for parity` comment WITH an `assert!(!reachable)` / `debug_assert` semantic — leaving it silently calling a no-op creates a second apparent dispatch path that confuses future readers and could be mistakenly "fixed" to re-implement CWD logic in the wrong layer. Preferred fix: remove the arm and handle the `set_working_directory` default body more explicitly.
 
 ### OSC 10 / 11 / 12 (default colors)
 
@@ -560,7 +564,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 - [ ] One test per variant — ~22 tests total (set + query + reset pairs).
 - [ ] Cross-reset consistency: set OSC 13, reset via OSC 113, verify it returns to default.
-- [ ] **Matrix completeness pin** — enumerate every OSC number in `catalog/osc.md` and assert a spec_chain test exists for each (grep for `osc<N>` test function names).
+- [ ] **Matrix completeness pin (SSOT: use catalog_row_id scanner, NOT function-name grep)** — use the existing `scan_test_citations` / `CoverageReport` infrastructure at `crates/oriterm_test_support/src/spec_chain/coverage/` (not a raw grep for function names). Every `SpecScenario` const in the OSC test files MUST declare `catalog_row_id: "OSC-<N>"` matching the corresponding catalog row ID. Run the coverage report (`cargo run --bin spec_coverage_report`) and assert every OSC catalog row has at least one citation. Function-name grepping (`osc<N>`) would bypass this SSOT and create a second catalog-tracking mechanism that can drift from the canonical scanner.
 
 **Catalog updates:**
 
@@ -570,7 +574,47 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ## 10.R Third Party Review Findings
 
-- None yet — populated by the three TPR checkpoints defined in the front-matter comment block.
+- [x] `[TPR-10-1-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:190` — Harness mux_layer implementation instruction had wrong interceptor/processor ordering.
+  Evidence: plan said "after the high-level call, run the raw parser" but production order is interceptor FIRST.
+  Impact: Implementing as written would produce a harness that runs the interceptor in the wrong order vs production.
+  Required plan update: rewritten at 10.0 implementation bullet to run interceptor before processor (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-2-codex][high]` `oriterm_mux/src/pane/io_thread/response_poll.rs:33` — Response-poll activation cannot proceed without EffectSink migration.
+  Evidence: IO thread uses `LegacyEventSink` whose `drain_into()` is no-op; `register_host_request_response` cannot be wired until QueueingEffectSink migration.
+  Impact: Plan's 10.2 test for full ResponseToken round-trip via PaneIoThread would fail silently with LegacyEventSink.
+  Required plan update: 10.0/10.2 now document the dependency on effect-cutover plan and provide Option A/B approaches (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-3-codex][medium]` `oriterm_core/src/term/renderable/mod.rs:46` — OSC 8 hyperlink `id` not exposed on RenderableCell; osc8_with_id test must use state rung.
+  Evidence: `RenderableCell` only has `hyperlink_uri: Option<String>`, no `id` field; `Cell::hyperlink()` carries `id: Option<String>`.
+  Impact: Test assertions about hyperlink id "in cell metadata" via renderable observer would be silently incomplete.
+  Required plan update: osc8_with_id rewritten to use state rung for id check, renderable rung for URI (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-4-codex][medium]` `oriterm_core/src/term/handler/tests/osc.rs:60` — Title push/pop is CSI 22;2t / CSI 23;2t, not OSC.
+  Evidence: `feed(&mut t, b"\x1b[22;2t")` — push_title dispatched from CSI, not from OSC dispatcher.
+  Impact: osc0_push_pop_title in the OSC 0/1/2 matrix would be in the wrong test file and wrong subsection.
+  Required plan update: `osc0_push_pop_title` renamed to `osc0_title_stack_via_csi_t`, correctly attributed to CSI window ops rung (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-5-codex][medium]` `crates/oriterm_test_support/src/spec_chain/scenario.rs:15` — 10.9 completeness pin bypasses catalog_row_id SSOT with function-name grep.
+  Evidence: `pub catalog_row_id: &'static str` — SpecScenario carries catalog_row_id; scan_test_citations reads it canonically.
+  Impact: Function-name grep would create a second test-tracking mechanism that can drift from the coverage scanner.
+  Required plan update: completeness pin rewritten to use `scan_test_citations` / `CoverageReport` infrastructure (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-6-codex][medium]` `crates/vte/src/ansi/dispatch/osc.rs:53` — osc0_empty_resets expects ResetTitle but dispatcher sends Some("") not None.
+  Evidence: `handler.set_title(Some(text.clone()))` — always wraps in Some(); empty param → `Some("")`, not `None`.
+  Impact: Test assertion `Event::ResetTitle` is emitted would fail; empty title sets `term.title() == ""`.
+  Required plan update: test renamed `osc0_empty_sets_empty_string` with correct assertion (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-7-gemini][high]` `crates/vte/src/ansi/dispatch/osc.rs:69` — OSC 7 double-dispatch: high-level arm calls no-op default; interceptor does real work.
+  Evidence: `b"7" => { ... handler.set_working_directory(Some(uri)); }` calls a no-op default; Term does not override.
+  Impact: Vestigial arm creates a false second dispatch path; future implementors could mistakenly add CWD logic to the wrong layer.
+  Required plan update: 10.8 now includes a task to remove the `b"7"` arm from osc.rs or add an explicit SSOT comment (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
 
 ---
 
