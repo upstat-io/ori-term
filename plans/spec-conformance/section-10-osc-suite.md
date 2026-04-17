@@ -275,8 +275,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc52_store_clipboard_s` — same shape, `s` (selection) clipboard character, assert `selection: Selection`.
 - [ ] `osc52_store_clipboard_p` — `p` (primary) clipboard character.
 - [ ] `osc52_store_clipboard_q` — `q` (secondary) clipboard character, if supported; else negative pin that this character is dropped.
-- [ ] `osc52_load_request_fires_hostrequest` — feed `\x1b]52;c;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { selection: Clipboard, clipboard_char: b'c', terminator: "\x1b\\", reply: <ResponseToken> })` is on the transcript. Hold a handle to the `ResponseToken` via `harness.pending_host_request_reply::<String>()` (new helper).
-- [ ] `osc52_response_token_roundtrip_emits_pty_write` — after the above, call `reply.fulfill("example-text".into())`. Advance the harness one tick (new `harness.poll_pending_responses()` delegating to `PaneIoThread::poll_pending_responses`). Assert a `Effect::Pty(PtyEffect::Write { bytes, kind: PtyWriteKind::Other })` appears on the transcript with `bytes == format_clipboard_reply("example-text", b'c', "\x1b\\")` (base64-encoded). Uses `format_clipboard_reply` from `oriterm_core/src/effect/families/host_request.rs:110` — DO NOT re-implement the reply format inline (LEAK).
+- [ ] `osc52_load_request_fires_hostrequest` — feed `\x1b]52;c;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { selection: Clipboard, clipboard_char: b'c', terminator: "\x1b\\", reply: <ResponseToken> })` is on the transcript. This is the SPEC-CHAIN assertion scope boundary — the spec_chain harness asserts the HostRequest was emitted; it does NOT simulate the IO thread's polling loop (that lives in `oriterm_mux::PaneIoThread`, which is a separate crate layer). The ResponseToken fulfillment → PtyEffect::Write round-trip is tested in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` (listed in the Files block), NOT in the spec_chain test. No `harness.poll_pending_responses()` helper is added to `SpecHarness` — doing so would force `oriterm_test_support` to depend on `oriterm_mux`'s internal `PaneIoThread`, which violates the crate boundary (see `.claude/rules/crate-boundaries.md` §crates/oriterm_test_support).
+- [ ] `response_poll_roundtrip_emits_pty_write` (**in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs`**, NOT in spec_chain) — construct a `PaneIoThread` (or the minimal stub thereof that holds `pending_responses`), call `register_host_request_response(request)` with a `HostRequest::ClipboardLoad { clipboard_char: b'c', terminator: "\x1b\\", reply }`, fulfill the `ResponseToken` with `reply.fulfill("example-text".into())`, call `poll_pending_responses()`, and assert the effect sink received `Effect::Pty(PtyEffect::Write { bytes })` where `bytes == format_clipboard_reply("example-text", b'c', "\x1b\\")` (base64-encoded). Uses `format_clipboard_reply` from `oriterm_core/src/effect/families/host_request.rs` — DO NOT re-implement the reply format inline (LEAK).
 - [ ] **Semantic pin** — `osc52_response_token_requires_fulfillment` — negative test: emit the load request, do NOT fulfill the token, advance the harness ten ticks. Assert NO `PtyEffect::Write` is emitted. This pins the requirement that the terminal waits for fulfillment rather than emitting an empty reply.
 - [ ] `osc52_load_with_s_and_p_selections` — load with `s` and `p` characters; assert the correct `ClipboardSelection` in the `HostRequest`.
 - [ ] `osc52_store_invalid_base64_dropped` — feed `\x1b]52;c;!!!invalid-base64!!!\x1b\\`, assert no `HostEffect::ClipboardStore` is emitted (store path rejects invalid base64; confirm behavior matches `oriterm_core/src/term/handler/tests/osc.rs::osc52_clipboard_load` pattern) OR assert a specific error/drop behavior — whichever the current dispatcher at `oriterm_core/src/term/handler/osc.rs::osc_clipboard_store` produces. If the current behavior is "accept garbage and store it", file `/add-bug` and document the observed behavior as the current catalog deviation.
@@ -289,8 +289,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Validation:**
 
-- [ ] All 8 tests pass (6 behavioral + 1 semantic pin + 1 negative-pin).
-- [ ] `PendingResponse::poll` is exercised by the round-trip test through the now-live `PaneIoThread::poll_pending_responses` path.
+- [ ] All 8 tests pass (4 spec_chain store tests + `osc52_load_request_fires_hostrequest` + `osc52_response_token_requires_fulfillment` + `osc52_load_with_s_and_p_selections` + `osc52_store_invalid_base64_dropped`).
+- [ ] `response_poll_roundtrip_emits_pty_write` in `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` green — exercises `PendingResponse::poll` via `PaneIoThread::register_host_request_response` + `poll_pending_responses` (the IO thread path stays in the `oriterm_mux` crate, not in spec_chain).
 - [ ] `oriterm_core/tests/teseq/osc.rs::osc_clipboard` regression test unchanged and green.
 
 ---
@@ -357,7 +357,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] Add dispatch + interceptor arms for each VS Code sub-command above. VS Code's semantic overlaps OSC 133, so the implementation wiring may reuse the OSC 133 handlers with VS Code-specific parameter parsing (in particular, `P;Cwd=<path>` should route through `Term::set_cwd` — SSOT with OSC 7).
 - [ ] `osc633_a_sets_prompt_state` through `osc633_d_emits_command_complete` — matrix mirroring OSC 133 A-D tests with OSC 633's exact syntax.
 - [ ] `osc633_p_cwd_sets_term_cwd` — feed `\x1b]633;P;Cwd=/home/user/project\x1b\\`. Assert `term.cwd() == Some("/home/user/project")`.
-- [ ] `osc633_e_records_command_line` — if VS Code's `E` sub-command carries the raw command text, expose it on `Term` (new field `last_command_line: Option<String>`) and assert it's recorded. If this is beyond scope for 10.4, defer the E sub-command to Section 22 (real-app harness) and file `/add-bug` with a clear triage note — but do NOT leave it silently unhandled.
+- [ ] `osc633_e_records_command_line` — VS Code's `E` sub-command carries the raw command text. Add `Term::last_command_line: Option<String>` field and expose via `term.last_command_line()`. Feed `\x1b]633;E;git status\x1b\\`, assert `term.last_command_line() == Some("git status")`. This sub-command is NOT optional for `verified` status: OSC-633 is enumerated in the section success criteria with no carve-outs. If the implementation cannot be completed in 10.4 because the VS Code source reveals additional complexity, the sub-command MUST be explicitly filed via `/add-bug` AND OSC-633 catalog status updated to `verified-with-deviation` with a catalog note naming the deviation — the catalog row MUST NOT be marked `verified` while the E sub-command is unimplemented. No silent deferral.
 
 **Catalog update:**
 
@@ -385,7 +385,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ### OSC 22 (mouse cursor icon, iTerm2)
 
 - [ ] `osc22_pointer_sets_cursor_icon` — feed `\x1b]22;pointer\x1b\\`, assert `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Uses the Term field + Handler override from 10.0.
-- [ ] `osc22_all_known_icons_matrix` — iterate through every `CursorIcon` variant supported by the vendored `cursor_icon` crate (cursor-icon crate enumerates ~30 variants). Feed `OSC 22 ; <name> ST` for each; assert each is stored. Self-verifying completeness pin: `assert_eq!(count, CursorIcon::all().count());`.
+- [ ] `osc22_all_known_icons_matrix` — iterate through every known OSC 22 cursor name string. `cursor_icon 1.2.0` does NOT provide a `CursorIcon::all()` or iterator over variants (confirmed: the crate only exposes `CursorIcon::name()` and `FromStr` parsing). Instead, maintain a project-owned static slice of cursor name strings: `const OSC22_KNOWN_ICONS: &[(&str, CursorIcon)] = &[("pointer", CursorIcon::Pointer), ("crosshair", CursorIcon::Crosshair), ...]` covering the ~30 variants from the CSS Basic UI / xterm spec. Feed `OSC 22 ; <name> ST` for each entry; assert each is stored. Self-verifying completeness pin: `assert_eq!(count, OSC22_KNOWN_ICONS.len())` — the project-owned slice is the SSOT for which names are supported, and the count assertion proves every cell was visited.
 - [ ] `osc22_unknown_icon_is_dropped` — feed `\x1b]22;not-a-real-cursor\x1b\\`, assert `term.mouse_cursor_icon()` is UNCHANGED (the `CursorIcon::from_str` error path in the dispatcher at `crates/vte/src/ansi/dispatch/osc.rs:184` logs and drops — no state mutation).
 - [ ] `osc22_reset_behavior` — OSC 22 does not have a spec'd reset form. Document this in the catalog; pin behavior: passing an explicit "default" name (if `CursorIcon::Default` exists) restores the default.
 - [ ] **Semantic pin** — `osc22_does_not_affect_text_cursor_shape` — set `term.cursor_shape()` to `Beam` via OSC 50, then fire OSC 22 with `pointer`. Assert `term.cursor_shape() == Beam` (unchanged). Cross-reference scope clarification §I / blind-spot #5 — OSC 22 (mouse icon) and OSC 50 (text shape) are different fields.
@@ -421,9 +421,9 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc104_zero_args_resets_all_256_palette` — pre-populate palette: set indices 0..256 to custom colors via OSC 4 at setup. Feed `\x1b]104\x1b\\`. Assert every index 0..256 matches the initial theme palette (compare against `Theme::default().palette()`).
 - [ ] `osc104_specific_indices_resets_only_those` — set indices 0, 5, 10 to custom colors. Feed `\x1b]104;5;10\x1b\\`. Assert index 0 is still the custom color; indices 5 and 10 are restored to theme defaults; indices 1–4, 6–9, 11–255 are at theme defaults (no collateral damage).
 - [ ] `osc104_invalid_index_dropped` — feed `\x1b]104;999;abc\x1b\\`, assert the `parse_number` failure path at `dispatch/osc.rs:231-234` routes to `unhandled` and no palette entry is mutated.
-- [ ] `osc110_resets_default_foreground` — set OSC 10 to red, feed `\x1b]110\x1b\\`. Assert default fg matches theme default fg (queryable via `Term::color()` for `NamedColor::Foreground`).
-- [ ] `osc111_resets_default_background` — same pattern for Background.
-- [ ] `osc112_resets_cursor_color` — same pattern for Cursor.
+- [ ] `osc110_resets_default_foreground` — set OSC 10 to red, feed `\x1b]110\x1b\\`. Assert default fg matches theme default fg (queryable via `term.palette().foreground()` — NOT `Term::color()`, which does not exist; the Palette API is at `oriterm_core/src/color/palette/mod.rs:253`).
+- [ ] `osc111_resets_default_background` — same pattern for Background; use `term.palette().background()`.
+- [ ] `osc112_resets_cursor_color` — same pattern for Cursor; use `term.palette().cursor_color()`.
 - [ ] `osc_reset_round_trip_with_query` — after each reset, feed OSC 10/11/12 ` ; ?` (query form) and assert the reply PtyWrite contains the theme default RGB (uses `format_color_reply` from 10.2's canonical home).
 - [ ] **Semantic pin** — `osc104_reset_marks_grid_dirty` — observe damage after OSC 104 (palette change should mark all visible rows dirty per `Term::set_color` which marks grid dirty). Negative pin: if damage isn't set, rendering won't repaint the reset palette — semantic regression.
 
@@ -457,7 +457,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc1337_shell_integration_version` — feed `\x1b]1337;ShellIntegrationVersion=5\x1b\\`, assert `term.shell_integration_version() == Some("5")`.
 - [ ] `osc1337_file_still_routes_to_iterm2_file` — feed a minimal `\x1b]1337;File=name=test.png;:<tiny-png-bytes>\x1b\\`, assert `Handler::iterm2_file` is still called (regression guard: the sub-dispatcher refactor from 10.0 must preserve Section 14's image path).
 - [ ] `osc1337_unknown_key_dropped` — feed `\x1b]1337;NotARealKey=value\x1b\\`, assert no state mutation and the `unhandled` branch fires.
-- [ ] **Semantic pin — SSOT for CWD** — set `term.cwd()` via OSC 7. Feed `OSC 1337 ; CurrentDir=<different-path> ST`. Assert `term.cwd()` now reflects the NEW path (last write wins; NO second CWD field). Cross-reference scope clarification §H.
+- [ ] **Semantic pin — SSOT for CWD (direction A)** — set `term.cwd()` via OSC 7 (`file:///start ST`). Feed `OSC 1337 ; CurrentDir=/other-path ST`. Assert `term.cwd() == Some("/other-path")` (last write wins; NO second CWD field). Cross-reference scope clarification §H.
+- [ ] **Semantic pin — SSOT for CWD (direction B)** — set `term.cwd()` via OSC 1337 CurrentDir first (`/from-iterm2`). Then feed `OSC 7 ; file:///from-osc7 ST`. Assert `term.cwd() == Some("/from-osc7")` (OSC 7 overwrites OSC 1337 via the same canonical `Term::set_cwd` field). Matrix clamping requires BOTH directions per `.claude/rules/tests.md §Matrix Clamping` — a one-directional test misses a future regression where OSC 1337 writes a second CWD field that OSC 7 does not overwrite.
 
 **Catalog update:**
 
@@ -502,7 +503,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### OSC 4 (palette index)
 
-- [ ] `osc4_set_palette_index` — feed `\x1b]4;5;rgb:ff/00/00\x1b\\`, assert `term.color(5) == Rgb(0xff, 0, 0)`.
+- [ ] `osc4_set_palette_index` — feed `\x1b]4;5;rgb:ff/00/00\x1b\\`, assert `term.palette().color(5) == Rgb(0xff, 0, 0)` (`Palette::color(index)` at `oriterm_core/src/color/palette/mod.rs:282`).
 - [ ] `osc4_query_palette_index` — feed `\x1b]4;5;?\x1b\\`, assert a `PtyEffect::Write` with the reply `OSC 4 ; 5 ; rgb:ffff/0000/0000 ST` (double-nibble per xterm).
 - [ ] `osc4_multi_param_sets_multiple_indices` — feed `\x1b]4;1;rgb:00/ff/00;2;rgb:00/00/ff\x1b\\`, assert indices 1 and 2 are both set.
 - [ ] `osc4_out_of_range_dropped` — feed `\x1b]4;999;rgb:ff/ff/ff\x1b\\`, assert no mutation.
@@ -520,7 +521,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### OSC 10 / 11 / 12 (default colors)
 
-- [ ] `osc10_sets_default_foreground` — feed `\x1b]10;rgb:de/ad/be\x1b\\`, assert `term.color(NamedColor::Foreground) == Rgb(0xde, 0xad, 0xbe)`.
+- [ ] `osc10_sets_default_foreground` — feed `\x1b]10;rgb:de/ad/be\x1b\\`, assert `term.palette().foreground() == Rgb(0xde, 0xad, 0xbe)` (use `Palette::foreground()` at `oriterm_core/src/color/palette/mod.rs:253` — `Term::color()` does not exist; the method is on `Palette`, not `Term`).
 - [ ] `osc11_sets_default_background` — OSC 11.
 - [ ] `osc12_sets_cursor_color` — OSC 12.
 - [ ] `osc10_query_replies_rgb` — feed `\x1b]10;?\x1b\\`, assert PtyEffect::Write with `OSC 10 ; rgb:dede/adad/bebe ST`.
@@ -615,6 +616,44 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Impact: Vestigial arm creates a false second dispatch path; future implementors could mistakenly add CWD logic to the wrong layer.
   Required plan update: 10.8 now includes a task to remove the `b"7"` arm from osc.rs or add an explicit SSOT comment (FIXED).
   Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+<!-- Round 2 findings (2026-04-17) -->
+
+- [x] `[TPR-10-8-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:279` — OSC 52 spec-chain test plans `harness.poll_pending_responses()` delegating to `PaneIoThread`, which would force `oriterm_test_support` to depend on `oriterm_mux` internals — a crate boundary violation.
+  Evidence: `harness.poll_pending_responses()` delegating to `PaneIoThread::poll_pending_responses` — `SpecHarness` wraps `Term<QueueingEffectSink>` and contains no `PaneIoThread`.
+  Impact: Adding this helper would add a `oriterm_mux` dependency to `oriterm_test_support`, violating `.claude/rules/crate-boundaries.md §crates/oriterm_test_support`.
+  Required plan update: spec_chain scope boundary clarified — `osc52_load_request_fires_hostrequest` asserts HostRequest emission only; `response_poll_roundtrip_emits_pty_write` moved to `oriterm_mux` IO thread tests where `PaneIoThread` is in scope (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-9-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:424` — Plan cites `Term::color()` for `NamedColor::Foreground` which does not exist; the real API is on `Palette`, not `Term`.
+  Evidence: `Term::color()` does not exist on `oriterm_core::Term`; method is `term.palette().color(index)`, `term.palette().foreground()`, `term.palette().background()`, `term.palette().cursor_color()` (at `oriterm_core/src/color/palette/mod.rs:253,258,274,282`).
+  Impact: An implementer following the plan would write `term.color(NamedColor::Foreground)` which fails to compile.
+  Required plan update: all `term.color(...)` references replaced with `term.palette().color(index)` / `.foreground()` / `.background()` / `.cursor_color()` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-10-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:360` — OSC 633 E sub-command has a deferral escape hatch that contradicts the `verified` catalog status requirement.
+  Evidence: "If this is beyond scope for 10.4, defer the E sub-command to Section 22 — but do NOT leave it silently unhandled" vs catalog update "OSC-633 → `verified`".
+  Impact: Deferring E without downgrading the catalog status would result in a falsely `verified` row with incomplete sub-command coverage.
+  Required plan update: escape hatch removed; plan now requires E to be implemented or explicitly filed via `/add-bug` AND OSC-633 downgraded to `verified-with-deviation` if E is deferred (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-11-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:388` — `CursorIcon::all()` does not exist in cursor-icon 1.2.0; completeness pin would fail to compile.
+  Evidence: cursor-icon 1.2.0 exposes only `CursorIcon::name()` and `FromStr`; no `all()` or variant iterator.
+  Impact: The completeness assertion `assert_eq!(count, CursorIcon::all().count())` does not compile.
+  Required plan update: replaced with a project-owned `OSC22_KNOWN_ICONS` slice as the SSOT; count pin asserts against `OSC22_KNOWN_ICONS.len()` (FIXED).
+  Basis: direct_file_inspection of cursor-icon 1.2.0 source. Confidence: high.
+
+- [x] `[TPR-10-12-gemini][low]` `oriterm_mux/src/shell_integration/interceptor.rs:7` — Interceptor module doc comment incorrectly states that the high-level `Handler::set_working_directory` "stores the raw URI"; the `Term` default implementation is a no-op.
+  Evidence: `fn set_working_directory(&mut self, _: Option<String>) {}` (handler.rs:28) — empty default; `Term` does not override it.
+  Impact: Future readers may believe the high-level handler stores CWD data, obscuring the interceptor's role as the sole canonical CWD path.
+  Required plan update: comment corrected in `interceptor.rs` to accurately state `Term` does not override the handler default and the interceptor is the sole canonical path (FIXED in source file per §7 fix policy).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-13-gemini][medium]` `plans/spec-conformance/section-10-osc-suite.md:460` — CWD SSOT semantic pin only tests OSC 7 → OSC 1337 direction; missing symmetrical test (OSC 1337 → OSC 7 overwrite).
+  Evidence: Plan pin: "set term.cwd() via OSC 7. Feed OSC 1337 ; CurrentDir=<different-path>. Assert new path." Reverse direction absent.
+  Impact: A future regression where OSC 1337 writes a separate CWD field not overwritten by OSC 7 would go undetected.
+  Required plan update: symmetrical direction B test added (OSC 1337 first, then OSC 7 overwrites) per `.claude/rules/tests.md §Matrix Clamping` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
 
 ---
 
