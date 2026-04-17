@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 12
+  rounds_completed: 13
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -174,6 +174,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - `oriterm_core/src/term/renderable/mod.rs` (expose `mouse_cursor_icon` on `RenderableContent`)
 - `crates/vte/src/ansi/handler.rs` (add `iterm2_set_mark`, `iterm2_remote_host`, `iterm2_current_dir`, `iterm2_copy`, `iterm2_report_cell_size`, `iterm2_set_user_var`, `iterm2_shell_integration_version` default methods)
 - `crates/vte/src/ansi/dispatch/osc.rs` (refactor the `b"1337"` arm into a key=value sub-dispatcher)
+- `crates/vte/src/ansi/dispatch/mod.rs` (**MODULE REGISTRATION**: add `#[cfg(test)] mod tests;` at the bottom of this file — required for the `dispatch/tests.rs` TDD test created in the OSC 1337 sub-dispatcher parse pin below. Without this registration, `tests.rs` will not be compiled. Currently `dispatch/mod.rs` has NO `#[cfg(test)] mod tests;` declaration, so the file must be added to the plan explicitly)
 - `crates/oriterm_test_support/src/spec_chain/recording_handler.rs` (**REGISTRATION SYNC**: for every new `Handler::iterm2_*` method added to `crates/vte/src/ansi/handler.rs`, a matching delegate arm must be added here — same pattern as the existing `iterm2_file` arm at line 317. Missing arms mean the SpecHarness silently drops the new methods and spec_chain tests cannot observe them. This file is also updated in 10.7 when Term overrides land.)
 - `oriterm_mux/src/pane/io_thread/response_poll.rs` (remove the `#[allow(dead_code)]` gate; add the activation call in `PaneIoThread::drain_events` or equivalent)
 - `oriterm_core/src/term/shell_state/mod.rs` (modify `finish_command` signature to accept `now: Option<Instant>` — Option A timing seam)
@@ -191,7 +192,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 **Implementation:**
 
-- [ ] Add a `spec_chain_helper` test-only module in `oriterm_mux/src/shell_integration/tests.rs` (existing sibling `#[cfg(test)] mod tests;` file) that constructs a `RawInterceptor + Term` pair and runs both parsers in production order matching `PaneIoThread::handle_bytes`: (1) capture `evicted_before = term.grid().total_evicted()`, (2) `raw_parser.advance(&mut interceptor, bytes)`, (3) `processor.advance(&mut term, bytes)`, (4) call `post_parse_housekeeping(evicted_before)` (snapshot flip + eviction accounting — same housekeeping production always runs). The sibling unit-test module has `pub(crate)` access to `RawInterceptor` because it compiles as part of the `oriterm_mux` crate (unlike integration tests in `oriterm_mux/tests/`, which are separate crates with no `pub(crate)` visibility). **CRITICAL BOUNDARY**: Do NOT place tests requiring `RawInterceptor` in `oriterm_mux/tests/spec_chain/` — integration test crates cannot access `pub(crate)` items. Only tests that exercise purely-public APIs may live in `oriterm_mux/tests/`. `crates/oriterm_test_support` (`SpecHarness`) requires NO modification — no `mux_layer`, no `feed_with_mux()`, no new dependency. The `SpecHarness` remains mux-free.
+- [ ] Add a `spec_chain_helper` test-only module in `oriterm_mux/src/shell_integration/tests.rs` (existing sibling `#[cfg(test)] mod tests;` file) that constructs a `RawInterceptor + Term` pair and runs both parsers in production order: (1) `raw_parser.advance(&mut interceptor, bytes)`, (2) `processor.advance(&mut term, bytes)`. **CRITICAL VISIBILITY NOTE**: Do NOT call `post_parse_housekeeping(evicted_before)` from this module — `post_parse_housekeeping` is a private method on `PaneIoThread` in `oriterm_mux/src/pane/io_thread/mod.rs:337` and is NOT accessible from `shell_integration/tests.rs` (they are sibling modules, not the same module or child/parent). The test helper in `shell_integration/tests.rs` does NOT need snapshot production housekeeping because it is testing interceptor behavior (state changes on `Term`), not snapshot visibility. If prompt-mark deferred side effects need verification in a specific test, call the public `Term` methods for deferred marking directly (`term.prompt_mark_pending()`, `term.mark_prompt_row()`, etc.) rather than routing through the private IO-thread method. The sibling unit-test module has `pub(crate)` access to `RawInterceptor` because it compiles as part of the `oriterm_mux` crate (unlike integration tests in `oriterm_mux/tests/`, which are separate crates with no `pub(crate)` visibility). **CRITICAL BOUNDARY**: Do NOT place tests requiring `RawInterceptor` in `oriterm_mux/tests/spec_chain/` — integration test crates cannot access `pub(crate)` items. Only tests that exercise purely-public APIs may live in `oriterm_mux/tests/`. `crates/oriterm_test_support` (`SpecHarness`) requires NO modification — no `mux_layer`, no `feed_with_mux()`, no new dependency. The `SpecHarness` remains mux-free.
 - [ ] Complete `observe_renderable` to check every field in `RenderableExpectation`:
   - `cells: Option<&'static [(usize, usize, char)]>` — cell contents at specific positions (`&'static` slice, const-constructible, preserves `Copy`).
   - `hyperlink_at: Option<(usize, usize, &'static str)>` — assert cell's hyperlink URI matches (tuple of row, col, `&'static str` — const-constructible).
@@ -464,6 +465,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc1337_file_still_routes_to_iterm2_file` — feed a minimal `\x1b]1337;File=name=test.png;:<tiny-png-bytes>\x1b\\`, assert `Handler::iterm2_file` is still called (regression guard: the sub-dispatcher refactor from 10.0 must preserve Section 14's image path).
 - [ ] `osc1337_unknown_key_dropped` — feed `\x1b]1337;NotARealKey=value\x1b\\`, assert no state mutation and the `unhandled` branch fires.
 - [ ] `osc1337_user_vars_cap_evicts_oldest` — **RSS REGRESSION PIN**: insert 257 distinct `SetUserVar` keys (`KEY_0` through `KEY_256`). Assert `term.user_vars().len() == 256` (cap enforced) AND `term.user_var("KEY_0") == None` (oldest evicted). Assert `term.user_var("KEY_256") == Some(...)` (newest retained). This test MUST FAIL if `user_vars` grows unboundedly. Cross-reference 10.N RSS regression check.
+- [ ] `osc1337_copy_invalid_base64_dropped` — **NEGATIVE PIN** (per `.claude/rules/tests.md §Negative Testing Protocol`): feed `\x1b]1337;Copy=:!!!not-valid-base64!!!\x1b\\`. Assert NO `HostEffect::ClipboardStore` is emitted (the Copy handler must drop invalid base64, not panic or store garbage). Mirrors the parallel `osc52_store_invalid_base64_dropped` test in 10.2 for consistency.
+- [ ] `osc1337_set_user_var_invalid_base64_dropped` — **NEGATIVE PIN**: feed `\x1b]1337;SetUserVar=MY_KEY=!!!invalid!!!\x1b\\`. Assert NO entry is added to `user_vars` for `MY_KEY` (the SetUserVar handler must reject invalid base64 in the value, not store garbage). Documents the expected drop behavior; if the current dispatcher accepts invalid base64 and stores raw bytes, file `/add-bug` and update the test to assert the observed behavior as a documented deviation.
 - [ ] **Semantic pin — SSOT for CWD (direction A)** — set `term.cwd()` via OSC 7 (`file:///start ST`). Feed `OSC 1337 ; CurrentDir=/other-path ST`. Assert `term.cwd() == Some("/other-path")` (last write wins; NO second CWD field). Cross-reference scope clarification §H.
 - [ ] **Semantic pin — SSOT for CWD (direction B)** — set `term.cwd()` via OSC 1337 CurrentDir first (`/from-iterm2`). Then feed `OSC 7 ; file:///from-osc7 ST`. Assert `term.cwd() == Some("/from-osc7")` (OSC 7 overwrites OSC 1337 via the same canonical `Term::set_cwd` field). Matrix clamping requires BOTH directions per `.claude/rules/tests.md §Matrix Clamping` — a one-directional test misses a future regression where OSC 1337 writes a second CWD field that OSC 7 does not overwrite.
 
@@ -481,7 +484,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Validation:**
 
-- [ ] All 12 tests green (7 behavioral + `osc1337_file_still_routes_to_iterm2_file` + `osc1337_unknown_key_dropped` + `osc1337_user_vars_cap_evicts_oldest` + 2 CWD SSOT semantic pins).
+- [ ] All 14 tests green (7 behavioral + `osc1337_file_still_routes_to_iterm2_file` + `osc1337_unknown_key_dropped` + `osc1337_user_vars_cap_evicts_oldest` + 2 CWD SSOT semantic pins + `osc1337_copy_invalid_base64_dropped` + `osc1337_set_user_var_invalid_base64_dropped`).
 - [ ] OSC 1337 `File=` path unchanged; Section 14 can build on top without touching the sub-dispatcher.
 - [ ] **TPR checkpoint 3** — `/tpr-review` covering 10.4–10.7 + ownership cross-check against Section 14.
 
@@ -560,7 +563,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Per-row analysis (per `catalog/osc.md:37-56`):**
 
-- **OSC 3** (set X11 window property) — platform-specific (X11 only). Add dispatch arm that routes to `Handler::set_x11_property(prop: &[u8], value: &[u8])`. Term's default implementation drops on non-X11; on Linux + X11 runtime it may emit `HostEffect::SetX11Property`. For 10.9 verification: test that the dispatch arm fires and on non-X11 platforms the dispatch returns without side effects. Catalog status → `verified-with-deviation` with a note that the effect is platform-conditional.
+- **OSC 3** (set X11 window property) — platform-specific (X11 only). Add dispatch arm that routes to `Handler::set_x11_property(prop: &[u8], value: &[u8])`. **EFFECT NOTE**: `HostEffect::SetX11Property` does NOT exist in `oriterm_core/src/effect/families/host.rs` (the enum has no such variant). Do NOT reference this variant. The implementation must either: (a) add a new `HostEffect::SetX11Property { prop: String, value: String }` variant to the enum (update ALL match arms that consume `HostEffect` across `oriterm_eval`, `LegacyEventSink`, `QueueingEffectSink`, etc.), OR (b) keep OSC 3 as a no-op that stores state only in `Term` (add a `Term::x11_property` field queried by renderable/state rungs) without emitting any `HostEffect`. Option B is preferred for 10.9's scope to avoid a cross-crate fan-out. `Handler::set_x11_property` default on `Term` is a no-op; on Linux+X11 runtime, a future section may emit the effect. For 10.9 verification: test that the dispatch arm fires (state rung, not effect rung) and on non-X11 platforms the dispatch returns without side effects. Catalog status → `verified-with-deviation` with a note that the effect is platform-conditional.
 - **OSC 5** (change/query special color: highlight/bold) — add dispatch + handler; test set + query round-trip. `verified`.
 - **OSC 6** (title tab color, iTerm2) — add dispatch + handler; new `Term::tab_title_color` field; test set + query. `verified`.
 - **OSC 13 / 113** (mouse fg color set/reset) — add dispatch + handler pair. Test set via `OSC 13 ; rgb:... ST`, query via `OSC 13 ; ? ST`, reset via `OSC 113 ST`. `verified`.
@@ -954,6 +957,38 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Required plan update: 10.7 flow-up note corrected to cite `catalog/iterm2.md:5` for `owner_section` and `catalog/iterm2.md:15-20` for the non-image rows (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
+<!-- Round 13 findings (2026-04-17) -->
+
+- [x] `[TPR-10-59-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:194` — 10.0 implementation bullet instructed `shell_integration/tests.rs` to call `post_parse_housekeeping(evicted_before)` — a private `fn` on `PaneIoThread` in `oriterm_mux/src/pane/io_thread/mod.rs:337`; `shell_integration` is a sibling module with no access to this method.
+  Evidence: `fn post_parse_housekeeping(&mut self, evicted_before: usize)` at `oriterm_mux/src/pane/io_thread/mod.rs:337` — private method on `PaneIoThread`; `shell_integration/tests.rs` is a sibling, not part of `pane/io_thread`.
+  Impact: An implementer following the plan would get a compile error: the private method is not callable from the sibling module.
+  Required plan update: Bullet rewritten to (1) omit the `post_parse_housekeeping` call (test verifies `Term` state, not snapshot production), (2) note that deferred marking can be tested via public `Term` methods if needed, (3) add CRITICAL VISIBILITY NOTE explaining why the private method cannot be called from this location (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-60-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:188` — TDD bullet plans `crates/vte/src/ansi/dispatch/tests.rs` but `dispatch/mod.rs` has no `#[cfg(test)] mod tests;` registration, so the file would not be compiled.
+  Evidence: `crates/vte/src/ansi/dispatch/mod.rs` — no `#[cfg(test)] mod tests;` line; no `dispatch/tests.rs` file exists; per `.claude/rules/test-organization.md §Sibling tests.rs Pattern`, the declaration is required.
+  Impact: Creating `dispatch/tests.rs` without the registration produces a file that compiles to nothing — the test runs no assertions and gives false confidence.
+  Required plan update: `crates/vte/src/ansi/dispatch/mod.rs` added to 10.0 Files block with explicit instruction to add `#[cfg(test)] mod tests;` (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-61-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:563` — 10.9 OSC 3 plan references `HostEffect::SetX11Property` which does not exist in `oriterm_core/src/effect/families/host.rs`.
+  Evidence: `pub enum HostEffect { Bell, VisualBell, DesktopNotification { .. }, TitleSet { .. }, IconNameSet { .. }, CwdSet { .. }, AudioRequest(..), PrintRequest(..), ClipboardStore { .. }, ChildExit { .. }, CommandComplete { .. }, ClearPendingNotifications }` — no `SetX11Property` variant.
+  Impact: An implementer emitting `HostEffect::SetX11Property { .. }` in the OSC 3 handler gets a compile error; all arms that consume `HostEffect` would also need updating if the variant is added.
+  Required plan update: 10.9 OSC 3 entry rewritten to clarify the variant does not exist and provide two valid paths: add the variant (with full fan-out), or use state-only (Term field) with no HostEffect emission for 10.9's scope (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-62-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:992` — 10.N SSOT verification grep expected `cwd: Option` to appear in `term/shell_state/mod.rs`; the field is actually declared at `oriterm_core/src/term/mod.rs:147`.
+  Evidence: `oriterm_core/src/term/mod.rs:147` — `cwd: Option<String>,`; `shell_state/mod.rs` contains only `set_cwd(&mut self, cwd: Option<String>)` mutator.
+  Impact: An implementer running the verification grep and expecting exactly one hit in `shell_state/mod.rs` would get confused when grep returns `term/mod.rs:147` instead.
+  Required plan update: SSOT check updated to cite `term/mod.rs` for the field declaration and keep `shell_state/mod.rs` only for the mutator check (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-63-gemini][medium]` `plans/spec-conformance/section-10-osc-suite.md:460` — 10.7 OSC 1337 Copy and SetUserVar tests lack negative pins for invalid base64, violating the Negative Testing Protocol; OSC 52's parallel test plan includes `osc52_store_invalid_base64_dropped` but 10.7 has no equivalent.
+  Evidence: 10.7 Tests block: no `osc1337_copy_invalid_base64_dropped` or `osc1337_set_user_var_invalid_base64_dropped` test; OSC 52's plan at line ~288 has `osc52_store_invalid_base64_dropped`.
+  Impact: A regression where invalid base64 is silently stored as garbage in clipboard or user_vars would go undetected.
+  Required plan update: Two negative pin tests added to 10.7: `osc1337_copy_invalid_base64_dropped` and `osc1337_set_user_var_invalid_base64_dropped`; 10.7 validation count updated from 12 to 14 (FIXED).
+  Basis: direct_file_inspection. Confidence: medium.
+
 ---
 
 ## 10.N Completion Checklist
@@ -989,7 +1024,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### Rules weaving (per `.claude/rules/impl-hygiene.md` + `.claude/rules/code-hygiene.md` + `.claude/rules/crate-boundaries.md` + `.claude/rules/oriterm_core.md` + `.claude/rules/oriterm_mux.md`)
 
-- [ ] **No SSOT drift**: `Term::cwd` is the ONLY CWD field — OSC 7, OSC 133, and OSC 1337 CurrentDir all route through it (10.4, 10.7, 10.8). Verified by: (1) `grep -rn 'cwd: Option' oriterm_core/src/term/` returns exactly ONE field declaration (`term/shell_state/mod.rs`); (2) `grep -rn 'fn set_cwd' oriterm_core/src/term/` returns exactly ONE function definition; (3) all `set_cwd` call sites route through `Term::set_cwd` (not direct field access). A broad `grep -rn 'cwd:'` is insufficient — it matches comments, doc strings, and struct initialisations that don't reveal whether there are TWO fields named `cwd`.
+- [ ] **No SSOT drift**: `Term::cwd` is the ONLY CWD field — OSC 7, OSC 133, and OSC 1337 CurrentDir all route through it (10.4, 10.7, 10.8). Verified by: (1) `grep -rn 'cwd: Option' oriterm_core/src/term/` returns exactly ONE field declaration (`term/mod.rs:147` — the field lives in `Term<S>` directly, NOT in `shell_state/mod.rs`; `shell_state/mod.rs` contains only the `set_cwd` mutator method); (2) `grep -rn 'fn set_cwd' oriterm_core/src/term/` returns exactly ONE function definition (in `shell_state/mod.rs:245`); (3) all `set_cwd` call sites route through `Term::set_cwd` (not direct field access). A broad `grep -rn 'cwd:'` is insufficient — it matches comments, doc strings, and struct initialisations that don't reveal whether there are TWO fields named `cwd`.
 - [ ] **No registration sync drift**: new `NotificationSource` variants (none added in this section — pinned in 10.3) AND new `Handler` trait methods (iterm2_* in 10.0 / 10.7 + x11_property in 10.9) are checked for sync across ALL three consumers — `grep -rn 'fn iterm2_'` in (1) `crates/vte/src/ansi/handler.rs` (trait declaration), (2) `oriterm_core/src/term/handler/mod.rs` (Term impl), AND (3) `crates/oriterm_test_support/src/spec_chain/recording_handler.rs` (RecordingHandler delegate) — all three must have matching method entries. Missing from `recording_handler.rs` means spec_chain tests silently miss the new dispatch (per finding TPR-10-15 precedent). Also verify `set_x11_property` is synced across all three when added in 10.9.
 - [ ] **No LEAK**: reply formatting for OSC 52 + OSC 4/10/11/12 queries goes through `format_clipboard_reply` / `format_color_reply` at `oriterm_core/src/effect/families/host_request.rs:110,126` — the canonical home; NO ad-hoc `format!` at dispatch or handler sites.
 - [ ] **No file size violations**: per `.claude/rules/code-hygiene.md` §File Size, source files (non-`tests.rs`) stay under 500 lines. `crates/vte/src/ansi/dispatch/osc.rs` is currently under the limit; the OSC 1337 sub-dispatcher extraction (10.0) and the new OSC 3/5/6/13/14/17/19/113/114/117/119/L/l arms (10.9) MUST NOT push it over. If approaching the limit, split by OSC family (e.g., `dispatch/osc/color.rs`, `dispatch/osc/notifications.rs`, `dispatch/osc/shell_integration.rs`) per the existing `dispatch/` pattern.
