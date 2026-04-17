@@ -346,11 +346,12 @@ These are two MISSING modes found in the catalog (`DEC-DECNKM`, `DEC-DECBKM`). B
   - [x] `shift_backspace_unchanged_by_decbkm_reset()` + `shift_backspace_unchanged_by_decbkm_set()` — negative pins
   - [x] `backspace_matrix_completeness()` — self-verifying 2×5=10 cell iteration
 
-- [x] **End-to-end bridge test through `pane_mode()`:** *(done: 3 bridge tests in `oriterm_mux/src/pane/io_thread/tests.rs`)*
-  - [x] `bridge_decbkm_propagates_to_mode_cache()` — DECSET ?67 → mode_cache carries DECBKM bit
-  - [x] `bridge_decbkm_reset_clears_mode_cache()` — DECRST ?67 → mode_cache cleared
-  - [x] `bridge_decnkm_propagates_to_mode_cache()` — DECSET ?66 → mode_cache carries APP_KEYPAD bit
-  - Note: daemon backend bridge deferred — daemon backend not yet wired for headless testing; the embedded-backend bridge proves the `post_parse_housekeeping()` → `mode_cache` → `TermMode::from_bits_truncate()` path that BOTH backends share (same `AtomicU64` + same `from_bits_truncate` reconstruction)
+- [x] **End-to-end bridge tests through `pane_mode()` (embedded + daemon):**
+  - [x] `bridge_decbkm_propagates_to_mode_cache()` in `oriterm_mux/src/pane/io_thread/tests.rs` — DECSET ?67 → mode_cache carries DECBKM bit (shared parser→mode_cache hop for both backends)
+  - [x] `bridge_decbkm_reset_clears_mode_cache()` in `oriterm_mux/src/pane/io_thread/tests.rs` — DECRST ?67 → mode_cache cleared
+  - [x] `bridge_decnkm_propagates_to_mode_cache()` in `oriterm_mux/src/pane/io_thread/tests.rs` — DECSET ?66 → mode_cache carries APP_KEYPAD bit
+  - [x] `pane_mode_reflects_decbkm_set()` + `pane_mode_clears_decbkm_on_reset()` in `oriterm_mux/src/backend/embedded/tests.rs` — embedded backend mode_cache → `pane_mode()`
+  - [x] `client_pane_mode_reflects_decbkm_from_cached_snapshot()` (+ negative pin) in `oriterm_mux/src/backend/client/tests.rs` — daemon backend cached snapshot → `MuxClient::pane_mode()` (the server→client PDU `modes` field is covered by mux protocol tests)
 
 - [x] Update catalog row `DEC-DECBKM` from `missing` to `verified` *(done in 09.N)*
 
