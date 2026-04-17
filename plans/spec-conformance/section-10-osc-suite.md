@@ -7,7 +7,7 @@ goal: "Drive every row in `catalog/osc.md`, `catalog/shell-integration.md`, and 
 success_criteria:
   - "Every row in `catalog/osc.md` is `verified` or `verified-with-deviation` (no `implemented-unverified`, no `stub`, no `missing`) — this includes the basic subset 08 left unverified (OSC 0/1/2/4/7/10/11/12/52) and the advanced subset (OSC 8/22/50/104/110/111/112/9/99/777/133/633 and the non-image OSC 1337 sub-ops)"
   - "Every row in `catalog/shell-integration.md` is `verified` (OSC-7-CWD, OSC-133 A/B/C/D, OSC-633 VS Code, OSC-1337-RemoteHost / CurrentDir / SetMark / SetUserVar / ReportCellSize shell-integration cross-refs, OSC-9/777 notification cross-refs)"
-  - "The non-image rows of `catalog/iterm2.md` (ITERM2-1337-REMOTEHOST, ITERM2-1337-CURRENTDIR, ITERM2-1337-COPY, ITERM2-1337-SETMARK, ITERM2-1337-REPORTCELLSIZE, ITERM2-1337-SETUSERVAR) are `verified`; `owner_section` in `catalog/iterm2.md` front-matter (line 5) is updated so Section 10 owns these rows and Section 14 owns ONLY `ITERM2-1337-FILE` + image-adjacent rows — cross-checked against the ownership conflict currently at `section-14-iterm2-images.md:55` and `catalog/iterm2.md:15-20` (the non-image rows)"
+  - "The non-image rows of `catalog/iterm2.md` (ITERM2-1337-REMOTEHOST, ITERM2-1337-CURRENTDIR, ITERM2-1337-COPY, ITERM2-1337-SETMARK, ITERM2-1337-REPORTCELLSIZE, ITERM2-1337-SETUSERVAR, ITERM2-1337-SHELLINTVERSION) are `verified`; `ITERM2-1337-SHELLINTVERSION` is a new catalog row added by Section 10 (it is not currently in `catalog/iterm2.md` — Section 10.7 adds it). `owner_section` in `catalog/iterm2.md` front-matter (line 5) is updated so Section 10 owns these rows and Section 14 owns ONLY `ITERM2-1337-FILE` + image-adjacent rows — cross-checked against the ownership conflict currently at `section-14-iterm2-images.md:55` and `catalog/iterm2.md:15-20` (the non-image rows)"
   - "OSC 7 / 9 / 99 / 133 / 633 / 777 are verified against the REAL production path (`oriterm_mux/src/shell_integration/interceptor.rs`) via spec_chain unit tests that live in `oriterm_mux/src/shell_integration/tests.rs` (sibling unit-test module — has `pub(crate)` access to `RawInterceptor` per the Rust unit-test visibility rule). Tests that need `RawInterceptor` MUST NOT live in `oriterm_mux/tests/spec_chain/` — integration test crates are separate compilation units and cannot access `pub(crate)` items in the main crate. `crates/oriterm_test_support` (`SpecHarness`) stays mux-free — no `mux_layer` API is added to `SpecHarness`. High-level-processor OSC tests (OSC 0/1/2/4/8/10/11/12/22/50/52/104/110/111/112/1337 non-image) stay in `oriterm_core/tests/spec_chain/osc/`."
   - "`observe_renderable` (crates/oriterm_test_support/src/spec_chain/observers/renderable.rs) is no longer a stub — it asserts cell hyperlink URI, cursor position, cursor shape, palette entries, and damaged lines. Every OSC 8 subsection test exercises this observer with a scenario that would FAIL if the observer remained a stub (semantic pin against `RungResult::pass(rung)` stub-behavior)"
   - "OSC 8 hyperlink rows verified — cell-attached URI survives reflow, scroll into scrollback, copy (cell metadata), and alt-screen toggle; the OSC 8 terminator (empty URI) cancels the attachment on subsequent cells; `id=<id>` parameter is preserved but does not change attachment semantics (per gist:egmontkob)"
@@ -37,7 +37,7 @@ depends_on: ["03", "08", "effect-cutover"]
 third_party_review:
   status: findings_accepted_by_user
   updated: "2026-04-17"
-  rounds_completed: 22
+  rounds_completed: 23
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -379,7 +379,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Catalog update:**
 
-- [ ] OSC-133 `catalog/osc.md` → `verified`. Implementation cell cites interceptor + handler paths.
+- [ ] OSC-133 `catalog/osc.md`: **Split the single `OSC-133` row into two rows before marking verified.** The A/B/C subops drive `PromptState` state machine (apex: `state-snapshot`); the D subop emits `HostEffect::CommandComplete` (apex: `effect-host-notification` — the closest canonical `ApexLayer` value covering fire-and-forget `HostEffect` variants; add a catalog Notes entry clarifying the apex maps to `CommandComplete`, not a desktop notification). New rows: `OSC-133-PROMPT` (subops A/B/C, apex `state-snapshot`) and `OSC-133-CMD-COMPLETE` (subop D, apex `effect-host-notification`). Implementation cells cite the interceptor + handler paths for each. The single-row `OSC-133` entry in the catalog is deleted. Also update `catalog/shell-integration.md::SHINT-OSC-133-PROMPT` to reference only the A/B/C rows (`state-snapshot` apex); add a new `SHINT-OSC-133-CMD-COMPLETE` cross-reference row for D (`effect-host-notification` apex).
 - [ ] OSC-633 `catalog/osc.md` → `verified` (add implementation citations).
 - [ ] `catalog/shell-integration.md` SHINT-OSC-133-PROMPT → `verified`; SHINT-OSC-633-VSCODE → `verified`.
 
@@ -490,7 +490,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `catalog/iterm2.md` front-matter `owner_section` → `"01 (bootstrap), 10 (non-image), 14 (image)"`.
 - [ ] Rows ITERM2-1337-REMOTEHOST, ITERM2-1337-CURRENTDIR, ITERM2-1337-COPY, ITERM2-1337-SETMARK, ITERM2-1337-REPORTCELLSIZE, ITERM2-1337-SETUSERVAR → `verified` with implementation citation to `oriterm_core/src/term/handler/mod.rs::iterm2_*`.
 - [ ] ITERM2-1337-FILE stays at `implemented-unverified` (Section 14 owns its verification). Add a catalog Notes entry cross-linking Section 10's ownership of the non-image variants.
-- [ ] New catalog row ITERM2-1337-SHELLINTVERSION added if missing.
+- [ ] New catalog row `ITERM2-1337-SHELLINTVERSION` added to `catalog/iterm2.md`: sequence `` `OSC 1337 ; ShellIntegrationVersion=<version> BEL|ST` ``, description "Report shell integration version string", implementation cites `Handler::iterm2_shell_integration_version` (`crates/vte/src/ansi/handler.rs`) → `Term::iterm2_shell_integration_version` (`oriterm_core/src/term/handler/mod.rs`), apex `state-snapshot`, verification → `verified`. This row MUST appear in the catalog before 10.7 marks itself complete — the section success criteria explicitly include it.
 - [ ] `catalog/shell-integration.md` — add or update cross-reference rows for OSC 1337 non-image sub-ops per the success criteria promise: SHINT-OSC-1337-REMOTEHOST, SHINT-OSC-1337-CURRENTDIR, SHINT-OSC-1337-SETMARK, SHINT-OSC-1337-SETUSERVAR, SHINT-OSC-1337-REPORTCELLSIZE → `verified`, each citing the corresponding `ITERM2-1337-*` row in `catalog/iterm2.md` and the `Term::iterm2_*` handler in `oriterm_core/src/term/handler/mod.rs`. These rows close out the success criterion "Every row in `catalog/shell-integration.md` is `verified` (... OSC-1337-RemoteHost / CurrentDir / SetMark / SetUserVar / ReportCellSize shell-integration cross-refs ...)".
 
 **Plan sync to Section 14 (flow-up edit beyond single-section authority — recorded for next /review-plan):**
@@ -530,7 +530,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ### OSC 4 (palette index)
 
 - [ ] `osc4_set_palette_index` — feed `\x1b]4;5;rgb:ff/00/00\x1b\\`, assert `term.palette().color(5) == Rgb(0xff, 0, 0)` (`Palette::color(index)` at `oriterm_core/src/color/palette/mod.rs:282`).
-- [ ] `osc4_query_palette_index` — feed `\x1b]4;5;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ColorQuery { index: ColorQueryTarget::PaletteIndex(5) })` is emitted (handler pushes `HostRequest::ColorQuery` to the effect sink — confirmed at `oriterm_core/src/term/handler/osc.rs:95`; the reply bytes `OSC 4 ; 5 ; rgb:ffff/0000/0000 ST` are produced by the consumer and tested separately in `oriterm_mux` IO-thread tests — the spec_chain scope boundary is HostRequest emission, NOT the reply write).
+- [ ] `osc4_query_palette_index` — feed `\x1b]4;5;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. })` is emitted where `prefix == "4"` and `index == 5` (handler pushes `HostRequest::ColorQuery` to the effect sink — confirmed at `oriterm_core/src/term/handler/osc.rs:95`; `HostRequest::ColorQuery` has fields `prefix: String`, `index: usize`, `terminator: String`, `reply: ResponseToken<Rgb>` — there is NO `ColorQueryTarget` enum; the reply bytes `OSC 4 ; 5 ; rgb:ffff/0000/0000 ST` are produced by the consumer and tested separately in `oriterm_mux` IO-thread tests — the spec_chain scope boundary is HostRequest emission, NOT the reply write).
 - [ ] `osc4_multi_param_sets_multiple_indices` — feed `\x1b]4;1;rgb:00/ff/00;2;rgb:00/00/ff\x1b\\`, assert indices 1 and 2 are both set.
 - [ ] `osc4_out_of_range_dropped` — feed `\x1b]4;999;rgb:ff/ff/ff\x1b\\`, assert no mutation.
 - [ ] `osc4_invalid_color_dropped` — feed `\x1b]4;5;NOT_A_COLOR\x1b\\`, assert index 5 unchanged.
@@ -550,7 +550,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc10_sets_default_foreground` — feed `\x1b]10;rgb:de/ad/be\x1b\\`, assert `term.palette().foreground() == Rgb(0xde, 0xad, 0xbe)` (use `Palette::foreground()` at `oriterm_core/src/color/palette/mod.rs:253` — `Term::color()` does not exist; the method is on `Palette`, not `Term`).
 - [ ] `osc11_sets_default_background` — OSC 11.
 - [ ] `osc12_sets_cursor_color` — OSC 12.
-- [ ] `osc10_query_replies_rgb` — feed `\x1b]10;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ColorQuery { index: ColorQueryTarget::NamedColor(NamedColor::Foreground) })` is emitted (same HostRequest::ColorQuery apex as OSC 4 queries — the handler at `oriterm_core/src/term/handler/osc.rs:95` pushes `HostRequest::ColorQuery` for OSC 10/11/12; the reply `OSC 10 ; rgb:dede/adad/bebe ST` is produced by the consumer and tested separately in `oriterm_mux` IO-thread response-fulfillment tests).
+- [ ] `osc10_query_replies_rgb` — feed `\x1b]10;?\x1b\\`, assert `Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. })` is emitted where `prefix == "10"` and `index == 256` (`NamedColor::Foreground as usize == 256`; `HostRequest::ColorQuery` has fields `prefix: String`, `index: usize`, `terminator: String`, `reply: ResponseToken<Rgb>` — there is NO `ColorQueryTarget` enum; the OSC dispatcher maps `OSC 10 → NamedColor::Foreground as usize`, `OSC 11 → NamedColor::Background as usize` (257), `OSC 12 → NamedColor::Cursor as usize` (258) via `let offset = dynamic_code as usize - 10; let index = NamedColor::Foreground as usize + offset` — confirmed at `crates/vte/src/ansi/dispatch/osc.rs:151-152`; same `HostRequest::ColorQuery` apex as OSC 4 queries; the reply `OSC 10 ; rgb:dede/adad/bebe ST` is produced by the consumer and tested separately in `oriterm_mux` IO-thread response-fulfillment tests).
 - [ ] `osc10_multi_param_walks_named_colors` — per the osc.md Notes column, the multi-param form walks `NamedColor::Foreground..Cursor`. Feed `\x1b]10;rgb:10/10/10;rgb:20/20/20;rgb:30/30/30\x1b\\`, assert Foreground == `#101010`, Background == `#202020`, Cursor == `#303030`.
 
 ### OSC 52 already covered in 10.2
@@ -577,12 +577,12 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - `oriterm_core/src/term/mod.rs` (new Term fields for 10.9: `x11_property`, `tab_title_color`, `mouse_fg_color`, `mouse_bg_color`, `highlight_bg_color`, `highlight_fg_color` — plus any other state-carrying fields for the new OSC variants)
 - `crates/oriterm_test_support/src/spec_chain/recording_handler.rs` (**REGISTRATION SYNC**: every new `Handler::set_x11_property`, `Handler::set_mouse_fg_color`, etc. method added to `crates/vte/src/ansi/handler.rs` MUST have a matching delegate arm here — same pattern as existing arms at lines ~320+. Missing arms cause spec_chain tests to silently miss the new dispatch.)
 - `oriterm_core/tests/spec_chain/osc/missing_rows.rs` (new — verifies each added variant)
-- Catalog updates: `catalog/osc.md` rows OSC-3, OSC-5, OSC-6, OSC-13-SET/QUERY, OSC-14-SET/QUERY, OSC-17-SET/QUERY, OSC-19-SET/QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L, OSC-l
+- Catalog updates: `catalog/osc.md` rows OSC-3, OSC-5-SET, OSC-5-QUERY, OSC-6, OSC-13-SET/QUERY, OSC-14-SET/QUERY, OSC-17-SET/QUERY, OSC-19-SET/QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L, OSC-l
 
 **Per-row analysis (per `catalog/osc.md:37-56`):**
 
 - **OSC 3** (set X11 window property) — platform-specific (X11 only). Add dispatch arm that routes to `Handler::set_x11_property(prop: &[u8], value: &[u8])`. **EFFECT NOTE**: `HostEffect::SetX11Property` does NOT exist in `oriterm_core/src/effect/families/host.rs` (the enum has no such variant). Do NOT reference this variant. The implementation must either: (a) add a new `HostEffect::SetX11Property { prop: String, value: String }` variant to the enum (update ALL match arms that consume `HostEffect`. `QueueingEffectSink` does NOT need updating — its `push()` method queues effects opaquely without matching on variants (`oriterm_core/src/effect/sink/mod.rs:72-75`). The actual match-arm consumer that requires updating is: `oriterm_core/src/effect/sink/legacy/mod.rs:104-145` (LegacyEventSink — the only exhaustive `HostEffect` match in the codebase; `oriterm_mux` uses `HostEffect::*` constructors in `interceptor.rs` but has NO match-arm consumer that would break; `oriterm_eval` does NOT exist in this workspace).), OR (b) keep OSC 3 as a no-op that stores state only in `Term` (add a `Term::x11_property` field queried by renderable/state rungs) without emitting any `HostEffect`. Option B is preferred for 10.9's scope to avoid a cross-crate fan-out. `Handler::set_x11_property` default on `Term` is a no-op; on Linux+X11 runtime, a future section may emit the effect. For 10.9 verification: test that the dispatch arm fires (state rung, not effect rung) and on non-X11 platforms the dispatch returns without side effects. Catalog status → `verified-with-deviation` with a note that the effect is platform-conditional.
-- **OSC 5** (change/query special color: highlight/bold) — add dispatch + handler; test set + query round-trip. `verified`.
+- **OSC 5** (change/query special color: highlight/bold) — add dispatch + handler; test set + query round-trip. **Catalog note**: OSC 5 requires two catalog rows: `OSC-5-SET` (set path, apex `state-snapshot`) and `OSC-5-QUERY` (query path returns color value via PTY response, apex `effect-pty-write`). The existing single `OSC-5` row in `catalog/osc.md` (currently `state-snapshot`) must be replaced with these two rows — the set-only apex would be incorrect for the query test. Pattern matches OSC-13-SET/QUERY split. `verified` on both rows.
 - **OSC 6** (title tab color, iTerm2) — add dispatch + handler; new `Term::tab_title_color` field; test set + query. `verified`.
 - **OSC 13 / 113** (mouse fg color set/reset) — add dispatch + handler pair. Test set via `OSC 13 ; rgb:... ST`, query via `OSC 13 ; ? ST`, reset via `OSC 113 ST`. `verified`.
 - **OSC 14 / 114** (mouse bg color, Tektronix) — same pattern as 13/113.
@@ -1190,6 +1190,38 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Evidence: `PaneSnapshot` struct (lines 160-188) carries `cwd`, `title`, `palette`, `cursor` but no `mouse_cursor_icon` field. In daemon mode the client renders from `PaneSnapshot` and has no `Term`. Daemon-mode clients would be blind to OSC 22 cursor icon changes.
   Impact: Embedded and daemon mode clients render different cursor icons from the same terminal session — SSOT violation in the mux wire protocol.
   Required plan update: GAP task added to 10.5 OSC 22 block directing `mouse_cursor_icon: Option<u8>` (wire-encoded) to be added to `PaneSnapshot`, populated in `oriterm_mux/src/server/snapshot.rs`, and decoded on the daemon-client side — same subsection as the Term field addition so the paths stay in sync (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+<!-- Round 23 findings (2026-04-17) — all fixed inline -->
+
+- [x] `[TPR-10-94-gemini][high]` `plans/spec-conformance/section-10-osc-suite.md:533` — OSC 4 query test assertion references a fabricated `ColorQueryTarget::PaletteIndex(5)` enum that does not exist in the codebase.
+  Evidence: Line 533: `Effect::HostRequest(HostRequest::ColorQuery { index: ColorQueryTarget::PaletteIndex(5) })`. `HostRequest::ColorQuery` has fields `prefix: String`, `index: usize`, `terminator: String`, `reply: ResponseToken<Rgb>` (confirmed at `oriterm_core/src/effect/families/host_request.rs:35-40`). There is no `ColorQueryTarget` enum anywhere in the workspace.
+  Impact: Developer would attempt to match a non-existent enum variant, causing a compilation error.
+  Required plan update: Replaced with `Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. })` where `prefix == "4"` and `index == 5`, with a comment clarifying the actual struct fields (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-95-gemini][high]` `plans/spec-conformance/section-10-osc-suite.md:553` — OSC 10 query test assertion references a fabricated `ColorQueryTarget::NamedColor(NamedColor::Foreground)` enum that does not exist.
+  Evidence: Line 553: `Effect::HostRequest(HostRequest::ColorQuery { index: ColorQueryTarget::NamedColor(NamedColor::Foreground) })`. Same root cause as TPR-10-94: `HostRequest::ColorQuery` uses `index: usize`, not a `ColorQueryTarget` enum. OSC 10 maps to `NamedColor::Foreground as usize = 256` via `let offset = dynamic_code as usize - 10; let index = NamedColor::Foreground as usize + offset` (`crates/vte/src/ansi/dispatch/osc.rs:151-152`).
+  Impact: Developer would attempt to match a non-existent enum variant, causing a compilation error.
+  Required plan update: Replaced with `Effect::HostRequest(HostRequest::ColorQuery { prefix, index, .. })` where `prefix == "10"` and `index == 256`, with index derivation context from the dispatcher confirmed at `crates/vte/src/ansi/dispatch/osc.rs:151-152` (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-96-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:382` — OSC-133 catalog update directs marking the single `OSC-133` row `verified` without splitting for the D subop effect apex.
+  Evidence: Line 382 (before fix): `OSC-133 catalog/osc.md → verified`. The single `OSC-133` catalog row has `state-snapshot` apex, but D emits `HostEffect::CommandComplete` — a host effect, not state. A/B/C are state-snapshot; D is effect-host-notification (nearest canonical apex).
+  Impact: Implementing as written would produce an incorrect catalog row that misrepresents the D subop apex, hiding the effect path from the verification chain.
+  Required plan update: Line 382 rewritten to require splitting `OSC-133` into `OSC-133-PROMPT` (A/B/C, `state-snapshot`) and `OSC-133-CMD-COMPLETE` (D, `effect-host-notification`); `SHINT-OSC-133-PROMPT` cross-reference updated; new `SHINT-OSC-133-CMD-COMPLETE` row added (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-97-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:585` — OSC 5 per-row analysis promises "set + query round-trip. verified" but the catalog row is `OSC-5` (state-snapshot) — a query round-trip requires an `effect-pty-write` apex row.
+  Evidence: Catalog update list at line 580 listed `OSC-5` as a single row; per-row at line 585 promises a query path that would need `effect-pty-write` apex per the natural-apex invariant.
+  Impact: OSC 5 query verification would be filed under the wrong apex, missing the effect path in the test chain.
+  Required plan update: Catalog update list corrected to `OSC-5-SET` and `OSC-5-QUERY` separate rows; per-row note updated to explain the split and the correct apex for each (FIXED in this round).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-98-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:493` — `ITERM2-1337-SHELLINTVERSION` is added in the 10.7 catalog update but not included in the iterm2.md success criteria row list.
+  Evidence: Success criteria (line 10 before fix) listed 6 non-image rows but omitted `ITERM2-1337-SHELLINTVERSION`; the 10.7 body at line 493 says "add if missing" without specifying the row fields; the catalog currently has no such row.
+  Impact: The row could be omitted at implementation time since it is not in the enumerated success criteria; the catalog scanner would miss it.
+  Required plan update: Success criteria updated to include `ITERM2-1337-SHELLINTVERSION` as a 7th non-image row; catalog update instruction updated with explicit row fields (sequence, description, apex, verification target) (FIXED in this round).
   Basis: fresh_verification | direct_file_inspection. Confidence: high.
 
 <!-- Round 22 findings (2026-04-17) — all fixed inline -->
