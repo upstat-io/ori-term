@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 10
+  rounds_completed: 12
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -113,7 +113,7 @@ These clarifications resolve the ambiguities reviewers surfaced during the /revi
 
 `SpecHarness` at `crates/oriterm_test_support/src/spec_chain/api.rs:82-103` wraps `Processor::advance_with_observer` (high-level VTE processor). The production-path interceptor at `oriterm_mux/src/shell_integration/interceptor.rs` runs a SEPARATE raw `vte::Parser` on the SAME bytes BEFORE the high-level processor — this is the only path that currently sees OSC 7, OSC 9, OSC 99, OSC 133, and OSC 777 (the high-level `Processor::advance_with_observer` silently drops them per the interceptor's own module doc: *"The vte::ansi::Processor does not route OSC 133, OSC 9/99/777, or XTVERSION (CSI >q) to Handler trait methods"*). OSC 633 is currently `MISSING` per `catalog/osc.md:56` — subsection **10.4** adds its dispatch arm to the interceptor.
 
-Consequence: verifying OSC 7/9/99/133/633/777 via `SpecHarness` alone would test a dispatch path that DOES NOT RUN IN PRODUCTION. The solution (adopted in Round 5, ratified in Round 7) is NOT to add a `mux_layer` extension to `SpecHarness` — doing so would require `oriterm_test_support` to depend on `oriterm_mux`, violating crate boundaries. Instead, subsection **10.0** creates `oriterm_mux/tests/spec_chain/` with a `spec_chain_helper` module that runs `RawInterceptor` + `Processor` in production order inside the `oriterm_mux` crate (which has full `pub(crate)` access to `RawInterceptor`). Every subsection that verifies a mux-intercepted OSC places its tests in `oriterm_mux/tests/spec_chain/`, NOT in `oriterm_core/tests/spec_chain/osc/` and NOT via a `mux_layer` API on `SpecHarness`. `SpecHarness` remains mux-free.
+Consequence: verifying OSC 7/9/99/133/633/777 via `SpecHarness` alone would test a dispatch path that DOES NOT RUN IN PRODUCTION. The solution (adopted in Round 5, ratified in Rounds 7 + 10 + 11) is NOT to add a `mux_layer` extension to `SpecHarness` — doing so would require `oriterm_test_support` to depend on `oriterm_mux`, violating crate boundaries. Instead, subsection **10.0** adds a `spec_chain_helper` test-only module inside `oriterm_mux/src/shell_integration/tests.rs` (sibling unit-test module) that runs `RawInterceptor` + `Processor` in production order. Because this module compiles as part of the `oriterm_mux` crate, it has full `pub(crate)` access to `RawInterceptor`. **CRITICAL**: Tests that need `RawInterceptor` MUST be placed in `oriterm_mux/src/shell_integration/tests.rs` — integration tests in `oriterm_mux/tests/` are separate compilation units with no `pub(crate)` visibility. Only tests exercising purely public `oriterm_mux` APIs may live in `oriterm_mux/tests/`. `SpecHarness` remains mux-free.
 
 ### C. The renderable observer is a no-op stub
 
@@ -178,7 +178,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 - `oriterm_mux/src/pane/io_thread/response_poll.rs` (remove the `#[allow(dead_code)]` gate; add the activation call in `PaneIoThread::drain_events` or equivalent)
 - `oriterm_core/src/term/shell_state/mod.rs` (modify `finish_command` signature to accept `now: Option<Instant>` — Option A timing seam)
 - `oriterm_mux/src/shell_integration/interceptor.rs` (update call sites of `finish_command` to pass `None`; this file is the caller of `Term::finish_command()`)
-- `oriterm_mux/tests/spec_chain/` (new directory — mux-intercepted OSC spec_chain tests: OSC 7, OSC 9/99/777, OSC 133/633 tests live here, NOT in `oriterm_core/tests/spec_chain/osc/`)
+- `oriterm_mux/src/shell_integration/tests.rs` (extend existing sibling unit-test module — mux-intercepted OSC spec_chain tests for OSC 7, OSC 9/99/777, OSC 133/633 live here because only this file has `pub(crate)` access to `RawInterceptor`; integration tests in `oriterm_mux/tests/` are separate compilation units with NO `pub(crate)` visibility and MUST NOT contain `RawInterceptor`-using tests)
 
 **Tests (written FIRST per `.claude/rules/tests.md` §TDD for Bugs — VERIFIED RED before implementation):**
 
@@ -224,7 +224,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 - [ ] All five TDD matrix tests transition RED → GREEN.
 - [ ] The OSC 133;A scenario routed through `SpecHarness::feed()` still fails (proves the high-level processor really drops OSC 133, not just our test setup).
-- [ ] The mux-layer test in `oriterm_mux/tests/spec_chain/` that runs both parsers in production order passes (proves the mux interceptor is load-bearing). The `SpecHarness` in `oriterm_core/tests/spec_chain/` has no `feed_with_mux()` method — this validation lives in the mux test module, not in `SpecHarness`.
+- [ ] The mux-layer test in `oriterm_mux/src/shell_integration/tests.rs` that runs both parsers in production order passes (proves the mux interceptor is load-bearing). The `SpecHarness` in `oriterm_core/tests/spec_chain/` has no `feed_with_mux()` method — this validation lives in the sibling unit-test module, not in `SpecHarness` and NOT in `oriterm_mux/tests/`.
 - [ ] `renderable.rs` NO LONGER contains `RungResult::pass(RungName::Renderable)` as the only return — grep for the string `"Stub: always passes"` returns zero matches.
 - [ ] `grep -rn '#\[allow(dead_code, reason = \"dormant during legacy phase'` in `oriterm_mux/` returns zero matches (the gate is removed).
 - [ ] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green.
@@ -303,10 +303,10 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ## 10.3 OSC 9 / 99 / 777 desktop notifications
 
 **Files:**
-- `oriterm_mux/tests/spec_chain/osc/notifications.rs` (new — mux layer test; OSC 9/99/777 are interceptor-handled, NOT high-level-processor-routed)
+- `oriterm_mux/src/shell_integration/tests.rs` (extend sibling unit-test module — OSC 9/99/777 tests live here because `RawInterceptor` is `pub(crate)` and only accessible from sibling unit tests, NOT from `oriterm_mux/tests/` integration tests)
 - Catalog updates: `catalog/osc.md` — OSC-9 and OSC-777 rows already exist (both marked `missing`; promote to `verified`); OSC-99 is NOT yet a catalog row and must be added as a new row (status `verified`). Also update `catalog/shell-integration.md` rows SHINT-OSC-9-NOTIFY, SHINT-OSC-777-NOTIFY.
 
-**Tests (in `oriterm_mux/tests/spec_chain/` — these OSCs route through the RawInterceptor, NOT the high-level processor; must NOT be placed in `oriterm_core/tests/spec_chain/osc/`):**
+**Tests (in `oriterm_mux/src/shell_integration/tests.rs` — these OSCs route through the RawInterceptor, NOT the high-level processor; must NOT be placed in `oriterm_core/tests/spec_chain/osc/` and must NOT be placed in `oriterm_mux/tests/` integration tests which have no `pub(crate)` access to `RawInterceptor`):**
 
 - [ ] `osc9_simple_body_fires_notification` — feed `\x1b]9;Build complete\x1b\\`, assert `Effect::Host(HostEffect::DesktopNotification { source: NotificationSource::Osc9, title: "", body: "Build complete" })`. OSC 9 has no title field (Growl-style).
 - [ ] `osc99_body_fires_notification_osc99_source` — feed `\x1b]99;kitty payload\x1b\\`, assert `source: NotificationSource::Osc99`. Per the interceptor at `shell_integration/interceptor.rs:124-128`, OSC 9 and 99 share the `handle_notification_simple` code path — 10.3 pins the discriminator so a future refactor cannot collapse them.
@@ -315,12 +315,12 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc9_empty_body` — feed `\x1b]9;\x1b\\`, assert `body == ""` and notification is still emitted (matches `handle_notification_simple` which accepts empty body).
 - [ ] `osc777_missing_title` — feed `\x1b]777;notify;;body-only\x1b\\`, assert `title == "", body == "body-only"`.
 - [ ] **Semantic pin** — `osc9_and_osc99_use_different_sources` — feed BOTH `OSC 9 ; X ST` and `OSC 99 ; Y ST` in the same scenario. Assert the two effects have DIFFERENT `NotificationSource` variants. If someone collapses the OSC 9 / 99 detection in the interceptor, this test fails immediately.
-- [ ] **Negative pin** — `osc9_via_processor_without_mux_drops` — route the same OSC 9 bytes through `SpecHarness::feed()` (no mux layer). Assert NO notification effect is emitted. This proves the mux layer is LOAD-BEARING for OSC 9; if someone accidentally adds OSC 9 to the high-level dispatcher too, this test fails (double-dispatch detection).
+- [ ] **Negative pin** — `osc9_via_processor_without_mux_drops` — in `oriterm_mux/src/shell_integration/tests.rs`, run ONLY `Processor::advance(&mut term, osc9_bytes)` WITHOUT calling `raw_parser.advance(&mut interceptor, osc9_bytes)` first. Assert NO notification effect is emitted on the sink. This proves the mux interceptor is LOAD-BEARING for OSC 9; if someone accidentally adds OSC 9 to the high-level dispatcher too, this test fails (double-dispatch detection). NOTE: Do NOT use `SpecHarness::feed()` here — `oriterm_test_support` is NOT in `oriterm_mux`'s `[dev-dependencies]` (`oriterm_mux/Cargo.toml` only lists `tempfile = "3"` as a dev-dep). Use `Processor::advance` directly.
 
 **Catalog update:**
 
 - [ ] OSC-9 `catalog/osc.md` → `verified` (was `missing`). Implementation cell now cites `oriterm_mux/src/shell_integration/interceptor.rs::handle_notification_simple`.
-- [ ] New rows OSC-99, OSC-777 added to `catalog/osc.md` with the same citation.
+- [ ] New row OSC-99 added to `catalog/osc.md` (status `verified`); existing OSC-777 row promoted from `missing` to `verified` (OSC-777 already exists at `catalog/osc.md:57` — do NOT create a duplicate row).
 - [ ] `catalog/shell-integration.md` SHINT-OSC-9-NOTIFY and SHINT-OSC-777-NOTIFY → `verified`.
 
 **Validation:**
@@ -334,12 +334,12 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 ## 10.4 OSC 133 semantic prompt + OSC 633 VS Code shell integration
 
 **Files:**
-- `oriterm_mux/tests/spec_chain/osc/shell_integration.rs` (new — mux layer test; OSC 133 + 633 are interceptor-handled)
+- `oriterm_mux/src/shell_integration/tests.rs` (extend sibling unit-test module — OSC 133 + 633 tests live here because `RawInterceptor` is `pub(crate)` and not accessible from `oriterm_mux/tests/` integration tests)
 - `oriterm_mux/src/shell_integration/interceptor.rs` (extend to dispatch OSC 633 sub-commands — currently NOT dispatched)
 - `crates/vte/src/ansi/dispatch/osc.rs` (route OSC 633 if any part of it needs the high-level processor; otherwise leave to the raw interceptor)
 - Catalog updates: `catalog/osc.md` OSC-133, OSC-633 (both currently `missing`); `catalog/shell-integration.md` SHINT-OSC-133-PROMPT, SHINT-OSC-633-VSCODE
 
-**Tests (in `oriterm_mux/tests/spec_chain/` — OSC 133 + 633 are interceptor-handled, NOT high-level-processor-routed):**
+**Tests (in `oriterm_mux/src/shell_integration/tests.rs` — OSC 133 + 633 are interceptor-handled, NOT high-level-processor-routed; MUST NOT be in `oriterm_mux/tests/` integration tests which have no `pub(crate)` visibility into `oriterm_mux`):**
 
 ### OSC 133 (Final Term semantic prompt)
 
@@ -477,7 +477,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Plan sync to Section 14 (flow-up edit beyond single-section authority — recorded for next /review-plan):**
 
-- `section-14-iterm2-images.md:55` currently says "Section 10's OSC suite covered the non-image OSC 1337 variants". This statement is now accurate with Section 10 owning the non-image variants — but `catalog/iterm2.md:14` said those variants are assigned to Section 14. This review's flow-up edit aligns the catalog (above) and the `catalog/iterm2.md` front-matter `owner_section`. Section 14's next /review-plan will pick up the consistent state and update `section-14-iterm2-images.md:55` to cite the new catalog ownership wording if needed.
+- `section-14-iterm2-images.md:55` currently says "Section 10's OSC suite covered the non-image OSC 1337 variants". This statement is now accurate with Section 10 owning the non-image variants — but `catalog/iterm2.md:5` (`owner_section` front-matter field) previously assigned all variants to Section 14, and `catalog/iterm2.md:15-20` (the non-image row table entries) listed those rows under Section 14. This review's flow-up edit updates `catalog/iterm2.md:5` `owner_section` to `"01 (bootstrap), 10 (non-image), 14 (image)"` (as specified in the Catalog update block above) and promotes the non-image rows. Section 14's next /review-plan will pick up the consistent state and update `section-14-iterm2-images.md:55` to cite the new catalog ownership wording if needed.
 
 **Validation:**
 
@@ -492,13 +492,13 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 **Files:**
 - `oriterm_core/tests/spec_chain/osc/basic.rs` (new — covers OSC 0/1/2 via `SpecHarness::feed()`)
 - `oriterm_core/tests/spec_chain/osc/palette.rs` (new — covers OSC 4 set/query via `SpecHarness::feed()`)
-- `oriterm_mux/tests/spec_chain/osc/cwd.rs` (new — covers OSC 7 via mux-layer test; OSC 7 is interceptor-handled, NOT high-level-processor-routed)
+- `oriterm_mux/src/shell_integration/tests.rs` (extend sibling unit-test module — covers OSC 7 via mux-layer test; OSC 7 is interceptor-handled, NOT high-level-processor-routed; must be sibling unit-test for `pub(crate)` access to `RawInterceptor`)
 - `oriterm_core/tests/spec_chain/osc/default_colors.rs` (new — covers OSC 10/11/12 set/query via `SpecHarness::feed()`)
 - Catalog updates: `catalog/osc.md` rows OSC-0, OSC-1, OSC-2, OSC-4-SET, OSC-4-QUERY, OSC-7, OSC-10-SET, OSC-10-QUERY, OSC-11-SET, OSC-11-QUERY, OSC-12-SET, OSC-12-QUERY; `catalog/shell-integration.md` row SHINT-OSC-7-CWD
 
 **Scope pin from 08:** `section-08-ecma-48-baseline.md:179` recorded zero OSC coverage from tack; all rows below start at `implemented-unverified` / `stub` and end `verified` here.
 
-**Tests (via `SpecHarness::feed()` for OSC 0/1/2/4/10/11/12 — routed through high-level processor; and via `oriterm_mux/tests/spec_chain/` for OSC 7 — interceptor-handled):**
+**Tests (via `SpecHarness::feed()` for OSC 0/1/2/4/10/11/12 — routed through high-level processor; and via `oriterm_mux/src/shell_integration/tests.rs` sibling unit-test module for OSC 7 — interceptor-handled, requires `pub(crate)` access to `RawInterceptor`):**
 
 ### OSC 0 / 1 / 2 (title + icon name)
 
@@ -519,7 +519,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### OSC 7 (CWD — INTERCEPTOR path)
 
-- [ ] `osc7_file_uri_sets_cwd` — (in `oriterm_mux/tests/spec_chain/osc/cwd.rs`) feed `\x1b]7;file:///home/user/project\x1b\\` through the mux-layer harness (run `RawInterceptor` + `Processor` in production order). Assert `term.cwd() == Some("/home/user/project")`. Uses the parse_osc7_path logic in `interceptor.rs:173-187`. NOT in `SpecHarness::feed()` — the high-level processor drops OSC 7.
+- [ ] `osc7_file_uri_sets_cwd` — (in `oriterm_mux/src/shell_integration/tests.rs` sibling unit-test module) feed `\x1b]7;file:///home/user/project\x1b\\` through the mux-layer harness (run `RawInterceptor` + `Processor` in production order via `spec_chain_helper`). Assert `term.cwd() == Some("/home/user/project")`. Uses the parse_osc7_path logic in `interceptor.rs:173-187`. NOT in `SpecHarness::feed()` — the high-level processor drops OSC 7. NOT in `oriterm_mux/tests/` — integration tests have no `pub(crate)` access to `RawInterceptor`.
 - [ ] `osc7_file_uri_with_hostname` — feed `file://myhost.example.com/path/to/dir`, assert cwd is `/path/to/dir` (hostname stripped per interceptor.rs).
 - [ ] `osc7_percent_decoded` — feed `file:///home/user/my%20folder`, assert cwd is `/home/user/my folder` (percent_decode in interceptor.rs:199-220).
 - [ ] `osc7_emits_host_effect_cwd_set` — assert `Effect::Host(HostEffect::CwdSet { cwd: "/home/user/project" })` on the transcript.
@@ -926,6 +926,34 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Required plan update: 10.7 catalog block extended with tasks to add/update SHINT-OSC-1337-* rows in `catalog/shell-integration.md` (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
+<!-- Round 11 findings already committed per git log -->
+
+<!-- Round 12 findings (2026-04-17) — survivor mode: codex only (gemini transport failure: no capacity) -->
+
+- [x] `[TPR-10-55-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:116` — Scope Clarification B still directed tests to `oriterm_mux/tests/spec_chain/` (integration test directory), contradicting the established fix (Round 10/11: tests needing `RawInterceptor` belong in `oriterm_mux/src/shell_integration/tests.rs` sibling unit-test module).
+  Evidence: Line 116: "subsection **10.0** creates `oriterm_mux/tests/spec_chain/` with a `spec_chain_helper` module ... Every subsection that verifies a mux-intercepted OSC places its tests in `oriterm_mux/tests/spec_chain/`"
+  Impact: Implementing as written would place `RawInterceptor`-using tests in integration test crates with no `pub(crate)` visibility, causing compile errors.
+  Required plan update: Scope Clarification B rewritten to direct tests to `oriterm_mux/src/shell_integration/tests.rs`; all subsection Files/Tests blocks (10.3, 10.4, 10.8) and the 10.N crate-ordering checklist updated to match (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-56-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:318` — 10.3 negative pin `osc9_via_processor_without_mux_drops` still called `SpecHarness::feed()`, which is unavailable in `oriterm_mux` test context (`oriterm_test_support` is not in `oriterm_mux`'s `[dev-dependencies]`).
+  Evidence: Line 318: "route the same OSC 9 bytes through `SpecHarness::feed()` (no mux layer)" — `oriterm_mux/Cargo.toml` [dev-dependencies] only lists `tempfile = "3"`.
+  Impact: An implementer following the plan would write a test that fails to compile due to missing `oriterm_test_support` dev-dependency.
+  Required plan update: Negative pin rewritten to use `Processor::advance(&mut term, osc9_bytes)` directly (no `SpecHarness`), with a NOTE explaining why `SpecHarness` is unavailable in the mux context (FIXED).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-57-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:323` — 10.3 catalog step said "New rows OSC-99, OSC-777 added" — but line 307 of the same section already noted "OSC-9 and OSC-777 rows already exist"; OSC-777 is a promotion, not a new row.
+  Evidence: Line 307: "OSC-9 and OSC-777 rows already exist (both marked `missing`; promote to `verified`)"; Line 323: "New rows OSC-99, OSC-777 added to `catalog/osc.md`"
+  Impact: An implementer adding OSC-777 as a new row would create a duplicate row, corrupting the catalog.
+  Required plan update: Catalog step corrected to "New row OSC-99 added; existing OSC-777 promoted from `missing` to `verified`" (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-58-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:480` — 10.7 flow-up note still cited `catalog/iterm2.md:14` for the ownership conflict location; the correct citation is `catalog/iterm2.md:5` for `owner_section` and `catalog/iterm2.md:15-20` for the non-image rows (same error that TPR-10-51 fixed in the success criteria at line 10, but the 10.7 body prose was not updated).
+  Evidence: Line 480: "catalog/iterm2.md:14 said those variants are assigned to Section 14" — line 14 is the FILE (image) row header, not the ownership field.
+  Impact: An implementer looking at `catalog/iterm2.md:14` sees the image row, not the ownership conflict location.
+  Required plan update: 10.7 flow-up note corrected to cite `catalog/iterm2.md:5` for `owner_section` and `catalog/iterm2.md:15-20` for the non-image rows (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
 ---
 
 ## 10.N Completion Checklist
@@ -937,7 +965,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### Crate ordering (per `.claude/rules/crate-boundaries.md` allowed dependency direction)
 
-- [ ] Changes land in this order: `crates/vte` (new Handler trait methods + OSC 1337 sub-dispatcher) → `oriterm_core` (Term fields: `mouse_cursor_icon`, `remote_host`, `user_vars`, `shell_integration_version`; handler overrides) → `oriterm_mux` (remove `#[allow(dead_code)]` on `register_host_request_response`; wire live call site; interceptor extensions for OSC 633 + 1337 delegated rows where applicable; mux-intercepted OSC spec_chain tests land in `oriterm_mux/tests/spec_chain/`) → `crates/oriterm_test_support` (completed renderable observer + new `RenderableExpectation` fields; NO new `mux_layer` dependency per crate-boundary constraint — see 10.0 Option A) → high-level-processor OSC tests under `oriterm_core/tests/spec_chain/osc/*` (OSC 0/1/2/4/10/11/12/8/22/50/52/104/110/111/112/1337 non-image sub-ops).
+- [ ] Changes land in this order: `crates/vte` (new Handler trait methods + OSC 1337 sub-dispatcher) → `oriterm_core` (Term fields: `mouse_cursor_icon`, `remote_host`, `user_vars`, `shell_integration_version`; handler overrides) → `oriterm_mux` (remove `#[allow(dead_code)]` on `register_host_request_response`; wire live call site; interceptor extensions for OSC 633 + 1337 delegated rows where applicable; mux-intercepted OSC tests added to `oriterm_mux/src/shell_integration/tests.rs` sibling unit-test module — NOT to `oriterm_mux/tests/` integration tests, which have no `pub(crate)` access to `RawInterceptor`) → `crates/oriterm_test_support` (completed renderable observer + new `RenderableExpectation` fields; NO new `mux_layer` dependency per crate-boundary constraint — see 10.0 Option A) → high-level-processor OSC tests under `oriterm_core/tests/spec_chain/osc/*` (OSC 0/1/2/4/10/11/12/8/22/50/52/104/110/111/112/1337 non-image sub-ops).
 
 ### Matrix coverage
 
