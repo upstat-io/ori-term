@@ -11,6 +11,12 @@ Bugs in the pane multiplexer — PTY I/O, IO thread behavior, pane lifecycle, me
 
 ## Open Bugs
 
+- [ ] `[BUG-11-7][low]` **MuxClient transport layer BLOAT: over-length functions + excessive nesting** — found by impl-hygiene-review.
+  Repro: `.claude/skills/impl-hygiene-review/hygiene-lint.sh --scope oriterm_mux/src/backend/client --check fn-length,nesting-depth` reports four BLOAT findings.
+  Subsystem: `oriterm_mux/src/backend/client/transport/mod.rs:93` (`fn connect` — 119 lines, limit 100); `oriterm_mux/src/backend/client/transport/reader.rs:132` (`fn reader_loop` — 112 lines, limit 100); `reader.rs:167` (`fn reader_loop` nesting depth 6, limit 4); `reader.rs:269` (`fn read_and_dispatch_frames` nesting depth 5, limit 4).
+  Found: 2026-04-16 | Source: impl-hygiene-review
+  Note: Surfaced during the Section 09 (DEC Private Modes) /impl-hygiene-review close-out gate. Not touched by Section 09 work — the new daemon-side bridge test in `oriterm_mux/src/backend/client/tests.rs` is clean; these findings are in `transport/` code that predates Section 09. Candidate refactors: extract PDU handshake steps out of `connect`; split `reader_loop` into `accept_frame` / `dispatch_frame` helpers; flatten the inner `if let` chains in `reader_loop` + `read_and_dispatch_frames` via guard clauses or extracted helper functions returning `Option`.
+
 - [ ] `[BUG-11-4][high]` **DA1/DA2/DA3, DSR 5/6, CSI 18t, and DECRQM produce no response in the live terminal** — found by manual.
   Repro: Run `printf '\e[c'` (DA1), `printf '\e[5n'` (DSR 5), `printf '\e[>c'` (DA2), `printf '\e[18t'` (CSI 18t) in oriterm — no response received by the requesting process.
   Subsystem: `oriterm_mux/src/pane/io_thread/event_proxy/mod.rs` (PtyWrite forwarding), `oriterm_mux/src/in_process/event_pump.rs` (PtyWrite handling), `oriterm_mux/src/pty/mod.rs` (writer thread)

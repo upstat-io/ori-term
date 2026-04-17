@@ -2,7 +2,7 @@
 section: 52
 title: "Native PTY Layer"
 status: not-started
-reviewed: true
+reviewed: false
 tier: 5
 goal: "Replace portable-pty with direct platform syscalls (libc/windows-sys), gaining control over pipe creation, buffer sizes, and ConPTY configuration. Overlapped named pipes + passthrough flag on Windows. Sideloaded conpty.dll support. Eliminates ~15 transitive dependencies."
 success_criteria:

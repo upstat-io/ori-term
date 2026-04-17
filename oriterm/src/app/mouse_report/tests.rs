@@ -1357,3 +1357,82 @@ fn wheel_pixel_delta_large_scroll() {
     let result = parse_wheel_delta(delta, 16.0);
     assert_eq!(result, Some((13, true)));
 }
+
+// --- Alternate scroll decision (should_translate_wheel_to_arrows) ---
+
+use super::should_translate_wheel_to_arrows;
+
+#[test]
+fn alt_scroll_active_when_alt_screen_and_alternate_scroll_set() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert!(should_translate_wheel_to_arrows(mode, false));
+}
+
+#[test]
+fn alt_scroll_inactive_without_alt_screen() {
+    let mode = TermMode::ALTERNATE_SCROLL;
+    assert!(!should_translate_wheel_to_arrows(mode, false));
+}
+
+#[test]
+fn alt_scroll_inactive_without_alternate_scroll() {
+    let mode = TermMode::ALT_SCREEN;
+    assert!(!should_translate_wheel_to_arrows(mode, false));
+}
+
+#[test]
+fn alt_scroll_inactive_when_shift_held() {
+    let mode = TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL;
+    assert!(!should_translate_wheel_to_arrows(mode, true));
+}
+
+#[test]
+fn alt_scroll_inactive_with_empty_mode() {
+    assert!(!should_translate_wheel_to_arrows(TermMode::empty(), false));
+}
+
+/// Bridge cell: CSI ? 1049 h + default ALTERNATE_SCROLL parsed through
+/// a real Term produces both ALT_SCREEN and ALTERNATE_SCROLL flags,
+/// which `should_translate_wheel_to_arrows` then correctly enables.
+#[test]
+fn bridge_parser_to_alt_scroll_decision() {
+    let mut term = oriterm_core::term::Term::new(
+        24,
+        80,
+        0,
+        oriterm_core::Theme::default(),
+        oriterm_core::effect::VoidEffectSink,
+    );
+
+    /// Feed raw bytes through VTE processor.
+    fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {
+        let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+        processor.advance(term, bytes);
+    }
+
+    // Default: ALTERNATE_SCROLL is on but ALT_SCREEN is off → no arrows.
+    let mode = term.mode();
+    assert!(mode.contains(TermMode::ALTERNATE_SCROLL));
+    assert!(!mode.contains(TermMode::ALT_SCREEN));
+    assert!(!should_translate_wheel_to_arrows(mode, false));
+
+    // Enter alt screen via mode 1049 → arrows enabled.
+    feed(&mut term, b"\x1b[?1049h");
+    let mode = term.mode();
+    assert!(mode.contains(TermMode::ALT_SCREEN));
+    assert!(mode.contains(TermMode::ALTERNATE_SCROLL));
+    assert!(should_translate_wheel_to_arrows(mode, false));
+
+    // Shift-bypass → arrows disabled even with both flags.
+    assert!(!should_translate_wheel_to_arrows(mode, true));
+
+    // DECRST alternate scroll → arrows disabled.
+    feed(&mut term, b"\x1b[?1007l");
+    let mode = term.mode();
+    assert!(!should_translate_wheel_to_arrows(mode, false));
+
+    // Leave alt screen → arrows disabled.
+    feed(&mut term, b"\x1b[?1049l");
+    let mode = term.mode();
+    assert!(!should_translate_wheel_to_arrows(mode, false));
+}

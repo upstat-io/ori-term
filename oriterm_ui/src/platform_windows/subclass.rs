@@ -94,11 +94,10 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
     let metrics = data.chrome_metrics.lock();
     let (border_width, caption_height) = metrics
         .as_ref()
-        .map(|m| (m.border_width, m.caption_height))
-        .unwrap_or((0.0, 0.0));
+        .map_or((0.0, 0.0), |m| (m.border_width, m.caption_height));
     drop(metrics);
     let rects_lock = data.interactive_rects.lock();
-    let rects: &[crate::geometry::Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
+    let rects: &[crate::geometry::Rect] = rects_lock.as_ref().map_or(&[], |g| g.as_slice());
     let chrome = hit_test::WindowChrome {
         window_size,
         border_width,
@@ -207,7 +206,7 @@ fn handle_sizing(wparam: usize, lparam: isize, data: &SnapData) -> bool {
 
     let chrome_h = {
         let lock = data.chrome_metrics.lock();
-        lock.as_ref().map(|m| m.caption_height).unwrap_or(0.0)
+        lock.as_ref().map_or(0.0, |m| m.caption_height)
     };
 
     let proposed = unsafe { &mut *(lparam as *mut RECT) };

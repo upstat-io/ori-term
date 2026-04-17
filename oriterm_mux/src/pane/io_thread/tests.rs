@@ -2200,3 +2200,140 @@ fn no_timeout_when_not_in_sync() {
         "sync buffer must be empty when not in sync mode"
     );
 }
+
+// --- Bridge cell: Mode 2026 parser → mode_cache SSOT contract (Section 09.2) ---
+
+/// Bridge cell: `CSI ? 2026 h` propagates `TermMode::SYNC_UPDATE` into
+/// `mode_cache` via `post_parse_housekeeping()`.
+///
+/// Proves the parser → mode_cache → publication-gate SSOT contract is
+/// live. Section 06 owns the apex tests (publication suppression +
+/// timeout-abort); Section 09 owns only this bridge proving the bit
+/// the parser writes is the bit Section 06's consumer reads.
+#[test]
+fn bridge_mode_2026_propagates_to_mode_cache() {
+    let mut t = make_sync_thread();
+
+    // Pre-condition: SYNC_UPDATE must NOT be in the mode cache.
+    let initial_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        initial_bits & TermMode::SYNC_UPDATE.bits(),
+        0,
+        "SYNC_UPDATE must be absent from mode_cache before DECSET"
+    );
+
+    // Feed DECSET ?2026 through the full handle_bytes path (which calls
+    // post_parse_housekeeping → mode_cache.store).
+    t.handle_bytes(b"\x1b[?2026h");
+
+    // Post-condition: SYNC_UPDATE must be present in mode_cache.
+    let updated_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_ne!(
+        updated_bits & TermMode::SYNC_UPDATE.bits(),
+        0,
+        "SYNC_UPDATE must be present in mode_cache after DECSET ?2026"
+    );
+}
+
+/// Bridge cell: `CSI ? 2026 l` clears `TermMode::SYNC_UPDATE` from
+/// `mode_cache`.
+///
+/// Completes the round-trip bridge: set → verify set → reset → verify
+/// cleared. Without this, a broken DECRST path could leave stale bits
+/// in the cache, causing the publication gate to suppress snapshots
+/// indefinitely.
+#[test]
+fn bridge_mode_2026_reset_clears_mode_cache() {
+    let mut t = make_sync_thread();
+
+    // Set mode 2026.
+    t.handle_bytes(b"\x1b[?2026h");
+    assert_ne!(
+        t.mode_cache.load(Ordering::Acquire) & TermMode::SYNC_UPDATE.bits(),
+        0,
+        "precondition: SYNC_UPDATE must be set"
+    );
+
+    // Reset mode 2026.
+    t.handle_bytes(b"\x1b[?2026l");
+
+    let final_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        final_bits & TermMode::SYNC_UPDATE.bits(),
+        0,
+        "SYNC_UPDATE must be cleared from mode_cache after DECRST ?2026"
+    );
+}
+
+// ── DECBKM (mode 67) bridge cells ──────────────────────────────────
+
+/// Bridge cell: `CSI ? 67 h` propagates `TermMode::DECBKM` into `mode_cache`.
+///
+/// Section 09.4b: proves the parser → `post_parse_housekeeping()` →
+/// `mode_cache` SSOT contract is live for mode 67. Without this bridge,
+/// the key encoder on the main thread would never see DECBKM.
+#[test]
+fn bridge_decbkm_propagates_to_mode_cache() {
+    let mut t = make_sync_thread();
+
+    let initial_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        initial_bits & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be absent from mode_cache before DECSET"
+    );
+
+    t.handle_bytes(b"\x1b[?67h");
+
+    let updated_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_ne!(
+        updated_bits & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be present in mode_cache after DECSET ?67"
+    );
+}
+
+/// Bridge cell: `CSI ? 67 l` clears `TermMode::DECBKM` from `mode_cache`.
+#[test]
+fn bridge_decbkm_reset_clears_mode_cache() {
+    let mut t = make_sync_thread();
+
+    t.handle_bytes(b"\x1b[?67h");
+    assert_ne!(
+        t.mode_cache.load(Ordering::Acquire) & TermMode::DECBKM.bits(),
+        0,
+        "precondition: DECBKM must be set"
+    );
+
+    t.handle_bytes(b"\x1b[?67l");
+
+    let final_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        final_bits & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be cleared from mode_cache after DECRST ?67"
+    );
+}
+
+/// Bridge cell: `CSI ? 66 h` propagates `TermMode::APP_KEYPAD` into
+/// `mode_cache` (DECNKM shares the same flag as ESC =/ESC >).
+#[test]
+fn bridge_decnkm_propagates_to_mode_cache() {
+    let mut t = make_sync_thread();
+
+    let initial_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_eq!(
+        initial_bits & TermMode::APP_KEYPAD.bits(),
+        0,
+        "APP_KEYPAD must be absent from mode_cache before DECSET ?66"
+    );
+
+    t.handle_bytes(b"\x1b[?66h");
+
+    let updated_bits = t.mode_cache.load(Ordering::Acquire);
+    assert_ne!(
+        updated_bits & TermMode::APP_KEYPAD.bits(),
+        0,
+        "APP_KEYPAD must be present in mode_cache after DECSET ?66"
+    );
+}

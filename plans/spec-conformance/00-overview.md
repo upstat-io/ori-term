@@ -548,10 +548,16 @@ Phase 3 — Per-stack expansion (parallelizable groups)
   Group A (parallel — pure data + handler stacks):
     ├─ 09 DEC Private Modes (the rest of catalog/dec-private-modes.md
     │     beyond the basic mode subset 08 covered, plus catalog/mode-2026.md)
-    ├─ 10 OSC Suite (the rest of catalog/osc.md beyond the minimal
-    │     subset 08 covered, plus catalog/shell-integration.md — palette
-    │     hyperlinks, clipboard, title, OSC 7, OSC 9/99/777, OSC 133,
-    │     OSC 633, OSC 1337 minimal)
+    ├─ 10 OSC Suite — ENTIRE OSC stack (08 verified zero OSC rows per
+    │     its 2026-04-14 implementation notes). Section 10 owns
+    │     catalog/osc.md (basic 0/1/2/4/7/10/11/12/52 + advanced
+    │     8/22/50/104/110/111/112 + 9/99/777 + 133 + 633 + currently-
+    │     missing 3/5/6/13/14/17/19/113/114/117/119/L/l), plus
+    │     catalog/shell-integration.md, plus the non-image rows of
+    │     catalog/iterm2.md (SetMark, RemoteHost, CurrentDir, Copy,
+    │     ReportCellSize, SetUserVar). 10.0 lands harness + observer +
+    │     Term-state + OSC 1337 sub-dispatcher + response_poll activation
+    │     prerequisites before the verification subsections run.
     └─ 11 Unicode Subcell Glyphs + octants (catalog/unicode-subcell.md)
 
   Group B (sequential — image stack):
@@ -777,7 +783,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 06 | Terminal Mode Plumbing (Mode 2026 + sync-point reduction) | `section-06-terminal-mode-plumbing.md`            | Complete    |
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Complete    |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Complete    |
-| 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Not Started |
+| 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Complete    |
 | 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | Not Started |
 | 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Not Started |
 | 12 | Sixel                                                  | `section-12-sixel.md`                                | Not Started |

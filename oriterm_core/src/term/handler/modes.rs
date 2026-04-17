@@ -104,6 +104,11 @@ impl<S: EffectSink> Term<S> {
             NamedPrivateMode::LeftRightMargin => {
                 self.mode.insert(TermMode::LEFT_RIGHT_MARGIN);
             }
+            NamedPrivateMode::ColorSchemeUpdate => {
+                self.mode.insert(TermMode::COLOR_SCHEME_UPDATE);
+            }
+            NamedPrivateMode::DecNumericKeypad => self.mode.insert(TermMode::APP_KEYPAD),
+            NamedPrivateMode::DecBackarrowKey => self.mode.insert(TermMode::DECBKM),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(true);
             }
@@ -184,6 +189,11 @@ impl<S: EffectSink> Term<S> {
                 self.mode.remove(TermMode::LEFT_RIGHT_MARGIN);
                 self.grid_mut().reset_left_right_margins();
             }
+            NamedPrivateMode::ColorSchemeUpdate => {
+                self.mode.remove(TermMode::COLOR_SCHEME_UPDATE);
+            }
+            NamedPrivateMode::DecNumericKeypad => self.mode.remove(TermMode::APP_KEYPAD),
+            NamedPrivateMode::DecBackarrowKey => self.mode.remove(TermMode::DECBKM),
             NamedPrivateMode::ColumnMode => {
                 self.apply_deccolm(false);
             }

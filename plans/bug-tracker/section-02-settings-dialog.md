@@ -2,7 +2,7 @@
 section: "02"
 title: "Settings Dialog Bugs"
 status: in-progress
-reviewed: true
+reviewed: false
 goal: "Track and fix bugs in the settings dialog layout, chrome, and interactions"
 depends_on: []
 third_party_review:

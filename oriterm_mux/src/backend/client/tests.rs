@@ -169,6 +169,85 @@ fn pane_snapshot_returns_none_for_unknown() {
     assert!(client.pane_snapshot(PaneId::from_raw(999)).is_none());
 }
 
+/// Section 09 bridge cell (daemon side): `MuxClient::pane_mode()` reads the
+/// `DECBKM` bit out of the cached `PaneSnapshot.modes` field. This is the
+/// client half of the mode 67 (DECBKM) cross-crate wire path — the
+/// io_thread → mode_cache path is proven by `bridge_decbkm_propagates_to_mode_cache`
+/// in `oriterm_mux/src/pane/io_thread/tests.rs`, and the embedded backend
+/// path is proven by `pane_mode_reflects_decbkm_set` in
+/// `oriterm_mux/src/backend/embedded/tests.rs`. This test pins the daemon
+/// side: once the client has received a snapshot PDU with DECBKM in
+/// `modes`, the main thread's `pane_mode()` reader MUST surface that bit.
+#[test]
+fn client_pane_mode_reflects_decbkm_from_cached_snapshot() {
+    use crate::backend::MuxBackend;
+    use oriterm_core::term::mode::TermMode;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+    let mut snap = test_snapshot("decbkm-on");
+    snap.modes = TermMode::DECBKM.bits();
+    client.cache_snapshot(p, snap);
+
+    let mode_bits = MuxBackend::pane_mode(&client, p).expect("snapshot cached");
+    assert_eq!(
+        mode_bits & TermMode::DECBKM.bits(),
+        TermMode::DECBKM.bits(),
+        "DECBKM bit must survive the wire path — cached snapshot.modes → pane_mode()"
+    );
+}
+
+/// Section 09 bridge cell (daemon side, negative pin): `MuxClient::pane_mode()`
+/// returns `None` when no snapshot has been cached. Pairs with the positive
+/// pin above to prove the daemon client does not fabricate a default mode
+/// value for an unknown pane. Also pairs with
+/// `pane_mode_returns_none_for_nonexistent_pane` in
+/// `oriterm_mux/src/backend/embedded/tests.rs` for matrix coverage.
+#[test]
+fn client_pane_mode_returns_none_for_unknown_pane() {
+    use crate::backend::MuxBackend;
+
+    let client = MuxClient::new();
+    assert!(
+        MuxBackend::pane_mode(&client, PaneId::from_raw(999)).is_none(),
+        "pane_mode() must return None for a pane with no cached snapshot"
+    );
+}
+
+/// Section 09 bridge cell (daemon side, reset): `MuxClient::pane_mode()`
+/// returns the updated `modes` bits after a snapshot that clears DECBKM
+/// overwrites the previously-cached "DECBKM set" snapshot. Proves the
+/// client applies later snapshots rather than sticking to the first one.
+#[test]
+fn client_pane_mode_reflects_decbkm_reset_via_snapshot_overwrite() {
+    use crate::backend::MuxBackend;
+    use oriterm_core::term::mode::TermMode;
+
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+    let mut on = test_snapshot("decbkm-on");
+    on.modes = TermMode::DECBKM.bits();
+    client.cache_snapshot(p, on);
+
+    let before = MuxBackend::pane_mode(&client, p).unwrap();
+    assert_eq!(
+        before & TermMode::DECBKM.bits(),
+        TermMode::DECBKM.bits(),
+        "precondition: DECBKM set after first snapshot"
+    );
+
+    let mut off = test_snapshot("decbkm-off");
+    off.modes = 0;
+    client.cache_snapshot(p, off);
+
+    let after = MuxBackend::pane_mode(&client, p).unwrap();
+    assert_eq!(
+        after & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must clear when a later snapshot has modes: 0"
+    );
+}
+
 /// `remove_snapshot` evicts the cached snapshot and clears dirty.
 #[test]
 fn remove_snapshot_evicts_and_clears_dirty() {

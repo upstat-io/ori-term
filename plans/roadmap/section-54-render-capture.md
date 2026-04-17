@@ -2,7 +2,7 @@
 section: 54
 title: "Render Capture & Texture Pipeline"
 status: not-started
-reviewed: true
+reviewed: false
 last_verified: "2026-04-05"
 tier: 5
 goal: "Shared GPU infrastructure for persistent texture management with incremental sub-region updates and frame capture/downscale — first consumer is the minimap (Section 55), future consumers are expose thumbnails (Section 42) and tab hover previews (Section 16)"

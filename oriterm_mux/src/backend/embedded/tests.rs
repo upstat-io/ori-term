@@ -473,6 +473,146 @@ fn cleanup_closed_pane_with_io_thread() {
     assert!(!mux.swap_renderable_content(pane_id, &mut buf));
 }
 
+// -- pane_mode bridge (Section 09 TPR) --
+
+/// Bridge: `pane_mode()` returns DECBKM bit after the IO thread processes
+/// `CSI ? 67 h`. Proves the full path: VTE parser -> `post_parse_housekeeping()`
+/// -> `mode_cache` -> `Pane::mode()` -> `EmbeddedMux::pane_mode()`.
+///
+/// Closes the test gap identified by `` — io_thread bridge
+/// tests stopped at `mode_cache`; this test verifies the downstream consumer.
+///
+/// Uses `printf` to emit the escape sequence from the shell process to the
+/// PTY output (where the VTE parser reads it), not `send_input` which writes
+/// to PTY stdin and would not trigger VTE parsing.
+#[cfg(unix)]
+#[test]
+fn pane_mode_reflects_decbkm_set() {
+    use std::time::{Duration, Instant};
+
+    use oriterm_core::{Theme, term::mode::TermMode};
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+
+    // Wait for initial shell startup to settle.
+    let settle = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < settle {
+        mux.poll_events();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // DECBKM should NOT be set initially.
+    let initial = mux.pane_mode(pane_id).unwrap_or(0);
+    assert_eq!(
+        initial & TermMode::DECBKM.bits(),
+        0,
+        "DECBKM must be clear before CSI ? 67 h"
+    );
+
+    // Use printf to emit CSI ? 67 h from the shell to PTY stdout.
+    // send_input writes to PTY stdin; the shell executes the printf
+    // command and its output (the escape sequence) flows through the
+    // PTY to the IO thread's VTE parser.
+    mux.send_input(pane_id, b"printf '\\033[?67h'\n");
+
+    // Wait for the IO thread to process the escape sequence and update mode_cache.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_decbkm = false;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if let Some(bits) = mux.pane_mode(pane_id) {
+            if bits & TermMode::DECBKM.bits() != 0 {
+                saw_decbkm = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        saw_decbkm,
+        "pane_mode() must reflect DECBKM after CSI ? 67 h is processed"
+    );
+
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
+}
+
+/// Negative pin: `pane_mode()` clears DECBKM after `CSI ? 67 l`.
+///
+/// Companion to `pane_mode_reflects_decbkm_set` — proves the reset path
+/// also propagates through the embedded backend's `pane_mode()`.
+#[cfg(unix)]
+#[test]
+fn pane_mode_clears_decbkm_on_reset() {
+    use std::time::{Duration, Instant};
+
+    use oriterm_core::{Theme, term::mode::TermMode};
+
+    use crate::domain::SpawnConfig;
+
+    let mut mux = EmbeddedMux::new(test_wakeup());
+    let config = SpawnConfig::default();
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
+
+    // Settle.
+    let settle = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < settle {
+        mux.poll_events();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    // Set DECBKM first via printf (PTY output -> VTE parser).
+    mux.send_input(pane_id, b"printf '\\033[?67h'\n");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if let Some(bits) = mux.pane_mode(pane_id) {
+            if bits & TermMode::DECBKM.bits() != 0 {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // Now reset DECBKM via printf.
+    mux.send_input(pane_id, b"printf '\\033[?67l'\n");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_clear = false;
+    while Instant::now() < deadline {
+        mux.poll_events();
+        if let Some(bits) = mux.pane_mode(pane_id) {
+            if bits & TermMode::DECBKM.bits() == 0 {
+                saw_clear = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        saw_clear,
+        "pane_mode() must clear DECBKM after CSI ? 67 l is processed"
+    );
+
+    mux.close_pane(pane_id);
+    mux.cleanup_closed_pane(pane_id);
+}
+
+/// `pane_mode()` returns `None` for a non-existent pane.
+#[test]
+fn pane_mode_returns_none_for_missing_pane() {
+    let mux = EmbeddedMux::new(test_wakeup());
+    assert!(
+        mux.pane_mode(PaneId::from_raw(999)).is_none(),
+        "pane_mode must return None for an unknown pane id"
+    );
+}
+
 /// TPR-6 semantic pin: `sync_pane_snapshot` returns `None` for an
 /// unknown pane id rather than blocking on a non-existent IO thread.
 ///

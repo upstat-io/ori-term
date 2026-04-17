@@ -219,6 +219,7 @@ fn push_image_with_offset() {
     scene.pop_offset();
 }
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "pop_clip without matching push_clip")]
 fn unbalanced_pop_clip_panics_in_debug() {
@@ -226,6 +227,7 @@ fn unbalanced_pop_clip_panics_in_debug() {
     scene.pop_clip();
 }
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "pop_offset without matching push_offset")]
 fn unbalanced_pop_offset_panics_in_debug() {
@@ -233,6 +235,7 @@ fn unbalanced_pop_offset_panics_in_debug() {
     scene.pop_offset();
 }
 
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "pop_layer_bg without matching push_layer_bg")]
 fn unbalanced_pop_layer_bg_panics_in_debug() {
