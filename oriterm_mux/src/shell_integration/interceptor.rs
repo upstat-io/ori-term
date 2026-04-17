@@ -4,8 +4,10 @@
 //! or XTVERSION (CSI >q) to `Handler` trait methods. This interceptor uses
 //! a raw `vte::Parser` with a custom `Perform` impl to catch these sequences
 //! before the high-level processor discards them. OSC 7 is also handled here
-//! (with proper URI parsing and percent-decoding) instead of through the
-//! high-level `Handler::set_working_directory`, which stores the raw URI.
+//! (with proper URI parsing and percent-decoding) because `Term` does NOT
+//! override `Handler::set_working_directory` — the high-level handler default
+//! is a no-op. The interceptor is therefore the sole canonical path for CWD
+//! updates from OSC 7 (SSOT: `Term::set_cwd`).
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{Effect, HostEffect, NotificationSource, PtyEffect, PtyWriteKind};
