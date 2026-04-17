@@ -2,7 +2,7 @@
 section: "51"
 title: "Rich Status Bar — Shell, CWD, Git Branch, Foreground Process"
 status: not-started
-reviewed: true
+reviewed: false
 tier: 5
 goal: "Status bar displays live shell name, CWD path, git branch, and foreground process name from real terminal state — no hardcoded placeholders."
 inspired_by:

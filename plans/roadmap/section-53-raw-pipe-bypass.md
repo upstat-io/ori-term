@@ -2,7 +2,7 @@
 section: 53
 title: "Raw Pipe Bypass for VT-Native Shells"
 status: not-started
-reviewed: true
+reviewed: false
 tier: 5
 goal: "Bypass ConPTY entirely for VT-native children (WSL) by connecting pipes directly. Image protocols (Sixel, Kitty) pass through unmangled. OriTerm becomes the first Windows terminal with zero-overhead VT passthrough. SSH raw pipe transport deferred to Section 35 (SshDomain)."
 success_criteria:
