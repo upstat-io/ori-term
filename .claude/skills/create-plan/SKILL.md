@@ -186,7 +186,7 @@ If not provided via arguments, use `AskUserQuestion` to ask:
 1. **Plan name** — kebab-case directory name
 2. **Plan title** — Human-readable title (e.g., "Error Recovery System")
 3. **Goal** — One-line description of what this plan accomplishes
-4. **Rough scope** — Which ori_term crates and subsystems does this touch? (`oriterm_core` / `oriterm_ui` / `oriterm_mux` / `oriterm_ipc` / `oriterm`, plus specific paths inside each — e.g. `oriterm_core/src/grid/`, `oriterm_ui/src/widgets/`, `oriterm/src/gpu/`). See `.claude/rules/crate-boundaries.md` for ownership.
+4. **Rough scope** — Which parts of the compiler/runtime/stdlib does this touch? (crates, subsystems, features)
 
 Do NOT ask for sections yet. Sections emerge from research, not from guessing.
 
@@ -203,11 +203,11 @@ Take the user's rough goal and expand it into:
 
 **Scoping discipline — CRITICAL:**
 
-ori_term is a GPU-accelerated terminal emulator in the same category as alacritty, wezterm, and ghostty. Plans exist to build it out against the reference terminal emulators' feature set. Scoping must reflect this reality:
+The compiler is under active development. Plans exist to build out the compiler's feature set. Scoping must reflect this reality:
 
 **Valid reasons to scope something OUT:**
-- It's not a terminal emulator concern (e.g. language-server features, package manager integration)
-- It doesn't improve user-facing terminal behavior meaningfully — busywork with no architectural payoff
+- It doesn't fit Ori's design philosophy — would feel tacked on, not organic to the language
+- It doesn't improve the compiler meaningfully — busywork with no architectural payoff
 - It's architecturally incoherent with the existing design direction
 - It belongs in a different plan that addresses a different subsystem (but must be cross-linked as a dependency)
 
@@ -431,14 +431,6 @@ Then:
   EXISTING_BUGS: {any bugs or issues you noticed while reading}
 ```
 
-### Step 2.5: Intelligence reconnaissance (CONDITIONAL)
-
-Follow the canonical intel-summary injection protocol:
-
-@.claude/skills/query-intel/compose-intel-summary.md
-
-Per SSOT Step F — /create-plan reconnaissance: use `symbols "<topic keyword>" --repo ori --limit 20` and `file-symbols "<likely path>" --repo ori` for inventory; `callers`/`callees`/`similar --repo rust,swift,go,koka --limit 5` for high-signal symbols. Feed the resulting symbol inventory into the breadth-scan agent prompts.
-
 #### Agent 2: Tests, Spec, & Hygiene Audit
 
 ```
@@ -504,15 +496,15 @@ You are researching the ori_term codebase for plan creation. Your job is to unde
 Read CLAUDE.md first.
 
 INSTRUCTIONS:
-1. Read the relevant runtime code in crates/$1/src/:
+1. Read the relevant runtime code in crates/rt/src/:
    - What C-ABI functions exist for this feature?
    - What data layouts are used?
    - What memory management patterns (RC inc/dec, COW, SSO)?
-2. Read the relevant codegen code in crates/$1/src/:
+2. Read the relevant codegen code in crates/llvm/src/:
    - How is this feature lowered to LLVM IR?
    - What builtins are emitted?
    - How does the ARC pipeline interact?
-3. Read the ARC pipeline if relevant (crates/$1/src/):
+3. Read the ARC pipeline if relevant (crates/arc/src/):
    - How does the optimizer analyze this feature?
    - What contracts/lattice states apply?
    - What rewrite rules fire?
@@ -567,15 +559,15 @@ INSTRUCTIONS:
    - If adding codegen support: trace how an existing feature flows through ori_llvm
 
 2. For EACH analogous feature, trace the COMPLETE implementation through every compiler phase:
-   a. Lexer: What tokens? (crates/$1/src/)
-   b. Parser: What AST nodes? (crates/$1/src/)
-   c. IR: What IR representation? (crates/$1/src/)
-   d. Type checker: What type rules? (crates/$1/src/)
-   e. Registry: What method/type registrations? (crates/$1/src/)
-   f. Evaluator: What evaluation logic? (crates/$1/src/)
-   g. ARC pipeline: What memory analysis? (crates/$1/src/)
-   h. LLVM codegen: What IR generation? (crates/$1/src/)
-   i. Runtime: What C-ABI support? (crates/$1/src/)
+   a. Lexer: What tokens? (crates/lexer/src/)
+   b. Parser: What AST nodes? (crates/parse/src/)
+   c. IR: What IR representation? (crates/ir/src/)
+   d. Type checker: What type rules? (crates/types/src/)
+   e. Registry: What method/type registrations? (crates/registry/src/)
+   f. Evaluator: What evaluation logic? (crates/eval/src/)
+   g. ARC pipeline: What memory analysis? (crates/arc/src/)
+   h. LLVM codegen: What IR generation? (crates/llvm/src/)
+   i. Runtime: What C-ABI support? (crates/rt/src/)
    j. Stdlib: What library support? ()
    k. Tests: What test files and patterns? (tests/spec/, */tests.rs)
 
@@ -632,7 +624,7 @@ INSTRUCTIONS:
    - "How should X interact with the ARC pipeline?"
    - "What error messages should X produce?"
 
-2. For EACH design decision, check the reference repos at ~/projects/reference_repos/console_repos/ (tmux, alacritty, wezterm, ghostty, ratatui, ptyxis, termenv) and ~/projects/reference_repos/gui_repos/ for widget/GPU concerns:
+2. For EACH design decision, check the reference repos at ~/projects/reference_repos/lang_repos/:
    - Rust, Swift, Koka, Lean4 for ARC/memory topics
    - Gleam, Elm, Roc for type system topics
    - Go, Zig, TypeScript for general patterns
@@ -1095,7 +1087,7 @@ If overlapping sections are found, present them to the user via `AskUserQuestion
 > This plan's scope overlaps with **N reviewed sections** across **M other plans**. These sections have `reviewed: true` but their reviews may be stale because this plan modifies files/types they reference.
 >
 > **High-impact overlaps** (weight ≥ 4):
-> - `plans/foo/section-03.md` — overlapping files: `crates/$1/src/...` (weight: 8)
+> - `plans/foo/section-03.md` — overlapping files: `crates/types/src/...` (weight: 8)
 > - `plans/bar/section-01.md` — overlapping symbols: `EnumRepr`, `IrBuilder` (weight: 5)
 >
 > **Lower-impact overlaps** (weight 2-3):

@@ -15,8 +15,21 @@ The full rule set is embedded below (source of truth files — do not maintain s
 **Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
 @.claude/rules/impl-hygiene.md
 
-**Compiler Guidelines** (`.claude/rules/compiler.md`):
-@.claude/rules/compiler.md
+**Code Hygiene** (`.claude/rules/code-hygiene.md`):
+@.claude/rules/code-hygiene.md
+
+**Crate Boundaries** (`.claude/rules/crate-boundaries.md`):
+@.claude/rules/crate-boundaries.md
+
+**Test Organization** (`.claude/rules/test-organization.md`):
+@.claude/rules/test-organization.md
+
+**Per-crate ownership** (`.claude/rules/oriterm*.md`):
+@.claude/rules/oriterm.md
+@.claude/rules/oriterm_core.md
+@.claude/rules/oriterm_ui.md
+@.claude/rules/oriterm_mux.md
+@.claude/rules/oriterm_ipc.md
 
 #### 1b. Load Plan Context
 
@@ -39,7 +52,7 @@ Plan context does NOT suppress or deprioritize findings. Instead, it **annotates
 
 **Example annotation:**
 ```
-3. **[DRIFT]** `crates/$1/src/check/registration/mod.rs:142` — Missing sync for new `Serialize` variant
+3. **[DRIFT]** `crates/types/src/check/registration/mod.rs:142` — Missing sync for new `Serialize` variant
    → covered by plans/trait_arch/ (Section 3: Registration Overhaul)
 ```
 

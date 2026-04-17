@@ -53,7 +53,7 @@ These are the tools you own and must improve:
 | **Allocation / RSS regression**     | `oriterm_core/tests/alloc_regression.rs`, `oriterm_core/tests/rss_regression.rs`                                   | `.claude/rules/tests.md` §Performance Invariants |
 | **Architecture tests**              | `oriterm/tests/architecture.rs`                                                                                    | `.claude/rules/crate-boundaries.md`     |
 | **Scripts** (build, bundle, test utilities) | `scripts/`, `bundle-macos.sh`                                                                               | `CLAUDE.md` §Commands                   |
-| **Dual-source review transport**    | `.claude/skills/dual-tpr/scripts/` (parse-codex, parse-gemini, merge-findings, dual-invoke, status-check, etc.)    | `.claude/skills/dual-tpr/transport.md`  |
+| **Dual-source review transport**    | `.claude/skills/tpr-review/` (`SKILL.md` orchestrator + `tp_agent_prompt.md` per-reviewer prompt template — direct parallel Agent dispatch, no external transport scripts), `.claude/skills/tp-help/` (`SKILL.md` + `tp_help_prompt.md`)    | `.claude/skills/tpr-review/SKILL.md`, `.claude/skills/tp-help/SKILL.md`  |
 | **Hooks**                           | `.claude/hooks/` (`block-banned-commands.sh`, `classify-review-command.py`, `shell_lex.py`, `verify-hook.sh`)       | — (owned by this skill + tests.md)      |
 
 ## Documentation Surfaces
@@ -146,12 +146,6 @@ Read the existing tool code. Understand:
 - Its current capabilities and flags
 - Its conventions (does it follow `_common.sh` patterns? Does it support `--help`?)
 - Where the gap is in the code
-
-Before creating a new tool, run the intelligence pre-query to check if similar tools already exist. Follow the canonical intel-summary injection protocol:
-
-@.claude/skills/query-intel/compose-intel-summary.md
-
-Per SSOT Step F — /improve-tooling uses `symbols "<keyword>" --repo ori --kind function --limit 10` to find existing tool functions before creating a new one.
 
 ### Step 3: Fix the Tool
 

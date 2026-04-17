@@ -18,14 +18,13 @@ No arguments — the skill auto-selects based on priority.
 
 ## How this skill runs
 
-**Queue scanning is a Python script (`bug_queue_scan.py`), not a sub-agent.** The scanner is deterministic, runs in ~35 ms, and costs essentially zero tokens. It replaces a prior Sonnet sub-agent that burned 140k tokens and ~3 minutes doing the same mechanical work.
+**Queue scanning is a Python script (`bug_queue_scan.py`), not a sub-agent.** The scanner is deterministic and costs essentially zero tokens. It replaces a prior sub-agent that burned 140k tokens doing the same mechanical work.
 
 The skill runs entirely in the parent (Opus) context:
 
 1. **Scan** — `bash`-invoke `bug_queue_scan.py --json`, parse the JSON, print the queue display.
-2. **Optional blast-radius preview** — run one `scripts/intel-query.sh` query if available.
-3. **Mode selection** — `AskUserQuestion` for interactive vs autopilot (this MUST be in the parent because sub-agents cannot talk to the user).
-4. **Fix loop** — invoke `/fix-bug` per iteration, run the commit-verification gate, re-scan, repeat.
+2. **Mode selection** — `AskUserQuestion` for interactive vs autopilot (this MUST be in the parent because sub-agents cannot talk to the user).
+3. **Fix loop** — invoke `/fix-bug` per iteration, run the commit-verification gate, re-scan, repeat.
 
 **FOREGROUND MANDATORY — ALL Agent / Skill dispatches.** Never `run_in_background: true` on `/fix-bug` or `/commit-push`.
 
@@ -77,26 +76,6 @@ The user MUST see this block before the mode question.
 
 ---
 
-## Step 2: Blast-Radius Preview (Optional)
-
-Before the mode question, attempt a lightweight blast-radius preview on the selected bug's repro symbol.
-
-Follow the canonical intel-summary injection protocol:
-
-@.claude/skills/query-intel/compose-intel-summary.md
-
-Per SSOT Step F — `/fix-next-bug` uses `callers "<repro symbol>" --repo ori` as a lightweight blast-radius preview. If `scripts/intel-query.sh status` returns unavailable, skip this and omit the preview line silently.
-
-If the query returns results, append one line to the queue display:
-
-```
-  Blast radius: <symbol> called by N sites across M modules
-```
-
-This is a **preview only** — `/fix-bug` Phase 1 (investigation) runs its own full intelligence queries during the fix.
-
----
-
 ## Step 3: Choose Mode (Parent — Opus)
 
 `AskUserQuestion` runs in the parent context where the user can respond.
@@ -119,11 +98,12 @@ Record the choice.
 3. After `/fix-bug` returns, run the **Commit Verification Gate** (Step 5).
 4. `AskUserQuestion`:
    - **Question**: `Fix complete for [BUG-XX-NNN].\n\nNext bug in queue: [BUG-YY-MMM][severity] title\n{K-1} more bugs remaining after that.\n\nContinue with the next bug?`
-   - **Options**: `Yes`, `No`, `Skip`
+   - **Options**: `Yes`, `No`, `Skip`, `Pause — clear context, resume via /continue-roadmap`
 5. Handle the response:
    - `Yes` → re-scan (Step 6), pick the new highest priority, go to Step 4.A step 1.
    - `Skip` → re-scan with `--skip-ids BUG-XX-NNN,...` (accumulate the skip list across the session), pick the next one, go to Step 4.A step 1.
    - `No` → print the Final Report (Step 7) and stop.
+   - `Pause — clear context, resume via /continue-roadmap` → print a brief pause summary (bugs fixed so far, next bug in queue, how to resume) and stop. The user clears context manually; a fresh session picks back up via `/continue-roadmap`, which will detect the remaining queue and prompt fresh.
 
 ### Step 4.B — Autopilot Mode
 
@@ -244,7 +224,7 @@ Remaining open bugs: {N}
 
 ## Key Rules
 
-- **Python scanner, not Sonnet sub-agent** — queue scanning is deterministic mechanical work. The scanner runs in ~35 ms for near-zero tokens.
+- **Python scanner, not sub-agent** — queue scanning is deterministic mechanical work. The scanner costs near-zero tokens.
 - **AskUserQuestion lives in the parent** — sub-agents cannot talk to the user. The mode prompt MUST be issued by the Opus parent context.
 - **Always re-scan** before picking the next bug — queue state is dynamic.
 - **Full `/fix-bug` rigor** — every bug goes through the complete workflow via the Skill tool, no shortcuts.

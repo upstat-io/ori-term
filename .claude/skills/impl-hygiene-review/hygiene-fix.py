@@ -15,7 +15,7 @@ Usage:
   hygiene-fix.py                        # Dry-run all fixable checks
   hygiene-fix.py --apply                # Apply all fixes
   hygiene-fix.py --checks banners       # Only fix banners
-  hygiene-fix.py --scope crates/$1/  # Restrict scope
+  hygiene-fix.py --scope crates/types/  # Restrict scope
 
 Exit codes: 0 = nothing to fix, 1 = fixes applied, 2 = dry-run preview
 """

@@ -52,15 +52,7 @@ from pathlib import Path
 from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# ori_term has no `compiler/` subdirectory — workspace crates live at the
-# repo root (oriterm, oriterm_core, oriterm_ui, oriterm_mux, oriterm_ipc)
-# and `crates/oriterm_test_support`. Treat REPO_ROOT itself as the scan
-# anchor; crate detection below walks REPO_ROOT's Cargo.toml workspace
-# members rather than assuming a single subdirectory.
-WORKSPACE_ROOT = REPO_ROOT
-# Back-compat alias: existing code references COMPILER_DIR. We preserve
-# the name but point it at REPO_ROOT so globs below still find sources.
-COMPILER_DIR = REPO_ROOT
+COMPILER_DIR = REPO_ROOT / "compiler"
 
 # ─── Color helpers ───────────────────────────────────────────
 
@@ -106,41 +98,31 @@ CHECK_DEFS: dict[str, tuple[str, str, bool, str]] = {
 ALL_CHECK_IDS = set(CHECK_DEFS.keys())
 
 
-# Pure crates that MUST have #![deny(unsafe_code)] (workspace-level
-# `unsafe_code = "deny"` already covers everything, but these are the
-# crates that should ALSO have the inner #![deny(unsafe_code)] attribute
-# because they contain zero unsafe FFI boundaries).
+# Pure crates that MUST have #![deny(unsafe_code)]
 PURE_CRATES = {
-    "oriterm_core",
-    "oriterm_ui",
-    "oriterm_ipc",
-    "oriterm_test_support",
+    "ori_ir", "ori_diagnostic", "ori_types", "ori_eval", "ori_patterns",
+    "ori_parse", "ori_lexer", "ori_registry",
 }
 
 # Crate dependency order (lower number = lower level).
 # A crate may only import from crates with LOWER numbers.
-# Mirrors .claude/rules/crate-boundaries.md §Allowed Dependency Direction.
 CRATE_ORDER: dict[str, int] = {
-    "oriterm_ipc": 0,          # standalone
-    "oriterm_core": 0,         # standalone
-    "oriterm_test_support": 0, # standalone test helpers
-    "oriterm_ui": 1,           # → oriterm_core
-    "oriterm_mux": 1,          # → oriterm_core, oriterm_ipc
-    "oriterm": 2,              # → oriterm_core, oriterm_ui, oriterm_mux
+    "ori_ir": 0, "ori_diagnostic": 0, "ori_registry": 0,
+    "ori_lexer_core": 1, "ori_lexer": 2,
+    "ori_parse": 3,
+    "ori_patterns": 4, "ori_types": 4,
+    "ori_eval": 5, "ori_arc": 5, "ori_repr": 5, "ori_canon": 5,
+    "ori_llvm": 6, "ori_compiler": 6,
+    "ori_fmt": 4, "ori_lsp": 7, "ori_stack": 1,  # shared utility, used by ori_parse+
+    "oric": 8, "ori_rt": 0,
 }
 
 # Sync-point enums — shared between catch-all-arms check and enum-drift.py
-# These are the enums where catch-all `_ =>` arms hide cross-module drift
-# and every new variant needs to be handled explicitly at every match
-# site. Seed list; expand as new sync-point enums are discovered.
+# These are the IR enums where catch-all `_ =>` arms hide cross-phase drift
 SYNC_POINT_ENUMS = {
-    "CellFlags",        # oriterm_core cell rendering flags
-    "KeyEvent",         # oriterm_ui input dispatch
-    "WidgetAction",     # oriterm_ui action system
-    "KeymapAction",     # oriterm_ui keybinding system
-    "PropagationPhase", # oriterm_ui pipeline event routing
-    "MuxEvent",         # oriterm_mux pane events
-    "SessionEvent",     # oriterm session model
+    "CanExpr", "ExprKind", "TypeTag", "DerivedTrait",
+    "TokenKind", "CollectionMethod", "IteratorValue",
+    "StmtKind", "BinaryOp", "UnaryOp",
 }
 
 
@@ -182,7 +164,7 @@ def is_test_file(path: Path) -> bool:
     name = path.name
     if name == "tests.rs" or name.endswith("_test.rs"):
         return True
-    # Files under a tests/ directory (e.g., crates/$1/tests/)
+    # Files under a tests/ directory (e.g., crates/llvm/tests/)
     return "tests" in path.parts
 
 

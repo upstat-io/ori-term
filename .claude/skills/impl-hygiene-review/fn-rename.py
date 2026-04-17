@@ -21,7 +21,7 @@ Modes:
 Manifest format (JSON):
   [
     {
-      "file": "crates/$1/src/tests.rs",
+      "file": "crates/eval/src/tests.rs",
       "from": "test_tpr_07_017_two_unrelated",
       "to": "test_iterator_drop_two_unrelated_sequences_release",
       "doc": "Regression: TPR-07-017"

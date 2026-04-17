@@ -97,7 +97,7 @@ Examples
 --------
 
     # Hygiene review of a specific arc:
-    plan-annotations.py --scope crates/$1/src/aot src/commands
+    plan-annotations.py --scope crates/llvm/src/aot src/commands
 
     # Full audit:
     plan-annotations.py --all
@@ -204,7 +204,7 @@ FIPS_PHASE_RE = re.compile(r"\bfip(?:s)?\s+Phase\s+[A-C]\b", re.IGNORECASE)
 # Architecture-internal directories — section references inside these are
 # ALWAYS internal design docs, never plan refs.
 ARCH_DOC_DIRS = [
-    "crates/$1/src/aims",
+    "crates/arc/src/aims",
     "compiler/ori_canon",
 ]
 
@@ -1756,7 +1756,7 @@ def build_argparser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "EXAMPLES:\n"
-            "  plan-annotations.py --scope crates/$1/src/aot\n"
+            "  plan-annotations.py --scope crates/llvm/src/aot\n"
             "  plan-annotations.py --all --count\n"
             "  plan-annotations.py --cleanup-only\n"
             "  plan-annotations.py --orphans-only\n"
