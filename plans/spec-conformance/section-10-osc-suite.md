@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 4
+  rounds_completed: 5
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -189,7 +189,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 **Implementation:**
 
-- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that enables a `feed_with_mux()` path. **`RawInterceptor` is `pub(crate)` in `oriterm_mux` and cannot be accessed from `crates/oriterm_test_support` directly** — the harness must go through a test hook. Two valid approaches: **(A, preferred)** add a `pub(crate)` function `advance_raw_interceptor(term: &mut Term<S>, bytes: &[u8])` exported as `#[cfg(test)]` from `oriterm_mux::shell_integration` (or as a crate-level test helper in `oriterm_mux/src/lib.rs` under `#[cfg(test)] pub fn`); OR **(B)** duplicate the OSC dispatch logic that `RawInterceptor` performs (osc7 / osc9 / osc133 / etc.) in a `TestInterceptor` type within `oriterm_test_support` that mirrors production behavior. Option A is preferred because Option B creates an SSOT DRIFT risk. Whichever approach is chosen, `feed_with_mux()` MUST run the interceptor dispatch FIRST on the bytes, then run the high-level `Processor::advance_with_observer` on the SAME bytes — matching the production order in `oriterm_mux/src/pane/io_thread/mod.rs::handle_bytes()` (`self.raw_parser.advance(&mut interceptor, bytes)` before `self.processor.advance(&mut self.terminal, bytes)`). The harness MUST mirror this order exactly.
+- [ ] Add `SpecHarness::with_mux_layer(self) -> Self` that enables a `feed_with_mux()` path. **`RawInterceptor` is `pub(crate)` in `oriterm_mux` and cannot be accessed from `crates/oriterm_test_support` directly** — the harness must go through a test hook. **CRATE BOUNDARY CONSTRAINT (per `.claude/rules/crate-boundaries.md`):** `crates/oriterm_test_support` depends only on `oriterm_core`; adding an `oriterm_mux` dependency to it is NOT permitted. Two valid approaches: **(A, preferred — crate-boundary safe)** place the mux-intercepted OSC spec_chain tests in `oriterm_mux/tests/spec_chain/` (where `oriterm_mux` has full access to its own `pub(crate)` types), using a test helper within `oriterm_mux` that constructs a `RawInterceptor + Term` pair and runs both parsers in production order. This keeps `oriterm_test_support` dependency-clean. **(B, alternative — SSOT DRIFT risk)** duplicate the OSC dispatch logic that `RawInterceptor` performs (osc7 / osc9 / osc133 / etc.) in a `TestInterceptor` type within `oriterm_test_support` that mirrors production behavior. Option B is ONLY acceptable if Option A (putting tests in `oriterm_mux`) is structurally impractical. **DO NOT** add `oriterm_mux` as a dependency of `oriterm_test_support` — this violates the allowed dependency direction and creates a cycle. Whichever approach is chosen, the test harness MUST run the interceptor dispatch FIRST on the bytes, then run the high-level `Processor::advance_with_observer` on the SAME bytes — matching the production order in `oriterm_mux/src/pane/io_thread/mod.rs::handle_bytes()` (`self.raw_parser.advance(&mut interceptor, bytes)` before `self.processor.advance(&mut self.terminal, bytes)`). The harness MUST mirror this order exactly.
 - [ ] Complete `observe_renderable` to check every field in `RenderableExpectation`:
   - `cells: Option<Vec<(row, col, ch)>>` — cell contents at specific positions.
   - `hyperlink_at: Option<(row, col, expected_uri: String)>` — assert cell's hyperlink URI matches.
@@ -215,7 +215,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
   - **Option A (preferred if effect-cutover is close):** Coordinate Section 10.2 implementation with the effect-cutover plan: migrate the pane IO thread to `QueueingEffectSink` first, then activate `register_host_request_response`. The response-poll test (`response_poll_emits_pty_write_on_fulfill`) only runs after the sink migration is in place.
   - **Option B (scope-bounded):** For spec_chain verification only, wire a test-only shim that injects fulfilled responses directly into the pane IO thread's `pending_responses` vec (bypassing the dead-code path) — this verifies the reply FORMAT without requiring the sink migration. Document clearly that end-to-end production behavior depends on effect-cutover.
   Whichever option is chosen, the 10.0/10.2 checklist MUST call out the dependency on the IO thread's effective sink type BEFORE writing tests that assume the round-trip works end-to-end through `PaneIoThread`.
-- [ ] Replace `std::time::Instant::now()` at `oriterm_mux/src/shell_integration/interceptor.rs:102` with a clock-source call routed through `Term` — `Term` grows an optional `clock: Arc<dyn Fn() -> Instant + Send + Sync>` field (default `Arc::new(Instant::now)` in production; tests inject a deterministic one). **CRITICAL — `#[derive(Debug)]` breakage:** `Arc<dyn Fn() -> Instant + Send + Sync>` does NOT implement `Debug`, but `Term` uses `#[derive(Debug)]` at `oriterm_core/src/term/mod.rs:113`. The clock field MUST be wrapped in a debuggable newtype — e.g. `struct ClockFn(Arc<dyn Fn() -> Instant + Send + Sync>)` with a manual `impl Debug for ClockFn { fn fmt(&self, f: ...) -> ... { write!(f, "ClockFn(...)") } }` — before adding it to `Term`. Alternatively, store `Option<Box<dyn Fn() -> Instant + Send + Sync>>` with a manual `Debug` impl on that specific field using `#[debug = "..."]` or a newtype wrapper. The implementation MUST keep `Term`'s `#[derive(Debug)]` compiling — a `Term` that doesn't implement `Debug` would break every existing test that uses `{:?}` formatting on `Term`. WHERE: clock field added in `oriterm_core/src/term/mod.rs`; `Term::set_command_start(start)` uses the clock's tick when `start` is `None` and the current design calls `Instant::now()` internally. Preserve production behavior by keeping a `Term::new_default_clock()` constructor; deterministic tests use `Term::with_clock(clock_fn)`.
+- [ ] Make `HostEffect::CommandComplete { duration }` deterministic for testing by correcting the timing seam. **TIMING SEAM ANALYSIS (verified against code):** The duration is computed in `oriterm_core/src/term/shell_state/mod.rs:205-210`: `fn finish_command(&mut self) -> Option<Duration> { let start = self.command_start.take()?; let duration = start.elapsed(); ... }` — the call is `start.elapsed()` on an `Instant`, NOT `Instant::now()` at the interceptor. Two valid approaches to make this deterministic: **(A, preferred)** refactor `finish_command()` to accept an optional `now: Option<Instant>` parameter: `fn finish_command(&mut self, now: Option<Instant>) -> Option<Duration>`, computing `now.unwrap_or_else(Instant::now).duration_since(start)`. Production callers pass `None`; tests pass `Some(injected_instant)`. No `Arc<dyn Fn>` field needed, no `Debug` issue. **(B, alternative)** add a `clock: Option<Arc<dyn Fn() -> Instant + Send + Sync>>` field to `Term` — but this requires a `ClockFn` newtype wrapper with manual `Debug` impl (see the `#[derive(Debug)]` constraint at `oriterm_core/src/term/mod.rs:113`). Option A is preferred because it avoids the `Arc<dyn Fn>` / `Debug` complication entirely and the test-injection is at the exact right seam. **INCORRECT alternative (do NOT do this):** replacing `Instant::now()` at `oriterm_mux/src/shell_integration/interceptor.rs` — the interceptor calls `Term::set_command_start(Instant::now())` to SET the start time, but the DURATION is computed in `Term::finish_command()` via `start.elapsed()`. The interceptor is not the seam where the duration is measured.
 
 **Validation:**
 
@@ -446,7 +446,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 **Files:**
 - `oriterm_core/tests/spec_chain/osc/iterm2_non_image.rs` (new)
 - `oriterm_core/src/term/handler/mod.rs` (implement `Handler::iterm2_set_mark`, `iterm2_remote_host`, `iterm2_current_dir`, `iterm2_copy`, `iterm2_report_cell_size`, `iterm2_set_user_var`, `iterm2_shell_integration_version` on `Term`)
-- `oriterm_core/src/term/mod.rs` (new Term fields: `remote_host: Option<String>`, `user_vars: HashMap<String, String>`, `shell_integration_version: Option<String>`)
+- `oriterm_core/src/term/mod.rs` (new Term fields: `remote_host: Option<String>`, `user_vars: HashMap<String, String>`, `shell_integration_version: Option<String>`). **RSS INVARIANT:** `user_vars` MUST be bounded to prevent unbounded memory growth under adversarial PTY output. Apply a configurable max-size cap: default 256 entries; when the cap is reached, the oldest (by insertion order — use `IndexMap` or a `VecDeque<String>` key-ring to track LRU order) entry is evicted before the new one is inserted. The RSS regression test (`oriterm_core/tests/rss_regression.rs`) MUST stay green; a `user_vars` that grows without bound per unique key fails that invariant. The size cap itself is verified by a dedicated test: `osc1337_user_vars_cap_evicts_oldest` — insert 257 distinct keys, assert the map size remains at 256 and the first-inserted key is gone.
 - `plans/spec-conformance/catalog/iterm2.md` (update `owner_section` in front-matter; update per-row `Implementation` + `Verification` cells)
 
 **Tests:**
@@ -460,6 +460,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 - [ ] `osc1337_shell_integration_version` — feed `\x1b]1337;ShellIntegrationVersion=5\x1b\\`, assert `term.shell_integration_version() == Some("5")`.
 - [ ] `osc1337_file_still_routes_to_iterm2_file` — feed a minimal `\x1b]1337;File=name=test.png;:<tiny-png-bytes>\x1b\\`, assert `Handler::iterm2_file` is still called (regression guard: the sub-dispatcher refactor from 10.0 must preserve Section 14's image path).
 - [ ] `osc1337_unknown_key_dropped` — feed `\x1b]1337;NotARealKey=value\x1b\\`, assert no state mutation and the `unhandled` branch fires.
+- [ ] `osc1337_user_vars_cap_evicts_oldest` — **RSS REGRESSION PIN**: insert 257 distinct `SetUserVar` keys (`KEY_0` through `KEY_256`). Assert `term.user_vars().len() == 256` (cap enforced) AND `term.user_var("KEY_0") == None` (oldest evicted). Assert `term.user_var("KEY_256") == Some(...)` (newest retained). This test MUST FAIL if `user_vars` grows unboundedly. Cross-reference 10.N RSS regression check.
 - [ ] **Semantic pin — SSOT for CWD (direction A)** — set `term.cwd()` via OSC 7 (`file:///start ST`). Feed `OSC 1337 ; CurrentDir=/other-path ST`. Assert `term.cwd() == Some("/other-path")` (last write wins; NO second CWD field). Cross-reference scope clarification §H.
 - [ ] **Semantic pin — SSOT for CWD (direction B)** — set `term.cwd()` via OSC 1337 CurrentDir first (`/from-iterm2`). Then feed `OSC 7 ; file:///from-osc7 ST`. Assert `term.cwd() == Some("/from-osc7")` (OSC 7 overwrites OSC 1337 via the same canonical `Term::set_cwd` field). Matrix clamping requires BOTH directions per `.claude/rules/tests.md §Matrix Clamping` — a one-directional test misses a future regression where OSC 1337 writes a second CWD field that OSC 7 does not overwrite.
 
@@ -568,7 +569,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 - [ ] One test per variant — ~22 tests total (set + query + reset pairs).
 - [ ] Cross-reset consistency: set OSC 13, reset via OSC 113, verify it returns to default.
-- [ ] **Matrix completeness pin (SSOT: use catalog_row_id scanner, NOT function-name grep)** — use the existing `scan_test_citations` / `CoverageReport` infrastructure at `crates/oriterm_test_support/src/spec_chain/coverage/` (not a raw grep for function names). Every `SpecScenario` const in the OSC test files MUST declare `catalog_row_id: "OSC-<N>"` matching the corresponding catalog row ID. Run the coverage report (`cargo run --bin spec_coverage_report`) and assert every OSC catalog row has at least one citation. Function-name grepping (`osc<N>`) would bypass this SSOT and create a second catalog-tracking mechanism that can drift from the canonical scanner.
+- [ ] **Matrix completeness pin (SSOT: use catalog_row_id scanner, NOT function-name grep)** — use the existing `scan_test_citations` / `CoverageReport` infrastructure at `crates/oriterm_test_support/src/spec_chain/coverage/` (not a raw grep for function names). Every `SpecScenario` const in the OSC test files MUST declare `catalog_row_id: "OSC-<N>"` matching the corresponding catalog row ID. Run the coverage report (`cargo run -p oriterm_test_support --bin spec-coverage-report`) and assert every OSC catalog row has at least one citation. (Binary name is `spec-coverage-report` with hyphens, NOT `spec_coverage_report` with underscores — per `crates/oriterm_test_support/Cargo.toml:[[bin]]:name`.) Function-name grepping (`osc<N>`) would bypass this SSOT and create a second catalog-tracking mechanism that can drift from the canonical scanner.
 
 **Catalog updates:**
 
@@ -735,6 +736,44 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Required plan update: item rewritten to a firm cross-reference-only note: this test is NOT Section 10's responsibility; the CSI window ops section owns it (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
+<!-- Round 5 findings (2026-04-17) -->
+
+- [x] `[TPR-10-26-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:192` — Preferred mux-layer approach (Option A) would require `oriterm_test_support` to call into `oriterm_mux`, violating crate boundary rules.
+  Evidence: `crates/oriterm_test_support/Cargo.toml` — depends only on `oriterm_core`; adding `oriterm_mux` would create an upward dependency in `oriterm_test_support` which is not permitted.
+  Impact: An implementer choosing Option A would need to add `oriterm_mux` as a dependency of `oriterm_test_support`, violating `.claude/rules/crate-boundaries.md` allowed dependency direction.
+  Required plan update: Option A revised to place mux-intercepted tests in `oriterm_mux/tests/spec_chain/` (boundary-safe); Option B retains SSOT DRIFT risk warning; dependency violation explicitly documented (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-27-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:218` — Clock injection plan targets wrong seam (`interceptor.rs:102`); actual duration measurement is in `finish_command()` via `start.elapsed()`.
+  Evidence: `oriterm_core/src/term/shell_state/mod.rs:205-210` — `fn finish_command(&mut self) { let start = self.command_start.take()?; let duration = start.elapsed(); ... }` — `elapsed()` is called here, not at `Instant::now()` in the interceptor.
+  Impact: Injecting a clock at the interceptor sets the START time deterministically but does NOT control how the DURATION is measured; `start.elapsed()` still uses wall clock.
+  Required plan update: plan rewritten to correct the seam — inject deterministic `now: Option<Instant>` into `finish_command()`, not into `set_command_start()` or the interceptor (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-28-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:571` — Coverage report command uses wrong binary name (underscore vs hyphen).
+  Evidence: `crates/oriterm_test_support/Cargo.toml:[[bin]] name = "spec-coverage-report"` — binary uses hyphens; plan said `cargo run --bin spec_coverage_report` (underscores).
+  Impact: Command fails at runtime with "no bin named `spec_coverage_report`".
+  Required plan update: corrected to `cargo run -p oriterm_test_support --bin spec-coverage-report` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-29-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:774` — Registration sync check omits `recording_handler.rs` as a consumer of `Handler::iterm2_*` methods.
+  Evidence: `crates/oriterm_test_support/src/spec_chain/recording_handler.rs:317` — `fn iterm2_file` is the only wired arm; missing arms cause spec_chain tests to miss new dispatch silently (established by TPR-10-15).
+  Impact: `grep -rn 'fn iterm2_'` only in `crates/vte` + `oriterm_core` would miss `recording_handler.rs` sync drift.
+  Required plan update: sync check expanded to include `recording_handler.rs` as a third sync point; `set_x11_property` also included (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-30-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:773` — CWD SSOT grep too broad; `grep -rn 'cwd:'` matches comments and struct initialisations, not just field declarations.
+  Evidence: `oriterm_core/src/term/mod.rs` — `cwd: None` appears in the constructor initialisation block; `cwd:` appears in doc strings. A broad grep cannot prove a single canonical field declaration.
+  Impact: The verification step claims to prove SSOT but would pass even if a second `cwd` field were added in a different module.
+  Required plan update: grep tightened to `grep -rn 'cwd: Option'` (field declaration) + `grep -rn 'fn set_cwd'` (mutator) — exactly one of each expected (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-31-gemini][medium]` `plans/spec-conformance/section-10-osc-suite.md:449` — `user_vars: HashMap<String, String>` has no size cap in the 10.7 implementation plan body, creating an RSS regression risk.
+  Evidence: 10.7 Files block adds `user_vars: HashMap<String, String>` without a max-size cap; only the 10.N checklist mentions "256 entries, eviction LRU" as a requirement.
+  Impact: An implementer following 10.7 alone would produce an unbounded HashMap that could exhaust memory under adversarial PTY output; the RSS regression test would catch it only at section completion, not at implementation.
+  Required plan update: 10.7 Files block updated with explicit RSS invariant (256-entry cap, LRU eviction); `osc1337_user_vars_cap_evicts_oldest` regression pin test added to 10.7 test list (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
 ---
 
 ## 10.N Completion Checklist
@@ -770,8 +809,8 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### Rules weaving (per `.claude/rules/impl-hygiene.md` + `.claude/rules/code-hygiene.md` + `.claude/rules/crate-boundaries.md` + `.claude/rules/oriterm_core.md` + `.claude/rules/oriterm_mux.md`)
 
-- [ ] **No SSOT drift**: `Term::cwd` is the ONLY CWD field — OSC 7, OSC 133, and OSC 1337 CurrentDir all route through it (10.4, 10.7, 10.8). Verified by `grep -rn 'cwd:' oriterm_core/src/term/` — returns the single canonical location.
-- [ ] **No registration sync drift**: new `NotificationSource` variants (none added in this section — pinned in 10.3) AND new `Handler` trait methods (iterm2_* in 10.0 / 10.7 + x11_property in 10.9) are checked for sync across all consumers — `grep -rn 'fn iterm2_'` in `crates/vte` + `oriterm_core` returns matching pairs per method.
+- [ ] **No SSOT drift**: `Term::cwd` is the ONLY CWD field — OSC 7, OSC 133, and OSC 1337 CurrentDir all route through it (10.4, 10.7, 10.8). Verified by: (1) `grep -rn 'cwd: Option' oriterm_core/src/term/` returns exactly ONE field declaration (`term/shell_state/mod.rs`); (2) `grep -rn 'fn set_cwd' oriterm_core/src/term/` returns exactly ONE function definition; (3) all `set_cwd` call sites route through `Term::set_cwd` (not direct field access). A broad `grep -rn 'cwd:'` is insufficient — it matches comments, doc strings, and struct initialisations that don't reveal whether there are TWO fields named `cwd`.
+- [ ] **No registration sync drift**: new `NotificationSource` variants (none added in this section — pinned in 10.3) AND new `Handler` trait methods (iterm2_* in 10.0 / 10.7 + x11_property in 10.9) are checked for sync across ALL three consumers — `grep -rn 'fn iterm2_'` in (1) `crates/vte/src/ansi/handler.rs` (trait declaration), (2) `oriterm_core/src/term/handler/mod.rs` (Term impl), AND (3) `crates/oriterm_test_support/src/spec_chain/recording_handler.rs` (RecordingHandler delegate) — all three must have matching method entries. Missing from `recording_handler.rs` means spec_chain tests silently miss the new dispatch (per finding TPR-10-15 precedent). Also verify `set_x11_property` is synced across all three when added in 10.9.
 - [ ] **No LEAK**: reply formatting for OSC 52 + OSC 4/10/11/12 queries goes through `format_clipboard_reply` / `format_color_reply` at `oriterm_core/src/effect/families/host_request.rs:110,126` — the canonical home; NO ad-hoc `format!` at dispatch or handler sites.
 - [ ] **No file size violations**: per `.claude/rules/code-hygiene.md` §File Size, source files (non-`tests.rs`) stay under 500 lines. `crates/vte/src/ansi/dispatch/osc.rs` is currently under the limit; the OSC 1337 sub-dispatcher extraction (10.0) and the new OSC 3/5/6/13/14/17/19/113/114/117/119/L/l arms (10.9) MUST NOT push it over. If approaching the limit, split by OSC family (e.g., `dispatch/osc/color.rs`, `dispatch/osc/notifications.rs`, `dispatch/osc/shell_integration.rs`) per the existing `dispatch/` pattern.
 - [ ] **Cross-platform**: OSC 3 (X11 property) has `#[cfg]` branches for Linux-X11 vs macOS vs Windows per `.claude/rules/tests.md` §Cross-Platform Verification. Every branch has a counterpart; Windows cross-compile via `cargo build --target x86_64-pc-windows-gnu` green.
