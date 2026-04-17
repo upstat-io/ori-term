@@ -37,7 +37,7 @@ depends_on: ["03", "08", "effect-cutover"]
 third_party_review:
   status: findings_accepted_by_user
   updated: "2026-04-17"
-  rounds_completed: 21
+  rounds_completed: 22
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
