@@ -1,8 +1,8 @@
 ---
 section: "10"
 title: "OSC Suite (full)"
-status: not-started
-reviewed: false
+status: in-progress
+reviewed: true
 goal: "Drive every row in `catalog/osc.md`, `catalog/shell-integration.md`, and the non-image rows of `catalog/iterm2.md` (SetMark, RemoteHost, CurrentDir, Copy, ReportCellSize, SetUserVar) from `implemented-unverified` / `stub` / `missing` to `verified`. Section 10 owns the ENTIRE OSC stack — Section 08's post-completion audit (`section-08 Implementation notes 2026-04-14`) recorded that tack scenarios drove ZERO OSC rows. Basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) stay owned by Section 10, NOT Section 08. This includes OSC 8 hyperlinks, OSC 22/50 cursor icon/shape, OSC 9/99/777 desktop notifications, OSC 104/110/111/112 color reset, OSC 133 semantic prompt, OSC 633 VS Code shell integration, and OSC 1337 non-image sub-ops. Section 10 also lands the prerequisites that make these rows testable: a spec_chain harness layer that routes through `oriterm_mux::shell_integration::RawInterceptor` (existing production path for OSC 7/9/99/133/777; OSC 633 dispatch is added by subsection 10.4), a completed renderable observer (OSC 8 cell-metadata assertions), a Term-level mouse-cursor-icon state (OSC 22), an extensible OSC 1337 sub-dispatcher (handed off to Section 14 for images), and the activation of the dormant `PendingResponse` polling path (OSC 52 ResponseToken round-trip)."
 success_criteria:
   - "Every row in `catalog/osc.md` is `verified` or `verified-with-deviation` (no `implemented-unverified`, no `stub`, no `missing`) — this includes the basic subset 08 left unverified (OSC 0/1/2/4/7/10/11/12/52) and the advanced subset (OSC 8/22/50/104/110/111/112/9/99/777/133/633 and the non-image OSC 1337 sub-ops)"
@@ -33,11 +33,11 @@ inspired_by:
   - "xterm `ctlseqs.html` — OSC 0/1/2/4/7/8/10/11/12/22/50/52/104/110/111/112/3/5/13/14/17/19"
   - "wezterm `escape-sequences.md` — de-facto OSC behavior reference across variants"
   - "alacritty `crates/vte/src/ansi/dispatch/osc.rs` (upstream) — dispatcher shape this section extends"
-depends_on: ["03", "08", "effect-cutover"]
+depends_on: ["03", "08"]
 third_party_review:
-  status: findings
-  updated: "2026-04-17"
-  rounds_completed: 19
+  status: findings_accepted_by_user
+  updated: "2026-04-16"
+  rounds_completed: 20
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -71,7 +71,7 @@ sections:
     status: not-started
   - id: "10.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "10.N"
     title: "Completion Checklist"
     status: not-started
