@@ -1,7 +1,7 @@
 ---
 section: "09"
 title: "DEC Private Modes (full)"
-status: in-progress
+status: complete
 reviewed: true
 goal: "Drive the subset of rows in `catalog/dec-private-modes.md` that Section 09 OWNS to `verified` status (state-rung + DECRQM-rung only): modes 9, 1000, 1002, 1003, 1005, 1006, 1015, 1047, 1048, 80, 8452 — these rows' verification chain tops out at the state/effect-mode-state rung, so flag-toggle + DECRQM fully verifies them. Plus the three implementation sub-deliverables: Mode 2031 (full implementation + verification), Mode 66/DECNKM (MISSING implementation), Mode 67/DECBKM (MISSING implementation with cross-crate key encoding). Mode 2026 gets core-layer plumbing verification (flag + DECRQM) only — its apex is Section 06's. Modes that have apexes beyond flag-state (1004 focus encoding, 1007 wheel-to-arrow, 1016 SGR-pixel, 9001 Win32 encoding, 1042 host-notification, 2 DECANM) stay at their current catalog status; Section 09 adds flag-toggle + DECRQM test coverage for those where the mode bit already exists but does NOT promote their catalog verification status — promotion waits for the owning section's apex work. Mode 1007 has no current apex owner and is filed as a deferred bug during 09.1 implementation."
 success_criteria:
@@ -57,12 +57,12 @@ sections:
     status: complete
   - id: "09.N"
     title: "Completion Checklist"
-    status: in-progress
+    status: complete
 ---
 
 # Section 09: DEC Private Modes (full)
 
-**Status:** In Progress (completion checklist — implementation and TPR Round 0 complete; `/impl-hygiene-review` remains)
+**Status:** Complete
 **Goal:** Verify the Section 09-owned subset of DEC private mode catalog rows (core-layer DECSET/DECRST + DECRQM plumbing) and implement the two MISSING modes (66/DECNKM, 67/DECBKM) plus Mode 2031 (color scheme update notification). Apex tests for modes this section does NOT own (2026 publication/commit/abort, 1016 SGR-pixel, 9001 Win32 encoding, 1004 focus encoding) are owned by other sections and cross-linked here. Mode 1007 wheel-to-arrow apex has no current owner — Section 09 files it as a deferred bug (same treatment as 1042 host notification).
 
 **Success Criteria:** see frontmatter.
@@ -622,6 +622,6 @@ Per `.claude/rules/code-hygiene.md` §File Size, `tests.rs` files are EXEMPT fro
 - [x] `00-overview.md` Quick Reference updated (do NOT tick the "Mode 2026 fully wired" mission criterion — that belongs to Section 06; DO tick "Verification chain complete per row" for the Section-09-promoted rows) *(done: updated to In Progress)*
 - [x] `index.md` section 09 status updated *(done: updated to In Progress)*
 - [x] `/tpr-review` passed (dual-source: codex + gemini — 6 rounds, 13 verified findings all fixed inline; final state has all four Mode 67 proof-chain sync points verified consistent. No Section 09 code changed; all fixes were plan/catalog DRIFT. Commits: 41af8bfb, 33a01929, 38a24532, c9f4ada0, d1a49a8b, e87443d0)
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [x] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean) — Section 09 code (new daemon-side bridge tests in `oriterm_mux/src/backend/client/tests.rs`) is clean; 4 pre-existing BLOAT findings in `oriterm_mux/src/backend/client/transport/` filed as `[BUG-11-7][low]` per Broken Window Policy (not Section 09's scope to fix).
 
 **Exit Criteria:** Section 09-owned DEC private mode catalog rows are `verified` (flag + DECRQM); excluded rows (DECANM, 1016, 1007 apex, 9001 encoding, 1042 host notification, mode-2026 apex) stay at their current status with cross-references pointing at the owning section; Mode 2031 implemented + verified; Modes 66 and 67 implemented + verified; all DECRQM queries return correct responses; `decset_decrst_flag_sync()` updated for new modes; mode 1042 gap filed as a bug.
