@@ -7,11 +7,11 @@ goal: "Drive every row in `catalog/osc.md`, `catalog/shell-integration.md`, and 
 success_criteria:
   - "Every row in `catalog/osc.md` is `verified` or `verified-with-deviation` (no `implemented-unverified`, no `stub`, no `missing`) — this includes the basic subset 08 left unverified (OSC 0/1/2/4/7/10/11/12/52) and the advanced subset (OSC 8/22/50/104/110/111/112/9/99/777/133/633 and the non-image OSC 1337 sub-ops)"
   - "Every row in `catalog/shell-integration.md` is `verified` (OSC-7-CWD, OSC-133 A/B/C/D, OSC-633 VS Code, OSC-1337-RemoteHost / CurrentDir / SetMark / SetUserVar / ReportCellSize shell-integration cross-refs, OSC-9/777 notification cross-refs)"
-  - "The non-image rows of `catalog/iterm2.md` (ITERM2-1337-REMOTEHOST, ITERM2-1337-CURRENTDIR, ITERM2-1337-COPY, ITERM2-1337-SETMARK, ITERM2-1337-REPORTCELLSIZE, ITERM2-1337-SETUSERVAR) are `verified`; `owner_section` in `catalog/iterm2.md` front-matter is updated so Section 10 owns these rows and Section 14 owns ONLY `ITERM2-1337-FILE` + image-adjacent rows — cross-checked against the ownership conflict currently at `section-14-iterm2-images.md:55` and `catalog/iterm2.md:14`"
+  - "The non-image rows of `catalog/iterm2.md` (ITERM2-1337-REMOTEHOST, ITERM2-1337-CURRENTDIR, ITERM2-1337-COPY, ITERM2-1337-SETMARK, ITERM2-1337-REPORTCELLSIZE, ITERM2-1337-SETUSERVAR) are `verified`; `owner_section` in `catalog/iterm2.md` front-matter (line 5) is updated so Section 10 owns these rows and Section 14 owns ONLY `ITERM2-1337-FILE` + image-adjacent rows — cross-checked against the ownership conflict currently at `section-14-iterm2-images.md:55` and `catalog/iterm2.md:15-20` (the non-image rows)"
   - "OSC 7 / 9 / 99 / 133 / 633 / 777 are verified against the REAL production path (`oriterm_mux/src/shell_integration/interceptor.rs`) via spec_chain tests that live in `oriterm_mux/tests/spec_chain/` (crate-boundary safe — `oriterm_mux` has full access to its own `pub(crate)` `RawInterceptor`). `crates/oriterm_test_support` (`SpecHarness`) stays mux-free — no `mux_layer` API is added to `SpecHarness`. High-level-processor OSC tests (OSC 0/1/2/4/8/10/11/12/22/50/52/104/110/111/112/1337 non-image) stay in `oriterm_core/tests/spec_chain/osc/`."
   - "`observe_renderable` (crates/oriterm_test_support/src/spec_chain/observers/renderable.rs) is no longer a stub — it asserts cell hyperlink URI, cursor position, cursor shape, palette entries, and damaged lines. Every OSC 8 subsection test exercises this observer with a scenario that would FAIL if the observer remained a stub (semantic pin against `RungResult::pass(rung)` stub-behavior)"
   - "OSC 8 hyperlink rows verified — cell-attached URI survives reflow, scroll into scrollback, copy (cell metadata), and alt-screen toggle; the OSC 8 terminator (empty URI) cancels the attachment on subsequent cells; `id=<id>` parameter is preserved but does not change attachment semantics (per gist:egmontkob)"
-  - "OSC 52 clipboard rows verified — `c`, `s`, `p` clipboard characters (store and load); `q` is explicitly pinned as an unsupported/dropped character (no `ClipboardSelection::q` variant exists — see `oriterm_core/src/effect/families/host.rs:108-115`). `HostRequest::ClipboardLoad` apex with `ResponseToken` round-trip is tested end-to-end through the activated `response_poll` path (section 10.2 removes the `#[allow(dead_code, reason = \"dormant during legacy phase\")]` gate on `PaneIoThread::register_host_request_response` and wires it into the IO thread for the spec_chain verification harness)"
+  - "OSC 52 clipboard rows verified — `c`, `s`, `p` clipboard characters (store and load); `q` is explicitly pinned as an unsupported/dropped character (no `ClipboardSelection::q` variant exists — see `oriterm_core/src/effect/families/host.rs:108-115`). `HostRequest::ClipboardLoad` apex is verified in spec_chain (harness asserts the HostRequest is emitted); the `ResponseToken` round-trip to `PtyEffect::Write` is verified separately in `oriterm_mux` IO-thread tests (`response_poll_roundtrip_emits_pty_write` and `response_poll_token_requires_fulfillment`). Section 10.2 removes the `#[allow(dead_code, reason = \"dormant during legacy phase\")]` gate on `PaneIoThread::register_host_request_response` and wires it into the IO thread."
   - "OSC 9 / 99 / 777 desktop notification rows verified — `Effect::Host(HostEffect::DesktopNotification { source, title, body })` is observed with the correct `NotificationSource` discriminator (`Osc9`, `Osc99`, `Osc777`); empty-body and missing-title cases are pinned so `String::from_utf8_lossy` boundary behavior is stable"
   - "OSC 133 semantic prompt rows verified — OSC 133;A/B/C/D each drive the `PromptState` state machine correctly AND update `PromptMarker`. The plan explicitly documents (in 10.4 body) that OSC 133;D does NOT write a D-field into `PromptMarker` (the struct has only `prompt` / `command` / `output`) — D clears `prompt_state` and emits `HostEffect::CommandComplete`. Any Success Criteria that asserted D 'records a marker' is rewritten to match the actual data model. The `command_start`/`finish_command` timing path uses an INJECTABLE clock so the `HostEffect::CommandComplete { duration }` assertion is deterministic (no wall-clock reliance)"
   - "OSC 633 VS Code shell integration rows verified against the authoritative VS Code source at `https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/xterm/shellIntegrationAddon.ts` — every OSC 633 sub-command that VS Code emits is catalogued and tested; any sub-command not yet dispatched (OSC 633 is currently MISSING per `catalog/osc.md:56`) lands its dispatch arm in `crates/vte/src/ansi/dispatch/osc.rs` AND its handler in `oriterm_mux/src/shell_integration/interceptor.rs`"
@@ -37,7 +37,7 @@ depends_on: ["03", "08"]
 third_party_review:
   status: findings
   updated: "2026-04-17"
-  rounds_completed: 9
+  rounds_completed: 10
 sections:
   - id: "10.0"
     title: "Harness + observer + state prerequisites (spec_chain mux layer, renderable observer, Term mouse cursor icon field, OSC 1337 sub-dispatcher, response-poll activation, injectable clock)"
@@ -113,7 +113,7 @@ These clarifications resolve the ambiguities reviewers surfaced during the /revi
 
 `SpecHarness` at `crates/oriterm_test_support/src/spec_chain/api.rs:82-103` wraps `Processor::advance_with_observer` (high-level VTE processor). The production-path interceptor at `oriterm_mux/src/shell_integration/interceptor.rs` runs a SEPARATE raw `vte::Parser` on the SAME bytes BEFORE the high-level processor — this is the only path that currently sees OSC 7, OSC 9, OSC 99, OSC 133, and OSC 777 (the high-level `Processor::advance_with_observer` silently drops them per the interceptor's own module doc: *"The vte::ansi::Processor does not route OSC 133, OSC 9/99/777, or XTVERSION (CSI >q) to Handler trait methods"*). OSC 633 is currently `MISSING` per `catalog/osc.md:56` — subsection **10.4** adds its dispatch arm to the interceptor.
 
-Consequence: verifying OSC 7/9/99/133/633/777 via `SpecHarness` without a `mux_layer` extension would test a dispatch path that DOES NOT RUN IN PRODUCTION. Subsection **10.0** lands the `mux_layer` first. Every subsection that verifies a mux-intercepted OSC MUST opt into that layer.
+Consequence: verifying OSC 7/9/99/133/633/777 via `SpecHarness` alone would test a dispatch path that DOES NOT RUN IN PRODUCTION. The solution (adopted in Round 5, ratified in Round 7) is NOT to add a `mux_layer` extension to `SpecHarness` — doing so would require `oriterm_test_support` to depend on `oriterm_mux`, violating crate boundaries. Instead, subsection **10.0** creates `oriterm_mux/tests/spec_chain/` with a `spec_chain_helper` module that runs `RawInterceptor` + `Processor` in production order inside the `oriterm_mux` crate (which has full `pub(crate)` access to `RawInterceptor`). Every subsection that verifies a mux-intercepted OSC places its tests in `oriterm_mux/tests/spec_chain/`, NOT in `oriterm_core/tests/spec_chain/osc/` and NOT via a `mux_layer` API on `SpecHarness`. `SpecHarness` remains mux-free.
 
 ### C. The renderable observer is a no-op stub
 
@@ -182,7 +182,7 @@ Both OSC 7 (set current working directory) and some OSC 133 variants (when they 
 
 **Tests (written FIRST per `.claude/rules/tests.md` §TDD for Bugs — VERIFIED RED before implementation):**
 
-- [ ] **Failing test matrix written FIRST** — write a test in `oriterm_mux/tests/spec_chain/` that feeds OSC 133;A through `SpecHarness::feed()` (high-level processor only) and verifies it drops the sequence (expected state change does NOT occur). Then write a second test that runs both the `RawInterceptor` and `SpecHarness::feed()` in production order (interceptor first, then Processor) and verifies the state change DOES occur. This RED→GREEN pair is the TDD proof that the mux interceptor is load-bearing. Both tests live in `oriterm_mux/tests/spec_chain/` — NOT in `oriterm_core/tests/spec_chain/` or in `SpecHarness` itself (see crate-boundary constraint).
+- [ ] **Failing test matrix written FIRST** — write TWO tests in `oriterm_mux/tests/spec_chain/` using the mux-internal `spec_chain_helper` (NOT `SpecHarness::feed()` — `oriterm_test_support` is NOT a dev-dependency of `oriterm_mux`). Test 1: run only the high-level `Processor::advance(&mut term, osc133_a_bytes)` without the `RawInterceptor` pass, and assert `term.prompt_state() == PromptState::None` (sequence was dropped). Test 2: run both parsers in production order via `spec_chain_helper::feed_mux_and_proc(&mut term, osc133_a_bytes)` and assert `term.prompt_state() == PromptState::PromptStart` (interceptor processed it). This RED→GREEN pair is the TDD proof that the mux interceptor is load-bearing. Both tests live in `oriterm_mux/tests/spec_chain/` and use only types visible inside `oriterm_mux` — NO `SpecHarness`, NO `oriterm_test_support` dev-dep required.
 - [ ] **Renderable stub regression pin** — `observers/tests.rs` test that constructs a `RenderableExpectation { hyperlink_at: Some((row, col, "http://example.com")) }` against a `Term` whose cell at (row, col) has a DIFFERENT URI. With the stub, the test passes; with the completed observer, the test fails. Commit the NEGATIVE test first, then complete the observer; the test flips from pass→fail, and THEN we invert the assertion so the final committed test is the semantic pin that requires the observer to actually check.
 - [ ] **Term mouse cursor icon pin** — test `term_set_mouse_cursor_icon_stores_icon` at `oriterm_core/src/term/tests.rs` that (i) starts `Term` with `mouse_cursor_icon == None`, (ii) calls `Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Pointer)`, (iii) asserts `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Failing RED before the override is added.
 - [ ] **OSC 1337 sub-dispatcher parse pin** — test in `crates/vte/src/ansi/dispatch/tests.rs` (if missing, create) that feeds `\x1b]1337;SetMark\x1b\\` and asserts `Handler::iterm2_set_mark` was called. RED before the sub-dispatcher refactor lands.
@@ -276,7 +276,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Tests (TDD — RED first):**
 
-- [ ] `osc52_store_clipboard_c` — feed `\x1b]52;c;SGVsbG8=\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` is NOT emitted (this is a store, not a load), and assert the Effect-side variant is `Effect::Host(HostEffect::ClipboardStore { selection: ClipboardSelection::Clipboard, data: "Hello".into() })` — the exact field name is `data: String` (NOT `text`), as confirmed at `oriterm_core/src/effect/families/host.rs:36`. The exact variant path is `oriterm_core::effect::families::host::{HostEffect, ClipboardSelection}`. **No `LegacyEventSink` assertion here** — spec_chain tests use `QueueingEffectSink`; asserting on `Event::ClipboardStore` via `LegacyEventSink` would test the wrong sink path.
+- [ ] `osc52_store_clipboard_c` — feed `\x1b]52;c;SGVsbG8=\x1b\\`, assert `Effect::HostRequest(HostRequest::ClipboardLoad { .. })` is NOT emitted (this is a store, not a load), and assert the Effect-side variant is `Effect::Host(HostEffect::ClipboardStore { selection: ClipboardSelection::Clipboard, data: "Hello".into() })` — the exact field name is `data: String` (NOT `text`), as confirmed at `oriterm_core/src/effect/families/host.rs:36`. The public re-export path is `oriterm_core::effect::{HostEffect, ClipboardSelection}` (NOT the private `oriterm_core::effect::families::host` path — use the public API). **No `LegacyEventSink` assertion here** — spec_chain tests use `QueueingEffectSink`; asserting on `Event::ClipboardStore` via `LegacyEventSink` would test the wrong sink path.
 - [ ] `osc52_store_clipboard_s` — same shape, `s` (selection) clipboard character, assert `selection: ClipboardSelection::Select` (NOT `Selection` — the enum variant at `oriterm_core/src/effect/families/host.rs:114` is `Select`, not `Selection`), `data: <decoded>`.
 - [ ] `osc52_store_clipboard_p` — `p` (primary) clipboard character; assert `selection: ClipboardSelection::Primary`, `data: <decoded>`.
 - [ ] `osc52_store_clipboard_q` — NEGATIVE PIN: `q` is NOT a valid `ClipboardSelection` variant (`ClipboardSelection` at `oriterm_core/src/effect/families/host.rs:108-115` has only `Clipboard`, `Primary`, `Select`). Feed `\x1b]52;q;SGVsbG8=\x1b\\` and assert NO `HostEffect::ClipboardStore` is emitted (the OSC 52 handler must drop unknown clipboard characters). This is a negative pin, NOT a positive test for `q` support. The success criteria (frontmatter line 14) that claims `both 'c' / 's' / 'p' / 'q' clipboard characters` is corrected by this test: `q` is tested only as a DROPPED/invalid character, not as a supported selection type.
@@ -304,7 +304,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Files:**
 - `oriterm_mux/tests/spec_chain/osc/notifications.rs` (new — mux layer test; OSC 9/99/777 are interceptor-handled, NOT high-level-processor-routed)
-- Catalog updates: `catalog/osc.md` rows OSC-9, and newly-added OSC-99 + OSC-777 rows (they are `missing` today); `catalog/shell-integration.md` rows SHINT-OSC-9-NOTIFY, SHINT-OSC-777-NOTIFY
+- Catalog updates: `catalog/osc.md` — OSC-9 and OSC-777 rows already exist (both marked `missing`; promote to `verified`); OSC-99 is NOT yet a catalog row and must be added as a new row (status `verified`). Also update `catalog/shell-integration.md` rows SHINT-OSC-9-NOTIFY, SHINT-OSC-777-NOTIFY.
 
 **Tests (in `oriterm_mux/tests/spec_chain/` — these OSCs route through the RawInterceptor, NOT the high-level processor; must NOT be placed in `oriterm_core/tests/spec_chain/osc/`):**
 
@@ -480,7 +480,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Validation:**
 
-- [ ] All 10 tests green.
+- [ ] All 12 tests green (7 behavioral + `osc1337_file_still_routes_to_iterm2_file` + `osc1337_unknown_key_dropped` + `osc1337_user_vars_cap_evicts_oldest` + 2 CWD SSOT semantic pins).
 - [ ] OSC 1337 `File=` path unchanged; Section 14 can build on top without touching the sub-dispatcher.
 - [ ] **TPR checkpoint 3** — `/tpr-review` covering 10.4–10.7 + ownership cross-check against Section 14.
 
@@ -861,6 +861,50 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
   Evidence: 10.7 Files block adds `user_vars: HashMap<String, String>` without a max-size cap; only the 10.N checklist mentions "256 entries, eviction LRU" as a requirement.
   Impact: An implementer following 10.7 alone would produce an unbounded HashMap that could exhaust memory under adversarial PTY output; the RSS regression test would catch it only at section completion, not at implementation.
   Required plan update: 10.7 Files block updated with explicit RSS invariant (256-entry cap, LRU eviction); `osc1337_user_vars_cap_evicts_oldest` regression pin test added to 10.7 test list (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+<!-- Round 10 findings (2026-04-17) -->
+
+- [x] `[TPR-10-45-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:14` — Success criterion for OSC 52 said "wires it into the IO thread for the spec_chain verification harness", implying the ResponseToken round-trip runs inside the spec_chain harness; the correct boundary (per Rounds 7-8) is that spec_chain verifies HostRequest emission only, and the ResponseToken round-trip lives in oriterm_mux IO-thread tests.
+  Evidence: Success criteria line 14: "wires it into the IO thread for the spec_chain verification harness" — round-trip belongs in mux IO-thread tests, not spec_chain.
+  Impact: Implementer following the criterion verbatim would attempt to wire the ResponseToken round-trip through spec_chain, violating crate boundaries.
+  Required plan update: Criterion rewritten to separate spec_chain scope (HostRequest emission) from oriterm_mux IO-thread scope (ResponseToken round-trip fulfillment) (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-46-gemini][high]` `plans/spec-conformance/section-10-osc-suite.md:116` — Scope Clarification B still said "Subsection 10.0 lands the mux_layer first" — contradicts the adopted fix (mux-intercepted tests live in `oriterm_mux/tests/spec_chain/`; no `mux_layer` API on SpecHarness).
+  Evidence: Line 116: "Subsection 10.0 lands the mux_layer first. Every subsection that verifies a mux-intercepted OSC MUST opt into that layer." — there is no mux_layer API; tests live in oriterm_mux/tests/spec_chain/.
+  Impact: Implementer reading Scope Clarification B would attempt to add a mux_layer extension to SpecHarness, requiring an oriterm_mux dependency on oriterm_test_support (compile error, dependency cycle).
+  Required plan update: Scope Clarification B rewritten to describe the adopted solution: tests in oriterm_mux/tests/spec_chain/ with mux-internal spec_chain_helper; SpecHarness stays mux-free (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-47-codex][high]` `plans/spec-conformance/section-10-osc-suite.md:185` — TDD bullet used `SpecHarness::feed()` in tests placed in `oriterm_mux/tests/spec_chain/`, but `oriterm_test_support` is not in oriterm_mux's `[dev-dependencies]`, so this would not compile.
+  Evidence: `oriterm_mux/Cargo.toml` [dev-dependencies]: only `tempfile = "3"` — no `oriterm_test_support`; `SpecHarness::feed()` cannot be called from oriterm_mux tests.
+  Impact: An implementer following the TDD bullet would write tests that fail to compile due to the missing dev-dependency.
+  Required plan update: TDD bullet rewritten to use the mux-internal `spec_chain_helper` (NOT SpecHarness); tests call `Processor::advance` and `spec_chain_helper::feed_mux_and_proc` directly (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-48-codex][medium]` `plans/spec-conformance/section-10-osc-suite.md:279` — Plan cited `oriterm_core::effect::families::host::{HostEffect, ClipboardSelection}` as the import path; the public re-export is `oriterm_core::effect::{HostEffect, ClipboardSelection}` — the `families::host` sub-module is private.
+  Evidence: `oriterm_core/src/effect/mod.rs:14-18`: `pub use families::{... ClipboardSelection, HostEffect, ... }` — these are re-exported through the public `effect` module, not through the private `families::host` path.
+  Impact: An implementer writing `use oriterm_core::effect::families::host::{HostEffect, ClipboardSelection}` gets a compile error (private module).
+  Required plan update: Path corrected to the public re-export `oriterm_core::effect::{HostEffect, ClipboardSelection}` (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-49-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:307` — 10.3 catalog update note said "newly-added OSC-99 + OSC-777 rows"; OSC-777 already exists in `catalog/osc.md` as a `missing` row, only OSC-99 is truly new.
+  Evidence: `catalog/osc.md:57` — `| OSC-777 | urxvt notifications | ... | missing |` — row already present; only OSC-99 is absent from the catalog.
+  Impact: Implementer following the note would attempt to add a duplicate OSC-777 row, or be confused about whether the row needs creation vs. promotion.
+  Required plan update: Note corrected to distinguish: OSC-777 already exists (promote from `missing` to `verified`); OSC-99 must be added as a new row (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-50-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:483` — 10.7 validation count "All 10 tests green" does not match the 12 test bullets in the 10.7 Tests block.
+  Evidence: 10.7 Tests block has: 7 behavioral tests + `osc1337_file_still_routes_to_iterm2_file` + `osc1337_unknown_key_dropped` + `osc1337_user_vars_cap_evicts_oldest` + 2 CWD SSOT semantic pins = 12 total.
+  Impact: An implementer who stops at 10 tests believes the matrix is complete when 2 tests are missing.
+  Required plan update: Validation count corrected to 12 with an enumeration of all 12 test names (FIXED).
+  Basis: direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-10-51-codex][low]` `plans/spec-conformance/section-10-osc-suite.md:10` — Success criterion cites `catalog/iterm2.md:14` for ownership conflict; line 14 is the FILE row (image row, not a conflict); `owner_section` is at line 5 and the non-image rows are at lines 15-20.
+  Evidence: `catalog/iterm2.md:5` — `owner_section: "01 (bootstrap), 14 (verification)"` (the field to update); line 14 is the FILE row header.
+  Impact: An implementer looking at `catalog/iterm2.md:14` would see the image row, not the ownership conflict location.
+  Required plan update: Citation corrected to `catalog/iterm2.md:5` for `owner_section` and `catalog/iterm2.md:15-20` for the non-image rows (FIXED).
   Basis: direct_file_inspection. Confidence: high.
 
 ---
