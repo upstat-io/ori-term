@@ -2,7 +2,7 @@
 section: 7
 title: 2D UI Framework
 status: in-progress
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 2
 goal: A lightweight GPU-agnostic UI framework (oriterm_ui) — drawing primitives, layout engine, and widget kit for ori_term's rich cross-platform UI (GPU conversion via wgpu lives in oriterm)

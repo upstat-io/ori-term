@@ -2,7 +2,7 @@
 section: "01"
 title: "Cleanup"
 status: not-started
-reviewed: true
+reviewed: false
 goal: "Resolve the 24 hygiene findings (8 Major + 16 Minor) from the impl-hygiene review of the Section 04 tack-conformance scenario framework slice, then delete the plan directory."
 depends_on: []
 third_party_review:

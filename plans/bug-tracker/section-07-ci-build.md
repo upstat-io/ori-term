@@ -2,7 +2,7 @@
 section: "07"
 title: "CI & Build Bugs"
 status: in-progress
-reviewed: true
+reviewed: false
 goal: "Track and fix bugs in CI workflows, release automation, and build scripts"
 depends_on: []
 third_party_review:

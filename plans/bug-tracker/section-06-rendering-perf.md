@@ -2,7 +2,7 @@
 section: "06"
 title: "Rendering & Performance Bugs"
 status: in-progress
-reviewed: true
+reviewed: false
 goal: "Track and fix rendering performance bugs — frame time, input latency, GPU bottlenecks"
 depends_on: []
 third_party_review:
