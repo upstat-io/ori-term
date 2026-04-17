@@ -28,7 +28,7 @@ Usage:
 
   enum-drift.py                      # Analyze all known enums
   enum-drift.py --enum TypeTag       # Analyze specific enum
-  enum-drift.py --scope crates/$1/  # Restrict match search
+  enum-drift.py --scope crates/eval/  # Restrict match search
   enum-drift.py --json               # Machine-readable output
   enum-drift.py --summary            # Counts only
 
@@ -81,28 +81,28 @@ class EnumDef:
 KNOWN_ENUMS: dict[str, EnumDef] = {
     "CanExpr": EnumDef(
         "CanExpr",
-        "crates/$1/src/canon/expr.rs",
+        "crates/ir/src/canon/expr.rs",
         "ori_ir",
         ["ori_eval", "ori_llvm", "ori_arc", "ori_canon"],
         "Canonical expression IR — matched in evaluator and LLVM codegen",
     ),
     "ExprKind": EnumDef(
         "ExprKind",
-        "crates/$1/src/ast/expr.rs",
+        "crates/ir/src/ast/expr.rs",
         "ori_ir",
         ["ori_canon", "ori_fmt", "ori_parse"],
         "AST expression variants — matched in canonicalization and formatting",
     ),
     "TypeTag": EnumDef(
         "TypeTag",
-        "crates/$1/src/tags/mod.rs",
+        "crates/registry/src/tags/mod.rs",
         "ori_registry",
         ["ori_types", "ori_eval", "ori_llvm", "ori_arc"],
         "Type identity discriminant — matched in all downstream phases",
     ),
     "DerivedTrait": EnumDef(
         "DerivedTrait",
-        "crates/$1/src/derives/mod.rs",
+        "crates/ir/src/derives/mod.rs",
         "ori_ir",
         ["ori_types", "ori_eval", "ori_llvm", "ori_arc"],
         "Derivable trait list — 4 sync points must stay aligned",
@@ -110,21 +110,21 @@ KNOWN_ENUMS: dict[str, EnumDef] = {
     ),
     "TokenKind": EnumDef(
         "TokenKind",
-        "crates/$1/src/token/kind.rs",
+        "crates/ir/src/token/kind.rs",
         "ori_ir",
         ["ori_parse", "ori_lexer", "ori_fmt"],
         "Lexer token types — matched in parser",
     ),
     "CollectionMethod": EnumDef(
         "CollectionMethod",
-        "crates/$1/src/interpreter/resolvers/mod.rs",
+        "crates/eval/src/interpreter/resolvers/mod.rs",
         "ori_eval",
         [],
         "Collection/iterator method dispatch — internal to evaluator",
     ),
     "IteratorValue": EnumDef(
         "IteratorValue",
-        "crates/$1/src/value/iterator/mod.rs",
+        "crates/patterns/src/value/iterator/mod.rs",
         "ori_patterns",
         ["ori_eval"],
         "Iterator state variants — matched in evaluator iterator dispatch",
@@ -418,7 +418,7 @@ def analyze_drift(
 
 
 def _crate_from_path(file_path: str) -> str:
-    """Extract crate name from a file path like crates/$1/src/..."""
+    """Extract crate name from a file path like crates/eval/src/..."""
     parts = Path(file_path).parts
     for i, part in enumerate(parts):
         if part == "compiler" and i + 1 < len(parts):

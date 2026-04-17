@@ -14,6 +14,7 @@
       "fix-bug",
       "fix-next-bug",
       "continue-roadmap",
+      "roadmap-work",
       "create-plan",
       "plan-audit",
       "impl-hygiene-review",
@@ -22,7 +23,6 @@
       "tp-help",
       "review-work",
       "verify-tpr",
-      "dual-tpr",
       "review-plan",
       "commit-push"
     ],

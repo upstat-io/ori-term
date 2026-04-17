@@ -128,20 +128,37 @@ def check_stale_line_refs(plan: planlib.PlanInfo) -> list[Finding]:
 
 
 def check_broken_deps(plan: planlib.PlanInfo) -> list[Finding]:
-    """Check that depends_on references point to existing sections."""
+    """Check that depends_on references point to existing sections.
+
+    Supports two reference styles:
+    - Intra-plan section numbers (e.g. "03", "3") — checked against this plan's sections.
+    - Cross-plan file paths (e.g. "plans/foo/section-03-bar.md") — checked against the
+      filesystem from REPO_ROOT. A cross-plan reference is any dep string that contains
+      a path separator or ends with ".md".
+    """
     findings = []
     section_nums = {s.number for s in plan.sections}
     # Also include zero-padded variants
     section_nums_norm = {s.number.lstrip("0") or "0" for s in plan.sections}
     for s in plan.sections:
         for dep in s.depends_on:
-            dep_norm = dep.lstrip("0") or "0"
-            if dep not in section_nums and dep_norm not in section_nums_norm:
-                findings.append(Finding(
-                    check="BROKEN_DEP", category="GAP", severity="critical",
-                    confidence="deterministic", location=s.filename,
-                    message=f"Section {s.number} depends_on '{dep}' — no such section exists",
-                ))
+            # Cross-plan path reference: contains "/" or ends with ".md"
+            if "/" in dep or dep.endswith(".md"):
+                cross_path = planlib.REPO_ROOT / dep
+                if not cross_path.exists():
+                    findings.append(Finding(
+                        check="BROKEN_DEP", category="GAP", severity="critical",
+                        confidence="deterministic", location=s.filename,
+                        message=f"Section {s.number} depends_on '{dep}' — no such section exists",
+                    ))
+            else:
+                dep_norm = dep.lstrip("0") or "0"
+                if dep not in section_nums and dep_norm not in section_nums_norm:
+                    findings.append(Finding(
+                        check="BROKEN_DEP", category="GAP", severity="critical",
+                        confidence="deterministic", location=s.filename,
+                        message=f"Section {s.number} depends_on '{dep}' — no such section exists",
+                    ))
     return findings
 
 

@@ -19,6 +19,21 @@ pub(crate) use encode::{
     MouseButton, MouseEvent, MouseEventKind, MouseModifiers, encode_mouse_event,
 };
 
+/// Pure decision function: should a mouse wheel event be translated to
+/// arrow key sequences in the PTY?
+///
+/// Returns `true` when the terminal is on the alternate screen AND has
+/// `ALTERNATE_SCROLL` enabled AND the Shift modifier is NOT held.
+/// Shift-bypass lets users scroll the viewport even in alternate screen.
+///
+/// Extracted from `handle_mouse_wheel` (Tier 2) so Section 09.1's
+/// bridge test can verify the full parser → mode flag → decision path
+/// without constructing a real `App`.
+#[must_use]
+pub(super) fn should_translate_wheel_to_arrows(mode: TermMode, shift_held: bool) -> bool {
+    !shift_held && mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
+}
+
 impl App {
     /// Whether mouse events should be reported to the PTY for the given mode.
     ///
@@ -178,9 +193,7 @@ impl App {
         }
 
         // Tier 2: Alternate scroll (arrow keys in alt screen).
-        if mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
-            && !self.modifiers.shift_key()
-        {
+        if should_translate_wheel_to_arrows(mode, self.modifiers.shift_key()) {
             let arrow: &[u8] = if scroll_up { b"\x1bOA" } else { b"\x1bOB" };
             for _ in 0..lines {
                 self.write_pane_input(pane_id, arrow);

@@ -4,7 +4,7 @@ Read by a Sonnet sub-agent dispatched from `/review-plan`. Not a registered skil
 
 ## Input
 
-Read `/tmp/review-plan-context.json` for `mode`, `plan_dir`, `target_section`.
+The parent orchestrator passed the scratch-dir path as `{RUN_DIR}`. Read `{RUN_DIR}/context.json` for `mode`, `plan_dir`, `target_section`.
 
 ## Dispatch /tpr-review
 
@@ -43,7 +43,7 @@ Extract from the final-report agent's output (field names are exactly as emitted
 - `thoroughness_reject_counter_peak`: peak value of the wasted-round counter (0 unless thoroughness-cap path fired)
 - Any `question` + `options` payload the final-report agent emitted for cap/failure paths
 
-**Field-name parity**: the consumer-side handoff below (`/tmp/review-plan-tpr.json`) uses the shorter names `iterations`, `final_findings`, `thoroughness_reject_counter` as a deliberate rename at the `/review-plan` boundary. Copy values through explicitly from `final-report.json`:
+**Field-name parity**: the consumer-side handoff below (`{RUN_DIR}/tpr.json`) uses the shorter names `iterations`, `final_findings`, `thoroughness_reject_counter` as a deliberate rename at the `/review-plan` boundary. Copy values through explicitly from `final-report.json`:
 
 - `iterations` ← `iteration_counter`
 - `final_findings` ← `remaining_findings` (if present)
@@ -53,7 +53,7 @@ Do NOT assume the producer emits the shorter names; they are consumer-side alias
 
 ## Output
 
-Write `/tmp/review-plan-tpr.json`. Exactly one of the four branches below applies, keyed by `status`. The top-level schema is the same; only the `escalate`/`question`/`options` fields differ.
+Write `{RUN_DIR}/tpr.json`. Exactly one of the four branches below applies, keyed by `status`. The top-level schema is the same; only the `escalate`/`question`/`options` fields differ.
 
 ### Branch 1 — `status: "clean"` (no escalation)
 
@@ -84,9 +84,12 @@ Write `/tmp/review-plan-tpr.json`. Exactly one of the four branches below applie
   "escalate": true,
   "question": "/tpr-review reached its 10-iteration finding-fixing cap with 2 findings still open. How do you want to proceed?",
   "options": [
-    {"key": "accept-remaining", "label": "Accept remaining findings and continue to verify"},
+    {"key": "accept-remaining",
+     "label": "Accept remaining findings — they stay filed as - [ ] items in §NN.R; flip reviewed: true with a note recording the cap exit and round count",
+     "applies_user_accepted": true},
     {"key": "retry-with-hints", "label": "Retry /tpr-review with user-provided hints"},
-    {"key": "abort", "label": "Abort review — findings need manual attention"}
+    {"key": "escalate-to-plan", "label": "Escalate remaining findings to /create-plan (new plan owns them; reviewed stays false)"},
+    {"key": "abort", "label": "Abort review — findings need manual attention; reviewed stays false"}
   ]
 }
 ```
@@ -105,7 +108,9 @@ Write `/tmp/review-plan-tpr.json`. Exactly one of the four branches below applie
   "escalate": true,
   "question": "/tpr-review rejected 3 consecutive rounds as thin (zero findings + insufficient depth). Prompt discipline is not eliciting the required investigation. How do you want to proceed?",
   "options": [
-    {"key": "accept-best-effort", "label": "Accept the last round as a best-effort clean pass (informed override)"},
+    {"key": "accept-best-effort",
+     "label": "Accept the last round as a best-effort clean pass — flip reviewed: true with a note recording the thoroughness-cap override",
+     "applies_user_accepted": true},
     {"key": "narrow-scope", "label": "Narrow the review scope and retry"},
     {"key": "change-intervention", "label": "Change the intervention — swap a reviewer or adjust the rubric"},
     {"key": "abandon-review", "label": "Abandon this review — leave the plan un-reviewed with a note"}
@@ -142,6 +147,7 @@ Write `/tmp/review-plan-tpr.json`. Exactly one of the four branches below applie
 - `status` is MANDATORY — the parent's Step 6 consumer branches on it. An absent or unknown `status` is a contract violation by this step.
 - When `status == "clean"`, `escalate` MUST be `false` and `question`/`options` MUST be absent.
 - When `status != "clean"`, `escalate` MUST be `true` AND `question` + `options` MUST be present.
+- **`applies_user_accepted` field on an option**: when present and `true`, signals the parent orchestrator that selecting this option means the user has explicitly accepted the non-converged state AND intends to flip `reviewed: true` downstream. The parent MUST patch `{RUN_DIR}/tpr.json` to set `user_accepted: true` before resuming to Step 7+8 (see `review-plan/SKILL.md §Escalation handling` and `step-7-8-verify.md §Step 7`). Options without this field are not user-accept options — they signal retry / narrow-scope / change-intervention / escalate-to-plan / abort, and the parent handles them per its normal `next_skill` / `proceed` / `abort` semantics without patching the handoff.
 
 ## Do NOT
 

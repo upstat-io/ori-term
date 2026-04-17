@@ -2,7 +2,7 @@
 
 Read by an **Opus** sub-agent dispatched from `/impl-hygiene-review` ONLY when the coordinator decides a plan is needed (e.g., findings count exceeds inline-fix scope). Not a registered skill. This is judgment-heavy plan authorship — which findings group into which plan sections, what the dependency order is, what the mission success criteria should be.
 
-Consumes `/tmp/impl-hygiene-{run}/phase-5.json`. Writes `/tmp/impl-hygiene-{run}/phase-6.json` with: plan directory path created, sections outlined, findings assigned to sections.
+Consumes `{run_id}/phase-5.json`. Writes `{run_id}/phase-6.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with: plan directory path created, sections outlined, findings assigned to sections.
 
 ---
 

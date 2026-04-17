@@ -34,8 +34,7 @@ pub fn tool_available(name: &str, version_arg: &str) -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+        .is_ok_and(|status| status.success())
 }
 
 /// Convenience: vttest specifically uses `--help` (it has no `--version`).

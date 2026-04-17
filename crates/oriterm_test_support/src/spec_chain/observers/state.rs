@@ -25,7 +25,7 @@ pub fn observe_state(term: &Term<QueueingEffectSink>, expected: &StateExpectatio
         if cursor_line != exp_line {
             return RungResult::fail(
                 RungName::State,
-                format!("cursor line: expected {exp_line}, got {cursor_line}",),
+                format!("cursor line: expected {exp_line}, got {cursor_line}"),
             );
         }
     }
@@ -34,7 +34,7 @@ pub fn observe_state(term: &Term<QueueingEffectSink>, expected: &StateExpectatio
         if cursor_col != exp_col {
             return RungResult::fail(
                 RungName::State,
-                format!("cursor col: expected {exp_col}, got {cursor_col}",),
+                format!("cursor col: expected {exp_col}, got {cursor_col}"),
             );
         }
     }

@@ -150,36 +150,7 @@ For each bug marked `- [x]` since the last review, verify that the fix followed 
  - In-progress fix sections that should be completed
 }
 
-### Intelligence Cross-Reference (CONDITIONAL)
-{If the intelligence graph is available, cross-reference high-priority bugs
- against reference compiler issues — see Step 5.5 below for details}
 ```
-
-### Step 5.5: CONDITIONAL — Intelligence Cross-Reference
-
-If the intelligence graph is available, cross-reference recommended bugs against reference compiler issues to enrich recommendations with fix-approach confidence.
-
-Follow the canonical intel-summary injection protocol for availability check + base queries:
-
-@.claude/skills/dual-tpr/compose-intel-summary.md
-
-**Bug-specific extension** (per SSOT Step F — /review-bugs domain extension):
-
-1. For each high-priority bug being recommended for fixing, run:
-   - `intel-query.sh --human search "<bug title keywords>" --limit 5`
-   - `intel-query.sh --human fixed "<bug category>" --repo rust,swift,koka,lean4 --limit 5`
-   - `intel-query.sh --human callers "<repro symbol>" --repo ori` — blast radius
-   - `intel-query.sh --human file-symbols "<subsystem path>" --repo ori` — cluster related bugs by module
-   - `intel-query.sh --human similar "<buggy function>" --repo rust,swift,koka,lean4 --limit 5` — find reference fixes
-
-2. Use verified results (SSOT Step D verify-before-citing applies) to enrich the `### Recommended Actions` section:
-   - Bugs where 2+ reference compilers hit the same failure mode → higher confidence the fix approach is known (mention in recommendation)
-   - Bugs matching "fixed" issues in reference compilers → note the fix approach for the implementer's benefit
-   - Bug clusters (multiple Ori bugs matching the same reference compiler issue class) → recommend fixing together via a single fix section
-
-3. **Opportunistic preset mapping** — If the bug's subsystem maps to an intelligence preset per `.claude/rules/intelligence.md` §Subsystem Mapping (e.g., `ori_arc` bugs → `ori-arc` preset), use the preset query in addition to `search`/`fixed` for more targeted results.
-
-If unavailable or empty, present recommendations without intelligence enrichment — the prioritization logic works without it.
 
 ### Step 6: Ask What to Do
 

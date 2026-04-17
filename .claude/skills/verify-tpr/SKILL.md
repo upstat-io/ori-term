@@ -9,7 +9,7 @@ argument-hint: "<section-file-path>"
 
 Triage all unchecked Third Party Review findings in a plan section file. This skill is invoked by `/continue-roadmap` (Step 1.9) when a section has `third_party_review.status: findings`.
 
-**This skill runs on Opus** because TPR triage requires deep codebase validation, spec cross-referencing, and judgment about whether findings are factually correct vs. rationalized dismissals.
+TPR triage requires deep codebase validation, spec cross-referencing, and judgment about whether findings are factually correct vs. rationalized dismissals.
 
 ## Arguments
 
@@ -35,17 +35,9 @@ If there are no unchecked findings, report "No open TPR findings" and exit.
 Before triaging findings in Step 3, identify which findings are high-severity
 or cite symbols whose blast radius is ambiguous (i.e., you cannot tell from
 the finding text alone whether the cited symbol is called by 2 or 200 sites).
-
-For each such finding, run the graph-first protocol:
-
-@.claude/skills/dual-tpr/compose-intel-summary.md
-
-Query with the finding's cited symbol. Example: finding cites `resolve_fully`
-— run `scripts/intel-query.sh --human callers "resolve_fully" --repo ori` to
-see how many sites consume the behavior the finding questions. A finding
-against a symbol with 20+ callers deserves more scrutiny than one with 2
-callers. Use the result to CALIBRATE accept/reject decisions in Step 3 —
-not as authority.
+For such findings use code search (Glob/Grep) to inventory callers and
+callees before deciding accept/reject — a finding against a symbol with 20+
+callers deserves more scrutiny than one with 2 callers.
 
 Skip this step for [low]-severity findings with clearly-scoped symbols
 (e.g., a test helper function, a local formatting issue). The goal is
@@ -150,4 +142,4 @@ TPR Triage Complete: <section-file>
 
 ## Quality Standard
 
-The entire point of this skill running on Opus is to prevent soft accepts — findings marked `[x]` with deferral language instead of actual fixes or properly-anchored blocked tasks. Every resolution must either change code or point to a concrete, verifiable blocker. "We'll handle it later" is not a resolution.
+The entire point of this skill is to prevent soft accepts — findings marked `[x]` with deferral language instead of actual fixes or properly-anchored blocked tasks. Every resolution must either change code or point to a concrete, verifiable blocker. "We'll handle it later" is not a resolution.

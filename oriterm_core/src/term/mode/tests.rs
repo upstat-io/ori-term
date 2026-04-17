@@ -102,6 +102,8 @@ fn all_flags_are_distinct() {
         TermMode::ENABLE_MODE_3,
         TermMode::WIN32_INPUT,
         TermMode::LEFT_RIGHT_MARGIN,
+        TermMode::COLOR_SCHEME_UPDATE,
+        TermMode::DECBKM,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).

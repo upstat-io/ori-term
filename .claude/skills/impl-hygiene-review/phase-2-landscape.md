@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Uses `scripts/intel-query.sh` (blast radius, module inventory, cross-repo similarity) to build a landscape map of the review target before Phase 3 deep analysis.
 
-Writes `/tmp/impl-hygiene-{run}/phase-2.json` with: call graph edges for in-scope symbols, file-symbol inventory per crate, cross-repo equivalents for architectural patterns.
+Writes `{run_id}/phase-2.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with: call graph edges for in-scope symbols, file-symbol inventory per crate, cross-repo equivalents for architectural patterns.
 
 ---
 
@@ -32,12 +32,4 @@ For full project mode or when 3+ crates are in scope, spawn an agent to trace th
 4. **Memory/RC flow**: How do ownership decisions flow from AIMS analysis → ARC pass → codegen emission → runtime?
 
 This agent produces a **flow map** — a brief summary of how each major data category crosses the phase boundaries. This map is passed to all subsequent review agents as context.
-
-#### Intelligence-assisted map (before agent dispatch)
-
-Follow the canonical intel-summary injection protocol:
-
-@.claude/skills/dual-tpr/compose-intel-summary.md
-
-Per SSOT Step F — /impl-hygiene-review flow map: use `file-symbols "<crate/path>" --repo ori` per in-scope crate, `callers`/`callees` per major dispatch or boundary symbol, `similar "<symbol>" --repo rust,swift,lean4 --limit 5` for cross-backend / prior-art checks. Use this map as input to Pass 1 and Pass 2 so the review starts from actual call-graph structure.
 

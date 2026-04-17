@@ -2,7 +2,7 @@
 section: 21
 title: Context Menu & Window Controls
 status: in-progress
-reviewed: true
+reviewed: false
 last_verified: "2026-03-29"
 tier: 4
 goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list

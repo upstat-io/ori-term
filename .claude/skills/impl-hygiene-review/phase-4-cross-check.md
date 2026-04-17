@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Dispatches `/tp-help` or `/tpr-review` to probe blind spots and validate ambiguous findings from Phase 3. Orchestration-only — the cross-check itself runs inside the external reviewer contexts.
 
-Consumes `/tmp/impl-hygiene-{run}/phase-3.json`. Writes `/tmp/impl-hygiene-{run}/phase-4.json` with: cross-check outcome, any new findings surfaced by reviewers, any Phase 3 findings reviewers rejected.
+Consumes `{run_id}/phase-3.json`. Writes `{run_id}/phase-4.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) with: cross-check outcome, any new findings surfaced by reviewers, any Phase 3 findings reviewers rejected.
 
 ---
 

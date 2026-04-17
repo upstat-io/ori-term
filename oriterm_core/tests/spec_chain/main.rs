@@ -11,3 +11,4 @@
 
 mod baseline;
 mod pilots;
+mod private_modes;

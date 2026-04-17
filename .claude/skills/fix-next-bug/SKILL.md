@@ -1,12 +1,12 @@
 ---
 name: fix-next-bug
 description: Iterate through the bug tracker, auto-picking the highest priority open bug and fixing it via /fix-bug. Each bug gets full /fix-bug rigor including mandatory /tp-help design consensus at Phase 1.75 before implementation (adds ~10–45 min per bug). After each fix, prompts the user to continue to the next bug or stop.
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Agent, AskUserQuestion, Skill
+allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Agent, AskUserQuestion, Skill, ToolSearch
 ---
 
 # Fix Next Bug
 
-Automatically pick the highest priority open bug from the bug tracker and fix it using `/fix-bug`. After each fix completes, prompt the user to continue with the next highest priority bug or stop.
+Auto-pick the highest priority open bug from `plans/bug-tracker/` and fix it using `/fix-bug`. After each fix, prompt the user to continue or stop (interactive mode) or keep going until the queue is empty (autopilot mode).
 
 ## Usage
 
@@ -14,209 +14,176 @@ Automatically pick the highest priority open bug from the bug tracker and fix it
 /fix-next-bug
 ```
 
-No arguments needed — the skill auto-selects based on priority.
+No arguments — the skill auto-selects based on priority.
 
-## Priority Ordering
+## How this skill runs
 
-Bugs are selected in this order:
-1. **Severity** — `critical` > `high` > `medium` > `low`
-2. **Subsystem impact** — earlier bug-tracker sections generally represent broader impact (core terminal and rendering issues affect every user interaction), but this is a loose ordering — defer to the user's own priorities from `plans/bug-tracker/00-overview.md` when they differ. Default order mirrors the Quick Reference table in that file.
-3. **Ordinal** — lower bug number first within the same section and severity
+**Queue scanning is a Python script (`bug_queue_scan.py`), not a sub-agent.** The scanner is deterministic and costs essentially zero tokens. It replaces a prior sub-agent that burned 140k tokens doing the same mechanical work.
 
-## Workflow
+The skill runs entirely in the parent (Opus) context:
 
-### Step 1: Scan All Open Bugs
+1. **Scan** — `bash`-invoke `bug_queue_scan.py --json`, parse the JSON, print the queue display.
+2. **Mode selection** — `AskUserQuestion` for interactive vs autopilot (this MUST be in the parent because sub-agents cannot talk to the user).
+3. **Fix loop** — invoke `/fix-bug` per iteration, run the commit-verification gate, re-scan, repeat.
 
-Read `plans/bug-tracker/00-overview.md` to discover the current section list (it lives in the Quick Reference table). Section topics can change over time — never hardcode a list here. Then read every section file that exists in `plans/bug-tracker/` matching `section-NN-*.md` and collect every `- [ ]` entry.
+**FOREGROUND MANDATORY — ALL Agent / Skill dispatches.** Never `run_in_background: true` on `/fix-bug` or `/commit-push`.
 
-For each `- [ ]` entry, extract:
-- **ID**: `BUG-{section}-{ordinal}`
-- **Severity**: critical, high, medium, or low
-- **Title**: the bold text after severity
-- **Repro**: repro line if present
-- **Subsystem**: subsystem line if present
-- **Lifecycle markers**: check for `Escalated to plan:`, `Blocked:`, or `Escalated:` notes in the entry body
+---
 
-**Exclude non-fixable entries** — remove from the candidate list any `- [ ]` entry whose body contains ANY of these lifecycle markers (check case-insensitively and account for markdown formatting):
-- `Escalated to plan:` or `Escalated:` — the bug has been promoted to a plan; it is no longer an inline fix candidate
-- `Blocked:` or `**Blocked**:` or `**Blocked:**` — the bug has a prerequisite that hasn't been met yet (existing entries use bold markdown formatting)
-- `<!-- blocked-by:` — HTML comment marker used for cross-section dependency tracking
+## Step 1: Scan the Queue
 
-These entries remain `- [ ]` (unchecked) because they are not resolved, but they are not actionable by `/fix-bug` until the plan completes or the blocker clears. Only genuinely open, unblocked, non-escalated bugs enter the priority queue.
+Run the Python scanner. The parent Opus context must execute this as its first action — do NOT dispatch a sub-agent for scanning.
 
-**Implementation note**: lifecycle markers can appear on the `- [ ]` checkbox line itself (e.g. `<!-- blocked-by:... -->` trailing the title) OR in the indented body lines below it. Scan the ENTIRE multi-line entry — checkbox line plus all indented continuation lines — before classifying it.
+```
+Bash (foreground):
+  python3 .claude/skills/fix-next-bug/bug_queue_scan.py --json
+```
 
-### Step 2: Sort by Priority
+Parse the JSON. Key fields:
 
-Sort all open bugs using the priority ordering above:
-1. Group by severity (critical first)
-2. Within each severity group, sort by section number ascending
-3. Within each section, sort by ordinal ascending
+- `queue_empty` — boolean; true iff no open, non-excluded bugs
+- `selected` — `{ bug_id, severity, title, repro, subsystem }` or `null`
+- `remaining` — array of `{ bug_id, severity, title }` after the selected
+- `total_open_candidates` — size of the candidate queue
+- `total_excluded` — count of `- [ ]` entries filtered by lifecycle markers
 
-### Step 3: Check for Empty Queue
+### Empty queue
 
-If there are no open bugs:
+If `queue_empty: true`:
+
 ```
 No open bugs in the tracker. All clear!
 ```
+
 Stop — nothing to do.
 
-### Step 4: Present the Selected Bug
+### Non-empty queue — print the queue display
 
-Show the user what's been selected and the queue behind it:
-
-```
-## Fix Next Bug — Queue
-
-Selected: [BUG-{section}-{ordinal}][{severity}] {title}
-  Repro: {repro}
-  Subsystem: {subsystem}
-
-Remaining queue ({N-1} bugs):
-  1. [BUG-...][severity] title
-  2. [BUG-...][severity] title
-  ...
-```
-
-### Step 4.5: Lightweight Blast-Radius Preview
-
-Before presenting the mode choice (Step 5), add blast-radius context to the
-bug presentation (Step 4's output). This helps the user gauge whether the bug
-is a localized fix or a cross-cutting concern:
-
-@.claude/skills/dual-tpr/compose-intel-summary.md
-
-Target the bug's repro symbol (from the bug entry's Repro or Subsystem field).
-Run `callers` to see how many sites touch the buggy code path. Append a
-one-line blast-radius note to the Step 4 presentation:
-
-  Blast radius: <symbol> called by N sites across M modules
-
-This is a PREVIEW only — /fix-bug Phase 1 (investigation) runs its own
-full intelligence queries. The preview here helps the user decide between
-interactive vs. autopilot mode with better scope awareness.
-
-### Step 5: Choose Mode
-
-Before fixing the first bug, use `AskUserQuestion` to ask:
+Print a verbatim queue display to the user (scope: roughly what the Python text mode would render; you can also run the scanner without `--json` for a pre-rendered version):
 
 ```
-Ready to start with: [BUG-{section}-{ordinal}][{severity}] {title}
+Selected: [BUG-XX-NNN][severity] title
+  Repro: …
+  Subsystem: …
 
-How would you like to proceed?
-
-1. **One at a time** — Fix this bug, then ask before each next bug
-2. **Fix all bugs non-stop** — Loop through ALL open bugs automatically with zero interaction. No questions, no pauses, no stops. Runs /fix-bug for every bug in priority order until the queue is empty or you manually stop me.
+Remaining queue (N bugs):
+  1. [BUG-XX-NNN][severity] title
+  2. …
+  … and M more
 ```
 
-- If **One at a time**: proceed to Step 6 (interactive mode)
-- If **Fix all**: proceed to Step 7 (autopilot mode)
+The user MUST see this block before the mode question.
 
-### Step 5.5: Commit Verification Gate — After EVERY Fix
+---
 
-**After `/fix-bug` completes (in EITHER mode), before doing anything else:**
+## Step 3: Choose Mode (Parent — Opus)
 
-1. Run `git status` to check for uncommitted changes (staged, unstaged, or untracked files anywhere in the workspace)
-2. If there are uncommitted changes:
-   - Invoke `/commit-push` to commit all changes
-   - Verify the commit succeeded (clean `git status`)
-3. If `git status` is clean, proceed
+`AskUserQuestion` runs in the parent context where the user can respond.
 
-**This gate is non-negotiable.** A fix that isn't committed doesn't exist. Never proceed to the next bug with uncommitted work — it will contaminate the next fix's diff, TPR review, and git history.
+- **Question**: `Ready to start with: [BUG-XX-NNN][severity] title\n\nHow would you like to proceed?`
+- **Options**:
+  - `One at a time` — Fix this bug, then ask before each next bug
+  - `Fix all bugs non-stop` — Loop through ALL open bugs automatically, zero interaction, no pauses
 
-### Step 6: Interactive Mode — Fix and Prompt
+Record the choice.
 
-**Invoke `/fix-bug` via the Skill tool**: `Skill(fix-bug, args: "BUG-{section}-{ordinal}")` (without `--autopilot`). MUST use the Skill tool — never inline the workflow.
+---
 
-**Let `/fix-bug` run its complete workflow** — investigation, fix section creation, TDD matrix, implementation, completion checklist (including TPR and hygiene review). Do NOT shortcut any phase.
+## Step 4: Enter the Fix Loop
 
-**Run the Commit Verification Gate (Step 5.5)** after `/fix-bug` returns.
+### Step 4.A — Interactive Mode
 
-After commit verification passes, use `AskUserQuestion` to ask:
+1. Invoke `Skill(fix-bug, args: "BUG-XX-NNN")` (no `--autopilot` flag). MUST use the Skill tool — never inline the /fix-bug workflow.
+2. Let `/fix-bug` run its complete workflow — do NOT shortcut any phase.
+3. After `/fix-bug` returns, run the **Commit Verification Gate** (Step 5).
+4. `AskUserQuestion`:
+   - **Question**: `Fix complete for [BUG-XX-NNN].\n\nNext bug in queue: [BUG-YY-MMM][severity] title\n{K-1} more bugs remaining after that.\n\nContinue with the next bug?`
+   - **Options**: `Yes`, `No`, `Skip`, `Pause — clear context, resume via /continue-roadmap`
+5. Handle the response:
+   - `Yes` → re-scan (Step 6), pick the new highest priority, go to Step 4.A step 1.
+   - `Skip` → re-scan with `--skip-ids BUG-XX-NNN,...` (accumulate the skip list across the session), pick the next one, go to Step 4.A step 1.
+   - `No` → print the Final Report (Step 7) and stop.
+   - `Pause — clear context, resume via /continue-roadmap` → print a brief pause summary (bugs fixed so far, next bug in queue, how to resume) and stop. The user clears context manually; a fresh session picks back up via `/continue-roadmap`, which will detect the remaining queue and prompt fresh.
 
-```
-Fix complete for [BUG-{section}-{ordinal}].
-
-Next bug in queue: [BUG-{next}][{severity}] {title}
-{N-2} more bugs remaining after that.
-
-Continue with the next bug?
-```
-
-Options:
-- **Yes** — go back to Step 1 (re-scan, in case OBE or new bugs were filed during the fix)
-- **No** — stop here
-- **Skip** — skip this next bug and move to the one after it
-
-Loop behavior:
-- If **Yes**: re-scan the bug tracker (Step 1) to get a fresh view — bugs may have been resolved as OBE during the previous fix, or new bugs may have been filed. Pick the new highest priority and continue.
-- If **Skip**: re-scan and exclude the skipped bug ID from selection for this session only. Pick the next one.
-- If **No**: report a summary of what was done and stop.
-
-### Step 7: Autopilot Mode — Fix All Non-Stop
+### Step 4.B — Autopilot Mode
 
 **This mode runs until the bug queue is empty or the user manually interrupts. NOTHING ELSE STOPS IT.**
 
-**Before entering the loop**, create a persistent reminder task using `TaskCreate`:
+Before entering the loop, create a persistent reminder task via `TaskCreate`:
+- **Subject**: `AUTOPILOT: Do NOT stop until bug queue is empty`
+- **Description**: `After EVERY /fix-bug outcome (fixed, escalated, blocked, OBE): commit gate → re-scan → pick next bug. The session summary is ONLY printed when re-scan returns queue_empty: true. There is NO 'natural stopping point.' The count of bugs processed is irrelevant — only queue_empty is the exit condition. If you are about to write a session summary, STOP and check: is queue_empty true? If no, pick the next bug.`
+
+Keep this task `in_progress` for the entire autopilot session. Mark it `completed` only when printing the final report.
+
+**CRITICAL: This is the ONLY `TaskCreate` task for the entire autopilot session.**
+
+**Autopilot loop:**
+
+1. Invoke `Skill(fix-bug, args: "--autopilot BUG-XX-NNN")`. The `--autopilot` flag tells `/fix-bug` to run zero-interaction with full rigor.
+2. Run the **Commit Verification Gate** (Step 5).
+3. **Immediately re-scan** (Step 6). Do NOT output a summary, do NOT pause, do NOT reflect.
+4. If `queue_empty: false` in the re-scan, pick the next bug and go to step 1.
+5. If `queue_empty: true`, **ONLY THEN** stop, mark the TaskCreate as completed, and print the Final Report (Step 7).
+
+**BANNED in autopilot — NOT valid reasons to stop:**
+- "Session summary" / "progress report" mid-loop — summary only at queue_empty.
+- "Natural stopping point" — doesn't exist.
+- "Already processed N bugs" — count is irrelevant; queue_empty is the only exit.
+- "Bug was complex / couldn't fix" — mark escalated or blocked, then CONTINUE.
+- "Bug was latent / OBE" — mark it, then CONTINUE.
+
+**All `/fix-bug` outcomes continue the loop:**
+- **Fixed** → continue
+- **Escalated** (marked `Escalated: requires plan — {reason}` in autopilot) → continue
+- **Blocked** → continue
+- **OBE** → continue
+
+**Consensus deadlocks** (autopilot): `/fix-bug` Phase 1.75 may deadlock after 3 `/tp-help` rounds. It proceeds with Claude's best-grounded approach and flags it. These MUST appear in the final report so the user can audit.
+
+---
+
+## Step 5: Commit Verification Gate (After EVERY Fix)
+
+After `/fix-bug` completes (in EITHER mode), before anything else:
+
+1. `git status` — check for uncommitted changes.
+2. If uncommitted changes exist:
+   - `Skill(commit-push)` to commit them.
+   - Verify clean `git status` after.
+3. If already clean, proceed.
+
+**Non-negotiable.** A fix that isn't committed doesn't exist. Never proceed to the next bug with uncommitted work.
+
+---
+
+## Step 6: Re-scan for Next Iteration
+
+Re-run the scanner to get a fresh queue. State may have changed — OBE resolutions, new bugs filed, escalations.
+
 ```
-Subject: "AUTOPILOT: Do NOT stop until bug queue is empty"
-Description: "After EVERY /fix-bug outcome (fixed, escalated, blocked, OBE): commit gate → re-scan → pick next bug. The session summary is ONLY printed when re-scan returns zero open bugs. There is NO 'natural stopping point.' The count of bugs processed is irrelevant — only the queue state matters. If you are about to write a session summary, STOP and check: is the queue empty? If no, pick the next bug."
+Bash (foreground):
+  python3 .claude/skills/fix-next-bug/bug_queue_scan.py --json \
+    [--skip-ids BUG-XX-NNN,BUG-YY-MMM]
 ```
-This task must remain `in_progress` for the entire autopilot session. Only mark it `completed` when you print the final report (queue empty or user stopped). This ensures the reminder stays visible even if earlier conversation context is compressed.
 
-**CRITICAL: This is the ONLY task for the entire autopilot session.** Do NOT use `TaskCreate` for any other purpose during autopilot — not for tracking `/fix-bug` phases, not for sub-steps, not for anything. Additional tasks would become the "current work" and their completion would signal the loop is done, causing premature termination.
+Pass `--skip-ids` accumulated across the session if the user has skipped bugs in interactive mode.
 
-Loop:
-1. **Invoke `/fix-bug` via the Skill tool** — use `Skill(fix-bug, args: "--autopilot BUG-{section}-{ordinal}")`. This is a BLOCKING REQUIREMENT: you MUST use the Skill tool, not inline the /fix-bug workflow by hand. Inlining drops phases (fix section files, /tp-help consensus, TDD-first, TPR/hygiene). The Skill tool loads the full /fix-bug SKILL.md fresh each time, preventing context drift across a long autopilot session. The `--autopilot` flag tells `/fix-bug` to operate with zero user interaction, no pausing, no `AskUserQuestion`, full rigor, no hacks. It must complete the fix no matter the scope.
-2. **Run the Commit Verification Gate (Step 5.5)** — check `git status`, commit via `/commit-push` if anything is uncommitted. Do NOT proceed until clean.
-3. When commit is verified, **immediately** re-scan the bug tracker (Step 1) — do NOT output a summary, do NOT pause, do NOT reflect on what was done
-4. If open bugs remain, pick the next highest priority bug and invoke `/fix-bug --autopilot` via the Skill tool again
-5. If no open bugs remain, **ONLY THEN** stop and print the final report
+---
 
-**BANNED: inlining the /fix-bug workflow.** Reading the bug entry and directly jumping to code changes — without a Skill tool invocation, without creating a fix section file, without /tp-help consensus, without TDD-first testing — is the most common autopilot failure mode. Each of those phases exists because "obvious" fixes have hidden implications. The Skill tool invocation is the enforcement mechanism.
+## Handling Plan Escalation
 
-**No questions. No pauses. No user interaction. No mid-loop summaries.** Just pick → fix → pick → fix until done.
+When `/fix-bug` determines a bug needs a plan:
 
-**The `--autopilot` flag is critical** — it tells `/fix-bug` that:
-- It CANNOT pause and ask questions — it must make decisions autonomously based on CLAUDE.md rules and the spec
-- It MUST re-read CLAUDE.md at the start (Phase -1) to ground itself in the rules
-- It MUST follow "The One Rule: Correctness Above All" — no hacks, no shortcuts, no workarounds regardless of scope
-- It MUST continue until the bug is fully fixed, reviewed (TPR + hygiene), and committed
-- It MUST return control to `/fix-next-bug` after each outcome (fixed, escalated, blocked, OBE) — never just stop
+- **Interactive mode**: `/fix-bug` invokes `/create-plan` normally. After it returns, ask to continue to the next bug (Step 4.A step 4).
+- **Autopilot mode**: `/fix-bug` marks the bug entry with `Escalated: requires plan — {reason}`. Run the Commit Verification Gate (the entry update needs committing), then immediately continue to the next bug. The user creates the plan after the autopilot session ends.
 
-**The ONLY things that stop autopilot mode:**
-- The bug queue is empty (all open bugs processed)
-- The user manually interrupts/stops the session
+Escalated and blocked bugs are excluded by `bug_queue_scan.py`'s lifecycle-marker filter — they won't appear in re-scans.
 
-**BANNED in autopilot mode — these are NOT valid reasons to stop:**
-- "Session summary" or "progress report" mid-loop — the summary is ONLY printed when the queue is empty
-- "Natural stopping point" — there is no such thing; the loop continues until the queue is empty
-- "Already processed N bugs" — the count is irrelevant; the queue state is all that matters
-- "Bug was complex/couldn't fix" — mark escalated or blocked, then CONTINUE to the next bug
-- "Bug was latent/OBE" — mark it, then CONTINUE to the next bug
-- Generating output that looks like a wrap-up — a session summary IS an exit; do NOT write one until the queue is empty
+---
 
-**Valid `/fix-bug` outcomes in autopilot — ALL require continuing to the next bug:**
-- **Fixed** — bug resolved, tests pass, TPR clean → continue
-- **Escalated** — too large for inline fix, bug entry marked `Escalated: requires plan — {reason}` (no `/create-plan` in autopilot — user creates plan after session) → continue
-- **Blocked** — prerequisite missing, bug entry updated → continue
-- **OBE** — already fixed, marked resolved → continue
+## Step 7: Final Report
 
-After EVERY outcome, the next action is ALWAYS: commit gate → re-scan → pick next bug. No exceptions.
-
-### Handling Plan Escalation
-
-When `/fix-bug` determines a bug needs a plan (Phase 1.5 scope assessment), this is a valid outcome — not a failure.
-
-In the loop:
-- **Interactive mode**: `/fix-bug` invokes `/create-plan` normally (with user approval gates), then reports the escalation. Ask to continue to the next bug as normal.
-- **Autopilot mode**: `/fix-bug` marks the bug entry with `Escalated: requires plan — {reason}` (it does NOT invoke `/create-plan` since that requires interactive approval). Run the Commit Verification Gate (the entry update needs committing), then immediately continue to the next bug. The user creates the plan after the autopilot session ends.
-
-Escalated and blocked bugs are already excluded by Step 1's lifecycle-marker filter — they will not appear in the re-scan.
-
-### Final Report
-
-**This is ONLY generated when the queue is empty (all bugs processed) or the user manually stops.** NEVER generate this mid-loop as a "checkpoint" or "progress report."
+**Generated ONLY when the queue is empty OR the user manually stops.** NEVER generate mid-loop.
 
 ```
 ## Fix Next Bug — Session Summary
@@ -225,29 +192,24 @@ Mode: {interactive | autopilot}
 Bugs processed this session: {total}
 
 Fixed: {N}
-{For each:}
   - [BUG-XX-NNN][severity] title — fixed
 
 Escalated to plans (interactive — plan created): {N}
-{For each:}
   - [BUG-XX-NNN][severity] title — escalated to plans/{plan-name}/
 
 Escalated (autopilot — requires plan, user action needed): {N}
-{For each:}
   - [BUG-XX-NNN][severity] title — requires plan: {reason}
 
 Blocked (prerequisite missing): {N}
-{For each:}
   - [BUG-XX-NNN][severity] title — blocked: {reason}
 
 Resolved as OBE: {N}
-{For each:}
   - [BUG-XX-NNN][severity] title — already fixed
 
 {If any autopilot consensus deadlocks:}
 Consensus deadlocks (autopilot — require user audit): {N}
-{For each:}
-  - [BUG-XX-NNN][severity] title — Phase 1.75 consensus deadlocked after 3 /tp-help rounds; proceeded with Claude's best-grounded approach. See fix-BUG-XX-NNN.md § 1.5 Round 3 for details.
+  - [BUG-XX-NNN][severity] title — Phase 1.75 consensus deadlocked after 3 /tp-help rounds;
+    proceeded with Claude's best-grounded approach. See fix-BUG-XX-NNN.md § 1.5 Round 3 for details.
 
 {If any skipped (interactive mode only):}
 Skipped: {N}
@@ -256,16 +218,26 @@ Skipped: {N}
 Remaining open bugs: {N}
 ```
 
-**Consensus deadlocks are load-bearing in the final report.** In autopilot mode, /fix-bug Phase 1.75 is allowed to proceed with Claude's best-grounded approach when /tp-help cannot reach consensus in 3 rounds (autopilot rules forbid AskUserQuestion). The user MUST be able to audit every such bug after the run — the session summary is the only surfacing point. If a consensus-deadlocked fix later proves wrong, the user's remediation path is to read the fix section's § 1.5 Round 3 entry, understand Claude's reasoning, and decide whether to revert or revise.
+**Consensus deadlocks are load-bearing in the final report.** In autopilot mode, this is the only surfacing point. If a consensus-deadlocked fix later proves wrong, the user's remediation path is to read the fix section's § 1.5 Round 3 entry.
+
+---
 
 ## Key Rules
 
-- **Always re-scan** before picking the next bug — the queue is dynamic
-- **Full `/fix-bug` rigor** — every bug goes through the complete workflow, no shortcuts
-- **Never skip phases** — investigation, TDD, implementation, TPR, hygiene — all mandatory per `/fix-bug`
-- **Mode is chosen once** — the mode question is asked only at the start, not after each bug
-- **Autopilot = zero interaction, zero stopping** — no questions, no confirmations, no pauses, no mid-loop summaries between bugs. The user chose this mode knowing what it means. The loop runs until the queue is EMPTY.
-- **Every `/fix-bug` outcome continues the loop** — fixed, escalated, blocked, OBE — ALL of these are valid outcomes that lead to picking the next bug. None of them are reasons to stop.
-- **The session summary IS the exit** — generating it means the loop is over. NEVER generate it unless the queue is empty or the user stopped you. If you find yourself writing a summary, ask: "is the queue empty?" If no, you are stopping prematurely.
-- **Flaky tests ARE bugs** — if a test passes sometimes and fails sometimes, that is a bug. Do NOT retry and move on. Research the root cause (race condition, timing, temp files, state leakage, non-deterministic ordering) and fix it so the test is deterministic. File via `/add-bug` if discovered during another fix; fix immediately if it blocks the current work.
-- **NEVER investigate "pre-existing?"** — do NOT use `git checkout`, `git stash`, `git bisect`, `git log`, or any other git archaeology to determine whether a bug or test failure existed before your changes. It does not matter. The question "was this pre-existing?" is banned. If it's broken now, fix it now. Spending time checking out old commits to see if something "was already broken" is wasted time that produces zero value. The only question is: is it fixed?
+- **Python scanner, not sub-agent** — queue scanning is deterministic mechanical work. The scanner costs near-zero tokens.
+- **AskUserQuestion lives in the parent** — sub-agents cannot talk to the user. The mode prompt MUST be issued by the Opus parent context.
+- **Always re-scan** before picking the next bug — queue state is dynamic.
+- **Full `/fix-bug` rigor** — every bug goes through the complete workflow via the Skill tool, no shortcuts.
+- **Never skip phases** — investigation, TDD, implementation, TPR, hygiene — all mandatory per `/fix-bug`.
+- **Mode is chosen once** — at the start; not after each bug.
+- **Autopilot = zero interaction, zero stopping** — no questions, no confirmations, no pauses, no mid-loop summaries.
+- **Every `/fix-bug` outcome continues the loop** — fixed, escalated, blocked, OBE.
+- **The session summary IS the exit** — generating it means the loop is over. NEVER generate unless `queue_empty: true` OR user stopped.
+- **Flaky tests ARE bugs** — do NOT retry and move on. Research the root cause. File via `/add-bug` if discovered during another fix; fix immediately if blocking.
+- **NEVER investigate "pre-existing?"** — no git archaeology. The only question is: is it fixed?
+
+## Files in this skill
+
+- `SKILL.md` (this file) — full skill protocol (parent-driven, no sub-agent for scanning).
+- `bug_queue_scan.py` — Python scanner. Emits JSON or text. Priority: severity > section > ordinal. Filters lifecycle markers.
+- `bug-queue-scan.sh` — thin shell shim delegating to the Python scanner.

@@ -250,7 +250,7 @@ LINE_NUMBER_CASES: list[tuple[str, str | None]] = [
 # plans/dual-tpr-gemini/section-05-review-work.md:44 — a `[x]` checkbox for
 # a scenario criterion that mentioned `BUG-04-045` in its description was
 # being indexed as a resolved marker for BUG-04-045, causing the scanner to
-# report an active annotation in crates/$1/tests/aot/cross.rs as
+# report an active annotation in crates/llvm/tests/aot/cross.rs as
 # stale-resolved even though fix-BUG-04-045.md was authoritatively still
 # in-progress.
 CHECKBOX_SUBJECT_CASES: list[tuple[str, str | None]] = [

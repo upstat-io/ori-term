@@ -4,22 +4,27 @@ Read by a Sonnet sub-agent dispatched from `/review-plan`. Not a registered skil
 
 ## Input
 
-Read:
+The parent orchestrator passed the scratch-dir path as `{RUN_DIR}`. Read:
 
-- `/tmp/review-plan-context.json` — `mode`, `plan_dir`, `target_section`
-- `/tmp/review-plan-editor.json` — Step 5 editor handoff. The `escalate` field indicates whether the editor surfaced unresolvable human-judgment issues; if absent, treat as `false`.
-- `/tmp/review-plan-tpr.json` — must have `"converged": true`; if `false`, this sub-skill does NOT flip `reviewed: true` and reports the tpr-review non-convergence as the reason.
+- `{RUN_DIR}/context.json` — `mode`, `plan_dir`, `target_section`
+- `{RUN_DIR}/editor.json` — Step 5 editor handoff. The `escalate` field indicates whether the editor surfaced unresolvable human-judgment issues; if absent, treat as `false`.
+- `{RUN_DIR}/tpr.json` — flip condition is `"converged": true` OR `"user_accepted": true`. The `user_accepted: true` flag is written by the parent orchestrator (see `review-plan/SKILL.md §Escalation handling` item 4) when the user explicitly selects an `applies_user_accepted: true` option at Step 6's cap-exit AskUserQuestion (`step-6-tpr.md` Branch 2 `accept-remaining` or Branch 3 `accept-best-effort`). When neither is true, this sub-skill does NOT flip `reviewed: true` and reports the reason.
 
 ## Step 7 — Flip `reviewed` field (single-section mode ONLY)
 
-If `mode == "single-section"` AND `tpr.converged == true` AND `editor.escalate != true`:
+Flip condition: `mode == "single-section"` AND `editor.escalate != true` AND (`tpr.converged == true` OR `tpr.user_accepted == true`).
+
+If flip condition holds:
 
 - Set `reviewed: true` in `{target_section}`'s frontmatter via the Edit tool.
 - Record `reviewed_flipped: true` in the output.
+- If the flip is by `tpr.user_accepted == true` (not `tpr.converged`), ALSO append a line to the section's `third_party_review.notes` frontmatter field recording the cap-exit reason + `user_accepted_option_key` value from the patched handoff JSON, e.g. `notes: "user-accepted via accept-remaining at max_iterations_reached — 2 findings filed as - [ ] items in §NN.R"`. The audit trail lives in the plan file itself, not just `$RUN_DIR/*.json` (the orchestrator-owned scratch dir).
 
 If `mode == "whole-plan"`: skip this step entirely. Never touch `reviewed` fields in whole-plan mode.
 
-If `tpr.converged == false` OR `editor.escalate == true`: leave `reviewed: false` and record the reason in the output (`tpr-non-convergence` or `editor-escalated`).
+If `editor.escalate == true`: leave `reviewed: false` regardless of `tpr.*` — an editor-escalated plan has unresolved human-judgment issues that block flip even if TPR converged. Record `editor-escalated` as the reason.
+
+If `tpr.converged == false` AND `tpr.user_accepted != true`: leave `reviewed: false` and record the reason as `tpr-non-convergence` (user declined the accept option, chose retry/abort/escalate-to-plan instead).
 
 ## Step 8 — Post-edit audit verify loop
 
@@ -27,7 +32,7 @@ Run plan-audit.py in verify mode until clean (max 5 iterations — escalate if i
 
 ```bash
 python3 .claude/skills/plan-audit/plan-audit.py {plan_dir} --verify --json \
-  > /tmp/plan-audit-verify.json 2>&1
+  > "{RUN_DIR}/plan-audit-verify.json" 2>&1
 ```
 
 Read results. If `critical > 0` OR `major > 0`:
@@ -40,13 +45,13 @@ Commit any fixes via `Skill: commit-push` with message `chore(plans): post-revie
 
 ## Output
 
-Write `/tmp/review-plan-verify.json`. On a clean converge:
+Write `{RUN_DIR}/verify.json`. On a clean converge:
 
 ```json
 {
   "reviewed_flipped": true,
   "reviewed_flipped_section": "plans/foo/section-03.md",
-  "reviewed_flipped_reason": "clean | tpr-non-convergence | whole-plan-mode | editor-escalated",
+  "reviewed_flipped_reason": "clean | user-accepted-tpr-non-convergence | tpr-non-convergence | whole-plan-mode | editor-escalated",
   "verify_iterations": 2,
   "verify_converged": true,
   "remaining_critical": 0,
@@ -85,6 +90,6 @@ If the verify loop does not converge within 5 iterations, include `question` + `
 ## Do NOT
 
 - Flip `reviewed: true` in whole-plan mode (hard rule)
-- Flip `reviewed: true` when tpr-review didn't converge (hard rule)
+- Flip `reviewed: true` when tpr-review didn't converge AND the user did not explicitly accept the remaining findings via the `applies_user_accepted: true` option at Step 6's cap-exit prompt (hard rule — the user-accepted path is the ONLY non-convergence route to flip)
 - Edit `.rs` / `.ori` files (plan-docs only)
 - Exceed 5 verify iterations without escalating

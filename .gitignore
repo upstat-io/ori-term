@@ -9,9 +9,9 @@
 .claude/.sync-ref/
 .claude/sync-manifest.json
 
-# Python bytecode from .claude/skills/*/ helper scripts (plan-audit, etc.)
-.claude/**/__pycache__/
-.claude/**/*.pyc
+# Python bytecode from helper scripts (.claude/skills/, scripts/plan_corpus, etc.)
+**/__pycache__/
+**/*.pyc
 
 # Claude scheduled-task lock file (local-only runtime state).
 .claude/scheduled_tasks.lock

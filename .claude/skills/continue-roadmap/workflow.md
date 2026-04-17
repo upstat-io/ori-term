@@ -52,9 +52,13 @@ If `gates.stale_frontmatter.fires` is true, iterate `payload.focus_plan_mismatch
 | `frontmatter=not-started but N checked` | set status `in-progress` (or `complete` if 0 unchecked) |
 | `frontmatter=in-progress but all items checked` | set status `complete` |
 | `frontmatter=in-progress but 0 items checked` | set status `not-started` |
-| TPR status mismatch | set `third_party_review.status` to match (`findings` if unchecked TPR items exist, else `resolved`) |
+| `third_party_review.status=findings but all N findings resolved (should be resolved)` | set `third_party_review.status: resolved` (keep `updated:` date as-is) |
+| `third_party_review.status=findings but no TPR findings parsed (should be resolved or none)` | set `third_party_review.status: resolved` if `updated:` is present, else `none` with `updated: null` |
+| `third_party_review.status=resolved but N finding(s) still open (should be findings)` | set `third_party_review.status: findings` |
 
 **Do NOT fix** any mismatch outside the focus plan. Report those in the handoff's Gate results as informational only.
+
+**Why the TPR drift rows matter**: the `tpr_findings` gate (Step 3) fires whenever `third_party_review.status == "findings"`, independent of whether any finding checkbox is still open. Historically the drift was unhealable — `/verify-tpr` has nothing to triage when 0 findings are open, so `/continue-roadmap` would loop on this gate forever. These rows close the loop by letting Step 2a silently flip the stale status BEFORE Step 3 evaluates `tpr_findings`.
 
 ### 2b. Stale plan annotations
 
@@ -68,9 +72,26 @@ This is a shell invocation of an idempotent tool — the "never edit .rs" rule a
 
 After the tool returns, verify the new count via `--count`. Include the "before → after" numbers in the handoff.
 
-### 2c. Commit all cleanup together
+### 2c. Bug-entry marker drift (auto-fix Superseded markers)
 
-If ANY fix was applied in 2a or 2b, commit everything via `Skill: commit-push` with a message like `chore(plans): auto-fix stale frontmatter + plan annotations`. Do not create separate commits per fix type — one cleanup commit covers the pass.
+If `gates.bug_marker_drift.fires` is true and `payload.missing_marker_count > 0`, iterate `payload.auto_fix_edits` and apply each edit to the named bug-tracker section file via the Edit tool.
+
+Each edit specifies:
+- `file`: target path (always `plans/bug-tracker/section-NN-*.md`)
+- `bug_id`: which bug entry receives the marker
+- `header_lineno`: 1-based line number of the entry header
+- `insert_line`: the full `Superseded by:` line to insert (already formatted with attribution)
+- `rationale`: human-readable explanation of why the marker is being added
+
+Application pattern: Read the file, locate the bug entry header at `header_lineno`, walk forward through the indented body lines until you hit the next blank line or the next `- [` header, insert `insert_line` immediately after the last body line. Preserve indentation. The auto-fix is idempotent — if a `Superseded by:` line already exists in the entry body, skip silently (the validator is conservative about this).
+
+If `payload.orphan_marker_count > 0`, iterate `payload.orphan_findings` and emit each as an `info`-level entry in the handoff's Gate results — these are NOT auto-fixed (a bug entry's marker points at a plan that doesn't claim it; user must reconcile manually). Surface format: `Orphan supersede marker: {bug_id} declares {declared_target}, but plan {claiming_plans or '(none)'} doesn't claim it.`
+
+This gate exists because the `Superseded by:` lifecycle marker is the routing signal `/fix-bug` Phase 0 uses to skip Phase -1 (the ~170k-token rules-file re-read). Missing markers re-trigger the waste on every invocation. The plan frontmatter `supersedes:` field is the canonical SSOT — bug entries are derived; this gate enforces the derivation.
+
+### 2d. Commit all cleanup together
+
+If ANY fix was applied in 2a, 2b, or 2c, commit everything via `Skill: commit-push` with a message like `chore(plans): auto-fix stale frontmatter + plan annotations + bug marker drift`. Do not create separate commits per fix type — one cleanup commit covers the pass.
 
 ## Step 3 — Evaluate Remaining Gates
 
@@ -78,12 +99,14 @@ After Step 2, only `block`-severity and `info`-severity gates remain. For each e
 
 | Gate key | Severity when fires | Action |
 |---|---|---|
+| `parse_error_sections` | `block` | Escalate. One or more sections have YAML parse errors — focus selection is unreliable. Fix the YAML before proceeding. |
 | `stale_frontmatter` | `auto-fix` | Handled silently in Step 2a — never escalates. |
 | `stale_plan_annotations` | `auto-fix` | Handled silently in Step 2b — never escalates. |
+| `bug_marker_drift` | `auto-fix` | Handled silently in Step 2c — auto-inserts missing `Superseded by:` markers; surfaces orphan markers as info. Never escalates. |
 | `unreviewed_plan` | `block` | Escalate. `payload.options` offers `/review-plan`, proceed-anyway, pick-different. |
 | `tpr_findings` | `block` | Escalate. Parent invokes `/verify-tpr` with `payload.next_skill_arg`. |
-| `critical_bugs` | `block` | Escalate. Parent invokes `/fix-bug` with the bug IDs from `payload.bugs`. |
-| `high_bugs` | `info` | Include bug IDs in handoff summary. Not blocking. |
+| `critical_bugs` | `block` | Escalate. Parent invokes `/fix-bug` with the bug IDs from `payload.bugs`. Includes bugs elevated from `high` when they block focus-section items via `<!-- blocked-by:BUG-XXX -->` annotations (marked `elevated: true` in the payload). |
+| `high_bugs` | `info` | Include bug IDs in handoff summary. Not blocking. Bugs elevated to `critical_bugs` via blocked-by are removed from this list. |
 | `dirty_tree` | `block` | Escalate. `payload.options` offers `/commit-push` or proceed-dirty. **NEVER** run destructive git commands to clean up. |
 
 When multiple block-severity gates fire together (e.g., unreviewed + dirty tree), escalate with ALL of them listed — the parent will ask the user each one via sequential `AskUserQuestion` calls.

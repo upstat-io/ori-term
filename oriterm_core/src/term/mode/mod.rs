@@ -93,6 +93,17 @@ bitflags! {
         /// margins and cursor-movement operations respect them. See
         /// `plans/spec-conformance/section-08` §08.3 / §08.4.
         const LEFT_RIGHT_MARGIN      = 1 << 32;
+        /// Mode 2031 — color scheme update notification.
+        ///
+        /// When set, `Term::set_theme()` emits `CSI ? 997 ; Ps n` to the
+        /// PTY whenever the host color scheme changes (Dark=1, Light=2).
+        const COLOR_SCHEME_UPDATE    = 1 << 33;
+        /// DECBKM (mode 67) — backarrow key sends BS instead of DEL.
+        ///
+        /// When set, plain Backspace sends 0x08 (BS) and Ctrl+Backspace
+        /// sends 0x7F (DEL). When reset (default), the polarity is
+        /// reversed per xterm semantics.
+        const DECBKM                 = 1 << 34;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()

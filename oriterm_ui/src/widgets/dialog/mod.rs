@@ -300,15 +300,13 @@ impl Widget for DialogWidget {
                     return OnInputResult::handled();
                 }
                 Key::Escape => return OnInputResult::handled(),
-                Key::Tab => {
-                    if self.buttons == DialogButtons::OkCancel {
-                        self.focus_visible = true;
-                        self.focused_button = match self.focused_button {
-                            DialogButton::Ok => DialogButton::Cancel,
-                            DialogButton::Cancel => DialogButton::Ok,
-                        };
-                        return OnInputResult::handled();
-                    }
+                Key::Tab if self.buttons == DialogButtons::OkCancel => {
+                    self.focus_visible = true;
+                    self.focused_button = match self.focused_button {
+                        DialogButton::Ok => DialogButton::Cancel,
+                        DialogButton::Cancel => DialogButton::Ok,
+                    };
+                    return OnInputResult::handled();
                 }
                 _ => {}
             }

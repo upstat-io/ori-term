@@ -2,7 +2,7 @@
 
 Read by a Sonnet sub-agent dispatched from `/impl-hygiene-review`. Not a registered skill. Loads CLAUDE.md, `.claude/rules/*.md`, and active-plan context into a structured context packet the Phase 3 Opus agent consumes.
 
-Writes `/tmp/impl-hygiene-{run}/phase-1.json` summarizing which rules are in scope, the active plan (if any), and any rule frameworks (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE taxonomy) that apply to the review target.
+Writes `{run_id}/phase-1.json` (the orchestrator-owned scratch dir passed in via the sub-agent prompt) summarizing which rules are in scope, the active plan (if any), and any rule frameworks (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT/NOTE taxonomy) that apply to the review target.
 
 ---
 
@@ -15,8 +15,21 @@ The full rule set is embedded below (source of truth files — do not maintain s
 **Hygiene Rules** (`.claude/rules/impl-hygiene.md`):
 @.claude/rules/impl-hygiene.md
 
-**Compiler Guidelines** (`.claude/rules/compiler.md`):
-@.claude/rules/compiler.md
+**Code Hygiene** (`.claude/rules/code-hygiene.md`):
+@.claude/rules/code-hygiene.md
+
+**Crate Boundaries** (`.claude/rules/crate-boundaries.md`):
+@.claude/rules/crate-boundaries.md
+
+**Test Organization** (`.claude/rules/test-organization.md`):
+@.claude/rules/test-organization.md
+
+**Per-crate ownership** (`.claude/rules/oriterm*.md`):
+@.claude/rules/oriterm.md
+@.claude/rules/oriterm_core.md
+@.claude/rules/oriterm_ui.md
+@.claude/rules/oriterm_mux.md
+@.claude/rules/oriterm_ipc.md
 
 #### 1b. Load Plan Context
 
@@ -39,7 +52,7 @@ Plan context does NOT suppress or deprioritize findings. Instead, it **annotates
 
 **Example annotation:**
 ```
-3. **[DRIFT]** `crates/$1/src/check/registration/mod.rs:142` — Missing sync for new `Serialize` variant
+3. **[DRIFT]** `crates/types/src/check/registration/mod.rs:142` — Missing sync for new `Serialize` variant
    → covered by plans/trait_arch/ (Section 3: Registration Overhaul)
 ```
 

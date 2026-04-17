@@ -2,7 +2,7 @@
 section: "05"
 title: "Config Bugs"
 status: in-progress
-reviewed: true
+reviewed: false
 goal: "Track and fix bugs in configuration loading, settings application, and config-to-runtime wiring"
 depends_on: []
 third_party_review:

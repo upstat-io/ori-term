@@ -28,6 +28,7 @@ use vte::ansi::KeyboardModes;
 
 use crate::color::Palette;
 use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::grid::{CursorShape, Grid};
 use crate::image::ImageCache;
 use crate::image::sixel::SixelParser;
@@ -388,6 +389,21 @@ impl<S: EffectSink> Term<S> {
         self.theme = theme;
         self.palette = Palette::for_theme(theme);
         self.grid_mut().dirty_mut().mark_all();
+
+        // Mode 2031: notify child process of color scheme change.
+        if self.mode.contains(TermMode::COLOR_SCHEME_UPDATE) {
+            let notification = match theme {
+                Theme::Dark => Some(b"\x1b[?997;1n".as_slice()),
+                Theme::Light => Some(b"\x1b[?997;2n".as_slice()),
+                Theme::Unknown => None,
+            };
+            if let Some(bytes) = notification {
+                self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+                    bytes: bytes.to_vec(),
+                    kind: PtyWriteKind::Other,
+                }));
+            }
+        }
     }
 
     /// Current window title (raw OSC 0/2 value).
