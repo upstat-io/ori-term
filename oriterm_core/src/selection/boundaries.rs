@@ -139,16 +139,12 @@ pub fn logical_line_start(grid: &Grid, abs_row: usize) -> usize {
 /// Returns the absolute row index of the last row in the logical line.
 pub fn logical_line_end(grid: &Grid, abs_row: usize) -> usize {
     let mut current = abs_row;
-    loop {
-        let Some(row) = grid.absolute_row(current) else {
-            break;
-        };
+    while let Some(row) = grid.absolute_row(current) {
         let last_col = row.cols().saturating_sub(1);
-        if row[Column(last_col)].flags.contains(CellFlags::WRAP) {
-            current += 1;
-        } else {
+        if !row[Column(last_col)].flags.contains(CellFlags::WRAP) {
             break;
         }
+        current += 1;
     }
     current
 }

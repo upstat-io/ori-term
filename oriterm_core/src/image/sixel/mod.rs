@@ -134,18 +134,14 @@ impl SixelParser {
                 }
             }
             // Digit — accumulate parameter.
-            b'0'..=b'9' => {
-                if self.cmd != 0 && self.param_idx < 5 {
-                    self.params[self.param_idx] = self.params[self.param_idx]
-                        .saturating_mul(10)
-                        .saturating_add(u32::from(byte - b'0'));
-                }
+            b'0'..=b'9' if self.cmd != 0 && self.param_idx < 5 => {
+                self.params[self.param_idx] = self.params[self.param_idx]
+                    .saturating_mul(10)
+                    .saturating_add(u32::from(byte - b'0'));
             }
             // Semicolon — advance to next parameter.
-            b';' => {
-                if self.cmd != 0 && self.param_idx < 4 {
-                    self.param_idx += 1;
-                }
+            b';' if self.cmd != 0 && self.param_idx < 4 => {
+                self.param_idx += 1;
             }
             // Carriage return — reset x to left margin.
             b'$' => {

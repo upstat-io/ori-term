@@ -157,7 +157,7 @@ pub fn decode_gif_frames(data: &[u8]) -> Option<GifFrames> {
         }
 
         let (numer, denom) = frame.delay().numer_denom_ms();
-        let ms = if denom > 0 { numer / denom } else { 100 };
+        let ms = numer.checked_div(denom).unwrap_or(100);
         durations.push(Duration::from_millis(u64::from(ms)));
     }
 
