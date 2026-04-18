@@ -303,7 +303,9 @@ fn drain_preserves_push_order_end_to_end() {
 }
 
 /// Intra-batch collapse: `ClearPendingNotifications` discards
-/// preceding `DesktopNotification` effects in the SAME drain.
+/// PRECEDING `DesktopNotification` effects in the SAME drain, AND
+/// emits the dedicated `ClearPendingDesktopNotifications` MuxEvent so
+/// downstream staging buffers can purge cross-batch leftovers.
 #[test]
 fn clear_pending_notifications_collapses_preceding_in_batch() {
     let (mut t, mux_rx, _wake) = make_router_harness();
@@ -326,10 +328,76 @@ fn clear_pending_notifications_collapses_preceding_in_batch() {
         .push(Effect::Host(HostEffect::ClearPendingNotifications));
     t.drain_effects_into_mux_events();
 
-    assert!(
-        mux_rx.try_recv().is_err(),
-        "intra-batch Clear must suppress preceding DesktopNotifications"
+    let events: Vec<_> = std::iter::from_fn(|| mux_rx.try_recv().ok()).collect();
+    assert_eq!(
+        events.len(),
+        1,
+        "preceding notifications must be suppressed"
     );
+    assert!(
+        matches!(&events[0], MuxEvent::ClearPendingDesktopNotifications(_)),
+        "the clear marker MUST surface as ClearPendingDesktopNotifications so \
+         downstream staging buffers can purge cross-batch entries; got {:?}",
+        events[0]
+    );
+}
+
+/// Blind-spot §7 contract pin (corrected post-TPR-01-F1):
+/// `ClearPendingNotifications` collapses ONLY preceding
+/// `DesktopNotification` effects in the same batch — notifications
+/// that follow the clear marker survive. Pinned by the canonical
+/// sequence from the plan body: `[Notif1, Notif2, Clear, Notif3]` →
+/// `[Clear, Notif3]`.
+#[test]
+fn clear_pending_notifications_collapses_preceding_only() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc9,
+            title: "A".into(),
+            body: "a".into(),
+        }));
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc99,
+            title: "B".into(),
+            body: "b".into(),
+        }));
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::ClearPendingNotifications));
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc777,
+            title: "C".into(),
+            body: "c".into(),
+        }));
+    t.drain_effects_into_mux_events();
+
+    let events: Vec<_> = std::iter::from_fn(|| mux_rx.try_recv().ok()).collect();
+    assert_eq!(
+        events.len(),
+        2,
+        "expected ClearPendingDesktopNotifications + the post-clear notification; got {events:?}"
+    );
+    assert!(
+        matches!(&events[0], MuxEvent::ClearPendingDesktopNotifications(_)),
+        "first event must be the clear; got {:?}",
+        events[0]
+    );
+    match &events[1] {
+        MuxEvent::DesktopNotification {
+            source: NotificationSource::Osc777,
+            title,
+            ..
+        } if title == "C" => {}
+        other => {
+            panic!("second event must be the post-clear DesktopNotification(C); got {other:?}")
+        }
+    }
 }
 
 /// `HostEffect::ChildExit` routes to `MuxEvent::PaneExited` with the
@@ -442,4 +510,110 @@ fn poll_result_variants_all_constructible() {
     let _ready = PollResult::Ready(bell);
     let _pending = PollResult::Pending;
     let _cancelled = PollResult::Cancelled;
+}
+
+/// Blind-spot §5: drain happens INSIDE `handle_bytes` (per chunk), not
+/// at the end of `handle_bytes_chunked`. Pinned architecturally —
+/// `mod.rs` MUST contain the drain call inside the per-chunk function so
+/// a 1 MB forwarded read does not accumulate ~16 chunks of effects.
+#[test]
+fn drain_call_lives_inside_handle_bytes_per_chunk() {
+    let source = include_str!("../mod.rs");
+
+    // The drain call must appear inside `fn handle_bytes` (the per-chunk
+    // function), not only inside `fn handle_bytes_chunked` (the outer
+    // loop).
+    let handle_bytes_start = source
+        .find("fn handle_bytes(&mut self, bytes: &[u8])")
+        .expect("fn handle_bytes signature must exist verbatim");
+
+    // Find the matching closing brace by matching braces.
+    let after_sig = &source[handle_bytes_start..];
+    let body_open = after_sig.find('{').expect("handle_bytes must have body");
+    let mut depth: usize = 0;
+    let mut end_offset = 0;
+    for (i, c) in after_sig[body_open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end_offset = body_open + i;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let body = &after_sig[body_open..=end_offset];
+    assert!(
+        body.contains("self.drain_effects_into_mux_events()"),
+        "drain MUST be called inside handle_bytes per blind-spot §5; \
+         body did not contain the drain call:\n{body}"
+    );
+}
+
+/// Blind-spot §16: every `MuxEvent` emission flows through
+/// `send_mux_event` (the wakeup-pairing helper), not direct
+/// `self.mux_tx.send(..)`. Enforced via grep against the router source,
+/// excluding doc/line comments.
+#[test]
+fn router_routes_mux_events_only_via_send_mux_event() {
+    let source = include_str!("mod.rs");
+    // Count non-comment lines that contain the direct send pattern.
+    // `///` doc lines and `//` line comments don't count — they describe
+    // the contract, they don't bypass it.
+    let occurrences = source
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("///") && !trimmed.starts_with("//")
+        })
+        .filter(|line| line.contains("self.mux_tx.send("))
+        .count();
+    assert_eq!(
+        occurrences, 1,
+        "router must route MuxEvents only through send_mux_event; \
+         unexpected `self.mux_tx.send(..)` site bypasses the wakeup pair"
+    );
+}
+
+/// Blind-spot §18: every staging-buffer site that carries
+/// `MuxNotification::HostClipboardLoad` / `HostColorQuery` MUST move
+/// the variant, not clone it — clones defeat `Arc::strong_count`-based
+/// cancellation detection in `PendingResponse::poll`.
+#[test]
+fn no_cloned_host_clipboard_load_notification_in_staging() {
+    // Files that buffer or forward `MuxNotification` between threads /
+    // processes. Each MUST use move semantics (`Vec::drain`,
+    // `mem::replace`, match-move) for HostClipboardLoad / HostColorQuery.
+    let staging_files: &[(&str, &str)] = &[
+        (
+            "oriterm_mux/src/backend/client/mod.rs",
+            include_str!("../../../backend/client/mod.rs"),
+        ),
+        (
+            "oriterm_mux/src/backend/client/notification.rs",
+            include_str!("../../../backend/client/notification.rs"),
+        ),
+        (
+            "oriterm_mux/src/server/mod.rs",
+            include_str!("../../../server/mod.rs"),
+        ),
+    ];
+    for (path, body) in staging_files {
+        for forbidden in [
+            "MuxNotification::HostClipboardLoad",
+            "MuxNotification::HostColorQuery",
+        ] {
+            for line in body.lines() {
+                if line.contains(forbidden) && line.contains(".clone()") {
+                    panic!(
+                        "{path}: forbidden clone of {forbidden} detected — \
+                         move semantics required (Vec::drain / mem::replace / match-move):\n  {line}"
+                    );
+                }
+            }
+        }
+    }
 }

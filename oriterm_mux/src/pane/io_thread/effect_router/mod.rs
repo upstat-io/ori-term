@@ -56,13 +56,18 @@ impl<S: EffectSink> PaneIoThread<S> {
             return;
         }
 
-        // First pass: detect `ClearPendingNotifications` and collapse
-        // preceding `DesktopNotification` effects in the same batch.
-        let mut clear_seen = false;
-        for effect in &self.effects_buf {
+        // First pass: locate the LAST `ClearPendingNotifications` index
+        // in the batch. `DesktopNotification` effects at strictly lower
+        // indices are suppressed by the clear (intra-batch
+        // collapse — preceding only); `DesktopNotification` effects at
+        // higher indices pass through unchanged. Tracking the LAST
+        // index handles a multi-clear batch correctly: a notification
+        // emitted between two clears is still preceding the second
+        // clear and so is suppressed.
+        let mut last_clear_index: Option<usize> = None;
+        for (i, effect) in self.effects_buf.iter().enumerate() {
             if matches!(effect, Effect::Host(HostEffect::ClearPendingNotifications)) {
-                clear_seen = true;
-                break;
+                last_clear_index = Some(i);
             }
         }
 
@@ -78,7 +83,7 @@ impl<S: EffectSink> PaneIoThread<S> {
             clippy::iter_with_drain,
             reason = "drain(..) preserves Vec capacity for scratch reuse"
         )]
-        for effect in effects.drain(..) {
+        for (idx, effect) in effects.drain(..).enumerate() {
             match effect {
                 Effect::Pty(PtyEffect::Write { bytes, .. }) => {
                     self.send_mux_event(MuxEvent::PtyWrite {
@@ -131,10 +136,16 @@ impl<S: EffectSink> PaneIoThread<S> {
                     title,
                     body,
                 }) => {
-                    if clear_seen {
-                        // Collapsed by later ClearPendingNotifications in
-                        // this drain batch — drop silently.
-                    } else {
+                    // Suppress only when this notification PRECEDES the
+                    // last clear marker in the batch. Notifications
+                    // emitted AFTER every clear marker survive — the
+                    // contract is "clear discards preceding only" per
+                    // host.rs:42-50 and plan blind-spot §7.
+                    let suppressed = matches!(
+                        last_clear_index,
+                        Some(clear_at) if idx < clear_at
+                    );
+                    if !suppressed {
                         self.send_mux_event(MuxEvent::DesktopNotification {
                             pane_id: self.pane_id,
                             source,
@@ -144,37 +155,16 @@ impl<S: EffectSink> PaneIoThread<S> {
                     }
                 }
                 Effect::Host(HostEffect::ClearPendingNotifications) => {
-                    // Emitted as a notification so downstream staging
-                    // buffers (mux_pump, window_management, daemon) can
-                    // purge their DesktopNotification entries for this
-                    // pane. The variant is added in effect-cutover 01.1
-                    // to MuxNotification — it does NOT ride through
-                    // MuxEvent because MuxEvent is the IO-thread→mux
-                    // bus and the purge target is the downstream
-                    // notification staging. The mux's
-                    // `in_process::event_pump` forwards this variant
-                    // as-is to the notification queue.
-                    //
-                    // The 01.3 follow-up may introduce a dedicated
-                    // MuxEvent variant if tracing / debugging benefits
-                    // from it. For 01.1 we just emit through the
-                    // notification channel directly: the mux forwards
-                    // every `DesktopNotification` MuxEvent into a
-                    // matching `MuxNotification::DesktopNotification`,
-                    // and `ClearPendingDesktopNotifications` follows the
-                    // same path (treat it as a control event in the
-                    // notification stream). Since MuxEvent doesn't
-                    // carry that variant today, send it via the
-                    // mux_pump's `drain_notifications` path — but the
-                    // only way to push to that path from the IO thread
-                    // is through MuxEvent. To keep the commit small and
-                    // avoid adding a whole new event variant that fans
-                    // through the entire pipeline, we NOOP here in 01.1
-                    // and file the full purge-through-MuxNotification
-                    // wiring as a tracked follow-up. The same batch's
-                    // DesktopNotification effects were already
-                    // suppressed by the `clear_seen` check above, which
-                    // is the load-bearing user-visible behavior.
+                    // Forward via the dedicated MuxEvent variant so the
+                    // event pump pushes
+                    // `MuxNotification::ClearPendingDesktopNotifications`
+                    // into the staging buffers (mux_pump,
+                    // window_management, daemon broadcast). Earlier
+                    // notifications in the same batch were already
+                    // suppressed above; this signal handles cross-batch
+                    // notifications that landed in main-thread staging
+                    // before this clear arrived.
+                    self.send_mux_event(MuxEvent::ClearPendingDesktopNotifications(self.pane_id));
                 }
                 Effect::Host(
                     HostEffect::VisualBell

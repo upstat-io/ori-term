@@ -108,6 +108,10 @@ impl InProcessMux {
                             body,
                         });
                 }
+                MuxEvent::ClearPendingDesktopNotifications(pane_id) => {
+                    self.notifications
+                        .push(MuxNotification::ClearPendingDesktopNotifications(pane_id));
+                }
                 MuxEvent::HostClipboardLoad {
                     pane_id,
                     selection,
