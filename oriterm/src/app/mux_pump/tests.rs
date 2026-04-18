@@ -16,7 +16,7 @@ fn dn(pane_id: PaneId, title: &str) -> MuxNotification {
     }
 }
 
-/// Regression: `[TPR-01-2-codex-r2][high]` — staging-buffer purge for
+/// Regression: `[high]` — staging-buffer purge for
 /// `ClearPendingDesktopNotifications` must remove preceding
 /// `DesktopNotification` entries for the same pane that landed in
 /// earlier IO-thread batches and accumulated in `notification_buf`.

@@ -47,10 +47,10 @@ third_party_review:
 sections:
   - id: "01.1"
     title: "Sink swap + Effect→MuxEvent router (atomic — no intermediate commit where effects are queued but not routed)"
-    status: complete
+    status: not-started
   - id: "01.2"
     title: "Activate PendingResponse polling with idle-wake channel"
-    status: complete
+    status: not-started
   - id: "01.3"
     title: "Delete IoThreadEventProxy, LegacyEventSink, Event::ClipboardLoad/ColorRequest, MuxEventProxy (if unused), drain_notifications shim"
     status: not-started
