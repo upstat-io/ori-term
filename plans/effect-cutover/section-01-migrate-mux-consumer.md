@@ -36,7 +36,7 @@ success_criteria:
 depends_on:
   - "plans/spec-conformance/section-03-effect-boundary-migration.md"
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-18
   rounds_completed: 8
   notes: "3-round /review-plan Step 6 /tpr-review convergence loop ran 2026-04-18. Pass 1 (round 6): 6 codex findings all fixed inline; 1 gemini fabricated REJECT. Pass 2 (round 7): 3 codex findings all fixed inline; 1 gemini fabricated REJECT. Pass 3 (round 8, convergence): 3 codex findings fixed inline (frontmatter success_criteria drift from body prose — erased PendingResponse, EOF ordering, cross-plan Section 10 edit); gemini returned clean. At max_rounds=3 iteration cap with 12 findings fixed total across all three passes — iter_cap_reached. Status is `findings`; flip reviewed:true deferred to the user-accept decision at the /review-plan Step 6 cap-exit prompt. Section 01.2 edits MUST land atomically with the matching Section 10.2 pin rewrite (TPR-01-7/TPR-01-14). user-accepted via accept-with-findings at iter_cap_reached — 12 findings fixed inline across commits b5af302a, e31170e6, 4a5756f5; 0 open findings filed as - [ ] items."
