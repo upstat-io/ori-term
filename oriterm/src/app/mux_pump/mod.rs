@@ -271,7 +271,7 @@ impl App {
 /// removes every `DesktopNotification { pane_id: P, .. }` at
 /// positions `< i`. Iteration order preserves remaining markers.
 ///
-/// Surfaced by `[TPR-01-2-codex-r2][high]` — the §01 fix only emitted
+/// Surfaced by `[high]` — the §01 fix only emitted
 /// the clear marker but did not act on it in the main-thread staging
 /// buffer.
 fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {

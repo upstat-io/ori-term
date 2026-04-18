@@ -86,7 +86,7 @@ impl std::error::Error for AlreadyFulfilled {}
 /// the explicit `Consumed` state the slot would revert to "empty" after
 /// `take()` and a second `fulfill` would silently succeed —
 /// indistinguishable from a legitimate first fulfill. Surfaced by
-/// `[TPR-01-1-codex-r1][high]`.
+/// `[high]`.
 #[derive(Debug)]
 enum SlotState<T> {
     /// No fulfill has been issued yet.
@@ -211,7 +211,7 @@ impl<T> ResponseToken<T> {
     /// count we read while holding it is decisive — if no consumer
     /// holds the `Arc`, no future fulfill can land on this slot.
     ///
-    /// Surfaced by `[TPR-01-1-codex-r2][high]` (round 2): the previous
+    /// Surfaced by `[high]` (round 2): the previous
     /// split `if let Some(v) = reply.take() { Ready } else if reply.consumer_strong_count() <= 1 { Cancelled } else { Pending }`
     /// pattern in `response_poll/mod.rs` could see `take() == None`
     /// (slot still `Pending`), then race a `fulfill()` + consumer drop,

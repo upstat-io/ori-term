@@ -51,7 +51,7 @@ fn response_token_fulfill_succeeds_once() {
     assert!(!token.is_fulfilled(), "Consumed is not Fulfilled");
 }
 
-/// Regression: TPR-01-1-codex-r1 — post-take fulfill must reject so a
+/// Regression: post-take fulfill must reject so a
 /// routing bug that double-fulfills after the IO thread already drained
 /// the reply surfaces loudly instead of silently overwriting the
 /// already-consumed slot.

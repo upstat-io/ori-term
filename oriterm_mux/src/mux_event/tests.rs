@@ -313,7 +313,7 @@ fn mux_event_debug_all_variants() {
     assert!(dbg.contains("Selection"));
 
     // Variants added in effect-cutover 01.1 — Debug coverage per
-    // `[TPR-01-3-gemini-r2][low]`.
+    // `[low]`.
     let desk = MuxEvent::DesktopNotification {
         pane_id: id,
         source: oriterm_core::effect::NotificationSource::Osc99,
@@ -409,7 +409,7 @@ fn mux_notification_debug_all_variants() {
 
     // Variants added in effect-cutover 01.1 — Debug coverage per the
     // matrix-testing rule (`.claude/rules/tests.md`). Surfaced by
-    // `[TPR-01-3-gemini-r2][low]`.
+    // `[low]`.
     let desk = MuxNotification::DesktopNotification {
         pane_id: pid,
         source: oriterm_core::effect::NotificationSource::Osc9,
