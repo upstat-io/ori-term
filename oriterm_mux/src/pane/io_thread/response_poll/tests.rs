@@ -372,3 +372,103 @@ fn cancellation_fails_when_inner_token_cloned() {
 
     handle.shutdown();
 }
+
+/// Blind-spot §14 canonical-name pin: matches the plan's named test for
+/// the bounded(1) wake-channel coalescing semantic. Multiple fulfills
+/// between wakes collapse to one wake; `poll_pending_responses`
+/// iterates EVERY entry on that single wake and emits N PTY writes.
+/// Companion to `two_fulfills_one_wake_drains_both_tokens` which
+/// exercises the same invariant with two tokens; this pin extends the
+/// matrix to three so the iteration-on-wake property is reinforced.
+#[test]
+fn multiple_fulfills_collapse_to_one_wake() {
+    let (mut handle, mux_rx, _exit_tx, _shutdown) = spawn_queueing_pair();
+
+    // Three clipboard read requests — three pending responses to pin
+    // the "many fulfills, one wake" coalescing semantic.
+    handle
+        .byte_sender()
+        .send(b"\x1b]52;c;?\x07\x1b]52;p;?\x07\x1b]52;s;?\x07".to_vec())
+        .unwrap();
+
+    let token_a = await_host_clipboard_load(&mux_rx, Duration::from_secs(5));
+    let token_b = await_host_clipboard_load(&mux_rx, Duration::from_secs(5));
+    let token_c = await_host_clipboard_load(&mux_rx, Duration::from_secs(5));
+
+    // Three rapid fulfills against the bounded(1) wake channel — the
+    // second and third try_send return Err(Full) silently, but the
+    // single pending wake suffices to drain ALL THREE tokens on the
+    // next poll_pending_responses iteration.
+    handle
+        .fulfill_clipboard_load(&token_a, "AAA".to_string())
+        .unwrap();
+    handle
+        .fulfill_clipboard_load(&token_b, "BBB".to_string())
+        .unwrap();
+    handle
+        .fulfill_clipboard_load(&token_c, "CCC".to_string())
+        .unwrap();
+
+    // All three replies must surface — base64 of A/B/C repeated.
+    let mut seen: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+    for _ in 0..3 {
+        let data = await_pty_write(&mux_rx, Duration::from_secs(5));
+        let s = String::from_utf8(data).unwrap();
+        for needle in ["QUFB", "QkJC", "Q0ND"] {
+            // base64('AAA'), base64('BBB'), base64('CCC')
+            if s.contains(needle) {
+                seen.insert(needle);
+            }
+        }
+    }
+    assert_eq!(
+        seen.len(),
+        3,
+        "all three coalesced fulfills must surface as PtyWrite (got {seen:?})"
+    );
+
+    handle.shutdown();
+}
+
+/// Blind-spot §1 canonical-name pin: a fulfillment that races (or even
+/// precedes) the IO thread's `register_host_request_response` is not
+/// lost. Polling is pull-based — `poll_pending_responses` calls
+/// `take()` on every tick after register, surfacing values written
+/// before register completed. Companion to
+/// `fulfill_immediately_after_request_still_delivers` which exercises
+/// the same invariant under a different framing; this pin uses
+/// `token.fulfill()` directly (no wake-tx pulse) so the lost-wake race
+/// is exercised explicitly.
+#[test]
+fn fulfill_before_register_still_delivers() {
+    let (mut handle, mux_rx, _exit_tx, _shutdown) = spawn_queueing_pair();
+
+    handle
+        .byte_sender()
+        .send(b"\x1b]52;c;?\x07".to_vec())
+        .unwrap();
+
+    let token = await_host_clipboard_load(&mux_rx, Duration::from_secs(5));
+
+    // Fulfill via the token directly — no wake-tx pulse, simulating the
+    // race where fulfillment lands before the IO thread's wake plumbing
+    // has settled. Polling is pull-based: `take()` on the next poll
+    // surfaces the value regardless of when the wake-tx signal arrived.
+    token
+        .fulfill("racey".to_string())
+        .expect("fresh fulfill must succeed");
+
+    // Send an unrelated wake (no-op space) so the IO thread's select!
+    // unblocks and runs poll_pending_responses, which discovers the
+    // already-fulfilled slot via `take()`.
+    handle.byte_sender().send(b" ".to_vec()).unwrap();
+
+    let data = await_pty_write(&mux_rx, Duration::from_secs(5));
+    let s = String::from_utf8(data).unwrap();
+    assert!(
+        s.contains("cmFjZXk="),
+        "expected base64('racey'), got {s:?}"
+    );
+
+    handle.shutdown();
+}

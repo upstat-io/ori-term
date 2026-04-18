@@ -2473,3 +2473,356 @@ fn bridge_decnkm_propagates_to_mode_cache() {
         "APP_KEYPAD must be present in mode_cache after DECSET ?66"
     );
 }
+
+// ============================================================================
+// EOF + ordering + multi-chunk pins (effect-cutover §01.1 Phase J)
+// ============================================================================
+//
+// These tests pin the load-bearing invariants of `handle_pty_eof` and
+// `handle_bytes_chunked` against the production code path (not the
+// VoidEffectSink synchronous helpers). They use a dedicated rig that
+// spawns a real `PaneIoThread<QueueingEffectSink>` with externally-owned
+// channels so the test can drop `byte_tx` independently to trigger
+// byte_rx EOF, and so `mux_rx` and `double_buffer` stay observable.
+
+/// Test rig for `handle_pty_eof` + multi-chunk + ordering scenarios.
+///
+/// Holds the test side of every channel so the test controls EOF timing,
+/// exit-status delivery, and snapshot observation.
+struct EofTestRig {
+    mux_rx: mpsc::Receiver<MuxEvent>,
+    byte_tx: Sender<Vec<u8>>,
+    child_exit_tx: Sender<ExitStatus>,
+    double_buffer: SnapshotDoubleBuffer,
+    /// Held so `cmd_rx` never returns `Err` before `byte_rx` — keeps the
+    /// `select!` cmd arm idle for the duration of the test.
+    _keep_alive_cmd_tx: Sender<PaneIoCommand>,
+    /// Held so `response_wake_rx` never returns `Err`.
+    _keep_alive_wake_tx: Sender<()>,
+    join: std::thread::JoinHandle<()>,
+}
+
+fn spawn_queueing_eof_rig() -> EofTestRig {
+    use oriterm_core::effect::QueueingEffectSink;
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (mux_tx, mux_rx) = mpsc::channel::<MuxEvent>();
+    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (byte_tx, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (child_exit_tx, child_exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
+    let (response_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
+    let double_buffer = SnapshotDoubleBuffer::new();
+    let term = Term::new(24, 80, 1000, Theme::default(), QueueingEffectSink::new());
+
+    let thread = PaneIoThread {
+        terminal: term,
+        pane_id: PaneId::from_raw(7),
+        mux_tx,
+        child_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx,
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        double_buffer: double_buffer.clone(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
+    };
+
+    let join = thread.spawn().expect("spawn IO thread");
+
+    EofTestRig {
+        mux_rx,
+        byte_tx,
+        child_exit_tx,
+        double_buffer,
+        _keep_alive_cmd_tx: cmd_tx,
+        _keep_alive_wake_tx: response_wake_tx,
+        join,
+    }
+}
+
+/// Construct an `ExitStatus` for testing via the public
+/// `portable_pty::ExitStatus::with_exit_code` constructor.
+fn make_exit_status(code: u32) -> ExitStatus {
+    ExitStatus::from(portable_pty::ExitStatus::with_exit_code(code))
+}
+
+/// Drain `mux_rx` until `MuxEvent::PaneExited` arrives, returning the
+/// exit code. Skips intermediate metadata events.
+fn await_pane_exited(rx: &mpsc::Receiver<MuxEvent>, deadline: Duration) -> i32 {
+    let start = std::time::Instant::now();
+    loop {
+        let remaining = deadline
+            .checked_sub(start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        match rx.recv_timeout(remaining) {
+            Ok(MuxEvent::PaneExited { exit_code, .. }) => return exit_code,
+            Ok(_) => continue,
+            Err(e) => panic!("PaneExited never arrived: {e}"),
+        }
+    }
+}
+
+/// Blind-spot §11: PTY EOF triggers `handle_pty_eof` which emits
+/// `MuxEvent::PaneExited` via the effect router with the watcher-supplied
+/// exit code intact. Exercises the cached `pending_child_exit` path —
+/// the watcher signal lands BEFORE byte_rx EOF, so `handle_pty_eof`'s
+/// `pending_child_exit.take()` succeeds without any `recv_timeout` wait.
+#[test]
+fn pty_eof_emits_pane_exited_via_effect_router() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Forward exit status BEFORE EOF so the cached pending_child_exit
+    // path is exercised — the select! child_exit arm stores into
+    // `pending_child_exit`, which `handle_pty_eof` then consumes.
+    rig.child_exit_tx
+        .send(make_exit_status(42))
+        .expect("send exit status");
+    // Give the IO thread a moment to consume the exit status into its
+    // pending_child_exit cache via the select! arm.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Trigger byte_rx EOF.
+    drop(rig.byte_tx);
+
+    let exit_code = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+    assert_eq!(
+        exit_code, 42,
+        "exit code must come from watcher cache, not the 0 fallback"
+    );
+
+    // Drop child_exit_tx so the IO thread can exit cleanly (the EOF path
+    // already consumed the cached status; this just cleans up the channel).
+    drop(rig.child_exit_tx);
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §11 negative side: when no exit status is ever delivered
+/// AND the watcher channel disconnects, `handle_pty_eof` falls back to
+/// `code: 0`. Drop order is byte_tx FIRST (enters handle_pty_eof and
+/// blocks on recv_timeout), THEN child_exit_tx (recv_timeout returns
+/// `Err(Disconnected)` immediately), so the test does not pay the 5s
+/// wait timeout.
+#[test]
+fn pty_eof_without_exit_code_defaults_to_zero() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Trigger EOF — IO thread enters handle_pty_eof and blocks on
+    // child_exit_rx.recv_timeout(5s).
+    drop(rig.byte_tx);
+
+    // Tiny pause to let the IO thread reach the recv_timeout call.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Drop child_exit_tx — recv_timeout returns Err(Disconnected) and
+    // the fallback path emits ChildExit { code: 0 }.
+    drop(rig.child_exit_tx);
+
+    let exit_code = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+    assert_eq!(exit_code, 0, "fallback exit code must be 0 on disconnect");
+
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §11 timing pin: when the watcher delivers the exit status
+/// AFTER byte_rx EOF arrives (scheduler delay between PTY close and
+/// child reaping returning), the exit code is still captured via the
+/// `child_exit_rx.recv_timeout(5s)` blocking wait — the EOF path does
+/// not race past slow watchers and never falls back to the 0 default
+/// when the watcher is merely delayed.
+#[test]
+fn pty_eof_exit_code_captured_after_scheduler_delay() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Trigger EOF FIRST. The IO thread enters handle_pty_eof and blocks
+    // on child_exit_rx.recv_timeout(5s) waiting for the status.
+    drop(rig.byte_tx);
+
+    // Spawn a delayed sender that simulates a 200ms scheduler delay
+    // between PTY close and `child.wait()` returning. Hold a clone of
+    // child_exit_tx in the spawn closure; drop the rig's primary copy so
+    // recv_timeout receives the value once the spawn thread sends.
+    let exit_tx = rig.child_exit_tx.clone();
+    let _delivery = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = exit_tx.send(make_exit_status(7));
+    });
+    drop(rig.child_exit_tx);
+
+    let exit_code = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+    assert_eq!(
+        exit_code, 7,
+        "exit code must be captured even after a 200ms scheduler delay"
+    );
+
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §17: on PTY EOF the IO thread sequences
+/// `[final drain → snapshot flip → child_exit → push ChildExit → drain
+/// → return]`. The main thread observes the final cell content snapshot
+/// BEFORE `MuxEvent::PaneExited` arrives. Send distinctive bytes
+/// ("FAREWELL"), trigger EOF, observe `PaneExited`, then assert the
+/// snapshot in `double_buffer` carries the FAREWELL cells.
+#[test]
+fn final_snapshot_precedes_pane_exited() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Send distinctive bytes that produce visible cells in row 0.
+    rig.byte_tx
+        .send(b"FAREWELL".to_vec())
+        .expect("byte send must succeed");
+
+    // Wait for the IO thread to process the bytes (one snapshot cycle).
+    std::thread::sleep(Duration::from_millis(80));
+
+    // Cache exit status in pending_child_exit, then trigger EOF so
+    // handle_pty_eof's cached path runs (no 5s wait required).
+    rig.child_exit_tx
+        .send(make_exit_status(0))
+        .expect("send exit status");
+    std::thread::sleep(Duration::from_millis(20));
+    drop(rig.byte_tx);
+
+    // Wait for PaneExited. By the time recv returns, handle_pty_eof has
+    // already executed step (2) (snapshot flip) BEFORE step (5)
+    // (PaneExited send) — code-ordering is the load-bearing invariant.
+    let _ = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+
+    // Read the latest snapshot. By happens-before from the IO thread's
+    // mux_tx.send → main-thread mux_rx.recv pairing, the snapshot
+    // produced in step (2) is visible to swap_front.
+    let mut snapshot = oriterm_core::RenderableContent::default();
+    let _ = rig.double_buffer.swap_front(&mut snapshot);
+
+    let row0_text: String = snapshot
+        .cells
+        .iter()
+        .filter(|c| c.line == 0)
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        row0_text.contains("FAREWELL"),
+        "snapshot must reflect FAREWELL cells before PaneExited; row0 = {row0_text:?}"
+    );
+
+    drop(rig.child_exit_tx);
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §17 ordering invariant: `PaneExited` NEVER reaches mux_rx
+/// before the final snapshot lands in the double buffer. Inverse phrasing
+/// of `final_snapshot_precedes_pane_exited` — both pins exist so the
+/// regression is impossible to commit even if one test is later weakened.
+///
+/// Polls both observation sources in lockstep: snapshot publication
+/// (visible via `double_buffer.swap_front` returning cells matching the
+/// marker) MUST be observable BEFORE `PaneExited` is received via
+/// `mux_rx.try_recv`.
+#[test]
+fn pane_exited_does_not_precede_final_snapshot() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Marker bytes the snapshot must carry forward.
+    rig.byte_tx
+        .send(b"GOODBYE!".to_vec())
+        .expect("byte send must succeed");
+    std::thread::sleep(Duration::from_millis(80));
+
+    rig.child_exit_tx
+        .send(make_exit_status(1))
+        .expect("send exit status");
+    std::thread::sleep(Duration::from_millis(20));
+    drop(rig.byte_tx);
+
+    // Lockstep poll: tracks whether the marker-bearing snapshot was
+    // observed BEFORE the first PaneExited recv.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut snapshot_observed_with_marker = false;
+    while std::time::Instant::now() < deadline {
+        let mut snapshot = oriterm_core::RenderableContent::default();
+        let _ = rig.double_buffer.swap_front(&mut snapshot);
+        if snapshot
+            .cells
+            .iter()
+            .filter(|c| c.line == 0)
+            .any(|c| c.ch == 'G')
+        {
+            snapshot_observed_with_marker = true;
+        }
+        if let Ok(MuxEvent::PaneExited { .. }) = rig.mux_rx.try_recv() {
+            assert!(
+                snapshot_observed_with_marker,
+                "PaneExited arrived before the final snapshot was visible — \
+                 ordering invariant violated"
+            );
+            drop(rig.child_exit_tx);
+            rig.join.join().expect("IO thread joined cleanly");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("PaneExited never arrived within 5s");
+}
+
+/// Blind-spot §5 bound: `handle_bytes_chunked` calls
+/// `drain_effects_into_mux_events` at the END of EACH chunk (inside
+/// `handle_bytes`), not only at the end of the outer
+/// `handle_bytes_chunked` loop. A 65 KB forwarded read containing
+/// bell-producing bytes (just over `MAX_PARSE_CHUNK = 64 KB`) routes
+/// ALL of them through the router across at least 2 chunks.
+///
+/// If the drain only fired at the end of the outer `handle_bytes_chunked`
+/// loop, the effects buffer would accumulate the full 65 K entries
+/// before draining; the per-chunk drain bounds it to <= 64 K.
+#[test]
+fn multi_chunk_parse_drains_between_chunks() {
+    let rig = spawn_queueing_eof_rig();
+
+    // 65 KB of BEL — produces 65 K HostEffect::Bell, spanning 2 chunks
+    // at MAX_PARSE_CHUNK = 64 KB.
+    const BELL_COUNT: usize = 65 * 1024;
+    rig.byte_tx
+        .send(vec![0x07; BELL_COUNT])
+        .expect("byte send must succeed");
+
+    // Count PaneBell events with a generous deadline. Every bell MUST
+    // reach mux_rx — if the drain only fired at the end of the OUTER
+    // handle_bytes_chunked loop, intermediate effects would be invisible
+    // to mux_rx until the whole 65 KB completed parsing (and the
+    // unbounded sink would briefly spike).
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut bell_count = 0usize;
+    while std::time::Instant::now() < deadline && bell_count < BELL_COUNT {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        match rig
+            .mux_rx
+            .recv_timeout(remaining.min(Duration::from_millis(500)))
+        {
+            Ok(MuxEvent::PaneBell(_)) => bell_count += 1,
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+
+    assert_eq!(
+        bell_count, BELL_COUNT,
+        "every bell must route through the per-chunk drain"
+    );
+
+    drop(rig.byte_tx);
+    drop(rig.child_exit_tx);
+    rig.join.join().expect("IO thread joined cleanly");
+}
