@@ -78,16 +78,32 @@ impl std::fmt::Display for AlreadyFulfilled {
 
 impl std::error::Error for AlreadyFulfilled {}
 
+/// Three-state slot backing [`ResponseToken`].
+///
+/// The state distinguishes "never fulfilled" from "fulfilled but already
+/// drained" so [`fulfill`](ResponseToken::fulfill) can reject duplicate
+/// fulfillment AFTER the IO-thread side has consumed the value. Without
+/// the explicit `Consumed` state the slot would revert to "empty" after
+/// `take()` and a second `fulfill` would silently succeed —
+/// indistinguishable from a legitimate first fulfill. Surfaced by
+/// `[TPR-01-1-codex-r1][high]`.
+#[derive(Debug)]
+enum SlotState<T> {
+    /// No fulfill has been issued yet.
+    Pending,
+    /// Fulfilled with a value, awaiting the terminal-side `take()`.
+    Fulfilled(T),
+    /// The terminal-side `take()` already drained the value. Further
+    /// `fulfill()` calls return [`AlreadyFulfilled`].
+    Consumed,
+}
+
 /// Token the consumer holds to deliver a reply to a `HostRequest`.
 ///
 /// The terminal handler creates a `ResponseToken` when emitting the request,
 /// and the consumer fulfills it by calling `token.fulfill(value)`. The
 /// terminal then observes the fulfillment via `take()` and formats the
 /// reply for PTY emission.
-///
-/// Implementation: wraps an `Arc<Mutex<Option<T>>>` — the consumer puts
-/// the response into the slot; the terminal drains the slot on the next
-/// event loop tick. NOT a closure — the value is plain data.
 ///
 /// # Cloning discipline
 ///
@@ -97,61 +113,156 @@ impl std::error::Error for AlreadyFulfilled {}
 /// detection via [`consumer_strong_count`](Self::consumer_strong_count)
 /// relies on the strong count dropping to `1` when the main-thread handle
 /// is dropped.
+///
+/// # Single-assignment for the token's lifetime
+///
+/// Once `fulfill()` has succeeded, the slot transitions through
+/// `Pending → Fulfilled(T) → Consumed` (the latter via `take()`). The
+/// `Consumed` state is terminal — a second `fulfill()` after `take()`
+/// returns [`AlreadyFulfilled`], not silent success. This protects
+/// against routing bugs where the main thread's handle leaks into a
+/// second fulfill site after the IO thread has already drained the
+/// reply.
 #[derive(Debug, Clone)]
 pub struct ResponseToken<T> {
-    slot: Arc<Mutex<Option<T>>>,
+    slot: Arc<Mutex<SlotState<T>>>,
 }
 
 impl<T> ResponseToken<T> {
     /// Create a new unfulfilled token.
     pub fn new() -> Self {
         Self {
-            slot: Arc::new(Mutex::new(None)),
+            slot: Arc::new(Mutex::new(SlotState::Pending)),
         }
     }
 
     /// Fulfill the request with the given value.
     ///
-    /// Returns `Err(AlreadyFulfilled)` if the slot already holds a value.
-    /// The first fulfill wins; duplicates are rejected, not silently
-    /// overwritten, so a routing-bug double-fulfill surfaces loudly at the
-    /// caller rather than becoming a last-write-wins race.
+    /// Returns `Err(AlreadyFulfilled)` if the slot is `Fulfilled` or
+    /// `Consumed`. The first fulfill wins; duplicates AND post-take
+    /// fulfills are rejected, so a routing-bug double-fulfill surfaces
+    /// loudly at the caller rather than becoming a last-write-wins race
+    /// or a silent overwrite of a previously-drained value.
     pub fn fulfill(&self, value: T) -> Result<(), AlreadyFulfilled> {
         let mut slot = self.slot.lock().expect("ResponseToken mutex poisoned");
-        if slot.is_some() {
-            return Err(AlreadyFulfilled);
+        match *slot {
+            SlotState::Pending => {
+                *slot = SlotState::Fulfilled(value);
+                Ok(())
+            }
+            SlotState::Fulfilled(_) | SlotState::Consumed => Err(AlreadyFulfilled),
         }
-        *slot = Some(value);
-        Ok(())
     }
 
-    /// Take the fulfilled value, if any.
+    /// Take the fulfilled value, if any. Called by the terminal side to
+    /// drain the response.
     ///
-    /// Called by the terminal side to drain the response.
+    /// Transitions `Fulfilled(T) → Consumed`. `Pending` and `Consumed`
+    /// states return `None` and leave the slot state unchanged — taking
+    /// from `Pending` MUST NOT consume the slot, otherwise a legitimate
+    /// future `fulfill()` would be rejected.
     pub fn take(&self) -> Option<T> {
-        self.slot
-            .lock()
-            .expect("ResponseToken mutex poisoned")
-            .take()
+        let mut slot = self.slot.lock().expect("ResponseToken mutex poisoned");
+        match &*slot {
+            SlotState::Fulfilled(_) => {
+                if let SlotState::Fulfilled(value) =
+                    std::mem::replace(&mut *slot, SlotState::Consumed)
+                {
+                    Some(value)
+                } else {
+                    unreachable!("matched Fulfilled above");
+                }
+            }
+            SlotState::Pending | SlotState::Consumed => None,
+        }
     }
 
     /// Returns `true` if the token has been fulfilled but not yet taken.
     pub fn is_fulfilled(&self) -> bool {
-        self.slot
-            .lock()
-            .expect("ResponseToken mutex poisoned")
-            .is_some()
+        matches!(
+            *self.slot.lock().expect("ResponseToken mutex poisoned"),
+            SlotState::Fulfilled(_)
+        )
     }
 
     /// Current strong count of the internal slot `Arc`.
     ///
-    /// Used by `PendingResponse::poll` to detect consumer-dropped cancellation:
+    /// Used by [`poll`](Self::poll) to detect consumer-dropped cancellation:
     /// when the main-thread handle is dropped, `consumer_strong_count` drops
-    /// from `2` (IO thread + main thread) to `1` (IO thread only). The IO
-    /// thread then removes the pending entry without emitting a PTY reply.
+    /// from `2` (IO thread + main thread) to `1` (IO thread only).
+    ///
+    /// **Prefer [`poll`](Self::poll) over a direct call** — `poll` performs
+    /// the strong-count check while holding the slot lock, eliminating a
+    /// race where a fulfill+drop between `take()` and a separate
+    /// `consumer_strong_count()` check would mark a fulfilled value as
+    /// cancelled. Direct callers MUST acknowledge that the count is a
+    /// snapshot — a racing fulfill/drop after the read can change it.
     pub fn consumer_strong_count(&self) -> usize {
         Arc::strong_count(&self.slot)
     }
+
+    /// Atomically poll the token, returning [`TokenPoll::Ready`] /
+    /// [`TokenPoll::Pending`] / [`TokenPoll::Cancelled`].
+    ///
+    /// All three decisions happen under a single slot-lock acquisition,
+    /// closing the race that an interleaved fulfill+drop between a
+    /// `take()` and a separate `consumer_strong_count()` check would
+    /// open: a racing fulfill MUST take the same lock, so the strong
+    /// count we read while holding it is decisive — if no consumer
+    /// holds the `Arc`, no future fulfill can land on this slot.
+    ///
+    /// Surfaced by `[TPR-01-1-codex-r2][high]` (round 2): the previous
+    /// split `if let Some(v) = reply.take() { Ready } else if reply.consumer_strong_count() <= 1 { Cancelled } else { Pending }`
+    /// pattern in `response_poll/mod.rs` could see `take() == None`
+    /// (slot still `Pending`), then race a `fulfill()` + consumer drop,
+    /// then read `strong_count == 1` and return `Cancelled` — losing
+    /// the fulfilled value the next iteration would otherwise drain.
+    pub fn poll(&self) -> TokenPoll<T> {
+        let mut slot = self.slot.lock().expect("ResponseToken mutex poisoned");
+        match &*slot {
+            SlotState::Fulfilled(_) => {
+                if let SlotState::Fulfilled(value) =
+                    std::mem::replace(&mut *slot, SlotState::Consumed)
+                {
+                    TokenPoll::Ready(value)
+                } else {
+                    unreachable!("matched Fulfilled above")
+                }
+            }
+            SlotState::Consumed => TokenPoll::Cancelled,
+            SlotState::Pending => {
+                // Strong-count check WHILE HOLDING the slot lock — any
+                // racing fulfill must wait for us to release the lock,
+                // so the count we observe is decisive.
+                if Arc::strong_count(&self.slot) <= 1 {
+                    TokenPoll::Cancelled
+                } else {
+                    TokenPoll::Pending
+                }
+            }
+        }
+    }
+}
+
+/// Result of an atomic [`ResponseToken::poll`] decision.
+///
+/// Decoupled from the mux-side `PollResult<Effect>` so the token core
+/// stays agnostic of the consumer's reply-format step. The consumer
+/// matches on this and produces the formatted `Effect` only on
+/// [`TokenPoll::Ready`].
+#[derive(Debug)]
+pub enum TokenPoll<T> {
+    /// The token was fulfilled and is now `Consumed` — the value is
+    /// returned for downstream formatting.
+    Ready(T),
+    /// No fulfill yet, but the consumer-side handle is still alive.
+    /// Caller should keep the entry and re-poll on the next cycle.
+    Pending,
+    /// Either the consumer dropped its handle without fulfilling
+    /// (`Pending` with `strong_count <= 1`), or the slot was already
+    /// drained on a prior poll (`Consumed`). Caller should remove the
+    /// entry without emitting a reply.
+    Cancelled,
 }
 
 impl<T> Default for ResponseToken<T> {

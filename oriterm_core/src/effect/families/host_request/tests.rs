@@ -42,13 +42,49 @@ fn response_token_rejects_double_fulfillment() {
 fn response_token_fulfill_succeeds_once() {
     let token: ResponseToken<u32> = ResponseToken::new();
     assert_eq!(token.fulfill(42), Ok(()));
-    // Duplicate rejected.
+    // Duplicate rejected (slot is `Fulfilled`).
     assert_eq!(token.fulfill(100), Err(AlreadyFulfilled));
-    // take() retrieves the first-write value; afterwards fulfill is allowed
-    // again because the slot is empty.
+    // take() retrieves the first-write value and transitions the slot to
+    // `Consumed` — single-assignment per the token's lifetime, NOT per
+    // intervening take.
     assert_eq!(token.take(), Some(42));
-    assert_eq!(token.fulfill(7), Ok(()));
-    assert_eq!(token.take(), Some(7));
+    assert!(!token.is_fulfilled(), "Consumed is not Fulfilled");
+}
+
+/// Regression: TPR-01-1-codex-r1 — post-take fulfill must reject so a
+/// routing bug that double-fulfills after the IO thread already drained
+/// the reply surfaces loudly instead of silently overwriting the
+/// already-consumed slot.
+#[test]
+fn response_token_rejects_fulfill_after_take() {
+    let token: ResponseToken<u32> = ResponseToken::new();
+    assert_eq!(token.fulfill(42), Ok(()));
+    assert_eq!(token.take(), Some(42));
+    // The slot is now `Consumed`. A second fulfill MUST return
+    // AlreadyFulfilled — the token's single-assignment guarantee
+    // covers its entire lifetime, not just "until the first take".
+    assert_eq!(
+        token.fulfill(7),
+        Err(AlreadyFulfilled),
+        "fulfill after take must reject — single-assignment for the token's lifetime"
+    );
+    // The slot stays `Consumed` — no value is buffered for a future take.
+    assert_eq!(token.take(), None);
+}
+
+/// Companion: take() on an unfulfilled token does NOT consume the slot.
+/// A legitimate later fulfill() must still succeed (the IO thread polls
+/// every tick on a not-yet-fulfilled token; consuming the slot on the
+/// poll's empty take would prematurely lock out the consumer).
+#[test]
+fn response_token_take_on_pending_does_not_consume_slot() {
+    let token: ResponseToken<u32> = ResponseToken::new();
+    // Empty take() — slot was Pending, returns None.
+    assert_eq!(token.take(), None);
+    // The legitimate later fulfill MUST still succeed — Pending state
+    // survived the empty take.
+    assert_eq!(token.fulfill(11), Ok(()));
+    assert_eq!(token.take(), Some(11));
 }
 
 #[test]

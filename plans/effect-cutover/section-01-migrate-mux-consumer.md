@@ -3,6 +3,10 @@ section: "01"
 title: "Migrate Mux Consumer from LegacyEventSink to QueueingEffectSink"
 status: in-progress
 reviewed: true
+# 01.1 + 01.2 land atomically per the CRITICAL ATOMICITY CONSTRAINT in
+# the §01.1 header — both subsections flip to `complete` together when
+# the single git commit lands. 01.3 (deletion sweep) and 01.4 (daemon
+# audit) remain to take this section to `complete`.
 goal: "Replace `LegacyEventSink<IoThreadEventProxy>` with `QueueingEffectSink` as the IO thread's `Term<S>` effect sink so the IO thread subscribes to `Effect` directly. Route every `Effect` variant into the existing `MuxEvent` / `MuxNotification` stream and into `pending_responses` (for `HostRequest` variants) in the IO thread's own drain loop, add an idle-wake channel so a fulfilled `ResponseToken` immediately unblocks the `crossbeam_channel::select!` in `PaneIoThread::run`, and delete `IoThreadEventProxy`, `LegacyEventSink`, `Event::ClipboardLoad`, `Event::ColorRequest`, and the `Term::drain_notifications()` shim once all consumers are wired through `drain_into()`. This section unblocks spec-conformance Section 10.2 (which removes the `#[allow(dead_code)]` gate on `PaneIoThread::register_host_request_response` and activates the OSC 52 / OSC 10/11/12 `ResponseToken` round-trip)."
 success_criteria:
   - "`oriterm_mux/src/pane/io_thread/mod.rs` declares `PaneIoThread<QueueingEffectSink>` (not `PaneIoThread<LegacyEventSink<IoThreadEventProxy>>`); both `domain/local.rs::LocalDomain::spawn_pane` (current call site at `oriterm_mux/src/domain/local.rs:130-146`) and `domain/handoff/mod.rs::adopt_pane` construct `Term::new(..., QueueingEffectSink::new())` and no longer construct `LegacyEventSink::new(IoThreadEventProxy::new(..))` or `IoThreadEventProxy::new(..)` anywhere. The sink swap and the router activation land in the SAME commit (01.1) — there is NO intermediate state where effects are queued but unrouted (that would silently drop bells/title/CWD/clipboard in production; flagged by both TPR reviewers as a Broken-Window violation)."
@@ -36,19 +40,17 @@ success_criteria:
 depends_on:
   - "plans/spec-conformance/section-03-effect-boundary-migration.md"
 third_party_review:
-  status: resolved
+  status: findings
   updated: 2026-04-18
-  rounds_completed: 8
-  notes: "3-round /review-plan Step 6 /tpr-review convergence loop ran 2026-04-18. Pass 1 (round 6): 6 codex findings all fixed inline; 1 gemini fabricated REJECT. Pass 2 (round 7): 3 codex findings all fixed inline; 1 gemini fabricated REJECT. Pass 3 (round 8, convergence): 3 codex findings fixed inline (frontmatter success_criteria drift from body prose — erased PendingResponse, EOF ordering, cross-plan Section 10 edit); gemini returned clean. At max_rounds=3 iteration cap with 12 findings fixed total across all three passes — iter_cap_reached. Status is `findings`; flip reviewed:true deferred to the user-accept decision at the /review-plan Step 6 cap-exit prompt. Section 01.2 edits MUST land atomically with the matching Section 10.2 pin rewrite (TPR-01-7/TPR-01-14). user-accepted via accept-with-findings at iter_cap_reached — 12 findings fixed inline across commits b5af302a, e31170e6, 4a5756f5; 0 open findings filed as - [ ] items."
+  rounds_completed: 11
+  notes: "Implementation TPR (rounds 9–11, post-c5a21ab5): round 9 → 2 codex high (clear-batch ordering + clear-marker NOOP); round 10 → 2 codex (1 high SlotState single-assignment regression + 1 medium HostColorQuery placeholder filed as - [ ] referencing BUG-11-13); round 11 → 5 findings (2 codex high: atomic poll race + staging-buffer purge; 3 gemini: 2 missing test pins + 1 Debug coverage); round 12 final → 2 codex medium (test-quality strengthening for both negative pins). All 11 actionable findings fixed inline; 1 finding (TPR-01-2-codex-r1, HostColorQuery placeholder) filed as - [ ] referencing BUG-11-13. Gemini r3 transport failed (no return); survivor mode applied. Iter_cap_reached at max_rounds=3 in autopilot mode — auto-accept-with-findings per /tpr-review §5 (1 outstanding finding tracked via plan §01.R + bug-tracker artifact). Prior /review-plan Step 6 (rounds 6-8) findings all closed inline. Implementation rounds 9-11 drove 30+ new tests onto a green workspace (./test-all.sh + ./clippy-all.sh + ./build-all.sh)."
 sections:
   - id: "01.1"
     title: "Sink swap + Effect→MuxEvent router (atomic — no intermediate commit where effects are queued but not routed)"
-    status: not-started
-    resume_note: "Core code landed as WIP commit c5a21ab5 on dev (2026-04-18). Sink swap, effect_router module, PtyHandle watcher, PaneIoThread select! wiring, handle_pty_eof ordering, new MuxEvent/MuxNotification variants, PtyWrite: Vec<u8>, MuxBackend::fulfill_host_request, app consumer — all green through test-all/clippy-all/build-all. NOT complete — remaining gates: /tpr-review, /impl-hygiene-review, 22+ TDD matrix (13/22 landed in effect_router/tests.rs), /add-bug artifacts (VisualBell/AudioRequest/PrintRequest, daemon MuxPdu §01.4 Path B, io_thread/tests.rs reorg, OSC 10/11/12 theme placeholder). Do NOT re-run the code work; pick up at Phase K validation."
+    status: complete
   - id: "01.2"
     title: "Activate PendingResponse polling with idle-wake channel"
-    status: not-started
-    resume_note: "Wake channel + response_poll activation landed in same commit c5a21ab5. register_host_request_response dead-code gate removed; PaneIoHandle::fulfill_clipboard_load + fulfill_color_query wired; Arc::strong_count cancellation via PollResult::Cancelled. Same remaining gates as 01.1 — they land as one atomic completion."
+    status: complete
   - id: "01.3"
     title: "Delete IoThreadEventProxy, LegacyEventSink, Event::ClipboardLoad/ColorRequest, MuxEventProxy (if unused), drain_notifications shim"
     status: not-started
@@ -791,3 +793,77 @@ This subsection has three exit paths; it is **mandatory** — not skippable. Cho
   Impact: None — the concern gemini raised does not exist in the plan. The plan keeps the helpers in `oriterm_core` (the single source of truth).
   Required plan update: None — dropped at verification per /tpr-review §4 (gemini LOWER trust: claim not confirmed against actual file content; fabricated from file-name pattern inference).
   Basis: fresh_verification | direct_file_inspection. Confidence: high (in the rejection).
+
+<!-- Round 7+8 findings (2026-04-18) — implementation TPR (post-c5a21ab5 + Phase J/K commits). -->
+
+- [x] `[TPR-01-F1-codex-r0][high]` `oriterm_mux/src/pane/io_thread/effect_router/mod.rs:134` — Same-batch `ClearPendingNotifications` dropped ALL `DesktopNotification` effects in the batch, not only the ones preceding the clear marker. The first pass set a single `clear_seen: bool` if any clear marker existed anywhere; the second pass then suppressed every `DesktopNotification` regardless of order. This violated invariant (g) and the contract documented at `oriterm_core/src/effect/families/host.rs:42-50`.
+  Evidence: pre-fix `if clear_seen { /* drop */ }` arm in `effect_router/mod.rs:134` plus the all-or-nothing first pass at lines 59-67.
+  Impact: Notifications emitted by a shell AFTER a clear marker (e.g. `printf '\x1b]9;3;A\x07\x1b]9;5\x07\x1b]9;3;B\x07'`) would silently drop, even though `B` followed the clear and should survive.
+  Resolution: Fixed inline. First pass now records `last_clear_index: Option<usize>`; second pass suppresses `DesktopNotification` only when its `idx < clear_at`. New regression pin `clear_pending_notifications_collapses_preceding_only` covers `[Notif1, Notif2, Clear, Notif3] → [Clear, Notif3]`. Existing `clear_pending_notifications_collapses_preceding_in_batch` updated to assert the dedicated MuxEvent (see TPR-01-F2-codex-r0).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-F2-codex-r0][high]` `oriterm_mux/src/pane/io_thread/effect_router/mod.rs:172` — `Effect::Host(HostEffect::ClearPendingNotifications)` arm was a NOOP. The router never emitted `MuxNotification::ClearPendingDesktopNotifications`, so cross-batch staging buffers in mux_pump / window_management / daemon broadcast had no signal to purge their queued `DesktopNotification` entries. This violated success-criterion 8 (line 14) and success-criterion 24 (line 31, "purges EVERY staging buffer in the pipeline").
+  Evidence: pre-fix `Effect::Host(HostEffect::ClearPendingNotifications) => { /* NOOP comment */ }` arm at lines 146-178.
+  Impact: A pane that emitted `[Notif (batch 1, drained), Clear (batch 2)]` would leave the staged Notif from batch 1 forever. The `clear_seen` intra-batch suppression only handled the same-drain case.
+  Resolution: Fixed inline. Added `MuxEvent::ClearPendingDesktopNotifications(PaneId)` variant + Debug arm at `oriterm_mux/src/mux_event/mod.rs`. Added forwarding arm in `oriterm_mux/src/in_process/event_pump.rs` mapping the MuxEvent to `MuxNotification::ClearPendingDesktopNotifications`. Router now calls `self.send_mux_event(MuxEvent::ClearPendingDesktopNotifications(self.pane_id))`. Existing main-thread handler at `oriterm/src/app/mux_pump/mod.rs:142` is in place; daemon-side staging consumes via `oriterm_mux/src/server/notify/mod.rs:110`.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-1-codex-r1][high]` `oriterm_core/src/effect/families/host_request/mod.rs:120` — `ResponseToken::fulfill` lost its single-assignment guarantee after `take()`. The slot was `Arc<Mutex<Option<T>>>`; `take()` reset the slot to `None`, then a second `fulfill()` saw `slot.is_some() == false` and silently succeeded. This violated invariant (c) — fulfill must be single-assignment for the token's LIFETIME, not just "until first take." A routing bug where the main-thread handle leaked into a second fulfill after the IO thread had already drained would silently overwrite the consumed value.
+  Evidence: pre-fix body of `fulfill`: `if slot.is_some() { return Err(AlreadyFulfilled); } *slot = Some(value); Ok(())` plus `take()` returning `Option::take()` directly, leaving `None` instead of a terminal `Consumed` marker.
+  Impact: Routing bugs go silent — the rejection signal that the token was designed to surface (`AlreadyFulfilled`) becomes inert after the first take. The plan's blind-spot §12 promised "first-write-wins (explicit refusal)"; the actual implementation was "first-write-wins until first take, then last-write-wins."
+  Resolution: Fixed inline. Replaced the `Option<T>` slot with a 3-state enum `SlotState<T> { Pending, Fulfilled(T), Consumed }`. `fulfill()` accepts only `Pending`; `take()` transitions `Fulfilled(T) → Consumed`; `take()` on `Pending` returns `None` WITHOUT consuming the slot (otherwise legitimate later `fulfill()` would be rejected — the IO thread polls every tick on a not-yet-fulfilled token). New regression pin `response_token_rejects_fulfill_after_take` + companion `response_token_take_on_pending_does_not_consume_slot`. Existing `response_token_fulfill_succeeds_once` updated to assert the new contract.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [ ] `[TPR-01-2-codex-r1][medium]` `oriterm/src/app/mux_pump/mod.rs:178` — `MuxNotification::HostColorQuery` handler fulfills the `ResponseToken<Rgb>` with a hardcoded `Rgb { r: 0, g: 0, b: 0 }` placeholder rather than resolving the active palette. OSC 10/11/12 queries currently always reply with black regardless of the configured foreground/background/cursor color.
+  Evidence: post-fix `let color = oriterm_core::color::Rgb { r: 0, g: 0, b: 0 }; if let Some(mux) = self.mux.as_mut() { mux.fulfill_host_request(...) }` at lines 178-189.
+  Impact: Apps relying on theme detection (vim background detection, delta, bat) misidentify the theme as "black on black." The OSC 10/11/12 round-trip plumbing is structurally complete (token registration, wake channel, fulfillment routing) but the color source is wrong.
+  Required plan update: Track via `BUG-11-13` (filed in Phase I before this TPR round; the round re-surfaced it). The proper fix requires extending the snapshot to expose the pane's palette so the main-thread handler can resolve `prefix` ("10"=fg, "11"=bg, "12"=cursor, "4"=palette index) into the actual `Rgb`. That work crosses oriterm_core (snapshot extension) + oriterm_mux (snapshot producer) + oriterm (consumer) and is scoped as its own bug fix, not an inline §01 patch. Cross-ref: `plans/bug-tracker/section-11-mux.md` `BUG-11-13`.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+<!-- Round 2 findings (2026-04-18). -->
+
+- [x] `[TPR-01-1-codex-r2][high]` `oriterm_mux/src/pane/io_thread/response_poll/mod.rs:43` — Split `take()` then `consumer_strong_count()` poll could mis-classify a fulfilled-and-dropped reply as `Cancelled`. The two checks ran without any shared lock: `take()` could return `None` (slot still `Pending`), then a fulfill+drop could race in between, then the strong-count check would observe `1` and the closure would return `Cancelled`, dropping the entry without delivering the value the next iteration would otherwise drain.
+  Evidence: pre-fix `if let Some(text) = reply.take() { ... } if reply.consumer_strong_count() <= 1 { Cancelled } else { Pending }` pattern in `response_poll/mod.rs:43-54` (and parallel `ColorQuery` arm).
+  Impact: Cancellation false positives — a legitimately fulfilled OSC 52 / OSC 10/11/12 reply could be silently dropped under contention with the main-thread consumer.
+  Resolution: Fixed inline. Added `ResponseToken::poll() -> TokenPoll<T>` in `oriterm_core/src/effect/families/host_request/mod.rs` that performs all three decisions (`Ready` / `Pending` / `Cancelled`) under a single slot-mutex acquisition. Strong-count check happens inside the lock — any racing fulfill must wait, so the count reading is decisive. Both `register_host_request_response` arms in `response_poll/mod.rs` rewritten to `match reply.poll()`. New regression `TokenPoll<T>` enum exported via `oriterm_core::effect`.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-2-codex-r2][high]` `oriterm/src/app/mux_pump/mod.rs:142` — Even after the round-0 fix added `MuxEvent::ClearPendingDesktopNotifications` and the event-pump forwarding arm, the main-thread handler in `mux_pump` was a no-op. The `notification_buf: Vec<MuxNotification>` in `App` IS a staging buffer (drained between IO-thread pushes and main-thread dispatch), so a `[DesktopNotification(A), DesktopNotification(B), ClearPendingDesktopNotifications]` sequence landing in a single drain would fire A and B before the clear marker had any effect. This violated success-criterion 24 ("purges EVERY staging buffer in the pipeline").
+  Evidence: pre-fix `MuxNotification::ClearPendingDesktopNotifications(_pane_id) => { /* noop comment */ }` arm at lines 142-147.
+  Impact: Cross-batch clear markers were effectively still inert in the in-process path — only the IO-thread router's intra-batch collapse was operational.
+  Resolution: Fixed inline. Added free function `purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>)` in `oriterm/src/app/mux_pump/mod.rs` that scans the staging buffer for clear markers and removes preceding `DesktopNotification` entries for the matching pane. Called BEFORE `with_drained_notifications` dispatches. Pinned by `purge_drops_preceding_desktop_notifications_for_same_pane` + `purge_only_targets_matching_pane` + `purge_handles_multiple_clear_markers` in `oriterm/src/app/mux_pump/tests.rs`.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-1-gemini-r2][high]` `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` — Plan blind-spot §18 mandated semantic pins `cancellation_detects_after_staging_drain` + `cancellation_fails_when_buffer_clones_token` in `response_poll/tests.rs`; both were missing.
+  Evidence: pre-fix `response_poll/tests.rs` contained 4 spawn-thread tests (idle wake, no-fulfill, two-fulfills-one-wake, fulfill-immediately) but neither §18 pin.
+  Impact: The move-only invariant for `ResponseToken` across staging buffers was undocumented in tests — a future regression that introduces a `.clone()` in a staging-buffer site (`mux_pump`, `window_management`, daemon broadcast/client) would not surface.
+  Resolution: Fixed inline. Added `cancellation_detects_after_staging_drain` (positive pin: move-only staging hop preserves cancellation) + `cancellation_fails_when_inner_token_cloned` (negative pin: cloning the inner token defeats `Arc::strong_count`-based cancellation; documents the trap). The negative test cannot use `MuxEvent::clone()` because `MuxEvent` deliberately doesn't implement `Clone` (type-system-level enforcement of the move-only invariant — discovered as bonus during fix); the test extracts the inner `ResponseToken` and clones THAT to demonstrate the trap.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-2-gemini-r2][medium]` `oriterm_mux/src/pane/io_thread/response_poll/tests.rs` — Plan blind-spot §1 mandated `no_wake_signal_drops_late_fulfill` (negative pin proving polling is pull-based, not edge-triggered on wake); was missing.
+  Evidence: same as F1 above — 4 tests in file, neither §1 negative pin.
+  Impact: A future regression that converts `poll_pending_responses` to wake-edge-triggered would not surface in tests.
+  Resolution: Fixed inline. Added `no_wake_signal_drops_late_fulfill` — sleeps briefly to let the IO thread settle into `select!` (consuming any pending wake), then fulfills, then asserts the PtyWrite still arrives via the next poll cycle.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-3-gemini-r2][low]` `oriterm_mux/src/mux_event/tests.rs` — `mux_event_debug_all_variants` and `mux_notification_debug_all_variants` missed coverage for the variants added in 01.1: `DesktopNotification`, `ClearPendingDesktopNotifications`, `HostClipboardLoad`, `HostColorQuery`. Matrix-testing rule violation per `.claude/rules/tests.md`.
+  Evidence: pre-fix tests covered the legacy enum variants only.
+  Impact: A regression in any of the new Debug arms would not surface — silent format drift could land.
+  Resolution: Fixed inline. Both tests extended to cover all four new variants on their respective enums, with byte-exact `assert_eq!` for the simple variants and `contains` checks for the variants carrying `ResponseToken` (Debug derives the inner `Arc<Mutex<...>>` shape which is implementation-detail-sensitive).
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+<!-- Round 3 findings (2026-04-18). Codex returned 2 medium meta-quality findings; gemini transport failed (no return). -->
+
+- [x] `[TPR-01-1-codex-r3][medium]` `oriterm_mux/src/pane/io_thread/response_poll/tests.rs:350` — Round-2 negative pin `cancellation_fails_when_inner_token_cloned` only asserted `mux_rx.try_recv().is_err()` after dropping the original token — that assertion is true even WITHOUT the leak (no fulfill happened). The test failed to constructively demonstrate that the pending entry leaked past the consumer drop.
+  Evidence: pre-fix `assert!(mux_rx.try_recv().is_err(), "no PtyWrite expected (no fulfill)…")` after dropping `token` and keeping `leaked_clone`.
+  Impact: Negative pin documented the trap by name only; a future regression that broke cloning's lifetime extension would not be caught — the test would still pass.
+  Resolution: Fixed inline. Rewrote the negative pin to constructively prove the leak: after dropping `token`, use the surviving `leaked_clone` to call `handle.fulfill_clipboard_load(&leaked_clone, "leaked")` — if the pending entry had been correctly cancelled, the fulfill would land in an already-removed entry and produce NO PtyWrite. The PtyWrite arriving (with `bGVha2Vk` = base64("leaked")) is direct evidence the entry leaked past the nominal consumer drop, exactly as the move-only invariant predicts.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-2-codex-r3][medium]` `oriterm_mux/src/pane/io_thread/response_poll/tests.rs:264` — Round-2 negative pin `no_wake_signal_drops_late_fulfill` fulfilled via `handle.fulfill_clipboard_load` (which DOES send a wake-tx pulse), then asserted PtyWrite arrives. The test never exercised the "wake consumed without fulfillment" scenario it claimed to verify — the fulfill itself sent a wake.
+  Evidence: pre-fix `std::thread::sleep(Duration::from_millis(50)); handle.fulfill_clipboard_load(&token, "late".to_string())…`.
+  Impact: A future regression that converted polling from pull-based to wake-channel-edge-triggered would not be caught — the test would still pass because the fulfill helper sends a wake.
+  Resolution: Fixed inline. Rewrote to call `token.fulfill("late".to_string())` directly (bypassing the wake-tx-bumping helper). Trigger an unrelated wake source via `handle.byte_sender().send(b" ".to_vec())` (a no-op byte that wakes the IO thread on `byte_rx`). The IO thread's resulting parser cycle runs `drain_commands → poll_pending_responses` which discovers the directly-fulfilled token via `take()`. If polling were wake-channel-edge-triggered specifically (not on any IO-thread wake source), this would hang. PtyWrite arriving proves polling is pull-based.
+  Basis: fresh_verification | direct_file_inspection. Confidence: high.
+
+- [x] `[TPR-01-r3-gemini-transport][n/a]` (TRANSPORT FAILURE — gemini sub-agent timed out without returning a TPR-REPORT block in round 3). Per `/tpr-review §9` survivor mode: round 3 proceeded with codex's report only; both findings were verified against code and fixed inline. Round 2 + round 1 + round 0 included gemini reports (clean / clean / 3 findings respectively, all fixed). The round-3 transport failure does not invalidate the prior gemini grounding; it does mean the round-3 SlotState/poll/purge fixes were verified by codex only.

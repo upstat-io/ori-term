@@ -11,8 +11,8 @@ pub use host::{
     PrintRequest,
 };
 pub use host_request::{
-    AlreadyFulfilled, HostRequest, ResponseFulfilled, ResponseToken, format_clipboard_reply,
-    format_color_reply,
+    AlreadyFulfilled, HostRequest, ResponseFulfilled, ResponseToken, TokenPoll,
+    format_clipboard_reply, format_color_reply,
 };
 pub use presentation::{PresentationEffect, SyncAbortReason};
 pub use pty::{PtyEffect, PtyWriteKind};

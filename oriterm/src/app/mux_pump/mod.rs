@@ -46,6 +46,18 @@ impl App {
             return;
         }
 
+        // 2a. Honor cross-batch `ClearPendingDesktopNotifications`
+        //     markers BEFORE dispatching: each clear marker discards
+        //     all preceding `DesktopNotification` entries for the same
+        //     pane that landed in earlier IO-thread batches and
+        //     accumulated in this drain. The IO-thread router already
+        //     handles intra-batch collapse; this purge handles the
+        //     case where a notification reached `notification_buf` in
+        //     an earlier drain cycle and the clear catches it before
+        //     the next dispatch tick. Per effect-cutover §01.1
+        //     success criterion 24.
+        purge_pending_desktop_notifications(&mut self.notification_buf);
+
         // 3. Handle each notification.
         self.with_drained_notifications(Self::handle_mux_notification);
     }
@@ -250,6 +262,38 @@ impl App {
             );
         let body = format_duration_body(duration);
         notify::send(&title, &body);
+    }
+}
+
+/// In-place collapse of `ClearPendingDesktopNotifications` against
+/// preceding `DesktopNotification` entries in the same staging
+/// buffer. For each clear marker at position `i` for pane `P`,
+/// removes every `DesktopNotification { pane_id: P, .. }` at
+/// positions `< i`. Iteration order preserves remaining markers.
+///
+/// Surfaced by `[TPR-01-2-codex-r2][high]` — the §01 fix only emitted
+/// the clear marker but did not act on it in the main-thread staging
+/// buffer.
+fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {
+    let mut i = 0;
+    while i < buf.len() {
+        if let MuxNotification::ClearPendingDesktopNotifications(target_pane) = buf[i] {
+            let mut j = 0;
+            while j < i {
+                let drop_it = matches!(
+                    &buf[j],
+                    MuxNotification::DesktopNotification { pane_id, .. }
+                        if *pane_id == target_pane
+                );
+                if drop_it {
+                    buf.remove(j);
+                    i -= 1;
+                } else {
+                    j += 1;
+                }
+            }
+        }
+        i += 1;
     }
 }
 

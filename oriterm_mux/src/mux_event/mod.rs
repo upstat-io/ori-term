@@ -116,6 +116,16 @@ pub enum MuxEvent {
         /// Notification body.
         body: String,
     },
+    /// Discard pending desktop notifications for a pane.
+    ///
+    /// Added in effect-cutover 01.1. Carries the contract of
+    /// [`HostEffect::ClearPendingNotifications`] across the
+    /// IO-thread→main-thread boundary so downstream staging buffers
+    /// (`mux_pump`, `window_management`, daemon broadcast) can purge
+    /// their queued [`MuxNotification::DesktopNotification`] entries
+    /// for the originating pane. The event pump forwards each
+    /// occurrence as [`MuxNotification::ClearPendingDesktopNotifications`].
+    ClearPendingDesktopNotifications(PaneId),
     /// OSC 52 clipboard load request with a typed `ResponseToken`.
     ///
     /// Added in effect-cutover 01.1. The main thread reads the clipboard
@@ -193,6 +203,9 @@ impl fmt::Debug for MuxEvent {
                 title,
                 ..
             } => write!(f, "DesktopNotification({pane_id}, {source:?}, {title:?})"),
+            Self::ClearPendingDesktopNotifications(id) => {
+                write!(f, "ClearPendingDesktopNotifications({id})")
+            }
             Self::HostClipboardLoad {
                 pane_id, selection, ..
             } => write!(f, "HostClipboardLoad({pane_id}, {selection:?})"),

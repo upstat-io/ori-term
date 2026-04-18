@@ -184,6 +184,13 @@ impl<S: EffectSink> PaneIoThread<S> {
                         recv(self.child_exit_rx) -> status => {
                             if let Ok(status) = status {
                                 self.pending_child_exit = Some(status);
+                            } else {
+                                // Watcher-thread sender dropped without sending
+                                // a status (watcher died unexpectedly). The EOF
+                                // path's recv_timeout fallback in handle_pty_eof
+                                // emits HostEffect::ChildExit { code: 0 } when
+                                // byte_rx subsequently closes — no action needed
+                                // here.
                             }
                         }
                         recv(self.response_wake_rx) -> _ => {
@@ -220,6 +227,10 @@ impl<S: EffectSink> PaneIoThread<S> {
                         recv(self.child_exit_rx) -> status => {
                             if let Ok(status) = status {
                                 self.pending_child_exit = Some(status);
+                            } else {
+                                // Watcher-thread sender dropped — handled by
+                                // handle_pty_eof's recv_timeout fallback when
+                                // byte_rx closes. See sync-deadline arm above.
                             }
                         }
                         recv(self.response_wake_rx) -> _ => {

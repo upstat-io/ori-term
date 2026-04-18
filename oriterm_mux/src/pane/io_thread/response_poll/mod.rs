@@ -10,7 +10,7 @@
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{
-    Effect, HostRequest, PendingResponse, PollResult, PtyEffect, PtyWriteKind,
+    Effect, HostRequest, PendingResponse, PollResult, PtyEffect, PtyWriteKind, TokenPoll,
     format_clipboard_reply, format_color_reply,
 };
 
@@ -39,19 +39,16 @@ impl<S: EffectSink> PaneIoThread<S> {
                 ..
             } => {
                 self.pending_responses
-                    .push(PendingResponse::new(Box::new(move || {
-                        if let Some(text) = reply.take() {
+                    .push(PendingResponse::new(Box::new(move || match reply.poll() {
+                        TokenPoll::Ready(text) => {
                             let bytes = format_clipboard_reply(&text, clipboard_char, &terminator);
-                            return PollResult::Ready(Effect::Pty(PtyEffect::Write {
+                            PollResult::Ready(Effect::Pty(PtyEffect::Write {
                                 bytes,
                                 kind: PtyWriteKind::Other,
-                            }));
+                            }))
                         }
-                        if reply.consumer_strong_count() <= 1 {
-                            PollResult::Cancelled
-                        } else {
-                            PollResult::Pending
-                        }
+                        TokenPoll::Cancelled => PollResult::Cancelled,
+                        TokenPoll::Pending => PollResult::Pending,
                     })));
             }
             HostRequest::ColorQuery {
@@ -61,19 +58,16 @@ impl<S: EffectSink> PaneIoThread<S> {
                 ..
             } => {
                 self.pending_responses
-                    .push(PendingResponse::new(Box::new(move || {
-                        if let Some(color) = reply.take() {
+                    .push(PendingResponse::new(Box::new(move || match reply.poll() {
+                        TokenPoll::Ready(color) => {
                             let bytes = format_color_reply(color, &prefix, &terminator);
-                            return PollResult::Ready(Effect::Pty(PtyEffect::Write {
+                            PollResult::Ready(Effect::Pty(PtyEffect::Write {
                                 bytes,
                                 kind: PtyWriteKind::Other,
-                            }));
+                            }))
                         }
-                        if reply.consumer_strong_count() <= 1 {
-                            PollResult::Cancelled
-                        } else {
-                            PollResult::Pending
-                        }
+                        TokenPoll::Cancelled => PollResult::Cancelled,
+                        TokenPoll::Pending => PollResult::Pending,
                     })));
             }
         }
@@ -109,3 +103,6 @@ impl<S: EffectSink> PaneIoThread<S> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
