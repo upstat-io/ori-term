@@ -103,7 +103,7 @@ fn response_token_fulfill_and_take() {
     assert!(!token.is_fulfilled());
     assert!(token.take().is_none());
 
-    token.fulfill("hello".to_owned());
+    token.fulfill("hello".to_owned()).unwrap();
     assert!(token.is_fulfilled());
 
     let value = token.take();
@@ -199,58 +199,67 @@ fn effect_debug() {
     assert!(debug.contains("Bell"));
 }
 
-#[test]
-fn pending_response_returns_none_when_unfulfilled() {
-    let token = ResponseToken::<String>::new();
-    let mut pr = PendingResponse::new(Box::new(move || {
-        let text = token.take()?;
-        Some(Effect::Pty(PtyEffect::Write {
-            bytes: text.into_bytes(),
-            kind: PtyWriteKind::Other,
-        }))
-    }));
-    assert!(pr.poll().is_none());
-    assert!(pr.poll().is_none());
+fn poll_closure_for_test(token: ResponseToken<String>) -> Box<dyn FnMut() -> PollResult + Send> {
+    Box::new(move || {
+        if let Some(text) = token.take() {
+            return PollResult::Ready(Effect::Pty(PtyEffect::Write {
+                bytes: text.into_bytes(),
+                kind: PtyWriteKind::Other,
+            }));
+        }
+        if token.consumer_strong_count() <= 1 {
+            PollResult::Cancelled
+        } else {
+            PollResult::Pending
+        }
+    })
 }
 
 #[test]
-fn pending_response_returns_effect_when_fulfilled() {
+fn pending_response_returns_pending_when_unfulfilled() {
     let token = ResponseToken::<String>::new();
-    let token_clone = token.clone();
-    let mut pr = PendingResponse::new(Box::new(move || {
-        let text = token.take()?;
-        Some(Effect::Pty(PtyEffect::Write {
-            bytes: text.into_bytes(),
-            kind: PtyWriteKind::Other,
-        }))
-    }));
+    // Keep the consumer handle alive so cancellation is not triggered.
+    let _consumer = token.clone();
+    let mut pr = PendingResponse::new(poll_closure_for_test(token));
+    assert!(matches!(pr.poll(), PollResult::Pending));
+    assert!(matches!(pr.poll(), PollResult::Pending));
+}
 
-    token_clone.fulfill("hello".to_owned());
-    let effect = pr.poll();
-    assert!(effect.is_some());
-    match effect.unwrap() {
-        Effect::Pty(PtyEffect::Write { bytes, kind }) => {
+#[test]
+fn pending_response_returns_ready_when_fulfilled() {
+    let token = ResponseToken::<String>::new();
+    let consumer = token.clone();
+    let mut pr = PendingResponse::new(poll_closure_for_test(token));
+
+    consumer.fulfill("hello".to_owned()).unwrap();
+    match pr.poll() {
+        PollResult::Ready(Effect::Pty(PtyEffect::Write { bytes, kind })) => {
             assert_eq!(bytes, b"hello");
             assert_eq!(kind, PtyWriteKind::Other);
         }
-        other => panic!("expected Pty(Write), got {other:?}"),
+        other => panic!("expected Ready(Pty(Write)), got {other:?}"),
     }
 }
 
 #[test]
-fn pending_response_returns_none_after_drain() {
+fn pending_response_returns_cancelled_when_consumer_dropped() {
     let token = ResponseToken::<String>::new();
-    let token_clone = token.clone();
-    let mut pr = PendingResponse::new(Box::new(move || {
-        let text = token.take()?;
-        Some(Effect::Pty(PtyEffect::Write {
-            bytes: text.into_bytes(),
-            kind: PtyWriteKind::Other,
-        }))
-    }));
+    let consumer = token.clone();
+    let mut pr = PendingResponse::new(poll_closure_for_test(token));
+    drop(consumer);
+    assert!(matches!(pr.poll(), PollResult::Cancelled));
+}
 
-    token_clone.fulfill("data".to_owned());
-    assert!(pr.poll().is_some());
-    // After draining, subsequent polls return None.
-    assert!(pr.poll().is_none());
+#[test]
+fn pending_response_returns_cancelled_after_drain() {
+    let token = ResponseToken::<String>::new();
+    let consumer = token.clone();
+    let mut pr = PendingResponse::new(poll_closure_for_test(token));
+
+    consumer.fulfill("data".to_owned()).unwrap();
+    assert!(matches!(pr.poll(), PollResult::Ready(_)));
+    // After draining AND after the consumer handle is dropped, subsequent
+    // polls report cancellation.
+    drop(consumer);
+    assert!(matches!(pr.poll(), PollResult::Cancelled));
 }

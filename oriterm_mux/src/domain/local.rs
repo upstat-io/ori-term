@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::mpsc;
 
-use oriterm_core::effect::LegacyEventSink;
+use oriterm_core::effect::QueueingEffectSink;
 use oriterm_core::{Term, Theme};
 
 use crate::{DomainId, PaneId};
@@ -14,7 +14,6 @@ use super::{Domain, DomainState, SpawnConfig};
 
 use crate::mux_event::MuxEvent;
 use crate::pane::io_thread;
-use crate::pane::io_thread::event_proxy::IoThreadEventProxy;
 use crate::pane::{Pane, PaneNotifier, PaneParts};
 use crate::pty::{PtyConfig, PtyReader, spawn_pty, spawn_pty_writer};
 
@@ -88,7 +87,7 @@ impl LocalDomain {
             env: config.env.clone(),
             shell_integration: config.shell_integration,
         };
-        let mut pty = spawn_pty(&pty_config)?;
+        let (mut pty, child_exit_rx) = spawn_pty(&pty_config)?;
 
         // 2. Take handles before they're moved into threads.
         let reader = pty
@@ -127,21 +126,17 @@ impl LocalDomain {
         let shutdown = Arc::new(AtomicBool::new(false));
         let io_selection_dirty = Arc::new(AtomicBool::new(false));
 
-        // 4. Create the single Term with IoThreadEventProxy (unsuppressed —
-        //    this is the sole source of metadata events).
-        let io_event_proxy = IoThreadEventProxy::new(
-            Arc::clone(&io_grid_dirty),
-            false, // suppress_metadata = false (post section 07)
-            pane_id,
-            mux_tx.clone(),
-            Arc::clone(wakeup),
-        );
+        // 4. Create the single Term with a QueueingEffectSink. The IO
+        //    thread drains the sink after every VTE parse chunk and
+        //    routes effects to MuxEvents via the effect router
+        //    (effect-cutover 01.1). The legacy `IoThreadEventProxy` +
+        //    `LegacyEventSink` bridge is no longer used on this path.
         let io_term = Term::new(
             usize::from(config.rows),
             usize::from(config.cols),
             config.scrollback,
             theme,
-            LegacyEventSink::new(io_event_proxy),
+            QueueingEffectSink::new(),
         );
 
         // 5. Wire the message channel for PTY writes.
@@ -163,6 +158,9 @@ impl LocalDomain {
         // 7. Spawn the Terminal IO thread (owns Term, VTE processors, PtyControl).
         let (io_thread, mut io_handle) = io_thread::new_with_handle(io_thread::IoThreadConfig {
             terminal: io_term,
+            pane_id,
+            mux_tx: mux_tx.clone(),
+            child_exit_rx,
             mode_cache: Arc::clone(&mode_cache),
             shutdown: Arc::clone(&shutdown),
             wakeup: Arc::clone(wakeup),

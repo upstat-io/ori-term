@@ -156,7 +156,12 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
                 Event::ClipboardLoad(
                     selection_to_legacy(selection),
                     Arc::new(move |text: &str| {
-                        reply.fulfill(text.to_string());
+                        // Legacy adapter ignores duplicate-fulfill — the legacy
+                        // path does not register a pending response, so a second
+                        // fulfill would only reach here via a duplicate-dispatch
+                        // bug which is out of scope for the soon-to-be-deleted
+                        // legacy bridge.
+                        let _ = reply.fulfill(text.to_string());
                         String::from_utf8(format_clipboard_reply(text, cb, &term))
                             .expect("clipboard reply is valid UTF-8")
                     }),
@@ -173,7 +178,7 @@ impl<L: EventListener + Sync> EffectSink for LegacyEventSink<L> {
                 Event::ColorRequest(
                     index,
                     Arc::new(move |color: Rgb| {
-                        reply.fulfill(color);
+                        let _ = reply.fulfill(color);
                         String::from_utf8(format_color_reply(color, &pfx, &term))
                             .expect("color reply is valid UTF-8")
                     }),

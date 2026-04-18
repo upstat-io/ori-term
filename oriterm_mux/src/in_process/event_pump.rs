@@ -20,6 +20,10 @@ impl InProcessMux {
     /// Called from the App's event loop every iteration. The `panes` map is
     /// passed so the mux can update pane metadata (title, CWD) and write
     /// PTY responses without the App needing to know event internals.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "single-match MuxEvent dispatch — splitting would violate SSOT"
+    )]
     pub fn poll_events(&mut self, panes: &mut HashMap<PaneId, Pane>) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
@@ -65,7 +69,7 @@ impl InProcessMux {
                 }
                 MuxEvent::PtyWrite { pane_id, data } => {
                     if let Some(pane) = panes.get(&pane_id) {
-                        pane.write_input(data.as_bytes());
+                        pane.write_input(&data);
                     }
                 }
                 MuxEvent::ClipboardStore {
@@ -88,6 +92,50 @@ impl InProcessMux {
                         pane_id,
                         clipboard_type,
                         formatter,
+                    });
+                }
+                MuxEvent::DesktopNotification {
+                    pane_id,
+                    source,
+                    title,
+                    body,
+                } => {
+                    self.notifications
+                        .push(MuxNotification::DesktopNotification {
+                            pane_id,
+                            source,
+                            title,
+                            body,
+                        });
+                }
+                MuxEvent::HostClipboardLoad {
+                    pane_id,
+                    selection,
+                    clipboard_char,
+                    terminator,
+                    reply,
+                } => {
+                    self.notifications.push(MuxNotification::HostClipboardLoad {
+                        pane_id,
+                        selection,
+                        clipboard_char,
+                        terminator,
+                        reply,
+                    });
+                }
+                MuxEvent::HostColorQuery {
+                    pane_id,
+                    prefix,
+                    index,
+                    terminator,
+                    reply,
+                } => {
+                    self.notifications.push(MuxNotification::HostColorQuery {
+                        pane_id,
+                        prefix,
+                        index,
+                        terminator,
+                        reply,
                     });
                 }
             }

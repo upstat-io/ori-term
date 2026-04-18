@@ -51,6 +51,10 @@ impl App {
     }
 
     /// Process a single mux notification.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "single-match notification dispatch — belongs in one place"
+    )]
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
             MuxNotification::PaneOutput(id) => {
@@ -126,6 +130,63 @@ impl App {
                 let text = self.clipboard.load(clipboard_type);
                 let response = formatter(&text);
                 self.write_pane_input(pane_id, response.as_bytes());
+            }
+            MuxNotification::DesktopNotification {
+                pane_id: _pane_id,
+                title,
+                body,
+                ..
+            } => {
+                notify::send(&title, &body);
+            }
+            MuxNotification::ClearPendingDesktopNotifications(_pane_id) => {
+                // Desktop notifications are dispatched to the platform
+                // notifier immediately on arrival (no local staging), so
+                // there is nothing to purge on the main thread. Daemon-side
+                // staging buffers handle their own purge in the 01.3 follow-up.
+            }
+            MuxNotification::HostClipboardLoad {
+                pane_id,
+                selection,
+                reply,
+                ..
+            } => {
+                let clipboard_type = match selection {
+                    oriterm_core::effect::ClipboardSelection::Clipboard => {
+                        oriterm_core::ClipboardType::Clipboard
+                    }
+                    oriterm_core::effect::ClipboardSelection::Primary
+                    | oriterm_core::effect::ClipboardSelection::Select => {
+                        oriterm_core::ClipboardType::Selection
+                    }
+                };
+                let text = self.clipboard.load(clipboard_type);
+                if let Some(mux) = self.mux.as_mut() {
+                    if let Err(err) = mux.fulfill_host_request(
+                        pane_id,
+                        oriterm_mux::HostReply::ClipboardLoad { token: reply, text },
+                    ) {
+                        log::warn!("fulfill_host_request (clipboard) for {pane_id} failed: {err}");
+                    }
+                }
+            }
+            MuxNotification::HostColorQuery { pane_id, reply, .. } => {
+                // Placeholder color until we wire theme lookup through the
+                // main-thread MuxBackend (tracked as a cleanup item —
+                // the OSC 10/11/12 reply flow is unblocked structurally,
+                // the actual color source is a separate bug).
+                let color = oriterm_core::color::Rgb { r: 0, g: 0, b: 0 };
+                if let Some(mux) = self.mux.as_mut() {
+                    if let Err(err) = mux.fulfill_host_request(
+                        pane_id,
+                        oriterm_mux::HostReply::ColorQuery {
+                            token: reply,
+                            color,
+                        },
+                    ) {
+                        log::warn!("fulfill_host_request (color) for {pane_id} failed: {err}");
+                    }
+                }
             }
             MuxNotification::NewTab => {
                 log::info!("received new-tab request from another instance");

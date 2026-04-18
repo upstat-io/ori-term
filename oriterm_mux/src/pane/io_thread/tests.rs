@@ -2,13 +2,50 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 
-use oriterm_core::effect::VoidEffectSink;
+use crossbeam_channel::Receiver;
+
+use oriterm_core::effect::{PollResult, VoidEffectSink};
 use oriterm_core::{Column, Line, Term, TermMode, Theme};
 
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
+use crate::PaneId;
+use crate::mux_event::MuxEvent;
+use crate::pty::spawn::ExitStatus;
+
+/// Test helper: dummy pane_id + live channels for constructing
+/// `PaneIoThread` in synchronous tests.
+///
+/// The `_keep_alive` fields are leaked via a `OnceLock<Vec<..>>` so the
+/// channels stay open for the duration of the test process — leaking
+/// is intentional and preferable to `std::mem::forget` call sites
+/// scattered across every helper.
+fn test_dummy_channels() -> (
+    PaneId,
+    mpsc::Sender<MuxEvent>,
+    Receiver<ExitStatus>,
+    Receiver<()>,
+) {
+    use std::sync::Mutex as StdMutex;
+    use std::sync::OnceLock;
+    static KEEP_ALIVE: OnceLock<StdMutex<Vec<Box<dyn std::any::Any + Send>>>> = OnceLock::new();
+    let vault = KEEP_ALIVE.get_or_init(|| StdMutex::new(Vec::new()));
+
+    let (mux_tx, mux_rx) = mpsc::channel::<MuxEvent>();
+    let (exit_tx, exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
+    let (wake_tx, wake_rx) = crossbeam_channel::bounded::<()>(1);
+
+    if let Ok(mut v) = vault.lock() {
+        v.push(Box::new(mux_rx));
+        v.push(Box::new(exit_tx));
+        v.push(Box::new(wake_tx));
+    }
+
+    (PaneId::from_raw(1), mux_tx, exit_rx, wake_rx)
+}
 
 /// Helper: create a Term<VoidEffectSink> with default dimensions.
 fn make_term() -> Term<VoidEffectSink> {
@@ -19,6 +56,18 @@ fn make_term() -> Term<VoidEffectSink> {
 fn make_pair() -> (PaneIoThread<VoidEffectSink>, PaneIoHandle) {
     new_with_handle(IoThreadConfig {
         terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
         mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::new(AtomicBool::new(false)),
         wakeup: Arc::new(|| {}),
@@ -36,6 +85,18 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (thread, mut handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
         mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::clone(&shutdown),
         wakeup: Arc::new(|| {}),
@@ -62,8 +123,14 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
     let cols = term.grid().cols() as u16;
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     PaneIoThread {
         terminal: term,
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -80,6 +147,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     }
 }
 
@@ -90,8 +158,14 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let grid_dirty = Arc::new(AtomicBool::new(false));
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -110,6 +184,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     (thread, wakeup_count)
 }
@@ -140,8 +215,14 @@ fn shutdown_via_channel_disconnect() {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
 
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -158,6 +239,7 @@ fn shutdown_via_channel_disconnect() {
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -180,6 +262,18 @@ fn command_delivery_ordering() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (thread, handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
         mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::clone(&shutdown),
         wakeup: Arc::new(|| {}),
@@ -215,8 +309,14 @@ fn byte_delivery_parses_vte() {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
 
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -233,6 +333,7 @@ fn byte_delivery_parses_vte() {
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -360,8 +461,14 @@ fn handle_bytes_chunked_drains_commands() {
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let shutdown = Arc::new(AtomicBool::new(false));
 
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let mut t = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -378,6 +485,7 @@ fn handle_bytes_chunked_drains_commands() {
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -590,8 +698,14 @@ fn produce_snapshot_fires_wakeup() {
 fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneIoCommand>) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -608,6 +722,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     (thread, cmd_tx)
 }
@@ -1380,11 +1495,13 @@ fn test_io_thread_panic_does_not_crash_app() {
         panic!("intentional IO thread panic for testing");
     });
 
+    let (_wake_tx, _wake_rx) = crossbeam_channel::bounded::<()>(1);
     let mut handle = PaneIoHandle {
         cmd_tx: tx,
         byte_tx,
         join: Some(join),
         double_buffer: SnapshotDoubleBuffer::new(),
+        response_wake_tx: _wake_tx,
     };
 
     // Trigger the panic.
@@ -1727,15 +1844,18 @@ fn reply_token_clipboard_load_produces_pty_write() {
     );
 
     // Fulfill the token with clipboard text.
-    token_clone.fulfill("hello world".to_string());
+    token_clone
+        .fulfill("hello world".to_string())
+        .expect("fresh token fulfill must succeed");
 
     // Poll after fulfillment — should produce Effect::Pty and remove entry.
     // poll_pending_responses pushes the effect through the VoidEffectSink (no-op),
     // so we poll the PendingResponse directly to capture the effect.
-    let effect = t.pending_responses[0].poll();
-    assert!(effect.is_some(), "fulfilled token should produce an effect");
+    let PollResult::Ready(effect) = t.pending_responses[0].poll() else {
+        panic!("fulfilled token should produce PollResult::Ready");
+    };
 
-    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect.unwrap() else {
+    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect else {
         panic!("expected Effect::Pty(PtyEffect::Write)");
     };
 
@@ -1767,16 +1887,19 @@ fn reply_token_color_query_produces_pty_write() {
     assert_eq!(t.pending_responses.len(), 1);
 
     // Fulfill with a color.
-    token_clone.fulfill(Rgb {
-        r: 0xAB,
-        g: 0xCD,
-        b: 0xEF,
-    });
+    token_clone
+        .fulfill(Rgb {
+            r: 0xAB,
+            g: 0xCD,
+            b: 0xEF,
+        })
+        .expect("fresh token fulfill must succeed");
 
-    let effect = t.pending_responses[0].poll();
-    assert!(effect.is_some());
+    let PollResult::Ready(effect) = t.pending_responses[0].poll() else {
+        panic!("fulfilled token should produce PollResult::Ready");
+    };
 
-    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect.unwrap() else {
+    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect else {
         panic!("expected Effect::Pty(PtyEffect::Write)");
     };
 
@@ -1798,6 +1921,10 @@ fn multiple_pending_responses_polled_independently() {
     let token1 = ResponseToken::<String>::new();
     let token1_clone = token1.clone();
     let token2 = ResponseToken::<String>::new();
+    // Keep a main-thread handle for token2 so `Arc::strong_count`-based
+    // cancellation detection does not remove its pending entry before the
+    // test has fulfilled token1.
+    let _token2_keep_alive = token2.clone();
 
     t.register_host_request_response(HostRequest::ClipboardLoad {
         selection: ClipboardSelection::Clipboard,
@@ -1814,7 +1941,9 @@ fn multiple_pending_responses_polled_independently() {
     assert_eq!(t.pending_responses.len(), 2);
 
     // Fulfill only the first token.
-    token1_clone.fulfill("first".to_string());
+    token1_clone
+        .fulfill("first".to_string())
+        .expect("fresh token fulfill must succeed");
 
     // poll_pending_responses should remove only the fulfilled one.
     t.poll_pending_responses();
@@ -1842,8 +1971,14 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
     let term = Term::new(24, 80, 1000, Theme::default(), sink);
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: term,
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -1862,6 +1997,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     (thread, wakeup_count)
 }
