@@ -150,7 +150,7 @@ fn pty_write_maps_to_pty_write() {
     proxy.send_event(Event::PtyWrite("data".to_string()));
     let event = rx.try_recv().unwrap();
     assert!(
-        matches!(&event, MuxEvent::PtyWrite { pane_id, data } if *pane_id == PaneId::from_raw(1) && data == "data")
+        matches!(&event, MuxEvent::PtyWrite { pane_id, data } if *pane_id == PaneId::from_raw(1) && data == b"data")
     );
 }
 
@@ -283,7 +283,7 @@ fn mux_event_debug_all_variants() {
         (
             MuxEvent::PtyWrite {
                 pane_id: id,
-                data: "abc".to_string(),
+                data: b"abc".to_vec(),
             },
             "PtyWrite(Pane(1), 3 bytes)",
         ),

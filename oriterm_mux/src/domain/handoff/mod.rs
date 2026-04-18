@@ -19,13 +19,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::mpsc;
 
-use oriterm_core::effect::LegacyEventSink;
+use oriterm_core::effect::QueueingEffectSink;
 use oriterm_core::{Term, Theme};
 
 use crate::id::{DomainId, PaneId};
 use crate::mux_event::MuxEvent;
-use crate::pane::io_thread::event_proxy::IoThreadEventProxy;
 use crate::pane::{self, Pane, PaneNotifier, PaneParts};
+use crate::pty::spawn::ExitStatus;
 use crate::pty::{AdoptedPtyHandle, PtyReader, spawn_pty_writer};
 
 /// Configuration for [`adopt_pane`].
@@ -103,23 +103,38 @@ pub fn adopt_pane(
     let io_selection_dirty = Arc::new(AtomicBool::new(false));
     let write_stalled = Arc::new(AtomicBool::new(false));
 
-    // 3. Build the IO thread's Term with an unsuppressed event proxy
-    //    (post Section 07 — adopted panes participate in the same mux
-    //    event flow as spawned panes).
-    let io_event_proxy = IoThreadEventProxy::new(
-        Arc::clone(&io_grid_dirty),
-        false,
-        config.pane_id,
-        mux_tx.clone(),
-        Arc::clone(wakeup),
-    );
+    // 3. Build the IO thread's Term with a QueueingEffectSink.
+    //    Post effect-cutover 01.1, adopted panes route effects through
+    //    the effect router identically to spawned panes.
     let io_term = Term::new(
         usize::from(config.rows),
         usize::from(config.cols),
         config.scrollback,
         config.theme,
-        LegacyEventSink::new(io_event_proxy),
+        QueueingEffectSink::new(),
     );
+
+    // 3b. Adopted-pane child-exit channel: adopted panes have no
+    //     `portable_pty::Child` to wait on; their exit is signalled by
+    //     the PTY reader observing EOF and firing
+    //     `AdoptedPtyHandle::deliver_exit`. A thin forwarder thread
+    //     parks on that Condvar and forwards `ExitStatus::synthesized_eof()`
+    //     onto a bounded(1) channel so the IO thread's `select!` arm
+    //     consumes the exit uniformly (no dummy channel, no fake source).
+    let (child_exit_tx, child_exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
+    let exit_signal_forwarder = config.adopted.clone_exit_signal();
+    std::thread::Builder::new()
+        .name("adopted-exit-forwarder".into())
+        .spawn(move || {
+            let (lock, cvar) = &*exit_signal_forwarder;
+            let Ok(guard) = lock.lock() else { return };
+            let Ok(final_guard) = cvar.wait_while(guard, |s| s.is_none()) else {
+                return;
+            };
+            if let Some(status) = final_guard.as_ref() {
+                let _ = child_exit_tx.send(status.clone());
+            }
+        })?;
 
     // 4. Writer channel + writer thread.
     let (tx, rx) = mpsc::channel();
@@ -140,6 +155,9 @@ pub fn adopt_pane(
     let (io_thread, mut io_handle) =
         pane::io_thread::new_with_handle(pane::io_thread::IoThreadConfig {
             terminal: io_term,
+            pane_id: config.pane_id,
+            mux_tx: mux_tx.clone(),
+            child_exit_rx,
             mode_cache: Arc::clone(&mode_cache),
             shutdown: Arc::clone(&shutdown),
             wakeup: Arc::clone(wakeup),

@@ -3,6 +3,26 @@
 //! The handler emits a `HostRequest` with a `ResponseToken`; the consumer
 //! fulfills the token with the requested data; the terminal formats the
 //! reply and emits it as `Effect::Pty(PtyEffect::Write { .. })`.
+//!
+//! # Single-assignment fulfill
+//!
+//! `ResponseToken::fulfill` returns `Result<(), AlreadyFulfilled>`. A duplicate
+//! fulfillment is a routing bug — it returns `Err(AlreadyFulfilled)` rather
+//! than silently overwriting the stored value.
+//!
+//! # Move-only across staging buffers
+//!
+//! `ResponseToken` is `Clone` (its inner `Arc<Mutex<Option<T>>>` is
+//! shared-ownership), but consumers MUST NOT clone a `ResponseToken` into
+//! intermediate staging buffers. Cancellation detection in `PendingResponse`
+//! relies on `Arc::strong_count` dropping when the main-thread handle is
+//! dropped; a stray clone in a staging buffer keeps the strong count elevated
+//! forever and the IO thread's pending entry leaks. The only legitimate clone
+//! is the two-copy handoff: one clone into the IO thread's pending-response
+//! closure, one clone into the main-thread's `MuxEvent` reply field. All
+//! downstream staging buffers (`notifications: Vec<MuxNotification>`,
+//! `notification_buf`, daemon server broadcast, daemon client local) MUST move
+//! (`Vec::drain`, `mem::replace`, match-move), never `.clone()`.
 
 use std::sync::{Arc, Mutex};
 
@@ -40,6 +60,24 @@ pub enum HostRequest {
     },
 }
 
+/// Error returned by `ResponseToken::fulfill` when the token has already
+/// been fulfilled.
+///
+/// Duplicate fulfillment is a routing bug: multiple consumers attempted to
+/// answer the same host request. The token's stored value is NOT overwritten
+/// — the first fulfill wins. Callers should log an error and continue; do not
+/// panic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AlreadyFulfilled;
+
+impl std::fmt::Display for AlreadyFulfilled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ResponseToken already fulfilled — duplicate fulfill is a routing bug")
+    }
+}
+
+impl std::error::Error for AlreadyFulfilled {}
+
 /// Token the consumer holds to deliver a reply to a `HostRequest`.
 ///
 /// The terminal handler creates a `ResponseToken` when emitting the request,
@@ -50,6 +88,15 @@ pub enum HostRequest {
 /// Implementation: wraps an `Arc<Mutex<Option<T>>>` — the consumer puts
 /// the response into the slot; the terminal drains the slot on the next
 /// event loop tick. NOT a closure — the value is plain data.
+///
+/// # Cloning discipline
+///
+/// The token is `Clone` because the IO thread (polling side) AND the main
+/// thread (fulfilling side) both need a handle. Beyond those two legitimate
+/// clones, downstream staging buffers MUST move, not clone. Cancellation
+/// detection via [`consumer_strong_count`](Self::consumer_strong_count)
+/// relies on the strong count dropping to `1` when the main-thread handle
+/// is dropped.
 #[derive(Debug, Clone)]
 pub struct ResponseToken<T> {
     slot: Arc<Mutex<Option<T>>>,
@@ -65,9 +112,17 @@ impl<T> ResponseToken<T> {
 
     /// Fulfill the request with the given value.
     ///
-    /// Called by the consumer (host side) to deliver the response.
-    pub fn fulfill(&self, value: T) {
-        *self.slot.lock().expect("ResponseToken mutex poisoned") = Some(value);
+    /// Returns `Err(AlreadyFulfilled)` if the slot already holds a value.
+    /// The first fulfill wins; duplicates are rejected, not silently
+    /// overwritten, so a routing-bug double-fulfill surfaces loudly at the
+    /// caller rather than becoming a last-write-wins race.
+    pub fn fulfill(&self, value: T) -> Result<(), AlreadyFulfilled> {
+        let mut slot = self.slot.lock().expect("ResponseToken mutex poisoned");
+        if slot.is_some() {
+            return Err(AlreadyFulfilled);
+        }
+        *slot = Some(value);
+        Ok(())
     }
 
     /// Take the fulfilled value, if any.
@@ -86,6 +141,16 @@ impl<T> ResponseToken<T> {
             .lock()
             .expect("ResponseToken mutex poisoned")
             .is_some()
+    }
+
+    /// Current strong count of the internal slot `Arc`.
+    ///
+    /// Used by `PendingResponse::poll` to detect consumer-dropped cancellation:
+    /// when the main-thread handle is dropped, `consumer_strong_count` drops
+    /// from `2` (IO thread + main thread) to `1` (IO thread only). The IO
+    /// thread then removes the pending entry without emitting a PTY reply.
+    pub fn consumer_strong_count(&self) -> usize {
+        Arc::strong_count(&self.slot)
     }
 }
 
@@ -130,3 +195,6 @@ pub fn format_color_reply(color: crate::color::Rgb, prefix: &str, terminator: &s
     )
     .into_bytes()
 }
+
+#[cfg(test)]
+mod tests;

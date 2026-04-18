@@ -28,7 +28,7 @@ pub(crate) mod registry;
 pub mod server;
 pub mod shell_integration;
 
-pub use backend::{EmbeddedMux, ImageConfig, MuxBackend, MuxClient};
+pub use backend::{EmbeddedMux, HostReply, ImageConfig, MuxBackend, MuxClient};
 pub use domain::{AdoptConfig, SpawnConfig, adopt_pane};
 pub use id::{ClientId, DomainId, PaneId};
 pub use mux_event::MuxNotification;

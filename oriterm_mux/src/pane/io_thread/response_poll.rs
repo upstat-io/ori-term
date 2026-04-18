@@ -3,15 +3,15 @@
 //! When a consumer fulfills a `ResponseToken` (e.g. providing clipboard text),
 //! the IO thread polls pending responses and formats the reply as a PTY write.
 //!
-//! During the legacy phase (`LegacyEventSink`), `pending_responses` is always
-//! empty — the legacy adapter handles the round-trip via closures. This module
-//! activates when consumers migrate to `QueueingEffectSink` (in
-//! `plans/effect-cutover/`).
+//! When the consumer DROPS the `ResponseToken` without fulfilling (user
+//! dismisses the overlay, pane closes mid-request), the IO thread detects the
+//! cancelled state via `Arc::strong_count` on the token's inner slot and
+//! removes the entry without emitting a reply.
 
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{
-    Effect, HostRequest, PendingResponse, PtyEffect, PtyWriteKind, format_clipboard_reply,
-    format_color_reply,
+    Effect, HostRequest, PendingResponse, PollResult, PtyEffect, PtyWriteKind,
+    format_clipboard_reply, format_color_reply,
 };
 
 use super::PaneIoThread;
@@ -19,23 +19,17 @@ use super::PaneIoThread;
 impl<S: EffectSink> PaneIoThread<S> {
     /// Register a host-request's response token for asynchronous polling.
     ///
-    /// Creates a `PendingResponse` that polls the request's `ResponseToken`
-    /// and, when fulfilled, produces an `Effect::Pty(PtyEffect::Write { .. })`
-    /// with the correctly formatted reply. Formatting is delegated to the
-    /// canonical functions in `oriterm_core::effect` (shared with the legacy
-    /// adapter to prevent SSOT drift).
+    /// Creates a `PendingResponse` whose poll closure:
+    /// 1. Attempts to `take()` a fulfilled value from the token; on `Some`,
+    ///    returns [`PollResult::Ready`] with the formatted PTY reply.
+    /// 2. On `None`, checks `reply.consumer_strong_count() <= 1` — when the
+    ///    main-thread consumer has dropped its handle, returns
+    ///    [`PollResult::Cancelled`] so the IO thread can remove the entry.
+    /// 3. Otherwise returns [`PollResult::Pending`].
     ///
-    /// # Dormant during legacy phase
-    ///
-    /// During the legacy phase, this method is never called — the legacy
-    /// adapter handles the round-trip internally. It activates when consumers
-    /// migrate to subscribe to `Effect::HostRequest` directly (see
-    /// `plans/effect-cutover/section-01-migrate-mux-consumer.md §01.1`). The
-    /// gate is lifted by spec-conformance §10.2 once that migration lands.
-    #[allow(
-        dead_code,
-        reason = "dormant during legacy phase; activates at effect-cutover"
-    )]
+    /// Reply formatting is delegated to the canonical functions in
+    /// `oriterm_core::effect` (shared with the legacy adapter to prevent
+    /// SSOT drift).
     pub(super) fn register_host_request_response(&mut self, request: HostRequest) {
         match request {
             HostRequest::ClipboardLoad {
@@ -46,12 +40,18 @@ impl<S: EffectSink> PaneIoThread<S> {
             } => {
                 self.pending_responses
                     .push(PendingResponse::new(Box::new(move || {
-                        let text = reply.take()?;
-                        let bytes = format_clipboard_reply(&text, clipboard_char, &terminator);
-                        Some(Effect::Pty(PtyEffect::Write {
-                            bytes,
-                            kind: PtyWriteKind::Other,
-                        }))
+                        if let Some(text) = reply.take() {
+                            let bytes = format_clipboard_reply(&text, clipboard_char, &terminator);
+                            return PollResult::Ready(Effect::Pty(PtyEffect::Write {
+                                bytes,
+                                kind: PtyWriteKind::Other,
+                            }));
+                        }
+                        if reply.consumer_strong_count() <= 1 {
+                            PollResult::Cancelled
+                        } else {
+                            PollResult::Pending
+                        }
                     })));
             }
             HostRequest::ColorQuery {
@@ -62,12 +62,18 @@ impl<S: EffectSink> PaneIoThread<S> {
             } => {
                 self.pending_responses
                     .push(PendingResponse::new(Box::new(move || {
-                        let color = reply.take()?;
-                        let bytes = format_color_reply(color, &prefix, &terminator);
-                        Some(Effect::Pty(PtyEffect::Write {
-                            bytes,
-                            kind: PtyWriteKind::Other,
-                        }))
+                        if let Some(color) = reply.take() {
+                            let bytes = format_color_reply(color, &prefix, &terminator);
+                            return PollResult::Ready(Effect::Pty(PtyEffect::Write {
+                                bytes,
+                                kind: PtyWriteKind::Other,
+                            }));
+                        }
+                        if reply.consumer_strong_count() <= 1 {
+                            PollResult::Cancelled
+                        } else {
+                            PollResult::Pending
+                        }
                     })));
             }
         }
@@ -75,26 +81,30 @@ impl<S: EffectSink> PaneIoThread<S> {
 
     /// Poll pending host-request responses and push fulfilled replies.
     ///
-    /// Iterates `pending_responses`, polls each token. Fulfilled responses
-    /// produce `Effect::Pty(PtyEffect::Write { .. })` which is pushed through
-    /// the terminal's effect sink for the consumer to process. Fulfilled
-    /// entries are removed in FIFO order (preserving insertion ordering per
-    /// the `EffectSink` ordering contract).
-    ///
-    /// During the legacy phase, `pending_responses` is always empty — this
-    /// is effectively a no-op.
+    /// Iterates `pending_responses`, polls each entry.
+    /// - `PollResult::Ready(effect)` → push through the terminal's effect
+    ///   sink and remove the entry (FIFO order via `Vec::remove`).
+    /// - `PollResult::Cancelled` → remove the entry WITHOUT pushing a reply
+    ///   (consumer dropped its handle).
+    /// - `PollResult::Pending` → retain the entry for the next poll.
     pub(super) fn poll_pending_responses(&mut self) {
         if self.pending_responses.is_empty() {
             return;
         }
         let mut i = 0;
         while i < self.pending_responses.len() {
-            if let Some(effect) = self.pending_responses[i].poll() {
-                self.terminal.effect_sink().push(effect);
-                // Use `remove` (not `swap_remove`) to preserve FIFO order.
-                self.pending_responses.remove(i);
-            } else {
-                i += 1;
+            match self.pending_responses[i].poll() {
+                PollResult::Ready(effect) => {
+                    self.terminal.effect_sink().push(effect);
+                    // Use `remove` (not `swap_remove`) to preserve FIFO order.
+                    self.pending_responses.remove(i);
+                }
+                PollResult::Cancelled => {
+                    self.pending_responses.remove(i);
+                }
+                PollResult::Pending => {
+                    i += 1;
+                }
             }
         }
     }

@@ -91,7 +91,7 @@ fn unsuppressed_forwards_pty_write() {
     let (proxy, _dirty, rx) = make_proxy(false);
     proxy.send_event(Event::PtyWrite("response".into()));
     let event = rx.try_recv().expect("should have received MuxEvent");
-    assert!(matches!(event, MuxEvent::PtyWrite { data, .. } if data == "response"));
+    assert!(matches!(event, MuxEvent::PtyWrite { data, .. } if data == b"response"));
 }
 
 /// Unsuppressed proxy forwards bell events.

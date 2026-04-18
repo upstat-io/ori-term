@@ -8,7 +8,7 @@
 pub mod adopt;
 pub(crate) mod lifecycle;
 pub(crate) mod reader;
-mod spawn;
+pub(crate) mod spawn;
 
 use std::io::{self, Write};
 use std::sync::Arc;
