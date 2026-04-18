@@ -27,7 +27,7 @@ success_criteria:
 depends_on:
   - "plans/spec-conformance/section-03-effect-boundary-migration.md"
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-17
 sections:
   - id: "01.1"
