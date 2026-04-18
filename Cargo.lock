@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260416"
+version = "0.2.0-alpha.20260417"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1971,7 +1971,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260416"
+version = "0.2.0-alpha.20260417"
 dependencies = [
  "base64",
  "bitflags 2.11.1",
@@ -1993,7 +1993,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260416"
+version = "0.2.0-alpha.20260417"
 dependencies = [
  "libc",
  "log",
@@ -2003,7 +2003,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260416"
+version = "0.2.0-alpha.20260417"
 dependencies = [
  "base64",
  "bincode",
@@ -2025,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_test_support"
-version = "0.2.0-alpha.20260416"
+version = "0.2.0-alpha.20260417"
 dependencies = [
  "clap",
  "oriterm_core",
@@ -2037,7 +2037,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260416"
+version = "0.2.0-alpha.20260417"
 dependencies = [
  "criterion",
  "image",
@@ -2220,9 +2220,9 @@ checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
 name = "portable-atomic-util"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "091397be61a01d4be58e7841595bd4bfedb15f1cd54977d79b8271e94ed799a3"
+checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
 dependencies = [
  "portable-atomic",
 ]
@@ -2288,9 +2288,9 @@ checksum = "3eb8486b569e12e2c32ad3e204dbaba5e4b5b216e9367044f25f1dba42341773"
 
 [[package]]
 name = "pxfm"
-version = "0.1.28"
+version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5a041e753da8b807c9255f28de81879c78c876392ff2469cde94799b2896b9d"
+checksum = "e0c5ccf5294c6ccd63a74f1565028353830a9c2f5eb0c682c355c471726a6e3f"
 
 [[package]]
 name = "quick-error"
