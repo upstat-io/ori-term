@@ -216,10 +216,26 @@ Escalate ONLY when the editor hits a case requiring human judgment — e.g., two
   },
   "question": "The plan has two contradictory designs for <X>: <one-sentence framing>. How should I resolve it?",
   "options": [
-    {"key": "prefer-section-03", "label": "Authoritative is section 03 (<summary>); rewrite section 05 to match"},
-    {"key": "prefer-section-05", "label": "Authoritative is section 05 (<summary>); rewrite section 03 to match"},
-    {"key": "split-scope", "label": "Both are valid for different scopes — split/rename the sections to avoid the conflict"},
-    {"key": "abort-editor", "label": "Abort Step 5 and surface the ambiguity for manual plan work", "next_skill": null}
+    /* Per .claude/rules/ask-user-question.md: exactly ONE option MUST be marked
+       `recommended: true`, placed at index 0, with `(Recommended)` appended to
+       its label and a `description` opening `Recommended because …`.
+       The editor picks whichever option its `evidence` array most strongly
+       supports. If evidence is genuinely symmetric, recommend `split-scope`
+       as the safe tie-break (preserves both designs, eliminates the conflict
+       by scoping). Never emit all four options with no recommendation. */
+    {"key": "prefer-section-03",
+     "label": "Authoritative is section 03 (<summary>); rewrite section 05 to match",
+     "description": "…"},
+    {"key": "prefer-section-05",
+     "label": "Authoritative is section 05 (<summary>); rewrite section 03 to match",
+     "description": "…"},
+    {"key": "split-scope",
+     "label": "Both are valid for different scopes — split/rename the sections to avoid the conflict",
+     "description": "…"},
+    {"key": "abort-editor",
+     "label": "Abort Step 5 and surface the ambiguity for manual plan work",
+     "description": "…",
+     "next_skill": null}
   ]
 }
 ```

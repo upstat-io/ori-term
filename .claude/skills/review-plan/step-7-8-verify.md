@@ -8,7 +8,7 @@ The parent orchestrator passed the scratch-dir path as `{RUN_DIR}`. Read:
 
 - `{RUN_DIR}/context.json` — `mode`, `plan_dir`, `target_section`
 - `{RUN_DIR}/editor.json` — Step 5 editor handoff. The `escalate` field indicates whether the editor surfaced unresolvable human-judgment issues; if absent, treat as `false`.
-- `{RUN_DIR}/tpr.json` — flip condition is `"converged": true` OR `"user_accepted": true`. The `user_accepted: true` flag is written by the parent orchestrator (see `review-plan/SKILL.md §Escalation handling` item 4) when the user explicitly selects an `applies_user_accepted: true` option at Step 6's cap-exit AskUserQuestion (`step-6-tpr.md` Branch 2 `accept-remaining` or Branch 3 `accept-best-effort`). When neither is true, this sub-skill does NOT flip `reviewed: true` and reports the reason.
+- `{RUN_DIR}/tpr.json` — flip condition is `"converged": true` OR `"user_accepted": true`. The `user_accepted: true` flag is written by the parent orchestrator (see `review-plan/SKILL.md §Escalation handling` item 4) when the user explicitly selects an `applies_user_accepted: true` option at Step 6's cap-exit AskUserQuestion (`step-6-tpr.md` Branch 2 `accept-with-findings` — the key aligned with `/tpr-review §5` to keep the two prompts consistent). When neither is true, this sub-skill does NOT flip `reviewed: true` and reports the reason.
 
 ## Step 7 — Flip `reviewed` field (single-section mode ONLY)
 
@@ -18,7 +18,7 @@ If flip condition holds:
 
 - Set `reviewed: true` in `{target_section}`'s frontmatter via the Edit tool.
 - Record `reviewed_flipped: true` in the output.
-- If the flip is by `tpr.user_accepted == true` (not `tpr.converged`), ALSO append a line to the section's `third_party_review.notes` frontmatter field recording the cap-exit reason + `user_accepted_option_key` value from the patched handoff JSON, e.g. `notes: "user-accepted via accept-remaining at max_iterations_reached — 2 findings filed as - [ ] items in §NN.R"`. The audit trail lives in the plan file itself, not just `$RUN_DIR/*.json` (the orchestrator-owned scratch dir).
+- If the flip is by `tpr.user_accepted == true` (not `tpr.converged`), ALSO append a line to the section's `third_party_review.notes` frontmatter field recording the cap-exit reason + `user_accepted_option_key` value from the patched handoff JSON, e.g. `notes: "user-accepted via accept-with-findings at iter_cap_reached — 2 findings filed as - [ ] items in §NN.R"`. Status names come from `/tpr-review/SKILL.md §5`'s current `exit_reason` set (`iter_cap_reached` / `meta_cap_reached`). The audit trail lives in the plan file itself, not just `$RUN_DIR/*.json` (the orchestrator-owned scratch dir).
 
 If `mode == "whole-plan"`: skip this step entirely. Never touch `reviewed` fields in whole-plan mode.
 
@@ -78,9 +78,16 @@ If the verify loop does not converge within 5 iterations, include `question` + `
   "escalate": true,
   "question": "Post-edit audit verify reached the 5-iteration cap with 3 major findings still open. How do you want to proceed?",
   "options": [
-    {"key": "accept-minor", "label": "Accept remaining minor findings and finish review"},
-    {"key": "dispatch-editor-round-2", "label": "Run a second editor pass to clean remaining findings"},
-    {"key": "abort", "label": "Abort — findings need manual attention"}
+    {"key": "dispatch-editor-round-2",
+     "label": "Run a second editor pass (Recommended)",
+     "description": "Recommended because 3 major findings are too many to accept silently — a second editor pass on the same inputs typically clears structural issues the first pass missed. Cost is one more editor Agent round; benefit is converging without manual intervention.",
+     "recommended": true},
+    {"key": "accept-minor",
+     "label": "Accept remaining minor findings and finish review",
+     "description": "Pick only if the majors have been re-classified as non-blocking after re-reading. Default is to resolve majors before flipping reviewed: true."},
+    {"key": "abort",
+     "label": "Abort — findings need manual attention",
+     "description": "Exits the review loop entirely; leaves reviewed: false with no follow-up anchor. Pick only if the findings surfaced plan-state that editor tooling cannot resolve."}
   ]
 }
 ```
