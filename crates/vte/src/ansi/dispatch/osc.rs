@@ -246,13 +246,77 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
 
         // iTerm2 proprietary sequences.
         b"1337" => {
-            if params.len() >= 2 && params[1].starts_with(b"File=") {
-                handler.iterm2_file(&params[1..]);
-            } else {
+            if params.len() < 2 {
                 unhandled(params);
+                return;
             }
+            dispatch_iterm2_osc1337(handler, &params[1..]);
         },
 
         _ => unhandled(params),
+    }
+}
+
+/// Route an OSC 1337 sub-command to the matching `Handler` method.
+///
+/// The first sub-op is expected to be `key[=value]`. `File=...` still routes
+/// through `Handler::iterm2_file` — the full param tail is forwarded so the
+/// existing iTerm2 image parser remains unchanged. Non-image sub-ops
+/// (`SetMark`, `RemoteHost=`, `CurrentDir=`, `Copy=`, `ReportCellSize`,
+/// `SetUserVar=`, `ShellIntegrationVersion=`) route to their own dedicated
+/// `Handler` hooks so each consumer (e.g. `Term`) can implement them without
+/// repeating the `key[=value]` parse.
+fn dispatch_iterm2_osc1337<H: Handler>(handler: &mut H, params: &[&[u8]]) {
+    // `params[0]` is the first sub-op, e.g. `SetMark`, `RemoteHost=user@host`,
+    // `File=name=...`, etc.
+    let head = params[0];
+
+    if head.starts_with(b"File=") {
+        handler.iterm2_file(params);
+        return;
+    }
+
+    // Split `head` on the first `=` into `(key, value)`.
+    let (key, value) = match head.iter().position(|&b| b == b'=') {
+        Some(idx) => (&head[..idx], Some(&head[idx + 1..])),
+        None => (head, None),
+    };
+
+    match key {
+        b"SetMark" => handler.iterm2_set_mark(),
+        b"ReportCellSize" => handler.iterm2_report_cell_size(),
+        b"RemoteHost" => {
+            if let Some(v) = value {
+                handler.iterm2_remote_host(v);
+            }
+        },
+        b"CurrentDir" => {
+            if let Some(v) = value {
+                handler.iterm2_current_dir(v);
+            }
+        },
+        b"Copy" => {
+            if let Some(v) = value {
+                handler.iterm2_copy(v);
+            }
+        },
+        b"ShellIntegrationVersion" => {
+            if let Some(v) = value {
+                handler.iterm2_shell_integration_version(v);
+            }
+        },
+        b"SetUserVar" => {
+            // `SetUserVar=NAME=<base64-value>` — the head split above gave us
+            // `value = Some(b"NAME=<base64>")`. Split once more on `=` to
+            // recover the name and the base64-encoded value.
+            let Some(rest) = value else { return };
+            let Some(sep) = rest.iter().position(|&b| b == b'=') else {
+                return;
+            };
+            let name = &rest[..sep];
+            let encoded = &rest[sep + 1..];
+            handler.iterm2_set_user_var(name, encoded);
+        },
+        _ => {},
     }
 }

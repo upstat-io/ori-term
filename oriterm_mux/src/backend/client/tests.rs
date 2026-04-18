@@ -133,6 +133,7 @@ fn test_snapshot(title: &str) -> crate::PaneSnapshot {
         search_focused: None,
         search_total_matches: 0,
         has_unseen_output: false,
+        mouse_cursor_icon: None,
     }
 }
 

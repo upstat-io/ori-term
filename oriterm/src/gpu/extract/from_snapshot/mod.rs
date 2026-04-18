@@ -135,6 +135,9 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
     out.images.clear();
     out.image_data.clear();
     out.images_dirty = false;
+    out.mouse_cursor_icon = snapshot
+        .mouse_cursor_icon
+        .and_then(oriterm_mux::protocol::snapshot::decode_cursor_icon);
 }
 
 /// Refill an existing [`FrameInput`] from a [`PaneSnapshot`], reusing allocations.

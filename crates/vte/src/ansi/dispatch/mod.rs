@@ -267,3 +267,6 @@ where
         self.terminated
     }
 }
+
+#[cfg(test)]
+mod tests;
