@@ -1613,7 +1613,7 @@ fn ris_clears_cwd_and_title_state() {
 fn ris_clears_command_timing() {
     let mut term = make_term();
     term.set_command_start(std::time::Instant::now());
-    let _ = term.finish_command();
+    let _ = term.finish_command(None);
 
     // Verify we had a duration.
     assert!(term.last_command_duration().is_some());
@@ -2609,4 +2609,68 @@ fn term_resize_without_reflow_skips_remap() {
         placements[0].cell_row.0, 1,
         "reflow=false must leave cell_row unchanged"
     );
+}
+
+// ── OSC 22: Mouse cursor icon ───────────────────────────────────────
+//
+// Section 10.0 adds `Term::mouse_cursor_icon` as the canonical store for
+// OSC 22 (iTerm2 mouse cursor icon). These tests pin the state plumbing
+// before subsection 10.5 writes the OSC 22 matrix.
+
+#[test]
+fn term_mouse_cursor_icon_starts_none() {
+    let term = make_term();
+    assert!(term.mouse_cursor_icon().is_none());
+}
+
+#[test]
+fn term_set_mouse_cursor_icon_stores_icon() {
+    use vte::ansi::Handler;
+    use vte::ansi::cursor_icon::CursorIcon;
+
+    let mut term = make_term();
+    Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Pointer);
+    assert_eq!(term.mouse_cursor_icon(), Some(CursorIcon::Pointer));
+}
+
+#[test]
+fn term_mouse_cursor_icon_flows_into_renderable_snapshot() {
+    use vte::ansi::Handler;
+    use vte::ansi::cursor_icon::CursorIcon;
+
+    let mut term = make_term();
+    Handler::set_mouse_cursor_icon(&mut term, CursorIcon::Crosshair);
+
+    let rc = term.renderable_content();
+    assert_eq!(rc.mouse_cursor_icon, Some(CursorIcon::Crosshair));
+}
+
+// ── OSC 133;D: Injectable clock for deterministic CommandComplete ───
+
+#[test]
+fn finish_command_uses_injected_now_for_deterministic_duration() {
+    use std::time::{Duration, Instant};
+
+    let mut term = make_term();
+    let t0 = Instant::now();
+    term.set_command_start(t0);
+
+    // Inject the end timestamp explicitly — no wall-clock reliance.
+    let duration = term.finish_command(Some(t0 + Duration::from_millis(1500)));
+    assert_eq!(duration, Some(Duration::from_millis(1500)));
+    assert_eq!(
+        term.last_command_duration(),
+        Some(Duration::from_millis(1500))
+    );
+}
+
+#[test]
+fn finish_command_without_start_returns_none_regardless_of_now() {
+    use std::time::{Duration, Instant};
+
+    let mut term = make_term();
+    // No set_command_start — finish should return None.
+    let d = term.finish_command(Some(Instant::now() + Duration::from_millis(10)));
+    assert!(d.is_none());
+    assert!(term.last_command_duration().is_none());
 }

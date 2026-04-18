@@ -29,7 +29,9 @@ impl<S: EffectSink> PaneIoThread<S> {
     ///
     /// During the legacy phase, this method is never called — the legacy
     /// adapter handles the round-trip internally. It activates when consumers
-    /// migrate to subscribe to `Effect::HostRequest` directly.
+    /// migrate to subscribe to `Effect::HostRequest` directly (see
+    /// `plans/effect-cutover/section-01-migrate-mux-consumer.md §01.1`). The
+    /// gate is lifted by spec-conformance §10.2 once that migration lands.
     #[allow(
         dead_code,
         reason = "dormant during legacy phase; activates at effect-cutover"

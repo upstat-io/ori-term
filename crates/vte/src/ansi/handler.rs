@@ -326,4 +326,32 @@ pub trait Handler {
     /// having split on `;`. The first param starts with `File=` and the
     /// last param contains `:<base64-data>` after the final key=value pair.
     fn iterm2_file(&mut self, _params: &[&[u8]]) {}
+
+    /// Handle OSC 1337 ; SetMark — iTerm2 navigation mark.
+    ///
+    /// Equivalent to OSC 133;A's prompt boundary: records the current
+    /// cursor row so the user can jump between marks in the scrollback.
+    fn iterm2_set_mark(&mut self) {}
+
+    /// Handle OSC 1337 ; RemoteHost=user@host — iTerm2 remote host identity.
+    fn iterm2_remote_host(&mut self, _host: &[u8]) {}
+
+    /// Handle OSC 1337 ; CurrentDir=/path — iTerm2 CWD update.
+    ///
+    /// Shares the canonical CWD field with OSC 7 (SSOT: `Term::set_cwd`).
+    fn iterm2_current_dir(&mut self, _path: &[u8]) {}
+
+    /// Handle OSC 1337 ; Copy=:<base64> — iTerm2 clipboard copy.
+    fn iterm2_copy(&mut self, _data: &[u8]) {}
+
+    /// Handle OSC 1337 ; ReportCellSize — iTerm2 request for cell pixel size.
+    ///
+    /// Handler replies over PTY with the current cell dimensions.
+    fn iterm2_report_cell_size(&mut self) {}
+
+    /// Handle OSC 1337 ; SetUserVar=NAME=<base64> — iTerm2 user-variable.
+    fn iterm2_set_user_var(&mut self, _name: &[u8], _value: &[u8]) {}
+
+    /// Handle OSC 1337 ; ShellIntegrationVersion=N — iTerm2 shell-integration version.
+    fn iterm2_shell_integration_version(&mut self, _version: &[u8]) {}
 }
