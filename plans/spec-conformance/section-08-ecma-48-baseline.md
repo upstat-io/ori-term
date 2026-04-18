@@ -81,7 +81,7 @@ sections:
 **Success Criteria:**
 - [x] Every tack-covered row in `catalog/ecma-48.md` is `verified`
 - [x] Basic ANSI/DEC modes verified
-- [x] Basic OSC rows verified
+- [x] Basic OSC rows scope audit (tack drove ZERO OSC rows — all basic OSC rows 0/1/2/4/7/10/11/12/52 remain owned by Section 10 and are verified there; this success-criterion line originally implied Section 08 verified them, which was wrong — corrected 2026-04-17 to reflect that Section 08's OSC scope is an ownership-audit only, the actual row verification lives in Section 10 OSC Suite)
 - [x] DECLRMM full mode plumbing implemented (VTE types, TermMode flag, mode reporting)
 - [x] DECLRMM grid enforcement implemented (margin fields, cursor movement, extended operations)
 - [x] CSI s / DECSLRM ambiguity resolved
