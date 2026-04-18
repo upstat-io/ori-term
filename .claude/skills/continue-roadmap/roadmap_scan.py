@@ -887,6 +887,36 @@ def crawl_workspace(repo_root: Path, explicit_plan_dir: Path | None = None) -> W
                 )
                 break
 
+    # Transitive dep-chain walk: deps take precedence over ordering.
+    # `_pick_focus_plan` + ordered-first pick surfaces a section that
+    # may have incomplete `depends_on` entries. Walk the chain until we
+    # land on a section whose deps are all satisfied — that's the real
+    # next work item. The walk can cross plan boundaries (e.g.
+    # spec-conformance §10 depends_on effect-cutover §01, so focus
+    # moves from the spec-conformance plan into the effect-cutover
+    # plan). See `.claude/skills/improve-tooling/script-roadmap-scan-design.md`
+    # §4 dated entry for the originating incident.
+    if ws.focus_section is not None:
+        terminal, hops = _follow_unmet_deps_chain(ws.focus_section, ws)
+        if terminal is not ws.focus_section:
+            hop_trail = " → ".join(
+                f"{h.plan.name}/§{h.number}" for h in hops
+            )
+            ws.focus_section_reason = (
+                f"transitive dep redirect: {hop_trail} → "
+                f"{terminal.plan.name}/§{terminal.number} "
+                f"({terminal.status}, {terminal.checked}/{terminal.total}); "
+                f"ordered-first pick was blocked by this dep"
+            )
+            ws.focus_section = terminal
+            if terminal.plan is not ws.focus_plan:
+                prior_plan = ws.focus_plan.name if ws.focus_plan else "?"
+                ws.focus_plan = terminal.plan
+                ws.focus_reason = (
+                    f"transitive dep redirect from {prior_plan}: "
+                    f"{hop_trail} → {terminal.plan.name}"
+                )
+
     return ws
 
 
@@ -931,6 +961,48 @@ def _resolve_dependency_ref(ref: str, ws: Workspace) -> "Section | None":
             if sec.number == ref or sec.number.strip('"') == ref:
                 return sec
     return None
+
+
+def _follow_unmet_deps_chain(
+    start: "Section", ws: "Workspace"
+) -> tuple["Section", list["Section"]]:
+    """Walk `depends_on` transitively to the first section with no unmet deps.
+
+    Deps take precedence over ordering: if `start` has an incomplete
+    dependency, the dependency is the actual next work item. If THAT
+    dependency has its own incomplete dependency, keep walking until we
+    reach a section whose deps are all `complete` (or unresolvable — those
+    surface via the `unmet_dependencies` info gate, not here).
+
+    Returns ``(terminal, hops)`` where ``hops`` is the ordered list of
+    sections traversed (start → penultimate, excluding the terminal). If
+    ``start`` itself has no unmet deps, returns ``(start, [])``.
+
+    Cycle guard: if we revisit a section, stop and return the revisit as
+    terminal — a dep cycle is a broken graph and the gate layer is
+    responsible for surfacing it.
+    """
+    hops: list["Section"] = []
+    visited: set[Path] = set()
+    current = start
+    while True:
+        if current.path in visited:
+            return current, hops
+        visited.add(current.path)
+        if not current.depends_on:
+            return current, hops
+        blocker: "Section | None" = None
+        for ref in current.depends_on:
+            dep = _resolve_dependency_ref(ref, ws)
+            if dep is None:
+                continue
+            if dep.status != "complete":
+                blocker = dep
+                break
+        if blocker is None:
+            return current, hops
+        hops.append(current)
+        current = blocker
 
 
 def classify_blocker_readiness(
