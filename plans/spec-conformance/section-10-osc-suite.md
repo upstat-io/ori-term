@@ -72,7 +72,7 @@ sections:
     status: not-started
   - id: "10.R"
     title: "Third Party Review Findings"
-    status: complete
+    status: in-progress
   - id: "10.N"
     title: "Completion Checklist"
     status: not-started
