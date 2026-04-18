@@ -597,3 +597,107 @@ fn large_snapshot_through_extract() {
     assert_eq!(last.line, rows - 1);
     assert_eq!(last.column, Column(cols - 1));
 }
+
+/// Regression: daemon first-frame extract must decode `mouse_cursor_icon`.
+///
+/// `snapshot_to_renderable()` builds `RenderableContent::default()` and then
+/// populates the fields; `mouse_cursor_icon` defaults to `None`. If the
+/// function fails to assign it, daemon clients render the first frame with
+/// no OSC 22 cursor icon even when the wire snapshot carries one.
+///
+/// See: plans/spec-conformance/section-10-osc-suite.md §10.5 daemon pin.
+#[test]
+fn snapshot_to_renderable_populates_mouse_cursor_icon() {
+    use vte::ansi::cursor_icon::CursorIcon;
+
+    let mut snap = test_snapshot();
+    snap.mouse_cursor_icon =
+        oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Pointer);
+
+    let content = snapshot_to_renderable(&snap);
+
+    assert_eq!(content.mouse_cursor_icon, Some(CursorIcon::Pointer));
+}
+
+/// Regression: refill path also carries `mouse_cursor_icon` — pinned here to
+/// guard against asymmetric drift between the initial extract and the refill
+/// (the historical bug was missing in the initial path; pinning both sides
+/// ensures future edits can't regress one while the other stays correct).
+#[test]
+fn snapshot_to_renderable_into_populates_mouse_cursor_icon() {
+    use oriterm_core::RenderableContent;
+    use vte::ansi::cursor_icon::CursorIcon;
+
+    let mut snap = test_snapshot();
+    snap.mouse_cursor_icon = oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Text);
+
+    let mut out = RenderableContent::default();
+    snapshot_to_renderable_into(&snap, &mut out);
+
+    assert_eq!(out.mouse_cursor_icon, Some(CursorIcon::Text));
+}
+
+/// Negative pin: `mouse_cursor_icon: None` on the wire produces `None` on
+/// `RenderableContent`, not a stale value from a prior extract.
+#[test]
+fn snapshot_to_renderable_none_icon_stays_none() {
+    let mut snap = test_snapshot();
+    snap.mouse_cursor_icon = None;
+
+    let content = snapshot_to_renderable(&snap);
+
+    assert_eq!(content.mouse_cursor_icon, None);
+}
+
+/// Negative pin: refill path MUST clear a prior `Some(icon)` when the wire
+/// snapshot has `None`. This is the stale-value-reuse case — without this
+/// pin, a refill that only assigns when the source is `Some` would leak the
+/// previous frame's icon into the current frame.
+#[test]
+fn snapshot_to_renderable_into_clears_stale_icon() {
+    use oriterm_core::RenderableContent;
+    use vte::ansi::cursor_icon::CursorIcon;
+
+    // Seed an existing content with a Some value (as if from a prior frame).
+    let mut out = RenderableContent::default();
+    out.mouse_cursor_icon = Some(CursorIcon::Pointer);
+
+    // Refill from a snapshot with None — the icon MUST be cleared.
+    let mut snap = test_snapshot();
+    snap.mouse_cursor_icon = None;
+    snapshot_to_renderable_into(&snap, &mut out);
+
+    assert_eq!(out.mouse_cursor_icon, None);
+}
+
+/// Negative pin: `extract_frame_from_snapshot_into` (the top-level refill
+/// that both `snapshot_to_renderable_into` and other field resets flow
+/// through) MUST also clear a stale `Some(icon)` when the source is `None`.
+#[test]
+fn extract_frame_from_snapshot_into_clears_stale_icon() {
+    use oriterm_core::RenderableContent;
+    use vte::ansi::cursor_icon::CursorIcon;
+
+    use super::extract_frame_from_snapshot;
+
+    // Build a first FrameInput with Some(icon) populated.
+    let mut snap1 = test_snapshot();
+    snap1.mouse_cursor_icon =
+        oriterm_mux::protocol::snapshot::encode_cursor_icon(CursorIcon::Pointer);
+    let viewport = ViewportSize {
+        width: 100,
+        height: 100,
+    };
+    let cell_metrics = test_cell_metrics();
+    let mut frame = extract_frame_from_snapshot(&snap1, viewport, cell_metrics);
+    assert_eq!(frame.content.mouse_cursor_icon, Some(CursorIcon::Pointer));
+
+    // Refill from a snapshot with None — icon MUST be cleared.
+    let mut snap2 = test_snapshot();
+    snap2.mouse_cursor_icon = None;
+    extract_frame_from_snapshot_into(&snap2, &mut frame, viewport, cell_metrics);
+
+    assert_eq!(frame.content.mouse_cursor_icon, None);
+    // Sanity: also verify cells were refreshed (not a stale seed).
+    let _: &RenderableContent = &frame.content;
+}
