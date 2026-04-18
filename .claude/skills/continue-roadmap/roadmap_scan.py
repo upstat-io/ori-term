@@ -893,6 +893,46 @@ def crawl_workspace(repo_root: Path, explicit_plan_dir: Path | None = None) -> W
 # ─── Analysis ─────────────────────────────────────────────────────────────────
 
 
+def _resolve_dependency_ref(ref: str, ws: Workspace) -> "Section | None":
+    """Resolve a `depends_on` entry to a `Section` across the workspace.
+
+    Supports two ref shapes:
+
+    1. Path-like (contains `/`) — matched against `Section.path` resolved
+       relative to repo root. Used for cross-plan deps such as
+       ``"plans/effect-cutover/section-01-migrate-mux-consumer.md"``.
+    2. Bare section ID (e.g. `"03"`, `"08"`) — matched against
+       `Section.number`, scoped to the focus plan first, then to any plan
+       in the workspace. Quotes in the ref are stripped.
+
+    Returns the resolved `Section`, or `None` if no match is found.
+    """
+    ref = ref.strip().strip('"').strip("'")
+    if not ref:
+        return None
+    if "/" in ref:
+        ref_path = (ws.repo_root / ref).resolve()
+        for plan in ws.all_plans.values():
+            for sec in plan.sections:
+                try:
+                    if sec.path.resolve() == ref_path:
+                        return sec
+                except OSError:
+                    continue
+        return None
+    plans_to_try: list[Plan] = []
+    if ws.focus_plan is not None:
+        plans_to_try.append(ws.focus_plan)
+    plans_to_try.extend(
+        p for p in ws.all_plans.values() if p is not ws.focus_plan
+    )
+    for plan in plans_to_try:
+        for sec in plan.sections:
+            if sec.number == ref or sec.number.strip('"') == ref:
+                return sec
+    return None
+
+
 def classify_blocker_readiness(
     section_number: str,
     focus_plan: Plan,
@@ -1638,6 +1678,103 @@ def _build_gates(ws: Workspace) -> dict:
         }
     else:
         gates["bug_marker_drift"] = {"fires": False, "severity": "none", "payload": {}}
+
+    # Gate 1.65 — unmet cross-section dependencies
+    #
+    # When the focus section's frontmatter declares `depends_on: [...]`, every
+    # referenced section must be `complete` before this section is ready to
+    # work on. Without this gate, the scanner can route to a section whose
+    # dependency is still in-progress — wasting any /review-plan or
+    # /roadmap-work dispatched against it, since the dependent's scope can
+    # shift once the dep lands. Path-like refs (containing `/`) are matched
+    # against `section.path` relative to repo root; bare IDs (e.g., "03") are
+    # matched against `section.number` scoped to the focus plan first, then
+    # any plan. Unresolved refs surface as `info` (stale frontmatter); unmet
+    # ones surface as `block` and offer a reroute to the first blocker.
+    #
+    # See `.claude/skills/improve-tooling/script-roadmap-scan-design.md` §4
+    # 2026-04-18 entry for the originating incident.
+    unmet_deps: list[dict] = []
+    unresolved_deps: list[str] = []
+    if ws.focus_section is not None and ws.focus_section.depends_on:
+        for ref in ws.focus_section.depends_on:
+            dep_sec = _resolve_dependency_ref(ref, ws)
+            if dep_sec is None:
+                unresolved_deps.append(ref)
+                continue
+            if dep_sec.status != "complete":
+                unmet_deps.append({
+                    "ref": ref,
+                    "plan": dep_sec.plan.name,
+                    "section": dep_sec.number,
+                    "title": dep_sec.title,
+                    "status": dep_sec.status,
+                    "section_path": str(dep_sec.path),
+                    "checked": dep_sec.checked,
+                    "total": dep_sec.total,
+                })
+
+    if unmet_deps:
+        first_blocker = unmet_deps[0]
+        blocker_descs = "; ".join(
+            f"{d['plan']}/§{d['section']} ({d['status']}, "
+            f"{d['checked']}/{d['total']})"
+            for d in unmet_deps
+        )
+        reroute_arg = f"{Path(first_blocker['section_path']).parent} {first_blocker['section']}"
+        deps_payload = {
+            "unmet": unmet_deps,
+            "unresolved": unresolved_deps,
+            "next_skill": "continue-roadmap",
+            "next_skill_arg": reroute_arg,
+            "question": (
+                f"Section {ws.focus_section.number} declares "
+                f"depends_on with {len(unmet_deps)} incomplete "
+                f"dependency: {blocker_descs}. The dependency must "
+                f"land before this section is ready (its scope can "
+                f"shift once the dep completes). How do you want to "
+                f"proceed?"
+            ),
+            "options": [
+                {"key": "reroute-to-blocker",
+                 "label": (
+                     f"Switch focus to {first_blocker['plan']} "
+                     f"§{first_blocker['section']}"
+                 ),
+                 "recommended": True,
+                 "next_skill": "continue-roadmap",
+                 "next_skill_arg": reroute_arg},
+                {"key": "proceed",
+                 "label": "Proceed anyway (dependency may invalidate this work)",
+                 "recommended": False, "next_skill": None},
+                {"key": "pick-different",
+                 "label": "Pick a different section",
+                 "recommended": False, "next_skill": None},
+            ],
+        }
+    elif unresolved_deps:
+        deps_payload = {
+            "unmet": [],
+            "unresolved": unresolved_deps,
+            "question": (
+                f"Section {ws.focus_section.number}'s `depends_on` "
+                f"lists {len(unresolved_deps)} reference(s) that "
+                f"resolve to no known section: "
+                f"{', '.join(unresolved_deps)}. The references may "
+                f"be stale."
+            ),
+        }
+    else:
+        deps_payload = {"unmet": [], "unresolved": []}
+
+    gates["unmet_dependencies"] = {
+        "fires": bool(unmet_deps) or bool(unresolved_deps),
+        "severity": (
+            "block" if unmet_deps
+            else ("info" if unresolved_deps else "none")
+        ),
+        "payload": deps_payload,
+    }
 
     # Gate 1.7 — unreviewed focus section
     #

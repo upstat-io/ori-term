@@ -54,7 +54,7 @@ Parse stdout as JSON. All subsequent steps read this object; do not open plan fi
 
 - `focus_context` — plan full name (`plan_full_name`), description (`plan_description`), section goal (`section_goal`), subsection list (`subsections`), progress text (`plan_progress_pct` / `plan_progress_text` / `section_progress_text`). Feeds the handoff's focus-context block verbatim.
 - `next_unblocked` — `{subsection_id, item_content, item_lineno, unblocked_count, blocked_count}` for the first actionable `- [ ]` item. May be `null` if the focus section has no unblocked items.
-- `gates` — 7 pre-computed gate entries, each `{fires: bool, severity, payload}`. Unfired gates have an empty `payload: {}`; firing gates carry `options` + `question` where user interaction is needed.
+- `gates` — 10 pre-computed gate entries, each `{fires: bool, severity, payload}`. Unfired gates have an empty `payload: {}`; firing gates carry `options` + `question` where user interaction is needed.
 
 If you need cross-plan diagnostics (mismatches, orphan blockers, health signals), invoke `roadmap_scan.py` WITHOUT `--json` — the rich-text mode includes them. The `--json` envelope is intentionally minimal; do not expect `focus.plan` / `focus.section` / `health.*` top-level keys to exist.
 
@@ -125,6 +125,7 @@ After Step 2, only `block`-severity and `info`-severity gates remain. For each e
 | `stale_frontmatter` | `auto-fix` | Handled silently in Step 2a — never escalates. |
 | `stale_plan_annotations` | `auto-fix` | Handled silently in Step 2b — never escalates. |
 | `bug_marker_drift` | `auto-fix` | Handled silently in Step 2c — auto-inserts missing `Superseded by:` markers; surfaces orphan markers as info. Never escalates. |
+| `unmet_dependencies` | `block` (when any unmet dep) / `info` (only unresolved refs) | Escalate. `payload.options` offers `Switch focus to <blocker>` (re-runs `/continue-roadmap` with the blocker's plan + section as args), proceed-anyway, pick-different. Fires BEFORE `unreviewed_plan` so a `/review-plan` pass is not wasted on a dependent whose scope can shift once its dep lands. |
 | `unreviewed_plan` | `block` | Escalate. `payload.options` offers `/review-plan`, proceed-anyway, pick-different. |
 | `tpr_findings` | `block` | Escalate. Parent invokes `/verify-tpr` with `payload.next_skill_arg`. |
 | `critical_bugs` | `block` | Escalate. Parent invokes `/fix-bug` with the bug IDs from `payload.bugs`. Includes bugs elevated from `high` when they block focus-section items via `<!-- blocked-by:BUG-XXX -->` annotations (marked `elevated: true` in the payload). |
