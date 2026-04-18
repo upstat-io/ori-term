@@ -43,10 +43,12 @@ third_party_review:
 sections:
   - id: "01.1"
     title: "Sink swap + Effect→MuxEvent router (atomic — no intermediate commit where effects are queued but not routed)"
-    status: not-started
+    status: in-progress
+    resume_note: "Core code landed as WIP commit c5a21ab5 on dev (2026-04-18). Sink swap, effect_router module, PtyHandle watcher, PaneIoThread select! wiring, handle_pty_eof ordering, new MuxEvent/MuxNotification variants, PtyWrite: Vec<u8>, MuxBackend::fulfill_host_request, app consumer — all green through test-all/clippy-all/build-all. NOT complete — remaining gates: /tpr-review, /impl-hygiene-review, 22+ TDD matrix (13/22 landed in effect_router/tests.rs), /add-bug artifacts (VisualBell/AudioRequest/PrintRequest, daemon MuxPdu §01.4 Path B, io_thread/tests.rs reorg, OSC 10/11/12 theme placeholder). Do NOT re-run the code work; pick up at Phase K validation."
   - id: "01.2"
     title: "Activate PendingResponse polling with idle-wake channel"
-    status: not-started
+    status: in-progress
+    resume_note: "Wake channel + response_poll activation landed in same commit c5a21ab5. register_host_request_response dead-code gate removed; PaneIoHandle::fulfill_clipboard_load + fulfill_color_query wired; Arc::strong_count cancellation via PollResult::Cancelled. Same remaining gates as 01.1 — they land as one atomic completion."
   - id: "01.3"
     title: "Delete IoThreadEventProxy, LegacyEventSink, Event::ClipboardLoad/ColorRequest, MuxEventProxy (if unused), drain_notifications shim"
     status: not-started
@@ -59,6 +61,45 @@ sections:
 ---
 
 # Section 01: Migrate Mux Consumer
+
+## Session Resume Point (added 2026-04-18)
+
+**Code WIP commit: `c5a21ab5` on `dev` (not pushed).** The core cross-crate code migration landed there — do NOT re-do Phases A–H below.
+
+**What's done (in commit `c5a21ab5`):**
+- Phase A — oriterm_core: `host_request/` dir module, `AlreadyFulfilled`, `ResponseToken::fulfill → Result`, `consumer_strong_count`, `PollResult::{Pending, Ready, Cancelled}` replacing `Option<Effect>`
+- Phase B — MuxEvent/MuxNotification variants: `DesktopNotification`, `HostClipboardLoad`, `HostColorQuery`, `ClearPendingDesktopNotifications`; `MuxEvent::PtyWrite::data: String → Vec<u8>`
+- Phase D — PtyHandle watcher-thread restructure: `Box<dyn Child>` owned by watcher; `PtyHandle` keeps `ChildKiller` clone + captured `process_id` + shared `exit_result`/`Condvar`; `spawn_pty` returns `(PtyHandle, Receiver<ExitStatus>)`
+- Phase E — new `oriterm_mux/src/pane/io_thread/effect_router/` module with `drain_effects_into_mux_events`, `send_mux_event` (wakeup pair), `fire_wakeup_only`, intra-batch `ClearPendingNotifications` collapse, and 13 new tests
+- Phase F — PaneIoThread fields (`pane_id`, `mux_tx`, `child_exit_rx`, `pending_child_exit`, `response_wake_rx`, `effects_buf`), `select!` arms, `handle_pty_eof` final-snapshot-before-PaneExited ordering; sink swap at `domain/local.rs` + `domain/handoff/mod.rs` (adopted-pane forwarder thread wired)
+- Phase G — wake channel: `PaneIoHandle::{response_wake_tx, fulfill_clipboard_load, fulfill_color_query}` helpers; `register_host_request_response` `#[allow(dead_code)]` gate removed; `Arc::strong_count`-based cancellation detection in the poll closure
+- Phase H — `HostReply` enum + `MuxBackend::fulfill_host_request` trait method; `EmbeddedMux` impl via `pane.io_handle()`; `oriterm/src/app/mux_pump/` handler rewire for `DesktopNotification` / `ClearPendingDesktopNotifications` / `HostClipboardLoad` / `HostColorQuery`
+- `./test-all.sh` (2737 passed), `./clippy-all.sh`, `./build-all.sh` (including x86_64-pc-windows-gnu release) all green at commit time
+
+**What still blocks `status: complete` for §01.1 + §01.2:**
+- **Phase C — daemon MuxPdu wire variants** deferred per plan §01.4 Path B — file `/add-bug` artifact (below)
+- **Phase I — `/add-bug` artifacts** (all pending):
+  - `HostEffect::VisualBell` user-visible regression (audible/visual bell not forwarded)
+  - `HostEffect::AudioRequest` (DECPS drops)
+  - `HostEffect::PrintRequest` (MC printer passthrough drops)
+  - Daemon-mode `MuxPdu` wire variants for `DesktopNotification` + `ClearPendingDesktopNotifications` + `HostClipboardLoad`/`HostColorQuery` (§01.4 Path B deferral)
+  - `oriterm_mux/src/pane/io_thread/tests.rs` per-module reorganization (>2000 lines)
+  - OSC 10/11/12 theme-color placeholder `Rgb{0,0,0}` in `oriterm/src/app/mux_pump/` (HostColorQuery handler)
+- **Phase J — remaining TDD matrix tests** (13/22 landed in `effect_router/tests.rs`; still to add):
+  - `response_poll_idle_wake_unblocks_select` semantic pin (the plan's THE critical test — §01.2)
+  - `multiple_fulfills_collapse_to_one_wake` wake-collapse
+  - `pty_eof_emits_pane_exited_via_effect_router` + `pty_eof_without_exit_code_defaults_to_zero` + `pty_eof_exit_code_captured_after_scheduler_delay` (§11 pins)
+  - `final_snapshot_precedes_pane_exited` + `pane_exited_does_not_precede_final_snapshot` (§17 ordering pins)
+  - `multi_chunk_parse_drains_between_chunks` (§5 bound)
+  - `no_cloned_host_clipboard_load_notification_in_staging` (§18 grep pin)
+  - Daemon PDU round-trip integration (`desktop_notification_roundtrips_through_daemon_wire`) — gated on Phase C
+- **Phase K — `/tpr-review` + `/impl-hygiene-review`**:
+  - Pre-composed TPR prompt at `/tmp/tpr-round-ori_term-3nFF0jVe/prompt.md` (may be gone after /clear — regenerate via /tpr-review custom-objective against commit `c5a21ab5`)
+  - Iterate fixes until dual-reviewer clean or user-accepted at cap-exit
+  - Run `/impl-hygiene-review` after TPR clean
+  - File any review findings as `- [ ]` entries in §01.R and §01.2.R blocks
+
+**Resume protocol for `/continue-roadmap`:** both §01.1 and §01.2 are `in-progress` — the scanner should re-enter at whichever has the earliest unchecked validation item. Start with Phase I bug filings (mechanical), then Phase J remaining tests (TDD — write RED, verify, make GREEN), then Phase K reviews. Only when K is clean should §01.1 + §01.2 frontmatter flip to `status: complete` AND the top-level `reviewed:` flip happen (cross-plan invalidation at spec-conformance §10 already handled per prior commit `9741ee5b`).
 
 ## Mission-Criterion Connection
 
