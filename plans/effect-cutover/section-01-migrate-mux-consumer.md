@@ -43,11 +43,11 @@ third_party_review:
 sections:
   - id: "01.1"
     title: "Sink swap + Effect→MuxEvent router (atomic — no intermediate commit where effects are queued but not routed)"
-    status: in-progress
+    status: not-started
     resume_note: "Core code landed as WIP commit c5a21ab5 on dev (2026-04-18). Sink swap, effect_router module, PtyHandle watcher, PaneIoThread select! wiring, handle_pty_eof ordering, new MuxEvent/MuxNotification variants, PtyWrite: Vec<u8>, MuxBackend::fulfill_host_request, app consumer — all green through test-all/clippy-all/build-all. NOT complete — remaining gates: /tpr-review, /impl-hygiene-review, 22+ TDD matrix (13/22 landed in effect_router/tests.rs), /add-bug artifacts (VisualBell/AudioRequest/PrintRequest, daemon MuxPdu §01.4 Path B, io_thread/tests.rs reorg, OSC 10/11/12 theme placeholder). Do NOT re-run the code work; pick up at Phase K validation."
   - id: "01.2"
     title: "Activate PendingResponse polling with idle-wake channel"
-    status: in-progress
+    status: not-started
     resume_note: "Wake channel + response_poll activation landed in same commit c5a21ab5. register_host_request_response dead-code gate removed; PaneIoHandle::fulfill_clipboard_load + fulfill_color_query wired; Arc::strong_count cancellation via PollResult::Cancelled. Same remaining gates as 01.1 — they land as one atomic completion."
   - id: "01.3"
     title: "Delete IoThreadEventProxy, LegacyEventSink, Event::ClipboardLoad/ColorRequest, MuxEventProxy (if unused), drain_notifications shim"
