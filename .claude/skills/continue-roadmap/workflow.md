@@ -2,13 +2,35 @@
 
 **This file is read by the sub-agent dispatched from `SKILL.md`.** The protocol is deliberately thin: the scanner (`roadmap_scan.py --json`) pre-computes every gate decision, focus-context field, and next-unblocked pointer. The sub-agent's job is to run the scanner once, apply mechanical auto-fixes, and fill a handoff template from the JSON.
 
-**You do NOT:**
-- Read `CLAUDE.md` (not needed for JSON transcription)
-- Read section files (their fields are in `focus_context` / `next_unblocked`)
-- Run intelligence-graph queries (belongs to `/review-plan` / `/roadmap-work`, not scan+gates)
-- Validate blockers by opening sibling plan files (scanner already classifies them)
-- Edit `.rs`, `.ori`, or any file under `compiler/`, `library/`, `tests/`
-- Run `git add` / `git commit` directly — commits go through `/commit-push`
+**The goal is SPEED.** A clean run completes in **3–8 tool calls** and well under a minute. This is a status reporter, not an investigator. All investigation — code reading, compiler invocation, test analysis, typeck diagnosis, git archaeology — is `/roadmap-work`'s job (Opus, full capability). Your job is to run the scanner, apply auto-fixes the scanner flagged, and hand off. Nothing else.
+
+## Tool-call budget
+
+| Phase | Expected tool calls |
+|---|---|
+| Read this file (`workflow.md`) | 1 |
+| Run `roadmap_scan.py --json` | 1 |
+| Auto-fix edits (Step 2a/2c) | 0–N (one `Edit` per mismatch; usually 0–3) |
+| `plan-annotations.sh --cleanup-only` / `--count` (Step 2b) | 0–2 |
+| `Skill: commit-push` if any auto-fix ran (Step 2d) | 0–1 |
+| **Total for a clean run** | **3–8** |
+
+**If you cross ~15 total tool calls, you are off-contract.** Stop whatever you are doing, fill the handoff with whatever scanner results you have, and escalate. Do NOT keep going to "understand" the failure.
+
+## Hard bans — what you MUST NOT do
+
+These are load-bearing invariants. A sub-agent that violates ANY of these has broken the skill's speed contract and has wandered into /roadmap-work's territory.
+
+- **NEVER run any compiler/test/build binary.** Banned commands include (non-exhaustive): `cargo`, `cargo check`, `cargo run`, `cargo test`, `cargo clippy`, `cargo b`, `cargo t`, `cargo st`, `cargo stf`, `cargo test --all`, `cargo clippy --all -- -D warnings`, `cargo build --all`, `cargo test --all`, `cargo test --all && cargo clippy --all`, `ori`, `oric`, `./target/debug/ori`, `./target/release/ori`, `~/.local/bin/ori`, any script under `diagnostics/`, any script under `scripts/` that invokes the compiler. The scanner's JSON is the complete world-state you are allowed to observe.
+- **NEVER read `.rs`, `.ori`, `.toml` source files** or any file under `compiler/`, `library/`, `tests/`, `scripts/`. Plan-doc edits in `plans/` are fine (Step 2); source reads are not.
+- **NEVER investigate test failures, typecheck errors, dirty-tree contents, bug repros, or diagnostic output.** When a gate fires, ESCALATE IMMEDIATELY. Do NOT peek inside to "understand why" — the parent + user + `/roadmap-work` own that step.
+- **NEVER run `git log`, `git blame`, `git show`, `git diff`, `git bisect`**, or any git archaeology. The scanner already captured the only git state gates need (via `dirty_tree`).
+- **NEVER run intelligence-graph queries** (`scripts/intel-query.sh ...`) — that belongs to `/review-plan` / `/roadmap-work`, not scan+gates.
+- **NEVER read `CLAUDE.md` or `.claude/rules/*.md`** — not needed for JSON transcription; the scanner pre-computes every field.
+- **NEVER read section files by hand** — their fields are in `focus_context` / `next_unblocked`.
+- **NEVER validate blockers by opening sibling plan files** — the scanner already classifies them.
+- **NEVER edit `.rs`, `.ori`, or any file under `compiler/`, `library/`, `tests/`.**
+- **NEVER run `git add` / `git commit` directly** — commits go through `/commit-push`.
 
 **You DO:**
 - Run the scanner once, parse JSON

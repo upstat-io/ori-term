@@ -533,7 +533,23 @@ Note: the sub-agent prompt no longer carries `{OBJECTIVE}` or `{SCOPE}` placehol
 
 ## §9 — Failure handling
 
-**Stranded-report recovery (check BEFORE classifying a reviewer as failed).** A sub-agent's return message is the PRIMARY transport for its TPR-REPORT, but it is not the only one. Before declaring a reviewer `failed`, attempt disk recovery from the scratch dir created in §8 step 8a:
+**Liveness probe (check BEFORE stranded-report recovery, BEFORE retry, BEFORE abort).** Silence from a reviewer sub-agent is ambiguous — it can mean the CLI hung OR that the reviewer is mid-investigation and waiting on a slow Bash / Read / Grep it dispatched. Treating every silence as death biases the orchestrator toward shallow reviewer work and kills agents doing deep analysis. Before any retry/abort decision, consult the liveness probe:
+
+```
+Bash (foreground, timeout: 30000):
+  diagnostics/tpr-liveness.sh "$scratch" codex --human
+  diagnostics/tpr-liveness.sh "$scratch" gemini --human
+```
+
+The probe returns a three-state verdict by inspecting `$scratch/{REVIEWER}-stdout.txt` (the tee'd CLI output guaranteed by invariant I14):
+
+- **`alive` (exit 0)** — the reviewer is still emitting, OR its tail contains a `tool_call` / `thinking` / `<<<TPR-REPORT` marker indicating in-flight work. DO NOT retry, DO NOT abort, DO NOT dispatch a replacement Agent. Wait at least one more probe cycle (~60-120s) before reassessing.
+- **`quiet` (exit 1)** — borderline; the file grew within the last `[grace, 2*grace)` window (default `[5min, 10min)`) OR an `[2*grace, 4*grace)` window with an in-flight `tool_call` signal (slow Bash suspected, e.g. `cargo build`, `cargo test --all`). Consult the probe once more ~60s later before deciding. Do NOT retry on the first `quiet` verdict.
+- **`dead` (exit 2)** — no emission for >= 2*grace seconds AND no strong alive signal in the tail. The CLI is genuinely hung or crashed. Stranded-report recovery (below) and the retry/survivor policy apply.
+
+The probe's 45-min worst-case ceiling is bounded externally by `block-banned-commands.sh` (upper-bound `timeout` on `codex exec` / `gemini -p`). The probe never extends that ceiling — it only prevents premature retry within it.
+
+**Stranded-report recovery (check AFTER the liveness verdict classifies a reviewer as `dead`, BEFORE classifying as failed).** A sub-agent's return message is the PRIMARY transport for its TPR-REPORT, but it is not the only one. Before declaring a reviewer `failed`, attempt disk recovery from the scratch dir created in §8 step 8a:
 
 1. Parse the reviewer's return message. If it contains a `<<<TPR-REPORT … TPR-REPORT>>>` block, use it directly — no recovery needed.
 2. If the return message has no report block (sub-agent truncated, auto-backgrounded its Bash call, or returned early for any reason), check `$scratch/{REVIEWER}-report.txt` on disk. The sub-agent is contractually required to write this file during Step 3 of `tp_agent_prompt.md`.
@@ -543,9 +559,9 @@ Note: the sub-agent prompt no longer carries `{OBJECTIVE}` or `{SCOPE}` placehol
 
 The dual-path transport (inline return + disk persistence) eliminates the "stranded report" failure mode where a fully-completed reviewer CLI invocation produced a valid report that never reached the orchestrator because the sub-agent couldn't return inline. Recovery is NOT a retry — it's reading output that already exists.
 
-**One reviewer `status: failed`.** Retry that reviewer once (single tool call in a follow-up message; partner already completed). If retry fails, **survivor mode**: use only the surviving report, set `survivor_mode: true` in the round summary, continue.
+**One reviewer `status: failed`.** Consult the liveness probe for that reviewer FIRST. If `alive` or `quiet`, wait — do not retry. Only when the probe returns `dead` AND stranded-report recovery produces nothing do you retry that reviewer once (single tool call in a follow-up message; partner already completed). If retry fails, **survivor mode**: use only the surviving report, set `survivor_mode: true` in the round summary, continue.
 
-**Both reviewers `status: failed`.** Retry ONCE (parallel dispatch again). If both fail a second time:
+**Both reviewers `status: failed`.** Consult the probe for BOTH reviewers. If either is `alive` or `quiet`, do NOT retry — wait and reassess. Only when BOTH probes return `dead` AND neither has a stranded report on disk do you retry the parallel dispatch ONCE. If both fail a second time:
 
 - **Autonomous mode** (`autonomous_mode == True`): exit with `exit_reason = "autonomous_transport_failure"`, preserve the per-round scratch dir as the postmortem artifact, emit a final round summary, and return to the parent batch. No `AskUserQuestion` — no user present to answer. The parent collects the status and reports the failure in its end-of-run summary.
 - **Interactive mode**: escalate via `AskUserQuestion` — NEVER render these as prose-numbered bullets (§11.5 item 3):
