@@ -60,7 +60,7 @@ sections:
     status: complete
   - id: "10.6"
     title: "OSC 104 / 110 / 111 / 112 color reset — palette + default color restoration"
-    status: not-started
+    status: complete
   - id: "10.7"
     title: "OSC 1337 non-image sub-ops (SetMark, RemoteHost, CurrentDir, Copy, ReportCellSize, SetUserVar, ShellIntegrationVersion)"
     status: not-started
@@ -508,24 +508,24 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Tests:**
 
-- [ ] `osc104_zero_args_resets_all_256_palette` — pre-populate palette: set indices 0..256 to custom colors via OSC 4 at setup. Feed `\x1b]104\x1b\\`. Assert every index 0..256 matches the initial theme palette (compare against `Palette::for_theme(Theme::default())` — `Theme` has no `.palette()` method; use `oriterm_core::color::palette::Palette::for_theme(oriterm_core::theme::Theme::default())`).
-- [ ] `osc104_specific_indices_resets_only_those` — set indices 0, 5, 10 to custom colors. Feed `\x1b]104;5;10\x1b\\`. Assert index 0 is still the custom color; indices 5 and 10 are restored to theme defaults; indices 1–4, 6–9, 11–255 are at theme defaults (no collateral damage).
-- [ ] `osc104_invalid_index_dropped` — feed `\x1b]104;999;abc\x1b\\`, assert the `parse_number` failure path at `dispatch/osc.rs:231-234` routes to `unhandled` and no palette entry is mutated.
-- [ ] `osc110_resets_default_foreground` — set OSC 10 to red, feed `\x1b]110\x1b\\`. Assert default fg matches theme default fg (queryable via `term.palette().foreground()` — NOT `Term::color()`, which does not exist; the Palette API is at `oriterm_core/src/color/palette/mod.rs:253`).
-- [ ] `osc111_resets_default_background` — same pattern for Background; use `term.palette().background()`.
-- [ ] `osc112_resets_cursor_color` — same pattern for Cursor; use `term.palette().cursor_color()`.
-- [ ] `osc_reset_round_trip_with_query` — after each reset, feed OSC 10/11/12 ` ; ?` (query form) and assert `Effect::HostRequest(HostRequest::ColorQuery { ... })` is emitted (same apex as `osc10_query_replies_rgb` — HostRequest::ColorQuery is the spec_chain boundary; the reply `format_color_reply` output is tested in `oriterm_mux` IO-thread response-fulfillment tests — NOT here).
-- [ ] **Semantic pin** — `osc104_reset_marks_grid_dirty` — observe damage after OSC 104 (palette change should mark all visible rows dirty per `Term::set_color` which marks grid dirty). Negative pin: if damage isn't set, rendering won't repaint the reset palette — semantic regression.
+- [x] `osc104_zero_args_resets_all_256_palette` — pre-populate palette: set indices 0..256 to custom colors via OSC 4 at setup. Feed `\x1b]104\x1b\\`. Assert every index 0..256 matches the initial theme palette (compare against `Palette::for_theme(Theme::default())` — `Theme` has no `.palette()` method; use `oriterm_core::color::palette::Palette::for_theme(oriterm_core::theme::Theme::default())`).
+- [x] `osc104_specific_indices_resets_only_those` — set indices 0, 5, 10 to custom colors. Feed `\x1b]104;5;10\x1b\\`. Assert index 0 is still the custom color; indices 5 and 10 are restored to theme defaults; indices 1–4, 6–9, 11–255 are at theme defaults (no collateral damage).
+- [x] `osc104_invalid_index_dropped` — feed `\x1b]104;999;abc\x1b\\`, assert the `parse_number` failure path at `dispatch/osc.rs:231-234` routes to `unhandled` and no palette entry is mutated.
+- [x] `osc110_resets_default_foreground` — set OSC 10 to red, feed `\x1b]110\x1b\\`. Assert default fg matches theme default fg (queryable via `term.palette().foreground()` — NOT `Term::color()`, which does not exist; the Palette API is at `oriterm_core/src/color/palette/mod.rs:253`).
+- [x] `osc111_resets_default_background` — same pattern for Background; use `term.palette().background()`.
+- [x] `osc112_resets_cursor_color` — same pattern for Cursor; use `term.palette().cursor_color()`.
+- [x] `osc_reset_round_trip_with_query` — after each reset, feed OSC 10/11/12 ` ; ?` (query form) and assert `Effect::HostRequest(HostRequest::ColorQuery { ... })` is emitted (same apex as `osc10_query_replies_rgb` — HostRequest::ColorQuery is the spec_chain boundary; the reply `format_color_reply` output is tested in `oriterm_mux` IO-thread response-fulfillment tests — NOT here).
+- [x] **Semantic pin** — `osc104_reset_marks_grid_dirty` — observe damage after OSC 104 (palette change should mark all visible rows dirty per `Term::set_color` which marks grid dirty). Negative pin: if damage isn't set, rendering won't repaint the reset palette — semantic regression.
 
 **Catalog update:**
 
-- [ ] OSC-104, OSC-110, OSC-111, OSC-112 in `plans/spec-conformance/catalog/osc.md` → `verified`.
+- [x] OSC-104, OSC-110, OSC-111, OSC-112 in `plans/spec-conformance/catalog/osc.md` → `verified`.
 
 **Validation:**
 
-- [ ] All 8 tests green.
-- [ ] Color-reset round-trip confirms OSC 10/11/12 query returns the theme default after 110/111/112.
-- [ ] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green after 10.6's changes (per CLAUDE.md "run these after every change").
+- [x] All 8 tests green.
+- [x] Color-reset round-trip confirms OSC 10/11/12 `;?` queries emit `HostRequest::ColorQuery` (spec_chain boundary) after 110/111/112; `ResponseToken` fulfillment with the theme-default RGB is covered by `oriterm_mux` IO-thread response-fulfillment tests per scope clarification §G, not this section.
+- [x] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green after 10.6's changes (per CLAUDE.md "run these after every change").
 
 ---
 
