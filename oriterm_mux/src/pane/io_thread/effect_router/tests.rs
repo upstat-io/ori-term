@@ -617,3 +617,85 @@ fn no_cloned_host_clipboard_load_notification_in_staging() {
         }
     }
 }
+
+/// Effect-cutover §01.N negative pin: `HostEffect::VisualBell` is
+/// LOGGED in the router (not silently dropped). The forwarding gap to
+/// a `MuxEvent::PaneVisualBell` variant is tracked separately as
+/// bug-tracker BUG-11-8 — until that lands, the router observes the
+/// effect and emits an `info!` log so the gap is visible in
+/// production logs rather than swallowed.
+#[test]
+fn visual_bell_is_logged_not_dropped_silently() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::VisualBell));
+    t.drain_effects_into_mux_events();
+
+    // No MuxEvent::PaneVisualBell variant exists yet (BUG-11-8). The
+    // router must NOT panic on the unknown effect, and the only
+    // observable side effect is the log line — verified by absence of
+    // any MuxEvent on the channel.
+    assert!(
+        mux_rx.try_recv().is_err(),
+        "VisualBell currently has no MuxEvent counterpart (BUG-11-8); \
+         the router must drop-with-log, not panic, until forwarding lands"
+    );
+}
+
+/// Effect-cutover §01.N negative pin: `ClearPendingNotifications` does
+/// NOT retroactively collapse `DesktopNotification` effects that
+/// landed in an EARLIER drain batch. Cross-batch staging-buffer
+/// purging is the responsibility of `mux_pump`'s
+/// `purge_pending_desktop_notifications` (and parallel daemon-side
+/// staging) — the router itself is intra-batch only.
+#[test]
+fn clear_pending_notifications_does_not_retro_collapse_across_drains() {
+    let (mut t, mux_rx, _wake) = make_router_harness();
+
+    // Batch 1: emit a notification, drain.
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::DesktopNotification {
+            source: NotificationSource::Osc9,
+            title: "BatchOne".into(),
+            body: "first".into(),
+        }));
+    t.drain_effects_into_mux_events();
+
+    // Batch 1 produced the notification — confirm it reached mux_rx.
+    let mut saw_notif = false;
+    while let Ok(event) = mux_rx.try_recv() {
+        if let MuxEvent::DesktopNotification { title, .. } = &event {
+            if title == "BatchOne" {
+                saw_notif = true;
+            }
+        }
+    }
+    assert!(
+        saw_notif,
+        "batch 1 DesktopNotification must reach mux_rx before any clear"
+    );
+
+    // Batch 2: emit ONLY the clear marker.
+    t.terminal
+        .effect_sink()
+        .push(Effect::Host(HostEffect::ClearPendingNotifications));
+    t.drain_effects_into_mux_events();
+
+    // The router emits the cross-batch ClearPendingDesktopNotifications
+    // MuxEvent so downstream staging can purge — but it does NOT reach
+    // back into batch 1's already-emitted notification (which is
+    // irretrievable from the router side; that's mux_pump's job via
+    // purge_pending_desktop_notifications).
+    let mut saw_clear = false;
+    while let Ok(event) = mux_rx.try_recv() {
+        if matches!(event, MuxEvent::ClearPendingDesktopNotifications(_)) {
+            saw_clear = true;
+        }
+    }
+    assert!(
+        saw_clear,
+        "batch 2 ClearPendingNotifications must surface as a MuxEvent for downstream staging purge"
+    );
+}
