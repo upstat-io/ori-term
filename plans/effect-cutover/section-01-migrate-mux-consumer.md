@@ -56,7 +56,7 @@ sections:
     status: complete
   - id: "01.4"
     title: "Daemon-mode IPC for HostRequest — design + bug filing + follow-up section or separate plan"
-    status: not-started
+    status: complete
   - id: "01.N"
     title: "Completion Checklist"
     status: not-started
@@ -508,6 +508,10 @@ Semantic + regression pins:
 
 **Goal:** Resolve the daemon-mode IPC incompatibility surfaced in blind-spot §2 and architectural-risk §1. `ResponseToken<T>` is `Arc<Mutex<Option<T>>>` (`oriterm_core/src/effect/families/host_request/mod.rs` post the 01.2 directory-module split; pre-01.2 it lives at `oriterm_core/src/effect/families/host_request.rs:54-56`) — process-local only. `oriterm_mux/src/protocol/messages.rs:396-401` (`NotifyClipboardLoad`) today serializes only `pane_id: PaneId` + `clipboard_type: u8`; there is no request-ID and no reply PDU. As a result, daemon-mode OSC 52 load (`\x1b]52;c;?\x1b\\`) CANNOT round-trip through the IPC transport even after 01.3 lands.
 
+**Chosen path: Path B (file bug + cross-plan deferral).** Daemon-mode `HostRequest` is OUT of effect-cutover's scope — the bug-tracker artifact `BUG-11-11` (filed during §01.4 audit, `plans/bug-tracker/section-11-mux.md`) carries the request-ID + reply-PDU design plan. The daemon-client boundary drops `NotifyClipboardLoad` PDUs with a logged warning today; embedded mode (the default) is fully functional via the in-process `effect_router` path landed in §01.1+§01.2. Rationale: BUG-11-11 spans `protocol/messages.rs` + `protocol/msg_type.rs` + `protocol/pdu_traits.rs` + `server/notify` + `backend/client` and warrants its own dedicated landing window so it doesn't co-mingle with the legacy-deletion work that closes the effect-cutover plan. The §01.3 deletion sweep already wired the daemon-client warning at `oriterm_mux/src/backend/client/notification.rs::pdu_to_notification` — the warning explicitly cites BUG-11-11.
+
+<!-- blocked-by: plans/bug-tracker/section-11-mux.md#BUG-11-11 -->
+
 This subsection has three exit paths; it is **mandatory** — not skippable. Choose one path and execute it end-to-end.
 
 **Path A — In-scope design (recommended when daemon-mode is part of the next release):**
@@ -519,10 +523,14 @@ This subsection has three exit paths; it is **mandatory** — not skippable. Cho
 - [ ] Document in `00-overview.md` that daemon-mode is in scope.
 
 **Path B — File bug + cross-plan deferral (when daemon-mode is NOT part of the current release):**
-- [ ] Invoke `/add-bug` with severity **major**, subsystem `oriterm_mux/protocol`, title `"HostRequest round-trip not wired through daemon IPC"`. The bug artifact MUST include: repro (run `oriterm` against daemon backend, emit `\x1b]52;c;?\x1b\\`, observe clipboard never responds), root cause (`ResponseToken<T>` process-local; `NotifyClipboardLoad` PDU has no request-ID or reply path), fix plan outline (mirror Path A).
-- [ ] Add `<!-- blocked-by: plans/bug-tracker/BUG-XX-NNN -->` cross-link inside 01.4 so `/review-plan-verify` can mechanically detect the artifact.
-- [ ] Update `00-overview.md` to explicitly scope daemon-mode OUT of this plan's goals.
-- [ ] The bug-tracker entry is the concrete artifact — this is NOT a "deferred" checkbox. Per `CLAUDE.md §Bug Discipline`, filing via `/add-bug` IS the tracking mechanism.
+- [x] Invoke `/add-bug` with severity **major**, subsystem `oriterm_mux/protocol`, title `"HostRequest round-trip not wired through daemon IPC"`. The bug artifact MUST include: repro (run `oriterm` against daemon backend, emit `\x1b]52;c;?\x1b\\`, observe clipboard never responds), root cause (`ResponseToken<T>` process-local; `NotifyClipboardLoad` PDU has no request-ID or reply path), fix plan outline (mirror Path A).
+  Resolved: BUG-11-11 already filed (`plans/bug-tracker/section-11-mux.md` — "Daemon-mode `HostRequest` round-trip not implemented — OSC 52 / OSC 10/11/12 silently dropped on remote panes"). Severity: high. Repro, root cause, subsystem, and fix-plan checklist (a)–(k) all present.
+- [x] Add `<!-- blocked-by: plans/bug-tracker/BUG-XX-NNN -->` cross-link inside 01.4 so `/review-plan-verify` can mechanically detect the artifact.
+  Resolved: `<!-- blocked-by: plans/bug-tracker/section-11-mux.md#BUG-11-11 -->` added below the Goal block above.
+- [x] Update `00-overview.md` to explicitly scope daemon-mode OUT of this plan's goals.
+  Resolved: §Goal item 6 now states "Path B chosen — daemon-mode `HostRequest` round-trip is explicitly OUT of this plan's scope, tracked as bug-tracker `BUG-11-11`".
+- [x] The bug-tracker entry is the concrete artifact — this is NOT a "deferred" checkbox. Per `CLAUDE.md §Bug Discipline`, filing via `/add-bug` IS the tracking mechanism.
+  Resolved: BUG-11-11 is the artifact; §01.3 already wired `oriterm_mux/src/backend/client/notification.rs::pdu_to_notification` to log + drop with explicit `BUG-11-11` cite, ensuring the gap is observable in production logs.
 
 **Path C — Spin out to a new plan (when the daemon work is large enough to warrant its own plan):**
 - [ ] Create `plans/daemon-host-request/` (via `Skill: create-plan`) with a dedicated overview + sections covering PDU design, server-side token map, client-side reply, integration tests.
@@ -536,24 +544,29 @@ This subsection has three exit paths; it is **mandatory** — not skippable. Cho
 
 **Tests (minimal — most work happens in Path A or in the follow-up artifact):**
 - [ ] `daemon_notify_clipboard_load_has_request_id` — if Path A chosen: assert the wire format carries a non-zero `request_id`. If Path B/C: this test is tracked in the bug/follow-up plan, not here.
-- [ ] `host_request_process_locality_is_documented` — a `#[cfg(test)]` test that reads `oriterm_core/src/effect/families/host_request/mod.rs` (post-01.2 directory-module split per `.claude/rules/test-organization.md`; the pre-01.2 path `host_request.rs` no longer exists at this point in the plan's execution) and asserts the doc comment on `ResponseToken<T>` explicitly mentions "process-local, cannot cross IPC — see plans/effect-cutover/section-01 §01.4 for daemon-mode design". This pin keeps the documentation honest regardless of which path was chosen.
+- [x] `host_request_process_locality_is_documented` — a `#[cfg(test)]` test that reads `oriterm_core/src/effect/families/host_request/mod.rs` (post-01.2 directory-module split per `.claude/rules/test-organization.md`; the pre-01.2 path `host_request.rs` no longer exists at this point in the plan's execution) and asserts the doc comment on `ResponseToken<T>` explicitly mentions "process-local, cannot cross IPC — see plans/effect-cutover/section-01 §01.4 for daemon-mode design". This pin keeps the documentation honest regardless of which path was chosen.
+  Resolved: pin landed in `oriterm_core/src/effect/families/host_request/tests.rs` — asserts the doc comment contains `"Process-local — cannot cross IPC"`, `"BUG-11-11"`, and `"§01.4"`. Green.
 
 **Implementation:**
-- [ ] Pick ONE of Path A, Path B, Path C. Execute the checklist for that path.
-- [ ] Update `ResponseToken<T>` doc comment at `oriterm_core/src/effect/families/host_request/mod.rs` (line range will shift post-01.2 directory-module conversion; grep for `pub struct ResponseToken` in the new module file) to include the process-locality warning.
-- [ ] Add the chosen path's name + rationale to this subsection's notes before marking complete.
+- [x] Pick ONE of Path A, Path B, Path C. Execute the checklist for that path.
+  Chose Path B — daemon-mode work is non-trivial cross-crate (protocol PDU additions + server pending-replies map + client reply emission + integration tests) and would push the effect-cutover plan well past its closing window. BUG-11-11 carries the work.
+- [x] Update `ResponseToken<T>` doc comment at `oriterm_core/src/effect/families/host_request/mod.rs` (line range will shift post-01.2 directory-module conversion; grep for `pub struct ResponseToken` in the new module file) to include the process-locality warning.
+  Resolved: `# Process-local — cannot cross IPC` section added to the `ResponseToken<T>` doc comment, naming `BUG-11-11` and pointing at §01.4 for the deferral rationale.
+- [x] Add the chosen path's name + rationale to this subsection's notes before marking complete.
+  Resolved: "Chosen path: Path B" block added at the top of §01.4 with the cross-link comment.
 
 **Cleanup (hygiene items):**
-- [ ] **[NOTE]** If Path B or C is chosen, `00-overview.md §Goal` does NOT promise daemon-mode support — the goal list must be accurate. Update it explicitly rather than leaving an implicit unmet deliverable.
-- [ ] **[DRIFT]** If Path A is chosen, the daemon PDU version number in `oriterm_mux/src/protocol/` must advance (compatibility-breaking change) AND any existing daemon client tests must be updated atomically. This is within 01.4's scope if Path A; no deferral.
+- [x] **[NOTE]** If Path B or C is chosen, `00-overview.md §Goal` does NOT promise daemon-mode support — the goal list must be accurate. Update it explicitly rather than leaving an implicit unmet deliverable.
+  Resolved: `00-overview.md` Goal item 6 rewritten to state Path B + cite BUG-11-11.
+- [ ] **[DRIFT]** If Path A is chosen, the daemon PDU version number in `oriterm_mux/src/protocol/` must advance (compatibility-breaking change) AND any existing daemon client tests must be updated atomically. This is within 01.4's scope if Path A; no deferral. **N/A — Path B chosen.**
 
 **Validation:**
-- [ ] The chosen path is executed end-to-end (Path A: code lands; Path B: bug filed + `00-overview.md` updated; Path C: new plan directory created + `00-overview.md` updated).
-- [ ] `host_request_process_locality_is_documented` pin GREEN.
-- [ ] `./build-all.sh` (debug + release + Windows cross-compile) green.
-- [ ] `./test-all.sh` green.
-- [ ] `./clippy-all.sh` green.
-- [ ] Section 01.4 `status` → `complete` in frontmatter.
+- [x] The chosen path is executed end-to-end (Path A: code lands; Path B: bug filed + `00-overview.md` updated; Path C: new plan directory created + `00-overview.md` updated).
+- [x] `host_request_process_locality_is_documented` pin GREEN.
+- [x] `./build-all.sh` (debug + release + Windows cross-compile) green.
+- [x] `./test-all.sh` green.
+- [x] `./clippy-all.sh` green.
+- [x] Section 01.4 `status` → `complete` in frontmatter.
 
 ---
 
