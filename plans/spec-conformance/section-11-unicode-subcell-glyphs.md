@@ -23,7 +23,7 @@ inspired_by:
   - "Unicode chart PDFs — definitive shape reference for every glyph. The shape of every codepoint covered by this section has been stable since its introduction (half blocks / quadrants / braille have been stable for decades; sextants were introduced in Unicode 13; octants were introduced in Unicode 16, September 2024 — the earliest Unicode version this section can claim compatibility with). Canonical sources: `https://www.unicode.org/charts/PDF/U2580.pdf` (Block Elements), `https://www.unicode.org/charts/PDF/U1FB00.pdf` (Symbols for Legacy Computing), `https://www.unicode.org/charts/PDF/U1CC00.pdf` (Symbols for Legacy Computing Supplement — octants at U+1CD00–U+1CDE5), `https://www.unicode.org/charts/PDF/U2800.pdf` (Braille Patterns). These are UNVERSIONED URLs that always serve the current Unicode version — the manifest entry's `sha256` field is what pins a specific snapshot if strict version pinning is required; otherwise the shape-reference use is insensitive to Unicode version. Added as fetch-on-demand entries (`redistributable = false`) to `plans/spec-conformance/specs/manifest.toml` by §11.0 so the manifest-backed fetch flow (per `plans/spec-conformance/00-overview.md §Spec Corpus`) works identically to the other fetch-on-demand specs."
 depends_on: ["04", "05", "08", "09A"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-19
   notes: "user-accepted at iter_cap_reached after 3 rounds; 16 findings fixed inline across commits bdaf54e0 + 0e74107d + eaa97a00; 0 outstanding findings — the plan state is fix-clean but a formal reviewer clean-return could not be produced within the 3-round cap"
 sections:
