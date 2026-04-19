@@ -5,7 +5,7 @@ use std::path::Path;
 use super::scripts::ensure_scripts_on_disk;
 use super::{Shell, detect_shell};
 
-// --- Shell detection ---
+// Shell detection
 
 #[test]
 fn detect_shell_unix_paths() {
@@ -58,7 +58,7 @@ fn detect_shell_windows_full_paths() {
     );
 }
 
-// --- Version stamping and script writing ---
+// Version stamping and script writing
 
 #[test]
 fn ensure_scripts_writes_all_files() {
@@ -144,7 +144,7 @@ fn scripts_contain_osc_sequences() {
     assert!(ps.contains("]7;"), "pwsh script must emit OSC 7");
 }
 
-// --- Injection configuration ---
+// Injection configuration
 
 #[test]
 fn setup_injection_bash_returns_posix_flag() {
@@ -191,7 +191,7 @@ fn setup_injection_wsl_returns_none() {
     assert_eq!(extra, None);
 }
 
-// --- Raw interceptor ---
+// Raw interceptor
 
 use oriterm_core::effect::{Effect, EffectSink, HostEffect, PtyEffect, QueueingEffectSink};
 use oriterm_core::{PromptState, Term, Theme};
@@ -312,7 +312,7 @@ fn interceptor_osc777_ignores_non_notify() {
     assert!(notifs.is_empty());
 }
 
-// --- Effective title resolution ---
+// Effective title resolution
 
 #[test]
 fn effective_title_prefers_explicit() {
@@ -362,7 +362,7 @@ fn effective_title_empty_fallback() {
     assert_eq!(term.effective_title(), "");
 }
 
-// --- Prompt row tracking ---
+// Prompt row tracking
 
 #[test]
 fn mark_prompt_row_records_position() {
@@ -424,7 +424,7 @@ fn interceptor_osc7_path_parsing() {
     assert_eq!(parse_osc7_path("file://host"), "host");
 }
 
-// --- Command timing ---
+// Command timing
 
 #[test]
 fn osc133c_records_command_start() {
@@ -485,7 +485,7 @@ fn command_duration_updates_on_new_command() {
     assert!(dur2.as_millis() >= 10);
 }
 
-// --- Gap analysis tests ---
+// Gap analysis tests
 
 // OSC 7: percent-encoded paths (Fish and some shells percent-encode URIs).
 
@@ -691,7 +691,7 @@ fn prompt_navigation_scrolls_to_next() {
     );
 }
 
-// --- Gap analysis: extra content after OSC 133 action letter ---
+// Gap analysis: extra content after OSC 133 action letter
 
 #[test]
 fn interceptor_osc133_extra_content_after_action_letter() {
@@ -712,7 +712,7 @@ fn interceptor_osc133_extra_content_after_d() {
     assert_eq!(term.prompt_state(), PromptState::None);
 }
 
-// --- Gap analysis: negative exit code in OSC 133;D ---
+// Gap analysis: negative exit code in OSC 133;D
 
 #[test]
 fn interceptor_osc133d_with_negative_exit_code() {
@@ -726,7 +726,7 @@ fn interceptor_osc133d_with_negative_exit_code() {
     assert!(term.last_command_duration().is_some());
 }
 
-// --- Gap analysis: exit code with option suffix ---
+// Gap analysis: exit code with option suffix
 
 #[test]
 fn interceptor_osc133d_with_exit_code_and_aid() {
@@ -740,7 +740,7 @@ fn interceptor_osc133d_with_exit_code_and_aid() {
     assert!(term.last_command_duration().is_some());
 }
 
-// --- Gap analysis: OSC 133;A with trailing semicolons/bare keys ---
+// Gap analysis: OSC 133;A with trailing semicolons/bare keys
 
 #[test]
 fn interceptor_osc133a_trailing_semicolon() {
@@ -759,7 +759,7 @@ fn interceptor_osc133a_bare_key_option() {
     assert_eq!(term.prompt_state(), PromptState::PromptStart);
 }
 
-// --- Gap analysis: OSC 7 with empty URI ---
+// Gap analysis: OSC 7 with empty URI
 
 #[test]
 fn interceptor_osc7_empty_uri() {
@@ -782,7 +782,7 @@ fn interceptor_osc7_file_scheme_only() {
     assert!(term.cwd().is_none());
 }
 
-// --- Gap analysis: OSC 9 single-character body ---
+// Gap analysis: OSC 9 single-character body
 
 #[test]
 fn interceptor_osc9_single_char_body() {
@@ -794,7 +794,7 @@ fn interceptor_osc9_single_char_body() {
     assert_eq!(notifs[0].body, "X");
 }
 
-// --- Gap analysis: command timing very fast ---
+// Gap analysis: command timing very fast
 
 #[test]
 fn command_timing_very_fast_command() {
@@ -808,7 +808,7 @@ fn command_timing_very_fast_command() {
     assert!(dur.as_secs() == 0);
 }
 
-// --- Gap analysis: RIS clears shell state (end-to-end via interceptor) ---
+// Gap analysis: RIS clears shell state (end-to-end via interceptor)
 
 #[test]
 fn ris_clears_cwd_and_effective_title() {
@@ -871,7 +871,7 @@ fn ris_clears_pending_notifications() {
     );
 }
 
-// --- Gap analysis: multiple A markers without B/C/D ---
+// Gap analysis: multiple A markers without B/C/D
 
 #[test]
 fn multiple_osc133a_without_completion_creates_separate_markers() {
@@ -895,7 +895,7 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
     assert!(term.prompt_markers()[0].output.is_none());
 }
 
-// --- XTVERSION (CSI > q) ---
+// XTVERSION (CSI > q)
 
 /// Effect sink that records `PtyEffect::Write` payloads for assertions.
 #[derive(Clone, Default)]
@@ -945,7 +945,7 @@ fn xtversion_responds_with_oriterm_version() {
     );
 }
 
-// --- OSC 7 non-UTF-8 edge case ---
+// OSC 7 non-UTF-8 edge case
 
 #[test]
 fn interceptor_osc7_non_utf8_bytes_returns_empty_path() {
