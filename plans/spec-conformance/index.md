@@ -269,7 +269,7 @@ unicode subcell, builtin glyphs, Canvas abstraction
 half blocks U+2580 U+2584, blocks.rs
 quadrants U+2596 U+2597 U+2598 U+2599 U+259A U+259B U+259C U+259D U+259E U+259F
 sextants U+1FB00 U+1FB3B, oriterm/src/gpu/builtin_glyphs/legacy_computing
-octants U+1CD00 U+1CDE5, Unicode 16, Symbols for Legacy Computing
+octants U+1CD00 U+1CDE5, Unicode 16, Symbols for Legacy Computing Supplement, U+1CC00 U+1CEBF
 braille U+2800 U+28FF, braille.rs
 powerline, nerd font, oriterm/src/gpu/builtin_glyphs/powerline.rs
 2x3 grid, 2x4 grid, 4-bit bitmask

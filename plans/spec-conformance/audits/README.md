@@ -99,10 +99,11 @@ Drift-gate invocation (copy-pasteable):
 ```bash
 git grep -nE 'Znamenny|U\+1CC00[^)]*U\+1CEFF|quadrants\s*\+\s*sextants' \
   -- 'plans/spec-conformance/**' \
-  ':!plans/spec-conformance/audits/README.md'
+  ':!plans/spec-conformance/audits/README.md' \
+  ':!plans/spec-conformance/section-11-unicode-subcell-glyphs.md'
 ```
 
-Expected output: empty. Non-empty output means at least one plan file still carries an obsolete citation and Section 11's §11.0 drift-normalization criterion has not been met.
+Expected output: empty. Non-empty output means at least one plan file OTHER than the two authority files (this README and section-11 — both must name the obsolete spellings in order to forbid them) still carries an obsolete citation, and Section 11's §11.0 drift-normalization criterion has not been met.
 
 ## Files in this directory
 
