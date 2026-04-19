@@ -168,6 +168,33 @@ git push
 
 Report success or any errors.
 
+### Step 8: Refresh global state cache
+
+After push succeeds, call `diagnostics/state.sh` to bump the cached HEAD
+SHA so that `.claude/state/known-state.json` reflects this commit. This
+is cheap (sub-100 ms — it only rewrites `head_sha` + `updated_at` +
+`updated_by`; it does NOT re-run tests).
+
+```bash
+diagnostics/state.sh refresh --sha-only --by commit-push
+```
+
+Failure to refresh is NOT fatal — the state cache is a convenience, and
+the worst case is that `state.sh check` will report `OBSOLETE` on the
+next consumer call, forcing them to fall back to actual runs. If the
+script is missing or returns non-zero, log the failure and continue.
+
+Rationale: consumers (`/continue-roadmap` scanner gate, `/roadmap-work`
+Step 5, future reviewers) consult `state.sh show --json` on invocation.
+Without the post-push SHA bump, the cache lags HEAD by at least one
+commit and every consumer misclassifies the cache as `OBSOLETE` until a
+manual `state.sh refresh` runs — defeating the purpose of the cache.
+`--by commit-push` records the trigger for auditing.
+
+For full test/clippy refreshes (slow, ~3 min), use
+`diagnostics/state.sh refresh --full --by section-close` at natural
+boundaries — NOT on every commit.
+
 ---
 
 ## Checklist
@@ -181,6 +208,7 @@ Before completing, verify:
 - [ ] Main changes staged + committed (Step 5)
 - [ ] Post-commit dirty-tree check passed (Step 6)
 - [ ] Changes pushed (Step 7)
+- [ ] Global state cache refreshed (Step 8 — `state.sh refresh --sha-only --by commit-push`)
 
 ---
 

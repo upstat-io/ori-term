@@ -21,7 +21,7 @@
 
 These are load-bearing invariants. A sub-agent that violates ANY of these has broken the skill's speed contract and has wandered into /roadmap-work's territory.
 
-- **NEVER run any compiler/test/build binary.** Banned commands include (non-exhaustive): `cargo`, `cargo check`, `cargo run`, `cargo test`, `cargo clippy`, `cargo b`, `cargo t`, `cargo st`, `cargo stf`, `cargo test --all`, `cargo clippy --all -- -D warnings`, `cargo build --all`, `cargo test --all`, `cargo test --all && cargo clippy --all`, `ori`, `oric`, `./target/debug/ori`, `./target/release/ori`, `~/.local/bin/ori`, any script under `diagnostics/`, any script under `scripts/` that invokes the compiler. The scanner's JSON is the complete world-state you are allowed to observe.
+- **NEVER run any compiler/test/build binary.** Banned commands include (non-exhaustive): `cargo`, `cargo check`, `cargo run`, `cargo test`, `cargo clippy`, `cargo b`, `cargo t`, `cargo st`, `cargo stf`, `cargo test --all`, `cargo clippy --all -- -D warnings`, `cargo build --all`, `cargo test --all`, `cargo test --all && cargo clippy --all`, `ori`, `oric`, `./target/debug/ori`, `./target/release/ori`, `~/.local/bin/ori`, any script under `diagnostics/` **except `diagnostics/state.sh show` / `check` / `known-failing`** (read-only cache reads, no compilation), any script under `scripts/` that invokes the compiler. The scanner's JSON is the complete world-state you are allowed to observe.
 - **NEVER read `.rs`, `.ori`, `.toml` source files** or any file under `compiler/`, `library/`, `tests/`, `scripts/`. Plan-doc edits in `plans/` are fine (Step 2); source reads are not.
 - **NEVER investigate test failures, typecheck errors, dirty-tree contents, bug repros, or diagnostic output.** When a gate fires, ESCALATE IMMEDIATELY. Do NOT peek inside to "understand why" — the parent + user + `/roadmap-work` own that step.
 - **NEVER run `git log`, `git blame`, `git show`, `git diff`, `git bisect`**, or any git archaeology. The scanner already captured the only git state gates need (via `dirty_tree`).
@@ -59,6 +59,26 @@ Parse stdout as JSON. All subsequent steps read this object; do not open plan fi
 If you need cross-plan diagnostics (mismatches, orphan blockers, health signals), invoke `roadmap_scan.py` WITHOUT `--json` — the rich-text mode includes them. The `--json` envelope is intentionally minimal; do not expect `focus.plan` / `focus.section` / `health.*` top-level keys to exist.
 
 If `scanner exit code != 0` or JSON parse fails: return `<escalate-to-parent>` with the raw stderr. Do not try to recover.
+
+## Step 1.5 — Read cached repo state (fast)
+
+```bash
+diagnostics/state.sh show --json
+```
+
+Capture the JSON. This is a read-only cache query (sub-100 ms) that tells you whether the tree is in a plan-documented "known-failing" state so you don't have to infer it from `dirty_tree` or the user's prior messages. The cache is maintained by `/commit-push` (post-push SHA bump) and `state.sh refresh --full` (explicit boundaries).
+
+Fields to extract:
+- `.test_suite.status` — `known-failing` | `clean` | `unknown`
+- `.test_suite.totals.failed` — current expected-failing count
+- `.test_suite.known_failing_count` — total files in the documented known-failing set
+- `.test_suite.remediation[0].plan` + `.subsection` — plan pointer for the remediation
+- `.clippy.status` — `clean` | `warnings` | `unknown`
+- `.hygiene.status` — `clean` | `noise` | `unknown`
+
+If the state file is missing or `state.sh` exits non-zero: log the failure and set state values to `"unknown"` in the handoff block below. Do NOT try to `refresh` it — that's slow work owned by the parent or by `/commit-push`.
+
+If `state.sh check` would return `obsolete` (cache SHA != HEAD SHA), state is stale but still informative — include it in the handoff, flagged as `stale (pre-commit ${cache_sha})`. The parent can decide whether to invalidate.
 
 ## Step 2 — Auto-fix Cleanup (mechanical, silent)
 
@@ -176,6 +196,14 @@ Subsections:
 - Critical bugs: {none | N}
 - High bugs: {none | N (list IDs)}
 - Dirty tree: {clean | N files}
+
+### Cached repo state (from Step 1.5)
+- Test suite: {test_suite.status} ({test_suite.totals.passed} passed / {test_suite.totals.failed} failed / {test_suite.totals.skipped} skipped at cache SHA {head_sha})
+- Known-failing files: {test_suite.known_failing_count}
+- Remediation: {test_suite.remediation[0].plan} §{test_suite.remediation[0].subsection} ({test_suite.remediation[0].class}) — or "none" if array empty
+- Clippy: {clippy.status}
+- Repo hygiene: {hygiene.status}{ " — " + hygiene.notes if notes present }
+- Cache freshness: {fresh | stale (dirty tree) | obsolete (SHA mismatch, was {cache_sha}) | missing}
 
 ### Next unblocked item
 Subsection {next_unblocked.subsection_id}: {next_unblocked.item_content}

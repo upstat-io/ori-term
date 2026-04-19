@@ -47,9 +47,11 @@ Rules:
   load-bearing ones):
   * NEVER run cargo, cargo check, cargo run, cargo test, cargo clippy,
     cargo test --all, cargo clippy --all -- -D warnings, cargo build --all, cargo test --all, ori,
-    oric, ~/.local/bin/ori, ./target/**, diagnostics/*.sh, or any
-    compiler/test/build binary. The scanner's JSON is the complete
-    world-state you may observe.
+    oric, ~/.local/bin/ori, ./target/**, diagnostics/*.sh (EXCEPT
+    diagnostics/state.sh show / check / known-failing — read-only cache
+    reads, no compilation; required by Step 1.5), or any compiler/test/
+    build binary. The scanner's JSON plus the state.sh read is the
+    complete world-state you may observe.
   * NEVER read .rs, .ori, .toml files or anything under compiler/,
     library/, tests/, scripts/. Plan-doc edits in plans/ are fine;
     source reads are not.

@@ -94,9 +94,20 @@ If the verify loop does not converge within 5 iterations, include `question` + `
 
 `question` and `options` MUST live inside the JSON handoff object when `escalate: true`. Never emit `options` as a sibling code block outside the handoff schema — the parent reads the fields from the JSON and passes them directly to `AskUserQuestion`.
 
+## Step 8.5 — Clear the `review_pipeline` marker
+
+**MANDATORY on ANY successful terminal exit** — clean converge, user-accepted, or whole-plan-mode (no-op flip). The marker's purpose is to record mid-pipeline state; once the pipeline reaches a terminal outcome, the marker MUST be removed so future `/review-plan` invocations on this section start fresh.
+
+In single-section mode: `Edit` the section file to delete the entire `review_pipeline:` YAML block from the frontmatter.
+
+In whole-plan mode: delete `<plan_dir>/.review-pipeline-state.yaml`.
+
+On escalation (`escalate: true` return path with `verify-non-convergence`): DO NOT clear the marker. Leave it set to `stage: tpr-done, next_step: 7` so the escalation-handling path can resume cleanly — the user's `dispatch-editor-round-2` / `accept-minor` / `abort` choice determines whether the marker gets cleared later (on accept/abort) or re-advanced (on dispatch-editor-round-2 which returns to Step 5).
+
 ## Do NOT
 
 - Flip `reviewed: true` in whole-plan mode (hard rule)
 - Flip `reviewed: true` when tpr-review didn't converge AND the user did not explicitly accept the remaining findings via the `applies_user_accepted: true` option at Step 6's cap-exit prompt (hard rule — the user-accepted path is the ONLY non-convergence route to flip)
 - Edit `.rs` / `.ori` files (plan-docs only)
 - Exceed 5 verify iterations without escalating
+- Leave the `review_pipeline` marker in place on a terminal exit (Step 8.5 above — prevents future /review-plan runs from falsely detecting a mid-pipeline state)
