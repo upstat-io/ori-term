@@ -238,6 +238,29 @@ PromptMarker, PendingMarks, OSC 133;A/B/C/D, command_start, finish_command
 
 ---
 
+### Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
+**File:** `section-09a-dec-csi-extensions.md` | **Status:** Not Started
+
+```
+DEC private CSI extensions, DECRQCRA checksum, rectangular operations
+DECCRA copy rectangle, DECFRA fill rectangle, DECERA erase rectangle
+DECSERA selective erase, DECRARA reverse attributes, DECCARA change attributes
+DECSACE select attribute change extent, XTCHECKSUM, XTREPORTSGR
+DECIC insert column, DECDC delete column, DECBI back index, DECFI forward index
+DECRQPSR presentation state report, DECRQUPSS user-preferred supplemental set
+DECRQDE displayed extent, DECSCL conformance level, DECSCA character protection
+DECSASD active status display, DECSSDT status line type
+DECRQSS request status string (DCS), DECRSPS restore presentation status (DCS)
+DCS Pid !~ checksum response, synchronous PtyEffect::Write from VTE handler
+plans/spec-conformance/audits/, top-down spec audit SSOT, audit-files lint
+spec-coverage-report --check audit-files, esctest as spec source
+catalog/dec-rectangle-ops.md, catalog/dec-presentation.md
+crates/vte/src/ansi/dispatch/csi.rs, oriterm_core/src/term/handler/status.rs
+DECRECT prefix, DECPRES prefix, audits/section-NN-top-down-inventory.md
+```
+
+---
+
 ### Section 11: Unicode Subcell Glyphs (incl. octants)
 **File:** `section-11-unicode-subcell-glyphs.md` | **Status:** Not Started
 
@@ -528,6 +551,8 @@ depends on section 08 (baseline parser/dispatch)
 | `catalog/ecma-48.md` | ECMA-48 CSI/SGR/modes baseline |
 | `catalog/xterm-ctlseqs.md` | xterm extensions: window, focus, bracketed paste, DECRQM |
 | `catalog/dec-private-modes.md` | every DECSET/DECRST private mode |
+| `catalog/dec-rectangle-ops.md` | DEC private CSI rectangular-area ops: DECRQCRA, DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA, DECSACE, XTCHECKSUM, XTREPORTSGR (added by Section 09A) |
+| `catalog/dec-presentation.md` | DEC private CSI presentation/column ops + DCS-path presentation queries: DECIC, DECDC, DECBI, DECFI, DECRQPSR, DECRQUPSS, DECRQDE, DECSCL, DECSCA, DECSASD, DECSSDT, DECRQSS, DECRSPS (added by Section 09A) |
 | `catalog/osc.md` | OSC registry: 0, 1, 2, 4, 7, 8, 9, 10, 11, 12, 22, 50, 52, 99, 104, 110-112, 133, 633, 777, 1337 |
 | `catalog/sixel.md` | DCS q + raster attrs + transparency + DECSDM |
 | `catalog/kitty-graphics.md` | APC _G + every key + chunked + animation + virtual placements + unicode placeholders |
@@ -555,6 +580,7 @@ depends on section 08 (baseline parser/dispatch)
 | 07 | Image Lifecycle Correctness | `section-07-image-lifecycle-correctness.md` |
 | 08 | ECMA-48 Baseline | `section-08-ecma-48-baseline.md` |
 | 09 | DEC Private Modes (full) | `section-09-dec-private-modes.md` |
+| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` |
 | 10 | OSC Suite (full) | `section-10-osc-suite.md` |
 | 11 | Unicode Subcell Glyphs (incl. octants) | `section-11-unicode-subcell-glyphs.md` |
 | 12 | Sixel | `section-12-sixel.md` |

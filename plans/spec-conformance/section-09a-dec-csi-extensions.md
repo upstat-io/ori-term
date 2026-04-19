@@ -1,0 +1,1173 @@
+---
+section: "09A"
+title: "DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)"
+status: not-started
+reviewed: false
+goal: "This section exists because the DECRQCRA gap — and the entire DEC private rectangular-ops family (DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA, DECSACE, XTCHECKSUM, XTREPORTSGR) plus the presentation/column ops (DECIC, DECDC, DECBI, DECFI, DECRQPSR, DECRQUPSS, DECRQDE, DECSCL, DECSCA, DECSASD, DECSSDT) and the DCS-path presentation queries (DECRQSS, DECRSPS) — survived undetected from the initial catalog bootstrap (Section 01) into production. Section 01's bottom-up harvest audited the existing dispatch table and augmented with tack/teseq-discovered items; it did not walk the canonical spec source row-by-row. The `Section 04.9 UncatalogedDetector` only catches sequences observed at harness time — sequences absent from both the catalog AND the test corpus are invisible. Section 09A closes this systemic gap by: (1) introducing `plans/spec-conformance/audits/` as the new SSOT for top-down coverage enforcement (the directory and README.md already exist, committed by the pre-implementation planning pass); (2) creating two new catalog files — `catalog/dec-rectangle-ops.md` (10 rows, DECRECT prefix) and `catalog/dec-presentation.md` (~13 rows, DECPRES prefix); (3) adding ALL missing CSI dispatch arms in `crates/vte/src/ansi/dispatch/csi.rs`, default Handler trait methods in `crates/vte/src/ansi/handler.rs`, and concrete override methods in `oriterm_core/src/term/handler/`; (4) implementing DECRQCRA checksum synchronously via `PtyEffect::Write` directly from the VTE handler (NOT via the `HostRequest` async round-trip pipeline — DECRQCRA has all the data it needs at dispatch time: grid snapshot, rectangular coordinates, checksum-algorithm selection; no external resource is required, so the ResponseToken pattern would be pure overhead and architectural mismatch); (5) implementing all six rectangular-area mutation ops (DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA) with DECLRMM-aware coordinate clamping; (6) implementing column insert/delete (DECIC, DECDC) and back/forward index (DECBI, DECFI on the ESC path); (7) implementing presentation query stubs (DECRQPSR, DECRQUPSS, DECRQDE, DECSCL, DECSCA, DECSASD, DECSSDT via CSI path; DECRQSS and DECRSPS via DCS handler); (8) wiring the `spec-coverage-report --check audit-files` lint into the existing binary at `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`; (9) performing a verbiage rewrite of sections 11-26 — each not-started section gains a top-down coverage success criterion, a §NN.0 checklist item pointing at its audit file, and an `audits/section-NN-top-down-inventory.md` stub; (10) updating all DRIFT locations in the plan (section-04 row/file counts, section-01 ID prefix table, coverage-baseline.toml). Cross-section impacts: Section 12 (mouse locator extensions DECEFR/DECELR/DECSLE/DECRQLP) are DEC private CSI sequences that belong to the mouse stack — they are NOT backfilled here, Section 16 catalogs them in `catalog/mouse.md` (noted as §09A.12 to gate their ownership). Section 23 wires the audit-files lint into CI. Sections 11-26 each gain an audit file stub. The reframe: esctest is a SPEC SOURCE for top-down enumeration (the 383 failing tests it surfaces identify sequences ori_term does not dispatch) — it is NOT a runtime CI dependency. The new section absorbs esctest's coverage enumeration into our `spec_chain` harness, same shape as Section 02 absorbed tack."
+success_criteria:
+  - "Every row in `plans/spec-conformance/catalog/dec-rectangle-ops.md` (10 rows: DECRECT-DECSACE, DECRECT-DECCARA, DECRECT-DECRARA, DECRECT-DECCRA, DECRECT-DECFRA, DECRECT-XTCHECKSUM, DECRECT-DECRQCRA, DECRECT-DECERA, DECRECT-DECSERA, DECRECT-XTREPORTSGR) reaches `verified` or `verified-with-deviation` status"
+  - "Every row in `plans/spec-conformance/catalog/dec-presentation.md` (~13 rows: DECPRES-DECIC, DECPRES-DECDC, DECPRES-DECBI, DECPRES-DECFI, DECPRES-DECRQPSR, DECPRES-DECRQUPSS, DECPRES-DECRQDE, DECPRES-DECSCL, DECPRES-DECSCA, DECPRES-DECSASD, DECPRES-DECSSDT, DECPRES-DECRQSS, DECPRES-DECRSPS) reaches `verified` or `verified-with-deviation` status (DCS-path rows DECRQSS and DECRSPS are `verified-with-deviation` if the DCS dispatcher stub routes but does not fully implement the response format — deviation must be documented)"
+  - "`plans/spec-conformance/audits/` directory contains a valid audit file for Section 09A itself (`audits/section-09a-top-down-inventory.md`) plus stub audit files for every not-started section 11-26 (16 additional files, 17 total including 09A's own) — every stub file parses cleanly per the audit-file schema in `plans/spec-conformance/audits/README.md`"
+  - "`cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` is implemented and passes for every committed audit file — each mapped row ID resolves to a real catalog row in some `catalog/*.md` file; every not-targeted row carries a non-empty one-line rationale"
+  - "DECRQCRA checksum matches the xterm patch-336 algorithm: attribute-selection bitmask governs which cell attributes are folded into the checksum; DCS reply format is `DCS Pi ! ~ <hex-checksum> ST` matching xterm's `Pt !~ <hex> ST` response shape; coordinate clamping matches xterm 'clamped to physical buffer' semantics (top/bottom/left/right clamped independently, margins respected if DECLRMM active)"
+  - "esctest baseline: after Section 09A lands, the count of esctest tests that fail due to unrecognized/missing dispatch (currently ~383) drops to fewer than 50 remaining failures; the remaining failures are second-order bugs that Section 09A surfaces but does not fix — each is filed via `/add-bug` as a concrete bug tracker entry before §09A.N is checked off"
+  - "Every dispatch arm added in `crates/vte/src/ansi/dispatch/csi.rs` has a corresponding sibling test in `crates/vte/src/ansi/tests.rs` (matrix: parse-param-extraction + dispatch-routing + unhandled-negative-pin) per `.claude/rules/tests.md`"
+  - "DECRQCRA checksum computation does NOT allocate per-cell — alloc regression test in `oriterm_core/tests/alloc_regression.rs` guards this invariant (performance pin: zero allocations in the checksum inner loop)"
+  - "DRIFT updates landed in full: `coverage-baseline.toml` gains `dec-rectangle-ops = 0` and `dec-presentation = 0` entries; `00-overview.md` Catalog Files table lists both new catalog files; `00-overview.md` Catalog Row Schema ID column description lists `DECRECT` and `DECPRES` prefixes; every cross-reference in the plan that counted catalog files, ID prefix families, or total rows is updated with the new counts"
+  - "Sections 11-26 each have: a top-down coverage success criterion added to their `success_criteria` frontmatter array; a `§NN.0 Top-down audit file` checklist item as the FIRST subsection in their sections list; a committed `audits/section-NN-top-down-inventory.md` stub file with frontmatter `canonical_spec_sources`, `last_walked`, and `walked_by` fields populated with placeholder values"
+  - "DECIC/DECDC column operations respect DECLRMM margins when mode 69 is active; DECBI/DECFI index operations at the left/right margins behave correctly per xterm: DECBI at column 0 inserts a blank column at left margin (scrolls right); DECFI at rightmost column inserts a blank column at right margin (scrolls left)"
+  - "Rectangular area ops (DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA) all clamp page/source/destination coordinates to [1, rows] × [1, cols] before any grid mutation — out-of-range coordinates are clamped, not rejected; zero-area rectangles (top > bottom or left > right after clamping) are silently no-ops"
+  - "`./build-all.sh` (debug + release + Windows cross-compile via `cargo build --target x86_64-pc-windows-gnu`) green; `./test-all.sh` green (debug workspace sweep); `./clippy-all.sh` green (zero new warnings under `deny(clippy::all)` + nursery)"
+  - "Section's mission-criterion connection: contributes to **Catalog complete (top-down enforced)** (the audits/ SSOT + lint enforce top-down completeness; 23 new rows added across two new catalog files) AND **Verification chain complete per row** (every applicable DECRECT and DECPRES row reaches `verified` with parser → dispatch → state/effect apex green)"
+inspired_by:
+  - "xterm `ctlseqs.txt` — primary canonical source for DEC private CSI intermediates"
+  - "DEC STD 070 §6 / VT420 Programming Reference Manual — original DEC spec for rectangular area ops"
+  - "wezterm `docs/escape-sequences.md` — de-facto implementation reference for DEC rect ops"
+  - "ThomasDickey/esctest2 — top-down conformance suite that surfaced this gap (esctest is a SPEC SOURCE for top-down enumeration; never a runtime CI dependency)"
+depends_on: ["04"]
+third_party_review:
+  status: pending
+  updated: null
+sections:
+  - id: "09A.0"
+    title: "Audits/ directory SSOT — bootstrap, README, lint contract, audit-files mode in spec-coverage-report"
+    status: not-started
+  - id: "09A.1"
+    title: "DEC rectangle ops catalog — populate catalog/dec-rectangle-ops.md with all 10 rows"
+    status: not-started
+  - id: "09A.2"
+    title: "DEC presentation ops catalog — populate catalog/dec-presentation.md with all ~13 rows (CSI path + 2 DCS-path)"
+    status: not-started
+  - id: "09A.3"
+    title: "VTE dispatch arms — add ALL missing CSI dispatch arms in crates/vte/src/ansi/dispatch/csi.rs for the new rows"
+    status: not-started
+  - id: "09A.4"
+    title: "Handler trait methods — add default impls in crates/vte/src/ansi/handler.rs; override in oriterm_core/src/term/handler/"
+    status: not-started
+  - id: "09A.5"
+    title: "DECRQCRA implementation — synchronous checksum from grid state; emit DCS Pid !~ <hex> ST via PtyEffect::Write directly"
+    status: not-started
+  - id: "09A.6"
+    title: "DECCRA / DECFRA / DECERA / DECSERA / DECRARA / DECCARA — rectangular area ops with DECLRMM-aware coordinate clamping"
+    status: not-started
+  - id: "09A.7"
+    title: "DECIC / DECDC / DECBI / DECFI — column operations + ESC-path back/forward index"
+    status: not-started
+  - id: "09A.8"
+    title: "Presentation queries — DECRQPSR, DECRQUPSS, DECRQDE, DECSCL, DECSCA, DECSASD, DECSSDT (CSI path)"
+    status: not-started
+  - id: "09A.9"
+    title: "DCS-path presentation queries — DECRQSS / DECRSPS dispatch + reply formatting"
+    status: not-started
+  - id: "09A.10"
+    title: "Verbiage rewrite of sections 11-26 — add top-down audit success criterion + §NN.0 checklist item + create audits/section-NN-top-down-inventory.md stub for each"
+    status: not-started
+  - id: "09A.11"
+    title: "DRIFT updates — coverage-baseline.toml + 00-overview.md catalog table + ID prefix table + cross-reference counts"
+    status: not-started
+  - id: "09A.12"
+    title: "Section 16 locator extensions gate — confirm DECEFR, DECELR, DECSLE, DECRQLP are in catalog/mouse.md owned by Section 16"
+    status: not-started
+  - id: "09A.R"
+    title: "Third Party Review Findings"
+    status: not-started
+  - id: "09A.N"
+    title: "Completion Checklist"
+    status: not-started
+# TPR checkpoints:
+# Checkpoint 1 — after 09A.0 + 09A.1 + 09A.2 (audits/ SSOT + both catalog files populated).
+#   Covers the catalog schema for DECRECT/DECPRES + the lint contract for audit files.
+#   Catches row schema drift and audit-file format errors before the implementation subsections
+#   build on those definitions.
+# Checkpoint 2 — after 09A.5 (DECRQCRA checksum implementation + PtyEffect::Write emission).
+#   Covers the most architecturally sensitive decision: synchronous vs. async emission path.
+#   Reviewers verify: (a) no HostRequest variant added, (b) checksum algorithm correctness vs
+#   xterm patch-336, (c) no per-cell allocation, (d) coordinate clamping behavior.
+# Checkpoint 3 — after 09A.7 (all rect ops + column ops + ESC-path index ops complete).
+#   Covers the six rectangular area mutation ops + DECIC/DECDC + DECBI/DECFI.
+#   Checks DECLRMM-aware margin clamping, zero-area rectangle no-op behavior, and the
+#   DECBI/DECFI scroll-direction semantics.
+# Final — 09A.N (full section TPR + impl-hygiene: all 23 rows verified, audits/ lint clean,
+#   verbiage rewrite of sections 11-26 complete, DRIFT updates landed).
+---
+
+# Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
+
+**Status:** Not started. All subsections (09A.0 through 09A.12, 09A.R, 09A.N) are not-started.
+
+---
+
+## Goal
+
+Drive all 10 rows in `plans/spec-conformance/catalog/dec-rectangle-ops.md` and all ~13 rows in `plans/spec-conformance/catalog/dec-presentation.md` from `missing` to `verified`, introduce the `plans/spec-conformance/audits/` SSOT for top-down coverage enforcement, wire the `spec-coverage-report --check audit-files` lint into the existing binary, perform the verbiage rewrite of sections 11-26, and update every DRIFT location. See frontmatter `goal:` for the full context and architectural decisions.
+
+---
+
+## Architecture Overview
+
+### Why the gap existed
+
+Section 01's catalog bootstrap was bottom-up: walk the existing `crates/vte/src/ansi/dispatch/csi.rs` dispatch table, augment with sequences observed during tack/teseq test runs, and add anything esctest surfaced. This approach is accurate for sequences already in the dispatch table — it found every CSI sequence ori_term already handled. But it is blind to sequences that have NO dispatch arm at all, because those sequences produce no observable events and therefore appear in no test output.
+
+The DEC private rectangular-area family uses uncommon CSI intermediates (`$`, `*`, `#`, `'`) that are absent from the existing dispatch table. They produced no observable behavior, no tack/teseq events, and no esctest captures routed through spec_chain. They were structurally invisible to the bottom-up approach.
+
+The `Section 04.9 UncatalogedDetector` (at `crates/oriterm_test_support/src/spec_chain/uncataloged/mod.rs:22-88`) runs during every spec_chain test and accumulates TupleSigs for sequences observed at harness time. It is a SECONDARY safety net — it catches sequences that APPEAR in test input but lack catalog rows. It cannot catch sequences absent from both the catalog AND the test corpus.
+
+### audits/ SSOT design
+
+`plans/spec-conformance/audits/` is the NEW PRIMARY gate for top-down catalog completeness. Each not-started spec-conformance section commits a per-section audit file at `audits/section-NN-top-down-inventory.md`. The file walks the section's canonical spec source(s) row-by-row and maps every sequence to a catalog row ID or an explicit `not-targeted` decision.
+
+The lint contract (from `plans/spec-conformance/audits/README.md`) enforces:
+
+1. **Existence** — every not-started section in the Quick Reference table has a corresponding audit file. Integration sections (21, 22, 24, 25) are exempted via `canonical_spec_sources: []` with a body comment.
+2. **Mapping resolution** — every `Decision: mapped` row cites a catalog row ID that exists in some `catalog/*.md` file. A mapping to a non-existent row ID fails the lint.
+3. **Schema conformance** — every audit file frontmatter parses; every row has all 4 columns; every `not-targeted` row has a non-empty rationale.
+4. **Freshness** — `last_walked` is present and parses as YYYY-MM-DD. CI does not gate on staleness — that is a `/review-bugs` triage check.
+
+`spec-coverage-report --check audit-files` is the new flag added to `crates/oriterm_test_support/src/bin/spec_coverage_report.rs`. The existing binary already handles `--check` for false-verified rows, uncataloged citations, and regression-below-baseline. The `audit-files` subcommand is a separate gate that runs the four lint checks above.
+
+The `UncatalogedDetector` REMAINS in place as a secondary/runtime catch. The relationship:
+
+- audits/ (primary): top-down, committed artifacts, walks spec before implementation
+- UncatalogedDetector (secondary): runtime, catches sequences appearing in test input that lack catalog rows
+
+Both gates run in CI. Neither replaces the other.
+
+### DECRQCRA: synchronous PtyEffect::Write (NOT HostRequest)
+
+**Decision rationale:** DECRQCRA (`CSI Pi;Pg;Pt;Pl;Pb;Pr * y`) requests a checksum of a rectangular area of the grid. The terminal has ALL the data it needs at dispatch time: the grid snapshot, the rectangular coordinates, and the checksum-algorithm selection (Pg param, bitmask from XTCHECKSUM). No external resource is required.
+
+Compare to the existing DA3 response in `oriterm_core/src/term/handler/status.rs:160-168` — DA3 emits `"\x1bP!|00000000\x1b\\"` directly via:
+
+```rust
+self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+    bytes: response.as_bytes().to_vec(),
+    kind: PtyWriteKind::DeviceAttribute,
+}));
+```
+
+DECRQCRA follows the SAME pattern. The checksum is computed synchronously from the grid, formatted as `DCS Pi !~ XXXX ST` where XXXX is the 4-digit hex checksum, then emitted via `PtyEffect::Write { kind: PtyWriteKind::ChecksumReport }`. No `HostRequest` variant is added; no `ResponseToken` is needed; the `response_poll` pipeline is not involved.
+
+The `HostRequest` async pipeline (`oriterm_core/src/effect/families/host_request/mod.rs:38-63`) is for operations that require EXTERNAL data: clipboard reads (the OS clipboard is not accessible synchronously from the VTE handler), color queries (the UI palette is not accessible inside Term's VTE handler without a round-trip). DECRQCRA does not need external data.
+
+**Anti-pattern to avoid:** Do NOT extend `HostRequest` with a `ChecksumRequest` variant. Do NOT add `DECRQCRA` to the `response_poll` machinery in `oriterm_mux/src/pane/io_thread/response_poll/mod.rs`. These would introduce an asynchronous round-trip where a synchronous computation suffices.
+
+### Dispatch arm + handler method + spec_chain test pattern (mirrors Section 10)
+
+For each new sequence, three artifacts land together in the same commit:
+
+1. **Dispatch arm** in `crates/vte/src/ansi/dispatch/csi.rs` — pattern match `(final_byte, intermediates)` → handler method call
+2. **Handler trait default** in `crates/vte/src/ansi/handler.rs` — no-op default; only `Term` (in `oriterm_core`) provides the real impl
+3. **Handler override** in `oriterm_core/src/term/handler/` — real state mutation or PtyEffect emission
+
+Tests at each rung:
+- **Parser rung** (`crates/vte/src/ansi/tests.rs`): feed raw bytes, assert param extraction + dispatch arm fires
+- **Dispatch rung** (same file): assert correct handler method called with correct args using `RecordingHandler`
+- **State/Effect rung** (`oriterm_core/tests/spec_chain/<stack>/`): use `SpecHarness::feed()` with `observe_state` / `observe_effect` to assert the apex
+
+The matrix per dispatch arm: (1) canonical params, (2) default params (zero → use-default behavior), (3) out-of-range params (clamped silently), (4) unhandled variant → `unhandled!()` negative pin.
+
+---
+
+## §09A.0 — Audits/ directory SSOT
+
+### Goal
+
+The `plans/spec-conformance/audits/` directory and its `README.md` already exist. §09A.0 implements the `--check audit-files` flag in `spec_coverage_report.rs`, creates Section 09A's own audit file (`audits/section-09a-top-down-inventory.md`), and verifies the lint passes clean for that one file before §09A.1–09A.12 proceed.
+
+### Files touched
+
+- `crates/oriterm_test_support/src/bin/spec_coverage_report.rs` — add `--check audit-files` subcommand
+- `crates/oriterm_test_support/src/spec_chain/coverage/` — add `AuditFilesChecker` module (new file `audit_files.rs`) implementing the four lint checks
+- `plans/spec-conformance/audits/section-09a-top-down-inventory.md` — Section 09A's own audit file (created and populated)
+
+### Implementation notes
+
+The existing binary at `crates/oriterm_test_support/src/bin/spec_coverage_report.rs:50` already handles `--check` via:
+
+```rust
+if std::env::args().any(|a| a == "--check") { ... }
+```
+
+The `audit-files` mode is added as an ADDITIONAL check that runs when `--check audit-files` is in args. The four lint checks mirror the contract in `plans/spec-conformance/audits/README.md §Lint contract`:
+
+1. **Existence check**: list all sections in the Quick Reference table in `00-overview.md` (parse by scanning for `| NN |` rows in the table), build the expected set of audit file paths, verify each exists. Integration sections (21, 22, 24, 25) are exempted when their audit file has `canonical_spec_sources: []`.
+2. **Mapping resolution**: for every audit file row with `Decision: mapped`, parse the catalog row ID from the 3rd column and confirm it resolves against the catalog signature set (re-use `build_catalog_signature_set()` already in `oriterm_test_support::catalog`).
+3. **Schema conformance**: frontmatter parses (YAML), all 4 table columns present, `not-targeted` rows have non-empty rationale after the colon.
+4. **Freshness**: `last_walked` field is present and parses as YYYY-MM-DD. Staleness is NOT a lint failure.
+
+The `AuditFilesChecker` type lives in a new file `crates/oriterm_test_support/src/spec_chain/coverage/audit_files.rs` so the main binary stays under 500 lines (code-hygiene.md §File Size).
+
+### §09A.0 audit file content
+
+`audits/section-09a-top-down-inventory.md` enumerates every sequence in `xterm ctlseqs.txt` under the DEC private CSI intermediates (`$`, `*`, `#`, `'`) plus the ESC-6/ESC-9 sequences (DECBI/DECFI), maps each to a DECRECT or DECPRES catalog row ID, and gives `not-targeted` decisions for any sequences omitted (e.g. DECCIR, DECRQLP — the latter belongs to Section 16 / mouse.md).
+
+### Test requirements
+
+- Unit tests for `AuditFilesChecker`: pass with a minimal valid audit file, fail with a mapping to a non-existent row ID, fail with a missing `not-targeted` rationale, fail with a missing required section (matrix: all 4 lint checks)
+- Negative pin: feeding a malformed audit file YAML frontmatter produces a lint failure, not a panic
+
+### Completion criteria
+
+- `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` exits 0 with `audits/section-09a-top-down-inventory.md` in scope
+- All 4 lint checks have unit tests in `crates/oriterm_test_support/src/spec_chain/coverage/tests.rs`
+
+---
+
+## §09A.1 — DEC rectangle ops catalog
+
+### Goal
+
+Create `plans/spec-conformance/catalog/dec-rectangle-ops.md` with all 10 rows using the canonical row schema from `00-overview.md §Catalog Row Schema`. All rows start at `missing` verification — implementation follows in §09A.3–09A.6.
+
+### Files touched
+
+- `plans/spec-conformance/catalog/dec-rectangle-ops.md` (create)
+
+### Row table (to be written verbatim as catalog rows)
+
+The following 10 rows constitute the full content of `catalog/dec-rectangle-ops.md`:
+
+---
+
+**DECRECT-DECSACE**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECSACE` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps * x` |
+| **Sequence** | `CSI Ps * x` — Select attribute change extent |
+| **Description** | Controls which attributes are changed by DECCARA/DECRARA; Ps=0 stream, Ps=1 rect |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-mode-state |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Param stored as `ace_mode` on Term; consumed by DECCARA/DECRARA to determine change extent |
+
+---
+
+**DECRECT-DECCARA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECCARA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pm $ r` |
+| **Sequence** | `CSI Pt;Pl;Pb;Pr;Pm $ r` — Change attributes in rectangular area |
+| **Description** | Applies SGR attribute change to cells in the specified rectangle |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | wezterm `docs/escape-sequences.md` DECCARA |
+| **Notes** | DECLRMM-aware; DECSACE mode governs stream vs rect extent |
+
+---
+
+**DECRECT-DECRARA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECRARA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pm $ t` |
+| **Sequence** | `CSI Pt;Pl;Pb;Pr;Pm $ t` — Reverse attributes in rectangular area |
+| **Description** | Reverses (toggles) video attributes in cells within the specified rectangle |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Reversal applies only to SGR attributes listed in Pm params |
+
+---
+
+**DECRECT-DECCRA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECCRA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr;Pp;Pt;Pl;Pp $ v` |
+| **Sequence** | `CSI Pt;Pl;Pb;Pr;Pp;Pt;Pl;Pp $ v` — Copy rectangular area |
+| **Description** | Copies a rectangular area of cells from source page to destination page |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | wezterm `docs/escape-sequences.md` DECCRA |
+| **Notes** | Source and destination pages; overlapping regions defined by copy-before-overwrite semantics |
+
+---
+
+**DECRECT-DECFRA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECFRA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pc;Pt;Pl;Pb;Pr $ x` |
+| **Sequence** | `CSI Pc;Pt;Pl;Pb;Pr $ x` — Fill rectangular area |
+| **Description** | Fills the specified rectangular area with character Pc and current SGR attributes |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | wezterm `docs/escape-sequences.md` DECFRA |
+| **Notes** | DECLRMM-aware; Pc is a character code point, not a string |
+
+---
+
+**DECRECT-XTCHECKSUM**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-XTCHECKSUM` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps # y` |
+| **Sequence** | `CSI Ps # y` — Select checksum extension flags (xterm) |
+| **Description** | Sets xterm checksum algorithm flags used by subsequent DECRQCRA requests |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-mode-state |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | xterm patch-336 |
+| **Notes** | Ps is a bitmask; stored as `checksum_flags: u16` on Term; consumed by DECRQCRA handler |
+
+---
+
+**DECRECT-DECRQCRA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECRQCRA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pi;Pg;Pt;Pl;Pb;Pr * y` |
+| **Sequence** | `CSI Pi;Pg;Pt;Pl;Pb;Pr * y` — Request checksum of rectangular area |
+| **Description** | Computes a checksum of the specified rectangular area and emits a DCS reply |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-pty-write |
+| **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
+| **Verification** | missing |
+| **De-facto ref** | xterm patch-336 (algorithm); esctest2 `DECRQCRA` suite (coordinate clamping) |
+| **Notes** | Reply format: `DCS Pi ! ~ XXXX ST` (4-hex-digit checksum); synchronous emission via PtyEffect::Write (NOT HostRequest); algorithm: xor-folded 16-bit sum of attribute-selected cell data |
+
+---
+
+**DECRECT-DECERA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECERA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr $ z` |
+| **Sequence** | `CSI Pt;Pl;Pb;Pr $ z` — Erase rectangular area |
+| **Description** | Erases all characters in the specified rectangle (replaces with space, default attrs) |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | DECLRMM-aware; respects DECSCA selective-erase protection attribute |
+
+---
+
+**DECRECT-DECSERA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-DECSERA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr $ {` |
+| **Sequence** | `` CSI Pt;Pl;Pb;Pr $ { `` — Selective erase rectangular area |
+| **Description** | Erases unprotected characters in the specified rectangle (DECSCA-protected cells are skipped) |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Companion to DECERA; only erases cells not marked with DECSCA protection |
+
+---
+
+**DECRECT-XTREPORTSGR**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECRECT-XTREPORTSGR` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pt;Pl;Pb;Pr # \|` |
+| **Sequence** | `CSI Pt;Pl;Pb;Pr # |` — Report selected graphic rendition (xterm) |
+| **Description** | Emits the SGR attributes for each cell in the rectangle as a DCS stream |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-pty-write |
+| **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
+| **Verification** | missing |
+| **De-facto ref** | xterm patch-336 |
+| **Notes** | DCS reply per-cell format; complex serialization; verified-with-deviation acceptable if only basic SGR attrs are included |
+
+---
+
+### Completion criteria
+
+- `plans/spec-conformance/catalog/dec-rectangle-ops.md` exists and passes `spec-coverage-report --check` (no false-verified rows — all 10 rows start at `missing`)
+- All 10 row IDs resolve correctly in `audits/section-09a-top-down-inventory.md` mapping table
+
+---
+
+## §09A.2 — DEC presentation ops catalog
+
+### Goal
+
+Create `plans/spec-conformance/catalog/dec-presentation.md` with all ~13 rows. Two rows (DECPRES-DECRQSS and DECPRES-DECRSPS) are DCS-path sequences — dispatch lives in the DCS handler, not `csi.rs`. This distinction is noted in each row's Implementation and Notes fields.
+
+### Files touched
+
+- `plans/spec-conformance/catalog/dec-presentation.md` (create)
+
+### Row table (to be written verbatim as catalog rows)
+
+---
+
+**DECPRES-DECIC**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECIC` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps ' }` |
+| **Sequence** | `CSI Ps ' }` — Insert column(s) |
+| **Description** | Inserts Ps blank columns at cursor column, shifting existing columns right |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | DECLRMM-aware; only valid when mode 69 (DECLRMM) is set per xterm; no-op otherwise |
+
+---
+
+**DECPRES-DECDC**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECDC` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps ' ~` |
+| **Sequence** | `CSI Ps ' ~` — Delete column(s) |
+| **Description** | Deletes Ps columns at cursor column, shifting remaining columns left |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Companion to DECIC; DECLRMM-aware |
+
+---
+
+**DECPRES-DECBI**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECBI` |
+| **Spec source** | xterm ctlseqs.txt `ESC 6` |
+| **Sequence** | `ESC 6` — Back index |
+| **Description** | If cursor is at left margin, inserts a blank column and scrolls right; otherwise moves cursor left |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | ESC path (not CSI); dispatch in `crates/vte/src/ansi/dispatch/esc.rs` or equivalent ESC handler |
+
+---
+
+**DECPRES-DECFI**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECFI` |
+| **Spec source** | xterm ctlseqs.txt `ESC 9` |
+| **Sequence** | `ESC 9` — Forward index |
+| **Description** | If cursor is at right margin, inserts a blank column and scrolls left; otherwise moves cursor right |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending snapshot:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | ESC path (not CSI); companion to DECBI |
+
+---
+
+**DECPRES-DECRQPSR**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECRQPSR` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps $ w` |
+| **Sequence** | `CSI Ps $ w` — Request presentation state report |
+| **Description** | Requests a DCS presentation state report for cursor information (Ps=1) or tab stops (Ps=2) |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-pty-write |
+| **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Reply is a DCS stream; complex serialization; stub reply acceptable for initial verification |
+
+---
+
+**DECPRES-DECRQUPSS**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECRQUPSS` |
+| **Spec source** | xterm ctlseqs.txt `CSI & u` |
+| **Sequence** | `CSI & u` — Request user-preferred supplemental set |
+| **Description** | Requests the user-preferred supplemental character set identifier |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-pty-write |
+| **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Reply format per DEC STD 070; constant reply (ISO Latin-1) acceptable for initial verification |
+
+---
+
+**DECPRES-DECRQDE**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECRQDE` |
+| **Spec source** | xterm ctlseqs.txt `CSI " v` |
+| **Sequence** | `CSI " v` — Request displayed extent |
+| **Description** | Requests the current display extent (rows and columns) |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-pty-write |
+| **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Reply: `CSI Pn;Pn " w` with current grid dimensions |
+
+---
+
+**DECPRES-DECSCL**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECSCL` |
+| **Spec source** | xterm ctlseqs.txt `CSI Pl;Pc " p` |
+| **Sequence** | `CSI Pl;Pc " p` — Set conformance level |
+| **Description** | Sets the terminal's DEC conformance level (VT100/VT200/VT300) |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-mode-state |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Pl=1 VT100, Pl=2 VT200, Pl=3 VT300; Pc selects 7-bit or 8-bit C1 mode |
+
+---
+
+**DECPRES-DECSCA**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECSCA` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps " q` |
+| **Sequence** | `CSI Ps " q` — Select character protection attribute |
+| **Description** | Sets selective-erase protection for subsequently written characters |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-mode-state |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Ps=0 or 2 unprotected; Ps=1 protected; flag stored per-cell in CellFlags; consumed by DECSERA/DECERA |
+
+---
+
+**DECPRES-DECSASD**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECSASD` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps $ }` |
+| **Sequence** | `CSI Ps $ }` — Select active status display |
+| **Description** | Switches active writing between main display and status line |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-mode-state |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Ps=0 main display (default), Ps=1 status line; status line not implemented — stub acceptable; verified-with-deviation if stub |
+
+---
+
+**DECPRES-DECSSDT**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECSSDT` |
+| **Spec source** | xterm ctlseqs.txt `CSI Ps $ ~` |
+| **Sequence** | `CSI Ps $ ~` — Select status line type |
+| **Description** | Configures whether status line is host-writable, indicator only, or off |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-mode-state |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | Ps=0 off (default), Ps=1 indicator, Ps=2 host-writable; stub acceptable; verified-with-deviation if stub |
+
+---
+
+**DECPRES-DECRQSS**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECRQSS` |
+| **Spec source** | xterm ctlseqs.txt `DCS $ q Pt ST` |
+| **Sequence** | `DCS $ q Pt ST` — Request status string |
+| **Description** | Requests the current setting for the CSI/DCS function named by Pt; terminal replies with DECSS |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | effect-pty-write |
+| **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | DCS path — dispatch in `crates/vte/src/ansi/dispatch/dcs.rs` (NOT csi.rs); reply: `DCS 1 $ r Pt ST` for recognized Pt, `DCS 0 $ r ST` for unrecognized |
+
+---
+
+**DECPRES-DECRSPS**
+
+| Field | Value |
+|---|---|
+| **ID** | `DECPRES-DECRSPS` |
+| **Spec source** | xterm ctlseqs.txt `DCS Ps $ t Pt ST` |
+| **Sequence** | `DCS Ps $ t Pt ST` — Restore presentation status |
+| **Description** | Restores a presentation state previously reported by DECRQPSR |
+| **Implementation** | MISSING — to be added by Section 09A |
+| **Apex layer** | state-snapshot |
+| **Test chain** | parser:pending dispatch:pending state:pending |
+| **Verification** | missing |
+| **De-facto ref** | — |
+| **Notes** | DCS path — dispatch in `crates/vte/src/ansi/dispatch/dcs.rs` (NOT csi.rs); complex serialization; stub acceptable |
+
+---
+
+### Completion criteria
+
+- `plans/spec-conformance/catalog/dec-presentation.md` exists and passes `spec-coverage-report --check` (no false-verified rows)
+- All 13 row IDs resolve in `audits/section-09a-top-down-inventory.md`
+
+---
+
+## §09A.3 — VTE dispatch arms
+
+### Goal
+
+Add ALL missing CSI dispatch arms to `crates/vte/src/ansi/dispatch/csi.rs` for the 21 new sequences (10 DECRECT + 11 DECPRES CSI-path rows). The 2 DCS-path rows (DECRQSS, DECRSPS) and the 2 ESC-path rows (DECBI, DECFI) are NOT in scope for this subsection — those are handled in §09A.7 and §09A.9.
+
+### Files touched
+
+- `crates/vte/src/ansi/dispatch/csi.rs` — add 19 new match arms
+- `crates/vte/src/ansi/tests.rs` — add parser + dispatch tests for each new arm
+
+### Existing dispatch table reference
+
+The existing dispatch table at `crates/vte/src/ansi/dispatch/csi.rs:56-325` matches `(action, intermediates)`. The final `_` arm at line 324 calls `unhandled!()`. New arms must be inserted BEFORE the wildcard. Key intermediates for the new sequences:
+
+```rust
+// DEC rectangular ops — intermediate '$'
+('r', [b'$']) => handler.deccara(...)        // DECRECT-DECCARA  CSI Pt;Pl;Pb;Pr;Pm $ r
+('t', [b'$']) => handler.decrara(...)        // DECRECT-DECRARA  CSI Pt;Pl;Pb;Pr;Pm $ t
+('v', [b'$']) => handler.deccra(...)         // DECRECT-DECCRA   CSI ... $ v
+('x', [b'*']) => handler.decsace(...)        // DECRECT-DECSACE  CSI Ps * x
+('x', [b'$']) => handler.decfra(...)         // DECRECT-DECFRA   CSI Pc;Pt;Pl;Pb;Pr $ x
+('y', [b'#']) => handler.xtchecksum(...)     // DECRECT-XTCHECKSUM  CSI Ps # y
+('y', [b'*']) => handler.decrqcra(...)       // DECRECT-DECRQCRA  CSI Pi;Pg;Pt;Pl;Pb;Pr * y
+('z', [b'$']) => handler.decera(...)         // DECRECT-DECERA   CSI Pt;Pl;Pb;Pr $ z
+('{', [b'$']) => handler.decsera(...)        // DECRECT-DECSERA  CSI Pt;Pl;Pb;Pr $ {
+('|', [b'#']) => handler.xtreportsgr(...)    // DECRECT-XTREPORTSGR  CSI Pt;Pl;Pb;Pr # |
+
+// DEC presentation ops — intermediates '$', '*', '"', '&', '\''
+('w', [b'$']) => handler.decrqpsr(...)       // DECPRES-DECRQPSR  CSI Ps $ w
+('u', [b'&']) => handler.decrqupss()         // DECPRES-DECRQUPSS  CSI & u
+('v', [b'"']) => handler.decrqde()           // DECPRES-DECRQDE   CSI " v
+('p', [b'"']) => handler.decscl(...)         // DECPRES-DECSCL   CSI Pl;Pc " p
+('q', [b'"']) => handler.decsca(...)         // DECPRES-DECSCA   CSI Ps " q
+('}', [b'$']) => handler.decsasd(...)        // DECPRES-DECSASD  CSI Ps $ }
+('~', [b'$']) => handler.decssdt(...)        // DECPRES-DECSSDT  CSI Ps $ ~
+('}', [b'\'']) => handler.decic(...)         // DECPRES-DECIC   CSI Ps ' }
+('~', [b'\'']) => handler.decdc(...)         // DECPRES-DECDC   CSI Ps ' ~
+```
+
+**Collision check:** Scan the existing dispatch table before adding arms to confirm no existing arm matches these `(final_byte, intermediates)` pairs. The existing `('{', [b'#'])` arm at line 322 (push_sgr) and `('}', [b'#'])` at line 323 (pop_sgr) use `[b'#']` intermediate — the new arms use `[b'$']`, `[b'*']`, `[b'"']`, `[b'&']`, `[b'\'']`, so there are no collisions.
+
+### Test requirements
+
+For EACH new dispatch arm, add to `crates/vte/src/ansi/tests.rs`:
+1. **Parse test**: feed the raw byte sequence (constructed from known params), assert `RecordingHandler` method was called with expected params
+2. **Unhandled negative pin**: feed the same final byte with a DIFFERENT intermediate (e.g. `('r', [b'*'])`) and assert `unhandled()` was called, NOT the handler method
+
+### Completion criteria
+
+- All 19 CSI dispatch arms present in `csi.rs`; `cargo test -p vte` green
+- Each arm has a parse+dispatch test and an unhandled negative pin in `tests.rs`
+- `./clippy-all.sh` green (no dead-code warnings on the new handler method calls — handler stubs must be called)
+
+---
+
+## §09A.4 — Handler trait methods
+
+### Goal
+
+Add default (no-op) implementations in `crates/vte/src/ansi/handler.rs` for every new handler method. Then add concrete override implementations in `oriterm_core/src/term/handler/`.
+
+### Files touched
+
+- `crates/vte/src/ansi/handler.rs` — add ~19 new default trait methods
+- `oriterm_core/src/term/handler/` — new submodule `rect_ops.rs` and `presentation.rs` (or extend `mod.rs` if within 500-line limit)
+- `crates/vte/src/ansi/dispatch/esc.rs` (or equivalent) — add ESC 6 (DECBI) and ESC 9 (DECFI) arms plus handler method calls
+
+### Handler method signatures (canonical form)
+
+```rust
+// In crates/vte/src/ansi/handler.rs Handler trait:
+
+// Rectangle ops
+fn decsace(&mut self, _mode: u16) {}
+fn deccara(&mut self, _top: u16, _left: u16, _bot: u16, _right: u16, _attrs: &[u16]) {}
+fn decrara(&mut self, _top: u16, _left: u16, _bot: u16, _right: u16, _attrs: &[u16]) {}
+fn deccra(&mut self, _src_top: u16, _src_left: u16, _src_bot: u16, _src_right: u16,
+          _src_page: u16, _dst_top: u16, _dst_left: u16, _dst_page: u16) {}
+fn decfra(&mut self, _ch: u16, _top: u16, _left: u16, _bot: u16, _right: u16) {}
+fn xtchecksum(&mut self, _flags: u16) {}
+fn decrqcra(&mut self, _id: u16, _page: u16, _top: u16, _left: u16, _bot: u16, _right: u16) {}
+fn decera(&mut self, _top: u16, _left: u16, _bot: u16, _right: u16) {}
+fn decsera(&mut self, _top: u16, _left: u16, _bot: u16, _right: u16) {}
+fn xtreportsgr(&mut self, _top: u16, _left: u16, _bot: u16, _right: u16) {}
+
+// Presentation ops (CSI path)
+fn decrqpsr(&mut self, _mode: u16) {}
+fn decrqupss(&mut self) {}
+fn decrqde(&mut self) {}
+fn decscl(&mut self, _level: u16, _c1_mode: u16) {}
+fn decsca(&mut self, _protected: u16) {}
+fn decsasd(&mut self, _target: u16) {}
+fn decssdt(&mut self, _line_type: u16) {}
+
+// Column ops
+fn decic(&mut self, _count: u16) {}
+fn decdc(&mut self, _count: u16) {}
+
+// Back/Forward index (ESC path — handler called by esc.rs dispatcher)
+fn decbi(&mut self) {}
+fn decfi(&mut self) {}
+```
+
+### oriterm_core override structure
+
+The Term handler overrides live in `oriterm_core/src/term/handler/`. Per the 500-line file size rule (code-hygiene.md), create two new handler submodule files:
+
+- `oriterm_core/src/term/handler/rect_ops.rs` — implements `decsace`, `deccara`, `decrara`, `deccra`, `decfra`, `xtchecksum`, `decrqcra`, `decera`, `decsera`, `xtreportsgr`
+- `oriterm_core/src/term/handler/presentation.rs` — implements `decrqpsr`, `decrqupss`, `decrqde`, `decscl`, `decsca`, `decsasd`, `decssdt`, `decic`, `decdc`, `decbi`, `decfi`
+
+Each file: `#[cfg(test)] mod tests;` at bottom; companion `tests.rs` file for unit tests.
+
+### Completion criteria
+
+- All handler methods compile; default trait stubs in vte are callable from `RecordingHandler` tests
+- `./build-all.sh` green (including Windows cross-compile — all new methods use only platform-independent grid operations)
+
+---
+
+## §09A.5 — DECRQCRA implementation
+
+### Goal
+
+Implement the DECRQCRA checksum handler in `oriterm_core/src/term/handler/rect_ops.rs`. The implementation: (1) clamps coordinates to grid bounds, (2) computes the checksum using the xterm patch-336 algorithm, (3) emits the reply synchronously via `PtyEffect::Write`.
+
+### Files touched
+
+- `oriterm_core/src/term/handler/rect_ops.rs` — `decrqcra()` method + `compute_rect_checksum()` helper
+- `oriterm_core/tests/spec_chain/dec_rect_ops/decrqcra.rs` — spec_chain tests
+- `oriterm_core/tests/alloc_regression.rs` — performance pin for zero-allocation in checksum inner loop
+
+### xterm patch-336 algorithm
+
+The checksum is a 16-bit value. For each cell in the rectangle (in row-major order):
+- Fold the cell's character code point into the running sum (lower 8 bits of the code point)
+- Conditionally fold SGR attributes based on the `checksum_flags` bitmask set by XTCHECKSUM:
+  - Bit 0: include video attributes (bold, underline, blink, reverse, protected, invisible)
+  - Bit 1: include foreground color index
+  - Bit 2: include background color index
+- The running sum is a u16 xor-fold (not a byte addition); the standard form used by xterm is a 16-bit ones-complement sum
+
+Reply format: `DCS Pi ! ~ XXXX ST` where Pi is the request ID and XXXX is the 4-digit uppercase hexadecimal checksum. Full byte sequence:
+```
+ESC P <id-digits> ! ~ <4-hex-digits> ESC \
+```
+
+For example, if id=1 and checksum=0xABCD: `\x1bP1!~ABCD\x1b\\`
+
+### Implementation pattern (mirrors DA3 in status.rs:160-168)
+
+```rust
+pub(super) fn rect_ops_decrqcra(
+    &mut self,
+    id: u16, _page: u16,
+    top: u16, left: u16, bot: u16, right: u16,
+) {
+    let checksum = self.compute_rect_checksum(top, left, bot, right);
+    let response = format!("\x1bP{id}!~{checksum:04X}\x1b\\");
+    self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+        bytes: response.into_bytes(),
+        kind: PtyWriteKind::ChecksumReport,
+    }));
+}
+```
+
+`PtyWriteKind::ChecksumReport` is a new variant added alongside this implementation. Its addition MUST be exhaustive-match-safe — audit all `match kind { ... }` arms across the codebase and add the new arm.
+
+### Zero-allocation requirement
+
+`compute_rect_checksum()` MUST NOT allocate. The inner loop iterates over grid rows via `self.grid.visible_row(line)` (returns `&Row`) and accesses cells by column index. No `Vec::collect()`, no `String::format!()` allocations inside the loop. The final `format!()` for the reply string happens ONCE after the loop, not per cell.
+
+Add to `oriterm_core/tests/alloc_regression.rs`:
+```rust
+#[test]
+fn decrqcra_no_alloc_in_checksum_loop() {
+    // Feed DECRQCRA to a Term and verify zero allocations in the compute_rect_checksum path.
+    // ... use the existing alloc_counter::measure! pattern
+}
+```
+
+### Test requirements (spec_chain)
+
+In `oriterm_core/tests/spec_chain/dec_rect_ops/decrqcra.rs`:
+
+1. **canonical params**: 5×5 grid with known content, DECRQCRA over the full grid, assert reply bytes match expected checksum
+2. **id passthrough**: different Pi values round-trip to the reply prefix
+3. **coordinate clamping**: top/left/bot/right beyond grid bounds are clamped; result is same as valid-bounds equivalent
+4. **zero-area rectangle**: top > bot after clamping → no-op (checksum of 0)
+5. **XTCHECKSUM flags**: Bit 0 set vs. unset changes checksum when cell has video attribute set (semantic pin)
+6. **negative pin**: DECRQCRA bytes fed through SpecHarness produce EXACTLY ONE PtyEffect::Write; no HostRequest is emitted
+
+### Completion criteria
+
+- `DECRECT-DECRQCRA` row verification status promoted from `missing` to `implemented-unverified` (full verification at §09A.N)
+- `alloc_regression.rs` green with new DECRQCRA pin
+- `cargo test -p oriterm_core` green
+
+---
+
+## §09A.6 — Rectangular area ops
+
+### Goal
+
+Implement the six rectangular area MUTATION ops in `oriterm_core/src/term/handler/rect_ops.rs`: DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA.
+
+### Files touched
+
+- `oriterm_core/src/term/handler/rect_ops.rs` — add methods for all six ops + shared `clamp_rect()` helper
+- `oriterm_core/tests/spec_chain/dec_rect_ops/` — one test file per op (or combined in `rect_ops_test.rs`)
+
+### Shared coordinate clamping
+
+Extract `clamp_rect(top, left, bot, right) -> Option<(usize, usize, usize, usize)>` as a shared private helper. Returns `None` for zero-area rectangles (top > bot or left > right after clamping). Returns `Some((t, l, b, r))` with each coordinate clamped to `[0, rows-1]` × `[0, cols-1]` (0-indexed after the 1-based input conversion). All six ops call this helper before any grid mutation.
+
+When DECLRMM (mode 69) is active (`self.grid.left_right_margins()`), the left/right clamping also enforces the active left-right margins: left is clamped to `max(left, margin_left)` and right is clamped to `min(right, margin_right)`.
+
+### Per-op implementation notes
+
+- **DECFRA** (`decfra`): fill with character Pc (u16 → char) at current SGR attributes. Iterate rectangle cells, write (Pc, current_sgr) to each cell.
+- **DECERA** (`decera`): erase (write space with default attrs) to all cells in rectangle, UNLESS cell has DECSCA protection flag. Check `cell.flags.contains(CellFlags::PROTECTED)`.
+- **DECSERA** (`decsera`): erase ONLY unprotected cells (complement of DECERA protection check: skip cells WITH DECSCA protection).
+- **DECCARA** (`deccara`): apply the Pm SGR attributes to all cells in rectangle. The attribute list is a u16 slice (multiple params). DECSACE mode governs whether the extent is rectangular (default) or stream.
+- **DECRARA** (`decrara`): reverse the Pm SGR attributes on all cells in rectangle.
+- **DECCRA** (`deccra`): copy source rectangle to destination. Source and destination may overlap — copy to a scratch buffer first to avoid overwrites. Source/destination pages are accepted but since ori_term is single-page, page ≠ 1 is a `verified-with-deviation` note.
+
+### Test requirements
+
+Per op (use spec_chain with `observe_state` / `observe_renderable` apex):
+
+1. Fill a grid with known content; apply the op; assert correct cells mutated
+2. Zero-area rectangle (top > bot): no grid mutation
+3. Out-of-bounds coordinates: clamped correctly; result identical to in-bounds equivalent
+4. DECLRMM active: left/right margins constrain the operation
+5. **Negative pin per op**: cell OUTSIDE the rectangle is unchanged (clamp boundary correctness)
+
+### Completion criteria
+
+- All six rows promoted from `missing` to `implemented-unverified`
+- `cargo test -p oriterm_core` green
+
+---
+
+## §09A.7 — Column ops + ESC-path index ops
+
+### Goal
+
+Implement DECIC, DECDC (CSI-path column insert/delete) and DECBI, DECFI (ESC-path back/forward index) in `oriterm_core/src/term/handler/presentation.rs`. The ESC dispatch arm for ESC 6 and ESC 9 must also be confirmed or added.
+
+### Files touched
+
+- `oriterm_core/src/term/handler/presentation.rs` — `decic()`, `decdc()`, `decbi()`, `decfi()` methods
+- `crates/vte/src/ansi/dispatch/esc.rs` (or wherever ESC dispatch lives — verify with Glob before editing) — confirm or add ESC 6 → `handler.decbi()` and ESC 9 → `handler.decfi()`
+
+### Implementation notes
+
+**DECIC** (`decic(count)`): Insert `count` blank columns at the cursor column. Content from cursor column to right margin shifts right by `count`; columns that shift beyond right margin are discarded. When DECLRMM is active, the right margin constrains the shift. When DECLRMM is NOT active, the shift extends to the physical right edge.
+
+**DECDC** (`decdc(count)`): Delete `count` columns at the cursor column. Content from cursor+count to right margin shifts left; blank columns appear at the right margin.
+
+**DECBI** (`decbi()`): If cursor is at the LEFT margin (or column 0 if DECLRMM inactive): insert a blank column at the left margin, scrolling the row right. Otherwise: move cursor left one column (equivalent to cursor-left-1).
+
+**DECFI** (`decfi()`): If cursor is at the RIGHT margin (or last column if DECLRMM inactive): insert a blank column at the right margin, scrolling the row left. Otherwise: move cursor right one column.
+
+### ESC dispatch verification
+
+Before implementing: search for the ESC dispatch file (likely `crates/vte/src/ansi/dispatch/esc.rs` or inline in `lib.rs`). Verify ESC 6 and ESC 9 are not already dispatched to a different handler. The final byte for ESC 6 is `b'6'` and for ESC 9 is `b'9'`.
+
+### Test requirements
+
+For DECIC/DECDC:
+1. Insert/delete columns in the middle of a grid with known content
+2. Insert at column 0 (edge case)
+3. Delete at last column
+4. DECLRMM active: operation constrained to margins
+
+For DECBI/DECFI:
+1. Cursor NOT at margin: moves one column (pure cursor-move, no scroll)
+2. Cursor AT margin: inserts blank column, existing content scrolls
+3. Negative pin: column outside the rectangle is unchanged
+
+### Completion criteria
+
+- DECPRES-DECIC, DECPRES-DECDC, DECPRES-DECBI, DECPRES-DECFI promoted from `missing` to `implemented-unverified`
+- ESC 6 / ESC 9 arms confirmed in dispatch; `cargo test -p vte` green
+
+---
+
+## §09A.8 — Presentation queries (CSI path)
+
+### Goal
+
+Implement the seven CSI-path presentation query stubs: DECRQPSR, DECRQUPSS, DECRQDE, DECSCL, DECSCA, DECSASD, DECSSDT. For queries that require serializing complex state (DECRQPSR), a stub reply is acceptable for initial verification; the row is promoted to `verified-with-deviation` with a deviation note.
+
+### Files touched
+
+- `oriterm_core/src/term/handler/presentation.rs` — concrete implementations
+- `oriterm_core/tests/spec_chain/dec_presentation/` — spec_chain tests per row
+
+### Per-op implementation notes
+
+**DECRQDE** (`decrqde()`): Simplest — reply with current grid dimensions: `CSI rows;cols " w`. Fully implementable.
+
+**DECRQUPSS** (`decrqupss()`): Reply with the user-preferred supplemental character set. ori_term does not implement NRCS charset selection; a constant reply identifying ISO Latin-1 (`CSI " u`) is acceptable. Mark `verified-with-deviation` with deviation: "constant reply — user-preferred supplemental charset not implemented".
+
+**DECSCL** (`decscl(level, c1_mode)`): Store conformance level on Term. Level 1 = VT100, 2 = VT200, 3 = VT300. C1 mode: 0 or 2 = 8-bit C1, 1 = 7-bit C1. This affects whether C1 control characters (0x80-0x9F) are recognized. Store as `conformance_level: u8` and `c1_8bit: bool` on Term. The state is observable — verify via spec_chain `observe_state`.
+
+**DECSCA** (`decsca(protected)`): Set the per-character protection attribute for SUBSEQUENTLY written characters. Store as `char_protection: bool` on Term. This flag is applied when cells are written (same pattern as current SGR attribute application). Protected cells survive DECSERA/DECERA. MUST store in `CellFlags::PROTECTED` when the cell is written, not on the cell retroactively. State observable via spec_chain.
+
+**DECSASD** (`decsasd(target)`): Ps=0 main display (default), Ps=1 status line. ori_term does not implement a DEC status line. Dispatch arm routes to handler; Term stores `active_status_display: u8`. `verified-with-deviation`: "status line write target accepted but status line not rendered".
+
+**DECSSDT** (`decssdt(line_type)`): Ps=0 off, Ps=1 indicator only, Ps=2 host-writable. Store `status_line_type: u8`. Same deviation as DECSASD.
+
+**DECRQPSR** (`decrqpsr(mode)`): Mode 1 = cursor information report; Mode 2 = tab stop report. The DCS reply for mode 2 (tab stops) requires serializing the full tab-stop vector — complex but implementable. Mode 1 (cursor) requires serializing cursor row, col, page, protection, and current charset designations — more complex. Initial verification: emit the correct DCS header (`DCS 1 $ s ...`) for Mode 2 with accurate tab stop data; Mode 1 as `verified-with-deviation`. File `/add-bug` for full cursor state serialization.
+
+### Completion criteria
+
+- All 7 CSI-path presentation rows promoted from `missing` to `implemented-unverified` or `verified-with-deviation` (deviation documented in catalog Notes field)
+- DECSCA `char_protection` flag propagates to `CellFlags::PROTECTED` when cells are written — verified by spec_chain test that writes a character after DECSCA Ps=1 and confirms the cell has PROTECTED flag, then calls DECSERA and confirms the cell is NOT erased
+
+---
+
+## §09A.9 — DCS-path presentation queries
+
+### Goal
+
+Add dispatch arms in the DCS handler for DECRQSS (`DCS $ q Pt ST`) and DECRSPS (`DCS Ps $ t Pt ST`). These are NOT in `csi.rs` — the DCS dispatcher is a separate path.
+
+### Files touched
+
+- `crates/vte/src/ansi/dispatch/dcs.rs` (or wherever DCS dispatch lives — verify with Glob before editing) — add DECRQSS and DECRSPS arms
+- `crates/vte/src/ansi/handler.rs` — add `decrqss(pt: &str)` and `decrsps(mode: u16, pt: &str)` default methods
+- `oriterm_core/src/term/handler/presentation.rs` — override implementations
+
+### Implementation notes
+
+**DECRQSS** (`DCS $ q Pt ST`): The `Pt` string names a CSI/DCS function (e.g. `q` for DECSCUSR, `m` for SGR). The terminal replies with `DCS 1 $ r Pt ST` if the function is recognized, or `DCS 0 $ r ST` if not. For initial implementation: recognize `q` (DECSCUSR cursor style) and `m` (SGR — report current attributes) as the two most common DECRQSS targets; reply with `DCS 0 $ r ST` (unrecognized) for all others. Mark `verified-with-deviation` if fewer than all recognized DECRQSS targets are implemented.
+
+**DECRSPS** (`DCS Ps $ t Pt ST`): Restores presentation state previously reported by DECRQPSR. For initial implementation, parse and acknowledge but do not implement full state restoration. `verified-with-deviation`: "DECRSPS parse-and-acknowledge stub — full state restoration not implemented".
+
+### DCS handler location
+
+Verify the DCS dispatch path before implementing. The VTE parser likely routes DCS strings through a separate `dcs_hook` / `dcs_put` / `dcs_unhook` sequence. Search for `dcs` in `crates/vte/src/ansi/` to find the canonical dispatch point. Do NOT route DCS sequences through the CSI dispatch table.
+
+### Completion criteria
+
+- DECPRES-DECRQSS and DECPRES-DECRSPS promoted from `missing` to `verified-with-deviation` (both are stub-level implementations with documented deviations)
+- DCS dispatch path verified and documented in the catalog Notes field for each row
+
+---
+
+## §09A.10 — Verbiage rewrite of sections 11-26
+
+### Goal
+
+Each not-started section (11-26, 16 sections) gains three additions:
+1. A `success_criteria` array entry: `"Every sequence in this section's stack maps to a catalog row ID or a not-targeted decision in audits/section-NN-top-down-inventory.md; spec-coverage-report --check audit-files passes for this section's audit file"`
+2. A new FIRST subsection `§NN.0 Top-down audit file` in the `sections` frontmatter list: `{ id: "NN.0", title: "Top-down audit file — commit audits/section-NN-top-down-inventory.md stub with canonical spec sources enumerated", status: not-started }`
+3. A stub audit file `plans/spec-conformance/audits/section-NN-top-down-inventory.md` with frontmatter populated (section, title, canonical_spec_sources, last_walked placeholder, walked_by placeholder) and the mapping table body as a TODO stub
+
+### Files touched (16 section files + 16 audit file stubs)
+
+- `plans/spec-conformance/section-11-*.md` through `plans/spec-conformance/section-26-*.md` — frontmatter edits
+- `plans/spec-conformance/audits/section-11-top-down-inventory.md` through `audits/section-26-top-down-inventory.md` (16 new files)
+
+### Audit file stub format
+
+Integration sections (21, 22, 24, 25) use the exempt form:
+```yaml
+---
+section: "21"
+title: "<copy from section frontmatter>"
+canonical_spec_sources: []
+last_walked: "TODO"
+walked_by: "TODO"
+---
+# Top-Down Spec Audit — Section 21 (Integration section)
+<!-- Integration section — corpus manifest is the audit input, not a spec source walk -->
+```
+
+Protocol sections (11-20, 23, 26) use the full form with:
+- `canonical_spec_sources` pointing at the real spec sources (e.g. Section 11 charsets → ISO 2022, ECMA-35, xterm ctlseqs)
+- Mapping table body as:
+  ```markdown
+  ## Sequence-to-catalog mapping
+  | Sequence (canonical form) | Spec source citation | Catalog row ID | Decision |
+  |---|---|---|---|
+  | TODO — walk `<canonical_spec_source>` row-by-row and fill this table | | | |
+  ```
+
+### Completion criteria
+
+- All 16 section files have the new success criterion and §NN.0 subsection entry in frontmatter
+- All 16 audit file stubs exist and pass `spec-coverage-report --check audit-files` schema conformance (the TODO-walk stub rows have `not-targeted` decision with rationale `"TODO — audit not yet performed"` to satisfy the non-empty rationale requirement)
+- `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` exits 0 for all 17 audit files (09A + 11-26)
+
+---
+
+## §09A.11 — DRIFT updates
+
+### Goal
+
+Update every location in the plan that records counts or lists of catalog files, ID prefixes, or total rows. These are the DRIFT locations identified during the pre-implementation planning pass.
+
+### Files touched
+
+- `plans/spec-conformance/coverage-baseline.toml` — add two new stack entries
+- `plans/spec-conformance/00-overview.md` — catalog table + ID prefix description + Catalog Files section
+
+### Specific DRIFT updates
+
+**`coverage-baseline.toml`**: Add two entries:
+```toml
+dec-rectangle-ops = 0
+dec-presentation = 0
+```
+(Initial baseline 0 — no rows verified yet. Baseline is updated by `spec-coverage-report --update-baseline` after verification.)
+
+**`00-overview.md` Catalog Row Schema ID column** (currently around line 816): The ID column description lists known stack prefixes. Add `DECRECT` and `DECPRES` to the list alongside the existing `DEC` prefix. Update the sentence to read: "`DECRECT` covers `catalog/dec-rectangle-ops.md` ... `DECPRES` covers `catalog/dec-presentation.md` ... `DEC` continues to cover `catalog/dec-private-modes.md` (numeric DECSET/DECRST modes only)." The text currently already contains these additions as forward-references from the pre-planning pass — verify they are present; if present, no edit needed; if absent, add them.
+
+**`00-overview.md` Catalog Files section** (currently around line 850-900): The tree listing of `catalog/` files currently lists `dec-rectangle-ops.md` and `dec-presentation.md` as forward references with "(added by Section 09A)" annotations. Verify these entries are present. Update any line counts or totals if they reference the number of catalog files.
+
+**`00-overview.md` §Mission criterion "Catalog complete (top-down enforced)"** (currently around line 27): The criterion references the audits/ SSOT introduced by Section 09A. Verify the criterion text is already updated (it was updated by the pre-planning pass). If any count like "17 protocol-family markdown files" appears, update it to the correct count (16 original + 2 new = 18, verify by counting `catalog/*.md` files excluding README and _legacy files).
+
+### Completion criteria
+
+- `spec-coverage-report --check` does not complain about unknown stacks in `coverage-baseline.toml` for `dec-rectangle-ops` and `dec-presentation`
+- No stale count references remain in `00-overview.md`
+
+---
+
+## §09A.12 — Section 16 locator extensions gate
+
+### Goal
+
+Confirm that the four DEC private CSI locator extension sequences (DECEFR, DECELR, DECSLE, DECRQLP) are catalogued in `plans/spec-conformance/catalog/mouse.md` with owner Section 16, NOT in the new `dec-presentation.md`. These sequences use DEC private CSI intermediates (`'` intermediate) but are mouse-protocol sequences, not presentation-state sequences.
+
+### Files touched
+
+- `plans/spec-conformance/catalog/mouse.md` — confirm or add rows for DECEFR, DECELR, DECSLE, DECRQLP
+
+### Verification
+
+Search `catalog/mouse.md` for the four mnemonics. If they are absent, add them as MOUSE-prefixed rows with `missing` verification status and `owner_section: 16` annotation. If they are present, verify their stack prefix is `MOUSE`, not `DECRECT` or `DECPRES`.
+
+This subsection is GATE-CHECKING only — it does NOT implement the locator sequences (that is Section 16's work). It ensures the audit-file mapping for Section 09A's own audit file can cite these rows as `not-targeted: belongs to catalog/mouse.md, owned by Section 16` rather than leaving them as unexplained omissions.
+
+### Completion criteria
+
+- All four locator extension sequences have a row in `catalog/mouse.md` or are explicitly noted as `not-targeted` in `audits/section-09a-top-down-inventory.md` with rationale "DEC private CSI locator extensions; catalogued in catalog/mouse.md owned by Section 16"
+
+---
+
+## §09A.R Third Party Review Findings
+
+- None.
+
+---
+
+## §09A.N Completion Checklist
+
+### Implementation complete
+
+- [ ] §09A.0 — `spec-coverage-report --check audit-files` implemented and passing for `audits/section-09a-top-down-inventory.md`
+- [ ] §09A.1 — `catalog/dec-rectangle-ops.md` created with all 10 DECRECT rows; all rows at `missing` status initially
+- [ ] §09A.2 — `catalog/dec-presentation.md` created with all 13 DECPRES rows; all rows at `missing` status initially
+- [ ] §09A.3 — All 19 CSI dispatch arms present in `crates/vte/src/ansi/dispatch/csi.rs`; ESC 6/9 dispatch arms confirmed; `cargo test -p vte` green
+- [ ] §09A.4 — All ~21 handler trait default methods in `crates/vte/src/ansi/handler.rs`; override implementations in `oriterm_core/src/term/handler/rect_ops.rs` and `presentation.rs`
+- [ ] §09A.5 — DECRQCRA synchronous checksum via `PtyEffect::Write`; xterm patch-336 algorithm; zero-alloc in checksum loop; `PtyWriteKind::ChecksumReport` variant exhaustive across all match arms
+- [ ] §09A.6 — All 6 rectangular area mutation ops implemented with `clamp_rect()` helper; DECLRMM-aware; DECSCA protection respected in DECERA/DECSERA
+- [ ] §09A.7 — DECIC/DECDC column ops; DECBI/DECFI ESC-path ops; DECLRMM-aware for all four
+- [ ] §09A.8 — All 7 CSI-path presentation queries stubbed; DECSCA protection flag propagates to `CellFlags::PROTECTED`; DECRQDE reply contains correct grid dimensions
+- [ ] §09A.9 — DECRQSS and DECRSPS DCS-path dispatch confirmed; stub reply for DECRQSS recognizing at minimum DECSCUSR (`q`) target
+- [ ] §09A.10 — All 16 sections (11-26) have `§NN.0` audit-file subsection; all 16 audit file stubs committed; `--check audit-files` exits 0 for all 17 audit files
+- [ ] §09A.11 — `coverage-baseline.toml` updated with `dec-rectangle-ops` and `dec-presentation` entries; `00-overview.md` DRIFT locations verified/updated
+- [ ] §09A.12 — DECEFR/DECELR/DECSLE/DECRQLP confirmed in `catalog/mouse.md` or documented as `not-targeted` in 09A's audit file
+
+### Catalog rows verified
+
+- [ ] All 10 DECRECT rows promoted to `verified` or `verified-with-deviation` (no `missing`, no `stub`, no `implemented-unverified` remaining)
+- [ ] All 13 DECPRES rows promoted to `verified` or `verified-with-deviation`
+- [ ] Every deviation documented in the row's Notes field with one-line rationale
+
+### Test coverage
+
+- [ ] Each new CSI dispatch arm has parser + dispatch + unhandled-negative-pin tests in `crates/vte/src/ansi/tests.rs`
+- [ ] Each new handler method has at minimum a canonical-params + zero-area-noop test in `oriterm_core/tests/spec_chain/dec_rect_ops/` and `dec_presentation/`
+- [ ] DECRQCRA has 6 spec_chain tests including alloc-regression pin (semantic pin: zero allocs in checksum loop)
+- [ ] DECCRA source/destination overlap scenario tested (scratch-buffer correctness pin)
+- [ ] DECSCA protection attribute tested end-to-end: write protected cell → DECSERA → cell NOT erased; write unprotected cell → DECERA → cell IS erased (both branches tested)
+- [ ] Negative pins: each rect op has at least one test asserting cells OUTSIDE the rectangle are unchanged
+
+### esctest baseline
+
+- [ ] esctest baseline run performed; count of failing tests documented (target: <50 remaining after Section 09A)
+- [ ] Every remaining esctest failure that Section 09A surfaces but does not fix has been filed via `/add-bug` as a concrete bug tracker entry with severity, repro, and subsystem
+
+### Build and lint gates
+
+- [ ] `./build-all.sh` green (debug + release + `cargo build --target x86_64-pc-windows-gnu`)
+- [ ] `./test-all.sh` green (debug workspace sweep)
+- [ ] `timeout 150 cargo test --workspace --features oriterm/gpu-tests --release` green (release-mode divergence check)
+- [ ] `./clippy-all.sh` green (zero new warnings under `deny(clippy::all)` + nursery)
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check` green (no false-verified, no regression)
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` green (all 17 audit files pass lint)
+- [ ] `oriterm_core/tests/alloc_regression.rs` green (DECRQCRA zero-alloc pin + existing pins)
+- [ ] `crates/vte/README.md` updated with Section 09A vendored-patch entry (mirrors Section 10.N §J requirement: record the patch reason and scope for DECBI/DECFI/DECIC/DECDC/DECRQCRA/rect-ops Handler hooks)
+
+### TPR and hygiene reviews
+
+- [ ] `/tpr-review` passed after §09A.5 (Checkpoint 2 — DECRQCRA algorithm + synchronous emission decision)
+- [ ] `/tpr-review` passed after §09A.7 (Checkpoint 3 — all rect ops + column ops + ESC-path ops)
+- [ ] `/tpr-review` passed at §09A.N (Final — all rows verified, audits/ lint clean, verbiage rewrite complete)
+- [ ] `/impl-hygiene-review` passed (no LEAK/DRIFT/GAP findings outstanding; `PtyWriteKind::ChecksumReport` exhaustive match verified; `CellFlags::PROTECTED` SSOT is `oriterm_core/src/cell/flags.rs`)
+
+### Plan sync
+
+- [ ] All subsection statuses in this file's frontmatter set to `complete`
+- [ ] Section status in frontmatter set to `complete`
+- [ ] `plans/spec-conformance/index.md` updated with Section 09A entry
+- [ ] `plans/spec-conformance/00-overview.md` Quick Reference table updated (Section 09A row added; status = Complete)
+- [ ] `third_party_review.status` updated to `resolved` with `updated` date

@@ -5,6 +5,8 @@ status: not-started
 reviewed: false
 goal: "Wire the cross-stack regression sweep into CI: every PR runs every stack's verification chain, every per-stack test binary stays under the 150s test cap, the coverage report (delivered by section 04) runs in `--check` mode and fails the build on any regression."
 success_criteria:
+  - "Audit-files lint wired into CI: `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` runs in the same CI lane as the existing coverage-report `--check` modes. The lint enforces (per `plans/spec-conformance/audits/README.md`): (1) every not-started section listed in `00-overview.md` Quick Reference has a corresponding audit file; (2) every `mapped` row in any audit file resolves to a real catalog row; (3) every audit file frontmatter parses; (4) every `not-targeted` decision has a one-line rationale. CI fails if any check fails. This closes the loop on top-down catalog coverage enforcement that Section 09A introduced."
+  - "Audit input committed at `plans/spec-conformance/audits/section-23-top-down-inventory.md`. The audit input is the lint contract itself + `coverage-baseline.toml` + every per-section audit file in scope. `--check audit-files` mode is implemented in this section (or verified to be implemented per Section 09A's §09A.0 deliverable; if Section 09A's §09A.0 already implements the lint, this section just wires it into CI)."
   - "`.github/workflows/spec-conformance.yml` exists with: per-stack test job (one job per Phase 3 stack), the coverage-report `--check` job, and a per-platform apex matrix for OS-dependent layers (clipboard, audio, focus, kitty file/shm transports, title, shell integration)"
   - "Every per-stack test binary runs in under 150 seconds (the CLAUDE.md test timeout cap). If any binary approaches the cap, it MUST be split into per-stack-subset binaries."
   - "Coverage report `--check` mode reads the previous baseline from `plans/spec-conformance/coverage-baseline.toml` and fails CI on any drop in the ABSOLUTE `verified` row count per stack (NOT percentage — see section 04.8 monotonicity rationale)."
@@ -23,6 +25,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "23.0"
+    title: "Top-down lint integration verification (BLOCKING) — wire `spec-coverage-report --check audit-files` into CI; commit audits/section-23-top-down-inventory.md"
+    status: not-started
   - id: "23.1"
     title: "Build per-stack test binary structure"
     status: not-started
@@ -72,6 +77,29 @@ gate) are this section's responsibility. Canonical absorption policy:
 see [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](./00-overview.md#tack-absorption-strategy-delivered-by-section-02).
 
 **Depends on:** Section 04 (coverage report binary exists), Section 08 (baseline + ~3 stacks verified so the report has meaningful content).
+
+---
+
+## 23.0 Top-down lint integration verification (BLOCKING — precedes all other subsections)
+
+**Goal:** Verify the audit-input record at `plans/spec-conformance/audits/section-23-top-down-inventory.md` is populated and that the `--check audit-files` lint is wired into CI.
+
+**Integration-section scope:** This section is NOT a protocol-stack section — it does not walk a control-sequence spec source. Its "audit input" IS the lint contract itself: `plans/spec-conformance/audits/README.md` + `coverage-baseline.toml` + every per-section audit file in scope. The `audits/` SSOT introduced by Section 09A (per `plans/spec-conformance/audits/README.md`) adapts to integration sections by treating the lint contract as the top-down enumerator. The completeness check is: the `--check audit-files` lint runs in CI and passes.
+
+**Why this exists:** Section 09A closed the bottom-up catalog gap that hid DECRQCRA via the per-section audit file pattern. The audit-files lint enforces that every section's audit file is present, schema-valid, and has all `mapped` rows resolving to real catalog rows. Without CI wiring, the lint can be broken silently between sessions. Section 23 closes that loop.
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-23-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `.github/workflows/spec-conformance.yml` — add `--check audit-files` step alongside existing `--check` steps
+
+**Completion criteria:**
+
+- [ ] Audit file is populated describing the lint contract + `coverage-baseline.toml` + audit file inventory as the audit input.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` is implemented (per §09A.0) and passes locally.
+- [ ] The `--check audit-files` mode is wired into the same CI lane as the existing `--check` modes; CI fails on any audit-file lint failure.
+- [ ] Audit file `last_walked` and `walked_by` set.
+
+**No other subsection in this section can begin work until §23.0 is complete.**
 
 ---
 

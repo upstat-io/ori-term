@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Add cell-level alpha modeling to the Cell struct, propagate it through RenderableContent → FrameInput → GPU pipeline, and verify translucent overlays render correctly — architectural prerequisite for the notcurses `trans` scene in section 24."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-15-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (notcurses `NCALPHA_*` semantics + wezterm cell color resolution cross-ref — multiple, see audit file) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "`oriterm_core/src/cell/mod.rs` `Cell` struct has an alpha field (or `CellFlags::ALPHA` flag with associated alpha value); currently MISSING per Pass 1"
   - "`RenderableCell` propagates the alpha to the snapshot"
   - "`FrameInput` consumer (GPU pipeline) blends the cell with the underlying surface using the alpha — `oriterm/src/gpu/pipeline/image.rs` (or text pipeline if cells go through text) is updated"
@@ -22,6 +23,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "15.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "15.1"
     title: "Add alpha field/flag to Cell struct"
     status: not-started
@@ -57,6 +61,31 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Sections 12, 13, 14 (image stacks landed; this section is the architectural change that lets section 24 use the image stacks under translucent overlay scenes).
+
+---
+
+## 15.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-15-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** notcurses `NCALPHA_OPAQUE`/`NCALPHA_TRANSPARENT`/`NCALPHA_BLEND`/`NCALPHA_HIGHCONTRAST` semantics (notcurses defines the per-cell alpha contract — no formal spec); wezterm `cell.rs` cell color resolution as cross-reference.
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-15-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/` — multiple catalog files may receive new rows for alpha-related behaviors (notcurses de-facto behaviors catalog is the likely home)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-15-top-down-inventory.md` is populated with every alpha mode defined in the canonical spec source(s).
+- [ ] Every row has a `Decision` of `mapped` (cites catalog row ID) or `not-targeted` (with rationale).
+- [ ] Every `mapped` row resolves to a real catalog row.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` and `walked_by` set.
+- [ ] Any new catalog rows use the canonical 10-column schema.
+
+**No other subsection in this section can begin work until §15.0 is complete.**
 
 ---
 

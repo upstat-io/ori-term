@@ -667,8 +667,9 @@ After both pilots run green AND Section 05 has landed (with 05.6 validating the 
   - How a row is added (workflow for new sequences)
   - How a row is migrated to `verified` (test chain requirements)
   - Update the stub's front-matter `schema_version: "0.1-provisional"` to `schema_version: "1.0"` as the very last edit of this subsection (the migration is atomic — all catalog files flip to 1.0 in the same commit).
-- [x] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). All 17 files migrated: `schema_version` flipped from `0.1-provisional` to `1.0`. Row format unchanged — the provisional format was already correct per the 10-column schema. (2026-04-13)
-- [x] **Validation**: every catalog file has `schema_version: "1.0"` (17/17 files verified); `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note). Provisional status labels updated. (2026-04-13)
+- [x] Walk every catalog file from section 01 (`ecma-48.md`, `xterm-ctlseqs.md`, `dec-private-modes.md`, `dec-rectangle-ops.md`, `dec-presentation.md`, `osc.md`, `sixel.md`, `kitty-graphics.md`, `kitty-keyboard.md`, `iterm2.md`, `mode-2026.md`, `unicode-subcell.md`, `mouse.md`, `charsets.md`, `audio-print.md`, `shell-integration.md`, `historical.md`, `de-facto-behaviors.md`). All 19 files migrated (17 original + dec-rectangle-ops.md + dec-presentation.md added by Section 09A): `schema_version` flipped from `0.1-provisional` to `1.0`. Row format unchanged — the provisional format was already correct per the 10-column schema. (2026-04-13)
+<!-- DRIFT update by Section 09A: was 16 stack files / 17 total; now 18 stack files / 19 total. -->
+- [x] **Validation**: every catalog file has `schema_version: "1.0"` (19/19 files verified — 17 original + dec-rectangle-ops.md + dec-presentation.md added by Section 09A); `catalog/README.md` is the single source of truth for the format AND still contains the Section 01.10 stub content above the extension boundary (authority-ladder index, files table, ownership note). Provisional status labels updated. (2026-04-13)
 
 ---
 
@@ -853,6 +854,8 @@ The coverage report has TWO responsibilities:
   ecma-48 = 0
   xterm-ctlseqs = 0
   dec-private-modes = 0
+  dec-presentation = 0
+  dec-rectangle-ops = 0
   osc = 0
   sixel = 0
   kitty-graphics = 0
@@ -868,7 +871,7 @@ The coverage report has TWO responsibilities:
   de-facto-behaviors = 0
   ```
   Initial values are all 0 (no rows verified yet). As sections 08-20 verify rows, the baseline is updated via `spec-coverage-report --update-baseline`. The `CoverageBaseline` type lives in `crates/oriterm_test_support/src/spec_chain/coverage/mod.rs` alongside `CoverageReport`.
-- [x] **Validation**: `cargo run -p oriterm_test_support --bin spec-coverage-report` produces the expected per-stack table (16 stacks, 315 total rows, 0 verified). `--check` mode correctly fails on uncataloged test citations. All 12 unit tests pass (citation scanning, error propagation, false-verified detection, regression detection, baseline parsing).
+- [x] **Validation**: `cargo run -p oriterm_test_support --bin spec-coverage-report` produces the expected per-stack table (18 stacks, 338 total rows, 0 verified — was 16/315 before Section 09A added dec-rectangle-ops with 10 rows + dec-presentation with 13 rows). `--check` mode correctly fails on uncataloged test citations. All 12 unit tests pass (citation scanning, error propagation, false-verified detection, regression detection, baseline parsing).
 
 ---
 
@@ -989,8 +992,8 @@ The catalog is bootstrapped in section 01 via a one-time bottom-up scan + top-do
 - [x] Sixel visual pilot test passes on the deterministic lane; golden captured at `tests/references/sixel_minimal.png` via `headless_env_with_pinned_software_rasterizer` (9692 bytes — verified 2026-04-13)
 - [x] DA1 non-visual pilot test passes (3/3 green: drives_to_effect_apex, reply_bytes_match, skips_parser_rung — verified 2026-04-13)
 - [x] `plans/spec-conformance/catalog/README.md` exists with the frozen schema documentation (frozen 2026-04-13 after both pilots + deterministic lane validated)
-- [x] All catalog files migrated to the frozen schema (17/17 files — verified 2026-04-13)
-- [x] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (16 stacks, 315 total rows — verified 2026-04-13)
+- [x] All catalog files migrated to the frozen schema (19/19 files (after Section 09A landed two new catalog files) — verified 2026-04-13)
+- [x] `cargo run -p oriterm_test_support --bin spec-coverage-report` produces a sane per-stack table with ABSOLUTE verified counts (18 stacks, 338 total rows (after Section 09A landed dec-rectangle-ops with 10 rows + dec-presentation with 13 rows) — verified 2026-04-13)
 - [x] Coverage report walks BOTH catalog files AND test source files (scans `catalog/*.md` via shared parser + 8 test root dirs for `// Catalog row:` and `catalog_row_id:` citations — verified 2026-04-13)
 - [x] `--check` mode of the report binary correctly detects ALL FOUR gates: (a) absolute-verified-count regression, (b) false-verified (no citation), (c) uncataloged citation (no catalog row), (d) non-empty uncataloged-backlog without paired catalog-update PR — all four gates verified, exit code 1 on uncataloged backlog (2026-04-13)
 - [x] Cataloging safety net (04.9) lands: `UncatalogedDetector` records tuples in-memory during test execution (`HashSet<TupleSig>`), serializes to temp files on drop, and `spec-coverage-report --check` materializes the backlog in a single serial post-test step. No file I/O during parallel test execution (flaky-test discipline per `.claude/rules/tests.md`). 6 unit tests green.
