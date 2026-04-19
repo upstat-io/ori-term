@@ -1,3 +1,4 @@
+# Section 09A added dec-rectangle-ops and dec-presentation entries — see plans/spec-conformance/section-09a-dec-csi-extensions.md
 # Coverage baseline — absolute verified row counts per stack.
 # Updated by spec-coverage-report --update-baseline.
 # CI fails if any stack's verified count drops below these values.
@@ -9,6 +10,8 @@ audio-print = 0
 charsets = 0
 de-facto-behaviors = 0
 dec-private-modes = 0
+dec-presentation = 0
+dec-rectangle-ops = 0
 ecma-48 = 0
 historical = 0
 iterm2 = 0

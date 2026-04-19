@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Build the notcurses-demo PTY recording / replay harness, the per-scene golden capture infrastructure, and the qrcode scene smoke test (the simplest scene). LANDS EARLY — does NOT wait for every Phase 3 stack to be `verified`. Section 24 (full-pass) depends on this section."
 success_criteria:
+  - "Audit input committed at `plans/spec-conformance/audits/section-21-top-down-inventory.md`. The audit input is a CORPUS MANIFEST (not an external control-sequence spec — this is an integration section). Every entry in the corpus has a corresponding harness wiring + per-entry pass criterion. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file (integration-section variant: validates corpus completeness against harness wiring). Section 09A introduced the `audits/` SSOT; this section adapts it for integration scope per `plans/spec-conformance/audits/README.md` integration-section guidance."
   - "`crates/oriterm_test_support/src/notcurses_harness/mod.rs` exists with the notcurses-demo PTY recording + replay infrastructure"
   - "Notcurses-demo binary detected at `/usr/bin/notcurses-demo` (Linux); harness gracefully skips when not installed"
   - "Per-scene PTY capture: a scene's byte stream can be captured once via `script -c '/usr/bin/notcurses-demo -p /usr/share/notcurses' /tmp/notcurses-<scene>.cap` then replayed deterministically through ori_term"
@@ -26,6 +27,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "21.0"
+    title: "Audit input verification (BLOCKING) — commit audits/section-21-top-down-inventory.md (corpus manifest of 28 notcurses-demo scenes)"
+    status: not-started
   - id: "21.1"
     title: "Build PTY recording + replay harness"
     status: not-started
@@ -58,6 +62,28 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 04 (verification chain harness exists; this section extends it for notcurses-demo replay), Section 07 (image lifecycle correct so notcurses scenes that resize don't break the harness).
+
+---
+
+## 21.0 Audit input verification (BLOCKING — precedes all other subsections)
+
+**Goal:** Verify the audit-input corpus manifest at `plans/spec-conformance/audits/section-21-top-down-inventory.md` is populated and that every entry has corresponding harness wiring + per-entry pass criterion.
+
+**Integration-section scope:** This section is NOT a protocol-stack section — it does not walk a control-sequence spec source. Its "audit input" is a CORPUS MANIFEST: the 28 notcurses-demo scenes — see the notcurses-demo scene matrix at `~/projects/reference_repos/console_repos/notcurses/`. The `audits/` SSOT introduced by Section 09A (per `plans/spec-conformance/audits/README.md`) adapts to integration sections by treating the corpus manifest as the top-down enumerator. The completeness check is: every corpus entry has harness wiring + a per-entry pass criterion.
+
+**Why this exists:** Section 09A closed the bottom-up catalog gap that hid DECRQCRA via the per-section audit file pattern. Integration sections inherit the same enforcement shape — the audit file IS the corpus manifest, and `spec-coverage-report --check audit-files` validates that every entry has the required wiring (not catalog-row mapping, since integration sections don't add catalog rows).
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-21-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+
+**Completion criteria:**
+
+- [ ] Audit file is populated with every entry in the corpus manifest.
+- [ ] Every entry has a `harness_wiring` reference (file path + test name) + a `pass_criterion` description.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes (integration-section variant — validates corpus completeness, not catalog-row mapping).
+- [ ] Audit file `last_walked` and `walked_by` set.
+
+**No other subsection in this section can begin work until §21.0 is complete.**
 
 ---
 

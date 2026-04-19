@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every catalog row in `catalog/audio-print.md` from `implemented-unverified` to `verified`. IMPLEMENT the missing audio handlers (ANSI music CSI M, DECPS, visual bell DECVB) and print handlers (CSI i print screen, auto print mode, file transfer detection). Each audio effect emits via `Effect::Host(HostEffect::AudioRequest { kind, params })` for fire-and-forget host audio."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-20-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (multiple sub-stacks — DEC tech manual §DECPS for audio, MS-DOS ANSI.SYS reference §CSI M for ANSI music, ECMA-48 §8.3.7 BEL + §8.3.91 CSI i for printer functions) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "Every row in `catalog/audio-print.md` is `verified`"
   - "**BEL** (already implemented at handler/mod.rs:135 per Pass 1) verified — emits `Effect::Host(HostEffect::Bell)`"
   - "**ANSI music CSI M** implemented: parses MML-like notation, emits `Effect::Host(HostEffect::AudioRequest { kind: AudioKind::AnsiMusic, params: AudioParams::AnsiMml { notes } })`. Currently MISSING per Pass 1."
@@ -28,6 +29,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "20.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "20.1"
     title: "Verify BEL + visual bell DECVB"
     status: not-started
@@ -63,6 +67,31 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 08 (baseline correct).
+
+---
+
+## 20.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-20-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up (audit existing dispatch + add tack/teseq-discovered items), which is incomplete by construction — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** Three sub-stacks — DEC technical manual §DECPS (audio: volume/note/duration parameters); MS-DOS ANSI.SYS reference §CSI M (ANSI music MML-like notation); ECMA-48 §8.3.7 BEL + §8.3.91 CSI i (BEL semantics + printer functions). The audit stub pre-populates a separate sub-table per sub-stack.
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-20-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/audio-print.md` (open new rows for any audio/print sequences that should be `mapped` but aren't catalogued yet — use the canonical schema per `plans/spec-conformance/00-overview.md §Catalog Row Schema`)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-20-top-down-inventory.md` is populated with every sequence in the canonical spec source(s) across all three sub-stacks (audio, ANSI music, print).
+- [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
+- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
+- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
+
+**No other subsection in this section can begin work until §20.0 is complete.** This is a hard gate.
 
 ---
 

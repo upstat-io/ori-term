@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every catalog row in `catalog/sixel.md` from `implemented-unverified` to `verified` via the spec_chain harness — first full visual stack section, exercising the entire pipeline (parser → DCS state → image cache → GPU image render → golden image)."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-12-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (DEC STD 070 §5/6 (primary); libsixel + wezterm cross-references) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "Every row in `catalog/sixel.md` is `verified`"
   - "Sixel parser tests verified for: DCS q introducer, P1 pan / P2 pad / P3 horizontal grid / P5 width / P6 height raster attributes, color define (#) / color select / repeat (!) / CR / NL operators, sixel data byte (vertical 6-pixel column)"
   - "Sixel decoder tests verified: HLS-to-RGB conversion (already correct per Pass 1 — `hue - 120.0` at color.rs:41), color map state, repeat optimization, background-transparent vs background-filled modes"
@@ -23,6 +24,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "12.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "12.1"
     title: "Verify sixel parser rows (DCS q + raster attrs + color ops + data)"
     status: not-started
@@ -62,6 +66,31 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 05 (deterministic golden lane), Section 07 (image lifecycle fix), Section 08 (baseline correct).
+
+---
+
+## 12.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-12-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up (audit existing dispatch + add tack/teseq-discovered items), which is incomplete by construction — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** DEC STD 070 §5/6 (primary); libsixel + wezterm cross-references
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-12-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/sixel.md` (open new rows for any sequences that should be `mapped` but aren't catalogued yet — use the canonical schema per `plans/spec-conformance/00-overview.md §Catalog Row Schema`)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
+- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
+- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
+
+**No other subsection in this section can begin work until §12.0 is complete.** This is a hard gate.
 
 ---
 

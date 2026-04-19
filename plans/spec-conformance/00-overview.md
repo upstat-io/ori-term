@@ -24,7 +24,7 @@ This is an open-ended, multi-year mission. The plan is structured to accept inde
 
 Each criterion is concrete and testable. Together they prove the mission is complete. Every criterion traces to at least one section that delivers it.
 
-- [ ] **Catalog complete** — Every published terminal protocol spec ori_term targets is enumerated under `plans/spec-conformance/catalog/`. No row is `MISSING` without a tracked decision. Delivered by section 01 (one-time bottom-up + top-down bootstrap) + per-stack additions in sections 08–20 + the continuous-delta safety net in section 04.9 (`UncatalogedDetector`) which appends any harness-observed or capture-replayed tuple not in the catalog to `plans/spec-conformance/uncataloged-backlog.md`. CI fails if the backlog is non-empty without an accompanying catalog-update PR — this is the "you can't forget to add a row" guarantee.
+- [ ] **Catalog complete (top-down enforced)** — Every published terminal protocol spec ori_term targets is enumerated under `plans/spec-conformance/catalog/` AND every sequence in each stack's canonical spec source maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. No row is `MISSING` without a tracked decision. Top-down enforcement is delivered by per-section audit files at `plans/spec-conformance/audits/section-NN-top-down-inventory.md` (introduced by Section 09A; required by the verbiage rewrite of every not-started section). `spec-coverage-report --check audit-files` is wired into CI (Section 23) and fails if any audit-file mapping does not resolve to a real catalog row. The continuous-delta safety net in section 04.9 (`UncatalogedDetector`) remains as a SECONDARY catch (it appends any harness-observed or capture-replayed tuple not in the catalog to `plans/spec-conformance/uncataloged-backlog.md`); the audits/ SSOT is the PRIMARY gate. Delivered by section 01 (one-time bottom-up + top-down bootstrap) + section 09A (audits/ SSOT introduction + DEC Private CSI Extensions backfill) + per-stack additions and audit-file commits in sections 08–20 + section 04.9 (continuous delta).
 - [ ] **Verification chain complete per row** — Every applicable catalog row reaches `verified` status (parser → dispatch → state/effect → apex test ladder, all green). Delivered by sections 08–20 + section 26 (historical vector stacks).
 - [ ] **Coverage report green** — `cargo run -p oriterm_test_support --bin spec-coverage-report` produces 100% verified status for every in-scope stack AND the gating CI metric (the ABSOLUTE count of `verified` rows per stack) only ever increases. The percentage metric is advisory and may drop temporarily when the 04.9 continuous-delta detector adds uncataloged rows to the denominator — this is expected and is NOT a regression. The absolute-verified count, however, is strictly monotonic (except during an intentional demotion documented in the PR description). Delivered by section 04 (generator + catalog walker + citation scanner + safety net) + section 23 (CI integration).
 - [ ] **`notcurses-demo` runs cleanly** — All 28 scenes pass against per-scene correctness criteria with zero visual glitches, zero tearing, zero ghosting on the canonical golden lane (Linux/x86_64 + llvmpipe). Delivered by section 24.
@@ -230,6 +230,20 @@ Group A (parallel — pure data + handler stacks):
   │              │  │ FTCS, OSC 8, │  │                  │
   │              │  │ OSC 52, ...) │  │                  │
   └──────────────┘  └──────────────┘  └──────────────────┘
+  ┌──────────────────────────────────┐
+  │ 09A DEC private CSI extensions   │
+  │ (rect ops + presentation +       │
+  │  audits/ SSOT introduction —     │
+  │  closes the bottom-up catalog    │
+  │  gap that hid DECRQCRA;          │
+  │  wires every section 11-26       │
+  │  into the audit-files lint)      │
+  └──────────────────────────────────┘
+  └─ depends on 04 (verification harness); is itself a parallel
+     peer to 09/10/11 in Phase 3 Group A. Section 09A's verbiage
+     rewrite of sections 11-26 means every subsequent section
+     INHERITS the audits/ SSOT gate as a §NN.0 BLOCKING precondition
+     before any verification work in that section can begin.
 
 Group B (sequential — image stack):
   ┌──────────────┐
@@ -784,6 +798,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Complete    |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Complete    |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Complete    |
+| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | Not Started |
 | 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | Complete    |
 | 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Not Started |
 | 12 | Sixel                                                  | `section-12-sixel.md`                                | Not Started |
@@ -812,7 +827,7 @@ Every catalog row is a markdown table with this explicit column order. The schem
 
 | Column             | Required | Content syntax                                                                                       |
 |---                 |---       |---                                                                                                   |
-| **ID**             | yes      | Stable row ID in backticks: ``` `ECMA48-CUP` ```. Stack prefix `ECMA48/DEC/OSC/SIXEL/KG/KKBD/ITERM2/MOUSE/CHSET/HIST/AUDIO/SHINT/DFCT` followed by a hyphen-separated mnemonic. Unique across every catalog file.       |
+| **ID**             | yes      | Stable row ID in backticks: ``` `ECMA48-CUP` ```. Stack prefix `ECMA48/DEC/DECRECT/DECPRES/OSC/SIXEL/KG/KKBD/ITERM2/MOUSE/CHSET/HIST/AUDIO/SHINT/DFCT` followed by a hyphen-separated mnemonic. Unique across every catalog file. `DECRECT` covers `catalog/dec-rectangle-ops.md` (added by Section 09A); `DECPRES` covers `catalog/dec-presentation.md` (added by Section 09A); `DEC` continues to cover `catalog/dec-private-modes.md` (numeric DECSET/DECRST modes only).       |
 | **Spec source**    | yes      | `<Document> §<section>`. Example: `ECMA-48 §8.3.21`, `xterm ctlseqs.html CSI H`, `DEC STD 070 §6.3`. |
 | **Sequence**       | yes      | Canonical backticked form: ``` `CSI Ps;Ps H` ```, ``` `DCS Pid q … ST` ```, ``` `OSC 52 ; c ; <b64> BEL|ST` ```. Use `Ps` for numeric, `Pt` for text, `…` for variable middle, `BEL\|ST` for terminator alternatives. |
 | **Description**    | yes      | One-line behavior summary, sentence case, no period.                                                 |
@@ -858,6 +873,15 @@ plans/spec-conformance/catalog/
 ├── xterm-ctlseqs.md                — xterm extensions: window manipulation,
 │                                     focus events, bracketed paste, DECRQM/DECRPM
 ├── dec-private-modes.md            — every numbered DECSET/DECRST private mode
+├── dec-rectangle-ops.md            — DEC private CSI rectangular-area ops:
+│                                     DECRQCRA, DECCRA, DECFRA, DECERA, DECSERA,
+│                                     DECRARA, DECCARA, DECSACE, XTCHECKSUM,
+│                                     XTREPORTSGR (added by Section 09A)
+├── dec-presentation.md             — DEC private CSI presentation/column ops +
+│                                     DCS-path presentation queries: DECIC, DECDC,
+│                                     DECBI, DECFI, DECRQPSR, DECRQUPSS, DECRQDE,
+│                                     DECSCL, DECSCA, DECSASD, DECSSDT, DECRQSS,
+│                                     DECRSPS (added by Section 09A)
 ├── osc.md                          — OSC registry: 0, 1, 2, 4, 7, 8, 9, 10, 11,
 │                                     12, 22, 50, 52, 99, 104, 110, 111, 112, 133,
 │                                     633, 777, 1337, plus xterm OSC range

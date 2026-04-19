@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every one of the 28 notcurses-demo scenes from `not-attempted` (or `fail`) to `pass` against per-scene correctness criteria. The harness from section 21 is the test infrastructure; this section USES the harness and bisects every glitch into a catalog row addition or fix in the appropriate per-stack section."
 success_criteria:
+  - "Audit input committed at `plans/spec-conformance/audits/section-24-top-down-inventory.md`. The audit input is a CORPUS MANIFEST (not an external control-sequence spec — this is an integration section). Every entry in the corpus has a corresponding harness wiring + per-entry pass criterion. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file (integration-section variant: validates corpus completeness against harness wiring). Section 09A introduced the `audits/` SSOT; this section adapts it for integration scope per `plans/spec-conformance/audits/README.md` integration-section guidance."
   - "All 28 notcurses-demo scenes are `pass` in `plans/spec-conformance/notcurses-scene-status.md`"
   - "Per-scene correctness criteria documented for each scene — what counts as 'no visual glitch' for that specific scene's protocol mix"
   - "Glitch bisection workflow followed: when a scene fails, the bisection identifies which catalog row's behavior is incorrect → file the bug under the appropriate per-stack section as a fix → re-run the scene"
@@ -21,6 +22,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "24.0"
+    title: "Audit input verification (BLOCKING) — commit audits/section-24-top-down-inventory.md (Section 21 harness corpus + per-scene goldens)"
+    status: not-started
   - id: "24.1"
     title: "Document per-scene correctness criteria for all 28 scenes"
     status: not-started
@@ -72,6 +76,28 @@ The order in this section's subsections walks complexity ascending. Scenes that 
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 07 (image lifecycle), Section 11 (unicode glyphs incl. octants — required by keller), Section 12 (sixel), Section 13 (kitty graphics), Section 15 (cell-level alpha — required by trans), Section 21 (harness scaffolding).
+
+---
+
+## 24.0 Audit input verification (BLOCKING — precedes all other subsections)
+
+**Goal:** Verify the audit-input corpus manifest at `plans/spec-conformance/audits/section-24-top-down-inventory.md` is populated and that every entry has corresponding harness wiring + per-entry pass criterion.
+
+**Integration-section scope:** This section is NOT a protocol-stack section — it does not walk a control-sequence spec source. Its "audit input" is a CORPUS MANIFEST: Section 21's harness corpus (all 28 notcurses-demo scenes) + per-scene golden images. The `audits/` SSOT introduced by Section 09A (per `plans/spec-conformance/audits/README.md`) adapts to integration sections by treating the corpus manifest as the top-down enumerator. The completeness check is: every corpus entry has harness wiring + a per-entry pass criterion.
+
+**Why this exists:** Section 09A closed the bottom-up catalog gap that hid DECRQCRA via the per-section audit file pattern. Integration sections inherit the same enforcement shape — the audit file IS the corpus manifest, and `spec-coverage-report --check audit-files` validates that every entry has the required wiring (not catalog-row mapping, since integration sections don't add catalog rows).
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-24-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+
+**Completion criteria:**
+
+- [ ] Audit file is populated with every entry in the corpus manifest (all 28 scenes + their committed goldens).
+- [ ] Every entry has a `harness_wiring` reference (file path + test name) + a `pass_criterion` description.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes (integration-section variant — validates corpus completeness, not catalog-row mapping).
+- [ ] Audit file `last_walked` and `walked_by` set.
+
+**No other subsection in this section can begin work until §24.0 is complete.**
 
 ---
 
