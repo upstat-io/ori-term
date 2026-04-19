@@ -48,7 +48,7 @@ sections:
     status: complete
   - id: "10.2"
     title: "OSC 52 clipboard — store + load + ResponseToken round-trip (consumer-side coverage on the already-live response_poll path)"
-    status: in-progress
+    status: complete
   - id: "10.3"
     title: "OSC 9 / 99 / 777 desktop notifications — NotificationSource discriminators"
     status: not-started
@@ -95,7 +95,7 @@ sections:
 
 # Section 10: OSC Suite (full)
 
-**Status:** In Progress (10.R — Third Party Review — complete; 10.0 — in-progress; 10.1–10.9 + 10.N — not started). Matches frontmatter `status: in-progress` and the per-subsection status fields at the top of this file.
+**Status:** In Progress (10.R — Third Party Review — complete; 10.0 / 10.1 / 10.2 — complete; 10.3–10.9 + 10.N — not started). Matches frontmatter `status: in-progress` and the per-subsection status fields at the top of this file.
 
 **Goal:** Verify EVERY OSC catalog row — basic (inherited from Section 08) and advanced (Section 10's own Phase 3 Group A expansion). Each OSC number gets a test that emits the sequence and asserts the correct apex: high-level-processor OSCs (0/1/2/4/8/10/11/12/22/50/52/104/110/111/112/1337 non-image and the new 10.9 variants) use `SpecHarness::feed()` with `observe_state` / `observe_effect` / `observe_renderable`; interceptor-handled OSCs (7/9/99/133/633/777) use the mux-layer sibling unit test in `oriterm_mux/src/shell_integration/tests.rs` which has `pub(crate)` access to `RawInterceptor` — SpecHarness does NOT route interceptor-managed sequences. This section owns the entire OSC stack plus its prerequisites: harness extensions, Term state additions, and dispatcher refactors. The OSC 52 ResponseToken pipeline (`response_poll`) was brought live by effect-cutover §01.1 (gate removed, call sites wired, tests green); Section 10 is a CONSUMER of that pipeline — §10.2 adds OSC-52-specific end-to-end coverage on top of the already-green path, it does NOT activate a dormant path.
 
@@ -353,7 +353,7 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 - [x] OSC-52-STORE in `plans/spec-conformance/catalog/osc.md` → `verified` with citations for `c`, `s`, `p` clipboard characters (store); `q` documented as not supported (`ClipboardSelection` has no `q` variant — verified at `oriterm_core/src/effect/families/host.rs:108-115`). **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "Emits `Event::ClipboardStore`" and the `Notes` wording is stale. Rewrite `Implementation` to cite `HostEffect::ClipboardStore { selection, data }` via `QueueingEffectSink` (public path: `oriterm_core::effect::HostEffect`); rewrite `Notes` to remove the old `Event::` wording. The `Apex layer` value `effect-clipboard` is already schema-correct (per `plans/spec-conformance/00-overview.md:820` canonical `ApexLayer` enum) — do NOT change it to `effect-host` (not a valid schema value). Do NOT mark the row `verified` while the Implementation cell still says `Event::ClipboardStore` — a DRIFT between the catalog and the actual code.
 - [x] OSC-52-LOAD in `plans/spec-conformance/catalog/osc.md` → `verified` with citation of the ResponseToken round-trip test. **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "Emits `Event::ClipboardLoad` with a response-formatting closure" and the `Notes` wording is stale. Rewrite `Implementation` to cite `HostRequest::ClipboardLoad { selection, reply: ResponseToken }` via `QueueingEffectSink`; rewrite `Notes` to describe the `ResponseToken` fulfillment → `PtyEffect::Write` path via `PaneIoThread::poll_pending_responses`. Do NOT mark the row `verified` while the Implementation cell still references the old `Event::ClipboardLoad` closure path.
-- [ ] `plans/spec-conformance/catalog/shell-integration.md` row SHINT-OSC-9-NOTIFY (cross-reference) remains pointing at `osc.md::OSC-9` (handled in 10.3).
+- [x] `plans/spec-conformance/catalog/shell-integration.md` row SHINT-OSC-9-NOTIFY (cross-reference) remains pointing at `osc.md::OSC-9` (handled in 10.3).
 
 **Validation:**
 
