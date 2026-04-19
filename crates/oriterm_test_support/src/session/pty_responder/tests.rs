@@ -5,40 +5,35 @@
 //! cloned so one handle moves into `Term::new` and the other stays
 //! inspectable.
 
-use std::sync::Arc;
-
-use oriterm_core::effect::LegacyEventSink;
+use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::effect::{
+    ClipboardSelection, Effect, HostEffect, HostRequest, PtyEffect, PtyWriteKind, ResponseToken,
+};
 use oriterm_core::event::ClipboardType;
-use oriterm_core::{Event, EventListener, Term, Theme};
+use oriterm_core::{Term, Theme};
 use vte::ansi::Processor;
 
 use super::PtyResponder;
 
 /// Build a 24x80 `Term` driven by a fresh `PtyResponder`, returning both
 /// the term and a clone of the responder that tests can inspect.
-fn term_with_responder() -> (Term<LegacyEventSink<PtyResponder>>, PtyResponder) {
+fn term_with_responder() -> (Term<PtyResponder>, PtyResponder) {
     let responder = PtyResponder::new();
-    let term = Term::new(
-        24,
-        80,
-        0,
-        Theme::default(),
-        LegacyEventSink::new(responder.clone()),
-    );
+    let term = Term::new(24, 80, 0, Theme::default(), responder.clone());
     (term, responder)
 }
 
-fn feed(term: &mut Term<LegacyEventSink<PtyResponder>>, bytes: &[u8]) {
+fn feed(term: &mut Term<PtyResponder>, bytes: &[u8]) {
     let mut processor: Processor = Processor::new();
     processor.advance(term, bytes);
 }
 
 #[test]
 fn pty_responder_captures_color_request() {
-    // OSC 10 ? ST → Term fires ColorRequest(10, formatter); the responder
-    // calls formatter(TEST_COLOR) and pushes the result into osc_responses.
-    // The canonical `0xabcdef` test color renders as `rgb:abab/cdcd/efef`
-    // using the same ESC]...ST terminator the query carried.
+    // OSC 10 ? ST → Term emits `Effect::HostRequest(HostRequest::ColorQuery)`;
+    // the responder formats the canonical reply for the pinned test color
+    // (`0xabcdef` → `rgb:abab/cdcd/efef`) using the same ESC]…ST terminator
+    // the query carried.
     let (mut term, responder) = term_with_responder();
     feed(&mut term, b"\x1b]10;?\x1b\\");
 
@@ -50,11 +45,11 @@ fn pty_responder_captures_color_request() {
     );
     assert!(
         responder.take_responses().is_empty(),
-        "ColorRequest must NOT populate the PtyWrite queue"
+        "ColorQuery must NOT populate the PtyWrite queue"
     );
     assert!(
         responder.take_clipboard_stores().is_empty(),
-        "ColorRequest must NOT populate the clipboard-store queue"
+        "ColorQuery must NOT populate the clipboard-store queue"
     );
 }
 
@@ -76,9 +71,9 @@ fn pty_responder_captures_color_request_bel_terminated() {
 
 #[test]
 fn pty_responder_captures_clipboard_load() {
-    // OSC 52;c;? ST → Term fires ClipboardLoad(Clipboard, formatter); the
-    // responder calls formatter(TEST_CLIPBOARD_TEXT) and pushes the base64
-    // response into osc_responses. Base64("ori-term-clipboard-stub") is
+    // OSC 52;c;? ST → Term emits `Effect::HostRequest(HostRequest::ClipboardLoad)`;
+    // the responder formats the base64-encoded reply for the pinned
+    // clipboard stub. Base64("ori-term-clipboard-stub") is
     // "b3JpLXRlcm0tY2xpcGJvYXJkLXN0dWI=".
     let (mut term, responder) = term_with_responder();
     feed(&mut term, b"\x1b]52;c;?\x1b\\");
@@ -97,8 +92,9 @@ fn pty_responder_captures_clipboard_load() {
 
 #[test]
 fn pty_responder_captures_clipboard_store() {
-    // OSC 52;c;<base64> ST → Term decodes and fires ClipboardStore.
-    // Base64("store-me") = "c3RvcmUtbWU=".
+    // OSC 52;c;<base64> ST → Term decodes and emits
+    // `Effect::Host(HostEffect::ClipboardStore)`. Base64("store-me") =
+    // "c3RvcmUtbWU=".
     let (mut term, responder) = term_with_responder();
     feed(&mut term, b"\x1b]52;c;c3RvcmUtbWU=\x1b\\");
 
@@ -116,9 +112,10 @@ fn pty_responder_captures_clipboard_store() {
 
 #[test]
 fn pty_responder_still_captures_pty_write() {
-    // Regression pin for the existing PtyWrite path: the 06.0.c extension
-    // must NOT break DA/DSR handling. DA1 (`ESC [ c`) fires a PtyWrite
-    // whose contents match ori_term's canonical DA1 response.
+    // Regression pin for the existing PtyWrite path: the effect-cutover
+    // migration must NOT break DA/DSR handling. DA1 (`ESC [ c`) emits a
+    // PtyEffect::Write whose contents match ori_term's canonical DA1
+    // response.
     let (mut term, responder) = term_with_responder();
     feed(&mut term, b"\x1b[c");
 
@@ -140,22 +137,23 @@ fn pty_responder_still_captures_pty_write() {
 }
 
 #[test]
-fn pty_responder_ignores_non_round_trip_events() {
+fn pty_responder_ignores_non_round_trip_effects() {
     // Negative pin locking in the `_ => {}` catch-all: non-round-trip
-    // event variants must not populate any queue. Future extensions that
-    // add a new Event variant cannot silently leak into these queues
+    // effect variants must not populate any queue. Future extensions that
+    // add a new effect variant cannot silently leak into these queues
     // without this test failing.
     let responder = PtyResponder::new();
-    responder.send_event(Event::Title("probe".to_string()));
-    responder.send_event(Event::ResetTitle);
-    responder.send_event(Event::IconName("probe".to_string()));
-    responder.send_event(Event::ResetIconName);
-    responder.send_event(Event::Wakeup);
-    responder.send_event(Event::Bell);
-    responder.send_event(Event::Cwd("/tmp".to_string()));
-    responder.send_event(Event::CursorBlinkingChange);
-    responder.send_event(Event::MouseCursorDirty);
-    responder.send_event(Event::ChildExit(0));
+    responder.push(Effect::Host(HostEffect::TitleSet {
+        value: Some("probe".to_string()),
+    }));
+    responder.push(Effect::Host(HostEffect::IconNameSet {
+        value: Some("probe".to_string()),
+    }));
+    responder.push(Effect::Host(HostEffect::Bell));
+    responder.push(Effect::Host(HostEffect::CwdSet {
+        cwd: "/tmp".to_string(),
+    }));
+    responder.push(Effect::Host(HostEffect::ChildExit { code: 0 }));
 
     assert!(responder.take_responses().is_empty());
     assert!(responder.take_osc_responses().is_empty());
@@ -169,28 +167,35 @@ fn pty_responder_direct_dispatch_populates_queues() {
     // parsing so a future osc.rs refactor cannot mask a responder-side
     // regression.
     let responder = PtyResponder::new();
-    responder.send_event(Event::PtyWrite("\x1b[?62;c".to_string()));
-    responder.send_event(Event::ColorRequest(
-        10,
-        Arc::new(|rgb| format!("color:{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)),
-    ));
-    responder.send_event(Event::ClipboardLoad(
-        ClipboardType::Selection,
-        Arc::new(|text| format!("load:{text}")),
-    ));
-    responder.send_event(Event::ClipboardStore(
-        ClipboardType::Clipboard,
-        "hello".to_string(),
-    ));
+    responder.push(Effect::Pty(PtyEffect::Write {
+        bytes: b"\x1b[?62;c".to_vec(),
+        kind: PtyWriteKind::DeviceAttribute,
+    }));
+    responder.push(Effect::HostRequest(HostRequest::ColorQuery {
+        prefix: "10".into(),
+        index: 0,
+        terminator: "\x1b\\".into(),
+        reply: ResponseToken::new(),
+    }));
+    responder.push(Effect::HostRequest(HostRequest::ClipboardLoad {
+        selection: ClipboardSelection::Select,
+        clipboard_char: b's',
+        terminator: "\x1b\\".into(),
+        reply: ResponseToken::new(),
+    }));
+    responder.push(Effect::Host(HostEffect::ClipboardStore {
+        selection: ClipboardSelection::Clipboard,
+        data: "hello".to_string(),
+    }));
 
     assert_eq!(responder.take_responses(), vec!["\x1b[?62;c".to_string()]);
     assert_eq!(
         responder.take_osc_responses(),
         vec![
-            "color:abcdef".to_string(),
-            "load:ori-term-clipboard-stub".to_string(),
+            "\x1b]10;rgb:abab/cdcd/efef\x1b\\".to_string(),
+            "\x1b]52;s;b3JpLXRlcm0tY2xpcGJvYXJkLXN0dWI=\x1b\\".to_string(),
         ],
-        "ColorRequest and ClipboardLoad must push into osc_responses in arrival order"
+        "ColorQuery and ClipboardLoad must push into osc_responses in arrival order"
     );
     assert_eq!(
         responder.take_clipboard_stores(),
@@ -208,7 +213,10 @@ fn pty_responder_clone_shares_queues() {
     let responder = PtyResponder::new();
     let inspector = responder.clone();
 
-    responder.send_event(Event::PtyWrite("via-original".to_string()));
+    responder.push(Effect::Pty(PtyEffect::Write {
+        bytes: b"via-original".to_vec(),
+        kind: PtyWriteKind::Other,
+    }));
 
     assert_eq!(
         inspector.take_responses(),

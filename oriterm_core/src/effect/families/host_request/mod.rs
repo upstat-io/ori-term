@@ -30,11 +30,14 @@ use super::ClipboardSelection;
 
 /// A host request that requires a response from the consumer.
 ///
-/// Replaces the closure-carrying `Event::ClipboardLoad` and
-/// `Event::ColorRequest` variants with typed, inspectable data.
+/// Carries typed, inspectable data instead of an opaque formatter
+/// closure: each variant exposes the OSC parameters needed to
+/// reconstruct the canonical reply via `format_clipboard_reply` /
+/// `format_color_reply`. The reply is delivered asynchronously via
+/// `ResponseToken<T>::fulfill`.
 #[derive(Debug, Clone)]
 pub enum HostRequest {
-    /// Replaces `Event::ClipboardLoad` — was `Arc<dyn Fn(&str) -> String>`.
+    /// OSC 52 clipboard read.
     ///
     /// `clipboard_char` is the raw OSC 52 clipboard character (e.g. `b'c'`,
     /// `b'p'`, `b's'`). `terminator` is the OSC string terminator (ST or BEL)
@@ -45,13 +48,12 @@ pub enum HostRequest {
         terminator: String,
         reply: ResponseToken<String>,
     },
-    /// Replaces `Event::ColorRequest` — was `Arc<dyn Fn(Rgb) -> String>`.
+    /// OSC 4/10/11/12 color query.
     ///
     /// `prefix` is the OSC prefix string (e.g. `"4"`, `"10"`, `"11"`).
-    /// `terminator` is the OSC string terminator (ST or BEL). Both were
-    /// captured in the legacy closure; the typed request preserves them
-    /// as plain data so the reply formatter can reconstruct the correct
-    /// escape sequence.
+    /// `terminator` is the OSC string terminator (ST or BEL). The reply
+    /// formatter reconstructs the escape sequence from these plus the
+    /// fulfilled `Rgb` value.
     ColorQuery {
         prefix: String,
         index: usize,
@@ -276,8 +278,9 @@ pub type ResponseFulfilled = ();
 
 // Reply formatting — canonical home for PTY response construction.
 //
-// Both `LegacyEventSink` and the dormant `response_poll` module use these
-// functions. Centralizing here prevents SSOT drift between the two paths.
+// The mux `response_poll` module and any test responder consume these
+// functions. Centralizing them here prevents SSOT drift between
+// reply-formatting sites.
 
 /// Format an OSC 52 clipboard reply as raw PTY bytes.
 ///

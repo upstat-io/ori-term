@@ -5,7 +5,6 @@
 
 use std::path::Path;
 
-use oriterm_core::effect::LegacyEventSink;
 use oriterm_core::term::renderable::RenderableCell;
 use oriterm_core::{Term, TermMode, Theme};
 
@@ -39,7 +38,7 @@ pub struct ScenarioOutcome {
 
 /// Integration test harness for teseq-based escape sequence scenarios.
 pub struct TeseqHarness {
-    term: Term<LegacyEventSink<RecordedListener>>,
+    term: Term<RecordedListener>,
     proc: vte::ansi::Processor,
     listener: RecordedListener,
     spec: ScenarioSpec,
@@ -62,7 +61,7 @@ impl TeseqHarness {
             spec.terminal.cols,
             spec.terminal.scrollback,
             theme,
-            LegacyEventSink::new(listener.clone()),
+            listener.clone(),
         );
         let mut proc = vte::ansi::Processor::new();
 

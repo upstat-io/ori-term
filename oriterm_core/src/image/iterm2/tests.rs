@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use vte::ansi::Processor;
 
 use super::{Iterm2Error, SizeSpec, parse_iterm2_file};
-use crate::effect::LegacyEventSink;
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect};
 use crate::term::Term;
 use crate::theme::Theme;
 
@@ -129,46 +129,32 @@ fn parse_pixel_width_spec() {
 
 // --- Handler integration tests ---
 
+#[derive(Clone, Default)]
 struct RecordingListener {
     events: Arc<Mutex<Vec<String>>>,
 }
 
 impl RecordingListener {
     fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
+        Self::default()
+    }
+}
+
+impl EffectSink for RecordingListener {
+    fn push(&self, effect: Effect) {
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect {
+            let s = String::from_utf8_lossy(&bytes).into_owned();
+            self.events.lock().expect("lock poisoned").push(s);
         }
     }
+
+    fn drain_into(&self, _out: &mut Vec<Effect>) {}
 }
 
-impl Clone for RecordingListener {
-    fn clone(&self) -> Self {
-        Self {
-            events: Arc::clone(&self.events),
-        }
-    }
-}
-
-impl EventListener for RecordingListener {
-    fn send_event(&self, event: Event) {
-        let s = match &event {
-            Event::PtyWrite(data) => format!("pty:{data}"),
-            other => format!("{other:?}"),
-        };
-        self.events.lock().expect("lock poisoned").push(s);
-    }
-}
-
-fn term_with_recorder() -> (Term<LegacyEventSink<RecordingListener>>, RecordingListener) {
-    let listener = RecordingListener::new();
-    let term = Term::new(
-        24,
-        80,
-        100,
-        Theme::default(),
-        LegacyEventSink::new(listener.clone()),
-    );
-    (term, listener)
+fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
+    let recorder = RecordingListener::new();
+    let term = Term::new(24, 80, 100, Theme::default(), recorder.clone());
+    (term, recorder)
 }
 
 fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {

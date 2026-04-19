@@ -43,7 +43,9 @@ pub enum HostEffect {
     ///
     /// Emitted unconditionally by the RIS handler (reset to initial state).
     /// Each sink type handles this in its own `push()` arm:
-    /// - `LegacyEventSink`: clears its internal `pending_notifications` queue.
+    /// - Effect router: collapses preceding `DesktopNotification` effects
+    ///   in the same drain batch + emits `MuxNotification::ClearPendingDesktopNotifications`
+    ///   so cross-batch staging buffers also purge.
     /// - `QueueingEffectSink`: queues the marker; the consumer discards
     ///   preceding `DesktopNotification` effects during `drain_into()`.
     /// - `VoidEffectSink`: no-op.

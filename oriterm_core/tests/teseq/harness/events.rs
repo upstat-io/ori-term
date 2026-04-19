@@ -1,21 +1,32 @@
-//! Structured event capture for teseq test assertions.
+//! Structured effect capture for teseq test assertions.
 //!
-//! `RecordedEvent` mirrors `oriterm_core::event::Event` but replaces closures
-//! with their identifying data, enabling equality comparison and snapshots.
+//! `RecordedEvent` provides a closure-free, equality-comparable view of
+//! the [`Effect`] stream emitted by `Term<RecordedListener>` — teseq tests
+//! historically asserted on `RecordedEvent`-shaped variants, and this
+//! shim preserves the same shape after the effect-cutover migration
+//! (see `plans/effect-cutover/`).
 
 use std::sync::{Arc, Mutex};
 
 use oriterm_core::ClipboardType;
-use oriterm_core::effect::LegacyEventSink;
-use oriterm_core::event::{Event, EventListener};
+use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::effect::{
+    ClipboardSelection, Effect, HostEffect, HostRequest, PtyEffect, UiEffect,
+};
 
-/// Structured event capture for test assertions.
+/// Structured effect capture for test assertions.
 ///
-/// Mirrors `oriterm_core::event::Event` but replaces closures with
-/// their identifying data, enabling equality comparison and snapshots.
+/// Equality-comparable mirror of the `Effect` variants the teseq harness
+/// observes; closures and sources of non-determinism (durations,
+/// internal sources) are stripped so snapshots stay stable.
 #[derive(Clone, Debug, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "exhaustive enum surface; some variants are only emitted by tests not yet migrated"
+)]
 pub enum RecordedEvent {
-    /// New content available.
+    /// New content available — set whenever a `UiEffect::CursorBlinkChanged` fires
+    /// or whenever the harness records a wakeup-like signal.
     Wakeup,
     /// BEL character received.
     Bell,
@@ -29,9 +40,9 @@ pub enum RecordedEvent {
     ResetIconName,
     /// OSC 52 clipboard store request.
     ClipboardStore(ClipboardType, String),
-    /// OSC 52 clipboard load request (closure stripped).
+    /// OSC 52 clipboard load request (token stripped).
     ClipboardLoad(ClipboardType),
-    /// OSC 4/10/11 color query response (closure stripped).
+    /// OSC 4/10/11/12 color query (token stripped).
     ColorRequest(usize),
     /// Response bytes to write back to PTY.
     PtyWrite(String),
@@ -47,43 +58,56 @@ pub enum RecordedEvent {
     ChildExit(i32),
 }
 
-// Exhaustive match ensures RecordedEvent stays in sync with Event.
-// When a new Event variant is added, this match will fail to compile,
-// forcing the implementer to add a corresponding RecordedEvent variant.
-impl From<&Event> for RecordedEvent {
-    fn from(event: &Event) -> Self {
-        match event {
-            Event::Wakeup => Self::Wakeup,
-            Event::Bell => Self::Bell,
-            Event::Title(t) => Self::Title(t.clone()),
-            Event::ResetTitle => Self::ResetTitle,
-            Event::IconName(n) => Self::IconName(n.clone()),
-            Event::ResetIconName => Self::ResetIconName,
-            Event::ClipboardStore(ty, text) => Self::ClipboardStore(*ty, text.clone()),
-            Event::ClipboardLoad(ty, _) => Self::ClipboardLoad(*ty),
-            Event::ColorRequest(idx, _) => Self::ColorRequest(*idx),
-            Event::PtyWrite(s) => Self::PtyWrite(s.clone()),
-            Event::CursorBlinkingChange => Self::CursorBlinkingChange,
-            Event::Cwd(path) => Self::Cwd(path.clone()),
-            Event::CommandComplete(_) => Self::CommandComplete,
-            Event::MouseCursorDirty => Self::MouseCursorDirty,
-            Event::ChildExit(code) => Self::ChildExit(*code),
-        }
+fn clipboard_from_selection(selection: ClipboardSelection) -> ClipboardType {
+    match selection {
+        ClipboardSelection::Clipboard => ClipboardType::Clipboard,
+        ClipboardSelection::Primary | ClipboardSelection::Select => ClipboardType::Selection,
     }
 }
 
-/// Event listener that captures structured `RecordedEvent`s.
-#[derive(Clone)]
+fn record_effect(effect: Effect) -> Option<RecordedEvent> {
+    Some(match effect {
+        Effect::Host(HostEffect::Bell) => RecordedEvent::Bell,
+        Effect::Host(HostEffect::TitleSet { value: Some(t) }) => RecordedEvent::Title(t),
+        Effect::Host(HostEffect::TitleSet { value: None }) => RecordedEvent::ResetTitle,
+        Effect::Host(HostEffect::IconNameSet { value: Some(n) }) => RecordedEvent::IconName(n),
+        Effect::Host(HostEffect::IconNameSet { value: None }) => RecordedEvent::ResetIconName,
+        Effect::Host(HostEffect::ClipboardStore { selection, data }) => {
+            RecordedEvent::ClipboardStore(clipboard_from_selection(selection), data)
+        }
+        Effect::Host(HostEffect::CwdSet { cwd }) => RecordedEvent::Cwd(cwd),
+        Effect::Host(HostEffect::CommandComplete { .. }) => RecordedEvent::CommandComplete,
+        Effect::Host(HostEffect::ChildExit { code }) => RecordedEvent::ChildExit(code),
+        Effect::Pty(PtyEffect::Write { bytes, .. }) => {
+            RecordedEvent::PtyWrite(String::from_utf8_lossy(&bytes).into_owned())
+        }
+        Effect::Ui(UiEffect::CursorBlinkChanged { .. }) => RecordedEvent::CursorBlinkingChange,
+        Effect::Ui(UiEffect::MouseCursorDirty) => RecordedEvent::MouseCursorDirty,
+        Effect::HostRequest(HostRequest::ClipboardLoad { selection, .. }) => {
+            RecordedEvent::ClipboardLoad(clipboard_from_selection(selection))
+        }
+        Effect::HostRequest(HostRequest::ColorQuery { index, .. }) => {
+            RecordedEvent::ColorRequest(index)
+        }
+        Effect::Host(HostEffect::DesktopNotification { .. })
+        | Effect::Host(HostEffect::ClearPendingNotifications)
+        | Effect::Host(HostEffect::VisualBell)
+        | Effect::Host(HostEffect::AudioRequest(_))
+        | Effect::Host(HostEffect::PrintRequest(_))
+        | Effect::Presentation(_) => return None,
+    })
+}
+
+/// Effect sink that captures structured [`RecordedEvent`]s.
+#[derive(Clone, Default)]
 pub struct RecordedListener {
     events: Arc<Mutex<Vec<RecordedEvent>>>,
 }
 
 impl RecordedListener {
-    /// Create a new listener with an empty event buffer.
+    /// Create a new sink with an empty event buffer.
     pub fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self::default()
     }
 
     /// All captured events.
@@ -91,7 +115,7 @@ impl RecordedListener {
         self.events.lock().expect("lock poisoned").clone()
     }
 
-    /// Only `PtyWrite` events (response bytes).
+    /// Only `PtyWrite` payloads (response bytes).
     pub fn pty_writes(&self) -> Vec<String> {
         self.events
             .lock()
@@ -113,11 +137,12 @@ impl RecordedListener {
     }
 }
 
-impl EventListener for RecordedListener {
-    fn send_event(&self, event: Event) {
-        self.events
-            .lock()
-            .expect("lock poisoned")
-            .push(RecordedEvent::from(&event));
+impl EffectSink for RecordedListener {
+    fn push(&self, effect: Effect) {
+        if let Some(rec) = record_effect(effect) {
+            self.events.lock().expect("lock poisoned").push(rec);
+        }
     }
+
+    fn drain_into(&self, _out: &mut Vec<Effect>) {}
 }

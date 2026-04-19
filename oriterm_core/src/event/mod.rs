@@ -6,9 +6,6 @@
 //! through winit's event loop proxy.
 
 use std::fmt;
-use std::sync::Arc;
-
-use crate::color::Rgb;
 
 /// Which system clipboard to target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,16 +36,6 @@ pub enum Event {
     ResetIconName,
     /// OSC 52 clipboard store request.
     ClipboardStore(ClipboardType, String),
-    /// **Deprecated**: emitted only via `LegacyEventSink` adapter during the
-    /// Effect migration. New code should subscribe to `Effect::HostRequest`
-    /// directly. This variant will be removed when the last legacy consumer
-    /// migrates (see `plans/effect-cutover/`).
-    ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Send + Sync>),
-    /// **Deprecated**: emitted only via `LegacyEventSink` adapter during the
-    /// Effect migration. New code should subscribe to `Effect::HostRequest`
-    /// directly. This variant will be removed when the last legacy consumer
-    /// migrates (see `plans/effect-cutover/`).
-    ColorRequest(usize, Arc<dyn Fn(Rgb) -> String + Send + Sync>),
     /// Response bytes to write back to PTY (DA, DSR, DECRPM, etc.).
     PtyWrite(String),
     /// Cursor blink state toggled via DECSET/DECRST.
@@ -59,8 +46,6 @@ pub enum Event {
     CommandComplete(std::time::Duration),
     /// Mouse cursor shape may need update (e.g. hover over hyperlink).
     MouseCursorDirty,
-    /// Child process exited with the given status code.
-    ChildExit(i32),
 }
 
 impl fmt::Debug for Event {
@@ -73,14 +58,11 @@ impl fmt::Debug for Event {
             Self::IconName(n) => write!(f, "IconName({n})"),
             Self::ResetIconName => write!(f, "ResetIconName"),
             Self::ClipboardStore(ty, text) => write!(f, "ClipboardStore({ty:?}, {text})"),
-            Self::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
-            Self::ColorRequest(idx, _) => write!(f, "ColorRequest({idx})"),
             Self::PtyWrite(text) => write!(f, "PtyWrite({text})"),
             Self::Cwd(path) => write!(f, "Cwd({path})"),
             Self::CommandComplete(d) => write!(f, "CommandComplete({d:?})"),
             Self::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
             Self::MouseCursorDirty => write!(f, "MouseCursorDirty"),
-            Self::ChildExit(code) => write!(f, "ChildExit({code})"),
         }
     }
 }

@@ -12,7 +12,7 @@
 //! helpers (`drain`, `drain_blocking`, `wait`, `wait_for`) live in the
 //! [`sync`] submodule together with the private `poll_until` SSOT
 //! helper. The child-exit and quit helpers (`wait_for_child_exit`) live
-//! in the [`teardown`] submodule. The test-side [`EventListener`]
+//! in the [`teardown`] submodule. The test-side [`EffectSink`]
 //! ([`PtyResponder`]) lives in the [`pty_responder`] submodule so its
 //! dispatch + sibling tests can grow without pushing `session/mod.rs`
 //! over the 500-line hygiene limit. Each leaf module owns its own
@@ -23,7 +23,6 @@ use std::io::{Read, Write};
 use std::sync::Mutex;
 use std::thread;
 
-use oriterm_core::effect::LegacyEventSink;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::{Term, Theme};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -103,7 +102,7 @@ static CONPTY_LIFETIME_LOCK: Mutex<()> = Mutex::new(());
 pub struct PtySession {
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     writer: Box<dyn Write + Send>,
-    term: Term<LegacyEventSink<PtyResponder>>,
+    term: Term<PtyResponder>,
     proc: vte::ansi::Processor,
     cols: u16,
     rows: u16,
@@ -225,14 +224,8 @@ impl PtySession {
             }
         });
 
-        let listener = PtyResponder::new();
-        let term = Term::new(
-            rows as usize,
-            cols as usize,
-            0,
-            Theme::default(),
-            LegacyEventSink::new(listener),
-        );
+        let responder = PtyResponder::new();
+        let term = Term::new(rows as usize, cols as usize, 0, Theme::default(), responder);
         let proc = vte::ansi::Processor::new();
 
         Self {
@@ -308,7 +301,7 @@ impl PtySession {
     /// needs to mutate `Term` outside of byte-feeding, add a narrow
     /// operation method on `PtySession` instead.
     #[must_use]
-    pub fn term(&self) -> &Term<LegacyEventSink<PtyResponder>> {
+    pub fn term(&self) -> &Term<PtyResponder> {
         &self.term
     }
 
@@ -322,7 +315,7 @@ impl PtySession {
     /// consume this for OSC 52 coverage.
     #[must_use]
     pub fn take_clipboard_stores(&self) -> Vec<(ClipboardType, String)> {
-        self.term.effect_sink().listener().take_clipboard_stores()
+        self.term.effect_sink().take_clipboard_stores()
     }
 
     /// Number of columns the PTY was opened with.

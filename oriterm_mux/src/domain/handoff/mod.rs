@@ -60,8 +60,8 @@ pub struct AdoptConfig {
 ///    stays with the handle and is dropped when the pane drops).
 /// 2. Set up shared atomics (`mode_cache`, `shutdown`, dirty flags,
 ///    write-stall flag).
-/// 3. Build the IO thread's `Term` with an [`IoThreadEventProxy`] that
-///    routes metadata events to the mux channel.
+/// 3. Build the IO thread's `Term` with a `QueueingEffectSink` whose
+///    drain feeds the [`PaneIoThread`]'s effect router → mux channel.
 /// 4. Spawn the writer thread.
 /// 5. Spawn the Terminal IO thread (`pty_control = None` because adopted
 ///    PTYs have no `MasterPty`).
