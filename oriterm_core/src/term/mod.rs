@@ -215,6 +215,13 @@ pub struct Term<S: EffectSink> {
     /// `None` until the application sets an icon. The renderer reads this
     /// via `RenderableContent::mouse_cursor_icon` and updates the OS pointer.
     mouse_cursor_icon: Option<CursorIcon>,
+    /// Last command line reported by VS Code OSC 633;E.
+    ///
+    /// `None` until the shell integration sends OSC 633;E with the raw typed
+    /// command. The `E` sub-command is interceptor-only — it is NOT routed
+    /// through the `Handler` trait because the high-level `vte::ansi::Processor`
+    /// does not dispatch OSC 633.
+    last_command_line: Option<String>,
 }
 
 impl<S: EffectSink> Term<S> {
@@ -258,6 +265,7 @@ impl<S: EffectSink> Term<S> {
             image_protocol_enabled: true,
             deccolm_default_cols: cols,
             mouse_cursor_icon: None,
+            last_command_line: None,
         }
     }
 
@@ -272,6 +280,18 @@ impl<S: EffectSink> Term<S> {
     /// Override the mouse cursor icon (raw interceptor / OSC 22 path).
     pub fn set_mouse_cursor_icon(&mut self, icon: Option<CursorIcon>) {
         self.mouse_cursor_icon = icon;
+    }
+
+    /// Last command line reported by VS Code OSC 633;E.
+    ///
+    /// `None` if no OSC 633;E sequence has been received yet.
+    pub fn last_command_line(&self) -> Option<&str> {
+        self.last_command_line.as_deref()
+    }
+
+    /// Record the raw command line text (OSC 633;E path, interceptor-only).
+    pub fn set_last_command_line(&mut self, line: Option<String>) {
+        self.last_command_line = line;
     }
 
     /// Effect sink for boundary-crossing side effects.

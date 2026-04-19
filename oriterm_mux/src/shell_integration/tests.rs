@@ -1300,3 +1300,339 @@ fn osc9_via_processor_without_mux_drops() {
          high-level dispatcher and would be double-handled in production"
     );
 }
+
+// §10.4 — OSC 133 semantic prompt + OSC 633 VS Code shell integration.
+//
+// Both OSC 133 and OSC 633 drive the same `PromptState` state machine through
+// the mux interceptor. OSC 633 additionally records the raw command line via
+// `E` and routes property settings (`P;Cwd=...`) through `Term::set_cwd` —
+// the same SSOT OSC 7 writes to. Negative pins confirm the high-level
+// `vte::ansi::Processor` does NOT dispatch either OSC, so a future refactor
+// that accidentally duplicates a dispatch arm on the high-level side is
+// detected immediately.
+
+use oriterm_core::PromptMarker;
+
+/// Drain `HostEffect::CommandComplete` effects from the terminal's queue.
+/// Used by OSC 133;D / OSC 633;D tests to assert the effect landed.
+fn drain_command_complete(term: &Term<QueueingEffectSink>) -> Vec<std::time::Duration> {
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+    let mut out = Vec::new();
+    for effect in effects {
+        if let Effect::Host(HostEffect::CommandComplete { duration }) = effect {
+            out.push(duration);
+        }
+    }
+    out
+}
+
+/// §10.4 — OSC 133;A drives `PromptState` to `PromptStart` and sets
+/// `prompt_mark_pending`. Matches the dispatch at
+/// `oriterm_mux/src/shell_integration/interceptor.rs` `handle_osc133` `b'A'`
+/// arm. Uses `feed_mux_and_proc` so the production-order dual-pass is pinned.
+#[test]
+fn osc133_a_sets_prompt_state() {
+    let mut term = make_term();
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::PromptStart);
+    assert!(term.prompt_mark_pending());
+}
+
+/// §10.4 — OSC 133;B drives `PromptState` to `CommandStart` and sets
+/// `command_start_mark_pending`.
+#[test]
+fn osc133_b_sets_command_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;B\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::CommandStart);
+    assert!(term.command_start_mark_pending());
+}
+
+/// §10.4 — OSC 133;C drives `PromptState` to `OutputStart` and sets
+/// `output_start_mark_pending`. Command-start time is stored with a live
+/// wall-clock `Instant` per interceptor.rs `b'C'` arm; the exact value is
+/// not asserted because there is no injectable-clock seam at the C step
+/// (the Option A seam only covers the D step via `finish_command(now)`).
+#[test]
+fn osc133_c_sets_output_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::OutputStart);
+    assert!(term.output_start_mark_pending());
+}
+
+/// §10.4 — OSC 133;D after a full A→B→C lifecycle clears `PromptState` to
+/// `None` AND emits a `HostEffect::CommandComplete` with a non-negative
+/// duration. The deferred-mark helpers are invoked between feeds so the
+/// `PromptMarker` for the completed lifecycle carries A/B/C fields — this
+/// mirrors `post_parse_housekeeping` in production.
+///
+/// The exhaustive match on `PromptMarker { prompt, command, output }` is a
+/// semantic pin: if a future refactor adds a fourth field (e.g. `complete`),
+/// this test MUST be updated explicitly — it will not silently compile. This
+/// is the catch for scope clarification D ("`PromptMarker` has no D-field").
+#[test]
+fn osc133_d_clears_state_and_emits_command_complete() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;B\x1b\\");
+    term.mark_command_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+    term.mark_output_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;D\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    let durations = drain_command_complete(&term);
+    assert_eq!(
+        durations.len(),
+        1,
+        "OSC 133;D after C must emit exactly one HostEffect::CommandComplete"
+    );
+    assert!(durations[0] >= std::time::Duration::ZERO);
+
+    let marker = term
+        .prompt_markers()
+        .last()
+        .expect("deferred-mark helpers populate the marker");
+    let PromptMarker {
+        prompt: _,
+        command,
+        output,
+    } = marker;
+    assert!(
+        command.is_some(),
+        "B-marked command row must survive into the completed lifecycle"
+    );
+    assert!(
+        output.is_some(),
+        "C-marked output row must survive into the completed lifecycle"
+    );
+}
+
+/// §10.4 — Two OSC 133;A feeds without intervening B/C/D produce TWO
+/// `PromptMarker`s, each with `command == None` and `output == None`. The
+/// deferred-mark helper is called after each A so the pending flag flushes
+/// into the marker vec (mirrors production `post_parse_housekeeping`). Uses
+/// the high-level `Processor` between A feeds to move the cursor so the
+/// de-duplication logic in `mark_prompt_row` does NOT coalesce the rows.
+#[test]
+fn osc133_a_without_b_does_not_record_command() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+
+    // Move cursor to a new row so the second A marks a distinct position.
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\r\n");
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(
+        markers.len(),
+        2,
+        "two A feeds at distinct rows must produce two markers"
+    );
+    for (i, marker) in markers.iter().enumerate() {
+        assert!(
+            marker.command.is_none(),
+            "marker {i}: no B feed means command must remain None"
+        );
+        assert!(
+            marker.output.is_none(),
+            "marker {i}: no C feed means output must remain None"
+        );
+    }
+}
+
+/// §10.4 — OSC 133;D without a preceding C is a no-op: no
+/// `HostEffect::CommandComplete` is emitted because `finish_command()`
+/// returns `None` when `command_start` is unset (interceptor.rs `b'D'` arm
+/// wraps the push in `if let Some(duration) = ...`). Pins the
+/// `set_prompt_state(None) + finish_command() == None → skip effect` path.
+#[test]
+fn osc133_command_complete_without_c_is_noop() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;D\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    let durations = drain_command_complete(&term);
+    assert!(
+        durations.is_empty(),
+        "OSC 133;D without a preceding C must not emit CommandComplete"
+    );
+}
+
+/// §10.4 — A full A→B→C→D lifecycle with deferred-mark helpers populates
+/// one `PromptMarker` whose `prompt`, `command`, and `output` rows all
+/// correspond to distinct absolute positions (advanced via `\r\n` between
+/// steps). Verifies the marker-flush plumbing end-to-end.
+#[test]
+fn osc133_full_lifecycle_records_markers() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\x1b]133;B\x1b\\");
+    term.mark_command_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\x1b]133;C\x1b\\");
+    term.mark_output_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\x1b]133;D\x1b\\");
+
+    let markers = term.prompt_markers();
+    assert_eq!(
+        markers.len(),
+        1,
+        "single A→B→C→D lifecycle records exactly one marker"
+    );
+    let marker = &markers[0];
+    let cmd = marker.command.expect("B must fill command row");
+    let out = marker.output.expect("C must fill output row");
+    assert!(
+        marker.prompt < cmd && cmd < out,
+        "prompt < command < output must hold after \\r\\n-advanced lifecycle: \
+         got prompt={}, command={cmd}, output={out}",
+        marker.prompt,
+    );
+}
+
+// ── OSC 633 (VS Code shell integration) ─────────────────────────────
+
+/// §10.4 — OSC 633;A mirrors OSC 133;A: drives `PromptState::PromptStart`
+/// and sets `prompt_mark_pending`. VS Code's `shellIntegrationAddon.ts`
+/// uses the same `A` sub-command semantics as Final Term OSC 133.
+#[test]
+fn osc633_a_sets_prompt_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;A\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::PromptStart);
+    assert!(term.prompt_mark_pending());
+}
+
+/// §10.4 — OSC 633;B mirrors OSC 133;B.
+#[test]
+fn osc633_b_sets_command_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;B\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::CommandStart);
+    assert!(term.command_start_mark_pending());
+}
+
+/// §10.4 — OSC 633;C mirrors OSC 133;C.
+#[test]
+fn osc633_c_sets_output_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::OutputStart);
+    assert!(term.output_start_mark_pending());
+}
+
+/// §10.4 — OSC 633;D after C emits `HostEffect::CommandComplete` and
+/// clears `PromptState` — same contract as OSC 133;D.
+#[test]
+fn osc633_d_emits_command_complete() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;D\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    let durations = drain_command_complete(&term);
+    assert_eq!(
+        durations.len(),
+        1,
+        "OSC 633;D after C must emit one CommandComplete"
+    );
+    assert!(durations[0] >= std::time::Duration::ZERO);
+}
+
+/// §10.4 — OSC 633;E records the raw command line text on
+/// `Term::last_command_line`. This is the VS Code-specific sub-op that has
+/// no OSC 133 counterpart.
+#[test]
+fn osc633_e_records_command_line() {
+    let mut term = make_term();
+    assert!(term.last_command_line().is_none());
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;E;git status\x1b\\");
+
+    assert_eq!(term.last_command_line(), Some("git status"));
+}
+
+/// §10.4 — OSC 633;P;Cwd=<path> routes through `Term::set_cwd` — the SAME
+/// canonical field OSC 7 writes to (scope clarification H: CWD SSOT). Pins
+/// that VS Code's CWD reporting shares the single source of truth with the
+/// Final Term / iTerm2 OSC 7 path.
+#[test]
+fn osc633_p_cwd_sets_term_cwd() {
+    let mut term = make_term();
+    assert!(term.cwd().is_none());
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;P;Cwd=/home/user/project\x1b\\");
+
+    assert_eq!(term.cwd(), Some("/home/user/project"));
+    assert!(
+        term.is_title_dirty(),
+        "OSC 633;P;Cwd must mark the title dirty, same as OSC 7"
+    );
+    assert!(!term.has_explicit_title());
+}
+
+/// §10.4 — OSC 633;P with an unknown key (e.g. `IsWindows=True`) is
+/// silently dropped — only `Cwd=` is honoured. Pins the forward-compat
+/// behavior called out in `shellIntegrationAddon.ts`: unknown `P` keys do
+/// NOT mutate state.
+#[test]
+fn osc633_p_unknown_key_dropped() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;P;IsWindows=True\x1b\\");
+
+    assert!(term.cwd().is_none(), "unknown P key must not set CWD");
+    assert!(
+        !term.is_title_dirty(),
+        "unknown P key must not mark the title dirty"
+    );
+}
+
+/// §10.4 — Negative pin: feeding OSC 633;A through the high-level
+/// `vte::ansi::Processor` ALONE (no `RawInterceptor` pass) does NOT mutate
+/// `PromptState`. Proves OSC 633 dispatch is interceptor-only — if someone
+/// adds a `b"633"` arm to `crates/vte/src/ansi/dispatch/osc.rs`, this test
+/// fails (double-dispatch detection). Mirrors
+/// `osc133a_via_processor_only_does_not_change_prompt_state`.
+#[test]
+fn osc633_via_high_level_processor_drops() {
+    let mut term = make_term();
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]633;A\x1b\\");
+
+    assert_eq!(
+        term.prompt_state(),
+        PromptState::None,
+        "high-level Processor must NOT route OSC 633;A — if this assertion \
+         fires, OSC 633 was added to the high-level dispatcher and would be \
+         double-handled in production"
+    );
+    assert!(!term.prompt_mark_pending());
+}
