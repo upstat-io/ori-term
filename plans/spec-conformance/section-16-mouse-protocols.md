@@ -54,6 +54,8 @@ sections:
 
 **Context:** Pass 1 confirmed mouse encoders exist for X10/UTF-8/SGR/URXVT. Section 09 verified the mode toggles (1000-1016). This section verifies the encoding via spec_chain. Locator mode (1001) was not found in Pass 1; this section IMPLEMENTS it per the xterm spec — no defer-vs-implement fork.
 
+**OSC 22 push-vs-poll handoff (from Section 10.5 / scope clarification E):** Section 10 exposed `Term::mouse_cursor_icon` as a polling getter consumed via `RenderableContent::mouse_cursor_icon` (embedded path) and `PaneSnapshot::mouse_cursor_icon` (daemon path). UI consumers read this on every frame or render signal. A push-style alternative (`Effect::Ui(UiEffect::MouseCursorChanged(icon))`) would let UI consumers update lazily — but the architecturally correct home for that decision is Section 16, because this section owns the broader "what mouse-facing state does the UI consume, and via what interface" question (OSC 22 cursor-icon, mouse-mode toggles 1000–1016, locator mode 1001, mouse encoders). If Section 16 decides to switch to push semantics, it owns the migration: the polling surface MUST stay live until every UI consumer is converted so mid-migration consumers are not stranded. No action required at Section 16 kickoff — OSC 22 remains `verified` via the polling path regardless of Section 16's eventual decision.
+
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 08 (baseline correct, basic CSI parsing solid).

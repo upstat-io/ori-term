@@ -7,9 +7,9 @@ owner_section: "01 (bootstrap), 10 (verification)"
 
 # OSC Suite Catalog
 
-One row per OSC numeric sub-op dispatched by `crates/vte/src/ansi/dispatch/osc.rs::dispatch`. OSC 1337 (iTerm2) lives in `iterm2.md`. OSC terminator is BEL (0x07) or ST (`ESC \\`); the dispatcher selects the echoed form via `bell_terminated`.
+One row per OSC numeric sub-op. Rows dispatched by `crates/vte/src/ansi/dispatch/osc.rs::dispatch` cover the high-level processor path (OSC 0/1/2/3/4/5/6/8/10/11/12/13/14/17/19/22/50/52/104/110/111/112/113/114/117/119/L/l/1337 non-image). Rows dispatched by `oriterm_mux::shell_integration::RawInterceptor` cover the interceptor-owned mux path (OSC 7/9/99/133/633/777). Every row's `Implementation` cell names its canonical dispatcher. OSC 1337 `File=` lives in `iterm2.md`. OSC terminator is BEL (0x07) or ST (`ESC \\`); the dispatcher selects the echoed form via `bell_terminated`.
 
-Section 01 populates rows for every dispatch arm currently implemented. Section 10 (OSC Suite full) verifies each chain end-to-end and adds OSC 9 / 99 / 133 / 633 / 777 when their dispatch arms land.
+Section 01 populated rows for every dispatch arm then implemented. Section 10 (OSC Suite full) verified each chain end-to-end and added OSC 9 / 99 / 133 / 633 / 777 via the interceptor path. Section 10 also finalized the two-path SSOT between the high-level processor and the mux interceptor — high-level-processor-only OSCs MUST NOT be duplicated to the interceptor and vice versa; negative pins (`osc7_via_high_level_processor_drops`, `osc9_via_processor_without_mux_drops`, `osc633_via_high_level_processor_drops`, `osc133a_via_processor_only_does_not_change_prompt_state`) guard against double-dispatch regressions.
 
 | ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
 |---|---|---|---|---|---|---|---|---|---|
