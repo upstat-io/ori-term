@@ -108,3 +108,30 @@ fn apex_layer_determines_applicable_rungs() {
     assert_eq!(ApexLayer::EffectClipboard.rung_chain().len(), 3);
     assert_eq!(ApexLayer::EffectHostTitle.rung_chain().len(), 3);
 }
+
+/// Pin §10.0 REGISTRATION SYNC: feeding OSC 1337 ; SetMark through
+/// SpecHarness MUST surface the dispatch as `iterm2_set_mark` in
+/// `outcome().dispatched_calls`. If the RecordingHandler is missing the
+/// new iterm2_* delegate arms, this assertion fails — guarding §10.7's
+/// downstream spec_chain tests against silent dispatch loss.
+#[test]
+fn spec_harness_records_iterm2_set_mark_dispatch() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b]1337;SetMark\x1b\\");
+    assert!(
+        harness
+            .outcome()
+            .dispatched_calls
+            .iter()
+            .any(|c| c.method == "iterm2_set_mark"),
+        "RecordingHandler dropped iterm2_set_mark — registration sync \
+         broken between crates/vte Handler trait and oriterm_test_support \
+         RecordingHandler. Got methods: {:?}",
+        harness
+            .outcome()
+            .dispatched_calls
+            .iter()
+            .map(|c| c.method)
+            .collect::<Vec<_>>()
+    );
+}

@@ -318,4 +318,17 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
         self.record_other("iterm2_file");
         Handler::iterm2_file(&mut self.term, params);
     }
+
+    // Registration sync for the OSC 1337 non-image sub-ops added in §10.0
+    // (plans/spec-conformance/section-10-osc-suite.md §10.0 REGISTRATION
+    // SYNC). Without these arms, SpecHarness silently drops the new
+    // Handler::iterm2_* dispatches and §10.7's spec_chain tests cannot
+    // observe them.
+    delegate_other!(iterm2_set_mark);
+    delegate_other!(iterm2_remote_host, host: &[u8]);
+    delegate_other!(iterm2_current_dir, path: &[u8]);
+    delegate_other!(iterm2_copy, data: &[u8]);
+    delegate_other!(iterm2_report_cell_size);
+    delegate_other!(iterm2_set_user_var, name: &[u8], value: &[u8]);
+    delegate_other!(iterm2_shell_integration_version, version: &[u8]);
 }
