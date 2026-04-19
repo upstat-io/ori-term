@@ -57,7 +57,7 @@ sections:
     status: complete
   - id: "10.5"
     title: "OSC 22 cursor icon (new Term state) + OSC 50 cursor shape (existing)"
-    status: not-started
+    status: complete
   - id: "10.6"
     title: "OSC 104 / 110 / 111 / 112 color reset — palette + default color restoration"
     status: not-started
@@ -467,13 +467,13 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### OSC 22 (mouse cursor icon, iTerm2)
 
-- [ ] `osc22_pointer_sets_cursor_icon` — feed `\x1b]22;pointer\x1b\\`, assert `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Uses the Term field + Handler override from 10.0.
-- [ ] `osc22_all_known_icons_matrix` — iterate through every known OSC 22 cursor name string. `cursor_icon 1.2.0` does NOT provide a `CursorIcon::all()` or iterator over variants (confirmed: the crate only exposes `CursorIcon::name()` and `FromStr` parsing). The test defines its OWN name-tagged slice (distinct from the wire-transport constant `oriterm_mux::protocol::snapshot::OSC22_KNOWN_ICONS` which is `&[CursorIcon]` without names — used for stable u8 indexing on the daemon wire): `const OSC22_TEST_CURSOR_NAMES: &[(&str, CursorIcon)] = &[("pointer", CursorIcon::Pointer), ("crosshair", CursorIcon::Crosshair), ...]` covering the ~30 variants from the CSS Basic UI / xterm spec. Feed `OSC 22 ; <name> ST` for each entry; assert each is stored. Self-verifying completeness pin: `assert_eq!(count, OSC22_TEST_CURSOR_NAMES.len())` — the project-owned name slice is the SSOT for which names are exercised BY THIS TEST; the wire `OSC22_KNOWN_ICONS` is the SSOT for which icons are transportable across the daemon boundary. Cross-check: `OSC22_TEST_CURSOR_NAMES` SHOULD be a superset of the CursorIcon variants in `oriterm_mux::protocol::snapshot::OSC22_KNOWN_ICONS` so every wire-transportable icon has a matching name-test, but the test matrix may exceed the wire slice (some variants may not be wire-stable yet) — that asymmetry is expected and not a DRIFT finding.
-- [ ] `osc22_unknown_icon_is_dropped` — feed `\x1b]22;not-a-real-cursor\x1b\\`, assert `term.mouse_cursor_icon()` is UNCHANGED (the `CursorIcon::from_str` error path in the dispatcher at `crates/vte/src/ansi/dispatch/osc.rs:184` logs and drops — no state mutation).
-- [ ] `osc22_no_parameter_is_dropped` — **NEGATIVE PIN**: feed `\x1b]22\x1b\\` (no second parameter at all, so `params.len() == 1`). The dispatcher at `crates/vte/src/ansi/dispatch/osc.rs:180` gates on `b"22" if params.len() == 2` — when only one param is present, the arm does NOT match and falls to `_ => unhandled(params)`. Assert `term.mouse_cursor_icon()` is UNCHANGED. This pins that a malformed OSC 22 with no cursor-name param is silently dropped, not panicked on.
-- [ ] `osc22_reset_behavior` — OSC 22 does not have a spec'd reset form. Document this in the catalog; pin behavior: passing an explicit "default" name (if `CursorIcon::Default` exists) restores the default.
-- [ ] **Semantic pin** — `osc22_does_not_affect_text_cursor_shape` — set `term.cursor_shape()` to `Beam` via OSC 50, then fire OSC 22 with `pointer`. Assert `term.cursor_shape() == Beam` (unchanged). Cross-reference scope clarification §I / blind-spot #5 — OSC 22 (mouse icon) and OSC 50 (text shape) are different fields.
-- [ ] **Daemon-mode `PaneSnapshot` transport (scheduled in 10.0)**: the `mouse_cursor_icon` field is added to `PaneSnapshot` at `oriterm_mux/src/protocol/snapshot.rs:160` and wired through `oriterm_mux/src/server/snapshot.rs` in subsection 10.0 alongside the embedded-path `Term` / `RenderableContent` additions (see 10.0 Files block and Implementation bullet). 10.5 OSC 22 tests MUST assert the daemon path works END-TO-END across BOTH server-side snapshot production AND client-side decode:
+- [x] `osc22_pointer_sets_cursor_icon` — feed `\x1b]22;pointer\x1b\\`, assert `term.mouse_cursor_icon() == Some(CursorIcon::Pointer)`. Uses the Term field + Handler override from 10.0.
+- [x] `osc22_all_known_icons_matrix` — iterate through every known OSC 22 cursor name string. `cursor_icon 1.2.0` does NOT provide a `CursorIcon::all()` or iterator over variants (confirmed: the crate only exposes `CursorIcon::name()` and `FromStr` parsing). The test defines its OWN name-tagged slice (distinct from the wire-transport constant `oriterm_mux::protocol::snapshot::OSC22_KNOWN_ICONS` which is `&[CursorIcon]` without names — used for stable u8 indexing on the daemon wire): `const OSC22_TEST_CURSOR_NAMES: &[(&str, CursorIcon)] = &[("pointer", CursorIcon::Pointer), ("crosshair", CursorIcon::Crosshair), ...]` covering the ~30 variants from the CSS Basic UI / xterm spec. Feed `OSC 22 ; <name> ST` for each entry; assert each is stored. Self-verifying completeness pin: `assert_eq!(count, OSC22_TEST_CURSOR_NAMES.len())` — the project-owned name slice is the SSOT for which names are exercised BY THIS TEST; the wire `OSC22_KNOWN_ICONS` is the SSOT for which icons are transportable across the daemon boundary. Cross-check: `OSC22_TEST_CURSOR_NAMES` SHOULD be a superset of the CursorIcon variants in `oriterm_mux::protocol::snapshot::OSC22_KNOWN_ICONS` so every wire-transportable icon has a matching name-test, but the test matrix may exceed the wire slice (some variants may not be wire-stable yet) — that asymmetry is expected and not a DRIFT finding.
+- [x] `osc22_unknown_icon_is_dropped` — feed `\x1b]22;not-a-real-cursor\x1b\\`, assert `term.mouse_cursor_icon()` is UNCHANGED (the `CursorIcon::from_str` error path in the dispatcher at `crates/vte/src/ansi/dispatch/osc.rs:184` logs and drops — no state mutation).
+- [x] `osc22_no_parameter_is_dropped` — **NEGATIVE PIN**: feed `\x1b]22\x1b\\` (no second parameter at all, so `params.len() == 1`). The dispatcher at `crates/vte/src/ansi/dispatch/osc.rs:180` gates on `b"22" if params.len() == 2` — when only one param is present, the arm does NOT match and falls to `_ => unhandled(params)`. Assert `term.mouse_cursor_icon()` is UNCHANGED. This pins that a malformed OSC 22 with no cursor-name param is silently dropped, not panicked on.
+- [x] `osc22_reset_behavior` — OSC 22 does not have a spec'd reset form. Document this in the catalog; pin behavior: passing an explicit "default" name (if `CursorIcon::Default` exists) restores the default.
+- [x] **Semantic pin** — `osc22_does_not_affect_text_cursor_shape` — set `term.cursor_shape()` to `Beam` via OSC 50, then fire OSC 22 with `pointer`. Assert `term.cursor_shape() == Beam` (unchanged). Cross-reference scope clarification §I / blind-spot #5 — OSC 22 (mouse icon) and OSC 50 (text shape) are different fields.
+- [x] **Daemon-mode `PaneSnapshot` transport (scheduled in 10.0)**: the `mouse_cursor_icon` field is added to `PaneSnapshot` at `oriterm_mux/src/protocol/snapshot.rs:160` and wired through `oriterm_mux/src/server/snapshot.rs` in subsection 10.0 alongside the embedded-path `Term` / `RenderableContent` additions (see 10.0 Files block and Implementation bullet). 10.5 OSC 22 tests MUST assert the daemon path works END-TO-END across BOTH server-side snapshot production AND client-side decode:
   - **Server-side pin**: `osc22_daemon_snapshot_carries_cursor_icon` — fire OSC 22 at the `Term`, build a `PaneSnapshot` via `server::snapshot`, assert the resulting snapshot's `mouse_cursor_icon` matches the icon set.
   - **Client-side decode pin (initial extract)**: `osc22_daemon_snapshot_decode_first_frame` — build a `PaneSnapshot` with `mouse_cursor_icon = Some(<encoded>)`, call `extract_frame_from_snapshot(snapshot, viewport, cell_size)`, assert `frame.content.mouse_cursor_icon == Some(<decoded>)`. This catches the initial-frame decode path (`snapshot_to_renderable()` at `oriterm/src/gpu/extract/from_snapshot/mod.rs:62-97`) which is separate from the refill path.
   - **Client-side decode pin (refill)**: `osc22_daemon_snapshot_decode_refill` — call `extract_frame_from_snapshot_into(snapshot, &mut out, ...)` on an existing `FrameInput`, assert `out.content.mouse_cursor_icon == Some(<decoded>)`. This catches the refill path (`snapshot_to_renderable_into()` at `oriterm/src/gpu/extract/from_snapshot/mod.rs:103-141`).
@@ -481,22 +481,22 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 ### OSC 50 (cursor shape, URxvt legacy)
 
-- [ ] `osc50_cursor_shape_block` — feed `\x1b]50;CursorShape=0\x1b\\`, assert `term.cursor_shape() == CursorShape::Block`.
-- [ ] `osc50_cursor_shape_beam` — `CursorShape=1` → `Beam`.
-- [ ] `osc50_cursor_shape_underline` — `CursorShape=2` → `Underline`.
-- [ ] `osc50_unknown_shape_dropped` — feed `CursorShape=9`, assert no change (dispatch arm returns `unhandled` per `dispatch/osc.rs:194-199`).
-- [ ] `osc50_malformed_prefix_dropped` — feed `\x1b]50;BADTHING\x1b\\`, assert no change.
+- [x] `osc50_cursor_shape_block` — feed `\x1b]50;CursorShape=0\x1b\\`, assert `term.cursor_shape() == CursorShape::Block`.
+- [x] `osc50_cursor_shape_beam` — `CursorShape=1` → `Beam`.
+- [x] `osc50_cursor_shape_underline` — `CursorShape=2` → `Underline`.
+- [x] `osc50_unknown_shape_dropped` — feed `CursorShape=9`, assert no change (dispatch arm returns `unhandled` per `dispatch/osc.rs:194-199`).
+- [x] `osc50_malformed_prefix_dropped` — feed `\x1b]50;BADTHING\x1b\\`, assert no change.
 
 **Catalog update:**
 
-- [ ] OSC-22 `plans/spec-conformance/catalog/osc.md` → `verified` (was `stub` — we added the Term field + override in 10.0, so the sequence now has observable state). **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "`Handler::set_mouse_cursor_icon` default impl" and `Apex layer` says `effect-host-notification` — both are stale (the no-op default is replaced by a real Term override and the effect is state, not a notification). Rewrite `Implementation` to cite `Term::set_mouse_cursor_icon` in `oriterm_core/src/term/handler/mod.rs`; rewrite `Apex layer` to `state-snapshot`; rewrite `Notes` to replace "effect is dropped" with the new state field description. Do NOT mark the row `verified` while these cells still describe the stub no-op.
-- [ ] OSC-50 `plans/spec-conformance/catalog/osc.md` → `verified` (was `implemented-unverified`).
+- [x] OSC-22 `plans/spec-conformance/catalog/osc.md` → `verified` (was `stub` — we added the Term field + override in 10.0, so the sequence now has observable state). **CATALOG METADATA UPDATE REQUIRED**: The current `Implementation` cell says "`Handler::set_mouse_cursor_icon` default impl" and `Apex layer` says `effect-host-notification` — both are stale (the no-op default is replaced by a real Term override and the effect is state, not a notification). Rewrite `Implementation` to cite `Term::set_mouse_cursor_icon` in `oriterm_core/src/term/handler/mod.rs`; rewrite `Apex layer` to `state-snapshot`; rewrite `Notes` to replace "effect is dropped" with the new state field description. Do NOT mark the row `verified` while these cells still describe the stub no-op.
+- [x] OSC-50 `plans/spec-conformance/catalog/osc.md` → `verified` (was `implemented-unverified`).
 
 **Validation:**
 
-- [ ] OSC 22 and OSC 50 tests green and do NOT interfere with each other.
-- [ ] The `mouse_cursor_icon` field is queryable via `renderable_content()` — a rendering consumer can update the OS cursor on icon change.
-- [ ] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green after 10.5's changes (per CLAUDE.md "run these after every change").
+- [x] OSC 22 and OSC 50 tests green and do NOT interfere with each other.
+- [x] The `mouse_cursor_icon` field is queryable via `renderable_content()` — a rendering consumer can update the OS cursor on icon change.
+- [x] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green after 10.5's changes (per CLAUDE.md "run these after every change").
 
 ---
 
