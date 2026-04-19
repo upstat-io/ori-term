@@ -205,7 +205,7 @@ if std::env::args().any(|a| a == "--check") { ... }
 
 The `audit-files` mode is added as an ADDITIONAL check that runs when `--check audit-files` is in args. The four lint checks mirror the contract in `plans/spec-conformance/audits/README.md §Lint contract`:
 
-1. **Existence check**: list all sections in the Quick Reference table in `00-overview.md` (parse by scanning for `| NN |` rows in the table), build the expected set of audit file paths, verify each exists. Integration sections (21, 22, 24, 25) are exempted when their audit file has `canonical_spec_sources: []`.
+1. **Existence check**: filter Quick Reference table rows in `00-overview.md` (parse `| NN |` rows) by `status` — only `in-progress` sections are required to have a corresponding audit file per `plans/spec-conformance/audits/README.md:59`; `not-started` sections are exempted until §NN.0 execution time and `complete` sections have their audit file permanently committed. Integration sections (21, 22, 24, 25) still get the existence check when they reach `in-progress` — their audit file uses `canonical_spec_sources: []` with a body comment so the mapping-resolution check no-ops. This matches the README's lint contract verbatim; do not widen it.
 2. **Mapping resolution**: for every audit file row with `Decision: mapped`, parse the catalog row ID from the 3rd column and confirm it resolves against the catalog signature set (re-use `build_catalog_signature_set()` already in `oriterm_test_support::catalog`).
 3. **Schema conformance**: frontmatter parses (YAML), all 4 table columns present, `not-targeted` rows have non-empty rationale after the colon.
 4. **Freshness**: `last_walked` field is present and parses as YYYY-MM-DD. Staleness is NOT a lint failure.
@@ -1057,7 +1057,7 @@ Implement the seven CSI-path presentation query stubs: DECRQPSR, DECRQUPSS, DECR
 
 **DECRQUPSS** (`decrqupss()`): Reply with the user-preferred supplemental character set. ori_term does not implement NRCS charset selection; a constant reply identifying ISO Latin-1 (`CSI " u`) is acceptable. Mark `verified-with-deviation` with deviation: "constant reply — user-preferred supplemental charset not implemented".
 
-**DECSCL** (`decscl(level, c1_mode)`): Store conformance level on Term. Level 1 = VT100, 2 = VT200, 3 = VT300. C1 mode: 0 or 2 = 8-bit C1, 1 = 7-bit C1. This affects whether C1 control characters (0x80-0x9F) are recognized. Store as `conformance_level: u8` and `c1_8bit: bool` on Term. The state is observable — verify via spec_chain `observe_state`.
+**DECSCL** (`decscl(level, c1_mode)`): Store conformance level on Term as observable state (`conformance_level: u8`, `c1_8bit: bool`). Level 1 = VT100, 2 = VT200, 3 = VT300. C1 mode: 0 or 2 = 8-bit C1, 1 = 7-bit C1. **Parser scope (out of Term's reach):** 8-bit C1 dispatch is owned by the vendored parser at `crates/vte/src/lib.rs:731-755` (`dispatch_c1`) and runs unconditionally — `c1_8bit: bool` on Term does NOT suppress parser-level C1 recognition. §09A.8 stores the flag as OBSERVABLE state only; any behavior change that depends on genuinely disabling 0x80-0x9F dispatch requires a separate vendored-parser patch with parser-level tests (NOT in scope for Section 09A — file a `/add-bug` if that behavior change is ever needed). The parser deviation MUST be listed in the DECPRES-DECSCL catalog row Notes as `verified-with-deviation: c1_8bit flag stored but does not suppress parser C1 dispatch`. **Soft-reset side effect:** DECSCL triggers a soft reset per the catalog row at `plans/spec-conformance/catalog/dec-presentation.md:34` ("triggers a soft reset"). The implementation MUST call the existing DECSTR soft-reset helper (see `oriterm_core/src/term/handler/status.rs` for the current DECSTR path; re-use it, do NOT duplicate reset logic) AFTER storing the new level/mode flags. Verify via spec_chain `observe_state`: after DECSCL, the set of soft-reset-cleared flags (cursor visibility, insert mode, margins, SGR) MUST match post-DECSTR state.
 
 **DECSCA** (`decsca(protected)`): Set the per-character protection attribute for SUBSEQUENTLY written characters. Store as `char_protection: bool` on Term. This flag is applied when cells are written (same pattern as current SGR attribute application). Protected cells survive DECSERA/DECERA. MUST store in `CellFlags::PROTECTED` when the cell is written, not on the cell retroactively. The canonical home for `CellFlags` is `oriterm_core/src/cell/mod.rs` (current bitflag declaration at line 18 — there is NO `cell/flags.rs` submodule). Add a new `CellFlags::PROTECTED` bit in that same file, NOT a new submodule file. `CellFlags` is already SSOT per `.claude/rules/impl-hygiene.md` — do not split it out unless `cell/mod.rs` crosses the 500-line limit.
 
@@ -1095,8 +1095,8 @@ Extend the existing DCS dispatcher in `crates/vte/src/ansi/dispatch/mod.rs` (`di
 ### Files touched
 
 - `crates/vte/src/ansi/dispatch/mod.rs` — extend `dispatch_hook` / `dispatch_unhook` with DECRQSS and DECRSPS Pt-routing (no new file, no new module)
-- `crates/vte/src/ansi/handler.rs` — add `decrqss(pt: &str)` and `decrsps(mode: u16, pt: &str)` default methods if not already present
-- `oriterm_core/src/term/handler/dcs.rs` — extend with new override implementations (NOT `presentation.rs` — `dcs.rs` already owns DCS-path handling; see the current DECRQSS tests at `tests/dcs.rs`)
+- `crates/vte/src/ansi/handler.rs` — `decrqss(&mut self, _query: &[u8])` already exists at `handler.rs:310-314` with the `&[u8]` signature (NOT `&str`); §09A.9 extends the existing trait method via richer default parsing if needed, and adds ONLY the missing `decrsps(&mut self, _ps: u16, _pt: &[u8])` default method. Preserve the byte-oriented signature — the parser emits the `Pt` bytes before UTF-8 validation, so a `&str` signature would force an upstream decode that doesn't exist
+- `oriterm_core/src/term/handler/status.rs` — extend the existing `status_decrqss` helper with new Pt-target branches. The current delegate at `oriterm_core/src/term/handler/mod.rs:460-461` routes `decrqss(&[u8])` to `self.status_decrqss(query)` in `status.rs`; DO NOT move the delegate to `dcs.rs`. (There is no `oriterm_core/src/term/handler/dcs.rs` trait-impl module today — tests live at `tests/dcs.rs` but the production handler path is via `status.rs`.) Add a new `status_decrsps` helper in the same file for symmetry
 - `oriterm_core/src/term/handler/presentation.rs` — only if CSI-path state needs to be READ by DCS-path handlers; in that case, add accessor methods, do not duplicate state
 
 ### Implementation notes
@@ -1327,7 +1327,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 - [ ] `/tpr-review` passed after §09A.5 (Checkpoint 2 — DECRQCRA algorithm + synchronous emission decision)
 - [ ] `/tpr-review` passed after §09A.7 (Checkpoint 3 — all rect ops + column ops + ESC-path ops)
 - [ ] `/tpr-review` passed at §09A.N (Final — all rows verified, audits/ lint clean, verbiage rewrite complete)
-- [ ] `/impl-hygiene-review` passed (no LEAK/DRIFT/GAP findings outstanding; `PtyWriteKind::ChecksumReport` exhaustive match verified; `CellFlags::PROTECTED` SSOT is `oriterm_core/src/cell/flags.rs`)
+- [ ] `/impl-hygiene-review` passed (no LEAK/DRIFT/GAP findings outstanding; `PtyWriteKind::ChecksumReport` exhaustive match verified; `CellFlags::PROTECTED` SSOT is `oriterm_core/src/cell/mod.rs` — NOT a `cell/flags.rs` submodule, consistent with §09A.8's "there is NO `cell/flags.rs` submodule" clause)
 
 ### Plan sync
 
