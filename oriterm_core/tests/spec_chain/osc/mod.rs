@@ -11,4 +11,5 @@ mod cursor;
 mod default_colors;
 mod hyperlinks;
 mod iterm2_non_image;
+mod missing_rows;
 mod palette;

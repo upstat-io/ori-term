@@ -331,4 +331,23 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(iterm2_report_cell_size);
     delegate_other!(iterm2_set_user_var, name: &[u8], value: &[u8]);
     delegate_other!(iterm2_shell_integration_version, version: &[u8]);
+
+    // Registration sync for the OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 /
+    // 114 / 117 / 119 Handler methods added in §10.9.
+    delegate_other!(set_x11_property, payload: &[u8]);
+    delegate_other!(set_special_color, index: usize, color: vte::ansi::Rgb);
+    delegate_other!(query_special_color, index: usize, terminator: &str);
+    delegate_other!(set_tab_title_color, color: vte::ansi::Rgb);
+    delegate_other!(set_mouse_fg_color, color: vte::ansi::Rgb);
+    delegate_other!(set_mouse_bg_color, color: vte::ansi::Rgb);
+    delegate_other!(set_highlight_bg_color, color: vte::ansi::Rgb);
+    delegate_other!(set_highlight_fg_color, color: vte::ansi::Rgb);
+    delegate_other!(query_mouse_fg_color, terminator: &str);
+    delegate_other!(query_mouse_bg_color, terminator: &str);
+    delegate_other!(query_highlight_bg_color, terminator: &str);
+    delegate_other!(query_highlight_fg_color, terminator: &str);
+    delegate_other!(reset_mouse_fg_color);
+    delegate_other!(reset_mouse_bg_color);
+    delegate_other!(reset_highlight_bg_color);
+    delegate_other!(reset_highlight_fg_color);
 }

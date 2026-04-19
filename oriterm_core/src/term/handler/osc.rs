@@ -318,4 +318,143 @@ impl<S: EffectSink> Term<S> {
         };
         self.iterm2_state.shell_integration_version = Some(v.to_owned());
     }
+
+    /// OSC 3 ; Pt — set or delete an X11 window property. `Pt` is
+    /// `prop[=value]`; bare `prop` deletes the property.
+    pub(super) fn osc_set_x11_property(&mut self, payload: &[u8]) {
+        let Ok(payload) = std::str::from_utf8(payload) else {
+            debug!("OSC 3: invalid UTF-8 payload");
+            return;
+        };
+        if payload.is_empty() {
+            return;
+        }
+        match payload.split_once('=') {
+            Some((name, value)) => {
+                if name.is_empty() {
+                    return;
+                }
+                self.colors_state
+                    .set_x11_property(name.to_owned(), value.to_owned());
+            }
+            None => {
+                self.colors_state.delete_x11_property(payload);
+            }
+        }
+    }
+
+    /// OSC 5 ; Ps ; spec — set one of the special-color slots.
+    pub(super) fn osc_set_special_color(&mut self, index: usize, color: Rgb) {
+        if let Some(slot) = self.colors_state.special_colors.get_mut(index) {
+            *slot = Some(color);
+        }
+    }
+
+    /// OSC 5 ; Ps ; ? — reply with the current special-color slot value.
+    pub(super) fn osc_query_special_color(&self, index: usize, terminator: &str) {
+        let color = self
+            .colors_state
+            .special_colors
+            .get(index)
+            .copied()
+            .flatten()
+            .unwrap_or_else(|| self.palette.foreground());
+        self.push_color_reply(format_args!("5;{index}"), color, terminator);
+    }
+
+    /// OSC 6 ; spec — set the iTerm2 tab title color.
+    pub(super) fn osc_set_tab_title_color(&mut self, color: Rgb) {
+        self.colors_state.tab_title_color = Some(color);
+    }
+
+    /// OSC 13 ; spec — set the mouse-cursor foreground color.
+    pub(super) fn osc_set_mouse_fg_color(&mut self, color: Rgb) {
+        self.colors_state.mouse_fg_color = Some(color);
+    }
+
+    /// OSC 14 ; spec — set the mouse-cursor background color.
+    pub(super) fn osc_set_mouse_bg_color(&mut self, color: Rgb) {
+        self.colors_state.mouse_bg_color = Some(color);
+    }
+
+    /// OSC 17 ; spec — set the selection highlight background color.
+    pub(super) fn osc_set_highlight_bg_color(&mut self, color: Rgb) {
+        self.colors_state.highlight_bg_color = Some(color);
+    }
+
+    /// OSC 19 ; spec — set the selection highlight foreground color.
+    pub(super) fn osc_set_highlight_fg_color(&mut self, color: Rgb) {
+        self.colors_state.highlight_fg_color = Some(color);
+    }
+
+    /// OSC 13 ; ? — reply with the current mouse-cursor foreground color.
+    pub(super) fn osc_query_mouse_fg_color(&self, terminator: &str) {
+        let color = self
+            .colors_state
+            .mouse_fg_color
+            .unwrap_or_else(|| self.palette.foreground());
+        self.push_color_reply(format_args!("13"), color, terminator);
+    }
+
+    /// OSC 14 ; ? — reply with the current mouse-cursor background color.
+    pub(super) fn osc_query_mouse_bg_color(&self, terminator: &str) {
+        let color = self
+            .colors_state
+            .mouse_bg_color
+            .unwrap_or_else(|| self.palette.background());
+        self.push_color_reply(format_args!("14"), color, terminator);
+    }
+
+    /// OSC 17 ; ? — reply with the current highlight background color.
+    pub(super) fn osc_query_highlight_bg_color(&self, terminator: &str) {
+        let color = self
+            .colors_state
+            .highlight_bg_color
+            .unwrap_or_else(|| self.palette.background());
+        self.push_color_reply(format_args!("17"), color, terminator);
+    }
+
+    /// OSC 19 ; ? — reply with the current highlight foreground color.
+    pub(super) fn osc_query_highlight_fg_color(&self, terminator: &str) {
+        let color = self
+            .colors_state
+            .highlight_fg_color
+            .unwrap_or_else(|| self.palette.foreground());
+        self.push_color_reply(format_args!("19"), color, terminator);
+    }
+
+    /// OSC 113 — reset mouse-cursor foreground color.
+    pub(super) fn osc_reset_mouse_fg_color(&mut self) {
+        self.colors_state.mouse_fg_color = None;
+    }
+
+    /// OSC 114 — reset mouse-cursor background color.
+    pub(super) fn osc_reset_mouse_bg_color(&mut self) {
+        self.colors_state.mouse_bg_color = None;
+    }
+
+    /// OSC 117 — reset selection highlight background color.
+    pub(super) fn osc_reset_highlight_bg_color(&mut self) {
+        self.colors_state.highlight_bg_color = None;
+    }
+
+    /// OSC 119 — reset selection highlight foreground color.
+    pub(super) fn osc_reset_highlight_fg_color(&mut self) {
+        self.colors_state.highlight_fg_color = None;
+    }
+
+    /// Push an `OSC <prefix> ; rgb:RRRR/GGGG/BBBB <terminator>` reply as a
+    /// PTY write effect. Shared helper for OSC 5 / 13 / 14 / 17 / 19
+    /// query paths. Uses four-hex-digit channel encoding to match
+    /// xterm's reply format (`rgb:RRRR/GGGG/BBBB`).
+    fn push_color_reply(&self, prefix: std::fmt::Arguments<'_>, color: Rgb, terminator: &str) {
+        let r = u16::from(color.r) * 0x101;
+        let g = u16::from(color.g) * 0x101;
+        let b = u16::from(color.b) * 0x101;
+        let reply = format!("\x1b]{prefix};rgb:{r:04x}/{g:04x}/{b:04x}{terminator}");
+        self.effect_sink.push(Effect::Pty(PtyEffect::Write {
+            bytes: reply.into_bytes(),
+            kind: PtyWriteKind::Other,
+        }));
+    }
 }
