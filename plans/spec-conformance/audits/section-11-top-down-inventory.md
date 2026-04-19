@@ -4,8 +4,9 @@ title: "Unicode Subcell Glyphs (incl. octants)"
 canonical_spec_sources:
   - "Unicode 16 chart PDFs — U+2580–U+259F Block Elements (half-blocks, quadrants)"
   - "Unicode 16 chart PDFs — U+1FB00–U+1FBFF Symbols for Legacy Computing (sextants, additional subcell glyphs)"
-  - "Unicode 16 chart PDFs — U+1CD00–U+1CDE5 Znamenny Musical Notation (octants)"
+  - "Unicode 16 chart PDFs — U+1CC00–U+1CEBF Symbols for Legacy Computing Supplement (octants at U+1CD00–U+1CDE5)"
   - "Unicode 16 chart PDFs — U+2800–U+28FF Braille Patterns"
+  - "Wezterm customglyph.rs octant table (`~/projects/reference_repos/console_repos/wezterm/wezterm-gui/src/customglyph.rs:317-559`) and Kitty decorations.c octant remap table (`~/projects/reference_repos/console_repos/kitty/kitty/decorations.c:979-1024`) — de-facto references for the 230-entry octant codepoint→8-bit-mask mapping used cross-stack"
 last_walked: null
 walked_by: null
 ---
