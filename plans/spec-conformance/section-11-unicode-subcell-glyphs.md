@@ -2,7 +2,7 @@
 section: "11"
 title: "Unicode Subcell Glyphs (incl. octants)"
 status: not-started
-reviewed: false
+reviewed: true
 goal: "Drive every catalog row in `catalog/unicode-subcell.md` from `implemented-unverified` to `verified`, and ADD the missing octant implementation (U+1CD00–U+1CDE5, Unicode 16, inside the Symbols for Legacy Computing Supplement block U+1CC00–U+1CEBF) which is currently NOT implemented per Pass 1."
 success_criteria:
   - "Top-down spec audit committed at `plans/spec-conformance/audits/section-11-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (Unicode 16 chart PDFs — U+2580–U+259F Block Elements, U+1FB00–U+1FBFF Symbols for Legacy Computing, U+1CC00–U+1CEBF Symbols for Legacy Computing Supplement with octants at U+1CD00–U+1CDE5, U+2800–U+28FF Braille Patterns) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
@@ -23,13 +23,9 @@ inspired_by:
   - "Unicode chart PDFs — definitive shape reference for every glyph. The shape of every codepoint covered by this section has been stable since its introduction (half blocks / quadrants / braille have been stable for decades; sextants were introduced in Unicode 13; octants were introduced in Unicode 16, September 2024 — the earliest Unicode version this section can claim compatibility with). Canonical sources: `https://www.unicode.org/charts/PDF/U2580.pdf` (Block Elements), `https://www.unicode.org/charts/PDF/U1FB00.pdf` (Symbols for Legacy Computing), `https://www.unicode.org/charts/PDF/U1CC00.pdf` (Symbols for Legacy Computing Supplement — octants at U+1CD00–U+1CDE5), `https://www.unicode.org/charts/PDF/U2800.pdf` (Braille Patterns). These are UNVERSIONED URLs that always serve the current Unicode version — the manifest entry's `sha256` field is what pins a specific snapshot if strict version pinning is required; otherwise the shape-reference use is insensitive to Unicode version. Added as fetch-on-demand entries (`redistributable = false`) to `plans/spec-conformance/specs/manifest.toml` by §11.0 so the manifest-backed fetch flow (per `plans/spec-conformance/00-overview.md §Spec Corpus`) works identically to the other fetch-on-demand specs."
 depends_on: ["04", "05", "08", "09A"]
 third_party_review:
-  status: none
-  updated: null
-review_pipeline:
-  stage: tpr-done
-  next_step: 7
+  status: findings
   updated: 2026-04-19
-  note: "3 TPR rounds run; 16 findings fixed inline (bdaf54e0 + 0e74107d + eaa97a00); iter_cap_reached with 0 outstanding findings; awaiting user cap-exit decision"
+  notes: "user-accepted at iter_cap_reached after 3 rounds; 16 findings fixed inline across commits bdaf54e0 + 0e74107d + eaa97a00; 0 outstanding findings — the plan state is fix-clean but a formal reviewer clean-return could not be produced within the 3-round cap"
 sections:
   - id: "11.0"
     title: "Top-down spec audit (BLOCKING)"
@@ -144,7 +140,33 @@ sections:
 
 ## 11.R Third Party Review Findings
 
-- None.
+/tpr-review ran 3 rounds on this section (2026-04-19). 16 verified findings across all rounds were fixed and committed inline; zero remain outstanding. The review exited at `iter_cap_reached` with `user-accepted` disposition per §5 of `.claude/skills/tpr-review/SKILL.md`.
+
+| Round | Codex findings | Gemini findings | Agreements | Actionable | Fix commit |
+|---|---|---|---|---|---|
+| 0 | 6 | 4 | 3 | 7 unique | `bdaf54e0` |
+| 1 | 4 | 3 | 1 | 6 unique | `0e74107d` |
+| 2 | 3 | 2 (1 dropped — hallucinated evidence) | 1 | 3 unique | `eaa97a00` |
+
+**Outstanding findings:** None. All 16 unique verified findings were fixed and committed in the round they surfaced.
+
+**Notable fixes applied:**
+
+- Range / block-name drift normalized across section-11, catalog, audit stub, index.md, and 00-overview.md (octant range corrected to U+1CD00–U+1CDE5 inside the Symbols for Legacy Computing Supplement block U+1CC00–U+1CEBF; obsolete "Znamenny Musical Notation" and "U+1CC00..U+1CEFF" citations removed; "USC-LEGACY-QUADRANT" renamed to "USC-LEGACY-SEXTANT").
+- Dispatch-API citations corrected to match real ori_term source (`font::is_builtin`, `builtin_glyphs::rasterize`, `legacy_computing::draw`).
+- Test-site location corrected from `oriterm_core` to `oriterm` per crate-boundary rules.
+- `depends_on` expanded to `["04", "05", "08", "09A"]`.
+- Canonical octant bitmask-to-position mapping artifact added as §11.0 deliverable.
+- Harness font-injection extension added as §11.2 prerequisite.
+- Test font asset creation added as §11.2 prerequisite.
+- Unicode chart PDFs switched to manifest-backed fetch-on-demand (no local PDF reference).
+- Drift-gate forbidden-pattern list moved to `plans/spec-conformance/audits/README.md §Drift Patterns` (SSOT); grep scope excludes both authority files.
+- Exhaustive semantic raster coverage per-codepoint added alongside sparse golden pins.
+- Font-precedence test added.
+- Braille/octant adjacency test added.
+- USC-BOX ownership acknowledged (Section 11 verifies box drawing per the catalog's `owner_section` contract).
+
+**Dropped at verification:** one round-2 gemini finding (claimed a stale line-number citation for `geometric_shapes::draw()` / `U+25A0..=U+25FF` that does not appear in the section file — hallucinated per /tpr-review §4 LOWER-trust verification).
 
 ---
 
