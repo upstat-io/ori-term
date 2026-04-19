@@ -1,7 +1,7 @@
 ---
 plan: effect-cutover
 title: "Effect Cutover — Migrate Legacy Event Consumers to Effect"
-status: in-progress
+status: complete
 ---
 
 # Effect Cutover
