@@ -740,20 +740,22 @@ The existing dispatch table at `crates/vte/src/ansi/dispatch/csi.rs:56-325` matc
 
 ### Test requirements
 
-For EACH new dispatch arm, add to `crates/vte/src/ansi/tests.rs`:
+For EACH new dispatch arm, the canonical sibling-test home per `.claude/rules/test-organization.md §Sibling tests.rs Pattern` is **`crates/vte/src/ansi/dispatch/csi/tests.rs`** (sibling to `dispatch/csi.rs`, the source that owns the dispatch arms). This requires converting `dispatch/csi.rs` to a directory module (`dispatch/csi/mod.rs`) before adding the new tests. Each dispatch-arm test adds:
 1. **Parse test**: feed the raw byte sequence (constructed from known params), assert `RecordingHandler` method was called with expected params
 2. **Unhandled negative pin**: feed the same final byte with a DIFFERENT intermediate (e.g. `('r', [b'*'])`) and assert `unhandled()` was called, NOT the handler method
 
+**Do NOT** add dispatch-arm tests to `crates/vte/src/ansi/tests.rs` — that file owns parser-level tests for `ansi/mod.rs`, and co-locating dispatch routing tests there violates the "one tests.rs per source file" discipline (every sibling is a distinct test owner). `dispatch/tests.rs` already exists as sibling-tests owner for `dispatch/mod.rs`; `dispatch/csi.rs` needs its own sibling pair.
+
 ### Pre-implementation BLOAT split (required before new tests are added)
 
-`crates/vte/src/ansi/tests.rs` is currently 512 lines — already at the 500-line hygiene limit per `.claude/rules/code-hygiene.md §File Size`. Adding ~19 new dispatch-arm tests will push it well past the limit. §09A.3 MUST split the file BEFORE new tests are added, not after:
+`crates/vte/src/ansi/tests.rs` is currently 512 lines — already at the 500-line hygiene limit per `.claude/rules/code-hygiene.md §File Size`. Existing parser-level tests living there need breathing room, AND the new §09A.3 dispatch tests have their own canonical home at `dispatch/csi/tests.rs` (per `test-organization.md §Sibling tests.rs Pattern` — tests live sibling to the source they test, not bundled with the parser entry point). Two coordinated moves happen BEFORE §09A.3 adds any new tests:
 
-1. Convert `crates/vte/src/ansi/tests.rs` to `crates/vte/src/ansi/tests/mod.rs` + submodule files per `.claude/rules/test-organization.md §Sibling tests.rs Pattern`
-2. Extract existing tests into cohesive submodules (e.g., `tests/csi_cursor.rs`, `tests/csi_erase.rs`, `tests/csi_sgr.rs`, `tests/esc_dispatch.rs`)
-3. Confirm `cargo test -p vte` green AFTER the split, BEFORE adding any §09A.3 new tests
-4. New §09A.3 tests land in a new submodule file `crates/vte/src/ansi/tests/csi_dec_private.rs` (or split further as the count grows — each of the three intermediate classes `$`, `*`, `#`, `"`, `&`, `'` can warrant its own file once >10 tests live per class)
+1. **Parser-test breathing room**: if existing `ansi/tests.rs` content genuinely tests `ansi/mod.rs` parser behavior rather than dispatch routing, leave it where it is and split only if the 500-line limit is still breached after step 2. If it contains dispatch-routing tests that should have lived sibling to `dispatch/csi.rs` all along, migrate those to the new `dispatch/csi/tests.rs` (step 2) as part of the preparatory cleanup.
+2. **Dispatch-tests sibling home**: convert `crates/vte/src/ansi/dispatch/csi.rs` to a directory module (`crates/vte/src/ansi/dispatch/csi/mod.rs`) and create `crates/vte/src/ansi/dispatch/csi/tests.rs` as the sibling test file. New §09A.3 dispatch-arm tests land there — NOT in `ansi/tests.rs`.
+3. Confirm `cargo test -p vte` green AFTER the split, BEFORE adding any §09A.3 new tests.
+4. New §09A.3 tests land in `crates/vte/src/ansi/dispatch/csi/tests.rs` (the sibling to the source that owns the dispatch arms). If the file grows past the hygiene limit as more dispatch arms are added, further split by intermediate class (e.g., `dispatch/csi/tests/dec_rect.rs` + `dispatch/csi/tests/dec_presentation.rs`) — but not speculatively; split only when the limit is breached.
 
-The BLOAT pre-split is a BLOCKING prerequisite for §09A.3's dispatch-arm additions. Do not interleave the split with the new test additions — split first, then add, so the diff is reviewable.
+The tests-sibling move is a BLOCKING prerequisite for §09A.3's dispatch-arm additions. Do not interleave the move with the new test additions — move first, then add, so the diff is reviewable.
 
 ### Similar BLOAT pre-split for other files §09A.3 touches
 
@@ -820,12 +822,17 @@ fn decfi(&mut self) {}
 
 ### oriterm_core override structure
 
-The Term handler overrides live in `oriterm_core/src/term/handler/`. Per the 500-line file size rule (code-hygiene.md), create two new handler submodule files:
+The Term handler overrides live in `oriterm_core/src/term/handler/`. Per the 500-line file size rule (code-hygiene.md) AND the sibling-tests-pattern rule (test-organization.md §Sibling `tests.rs` Pattern, rule #1: "When a module has tests, it **must** be a directory module (`foo/mod.rs`), not a file module (`foo.rs`). Never have `foo.rs` alongside a `foo/` directory."), create two new handler modules as **directory modules** so they can host sibling `tests.rs` without violating the layout rule:
 
-- `oriterm_core/src/term/handler/rect_ops.rs` — implements `decsace`, `deccara`, `decrara`, `deccra`, `decfra`, `xtchecksum`, `decrqcra`, `decera`, `decsera`, `xtreportsgr`
-- `oriterm_core/src/term/handler/presentation.rs` — implements `decrqpsr`, `decrqupss`, `decrqde`, `decscl`, `decsca`, `decsasd`, `decssdt`, `decic`, `decdc`, `decbi`, `decfi`
+- `oriterm_core/src/term/handler/rect_ops/mod.rs` — implements `decsace`, `deccara`, `decrara`, `deccra`, `decfra`, `xtchecksum`, `decrqcra`, `decera`, `decsera`, `xtreportsgr`
+- `oriterm_core/src/term/handler/presentation/mod.rs` — implements `decrqpsr`, `decrqupss`, `decrqde`, `decscl`, `decsca`, `decsasd`, `decssdt`, `decic`, `decdc`, `decbi`, `decfi`
 
-Each file: `#[cfg(test)] mod tests;` at bottom; companion `tests.rs` file for unit tests.
+Each `mod.rs` ends with `#[cfg(test)] mod tests;` (semicolon, no braces) per `test-organization.md §No inline test modules`. The sibling test files are:
+
+- `oriterm_core/src/term/handler/rect_ops/tests.rs`
+- `oriterm_core/src/term/handler/presentation/tests.rs`
+
+**Do NOT** use file modules (`rect_ops.rs` / `presentation.rs`) with a separate `tests.rs` — that combination forces the banned `foo.rs` + `foo/` coexistence. Directory modules are the canonical form whenever the module has tests.
 
 ### Completion criteria
 
@@ -838,11 +845,11 @@ Each file: `#[cfg(test)] mod tests;` at bottom; companion `tests.rs` file for un
 
 ### Goal
 
-Implement the DECRQCRA checksum handler in `oriterm_core/src/term/handler/rect_ops.rs`. The implementation: (1) clamps coordinates to grid bounds, (2) computes the checksum using the xterm patch-336 algorithm, (3) emits the reply synchronously via `PtyEffect::Write`.
+Implement the DECRQCRA checksum handler in `oriterm_core/src/term/handler/rect_ops/mod.rs`. The implementation: (1) clamps coordinates to grid bounds, (2) computes the checksum using the xterm patch-336 algorithm, (3) emits the reply synchronously via `PtyEffect::Write`.
 
 ### Files touched
 
-- `oriterm_core/src/term/handler/rect_ops.rs` — `decrqcra()` method + `compute_rect_checksum()` helper
+- `oriterm_core/src/term/handler/rect_ops/mod.rs` — `decrqcra()` method + `compute_rect_checksum()` helper
 - `oriterm_core/tests/spec_chain/dec_rect_ops/decrqcra.rs` — spec_chain tests
 - `oriterm_core/tests/alloc_regression.rs` — performance pin for zero-allocation in checksum inner loop
 
@@ -943,7 +950,7 @@ In `oriterm_core/tests/spec_chain/dec_rect_ops/decrqcra.rs`:
 
 ### Goal
 
-Implement the six rectangular area MUTATION ops: DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA. The handler methods live in `oriterm_core/src/term/handler/rect_ops.rs` (thin adapter layer) but the actual row/cell mutation logic lives inside `oriterm_core/src/grid/editing/` (for fill/erase/attribute mutations) and `oriterm_core/src/grid/scroll/` (for copy operations that touch damage state). The handler method's job is to parse + clamp params then delegate to grid methods that already respect the grid invariants listed below.
+Implement the six rectangular area MUTATION ops: DECCRA, DECFRA, DECERA, DECSERA, DECRARA, DECCARA. The handler methods live in `oriterm_core/src/term/handler/rect_ops/mod.rs` (thin adapter layer) but the actual row/cell mutation logic lives inside `oriterm_core/src/grid/editing/` (for fill/erase/attribute mutations) and `oriterm_core/src/grid/scroll/` (for copy operations that touch damage state). The handler method's job is to parse + clamp params then delegate to grid methods that already respect the grid invariants listed below.
 
 ### Architectural constraint — grid invariants must not be bypassed
 
@@ -958,7 +965,7 @@ If a required grid method does not exist (e.g., `fill_rect` for DECFRA, `copy_re
 
 ### Files touched
 
-- `oriterm_core/src/term/handler/rect_ops.rs` — handler methods for all six ops + shared `clamp_rect()` helper (adapter layer only — no direct row writes)
+- `oriterm_core/src/term/handler/rect_ops/mod.rs` — handler methods for all six ops + shared `clamp_rect()` helper (adapter layer only — no direct row writes)
 - `oriterm_core/src/grid/editing/rect.rs` (NEW) — `fill_rect`, `erase_rect_all`, `erase_rect_unprotected`, `apply_sgr_rect`, `reverse_sgr_rect`, `copy_rect` methods on `Grid` (or wherever `grid/editing/mod.rs` dispatches)
 - `oriterm_core/src/grid/editing/tests.rs` — unit tests for each rect grid method at the grid layer
 - `oriterm_core/tests/spec_chain/dec_rect_ops/` — end-to-end spec_chain tests per op (handler → grid → snapshot apex)
@@ -999,11 +1006,11 @@ Per op (use spec_chain with `observe_state` / `observe_renderable` apex):
 
 ### Goal
 
-Implement DECIC, DECDC (CSI-path column insert/delete) and DECBI, DECFI (ESC-path back/forward index) in `oriterm_core/src/term/handler/presentation.rs`. The ESC dispatch arm for ESC 6 and ESC 9 must also be confirmed or added.
+Implement DECIC, DECDC (CSI-path column insert/delete) and DECBI, DECFI (ESC-path back/forward index) in `oriterm_core/src/term/handler/presentation/mod.rs`. The ESC dispatch arm for ESC 6 and ESC 9 must also be confirmed or added.
 
 ### Files touched
 
-- `oriterm_core/src/term/handler/presentation.rs` (NEW) — `decic()`, `decdc()`, `decbi()`, `decfi()` methods
+- `oriterm_core/src/term/handler/presentation/mod.rs` (NEW) — `decic()`, `decdc()`, `decbi()`, `decfi()` methods
 - `crates/vte/src/ansi/dispatch/mod.rs::esc_dispatch` (~line 261 in the existing file — there is no standalone `esc.rs`) — add ESC 6 (final byte `b'6'`) → `handler.decbi()` and ESC 9 (final byte `b'9'`) → `handler.decfi()` arms inside the `match byte { ... }` block. The match currently falls through to `debug!("[unhandled] esc_dispatch ...")` for these bytes; add the new arms above that catch-all.
 
 ### Implementation notes
@@ -1048,7 +1055,7 @@ Implement the seven CSI-path presentation query stubs: DECRQPSR, DECRQUPSS, DECR
 
 ### Files touched
 
-- `oriterm_core/src/term/handler/presentation.rs` — concrete implementations
+- `oriterm_core/src/term/handler/presentation/mod.rs` — concrete implementations
 - `oriterm_core/tests/spec_chain/dec_presentation/` — spec_chain tests per row
 
 ### Per-op implementation notes
@@ -1086,7 +1093,7 @@ Extend the existing DCS dispatcher in `crates/vte/src/ansi/dispatch/mod.rs` (`di
 
 `oriterm_core/src/term/handler/tests/dcs.rs:94-168` already exercises DECRQSS end-to-end through the DCS path — the DCS hook/put/unhook pipeline is live. §09A.9's actual work is SCOPE-LIMITED:
 
-- Enumerate which DECRQSS target response formats are already implemented (walk `oriterm_core/src/term/handler/dcs.rs` + `tests/dcs.rs`), and which are missing
+- Enumerate which DECRQSS target response formats are already implemented (walk `oriterm_core/src/term/handler/status.rs` `status_decrqss` — the production handler per `handler/mod.rs:460-461` delegate — plus `oriterm_core/src/term/handler/tests/dcs.rs:94-168` for observable coverage), and which are missing. Do NOT walk `handler/dcs.rs` — no such trait-impl module exists today (only `tests/dcs.rs` under the tests tree).
 - Add only the missing Pt-target branches (e.g., `q`=DECSCUSR, `m`=SGR, `r`=DECSTBM, `s`=DECSLRM) that the DCS hook doesn't yet recognize
 - Add DECRSPS dispatch if absent — parse-and-acknowledge stub acceptable
 
@@ -1097,11 +1104,11 @@ Extend the existing DCS dispatcher in `crates/vte/src/ansi/dispatch/mod.rs` (`di
 - `crates/vte/src/ansi/dispatch/mod.rs` — extend `dispatch_hook` / `dispatch_unhook` with DECRQSS and DECRSPS Pt-routing (no new file, no new module)
 - `crates/vte/src/ansi/handler.rs` — `decrqss(&mut self, _query: &[u8])` already exists at `handler.rs:310-314` with the `&[u8]` signature (NOT `&str`); §09A.9 extends the existing trait method via richer default parsing if needed, and adds ONLY the missing `decrsps(&mut self, _ps: u16, _pt: &[u8])` default method. Preserve the byte-oriented signature — the parser emits the `Pt` bytes before UTF-8 validation, so a `&str` signature would force an upstream decode that doesn't exist
 - `oriterm_core/src/term/handler/status.rs` — extend the existing `status_decrqss` helper with new Pt-target branches. The current delegate at `oriterm_core/src/term/handler/mod.rs:460-461` routes `decrqss(&[u8])` to `self.status_decrqss(query)` in `status.rs`; DO NOT move the delegate to `dcs.rs`. (There is no `oriterm_core/src/term/handler/dcs.rs` trait-impl module today — tests live at `tests/dcs.rs` but the production handler path is via `status.rs`.) Add a new `status_decrsps` helper in the same file for symmetry
-- `oriterm_core/src/term/handler/presentation.rs` — only if CSI-path state needs to be READ by DCS-path handlers; in that case, add accessor methods, do not duplicate state
+- `oriterm_core/src/term/handler/presentation/mod.rs` — only if CSI-path state needs to be READ by DCS-path handlers; in that case, add accessor methods, do not duplicate state
 
 ### Implementation notes
 
-**DECRQSS** (`DCS $ q Pt ST`): The `Pt` string names a CSI/DCS function (e.g. `q` for DECSCUSR, `m` for SGR). The terminal replies with `DCS 1 $ r Pt ST` if the function is recognized, or `DCS 0 $ r ST` if not. Start from the inventory of targets already implemented at `oriterm_core/src/term/handler/dcs.rs` + `tests/dcs.rs` — the list of ALREADY-HANDLED Pt values is the baseline. For the additional common targets (`q` DECSCUSR, `m` SGR, `r` DECSTBM, `s` DECSLRM, `"p"` DECSCL, `"q"` DECSCA): recognize and reply with `DCS 1 $ r <echo-of-Pt>;<current-value> ST`. Unknown Pt: reply `DCS 0 $ r ST`. Mark `verified-with-deviation` if fewer than all published xterm DECRQSS targets are implemented; list the deviations in the catalog Notes.
+**DECRQSS** (`DCS $ q Pt ST`): The `Pt` string names a CSI/DCS function (e.g. `q` for DECSCUSR, `m` for SGR). The terminal replies with `DCS 1 $ r Pt ST` if the function is recognized, or `DCS 0 $ r ST` if not. Start from the inventory of targets already implemented at `oriterm_core/src/term/handler/status.rs` `status_decrqss` (production handler) plus `tests/dcs.rs:94-168` (observable coverage) — the list of ALREADY-HANDLED Pt values is the baseline. There is no `handler/dcs.rs` trait-impl module. For the additional common targets (`q` DECSCUSR, `m` SGR, `r` DECSTBM, `s` DECSLRM, `"p"` DECSCL, `"q"` DECSCA): recognize and reply with `DCS 1 $ r <echo-of-Pt>;<current-value> ST`. Unknown Pt: reply `DCS 0 $ r ST`. Mark `verified-with-deviation` if fewer than all published xterm DECRQSS targets are implemented; list the deviations in the catalog Notes.
 
 **DECRSPS** (`DCS Ps $ t Pt ST`): Restores presentation state previously reported by DECRQPSR. For initial implementation, parse and acknowledge but do not implement full state restoration. `verified-with-deviation`: "DECRSPS parse-and-acknowledge stub — full state restoration not implemented".
 
@@ -1258,7 +1265,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 - **DECRQCRA algorithm underspecified** — resolved in §09A.5 by pinning the xterm sum-then-negate algorithm against `~/projects/reference_repos/console_repos/xterm/screen.c:3136` and providing a concrete reply example (Pi=3, `'A'`, default flags → `\x1bP3!~FFBF\x1b\\`). The blind-spot's "pin CRC-16/poly 0x1021" was fact-checked against xterm source and found incorrect — xterm uses sum-then-negate, not CRC.
 - **Three-artifact coupling (dispatch + trait-default + override) overreach** — resolved in §09A.9 by acknowledging DCS-path sequences (DECRQSS, DECRSPS) skip `csi.rs` entirely; the rule as a blanket convention does not hold for DCS-path rows.
 - **audits/ README existence-rule mismatch (not-started vs in-progress)** — the audits/README.md lint contract at §57-64 exempts `not-started` sections from the existence check because their audit file is created at `§NN.0` execution time. Section 09A's rationale is consistent: §09A.0 creates `audits/section-09a-top-down-inventory.md` when 09A transitions from `not-started` to `in-progress`. The README's current text is the canonical rule. No edit needed.
-- **Rect-ops architectural placement** — resolved in §09A.6 by redirecting row-mutation logic into `oriterm_core/src/grid/editing/rect.rs` + `grid/scroll/` rather than direct row writes in `term/handler/rect_ops.rs`; handler is adapter-only.
+- **Rect-ops architectural placement** — resolved in §09A.6 by redirecting row-mutation logic into `oriterm_core/src/grid/editing/rect.rs` + `grid/scroll/` rather than direct row writes in `term/handler/rect_ops/mod.rs`; handler is adapter-only.
 - **DECSACE `ace_mode` placement** — resolved in §09A.8 by pinning `ace_mode` on Term alongside other mode fields; explicitly forbidden on Grid (would LEAK mode into storage).
 - **alloc-regression pattern reuse** — resolved in §09A.5 by citing the closure-based pin pattern at `oriterm_core/tests/alloc_regression.rs:57-84,191-215`; do not invent new pin types.
 - **CI wiring gap** — resolved by adding §09A.13 (wire `--check` + `--check audit-files` into `.github/workflows/ci.yml`) rather than deferring to Section 23.
@@ -1278,7 +1285,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 - [ ] §09A.1 — `catalog/dec-rectangle-ops.md` created with all 10 DECRECT rows; all rows at `missing` status initially
 - [ ] §09A.2 — `catalog/dec-presentation.md` created with all 13 DECPRES rows; all rows at `missing` status initially
 - [ ] §09A.3 — All 19 CSI dispatch arms present in `crates/vte/src/ansi/dispatch/csi.rs`; ESC 6/9 dispatch arms confirmed; `cargo test -p vte` green
-- [ ] §09A.4 — All ~21 handler trait default methods in `crates/vte/src/ansi/handler.rs`; override implementations in `oriterm_core/src/term/handler/rect_ops.rs` and `presentation.rs`
+- [ ] §09A.4 — All ~21 handler trait default methods in `crates/vte/src/ansi/handler.rs`; override implementations in `oriterm_core/src/term/handler/rect_ops/mod.rs` and `oriterm_core/src/term/handler/presentation/mod.rs` (both as directory modules with sibling `tests.rs` files)
 - [ ] §09A.5 — DECRQCRA synchronous checksum via `PtyEffect::Write`; xterm patch-336 algorithm; zero-alloc in checksum loop; `PtyWriteKind::ChecksumReport` variant exhaustive across all match arms
 - [ ] §09A.6 — All 6 rectangular area mutation ops implemented with `clamp_rect()` helper; DECLRMM-aware; DECSCA protection respected in DECERA/DECSERA
 - [ ] §09A.7 — DECIC/DECDC column ops; DECBI/DECFI ESC-path ops; DECLRMM-aware for all four
