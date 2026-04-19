@@ -66,26 +66,6 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // Set working directory (shell integration).
-        b"7" => {
-            if params.len() >= 2 {
-                let uri = params[1..]
-                    .iter()
-                    .flat_map(|x| str::from_utf8(x))
-                    .collect::<Vec<&str>>()
-                    .join(";")
-                    .trim()
-                    .to_owned();
-                if uri.is_empty() {
-                    handler.set_working_directory(None);
-                } else {
-                    handler.set_working_directory(Some(uri));
-                }
-                return;
-            }
-            unhandled(params);
-        },
-
         // Set color index.
         b"4" => {
             if params.len() <= 1 || params.len() % 2 == 0 {
