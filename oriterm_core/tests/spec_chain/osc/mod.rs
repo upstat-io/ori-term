@@ -5,5 +5,6 @@
 //! OSCs (7, 9, 99, 133, 633, 777) live in `oriterm_mux/src/shell_integration/tests.rs`.
 
 mod clipboard;
+mod color_reset;
 mod cursor;
 mod hyperlinks;
