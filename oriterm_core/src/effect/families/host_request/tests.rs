@@ -136,3 +136,28 @@ fn already_fulfilled_implements_error_trait() {
     // Error trait marker — verify the dyn cast compiles.
     let _: &dyn std::error::Error = &err;
 }
+
+/// Effect-cutover §01.4 documentation pin: the `ResponseToken<T>`
+/// doc comment MUST explicitly state that the token is process-local
+/// (cannot cross IPC) AND name the bug-tracker artifact tracking the
+/// daemon-mode follow-up. This pin keeps the `00-overview.md` Path B
+/// rationale anchored in source — if a future change strips the
+/// process-locality warning from the doc comment, this test surfaces
+/// the regression at compile/test time.
+#[test]
+fn host_request_process_locality_is_documented() {
+    let source = include_str!("mod.rs");
+
+    assert!(
+        source.contains("Process-local — cannot cross IPC"),
+        "ResponseToken<T> doc comment must include the `Process-local — cannot cross IPC` warning"
+    );
+    assert!(
+        source.contains("BUG-11-11"),
+        "ResponseToken<T> doc comment must cite the daemon-mode follow-up artifact (BUG-11-11)"
+    );
+    assert!(
+        source.contains("§01.4"),
+        "ResponseToken<T> doc comment must point at §01.4 for the deferral rationale"
+    );
+}

@@ -107,6 +107,21 @@ enum SlotState<T> {
 /// terminal then observes the fulfillment via `take()` and formats the
 /// reply for PTY emission.
 ///
+/// # Process-local — cannot cross IPC
+///
+/// `ResponseToken<T>` wraps an `Arc<Mutex<SlotState<T>>>`. The `Arc` is
+/// strictly process-local: serializing it across an IPC boundary makes
+/// no sense, and the daemon-mode wire protocol (`oriterm_mux::protocol`)
+/// deliberately omits any reply token from `NotifyClipboardLoad` /
+/// `NotifyHostColorQuery` PDUs. As a result, `HostRequest` round-trips
+/// (OSC 52 clipboard load, OSC 4/10/11/12 color queries) work in
+/// embedded mode (`oriterm` and `oriterm_mux::backend::embedded`) but
+/// are dropped at the daemon-client boundary today. The daemon
+/// request-ID + reply-PDU design is tracked in bug-tracker
+/// `BUG-11-11`; see `plans/effect-cutover/section-01-migrate-mux-consumer.md`
+/// §01.4 for the deferral rationale (Path B — bug filing + cross-link,
+/// chosen over an in-scope daemon redesign).
+///
 /// # Cloning discipline
 ///
 /// The token is `Clone` because the IO thread (polling side) AND the main
