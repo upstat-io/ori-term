@@ -74,8 +74,8 @@ pub const CONTRIBUTION: CapCoverageContribution = CapCoverageContribution {
         // via OSC 112 reset) + OSC 52 clipboard (`Ms`). Tested
         // in `tack_cap_xcheck/osc_color.rs` and
         // `tack_cap_xcheck/osc_clipboard.rs` via OSC round-trips
-        // through the palette and `Event::ClipboardStore`/
-        // `Event::ClipboardLoad`/`Event::ColorRequest` paths.
+        // through the palette and the `Effect::Host(ClipboardStore)`
+        // / `Effect::HostRequest` paths.
         "Cr", "Cs", "Ms",
         // Status line via OSC 0/2 title-backed (`hs` bool + `tsl`
         // open + `fsl` terminate + `dsl` clear). Tested in

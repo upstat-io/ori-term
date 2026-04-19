@@ -1,20 +1,18 @@
 //! Mux event types and the PTY-to-mux event bridge.
 //!
 //! [`MuxEvent`] carries pane events from PTY reader threads to the mux layer
-//! via an mpsc channel. [`MuxEventProxy`] implements [`EventListener`] so it
-//! can be plugged into `Term<MuxEventProxy>` as the event sink.
+//! via an mpsc channel. The IO thread routes effects via
+//! `effect_router` → `MuxEvent` directly — no event-listener adapter
+//! sits between the VTE handler and the channel.
 //!
 //! [`MuxNotification`] carries pane lifecycle notifications (output, closed,
 //! title changes, bell). Clients drain these via the notification channel.
 
 use std::fmt;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 
+use oriterm_core::ClipboardType;
 use oriterm_core::color::Rgb;
 use oriterm_core::effect::{ClipboardSelection, NotificationSource, ResponseToken};
-use oriterm_core::{ClipboardType, Event, EventListener};
 
 use crate::PaneId;
 
@@ -89,17 +87,6 @@ pub enum MuxEvent {
         /// Text to store.
         text: String,
     },
-    /// OSC 52 clipboard load request (legacy closure-carrier).
-    ///
-    /// Deleted in effect-cutover 01.3 — replaced by `HostClipboardLoad`.
-    ClipboardLoad {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Which clipboard to read.
-        clipboard_type: ClipboardType,
-        /// Formats the clipboard text into a PTY response.
-        formatter: Arc<dyn Fn(&str) -> String + Send + Sync>,
-    },
     /// Desktop notification (OSC 9 / 99 / 777).
     ///
     /// Added in effect-cutover 01.1: flows from the effect router to the
@@ -131,7 +118,7 @@ pub enum MuxEvent {
     /// Added in effect-cutover 01.1. The main thread reads the clipboard
     /// and calls `MuxBackend::fulfill_host_request` to route the reply
     /// back to the originating pane. Supersedes the closure-carrying
-    /// [`MuxEvent::ClipboardLoad`] (deleted in 01.3).
+    /// the deleted closure-carrying load notification.
     HostClipboardLoad {
         /// Originating pane.
         pane_id: PaneId,
@@ -192,11 +179,6 @@ impl fmt::Debug for MuxEvent {
                 clipboard_type,
                 ..
             } => write!(f, "ClipboardStore({pane_id}, {clipboard_type:?})"),
-            Self::ClipboardLoad {
-                pane_id,
-                clipboard_type,
-                ..
-            } => write!(f, "ClipboardLoad({pane_id}, {clipboard_type:?})"),
             Self::DesktopNotification {
                 pane_id,
                 source,
@@ -219,139 +201,6 @@ impl fmt::Debug for MuxEvent {
     }
 }
 
-/// Bridges terminal events from the PTY reader thread to the mux layer.
-///
-/// Implements [`EventListener`] so it can be used as the event sink for
-/// `Term<MuxEventProxy>`. On each event, maps it to a [`MuxEvent`] and
-/// sends it over mpsc. Wakeup events are coalesced via an atomic flag to
-/// avoid flooding the channel.
-pub struct MuxEventProxy {
-    /// Identity of the pane this proxy serves.
-    pane_id: PaneId,
-    /// Channel sender to the mux event processor.
-    tx: mpsc::Sender<MuxEvent>,
-    /// Coalesces wakeup events — set by reader thread, cleared by main thread.
-    wakeup_pending: Arc<AtomicBool>,
-    /// Set when the pane's grid has new content to render.
-    grid_dirty: Arc<AtomicBool>,
-    /// Wakes the event loop when events arrive.
-    wakeup: Arc<dyn Fn() + Send + Sync>,
-}
-
-impl MuxEventProxy {
-    /// Create a new event proxy for a pane.
-    pub fn new(
-        pane_id: PaneId,
-        tx: mpsc::Sender<MuxEvent>,
-        wakeup_pending: Arc<AtomicBool>,
-        grid_dirty: Arc<AtomicBool>,
-        wakeup: Arc<dyn Fn() + Send + Sync>,
-    ) -> Self {
-        Self {
-            pane_id,
-            tx,
-            wakeup_pending,
-            grid_dirty,
-            wakeup,
-        }
-    }
-
-    /// Send a `MuxEvent` and wake the event loop.
-    fn send(&self, event: MuxEvent) {
-        let _ = self.tx.send(event);
-        (self.wakeup)();
-    }
-}
-
-impl EventListener for MuxEventProxy {
-    fn send_event(&self, event: Event) {
-        match event {
-            Event::Wakeup => {
-                // Always mark grid dirty, even when coalesced.
-                self.grid_dirty.store(true, Ordering::Release);
-                // Coalesce: only send if not already pending.
-                if !self.wakeup_pending.swap(true, Ordering::AcqRel) {
-                    self.send(MuxEvent::PaneOutput(self.pane_id));
-                }
-            }
-            Event::Bell => {
-                self.send(MuxEvent::PaneBell(self.pane_id));
-            }
-            Event::Title(title) => {
-                self.send(MuxEvent::PaneTitleChanged {
-                    pane_id: self.pane_id,
-                    title,
-                });
-            }
-            Event::ResetTitle => {
-                self.send(MuxEvent::PaneTitleChanged {
-                    pane_id: self.pane_id,
-                    title: String::new(),
-                });
-            }
-            Event::IconName(name) => {
-                self.send(MuxEvent::PaneIconChanged {
-                    pane_id: self.pane_id,
-                    icon_name: name,
-                });
-            }
-            Event::ResetIconName => {
-                self.send(MuxEvent::PaneIconChanged {
-                    pane_id: self.pane_id,
-                    icon_name: String::new(),
-                });
-            }
-            Event::ClipboardStore(clipboard_type, text) => {
-                self.send(MuxEvent::ClipboardStore {
-                    pane_id: self.pane_id,
-                    clipboard_type,
-                    text,
-                });
-            }
-            Event::ClipboardLoad(clipboard_type, formatter) => {
-                self.send(MuxEvent::ClipboardLoad {
-                    pane_id: self.pane_id,
-                    clipboard_type,
-                    formatter,
-                });
-            }
-            Event::PtyWrite(data) => {
-                // Legacy `Event::PtyWrite` carries `String`; the new
-                // `MuxEvent::PtyWrite` carries `Vec<u8>` for byte-exactness.
-                // The conversion is lossless on the legacy path because
-                // `Event::PtyWrite` is constructed from `String::from_utf8_lossy`
-                // of the underlying bytes already — no further corruption.
-                self.send(MuxEvent::PtyWrite {
-                    pane_id: self.pane_id,
-                    data: data.into_bytes(),
-                });
-            }
-            Event::Cwd(cwd) => {
-                self.send(MuxEvent::PaneCwdChanged {
-                    pane_id: self.pane_id,
-                    cwd,
-                });
-            }
-            Event::CommandComplete(duration) => {
-                self.send(MuxEvent::CommandComplete {
-                    pane_id: self.pane_id,
-                    duration,
-                });
-            }
-            Event::ChildExit(code) => {
-                self.send(MuxEvent::PaneExited {
-                    pane_id: self.pane_id,
-                    exit_code: code,
-                });
-            }
-            // Events that don't need mux routing — still wake the event loop.
-            Event::ColorRequest(..) | Event::CursorBlinkingChange | Event::MouseCursorDirty => {
-                (self.wakeup)();
-            }
-        }
-    }
-}
-
 /// Pane lifecycle notifications from the mux layer.
 ///
 /// These flow from the mux to clients after the mux has processed
@@ -370,7 +219,8 @@ impl EventListener for MuxEventProxy {
 /// | `PaneBell` | `PaneBell` | 1:1 forwarding |
 /// | `PtyWrite` | *(not forwarded)* | Handled inline (PTY write) |
 /// | `ClipboardStore` | `ClipboardStore` | 1:1 forwarding |
-/// | `ClipboardLoad` | `ClipboardLoad` | 1:1 forwarding |
+/// | `HostClipboardLoad` | `HostClipboardLoad` | Carries `ResponseToken` |
+/// | `HostColorQuery` | `HostColorQuery` | Carries `ResponseToken` |
 pub enum MuxNotification {
     /// A pane's metadata changed (title, icon name, or CWD).
     ///
@@ -403,18 +253,6 @@ pub enum MuxNotification {
         clipboard_type: ClipboardType,
         /// Text to store.
         text: String,
-    },
-    /// OSC 52 clipboard load request forwarded from a pane (legacy
-    /// closure-carrier).
-    ///
-    /// Deleted in effect-cutover 01.3 — replaced by `HostClipboardLoad`.
-    ClipboardLoad {
-        /// Originating pane.
-        pane_id: PaneId,
-        /// Which clipboard to read.
-        clipboard_type: ClipboardType,
-        /// Formats the clipboard text into a PTY response.
-        formatter: Arc<dyn Fn(&str) -> String + Send + Sync>,
     },
     /// Desktop notification (OSC 9 / 99 / 777) forwarded from a pane.
     ///
@@ -505,11 +343,6 @@ impl fmt::Debug for MuxNotification {
                 clipboard_type,
                 ..
             } => write!(f, "ClipboardStore({pane_id}, {clipboard_type:?})"),
-            Self::ClipboardLoad {
-                pane_id,
-                clipboard_type,
-                ..
-            } => write!(f, "ClipboardLoad({pane_id}, {clipboard_type:?})"),
             Self::DesktopNotification {
                 pane_id,
                 source,

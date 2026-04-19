@@ -1805,9 +1805,8 @@ fn test_resize_during_sustained_output() {
 /// Register a `ClipboardLoad` pending response, fulfill the token, poll,
 /// and verify the `Effect::Pty` reply contains correct base64 content.
 ///
-/// This tests the dormant reply-return infrastructure that activates when
-/// consumers migrate from `LegacyEventSink` to `QueueingEffectSink`
-/// (in `plans/effect-cutover/`).
+/// Pins the production reply-return path activated by effect-cutover
+/// §01.1: register-poll-fulfill round trip on `Term<QueueingEffectSink>`.
 #[test]
 fn reply_token_clipboard_load_produces_pty_write() {
     use base64::Engine;

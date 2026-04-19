@@ -443,18 +443,11 @@ fn drain_notifications_preserves_clipboard_data() {
     })
     .unwrap();
 
-    tx.send(MuxEvent::ClipboardLoad {
-        pane_id: PaneId::from_raw(42),
-        clipboard_type: oriterm_core::ClipboardType::Selection,
-        formatter: std::sync::Arc::new(|s: &str| format!("\x1b]52;s;{s}\x07")),
-    })
-    .unwrap();
-
     let mut panes = std::collections::HashMap::new();
     mux.poll_events(&mut panes);
 
     let notifs = drain(&mut mux);
-    assert_eq!(notifs.len(), 2);
+    assert_eq!(notifs.len(), 1);
 
     assert!(matches!(
         &notifs[0],
@@ -463,12 +456,6 @@ fn drain_notifications_preserves_clipboard_data() {
             && *pane_id == PaneId::from_raw(42)
             && *clipboard_type == oriterm_core::ClipboardType::Clipboard
     ));
-
-    if let MuxNotification::ClipboardLoad { formatter, .. } = &notifs[1] {
-        assert_eq!(formatter("test"), "\x1b]52;s;test\x07");
-    } else {
-        panic!("expected ClipboardLoad notification");
-    }
 }
 
 // PaneOutput for absent pane
@@ -490,37 +477,6 @@ fn pane_dirty_produced_for_absent_pane() {
         &notifs[0],
         MuxNotification::PaneOutput(id) if *id == unknown
     ));
-}
-
-// ClipboardLoad for unknown pane
-
-#[test]
-fn clipboard_load_unknown_pane_produces_notification() {
-    let mut mux = InProcessMux::new();
-    let tx = mux.event_tx().clone();
-
-    let unknown = PaneId::from_raw(999);
-    tx.send(MuxEvent::ClipboardLoad {
-        pane_id: unknown,
-        clipboard_type: oriterm_core::ClipboardType::Clipboard,
-        formatter: std::sync::Arc::new(|s: &str| format!("\x1b]52;c;{s}\x07")),
-    })
-    .unwrap();
-
-    let mut panes = std::collections::HashMap::new();
-    mux.poll_events(&mut panes);
-
-    let notifs = drain(&mut mux);
-    assert_eq!(notifs.len(), 1);
-    if let MuxNotification::ClipboardLoad {
-        pane_id, formatter, ..
-    } = &notifs[0]
-    {
-        assert_eq!(*pane_id, unknown);
-        assert_eq!(formatter("hello"), "\x1b]52;c;hello\x07");
-    } else {
-        panic!("expected ClipboardLoad notification");
-    }
 }
 
 // Empty notification buffer

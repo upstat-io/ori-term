@@ -18,8 +18,7 @@ pub use families::{
     format_color_reply,
 };
 pub use response::{PendingResponse, PollResult};
-pub use sink::legacy::DesktopNotificationRecord;
-pub use sink::{EffectSink, LegacyEventSink, QueueingEffectSink, VoidEffectSink};
+pub use sink::{EffectSink, QueueingEffectSink, VoidEffectSink};
 pub use types::Effect;
 
 #[cfg(test)]

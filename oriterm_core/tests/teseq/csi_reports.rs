@@ -44,17 +44,11 @@ fn da2_version_drift_check() {
     // output by feeding DA2 query directly through Term (no reseq dependency).
     use super::harness::RecordedListener;
     use oriterm_core::Theme;
-    use oriterm_core::effect::LegacyEventSink;
+
     use oriterm_core::term::Term;
 
     let listener = RecordedListener::new();
-    let mut term = Term::new(
-        24,
-        80,
-        0,
-        Theme::Dark,
-        LegacyEventSink::new(listener.clone()),
-    );
+    let mut term = Term::new(24, 80, 0, Theme::Dark, listener.clone());
 
     // Feed DA2 query: ESC [ > c
     let mut processor: vte::ansi::Processor = vte::ansi::Processor::new();

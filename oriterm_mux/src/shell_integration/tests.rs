@@ -193,7 +193,7 @@ fn setup_injection_wsl_returns_none() {
 
 // --- Raw interceptor ---
 
-use oriterm_core::effect::{Effect, EffectSink, HostEffect, QueueingEffectSink};
+use oriterm_core::effect::{Effect, EffectSink, HostEffect, PtyEffect, QueueingEffectSink};
 use oriterm_core::{PromptState, Term, Theme};
 
 /// Helper: create a minimal terminal for interceptor tests.
@@ -897,61 +897,51 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
 
 // --- XTVERSION (CSI > q) ---
 
-/// Event listener that records all events for assertions.
-#[derive(Clone)]
+/// Effect sink that records `PtyEffect::Write` payloads for assertions.
+#[derive(Clone, Default)]
 struct RecordingListener {
-    events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    pty_writes: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl RecordingListener {
     fn new() -> Self {
-        Self {
-            events: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-        }
+        Self::default()
     }
 
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("lock poisoned").clone()
+    fn pty_writes(&self) -> Vec<String> {
+        self.pty_writes.lock().expect("lock poisoned").clone()
     }
 }
 
-impl oriterm_core::EventListener for RecordingListener {
-    fn send_event(&self, event: oriterm_core::Event) {
-        self.events
-            .lock()
-            .expect("lock poisoned")
-            .push(format!("{event:?}"));
+impl EffectSink for RecordingListener {
+    fn push(&self, effect: Effect) {
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect {
+            let s = String::from_utf8_lossy(&bytes).into_owned();
+            self.pty_writes.lock().expect("lock poisoned").push(s);
+        }
     }
+
+    fn drain_into(&self, _out: &mut Vec<Effect>) {}
 }
 
 #[test]
 fn xtversion_responds_with_oriterm_version() {
-    use oriterm_core::effect::LegacyEventSink;
-
     let listener = RecordingListener::new();
-    let mut term = Term::new(
-        24,
-        80,
-        100,
-        Theme::Dark,
-        LegacyEventSink::new(listener.clone()),
-    );
+    let mut term = Term::new(24, 80, 100, Theme::Dark, listener.clone());
 
     // CSI > q — XTVERSION request.
     let mut parser = vte::Parser::new();
     let mut interceptor = super::interceptor::RawInterceptor::new(&mut term);
     parser.advance(&mut interceptor, b"\x1b[>q");
 
-    let events = listener.events();
-    let pty_write = events.iter().find(|e| e.contains("PtyWrite"));
+    let writes = listener.pty_writes();
     assert!(
-        pty_write.is_some(),
-        "XTVERSION should produce a PtyWrite event, got: {events:?}"
+        !writes.is_empty(),
+        "XTVERSION should produce a PtyWrite payload, got: {writes:?}"
     );
-    let pty_write = pty_write.unwrap();
     assert!(
-        pty_write.contains("oriterm"),
-        "XTVERSION response should contain 'oriterm', got: {pty_write}"
+        writes.iter().any(|w| w.contains("oriterm")),
+        "XTVERSION response should contain 'oriterm', got: {writes:?}"
     );
 }
 

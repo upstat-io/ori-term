@@ -4,11 +4,7 @@
 //! emits to. `Term<S: EffectSink>` is statically dispatched (monomorphized)
 //! — zero vtable overhead on the handler hot path.
 
-pub mod legacy;
-
 use super::Effect;
-
-pub use legacy::LegacyEventSink;
 
 /// Receives terminal effects from the VTE handler.
 ///
@@ -16,7 +12,7 @@ pub use legacy::LegacyEventSink;
 ///
 /// - `push()` accepts an effect. Implementations may either queue it for
 ///   later retrieval via `drain_into()`, or forward it immediately to a
-///   downstream consumer (as `LegacyEventSink` does).
+///   downstream consumer.
 /// - `drain_into()` appends effects that have NOT already been forwarded.
 ///   For queuing sinks, this drains the queue into the provided Vec.
 ///   For immediate-forward sinks, this is a no-op — the effects were

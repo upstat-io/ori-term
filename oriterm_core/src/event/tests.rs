@@ -1,9 +1,6 @@
 //! Tests for the event system.
 
-use std::sync::Arc;
-
 use super::{ClipboardType, Event, EventListener, VoidListener};
-use crate::color::Rgb;
 
 #[test]
 fn void_listener_implements_event_listener() {
@@ -62,20 +59,6 @@ fn event_clipboard_store() {
 }
 
 #[test]
-fn event_clipboard_load() {
-    let formatter = Arc::new(|s: &str| format!("formatted:{s}"));
-    let event = Event::ClipboardLoad(ClipboardType::Selection, formatter);
-    assert_eq!(format!("{event:?}"), "ClipboardLoad(Selection)");
-}
-
-#[test]
-fn event_color_request() {
-    let formatter = Arc::new(|rgb: Rgb| format!("rgb({},{},{})", rgb.r, rgb.g, rgb.b));
-    let event = Event::ColorRequest(42, formatter);
-    assert_eq!(format!("{event:?}"), "ColorRequest(42)");
-}
-
-#[test]
 fn event_pty_write() {
     let event = Event::PtyWrite("\x1b[6n".to_string());
     assert_eq!(format!("{event:?}"), "PtyWrite(\x1b[6n)");
@@ -91,15 +74,6 @@ fn event_cursor_blinking_change() {
 fn event_mouse_cursor_dirty() {
     let event = Event::MouseCursorDirty;
     assert_eq!(format!("{event:?}"), "MouseCursorDirty");
-}
-
-#[test]
-fn event_child_exit() {
-    let event = Event::ChildExit(0);
-    assert_eq!(format!("{event:?}"), "ChildExit(0)");
-
-    let event = Event::ChildExit(1);
-    assert_eq!(format!("{event:?}"), "ChildExit(1)");
 }
 
 #[test]
@@ -119,9 +93,13 @@ fn event_clone() {
     assert_eq!(format!("{cloned:?}"), "Title(test)");
 }
 
+/// Effect-cutover §01.3 deletion pin: the closure-bearing `ClipboardLoad`,
+/// `ColorRequest`, and `ChildExit` variants are gone — `HostRequest` and
+/// `HostEffect::ChildExit` cover those code paths via the Effect path now.
+/// Listing the surviving variants explicitly here surfaces an exhaustiveness
+/// regression at compile time if a new variant is added without test coverage.
 #[test]
 fn all_event_variants_constructible() {
-    // Verify every variant can be constructed without panic.
     let _events = [
         Event::Wakeup,
         Event::Bell,
@@ -130,13 +108,10 @@ fn all_event_variants_constructible() {
         Event::IconName(String::new()),
         Event::ResetIconName,
         Event::ClipboardStore(ClipboardType::Clipboard, String::new()),
-        Event::ClipboardLoad(ClipboardType::Selection, Arc::new(|s: &str| s.to_string())),
-        Event::ColorRequest(0, Arc::new(|_| String::new())),
         Event::PtyWrite(String::new()),
         Event::CursorBlinkingChange,
         Event::Cwd("/tmp".to_string()),
         Event::CommandComplete(std::time::Duration::from_secs(5)),
         Event::MouseCursorDirty,
-        Event::ChildExit(0),
     ];
 }

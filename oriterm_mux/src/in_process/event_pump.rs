@@ -83,17 +83,6 @@ impl InProcessMux {
                         text,
                     });
                 }
-                MuxEvent::ClipboardLoad {
-                    pane_id,
-                    clipboard_type,
-                    formatter,
-                } => {
-                    self.notifications.push(MuxNotification::ClipboardLoad {
-                        pane_id,
-                        clipboard_type,
-                        formatter,
-                    });
-                }
                 MuxEvent::DesktopNotification {
                     pane_id,
                     source,

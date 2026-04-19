@@ -1,21 +1,35 @@
-//! Test-side [`EventListener`] that captures round-trip responses.
+//! Test-side [`EffectSink`] that captures round-trip responses.
 //!
-//! `PtyResponder` buffers four event variants that round-trip through the
-//! PTY: [`Event::PtyWrite`] (DA/DSR replies), [`Event::ColorRequest`]
-//! (OSC 4/10/11/12 color queries), [`Event::ClipboardLoad`] (OSC 52 read),
-//! and [`Event::ClipboardStore`] (OSC 52 write). All other event variants
-//! are intentionally ignored — the responder is a round-trip collector,
-//! not a general event sink.
+//! `PtyResponder` collects four effect families that round-trip through the
+//! PTY: [`PtyEffect::Write`] (DA/DSR replies), [`HostRequest::ColorQuery`]
+//! (OSC 4/10/11/12 color queries), [`HostRequest::ClipboardLoad`] (OSC 52
+//! read), and [`HostEffect::ClipboardStore`] (OSC 52 write). All other
+//! effect variants are intentionally ignored — the responder is a
+//! round-trip collector, not a general effect sink.
 //!
 //! Lives in its own sibling module so the OSC dispatch can grow without
 //! pushing `session/mod.rs` over the 500-line hygiene limit.
+//!
+//! Implements [`EffectSink`] directly so `Term<PtyResponder>` plugs in
+//! without a wrapper. Replies for `HostRequest` variants are formatted
+//! inline via the canonical helpers in `oriterm_core::effect`
+//! ([`format_clipboard_reply`], [`format_color_reply`]) — no separate IO
+//! thread is needed in tests, so the response is computed at push-time
+//! rather than via the production `register_host_request_response` poll
+//! cycle. The stored reply is byte-identical to what the production
+//! `effect_router` + `pending_responses` path produces.
 
 use std::sync::{Arc, Mutex};
 
 use oriterm_core::Rgb;
-use oriterm_core::event::{ClipboardType, Event, EventListener};
+use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::effect::{
+    ClipboardSelection, Effect, HostEffect, HostRequest, PtyEffect, format_clipboard_reply,
+    format_color_reply,
+};
+use oriterm_core::event::ClipboardType;
 
-/// Deterministic RGB value injected into every `ColorRequest` callback.
+/// Deterministic RGB value injected into every `ColorQuery` reply.
 ///
 /// OSC 4/10/11/12 responses need *some* color — in a headless test we
 /// cannot query the real theme, and production values would couple every
@@ -28,7 +42,7 @@ const TEST_COLOR: Rgb = Rgb {
     b: 0xef,
 };
 
-/// Deterministic clipboard text injected into every `ClipboardLoad` callback.
+/// Deterministic clipboard text injected into every `ClipboardLoad` reply.
 ///
 /// OSC 52 load asks us to produce clipboard contents; a pinned string
 /// keeps the base64-encoded response stable across runs and makes
@@ -45,9 +59,9 @@ const TEST_CLIPBOARD_TEXT: &str = "ori-term-clipboard-stub";
 ///
 /// **Clone semantics.** The struct holds only `Arc<Mutex<_>>` handles so
 /// all clones share the same underlying queues. Tests use this to hand
-/// one clone to `Term::new` (which moves the listener) and keep another
+/// one clone to `Term::new` (which moves the sink) and keep another
 /// clone for inspection.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PtyResponder {
     responses: Arc<Mutex<Vec<String>>>,
     osc_responses: Arc<Mutex<Vec<String>>>,
@@ -57,11 +71,7 @@ pub struct PtyResponder {
 impl PtyResponder {
     /// Construct an empty responder with no buffered responses.
     pub(crate) fn new() -> Self {
-        Self {
-            responses: Arc::new(Mutex::new(Vec::new())),
-            osc_responses: Arc::new(Mutex::new(Vec::new())),
-            clipboard_stores: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self::default()
     }
 
     /// Drain all buffered `PtyWrite` payloads, returning them in arrival
@@ -70,8 +80,8 @@ impl PtyResponder {
         std::mem::take(&mut *self.responses.lock().expect("PtyResponder mutex poisoned"))
     }
 
-    /// Drain all buffered OSC response strings (from `ColorRequest` and
-    /// `ClipboardLoad` callbacks). `PtySession::drain` writes these back
+    /// Drain all buffered OSC reply strings (from `ColorQuery` and
+    /// `ClipboardLoad` replies). `PtySession::drain` writes these back
     /// through the PTY writer automatically.
     pub(crate) fn take_osc_responses(&self) -> Vec<String> {
         std::mem::take(
@@ -95,56 +105,66 @@ impl PtyResponder {
         )
     }
 
-    fn push_pty_write(&self, data: String) {
+    fn push_pty_write(&self, bytes: &[u8]) {
+        let s = String::from_utf8_lossy(bytes).into_owned();
         self.responses
             .lock()
             .expect("PtyResponder mutex poisoned")
-            .push(data);
+            .push(s);
     }
 
-    fn handle_color_request(
-        &self,
-        _index: usize,
-        formatter: &Arc<dyn Fn(Rgb) -> String + Send + Sync>,
-    ) {
-        let response = formatter(TEST_COLOR);
+    fn handle_color_query(&self, prefix: &str, terminator: &str) {
+        let bytes = format_color_reply(TEST_COLOR, prefix, terminator);
+        let response = String::from_utf8_lossy(&bytes).into_owned();
         self.osc_responses
             .lock()
             .expect("PtyResponder mutex poisoned")
             .push(response);
     }
 
-    fn handle_clipboard_load(
-        &self,
-        _clipboard: ClipboardType,
-        formatter: &Arc<dyn Fn(&str) -> String + Send + Sync>,
-    ) {
-        let response = formatter(TEST_CLIPBOARD_TEXT);
+    fn handle_clipboard_load(&self, clipboard_char: u8, terminator: &str) {
+        let bytes = format_clipboard_reply(TEST_CLIPBOARD_TEXT, clipboard_char, terminator);
+        let response = String::from_utf8_lossy(&bytes).into_owned();
         self.osc_responses
             .lock()
             .expect("PtyResponder mutex poisoned")
             .push(response);
     }
 
-    fn handle_clipboard_store(&self, clipboard: ClipboardType, text: String) {
+    fn handle_clipboard_store(&self, selection: ClipboardSelection, data: String) {
+        let clipboard = match selection {
+            ClipboardSelection::Clipboard => ClipboardType::Clipboard,
+            ClipboardSelection::Primary | ClipboardSelection::Select => ClipboardType::Selection,
+        };
         self.clipboard_stores
             .lock()
             .expect("PtyResponder mutex poisoned")
-            .push((clipboard, text));
+            .push((clipboard, data));
     }
 }
 
-impl EventListener for PtyResponder {
-    fn send_event(&self, event: Event) {
-        match event {
-            Event::PtyWrite(data) => self.push_pty_write(data),
-            Event::ColorRequest(index, formatter) => self.handle_color_request(index, &formatter),
-            Event::ClipboardLoad(clipboard, formatter) => {
-                self.handle_clipboard_load(clipboard, &formatter);
+impl EffectSink for PtyResponder {
+    fn push(&self, effect: Effect) {
+        match effect {
+            Effect::Pty(PtyEffect::Write { bytes, .. }) => self.push_pty_write(&bytes),
+            Effect::HostRequest(HostRequest::ColorQuery {
+                prefix, terminator, ..
+            }) => self.handle_color_query(&prefix, &terminator),
+            Effect::HostRequest(HostRequest::ClipboardLoad {
+                clipboard_char,
+                terminator,
+                ..
+            }) => self.handle_clipboard_load(clipboard_char, &terminator),
+            Effect::Host(HostEffect::ClipboardStore { selection, data }) => {
+                self.handle_clipboard_store(selection, data);
             }
-            Event::ClipboardStore(clipboard, text) => self.handle_clipboard_store(clipboard, text),
             _ => {}
         }
+    }
+
+    fn drain_into(&self, _out: &mut Vec<Effect>) {
+        // Tests read responses via the side-channel `take_*()` helpers;
+        // `drain_into` is required by the trait but unused for this sink.
     }
 }
 
