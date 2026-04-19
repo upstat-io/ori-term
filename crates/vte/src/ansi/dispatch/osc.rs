@@ -244,6 +244,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
         // Reset text cursor color.
         b"112" => handler.reset_color(NamedColor::Cursor as usize),
 
+        // VENDORED PATCH (oriterm): refactored b"1337" arm into sub-dispatcher (Section 10.0).
         // iTerm2 proprietary sequences.
         b"1337" => {
             if params.len() < 2 {
@@ -257,6 +258,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
     }
 }
 
+// VENDORED PATCH (oriterm): OSC 1337 sub-dispatcher helper (Section 10.0).
 /// Route an OSC 1337 sub-command to the matching `Handler` method.
 ///
 /// The first sub-op is expected to be `key[=value]`. `File=...` still routes
