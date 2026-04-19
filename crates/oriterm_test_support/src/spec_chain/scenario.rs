@@ -98,6 +98,8 @@ pub enum ApexLayer {
     EffectAudio,
     /// Apex: desktop notification (OSC 9/99/777).
     EffectHostNotification,
+    /// Apex: shell command lifecycle signal (OSC 133;D / `HostEffect::CommandComplete`).
+    EffectHostCommand,
 }
 
 impl ApexLayer {
@@ -156,9 +158,8 @@ impl ApexLayer {
             | Self::EffectModeState
             | Self::EffectPresentationCommit
             | Self::EffectAudio
-            | Self::EffectHostNotification => {
-                &[RungName::Parser, RungName::Dispatch, RungName::Effect]
-            }
+            | Self::EffectHostNotification
+            | Self::EffectHostCommand => &[RungName::Parser, RungName::Dispatch, RungName::Effect],
         }
     }
 }
@@ -204,7 +205,8 @@ impl RungName {
             | ApexLayer::EffectModeState
             | ApexLayer::EffectPresentationCommit
             | ApexLayer::EffectAudio
-            | ApexLayer::EffectHostNotification => Self::Effect,
+            | ApexLayer::EffectHostNotification
+            | ApexLayer::EffectHostCommand => Self::Effect,
         }
     }
 }
