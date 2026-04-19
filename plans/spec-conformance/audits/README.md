@@ -80,6 +80,30 @@ For every row with `not-targeted` in the Decision column, this section explains:
 3. Re-evaluate every `not-targeted` decision — has the rationale aged out? Has a real-world consumer surfaced for a previously-excluded sequence?
 4. Run the lint until clean.
 
+## Drift Patterns
+
+A section-owned drift gate ensures citations across plan files agree on block names and codepoint ranges. Each not-started section that carries such a gate (currently only Section 11) MUST declare its forbidden regex patterns here so the patterns live in ONE canonical home and the section file itself does not contain literal strings the grep would match.
+
+### Section 11 — Unicode subcell glyphs (octants)
+
+Banned citation forms (the grep runs with scope `-- 'plans/spec-conformance/**' ':!plans/spec-conformance/audits/README.md'` so this file, which defines the bans, does not trip them):
+
+| Forbidden form | Replacement | Rationale |
+|---|---|---|
+| `Znamenny` (as an octant-block label) | Symbols for Legacy Computing Supplement | Znamenny Musical Notation is U+1CF00..=U+1CFCF, a different block entirely; octants live at U+1CD00..=U+1CDE5 inside the Symbols for Legacy Computing Supplement block U+1CC00..=U+1CEBF |
+| `U+1CC00` + `U+1CEFF` in the same citation | U+1CC00..=U+1CEBF for the block, U+1CD00..=U+1CDE5 for the octant subrange | Unicode 16 allocates the Symbols for Legacy Computing Supplement block as U+1CC00..=U+1CEBF (not `U+1CEFF`); the U+1CEFF upper-bound citation is an earlier miscitation from pre-Unicode-16 notes |
+| `quadrants + sextants` | quadrants (U+2596..=U+259F in Block Elements), sextants (U+1FB00..=U+1FB3B in Symbols for Legacy Computing) | These are disjoint Unicode ranges in different blocks; the conflation obscured ownership (catalog row USC-LEGACY-QUADRANT misnamed as holding quadrants when it actually covered sextants) |
+
+Drift-gate invocation (copy-pasteable):
+
+```bash
+git grep -nE 'Znamenny|U\+1CC00[^)]*U\+1CEFF|quadrants\s*\+\s*sextants' \
+  -- 'plans/spec-conformance/**' \
+  ':!plans/spec-conformance/audits/README.md'
+```
+
+Expected output: empty. Non-empty output means at least one plan file still carries an obsolete citation and Section 11's §11.0 drift-normalization criterion has not been met.
+
 ## Files in this directory
 
 - `README.md` — this file (artifact format + lint contract).

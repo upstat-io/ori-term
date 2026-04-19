@@ -935,7 +935,10 @@ plans/spec-conformance/specs/
 ├── unicode-uax-9.txt               — UAX #9 (Bidi) snapshot
 ├── unicode-uax-11.txt              — UAX #11 (East Asian Width) snapshot
 ├── unicode-uax-29.txt              — UAX #29 (Grapheme Clustering) snapshot
-├── unicode-symbols-legacy.pdf      — U+1FB00 + U+1CD00 chart PDFs
+├── unicode_chart_u2580.pdf         — manifest-backed fetch-on-demand (U+2580 Block Elements)
+├── unicode_chart_u1fb00.pdf        — manifest-backed fetch-on-demand (U+1FB00 Symbols for Legacy Computing)
+├── unicode_chart_u1cc00.pdf        — manifest-backed fetch-on-demand (U+1CC00 Symbols for Legacy Computing Supplement — octants at U+1CD00–U+1CDE5)
+├── unicode_chart_u2800.pdf         — manifest-backed fetch-on-demand (U+2800 Braille Patterns)
 ├── dec-std-070.pdf                 — IF redistributable; manifest entry otherwise
 ├── vt-series-manuals/              — DEC user manuals (verify license per file)
 └── manifest-fetch.sh               — script that downloads restricted-license
