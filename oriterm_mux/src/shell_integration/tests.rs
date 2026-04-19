@@ -1636,3 +1636,138 @@ fn osc633_via_high_level_processor_drops() {
     );
     assert!(!term.prompt_mark_pending());
 }
+
+// §10.8 — OSC 7 CWD via production-order dual-pass.
+//
+// OSC 7 is interceptor-handled: the high-level `vte::ansi::Processor`
+// does NOT route it to a `Handler` method (the default
+// `Handler::set_working_directory` is a no-op, and `Term` does not
+// override it). The canonical path runs `RawInterceptor` FIRST, which
+// parses the `file://hostname/path` URI, strips the hostname,
+// percent-decodes the path, and writes it to `Term::set_cwd`. These
+// tests drive the sequence through `spec_chain_helper::feed_mux_and_proc`
+// so both passes execute in production order.
+
+/// §10.8 — Canonical OSC 7 input: `file://host/path`. The `parse_osc7_path`
+/// helper strips the hostname and returns `/path`, which reaches
+/// `Term::set_cwd` via the interceptor. The high-level processor pass
+/// on the same bytes is a no-op for this sequence.
+#[test]
+fn osc7_file_uri_sets_cwd() {
+    let mut term = make_term();
+    assert!(term.cwd().is_none());
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;file:///home/user/project\x1b\\");
+
+    assert_eq!(
+        term.cwd(),
+        Some("/home/user/project"),
+        "production dual-pass must drive OSC 7 through the interceptor's \
+         parse_osc7_path → percent_decode → Term::set_cwd pipeline"
+    );
+}
+
+/// §10.8 — OSC 7 with an explicit hostname (`file://myhost.example.com/path`):
+/// the interceptor's `parse_osc7_path` skips the hostname portion and
+/// returns only the absolute path segment (`/path/to/dir`).
+#[test]
+fn osc7_file_uri_with_hostname() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(
+        &mut term,
+        b"\x1b]7;file://myhost.example.com/path/to/dir\x1b\\",
+    );
+
+    assert_eq!(
+        term.cwd(),
+        Some("/path/to/dir"),
+        "hostname segment must be stripped — parse_osc7_path returns the path after the hostname"
+    );
+}
+
+/// §10.8 — OSC 7 URI-encoded bytes (`%20` for space) round-trip through
+/// `percent_decode` in the interceptor. Final CWD contains a literal
+/// space, not the `%20` escape.
+#[test]
+fn osc7_percent_decoded() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;file:///home/user/my%20folder\x1b\\");
+
+    assert_eq!(
+        term.cwd(),
+        Some("/home/user/my folder"),
+        "percent_decode must convert %20 → space in the CWD payload"
+    );
+}
+
+/// §10.8 — OSC 7 emits `Effect::Host(HostEffect::CwdSet { cwd })` on
+/// the effect transcript. The consumer-side test for mux clients reads
+/// this effect to update session-level state. The scenario asserts
+/// exactly one CwdSet was emitted and its payload matches the set CWD.
+#[test]
+fn osc7_emits_host_effect_cwd_set() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;file:///home/user/project\x1b\\");
+
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+
+    let mut cwd_sets = effects.iter().filter_map(|eff| match eff {
+        Effect::Host(HostEffect::CwdSet { cwd }) => Some(cwd.clone()),
+        _ => None,
+    });
+    let first = cwd_sets
+        .next()
+        .expect("OSC 7 must emit exactly one CwdSet effect");
+    assert_eq!(first, "/home/user/project");
+    assert!(
+        cwd_sets.next().is_none(),
+        "OSC 7 must emit exactly one CwdSet; found a second"
+    );
+}
+
+/// §10.8 — Relative-path payload (no `file://` prefix) flows through
+/// `strip_uri_suffix` unchanged. The path is non-empty, so the
+/// interceptor writes it verbatim to `Term::set_cwd`. This pins the
+/// behavior documented in `parse_osc7_path` at
+/// `interceptor.rs:289-303` — a future regression that rejected
+/// non-URI payloads would break this contract.
+#[test]
+fn osc7_relative_path_passed_through() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;relative/path\x1b\\");
+
+    assert_eq!(
+        term.cwd(),
+        Some("relative/path"),
+        "parse_osc7_path passes non-URI payloads through strip_uri_suffix unchanged"
+    );
+}
+
+/// §10.8 — Negative pin: feeding OSC 7 through the high-level
+/// `vte::ansi::Processor` ALONE (no `RawInterceptor` pass) does NOT
+/// set CWD. Proves OSC 7 is interceptor-only in production — `Term`
+/// does not override `Handler::set_working_directory` (the default is
+/// a no-op). Mirrors `osc9_via_processor_without_mux_drops` /
+/// `osc633_via_high_level_processor_drops`.
+#[test]
+fn osc7_via_high_level_processor_drops() {
+    let mut term = make_term();
+    assert!(term.cwd().is_none());
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]7;file:///home/user/project\x1b\\");
+
+    assert!(
+        term.cwd().is_none(),
+        "high-level Processor must NOT route OSC 7 — Term does not override \
+         Handler::set_working_directory; the canonical path is the interceptor. \
+         If this assertion fires, a `b\"7\"` arm with a non-default handler \
+         override was added, which would create a second dispatch path \
+         and cause double-handling in production"
+    );
+}
