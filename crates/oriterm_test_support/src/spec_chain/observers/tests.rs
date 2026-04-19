@@ -6,7 +6,7 @@ use crate::spec_chain::{
     StateExpectation,
 };
 
-// ── Parser observer ─────────────────────────────────────────────────
+// Parser observer
 
 #[test]
 fn parser_observer_matches_csi_action() {
@@ -113,7 +113,7 @@ fn parser_observer_distinguishes_osc_commands() {
     );
 }
 
-// ── Dispatch observer ───────────────────────────────────────────────
+// Dispatch observer
 
 #[test]
 fn dispatch_observer_matches_method_name() {
@@ -142,7 +142,7 @@ fn dispatch_observer_fails_on_wrong_method() {
     );
 }
 
-// ── State observer ──────────────────────────────────────────────────
+// State observer
 
 #[test]
 fn state_observer_matches_cursor_position() {
@@ -178,7 +178,7 @@ fn state_observer_fails_on_wrong_col() {
     assert!(!result.passed, "state observer should fail for wrong col");
 }
 
-// ── Effect observer ─────────────────────────────────────────────────
+// Effect observer
 
 #[test]
 fn effect_observer_matches_pty_effect() {
@@ -250,7 +250,7 @@ fn effect_observer_fails_on_wrong_sub_variant() {
     );
 }
 
-// ── Renderable observer ─────────────────────────────────────────────
+// Renderable observer
 //
 // Stub-regression pins. With the original `RungResult::pass(rung)`-only
 // stub, the mismatch tests below would PASS the assertion (stub returned
