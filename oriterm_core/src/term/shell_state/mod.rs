@@ -2,10 +2,71 @@
 //!
 //! Extracted from `term/mod.rs` to keep the main file under the 500-line
 //! limit. These methods manage prompt state (OSC 133), CWD (OSC 7),
-//! title resolution, notifications, and prompt-based navigation.
+//! title resolution, notifications, and prompt-based navigation. The
+//! shell-integration state types (`PromptState`, `PromptMarker`,
+//! `Notification`, `PendingMarks`) also live here; `term/mod.rs`
+//! re-exports them for a stable public API.
 
-use super::{PendingMarks, PromptMarker, PromptState, Term};
+use super::Term;
 use crate::effect::sink::EffectSink;
+
+/// Shell integration prompt lifecycle state.
+///
+/// Tracks transitions from OSC 133 sub-parameters:
+/// `None` → `PromptStart` (A) → `CommandStart` (B) → `OutputStart` (C) → `None` (D).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PromptState {
+    /// No prompt activity or command completed (after D marker).
+    #[default]
+    None,
+    /// Prompt is being displayed (after A marker).
+    PromptStart,
+    /// User is typing a command (after B marker).
+    CommandStart,
+    /// Command output is being produced (after C marker).
+    OutputStart,
+}
+
+/// A single prompt lifecycle's boundary rows (absolute row indices).
+///
+/// Associates the OSC 133 sub-marker rows for one prompt: where the prompt
+/// started (A), where the command line started (B), and where command output
+/// started (C). Used for semantic zone navigation and selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptMarker {
+    /// Absolute row where OSC 133;A (prompt start) was received.
+    pub prompt: usize,
+    /// Absolute row where OSC 133;B (command start) was received.
+    pub command: Option<usize>,
+    /// Absolute row where OSC 133;C (output start) was received.
+    pub output: Option<usize>,
+}
+
+/// Desktop notification from the shell (OSC 9/99/777).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notification {
+    /// Notification title (may be empty for OSC 9/99).
+    pub title: String,
+    /// Notification body text.
+    pub body: String,
+}
+
+bitflags::bitflags! {
+    /// Deferred OSC 133 marking actions.
+    ///
+    /// These flags are set when the corresponding OSC 133 sequence arrives
+    /// and cleared after both VTE parsers finish processing, when the actual
+    /// grid row marking occurs.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct PendingMarks: u8 {
+        /// OSC 133;A received — prompt row marking deferred.
+        const PROMPT = 1;
+        /// OSC 133;B received — command start row marking deferred.
+        const COMMAND_START = 2;
+        /// OSC 133;C received — output start row marking deferred.
+        const OUTPUT_START = 4;
+    }
+}
 
 /// Extract the last path component from a CWD path for tab display.
 ///

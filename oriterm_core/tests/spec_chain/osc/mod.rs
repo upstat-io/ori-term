@@ -8,3 +8,4 @@ mod clipboard;
 mod color_reset;
 mod cursor;
 mod hyperlinks;
+mod iterm2_non_image;
