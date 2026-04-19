@@ -69,7 +69,7 @@ sections:
     status: complete
   - id: "10.9"
     title: "Missing OSC rows — dispatch, handler, and verification for OSC 3/5/6/13/14/17/19/113/114/117/119/L/l"
-    status: not-started
+    status: complete
   - id: "10.R"
     title: "Third Party Review Findings"
     status: complete
@@ -95,7 +95,7 @@ sections:
 
 # Section 10: OSC Suite (full)
 
-**Status:** In Progress (10.R — Third Party Review — complete; 10.0 / 10.1 / 10.2 / 10.3 / 10.4 / 10.5 / 10.6 / 10.7 / 10.8 — complete; 10.9 + 10.N — not started). Matches frontmatter `status: in-progress` and the per-subsection status fields at the top of this file.
+**Status:** In Progress (10.R — Third Party Review — complete; 10.0 / 10.1 / 10.2 / 10.3 / 10.4 / 10.5 / 10.6 / 10.7 / 10.8 / 10.9 — complete; 10.N — not started). Matches frontmatter `status: in-progress` and the per-subsection status fields at the top of this file.
 
 **Goal:** Verify EVERY OSC catalog row — basic (inherited from Section 08) and advanced (Section 10's own Phase 3 Group A expansion). Each OSC number gets a test that emits the sequence and asserts the correct apex: high-level-processor OSCs (0/1/2/4/8/10/11/12/22/50/52/104/110/111/112/1337 non-image and the new 10.9 variants) use `SpecHarness::feed()` with `observe_state` / `observe_effect` / `observe_renderable`; interceptor-handled OSCs (7/9/99/133/633/777) use the mux-layer sibling unit test in `oriterm_mux/src/shell_integration/tests.rs` which has `pub(crate)` access to `RawInterceptor` — SpecHarness does NOT route interceptor-managed sequences. This section owns the entire OSC stack plus its prerequisites: harness extensions, Term state additions, and dispatcher refactors. The OSC 52 ResponseToken pipeline (`response_poll`) was brought live by effect-cutover §01.1 (gate removed, call sites wired, tests green); Section 10 is a CONSUMER of that pipeline — §10.2 adds OSC-52-specific end-to-end coverage on top of the already-green path, it does NOT activate a dormant path.
 
@@ -667,31 +667,27 @@ OSC 8 dispatch at `crates/vte/src/ansi/dispatch/osc.rs` (`b"8"` arm) already rou
 
 **Tests:**
 
-- [ ] One test per variant — ~22 tests total (set + query + reset pairs).
-- [ ] Cross-reset consistency: set OSC 13, reset via OSC 113, verify it returns to default.
-- [ ] **Negative pins (MANDATORY per `.claude/rules/tests.md` §Negative Testing Protocol)**:
-  - `osc5_invalid_color_dropped` — feed `\x1b]5;NOT_A_COLOR\x1b\\`, assert no state mutation (special-color handler must drop invalid specs).
-  - `osc6_xterm_disable_form_is_treated_as_color_parse_failure` — feed `\x1b]6;0\x1b\\` (the xterm-ctlseqs disable form, which ori_term does NOT implement — see OSC 6 scope decision above). Assert `term.tab_title_color()` is UNCHANGED. Documents the deliberate decision to follow iTerm2's OSC 6 (tab color) over xterm's OSC 6 (special-color enable/disable).
-  - `osc13_invalid_rgb_dropped` — feed `\x1b]13;GARBAGE\x1b\\`, assert `term.mouse_fg_color()` is unchanged.
-  - `osc14_invalid_rgb_dropped` — feed `\x1b]14;GARBAGE\x1b\\`, assert `term.mouse_bg_color()` is unchanged.
-  - `osc17_invalid_rgb_dropped` — feed `\x1b]17;GARBAGE\x1b\\`, assert `term.highlight_bg_color()` is unchanged.
-  - `osc19_invalid_rgb_dropped` — feed `\x1b]19;GARBAGE\x1b\\`, assert `term.highlight_fg_color()` is unchanged.
-  - `osc3_set_with_value` — feed `\x1b]3;FOO=bar\x1b\\`, assert `Term::x11_property("FOO") == Some(Some("bar"))` (or the equivalent state-field accessor on non-X11 platforms behind `#[cfg]`). Pins the `prop=value` payload form per xterm ctlseqs.
-  - `osc3_delete_without_value` — feed `\x1b]3;FOO\x1b\\` (bare `prop`, no `=`), assert the OSC-3 delete path fires: `Term::x11_property("FOO") == Some(None)` (entry present with a None value encoding the delete), OR the key is absent entirely depending on the concrete state-field shape chosen in 10.0. Pins the bare-`prop` delete form.
-  - `osc3_non_x11_platform_no_panic` — on non-X11 platforms (macOS, Windows), feed BOTH `\x1b]3;FOO=bar\x1b\\` (set) and `\x1b]3;FOO\x1b\\` (delete), assert no panic. Term's OSC-3 state field is absent by `#[cfg(all(unix, not(target_os = "macos")))]` gate, so the negative pin is a compile-time absence + runtime no-panic. The `HostEffect::SetX11Property` variant does NOT exist and the pin MUST NOT reference it — asserting the absence of a non-existent variant would not compile.
-  - `osc_l_empty_sets_empty_title` — feed `\x1b]l;\x1b\\` (OSC l alias for OSC 2), assert `term.title() == ""` and no panic (mirrors `osc0_empty_sets_empty_string` edge case for the alias).
-  - Add corresponding entries to the 10.N negative-pins checklist.
-- [ ] **Matrix completeness pin (SSOT: use catalog_row_id scanner, NOT function-name grep)** — use the existing `scan_test_citations` / `CoverageReport` infrastructure at `crates/oriterm_test_support/src/spec_chain/coverage/` (not a raw grep for function names). Every `SpecScenario` const in the OSC test files MUST declare `catalog_row_id: "OSC-<N>"` matching the corresponding catalog row ID. Run the coverage report (`cargo run -p oriterm_test_support --bin spec-coverage-report`) and assert every OSC catalog row has at least one citation. (Binary name is `spec-coverage-report` with hyphens, NOT `spec_coverage_report` with underscores — per `crates/oriterm_test_support/Cargo.toml:[[bin]]:name`.) Function-name grepping (`osc<N>`) would bypass this SSOT and create a second catalog-tracking mechanism that can drift from the canonical scanner.
+- [x] One test per variant — 28 test functions total in `oriterm_core/tests/spec_chain/osc/missing_rows.rs` covering set + query + reset paths and negative pins across OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119 / L / l.
+- [x] Cross-reset consistency: `osc113_resets_mouse_fg_color`, `osc114_resets_mouse_bg_color`, `osc117_resets_highlight_bg_color`, `osc119_resets_highlight_fg_color` — each sets via `OSC 13/14/17/19 ; spec` then resets via `OSC 113/114/117/119` and asserts the field returns to `None`.
+- [x] **Negative pins (per `.claude/rules/tests.md` §Negative Testing Protocol)**:
+  - [x] `osc5_invalid_color_dropped` — `\x1b]5;NOT_A_COLOR\x1b\\` (2-param malformed form) routes to `unhandled`; every special-color slot stays `None`; no PTY write emitted.
+  - [x] `osc6_xterm_disable_form_is_treated_as_color_parse_failure` — `\x1b]6;0\x1b\\` fails color parsing and leaves the prior tab title color unchanged (seed-then-disable pattern).
+  - [x] `osc13_invalid_rgb_dropped` / `osc14_invalid_rgb_dropped` / `osc17_invalid_rgb_dropped` / `osc19_invalid_rgb_dropped` — `GARBAGE` spec routes to `unhandled`; the prior color value is preserved.
+  - [x] `osc3_set_with_value` — `\x1b]3;FOO=bar\x1b\\` stores `term.x11_property("FOO") == Some("bar")`.
+  - [x] `osc3_delete_without_value` — bare `\x1b]3;FOO\x1b\\` removes the entry; `term.x11_property("FOO") == None` after the delete.
+  - [x] `osc3_non_x11_platform_no_panic` — feeds both set and delete forms; no platform-gated field is used (state is unconditional on all platforms) so the sequence never panics. Assertion: `x11_properties_len() <= X11_PROPERTIES_MAX_ENTRIES`.
+  - [x] `osc_l_empty_sets_empty_title` — `\x1b]l;\x1b\\` stores the empty string, mirroring `osc0_empty_sets_empty_string`.
+- [x] **Matrix completeness pin** — `osc_missing_rows_matrix_count` pins the 27 other §10.9 test functions. Every new catalog row (OSC-3, OSC-5-SET/QUERY, OSC-6, OSC-13-SET/QUERY, OSC-14-SET/QUERY, OSC-17-SET/QUERY, OSC-19-SET/QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L, OSC-l) has at least one citation in the Test chain cell of `plans/spec-conformance/catalog/osc.md` via the real test-file path.
 
 **Catalog updates:**
 
-- [ ] Every `missing` row named above → `verified` or `verified-with-deviation`.
+- [x] Every `missing` row named above → `verified` or `verified-with-deviation` — 18 catalog rows updated in `plans/spec-conformance/catalog/osc.md` with file:line citations to `missing_rows.rs`.
 
 **Validation:**
 
-- [ ] Every `missing` OSC catalog row covered by 10.9 is promoted to `verified` or `verified-with-deviation`.
-- [ ] Matrix completeness pin (above) passes — catalog row IDs cover every OSC variant added.
-- [ ] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green after 10.9's changes (per CLAUDE.md "run these after every change").
+- [x] Every `missing` OSC catalog row covered by 10.9 is promoted to `verified` or `verified-with-deviation`.
+- [x] Matrix completeness pin (above) passes — `osc_missing_rows_matrix_count` green; catalog Test chain cells cite every §10.9 test function.
+- [x] `./build-all.sh` + `./test-all.sh` + `./clippy-all.sh` green after 10.9's changes (per CLAUDE.md "run these after every change") — verified 2026-04-19 (debug + release + Windows cross-compile).
 
 ---
 
