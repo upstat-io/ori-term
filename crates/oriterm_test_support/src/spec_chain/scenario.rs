@@ -5,6 +5,9 @@
 //! Const-constructibility enables the citation scanner (04.8) to find
 //! `catalog_row_id: "…"` via a literal grep.
 
+use oriterm_core::{CursorShape, Rgb};
+use vte::ansi::cursor_icon::CursorIcon;
+
 /// Const-constructible scenario definition (no closures, function pointers only).
 ///
 /// Every field type is `const`-constructible. Slices use `&'static [u16]`
@@ -336,9 +339,32 @@ impl EffectExpectation {
     }
 }
 
-/// Renderable rung expectation (stub — expanded when pilots exercise it).
+/// Renderable rung (Rung 4) expectation.
+///
+/// Asserts properties of `Term::renderable_content()` — the snapshot the
+/// renderer actually consumes (NOT the live state on `Term`). Every field
+/// is `Option`; `None` means "do not check this property." Every field is
+/// `Copy` and const-constructible — `&'static [...]` slices, `&'static str`,
+/// no `Vec` / `String`. This preserves the `SpecScenario` const-constructible
+/// invariant (see module doc) so const scenarios remain greppable by the
+/// citation scanner.
 #[derive(Copy, Clone, Debug, Default)]
-pub struct RenderableExpectation;
+pub struct RenderableExpectation {
+    /// Cell contents at specific viewport positions: `(line, col, ch)`.
+    pub cells: Option<&'static [(usize, usize, char)]>,
+    /// OSC 8 hyperlink URI at a viewport position: `(line, col, uri)`.
+    pub hyperlink_at: Option<(usize, usize, &'static str)>,
+    /// Cursor viewport position: `(line, col)`.
+    pub cursor_position: Option<(usize, usize)>,
+    /// Cursor shape (block / beam / underline).
+    pub cursor_shape: Option<CursorShape>,
+    /// Palette entry color: `(index, expected_rgb)`.
+    pub palette_index: Option<(usize, Rgb)>,
+    /// OSC 22 mouse cursor icon.
+    pub mouse_cursor_icon: Option<CursorIcon>,
+    /// Damaged-line viewport indices reported by the renderable snapshot.
+    pub damaged_lines: Option<&'static [usize]>,
+}
 
 /// Frame input rung expectation (rung 5).
 ///

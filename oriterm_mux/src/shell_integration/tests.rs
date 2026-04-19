@@ -972,3 +972,101 @@ fn interceptor_osc7_non_utf8_bytes_returns_empty_path() {
         );
     }
 }
+
+// spec_chain_helper: production-order dual-pass byte feed.
+//
+// `spec_chain_helper::feed_mux_and_proc` encapsulates the production
+// "interceptor FIRST, processor SECOND" byte-feed order so downstream
+// spec_chain tests for OSC 7 / 9 / 99 / 133 / 633 / 777 cannot accidentally
+// reorder the two passes (a silent false-green source). It lives in the
+// sibling unit-test module because `RawInterceptor` is `pub(crate)` and
+// integration tests in `oriterm_mux/tests/` cannot reach it.
+//
+// The high-level `vte::ansi::Processor` silently drops OSC 133 / 9 / 99 / 777
+// (no `Handler` trait route exists for them), so a test that calls only
+// `Processor::advance` would observe NO state mutation for those sequences
+// — exactly the behavior the production path avoids by running the
+// interceptor FIRST. The TDD pair below pins this contract.
+
+mod spec_chain_helper {
+    use oriterm_core::Term;
+    use oriterm_core::effect::QueueingEffectSink;
+    use vte::Parser;
+    use vte::ansi::{Processor, StdSyncHandler};
+
+    use crate::shell_integration::interceptor::RawInterceptor;
+
+    /// Feed `bytes` through the production-order parser chain:
+    /// the raw `vte::Parser` + `RawInterceptor` runs first, then the
+    /// high-level `vte::ansi::Processor` runs on the same bytes.
+    ///
+    /// Both passes mutate `term`. The interceptor handles OSC 7 / 9 / 99
+    /// / 133 / 633 / 777 (and CSI > q), and the high-level processor
+    /// drives every other OSC, CSI, ESC, and DCS sequence.
+    pub(super) fn feed_mux_and_proc(term: &mut Term<QueueingEffectSink>, bytes: &[u8]) {
+        // Scope the interceptor so its `&mut term` borrow ends before the
+        // processor takes its own `&mut term` borrow on the next line.
+        {
+            let mut interceptor = RawInterceptor::new(term);
+            let mut raw_parser = Parser::new();
+            raw_parser.advance(&mut interceptor, bytes);
+        }
+        let mut processor = Processor::<StdSyncHandler>::new();
+        processor.advance(term, bytes);
+    }
+}
+
+/// TDD RED side: feeding OSC 133;A through ONLY the high-level
+/// `vte::ansi::Processor` (no `RawInterceptor` pass) leaves `prompt_state`
+/// unchanged. Proves the high-level processor really drops OSC 133, so
+/// the mux interceptor is load-bearing for the production path.
+#[test]
+fn osc133a_via_processor_only_does_not_change_prompt_state() {
+    use oriterm_core::PromptState;
+
+    let mut term = make_term();
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert_eq!(
+        term.prompt_state(),
+        PromptState::None,
+        "high-level Processor must NOT route OSC 133 to a Handler hook \
+         — if this assertion ever fires, OSC 133 was added to the \
+         high-level dispatcher and would be double-handled in production"
+    );
+    assert!(
+        !term.prompt_mark_pending(),
+        "high-level Processor must NOT set prompt_mark_pending for OSC 133"
+    );
+}
+
+/// TDD GREEN side: feeding OSC 133;A via the production-order
+/// `spec_chain_helper::feed_mux_and_proc` drives the interceptor's OSC
+/// 133 handler, which transitions `prompt_state` to `PromptStart`. This
+/// is the contract every downstream §10.3/§10.4/§10.8 mux-intercepted
+/// OSC test relies on.
+#[test]
+fn osc133a_via_spec_chain_helper_sets_prompt_start() {
+    use oriterm_core::PromptState;
+
+    let mut term = make_term();
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert_eq!(
+        term.prompt_state(),
+        PromptState::PromptStart,
+        "production-order dual-pass MUST drive OSC 133;A through the \
+         interceptor — if this assertion fails, the interceptor pass \
+         was dropped and downstream spec_chain tests would silently \
+         pass against a parser that never saw the sequence"
+    );
+    assert!(
+        term.prompt_mark_pending(),
+        "OSC 133;A via interceptor must set prompt_mark_pending"
+    );
+}
