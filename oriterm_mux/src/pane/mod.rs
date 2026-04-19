@@ -296,6 +296,15 @@ impl Pane {
         self.io_handle.send_command(cmd);
     }
 
+    /// Borrow the pane's IO thread handle.
+    ///
+    /// Crate-internal access so the embedded backend can call the
+    /// `fulfill_clipboard_load` / `fulfill_color_query` helpers to
+    /// signal a fulfilled host-request response.
+    pub(crate) fn io_handle(&self) -> &PaneIoHandle {
+        &self.io_handle
+    }
+
     // -- Title / CWD / Bell --
 
     /// Set the pane title (from OSC 0/2 via `MuxEvent::PaneTitleChanged`).

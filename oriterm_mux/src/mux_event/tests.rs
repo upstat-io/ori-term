@@ -150,7 +150,7 @@ fn pty_write_maps_to_pty_write() {
     proxy.send_event(Event::PtyWrite("data".to_string()));
     let event = rx.try_recv().unwrap();
     assert!(
-        matches!(&event, MuxEvent::PtyWrite { pane_id, data } if *pane_id == PaneId::from_raw(1) && data == "data")
+        matches!(&event, MuxEvent::PtyWrite { pane_id, data } if *pane_id == PaneId::from_raw(1) && data == b"data")
     );
 }
 
@@ -283,7 +283,7 @@ fn mux_event_debug_all_variants() {
         (
             MuxEvent::PtyWrite {
                 pane_id: id,
-                data: "abc".to_string(),
+                data: b"abc".to_vec(),
             },
             "PtyWrite(Pane(1), 3 bytes)",
         ),
@@ -311,6 +311,46 @@ fn mux_event_debug_all_variants() {
     let dbg = format!("{load:?}");
     assert!(dbg.contains("ClipboardLoad"));
     assert!(dbg.contains("Selection"));
+
+    // Variants added in effect-cutover 01.1 — Debug coverage per
+    // `[low]`.
+    let desk = MuxEvent::DesktopNotification {
+        pane_id: id,
+        source: oriterm_core::effect::NotificationSource::Osc99,
+        title: "Hello".to_string(),
+        body: String::new(),
+    };
+    assert_eq!(
+        format!("{desk:?}"),
+        "DesktopNotification(Pane(1), Osc99, \"Hello\")"
+    );
+
+    let clear = MuxEvent::ClearPendingDesktopNotifications(id);
+    assert_eq!(
+        format!("{clear:?}"),
+        "ClearPendingDesktopNotifications(Pane(1))"
+    );
+
+    let host_clip = MuxEvent::HostClipboardLoad {
+        pane_id: id,
+        selection: oriterm_core::effect::ClipboardSelection::Clipboard,
+        clipboard_char: b'c',
+        terminator: "\x1b\\".to_string(),
+        reply: oriterm_core::effect::ResponseToken::new(),
+    };
+    let dbg = format!("{host_clip:?}");
+    assert!(dbg.contains("HostClipboardLoad"));
+    assert!(dbg.contains("Clipboard"));
+
+    let host_color = MuxEvent::HostColorQuery {
+        pane_id: id,
+        prefix: "11".to_string(),
+        index: 0,
+        terminator: "\x1b\\".to_string(),
+        reply: oriterm_core::effect::ResponseToken::new(),
+    };
+    let dbg = format!("{host_color:?}");
+    assert!(dbg.contains("HostColorQuery"));
 }
 
 // MuxNotification Debug format
@@ -366,6 +406,48 @@ fn mux_notification_debug_all_variants() {
     let dbg = format!("{load:?}");
     assert!(dbg.contains("ClipboardLoad"));
     assert!(dbg.contains("Selection"));
+
+    // Variants added in effect-cutover 01.1 — Debug coverage per the
+    // matrix-testing rule (`.claude/rules/tests.md`). Surfaced by
+    // `[low]`.
+    let desk = MuxNotification::DesktopNotification {
+        pane_id: pid,
+        source: oriterm_core::effect::NotificationSource::Osc9,
+        title: "T".to_string(),
+        body: "B".to_string(),
+    };
+    let dbg = format!("{desk:?}");
+    assert!(dbg.contains("DesktopNotification"));
+    assert!(dbg.contains("Osc9"));
+    assert!(dbg.contains("\"T\""));
+
+    let clear = MuxNotification::ClearPendingDesktopNotifications(pid);
+    assert_eq!(
+        format!("{clear:?}"),
+        "ClearPendingDesktopNotifications(Pane(1))"
+    );
+
+    let host_clip = MuxNotification::HostClipboardLoad {
+        pane_id: pid,
+        selection: oriterm_core::effect::ClipboardSelection::Clipboard,
+        clipboard_char: b'c',
+        terminator: "\x1b\\".to_string(),
+        reply: oriterm_core::effect::ResponseToken::new(),
+    };
+    let dbg = format!("{host_clip:?}");
+    assert!(dbg.contains("HostClipboardLoad"));
+    assert!(dbg.contains("Clipboard"));
+
+    let host_color = MuxNotification::HostColorQuery {
+        pane_id: pid,
+        prefix: "10".to_string(),
+        index: 0,
+        terminator: "\x1b\\".to_string(),
+        reply: oriterm_core::effect::ResponseToken::new(),
+    };
+    let dbg = format!("{host_color:?}");
+    assert!(dbg.contains("HostColorQuery"));
+    assert!(dbg.contains("\"10\""));
 }
 
 // Concurrent wakeup coalescing

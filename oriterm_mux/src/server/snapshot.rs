@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use oriterm_core::{CursorShape, RenderableContent, Rgb};
 
 use crate::pane::Pane;
-use crate::protocol::WireSearchMatch;
+use crate::protocol::{WireSearchMatch, encode_cursor_icon};
 use crate::{PaneId, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 
 /// Cached snapshots with reusable allocation buffers.
@@ -176,6 +176,7 @@ fn fill_metadata_from_renderable(
     out.display_offset = u32::try_from(render_buf.display_offset).unwrap_or(u32::MAX);
     out.stable_row_base = render_buf.stable_row_base;
     out.cols = render_buf.cols as u16;
+    out.mouse_cursor_icon = render_buf.mouse_cursor_icon.and_then(encode_cursor_icon);
 
     // Search state from RenderableContent (filled by IO thread).
     fill_search_from_renderable(render_buf, out);

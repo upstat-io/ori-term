@@ -106,7 +106,7 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
             }
             b'D' => {
                 self.term.set_prompt_state(PromptState::None);
-                if let Some(duration) = self.term.finish_command() {
+                if let Some(duration) = self.term.finish_command(None) {
                     self.term
                         .effect_sink()
                         .push(Effect::Host(HostEffect::CommandComplete { duration }));

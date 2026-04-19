@@ -46,11 +46,27 @@ impl App {
             return;
         }
 
+        // 2a. Honor cross-batch `ClearPendingDesktopNotifications`
+        //     markers BEFORE dispatching: each clear marker discards
+        //     all preceding `DesktopNotification` entries for the same
+        //     pane that landed in earlier IO-thread batches and
+        //     accumulated in this drain. The IO-thread router already
+        //     handles intra-batch collapse; this purge handles the
+        //     case where a notification reached `notification_buf` in
+        //     an earlier drain cycle and the clear catches it before
+        //     the next dispatch tick. Per effect-cutover §01.1
+        //     success criterion 24.
+        purge_pending_desktop_notifications(&mut self.notification_buf);
+
         // 3. Handle each notification.
         self.with_drained_notifications(Self::handle_mux_notification);
     }
 
     /// Process a single mux notification.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "single-match notification dispatch — belongs in one place"
+    )]
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
             MuxNotification::PaneOutput(id) => {
@@ -127,6 +143,63 @@ impl App {
                 let response = formatter(&text);
                 self.write_pane_input(pane_id, response.as_bytes());
             }
+            MuxNotification::DesktopNotification {
+                pane_id: _pane_id,
+                title,
+                body,
+                ..
+            } => {
+                notify::send(&title, &body);
+            }
+            MuxNotification::ClearPendingDesktopNotifications(_pane_id) => {
+                // Desktop notifications are dispatched to the platform
+                // notifier immediately on arrival (no local staging), so
+                // there is nothing to purge on the main thread. Daemon-side
+                // staging buffers handle their own purge in the 01.3 follow-up.
+            }
+            MuxNotification::HostClipboardLoad {
+                pane_id,
+                selection,
+                reply,
+                ..
+            } => {
+                let clipboard_type = match selection {
+                    oriterm_core::effect::ClipboardSelection::Clipboard => {
+                        oriterm_core::ClipboardType::Clipboard
+                    }
+                    oriterm_core::effect::ClipboardSelection::Primary
+                    | oriterm_core::effect::ClipboardSelection::Select => {
+                        oriterm_core::ClipboardType::Selection
+                    }
+                };
+                let text = self.clipboard.load(clipboard_type);
+                if let Some(mux) = self.mux.as_mut() {
+                    if let Err(err) = mux.fulfill_host_request(
+                        pane_id,
+                        oriterm_mux::HostReply::ClipboardLoad { token: reply, text },
+                    ) {
+                        log::warn!("fulfill_host_request (clipboard) for {pane_id} failed: {err}");
+                    }
+                }
+            }
+            MuxNotification::HostColorQuery { pane_id, reply, .. } => {
+                // Placeholder color until we wire theme lookup through the
+                // main-thread MuxBackend (tracked as a cleanup item —
+                // the OSC 10/11/12 reply flow is unblocked structurally,
+                // the actual color source is a separate bug).
+                let color = oriterm_core::color::Rgb { r: 0, g: 0, b: 0 };
+                if let Some(mux) = self.mux.as_mut() {
+                    if let Err(err) = mux.fulfill_host_request(
+                        pane_id,
+                        oriterm_mux::HostReply::ColorQuery {
+                            token: reply,
+                            color,
+                        },
+                    ) {
+                        log::warn!("fulfill_host_request (color) for {pane_id} failed: {err}");
+                    }
+                }
+            }
             MuxNotification::NewTab => {
                 log::info!("received new-tab request from another instance");
                 if let Some(win_id) = self.active_window {
@@ -189,6 +262,38 @@ impl App {
             );
         let body = format_duration_body(duration);
         notify::send(&title, &body);
+    }
+}
+
+/// In-place collapse of `ClearPendingDesktopNotifications` against
+/// preceding `DesktopNotification` entries in the same staging
+/// buffer. For each clear marker at position `i` for pane `P`,
+/// removes every `DesktopNotification { pane_id: P, .. }` at
+/// positions `< i`. Iteration order preserves remaining markers.
+///
+/// Surfaced by `[high]` — the §01 fix only emitted
+/// the clear marker but did not act on it in the main-thread staging
+/// buffer.
+fn purge_pending_desktop_notifications(buf: &mut Vec<MuxNotification>) {
+    let mut i = 0;
+    while i < buf.len() {
+        if let MuxNotification::ClearPendingDesktopNotifications(target_pane) = buf[i] {
+            let mut j = 0;
+            while j < i {
+                let drop_it = matches!(
+                    &buf[j],
+                    MuxNotification::DesktopNotification { pane_id, .. }
+                        if *pane_id == target_pane
+                );
+                if drop_it {
+                    buf.remove(j);
+                    i -= 1;
+                } else {
+                    j += 1;
+                }
+            }
+        }
+        i += 1;
     }
 }
 

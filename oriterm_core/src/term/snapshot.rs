@@ -57,6 +57,7 @@ impl<S: EffectSink> Term<S> {
             search_matches: Vec::new(),
             search_focused: None,
             search_total_matches: 0,
+            mouse_cursor_icon: None,
             seen_image_ids: HashSet::new(),
         };
         self.renderable_content_into(&mut out);
@@ -172,6 +173,7 @@ impl<S: EffectSink> Term<S> {
         out.cols = cols;
         out.lines = lines;
         out.scrollback_len = grid.scrollback().len();
+        out.mouse_cursor_icon = self.mouse_cursor_icon;
 
         Self::fill_palette_snapshot(palette, out);
         self.fill_image_snapshot(out);

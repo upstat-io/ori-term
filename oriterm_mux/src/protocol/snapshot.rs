@@ -6,6 +6,7 @@
 //! aren't directly serializable — wire types are flat and self-contained.
 
 use serde::{Deserialize, Serialize};
+use vte::ansi::cursor_icon::CursorIcon;
 
 use oriterm_core::Side;
 use oriterm_core::grid::StableRowIndex;
@@ -231,6 +232,14 @@ pub struct PaneSnapshot {
     pub search_focused: Option<u32>,
     /// Total match count across the full scrollback.
     pub search_total_matches: u32,
+    /// Mouse cursor icon requested by the shell (OSC 22), encoded as a
+    /// stable `u8` index per [`encode_cursor_icon`] / [`decode_cursor_icon`].
+    ///
+    /// `None` means no OSC 22 has been received (or the icon is unknown).
+    /// The wire index space is project-owned (not `CursorIcon::default()`
+    /// ordinal) so reordering of upstream `cursor_icon` variants cannot
+    /// invalidate serialized daemon snapshots.
+    pub mouse_cursor_icon: Option<u8>,
 }
 
 /// A selection on the wire.
@@ -321,4 +330,72 @@ impl WireSelection {
             },
         }
     }
+}
+
+/// Known OSC 22 mouse cursor icons and their stable wire indices.
+///
+/// The wire index space is project-owned so reordering of variants in the
+/// upstream `cursor_icon` crate cannot invalidate serialized daemon
+/// snapshots. Only icons listed here round-trip through the wire; unknown
+/// icons encode as `None` (decoder yields `None`, renderer falls back to
+/// the default pointer).
+///
+/// New icons MUST be appended; existing entries MUST NOT change index.
+/// Section 10.5 references this slice to build its OSC 22 matrix.
+pub const OSC22_KNOWN_ICONS: &[CursorIcon] = &[
+    CursorIcon::Default,
+    CursorIcon::ContextMenu,
+    CursorIcon::Help,
+    CursorIcon::Pointer,
+    CursorIcon::Progress,
+    CursorIcon::Wait,
+    CursorIcon::Cell,
+    CursorIcon::Crosshair,
+    CursorIcon::Text,
+    CursorIcon::VerticalText,
+    CursorIcon::Alias,
+    CursorIcon::Copy,
+    CursorIcon::Move,
+    CursorIcon::NoDrop,
+    CursorIcon::NotAllowed,
+    CursorIcon::Grab,
+    CursorIcon::Grabbing,
+    CursorIcon::EResize,
+    CursorIcon::NResize,
+    CursorIcon::NeResize,
+    CursorIcon::NwResize,
+    CursorIcon::SResize,
+    CursorIcon::SeResize,
+    CursorIcon::SwResize,
+    CursorIcon::WResize,
+    CursorIcon::EwResize,
+    CursorIcon::NsResize,
+    CursorIcon::NeswResize,
+    CursorIcon::NwseResize,
+    CursorIcon::ColResize,
+    CursorIcon::RowResize,
+    CursorIcon::AllScroll,
+    CursorIcon::ZoomIn,
+    CursorIcon::ZoomOut,
+];
+
+/// Encode a `CursorIcon` into a stable wire index, or `None` if the icon
+/// is not in [`OSC22_KNOWN_ICONS`].
+///
+/// Uses linear scan; the slice is ~34 entries so O(n) is cheap compared to
+/// a per-variant match table (which would not be kept in sync on upstream
+/// variant reorderings).
+#[must_use]
+pub fn encode_cursor_icon(icon: CursorIcon) -> Option<u8> {
+    OSC22_KNOWN_ICONS
+        .iter()
+        .position(|&known| known == icon)
+        .and_then(|idx| u8::try_from(idx).ok())
+}
+
+/// Decode a wire index back into a `CursorIcon`. Out-of-range indices
+/// return `None` (renderer falls back to the default pointer).
+#[must_use]
+pub fn decode_cursor_icon(index: u8) -> Option<CursorIcon> {
+    OSC22_KNOWN_ICONS.get(index as usize).copied()
 }

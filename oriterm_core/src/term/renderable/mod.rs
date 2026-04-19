@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use vte::ansi::Color;
+use vte::ansi::cursor_icon::CursorIcon;
 
 use crate::cell::CellFlags;
 use crate::color::{Palette, Rgb, dim_rgb};
@@ -181,6 +182,12 @@ pub struct RenderableContent {
     pub search_focused: Option<u32>,
     /// Total number of search matches.
     pub search_total_matches: u32,
+    /// Mouse cursor icon requested by the shell (OSC 22).
+    ///
+    /// `None` until the application sets an icon. The GPU consumer reads
+    /// this to update the OS pointer shape while hovering the terminal.
+    /// `Copy` field — no allocation.
+    pub mouse_cursor_icon: Option<CursorIcon>,
     /// Scratch buffer for image extraction — reused across frames to
     /// avoid per-frame `HashSet` allocation. Not part of the semantic
     /// snapshot; only used internally by `extract_images`.
@@ -214,6 +221,7 @@ impl Default for RenderableContent {
             search_matches: Vec::new(),
             search_focused: None,
             search_total_matches: 0,
+            mouse_cursor_icon: None,
             seen_image_ids: HashSet::new(),
         }
     }
@@ -244,6 +252,7 @@ impl RenderableContent {
         self.search_matches.clear();
         self.search_focused = None;
         self.search_total_matches = 0;
+        self.mouse_cursor_icon = None;
         self.cursor = RenderableCursor {
             line: 0,
             column: Column(0),

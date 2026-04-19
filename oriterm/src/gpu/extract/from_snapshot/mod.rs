@@ -93,6 +93,9 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
     content.stable_row_base = snapshot.stable_row_base;
     content.mode = TermMode::from_bits_truncate(snapshot.modes);
     content.all_dirty = true;
+    content.mouse_cursor_icon = snapshot
+        .mouse_cursor_icon
+        .and_then(oriterm_mux::protocol::snapshot::decode_cursor_icon);
     content
 }
 
@@ -135,6 +138,9 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
     out.images.clear();
     out.image_data.clear();
     out.images_dirty = false;
+    out.mouse_cursor_icon = snapshot
+        .mouse_cursor_icon
+        .and_then(oriterm_mux::protocol::snapshot::decode_cursor_icon);
 }
 
 /// Refill an existing [`FrameInput`] from a [`PaneSnapshot`], reusing allocations.

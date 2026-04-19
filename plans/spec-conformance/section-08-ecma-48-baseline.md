@@ -8,7 +8,7 @@ success_criteria:
   - "Every row in `catalog/ecma-48.md` covered by tack-conformance section 05 (test menu) is `verified` (uses the spec_chain harness from section 04)"
   - "Every row in `catalog/ecma-48.md` covered by tack-conformance section 06 (tools menu) is `verified`"
   - "Every basic ANSI mode (IRM, LNM) and basic DEC private mode (1, 5, 6, 7, 12, 25, 47, 1049, 2004) row in `catalog/dec-private-modes.md` is `verified`"
-  - "Every basic OSC row (0, 1, 2, 4, 7, 10, 11, 12, 52) is `verified` in `catalog/osc.md` — these rows are verified by converting tack section 06's direct-VTE cap cross-checks into spec_chain tests (subsections 08.1-08.2). If any basic OSC rows are NOT covered by tack section 05/06 scenarios, they are deferred to Section 10 (OSC Suite) which owns the full OSC stack."
+  - "Basic OSC rows (0, 1, 2, 4, 7, 10, 11, 12, 52) in `catalog/osc.md` are owned by Section 10 (OSC Suite), NOT Section 08. Section 08's post-completion audit (`section-08 Implementation notes 2026-04-14`) recorded that tack scenarios drove ZERO OSC rows — the tack menus test non-OSC capabilities. Section 10 owns the entire OSC stack and verifies these rows via the OSC Suite spec_chain tests."
   - "**DECLRMM full mode plumbing + grid enforcement implemented**: VTE layer has `NamedPrivateMode::LeftRightMargin` variant (mode 69) with `PrivateMode::new` mapping; `TermMode` has `LEFT_RIGHT_MARGIN` flag; `named_private_mode_flag` maps it; `status_report_private_mode` reports it; `Grid` has `left_margin: usize` and `right_margin: usize` fields; CSI s / DECSLRM ambiguity resolved (state-dependent dispatch); CUF/CUB/ICH/DCH/IL/DL/CR/NEL/IND/RI/cursor-wrap/reverse-wrap respect margins; absolute CUP/HVP/CHA/HPA ignore margins (DECOM offset applied at Term layer via `origin_aware_col`); `goto_col` is column-aware under DECOM+DECLRMM; DECSC/DECRC save-set excludes margins and DECLRMM mode per DEC STD 070 §5.6.1; reset/resize/disable-mode-69 clears margins; the corresponding catalog row in `catalog/dec-private-modes.md` is `verified`"
   - "**8-bit C1 controls handled**: VTE parser in `crates/vte/src/lib.rs:advance_ground()` detects 0x9B (CSI), 0x90 (DCS), 0x9D (OSC), 0x9F (APC), 0x98 (SOS), 0x9E (PM), 0x9C (ST) as C1 introducers — entering the same parser states as their 7-bit ESC-prefixed equivalents; the corresponding catalog rows are `verified`"
   - "**REP edge cases handled**: REP (CSI Ps b) with no preceding character is a no-op (per ECMA-48 sect.8.3.103); REP after a wide character repeats the wide character; the catalog rows are `verified`"
@@ -81,7 +81,7 @@ sections:
 **Success Criteria:**
 - [x] Every tack-covered row in `catalog/ecma-48.md` is `verified`
 - [x] Basic ANSI/DEC modes verified
-- [x] Basic OSC rows verified
+- [x] Basic OSC rows scope audit (tack drove ZERO OSC rows — all basic OSC rows 0/1/2/4/7/10/11/12/52 remain owned by Section 10 and are verified there; this success-criterion line originally implied Section 08 verified them, which was wrong — corrected 2026-04-17 to reflect that Section 08's OSC scope is an ownership-audit only, the actual row verification lives in Section 10 OSC Suite)
 - [x] DECLRMM full mode plumbing implemented (VTE types, TermMode flag, mode reporting)
 - [x] DECLRMM grid enforcement implemented (margin fields, cursor movement, extended operations)
 - [x] CSI s / DECSLRM ambiguity resolved

@@ -267,7 +267,7 @@ fn poll_events_pty_write_missing_pane_no_panic() {
 
     tx.send(MuxEvent::PtyWrite {
         pane_id: PaneId::from_raw(999),
-        data: "hello".to_string(),
+        data: b"hello".to_vec(),
     })
     .unwrap();
 

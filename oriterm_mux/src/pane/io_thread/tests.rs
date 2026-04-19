@@ -2,13 +2,50 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 
-use oriterm_core::effect::VoidEffectSink;
+use crossbeam_channel::Receiver;
+
+use oriterm_core::effect::{PollResult, VoidEffectSink};
 use oriterm_core::{Column, Line, Term, TermMode, Theme};
 
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{IoThreadConfig, PaneIoCommand, PaneIoHandle, PaneIoThread, new_with_handle};
+use crate::PaneId;
+use crate::mux_event::MuxEvent;
+use crate::pty::spawn::ExitStatus;
+
+/// Test helper: dummy pane_id + live channels for constructing
+/// `PaneIoThread` in synchronous tests.
+///
+/// The `_keep_alive` fields are leaked via a `OnceLock<Vec<..>>` so the
+/// channels stay open for the duration of the test process — leaking
+/// is intentional and preferable to `std::mem::forget` call sites
+/// scattered across every helper.
+fn test_dummy_channels() -> (
+    PaneId,
+    mpsc::Sender<MuxEvent>,
+    Receiver<ExitStatus>,
+    Receiver<()>,
+) {
+    use std::sync::Mutex as StdMutex;
+    use std::sync::OnceLock;
+    static KEEP_ALIVE: OnceLock<StdMutex<Vec<Box<dyn std::any::Any + Send>>>> = OnceLock::new();
+    let vault = KEEP_ALIVE.get_or_init(|| StdMutex::new(Vec::new()));
+
+    let (mux_tx, mux_rx) = mpsc::channel::<MuxEvent>();
+    let (exit_tx, exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
+    let (wake_tx, wake_rx) = crossbeam_channel::bounded::<()>(1);
+
+    if let Ok(mut v) = vault.lock() {
+        v.push(Box::new(mux_rx));
+        v.push(Box::new(exit_tx));
+        v.push(Box::new(wake_tx));
+    }
+
+    (PaneId::from_raw(1), mux_tx, exit_rx, wake_rx)
+}
 
 /// Helper: create a Term<VoidEffectSink> with default dimensions.
 fn make_term() -> Term<VoidEffectSink> {
@@ -19,6 +56,18 @@ fn make_term() -> Term<VoidEffectSink> {
 fn make_pair() -> (PaneIoThread<VoidEffectSink>, PaneIoHandle) {
     new_with_handle(IoThreadConfig {
         terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
         mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::new(AtomicBool::new(false)),
         wakeup: Arc::new(|| {}),
@@ -36,6 +85,18 @@ fn spawn_pair_with_flag() -> (PaneIoHandle, Arc<AtomicBool>) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (thread, mut handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
         mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::clone(&shutdown),
         wakeup: Arc::new(|| {}),
@@ -62,8 +123,14 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
     let cols = term.grid().cols() as u16;
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     PaneIoThread {
         terminal: term,
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -80,6 +147,7 @@ fn make_sync_thread_with_term(term: Term<VoidEffectSink>) -> PaneIoThread<VoidEf
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     }
 }
 
@@ -90,8 +158,14 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let grid_dirty = Arc::new(AtomicBool::new(false));
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -110,6 +184,7 @@ fn make_sync_thread_with_wakeup() -> (PaneIoThread<VoidEffectSink>, Arc<AtomicU6
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     (thread, wakeup_count)
 }
@@ -140,8 +215,14 @@ fn shutdown_via_channel_disconnect() {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
 
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -158,6 +239,7 @@ fn shutdown_via_channel_disconnect() {
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -180,6 +262,18 @@ fn command_delivery_ordering() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let (thread, handle) = new_with_handle(IoThreadConfig {
         terminal: make_term(),
+        pane_id: {
+            let (p, _, _, _) = test_dummy_channels();
+            p
+        },
+        mux_tx: {
+            let (_, t, _, _) = test_dummy_channels();
+            t
+        },
+        child_exit_rx: {
+            let (_, _, r, _) = test_dummy_channels();
+            r
+        },
         mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
         shutdown: Arc::clone(&shutdown),
         wakeup: Arc::new(|| {}),
@@ -215,8 +309,14 @@ fn byte_delivery_parses_vte() {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
 
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -233,6 +333,7 @@ fn byte_delivery_parses_vte() {
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     let join = thread.spawn().expect("failed to spawn IO thread");
 
@@ -360,8 +461,14 @@ fn handle_bytes_chunked_drains_commands() {
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
     let shutdown = Arc::new(AtomicBool::new(false));
 
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let mut t = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::clone(&shutdown),
@@ -378,6 +485,7 @@ fn handle_bytes_chunked_drains_commands() {
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
 
     cmd_tx.send(PaneIoCommand::Shutdown).unwrap();
@@ -590,8 +698,14 @@ fn produce_snapshot_fires_wakeup() {
 fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneIoCommand>) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: make_term(),
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -608,6 +722,7 @@ fn make_sync_thread_with_cmd_tx() -> (PaneIoThread<VoidEffectSink>, Sender<PaneI
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     (thread, cmd_tx)
 }
@@ -1380,11 +1495,13 @@ fn test_io_thread_panic_does_not_crash_app() {
         panic!("intentional IO thread panic for testing");
     });
 
+    let (_wake_tx, _wake_rx) = crossbeam_channel::bounded::<()>(1);
     let mut handle = PaneIoHandle {
         cmd_tx: tx,
         byte_tx,
         join: Some(join),
         double_buffer: SnapshotDoubleBuffer::new(),
+        response_wake_tx: _wake_tx,
     };
 
     // Trigger the panic.
@@ -1727,15 +1844,18 @@ fn reply_token_clipboard_load_produces_pty_write() {
     );
 
     // Fulfill the token with clipboard text.
-    token_clone.fulfill("hello world".to_string());
+    token_clone
+        .fulfill("hello world".to_string())
+        .expect("fresh token fulfill must succeed");
 
     // Poll after fulfillment — should produce Effect::Pty and remove entry.
     // poll_pending_responses pushes the effect through the VoidEffectSink (no-op),
     // so we poll the PendingResponse directly to capture the effect.
-    let effect = t.pending_responses[0].poll();
-    assert!(effect.is_some(), "fulfilled token should produce an effect");
+    let PollResult::Ready(effect) = t.pending_responses[0].poll() else {
+        panic!("fulfilled token should produce PollResult::Ready");
+    };
 
-    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect.unwrap() else {
+    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect else {
         panic!("expected Effect::Pty(PtyEffect::Write)");
     };
 
@@ -1767,16 +1887,19 @@ fn reply_token_color_query_produces_pty_write() {
     assert_eq!(t.pending_responses.len(), 1);
 
     // Fulfill with a color.
-    token_clone.fulfill(Rgb {
-        r: 0xAB,
-        g: 0xCD,
-        b: 0xEF,
-    });
+    token_clone
+        .fulfill(Rgb {
+            r: 0xAB,
+            g: 0xCD,
+            b: 0xEF,
+        })
+        .expect("fresh token fulfill must succeed");
 
-    let effect = t.pending_responses[0].poll();
-    assert!(effect.is_some());
+    let PollResult::Ready(effect) = t.pending_responses[0].poll() else {
+        panic!("fulfilled token should produce PollResult::Ready");
+    };
 
-    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect.unwrap() else {
+    let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect else {
         panic!("expected Effect::Pty(PtyEffect::Write)");
     };
 
@@ -1798,6 +1921,10 @@ fn multiple_pending_responses_polled_independently() {
     let token1 = ResponseToken::<String>::new();
     let token1_clone = token1.clone();
     let token2 = ResponseToken::<String>::new();
+    // Keep a main-thread handle for token2 so `Arc::strong_count`-based
+    // cancellation detection does not remove its pending entry before the
+    // test has fulfilled token1.
+    let _token2_keep_alive = token2.clone();
 
     t.register_host_request_response(HostRequest::ClipboardLoad {
         selection: ClipboardSelection::Clipboard,
@@ -1814,7 +1941,9 @@ fn multiple_pending_responses_polled_independently() {
     assert_eq!(t.pending_responses.len(), 2);
 
     // Fulfill only the first token.
-    token1_clone.fulfill("first".to_string());
+    token1_clone
+        .fulfill("first".to_string())
+        .expect("fresh token fulfill must succeed");
 
     // poll_pending_responses should remove only the fulfilled one.
     t.poll_pending_responses();
@@ -1842,8 +1971,14 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
     let term = Term::new(24, 80, 1000, Theme::default(), sink);
     let (_, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
     let (_, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (_dummy_pane_id, _dummy_mux_tx, _dummy_exit_rx, _dummy_wake_rx) = test_dummy_channels();
     let thread = PaneIoThread {
         terminal: term,
+        pane_id: _dummy_pane_id,
+        mux_tx: _dummy_mux_tx,
+        child_exit_rx: _dummy_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx: _dummy_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: Arc::new(AtomicBool::new(false)),
@@ -1862,6 +1997,7 @@ fn make_sync_thread_generic<S: oriterm_core::effect::EffectSink + 'static>(
         search: None,
         selection_dirty: Arc::new(AtomicBool::new(false)),
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     (thread, wakeup_count)
 }
@@ -2336,4 +2472,357 @@ fn bridge_decnkm_propagates_to_mode_cache() {
         0,
         "APP_KEYPAD must be present in mode_cache after DECSET ?66"
     );
+}
+
+// ============================================================================
+// EOF + ordering + multi-chunk pins (effect-cutover §01.1 Phase J)
+// ============================================================================
+//
+// These tests pin the load-bearing invariants of `handle_pty_eof` and
+// `handle_bytes_chunked` against the production code path (not the
+// VoidEffectSink synchronous helpers). They use a dedicated rig that
+// spawns a real `PaneIoThread<QueueingEffectSink>` with externally-owned
+// channels so the test can drop `byte_tx` independently to trigger
+// byte_rx EOF, and so `mux_rx` and `double_buffer` stay observable.
+
+/// Test rig for `handle_pty_eof` + multi-chunk + ordering scenarios.
+///
+/// Holds the test side of every channel so the test controls EOF timing,
+/// exit-status delivery, and snapshot observation.
+struct EofTestRig {
+    mux_rx: mpsc::Receiver<MuxEvent>,
+    byte_tx: Sender<Vec<u8>>,
+    child_exit_tx: Sender<ExitStatus>,
+    double_buffer: SnapshotDoubleBuffer,
+    /// Held so `cmd_rx` never returns `Err` before `byte_rx` — keeps the
+    /// `select!` cmd arm idle for the duration of the test.
+    _keep_alive_cmd_tx: Sender<PaneIoCommand>,
+    /// Held so `response_wake_rx` never returns `Err`.
+    _keep_alive_wake_tx: Sender<()>,
+    join: std::thread::JoinHandle<()>,
+}
+
+fn spawn_queueing_eof_rig() -> EofTestRig {
+    use oriterm_core::effect::QueueingEffectSink;
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let (mux_tx, mux_rx) = mpsc::channel::<MuxEvent>();
+    let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<PaneIoCommand>();
+    let (byte_tx, byte_rx) = crossbeam_channel::unbounded::<Vec<u8>>();
+    let (child_exit_tx, child_exit_rx) = crossbeam_channel::bounded::<ExitStatus>(1);
+    let (response_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
+    let double_buffer = SnapshotDoubleBuffer::new();
+    let term = Term::new(24, 80, 1000, Theme::default(), QueueingEffectSink::new());
+
+    let thread = PaneIoThread {
+        terminal: term,
+        pane_id: PaneId::from_raw(7),
+        mux_tx,
+        child_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx,
+        cmd_rx,
+        byte_rx,
+        shutdown: Arc::clone(&shutdown),
+        wakeup: Arc::new(|| {}),
+        processor: vte::ansi::Processor::new(),
+        raw_parser: vte::Parser::new(),
+        mode_cache: Arc::new(AtomicU64::new(TermMode::default().bits())),
+        double_buffer: double_buffer.clone(),
+        snapshot_buf: Default::default(),
+        grid_dirty: Arc::new(AtomicBool::new(false)),
+        pty_control: None,
+        adopted_signal: None,
+        last_pty_size: (24u32 << 16) | 80u32,
+        search: None,
+        selection_dirty: Arc::new(AtomicBool::new(false)),
+        pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
+    };
+
+    let join = thread.spawn().expect("spawn IO thread");
+
+    EofTestRig {
+        mux_rx,
+        byte_tx,
+        child_exit_tx,
+        double_buffer,
+        _keep_alive_cmd_tx: cmd_tx,
+        _keep_alive_wake_tx: response_wake_tx,
+        join,
+    }
+}
+
+/// Construct an `ExitStatus` for testing via the public
+/// `portable_pty::ExitStatus::with_exit_code` constructor.
+fn make_exit_status(code: u32) -> ExitStatus {
+    ExitStatus::from(portable_pty::ExitStatus::with_exit_code(code))
+}
+
+/// Drain `mux_rx` until `MuxEvent::PaneExited` arrives, returning the
+/// exit code. Skips intermediate metadata events.
+fn await_pane_exited(rx: &mpsc::Receiver<MuxEvent>, deadline: Duration) -> i32 {
+    let start = std::time::Instant::now();
+    loop {
+        let remaining = deadline
+            .checked_sub(start.elapsed())
+            .unwrap_or(Duration::ZERO);
+        match rx.recv_timeout(remaining) {
+            Ok(MuxEvent::PaneExited { exit_code, .. }) => return exit_code,
+            Ok(_) => continue,
+            Err(e) => panic!("PaneExited never arrived: {e}"),
+        }
+    }
+}
+
+/// Blind-spot §11: PTY EOF triggers `handle_pty_eof` which emits
+/// `MuxEvent::PaneExited` via the effect router with the watcher-supplied
+/// exit code intact. Exercises the cached `pending_child_exit` path —
+/// the watcher signal lands BEFORE byte_rx EOF, so `handle_pty_eof`'s
+/// `pending_child_exit.take()` succeeds without any `recv_timeout` wait.
+#[test]
+fn pty_eof_emits_pane_exited_via_effect_router() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Forward exit status BEFORE EOF so the cached pending_child_exit
+    // path is exercised — the select! child_exit arm stores into
+    // `pending_child_exit`, which `handle_pty_eof` then consumes.
+    rig.child_exit_tx
+        .send(make_exit_status(42))
+        .expect("send exit status");
+    // Give the IO thread a moment to consume the exit status into its
+    // pending_child_exit cache via the select! arm.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Trigger byte_rx EOF.
+    drop(rig.byte_tx);
+
+    let exit_code = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+    assert_eq!(
+        exit_code, 42,
+        "exit code must come from watcher cache, not the 0 fallback"
+    );
+
+    // Drop child_exit_tx so the IO thread can exit cleanly (the EOF path
+    // already consumed the cached status; this just cleans up the channel).
+    drop(rig.child_exit_tx);
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §11 negative side: when no exit status is ever delivered
+/// AND the watcher channel disconnects, `handle_pty_eof` falls back to
+/// `code: 0`. Drop order is byte_tx FIRST (enters handle_pty_eof and
+/// blocks on recv_timeout), THEN child_exit_tx (recv_timeout returns
+/// `Err(Disconnected)` immediately), so the test does not pay the 5s
+/// wait timeout.
+#[test]
+fn pty_eof_without_exit_code_defaults_to_zero() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Trigger EOF — IO thread enters handle_pty_eof and blocks on
+    // child_exit_rx.recv_timeout(5s).
+    drop(rig.byte_tx);
+
+    // Tiny pause to let the IO thread reach the recv_timeout call.
+    std::thread::sleep(Duration::from_millis(50));
+
+    // Drop child_exit_tx — recv_timeout returns Err(Disconnected) and
+    // the fallback path emits ChildExit { code: 0 }.
+    drop(rig.child_exit_tx);
+
+    let exit_code = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+    assert_eq!(exit_code, 0, "fallback exit code must be 0 on disconnect");
+
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §11 timing pin: when the watcher delivers the exit status
+/// AFTER byte_rx EOF arrives (scheduler delay between PTY close and
+/// child reaping returning), the exit code is still captured via the
+/// `child_exit_rx.recv_timeout(5s)` blocking wait — the EOF path does
+/// not race past slow watchers and never falls back to the 0 default
+/// when the watcher is merely delayed.
+#[test]
+fn pty_eof_exit_code_captured_after_scheduler_delay() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Trigger EOF FIRST. The IO thread enters handle_pty_eof and blocks
+    // on child_exit_rx.recv_timeout(5s) waiting for the status.
+    drop(rig.byte_tx);
+
+    // Spawn a delayed sender that simulates a 200ms scheduler delay
+    // between PTY close and `child.wait()` returning. Hold a clone of
+    // child_exit_tx in the spawn closure; drop the rig's primary copy so
+    // recv_timeout receives the value once the spawn thread sends.
+    let exit_tx = rig.child_exit_tx.clone();
+    let _delivery = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = exit_tx.send(make_exit_status(7));
+    });
+    drop(rig.child_exit_tx);
+
+    let exit_code = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+    assert_eq!(
+        exit_code, 7,
+        "exit code must be captured even after a 200ms scheduler delay"
+    );
+
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §17: on PTY EOF the IO thread sequences
+/// `[final drain → snapshot flip → child_exit → push ChildExit → drain
+/// → return]`. The main thread observes the final cell content snapshot
+/// BEFORE `MuxEvent::PaneExited` arrives. Send distinctive bytes
+/// ("FAREWELL"), trigger EOF, observe `PaneExited`, then assert the
+/// snapshot in `double_buffer` carries the FAREWELL cells.
+#[test]
+fn final_snapshot_precedes_pane_exited() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Send distinctive bytes that produce visible cells in row 0.
+    rig.byte_tx
+        .send(b"FAREWELL".to_vec())
+        .expect("byte send must succeed");
+
+    // Wait for the IO thread to process the bytes (one snapshot cycle).
+    std::thread::sleep(Duration::from_millis(80));
+
+    // Cache exit status in pending_child_exit, then trigger EOF so
+    // handle_pty_eof's cached path runs (no 5s wait required).
+    rig.child_exit_tx
+        .send(make_exit_status(0))
+        .expect("send exit status");
+    std::thread::sleep(Duration::from_millis(20));
+    drop(rig.byte_tx);
+
+    // Wait for PaneExited. By the time recv returns, handle_pty_eof has
+    // already executed step (2) (snapshot flip) BEFORE step (5)
+    // (PaneExited send) — code-ordering is the load-bearing invariant.
+    let _ = await_pane_exited(&rig.mux_rx, Duration::from_secs(5));
+
+    // Read the latest snapshot. By happens-before from the IO thread's
+    // mux_tx.send → main-thread mux_rx.recv pairing, the snapshot
+    // produced in step (2) is visible to swap_front.
+    let mut snapshot = oriterm_core::RenderableContent::default();
+    let _ = rig.double_buffer.swap_front(&mut snapshot);
+
+    let row0_text: String = snapshot
+        .cells
+        .iter()
+        .filter(|c| c.line == 0)
+        .map(|c| c.ch)
+        .collect();
+    assert!(
+        row0_text.contains("FAREWELL"),
+        "snapshot must reflect FAREWELL cells before PaneExited; row0 = {row0_text:?}"
+    );
+
+    drop(rig.child_exit_tx);
+    rig.join.join().expect("IO thread joined cleanly");
+}
+
+/// Blind-spot §17 ordering invariant: `PaneExited` NEVER reaches mux_rx
+/// before the final snapshot lands in the double buffer. Inverse phrasing
+/// of `final_snapshot_precedes_pane_exited` — both pins exist so the
+/// regression is impossible to commit even if one test is later weakened.
+///
+/// Polls both observation sources in lockstep: snapshot publication
+/// (visible via `double_buffer.swap_front` returning cells matching the
+/// marker) MUST be observable BEFORE `PaneExited` is received via
+/// `mux_rx.try_recv`.
+#[test]
+fn pane_exited_does_not_precede_final_snapshot() {
+    let rig = spawn_queueing_eof_rig();
+
+    // Marker bytes the snapshot must carry forward.
+    rig.byte_tx
+        .send(b"GOODBYE!".to_vec())
+        .expect("byte send must succeed");
+    std::thread::sleep(Duration::from_millis(80));
+
+    rig.child_exit_tx
+        .send(make_exit_status(1))
+        .expect("send exit status");
+    std::thread::sleep(Duration::from_millis(20));
+    drop(rig.byte_tx);
+
+    // Lockstep poll: tracks whether the marker-bearing snapshot was
+    // observed BEFORE the first PaneExited recv.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut snapshot_observed_with_marker = false;
+    while std::time::Instant::now() < deadline {
+        let mut snapshot = oriterm_core::RenderableContent::default();
+        let _ = rig.double_buffer.swap_front(&mut snapshot);
+        if snapshot
+            .cells
+            .iter()
+            .filter(|c| c.line == 0)
+            .any(|c| c.ch == 'G')
+        {
+            snapshot_observed_with_marker = true;
+        }
+        if let Ok(MuxEvent::PaneExited { .. }) = rig.mux_rx.try_recv() {
+            assert!(
+                snapshot_observed_with_marker,
+                "PaneExited arrived before the final snapshot was visible — \
+                 ordering invariant violated"
+            );
+            drop(rig.child_exit_tx);
+            rig.join.join().expect("IO thread joined cleanly");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("PaneExited never arrived within 5s");
+}
+
+/// Blind-spot §5 bound: `handle_bytes_chunked` calls
+/// `drain_effects_into_mux_events` at the END of EACH chunk (inside
+/// `handle_bytes`), not only at the end of the outer
+/// `handle_bytes_chunked` loop. A 65 KB forwarded read containing
+/// bell-producing bytes (just over `MAX_PARSE_CHUNK = 64 KB`) routes
+/// ALL of them through the router across at least 2 chunks.
+///
+/// If the drain only fired at the end of the outer `handle_bytes_chunked`
+/// loop, the effects buffer would accumulate the full 65 K entries
+/// before draining; the per-chunk drain bounds it to <= 64 K.
+#[test]
+fn multi_chunk_parse_drains_between_chunks() {
+    let rig = spawn_queueing_eof_rig();
+
+    // 65 KB of BEL — produces 65 K HostEffect::Bell, spanning 2 chunks
+    // at MAX_PARSE_CHUNK = 64 KB.
+    const BELL_COUNT: usize = 65 * 1024;
+    rig.byte_tx
+        .send(vec![0x07; BELL_COUNT])
+        .expect("byte send must succeed");
+
+    // Count PaneBell events with a generous deadline. Every bell MUST
+    // reach mux_rx — if the drain only fired at the end of the OUTER
+    // handle_bytes_chunked loop, intermediate effects would be invisible
+    // to mux_rx until the whole 65 KB completed parsing (and the
+    // unbounded sink would briefly spike).
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut bell_count = 0usize;
+    while std::time::Instant::now() < deadline && bell_count < BELL_COUNT {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        match rig
+            .mux_rx
+            .recv_timeout(remaining.min(Duration::from_millis(500)))
+        {
+            Ok(MuxEvent::PaneBell(_)) => bell_count += 1,
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+
+    assert_eq!(
+        bell_count, BELL_COUNT,
+        "every bell must route through the per-chunk drain"
+    );
+
+    drop(rig.byte_tx);
+    drop(rig.child_exit_tx);
+    rig.join.join().expect("IO thread joined cleanly");
 }
