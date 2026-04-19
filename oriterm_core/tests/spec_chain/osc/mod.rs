@@ -4,4 +4,5 @@
 //! high-level `Processor::advance_with_observer` path. Mux-intercepted
 //! OSCs (7, 9, 99, 133, 633, 777) live in `oriterm_mux/src/shell_integration/tests.rs`.
 
+mod clipboard;
 mod hyperlinks;

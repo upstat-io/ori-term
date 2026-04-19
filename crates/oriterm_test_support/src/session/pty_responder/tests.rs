@@ -8,6 +8,7 @@
 use oriterm_core::effect::sink::EffectSink;
 use oriterm_core::effect::{
     ClipboardSelection, Effect, HostEffect, HostRequest, PtyEffect, PtyWriteKind, ResponseToken,
+    format_clipboard_reply,
 };
 use oriterm_core::event::ClipboardType;
 use oriterm_core::{Term, Theme};
@@ -108,6 +109,60 @@ fn pty_responder_captures_clipboard_store() {
         responder.take_osc_responses().is_empty(),
         "ClipboardStore must NOT populate the osc_responses queue"
     );
+}
+
+/// §10.2 blind-spot #6 remediation — embedded-backend SSOT pin.
+///
+/// The daemon-path OSC 52 round-trip is pinned in
+/// `oriterm_mux/src/pane/io_thread/response_poll/tests.rs::osc52_register_
+/// poll_roundtrip`; this sibling test pins the embedded-backend path so
+/// `ResponseToken` fulfillment for OSC 52 cannot silently diverge between
+/// the two consumers. The responder's reply MUST come from the canonical
+/// `format_clipboard_reply` helper — byte-equality against the helper's
+/// output rejects any ad-hoc reply formatting.
+///
+/// Matrix: all three `ClipboardSelection` variants (`c`, `s`, `p`) plus
+/// both terminators (ST, BEL) — `q` has no variant and is exercised as a
+/// drop in `oriterm_core/tests/spec_chain/osc/clipboard.rs::
+/// osc52_store_clipboard_q_dropped`.
+#[test]
+fn osc52_embedded_backend_fulfills_via_session_pty_responder() {
+    const TEST_CLIPBOARD_TEXT: &str = "ori-term-clipboard-stub";
+
+    for (bytes, clipboard_char, terminator) in [
+        (&b"\x1b]52;c;?\x1b\\"[..], b'c', "\x1b\\"),
+        (&b"\x1b]52;s;?\x1b\\"[..], b's', "\x1b\\"),
+        (&b"\x1b]52;p;?\x1b\\"[..], b'p', "\x1b\\"),
+        (&b"\x1b]52;c;?\x07"[..], b'c', "\x07"),
+    ] {
+        let (mut term, responder) = term_with_responder();
+        feed(&mut term, bytes);
+
+        let osc = responder.take_osc_responses();
+        let expected = String::from_utf8(format_clipboard_reply(
+            TEST_CLIPBOARD_TEXT,
+            clipboard_char,
+            terminator,
+        ))
+        .expect("format_clipboard_reply output is ASCII");
+        assert_eq!(
+            osc,
+            vec![expected.clone()],
+            "OSC 52 load (Pc={}, terminator={:?}) must round-trip via \
+             format_clipboard_reply — no ad-hoc formatting at the responder \
+             call site. got {osc:?}, want [{expected:?}]",
+            clipboard_char as char,
+            terminator,
+        );
+        assert!(
+            responder.take_responses().is_empty(),
+            "ClipboardLoad must NOT populate the PtyWrite queue"
+        );
+        assert!(
+            responder.take_clipboard_stores().is_empty(),
+            "ClipboardLoad must NOT populate the clipboard-store queue"
+        );
+    }
 }
 
 #[test]
