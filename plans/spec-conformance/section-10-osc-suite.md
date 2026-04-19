@@ -48,7 +48,7 @@ sections:
     status: complete
   - id: "10.2"
     title: "OSC 52 clipboard — store + load + ResponseToken round-trip (consumer-side coverage on the already-live response_poll path)"
-    status: complete
+    status: in-progress
   - id: "10.3"
     title: "OSC 9 / 99 / 777 desktop notifications — NotificationSource discriminators"
     status: not-started
