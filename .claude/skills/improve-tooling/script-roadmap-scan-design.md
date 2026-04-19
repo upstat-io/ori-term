@@ -183,7 +183,7 @@ Wired into `crawl_workspace` right after the ordered-first pick (lines ~890 ff):
 
 ### Open items
 
-*(none at this time)*
+- [ ] **[p2] Surface load-bearing embedded notes from subsection prose at dispatch time.** Plan subsections frequently embed invariants in prose — e.g., `plans/spec-conformance/section-10-osc-suite.md` §10.0 Files block carries `REGISTRATION SYNC: for every new Handler::iterm2_* method added to crates/vte/src/ansi/handler.rs, a matching delegate arm must be added here`. The current `/continue-roadmap` focus context renders subsection titles + checkbox counts but NOT these inline invariants. Consequence: implementers miss registration-sync / SSOT / CRITICAL-prefixed notes until TPR catches them (observed 2026-04-19 on §10.0 — cost one TPR round + one fix commit `2ba96455`). Candidate fix: scanner greps each subsection's Files / Implementation / Validation blocks for all-caps anchors (`REGISTRATION SYNC`, `CRITICAL`, `MUST`, `SSOT`, `DRIFT`, `VENDORED`) and the focus-context block renders them under a `Load-bearing notes` heading. Heuristic design needs prototyping (false-positive risk: `MUST` appears in prose unrelated to invariants). Not implemented inline during the §10.0 retrospective because the heuristic would touch a non-trivial amount of scanner logic relative to a single avoided TPR round — file for a dedicated tooling session.
 
 ### Recently closed
 
