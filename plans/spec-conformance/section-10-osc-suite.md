@@ -35,7 +35,7 @@ inspired_by:
   - "alacritty `crates/vte/src/ansi/dispatch/osc.rs` (upstream) — dispatcher shape this section extends"
 depends_on: ["03", "08", "plans/effect-cutover/section-01-migrate-mux-consumer.md"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: "2026-04-18"
   rounds_completed: 30
   notes: "TPR-10-109 (SIZE_VIOLATION documented exception) triaged via /verify-tpr on 2026-04-18: ACCEPTED with blocked-task anchor. The §10.N 'Accepted audit findings' SIZE_VIOLATION entry now carries `<!-- blocked-by:anchor-migration-plan -->` + explicit unblock condition (targeted /review-plan producing split proposal + anchor-rewrite strategy). Status stays `findings` because the anchored task remains open; transitions to `resolved` when the split lands or a permanent exception is ratified. Round 30 (/review-plan → /tpr-review, 2026-04-18): four /tpr-review rounds after the Step 5 editor pass — round 0 fixed 8 residual drift/consistency items (34e7214e), round 1 fixed 6 dependency/crate-ordering items (84f11055), round 2 fixed 2 alignment items with gemini clean (f5de3ab6), round 3 fixed 3 meta count-drift items with gemini clean (ad77d3ee). Convergence achieved: all ever-verified findings resolved inline; zero outstanding - [ ] items."
@@ -48,7 +48,7 @@ sections:
     status: not-started
   - id: "10.2"
     title: "OSC 52 clipboard — store + load + ResponseToken round-trip (consumer-side coverage on the already-live response_poll path)"
-    status: not-started
+    status: in-progress
   - id: "10.3"
     title: "OSC 9 / 99 / 777 desktop notifications — NotificationSource discriminators"
     status: not-started
