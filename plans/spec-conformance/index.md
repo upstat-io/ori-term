@@ -220,7 +220,7 @@ contour-terminal spec, oriterm_core/src/term/mode/mod.rs
 ---
 
 ### Section 10: OSC Suite (full)
-**File:** `section-10-osc-suite.md` | **Status:** In Progress
+**File:** `section-10-osc-suite.md` | **Status:** Complete
 
 ```
 OSC, operating system command, OSC dispatch
