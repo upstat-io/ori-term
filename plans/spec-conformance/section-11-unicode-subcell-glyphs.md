@@ -26,9 +26,10 @@ third_party_review:
   status: none
   updated: null
 review_pipeline:
-  stage: editor-done
-  next_step: 6
+  stage: tpr-done
+  next_step: 7
   updated: 2026-04-19
+  note: "3 TPR rounds run; 16 findings fixed inline (bdaf54e0 + 0e74107d + eaa97a00); iter_cap_reached with 0 outstanding findings; awaiting user cap-exit decision"
 sections:
   - id: "11.0"
     title: "Top-down spec audit (BLOCKING)"
