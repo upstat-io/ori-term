@@ -201,10 +201,16 @@ impl<S: EffectSink> Term<S> {
 
     /// Compute and store command duration (when OSC 133;D is received).
     ///
-    /// Returns the duration if a matching start time existed.
-    pub fn finish_command(&mut self) -> Option<std::time::Duration> {
+    /// Returns the duration if a matching start time existed. `now` lets
+    /// tests inject a deterministic end timestamp; production callers pass
+    /// `None` so the current wall-clock is used.
+    pub fn finish_command(
+        &mut self,
+        now: Option<std::time::Instant>,
+    ) -> Option<std::time::Duration> {
         let start = self.command_start.take()?;
-        let duration = start.elapsed();
+        let end = now.unwrap_or_else(std::time::Instant::now);
+        let duration = end.saturating_duration_since(start);
         self.last_command_duration = Some(duration);
         Some(duration)
     }

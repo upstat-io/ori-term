@@ -23,6 +23,15 @@ use crate::mux_event::MuxEvent;
 ///
 /// Sets `grid_dirty` on `Wakeup`. Forwards metadata events to the mux
 /// event channel when `suppress_metadata` is false.
+///
+/// Replaced by `QueueingEffectSink` + `effect_router` in effect-cutover
+/// 01.1. Struct retained here behind `#[allow(dead_code)]` so the legacy
+/// test file still compiles until 01.3 deletes it alongside
+/// `LegacyEventSink`.
+#[allow(
+    dead_code,
+    reason = "scheduled for deletion in effect-cutover 01.3; retained for test compatibility"
+)]
 pub struct IoThreadEventProxy {
     /// Set when the IO thread's grid has new content.
     grid_dirty: Arc<AtomicBool>,
@@ -36,6 +45,10 @@ pub struct IoThreadEventProxy {
     wakeup: Arc<dyn Fn() + Send + Sync>,
 }
 
+#[allow(
+    dead_code,
+    reason = "scheduled for deletion in effect-cutover 01.3; retained for test compatibility"
+)]
 impl IoThreadEventProxy {
     /// Create a new proxy.
     ///
@@ -125,7 +138,7 @@ impl EventListener for IoThreadEventProxy {
             Event::PtyWrite(data) => {
                 self.send(MuxEvent::PtyWrite {
                     pane_id: self.pane_id,
-                    data,
+                    data: data.into_bytes(),
                 });
             }
             Event::Cwd(cwd) => {

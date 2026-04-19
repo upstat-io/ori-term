@@ -34,6 +34,8 @@ Args from the user: <ARGS>
 (Empty string means auto-detect the first incomplete section.)
 
 Rules:
+- GOAL IS SPEED. A clean run completes in 3–8 tool calls. You are a status
+  reporter, not an investigator. All investigation belongs to /roadmap-work.
 - Follow Steps 1 through 5 literally. Do NOT read CLAUDE.md — the scanner
   pre-computes every gate decision and focus-context field.
 - Stop at the end of Step 5. Do NOT execute /roadmap-work. Code execution
@@ -41,6 +43,23 @@ Rules:
 - You touch plan docs (plans/**/*.md), frontmatter, and checkboxes ONLY.
   Never edit .rs, .ori, or anything under compiler/, library/, tests/.
 - Commits via /commit-push only — never run git commit directly.
+- HARD BANS (workflow.md §"Hard bans" has the full list — these are the
+  load-bearing ones):
+  * NEVER run cargo, cargo check, cargo run, cargo test, cargo clippy,
+    cargo test --all, cargo clippy --all -- -D warnings, cargo build --all, cargo test --all, ori,
+    oric, ~/.local/bin/ori, ./target/**, diagnostics/*.sh, or any
+    compiler/test/build binary. The scanner's JSON is the complete
+    world-state you may observe.
+  * NEVER read .rs, .ori, .toml files or anything under compiler/,
+    library/, tests/, scripts/. Plan-doc edits in plans/ are fine;
+    source reads are not.
+  * NEVER investigate test failures, typecheck errors, dirty-tree
+    contents, bug repros, or diagnostic output. When a gate fires,
+    ESCALATE IMMEDIATELY.
+  * NEVER run git log / git blame / git show / git diff / git bisect,
+    or intelligence-graph queries (scripts/intel-query.sh ...).
+  * If you pass ~15 total tool calls you are off-contract — fill the
+    handoff with what you have and escalate.
 - If a gate requires invoking a separate skill (/verify-tpr for TPR finding
   validation, /review-plan for unreviewed plans, /fix-bug for critical bugs,
   /create-plan for unplanned blockers), STOP and return <escalate-to-parent>

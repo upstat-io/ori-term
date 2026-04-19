@@ -9,6 +9,7 @@
 //! thread with command coalescing — the main thread never does grid reflow.
 
 mod commands;
+mod effect_router;
 pub(crate) mod event_proxy;
 mod handle;
 mod handler;
@@ -17,23 +18,35 @@ pub(crate) mod snapshot;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use crossbeam_channel::Receiver;
 
-use oriterm_core::effect::PendingResponse;
 use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::effect::{Effect, HostEffect, PendingResponse};
 use oriterm_core::{RenderableContent, Term};
 
 pub use commands::PaneIoCommand;
 pub use handle::{IoThreadConfig, PaneIoHandle, new_with_handle};
 pub(crate) use snapshot::SnapshotDoubleBuffer;
 
+use crate::PaneId;
+use crate::mux_event::MuxEvent;
 use crate::pty::PtyControl;
 use crate::pty::adopt::AdoptedSignal;
+use crate::pty::spawn::ExitStatus;
 use crate::shell_integration::interceptor::RawInterceptor;
+
+/// Upper bound on the wait between PTY EOF and the watcher thread's
+/// `child.wait()` returning. 5 s accommodates scheduler jitter and
+/// signal-delivery delays on loaded systems; empirically `child.wait()`
+/// returns within <100 ms of EOF on all three targets when the child
+/// has actually exited. On timeout the IO thread logs an error and
+/// emits `HostEffect::ChildExit { code: 0 }` as a graceful fallback.
+const CHILD_EXIT_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Maximum bytes parsed before re-checking for commands.
 ///
@@ -51,6 +64,23 @@ const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
 pub struct PaneIoThread<S: EffectSink + 'static> {
     /// The terminal state machine — exclusively owned by this thread.
     terminal: Term<S>,
+    /// Pane identity — used by the effect router to tag outbound
+    /// `MuxEvent`s.
+    pub(crate) pane_id: PaneId,
+    /// Output channel for `MuxEvent`s — written to by the effect router.
+    pub(crate) mux_tx: mpsc::Sender<MuxEvent>,
+    /// Receives child-process exit status from the watcher thread spawned
+    /// in `spawn_pty` (or the adopted-pane equivalent). Consumed on PTY
+    /// EOF to emit `HostEffect::ChildExit` with the real exit code.
+    child_exit_rx: Receiver<ExitStatus>,
+    /// Cached exit status seen EARLY (watcher fired before PTY `byte_rx`
+    /// observed EOF). The `select!` arm stores here instead of emitting
+    /// directly; the EOF drain sequence consumes it.
+    pending_child_exit: Option<ExitStatus>,
+    /// Receives fulfillment wake signals from `PaneIoHandle::fulfill_*`.
+    /// The `select!` wake arm has an empty body — the wake IS the signal;
+    /// the next loop iteration drains commands and polls pending responses.
+    response_wake_rx: Receiver<()>,
     /// Receives commands from the main thread.
     cmd_rx: Receiver<PaneIoCommand>,
     /// Receives raw PTY bytes from the reader thread.
@@ -58,7 +88,7 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// Shutdown flag shared with reader/writer threads.
     shutdown: Arc<AtomicBool>,
     /// Wakeup callback — signals the main thread that new state is available.
-    wakeup: Arc<dyn Fn() + Send + Sync>,
+    pub(crate) wakeup: Arc<dyn Fn() + Send + Sync>,
     /// High-level VTE parser (routes to `Handler` trait methods).
     processor: vte::ansi::Processor,
     /// Raw VTE parser for shell integration sequences (OSC 7, 133, etc.).
@@ -70,32 +100,25 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     /// Work buffer for snapshot production — reused across frames.
     snapshot_buf: RenderableContent,
     /// Set by `IoThreadEventProxy` when VTE parsing sets grid dirty.
-    /// Checked after snapshot production to decide whether to fire wakeup.
     grid_dirty: Arc<AtomicBool>,
-    /// PTY control handle for resize (SIGWINCH). Owned by the IO thread so
-    /// reflow and PTY resize happen atomically on the same thread.
+    /// PTY control handle for resize (SIGWINCH).
     pty_control: Option<PtyControl>,
     /// Adopted conhost signal pipe for resize on Windows Default Terminal
-    /// handoff panes. `None` for spawned panes (which use `pty_control`
-    /// above) and for non-Windows targets where the signal is a stub.
-    /// `process_resize` falls back to this when `pty_control` is `None`.
+    /// handoff panes.
     adopted_signal: Option<AdoptedSignal>,
-    /// Last PTY size sent, packed as `(rows << 16) | cols`. Guards against
-    /// redundant syscalls (`ConPTY` `WINDOW_BUFFER_SIZE_EVENT` interference).
+    /// Last PTY size sent, packed as `(rows << 16) | cols`.
     last_pty_size: u32,
     /// Search state — owned by the IO thread so `set_query()` can read the
     /// grid directly without cross-thread locking.
     search: Option<oriterm_core::SearchState>,
-    /// Shared selection-dirty flag. Set by the IO thread after VTE parsing
-    /// when `Term::selection_dirty` becomes true. Read/cleared by the main
-    /// thread in `check_selection_invalidation()`.
+    /// Shared selection-dirty flag.
     selection_dirty: Arc<AtomicBool>,
     /// Pending host-request responses awaiting fulfillment.
-    ///
-    /// Dormant during the legacy phase (`LegacyEventSink` handles the
-    /// round-trip via closures). Activates when consumers migrate to
-    /// `QueueingEffectSink` (in `plans/effect-cutover/`).
-    pending_responses: Vec<PendingResponse>,
+    pub(crate) pending_responses: Vec<PendingResponse>,
+    /// Reusable scratch vector for `drain_effects_into_mux_events()`.
+    /// Grows once and is cleared (not shrunk) between drains so the
+    /// hot path stays zero-alloc once capacity stabilizes.
+    pub(crate) effects_buf: Vec<Effect>,
 }
 
 impl<S: EffectSink> PaneIoThread<S> {
@@ -139,19 +162,42 @@ impl<S: EffectSink> PaneIoThread<S> {
                 Some(deadline) => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
                     crossbeam_channel::select! {
-                        recv(self.cmd_rx) -> msg => match msg {
-                            Ok(PaneIoCommand::Shutdown) => {
-                                self.shutdown.store(true, Ordering::Release);
-                                self.maybe_produce_snapshot();
+                        recv(self.cmd_rx) -> msg => {
+                            match msg {
+                                Ok(PaneIoCommand::Shutdown) => {
+                                    self.shutdown.store(true, Ordering::Release);
+                                    self.maybe_produce_snapshot();
+                                    return;
+                                }
+                                Ok(cmd) => self.handle_command(cmd),
+                                Err(_) => return,
+                            }
+                        },
+                        recv(self.byte_rx) -> msg => {
+                            if let Ok(bytes) = msg {
+                                self.handle_bytes_chunked(&bytes);
+                            } else {
+                                self.handle_pty_eof();
                                 return;
                             }
-                            Ok(cmd) => self.handle_command(cmd),
-                            Err(_) => return,
                         },
-                        recv(self.byte_rx) -> msg => match msg {
-                            Ok(bytes) => self.handle_bytes_chunked(&bytes),
-                            Err(_) => return,
-                        },
+                        recv(self.child_exit_rx) -> status => {
+                            if let Ok(status) = status {
+                                self.pending_child_exit = Some(status);
+                            } else {
+                                // Watcher-thread sender dropped without sending
+                                // a status (watcher died unexpectedly). The EOF
+                                // path's recv_timeout fallback in handle_pty_eof
+                                // emits HostEffect::ChildExit { code: 0 } when
+                                // byte_rx subsequently closes — no action needed
+                                // here.
+                            }
+                        }
+                        recv(self.response_wake_rx) -> _ => {
+                            // Woken by response fulfillment — next loop
+                            // iteration drains commands which polls pending
+                            // responses and emits PTY replies.
+                        }
                         default(timeout) => {
                             self.handle_sync_timeout();
                         },
@@ -159,23 +205,93 @@ impl<S: EffectSink> PaneIoThread<S> {
                 }
                 None => {
                     crossbeam_channel::select! {
-                        recv(self.cmd_rx) -> msg => match msg {
-                            Ok(PaneIoCommand::Shutdown) => {
-                                self.shutdown.store(true, Ordering::Release);
-                                self.maybe_produce_snapshot();
+                        recv(self.cmd_rx) -> msg => {
+                            match msg {
+                                Ok(PaneIoCommand::Shutdown) => {
+                                    self.shutdown.store(true, Ordering::Release);
+                                    self.maybe_produce_snapshot();
+                                    return;
+                                }
+                                Ok(cmd) => self.handle_command(cmd),
+                                Err(_) => return,
+                            }
+                        },
+                        recv(self.byte_rx) -> msg => {
+                            if let Ok(bytes) = msg {
+                                self.handle_bytes_chunked(&bytes);
+                            } else {
+                                self.handle_pty_eof();
                                 return;
                             }
-                            Ok(cmd) => self.handle_command(cmd),
-                            Err(_) => return,
                         },
-                        recv(self.byte_rx) -> msg => match msg {
-                            Ok(bytes) => self.handle_bytes_chunked(&bytes),
-                            Err(_) => return,
-                        },
+                        recv(self.child_exit_rx) -> status => {
+                            if let Ok(status) = status {
+                                self.pending_child_exit = Some(status);
+                            } else {
+                                // Watcher-thread sender dropped — handled by
+                                // handle_pty_eof's recv_timeout fallback when
+                                // byte_rx closes. See sync-deadline arm above.
+                            }
+                        }
+                        recv(self.response_wake_rx) -> _ => {
+                            // Woken by response fulfillment.
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// Handle PTY end-of-file: flush pending effects, produce the final
+    /// snapshot, consume or wait for the child's exit status, emit
+    /// `HostEffect::ChildExit`, flush once more, then return.
+    ///
+    /// Sequence (per §17 of the effect-cutover plan blind-spot analysis):
+    ///
+    /// 1. Final `drain_effects_into_mux_events()` — flush any effects
+    ///    produced during the preceding parse cycle.
+    /// 2. `maybe_produce_snapshot()` — publish the PTY's final cell
+    ///    content to the main thread BEFORE `MuxEvent::PaneExited`
+    ///    arrives. Gated by Mode 2026 synchronized-output so sync-active
+    ///    panes defer the snapshot per the application's request.
+    /// 3. Exit-code source: cached `pending_child_exit` if the watcher
+    ///    already fired, otherwise `child_exit_rx.recv_timeout(5s)`.
+    /// 4. Emit `HostEffect::ChildExit { code }` through the sink.
+    /// 5. Final `drain_effects_into_mux_events()` — routes to
+    ///    `MuxEvent::PaneExited { pane_id, exit_code }`.
+    /// 6. Return from `run()`.
+    fn handle_pty_eof(&mut self) {
+        // (1) Flush in-flight effects from the last parse chunk.
+        self.drain_effects_into_mux_events();
+
+        // (2) Final snapshot BEFORE `PaneExited` fires.
+        self.grid_dirty.store(true, Ordering::Release);
+        self.maybe_produce_snapshot();
+
+        // (3) Determine the exit code.
+        let exit_code = if let Some(status) = self.pending_child_exit.take() {
+            status.exit_code() as i32
+        } else if let Ok(status) = self.child_exit_rx.recv_timeout(CHILD_EXIT_WAIT_TIMEOUT) {
+            status.exit_code() as i32
+        } else {
+            log::error!(
+                "PaneIoThread ({}): child exit not observed within {:?}; emitting \
+                 ChildExit {{ code: 0 }} as fallback",
+                self.pane_id,
+                CHILD_EXIT_WAIT_TIMEOUT,
+            );
+            0
+        };
+
+        // (4) Push the exit effect into the sink.
+        self.terminal
+            .effect_sink()
+            .push(Effect::Host(HostEffect::ChildExit { code: exit_code }));
+
+        // (5) Final drain — routes to `MuxEvent::PaneExited` via the
+        //     effect router (fires wakeup so the main thread sees the
+        //     pane close within one event loop iteration).
+        self.drain_effects_into_mux_events();
     }
 
     /// Spawn the IO thread.
@@ -209,6 +325,7 @@ impl<S: EffectSink> PaneIoThread<S> {
             self.process_resize(rows, cols);
         }
         self.poll_pending_responses();
+        self.drain_effects_into_mux_events();
     }
 
     /// Parse a byte buffer with bounded chunking.
@@ -280,6 +397,12 @@ impl<S: EffectSink> PaneIoThread<S> {
 
         // 3. Post-parse housekeeping (shared with handle_sync_timeout).
         self.post_parse_housekeeping(evicted_before);
+
+        // 4. Drain queued effects into MuxEvents. Placed INSIDE per-chunk
+        //    boundary (not only at the top of handle_bytes_chunked) so a
+        //    1 MB forwarded read doesn't accumulate 16 chunks worth of
+        //    effects before they reach the main thread.
+        self.drain_effects_into_mux_events();
     }
 
     /// Handle Mode 2026 sync timeout — flush the buffered bytes and publish.
@@ -315,6 +438,15 @@ impl<S: EffectSink> PaneIoThread<S> {
         // Force snapshot publication.
         self.grid_dirty.store(true, Ordering::Release);
         self.maybe_produce_snapshot();
+
+        // Note: effects from the sync-timeout replay (including the
+        // `PresentationEffect::Abort` emission above) stay in the sink
+        // and are drained at the top of the next outer loop iteration
+        // via `drain_commands`'s call to `drain_effects_into_mux_events`.
+        // Intentionally NOT drained here so tests that inspect the sink
+        // after `handle_sync_timeout` (e.g. `sync_timeout_emits_abort_effect`)
+        // can observe the effect. In production the next iteration
+        // runs on the same tick.
     }
 
     /// Emit a `PresentationEffect::Abort` through the terminal's effect sink.

@@ -60,9 +60,16 @@ Write `{RUN_DIR}/precheck.json`:
   "escalate": true,
   "question": "Precheck found M ambiguous sections (stale blockers, broken references, self-blockers, or missing annotations). How do you want to resolve them?",
   "options": [
-    {"key": "fix-individually", "label": "Walk through each ambiguous section and decide"},
-    {"key": "leave-as-is", "label": "Leave all ambiguous sections in-progress"},
-    {"key": "abort", "label": "Abort review and fix manually"}
+    {"key": "fix-individually",
+     "label": "Walk through each ambiguous section and decide (Recommended)",
+     "description": "Recommended because precheck ambiguity usually reflects real plan-state conflicts (stale blockers, broken references) that need per-section judgment; bulk actions mask the signal. Cost is one quick interactive pass; benefit is a clean plan for Step 3 onward.",
+     "recommended": true},
+    {"key": "leave-as-is",
+     "label": "Leave all ambiguous sections in-progress",
+     "description": "Punts the ambiguity forward — downstream phases may misjudge section state. Only pick if you plan to resolve these sections out-of-band in the same session."},
+    {"key": "abort",
+     "label": "Abort review and fix manually",
+     "description": "Exits the review entirely. Pick only when the precheck surfaced plan-state that review tooling cannot untangle (rare)."}
   ]
 }
 ```

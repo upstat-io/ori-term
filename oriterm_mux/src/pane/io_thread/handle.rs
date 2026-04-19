@@ -8,17 +8,23 @@
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::mpsc;
 use std::thread::JoinHandle;
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 
+use oriterm_core::color::Rgb;
 use oriterm_core::effect::sink::EffectSink;
+use oriterm_core::effect::{AlreadyFulfilled, ResponseToken};
 use oriterm_core::{RenderableContent, Term};
 
 use super::snapshot::SnapshotDoubleBuffer;
 use super::{PaneIoCommand, PaneIoThread};
+use crate::PaneId;
+use crate::mux_event::MuxEvent;
 use crate::pty::PtyControl;
 use crate::pty::adopt::AdoptedSignal;
+use crate::pty::spawn::ExitStatus;
 
 /// Main-thread handle to a Terminal IO thread.
 ///
@@ -35,6 +41,15 @@ pub struct PaneIoHandle {
     pub(crate) join: Option<JoinHandle<()>>,
     /// Shared double buffer — main thread reads snapshots from here.
     pub(crate) double_buffer: SnapshotDoubleBuffer,
+    /// Bounded-size-1 wake channel for response-token fulfillment.
+    ///
+    /// When the main thread calls
+    /// [`fulfill_clipboard_load`](Self::fulfill_clipboard_load) or
+    /// [`fulfill_color_query`](Self::fulfill_color_query), the helper
+    /// signals this channel after writing the value so the IO thread's
+    /// `select!` wakes within one iteration without requiring unrelated
+    /// PTY or command activity.
+    pub(crate) response_wake_tx: Sender<()>,
 }
 
 impl PaneIoHandle {
@@ -51,11 +66,37 @@ impl PaneIoHandle {
     }
 
     /// Access the shared snapshot double buffer.
-    ///
-    /// The main thread uses this to swap its old buffer for the latest
-    /// snapshot produced by the IO thread.
     pub fn double_buffer(&self) -> &SnapshotDoubleBuffer {
         &self.double_buffer
+    }
+
+    /// Fulfill a clipboard-load `ResponseToken` and wake the IO thread.
+    ///
+    /// Returns `Err(AlreadyFulfilled)` if a previous fulfill already
+    /// succeeded (routing-bug detection per the single-assignment
+    /// contract on [`ResponseToken::fulfill`]).
+    pub fn fulfill_clipboard_load(
+        &self,
+        token: &ResponseToken<String>,
+        text: String,
+    ) -> Result<(), AlreadyFulfilled> {
+        token.fulfill(text)?;
+        // Bounded(1) channel: `try_send` coalesces multiple fulfills
+        // between wakes into one signal. If the channel is already
+        // full, the prior pending wake is enough.
+        let _ = self.response_wake_tx.try_send(());
+        Ok(())
+    }
+
+    /// Fulfill a color-query `ResponseToken` and wake the IO thread.
+    pub fn fulfill_color_query(
+        &self,
+        token: &ResponseToken<Rgb>,
+        color: Rgb,
+    ) -> Result<(), AlreadyFulfilled> {
+        token.fulfill(color)?;
+        let _ = self.response_wake_tx.try_send(());
+        Ok(())
     }
 
     /// Shut down the IO thread and wait for it to exit.
@@ -90,6 +131,19 @@ impl fmt::Debug for PaneIoHandle {
 pub struct IoThreadConfig<S: EffectSink + 'static> {
     /// The terminal state machine — transferred to the IO thread.
     pub terminal: Term<S>,
+    /// Pane identity — used by the effect router to tag outbound
+    /// `MuxEvent`s with `pane_id`.
+    pub pane_id: PaneId,
+    /// Output channel for `MuxEvent`s — the effect router sends through
+    /// this to reach the main thread's mux event pump.
+    pub mux_tx: mpsc::Sender<MuxEvent>,
+    /// Child-process exit channel.
+    ///
+    /// Delivered by the watcher thread spawned in [`crate::pty::spawn_pty`]
+    /// (or the adopted-pane equivalent). When the PTY reader observes
+    /// EOF, the IO thread waits briefly on this channel for the real
+    /// exit code before emitting `HostEffect::ChildExit`.
+    pub child_exit_rx: Receiver<ExitStatus>,
     /// Lock-free mode cache (shared with main thread).
     pub mode_cache: Arc<AtomicU64>,
     /// Shutdown flag (shared with reader/writer threads).
@@ -103,8 +157,7 @@ pub struct IoThreadConfig<S: EffectSink + 'static> {
     pub pty_control: Option<PtyControl>,
     /// Adopted conhost signal handle for resize on Windows Default
     /// Terminal handoff panes. `None` for spawned panes (which use
-    /// `pty_control`) and tests. The IO thread's `process_resize`
-    /// falls back to this when `pty_control` is `None`.
+    /// `pty_control`) and tests.
     pub adopted_signal: Option<AdoptedSignal>,
     /// Initial PTY dimensions (rows, cols) — seeds the dedup guard so the
     /// first resize at spawn size skips the redundant syscall.
@@ -116,23 +169,23 @@ pub struct IoThreadConfig<S: EffectSink + 'static> {
 }
 
 /// Create the IO thread and its main-thread handle.
-///
-/// Channels and the shared double buffer are created here and split
-/// between the two sides. The `grid_dirty` atomic is shared with
-/// the IO thread's `IoThreadEventProxy` — the proxy sets it during
-/// VTE parsing, the IO thread reads + clears it after snapshot
-/// production.
-///
-/// The caller spawns the thread via [`PaneIoThread::spawn()`], then
-/// sets the join handle on the returned `PaneIoHandle`.
 pub fn new_with_handle<S: EffectSink + 'static>(
     config: IoThreadConfig<S>,
 ) -> (PaneIoThread<S>, PaneIoHandle) {
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
     let (byte_tx, byte_rx) = crossbeam_channel::unbounded();
+    // Bounded(1) wake channel: `try_send` coalesces N fulfills between
+    // wakes into a single signal. One wake drains ALL ready tokens on
+    // the IO thread side (see `response_poll::poll_pending_responses`).
+    let (response_wake_tx, response_wake_rx) = crossbeam_channel::bounded::<()>(1);
     let double_buffer = SnapshotDoubleBuffer::new();
     let thread = PaneIoThread {
         terminal: config.terminal,
+        pane_id: config.pane_id,
+        mux_tx: config.mux_tx,
+        child_exit_rx: config.child_exit_rx,
+        pending_child_exit: None,
+        response_wake_rx,
         cmd_rx,
         byte_rx,
         shutdown: config.shutdown,
@@ -149,12 +202,14 @@ pub fn new_with_handle<S: EffectSink + 'static>(
         search: None,
         selection_dirty: config.selection_dirty,
         pending_responses: Vec::new(),
+        effects_buf: Vec::new(),
     };
     let handle = PaneIoHandle {
         cmd_tx,
         byte_tx,
         join: None,
         double_buffer,
+        response_wake_tx,
     };
     (thread, handle)
 }

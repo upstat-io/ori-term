@@ -2,8 +2,11 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
 
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use crossbeam_channel::{Receiver, Sender, bounded};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use super::PtyLifecycle;
 
@@ -71,9 +74,6 @@ impl From<portable_pty::ExitStatus> for ExitStatus {
 }
 
 /// Owned PTY control handle for resize operations.
-///
-/// Wraps the underlying PTY library's control handle so callers don't depend
-/// on `portable_pty` types directly.
 pub struct PtyControl(Box<dyn MasterPty + Send>);
 
 impl PtyControl {
@@ -90,9 +90,6 @@ impl PtyControl {
     }
 
     /// Get the PTY master file descriptor (Unix only).
-    ///
-    /// Used for `tcgetpgrp()` to find the foreground process group for
-    /// signal delivery.
     #[cfg(unix)]
     pub fn master_fd(&self) -> Option<std::os::unix::io::RawFd> {
         self.0.as_raw_fd()
@@ -128,49 +125,64 @@ impl Default for PtyConfig {
     }
 }
 
-/// Handles to a spawned PTY and its child process.
+/// Shared cell holding a child's exit status once the watcher thread
+/// observes it via `Child::wait()`.
 ///
-/// The reader and writer are taken separately via [`take_reader`] and
-/// [`take_writer`] for use by the reader thread and input handler.
-/// Resize, kill, and wait operations remain available on the handle.
+/// Uses `Result<ExitStatus, String>` (not `io::Error`) because `io::Error`
+/// is not `Clone`. The watcher maps the underlying error to a string so
+/// `PtyHandle::wait`/`try_wait` can clone the stored value and rehydrate
+/// via `io::Error::other(s)`.
+type ExitResultCell = Arc<Mutex<Option<Result<ExitStatus, String>>>>;
+
+/// Handles to a spawned PTY.
 ///
-/// [`take_reader`]: PtyHandle::take_reader
-/// [`take_writer`]: PtyHandle::take_writer
+/// # Ownership model (effect-cutover 01.1)
+///
+/// The child process (`Box<dyn portable_pty::Child>`) is owned by a
+/// dedicated watcher thread spawned in [`spawn_pty`]. `PtyHandle` keeps
+/// only:
+/// - `killer: Box<dyn ChildKiller>` — cloned from `child.clone_killer()`
+///   *before* the child is moved to the watcher, so `PtyLifecycle::kill`
+///   still works.
+/// - `process_id: Option<u32>` — captured from `child.process_id()` at
+///   spawn time; never re-queried.
+/// - `exit_result: Arc<Mutex<Option<Result<ExitStatus, String>>>>` —
+///   shared cell populated by the watcher. `PtyLifecycle::wait` blocks
+///   on `exit_notifier.wait(...)` until `exit_result` is `Some`;
+///   `try_wait` reads it non-blocking.
+/// - `exit_notifier: Arc<Condvar>` — signalled by the watcher after
+///   writing `exit_result`.
+///
+/// [`spawn_pty`] now returns `(PtyHandle, Receiver<ExitStatus>)`. The
+/// receiver side is threaded into `PaneIoThread` so the effect router
+/// can emit `HostEffect::ChildExit { code }` on EOF + exit.
 pub struct PtyHandle {
     reader: Option<Box<dyn io::Read + Send>>,
     writer: Option<Box<dyn io::Write + Send>>,
     control: Option<PtyControl>,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    killer: Box<dyn ChildKiller + Send + Sync>,
+    child_process_id: Option<u32>,
+    exit_result: ExitResultCell,
+    exit_notifier: Arc<Condvar>,
 }
 
 impl PtyHandle {
     /// Take the PTY output reader (child to parent).
-    ///
-    /// Returns `None` if already taken. The reader is handed to the
-    /// [`PtyReader`](super::reader::PtyReader) background thread.
     pub fn take_reader(&mut self) -> Option<Box<dyn io::Read + Send>> {
         self.reader.take()
     }
 
     /// Take the PTY input writer (parent to child).
-    ///
-    /// Returns `None` if already taken. The writer is typically owned by the
-    /// input handler or notifier that forwards keyboard input.
     pub fn take_writer(&mut self) -> Option<Box<dyn io::Write + Send>> {
         self.writer.take()
     }
 
     /// Take the PTY control handle (for resize operations).
-    ///
-    /// Returns `None` if already taken. The control handle is handed to
-    /// the Terminal IO thread for resize operations.
     pub fn take_control(&mut self) -> Option<PtyControl> {
         self.control.take()
     }
 
     /// Resize the PTY to new dimensions.
-    ///
-    /// Returns an error if the control handle has been taken.
     #[allow(
         dead_code,
         reason = "used for direct resize before control handle is taken"
@@ -184,29 +196,48 @@ impl PtyHandle {
     }
 
     /// Get the child process ID, if available.
-    ///
-    /// Used for direct signal delivery when the PTY writer is stalled.
     pub fn process_id(&self) -> Option<u32> {
-        self.child.process_id()
+        self.child_process_id
     }
 
-    /// Kill the child process.
+    /// Kill the child process via the cloned `ChildKiller`.
     pub fn kill(&mut self) -> io::Result<()> {
-        self.child.kill()
+        self.killer.kill()
     }
 
-    /// Wait for the child process to exit (blocking).
+    /// Block until the child process has exited.
+    ///
+    /// Waits on `exit_notifier` until the watcher populates
+    /// `exit_result`. Re-hydrates the stored `Result<_, String>` back
+    /// into `io::Result<ExitStatus>`.
+    #[allow(
+        clippy::needless_pass_by_ref_mut,
+        reason = "signature matches PtyLifecycle trait method which takes &mut self"
+    )]
     pub fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.child.wait().map(ExitStatus::from)
+        let mut guard = self.exit_result.lock().map_err(poisoned_mutex_err)?;
+        while guard.is_none() {
+            guard = self
+                .exit_notifier
+                .wait(guard)
+                .map_err(poisoned_notifier_err)?;
+        }
+        clone_exit_result(guard.as_ref().expect("guard is Some after wait loop"))
     }
 
     /// Non-blocking check for child exit.
-    ///
-    /// Returns `Ok(Some(status))` if the child has exited, `Ok(None)` if
-    /// still running, or `Err` on failure.
     #[allow(dead_code, reason = "used when pane reports child exit to UI")]
+    #[allow(
+        clippy::needless_pass_by_ref_mut,
+        reason = "signature matches PtyLifecycle trait method which takes &mut self"
+    )]
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.try_wait().map(|opt| opt.map(ExitStatus::from))
+        let guard = self.exit_result.lock().map_err(poisoned_mutex_err)?;
+        if let Some(r) = guard.as_ref() {
+            Ok(Some(clone_exit_result(r)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -228,11 +259,31 @@ impl PtyLifecycle for PtyHandle {
     }
 }
 
+/// Clone a stored `Result<ExitStatus, String>` back to `io::Result<ExitStatus>`.
+fn clone_exit_result(stored: &Result<ExitStatus, String>) -> io::Result<ExitStatus> {
+    match stored {
+        Ok(status) => Ok(status.clone()),
+        Err(msg) => Err(io::Error::other(msg.clone())),
+    }
+}
+
+#[cold]
+fn poisoned_mutex_err<T>(_err: std::sync::PoisonError<T>) -> io::Error {
+    io::Error::other("exit_result mutex poisoned")
+}
+
+#[cold]
+fn poisoned_notifier_err<T>(_err: std::sync::PoisonError<T>) -> io::Error {
+    io::Error::other("exit_notifier wait poisoned")
+}
+
 /// Spawn a PTY with the configured shell and environment.
 ///
-/// Creates a platform-native PTY pair, spawns the shell as a child process,
-/// and returns a handle with reader, writer, and child management methods.
-pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
+/// Returns a `(PtyHandle, child_exit_rx)` pair. The receiver delivers
+/// `ExitStatus` when the child exits; the sender lives on a dedicated
+/// watcher thread that owns the `Box<dyn Child>` for the duration of
+/// the process's lifetime.
+pub fn spawn_pty(config: &PtyConfig) -> io::Result<(PtyHandle, Receiver<ExitStatus>)> {
     let pty_system = native_pty_system();
 
     let pair = pty_system
@@ -246,7 +297,11 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
 
     let cmd = build_command(config);
 
-    let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
+    let mut child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
+
+    // Capture kill handle and PID BEFORE moving child into the watcher.
+    let killer = child.clone_killer();
+    let child_process_id = child.process_id();
 
     // Drop the slave side so the reader detects EOF when child exits.
     drop(pair.slave);
@@ -255,12 +310,47 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
 
     let writer = pair.master.take_writer().map_err(pty_err)?;
 
-    Ok(PtyHandle {
+    // Shared cell + condvar — populated by the watcher thread on exit.
+    let exit_result: ExitResultCell = Arc::new(Mutex::new(None));
+    let exit_notifier = Arc::new(Condvar::new());
+    let (child_exit_tx, child_exit_rx): (Sender<ExitStatus>, Receiver<ExitStatus>) = bounded(1);
+
+    // Spawn the watcher thread.
+    let watcher_exit_result = Arc::clone(&exit_result);
+    let watcher_exit_notifier = Arc::clone(&exit_notifier);
+    thread::Builder::new()
+        .name("pty-child-watcher".into())
+        .spawn(move || {
+            let wait_result = child
+                .wait()
+                .map(ExitStatus::from)
+                .map_err(|e| e.to_string());
+
+            // Store the result and wake any waiters.
+            if let Ok(mut guard) = watcher_exit_result.lock() {
+                *guard = Some(wait_result.clone());
+            }
+            watcher_exit_notifier.notify_all();
+
+            // Forward success onto the bounded channel. On error, drop
+            // the sender — downstream `recv_timeout` will observe
+            // `Disconnected` and fall back to a `code: 0` emission.
+            if let Ok(status) = wait_result {
+                let _ = child_exit_tx.send(status);
+            }
+            // Child dropped here — slave process is fully reaped.
+        })?;
+
+    let handle = PtyHandle {
         reader: Some(reader),
         writer: Some(writer),
         control: Some(PtyControl(pair.master)),
-        child,
-    })
+        killer,
+        child_process_id,
+        exit_result,
+        exit_notifier,
+    };
+    Ok((handle, child_exit_rx))
 }
 
 /// Build a `CommandBuilder` with shell detection and environment variables.
@@ -335,9 +425,6 @@ fn inject_shell_integration(
 }
 
 /// Build the `WSLENV` value that propagates env vars across the Win32/WSL boundary.
-///
-/// Reads the current `WSLENV` from the process environment, computes the new
-/// value via [`compute_wslenv`], and sets it on the command if anything changed.
 #[cfg(windows)]
 fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
     let existing = std::env::var("WSLENV").unwrap_or_default();
@@ -350,13 +437,6 @@ fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
 
 /// Compute the new `WSLENV` value by merging builtin terminal variables and
 /// user-provided keys into the existing value.
-///
-/// Follows the Windows Terminal pattern: parse existing WSLENV to avoid
-/// duplicates (case-insensitive), add our terminal variables plus any
-/// user-provided overrides, and explicitly exclude `PATH` (Windows PATH
-/// breaks WSL's computed PATH).
-///
-/// Returns `None` if all keys are already present (nothing to add).
 pub(crate) fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
     use std::collections::HashSet;
 
@@ -408,9 +488,6 @@ pub(crate) fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<Strin
 }
 
 /// Returns the default shell for the current platform.
-///
-/// On Windows, returns `cmd.exe`. On Unix, reads the `SHELL` environment
-/// variable and falls back to `/bin/sh`.
 #[cfg(windows)]
 pub(crate) fn default_shell() -> &'static str {
     "cmd.exe"

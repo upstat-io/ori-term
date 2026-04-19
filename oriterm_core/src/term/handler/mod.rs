@@ -384,6 +384,10 @@ impl<S: EffectSink> Handler for Term<S> {
         self.dcs_set_cursor_shape(shape);
     }
 
+    fn set_mouse_cursor_icon(&mut self, icon: vte::ansi::cursor_icon::CursorIcon) {
+        Self::set_mouse_cursor_icon(self, Some(icon));
+    }
+
     fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
         self.dcs_push_keyboard_mode(mode);
     }

@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use oriterm_core::Selection;
 use oriterm_core::{RenderableContent, Theme};
 
-use super::{AdoptPaneRequest, ImageConfig, MuxBackend};
+use super::{AdoptPaneRequest, HostReply, ImageConfig, MuxBackend};
 use crate::domain::SpawnConfig;
 use crate::in_process::{ClosePaneResult, InProcessMux};
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -137,6 +137,25 @@ impl MuxBackend for EmbeddedMux {
         // (Phase 2), which drops the Pane on a background thread to avoid
         // blocking the event loop with PTY kill + child reap.
         self.mux.close_pane(pane_id)
+    }
+
+    fn fulfill_host_request(&mut self, pane_id: PaneId, reply: HostReply) -> io::Result<()> {
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(io::Error::other(format!(
+                "fulfill_host_request: pane {pane_id} not found"
+            )));
+        };
+        let handle = pane.io_handle();
+        let result = match reply {
+            HostReply::ClipboardLoad { token, text } => handle.fulfill_clipboard_load(&token, text),
+            HostReply::ColorQuery { token, color } => handle.fulfill_color_query(&token, color),
+        };
+        if let Err(err) = result {
+            log::warn!(
+                "fulfill_host_request: duplicate fulfill on pane {pane_id} (routing bug): {err}"
+            );
+        }
+        Ok(())
     }
 
     fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {

@@ -682,7 +682,7 @@ fn ctrl_c_delivered_after_stall_cleared() {
 fn pty_handle_dispatches_through_pty_lifecycle_trait() {
     // Spawn a PTY with the platform default shell.
     let config = PtyConfig::default();
-    let pty = spawn_pty(&config).expect("spawn_pty must succeed");
+    let (pty, _child_exit_rx) = spawn_pty(&config).expect("spawn_pty must succeed");
 
     // Capture the inherent process_id BEFORE moving into the box.
     let direct_pid = pty.process_id();

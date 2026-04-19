@@ -28,7 +28,7 @@ pub(crate) mod encode;
 pub(crate) mod messages;
 pub(crate) mod msg_type;
 mod pdu_traits;
-mod snapshot;
+pub mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
 pub use messages::MuxPdu;
@@ -36,8 +36,8 @@ pub use messages::MuxPdu;
 #[cfg(test)]
 pub(crate) use msg_type::MsgType;
 pub use snapshot::{
-    PaneSnapshot, WireCell, WireCellFlags, WireCursor, WireCursorShape, WireRgb, WireSearchMatch,
-    WireSelection,
+    OSC22_KNOWN_ICONS, PaneSnapshot, WireCell, WireCellFlags, WireCursor, WireCursorShape, WireRgb,
+    WireSearchMatch, WireSelection, decode_cursor_icon, encode_cursor_icon,
 };
 
 /// Frame header size in bytes.

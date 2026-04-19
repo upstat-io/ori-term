@@ -25,6 +25,7 @@ pub use renderable::{
 use std::collections::{HashMap, VecDeque};
 
 use vte::ansi::KeyboardModes;
+use vte::ansi::cursor_icon::CursorIcon;
 
 use crate::color::Palette;
 use crate::effect::sink::EffectSink;
@@ -209,6 +210,11 @@ pub struct Term<S: EffectSink> {
     /// hardcoded 80. Updated on external resize so it always reflects the
     /// window's native column count.
     deccolm_default_cols: usize,
+    /// Mouse cursor icon requested by the shell (OSC 22).
+    ///
+    /// `None` until the application sets an icon. The renderer reads this
+    /// via `RenderableContent::mouse_cursor_icon` and updates the OS pointer.
+    mouse_cursor_icon: Option<CursorIcon>,
 }
 
 impl<S: EffectSink> Term<S> {
@@ -251,7 +257,21 @@ impl<S: EffectSink> Term<S> {
             cell_pixel_height: 16,
             image_protocol_enabled: true,
             deccolm_default_cols: cols,
+            mouse_cursor_icon: None,
         }
+    }
+
+    /// Mouse cursor icon requested by the shell (OSC 22).
+    ///
+    /// `None` if no OSC 22 sequence has been received. The renderer reads
+    /// this to update the OS pointer shape while hovering the terminal.
+    pub fn mouse_cursor_icon(&self) -> Option<CursorIcon> {
+        self.mouse_cursor_icon
+    }
+
+    /// Override the mouse cursor icon (raw interceptor / OSC 22 path).
+    pub fn set_mouse_cursor_icon(&mut self, icon: Option<CursorIcon>) {
+        self.mouse_cursor_icon = icon;
     }
 
     /// Effect sink for boundary-crossing side effects.

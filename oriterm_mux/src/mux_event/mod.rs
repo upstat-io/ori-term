@@ -12,6 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
+use oriterm_core::color::Rgb;
+use oriterm_core::effect::{ClipboardSelection, NotificationSource, ResponseToken};
 use oriterm_core::{ClipboardType, Event, EventListener};
 
 use crate::PaneId;
@@ -65,11 +67,18 @@ pub enum MuxEvent {
     /// Bell fired in a pane.
     PaneBell(PaneId),
     /// Data to write to a pane's PTY (DA responses, etc.).
+    ///
+    /// Carries raw bytes rather than `String` so non-UTF-8 replies (binary
+    /// Kitty Graphics replies, raw DA2 with `0x9C`, future binary protocols)
+    /// survive the effect→MuxEvent boundary byte-exact. Today's OSC 52 /
+    /// OSC 10–12 replies are ASCII so this is latent coverage, but the
+    /// effect-side variant is `Vec<u8>`; silently downgrading to `String`
+    /// at the mux boundary is an SSOT violation.
     PtyWrite {
         /// Target pane.
         pane_id: PaneId,
         /// Bytes to write.
-        data: String,
+        data: Vec<u8>,
     },
     /// OSC 52 clipboard store request.
     ClipboardStore {
@@ -80,7 +89,9 @@ pub enum MuxEvent {
         /// Text to store.
         text: String,
     },
-    /// OSC 52 clipboard load request.
+    /// OSC 52 clipboard load request (legacy closure-carrier).
+    ///
+    /// Deleted in effect-cutover 01.3 — replaced by `HostClipboardLoad`.
     ClipboardLoad {
         /// Originating pane.
         pane_id: PaneId,
@@ -88,6 +99,68 @@ pub enum MuxEvent {
         clipboard_type: ClipboardType,
         /// Formats the clipboard text into a PTY response.
         formatter: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    },
+    /// Desktop notification (OSC 9 / 99 / 777).
+    ///
+    /// Added in effect-cutover 01.1: flows from the effect router to the
+    /// main thread, where it is forwarded as
+    /// [`MuxNotification::DesktopNotification`] for the window / desktop
+    /// integration layer to display.
+    DesktopNotification {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Which OSC sequence produced the notification.
+        source: NotificationSource,
+        /// Notification title.
+        title: String,
+        /// Notification body.
+        body: String,
+    },
+    /// Discard pending desktop notifications for a pane.
+    ///
+    /// Added in effect-cutover 01.1. Carries the contract of
+    /// [`HostEffect::ClearPendingNotifications`] across the
+    /// IO-thread→main-thread boundary so downstream staging buffers
+    /// (`mux_pump`, `window_management`, daemon broadcast) can purge
+    /// their queued [`MuxNotification::DesktopNotification`] entries
+    /// for the originating pane. The event pump forwards each
+    /// occurrence as [`MuxNotification::ClearPendingDesktopNotifications`].
+    ClearPendingDesktopNotifications(PaneId),
+    /// OSC 52 clipboard load request with a typed `ResponseToken`.
+    ///
+    /// Added in effect-cutover 01.1. The main thread reads the clipboard
+    /// and calls `MuxBackend::fulfill_host_request` to route the reply
+    /// back to the originating pane. Supersedes the closure-carrying
+    /// [`MuxEvent::ClipboardLoad`] (deleted in 01.3).
+    HostClipboardLoad {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Which clipboard to read.
+        selection: ClipboardSelection,
+        /// Raw OSC 52 clipboard character (e.g. `b'c'`, `b'p'`, `b's'`).
+        clipboard_char: u8,
+        /// OSC string terminator (ST or BEL) to use in the reply.
+        terminator: String,
+        /// Reply token — the consumer calls `.fulfill(text)` with the
+        /// clipboard contents.
+        reply: ResponseToken<String>,
+    },
+    /// OSC color query with a typed `ResponseToken`.
+    ///
+    /// Added in effect-cutover 01.1. The main thread looks up the color and
+    /// fulfills the reply via `MuxBackend::fulfill_host_request`.
+    HostColorQuery {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// OSC prefix string (`"4"`, `"10"`, `"11"`, `"12"`).
+        prefix: String,
+        /// Color index (for palette queries).
+        index: usize,
+        /// OSC string terminator (ST or BEL) to use in the reply.
+        terminator: String,
+        /// Reply token — the consumer calls `.fulfill(color)` with the
+        /// requested `Rgb` value.
+        reply: ResponseToken<Rgb>,
     },
 }
 
@@ -124,6 +197,24 @@ impl fmt::Debug for MuxEvent {
                 clipboard_type,
                 ..
             } => write!(f, "ClipboardLoad({pane_id}, {clipboard_type:?})"),
+            Self::DesktopNotification {
+                pane_id,
+                source,
+                title,
+                ..
+            } => write!(f, "DesktopNotification({pane_id}, {source:?}, {title:?})"),
+            Self::ClearPendingDesktopNotifications(id) => {
+                write!(f, "ClearPendingDesktopNotifications({id})")
+            }
+            Self::HostClipboardLoad {
+                pane_id, selection, ..
+            } => write!(f, "HostClipboardLoad({pane_id}, {selection:?})"),
+            Self::HostColorQuery {
+                pane_id,
+                prefix,
+                index,
+                ..
+            } => write!(f, "HostColorQuery({pane_id}, {prefix:?}, index={index})"),
         }
     }
 }
@@ -225,9 +316,14 @@ impl EventListener for MuxEventProxy {
                 });
             }
             Event::PtyWrite(data) => {
+                // Legacy `Event::PtyWrite` carries `String`; the new
+                // `MuxEvent::PtyWrite` carries `Vec<u8>` for byte-exactness.
+                // The conversion is lossless on the legacy path because
+                // `Event::PtyWrite` is constructed from `String::from_utf8_lossy`
+                // of the underlying bytes already — no further corruption.
                 self.send(MuxEvent::PtyWrite {
                     pane_id: self.pane_id,
-                    data,
+                    data: data.into_bytes(),
                 });
             }
             Event::Cwd(cwd) => {
@@ -308,7 +404,10 @@ pub enum MuxNotification {
         /// Text to store.
         text: String,
     },
-    /// OSC 52 clipboard load request forwarded from a pane.
+    /// OSC 52 clipboard load request forwarded from a pane (legacy
+    /// closure-carrier).
+    ///
+    /// Deleted in effect-cutover 01.3 — replaced by `HostClipboardLoad`.
     ClipboardLoad {
         /// Originating pane.
         pane_id: PaneId,
@@ -316,6 +415,71 @@ pub enum MuxNotification {
         clipboard_type: ClipboardType,
         /// Formats the clipboard text into a PTY response.
         formatter: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    },
+    /// Desktop notification (OSC 9 / 99 / 777) forwarded from a pane.
+    ///
+    /// Added in effect-cutover 01.1. The receiving client displays the
+    /// notification via the platform-native notification API.
+    DesktopNotification {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Which OSC sequence produced the notification.
+        source: NotificationSource,
+        /// Notification title.
+        title: String,
+        /// Notification body.
+        body: String,
+    },
+    /// Purge any queued desktop notifications for a pane (OSC `RIS` reset).
+    ///
+    /// Added in effect-cutover 01.1. Every downstream staging buffer that
+    /// holds `DesktopNotification` notifications for `pane_id` MUST discard
+    /// them when this variant arrives.
+    ClearPendingDesktopNotifications(PaneId),
+    /// OSC 52 clipboard load forwarded with a typed `ResponseToken`.
+    ///
+    /// Added in effect-cutover 01.1. The main thread reads the clipboard
+    /// and calls `MuxBackend::fulfill_host_request` with a
+    /// `HostReply::ClipboardLoad` payload; the IO thread's pending-response
+    /// poll then emits the formatted PTY reply.
+    ///
+    /// # Move-only across staging buffers
+    ///
+    /// The `reply` field carries an `Arc<Mutex<Option<String>>>`. Every
+    /// downstream staging-buffer hop MUST move the notification (via
+    /// `Vec::drain`, `mem::replace`, match-move) rather than `.clone()` it.
+    /// Cloning defeats the `Arc::strong_count`-based cancellation detection
+    /// in `PendingResponse`. See
+    /// `oriterm_core::effect::ResponseToken` doc comment for the SSOT.
+    HostClipboardLoad {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// Which clipboard to read.
+        selection: ClipboardSelection,
+        /// Raw OSC 52 clipboard character.
+        clipboard_char: u8,
+        /// OSC string terminator (ST or BEL).
+        terminator: String,
+        /// Reply token — consumer calls `.fulfill(text)` with the
+        /// clipboard contents.
+        reply: ResponseToken<String>,
+    },
+    /// OSC color query forwarded with a typed `ResponseToken`.
+    ///
+    /// Added in effect-cutover 01.1. Same move-only discipline as
+    /// [`MuxNotification::HostClipboardLoad`].
+    HostColorQuery {
+        /// Originating pane.
+        pane_id: PaneId,
+        /// OSC prefix string.
+        prefix: String,
+        /// Color index (palette queries).
+        index: usize,
+        /// OSC string terminator.
+        terminator: String,
+        /// Reply token — consumer calls `.fulfill(color)` with the
+        /// requested `Rgb` value.
+        reply: ResponseToken<Rgb>,
     },
     /// Another process requested a new tab via the daemon.
     ///
@@ -346,6 +510,24 @@ impl fmt::Debug for MuxNotification {
                 clipboard_type,
                 ..
             } => write!(f, "ClipboardLoad({pane_id}, {clipboard_type:?})"),
+            Self::DesktopNotification {
+                pane_id,
+                source,
+                title,
+                ..
+            } => write!(f, "DesktopNotification({pane_id}, {source:?}, {title:?})"),
+            Self::ClearPendingDesktopNotifications(id) => {
+                write!(f, "ClearPendingDesktopNotifications({id})")
+            }
+            Self::HostClipboardLoad {
+                pane_id, selection, ..
+            } => write!(f, "HostClipboardLoad({pane_id}, {selection:?})"),
+            Self::HostColorQuery {
+                pane_id,
+                prefix,
+                index,
+                ..
+            } => write!(f, "HostColorQuery({pane_id}, {prefix:?}, index={index})"),
             Self::NewTab => write!(f, "NewTab"),
         }
     }

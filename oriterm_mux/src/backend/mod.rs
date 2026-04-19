@@ -15,6 +15,8 @@ use std::io;
 use std::sync::mpsc;
 
 use oriterm_core::Theme;
+use oriterm_core::color::Rgb;
+use oriterm_core::effect::ResponseToken;
 use oriterm_core::selection::Selection;
 
 use crate::PaneSnapshot;
@@ -27,6 +29,32 @@ use crate::{DomainId, PaneId};
 
 pub use self::client::MuxClient;
 pub use self::embedded::EmbeddedMux;
+
+/// Payload for [`MuxBackend::fulfill_host_request`].
+///
+/// Carries the `ResponseToken` the main thread extracted from a
+/// `MuxNotification::HostClipboardLoad` / `HostColorQuery`, paired with
+/// the value the main thread resolved (clipboard text, palette color).
+/// The embedded backend forwards the fulfillment to the owning pane's
+/// `PaneIoHandle`; the daemon backend rejects today and will gain a
+/// reply-PDU wire in a follow-up plan.
+#[derive(Debug)]
+pub enum HostReply {
+    /// Reply to an OSC 52 clipboard read request.
+    ClipboardLoad {
+        /// Token carried by the originating notification.
+        token: ResponseToken<String>,
+        /// Clipboard text read by the main thread.
+        text: String,
+    },
+    /// Reply to an OSC color query.
+    ColorQuery {
+        /// Token carried by the originating notification.
+        token: ResponseToken<Rgb>,
+        /// Resolved `Rgb` value.
+        color: Rgb,
+    },
+}
 
 /// Image protocol configuration for a pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -430,4 +458,24 @@ pub trait MuxBackend {
     /// Called after rendering to bound memory waste. Default is a no-op
     /// (daemon mode doesn't cache `RenderableContent`).
     fn maybe_shrink_renderable_caches(&mut self) {}
+
+    /// Fulfill a host-request response.
+    ///
+    /// Called by the main thread after it resolves the value for a
+    /// `MuxNotification::HostClipboardLoad` / `HostColorQuery` token.
+    /// The embedded backend looks up the pane's `PaneIoHandle` and
+    /// signals the wake channel so the IO thread's `select!` wakes
+    /// within one iteration. The daemon backend returns `Err` until a
+    /// reply-PDU wire design lands (tracked separately — see
+    /// `plans/effect-cutover/section-01-migrate-mux-consumer.md §01.4`).
+    ///
+    /// A duplicate fulfill is logged (the
+    /// [`oriterm_core::effect::AlreadyFulfilled`] error is caught and
+    /// collapsed to `Ok(())`) — routing bugs surface as log noise, not
+    /// as IO errors, because the first fulfill is authoritative.
+    fn fulfill_host_request(&mut self, _pane_id: PaneId, _reply: HostReply) -> io::Result<()> {
+        Err(io::Error::other(
+            "host-request fulfillment not supported on this backend",
+        ))
+    }
 }
