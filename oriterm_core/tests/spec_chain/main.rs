@@ -10,5 +10,6 @@
 //! - Run: `cargo test -p oriterm_core --test spec_chain`
 
 mod baseline;
+mod osc;
 mod pilots;
 mod private_modes;
