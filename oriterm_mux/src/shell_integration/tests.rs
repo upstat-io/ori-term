@@ -193,7 +193,9 @@ fn setup_injection_wsl_returns_none() {
 
 // Raw interceptor
 
-use oriterm_core::effect::{Effect, EffectSink, HostEffect, PtyEffect, QueueingEffectSink};
+use oriterm_core::effect::{
+    Effect, EffectSink, HostEffect, NotificationSource, PtyEffect, QueueingEffectSink,
+};
 use oriterm_core::{PromptState, Term, Theme};
 
 /// Helper: create a minimal terminal for interceptor tests.
@@ -210,6 +212,7 @@ fn intercept(term: &mut Term<QueueingEffectSink>, bytes: &[u8]) {
 
 /// Test-local notification record for readable assertions.
 struct TestNotification {
+    source: NotificationSource,
     title: String,
     body: String,
 }
@@ -222,8 +225,16 @@ fn drain_desktop_notifications(term: &Term<QueueingEffectSink>) -> Vec<TestNotif
     let mut notifs = Vec::new();
     for effect in effects {
         match effect {
-            Effect::Host(HostEffect::DesktopNotification { title, body, .. }) => {
-                notifs.push(TestNotification { title, body });
+            Effect::Host(HostEffect::DesktopNotification {
+                source,
+                title,
+                body,
+            }) => {
+                notifs.push(TestNotification {
+                    source,
+                    title,
+                    body,
+                });
             }
             Effect::Host(HostEffect::ClearPendingNotifications) => notifs.clear(),
             _ => {}
@@ -599,17 +610,20 @@ fn interceptor_osc133d_with_nonzero_exit_code() {
     assert_eq!(term.prompt_state(), PromptState::None);
 }
 
-// OSC 99: Kitty notification protocol.
+// OSC 99: Kitty notification protocol. Kitty's spec mandates
+// `OSC 99 ; metadata ; payload ST` (two semicolons even when metadata is
+// empty); the payload lives at params[2]. Default `p=title` routes the
+// payload into the `title` field — only `p=body` routes into `body`.
 
 #[test]
 fn interceptor_osc99_kitty_notification() {
     let mut term = make_term();
-    intercept(&mut term, b"\x1b]99;Build complete\x07");
+    intercept(&mut term, b"\x1b]99;;Build complete\x07");
 
     let notifs = drain_desktop_notifications(&term);
     assert_eq!(notifs.len(), 1);
-    assert_eq!(notifs[0].body, "Build complete");
-    assert!(notifs[0].title.is_empty());
+    assert_eq!(notifs[0].title, "Build complete");
+    assert!(notifs[0].body.is_empty());
 }
 
 // Script writing: nonexistent parent directory returns error.
@@ -1068,5 +1082,221 @@ fn osc133a_via_spec_chain_helper_sets_prompt_start() {
     assert!(
         term.prompt_mark_pending(),
         "OSC 133;A via interceptor must set prompt_mark_pending"
+    );
+}
+
+// §10.3 — OSC 9 / 99 / 777 desktop notifications.
+//
+// These tests pin the `NotificationSource` discriminator that the mux
+// interceptor produces for each OSC variant, plus a negative pin proving
+// the high-level `vte::ansi::Processor` does NOT route OSC 9 to a
+// notification effect (mux interceptor is load-bearing).
+
+/// §10.3 — OSC 9 simple body: source=Osc9, title="", body preserved.
+/// OSC 9 (Growl-style, iTerm2/Windows Terminal) has no title field.
+#[test]
+fn osc9_simple_body_fires_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;Build complete\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc9);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "Build complete");
+}
+
+/// §10.3 — OSC 99 spec-conformant simple form (`OSC 99 ;; payload ST` —
+/// two semicolons mandatory per Kitty's spec even when metadata is empty).
+/// Default `p=title` (no `p` key in metadata) routes the payload into the
+/// `title` field per Kitty `desktop-notifications.rst` line 472. Pinning
+/// the source discriminator prevents a future refactor from collapsing
+/// the OSC 9 / OSC 99 arms in `handle_notification_simple`.
+#[test]
+fn osc99_default_payload_routes_to_title() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;;kitty payload\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc99);
+    assert_eq!(
+        notifs[0].title, "kitty payload",
+        "Kitty OSC 99 default p=title: payload at params[2] must route into title."
+    );
+    assert_eq!(notifs[0].body, "");
+}
+
+/// §10.3 — Kitty's OSC 99 two-parameter form with metadata that does NOT
+/// include a `p=` key (here `i=1:t=info`): the default `p=title` still
+/// applies; the payload routes into `title`; metadata is recognised as
+/// opaque and silently discarded. Pins the deviation tracked in
+/// `plans/spec-conformance/catalog/osc.md::OSC-99` — only the `p=` key
+/// is honoured; chunking (`i=` chunk id, `d=` done), base64 (`e=1`), type
+/// (`t=`), application (`f=`), urgency (`u=`), sound (`s=`), and other
+/// metadata keys are not honoured.
+#[test]
+fn osc99_metadata_form_default_p_routes_payload_to_title() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;i=1:t=info;hello\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc99);
+    assert_eq!(
+        notifs[0].title, "hello",
+        "metadata without `p=` defaults to p=title; payload routes to title."
+    );
+    assert_eq!(notifs[0].body, "");
+}
+
+/// §10.3 — Kitty's OSC 99 with `p=body` in the metadata: payload routes to
+/// `body` (not `title`). Pins the only metadata key the implementation
+/// actually parses (`p=`).
+#[test]
+fn osc99_p_body_routes_payload_to_body() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;p=body;hello\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc99);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "hello");
+}
+
+/// §10.3 — Kitty's OSC 99 with both empty metadata and empty payload
+/// (`OSC 99 ;; ST`): per Kitty's spec rule "A notification with not title
+/// and no body is ignored", the notification is dropped — no
+/// `DesktopNotification` effect is emitted.
+#[test]
+fn osc99_empty_payload_drops_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;;\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "Kitty OSC 99 with empty payload (no title, no body) must be dropped"
+    );
+}
+
+/// §10.3 — Kitty's OSC 99 with `p=close` (or any other unknown payload kind
+/// — `icon`, `?`, `alive`, `buttons`): per Kitty spec "Terminal emulators
+/// should ignore payloads of unknown type", the notification is dropped.
+#[test]
+fn osc99_unsupported_payload_kind_drops_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;p=close;something\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "Kitty OSC 99 with p=close (or any unknown p value) must be dropped"
+    );
+}
+
+/// §10.3 — OSC 777 with `notify` action, title, and body: source=Osc777.
+#[test]
+fn osc777_notify_title_body() {
+    let mut term = make_term();
+    intercept(
+        &mut term,
+        b"\x1b]777;notify;Build;completed successfully\x1b\\",
+    );
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc777);
+    assert_eq!(notifs[0].title, "Build");
+    assert_eq!(notifs[0].body, "completed successfully");
+}
+
+/// §10.3 — OSC 777 with a non-`notify` action is filtered out; no
+/// notification effect is emitted.
+#[test]
+fn osc777_non_notify_action_dropped() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]777;BAD_ACTION;title;body\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "OSC 777 with action != 'notify' must not emit a desktop notification"
+    );
+}
+
+/// §10.3 — OSC 9 with empty body still emits a notification (body="").
+#[test]
+fn osc9_empty_body() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc9);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "");
+}
+
+/// §10.3 — OSC 777 with an empty title field: title="", body preserved.
+#[test]
+fn osc777_missing_title() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]777;notify;;body-only\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc777);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "body-only");
+}
+
+/// §10.3 — Semantic pin: OSC 9 (Growl form) and OSC 99 (Kitty form, default
+/// `p=title`) fed in the same scenario produce *distinct* `NotificationSource`
+/// variants AND distinct field-routing semantics — OSC 9 routes payload into
+/// `body` (no title), OSC 99 routes payload into `title` (default `p=title`).
+/// A refactor that collapses the OSC 9 / 99 detection in
+/// `handle_notification_simple` would fail this assertion immediately. The
+/// OSC 99 input uses Kitty-conformant `;;` form per spec.
+#[test]
+fn osc9_and_osc99_use_different_sources() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;first\x1b\\");
+    intercept(&mut term, b"\x1b]99;;second\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 2);
+    assert_eq!(notifs[0].source, NotificationSource::Osc9);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "first");
+    assert_eq!(notifs[1].source, NotificationSource::Osc99);
+    assert_eq!(notifs[1].title, "second");
+    assert_eq!(notifs[1].body, "");
+    assert_ne!(
+        notifs[0].source, notifs[1].source,
+        "OSC 9 and OSC 99 must produce distinct NotificationSource variants"
+    );
+}
+
+/// §10.3 — Negative pin: feeding OSC 9 through the high-level
+/// `vte::ansi::Processor` ALONE (no `RawInterceptor` pass) does NOT emit a
+/// desktop notification. Proves the mux interceptor is load-bearing for
+/// OSC 9; if someone accidentally adds OSC 9 to the high-level dispatcher
+/// too, this test fails (double-dispatch detection). Mirrors
+/// `osc133a_via_processor_only_does_not_change_prompt_state`.
+#[test]
+fn osc9_via_processor_without_mux_drops() {
+    let mut term = make_term();
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]9;X\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "high-level Processor must NOT route OSC 9 to a notification \
+         effect — if this assertion fires, OSC 9 was added to the \
+         high-level dispatcher and would be double-handled in production"
     );
 }

@@ -116,23 +116,67 @@ impl<S: EffectSink> RawInterceptor<'_, S> {
         }
     }
 
-    /// OSC 9/99: simple notification (body only).
+    /// OSC 9 / OSC 99: simple desktop notification.
+    ///
+    /// Wire-format differs between the two:
+    /// - OSC 9 (Growl / iTerm2): `OSC 9 ; body ST` — payload at `params[1]`,
+    ///   always carried in the `body` field (no title concept).
+    /// - OSC 99 (Kitty): `OSC 99 ;; payload ST` (no metadata) or
+    ///   `OSC 99 ; metadata ; payload ST` (with metadata). Payload at
+    ///   `params[2]`. Per Kitty's OSC 99 spec the two semicolons are
+    ///   mandatory even when metadata is empty. Metadata is a colon-separated
+    ///   list of `key=value` pairs; only the `p` (payload type) key is
+    ///   honoured. `p=title` (the default) routes payload to `title`;
+    ///   `p=body` routes payload to `body`; other `p` values (`close`,
+    ///   `icon`, `?`, `alive`, `buttons`) drop the notification per the
+    ///   Kitty spec rule "Terminal emulators should ignore payloads of
+    ///   unknown type to allow for future expansion of this protocol."
+    ///
+    /// Other metadata keys (`i` chunk id, `d` done flag, `e` base64-encoded,
+    /// `t` notification type, `f` application name, `n` icon name, `o`
+    /// urgency-on, `s` sound, `u` urgency, etc.) are recognised as opaque and
+    /// silently discarded — chunking, base64, urgency, sound, and filtering
+    /// are not honoured. Per the spec, a notification with neither title nor
+    /// body is dropped.
     fn handle_notification_simple(&self, params: &[&[u8]]) {
-        let body = if params.len() >= 2 {
-            String::from_utf8_lossy(params[1]).into_owned()
-        } else {
-            String::new()
-        };
         let source = if params.first().is_some_and(|p| *p == b"9") {
             NotificationSource::Osc9
         } else {
             NotificationSource::Osc99
         };
+        let (title, body) = match source {
+            NotificationSource::Osc9 => {
+                let body = params
+                    .get(1)
+                    .map(|p| String::from_utf8_lossy(p).into_owned())
+                    .unwrap_or_default();
+                (String::new(), body)
+            }
+            NotificationSource::Osc99 => {
+                let payload = params
+                    .get(2)
+                    .map(|p| String::from_utf8_lossy(p).into_owned())
+                    .unwrap_or_default();
+                let kind = parse_osc99_payload_kind(params.get(1).copied().unwrap_or(b""));
+                let (title, body) = match kind {
+                    Osc99PayloadKind::Title => (payload, String::new()),
+                    Osc99PayloadKind::Body => (String::new(), payload),
+                    Osc99PayloadKind::Unsupported => return,
+                };
+                // Per Kitty: "A notification with not title and no body is
+                // ignored." OSC 9 has no such rule (empty body still fires).
+                if title.is_empty() && body.is_empty() {
+                    return;
+                }
+                (title, body)
+            }
+            NotificationSource::Osc777 => unreachable!("Osc777 routed to handle_notification_777"),
+        };
         self.term
             .effect_sink()
             .push(Effect::Host(HostEffect::DesktopNotification {
                 source,
-                title: String::new(),
+                title,
                 body,
             }));
     }
@@ -236,4 +280,44 @@ fn decode_hex_pair(hi: u8, lo: u8) -> Option<u8> {
         _ => return None,
     };
     Some(h << 4 | l)
+}
+
+/// Kitty OSC 99 `p` (payload type) discriminator.
+///
+/// Per kitty `desktop-notifications.rst`:
+/// > `p` — One of `title`, `body`, `close`, `icon`, `?`, `alive`, `buttons`.
+/// > Default: `title`. Type of the payload. ... Terminal emulators should
+/// > ignore payloads of unknown type to allow for future expansion of this
+/// > protocol.
+enum Osc99PayloadKind {
+    /// Default — `p=title` or no `p` key.
+    Title,
+    /// `p=body`.
+    Body,
+    /// `p=close|icon|?|alive|buttons` or any unknown value — drop the
+    /// notification per the spec's "ignore payloads of unknown type" rule.
+    Unsupported,
+}
+
+/// Parse Kitty OSC 99 metadata for the `p=` key.
+///
+/// Metadata is a colon-separated list of `key=value` pairs. Only the `p` key
+/// is honoured; all other keys (`i`, `d`, `e`, `t`, `f`, `n`, `o`, `s`, `u`,
+/// `a`, `c`, `g`, `w`) are recognised as opaque and discarded — see the
+/// `OSC-99` catalog row for the documented deviation. Empty metadata
+/// (`OSC 99 ;; payload`) defaults to `Title` per spec.
+fn parse_osc99_payload_kind(metadata: &[u8]) -> Osc99PayloadKind {
+    for field in metadata.split(|&b| b == b':') {
+        let mut parts = field.splitn(2, |&b| b == b'=');
+        let key = parts.next().unwrap_or(&[]);
+        let value = parts.next().unwrap_or(&[]);
+        if key == b"p" {
+            return match value {
+                b"title" => Osc99PayloadKind::Title,
+                b"body" => Osc99PayloadKind::Body,
+                _ => Osc99PayloadKind::Unsupported,
+            };
+        }
+    }
+    Osc99PayloadKind::Title
 }
