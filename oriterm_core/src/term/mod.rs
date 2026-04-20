@@ -175,6 +175,13 @@ pub struct Term<S: EffectSink> {
     /// OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 terminal-level color + property
     /// state. See `colors_state.rs`.
     colors_state: TermColorsState,
+    /// XTCHECKSUM (`CSI Ps # y`) flag bitmask consumed by DECRQCRA.
+    ///
+    /// Bit layout mirrors xterm patch-336 (`csPOSITIVE=1`, `csATTRIBS=2`,
+    /// `csNOTRIM=4`, `csDRAWN=8`, `csBYTE=16`). Default `0` means
+    /// negate-on, attribs-included, trim, DEC-translate — which matches
+    /// xterm's default DECRQCRA reply.
+    checksum_flags: u16,
 }
 
 impl<S: EffectSink> Term<S> {
@@ -221,6 +228,7 @@ impl<S: EffectSink> Term<S> {
             last_command_line: None,
             iterm2_state: Iterm2State::new(),
             colors_state: TermColorsState::new(),
+            checksum_flags: 0,
         }
     }
 

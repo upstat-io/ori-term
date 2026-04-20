@@ -6,7 +6,7 @@
 
 use log::debug;
 
-use crate::cell::Cell;
+use crate::cell::{Cell, CellFlags};
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, HostEffect};
 use crate::index::{Column, Line};
@@ -128,12 +128,15 @@ impl<S: EffectSink> Term<S> {
         grid.reset_left_right_margins();
 
         // Fill every visible cell with 'E' and default attributes.
+        // DECALN cells are application-written per xterm semantics —
+        // set DRAWN so DECRQCRA treats them as drawn (BUG-08-17).
         let template = Cell::default();
         for line in 0..lines {
             for col in 0..cols {
                 let cell = &mut grid[Line(line as i32)][Column(col)];
                 cell.reset(&template);
                 cell.ch = 'E';
+                cell.flags.insert(CellFlags::DRAWN);
             }
         }
 

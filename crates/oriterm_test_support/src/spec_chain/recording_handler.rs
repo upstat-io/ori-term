@@ -350,4 +350,40 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     delegate_other!(reset_mouse_bg_color);
     delegate_other!(reset_highlight_bg_color);
     delegate_other!(reset_highlight_fg_color);
+
+    // Registration sync for the DEC private rect-ops + presentation
+    // Handler methods added in §09A.3/§09A.4. Without these arms,
+    // SpecHarness silently drops dispatches and §09A.5+ spec_chain
+    // tests cannot observe the emitted effects.
+    delegate_other!(decsace, mode: u16);
+    delegate_other!(deccara, top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]);
+    delegate_other!(decrara, top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]);
+
+    fn deccra(&mut self, st: u16, sl: u16, sb: u16, sr: u16, sp: u16, dt: u16, dl: u16, dp: u16) {
+        self.record_other("deccra");
+        Handler::deccra(&mut self.term, st, sl, sb, sr, sp, dt, dl, dp);
+    }
+
+    delegate_other!(decfra, ch: u16, top: u16, left: u16, bot: u16, right: u16);
+    delegate_other!(xtchecksum, flags: u16);
+
+    fn decrqcra(&mut self, id: u16, page: u16, top: u16, left: u16, bot: u16, right: u16) {
+        self.record_other("decrqcra");
+        Handler::decrqcra(&mut self.term, id, page, top, left, bot, right);
+    }
+
+    delegate_other!(decera, top: u16, left: u16, bot: u16, right: u16);
+    delegate_other!(decsera, top: u16, left: u16, bot: u16, right: u16);
+    delegate_other!(xtreportsgr, top: u16, left: u16, bot: u16, right: u16);
+    delegate_other!(decrqpsr, mode: u16);
+    delegate_other!(decrqupss);
+    delegate_other!(decrqde);
+    delegate_other!(decscl, level: u16, c1_mode: u16);
+    delegate_other!(decsca, protected: u16);
+    delegate_other!(decsasd, target: u16);
+    delegate_other!(decssdt, line_type: u16);
+    delegate_other!(decic, count: u16);
+    delegate_other!(decdc, count: u16);
+    delegate_other!(decbi);
+    delegate_other!(decfi);
 }

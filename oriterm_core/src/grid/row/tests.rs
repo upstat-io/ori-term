@@ -328,3 +328,70 @@ fn content_len_shrinks_after_clear() {
     row.clear_range(Column(5)..Column(6), &Cell::default());
     assert_eq!(row.content_len(), 0);
 }
+
+// ---- BUG-08-17 regression tests: DRAWN lifecycle on Row ----
+
+/// `Row::reset` MUST copy DRAWN state from the template. A DRAWN-clear
+/// template (the normal case — `Cell::default()` or `Cell::from(bg)`)
+/// therefore wipes DRAWN from every cell in the row.
+#[test]
+fn row_reset_from_default_template_clears_drawn() {
+    let mut row = Row::new(5);
+    let mut drawn_cell = Cell::default();
+    drawn_cell.ch = 'A';
+    drawn_cell.flags = CellFlags::DRAWN | CellFlags::BOLD;
+    row.append(Column(0), &drawn_cell);
+    row.append(Column(1), &drawn_cell);
+    row.append(Column(2), &drawn_cell);
+    assert!(row[Column(0)].flags.contains(CellFlags::DRAWN));
+
+    row.reset(5, &Cell::default());
+
+    for col in 0..5 {
+        assert!(
+            !row[Column(col)].flags.contains(CellFlags::DRAWN),
+            "row.reset(default) must clear DRAWN on col {col}"
+        );
+    }
+}
+
+/// `Row::clear_range` clears DRAWN on the cleared range when the
+/// template is DRAWN-clear. Outside the range, DRAWN is preserved.
+#[test]
+fn row_clear_range_clears_drawn_on_range_only() {
+    let mut row = Row::new(5);
+    let mut drawn_cell = Cell::default();
+    drawn_cell.ch = 'X';
+    drawn_cell.flags = CellFlags::DRAWN;
+    for col in 0..5 {
+        row.append(Column(col), &drawn_cell);
+    }
+
+    row.clear_range(Column(1)..Column(4), &Cell::default());
+
+    assert!(row[Column(0)].flags.contains(CellFlags::DRAWN));
+    assert!(!row[Column(1)].flags.contains(CellFlags::DRAWN));
+    assert!(!row[Column(2)].flags.contains(CellFlags::DRAWN));
+    assert!(!row[Column(3)].flags.contains(CellFlags::DRAWN));
+    assert!(row[Column(4)].flags.contains(CellFlags::DRAWN));
+}
+
+/// `Row::truncate` clears DRAWN from the cursor column onward.
+#[test]
+fn row_truncate_clears_drawn_from_col_onward() {
+    let mut row = Row::new(5);
+    let mut drawn_cell = Cell::default();
+    drawn_cell.ch = 'Y';
+    drawn_cell.flags = CellFlags::DRAWN;
+    for col in 0..5 {
+        row.append(Column(col), &drawn_cell);
+    }
+
+    row.truncate(Column(2), &Cell::default());
+
+    assert!(row[Column(0)].flags.contains(CellFlags::DRAWN));
+    assert!(row[Column(1)].flags.contains(CellFlags::DRAWN));
+    assert!(!row[Column(2)].flags.contains(CellFlags::DRAWN));
+    assert!(!row[Column(3)].flags.contains(CellFlags::DRAWN));
+    assert!(!row[Column(4)].flags.contains(CellFlags::DRAWN));
+}

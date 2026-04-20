@@ -516,10 +516,14 @@ fn reflow_row_cells(
                 boundary.flags.insert(CellFlags::WRAP);
                 // Wide char at boundary with a gap cell: the cell at
                 // new_cols - 1 is padding, not content. Mark it so
-                // reflow/selection/search skips it.
+                // reflow/selection/search skips it. Carries DRAWN
+                // because it structurally participates in the wide
+                // char's on-screen presence (BUG-08-17).
                 if is_wide && *out_col < new_cols {
                     boundary.ch = ' ';
-                    boundary.flags.insert(CellFlags::LEADING_WIDE_CHAR_SPACER);
+                    boundary
+                        .flags
+                        .insert(CellFlags::LEADING_WIDE_CHAR_SPACER | CellFlags::DRAWN);
                 }
             }
             out_row.set_occ(new_cols);
@@ -544,10 +548,14 @@ fn reflow_row_cells(
         out_row[Column(*out_col)] = new_cell;
         *out_col += 1;
 
-        // Write wide char spacer in next column.
+        // Write wide char spacer in next column. Carries DRAWN because
+        // it structurally participates in the wide char's on-screen
+        // presence (BUG-08-17).
         if is_wide {
             let mut spacer = Cell::default();
-            spacer.flags.insert(CellFlags::WIDE_CHAR_SPACER);
+            spacer
+                .flags
+                .insert(CellFlags::WIDE_CHAR_SPACER | CellFlags::DRAWN);
             spacer.fg = cell.fg;
             spacer.bg = cell.bg;
             out_row[Column(*out_col)] = spacer;

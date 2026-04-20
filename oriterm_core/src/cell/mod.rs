@@ -41,12 +41,36 @@ bitflags! {
         const SUPERSCRIPT       = 1 << 17;
         const SUBSCRIPT         = 1 << 18;
 
+        /// Cell has been written by the application (xterm CHARDRAWN
+        /// equivalent). Set at every put_char / wide-spacer / leading-
+        /// wide-spacer / DECALN / reflow-synthesized-spacer /
+        /// push_zerowidth write site; cleared at every reset path via
+        /// template copy (templates must never carry DRAWN — enforced
+        /// by `debug_assert!` in the Grid write paths). Consumed by
+        /// DECRQCRA (`CSI * y`) to distinguish application-written
+        /// blanks from pristine cells per xterm `screen.c:3178-3180`.
+        const DRAWN             = 1 << 19;
+
         /// Union of all underline variants for mutual exclusion.
         const ALL_UNDERLINES = Self::UNDERLINE.bits()
             | Self::DOUBLE_UNDERLINE.bits()
             | Self::CURLY_UNDERLINE.bits()
             | Self::DOTTED_UNDERLINE.bits()
             | Self::DASHED_UNDERLINE.bits();
+
+        /// Internal cell-state bits that must NEVER appear on a
+        /// `cursor.template.flags` value. SGR attributes (BOLD /
+        /// UNDERLINE / COLORED / …) are template-legal; these
+        /// structural bits are set only by concrete cell-write paths
+        /// and would corrupt written cells if they leaked via the
+        /// template. `Grid::put_char_ascii` and `Grid::put_char_slow`
+        /// debug_assert that `cursor.template.flags & INTERNAL_CELL_STATE`
+        /// is empty on every write.
+        const INTERNAL_CELL_STATE = Self::DRAWN.bits()
+            | Self::WRAP.bits()
+            | Self::WIDE_CHAR.bits()
+            | Self::WIDE_CHAR_SPACER.bits()
+            | Self::LEADING_WIDE_CHAR_SPACER.bits();
     }
 }
 

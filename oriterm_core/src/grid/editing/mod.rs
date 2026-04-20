@@ -67,6 +67,15 @@ impl Grid {
     /// ASCII range, so this avoids double-checking.
     #[inline]
     pub fn put_char_ascii(&mut self, ch: char) -> bool {
+        debug_assert!(
+            !self
+                .cursor
+                .template
+                .flags
+                .intersects(CellFlags::INTERNAL_CELL_STATE),
+            "cursor template must not carry internal cell-state bits (DRAWN/WRAP/wide spacers) — see BUG-08-17"
+        );
+
         let line = self.cursor.line();
         let col = self.cursor.col().0;
 
@@ -88,7 +97,7 @@ impl Grid {
         cell.ch = ch;
         cell.fg = self.cursor.template.fg;
         cell.bg = self.cursor.template.bg;
-        cell.flags = self.cursor.template.flags;
+        cell.flags = self.cursor.template.flags | CellFlags::DRAWN;
         cell.extra.clone_from(&self.cursor.template.extra);
 
         self.cursor.set_col(Column(col + 1));
@@ -99,6 +108,15 @@ impl Grid {
     /// Slow path for `put_char`: full width lookup, wide char handling,
     /// and wrap logic.
     fn put_char_slow(&mut self, ch: char) {
+        debug_assert!(
+            !self
+                .cursor
+                .template
+                .flags
+                .intersects(CellFlags::INTERNAL_CELL_STATE),
+            "cursor template must not carry internal cell-state bits (DRAWN/WRAP/wide spacers) — see BUG-08-17"
+        );
+
         let width = UnicodeWidthChar::width(ch).unwrap_or(1);
         let cols = self.cols;
 
@@ -129,7 +147,8 @@ impl Grid {
             if width == 2 && col + 1 >= right_edge {
                 let boundary = &mut self.rows[line][Column(col)];
                 boundary.ch = ' ';
-                boundary.flags = CellFlags::LEADING_WIDE_CHAR_SPACER | CellFlags::WRAP;
+                boundary.flags =
+                    CellFlags::LEADING_WIDE_CHAR_SPACER | CellFlags::WRAP | CellFlags::DRAWN;
                 self.linefeed();
                 self.cursor.set_col(Column(wrap_col));
                 continue;
@@ -148,7 +167,7 @@ impl Grid {
             cell.ch = ch;
             cell.fg = tmpl_fg;
             cell.bg = tmpl_bg;
-            cell.flags = tmpl_flags;
+            cell.flags = tmpl_flags | CellFlags::DRAWN;
             cell.extra = tmpl_extra;
 
             if width == 2 {
@@ -161,7 +180,7 @@ impl Grid {
                     spacer.ch = ' ';
                     spacer.fg = tmpl_fg;
                     spacer.bg = tmpl_bg;
-                    spacer.flags = CellFlags::WIDE_CHAR_SPACER;
+                    spacer.flags = CellFlags::WIDE_CHAR_SPACER | CellFlags::DRAWN;
                     spacer.extra = None;
                 }
             }
@@ -217,7 +236,13 @@ impl Grid {
             prev_col = prev_col.saturating_sub(1);
         }
 
-        self.rows[line][Column(prev_col)].push_zerowidth(ch);
+        let target = &mut self.rows[line][Column(prev_col)];
+        // Combining-mark modification IS a draw operation (BUG-08-17).
+        // In current production paths the target was just written and
+        // already carries DRAWN, but the invariant is cheap to enforce
+        // here and defends against future callers.
+        target.flags.insert(CellFlags::DRAWN);
+        target.push_zerowidth(ch);
         self.dirty.mark_cols(line, prev_col, prev_col);
     }
 

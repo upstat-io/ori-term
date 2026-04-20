@@ -115,6 +115,7 @@ fn pty_write_all_kinds_preserve_bytes() {
         PtyWriteKind::MouseEvent,
         PtyWriteKind::KeyboardEvent,
         PtyWriteKind::FocusEvent,
+        PtyWriteKind::ChecksumReport,
         PtyWriteKind::Other,
     ];
     for kind in kinds {
