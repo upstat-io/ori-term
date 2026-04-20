@@ -239,7 +239,7 @@ PromptMarker, PendingMarks, OSC 133;A/B/C/D, command_start, finish_command
 ---
 
 ### Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
-**File:** `section-09a-dec-csi-extensions.md` | **Status:** Not Started
+**File:** `section-09a-dec-csi-extensions.md` | **Status:** In Progress
 
 ```
 DEC private CSI extensions, DECRQCRA checksum, rectangular operations
