@@ -34,7 +34,7 @@ third_party_review:
 sections:
   - id: "12.0"
     title: "Top-down spec audit (BLOCKING) — per-operator + behavioral rows"
-    status: not-started
+    status: complete
   - id: "12.1"
     title: "Verify sixel parser+decoder state machine end-to-end (DCS q, raster attrs, color ops, repeat, CR/NL, data, abort)"
     status: not-started
@@ -107,36 +107,36 @@ sections:
 
 **Completion criteria:**
 
-- [ ] Audit file `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated with every sequence in DEC STD 070 §5/§6.
-- [ ] Audit file contains per-operator rows (not a single "sixel data" mega-row):
-  - [ ] DCS q introducer with parameters P1 (aspect-ratio/Pan), P2 (background-select), P3 (Ph, horizontal grid — ignored in our impl, **note the divergence**)
-  - [ ] Raster attributes operator `"` with sub-params Pan, Pad, Ph, Pv
-  - [ ] Color definition operator `#n;Pu;Px;Py;Pz` — separate row per Pu value (Pu=1 HLS, Pu=2 RGB)
-  - [ ] Color selection operator `#n` (bare select, no definition)
-  - [ ] Repeat operator `!n` with data-byte payload
-  - [ ] CR operator `$` (graphic carriage return — reset x, keep y)
-  - [ ] NL operator `-` (graphic newline — reset x, advance y by 6)
-  - [ ] Sixel data byte `?`..`~` (the 6-pixel column encoding)
-- [ ] Audit file contains behavioral rows (not just operator rows):
-  - [ ] `SIXEL-BG-DeviceDefault` (P2=0) — renders with device-default bg
-  - [ ] `SIXEL-BG-NoChange` (P2=1) — undrawn pixels alpha=0 (transparent)
-  - [ ] `SIXEL-BG-SetToBg` (P2=2) — undrawn pixels filled with terminal bg color, **distinct from DeviceDefault**
-  - [ ] `SIXEL-ABORT-CAN` — CAN (0x18) mid-DCS aborts; no placement committed
-  - [ ] `SIXEL-ABORT-SUB` — SUB (0x1A) mid-DCS aborts; no placement committed
-  - [ ] `SIXEL-ABORT-ESC` — ESC mid-DCS aborts; no placement committed
-  - [ ] `SIXEL-RASTER-BEFORE-DATA` — `"` before first data byte sets dimensions
-  - [ ] `SIXEL-RASTER-MID-STREAM` — `"` emitted after data is ignored OR re-dimensions (document which)
-  - [ ] `SIXEL-PALETTE-RESET-PER-DCS` — palette rebuilt from VT340 defaults on every DCS q; prior definitions do not leak
-  - [ ] `SIXEL-MODE-80-DEFAULT` — SIXEL_SCROLLING default state verified
-  - [ ] `SIXEL-MODE-8452-CURSOR-RIGHT` — DECSET 8452 cursor-right behavior
-- [ ] Audit file contains `not-targeted` rows for:
-  - [ ] DEC STD 070 macro-set commands (DECDMAC / DECINVM) — rationale: ori_term does not implement macro storage; parser must silently drop.
-  - [ ] DECGRA and other non-sixel graphics sequences that share the DCS space — rationale: ori_term's `DcsState` gates only on `DcsState::Sixel`; parser must pass non-sixel DCS through to their respective handlers without corrupting sixel state.
-- [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
-- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/sixel.md`.
-- [ ] New catalog rows in `catalog/sixel.md` use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema` (frozen v1.0 — 2026-04-13).
-- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
-- [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
+- [x] Audit file `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated with every sequence in DEC STD 070 §5/§6.
+- [x] Audit file contains per-operator rows (not a single "sixel data" mega-row):
+  - [x] DCS q introducer with parameters P1 (aspect-ratio/Pan), P2 (background-select), P3 (Ph, horizontal grid — ignored in our impl, **note the divergence**)
+  - [x] Raster attributes operator `"` with sub-params Pan, Pad, Ph, Pv
+  - [x] Color definition operator `#n;Pu;Px;Py;Pz` — separate row per Pu value (Pu=1 HLS, Pu=2 RGB)
+  - [x] Color selection operator `#n` (bare select, no definition)
+  - [x] Repeat operator `!n` with data-byte payload
+  - [x] CR operator `$` (graphic carriage return — reset x, keep y)
+  - [x] NL operator `-` (graphic newline — reset x, advance y by 6)
+  - [x] Sixel data byte `?`..`~` (the 6-pixel column encoding)
+- [x] Audit file contains behavioral rows (not just operator rows):
+  - [x] `SIXEL-BG-DeviceDefault` (P2=0) — renders with device-default bg
+  - [x] `SIXEL-BG-NoChange` (P2=1) — undrawn pixels alpha=0 (transparent)
+  - [x] `SIXEL-BG-SetToBg` (P2=2) — undrawn pixels filled with terminal bg color, **distinct from DeviceDefault**
+  - [x] `SIXEL-ABORT-CAN` — CAN (0x18) mid-DCS aborts; no placement committed
+  - [x] `SIXEL-ABORT-SUB` — SUB (0x1A) mid-DCS aborts; no placement committed
+  - [x] `SIXEL-ABORT-ESC` — ESC mid-DCS aborts; no placement committed
+  - [x] `SIXEL-RASTER-BEFORE-DATA` — `"` before first data byte sets dimensions
+  - [x] `SIXEL-RASTER-MID-STREAM` — `"` emitted after data is ignored OR re-dimensions (document which)
+  - [x] `SIXEL-PALETTE-RESET-PER-DCS` — palette rebuilt from VT340 defaults on every DCS q; prior definitions do not leak
+  - [x] `SIXEL-MODE-80-DEFAULT` — SIXEL_SCROLLING default state verified
+  - [x] `SIXEL-MODE-8452-CURSOR-RIGHT` — DECSET 8452 cursor-right behavior
+- [x] Audit file contains `not-targeted` rows for:
+  - [x] DEC STD 070 macro-set commands (DECDMAC / DECINVM) — rationale: ori_term does not implement macro storage; parser must silently drop.
+  - [x] DECGRA and other non-sixel graphics sequences that share the DCS space — rationale: ori_term's `DcsState` gates only on `DcsState::Sixel`; parser must pass non-sixel DCS through to their respective handlers without corrupting sixel state.
+- [x] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
+- [x] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/sixel.md`.
+- [x] New catalog rows in `catalog/sixel.md` use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema` (frozen v1.0 — 2026-04-13).
+- [x] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [x] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
 
 **No other subsection in this section can begin work until §12.0 is complete.** This is a hard gate. The audit file IS the row set §12.1–§12.5 drive to `verified`.
 
