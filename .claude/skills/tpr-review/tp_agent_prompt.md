@@ -126,7 +126,7 @@ You do NOT convert JSON to YAML. You do NOT rewrite Markdown bullets as YAML lis
 
 ### Tier 5 — Truly nothing usable
 
-If the stdout contains no identifiable report content (CLI crashed, empty output, only chain-of-thought with no conclusions, timeout before any output), synthesize a failure stub:
+If the stdout contains no identifiable report content (CLI crashed, empty output, only chain-of-thought with no conclusions, timeout before any output, provider error like 429 / RESOURCE_EXHAUSTED / rate-limit / auth failure / network error), synthesize a failure stub:
 
 ```
 <<<TPR-REPORT
@@ -138,6 +138,10 @@ TPR-REPORT>>>
 ```
 
 Do NOT invent findings. Do NOT guess at a partial report. Do NOT construct a plausible-looking report from the chain-of-thought. `status: failed` is the correct output when there is no real report to return.
+
+**MANDATORY for ALL terminal failure modes.** Provider errors (429 / RESOURCE_EXHAUSTED / rate-limit / quota exceeded / auth failure / network timeout / CLI non-zero exit) are Tier-5 conditions — synthesize the stub. Do NOT return prose like "Still running", "CLI hit a rate limit", "Retrying later", or any other human-readable status. Do NOT return only the CLI's raw error message. Do NOT omit the stub and return just `scratch_dir:`. The orchestrator's §9 stranded-report recovery + retry/survivor-mode policy depends on receiving a valid `<<<TPR-REPORT … TPR-REPORT>>>` block with `status: failed` — prose or missing blocks break the recovery path and the orchestrator cannot distinguish "reviewer failed" from "transport bug".
+
+**If the stderr shows a provider error** (grep `stderr.txt` for `429`, `RESOURCE_EXHAUSTED`, `rate limit`, `authentication`, `quota`, `TIMEOUT`), include the specific error phrase in the `summary` so the orchestrator's error classification can log the cause accurately.
 
 ### Tier priority
 
