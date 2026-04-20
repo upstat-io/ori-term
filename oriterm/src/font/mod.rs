@@ -492,6 +492,7 @@ pub(crate) fn is_builtin(ch: char) -> bool {
         | '\u{E0B6}'                // Powerline left rounded separator
         | '\u{F5D0}'..='\u{F60D}'   // Branch drawing (Kitty/Ghostty PUA)
         | '\u{1FB00}'..='\u{1FB9F}' // Symbols for Legacy Computing
+        | '\u{1CD00}'..='\u{1CDE5}' // Symbols for Legacy Computing Supplement (octants)
     ) || is_builtin_geometric(ch)
 }
 
