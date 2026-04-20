@@ -100,8 +100,8 @@ Row names below are LITERAL copies of the step headers later in this file — no
 | 3 | Step 8B: Architecture Sanity Check via /tp-help | → `/tp-help` Model Policy | |
 | 3 | Step 9: User Review of Architecture (MANDATORY — DO NOT SKIP) | Opus (session) | Judgment: user-facing checkpoint |
 | 4 | Step 10: Create Directory Structure | Sonnet | Orchestration: shell / file creation |
-| 4 | Step 11: Write Sections Sequentially via Sonnet Subagents | **Sonnet** (`model: "sonnet"`) | Mechanical-writing: expand Opus-authored architecture into section templates — already annotated |
-| 4 | Step 12: Update Overview and Index | Sonnet | Mechanical-writing: index reflects the known section list decided in Phase 3 |
+| 4 | Step 11: Write Sections Sequentially (MAIN-AGENT INLINE — NO SUBAGENTS) | **Main agent (Opus)** — inline Write | Judgment-writing: section text encodes architectural decisions; no subagent dispatch |
+| 4 | Step 12: Update Overview and Index | **Main agent (Opus)** — inline Edit | Judgment-writing: overview/index mutations co-decided with sections |
 | 5 | Step 13: Cohesion Check (NEW — before /review-plan) | **Sonnet** (`model: "sonnet"`) | Orchestration / research reading — already annotated |
 | 5 | Step 14: Self-Check Before Review | Opus (session) | Judgment: is the plan ready? |
 | 5 | Step 15: Report Progress | Sonnet | Mechanical-writing: summary from known state |
@@ -110,7 +110,11 @@ Row names below are LITERAL copies of the step headers later in this file — no
 | 5 | Step 18: Reroute Lifecycle Setup — MANDATORY | **Opus** (session) | Judgment-writing: plan-graph reordering |
 | 5 | Step 19: Cross-Plan Review Invalidation (MANDATORY) | **Opus** (session) | Judgment-writing: cross-plan reasoning |
 
-**Rule of thumb:** Opus decides the architecture; Sonnet subagents expand each section from the architecture Opus handed them. Step 11 writes section files, Step 12 updates the overview, and Step 15 writes the progress report — but all three mutate text whose shape was already fixed by the Opus phases (architecture + `00-overview.md` + section list). That's mechanical-writing, not judgment-writing, and running it on Opus would be Opus waste.
+**Rule of thumb:**
+
+- Sonnet subagents run ONLY for research/orchestration (Steps 3–6 research passes, Step 13 cohesion read-only scan).
+- Every plan-content mutation (section files, `00-overview.md`, `index.md`) runs inline in the main agent. Plan text is judgment-writing: each section resolves architectural ambiguities that surface only while writing — sync-point enumeration, cross-section dependency phrasing, semantic-pin wording. Delegating that to Sonnet produces scope drift (pre-implementing described code) and template drift (hallucinated file paths, mis-referenced prior sections).
+- Context pressure from in-line section writing is acceptable — the main agent reads files via Read and writes one section at a time, releasing intermediate context between sections.
 
 ## Phase 0: Fork Decision — Heavy Plan vs. Light Plan (RUN FIRST, BEFORE ANYTHING ELSE)
 
@@ -467,10 +471,10 @@ Read CLAUDE.md first, then read .claude/rules/impl-hygiene.md and .claude/rules/
 
 PART A — Tests & Spec:
 1. Find ALL existing tests related to {topic}:
-   - Rust unit tests (tests.rs files)
-   - Rust integration tests (ori_llvm/tests/aot/)
-   - Ori spec tests (tests/spec/)
-   - Valgrind tests (tests/valgrind/)
+   - Rust unit tests (sibling `tests.rs` files)
+   - Terminal-conformance tests (`teseq` / `tack` / `vttest` under `oriterm_core/tests/`)
+   - GPU visual-regression tests (`oriterm/src/gpu/visual_regression/`)
+   - UI-framework tests (`oriterm_ui/` test modules)
    - Read the actual test code, not just file names
 2. Check the spec:
    - Read relevant sections of docs/spec/
@@ -800,81 +804,66 @@ Create the plan directory under the plan root:
 
 Where `{plan_root}` is `${ORI_PLAN_ROOT:-plans}`. When `ORI_PLAN_ROOT` is not set, this resolves to the standard `plans/{name}/`.
 
-### Step 11: Write Sections Sequentially via Sonnet Subagents
+### Step 11: Write Sections Sequentially (MAIN-AGENT INLINE — NO SUBAGENTS)
 
-**Context-saving architecture**: Each section is written by a **Sonnet subagent** (`model: "sonnet"`), not by the main Opus agent. This keeps section text — which can be thousands of tokens per section — out of the main Opus context window. By the time a plan has 8 sections, the savings are massive: Opus holds only the architecture + brief per-section confirmations, not the full text of every section.
+**Main-agent inline writing — no Sonnet subagents, no Agent dispatch.** Section files are plan content. Plan content is judgment-writing: each section resolves architectural ambiguities that surface only while writing (sync-point enumeration, cross-section dependency phrasing, semantic-pin wording). Delegating to a Sonnet subagent produces scope drift (pre-implementing described code into sibling repos) and template drift (hallucinated file paths, mis-referenced prior sections). The main agent (Opus) writes every section itself using the Write tool.
 
-**Why Sonnet works here**: By this point, the architecture is designed (Phase 3) and user-approved (Step 9). Section writing is structured document generation following a well-defined template, grounded in specific research findings. This is Sonnet-grade work. Opus made the architectural judgment calls; Sonnet executes the structured writing.
+For each section, in order from 01 to N — one at a time, never batched:
 
-For each section, in order from 01 to N:
+**Step 11a: Gather section-writing context.** Before writing section `{NN}`, the main agent assembles in its own context:
 
-**Step 11a: Prepare the Sonnet agent prompt.** The main agent (Opus) assembles:
-- The full `00-overview.md` architecture
-- ALL previously written section files (read from disk — the main agent doesn't need to hold them in context, just pass their paths/content to the subagent)
-- The relevant research findings for this section's scope (from Phases 2 agent results)
-- The plan template from `.claude/skills/create-plan/plan-schema.md`
-- The section-specific grounding requirements (listed below)
-- Any relevant rule files for this section's domain (e.g., `.claude/rules/tests.md`, `.claude/rules/compiler.md`, `.claude/rules/registry.md`)
+- The full `00-overview.md` architecture (already written in Step 8 — re-read if not already in context)
+- ALL previously-written section files for this plan (Read each from disk in order — `section-01-*.md` through `section-{NN-1}-*.md`)
+- The relevant research findings for this section's scope (from Phase 2 agent results already in context)
+- The plan template from `.claude/skills/create-plan/plan-schema.md` (re-read — it is the SSOT for structure)
+- Any rule files whose constraints apply to this section's domain (e.g., `.claude/rules/tests.md`, `.claude/rules/compiler.md`, `.claude/rules/registry.md`, `.claude/rules/arc.md`)
+- The PLAN TYPE classification from Phase 0.5 (`compiler` | `skill-infra-docs` | `spec-grammar`) — drives template branching below
 
-**Step 11b: Launch the Sonnet subagent** (`model: "sonnet"`) with a prompt structured as:
+Context-release discipline:
 
-```
-## CRITICAL SCOPE CONSTRAINT — READ FIRST (MANDATORY PREAMBLE)
+- After writing section `{NN}` and verifying it (Step 11d), do NOT retain the full text of section `{NN}` in active context when moving to section `{NN+1}`.
+- Re-Read prior sections on-demand when cross-reference checks need them.
+- Read-on-demand replaces subagent delegation as the context-pressure relief mechanism — no scope-drift boundary to cross.
 
-You are writing a PLAN DOCUMENT. This means:
+**Step 11b: Select the template by PLAN TYPE.**
 
-1. You write EXACTLY ONE file: `{plan_root}/{name}/section-{NN}-{slug}.md`.
-2. You DO NOT modify any other file. No edits to source code, scripts, rule files, CLAUDE.md, or sibling repos.
-3. You DO NOT run `git add`, `git commit`, or any destructive git command.
-4. Plans describe FORWARD-LOOKING work. All checkboxes in the section you write should be `- [ ]` (not-started), not `- [x]`. Subsection statuses should be `not-started`. Section status should be `not-started`.
-5. The work described in this plan will be EXECUTED later by `/continue-roadmap` or explicit implementation. You DO NOT pre-implement anything.
+| PLAN TYPE | Template | Completion checklist |
+|---|---|---|
+| `compiler` | Full Section File Template (`plan-schema.md` §Section File Template) | TPR checkpoints, `§NN.R` block, matrix testing, semantic/negative pins, `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling` section-close sweep, `/sync-claude` section-close doc sync. `reviewed: false` default. |
+| `skill-infra-docs` | Skill/Infra/Docs Plan Variant (`plan-schema.md` §Skill/Infra/Docs Plan Variant) | Practical verification only: tests pass (if applicable), `plan_corpus check` clean, `cargo test --all` green, `repo-hygiene.sh --check`. OMIT §NN.R blocks, TPR checkpoints, matrix testing, semantic/negative pins, retrospective sweeps. `reviewed: true` default. |
+| `spec-grammar` | Full Section File Template PLUS spec gates | All `compiler` items PLUS `/create-draft-proposal` → `/review-draft-proposal` precursor gate + `/sync-spec` + `/sync-grammar` + full-aggregate `/tpr-review`. `reviewed: false` default. |
 
-Violations of this scope fence produce stranded commits in sibling repos, premature "complete" statuses in plans that haven't been approved yet, and post-hoc cleanup debt. If you find yourself writing code outside the plan file, STOP.
+**Step 11c: Write the section file inline.** The main agent calls Write with:
 
----
+- Path: `{plan_root}/{name}/section-{NN}-{slug}.md`
+- Content: assembled per the Step 11b template, filled from the Step 11a context
 
-You are writing Section {NN} of a plan for the ori_term. You will WRITE the section file to disk using the Write tool.
+Writing discipline — these are main-agent responsibilities, not subagent preamble:
 
-PLAN TYPE: {plan_type}  # one of: compiler | skill-infra-docs | spec-grammar
-  - If `compiler`: use the full Section File Template with TPR checkpoints, §NN.R block, matrix testing, semantic/negative pins, and the full compiler-rigor completion checklist. `reviewed: false` default.
-  - If `skill-infra-docs`: use the Skill/Infra/Docs Plan Variant template (see plan-schema.md §Skill/Infra/Docs Plan Variant). Omit §NN.R blocks, TPR checkpoints, matrix testing, semantic/negative pins, `/improve-tooling` per-subsection retrospectives, `/sync-claude` per-subsection retrospectives, and `/tpr-review` / `/impl-hygiene-review` / `/improve-tooling section-close sweep` / `/sync-claude section-close doc sync` items from the completion checklist. Keep practical verification (tests pass, plan-corpus check, repo-hygiene). `reviewed: true` default.
-  - If `spec-grammar`: full compiler rigor PLUS `/create-draft-proposal` → `/review-draft-proposal` precursor gate + `/sync-spec` + `/sync-grammar` + `/tpr-review` on aggregate. `reviewed: false` default.
+- **One file per Step 11 iteration.** Never Write to any path other than the current section file.
+- **No code edits, no git commands.** Plan writing NEVER touches `compiler/`, `scripts/`, `.claude/` (other than the plan directory being created), or any sibling repo. Never run `git add`, `git commit`, or any destructive git operation during plan writing.
+- **Forward-looking checkboxes.** Every `- [ ]` in the new section stays unchecked. Subsection statuses are `not-started`. Section status is `not-started`. The work is EXECUTED later by `/continue-roadmap`; `/create-plan` never pre-implements.
+- **Exact paths and symbols.** Use EXACT paths from research (Glob-verified), EXACT type signatures (copied from source), EXACT function names. No paraphrased or invented identifiers.
+- **Sync point enumeration.** For any new enum variant / type / registry entry the section introduces, list ALL sync points from research. A missing sync point is a silent regression source.
+- **Analogous pattern reference.** Cite the analogous feature's implementation pattern — "Follow the same pattern as {feature} in {files}".
+- **Rules woven in.** Embed applicable CLAUDE.md + `.claude/rules/*.md` constraints directly into checklist items, not as an appendix. Example: "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)".
+- **Test strategy per code-modifying section.** Explicit matrix dimensions (types × patterns), semantic pin requirements, TDD ordering ("failing tests first" as the first checklist item, "debug + release green" as the last), test categories (Rust unit tests, Ori spec tests, AOT tests, Valgrind tests).
+- **Dependencies stated both directions.** Reference what prior sections provide AND state what this section provides to downstream sections.
+- **Success criteria concrete and traced.** Every section MUST have detailed success criteria (testable conditions, not "implement X"). Each criterion must connect upward to ≥1 mission success criterion in `00-overview.md`.
 
-ARCHITECTURE (from 00-overview.md):
-{paste overview content}
+**Step 11d: Self-verify the section before proceeding.** After Write completes, the main agent spot-checks its own output:
 
-PRIOR SECTIONS (read these for cross-references and to avoid contradictions):
-{paste prior section content or instruct agent to read files from disk}
+- File paths referenced in this section exist (Glob)
+- Type/function names referenced exist (Grep)
+- References to prior sections are accurate (compare against the Read'd prior sections)
+- No contradictions with `00-overview.md` or prior sections
+- All required frontmatter fields present (id, title, status, goal, success_criteria, reviewed, inspired_by, depends_on, third_party_review)
+- All checkboxes are `- [ ]` (forward-looking)
+- Completion checklist matches the PLAN TYPE branch from Step 11b
 
-RESEARCH FINDINGS FOR THIS SECTION:
-{paste relevant research excerpts}
+If issues are found, Edit the section file directly to fix them. Then proceed to section `{NN+1}`.
 
-SECTION REQUIREMENTS:
-- Title: {title}
-- Goal: {goal from architecture}
-- Files touched: {from research}
-- Depends on: {prior sections}
-
-TEMPLATE: Follow the format in .claude/skills/create-plan/plan-schema.md (read it). Branch to the Skill/Infra/Docs Plan Variant OR full Section File Template based on PLAN TYPE above.
-
-RULES TO WEAVE IN: Read {list of applicable rule files} and embed applicable constraints into checklist items.
-
-Write the section file to: {plan_root}/{name}/section-{NN}-{slug}.md
-Return a 2-line summary: total lines + confirmation that all checkboxes are `- [ ]`.
-```
-
-The subagent writes the file directly to disk and returns a summary. The main-agent MUST verify (Step 11c) that no files outside the plan directory were modified — if the subagent drifted, fix the plan file and revert any stray changes before proceeding to the next section.
-
-**Step 11c: Opus reviews the result.** The main agent reads the written section file and verifies:
-- File paths referenced in this section exist (spot-check with Glob)
-- Type/function names referenced exist (spot-check with Grep)
-- References to prior sections are accurate
-- No contradictions with the overview or prior sections
-- Section has all required elements (frontmatter, success criteria, matrix testing, completion checklist)
-
-If issues are found, either fix them directly or re-prompt the Sonnet agent with corrections. Then proceed to the next section.
-
-**Section grounding requirements** (the Sonnet agent's prompt MUST include these):
+**Section grounding requirements** (re-summary for auditability):
 
 - **File paths**: Use EXACT paths from research (verified to exist)
 - **Type signatures**: Use EXACT signatures from research (copy from source)
@@ -892,7 +881,7 @@ If issues are found, either fix them directly or re-prompt the Sonnet agent with
 - **What this section provides to later sections**: State what downstream sections will depend on. "Section {M} will use the {API/type/pattern} established here."
 
 - **Success criteria**: Every section MUST have detailed success criteria — concrete, testable conditions that prove the section's work is done. Not "implement X" but "X produces Y when Z is run." Each criterion must connect upward to at least one mission success criterion in `00-overview.md`. A section without success criteria is not executable.
-- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. The Sonnet agent reads the relevant rule files and embeds the applicable constraints directly into the section's tasks. For example: if a section adds an enum variant, the checklist item should say "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
+- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. The main agent reads the relevant rule files (Read tool) and embeds applicable constraints directly into the section's tasks. Example: if a section adds an enum variant, the checklist item should say "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
 
 **Frontmatter includes (all plan types):**
 - Section ID, title, status: not-started, goal, `success_criteria` list
@@ -916,7 +905,7 @@ If issues are found, either fix them directly or re-prompt the Sonnet agent with
 - **`spec-grammar` plan sections**: `reviewed: false` at creation — same rationale as compiler.
 - **`skill-infra-docs` plan sections**: `reviewed: true` at creation — these plans are low-correctness-risk (no compiler invariants at stake) and don't undergo pre-implementation re-review. Flipping to `true` up front prevents unnecessary `/review-plan` cycles that would delay skill/infra execution.
 
-**After the Sonnet subagent writes each section**, Step 11c's verification pass (described above) is mandatory before proceeding to the next section. Do NOT skip the verification — the Sonnet subagent might hallucinate file paths or mis-reference prior sections, and the main Opus agent is the single authority catching these before the error propagates into subsequent sections.
+**After each section is written**, Step 11d's self-verification pass (described above) is mandatory before proceeding to the next section. Do NOT skip it — the main agent is still the single authority catching hallucinated file paths or mis-referenced prior sections before the error propagates into subsequent sections.
 
 Then proceed to the next section.
 

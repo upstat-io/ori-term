@@ -2,7 +2,7 @@
 
 Not invoked directly. The `/tpr-review` orchestrator (Opus, main context) composes ONE shared reviewer prompt per round in `compose-round-prompt.md`, writes it to `{SCRATCH_DIR}/prompt.md`, then dispatches this sub-agent to:
 
-1. Invoke the `{REVIEWER}` CLI against that shared prompt, prepending a 2-line identity header so the CLI knows which reviewer it is and what trust tier to self-police against.
+1. Invoke the `{REVIEWER}` CLI against that shared prompt, prepending the 1-line identity header `You are {REVIEWER}.`. No trust-tier text.
 2. Extract the CLI's `<<<TPR-REPORT … TPR-REPORT>>>` block.
 3. Return ONLY that block to the orchestrator.
 
@@ -11,8 +11,8 @@ Everything else the CLI prints is chatter — drop it. The orchestrator never wa
 ## Placeholders (orchestrator fills before dispatch)
 
 - `{REVIEWER}` → `codex` or `gemini`
-- `{TRUST_TIER}` → `HIGH` (codex) or `LOWER` (gemini)
 - `{SCRATCH_DIR}` → absolute path to the shared per-round scratch dir (same path for both sub-agents; output files inside are namespaced by reviewer)
+- No `{TRUST_TIER}` placeholder. Trust tier is orchestrator-only; never in reviewer-facing text.
 
 ## Your mission is transport, not editorial
 
@@ -45,16 +45,23 @@ The `scratch_dir:` line MUST be the FIRST line of your final return message so t
 
 ## Step 2 — Invoke the CLI foreground (single Bash call, timeout: 2700000)
 
-Prepend a 2-line identity header to the shared prompt and pass the combined text to the CLI. The shared prompt is identity-neutral (it contains `<your identity>` / `<your trust tier>` slot markers in its return format) — the header is how the CLI learns which reviewer it is and fills those slots correctly.
+Prepend the 1-line identity header `You are {REVIEWER}.` to the shared prompt and pass the combined text to the CLI. No trust-tier text in header, prompt, or anywhere else in reviewer-facing surfaces.
 
-Do NOT use `run_in_background: true`. Do NOT pipe through `Monitor`. Do NOT retry on non-zero exit. Do NOT modify CLI flags. Do NOT read or alter the shared prompt file.
+Gemini depth-suffix concatenation rules:
+
+- If `{REVIEWER}` == gemini AND `$RUN/prompt-gemini-depth.md` exists, concatenate it after `$RUN/prompt.md` separated by a blank line.
+- This is the ONLY per-reviewer prompt concatenation permitted at transport time; Codex never reads the depth suffix.
+- When the file is absent (help-mode, or any round where the orchestrator did not write it), fall through to the base gemini invocation.
+- Do NOT compose, edit, or invent the suffix — it is orchestrator-owned per `compose-round-prompt.md §Gemini depth appendix`.
+
+Do NOT use `run_in_background: true`. Do NOT pipe through `Monitor`. Do NOT retry on non-zero exit. Do NOT modify CLI flags. Do NOT read or alter either prompt file.
 
 `tee` stdout to disk so the orchestrator can recover the report if your return message is truncated (dual-path transport). Output files inside `$RUN` are namespaced by `{REVIEWER}` so both sub-agents writing into the same shared dir do not collide.
 
 **If `{REVIEWER}` == codex:**
 
 ```
-PROMPT="$(printf 'You are codex. Your trust tier in the consuming orchestrator is HIGH.\n\n'; cat "$RUN/prompt.md")"
+PROMPT="$(printf 'You are codex.\n\n'; cat "$RUN/prompt.md")"
 codex exec --full-auto --json --ephemeral "$PROMPT" \
   2>"$RUN/codex-stderr.txt" | tee "$RUN/codex-stdout.txt"
 ```
@@ -62,7 +69,11 @@ codex exec --full-auto --json --ephemeral "$PROMPT" \
 **If `{REVIEWER}` == gemini:**
 
 ```
-PROMPT="$(printf 'You are gemini. Your trust tier in the consuming orchestrator is LOWER.\n\n'; cat "$RUN/prompt.md")"
+if [ -f "$RUN/prompt-gemini-depth.md" ]; then
+  PROMPT="$(printf 'You are gemini.\n\n'; cat "$RUN/prompt.md"; printf '\n\n'; cat "$RUN/prompt-gemini-depth.md")"
+else
+  PROMPT="$(printf 'You are gemini.\n\n'; cat "$RUN/prompt.md")"
+fi
 gemini -m gemini-3.1-pro-preview --approval-mode yolo --output-format stream-json \
   -p "$PROMPT" 2>"$RUN/gemini-stderr.txt" | tee "$RUN/gemini-stdout.txt"
 ```
@@ -98,7 +109,7 @@ Add a single `extraction_note: recovered from missing-{open|close}-sentinel` lin
 
 ### Tier 3 — Neither sentinel, but report content is clearly present
 
-Scan the stdout for a block that looks like the report schema: YAML-ish lines with `reviewer:`, `trust_tier:`, `status:`, and (if findings were raised) a `findings:` list. The block is usually near the end of the CLI output, after any chain-of-thought chatter.
+Scan the stdout for a block that looks like the report schema: YAML-ish lines with `reviewer:`, `status:`, and (if findings were raised) a `findings:` list. The block is usually near the end of the CLI output, after any chain-of-thought chatter.
 
 Locate the start line and end line by content, then wrap:
 
@@ -131,7 +142,6 @@ If the stdout contains no identifiable report content (CLI crashed, empty output
 ```
 <<<TPR-REPORT
 reviewer: {REVIEWER}
-trust_tier: {TRUST_TIER}
 status: failed
 summary: <one-line description of what went wrong — no findings invented>
 TPR-REPORT>>>
@@ -163,7 +173,7 @@ A brief mechanical comment between the two required elements (e.g., "CLI exit 0;
 1. You DO NOT compose the reviewer prompt — the orchestrator wrote ONE shared prompt to `{SCRATCH_DIR}/prompt.md` (same file both sub-agents read). You only read it; you never modify it.
 2. You DO NOT translate, reinterpret, reword, or summarize the CLI's TPR-REPORT output. Your job is transport, not editorial.
 3. You DO NOT return the full CLI transcript. You return ONLY the extracted `<<<TPR-REPORT … TPR-REPORT>>>` block.
-4. You use the verbatim CLI flags in Step 2. No retries. No flag changes. No `run_in_background: true`. Single foreground Bash call, `timeout: 2700000`. Prepend the 2-line identity header described in Step 2 — this is how the CLI knows its identity and trust tier.
+4. You use the verbatim CLI flags in Step 2. No retries. No flag changes. No `run_in_background: true`. Single foreground Bash call, `timeout: 2700000`. Prepend the 1-line identity header described in Step 2 — this is how the CLI knows its identity. Trust tier is orchestrator-only metadata and must NEVER appear in the header, the prompt, or the return schema.
 5. You extract with the `sed` pattern in Step 3. No regex changes. No post-processing.
 6. If extraction fails, you emit a `status: failed` stub — you DO NOT invent findings to fill the gap.
 7. You do NOT file findings into plan sections. You do NOT commit code. You do NOT edit files other than `$RUN/{REVIEWER}-{stdout,stderr,report}.txt`.

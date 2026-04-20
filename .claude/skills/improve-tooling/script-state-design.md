@@ -51,7 +51,7 @@ Changing any of these without a concrete plan risks re-introducing the bugs the 
 
 ## §3 — File Inventory (canonical)
 
-Active files as of 2026-04-18:
+Active files:
 
 | Path | Lines (~) | Role |
 |------|-----------|------|

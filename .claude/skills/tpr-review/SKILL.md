@@ -48,7 +48,7 @@ Canonical use cases:
 - Nightly unattended: `/tpr-review --autonomous --max-rounds=2 <scope>` — both flags compose; autonomous mode + a tighter cap for faster batches.
 - Deep review for correctness-sensitive work: `/tpr-review --max-rounds=6 <scope>` — extended cap up front (equivalent to the interactive "run-more" extension default).
 
-Without the strip-first normalization, custom-objective mode's "any other value → the entire `ARGS` becomes the review objective" rule would absorb `--autonomous` or `--max-rounds=N` into the objective string, leaving the flags ignored. The normalization happens once at §1 parse time; every downstream check reads the normalized state (`autonomous_mode`, `max_rounds`). Autonomous mode replaces every `AskUserQuestion` the coordinator would otherwise emit with a best-judgement auto-decision that emits a distinct `exit_reason` so the calling parent can triage outcomes in bulk. See §5 (cap-exit), §9 (both-reviewer-failure + context-pressure-pause), §3 (spec-gate), and §11.5 (user-interaction discipline) for the per-point auto-decision rules.
+Without the strip-first normalization, custom-objective mode's "any other value → the entire `ARGS` becomes the review objective" rule would absorb `--autonomous` or `--max-rounds=N` into the objective string, leaving the flags ignored. The normalization happens once at §1 parse time; every downstream check reads the normalized state (`autonomous_mode`, `max_rounds`). Autonomous mode replaces every `AskUserQuestion` the coordinator would otherwise emit with a best-judgement auto-decision that emits a distinct `exit_reason` so the calling parent can triage outcomes in bulk. See §5 (cap-exit), §9 (both-reviewer-failure), §3 (spec-gate), and §11.5 (user-interaction discipline) for the per-point auto-decision rules.
 
 **Who passes this flag.** `/tpr-review` is invoked by autonomous parent skills that run without a human at the keyboard (cron-triggered batches, nightly pipelines). The canonical consumer today is `/sync-docs` ("Nightly-ready, fully automated"). Any parent that runs unattended MUST append `--autonomous` to its `ARGS` when invoking `/tpr-review`; conversely, interactive callers (`/review-plan`, `/fix-bug`, direct user invocation) MUST NOT pass the flag, because the best-judgement auto-decisions are strictly worse than a human answer when a human is available.
 
@@ -56,38 +56,43 @@ Without the strip-first normalization, custom-objective mode's "any other value 
 
 ## §2 — Grounding (MANDATORY before round 1)
 
-```
-Read: CLAUDE.md
-Bash: ls .claude/rules/*.md
-Read: every file the ls enumerated
-```
-
-The `ls` output is the authoritative rule manifest. Do not hand-select. Reviewers perform their own grounding inside their sub-agents (see `tp_agent_prompt.md`).
-
-## §3 — Spec/grammar gate (MANDATORY, all modes, pre-round-1)
+Orchestrator-side grounding is MINIMAL. Reviewer sub-agents self-ground (see `tp_agent_prompt.md`). Orchestrator reads rule files JIT during §4 verification, only the files a finding cites.
 
 ```
-Bash: git diff --name-only HEAD -- docs/spec/ docs/spec/grammar.ebnf
+Read: CLAUDE.md                         # general guardrails
+Bash: ls .claude/rules/*.md             # manifest for JIT lookups — do NOT Read upfront
 ```
 
-If the output is **non-empty**, check `docs/ori_lang/proposals/approved/` for a proposal whose body mentions any of the touched files. If no matching proposal is found, emit a synthetic pre-round-0 finding and prepend it to the round-0 verified set:
+Rules:
+- Do NOT pre-load rule files beyond `CLAUDE.md`.
+- Do NOT hand-select a "core subset" of rules.
+- JIT-on-cite: when a finding's `rule_violated` or `evidence` references `.claude/rules/<name>.md`, Read THAT file during §4 verification.
+- Full-manifest read is the documented waste pattern (see `tpr-review-design.md §5 — orchestrator rule pre-load regression, 2026-04-19`).
+
+## §3 — Vendored-dep gate (MANDATORY, all modes, pre-round-1)
+
+```
+Bash: git diff --name-only HEAD -- crates/vte/ crates/portable-pty/ crates/wgpu-hal/
+```
+
+If the output is **non-empty**, a vendored dependency was modified. Emit a synthetic pre-round-0 finding and prepend it to the round-0 verified set:
 
 ```
 {
-  id: "SPEC-GATE-001",
+  id: "VENDOR-GATE-001",
   severity: "critical",
-  path: "<first spec/grammar file touched>",
+  path: "<first vendored file touched>",
   line: 1,
-  title: "Spec/grammar modified without approved proposal",
-  evidence: "<git diff output listing all touched spec/grammar files>",
-  rule_violated: ".claude/rules/spec.md §Enforcement",
-  recommended_fix: "Either revert the spec/grammar changes OR create + approve a proposal under docs/ori_lang/proposals/approved/ and reference it in the commit message"
+  title: "Vendored crate modified without documented rationale",
+  evidence: "<git diff output listing all touched vendored files>",
+  rule_violated: ".claude/rules/crate-boundaries.md §Vendored crates",
+  recommended_fix: "Either revert the vendored change OR document the patch + upstream intent in the commit message, and record the divergence in the corresponding per-crate rules file under .claude/rules/."
 }
 ```
 
-The finding is CRITICAL, NOT meta, and verified-by-construction (git diff is ground truth). The user must fix it (revert or approve a proposal) before the round's reviewers can complete.
+The finding is CRITICAL, NOT meta, and verified-by-construction (git diff is ground truth). The user must fix it (revert or document the patch) before the round's reviewers can complete.
 
-**Autonomous-mode spec-gate handling.** When `autonomous_mode == True`, the gate CANNOT pause for a user decision. If a real SPEC-GATE finding fires (spec/grammar diff touched without an approved proposal), exit immediately with `exit_reason = "autonomous_spec_gate_violation"`, emit a final round summary listing the touched files + missing proposal, and return. The parent batch MUST treat this status as a blocking alarm — never silently proceed, never continue the batch on the violating file. Spec/grammar changes without governance are correctness-sensitive in a way autonomous mode cannot sign off on.
+**Autonomous-mode vendored-dep gate handling.** When `autonomous_mode == True`, the gate CANNOT pause for a user decision. If a real VENDOR-GATE finding fires (vendored crate diff touched without documented rationale), exit immediately with `exit_reason = "autonomous_vendor_gate_violation"`, emit a final round summary listing the touched files, and return. The parent batch MUST treat this status as a blocking alarm — never silently proceed, never continue the batch on the violating file. Vendored changes without documentation are correctness-sensitive in a way autonomous mode cannot sign off on.
 
 ## §4 — Trust tiers (verification posture)
 
@@ -160,8 +165,20 @@ The attribution-sentinel format matches `/tp-help`'s pre-refactor contract so ex
 
 Two counters bound the loop:
 
-- `iteration_counter` — finding-fixing rounds completed. Cap: **`max_rounds`** (default `3`, overridable via `--max-rounds=N` flag in §1; valid range 1-10).
+- `iteration_counter` — finding-fixing rounds completed. Cap: **`max_rounds`** (default `3`, overridable via `--max-rounds=N` flag in §1; valid range 1-10). On resume, callers MAY pass `--resume-from-rounds=N` (integer, default `0`) to initialize `iteration_counter = N` — used by `/review-plan` Step 6 to honor `rounds_completed` read from the plan's `review_pipeline:` marker. Valid range: `0 ≤ N < max_rounds` (clamped with warning on out-of-range).
 - `meta_only_streak` — consecutive rounds where every verified finding was meta. Cap: **2** (always; not user-configurable).
+
+**Exit-surface contract (§5.E) — MANDATORY on every terminal exit.** When control returns to a main-context caller (inline invocation via Skill tool, e.g. `/review-plan` Step 6), surface this structured state alongside `exit_reason`:
+
+| Field | Value | Required on |
+|---|---|---|
+| `exit_reason` | `clean` / `iter_cap_reached` / `meta_cap_reached` / `user_accepted_at_*` / `autonomous_accept_at_*` / `user_pause_and_resume` / `both_reviewer_failure` / `escalated_to_plan_at_*` / `autonomous_exit_substantive_at_*` / `autonomous_transport_failure` / `autonomous_spec_gate_violation` / `autonomous_ambiguous_input` | every exit |
+| `rounds_completed` | final value of `iteration_counter` at exit | every exit |
+| `last_round_commit` | SHA from most recent `fix_and_commit` in the loop (`None` if no round produced actionable fixes) | every exit where ≥1 round ran |
+| `last_round_findings` | `len(verified)` from most recent round | every exit where ≥1 round ran |
+| `ever_verified_findings` | accumulated list across all rounds (§10 uses this for plan filing) | every exit |
+
+Callers consume this to update external state (e.g. `/review-plan` writes `rounds_completed` / `last_round_commit` / `last_round_findings` into the plan's `review_pipeline:` marker per `review-plan/SKILL.md §Step 1d` dispatch table). Help mode skips this surface (it does not iterate).
 
 Stop conditions (check in order):
 
@@ -212,15 +229,27 @@ while iteration_counter < max_rounds and meta_only_streak < 2:
     # no reinterpretation. See tp_agent_prompt.md.
     [codex_out, gemini_out] = dispatch_parallel_thin_transports($scratch)
 
+    # ── Shadow-edit absorption (§8e) ──────────────────────────────────
+    # Reviewer CLIs run with file-write authority (--full-auto / yolo)
+    # so they can run cargo test / cargo test --all against actual behavior.
+    # The prompt forbids file edits, but prompts can be ignored — this
+    # step enforces the contract by diffing the working tree against the
+    # pre-dispatch snapshot taken in §8 step 8a. Any shadow edits become
+    # SHADOW-FIX-{ordinal} synthesized findings prepended to the verified
+    # set BEFORE reviewer findings flow through §4. NEVER discard via
+    # bulk git checkout/restore/reset — would clobber the user's
+    # parallel-session work (per CLAUDE.md "Never destructive git").
+    shadow_findings = detect_and_synthesize_shadow_edits($scratch)  # §8e
+
     codex_report  = parse_tpr_report(codex_out)
     gemini_report = parse_tpr_report(gemini_out)
 
     if codex_report.status == "failed":  codex_report  = retry_or_survivor(codex)
     if gemini_report.status == "failed": gemini_report = retry_or_survivor(gemini)
 
-    all_findings = codex_report.findings + gemini_report.findings
+    all_findings = shadow_findings + codex_report.findings + gemini_report.findings
     verified     = [f for f in all_findings if verify_against_code(f)]  # §4
-    meta         = [f for f in verified if classify_meta(f)]             # §6
+    meta         = [f for f in verified if classify_meta(f)]             # §6 (shadow_findings NEVER classified as meta — see §8e)
     actionable   = [f for f in verified if f not in meta]
     ever_verified_findings.extend(verified)                              # §10
 
@@ -486,28 +515,38 @@ The size of the fix is irrelevant. Cross-crate refactoring across 10 files is th
 
 ## §8 — Parallel dispatch (canonical template)
 
-**Step 8a — Create the orchestrator-owned scratch dir (ONE per round, shared by both reviewer sub-agents) BEFORE dispatching.** The orchestrator owns this dir so it can recover reviewer output from disk even when a sub-agent's return message is truncated or the sub-agent auto-backgrounds its internal Bash call. Per-invocation `mktemp -d` prevents cross-session collision (invariant I1). Output files inside the shared dir are namespaced by reviewer (`codex-stdout.txt` / `gemini-stdout.txt` / `codex-report.txt` / `gemini-report.txt` / `codex-stderr.txt` / `gemini-stderr.txt`) so both sub-agents can write into the same dir without collision. The prefix embeds the **repo name** (basename of the git worktree root) so parallel sessions running in different repos produce visually distinguishable scratch dirs when listing `/tmp/` — e.g., `tpr-round-ori_lang-a1b2c3d4` vs. `tpr-round-warpkit-e5f6g7h8`.
+**Step 8a — Create the orchestrator-owned scratch dir AND snapshot the working tree state (ONE per round, shared by both reviewer sub-agents) BEFORE dispatching.** The orchestrator owns this dir so it can recover reviewer output from disk even when a sub-agent's return message is truncated or the sub-agent auto-backgrounds its internal Bash call. Per-invocation `mktemp -d` prevents cross-session collision (invariant I1). Output files inside the shared dir are namespaced by reviewer (`codex-stdout.txt` / `gemini-stdout.txt` / `codex-report.txt` / `gemini-report.txt` / `codex-stderr.txt` / `gemini-stderr.txt`) so both sub-agents can write into the same dir without collision. The prefix embeds the **repo name** (basename of the git worktree root) so parallel sessions running in different repos produce visually distinguishable scratch dirs when listing `/tmp/` — e.g., `tpr-round-ori_lang-a1b2c3d4` vs. `tpr-round-warpkit-e5f6g7h8`.
+
+The pre-dispatch snapshot (`pre-dispatch-status.txt` + `pre-dispatch-head.txt`) is the baseline §8e diffs against to detect any source-tree edits made by the reviewer CLIs (codex `--full-auto` and gemini `--approval-mode yolo` both have file-write authority — the prompt forbids it per `compose-round-prompt.md` "Read and run, do NOT write" but prompts can be ignored; §8e is the enforcement).
 
 ```
 Bash: repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 Bash: scratch="$(mktemp -d -t "tpr-round-${repo}-XXXXXXXX")"; echo "$scratch"
+Bash: git status --porcelain > "$scratch/pre-dispatch-status.txt"
+Bash: git rev-parse HEAD > "$scratch/pre-dispatch-head.txt"
 ```
 
 The `git rev-parse --show-toplevel` fallback to `pwd` covers non-git cwds (should not happen for a `/tpr-review` invocation, but the fallback keeps the command total and makes the template portable).
 
-**Step 8b — Compose the per-round reviewer prompt (orchestrator-owned, main context / Opus).** Sub-agents DO NOT compose prompts. Read `.claude/skills/tpr-review/compose-round-prompt.md` inline and follow its protocol to produce ONE shared prompt file on disk BEFORE dispatching:
+**Step 8b — Compose the per-round reviewer prompt (orchestrator-owned, main context / Opus).** Sub-agents DO NOT compose prompts. Read `.claude/skills/tpr-review/compose-round-prompt.md` inline and follow its protocol to produce the shared prompt file on disk BEFORE dispatching. Additionally, in review mode only (not help mode), copy the canonical Gemini depth appendix to the scratch dir so the Gemini sub-agent can concatenate it at CLI-invocation time:
 
 ```
 Write: $scratch/prompt.md
+
+# Review mode only — skip in help mode:
+Bash: cp .claude/skills/tpr-review/gemini-depth-appendix.md \
+         "$scratch/prompt-gemini-depth.md"
 ```
 
-The shared prompt is identity-neutral — it does not name a specific reviewer and does not state a trust tier. Both sub-agents read the same file. Each sub-agent prepends its own 2-line identity header (`You are {REVIEWER}. Your trust tier in the consuming orchestrator is {TRUST_TIER}.`) when invoking its CLI, per `tp_agent_prompt.md` Step 2. Writing ONE prompt per round (instead of one per reviewer) halves orchestrator output tokens and restores the "Opus composes ONCE" principle.
+The shared `prompt.md` is identity-neutral — it does not name a specific reviewer and does not state a trust tier. Both sub-agents read the same file. Each sub-agent prepends its own 1-line identity header (`You are {REVIEWER}.`) when invoking its CLI, per `tp_agent_prompt.md` Step 2. Trust tier is orchestrator-only metadata (codex → HIGH, gemini → LOWER); it NEVER ships to the reviewer, header, prompt, or return schema — priming causes self-anchoring bias. Writing ONE shared prompt per round (instead of one per reviewer) halves orchestrator output tokens and restores the "Opus composes ONCE" principle.
+
+The Gemini depth appendix `prompt-gemini-depth.md` is the single permitted per-reviewer prompt artifact — it is a SEPARATE file (never merged into the shared `prompt.md`) and carries depth guidance only (time budget, self-fact-check protocol, disqualifier list). See `compose-round-prompt.md §Gemini depth appendix` for the contract and `tp_agent_prompt.md` Step 2 for the transport-layer concatenation.
 
 For rounds N>0, the orchestrator prepends a Prior-Round State block (findings already fixed, findings filed as `- [ ]`, single-reviewer findings to cross-check) and — if the prior round was thin — a Thoroughness Re-review Directive above the shared body. See `compose-round-prompt.md` for the exact template and prepend order.
 
 This is editorial work — it requires judgment about what the prior round found and where reviewers should sharpen focus this round. Keeping it in main context (Opus) keeps the judgment at the right model tier. Pushing it into a Sonnet sub-agent loses round-over-round convergence pressure.
 
-**Step 8c — Dispatch BOTH reviewers in a SINGLE assistant message.** Foreground only on the Agent call itself — never `run_in_background: true`. Both sub-agents get the SAME `{SCRATCH_DIR}` (the per-round shared dir from step 8a); they differ only in their `{REVIEWER}` / `{TRUST_TIER}` identity values. Sub-agents are thin CLI transports — they read `$SCRATCH_DIR/prompt.md` (which you wrote in step 8b), prepend their identity header, invoke the CLI, `sed`-extract the TPR-REPORT block, and return ONLY that block. They do NOT translate, reinterpret, or summarize findings. See `tp_agent_prompt.md`.
+**Step 8c — Dispatch BOTH reviewers in a SINGLE assistant message.** Foreground only on the Agent call itself — never `run_in_background: true`. Both sub-agents get the SAME `{SCRATCH_DIR}` (the per-round shared dir from step 8a); they differ only in their `{REVIEWER}` identity value. Trust tier is orchestrator-only metadata (codex HIGH, gemini LOWER) and MUST NOT appear as a placeholder, in the header, in the prompt, or in the return schema — per invariant I16. Sub-agents are thin CLI transports — they read `$SCRATCH_DIR/prompt.md` (which you wrote in step 8b), prepend their 1-line identity header (`You are {REVIEWER}.`), and — if reviewer is gemini AND `$SCRATCH_DIR/prompt-gemini-depth.md` exists — concatenate that depth appendix after the shared prompt. Then invoke the CLI, `sed`-extract the TPR-REPORT block, and return ONLY that block. They do NOT translate, reinterpret, or summarize findings. See `tp_agent_prompt.md`.
 
 ```
 Agent({
@@ -515,7 +554,7 @@ Agent({
   model: "sonnet",
   description: "tpr-review codex reviewer round {N}",
   prompt: <contents of tp_agent_prompt.md with {REVIEWER}=codex,
-           {TRUST_TIER}=HIGH, {SCRATCH_DIR}=<scratch from step 8a>>
+           {SCRATCH_DIR}=<scratch from step 8a>>
 })
 
 Agent({
@@ -523,13 +562,65 @@ Agent({
   model: "sonnet",
   description: "tpr-review gemini reviewer round {N}",
   prompt: <contents of tp_agent_prompt.md with {REVIEWER}=gemini,
-           {TRUST_TIER}=LOWER, {SCRATCH_DIR}=<scratch from step 8a>>
+           {SCRATCH_DIR}=<scratch from step 8a>>
 })
 ```
 
-Note: the sub-agent prompt no longer carries `{OBJECTIVE}` or `{SCOPE}` placeholders — those live in `$SCRATCH_DIR/prompt.md`, which the orchestrator wrote in step 8b. Both sub-agents receive the same `{SCRATCH_DIR}` value (the per-round shared dir); they differ only in their `{REVIEWER}` / `{TRUST_TIER}` identity values.
+Note: the sub-agent prompt carries ONLY `{REVIEWER}` and `{SCRATCH_DIR}` placeholders. `{OBJECTIVE}` / `{SCOPE}` live in `$SCRATCH_DIR/prompt.md`, which the orchestrator wrote in step 8b. `{TRUST_TIER}` is orchestrator-only and never reaches the sub-agent prompt (I16).
 
-**Step 8d — Remember the path.** Keep the single `scratch` value in orchestrator state across the round so §9 stranded-report recovery can read `$scratch/codex-report.txt` or `$scratch/gemini-report.txt` if a sub-agent returns without an inline TPR-REPORT block. Both sub-agents write into the same scratch dir with per-reviewer file namespacing (`{codex,gemini}-{stdout,stderr,report}.txt`) so there is no collision.
+**Step 8d — Remember the path.** Keep the single `scratch` value in orchestrator state across the round so §9 stranded-report recovery can read `$scratch/codex-report.txt` or `$scratch/gemini-report.txt` if a sub-agent returns without an inline TPR-REPORT block. Both sub-agents write into the same scratch dir with per-reviewer file namespacing (`{codex,gemini}-{stdout,stderr,report}.txt`) so there is no collision. The scratch-dir inventory for a review-mode round is:
+
+  - `prompt.md` — shared, identity-neutral, read by BOTH sub-agents.
+  - `prompt-gemini-depth.md` — Gemini-only depth appendix (review mode only; absent in help mode).
+  - `pre-dispatch-status.txt` / `pre-dispatch-head.txt` / `post-dispatch-status.txt` / `shadow-edit-diff.txt` / `shadow-edit-stat.txt` / `shadow-edits.patch` — §8a/§8e shadow-edit detection artifacts.
+  - `{codex,gemini}-{stdout,stderr,report}.txt` — per-reviewer CLI capture artifacts.
+
+**Step 8e — Detect shadow edits (post-dispatch, BEFORE §4 verification).** Reviewer CLIs run with file-write authority (`codex --full-auto`, `gemini --approval-mode yolo` — both required so reviewers can run `cargo test` / `cargo test --all` / `scripts/intel-query.sh` to verify their findings against actual behavior). The prompt forbids file edits per `compose-round-prompt.md` "Read and run, do NOT write", but prompts can be ignored. This step enforces the contract.
+
+```
+Bash: git status --porcelain > "$scratch/post-dispatch-status.txt"
+Bash: diff -u "$scratch/pre-dispatch-status.txt" "$scratch/post-dispatch-status.txt" > "$scratch/shadow-edit-diff.txt" || true
+Bash: git diff --stat > "$scratch/shadow-edit-stat.txt"
+```
+
+If `$scratch/shadow-edit-diff.txt` is empty AND `git status --porcelain` matches the pre-dispatch snapshot byte-for-byte, no shadow edits occurred. Continue to §4.
+
+If shadow edits are detected, the orchestrator MUST absorb them through the documented pipeline — they are NEVER silently kept and NEVER destructively discarded (the user runs parallel sessions with uncommitted work; `git checkout --` / `git restore` / `git reset --hard` are forbidden per CLAUDE.md "Never destructive git").
+
+**Absorption protocol:**
+
+1. **Capture the diff** to `$scratch/shadow-edits.patch` for forensic review:
+   ```
+   Bash: git diff > "$scratch/shadow-edits.patch"
+   ```
+
+2. **Synthesize a SHADOW-FIX finding** for each modified file and PREPEND it to the round's verified set BEFORE §4 runs against the reviewer-emitted findings. The finding is verified-by-construction (the diff is ground truth). It is NEVER meta — shadow edits ALWAYS bypass §4-§7 and ALWAYS warrant orchestrator review:
+
+   ```
+   {
+     id: "SHADOW-FIX-{ordinal}",
+     severity: "high",
+     path: "<modified file>",
+     line: 1,
+     title: "Reviewer made out-of-band edit bypassing TPR pipeline",
+     evidence: "<truncated git diff for this file, <= 20 lines>",
+     rule_violated: "compose-round-prompt.md §Read and run, do NOT write — ABSOLUTE",
+     recommended_fix: "Orchestrator: review the diff. If correct → keep + commit with shadow-fix attribution. If wrong or out-of-scope → revert this file's hunks via `git checkout -- <file>` (scoped to ONLY the shadow-edited file paths in the diff, NEVER `git checkout -- .`). Either way, classify as actionable and feed through §7 commit discipline."
+   }
+   ```
+
+3. **Run §4 verification on the shadow-fix finding.** The diff is ground truth — verification is automatic — but the orchestrator still inspects the diff content to decide keep-or-revert. Reading the diff is mandatory; trusting the reviewer's judgment is banned.
+
+4. **Decide keep-or-revert per shadow-edited file:**
+   - **Keep**: the edit is correct AND in scope for the review objective AND would have been an accepted finding's `recommended_fix` anyway. The orchestrator treats this as the round's fix for that finding (no double-fix in §7 for the same file). Attribution: prepend `Shadow-fix from {reviewer} reviewer (absorbed by orchestrator):` to the commit message body for that file's hunks.
+   - **Revert**: the edit is wrong OR out-of-scope OR speculative OR breaks other tests. Revert ONLY the shadow-edited file paths via `git checkout -- <enumerated paths>` (NEVER bulk `git checkout -- .` — would clobber the user's parallel-session work). The shadow-fix finding stays in the round summary as `Disposition: shadow-edit reverted: <reason>`.
+   - **Re-apply differently**: the intent is correct but the implementation is wrong. Revert the shadow edit (per Revert above), then apply the orchestrator's correct version through §7 normally. Cite both in the round summary.
+
+5. **The shadow-fix findings appear in the round summary (§11)** with explicit `[SHADOW-FIX-N]` IDs and per-file dispositions. They count toward `actionable` for `meta_only_streak` accounting (a round with shadow edits is NEVER a "meta-only" round — by definition the reviewer wrote code).
+
+6. **Append a §11 trailing line** for any round where shadow edits occurred: `**Shadow edits**: {N} file(s) absorbed (kept: {K}, reverted: {R}, re-applied: {A}). Patch archived at $scratch/shadow-edits.patch.`
+
+This protocol turns a contract violation into a documented contribution: the user always sees what the reviewer did, the orchestrator always owns the decision, and `git checkout -- <enumerated paths>` is the ONLY destructive operation permitted (scoped to known shadow-edited paths, NEVER bulk).
 
 ## §9 — Failure handling
 
@@ -603,39 +694,7 @@ Exit-reason assignment for each `user_choice.key` in interactive mode:
 - `retry-once-more` → re-dispatch the parallel-reviewer pair. If THAT retry also fails, the loop bottoms out with `exit_reason = "both_reviewer_failure"`.
 - `abort` → `exit_reason = "both_reviewer_failure"`; render round summary; `third_party_review.status: escalated`; `reviewed: false` in plan mode.
 
-**Context-pressure pause (mid-loop, optional).** Skipped entirely when `autonomous_mode == True` (no user to pause for). In interactive mode, between rounds, if the session has accumulated substantial context from earlier rounds' findings, verification reads, and fix edits — enough that a fresh session would review better — the orchestrator MAY insert an `AskUserQuestion` before dispatching the next round:
-
-```
-AskUserQuestion(questions=[{
-    "question": f"Round {N} complete. Context has grown substantially across {N+1} rounds "
-                 "of findings + verification + fixes. How do you want to proceed?",
-    "header": f"TPR context-pressure pause (post-round {N})",
-    "multiSelect": False,
-    "options": [
-        {"key": "pause-and-resume",
-         "label": "Pause here, clear context, resume with /continue-roadmap (Recommended)",
-         "description": "Recommended because the trigger signals that surfaced this prompt "
-                        "(round count >= 3, long transcript, substantive findings still arriving) "
-                        "mean the review quality from this session is already degrading. A fresh "
-                        "session reviews better — the roadmap picks up where this /tpr-review was "
-                        "invoked from, so no work is lost. All fixes committed so far are kept.",
-         "recommended": True},
-        {"key": "continue",
-         "label": f"Continue to round {N+1} in this session",
-         "description": "Keep going with the current context. Pick if the remaining work looks "
-                        "small (e.g. the last round converged to a handful of meta findings). "
-                        "Review quality depends on context headroom — risk is declining depth as "
-                        "context fills."},
-        {"key": "stop-clean",
-         "label": f"Stop here and commit current state (round {N} is the final round)",
-         "description": "Terminal exit — skips the remaining loop cleanly. Findings fixed through "
-                        "round {N} are preserved; any open cap-exit flow is bypassed. Pick when "
-                        "the current state is good enough to ship."},
-    ],
-}])
-```
-
-Use this proactively, not reactively — by the time the current session is truly exhausted, the user can't cleanly resume. Trigger signals: round count ≥3, context visibly long (multiple rounds of finding tables + fix diffs already rendered), or the reviewers are still returning substantive findings (indicating more work remains).
+**Never insert a mid-loop context-pressure pause.** The orchestrator MUST NOT emit an `AskUserQuestion` between rounds based on "context has grown", "round count ≥ 3", "long transcript", or any other session-length heuristic. Dispatch the next round directly. Mid-loop pause-for-context is banned in both interactive and autonomous modes — the `/clear` + `/continue-roadmap` round-trip it invites costs more context than it saves, and a fresh session restarts `/tpr-review` at round 0 rather than resuming mid-loop.
 
 ## §10 — Plan-TPR integration (plan mode only)
 
@@ -723,7 +782,6 @@ Required structure:
 |---|---|---|
 | §5 cap-exit (iter_cap / meta_cap) | `AskUserQuestion` with 4 options | `all_meta` → `autonomous_accept_at_*`; else → `autonomous_exit_substantive_at_*` |
 | §9 both-reviewer-failure-twice | `AskUserQuestion` with 3 options | Exit with `autonomous_transport_failure` |
-| §9 context-pressure pause | Optional `AskUserQuestion` between rounds | Never inserted |
 | §3 SPEC-GATE finding (critical) | Finding filed; user fixes before continuing | Exit with `autonomous_spec_gate_violation` |
 | §1 ambiguous input | `AskUserQuestion` with mode interpretations | Exit with `autonomous_ambiguous_input` (ARGS parsing couldn't resolve a mode after stripping `--autonomous`); emit final round summary with the received `ARGS` verbatim — never guess |
 
@@ -734,7 +792,7 @@ The autonomous auto-decisions are NOT interactive-mode shortcuts — they are di
 Run after ANY of:
 
 - Bug fixes (any severity), new features, refactors, multi-file changes (2+ files).
-- Changes to compiler crates (`ori_arc`, `ori_types`, `ori_llvm`, `ori_eval`, `ori_parse`, `ori_patterns`).
+- Changes to workspace crates (`oriterm_core`, `oriterm_ui`, `oriterm_mux`, `oriterm_ipc`, `oriterm`).
 - Test matrix additions, stdlib changes, registry changes, diagnostics changes.
 - Plan section implementations, docs touching invariants.
 

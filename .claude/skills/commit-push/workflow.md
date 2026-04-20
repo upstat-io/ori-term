@@ -53,7 +53,7 @@ Review the changes and create a commit message following conventional commit for
 | `chore` | Other changes that don't modify src or test files |
 | `revert` | Reverts a previous commit |
 
-**Scope** is optional. Use the primary module affected (e.g., `typeck`, `parser`, `llvm`).
+**Scope** is optional. Use the primary module affected (e.g., `core`, `ui`, `mux`, `gpu`, `session`).
 
 ### Step 3: Preview Mode (only if `preview` argument is passed)
 
@@ -64,22 +64,17 @@ Review the changes and create a commit message following conventional commit for
 
 **Otherwise (default):** Skip directly to Step 4 — no confirmation needed.
 
-### Step 4: Pre-Format (fixes the restaging issue)
+### Step 4: Pre-format + plan cleanup (before staging)
 
-**Run `cargo fmt --all` BEFORE staging.** This formats every file in the tree so the formatter's output is captured in the snapshot you're about to stage — NOT produced as a side-effect after staging.
+Run both BEFORE `git add -A`. Same slot, same reason: snapshot the cleaned tree so the stage captures it, no post-commit dirt.
 
 ```bash
 cargo fmt --all
+python3 scripts/plan-cleanup.py
 ```
 
-**Why this ordering matters:** Lefthook's pre-commit `fmt` step also runs `fmt-all.sh` with `stage_fixed: true`, but `stage_fixed` only restages files that were *already* in the index at the moment the hook fired. Any files the formatter touches that weren't intentionally staged get left as unstaged dirt in the working tree *post-commit* — the "restaging issue." Running `fmt-all.sh` here, before `git add`, means:
-
-1. All formatter changes (on our target files AND any incidental fixes elsewhere) land in the working tree first.
-2. `git add -A` then stages a fully-formatted snapshot.
-3. Lefthook's `fmt` step becomes a no-op (idempotent — nothing left to fix).
-4. The commit lands with a clean working tree — no post-commit dirt to chase.
-
-`fmt-all.sh` is fast on an already-formatted tree (`cargo fmt --check` short-circuits) and harmless when there's nothing to fix, so running it unconditionally is cheap insurance.
+- `fmt-all.sh` — formats every file. Idempotent; no-op on already-formatted tree.
+- `scripts/plan-cleanup.py` — applies scanner-detected plan-doc fixes (stale frontmatter status, stale plan annotations, bug-marker drift). Idempotent; silent when clean; exit 0 always. SSOT for plan-doc cleanup.
 
 ### Step 5: Stage and Commit
 
@@ -184,12 +179,11 @@ the worst case is that `state.sh check` will report `OBSOLETE` on the
 next consumer call, forcing them to fall back to actual runs. If the
 script is missing or returns non-zero, log the failure and continue.
 
-Rationale: consumers (`/continue-roadmap` scanner gate, `/roadmap-work`
-Step 5, future reviewers) consult `state.sh show --json` on invocation.
-Without the post-push SHA bump, the cache lags HEAD by at least one
-commit and every consumer misclassifies the cache as `OBSOLETE` until a
-manual `state.sh refresh` runs — defeating the purpose of the cache.
-`--by commit-push` records the trigger for auditing.
+Contract:
+
+- Consumers (`/continue-roadmap` scanner gate + Step 6.6, reviewers) read `state.sh show --json` on invocation.
+- Without the post-push SHA bump, the cache lags HEAD by ≥1 commit; consumers then misclassify the cache as `OBSOLETE` until a manual `state.sh refresh`.
+- `--by commit-push` records the trigger for auditing.
 
 For full test/clippy refreshes (slow, ~3 min), use
 `diagnostics/state.sh refresh --full --by section-close` at natural
@@ -215,12 +209,12 @@ Before completing, verify:
 ## Example Commit Message
 
 ```
-perf(typeck): optimize line lookup and hash map usage
+perf(gpu): reduce atlas uploads and glyph cache churn
 
-- Add LineOffsetTable for O(log n) line lookups instead of O(n)
-- Switch to FxHashMap/FxHashSet in type checker components
-- Add index for O(1) associated type lookups
-- Optimize diagnostic queue sorting
+- Pre-size the glyph cache to avoid rehash during frame draw
+- Coalesce staging uploads into a single copy per frame
+- Track atlas dirty rects to skip whole-atlas reuploads
+- Early-exit cell loop when damage region is empty
 ```
 
 ---

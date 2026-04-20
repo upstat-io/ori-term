@@ -3,9 +3,20 @@
   "project_type": "rust",
   "project_name": "ori_term",
   "substitutions": {
-    "$comment": "Defaults for project_type='rust' are applied automatically from rust.json. Add overrides here; they win.",
+    "$comment": "Defaults for project_type='rust' are applied automatically from rust.json. Add overrides here; they win. ori_term keeps its own build-all.sh / test-all.sh / clippy-all.sh / fmt-all.sh shell scripts, so the rust.json defaults that rewrite those to cargo invocations must be canceled here.",
     "Ori compiler roadmap": "ori_term roadmap",
-    "Ori compiler": "ori_term"
+    "Ori compiler": "ori_term",
+    "\\./test-all\\.sh":    "./test-all.sh",
+    "\\./clippy-all\\.sh":  "./clippy-all.sh",
+    "\\./fmt-all\\.sh":     "./fmt-all.sh",
+    "\\./build-all\\.sh":   "./build-all.sh",
+    "\\./full-check\\.sh":  "./full-check.sh",
+    "\\./llvm-test\\.sh":   "./llvm-test.sh",
+    "docs/ori_lang/proposals/approved/": "",
+    "docs/ori_lang/":       "",
+    "Ori snippet":          "minimal repro",
+    "Ori language":         "ori_term",
+    "ori_lang":             "ori_term"
   },
   "include": {
     "$comment": "What to pull from canonical. If a category is missing, defaults to 'all tailorable + all portable from that category'.",
@@ -14,7 +25,6 @@
       "fix-bug",
       "fix-next-bug",
       "continue-roadmap",
-      "roadmap-work",
       "create-plan",
       "plan-audit",
       "impl-hygiene-review",

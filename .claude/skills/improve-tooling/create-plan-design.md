@@ -22,15 +22,15 @@
 
 6. **Plan TYPE is a first-class branch of the template.** Compiler-correctness plans, skill/infra/docs plans, and spec/grammar-proposal plans all need proper structure, but their completion rigor differs. The template branches on plan type at Phase 1B classification time, not at Phase 5 cleanup time. (Added 2026-04-17 — see §4.)
 
-7. **Subagent prompts MUST contain explicit scope fences.** Section-writer Sonnet subagents receive implementation-rich task descriptions (code examples, exact file paths, Cypher queries). Without an explicit "write ONE markdown file, do NOT edit any other file, do NOT run git add/commit" preamble, they may pre-implement the code they're describing. (Added 2026-04-17 after Section 04 drift — see §4.)
+7. **No Sonnet subagents for plan content.** Section files, `00-overview.md`, and `index.md` are all authored inline by the main agent (Opus). Subagents run only for research/orchestration (Steps 3–6 research passes, Step 13 cohesion read-only scan). Plan content is judgment-writing: each section resolves architectural ambiguities that surface only while writing — sync-point enumeration, cross-section dependency phrasing, semantic-pin wording. Delegating to a Sonnet subagent produced scope drift (pre-implementing described code into sibling repos) and template drift (hallucinated paths, mis-referenced prior sections). Context pressure is handled by Read-on-demand of prior sections, not by subagent delegation.
 
-8. **Sonnet for section writing; Opus for architecture.** Architecture synthesis (Step 7), `00-overview.md` authorship (Step 8), mission expansion (Step 1B), fork-gate evaluation (Phase 0), reviewer-finding triage (Phase 1D) are judgment-writing → Opus. Section template expansion (Step 11), index bookkeeping (Step 12), cohesion scanning (Step 13) are mechanical-writing → Sonnet. Any rewrite that flips this ratio is probably regressing.
+8. **Opus writes; Sonnet reads.** Architecture synthesis (Step 7), `00-overview.md` authorship (Step 8), mission expansion (Step 1B), fork-gate evaluation (Phase 0), reviewer-finding triage (Phase 1D), section authorship (Step 11), overview/index update (Step 12), self-check (Step 14), reroute setup (Step 18) all run in the main agent. Sonnet subagents are read-only research passes (breadth scan, deep read, pattern study, prior-art study, cohesion check). Any rewrite that re-introduces a Sonnet subagent for a task that mutates plan files is a regression.
 
 ## §2 — Load-Bearing Invariants
 
 | # | Invariant | Why (which failure mode it prevents) |
 |---|-----------|--------------------------------------|
-| I1 | Section-writer subagent prompts MUST include an explicit scope fence ("write ONE file at <path>, do NOT modify any other file, do NOT run git") | Prevents section writers from pre-implementing code and committing to sibling repos. Surfaced 2026-04-17: Section 04's subagent committed 905 LOC to `lang_intelligence/master` because the prompt described implementation details richly and didn't fence scope. |
+| I1 | Section files, `00-overview.md`, and `index.md` MUST be authored inline by the main agent (Opus) — no Sonnet subagent dispatch for plan content | Section-writer subagents drifted scope twice (2026-04-17: Section 04 subagent committed 905 LOC to `lang_intelligence/master`; recurring template drift from hallucinated paths). Inlining eliminates the dispatch boundary where drift occurred. Context pressure is handled by Read-on-demand of prior sections, not subagent delegation. |
 | I2 | `plan-schema.md` Section File Template's completion checklist branches by plan type | Compiler rigor (TPR checkpoints, matrix testing, semantic/negative pins, §NN.R blocks, /impl-hygiene-review) MUST NOT be hard-coded into skill/infra/docs plans. Those plans then need post-creation stripping (234 lines last session) that should have been template-time branching. |
 | I3 | Phase 1B mission expansion MUST classify plan type (`compiler` vs `skill-infra-docs` vs `spec-grammar`) before Phase 2 research begins | Drives template selection in Step 8 (overview) + Step 11 (sections). Classification after-the-fact forces post-hoc cleanup. |
 | I4 | `reviewed: false` default is CORRECT for compiler plans (gates pre-implementation re-review) | But `reviewed: true` is correct for skill/infra/docs plans (no pre-implementation gate — the work is low-correctness-risk). Never make the default unconditional either way. |
@@ -76,11 +76,38 @@ Note: the skill uses inline markdown content for subagent prompts rather than se
 - Clarified `reviewed:` default behavior per plan type
 - Documented `/review-plan` (Step 16) as optional for skill/infra plans
 
+### 2026-04-19: §08.3 retrospective — scoped-patch reversal post-commit form + path-list coverage
+
+**Context:** Plan `empty-container-typeck-phase-contract/section-08-codegen-poly-lambda.md` §08.3 specified a §08.2 negative pin via scoped-patch reversal (capture working-tree diff → `git apply -R` → re-run tests → `git apply` restore). Executed during `/roadmap-work` post-commit (§08.3's impl landed in commit `9eae468d` before the negative pin ran). Two authoring defects surfaced.
+
+**Finding 1 — Silent no-op post-commit.** The plan's form was `git diff crates/types/src/pool/re_intern/ src/test/runner/llvm_backend.rs > /tmp/section-08-3.patch` (working-tree vs HEAD). Post-commit, that diff is empty; `git apply -R` on an empty patch is a no-op, and re-run tests pass trivially — a FALSE-POSITIVE "pin passed" signal with no reversal ever occurring. Detection was accidental during `/roadmap-work` execution (Claude noticed the semantic and adapted to `git diff HEAD~1 HEAD -- <paths>`). Without the adaptation, the pin would have been silently meaningless.
+
+**Finding 2 — Path-list coverage gap.** The plan's path list (`re_intern/` + `llvm_backend.rs`) omitted `pool/mod.rs:27`, where §08.3 bundled a re-export line for the new `re_intern_type_with_var_remap` + `re_intern_sig_with_var_remap` functions. The reverse-apply therefore produced a COMPILE FAILURE (re-export referring to removed symbols) rather than the predicted test-count regression (35→25). The compile failure is a STRONGER negative-pin signal than test-count regression, but the plan's predicted mode was wrong — plan authors writing scoped-patch reversal pins must enumerate every file touched by the implementing commit, not just the plan's "primary surface" paths. `git show --stat <commit>` is the ground truth.
+
+**Fixes applied (this session):**
+- This §4 entry + §5 regression guards below.
+- Plan `§08.3` item 2 text annotated inline with the adapted `HEAD~1 HEAD` form and the stronger-than-expected compile-fail outcome (`plans/empty-container-typeck-phase-contract/section-08-codegen-poly-lambda.md` line 318).
+
+**No script created.** Filter check: scoped-patch reversal is a niche negative-pin technique (~1x per plan that uses it); a `scripts/scoped-patch-reversal.sh` wrapper would add infrastructure for a marginal use. Documentation-only improvement passes the filter; helper script does not.
+
+### 2026-04-19: Step 11 inlined — retire Sonnet section-writer subagent
+
+**Context:** User directive via `/improve-tooling`: "make sure sonnet is not writing any plan content in /create-plan, if it is, that needs to be removed from sub-agent and inlined." Audit found Step 11 (Write Sections Sequentially via Sonnet Subagents) dispatched a `model: "sonnet"` Agent that called Write on `section-{NN}-*.md` files — plan content. Steps 12, 13, 15 were not writing plan content (12 was already main-agent; 13 is read-only cohesion scan; 15 is a progress summary).
+
+**Root cause of the prior design:** Context-window conservation. Section text is thousands of tokens × 8+ sections; the original rationale was "Opus holds only the architecture; Sonnet holds the per-section text." But the dispatch boundary is also where scope drift surfaced (2026-04-17 Section 04: 905 LOC committed to `lang_intelligence/master`). The context saving did not justify the drift cost.
+
+**Fix applied:** Step 11 rewritten as main-agent inline writing (Step 11a: gather context via Read; Step 11b: select template by PLAN TYPE; Step 11c: Write the section file; Step 11d: self-verify). Context pressure is now handled by Read-on-demand of prior sections rather than subagent delegation — the main agent does not need to retain earlier section text in active context to cross-reference it; it re-Reads only when needed.
+
+**Invariants changed:** §1.7 rewritten ("No Sonnet subagents for plan content" replaces "Subagent prompts MUST contain scope fences"). §1.8 rewritten ("Opus writes; Sonnet reads" replaces the previous Opus-for-architecture / Sonnet-for-sections split). §2 I1 rewritten to forbid subagent dispatch for plan content rather than mandate a scope fence. §5 regressions flipped to guard against re-introducing Sonnet dispatch.
+
+**Scope:** Research passes (Steps 3–6) remain Sonnet subagents — they READ code and return findings, not plan content. Step 13 (cohesion check) remains Sonnet — same rationale (read-only, returns findings).
+
 ## §5 — Regressions To Watch For
 
 Check each before editing `SKILL.md` or `plan-schema.md`:
 
-- [ ] Section-writer subagent prompt MUST retain the "CRITICAL SCOPE CONSTRAINT" preamble — do NOT remove it to "clean up" the prompt template. Its removal is what caused the 2026-04-17 §04 drift.
+- [ ] Step 11 MUST stay main-agent inline. Do NOT re-introduce a `model: "sonnet"` Agent dispatch for section writing, even with a "better scope fence". The dispatch boundary is what drifts; removing the boundary removes the drift.
+- [ ] Step 12 (Update Overview and Index) MUST stay main-agent inline. Same reasoning — `00-overview.md` and `index.md` are plan content.
 - [ ] The Section File Template's completion checklist MUST branch by plan type (compiler / skill-infra-docs / spec-grammar) — do NOT collapse back into a single unconditional template "for simplicity".
 - [ ] `reviewed:` frontmatter default MUST vary by plan type. Never hard-code `reviewed: false` or `reviewed: true` as the unconditional default.
 - [ ] The `§NN.R Third Party Review Findings` subsection MUST be conditional on plan type. Compiler plans include it; skill/infra/docs plans omit it.
@@ -88,6 +115,8 @@ Check each before editing `SKILL.md` or `plan-schema.md`:
 - [ ] `/review-plan` (Step 16) MUST be listed as optional for skill/infra/docs plans. Mandating dual-source review on skill changes creates circular dependency (reviewing the review infrastructure).
 - [ ] `00-overview.md` must be authored by main-context Opus, not a Sonnet subagent. If a rewrite moves overview authorship to a subagent, architecture-synthesis gets lost.
 - [ ] Step 18 Reroute Lifecycle MUST remain mandatory and surface the current queue before asking. Silently skipping is a workflow-invisibility bug.
+- [ ] Scoped-patch reversal pins using `git diff <paths>` (no refs) are a hazard POST-COMMIT — the diff is empty and the reversal is a silent no-op producing a false-positive "pin passed" signal. Plan authors MUST write the post-commit form `git diff <pre-impl-ref> <post-impl-ref> -- <paths>` (e.g., `HEAD~1 HEAD`) whenever the pin runs after the implementing commit has landed. See §4 2026-04-19 `§08.3 retrospective` entry.
+- [ ] Scoped-patch reversal pins MUST enumerate every file touched by the implementing commit, not just the plan's "primary surface" paths. Bundled re-export edits in sibling `mod.rs` / `lib.rs` / similar files will produce compile-fails (not test-count regressions) when the pin runs. Plan authors: run `git show --stat <impl-commit>` against the implementing commit to ground-truth the path list before writing the pin.
 
 ## §6 — Improvement Log
 
@@ -99,6 +128,8 @@ Check each before editing `SKILL.md` or `plan-schema.md`:
 
 ### Recently closed
 
+- [x] **2026-04-19** — §08.3 retrospective: documented scoped-patch reversal post-commit form (`git diff HEAD~1 HEAD -- <paths>` vs working-tree `git diff <paths>` silent-no-op hazard) + path-list coverage requirement (`git show --stat <impl-commit>` as ground truth for enumerating bundled sibling-file edits) as §4 Lessons + two §5 regression guards. Helper script filtered out — niche negative-pin pattern, doc-only fix is sufficient. Commit: `127531c2`.
+- [x] **2026-04-19** — Retired Sonnet section-writer subagent. Step 11 rewritten as main-agent inline writing (Step 11a gather → 11b select template → 11c Write → 11d self-verify). Model Policy table, §1.7, §1.8, §2 I1, §5 regressions all updated. Context-pressure relief now handled by Read-on-demand of prior sections. Commit: pending (this `/improve-tooling` session).
 - [x] **2026-04-17** — Added plan-type classification to Phase 1B; added scope-fence preamble to Step 11b subagent prompt; branched Section File Template completion checklist by plan type; documented optional `/review-plan` for skill/infra/docs plans. Commit: pending (this session's `/improve-tooling` retrospective).
 
 ## §7 — How To Use This File In Future Sessions

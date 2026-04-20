@@ -10,6 +10,14 @@ Deep, wide-angle review of implementation hygiene against `.claude/rules/impl-hy
 
 **Implementation hygiene is NOT architecture** (design decisions are made). It covers the full plumbing layer — phase boundaries, data flow, error propagation, abstraction discipline, algorithmic DRY, file organization, naming, comments, visibility, and lint discipline.
 
+## Findings Disposition — Inline, Never `/add-bug`
+
+- Findings produced by this skill are inline plan-section artifacts. Rule + enforcement: `.claude/rules/impl-hygiene.md` §Findings Disposition.
+- Record every finding in the owning plan's `### Findings` subsection (see `phase-6-plan.md` template) or in the `## Hygiene Findings` block of the fix section if the review scope is a `/fix-bug` run.
+- NEVER route a finding through `/add-bug`. The tracker is for correctness defects; hygiene findings are plan-scope close-out gates.
+- Every finding blocks close-out of its owning subsection, section, plan, and containing fix section until resolved in code or deferred with a concrete implementation anchor per CLAUDE.md §ALL Deferrals.
+- Phase 6 (plan generation) fires when findings exceed inline-fix capacity — the generated plan IS the resolution path; findings do not leave the plan surface.
+
 ## How this skill runs
 
 SKILL.md is a thin coordinator. The review runs as a pipeline of sub-agents, each dispatched via `Agent({})` with its own model. The coordinator parses the target mode, chains phases sequentially, and threads handoff JSON files between them.
@@ -44,9 +52,9 @@ When called with no arguments, the review autoscopes to the current "session of 
 
 ### Path Mode (explicit crate/directory targets)
 
-- `/impl-hygiene-review compiler/ori_lexer compiler/ori_parse` — review lexer→parser boundary
-- `/impl-hygiene-review compiler/ori_types` — review internal phase boundaries within a crate
-- `/impl-hygiene-review compiler/ori_arc` — review ARC pass composition
+- `/impl-hygiene-review oriterm_core oriterm_ui` — review core→UI boundary
+- `/impl-hygiene-review oriterm_core` — review internal phase boundaries within a crate
+- `/impl-hygiene-review oriterm_mux` — review pane server composition
 
 ### Commit Mode
 
@@ -56,7 +64,7 @@ When called with no arguments, the review autoscopes to the current "session of 
 
 ### Full Project Mode (landscape survey)
 
-- `/impl-hygiene-review full` — review the entire compiler across all crates
+- `/impl-hygiene-review full` — review the entire workspace across all crates
 - `/impl-hygiene-review full --focus=dry` — emphasis on algorithmic duplication
 - `/impl-hygiene-review full --focus=leaks` — emphasis on side logic and SSOT
 
@@ -66,28 +74,19 @@ Full project mode is the widest sweep. Use this when you want the complete lands
 
 ### Dependency map for expansion
 
-Mirrors `canon.md §1 Pipeline Overview` and the live Cargo dep graph. If any `.rs` file in a crate is touched, the whole crate is in scope; its downstream consumers also enter scope.
+Mirrors `.claude/rules/crate-boundaries.md` and the live Cargo dep graph. If any `.rs` file in a crate is touched, the whole crate is in scope; its downstream consumers also enter scope.
 
 "Consumed by" lists the **union** of Cargo dependents and pipeline-flow downstream (whichever is broader), so auto-expansion always picks the larger scope.
 
 ```
-ori_lexer      → consumed by: ori_parse
-ori_parse      → consumed by: ori_types, ori_eval
-ori_ir         → consumed by: ori_types, ori_eval, ori_llvm, ori_arc, ori_canon, ori_repr
-ori_diagnostic → consumed by: all compiler crates
-ori_registry   → consumed by: ori_types, ori_eval, ori_llvm, ori_arc
-ori_types      → consumed by: ori_eval, ori_llvm, ori_arc, ori_canon, ori_repr, ori_compiler
-ori_patterns   → consumed by: ori_eval, ori_compiler
-ori_eval       → consumed by: ori_compiler, oric
-ori_arc        → consumed by: ori_llvm, ori_canon, ori_repr, oric
-ori_canon      → consumed by: ori_arc, ori_eval, ori_llvm, ori_compiler, oric
-ori_repr       → consumed by: ori_llvm, oric
-ori_llvm       → consumed by: oric
-ori_compiler   → consumed by: (none — pure facade with no live Cargo edge today)
-ori_rt         → consumed by: ori_llvm (FFI contract), oric
+oriterm_core   → consumed by: oriterm_ui, oriterm_mux, oriterm
+oriterm_ipc    → consumed by: oriterm_mux, oriterm
+oriterm_ui     → consumed by: oriterm
+oriterm_mux    → consumed by: oriterm
+oriterm        → consumed by: (none — application shell)
 ```
 
-**Pipeline-flow note**: `ori_canon` produces `CanExpr` that `ori_arc` lowers and `ori_eval` interprets, with `ori_llvm` consuming the realized ARC IR (`canon.md §1`). The reverse Cargo edge `ori_canon → ori_arc` (canon depends on arc for `decision_tree` primitives) is the one non-upstream edge documented in `canon.md §1` and tracked as a migration target; the `consumed by` list above expresses pipeline-flow downstream, which is what auto-expansion needs.
+**Pipeline-flow note**: `oriterm_core` owns the terminal-emulation primitives (grid, VTE, cell, palette). `oriterm_ui` consumes it for widget rendering state. `oriterm_mux` consumes it for PTY snapshot production. `oriterm` composes all of the above into the windowed application. `oriterm_ipc` is a standalone transport layer consumed by the mux and the shell. See `.claude/rules/crate-boundaries.md` for the canonical ownership table.
 
 ## Pipeline — Sequential Phase Dispatch
 
