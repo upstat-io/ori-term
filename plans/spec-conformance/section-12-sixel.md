@@ -3,7 +3,7 @@ section: "12"
 title: "Sixel"
 status: in-progress
 
-reviewed: false
+reviewed: true
 goal: "Drive every catalog row in `catalog/sixel.md` from `implemented-unverified` to `verified` via the spec_chain harness — first full visual stack section, exercising the entire pipeline (DCS-state parser → state-machine operator dispatch → image cache → GPU image render → golden image). Close the parser/decoder state-machine seam end-to-end, pin DCS-abort + palette-lifetime + background-mode semantics, and establish occlusion + mixed-protocol cross-stack hand-offs that downstream sections (§13 Kitty, §14 iTerm2) can rely on."
 success_criteria:
   - "Top-down spec audit committed at `plans/spec-conformance/audits/section-12-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (DEC STD 070 §5/6 (primary); libsixel + wezterm cross-references) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
@@ -31,13 +31,6 @@ third_party_review:
   status: findings
   updated: 2026-04-20
   notes: "12 findings verified + fixed inline across rounds 0-2 (commits 54041ae6, e5a19364, fcc2f258); round 3 returned clean from both reviewers. All findings resolved; see §12.R for the tracked log."
-review_pipeline:
-  stage: tpr-done
-  next_step: 7
-  updated: 2026-04-20
-  rounds_completed: 4
-  last_round_commit: fcc2f258
-  last_round_findings: 0
 sections:
   - id: "12.0"
     title: "Top-down spec audit (BLOCKING) — per-operator + behavioral rows"
@@ -59,7 +52,7 @@ sections:
     status: not-started
   - id: "12.R"
     title: "Third Party Review Findings"
-    status: in-progress
+    status: complete
 
   - id: "12.N"
     title: "Completion Checklist"
