@@ -4,4 +4,5 @@
 //! `SpecHarness` → `Term` → `SixelParser` seam. Each test names the
 //! catalog row ID(s) it verifies from `plans/spec-conformance/catalog/sixel.md`.
 
+pub mod invariants;
 pub mod state_machine;

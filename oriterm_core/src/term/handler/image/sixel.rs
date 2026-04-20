@@ -16,11 +16,20 @@ use crate::term::{Term, TermMode};
 
 impl<S: EffectSink> Term<S> {
     /// Begin a sixel sequence: create parser from DCS params.
+    ///
+    /// Captures the terminal's *effective* background color at DCS-hook
+    /// time — DEC STD 070 §6.2.2 ties P2=2 (`SixelBgMode::SetToBg`) to
+    /// the bg in effect at the start of the sixel sequence, not at
+    /// `sixel_end`. "Effective" here routes through
+    /// `Term::effective_background`, which accounts for DECSCNM (reverse
+    /// video) so the captured bg matches what `renderable_content` would
+    /// use for the rest of the frame.
     pub(in crate::term::handler) fn handle_sixel_start(&mut self, params: &[u16]) {
         if !self.image_protocol_enabled {
             return;
         }
-        self.sixel_parser = Some(SixelParser::new(params));
+        let bg = self.effective_background();
+        self.sixel_parser = Some(SixelParser::new(params, [bg.r, bg.g, bg.b]));
     }
 
     /// Feed one byte to the active sixel parser.

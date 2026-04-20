@@ -113,10 +113,10 @@ fn dcs_envelope(p1: u16, p2: u16, p3: u16, body: &[u8]) -> Vec<u8> {
 /// 2. A placement is committed (the state-effect observation).
 /// 3. P2 drives observable bg semantics: P2=1 (NoChange) yields undrawn
 ///    pixels with α=0 (transparent); P2=0 (DeviceDefault) and P2=2
-///    (SetToBg) yield opaque undrawn pixels (α=255). P2=0 vs P2=2 are
-///    currently rendered identically per
-///    `oriterm_core/src/image/sixel/mod.rs:22-30,222-227` — §12.2 pins
-///    the SetToBg/DeviceDefault distinction separately.
+///    (SetToBg) yield opaque undrawn pixels (α=255). The RGB distinction
+///    between DeviceDefault (VT340 black) and SetToBg (terminal bg) is
+///    pinned by §12.2 `invariants.rs`; this test only asserts the α
+///    invariant because the default harness terminal bg is black.
 #[test]
 fn dcs_q_introducer_p1_p2_p3_cartesian_product() {
     const P1_VALUES: [u16; 2] = [0, 7];
