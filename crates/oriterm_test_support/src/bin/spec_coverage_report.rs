@@ -8,16 +8,29 @@
 //!
 //! Run: `cargo run -p oriterm_test_support --bin spec-coverage-report`
 //! Check: `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check`
+//! Audit-files lint: `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files`
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use oriterm_test_support::catalog::build_catalog_signature_set;
-use oriterm_test_support::spec_chain::coverage::{CoverageBaseline, CoverageReport};
+use oriterm_test_support::spec_chain::coverage::{
+    CoverageBaseline, CoverageReport, check_audit_files,
+};
 use oriterm_test_support::spec_chain::uncataloged;
 
 fn main() -> ExitCode {
     let workspace_root = find_workspace_root();
+
+    // `--check audit-files` runs the top-down audit-file lint ONLY
+    // (separate gate from the coverage report). Wire point for the
+    // audits/ SSOT introduced in Section 09A.
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "audit-files") && args.iter().any(|a| a == "--check") {
+        let plan_root = workspace_root.join("plans/spec-conformance");
+        return run_audit_files_lint(&plan_root);
+    }
+
     let catalog_dir = workspace_root.join("plans/spec-conformance/catalog");
     let test_roots: Vec<PathBuf> = vec![
         workspace_root.join("oriterm_core/tests"),
@@ -121,6 +134,24 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Run the top-down audit-file lint. Fails (non-zero exit) when any of
+/// the four lint checks surface findings. Clean runs produce no output.
+fn run_audit_files_lint(plan_root: &Path) -> ExitCode {
+    let report = match check_audit_files(plan_root) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    report.print_summary();
+    if report.has_failures() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Find the workspace root by walking up from `CARGO_MANIFEST_DIR`.

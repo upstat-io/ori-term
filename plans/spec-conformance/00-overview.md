@@ -798,7 +798,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Complete    |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Complete    |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Complete    |
-| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | Not Started |
+| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | In Progress |
 | 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | Complete    |
 | 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Not Started |
 | 12 | Sixel                                                  | `section-12-sixel.md`                                | Not Started |
