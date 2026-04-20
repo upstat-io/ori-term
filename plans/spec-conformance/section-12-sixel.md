@@ -28,9 +28,9 @@ inspired_by:
   - "wezterm `term/src/terminalstate/sixel.rs` — production reference for HLS rotation, raster attrs, transparency"
 depends_on: ["05", "07", "08"]
 third_party_review:
-  status: findings
+  status: clean
   updated: 2026-04-20
-  notes: "12 findings verified + fixed inline across rounds 0-2 (commits 54041ae6, e5a19364, fcc2f258); round 3 returned clean from both reviewers. All findings resolved; see §12.R for the tracked log."
+  notes: "12 findings verified + fixed inline across rounds 0-2 (commits 54041ae6, e5a19364, fcc2f258); round 3 returned clean from both reviewers. All findings resolved (see §12.R for the audit trail) — status flipped `findings` → `clean` once `open_count` reached 0."
 sections:
   - id: "12.0"
     title: "Top-down spec audit (BLOCKING) — per-operator + behavioral rows"
