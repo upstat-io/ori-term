@@ -2,7 +2,7 @@
 bug: "BUG-08-17"
 title: "Cell lacks a CHARDRAWN-equivalent flag — DECRQCRA (CSI * y) silently skips application-written spaces with default SGR"
 severity: "medium"
-status: in-progress
+status: complete
 goal: "Cell carries a persistent DRAWN bit set on every application write and cleared on every reset, so compute_rect_checksum() distinguishes application-written blanks from pristine cells and matches xterm byte-for-byte on 'A B'-style inputs."
 success_criteria:
   - "A 2×3 DECRQCRA scenario that writes 'A B' (three drawn cells: 'A', ' ', 'B' with default SGR) returns checksum 0xFF5D, byte-identical to xterm."
@@ -15,13 +15,15 @@ subsystem: "oriterm_core/src/cell/mod.rs + oriterm_core/src/grid/editing/mod.rs 
 found: "2026-04-19"
 source: "/tpr-review round 2 on spec-conformance §09A.5 (codex round 2 F1)"
 third_party_review:
-  status: none
-  updated: null
+  status: clean
+  updated: 2026-04-20
+  rounds: 3
+  notes: "3-round code TPR; round 0 codex F1 (is_empty leak) + F2 (doc drift) fixed in 6dd30e5a; round 1 codex F1 (row-level regression pins) fixed in 6c966f2b; round 2 returned informational-only verifications confirming convergence. Gemini findings in rounds 0+1 verified against code and dropped as hallucinated or non-xterm-parity. Round 2 gemini status=clean."
 ---
 
 # Fix: BUG-08-17 — Cell lacks a CHARDRAWN-equivalent flag
 
-**Status:** In Progress
+**Status:** Complete
 **Severity:** medium
 **Goal:** `Cell` carries a persistent `DRAWN` bit that distinguishes "application-written" cells from pristine cells, restoring xterm parity for DECRQCRA on explicit-space inputs.
 
@@ -278,30 +280,52 @@ Plan TPR: Skipped — medium severity, non-elevated subsystem, round-1 consensus
 
 ## R. Third Party Review Findings
 
-*Initially empty — populated by the executor during Phase 5 completion checklist.*
+3-round code TPR on commits `372f448e` + `6dd30e5a` + `6c966f2b`.
+
+### Round 0 (2026-04-19; commits `372f448e` → `6dd30e5a`)
+
+- `[TPR-BUG-08-17-1-codex][high]` `oriterm_core/src/cell/mod.rs:199` — DRAWN leaks into `Cell::is_empty()` via `flags.is_empty()`, changing `Row::is_blank`/`content_len` semantics at reflow sites (`resize/mod.rs:222` + `:407`). **Fixed in `6dd30e5a`** — `is_empty()` masks DRAWN via `(self.flags - CellFlags::DRAWN).is_empty()`, restoring visual-empty orthogonality.
+- `[TPR-BUG-08-17-2-codex][low]` `rect_ops/mod.rs:171` — stale doc reference to "`Cell::is_empty()`" proxy. **Fixed in `6dd30e5a`** — updated to cite `CellFlags::DRAWN`.
+- `[TPR-BUG-08-17-1-gemini][high]` `cell/mod.rs:236` — claimed `is_empty()` contained `!self.flags.contains(CellFlags::DRAWN)` + `CellFlags::SGR_MASK`. **Dropped at verification**: neither construct exists in actual code at `cell/mod.rs:195-201` (hallucinated).
+
+### Round 1 (2026-04-19; commit `6c966f2b`)
+
+- `[TPR-BUG-08-17-1-codex-r1][low]` `grid/row/tests.rs:277` — row-level regression tests only cover pristine blanks, not DRAWN-only cells. **Fixed in `6c966f2b`** — added 3 row-level pins: `is_blank_true_for_drawn_only_cells`, `content_len_zero_for_drawn_only_row`, `content_len_ignores_drawn_only_trailing_cells`.
+- `[TPR-BUG-08-17-2-codex-r1][informational]` `cell/mod.rs:206` — verified DRAWN masked before blank/reflow consumers. **Informational only; no code change.**
+- `[TPR-BUG-08-17-1-gemini-r1][medium]` `image/sixel.rs:102` — claimed sixel placement should set DRAWN on occupied cells. **Dropped at verification**: image protocols in ori_term overlay visually without mutating grid cells; xterm CHARDRAWN is set only by character-draw paths (`drawXtermText`), not by image placement — DECRQCRA is a character checksum, not pixel-based. ori_term behavior matches xterm.
+- `[TPR-BUG-08-17-2-gemini-r1][medium]` `image/kitty.rs:492` — same as above for kitty protocol. **Dropped at verification**: same xterm-parity reasoning.
+
+### Round 2 (2026-04-20; no commits needed)
+
+- `[TPR-BUG-08-17-1-codex-r2][informational]` `cell/mod.rs:204` — verified DRAWN orthogonal to `Cell::is_empty()`.
+- `[TPR-BUG-08-17-2-codex-r2][informational]` `rect_ops/mod.rs:241` — verified `compute_rect_checksum` keys off DRAWN, xterm parity at `screen.c:3178-3182, 3236-3240`.
+- `[TPR-BUG-08-17-3-codex-r2][informational]` `image/kitty.rs:455` — verified sixel/kitty stay out of CHARDRAWN semantics, cross-checked against xterm `graphics.c:694-699` + `graphics_sixel.c:396-405`.
+- `[TPR-BUG-08-17-1-gemini-r2][informational]` `cell/mod.rs:198` — `status: clean` with verification entry confirming all 3 commits.
+
+**Outcome**: Clean convergence after 3 rounds. Gemini status=clean in round 2; codex returned only informational verifications. Zero actionable findings remaining.
 
 ---
 
 ## 4. Completion Checklist
 
-- [ ] All new tests pass unchanged after fix (no test modifications needed)
-- [ ] Matrix completeness verified — write paths × reset paths × consumer (compute_rect_checksum) covered
-- [ ] Debug AND release builds pass
-- [ ] Windows cross-compile green
-- [ ] `oriterm_core/tests/alloc_regression.rs` still green (DECRQCRA pin unaffected — helper call is unchanged)
-- [ ] `timeout 150 ./test-all.sh` green — no regressions
-- [ ] `./clippy-all.sh` green
-- [ ] `./build-all.sh` green
-- [ ] `cargo test -p oriterm_core` green
-- [ ] `/commit-push` — commit implementation before review
-- [ ] Plan TPR (Phase 2.5) — determined post Phase 1.75 outcome
-- [ ] `/tpr-review` (Phase 5) passed
-- [ ] `/impl-hygiene-review` passed (after code TPR)
-- [ ] Capability regression gate — fix is purely additive; no capability disabled
-- [ ] `/improve-tooling` retrospective completed — capture any diagnostic gaps surfaced during the CHARDRAWN gap investigation (e.g., cell-state inspection helpers, grid-dump utilities)
-- [ ] Bug entry in `plans/bug-tracker/section-08-core-terminal.md` updated: `- [x]` with resolution
-- [ ] Fix section frontmatter `status: complete`
-- [ ] `plans/bug-tracker/00-overview.md` Quick Reference open bug count decremented
-- [ ] Final `/commit-push` for closure artifacts
+- [x] All new tests pass unchanged after fix (no test modifications needed)
+- [x] Matrix completeness verified — write paths × reset paths × consumer (compute_rect_checksum) covered
+- [x] Debug AND release builds pass
+- [x] Windows cross-compile green
+- [x] `oriterm_core/tests/alloc_regression.rs` still green (DECRQCRA pin unaffected — helper call is unchanged)
+- [x] `timeout 150 ./test-all.sh` green — no regressions (1894 lib + 2741 core + 582 spec_chain + 176 teseq + all others)
+- [x] `./clippy-all.sh` green
+- [x] `./build-all.sh` green
+- [x] `cargo test -p oriterm_core` green
+- [x] `/commit-push` — 3 commits: `372f448e` (infra), `6dd30e5a` (TPR r0 fix), `6c966f2b` (TPR r1 pins)
+- [x] Plan TPR (Phase 2.5) — Skipped per gate: medium severity, non-elevated subsystem, round-1 consensus (§2.5)
+- [x] `/tpr-review` (Phase 5) passed — 3 rounds, clean convergence; see §R.
+- [x] `/impl-hygiene-review` passed — 1 BLOAT finding filed as BUG-08-18 (`resize/mod.rs` 569 > 500 lines, pre-existing, touched by fix); all other categories clean (SSOT / no-side-logic / algorithmic-DRY / registration-sync / boundary-discipline).
+- [x] Capability regression gate — fix is purely additive; no capability disabled
+- [x] `/improve-tooling` retrospective completed — 3 improvements committed (`cb140fa5` Cell::drawn(ch) test helper; `33462410` tp_agent_prompt Tier-5 tightening on 429; `9b8c2919` xterm-reference cheatsheet). 2 deferred (Grid::debug_dump speculative; assert_drawn! macros marginal).
+- [x] Bug entry in `plans/bug-tracker/section-08-core-terminal.md` updated: `- [x]` with resolution (2026-04-20)
+- [x] Fix section frontmatter `status: complete`
+- [ ] `plans/bug-tracker/00-overview.md` Quick Reference open bug count — Quick Reference table has pre-existing drift in the 08 row (Total=7 < Open=10 before my change); my fix nets -1 + 1 (close BUG-08-17, add BUG-08-18) for zero count change. Leaving table alone; reconciliation is a separate concern.
+- [x] Final `/commit-push` for closure artifacts — pending this commit
 
 **Exit Criteria:** `cargo test -p oriterm_core --test spec_chain dec_rect_ops::decrqcra::decrqcra_explicit_spaces_match_xterm` passes against the produced DCS reply bytes `\x1bP1!~FF5D\x1b\\` (the xterm byte-parity value). All 1868+ lib tests, 582 spec_chain tests, 176 teseq tests, and full `./test-all.sh` green. `./clippy-all.sh` and `./build-all.sh` green. §09A.5 TPR round 2 (re-run after this fix lands) completes with no new findings on the CHARDRAWN axis.
