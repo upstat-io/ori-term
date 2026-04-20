@@ -1,173 +1,236 @@
-"""bug_markers.py — SSOT for bug-tracker entry parsing and lifecycle classification.
+"""Bug-entry marker SSOT — schema for `- [ ] BUG-XX-NNN ...` entries.
 
-This module is the canonical source for:
-- Bug-entry header regex and parser (`parse_bug_entries`)
-- Lifecycle marker patterns and classifier (`classify_bug_exclusion`)
-- Body-field extractors (`extract_repro`, `extract_subsystem`)
-- Severity normalizer (`normalize_severity`)
+This module is the **sole** home for parsing and classifying bug entries
+in `plans/bug-tracker/section-*.md` files. It defines:
 
-Consumers:
-    - .claude/skills/continue-roadmap/roadmap_scan.py  (Gate 1.92, Gate 1.6)
-    - .claude/skills/fix-next-bug/bug_queue_scan.py    (queue priority scan)
+  - Lifecycle marker regex constants (Superseded, Escalated, Blocked, blocked-by)
+  - `BugEntry` dataclass — the parsed shape of a bug entry
+  - `parse_bug_entries(text, source_file)` — generator yielding entries
+  - `classify_bug_exclusion(body_text)` — first-match precedence classifier
+  - `extract_supersede_target(body_text)` — pull plan path from `Superseded by:`
+  - `extract_repro(body_lines)` / `extract_subsystem(body_lines)` — field pullers
 
-Extending the marker vocabulary:
-    Edit ONLY this file. Both consumers pick up changes automatically via import.
-    Never duplicate regex patterns in the consumer scripts — that is a
-    `LEAK:algorithmic-duplication` per impl-hygiene.md §SSOT.
+Re-implementing these regexes or the classifier elsewhere is a
+`LEAK:algorithmic-duplication` violation. Both `bug_queue_scan.py`
+(autopilot priority queue) and `roadmap_scan.py` (continue-roadmap
+critical-bug gate) import from here. Adding a new lifecycle marker
+(e.g., a future `Wontfix:` state) is a one-file change — extend the
+PRECEDENCE list and add the regex.
 
-Lifecycle marker precedence (first match wins):
-    Superseded  >  Escalated  >  Blocked  >  blocked-by
+## Lifecycle marker precedence
+
+First match wins. The order encodes "what does this bug need next":
+
+  1. **Superseded by:** — fix is owned by a multi-section plan; route via
+     `/continue-roadmap <plan>`, NOT `/fix-bug`. The plan's frontmatter
+     `supersedes:` field MUST point back to the fix-section file for
+     bidirectional discoverability (validated by `bug_validators.py`).
+  2. **Escalated to plan: / Escalated:** — bug requires a plan but none
+     exists yet; user must run `/create-plan`.
+  3. **Blocked: / **Blocked**:** — bug is waiting on a dependency
+     (different from Superseded — no plan owns the fix yet).
+  4. **<!-- blocked-by:** — cross-section blocker tag; the blocking work
+     lives elsewhere in the corpus.
+
+## `**BLOCKER**:` is NOT a lifecycle marker
+
+Informational impact text describing what the bug blocks downstream
+(e.g. "**BLOCKER**: This blocks ~800 spec tests until X lands") uses
+the `**BLOCKER**:` prefix. This is NOT a lifecycle marker — it carries
+no instruction about how to handle the bug. Only `**Blocked**:` (with
+the lowercase `locked` substring + trailing colon + reason text) is.
+The substring distinction is load-bearing; the regexes below enforce it.
 """
+
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterator
 
 
 # ---------------------------------------------------------------------------
-# Regex: bug-entry header line
+# Lifecycle marker regexes
 # ---------------------------------------------------------------------------
 
-# Matches the checkbox header line of a bug entry. Captures:
-#   checked   : " " or "x" / "X"
-#   section   : numeric section code ("04")
-#   ordinal   : numeric ordinal ("074")
-#   severity  : raw severity token (may include Unicode arrow "→")
-#   title     : title text between the first `**` and the matching `**`
-#
-# We deliberately allow arbitrary trailing content after the closing
-# `**` — entries frequently have attribution like `— found by tpr-review`
-# following the bold title, and dropping those bugs (as an over-strict
-# `\s*$` anchor did previously) would silently hide high-severity work.
-BUG_HEADER_RE = re.compile(
-    r"^- \[(?P<checked>[ xX])\] `\[BUG-(?P<section>\d+)-(?P<ordinal>\d+)\]"
-    r"\[(?P<severity>[^\]]+)\]` \*\*(?P<title>.+?)\*\*"
+# Each marker matches at start-of-line (multiline mode) with optional leading
+# whitespace + optional `**` wrapping + the marker keyword + colon. The body
+# text after the colon is what determines what action to take, but the regex
+# only confirms the marker is present.
+
+BUG_SUPERSEDED_RE = re.compile(r"(?im)^\s*superseded\s+by\s*:")
+BUG_ESCALATED_RE = re.compile(r"(?im)^\s*escalated(?:\s+to\s+plan)?\s*:")
+# BUG_BLOCKED_RE: matches `**Blocked**:`, `**Blocked:**`, `Blocked:`. The
+# `\*{0,2}` allows 0 or 2 surrounding asterisks; the `\s*:` requires the
+# trailing colon. Does NOT match `**BLOCKER**:` — the lowercased input
+# `blocked` substring would not appear (BLOCKER lowercased is "blocker").
+BUG_BLOCKED_RE = re.compile(r"(?im)^\s*\*{0,2}blocked\*{0,2}\s*:")
+BUG_BLOCKED_BY_COMMENT_RE = re.compile(r"<!--\s*blocked-by:", re.IGNORECASE)
+
+# Extracts the plan path from a `Superseded by:` line. Captures the first
+# non-whitespace token on the right-hand side, stopping at backticks, commas,
+# or end-of-line. Handles both `Superseded by: plans/foo/` (bare) and
+# `Superseded by: ` + backtick-wrapped (`plans/foo/`) forms.
+BUG_SUPERSEDED_TARGET_RE = re.compile(
+    r"(?im)^\s*superseded\s+by\s*:\s*`?([^\s`,\n]+)`?",
 )
 
-# ---------------------------------------------------------------------------
-# Regex: lifecycle marker patterns
-# ---------------------------------------------------------------------------
-
-# "Superseded by:" — bug is being fixed by a multi-section plan.
-# Route via `/continue-roadmap`, NOT `/fix-bug`.
-# The plan's 00-overview.md `supersedes:` frontmatter MUST point back.
-# Matches: "Superseded by: plans/foo/" or "  Superseded by: plans/foo/"
-SUPERSEDED_RE = re.compile(r"(?im)^\s*superseded\s+by\s*:")
-
-# "Escalated to plan:" / "Escalated:" — waiting on plan creation.
-ESCALATED_RE = re.compile(r"(?im)^\s*escalated(?:\s+to\s+plan)?\s*:")
-
-# "Blocked:" / "**Blocked**:" / "**Blocked:**" — waiting on a dependency.
-# NOTE: `**BLOCKER**:` (informational impact text) is NOT a lifecycle marker.
-# Only `**Blocked**:` (with trailing colon, followed by reason text) is a
-# lifecycle marker. The distinction is load-bearing — see fix-bug-design.md §4.
-# Pattern anchors to line start and requires the word to be "Blocked" (past
-# participle), not "BLOCKER" (noun/adjective). The negative lookahead on [R]
-# ensures "BLOCKER" is excluded.
-BLOCKED_RE = re.compile(r"(?im)^\s*\*{0,2}blocked(?!er)\*{0,2}\s*:")
-
-# `<!-- blocked-by: ... -->` — cross-section blocker comment tag.
-BLOCKED_BY_COMMENT_RE = re.compile(r"<!--\s*blocked-by:", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
-# Data model
+# Entry header regex (canonical bug entry shape)
+# ---------------------------------------------------------------------------
+
+# Matches: `- [ ] [BUG-XX-NNN][severity] **Title** ...` (with `[x]` for fixed)
+# Captures: section, ordinal, severity_raw, title.
+# Tolerates: backticks around `[BUG-XX-NNN]`, optional `*` wrapping, severity
+# reclassification like `[critical→medium]` or `[critical->medium]` (RHS is
+# effective severity), AND trailing text after the closing `**` (e.g.
+# `**Title** — found by continue-roadmap.` is a valid form in the corpus).
+# The severity character class allows arrow/dash/word chars to admit
+# reclassification syntax; `normalize_severity()` extracts the effective value.
+BUG_HEADER_RE = re.compile(
+    r"^\s*- \[(?P<checked>[ xX])\]\s+"
+    r"`?\[BUG-(?P<section>\d{2})-(?P<ordinal>\d{3})\]"
+    r"\[(?P<severity>[^\]]+)\]`?\s+"
+    r"\*\*(?P<title>.+?)\*\*"
+    r"(?:.*)?$"
+)
+
+
+# ---------------------------------------------------------------------------
+# Severity normalization
+# ---------------------------------------------------------------------------
+
+_VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+
+
+def normalize_severity(severity_raw: str) -> str:
+    """Normalize severity tag, handling reclassification syntax.
+
+    `[critical→medium]` or `[critical->medium]` reclassifies — the
+    target (RHS) severity is the effective one. Bare `critical`/`high`
+    /`medium`/`low` is returned lowercased. Anything else is `unknown`.
+    """
+    raw = severity_raw.strip().lower()
+    # Reclassification: take the right-hand side
+    for sep in ("→", "->"):
+        if sep in raw:
+            raw = raw.split(sep, 1)[1].strip()
+            break
+    return raw if raw in _VALID_SEVERITIES else "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Exclusion classifier (first-match precedence)
+# ---------------------------------------------------------------------------
+
+# Precedence: Superseded > Escalated > Blocked > blocked-by.
+# Each entry is (regex, exclusion_reason). First match wins.
+_EXCLUSION_PRECEDENCE: list[tuple[re.Pattern[str], str]] = [
+    (BUG_SUPERSEDED_RE, "Superseded by plan"),
+    (BUG_ESCALATED_RE, "Escalated to plan"),
+    (BUG_BLOCKED_RE, "Blocked"),
+    (BUG_BLOCKED_BY_COMMENT_RE, "Blocked (cross-section blocker tag)"),
+]
+
+
+def classify_bug_exclusion(body_text: str) -> str | None:
+    """Return the exclusion reason for a bug body, or None if actionable.
+
+    Applies the precedence list above. None means the bug is actionable
+    by `/fix-bug` (no lifecycle marker fired). Any non-None string means
+    the bug is owned by a different workflow:
+
+    - "Superseded by plan" → route via `/continue-roadmap <plan>`
+    - "Escalated to plan"  → user must `/create-plan`
+    - "Blocked"            → waiting on a dependency
+    - "Blocked (cross-section blocker tag)" → waiting on cross-section work
+    """
+    for regex, reason in _EXCLUSION_PRECEDENCE:
+        if regex.search(body_text):
+            return reason
+    return None
+
+
+def extract_supersede_target(body_text: str) -> str | None:
+    """Return the plan path from a `Superseded by:` marker, or None.
+
+    Trailing slash is preserved if present in the source (it's the
+    convention for plan directories). Backticks are stripped.
+    """
+    m = BUG_SUPERSEDED_TARGET_RE.search(body_text)
+    return m.group(1) if m else None
+
+
+# ---------------------------------------------------------------------------
+# Field pullers (Repro, Subsystem)
+# ---------------------------------------------------------------------------
+
+
+def extract_repro(body_lines: list[str]) -> str | None:
+    """First `Repro:` line value, or None."""
+    for line in body_lines:
+        s = line.strip()
+        if s.lower().startswith("repro:"):
+            return s.split(":", 1)[1].strip()
+    return None
+
+
+def extract_subsystem(body_lines: list[str]) -> str | None:
+    """First `Subsystem:` line value, or None."""
+    for line in body_lines:
+        s = line.strip()
+        if s.lower().startswith("subsystem:"):
+            return s.split(":", 1)[1].strip()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# BugEntry dataclass + parser
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class BugEntry:
-    """A single bug-tracker entry parsed from a section-NN-*.md file.
+    """A parsed `- [ ]` / `- [x]` bug entry from a bug-tracker section file.
 
-    The `excluded_reason` field mirrors `bug_queue_scan.py`'s field of the
-    same name: `None` = actionable; any string = excluded for that reason.
+    All fields except the ID are best-effort; missing source data yields
+    None (for optional fields) or empty strings.
 
-    Consumers that need only a subset of these fields (e.g., the roadmap
-    scanner's local `Bug` shape) should cherry-pick from here rather than
-    duplicating parsing logic.
+    `excluded_reason` populated via `classify_bug_exclusion`. None means
+    the bug is actionable by `/fix-bug`. Non-None means it's owned by
+    another workflow — see `classify_bug_exclusion` docstring.
+
+    `superseded_by` populated only when `excluded_reason == "Superseded by plan"`.
+    Carries the plan path from the marker.
     """
-    bug_id: str           # "BUG-04-045"
-    section: int          # 4
-    ordinal: int          # 45
-    severity: str         # normalized: critical | high | medium | low | unknown
-    severity_raw: str     # raw token from the entry header
-    status: str           # "open" | "fixed"
-    title: str            # display title (stripped of `**` markers)
-    lineno: int           # 1-based line number of the header in the source file
-    source_file: str      # filename only, e.g. "section-04-fonts.md"
-    body_lines: list[str] = field(default_factory=list)
+    bug_id: str              # "BUG-04-074"
+    section: int             # 4
+    ordinal: int             # 74
+    severity: str            # normalized: critical | high | medium | low | unknown
+    severity_raw: str        # raw tag from source (may contain reclassification)
+    status: str              # "open" | "fixed"
+    title: str
+    lineno: int              # 1-based line of the entry header
+    source_file: str         # bug-tracker section filename (basename)
+    body_text: str = ""      # joined body lines (for marker re-classification)
+    body_lines: list[str] | None = None  # raw body lines (for field pullers)
+    excluded_reason: str | None = None
+    superseded_by: str | None = None
     repro: str | None = None
     subsystem: str | None = None
-    excluded_reason: str | None = None  # None = actionable
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
-def normalize_severity(raw: str) -> str:
-    """Normalize a raw severity token to one of: critical high medium low.
-
-    Handles reclassification notation like `critical→medium` (use the
-    reclassified current severity for priority purposes) and trailing
-    annotations like `critical (reclassified)`.
-    """
-    s = raw.strip().lower()
-    if "→" in s:
-        s = s.split("→")[-1].strip()
-    # Strip trailing annotations like " (reclassified)" or " elevated"
-    s = re.split(r"[\s(]", s, maxsplit=1)[0]
-    return s
-
-
-def classify_bug_exclusion(body_text: str) -> str | None:
-    """Classify a bug entry's lifecycle exclusion reason from its body text.
-
-    Returns a human-readable exclusion reason string, or `None` if the bug
-    is actionable (should be routed to `/fix-bug`).
-
-    Precedence (first match wins): Superseded > Escalated > Blocked > blocked-by.
-    This ordering is LOAD-BEARING — see fix-bug-design.md §1 Invariant I2.
-    """
-    if SUPERSEDED_RE.search(body_text):
-        return "Superseded by plan"
-    if ESCALATED_RE.search(body_text):
-        return "Escalated to plan"
-    if BLOCKED_RE.search(body_text):
-        return "Blocked"
-    if BLOCKED_BY_COMMENT_RE.search(body_text):
-        return "Blocked (cross-section blocker tag)"
-    return None
-
-
-def extract_repro(body_lines: list[str]) -> str | None:
-    """Extract the first `Repro:` field value from body lines."""
-    for line in body_lines:
-        s = line.strip()
-        if s.lower().startswith("repro:"):
-            return s.split(":", 1)[1].strip() or None
-    return None
-
-
-def extract_subsystem(body_lines: list[str]) -> str | None:
-    """Extract the first `Subsystem:` field value from body lines."""
-    for line in body_lines:
-        s = line.strip()
-        if s.lower().startswith("subsystem:"):
-            return s.split(":", 1)[1].strip() or None
-    return None
 
 
 def parse_bug_entries(text: str, source_file: str) -> Iterator[BugEntry]:
-    """Parse all bug entries (open + fixed) from one section-NN-*.md file.
+    """Yield `BugEntry` objects from a bug-tracker section file's text.
 
-    Yields `BugEntry` objects in document order.  Callers that only want
-    open bugs must filter: `entry.status == "open"`.
+    Body lines are collected as indented continuations until a blank line
+    or the next `- [` header. This mirrors the conventional bug-entry
+    layout in `plans/bug-tracker/section-*.md` files.
 
-    Body collection: indented/continuation lines from the line after the
-    header until a blank line or the next `- [` header.  This is the same
-    collection rule as `bug_queue_scan.py::parse_section_file`.
+    Lifecycle marker classification + supersede-target extraction happen
+    here so consumers don't have to re-parse the body.
     """
     lines = text.splitlines()
     i = 0
@@ -177,15 +240,12 @@ def parse_bug_entries(text: str, source_file: str) -> Iterator[BugEntry]:
         if not m:
             i += 1
             continue
-
-        checked = m.group("checked").strip().lower() == "x"
+        checked = m.group("checked").lower()
         section = int(m.group("section"))
         ordinal = int(m.group("ordinal"))
         severity_raw = m.group("severity")
-        title = m.group("title")
-        lineno = i + 1  # 1-based
-
-        # Collect body lines
+        title = m.group("title").strip()
+        # Collect body lines until blank or next `- [` header
         body_lines: list[str] = []
         j = i + 1
         while j < len(lines):
@@ -196,28 +256,62 @@ def parse_bug_entries(text: str, source_file: str) -> Iterator[BugEntry]:
                 break
             body_lines.append(bl)
             j += 1
-
         body_text = "\n".join(body_lines)
-
-        status = "fixed" if checked else "open"
-        severity = normalize_severity(severity_raw)
-        excluded_reason = classify_bug_exclusion(body_text) if not checked else None
-        repro = extract_repro(body_lines)
-        subsystem = extract_subsystem(body_lines)
-
+        excluded_reason = classify_bug_exclusion(body_text)
+        superseded_by = (
+            extract_supersede_target(body_text)
+            if excluded_reason == "Superseded by plan"
+            else None
+        )
         yield BugEntry(
             bug_id=f"BUG-{section:02d}-{ordinal:03d}",
             section=section,
             ordinal=ordinal,
-            severity=severity,
+            severity=normalize_severity(severity_raw),
             severity_raw=severity_raw,
-            status=status,
+            status="fixed" if checked == "x" else "open",
             title=title,
-            lineno=lineno,
+            lineno=i + 1,
             source_file=source_file,
+            body_text=body_text,
             body_lines=body_lines,
-            repro=repro,
-            subsystem=subsystem,
             excluded_reason=excluded_reason,
+            superseded_by=superseded_by,
+            repro=extract_repro(body_lines),
+            subsystem=extract_subsystem(body_lines),
         )
         i = j
+
+
+def parse_bug_tracker_dir(bug_tracker_dir: Path) -> list[BugEntry]:
+    """Convenience: parse all `section-*.md` files in a bug-tracker directory."""
+    entries: list[BugEntry] = []
+    for path in sorted(bug_tracker_dir.glob("section-*.md")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        entries.extend(parse_bug_entries(text, path.name))
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "BUG_SUPERSEDED_RE",
+    "BUG_ESCALATED_RE",
+    "BUG_BLOCKED_RE",
+    "BUG_BLOCKED_BY_COMMENT_RE",
+    "BUG_SUPERSEDED_TARGET_RE",
+    "BUG_HEADER_RE",
+    "BugEntry",
+    "classify_bug_exclusion",
+    "extract_supersede_target",
+    "extract_repro",
+    "extract_subsystem",
+    "normalize_severity",
+    "parse_bug_entries",
+    "parse_bug_tracker_dir",
+]
