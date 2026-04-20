@@ -303,7 +303,7 @@ sections:
 - [ ] Sixel + image lifecycle survives every grid mutation (§07 complete; §12.5 consumes handlers).
 - [ ] Sixel + §11 occlusion goldens green (wide-CJK, ZWJ cluster, subcell glyphs).
 - [ ] Sixel ↔ Kitty `ImageCache` hand-off green; deep mixed-protocol rendering interference DEFERRED-TO-DOWNSTREAM to §13.6 — cross-link recorded in §13.6's depends_on / success criteria, NOT silently deferred.
-- [ ] All existing teseq sixel tests pass.
+- [ ] `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (§04 sixel pilot) stays green — no regression from §12's new pilots. (No sixel-specific teseq suite exists; `oriterm_core/tests/teseq/` has no sixel scenarios and §23.5 owns teseq archival.)
 - [ ] Alloc regression unchanged (`oriterm_core/tests/alloc_regression.rs`).
 - [ ] RSS regression unchanged (`oriterm_core/tests/rss_regression.rs`).
 - [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release.
