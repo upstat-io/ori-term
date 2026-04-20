@@ -1,7 +1,7 @@
 //! Tests for GoldenLaneConfig.
 
 use super::GoldenLaneConfig;
-use crate::font::{GlyphFormat, HintingMode};
+use crate::font::{FontSet, GlyphFormat, HintingMode};
 
 #[test]
 fn spec_default_uses_grayscale_alpha_hinting() {
@@ -45,4 +45,29 @@ fn config_clone_is_independent() {
     // Original unchanged.
     assert_eq!(GoldenLaneConfig::SPEC_DEFAULT.pixel_tolerance, 0);
     assert_eq!(cloned.pixel_tolerance, 1);
+}
+
+#[test]
+fn spec_default_has_no_font_override() {
+    let config = GoldenLaneConfig::SPEC_DEFAULT;
+    assert!(config.font_override.is_none());
+}
+
+#[test]
+fn with_font_override_stores_injected_fontset() {
+    let config = GoldenLaneConfig::SPEC_DEFAULT.with_font_override(FontSet::embedded());
+    assert!(config.font_override.is_some());
+    // Other fields unchanged.
+    assert_eq!(config.font_size_pt, 12.0);
+    assert_eq!(config.pixel_tolerance, 0);
+    assert!(!config.subpixel_positioning);
+}
+
+#[test]
+fn with_font_override_preserves_clone_independence() {
+    let config = GoldenLaneConfig::SPEC_DEFAULT.with_font_override(FontSet::embedded());
+    let cloned = config.clone();
+    assert!(cloned.font_override.is_some());
+    // SPEC_DEFAULT is unchanged — the override lives only in `config` / `cloned`.
+    assert!(GoldenLaneConfig::SPEC_DEFAULT.font_override.is_none());
 }

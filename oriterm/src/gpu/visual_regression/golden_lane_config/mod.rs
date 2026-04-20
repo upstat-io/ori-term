@@ -8,7 +8,7 @@
 //! Adding independent cell metric fields (`cell_width_px`, `cell_height_px`)
 //! would create a `LEAK:shadow-home` against `FontCollection::cell_metrics()`.
 
-use crate::font::{GlyphFormat, HintingMode};
+use crate::font::{FontSet, GlyphFormat, HintingMode};
 
 /// Configuration for spec-conformance golden image tests.
 ///
@@ -17,7 +17,10 @@ use crate::font::{GlyphFormat, HintingMode};
 /// call `FontCollection::cell_metrics()` to obtain authoritative cell
 /// dimensions. Adding independent cell metric fields here would create a
 /// `LEAK:shadow-home` against `font/collection/mod.rs`.
-#[derive(Clone, Debug)]
+///
+/// `Debug` is implemented manually because `FontSet` intentionally does not
+/// derive `Debug` (its owned byte buffers are large and uninformative).
+#[derive(Clone)]
 pub struct GoldenLaneConfig {
     // Font parameters (inputs to FontCollection construction).
     /// Font size in points (e.g. 12.0).
@@ -47,6 +50,35 @@ pub struct GoldenLaneConfig {
     pub pixel_tolerance: u8,
     /// Maximum percentage of pixels allowed to differ (0.0 = zero mismatches).
     pub max_diff_percent: f64,
+
+    // Harness font override (test-only).
+    /// Optional test-only `FontSet` override for the deterministic lane.
+    ///
+    /// `None` (the `SPEC_DEFAULT` value) keeps `FontSet::embedded()` — the
+    /// canonical JetBrains Mono fixture used by every production golden.
+    ///
+    /// `Some(custom)` lets a test inject a font that advertises coverage of
+    /// a built-in-rendered codepoint with an obviously-wrong glyph, so the
+    /// precedence tests in §11.2 can prove the built-in Canvas renderer
+    /// wins unconditionally over the configured font.
+    pub font_override: Option<FontSet>,
+}
+
+impl std::fmt::Debug for GoldenLaneConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoldenLaneConfig")
+            .field("font_size_pt", &self.font_size_pt)
+            .field("dpi", &self.dpi)
+            .field("glyph_format", &self.glyph_format)
+            .field("hinting_mode", &self.hinting_mode)
+            .field("viewport_cols", &self.viewport_cols)
+            .field("viewport_rows", &self.viewport_rows)
+            .field("subpixel_positioning", &self.subpixel_positioning)
+            .field("pixel_tolerance", &self.pixel_tolerance)
+            .field("max_diff_percent", &self.max_diff_percent)
+            .field("font_override", &self.font_override.is_some())
+            .finish()
+    }
 }
 
 impl GoldenLaneConfig {
@@ -69,7 +101,19 @@ impl GoldenLaneConfig {
         subpixel_positioning: false,
         pixel_tolerance: 0,
         max_diff_percent: 0.0,
+        font_override: None,
     };
+
+    /// Builder: return a config that carries the given `FontSet` as the
+    /// harness's primary font, replacing `FontSet::embedded()` in the
+    /// deterministic lane. Test-only — consumed by font-precedence tests
+    /// that need to inject a custom font advertising coverage of built-in
+    /// codepoints.
+    #[must_use]
+    pub fn with_font_override(mut self, font: FontSet) -> Self {
+        self.font_override = Some(font);
+        self
+    }
 }
 
 #[cfg(test)]
