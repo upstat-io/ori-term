@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "head_sha": "ace932f7",
+  "updated_at": "2026-04-20T11:29:42Z",
+  "updated_by": "commit-push",
+  "notes": "Seeded by state.sh first-run bootstrap. Run refresh --full to populate test_suite + clippy with real values.",
+  "test_suite": {
+    "status": "unknown",
+    "last_run_sha": "",
+    "last_run_at": "",
+    "last_run_kind": "",
+    "totals": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "known_failing_files": [],
+    "known_failing_count": 0,
+    "failure_class": "",
+    "remediation": []
+  },
+  "clippy": {
+    "status": "unknown",
+    "last_run_sha": "",
+    "last_run_at": ""
+  },
+  "hygiene": {
+    "status": "unknown",
+    "last_run_sha": "",
+    "last_run_at": "",
+    "notes": ""
+  }
+}
