@@ -11,10 +11,10 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
 
 ## Open Bugs
 
-- [ ] `[BUG-08-20][low]` **`oriterm_core/src/term/mod.rs` is 571 lines, 71 over the 500-line limit** — found by §09A.N post-split file-size sweep.
-  Repro: `wc -l oriterm_core/src/term/mod.rs` prints `571`.
+- [ ] `[BUG-08-20][low]` **`oriterm_core/src/term/mod.rs` is 586 lines, 86 over the 500-line limit** — found by §09A.N post-split file-size sweep; size bumped by the §12.2 TPR round-0 addition of `Term::effective_background` (DECSCNM-aware helper for sixel `SetToBg`).
+  Repro: `wc -l oriterm_core/src/term/mod.rs` prints `586`.
   Subsystem: `oriterm_core/src/term/mod.rs`.
-  Analysis: Pre-existing BLOAT — file exceeds the `.claude/rules/code-hygiene.md §File Size` 500-line cap. `Term` struct carries the full terminal state: mode stacks, cursor save, alt-screen swap, image-cache routing, keyboard-mode stack, color palette, charsets, C1-7bit / conformance-level fields, tab stops, selection, snapshot buffers, effect sink wiring. Natural split points: cursor save/restore + alt-screen swap helpers into `term/screen_swap.rs`; snapshot/effect plumbing into `term/effects.rs`; leave `Term::new` and the top-level field definitions in `mod.rs`.
+  Analysis: Pre-existing BLOAT — file exceeds the `.claude/rules/code-hygiene.md §File Size` 500-line cap. `Term` struct carries the full terminal state: mode stacks, cursor save, alt-screen swap, image-cache routing, keyboard-mode stack, color palette, charsets, C1-7bit / conformance-level fields, tab stops, selection, snapshot buffers, effect sink wiring. Natural split points: cursor save/restore + alt-screen swap helpers into `term/screen_swap.rs`; snapshot/effect plumbing into `term/effects.rs`; leave `Term::new` and the top-level field definitions in `mod.rs`. `effective_background` is a one-screen accessor that naturally stays on the top-level `impl Term` alongside `palette()` / `palette_mut()`.
   TDD matrix: no new tests required — existing `term/tests/` directory (core.rs, modes.rs, osc.rs, etc.) covers the behavior. Split must preserve every test's observable behavior.
 
 - [ ] `[BUG-08-19-b][low]` **`oriterm_mux/src/pane/io_thread/mod.rs` is 566 lines, 66 over the 500-line limit** — found by §09A.N post-split file-size sweep. (Numbered `-b` to avoid colliding with the just-closed BUG-08-19.)
