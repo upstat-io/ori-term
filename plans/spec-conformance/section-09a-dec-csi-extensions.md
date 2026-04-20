@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "09A.2"
     title: "DEC presentation ops catalog — verify catalog/dec-presentation.md parses cleanly via parse_catalog_markdown (13 rows, already in 10-col table form)"
-    status: not-started
+    status: complete
   - id: "09A.3"
     title: "VTE dispatch arms — add ALL missing CSI dispatch arms in crates/vte/src/ansi/dispatch/csi.rs for the new rows"
     status: not-started
@@ -100,7 +100,7 @@ sections:
 
 # Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
 
-**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.2–09A.11, 09A.13, 09A.R, 09A.N.
+**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.3–09A.11, 09A.13, 09A.R, 09A.N.
 
 ---
 
@@ -1282,7 +1282,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 
 - [ ] §09A.0 — `spec-coverage-report --check audit-files` implemented and passing for `audits/section-09a-top-down-inventory.md`
 - [ ] §09A.1 — `catalog/dec-rectangle-ops.md` created with all 10 DECRECT rows; all rows at `missing` status initially
-- [ ] §09A.2 — `catalog/dec-presentation.md` created with all 13 DECPRES rows; all rows at `missing` status initially
+- [x] §09A.2 — `catalog/dec-presentation.md` created with all 13 DECPRES rows; all rows at `missing` status initially
 - [ ] §09A.3 — All 19 CSI dispatch arms present in `crates/vte/src/ansi/dispatch/csi.rs`; ESC 6/9 dispatch arms confirmed; `cargo test -p vte` green
 - [ ] §09A.4 — All ~21 handler trait default methods in `crates/vte/src/ansi/handler.rs`; override implementations in `oriterm_core/src/term/handler/rect_ops/mod.rs` and `oriterm_core/src/term/handler/presentation/mod.rs` (both as directory modules with sibling `tests.rs` files)
 - [ ] §09A.5 — DECRQCRA synchronous checksum via `PtyEffect::Write`; xterm patch-336 algorithm; zero-alloc in checksum loop; `PtyWriteKind::ChecksumReport` variant exhaustive across all match arms
