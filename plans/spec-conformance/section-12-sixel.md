@@ -3,44 +3,54 @@ section: "12"
 title: "Sixel"
 status: not-started
 reviewed: false
-goal: "Drive every catalog row in `catalog/sixel.md` from `implemented-unverified` to `verified` via the spec_chain harness — first full visual stack section, exercising the entire pipeline (parser → DCS state → image cache → GPU image render → golden image)."
+goal: "Drive every catalog row in `catalog/sixel.md` from `implemented-unverified` to `verified` via the spec_chain harness — first full visual stack section, exercising the entire pipeline (DCS-state parser → state-machine operator dispatch → image cache → GPU image render → golden image). Close the parser/decoder state-machine seam end-to-end, pin DCS-abort + palette-lifetime + background-mode semantics, and establish occlusion + mixed-protocol cross-stack hand-offs that downstream sections (§13 Kitty, §14 iTerm2) can rely on."
 success_criteria:
   - "Top-down spec audit committed at `plans/spec-conformance/audits/section-12-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (DEC STD 070 §5/6 (primary); libsixel + wezterm cross-references) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
-  - "Every row in `catalog/sixel.md` is `verified`"
-  - "Sixel parser tests verified for: DCS q introducer, P1 pan / P2 pad / P3 horizontal grid / P5 width / P6 height raster attributes, color define (#) / color select / repeat (!) / CR / NL operators, sixel data byte (vertical 6-pixel column)"
-  - "Sixel decoder tests verified: HLS-to-RGB conversion (already correct per Pass 1 — `hue - 120.0` at color.rs:41), color map state, repeat optimization, background-transparent vs background-filled modes"
-  - "Sixel grid integration verified: SIXEL_SCROLLING mode 80 cursor positioning, SIXEL_CURSOR_RIGHT mode 8452 cursor positioning, image placement creation, orphan cleanup"
-  - "Sixel GPU rendering verified via golden image apex: a sixel raster fills the expected pixels in the rendered output (tested in section 04 pilot already; this section adds more golden scenarios)"
-  - "Sixel + image lifecycle interactions verified: sixel image survives scrollback eviction, ED/EL erase, alt-screen toggle, resize (depends on section 07's image lifecycle fix)"
-  - "All existing teseq sixel tests pass without modification"
-  - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release"
-  - "Section's mission criterion connection: contributes to **Verification chain complete per row**"
+  - "Audit-file coverage extends the current 5-row catalog with per-operator rows (`\"` raster attrs, `#` define, `#N` select, `!N` repeat, `$` CR, `-` NL, sixel data byte) AND behavioral rows for: (a) aborted DCS commits nothing on CAN/SUB/ESC mid-image, (b) raster-attrs-before-data vs raster-attrs-mid-stream materially affect output, (c) `SetToBg` vs `DeviceDefault` render distinctly (not both opaque black), (d) DECSET 80 default state + 8452 cursor-right behavior as separate rows, (e) color-map reset-vs-persist across DCS q invocations. `not-targeted` rows exist for DEC STD 070 macro-set and DECGRA non-sixel sequences with rationale that the parser drops them silently."
+  - "Every row in `catalog/sixel.md` is `verified`."
+  - "Sixel parser + decoder (the `SixelParser` state machine at `oriterm_core/src/image/sixel/mod.rs`) is verified end-to-end as one coupled unit: DCS q introducer (params P1/P2/P3), raster attrs (`\"` Pan/Pad/Ph/Pv), color define (`#n;Pu;Px;Py;Pz`) with Pu=1 (HLS) and Pu=2 (RGB), color select (`#n`), repeat (`!n`), CR (`$`), NL (`-`), sixel data byte (`?`..`~`), intermixed `#` color changes mid-data, `!` repeat interaction with palette, abort via CAN/SUB/ESC mid-DCS."
+  - "Background mode semantics are pinned distinctly: `SixelBgMode::DeviceDefault` (P2=0), `SixelBgMode::NoChange` (P2=1, transparent α=0), `SixelBgMode::SetToBg` (P2=2, filled with terminal bg). A test asserts `SetToBg` output differs from `DeviceDefault` output on identical pixel input (addresses the current `oriterm_core/src/image/sixel/mod.rs:22-30,222-227` false-equivalence)."
+  - "Palette-lifetime invariant is pinned: every DCS q invocation rebuilds the VT340 palette from scratch (`oriterm_core/src/image/sixel/mod.rs:87-91`), so color-map state from a prior sixel does NOT leak into the next. A regression test emits two back-to-back DCS q streams with different palettes and asserts the second stream's output depends only on its own palette definitions."
+  - "`!` repeat clamping semantics are pinned at `oriterm_core/src/image/sixel/mod.rs:335-360` — a test feeds `!20000?` and asserts either (a) the documented libsixel-compatible behaviour of clamping to MAX_DIMENSION / 10,000 pixels, or (b) if the implementation diverges, the divergence is recorded in a catalog-row note and cross-referenced against libsixel's `decoder.c`."
+  - "DCS-abort is pinned end-to-end through the VTE performer: CAN (0x18), SUB (0x1A), and ESC-mid-DCS all drive `Performer::unhook` (`crates/vte/src/lib.rs:341-355`) → `dispatch/mod.rs:118-131` → `Term::handle_sixel_end` (`oriterm_core/src/term/handler/image/sixel.rs:34-64`) but the test asserts **no image placement is created** when the abort happens before sixel data is finalized. (Today the abort path stores unconditionally — if the test fails, that is BUG-12-* filed via `/add-bug`.)"
+  - "Sixel grid integration verified: SIXEL_SCROLLING mode 80 cursor positioning, SIXEL_CURSOR_RIGHT mode 8452 cursor positioning, image placement creation at `(cell_col, stable_row)` with `z_index: 0`, orphan cleanup via `prune_scrollback`."
+  - "Sixel GPU rendering verified via golden image apex on the deterministic lane from §05 — five expanded scenarios: (a) solid rectangle, (b) multi-color palette-switch mid-image, (c) `!` repeat optimization, (d) `$` CR + `-` NL banding interaction, (e) transparency composite against the deterministic background without sub-pixel jitter, PLUS (f) SIXEL_SCROLLING OFF goldens, (g) SIXEL_CURSOR_RIGHT ON goldens so §12.3's behavioral bullets are visually pinned."
+  - "Sixel + unicode/subcell occlusion verified: sixel placements use `z_index: 0` (`oriterm_core/src/term/handler/image/sixel.rs:79-97`) and non-negative images render above text (`oriterm/src/gpu/prepare/emit.rs:264-285`). Goldens pin z-order against §11 glyph families — sixel + wide-CJK, sixel + ZWJ cluster, sixel + half-blocks/quadrants/sextants."
+  - "Sixel + image lifecycle interactions verified: sixel image survives scrollback eviction, ED/EL erase, alt-screen toggle, resize (consumes §07's `ImageCache::on_resize` + `remap_placements` — §07 is `status: complete`)."
+  - "Sixel ↔ Kitty cross-stack hand-off proven at `ImageCache` + placement level: a shared-cache regression test places a sixel image, then a kitty image into the same `ImageCache` instance, and asserts both `extract_images()` entries are independently addressable (deeper mixed-protocol rendering interference is delegated to §13.6 via an explicit DEFERRED-TO-DOWNSTREAM cross-link)."
+  - "All existing teseq sixel tests pass without modification."
+  - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release."
+  - "Section's mission criterion connection: contributes to **Verification chain complete per row** and (for lifecycle rung) **Image lifecycle correct under resize/reflow/scrollback/alt-screen**."
 inspired_by:
   - "DEC STD 070 — primary spec; defines DCS q semantics, P1-P6 raster attrs, color operators"
-  - "libsixel `src/decoder.c` — reference implementation for parsing edge cases"
+  - "libsixel `src/decoder.c` — reference implementation for parsing edge cases (palette reset, repeat clamping, abort path)"
   - "wezterm `term/src/terminalstate/sixel.rs` — production reference for HLS rotation, raster attrs, transparency"
-depends_on: ["05", "07", "08"]
+depends_on: ["05", "07"]
 third_party_review:
   status: none
   updated: null
+review_pipeline:
+  stage: editor-done
+  next_step: 6
+  updated: 2026-04-20
 sections:
   - id: "12.0"
-    title: "Top-down spec audit (BLOCKING)"
+    title: "Top-down spec audit (BLOCKING) — per-operator + behavioral rows"
     status: not-started
   - id: "12.1"
-    title: "Verify sixel parser rows (DCS q + raster attrs + color ops + data)"
+    title: "Verify sixel parser+decoder state machine end-to-end (DCS q, raster attrs, color ops, repeat, CR/NL, data, abort)"
     status: not-started
   - id: "12.2"
-    title: "Verify sixel decoder rows (HLS, color map, repeat, transparency)"
+    title: "Verify background modes + palette-lifetime + repeat-clamp invariants"
     status: not-started
   - id: "12.3"
-    title: "Verify sixel grid integration (SIXEL_SCROLLING, SIXEL_CURSOR_RIGHT)"
+    title: "Verify sixel grid integration + §11 occlusion (SIXEL_SCROLLING, SIXEL_CURSOR_RIGHT, z-order)"
     status: not-started
   - id: "12.4"
-    title: "Verify sixel GPU rendering via golden image apex"
+    title: "Verify sixel GPU rendering via golden image apex (expanded scenarios + cursor-mode goldens)"
     status: not-started
   - id: "12.5"
-    title: "Verify sixel + image lifecycle interactions"
+    title: "Verify sixel + image lifecycle interactions + sixel↔kitty ImageCache hand-off"
     status: not-started
   - id: "12.R"
     title: "Third Party Review Findings"
@@ -48,89 +58,167 @@ sections:
   - id: "12.N"
     title: "Completion Checklist"
     status: not-started
-# TPR Checkpoint Placement: 12.3 (after parser+decoder+grid — covers .1-.3),
-# 12.5 (after GPU + lifecycle — covers .4-.5), final in 12.N
+# TPR Checkpoint Placement: 12.3 (after parser/decoder state machine + invariants + grid integration — covers .1-.3),
+# 12.5 (after GPU goldens + lifecycle + cross-stack hand-off — covers .4-.5), final in 12.N
 ---
 
 # Section 12: Sixel
 
 **Status:** Not Started
-**Goal:** Sixel is the first full visual stack — its verification chain exercises the entire pipeline from byte parsing to golden image. This section drives every sixel catalog row to `verified`.
+**Goal:** Sixel is the first full visual stack — its verification chain exercises the entire pipeline from DCS byte parsing through GPU composition. This section drives every sixel catalog row to `verified`, closes the parser/decoder state-machine seam end-to-end, and pins three invariants that the current 5-row catalog does not cover: background-mode distinction, palette reset per DCS q, and DCS abort correctness.
 
 **Success Criteria:** see frontmatter.
 
-**Context:** Pass 1 confirmed sixel parser, decoder, grid integration, and GPU rendering all exist. Section 04's pilot already verified one minimal scenario. This section drives every other catalog row. The HLS rotation bug suspected by the audit memory turned out to be CORRECT (`hue - 120.0` at color.rs:41 — verified by Pass 1), so no fix needed. Section 07's image lifecycle fix is a hard prerequisite for the lifecycle interaction tests.
+**Context:** Pass 1 confirmed sixel parser, decoder, grid integration, and GPU rendering all exist. Section 04's pilot verified one minimal scenario (opaque rectangle). This section drives every other catalog row AND adds the per-operator + behavioral rows the current catalog lacks. The HLS rotation bug suspected by the audit memory turned out to be CORRECT (`hue - 120.0` at `oriterm_core/src/image/sixel/color.rs:41` — verified by Pass 1). Section 07 (image lifecycle) is `status: complete`, so `ImageCache::on_resize`, `remap_placements`, and the 42-scenario lifecycle matrix are available runway for §12.5.
 
-**Blocker note:** Additionally blocked by `BUG-08-8` (kitty.rs BLOAT split — 476 lines, ≤24 lines from the hard 500-line limit) — see `plans/bug-tracker/section-08-core-terminal.md` for the bug entry. Although BUG-08-8's fix target is `oriterm_core/src/term/handler/image/kitty.rs`, Sections 12 (Sixel) and 13 (Kitty Graphics) are the implementation consumers that MUST NOT begin implementation until the kitty.rs split lands — any new per-action code added on top of the current 476-line baseline would push the file through the 500-line hard limit defined in `.claude/rules/code-hygiene.md` §File Size. This blocker is intentionally NOT recorded in frontmatter `depends_on:` because that field takes section-number tokens, not bug-tracker IDs; `/continue-roadmap` Step 1.92 surfaces BUG-08-8 to implementers when Section 12 becomes focus. Section 12's own completion checklist (see `## 12.N` below) contains a scanner-parsed gate on BUG-08-8 closure.
+**Code seam this section owns (in-crate anchors):**
+- `oriterm_core/src/image/sixel/mod.rs` — `SixelParser` coupled state machine (438 lines): byte intake at `mod.rs:33-73,115-190`, operator dispatch at `mod.rs:256-360`, palette rebuild at `mod.rs:87-91`, repeat clamp at `mod.rs:335-360`, raster attrs ignored dims at `mod.rs:78-85,310-329`, `SetToBg` rendering at `mod.rs:22-30,222-227`.
+- `oriterm_core/src/term/handler/image/sixel.rs` — handler wiring (140 lines): `handle_sixel_start` / `handle_sixel_put` / `handle_sixel_end` at `sixel.rs:19-64`, `sixel_create_placement` with `z_index: 0` at `sixel.rs:68-139`.
+- `crates/vte/src/lib.rs:341-355` — VTE `Performer::unhook` drives DCS finalize; CAN/SUB/ESC-mid-DCS route through the same `unhook` callback.
+- `crates/vte/src/ansi/dispatch/mod.rs:118-131` — dispatch routes `DcsState::Sixel` unhook to `Term::sixel_end` regardless of whether the DCS was finalized or aborted.
+- `oriterm_core/src/term/snapshot.rs:243-339` — `Term::extract_images` produces the `RenderableContent::images` vector that flows into GPU.
+- `oriterm/src/gpu/frame_prep.rs:149-173` + `oriterm/src/gpu/image_render/mod.rs:67-151` + `oriterm/src/gpu/prepare/emit.rs:262-285` — image-render prepare path shared with §13 Kitty; `z_index >= 0` draws above text.
+
+**NO BUG-08-8 blocker on §12.** Earlier plan drafts pre-blocked Section 12 on the `kitty.rs` BLOAT split. That gate is **factually wrong** and is removed:
+- Section 12's implementation surface is `oriterm_core/src/term/handler/image/sixel.rs` (140 lines) + `oriterm_core/src/image/sixel/mod.rs` (438 lines) — NOT `kitty.rs`.
+- `.claude/rules/code-hygiene.md` §File Size (line 91) scopes the 500-line cap **file-local**: "Source files (excluding `tests.rs`) must not exceed 500 lines." `kitty.rs` being at 480 lines does not block edits to unrelated files.
+- BUG-08-8 remains tracked at `plans/bug-tracker/section-08-core-terminal.md` and still blocks §13 (Kitty Graphics) implementation as that section's own blocker note states. §12 proceeds independently.
 
 **Reference implementations:** see frontmatter.
 
-**Depends on:** Section 05 (deterministic golden lane), Section 07 (image lifecycle fix), Section 08 (baseline correct).
+**Depends on:** Section 05 (deterministic golden lane — `status: complete`), Section 07 (image lifecycle handlers — `status: complete`).
+
+**Cross-section hand-offs (downstream consumers):**
+- §13.6 (Kitty + sixel cross-stack regression) consumes §12.5's shared-`ImageCache` handshake test. Deep mixed-protocol rendering interference (sixel + kitty in same grid row, same cell, overlapping placements) is **DEFERRED-TO-DOWNSTREAM** to §13.6 and called out in §12.N.
+- §14 (iTerm2) and §15 (Cell-Level Alpha) inherit the `z_index` + transparency composite pins established here.
 
 ---
 
 ## 12.0 Top-down spec audit (BLOCKING — precedes all other subsections)
 
-**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-12-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+**Goal:** Walk DEC STD 070 §5/§6 TOP-DOWN. Every sequence the spec defines gets a row in the audit file at `plans/spec-conformance/audits/section-12-top-down-inventory.md`, mapped to either a catalog row ID or an explicit `not-targeted` decision with rationale. Expand the current 5-row catalog to per-operator granularity plus the behavioral rows the state machine requires.
 
-**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up (audit existing dispatch + add tack/teseq-discovered items), which is incomplete by construction — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA from the catalog. The current `catalog/sixel.md` has only 5 broad rows (DCS-q introducer, DCS-put payload, DCS-unhook, MODE-80 xref, MODE-8452 xref). That granularity cannot pin per-operator correctness or behavioral invariants — a `!` repeat bug can sit under `SIXEL-DCS-put` indefinitely with no catalog row failing. The audit file forces the expansion.
 
-**Canonical spec source(s):** DEC STD 070 §5/6 (primary); libsixel + wezterm cross-references
+**Canonical spec source(s):** DEC STD 070 §5 (Sixel Color Extension) + §6 (Sixel Graphics Extension), primary; libsixel `src/decoder.c` + wezterm `term/src/terminalstate/sixel.rs` cross-references.
 
 **Files touched:**
-- `plans/spec-conformance/audits/section-12-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
-- `plans/spec-conformance/catalog/sixel.md` (open new rows for any sequences that should be `mapped` but aren't catalogued yet — use the canonical schema per `plans/spec-conformance/00-overview.md §Catalog Row Schema`)
+- `plans/spec-conformance/audits/section-12-top-down-inventory.md` (POPULATE — currently a stub created by §09A.10; the table at `audits/section-12-top-down-inventory.md:21-27` is empty)
+- `plans/spec-conformance/catalog/sixel.md` (EXPAND — open new rows using the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`)
 
 **Completion criteria:**
 
-- [ ] Audit file `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [ ] Audit file `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated with every sequence in DEC STD 070 §5/§6.
+- [ ] Audit file contains per-operator rows (not a single "sixel data" mega-row):
+  - [ ] DCS q introducer with parameters P1 (aspect-ratio/Pan), P2 (background-select), P3 (Ph, horizontal grid — ignored in our impl, **note the divergence**)
+  - [ ] Raster attributes operator `"` with sub-params Pan, Pad, Ph, Pv
+  - [ ] Color definition operator `#n;Pu;Px;Py;Pz` — separate row per Pu value (Pu=1 HLS, Pu=2 RGB)
+  - [ ] Color selection operator `#n` (bare select, no definition)
+  - [ ] Repeat operator `!n` with data-byte payload
+  - [ ] CR operator `$` (graphic carriage return — reset x, keep y)
+  - [ ] NL operator `-` (graphic newline — reset x, advance y by 6)
+  - [ ] Sixel data byte `?`..`~` (the 6-pixel column encoding)
+- [ ] Audit file contains behavioral rows (not just operator rows):
+  - [ ] `SIXEL-BG-DeviceDefault` (P2=0) — renders with device-default bg
+  - [ ] `SIXEL-BG-NoChange` (P2=1) — undrawn pixels alpha=0 (transparent)
+  - [ ] `SIXEL-BG-SetToBg` (P2=2) — undrawn pixels filled with terminal bg color, **distinct from DeviceDefault**
+  - [ ] `SIXEL-ABORT-CAN` — CAN (0x18) mid-DCS aborts; no placement committed
+  - [ ] `SIXEL-ABORT-SUB` — SUB (0x1A) mid-DCS aborts; no placement committed
+  - [ ] `SIXEL-ABORT-ESC` — ESC mid-DCS aborts; no placement committed
+  - [ ] `SIXEL-RASTER-BEFORE-DATA` — `"` before first data byte sets dimensions
+  - [ ] `SIXEL-RASTER-MID-STREAM` — `"` emitted after data is ignored OR re-dimensions (document which)
+  - [ ] `SIXEL-PALETTE-RESET-PER-DCS` — palette rebuilt from VT340 defaults on every DCS q; prior definitions do not leak
+  - [ ] `SIXEL-MODE-80-DEFAULT` — SIXEL_SCROLLING default state verified
+  - [ ] `SIXEL-MODE-8452-CURSOR-RIGHT` — DECSET 8452 cursor-right behavior
+- [ ] Audit file contains `not-targeted` rows for:
+  - [ ] DEC STD 070 macro-set commands (DECDMAC / DECINVM) — rationale: ori_term does not implement macro storage; parser must silently drop.
+  - [ ] DECGRA and other non-sixel graphics sequences that share the DCS space — rationale: ori_term's `DcsState` gates only on `DcsState::Sixel`; parser must pass non-sixel DCS through to their respective handlers without corrupting sixel state.
 - [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
-- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/sixel.md`.
+- [ ] New catalog rows in `catalog/sixel.md` use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema` (frozen v1.0 — 2026-04-13).
 - [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
 - [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
-- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
 
-**No other subsection in this section can begin work until §12.0 is complete.** This is a hard gate.
-
----
-
-## 12.1 Verify sixel parser rows
-
-**File(s):** `oriterm_core/tests/spec_chain/sixel/parser.rs` (new)
-
-For every parser-level catalog row (DCS q introducer, P1-P6 raster attrs, color define/select, repeat, CR, NL, sixel data byte), write a spec_chain test that asserts the parser tokenizes correctly.
-
-- [ ] Walk `catalog/sixel.md` and identify rows with apex layer = parser
-- [ ] For each row, write a spec_chain test feeding the byte sequence and asserting `observe_parser_rung(...)` matches the expected tokenization
-- [ ] Update each row's `Verification` to `verified` (after the entire chain for that row passes — multi-rung rows verify only when every applicable rung is green)
-- [ ] **Validation**: parser-level rows verified.
+**No other subsection in this section can begin work until §12.0 is complete.** This is a hard gate. The audit file IS the row set §12.1–§12.5 drive to `verified`.
 
 ---
 
-## 12.2 Verify sixel decoder rows
+## 12.1 Verify sixel parser+decoder state machine end-to-end
 
-**File(s):** `oriterm_core/tests/spec_chain/sixel/decoder.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/sixel/state_machine.rs` (new)
 
-- [ ] Walk decoder-level rows in `catalog/sixel.md`
-- [ ] For each, spec_chain test that feeds the sequence and asserts decoder state (color map updates, transparency mode toggle, etc.)
-- [ ] Test HLS rotation explicitly: feed a known HLS triplet, assert the resulting RGB matches the expected (cross-check against libsixel)
-- [ ] Update rows to `verified`
-- [ ] **Validation**: decoder-level rows verified.
+**Why merged:** The original plan split parser (§12.1) and decoder (§12.2) into separate test files. The `SixelParser` at `oriterm_core/src/image/sixel/mod.rs:33-73,115-190,256-360` is **one coupled state machine** — byte intake, command parsing, palette mutation, raster-attrs, and pixel emission all share the same `SixelParser` struct. A byte-level test that tokenizes `P1` parameters but never drives palette mutation can be green while palette dispatch is broken. Merging §12.1 + §12.2 into a single state-machine rung forces intermixed-operator coverage, which is what actually verifies the coupling. Pure-decoder invariants (background mode, palette reset, repeat clamp) move to §12.2 because they are observable properties of the decoder's **output state** rather than per-operator dispatch correctness.
+
+**What to test (catalog rows driven to `verified` by this subsection — the per-operator + abort rows from §12.0):**
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **DCS q introducer** — feed `ESC P <Ps1> ; <Ps2> ; <Ps3> q` prefixes with the full P1×P2×P3 cartesian product, assert `SixelParser::new` receives the correct `params` slice. Verified at `oriterm_core/src/image/sixel/mod.rs:78-85`.
+- [ ] **Raster attributes `"`** — feed `" <Pan> ; <Pad> ; <Ph> ; <Pv>` before data, assert width/height are set from Ph/Pv (note Pan/Pad currently ignored — `oriterm_core/src/image/sixel/mod.rs:310-329` — this is a documented divergence the audit row captures).
+- [ ] **Color define Pu=2 (RGB)** — feed `#n;2;Px;Py;Pz`, assert `palette[n] = [Px, Py, Pz]` scaled from 0-100 to 0-255.
+- [ ] **Color define Pu=1 (HLS)** — feed `#n;1;Ph;Pl;Ps`, assert `palette[n]` matches libsixel's `hls_to_rgb` at `oriterm_core/src/image/sixel/color.rs:41` (the `hue - 120.0` rotation verified correct in Pass 1).
+- [ ] **Color select `#n`** — feed `#n` without follow-on params, assert `current_color = n`.
+- [ ] **Repeat `!n`** — feed `!5?`, assert 5 consecutive columns of the same sixel data byte are emitted.
+- [ ] **CR `$`** — feed data, `$`, more data, assert second data band starts at `x = 0` with `y` unchanged.
+- [ ] **NL `-`** — feed data, `-`, more data, assert second data band starts at `x = 0` with `y += 6`.
+- [ ] **Sixel data byte `?`..`~`** — for every byte in the 63-code range, assert the 6-bit pixel column is decoded per `byte - 0x3F`.
+- [ ] **Intermixed `#` mid-data** — feed `<data>#5<data>`, assert the second data band uses `current_color = 5` on live placement (forces dispatch on live `SixelParser` state, not just setup).
+- [ ] **`!` repeat interacts with palette** — feed `#3!5?`, assert all 5 columns use palette index 3 (forces repeat to read `current_color` at emission time, not at `!` time).
+- [ ] **Raster-before-data** — feed `"1;1;10;20<data>`, assert dimensions set before first pixel.
+- [ ] **Raster-mid-stream** — feed `<data>"5;5;100;100<data>`, assert the documented behavior (ignored vs re-dimensions). Audit file row captures the choice.
+- [ ] **Negative pin — abort path** — feed `ESC P q <data> <CAN>`, drive through `crates/vte/src/lib.rs:341-355` `Performer::unhook` → `dispatch/mod.rs:118-131` → `Term::handle_sixel_end` at `oriterm_core/src/term/handler/image/sixel.rs:34-64`, assert:
+  - No entry added to `ImageCache` (today `handle_sixel_end` stores unconditionally — if this test fails, file BUG-12-* via `/add-bug` and treat the fix as an in-scope deliverable of §12.1, not deferred).
+  - Same test shape with SUB (0x1A) and ESC-mid-DCS.
+- [ ] Matrix count assertion: `assert_eq!(cells_visited, OPS.len() * INTERMIX_SCENARIOS.len())` per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
+- [ ] Update per-operator + per-abort catalog rows (from §12.0 expansion) to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** state-machine rung green; parser + decoder seam proven coupled.
 
 ---
 
-## 12.3 Verify sixel grid integration (SIXEL_SCROLLING, SIXEL_CURSOR_RIGHT)
+## 12.2 Verify background modes + palette-lifetime + repeat-clamp invariants
+
+**File(s):** `oriterm_core/tests/spec_chain/sixel/invariants.rs` (new)
+
+**Why separate from §12.1:** These are properties of the decoder's **output state** over multiple DCS invocations and output-buffer invariants, not per-operator dispatch. They belong in their own rung because the failure mode (silent pixel corruption, cross-image palette leak, unbounded allocation) is observed at the output layer, not at the token layer.
+
+- [ ] Write failing test matrix BEFORE implementation.
+- [ ] **`SixelBgMode::DeviceDefault` vs `SixelBgMode::SetToBg`** — feed identical pixel data twice, once with P2=0, once with P2=2, assert the output RGBA buffers differ. The test directly addresses the current behavior at `oriterm_core/src/image/sixel/mod.rs:22-30,222-227` where `SetToBg` renders as opaque black (same as `DeviceDefault`). If the buffers are equal, that is a filed bug — treat the fix as in-scope here (either `SetToBg` must render as terminal bg color, or the rows in §12.0 must be collapsed to a `not-targeted` pair with documented divergence).
+- [ ] **`SixelBgMode::NoChange` transparency** — feed P2=1 with partial pixel coverage, assert undrawn pixels have `α = 0`.
+- [ ] **Palette reset per DCS q (semantic pin)** — emit two back-to-back `ESC P q ... ST` streams. Stream A defines color 5 as red; stream B defines color 5 as blue and uses color 5 for all pixels. Assert stream B's output depends ONLY on stream B's palette — all pixels blue, not red. This pins the invariant at `oriterm_core/src/image/sixel/mod.rs:87-91` that every `SixelParser::new` rebuilds the VT340 defaults and prior palettes do not leak.
+- [ ] **Negative pin — palette leak** — same test with the palette-reset code deliberately skipped (via a `#[cfg(test)]` bypass) should FAIL, proving the regression guard is live.
+- [ ] **Repeat clamp at `MAX_DIMENSION`** — feed `!20000?` (above the 10,000 clamp at `oriterm_core/src/image/sixel/mod.rs:335-360`), assert:
+  - No panic, no OOM.
+  - Output width ≤ `MAX_DIMENSION` (10,000 pixels).
+  - Cross-check against libsixel `src/decoder.c` behavior; document any divergence as a catalog-row note.
+- [ ] **Pixel-buffer cap** — feed raster attrs `"1;1;15000;15000` (exceeds `MAX_PIXEL_BYTES` = 100 MB at `oriterm_core/src/image/sixel/mod.rs:20`), assert the parser aborts cleanly (sets `aborted = true` at `mod.rs:64`) and finalize returns `Err(ImageError::TooLarge)` or equivalent — NO allocation of a 900 MB buffer.
+- [ ] Matrix count assertion.
+- [ ] Update `SIXEL-BG-*`, `SIXEL-PALETTE-RESET-PER-DCS`, and repeat-clamp catalog rows (from §12.0 expansion) to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** invariant rung green; decoder output state proven correct across DCS boundaries + buffer bounds.
+
+---
+
+## 12.3 Verify sixel grid integration + §11 occlusion
 
 **File(s):** `oriterm_core/tests/spec_chain/sixel/grid_integration.rs` (new)
 
-- [ ] Test cursor positioning under SIXEL_SCROLLING ON (default): after sixel placement, cursor moves to next line below the image
-- [ ] Test cursor positioning under SIXEL_SCROLLING OFF (DECRST 80): cursor stays at home
-- [ ] Test cursor positioning under SIXEL_CURSOR_RIGHT ON (DECSET 8452): cursor moves to the right of the image rather than below
-- [ ] Test image placement creation: after sixel data, the image_cache contains a placement at the expected row/column
-- [ ] Test orphan cleanup: place sixel, scroll the placement off-screen, verify the placement is cleaned up by `prune_scrollback`
-- [ ] Update rows to `verified`
-- [ ] **Validation**: grid integration tests pass.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 12.1–12.3 (parser + decoder + grid integration). Catches multi-rung integration issues before GPU + lifecycle subsections.
+**Depends on code paths:** `oriterm_core/src/term/handler/image/sixel.rs:68-139` (placement creation + cursor advance); `oriterm/src/gpu/prepare/emit.rs:262-285` (z-order emission); §11 unicode/subcell payloads.
+
+- [ ] Write failing test matrix BEFORE implementation.
+- [ ] **SIXEL_SCROLLING ON (default)** — place sixel, assert cursor moves to next line below the image per `oriterm_core/src/term/handler/image/sixel.rs:129-135`.
+- [ ] **SIXEL_SCROLLING OFF (DECRST 80)** — place sixel, assert cursor stays at the pre-placement position per `sixel.rs:136-138`.
+- [ ] **SIXEL_CURSOR_RIGHT ON (DECSET 8452)** — place sixel, assert cursor moves to the right of the image rather than below per `sixel.rs:124-128`.
+- [ ] **Image placement creation** — after sixel data, `ImageCache` contains a placement with `z_index: 0`, `cell_col` and `cell_row` at cursor position, `PlacementSizing::FixedPixels { width, height }` from the decoded image (`sixel.rs:79-97`).
+- [ ] **Orphan cleanup** — place sixel, scroll beyond eviction threshold, assert `prune_scrollback` removes the placement (consumes §07's handler).
+- [ ] **§11 OCCLUSION — sixel + wide-CJK** — write a wide CJK character at `(row, col)`, then place a sixel at an overlapping cell, assert golden-image z-order: sixel above CJK glyph (non-negative `z_index` draws above text per `oriterm/src/gpu/prepare/emit.rs:264-285`). Catalog row: new cross-reference to `catalog/unicode-subcell.md` occlusion rows.
+- [ ] **§11 OCCLUSION — sixel + ZWJ cluster** — emit a ZWJ emoji cluster (e.g., `U+1F468 U+200D U+1F4BB`), place sixel overlapping, assert z-order.
+- [ ] **§11 OCCLUSION — sixel + subcell glyphs** — emit half-blocks / quadrants / sextants at an occupied row, place sixel overlapping, assert z-order against the deterministic golden.
+- [ ] **Negative pin — negative z_index** — programmatically create a placement with `z_index: -1` (below text), assert the text draws **above** the image per the same emit-path logic. Proves z-order is live, not coincidentally correct.
+- [ ] Matrix count assertion.
+- [ ] Update grid-integration + MODE-80 + MODE-8452 + §11-occlusion catalog rows to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **TPR checkpoint** — `/tpr-review` covering §12.1–§12.3 (state machine + invariants + grid integration + occlusion). Catches multi-rung integration issues before GPU + lifecycle subsections.
+- [ ] **Validation:** grid-integration rung green; z-order pinned against §11 subcell glyph families.
 
 ---
 
@@ -138,57 +226,93 @@ For every parser-level catalog row (DCS q introducer, P1-P6 raster attrs, color 
 
 **File(s):** `oriterm_core/tests/spec_chain/sixel/golden_render.rs` (new), goldens in `crates/oriterm_test_support/tests/references/spec_chain/sixel/`
 
-- [ ] Pick a few representative sixel scenarios:
-  - Solid rectangle with one color (similar to section 04 pilot but explicit test in this section's directory)
-  - Multi-color sixel with palette switching
-  - Sixel with repeat optimization (`!` operator)
-  - Sixel with CR + NL line wrapping
-  - Sixel with transparency
-- [ ] For each, capture the golden via `ORITERM_UPDATE_GOLDEN=1` using the deterministic lane from section 05
-- [ ] Spec_chain test asserts the golden matches on subsequent runs
-- [ ] Update GPU rendering rows to `verified`
-- [ ] **Validation**: golden tests pass; back-to-back runs produce 0-pixel diff.
+**Depends on code paths:** `oriterm_core/src/term/snapshot.rs:243-339` (`Term::extract_images`); `oriterm/src/gpu/frame_prep.rs:149-173`; `oriterm/src/gpu/image_render/mod.rs:67-151`; `oriterm/src/gpu/prepare/emit.rs:262-285`. Deterministic lane from §05 (`status: complete`).
+
+- [ ] Write failing test matrix BEFORE implementation.
+- [ ] Capture goldens via `ORITERM_UPDATE_GOLDEN=1` using the deterministic lane (llvmpipe, grayscale hinting, pinned cell metrics) from §05.
+- [ ] **Scenario A — Solid rectangle, one color** (baseline parity with §04 pilot, explicit row in this section's directory).
+- [ ] **Scenario B — Palette-switch mid-image** — emit `#0;2;100;0;0<data>#1;2;0;100;0<data>`, assert the golden shows both color bands. Forces `#` dispatch on live placement (catches a parser-correct, decoder-wrong seam).
+- [ ] **Scenario C — Repeat optimization** — emit `!100?`, assert golden shows 100 equal-valued columns (no per-column decode drift).
+- [ ] **Scenario D — CR + NL banding interaction** — emit two bands separated by `$` and two bands separated by `-`, assert golden shows correct band stacking. Forces `$` + `-` operator semantics into the raster output, not just the state machine.
+- [ ] **Scenario E — Transparency composite** — P2=1 with partial coverage over the deterministic background from §05. **Explicit sub-pixel / AA gate:** assert 0-pixel diff against golden with zero AA jitter. Any non-zero diff on the deterministic lane IS a bug (either in transparency compositing in `oriterm/src/gpu/image_render/mod.rs` or in §05's cell-metrics pinning).
+- [ ] **Scenario F — SIXEL_SCROLLING OFF golden** — DECRST 80 + sixel, assert cursor-stays-at-home is visually pinned (image placed where cursor was, subsequent text overwrites image cells per no-scroll behavior). Pins §12.3's behavioral bullet visually, not just programmatically.
+- [ ] **Scenario G — SIXEL_CURSOR_RIGHT golden** — DECSET 8452 + sixel, assert cursor-to-right-of-image is visually pinned (subsequent text lands to the right of the image band).
+- [ ] Spec_chain tests assert goldens match on subsequent runs — 0-pixel diff tolerance on the deterministic lane.
+- [ ] Negative pin — run without deterministic-lane pinning (e.g., `ORITERM_FORCE_NONDETERMINISTIC=1` if available, or a different adapter); test should skip with `eprintln!("SKIP: ...")` per `.claude/rules/tests.md` §Graceful Skip Protocol, never falsely pass or crash.
+- [ ] Matrix count assertion.
+- [ ] Update GPU-rendering catalog rows to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** golden tests pass; back-to-back runs produce 0-pixel diff; cursor-mode goldens visually pin §12.3's behavioral bullets.
 
 ---
 
-## 12.5 Verify sixel + image lifecycle interactions
+## 12.5 Verify sixel + image lifecycle interactions + sixel↔kitty ImageCache hand-off
 
-**File(s):** `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` (new), `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` (new)
 
-- [ ] Test sixel survives scrollback eviction: place sixel near top of scrollback, fill scrollback past the eviction threshold, verify the placement is removed from cache
-- [ ] Test sixel survives ED (erase display): place sixel, emit ED, verify the placement is removed from the erased region
-- [ ] Test sixel survives EL (erase line): place sixel, emit EL, verify the placement at that row is removed
-- [ ] Test sixel survives alt-screen toggle: place sixel, enter alt screen, verify the primary cache placement is preserved (alt cache is separate); exit alt screen, verify the placement is still in the primary cache
-- [ ] Test sixel survives resize: place sixel, resize the grid smaller, verify the placement is clamped or removed per the section 07 resize policy
-- [ ] Update rows to `verified`
-- [ ] **Validation**: all lifecycle tests pass.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 12.4-12.5.
+**Depends on code paths:** `oriterm_core/src/image/cache/lifecycle.rs` (§07 complete — `on_resize`, `remap_placements`, `prune_scrollback`, `remove_placements_in_region`); `oriterm_core/src/term/handler/image/sixel.rs` (sixel side); `oriterm_core/src/term/handler/image/kitty.rs` (kitty side — read-only reference, no edits).
+
+**§07 runway note:** §07 is `status: complete` — `ImageCache::on_resize`, `ReflowMapping` / `remap_placements`, and the 42-scenario lifecycle matrix are available. §12.5 **consumes** these handlers; it does not re-implement them. Specifically relied-upon §07 deliverables:
+- `ImageCache::on_resize(new_cols, new_rows)` — removes column-out-of-bounds placements.
+- `ImageCache::remap_placements(mapping)` — translates `StableRowIndex` through `ReflowMapping::first_output_row`.
+- `Term::resize` — invokes `remap_placements` → `prune_scrollback` → `on_resize` on primary cache; alt cache gets `on_resize` only.
+- `PaneIoCommand::SetCellDimensions` — the cell-metric runtime-config wire that feeds `FixedPixels` re-coverage.
+
+- [ ] Write failing test matrix BEFORE implementation.
+- [ ] **Scrollback eviction** — place sixel near top of scrollback, fill scrollback past eviction threshold, assert placement removed from cache via `prune_scrollback`.
+- [ ] **ED (erase display)** — place sixel, emit `CSI 2 J`, assert placement removed from the erased region via `remove_placements_in_region`.
+- [ ] **EL (erase line)** — place sixel, emit `CSI 2 K`, assert placement at that row removed.
+- [ ] **Alt-screen toggle** — place sixel in primary, enter alt screen (DECSET 1049), assert primary cache preserved AND alt cache is separate; exit alt screen, assert primary placement still intact.
+- [ ] **Resize shrink columns** — place sixel at col=90, resize grid to 80 cols, assert placement removed (consumes `on_resize`).
+- [ ] **Resize with reflow** — place sixel, resize with reflow enabled, assert placement's `StableRowIndex` updated via `remap_placements` (consumes §07's `ReflowMapping::first_output_row`).
+- [ ] **Font-size / DPI change** — place `FixedPixels` sixel, dispatch `PaneIoCommand::SetCellDimensions`, assert placement's `cols`/`rows` coverage recomputed.
+- [ ] **CROSS-STACK ImageCache hand-off** — in `cross_stack_handoff.rs`:
+  - Place a sixel image at `(row=5, col=0)`.
+  - Place a kitty image at `(row=10, col=0)` by driving the kitty transmit+place action through `oriterm_core/src/term/handler/image/kitty.rs` (read-only — no `kitty.rs` edits, which keeps BUG-08-8's kitty-scope gate intact).
+  - Assert `ImageCache::extract_images` returns both placements independently addressable in `RenderableContent::images`.
+  - Assert neither image corrupts the other's pixel data (sixel RGBA buffer unchanged, kitty PNG-decoded RGBA buffer unchanged).
+  - **This is a handshake test, not a full cross-stack rendering regression.** Deep mixed-protocol rendering interference (overlapping placements, z-order interleaving, shared-eviction races) is explicitly DEFERRED-TO-DOWNSTREAM to §13.6 — recorded as a cross-link here and in §12.N.
+- [ ] Negative pin — `ImageCache::on_resize` on a cache with no sixel placements must be a no-op (proves the handler fires only on relevant placements).
+- [ ] Alloc regression unchanged — per `.claude/rules/tests.md` §Performance Invariants, lifecycle handlers must not allocate per placement beyond the `remove` cost already accounted for in §07.
+- [ ] Matrix count assertion.
+- [ ] Update lifecycle + cross-stack-handshake catalog rows to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **TPR checkpoint** — `/tpr-review` covering §12.4–§12.5 (GPU goldens + lifecycle + cross-stack hand-off).
+- [ ] **Validation:** lifecycle rung green; cross-stack hand-off proven at `ImageCache` level; downstream deferral to §13.6 recorded.
 
 ---
 
 ## 12.R Third Party Review Findings
 
-- None.
+- None — populated by `/tpr-review` at the §12.3 and §12.5 checkpoints and the §12.N final gate. Every unchecked finding here MUST be resolved (fix or file+resolve via `/fix-bug`) before this section can close, per `CLAUDE.md §NEVER reason out of TPR findings`.
 
 ---
 
 ## 12.N Completion Checklist
 
-- [ ] `BUG-08-8` (kitty.rs BLOAT split) is CLOSED in `plans/bug-tracker/section-08-core-terminal.md` — verified by grepping the bug entry for `[x]`. This gate is MANDATORY: Section 12 cannot close while `oriterm_core/src/term/handler/image/kitty.rs` remains above the 500-line hard limit in `.claude/rules/code-hygiene.md` §File Size. See the `**Blocker note:**` in the Context paragraph above for the full rationale. Until BUG-08-8 closes, implementers must not modify `oriterm_core/src/term/handler/image/kitty.rs`.
-- [ ] Failing test matrix written FIRST
-- [ ] **Matrix dimensions**: sixel feature × verification rung × lifecycle event
-- [ ] **Semantic pin**: sixel golden tests + lifecycle matrix are the regression guards
-- [ ] Every row in `catalog/sixel.md` is `verified`
-- [ ] HLS rotation explicitly tested (cross-checked against libsixel)
-- [ ] Sixel + image lifecycle survives every grid mutation (depends on section 07 fix)
-- [ ] All existing teseq sixel tests pass
-- [ ] Alloc regression unchanged
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [ ] Plan annotation cleanup
-- [ ] Section frontmatter `status` → `complete`
-- [ ] `00-overview.md` Quick Reference + mission criteria updated
-- [ ] `index.md` section 12 status updated
-- [ ] `/tpr-review` passed (final, full-section)
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [ ] Every row in `catalog/sixel.md` is `verified` (including the per-operator + behavioral + §11-occlusion rows opened in §12.0).
+- [ ] `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated, `last_walked` set to today, `walked_by` set.
+- [ ] Failing test matrix written FIRST (§12.1–§12.5 each have their own TDD checkbox).
+- [ ] **Matrix dimensions**: operator × DCS-count × background-mode × cursor-mode × lifecycle-event × protocol-neighbor (§11 subcell, §13 kitty hand-off).
+- [ ] **Semantic pins (≥3 — one per invariant)**: (a) `SetToBg` differs from `DeviceDefault` on identical input, (b) palette resets between DCS q invocations, (c) DCS abort commits no placement.
+- [ ] **Negative pins (≥3)**: (a) palette-leak guard fails if reset code is bypassed, (b) `z_index: -1` draws below text, (c) `on_resize` no-op when no sixel placements present.
+- [ ] HLS rotation explicitly tested (cross-checked against libsixel `color.rs:41` `hue - 120.0`).
+- [ ] `!` repeat clamp cross-checked against libsixel `src/decoder.c`; any divergence documented as a catalog-row note.
+- [ ] DCS abort (CAN / SUB / ESC mid-DCS) commits no placement — if today's `handle_sixel_end` at `oriterm_core/src/term/handler/image/sixel.rs:34-64` stores unconditionally, that bug IS filed and fixed in-scope here (not deferred).
+- [ ] `SixelBgMode::SetToBg` renders distinctly from `DeviceDefault` — if today's code at `oriterm_core/src/image/sixel/mod.rs:22-30,222-227` renders both as opaque black, that bug IS filed and fixed in-scope here (not deferred).
+- [ ] Sixel + image lifecycle survives every grid mutation (§07 complete; §12.5 consumes handlers).
+- [ ] Sixel + §11 occlusion goldens green (wide-CJK, ZWJ cluster, subcell glyphs).
+- [ ] Sixel ↔ Kitty `ImageCache` hand-off green; deep mixed-protocol rendering interference DEFERRED-TO-DOWNSTREAM to §13.6 — cross-link recorded in §13.6's depends_on / success criteria, NOT silently deferred.
+- [ ] All existing teseq sixel tests pass.
+- [ ] Alloc regression unchanged (`oriterm_core/tests/alloc_regression.rs`).
+- [ ] RSS regression unchanged (`oriterm_core/tests/rss_regression.rs`).
+- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release.
+- [ ] Plan annotation cleanup.
+- [ ] Section frontmatter `status` → `complete`.
+- [ ] `00-overview.md` Quick Reference + mission success criteria checkboxes updated (contributes to **Verification chain complete per row** and **Image lifecycle correct under resize/reflow/scrollback/alt-screen**).
+- [ ] `index.md` section 12 status updated.
+- [ ] Next section `depends_on` verification — §13 (Kitty) currently lists `depends_on: ["12"]`; verify §13.6's cross-stack-regression depends on §12.5's hand-off test.
+- [ ] `/tpr-review` passed (final, full-section).
+- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean).
 
-**Exit Criteria:** Every sixel catalog row is `verified`. Sixel is the first conformance-complete visual stack.
+**Exit Criteria:** Every sixel catalog row is `verified` — including per-operator, behavioral (bg-mode + palette-reset + abort), and §11-occlusion rows. Sixel is the first conformance-complete visual stack and establishes the z-order + transparency composite + mixed-protocol hand-off pins that §13 Kitty, §14 iTerm2, and §15 Cell-Level Alpha inherit.
