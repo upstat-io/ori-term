@@ -40,7 +40,7 @@ sections:
     status: complete
   - id: "12.2"
     title: "Verify background modes + palette-lifetime + repeat-clamp invariants"
-    status: not-started
+    status: complete
   - id: "12.3"
     title: "Verify sixel grid integration + §11 occlusion (SIXEL_SCROLLING, SIXEL_CURSOR_RIGHT, z-order)"
     status: not-started
@@ -180,20 +180,17 @@ sections:
 
 **Why separate from §12.1:** These are properties of the decoder's **output state** over multiple DCS invocations and output-buffer invariants, not per-operator dispatch. They belong in their own rung because the failure mode (silent pixel corruption, cross-image palette leak, unbounded allocation) is observed at the output layer, not at the token layer.
 
-- [ ] Write failing test matrix BEFORE implementation.
-- [ ] **`SixelBgMode::DeviceDefault` vs `SixelBgMode::SetToBg`** — feed identical pixel data twice, once with P2=0, once with P2=2, assert the output RGBA buffers differ. The test directly addresses the current behavior at `oriterm_core/src/image/sixel/mod.rs:22-30,222-227` where `SetToBg` renders as opaque black (same as `DeviceDefault`). If the buffers are equal, that is a filed bug — treat the fix as in-scope here (either `SetToBg` must render as terminal bg color, or the rows in §12.0 must be collapsed to a `not-targeted` pair with documented divergence).
-- [ ] **`SixelBgMode::NoChange` transparency** — feed P2=1 with partial pixel coverage, assert undrawn pixels have `α = 0`.
-- [ ] **Palette reset per DCS q (semantic pin)** — emit two back-to-back `ESC P q ... ST` streams. Stream A defines color 5 as red; stream B defines color 5 as blue and uses color 5 for all pixels. Assert stream B's output depends ONLY on stream B's palette — all pixels blue, not red. This pins the invariant at `oriterm_core/src/image/sixel/mod.rs:87-91` that every `SixelParser::new` rebuilds the VT340 defaults and prior palettes do not leak.
-- [ ] **Negative pin — palette leak** — same test with the palette-reset code deliberately skipped (via a `#[cfg(test)]` bypass) should FAIL, proving the regression guard is live.
-- [ ] **Repeat clamp at `MAX_DIMENSION`** — feed `!20000?` (above the 10,000 clamp at `oriterm_core/src/image/sixel/mod.rs:336` — `count.min(MAX_DIMENSION)` inside `emit_sixel`; `MAX_DIMENSION` declared at `mod.rs:17`), assert:
-  - No panic, no OOM.
-  - Output width ≤ `MAX_DIMENSION` (10,000 pixels).
-  - Cross-check against libsixel `src/decoder.c` behavior; document any divergence as a catalog-row note.
-- [ ] **Pixel-buffer cap** — feed raster attrs `"1;1;15000;15000` (exceeds `MAX_PIXEL_BYTES` = 100 MB declared at `oriterm_core/src/image/sixel/mod.rs:20`). Assert the parser aborts cleanly — `apply_raster_attrs` sets `self.aborted = true` at `mod.rs:318` (MAX_DIMENSION path) or `mod.rs:323` (MAX_PIXEL_BYTES path) — and `SixelParser::finish` returns `Err(ImageError::OversizedImage)` (the real variant, see `mod.rs:200,216,219`). NO allocation of a 900 MB buffer.
-- [ ] Matrix count assertion.
-- [ ] Update `SIXEL-BG-*`, `SIXEL-PALETTE-RESET-PER-DCS`, and repeat-clamp catalog rows (from §12.0 expansion) to `verified`.
-- [ ] Verify all tests pass in both debug AND release builds.
-- [ ] **Validation:** invariant rung green; decoder output state proven correct across DCS boundaries + buffer bounds.
+- [x] Write failing test matrix BEFORE implementation.
+- [x] **`SixelBgMode::DeviceDefault` vs `SixelBgMode::SetToBg`** — fix landed in-scope: `Term::handle_sixel_start` now snapshots `self.palette().background()` at DCS-hook time and passes it into `SixelParser::new(params, [r,g,b])`; `finish()` fills undrawn pixels with `[0,0,0,255]` for `DeviceDefault` (VT340 opaque black) and `[r,g,b,255]` for `SetToBg` (terminal bg). Pinned by `bg_mode_set_to_bg_differs_from_device_default_on_identical_input` in `oriterm_core/tests/spec_chain/sixel/invariants.rs` + `set_to_bg_uses_terminal_background_not_black` + `device_default_and_set_to_bg_diverge_under_non_black_terminal_bg` in the unit tests. DEC STD 070 §6.2.2 — SetToBg is now semantically distinct.
+- [x] **`SixelBgMode::NoChange` transparency** — pinned by `bg_mode_no_change_undrawn_pixels_have_alpha_zero` in `invariants.rs`: feeds P2=1 with partial coverage, asserts `pixels[7] == 0` on an undrawn pixel regardless of the harness terminal bg.
+- [x] **Palette reset per DCS q (semantic pin)** — pinned by `palette_rebuilds_per_dcs_q_no_leak_across_invocations` and `palette_vt340_fingerprint_reappears_on_fresh_dcs` in `invariants.rs`. Two back-to-back DCS streams on the same harness confirm (a) stream B's defined palette overrides take effect regardless of stream A's state and (b) stream B's undefined `#5` sees the VT340 default cyan, not leaked red from stream A.
+- [x] **Negative pin — palette leak** — pinned by `palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint` in the unit tests (`oriterm_core/src/image/sixel/tests.rs`). Implementation adds a `#[cfg(test)]`-only `BYPASS_VT340_RESET` thread-local flag in `oriterm_core/src/image/sixel/mod.rs`; when set, `SixelParser::new` skips the VT340 rebuild loop and leaves `palette[5] = [0,0,0]`. The test flips the flag, confirms `#5@` yields opaque black (not cyan), then restores — proving the VT340 rebuild is load-bearing. Lives as a unit test because `#[cfg(test)]` is not visible to integration tests.
+- [x] **Repeat clamp at `MAX_DIMENSION`** — pinned by `repeat_clamps_at_max_dimension_without_allocation_spike` in `invariants.rs`. Feeds `!20000~` (count 20 000 well above the 10 000 clamp); asserts placement commits with `w ≤ 10 000`, no panic, no OOM. libsixel also applies a protective clamp — tracked as `verified-with-deviation` in the catalog row.
+- [x] **Pixel-buffer cap** — pinned by `raster_attrs_exceeding_max_pixel_bytes_aborts_cleanly` in `invariants.rs`. Feeds `"1;1;15000;15000` (900 MB > 100 MB `MAX_PIXEL_BYTES`); asserts no placement is committed (`placement_count == 0`) because `apply_raster_attrs` sets `aborted = true` and `finish()` returns `Err(ImageError::OversizedImage)`, which `handle_sixel_end` warns+drops.
+- [x] Matrix count assertion — `invariant_category_matrix_completeness` in `invariants.rs` plus the `set_to_bg_*` / `device_default_and_set_to_bg_diverge_*` / `palette_reset_per_dcs_negative_pin_*` unit tests; count totals 7 invariant categories (6 integration + 1 unit).
+- [x] Update `SIXEL-BG-*`, `SIXEL-PALETTE-RESET-PER-DCS`, and repeat-clamp catalog rows (from §12.0 expansion) to `verified`. `SIXEL-REPEAT-CLAMP` + `SIXEL-PIXEL-BUFFER-CAP` → `verified-with-deviation`; `SIXEL-BG-*` and `SIXEL-PALETTE-RESET-PER-DCS` → `verified`.
+- [x] Verify all tests pass in both debug AND release builds — `cargo test -p oriterm_core --lib image::sixel` + `cargo test -p oriterm_core --test spec_chain sixel::` green in debug AND `--release`; `./test-all.sh`, `./clippy-all.sh`, `./build-all.sh` all green (workspace + `x86_64-pc-windows-gnu` cross-compile).
+- [x] **Validation:** invariant rung green; decoder output state proven correct across DCS boundaries + buffer bounds.
 
 ---
 

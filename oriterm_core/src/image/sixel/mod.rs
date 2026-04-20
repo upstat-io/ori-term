@@ -52,6 +52,11 @@ pub struct SixelParser {
     y: usize,
     /// Background mode (from P2).
     bg_mode: SixelBgMode,
+    /// Terminal background RGB captured at DCS-hook time — used to fill
+    /// undrawn pixels when `bg_mode == SixelBgMode::SetToBg`. DEC STD 070
+    /// §6.2.2 ties P2=2 to the current terminal bg (at the time of sixel
+    /// entry), so snapshotting here is the DEC-correct semantics.
+    terminal_bg: [u8; 3],
     /// Explicit width from raster attributes (if provided).
     raster_width: Option<usize>,
     /// Explicit height from raster attributes (if provided).
@@ -72,12 +77,52 @@ pub struct SixelParser {
     param_idx: usize,
 }
 
+/// RAII guard for the test-only VT340 palette-rebuild bypass.
+///
+/// Construct via `BypassVt340ResetGuard::enable()` at the start of a test
+/// that wants to verify what happens when `SixelParser::new` skips the
+/// VT340 default copy. The guard flips the thread-local flag to `true`
+/// on construction and restores it to `false` on `Drop` — so a panic in
+/// the test body cannot leak the flag into other tests sharing the
+/// thread. Exclusively for the negative-pin palette-leak test in
+/// `sixel/tests.rs`; if the rebuild guard regresses, the test with this
+/// guard installed asserts the VT340 fingerprint no longer appears,
+/// proving the rebuild is load-bearing.
+#[cfg(test)]
+pub(super) struct BypassVt340ResetGuard {
+    _priv: (),
+}
+
+#[cfg(test)]
+impl BypassVt340ResetGuard {
+    pub(super) fn enable() -> Self {
+        BYPASS_VT340_RESET.with(|cell| cell.set(true));
+        Self { _priv: () }
+    }
+}
+
+#[cfg(test)]
+impl Drop for BypassVt340ResetGuard {
+    fn drop(&mut self) {
+        BYPASS_VT340_RESET.with(|cell| cell.set(false));
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static BYPASS_VT340_RESET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 impl SixelParser {
     /// Create a new sixel parser from DCS parameters.
     ///
     /// `params` correspond to P1 (aspect ratio), P2 (background select),
-    /// P3 (horizontal grid size — ignored).
-    pub fn new(params: &[u16]) -> Self {
+    /// P3 (horizontal grid size — ignored). `terminal_bg` is the
+    /// terminal's current background color captured at DCS hook time; it
+    /// is used only when P2=2 (`SixelBgMode::SetToBg`) — DEC STD 070
+    /// §6.2.2 ties P2=2 to the terminal bg at the start of the sixel
+    /// sequence, so callers MUST snapshot it there (not at `finish()`).
+    pub fn new(params: &[u16], terminal_bg: [u8; 3]) -> Self {
         let bg_mode = match params.get(1).copied().unwrap_or(0) {
             1 => SixelBgMode::NoChange,
             2 => SixelBgMode::SetToBg,
@@ -85,9 +130,17 @@ impl SixelParser {
         };
 
         // Initialize palette with VT340 defaults.
+        // Note: the `BYPASS_VT340_RESET` branch exists solely for the
+        // negative-pin palette-leak test — production always rebuilds.
         let mut palette = vec![[0u8; 3]; 256];
-        for (i, &color) in VT340_PALETTE.iter().enumerate() {
-            palette[i] = color;
+        #[cfg(test)]
+        let bypass = BYPASS_VT340_RESET.with(std::cell::Cell::get);
+        #[cfg(not(test))]
+        let bypass = false;
+        if !bypass {
+            for (i, &color) in VT340_PALETTE.iter().enumerate() {
+                palette[i] = color;
+            }
         }
 
         Self {
@@ -99,6 +152,7 @@ impl SixelParser {
             x: 0,
             y: 0,
             bg_mode,
+            terminal_bg,
             raster_width: None,
             raster_height: None,
             max_x: 0,
@@ -219,11 +273,22 @@ impl SixelParser {
             return Err(ImageError::OversizedImage);
         }
 
-        // Background fill for undrawn pixels depends on bg_mode:
-        // NoChange: transparent (alpha=0), DeviceDefault/SetToBg: opaque black.
+        // Background fill for undrawn pixels depends on bg_mode per
+        // DEC STD 070 §6.2.2:
+        //   NoChange (P2=1):       undrawn pixels transparent (α=0)
+        //   DeviceDefault (P2=0):  undrawn pixels opaque, VT340 device
+        //                          default — palette color 0 (black)
+        //   SetToBg (P2=2):        undrawn pixels opaque, terminal bg
+        //                          captured at DCS-hook time
         let bg = match self.bg_mode {
             SixelBgMode::NoChange => [0u8, 0, 0, 0],
-            _ => [0u8, 0, 0, 255],
+            SixelBgMode::DeviceDefault => [0, 0, 0, 255],
+            SixelBgMode::SetToBg => [
+                self.terminal_bg[0],
+                self.terminal_bg[1],
+                self.terminal_bg[2],
+                255,
+            ],
         };
 
         let mut result = vec![0u8; total];

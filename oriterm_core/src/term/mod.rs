@@ -434,6 +434,21 @@ impl<S: EffectSink> Term<S> {
         &mut self.palette
     }
 
+    /// Terminal's effective background color, accounting for DECSCNM
+    /// (reverse video, mode 5). When `REVERSE_VIDEO` is active, the
+    /// effective bg is the foreground slot — matching the snapshot-time
+    /// `Palette::swap_fg_bg` at `Term::renderable_content` so consumers
+    /// that need to snapshot the "background in effect at this moment"
+    /// (e.g. sixel P2=2 per DEC STD 070 §6.2.2) do not diverge from the
+    /// render path when DECSCNM is active.
+    pub fn effective_background(&self) -> vte::ansi::Rgb {
+        if self.mode.contains(TermMode::REVERSE_VIDEO) {
+            self.palette.foreground()
+        } else {
+            self.palette.background()
+        }
+    }
+
     /// Reference to the active screen's image cache.
     ///
     /// Mirrors [`Self::grid`]: returns `alt_image_cache` when
