@@ -182,6 +182,26 @@ impl From<Color> for Cell {
 }
 
 impl Cell {
+    /// Test helper: construct a drawn cell carrying the given character
+    /// with default SGR + `CellFlags::DRAWN` set.
+    ///
+    /// Cuts the `Cell { ch: 'X', flags: CellFlags::DRAWN, ..Cell::default() }`
+    /// boilerplate that appears repeatedly in grid/rect-op/row tests.
+    /// Use this (not bare `Cell::default` + flag insert) whenever a
+    /// test needs to construct a cell that behaves like it was written
+    /// by the application — so `compute_rect_checksum` and
+    /// `Row::is_blank`/`content_len` see the correct write-history
+    /// state per BUG-08-17.
+    #[cfg(test)]
+    #[must_use]
+    pub fn drawn(ch: char) -> Self {
+        Self {
+            ch,
+            flags: CellFlags::DRAWN,
+            ..Self::default()
+        }
+    }
+
     /// Reset this cell to match the given template.
     pub fn reset(&mut self, template: &Self) {
         self.ch = template.ch;
