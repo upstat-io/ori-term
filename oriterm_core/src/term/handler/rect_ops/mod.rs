@@ -167,10 +167,11 @@ impl<S: EffectSink> Term<S> {
     /// Mirrors xterm `xtermCheckRect()` at `screen.c:3136`. Maintains
     /// `total` (every counted cell) and `trimmed` (same, minus trailing
     /// blanks per row); the final checksum is `trimmed` in default mode
-    /// and `total` when `csNOTRIM` is set. Undrawn cells (proxied via
-    /// `Cell::is_empty()`) are skipped in default mode and treated as
-    /// `' '` when `csNOTRIM` or `csDRAWN` is set. Combining marks fold
-    /// into `total` only when `csBYTE` is unset.
+    /// and `total` when `csNOTRIM` is set. Undrawn cells (detected via
+    /// `CellFlags::DRAWN` — the `ori_term` CHARDRAWN analog set on every
+    /// cell-write path per BUG-08-17) are skipped in default mode and
+    /// treated as `' '` when `csNOTRIM` or `csDRAWN` is set. Combining
+    /// marks fold into `total` only when `csBYTE` is unset.
     ///
     /// **Structural deviations from xterm** — documented so downstream
     /// consumers expecting byte-exact xterm parity know where we diverge:

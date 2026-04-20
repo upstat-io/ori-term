@@ -56,17 +56,38 @@ fn default_cell_has_drawn_clear() {
     assert!(!Cell::default().flags.contains(CellFlags::DRAWN));
 }
 
-/// Regression: BUG-08-17. `is_empty()` stays orthogonal to DRAWN — it
-/// answers "visually empty", not "never written". A drawn-but-visually-
-/// empty cell (application wrote a plain space) MUST NOT be `is_empty()`
-/// because it carries the DRAWN bit in its flags.
+/// Regression: BUG-08-17 TPR codex F1. `is_empty()` stays orthogonal
+/// to DRAWN — it answers "visually empty", NOT "never written". A
+/// cell that was written by the application as a plain space under
+/// default SGR still LOOKS empty (same pixels as a pristine cell),
+/// so `is_empty()` MUST return true. Consumers that need the "never
+/// written" semantic query `flags.contains(CellFlags::DRAWN)` directly.
+///
+/// This orthogonality preserves the pre-fix behavior of `Row::is_blank`
+/// and `Row::content_len` — used by reflow at
+/// `oriterm_core/src/grid/resize/mod.rs:222` and `:407` — so existing
+/// reflow semantics are unchanged by the CHARDRAWN infrastructure.
 #[test]
-fn is_empty_sees_drawn_as_non_empty() {
+fn is_empty_stays_true_when_only_drawn_is_set() {
     let mut cell = Cell::default();
     cell.flags.insert(CellFlags::DRAWN);
     assert!(
+        cell.is_empty(),
+        "a drawn-but-visually-empty cell MUST still be is_empty \
+         (DRAWN is orthogonal to visual emptiness)"
+    );
+}
+
+/// Regression: BUG-08-17 TPR codex F1. A cell with DRAWN + any other
+/// flag (SGR or structural) is NOT is_empty — the non-DRAWN flag bit
+/// is what makes it visually non-empty, not DRAWN itself.
+#[test]
+fn is_empty_false_when_drawn_plus_sgr_flag() {
+    let mut cell = Cell::default();
+    cell.flags.insert(CellFlags::DRAWN | CellFlags::BOLD);
+    assert!(
         !cell.is_empty(),
-        "a drawn cell with default ch/fg/bg must NOT be is_empty"
+        "DRAWN + BOLD: BOLD is a visible attribute so is_empty is false"
     );
 }
 

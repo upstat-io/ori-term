@@ -191,12 +191,21 @@ impl Cell {
         self.extra.clone_from(&template.extra);
     }
 
-    /// Returns `true` if this cell is visually empty (space, default colors, no flags).
+    /// Returns `true` if this cell is visually empty (space, default
+    /// colors, no visible SGR flags).
+    ///
+    /// `CellFlags::DRAWN` is MASKED OUT of the flags check: it's the
+    /// xterm CHARDRAWN analog (write history, consumed by DECRQCRA)
+    /// and is orthogonal to visual emptiness. A cell that was written
+    /// by the application as a plain space under default SGR still
+    /// LOOKS empty — so `is_empty()` returns true. Consumers that
+    /// need the "never written" semantic (`compute_rect_checksum`)
+    /// must query `flags.contains(CellFlags::DRAWN)` directly.
     pub fn is_empty(&self) -> bool {
         self.ch == ' '
             && self.fg == Color::Named(vte::ansi::NamedColor::Foreground)
             && self.bg == Color::Named(vte::ansi::NamedColor::Background)
-            && self.flags.is_empty()
+            && (self.flags - CellFlags::DRAWN).is_empty()
             && self.extra.is_none()
     }
 
