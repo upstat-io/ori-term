@@ -46,7 +46,7 @@ sections:
     status: complete
   - id: "09A.4"
     title: "Handler trait methods — add default impls in crates/vte/src/ansi/handler.rs; override in oriterm_core/src/term/handler/"
-    status: not-started
+    status: complete
   - id: "09A.5"
     title: "DECRQCRA implementation — synchronous checksum from grid state; emit DCS Pid !~ <hex> ST via PtyEffect::Write directly"
     status: not-started
@@ -100,7 +100,7 @@ sections:
 
 # Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
 
-**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.3 (19 CSI dispatch arms + parse/negative-pin tests; SGR helpers extracted to dispatch/csi/sgr.rs to keep mod.rs under 500 lines; handler.rs trait defaults bundled here so the dispatch arms compile), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.4–09A.11, 09A.13, 09A.R, 09A.N.
+**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.3 (19 CSI dispatch arms + parse/negative-pin tests; SGR helpers extracted to dispatch/csi/sgr.rs to keep mod.rs under 500 lines; handler.rs trait defaults bundled here so the dispatch arms compile), 09A.4 (ESC 6/9 dispatch arms + DECBI/DECFI trait defaults + rect_ops/ + presentation/ directory modules with stub Term overrides and sibling tests.rs pinning no-op semantics; compressed 13 existing mod.rs wrappers via delegate_osc! to free budget for 21 new DEC delegates), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.5–09A.11, 09A.13, 09A.R, 09A.N.
 
 ---
 

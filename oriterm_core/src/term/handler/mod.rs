@@ -24,12 +24,16 @@ mod helpers;
 mod image;
 mod modes;
 mod osc;
+mod presentation;
+mod rect_ops;
 mod sgr;
 mod status;
 
 /// Generate a one-line `Handler` trait method that delegates to an
-/// inherent helper on `Term<S>`. Keeps the §10.9 Handler delegate block
-/// compact enough to stay within the 500-line file budget.
+/// inherent helper on `Term<S>`. Used by the OSC 3/5/6/… block, the
+/// iTerm2 / sixel / APC / DECRQSS delegates, and the §09A.4 DEC
+/// private rect-ops + presentation delegates. Keeps the trait impl
+/// under the 500-line file budget per `.claude/rules/code-hygiene.md`.
 macro_rules! delegate_osc {
     ($method:ident($($arg:ident : $ty:ty),*) => $helper:ident) => {
         fn $method(&mut self, $($arg: $ty),*) { self.$helper($($arg),*); }
@@ -421,45 +425,19 @@ impl<S: EffectSink> Handler for Term<S> {
     fn text_area_size_pixels(&mut self) {
         self.dcs_text_area_size_pixels();
     }
-    fn apc_dispatch(&mut self, payload: &[u8]) {
-        self.handle_apc_dispatch(payload);
-    }
-    fn sixel_start(&mut self, params: &[u16]) {
-        self.handle_sixel_start(params);
-    }
-    fn sixel_put(&mut self, byte: u8) {
-        self.handle_sixel_put(byte);
-    }
-    fn sixel_end(&mut self) {
-        self.handle_sixel_end();
-    }
-    fn iterm2_file(&mut self, params: &[&[u8]]) {
-        self.handle_iterm2_file(params);
-    }
-    fn iterm2_set_mark(&mut self) {
-        self.osc_iterm2_set_mark();
-    }
-    fn iterm2_remote_host(&mut self, host: &[u8]) {
-        self.osc_iterm2_remote_host(host);
-    }
-    fn iterm2_current_dir(&mut self, path: &[u8]) {
-        self.osc_iterm2_current_dir(path);
-    }
-    fn iterm2_copy(&mut self, data: &[u8]) {
-        self.osc_iterm2_copy(data);
-    }
-    fn iterm2_report_cell_size(&mut self) {
-        self.osc_iterm2_report_cell_size();
-    }
-    fn iterm2_set_user_var(&mut self, name: &[u8], value: &[u8]) {
-        self.osc_iterm2_set_user_var(name, value);
-    }
-    fn iterm2_shell_integration_version(&mut self, version: &[u8]) {
-        self.osc_iterm2_shell_integration_version(version);
-    }
-    fn decrqss(&mut self, query: &[u8]) {
-        self.status_decrqss(query);
-    }
+    delegate_osc!(apc_dispatch(payload: &[u8]) => handle_apc_dispatch);
+    delegate_osc!(sixel_start(params: &[u16]) => handle_sixel_start);
+    delegate_osc!(sixel_put(byte: u8) => handle_sixel_put);
+    delegate_osc!(sixel_end() => handle_sixel_end);
+    delegate_osc!(iterm2_file(params: &[&[u8]]) => handle_iterm2_file);
+    delegate_osc!(iterm2_set_mark() => osc_iterm2_set_mark);
+    delegate_osc!(iterm2_remote_host(host: &[u8]) => osc_iterm2_remote_host);
+    delegate_osc!(iterm2_current_dir(path: &[u8]) => osc_iterm2_current_dir);
+    delegate_osc!(iterm2_copy(data: &[u8]) => osc_iterm2_copy);
+    delegate_osc!(iterm2_report_cell_size() => osc_iterm2_report_cell_size);
+    delegate_osc!(iterm2_set_user_var(name: &[u8], value: &[u8]) => osc_iterm2_set_user_var);
+    delegate_osc!(iterm2_shell_integration_version(version: &[u8]) => osc_iterm2_shell_integration_version);
+    delegate_osc!(decrqss(query: &[u8]) => status_decrqss);
 
     // §10.9 OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119
     // delegates — each forwards to its `osc_*` helper in `handler/osc.rs`.
@@ -481,6 +459,33 @@ impl<S: EffectSink> Handler for Term<S> {
     delegate_osc!(reset_mouse_bg_color() => osc_reset_mouse_bg_color);
     delegate_osc!(reset_highlight_bg_color() => osc_reset_highlight_bg_color);
     delegate_osc!(reset_highlight_fg_color() => osc_reset_highlight_fg_color);
+
+    // §09A.4 — DEC private rect-ops + presentation delegates (stubs;
+    // real semantics land in §09A.5 (DECRQCRA), §09A.6 (rect mutation),
+    // §09A.7 (column + index), §09A.8 (CSI-path presentation queries)).
+    delegate_osc!(decsace(mode: u16) => decsace_impl);
+    delegate_osc!(deccara(top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]) => deccara_impl);
+    delegate_osc!(decrara(top: u16, left: u16, bot: u16, right: u16, attrs: &[u16]) => decrara_impl);
+    fn deccra(&mut self, st: u16, sl: u16, sb: u16, sr: u16, sp: u16, dt: u16, dl: u16, dp: u16) {
+        self.deccra_impl(st, sl, sb, sr, sp, dt, dl, dp);
+    }
+    delegate_osc!(decfra(ch: u16, top: u16, left: u16, bot: u16, right: u16) => decfra_impl);
+    delegate_osc!(xtchecksum(flags: u16) => xtchecksum_impl);
+    delegate_osc!(decrqcra(id: u16, page: u16, top: u16, left: u16, bot: u16, right: u16) => decrqcra_impl);
+    delegate_osc!(decera(top: u16, left: u16, bot: u16, right: u16) => decera_impl);
+    delegate_osc!(decsera(top: u16, left: u16, bot: u16, right: u16) => decsera_impl);
+    delegate_osc!(xtreportsgr(top: u16, left: u16, bot: u16, right: u16) => xtreportsgr_impl);
+    delegate_osc!(decrqpsr(mode: u16) => decrqpsr_impl);
+    delegate_osc!(decrqupss() => decrqupss_impl);
+    delegate_osc!(decrqde() => decrqde_impl);
+    delegate_osc!(decscl(level: u16, c1_mode: u16) => decscl_impl);
+    delegate_osc!(decsca(protected: u16) => decsca_impl);
+    delegate_osc!(decsasd(target: u16) => decsasd_impl);
+    delegate_osc!(decssdt(line_type: u16) => decssdt_impl);
+    delegate_osc!(decic(count: u16) => decic_impl);
+    delegate_osc!(decdc(count: u16) => decdc_impl);
+    delegate_osc!(decbi() => decbi_impl);
+    delegate_osc!(decfi() => decfi_impl);
 }
 
 #[cfg(test)]

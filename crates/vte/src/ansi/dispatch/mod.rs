@@ -171,9 +171,11 @@ fn dispatch_esc<H: Handler>(handler: &mut H, intermediates: &[u8], byte: u8) {
         (b'0', intermediates) => {
             configure_charset!(StandardCharset::SpecialCharacterAndLineDrawing, intermediates)
         },
+        (b'6', []) => handler.decbi(),
         (b'7', []) => handler.save_cursor_position(),
         (b'8', [b'#']) => handler.decaln(),
         (b'8', []) => handler.restore_cursor_position(),
+        (b'9', []) => handler.decfi(),
         (b'=', []) => handler.set_keypad_application_mode(),
         (b'>', []) => handler.unset_keypad_application_mode(),
         (b'N', []) => handler.set_single_shift(CharsetIndex::G2),
