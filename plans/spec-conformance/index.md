@@ -262,7 +262,7 @@ DECRECT prefix, DECPRES prefix, audits/section-NN-top-down-inventory.md
 ---
 
 ### Section 11: Unicode Subcell Glyphs (incl. octants)
-**File:** `section-11-unicode-subcell-glyphs.md` | **Status:** Not Started
+**File:** `section-11-unicode-subcell-glyphs.md` | **Status:** Complete
 
 ```
 unicode subcell, builtin glyphs, Canvas abstraction
