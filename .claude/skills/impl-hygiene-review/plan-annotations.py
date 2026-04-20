@@ -14,7 +14,7 @@ Classifications
 
 PERMANENT
     Spec citations (`Spec: Clause N.M`) and architecture-internal
-    section numbering (`AIMS Section N`, `eval_v2 Section N`). Never
+    section numbering (project-specific permanent markers — none in ori_term today). Never
     flagged — these are load-bearing design references.
 
 ACTIVE_SCAFFOLDING
@@ -197,8 +197,9 @@ MASTER_GREP_PATTERN = (
 
 # Permanent (never flag) patterns
 SPEC_CLAUSE_RE = re.compile(r"Spec:\s*Clause\s+\d+", re.IGNORECASE)
-AIMS_SECTION_RE = re.compile(r"AIMS\s+Section\s+\d+", re.IGNORECASE)
-EVAL_V2_SECTION_RE = re.compile(r"eval_v2\s+Section\s+\d+", re.IGNORECASE)
+# ori_term has no permanent section-marker regexes today; add when a
+# domain convention emerges (e.g., "VT Section N" for VT-conformance
+# clauses that anchor multiple plan entries).
 FIPS_PHASE_RE = re.compile(r"\bfip(?:s)?\s+Phase\s+[A-C]\b", re.IGNORECASE)
 
 # Architecture-internal directories — section references inside these are

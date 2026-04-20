@@ -235,7 +235,7 @@ The handoff from the Sonnet sub-agent already contains the full bug entry text, 
       ```
    6. **Stop** — do NOT proceed to Phase 1.5 or beyond. The bug is resolved.
 
-3. **Consult the spec** — check `docs/spec/` for the intended behavior. The spec is authoritative.
+3. **Consult the protocol / reference** — for terminal-conformance bugs, check XTerm control-sequence docs, ECMA-48, terminfo/termcap, or the vt100.net reference. For bugs in the vendored crates (`crates/vte`, `crates/portable-pty`, `crates/wgpu-hal`), check upstream semantics. There is no internal ori_term spec.
 
 4. **Root cause analysis** — trace the bug to its *root cause*, not just the symptom. Follow the chain:
    - What was observed? (symptom)
@@ -259,7 +259,7 @@ Before scope assessment, **re-evaluate the bug's severity** based on what Phase 
 
 **Reclassify upward when ANY of these are true:**
 - **Blast radius is wider than expected** — the bug affects more code paths, types, or features than the original entry described
-- **Root cause is in a complexity-elevated subsystem** (AIMS, CodeGen, LLVM, AOT, Runtime) but severity was rated `medium` or `low` — elevate to at least `high`
+- **Root cause is in a complexity-elevated subsystem** (GPU render pipeline, VTE parser / core grid, mux IO thread, IPC transport, platform-specific cfg branch) but severity was rated `medium` or `low` — elevate to at least `high`
 - **Silent corruption** — the bug produces wrong results without error/crash (more dangerous than a crash)
 - **Cross-crate root cause** — the bug's fix requires changes in 3+ crates, indicating systemic scope
 - **Downstream cascade** — fixing this bug would surface or interfere with other known bugs
@@ -415,11 +415,11 @@ The fix section file already exists from Phase 1.6. After `/tp-help` consensus (
 
 | Subsystem | Crate/Path Pattern | Why Elevated |
 |-----------|-------------------|--------------|
-| **AIMS** | `crates/arc/`, `crates/rt/src/rc/` | 7-dimension lattice, interprocedural fixpoints, pass ordering dependencies, RC invariants |
-| **CodeGen** | `crates/llvm/src/codegen/` | IR generation touches types, ABI, optimization levels; silent wrong-output bugs |
-| **LLVM integration** | `crates/llvm/` (broadly) | Debug/release divergence (FastISel vs SelectionDAG), LLVM pass interactions |
-| **AOT** | `crates/llvm/tests/aot/`, AOT compilation paths | End-to-end: type system → IR → LLVM → linking → runtime; failures can be anywhere in the chain |
-| **Runtime** | `crates/rt/` | FFI boundary, RC internals, platform-specific behavior; bugs here corrupt memory silently |
+| **GPU render pipeline** | `oriterm/src/gpu/` | Frame-budget invariants, atlas lifetimes, surface reconfigure races, device-loss timing; silent wrong-render bugs are hard to unit test |
+| **VTE / core grid** | `oriterm_core/`, `crates/vte/` (vendored) | Absolute-row indexing across scrollback + visible rows, UTF-8 width classification, selection update under scroll; corruption here surfaces far from the cause |
+| **Mux / IO thread** | `oriterm_mux/` | Owns `Term` + VTE state + snapshot double-buffer; threading bugs between IO thread and main thread corrupt visible grid silently |
+| **IPC transport** | `oriterm_ipc/`, `crates/portable-pty/` (vendored) | Cross-platform framing (Unix sockets vs named pipes); partial reads / protocol drift produce non-deterministic failures |
+| **Platform-specific cfg** | Any `#[cfg(target_os = "...")]` branch | Missing branch on one platform ships a panic or wrong behavior only on that target — not caught by WSL/Linux dev loop |
 
 **SKIP (Plan TPR not required) when ALL of these are true:**
 - Bug severity is `medium` or `low`

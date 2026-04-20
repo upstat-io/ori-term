@@ -62,7 +62,7 @@ For EACH unchecked finding:
 2. **Validate against the codebase** — does the issue described in the finding actually exist?
    - Check the specific code paths mentioned
    - Check if the issue has already been fixed since the finding was filed
-   - Check the spec (`docs/spec/`) if the finding concerns language semantics
+   - Check the protocol / reference (XTerm ctlseqs, ECMA-48, terminfo, vt100.net) if the finding concerns terminal-conformance semantics
    - Check tests — are there existing tests that cover this? Are they sufficient?
 
 3. **Determine: ACCEPT or REJECT**

@@ -76,7 +76,7 @@ Results are for DISCOVERY, not replacement — always verify against actual code
    - Do referenced files / types / functions / modules exist?
    - Are crate dependency assumptions correct? (`oriterm_core → oriterm_ui → oriterm`, and `oriterm_ipc → oriterm_mux → oriterm`; `oriterm_core` is standalone)
    - Are code patterns described accurately?
-2. Check claims against the spec (`docs/spec/` — `grammar.ebnf`, `operator-rules.md`, clause files)
+2. Check claims against the protocol / reference sources: XTerm control-sequence docs, ECMA-48, terminfo/termcap, vt100.net, and the vendored VTE / PTY crates under `crates/`. ori_term has no internal language spec.
 3. EDIT inaccuracies directly — don't flag, fix.
 4. For each section, assess whether the implementation approach will actually work:
    - Can each checklist item be implemented as described?

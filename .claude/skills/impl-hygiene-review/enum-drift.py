@@ -2,8 +2,9 @@
 """
 enum-drift.py — Cross-file enum coverage analyzer for ori_term.
 
-Finds all variants of key IR enums (CanExpr, ExprKind, TypeTag, etc.),
-locates every match expression on those enums across the codebase, and
+Finds all variants of user-declared sync-point enums (populated via
+KNOWN_ENUMS below or `--enum <name>` ad-hoc), locates every match
+expression on those enums across the codebase, and
 compares arm coverage. Flags missing variants, catch-all arms, and
 arm-count mismatches between files.
 

@@ -480,7 +480,7 @@ The `accept-with-findings` choice is NOT deferral: all findings remain as `- [ ]
 A finding is **meta** if and only if ALL of these apply:
 
 - Category is purely wording/phrasing, cosmetic/formatting, already-documented-elsewhere, or an exact duplicate of a prior-round finding.
-- Does NOT touch: correctness, invariants (AIMS / SSOT / phase boundaries / registry drift), tests, security, spec conformance, error paths, API contracts, memory safety.
+- Does NOT touch: correctness, invariants (SSOT / module boundaries / frame-budget / damage-region / VT-conformance), tests, security, protocol conformance, error paths, API contracts, memory safety.
 - `recommended_fix` is a pure-doc edit, rename, or whitespace change.
 
 Any doubt → NOT meta.

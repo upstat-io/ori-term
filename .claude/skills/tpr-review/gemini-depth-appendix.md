@@ -35,7 +35,7 @@ Enforcement rules:
 
 ## Rule 4 — Trace, do not infer
 
-- Cross-phase claims ("this breaks codegen", "this violates the AIMS invariant", "this fails dual-execution parity") require end-to-end tracing with file:line evidence at each hop.
+- Cross-module claims ("this breaks GPU render", "this violates the frame-budget invariant", "this drifts from the VTE → core grid contract") require end-to-end tracing with file:line evidence at each hop.
 - If you cannot trace a claim to a concrete file-line chain, DROP it. Vague cross-phase assertions are confabulation and get dropped at §4 verification.
 - Record every traced file in `files_read` with the call chain evidenced.
 

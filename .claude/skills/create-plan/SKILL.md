@@ -118,18 +118,18 @@ Row names below are LITERAL copies of the step headers later in this file — no
 
 ## Phase 0: Fork Decision — Heavy Plan vs. Light Plan (RUN FIRST, BEFORE ANYTHING ELSE)
 
-**Before reading CLAUDE.md or doing any Phase 1 work, decide which path this plan takes.** The heavy `/create-plan` workflow (Phases 1–5 below) is calibrated for compiler work where correctness invariants — phase purity, ARC soundness, AIMS lattice coherence, spec conformance — are load-bearing. For non-compiler work that has already reached design consensus, that rigor is overkill and actively slows useful work.
+**Before reading CLAUDE.md or doing any Phase 1 work, decide which path this plan takes.** The heavy `/create-plan` workflow (Phases 1–5 below) is calibrated for application work where correctness invariants — terminal-emulation conformance, GPU frame-budget rules, widget-pipeline invariants, platform-specific cfg gates — are load-bearing. For non-application work that has already reached design consensus, that rigor is overkill and actively slows useful work.
 
 ### The Fork Gate — ALL THREE must be true to take the light path
 
-1. **Scope check — non-compiler only.** The work touches ONLY files outside the compiler/runtime/spec surface:
-   - **Eligible domains**: `.claude/skills/`, `.claude/rules/`, `.claude/hooks/`, `.claude/commands/`, `diagnostics/`, `scripts/`, `.codex/`, `.gemini/`, top-level workflow files (`lefthook.yml`, `.github/workflows/`, etc.), non-spec documentation (`README.md`, `docs/development/`, `docs/compiler/design/` prose-only changes).
-   - **Ineligible domains** (force heavy path): any file under `compiler/`, ``, `docs/spec/`, `tests/spec/`, `tests/valgrind/`, `tests/alive2/`, `runtime/`, `tests/benchmarks/`.
+1. **Scope check — non-application only.** The work touches ONLY files outside the workspace-crate / vendored-dep surface:
+   - **Eligible domains**: `.claude/skills/`, `.claude/rules/`, `.claude/hooks/`, `.claude/commands/`, `diagnostics/`, `scripts/`, `.codex/`, `.gemini/`, top-level workflow files (`lefthook.yml`, `.github/workflows/`, etc.), non-source documentation (`README.md`, prose-only changes in `docs/`).
+   - **Ineligible domains** (force heavy path): any file under the workspace crates (`oriterm_core/`, `oriterm_ui/`, `oriterm_mux/`, `oriterm_ipc/`, `oriterm/`, `crates/`), vendored deps (`crates/vte/`, `crates/portable-pty/`, `crates/wgpu-hal/`), or `tests/`.
    - **Mixed changes force heavy path.** If the work touches even one ineligible file, use the heavy path. Do not split a coherent mission across two paths to qualify for light.
 
 2. **Rigor check — no correctness-critical invariants.** The work does NOT:
-   - introduce or modify phase-purity rules, ARC soundness invariants, AIMS lattice dimensions, or any `impl-hygiene.md` cross-phase contract
-   - alter test-gate behavior (`test-all.sh`, `clippy-all.sh`, `fmt-all.sh`, `build-all.sh`, `llvm-test.sh`, `full-check.sh`, or pre-commit / commit-msg hooks that enforce correctness)
+   - introduce or modify frame-budget / damage-region / scrollback / VT-conformance invariants, widget-pipeline contracts, GPU-resource-lifetime rules, or any `impl-hygiene.md` cross-module contract
+   - alter test-gate behavior (`test-all.sh`, `clippy-all.sh`, `fmt-all.sh`, `build-all.sh`, or pre-commit / commit-msg hooks that enforce correctness)
    - change how bug fixes are enforced (`/fix-bug` phase structure, hygiene review, TPR gates)
    - modify the plan schema itself (`plan-schema.md`, plan-audit rules) — meta-plan-system changes go through heavy path
 
@@ -173,28 +173,26 @@ The heavy path is the default. The light path is an explicit opt-out for a narro
 
 Once Phase 0 has decided heavy path (or the user forced heavy path via override), **classify the plan's TYPE** before entering Phase 1. The type drives template selection, completion-checklist rigor, `reviewed:` frontmatter defaults, and subagent prompt constraints throughout the workflow. Classifying after the fact — after sections are already written — guarantees post-hoc cleanup (manual stripping of compiler rigor that doesn't apply, manual flipping of `reviewed:` defaults, manual removal of `§NN.R` blocks). Classifying up front is cheaper and prevents drift.
 
-**The three plan types:**
+**The two plan types:**
 
 | Type | Scope | Rigor | Use when |
 |---|---|---|---|
-| **`compiler`** | Touches `compiler/`, ``, `runtime/`, `tests/spec/`, `tests/valgrind/`, `tests/alive2/`, `tests/benchmarks/` — any correctness-critical source | Full compiler rigor: `/tpr-review`, `/impl-hygiene-review`, TPR checkpoints, matrix testing + semantic/negative pins, `§NN.R Third Party Review Findings` blocks, `/improve-tooling` per-subsection retrospectives, `/sync-claude` retrospectives, `/review-plan` final consensus. `reviewed: false` default. | Compiler features, bug fixes, codegen changes, AIMS/ARC work, type checker changes, spec-conformant library work. |
-| **`skill-infra-docs`** | Touches ONLY `.claude/`, `scripts/`, `diagnostics/`, `~/projects/lang_intelligence/` (sibling repo), `.codex/`, `.gemini/`, top-level workflow files, non-spec documentation, tooling/test-harness improvements | Reduced rigor: basic tests (if applicable), `plan_corpus check` clean, `cargo test --all` green (regression canary), `diagnostics/repo-hygiene.sh --check`. No TPR checkpoints, no §NN.R blocks, no matrix testing, no semantic/negative pins, no retrospective sweeps baked into every subsection, no `/review-plan` final consensus required. `reviewed: true` default (no pre-implementation re-review gate needed — these plans are low-correctness-risk). | Skill additions, rules updates, diagnostic-script improvements, `lang_intelligence` pipeline work, `.claude/hooks/` changes, doc-only plans, plan-schema/plan-audit tooling work. |
-| **`spec-grammar`** | Modifies `docs/spec/`, `grammar.ebnf`, `operator-rules.md`, or any spec-clause content | Spec-specialist rigor: mandatory `/create-draft-proposal` → `/review-draft-proposal` precursor (spec-grammar proposal gate per CLAUDE.md), plus `/sync-spec` + `/sync-grammar` + `/tpr-review` on aggregate changes. `reviewed: false` default (spec changes are correctness-critical). | Spec clause additions, grammar edits, operator-rule changes, new language features at the spec surface. |
+| **`application`** | Touches workspace crates (`oriterm_core/`, `oriterm_ui/`, `oriterm_mux/`, `oriterm_ipc/`, `oriterm/`, `crates/`), vendored deps (`crates/vte/`, `crates/portable-pty/`, `crates/wgpu-hal/`), or `tests/` — any correctness-critical source | Full application rigor: `/tpr-review`, `/impl-hygiene-review`, TPR checkpoints, matrix testing + semantic/negative pins, `§NN.R Third Party Review Findings` blocks, `/improve-tooling` per-subsection retrospectives, `/sync-claude` retrospectives, `/review-plan` final consensus. `reviewed: false` default. | Terminal-emulation features, bug fixes, GPU/render changes, VT conformance work, mux/IPC changes, widget-pipeline changes, vendored-crate patches. |
+| **`skill-infra-docs`** | Touches ONLY `.claude/`, `scripts/`, `diagnostics/`, `.codex/`, `.gemini/`, top-level workflow files, or non-source documentation | Reduced rigor: basic tests (if applicable), `plan_corpus check` clean, `./test-all.sh` green (regression canary), `diagnostics/repo-hygiene.sh --check`. No TPR checkpoints, no §NN.R blocks, no matrix testing, no semantic/negative pins, no retrospective sweeps baked into every subsection, no `/review-plan` final consensus required. `reviewed: true` default (no pre-implementation re-review gate needed — these plans are low-correctness-risk). | Skill additions, rules updates, diagnostic-script improvements, `.claude/hooks/` changes, doc-only plans, plan-schema/plan-audit tooling work. |
 
 **Banned classifications:**
-- "Mixed plan" — if the work crosses type boundaries, it IS a `compiler` plan and takes the highest-rigor template. Do NOT split a coherent mission across two plans to avoid the higher rigor.
+- "Mixed plan" — if the work crosses type boundaries, it IS an `application` plan and takes the highest-rigor template. Do NOT split a coherent mission across two plans to avoid the higher rigor.
 - "I'll classify later" — classification MUST happen before Phase 1B Mission Expansion. Later classification produces post-hoc cleanup debt.
 
 **How to classify:**
 1. Look at the user's scope description and the list of files/directories the plan will touch.
-2. If ANY file under `compiler/`, ``, `runtime/`, or compiler test trees: type = `compiler`.
-3. Else if ANY file under `docs/spec/`, `grammar.ebnf`, or `operator-rules.md`: type = `spec-grammar`.
-4. Else (only `.claude/`, `scripts/`, `diagnostics/`, sibling infra repos, non-spec docs): type = `skill-infra-docs`.
-5. When in doubt between `compiler` and `skill-infra-docs`, pick `compiler`. Applying compiler rigor to skill work wastes time; applying skill rigor to compiler work ships skipped design steps.
+2. If ANY file under the workspace crates, vendored deps, or `tests/`: type = `application`.
+3. Else (only `.claude/`, `scripts/`, `diagnostics/`, non-source docs): type = `skill-infra-docs`.
+4. When in doubt between `application` and `skill-infra-docs`, pick `application`. Applying application rigor to skill work wastes time; applying skill rigor to application work ships skipped design steps.
 
-**Carry classification forward:** the plan type MUST appear in `00-overview.md` frontmatter as `plan_type: <compiler|skill-infra-docs|spec-grammar>`. This is machine-readable and drives template selection in Phase 4 section writing.
+**Carry classification forward:** the plan type MUST appear in `00-overview.md` frontmatter as `plan_type: <application|skill-infra-docs>`. This is machine-readable and drives template selection in Phase 4 section writing.
 
-**If the user force-invokes `/create-plan --type=<type>`:** skip the classification logic and use the user's declared type. This is an escape hatch for cases where the heuristic is wrong (e.g., "this TOUCHES `compiler/` via a docstring change only — take skill-infra-docs").
+**If the user force-invokes `/create-plan --type=<type>`:** skip the classification logic and use the user's declared type. This is an escape hatch for cases where the heuristic is wrong (e.g., "this TOUCHES `oriterm_core/` via a docstring change only — take skill-infra-docs").
 
 ---
 
@@ -476,11 +474,11 @@ PART A — Tests & Spec:
    - GPU visual-regression tests (`oriterm/src/gpu/visual_regression/`)
    - UI-framework tests (`oriterm_ui/` test modules)
    - Read the actual test code, not just file names
-2. Check the spec:
-   - Read relevant sections of docs/spec/
-   - Read grammar.ebnf for syntax rules
-   - Read operator-rules.md if operators are involved
-   - Report what the spec says about this topic
+2. Check the protocol / reference:
+   - XTerm control-sequence docs, ECMA-48, terminfo/termcap, vt100.net for terminal-conformance topics
+   - Vendored crate docs under `crates/vte`, `crates/portable-pty`, `crates/wgpu-hal` for their covered semantics
+   - Reference-repo sources under `~/projects/reference_repos/console_repos/` (alacritty, wezterm, ghostty, tmux) for prior art
+   - Report what the authoritative sources say about this topic
 3. Check existing plans:
    - Read plans/ directory for related or superseded plans
    - Report any existing plan items that overlap with this topic

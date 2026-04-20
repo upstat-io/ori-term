@@ -41,7 +41,7 @@ You have shell + file-reading tool access. Before reviewing ANY code and before 
 
 ### Why full reads are mandatory
 
-  - Rule files carry load-bearing invariants (AIMS Five Load-Bearing Invariants, cross-phase contracts, SSOT rules, banned-phrase lists, INVERTED-TDD prohibitions, The One Rule, Ownership & Deferral, Matrix Testing). A skimmed rule file produces a review that misses the exact violation the rule was written to catch.
+  - Rule files carry load-bearing invariants (crate-boundary contracts, SSOT rules, banned-phrase lists, INVERTED-TDD prohibitions, The One Rule, Ownership & Deferral, Matrix Testing, per-crate oriterm_*.md rules). A skimmed rule file produces a review that misses the exact violation the rule was written to catch.
   - Rule files are dense and short. Reading every file in full typically costs 5–15 minutes of wall-time — the cheapest step in the round. Skipping it to save time is strictly worse than skipping the review entirely.
   - Prior-conversation or training-data memory of these rules is STALE by definition. Read them in THIS invocation.
 

@@ -21,7 +21,7 @@ This pass MUST run first. It depends on the Phase 1 plan context: every plan sec
 **Checklist:**
 - [ ] **Gated deliverable**: For every validator/check/invariant in the diff, scan for early-returns, feature-flag gates, `if empty { skip }`, `if !condition { return }`, or `#[cfg(...)]` near the enforcement site. Cross-reference the gate's input class against the owning plan's stated deliverable scope. If the gate disables the deliverable on the inputs the subsection was designed to catch, flag `INVERTED-TDD:gated-deliverable`.
 - [ ] **Widened exemption set**: For every validator/check, diff its exemption list (allow-list, skip-list, special-case branches) against the prior commit. Any growth without a spec citation (`Clause N.M`) in the commit message or doc comment proving the exemption is architecturally correct = `INVERTED-TDD:widened-exemption`.
-- [ ] **Goal drift**: For each fixed bug or completed subsection in scope, re-state the system invariant it serves (spec clause, `typeck.md §PC-*`, `aims-rules.md` lattice dimension, AIMS invariant, phase contract). If the through-line from deliverable → downstream consumer was not maintained — i.e., the fix optimized for local green tests rather than the invariant — flag `INVERTED-TDD:goal-drift`. Banned commit/plan/code phrases (any one is a Critical signal): "make tests pass", "pragmatic workaround", "gate failing path", "accept current state and proceed", "file bugs and proceed".
+- [ ] **Goal drift**: For each fixed bug or completed subsection in scope, re-state the system invariant it serves (protocol clause, frame-budget constraint, damage-region SSOT, crate-boundary contract, per-crate `oriterm_*.md` rule). If the through-line from deliverable → downstream consumer was not maintained — i.e., the fix optimized for local green tests rather than the invariant — flag `INVERTED-TDD:goal-drift`. Banned commit/plan/code phrases (any one is a Critical signal): "make tests pass", "pragmatic workaround", "gate failing path", "accept current state and proceed", "file bugs and proceed".
 - [ ] **Disabled negative pin**: For every `#compile_fail`, negative test, or assertion in the diff, check whether it was removed, weakened, or had its expected error narrowed. If yes without a spec change explaining why the negative behavior is no longer wrong, flag `INVERTED-TDD:disabled-negative-pin`.
 - [ ] **Known Failing Tests without anchor**: For every test moved into a "Known Failing Tests" / `#[ignore]` / `#skip` block, verify it has a concrete `<!-- blocked-by:path#item -->` pointer or equivalent `- [ ]` checkbox in the section/plan that will resolve it. No anchor = `INVERTED-TDD:moved-to-known-failing-without-anchor`.
 - [ ] **Blocker deferred via `/add-bug` only**: For every bug filed during the active subsection, classify whether it BLOCKS the subsection's stated deliverable. A blocker filed via `/add-bug` (instead of fixed via `/fix-bug` with full plan-section rigor) = `INVERTED-TDD:blocker-add-bug-only`. The right mode for blockers is `/fix-bug` NOW, then resume.
@@ -42,7 +42,7 @@ This pass MUST run first. It depends on the Phase 1 plan context: every plan sec
 This pass reads the code structurally — it's looking for *where* logic lives relative to where it *should* live.
 
 **Checklist:**
-- [ ] **No duplicated dispatch**: match/if-chain on TypeTag, MethodKind, or operator kind exists ONLY at the canonical dispatch point? Any parallel match elsewhere is a LEAK — even if it produces correct results today.
+- [ ] **No duplicated dispatch**: match/if-chain on an enum variant tag exists ONLY at the canonical dispatch point? Any parallel match elsewhere is a LEAK — even if it produces correct results today.
 - [ ] **No scattered knowledge**: type behavior (methods, operators, memory strategy) read from the registry, never hardcoded? Any `if type == X { special_behavior }` outside the canonical dispatcher is a LEAK.
 - [ ] **No re-derived facts**: information computed by a prior phase is queried, not recomputed? Recomputing what's already stored creates a shadow source of truth.
 - [ ] **No inline policy**: defaults, thresholds, format strings, validation rules defined at their canonical home, not at consumption sites? If changing a default requires grep-and-replace across files, it's a LEAK.
@@ -54,7 +54,7 @@ This pass reads the code structurally — it's looking for *where* logic lives r
 - [ ] **No parallel authority**: are there two locations both claiming to define the same knowledge? (e.g., two match tables that both define "what methods does type X have?") Designate one as canonical, derive the other.
 - [ ] **Consumers query, don't cache**: do consumers of shared knowledge call a function/query on the canonical owner, or do they maintain a local lookup table? Local tables are shadow homes.
 - [ ] **Enforcement exists**: for every canonical source, is there a compile-time (exhaustive match) or test-time (exhaustiveness test) mechanism that catches consumers falling out of sync?
-- [ ] **Architectural centers respected**: does this code correctly query from: registry (builtin behavior), type pool (type structure), AIMS (memory facts), repr-opt (representation)? Or does it re-derive what these centers already know?
+- [ ] **Architectural centers respected**: does this code correctly query from the canonical center (e.g., `oriterm_core::Grid` for cell state, `oriterm_core::selection::Selection` for selection bounds, `oriterm/src/session/` for tab/window/split state)? Or does it re-derive what these centers already know?
 
 #### Pass 3: Algorithmic DRY Scan (Pattern Pass)
 
@@ -131,10 +131,10 @@ This pass reads the code *across boundaries* — it's looking at how data crosse
 - [ ] Full pipeline works end-to-end for each feature?
 
 **Compiler-Specific Invariants:**
-- [ ] **IR variant exhaustiveness**: New ExprKind/CanExpr/StmtKind variants handled in ALL consuming phases? No `_ => unreachable!()` catch-all arms hiding unhandled variants?
+- [ ] **Enum variant exhaustiveness**: When a workspace-crate enum adds a variant, are all cross-crate match sites updated? No `_ => unreachable!()` catch-all arms hiding unhandled variants? (Rust exhaustive-match only catches within a single crate.)
 - [ ] **Cross-phase invariant contracts**: Does each phase boundary have explicit validation? ARC→Codegen: RC ops balanced? TypeCheck→Codegen: no unresolved type variables? Canon→All: no sugar variants, no TypeId::INFER?
 - [ ] **Lowering completeness**: Every language construct lowered in BOTH eval AND LLVM codegen? No construct that works in one backend but crashes/panics in the other?
-- [ ] **Span provenance**: Spans survive every lowering step (AST → CanExpr → ARC IR → LLVM IR)? No IR nodes with DUMMY spans outside of compiler-generated code?
+- [ ] **Provenance preservation**: When data flows across subsystem boundaries (bytes → VTE → core grid → snapshot → GPU instance data), does the chain of custody survive so debug output / diagnostics can trace back to origin?
 - [ ] **Error recovery monotonicity**: TyError propagates silently without generating cascading diagnostics? Error nodes skipped (not re-diagnosed) by later phases?
 - [ ] **Debug/release parity**: No `#[cfg(debug_assertions)]` blocks that change semantics (only verification)? Both debug and release builds produce identical observable output?
 - [ ] **Interning discipline**: All identifier comparisons use `Name` (not `String`)? All type comparisons use `Idx` (not structure)? No string-based identity checks in non-test code?
@@ -161,7 +161,7 @@ This pass reads the code *locally* — each file on its own terms.
 - [ ] For a quick hygiene-review scope check: `plan-annotations.sh --scope <paths> --cleanup-only` lists stale annotations grouped by finding ID, each showing the plan file and line where the finding was resolved. Every group is directly actionable.
 - [ ] **Ephemeral names in function/fixture names** are also scanned automatically: `plan-annotations.sh --cleanup-only` now includes an `EPHEMERAL NAMES` section that catches underscore-form IDs baked into `fn` names (e.g., `fn tpr_07_017_two_unrelated_...`) and `include_str!` fixture paths. These are classified with the same stale/active logic as comment annotations but require *renaming* (not comment stripping) — the output includes `[fn]`/`[fixture]` tags and the full name for each hit.
 - [ ] Active plan annotations (classification `active-scaffolding`) are acceptable only while the specific finding checkbox is `[ ]`; flip to stale the instant the checkbox becomes `[x]`
-- [ ] Spec references (`Spec: Clause N.M`), `AIMS Section N`, and `eval_v2 Section N` are permanent and always acceptable (classified as `permanent` / `arch-internal` by the tool)
+- [ ] Protocol references (`XTerm ctlseq: ...`, `ECMA-48 §N.M`, `terminfo: <cap>`) are permanent and always acceptable (classified as `permanent` / `arch-internal` by the tool)
 
 **Unsafe & FFI (ori_term enforces `unsafe_code = "deny"` workspace-wide — unsafe is allowed ONLY in vendored deps `crates/vte`, `crates/portable-pty`, `crates/wgpu-hal`):**
 - [ ] If an `unsafe` block appears in a non-vendored crate, flag it as a workspace-lint violation — do NOT accept a `// SAFETY:` justification; the correct fix is to remove the unsafe entirely.

@@ -122,12 +122,12 @@ CRATE_ORDER: dict[str, int] = {
 }
 
 # Sync-point enums — shared between catch-all-arms check and enum-drift.py
-# These are the IR enums where catch-all `_ =>` arms hide cross-phase drift
-SYNC_POINT_ENUMS = {
-    "CanExpr", "ExprKind", "TypeTag", "DerivedTrait",
-    "TokenKind", "CollectionMethod", "IteratorValue",
-    "StmtKind", "BinaryOp", "UnaryOp",
-}
+# These are enums where catch-all `_ =>` arms hide cross-module drift.
+# Empty for ori_term today — populate when a genuine cross-crate sync-point
+# enum appears (e.g., a pane-lifecycle event matched in both oriterm_mux
+# and oriterm, or a render primitive matched in oriterm_ui and oriterm's
+# GPU cell loop). Until then the catch-all-arms check is a no-op.
+SYNC_POINT_ENUMS: set[str] = set()
 
 
 # ─── Finding ─────────────────────────────────────────────────
@@ -546,12 +546,13 @@ def check_bare_todo(path: Path, lines: list[str]) -> list[Finding]:
 def check_catch_all_arms(path: Path, lines: list[str]) -> list[Finding]:
     """GAP: _ => unreachable!()/todo!() catch-all arms.
 
-    Only flags catch-alls near sync-point enum references (CanExpr::,
-    ExprKind::, TypeTag::, DerivedTrait::, TokenKind::, etc.) to avoid
-    flagging local refinement matches like `match char_kind { ... }`.
+    Only flags catch-alls near sync-point enum references (populated
+    via SYNC_POINT_ENUMS — empty for ori_term today). This keeps the
+    check from flagging local refinement matches like
+    `match char_kind { ... }`.
     """
-    # Sync-point enums — SSOT shared with enum-drift.py KNOWN_ENUMS
-    # These are the IR enums whose catch-alls indicate cross-phase drift
+    # Sync-point enums — SSOT shared with enum-drift.py KNOWN_ENUMS.
+    # When this set is empty, the catch-all-arms check is a no-op.
     sync_enums = SYNC_POINT_ENUMS
     findings: list[Finding] = []
     text = "\n".join(lines)
