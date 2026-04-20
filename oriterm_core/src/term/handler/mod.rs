@@ -428,7 +428,7 @@ impl<S: EffectSink> Handler for Term<S> {
     delegate_osc!(apc_dispatch(payload: &[u8]) => handle_apc_dispatch);
     delegate_osc!(sixel_start(params: &[u16]) => handle_sixel_start);
     delegate_osc!(sixel_put(byte: u8) => handle_sixel_put);
-    delegate_osc!(sixel_end() => handle_sixel_end);
+    delegate_osc!(sixel_end(aborted: bool) => handle_sixel_end);
     delegate_osc!(iterm2_file(params: &[&[u8]]) => handle_iterm2_file);
     delegate_osc!(iterm2_set_mark() => osc_iterm2_set_mark);
     delegate_osc!(iterm2_remote_host(host: &[u8]) => osc_iterm2_remote_host);

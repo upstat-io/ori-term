@@ -116,19 +116,28 @@ fn dispatch_put<H: Handler, T: Timeout>(
 
 #[inline]
 fn dispatch_unhook<H: Handler, T: Timeout>(state: &mut ProcessorState<T>, handler: &mut H) {
+    let aborted = state.dcs_aborted;
     match state.dcs_state {
-        DcsState::Sixel => handler.sixel_end(),
+        DcsState::Sixel => handler.sixel_end(aborted),
         DcsState::Decrqss => {
             let query: Vec<u8> = state.decrqss_buf.drain(..).collect();
+            // DECRQSS status strings are query/response — an aborted
+            // query still returns the current status; no payload to
+            // discard on abort.
             handler.decrqss(&query);
         },
         DcsState::Decrsps { ps } => {
             let payload: Vec<u8> = state.decrsps_buf.drain(..).collect();
+            // DECRSPS aborted mid-payload would restore a truncated
+            // state; today the handler stubs log + ignore, so abort
+            // path is functionally equivalent. When a real restore
+            // lands, it must check `aborted` before applying.
             handler.decrsps(ps, &payload);
         },
         DcsState::None => debug!("[unhandled unhook]"),
     }
     state.dcs_state = DcsState::None;
+    state.dcs_aborted = false;
 }
 
 #[inline]
@@ -237,6 +246,12 @@ where
     #[inline]
     fn unhook(&mut self) {
         dispatch_unhook(self.state, self.handler);
+    }
+
+    // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort flag set.
+    #[inline]
+    fn notify_dcs_abort(&mut self) {
+        self.state.dcs_aborted = true;
     }
 
     #[inline]

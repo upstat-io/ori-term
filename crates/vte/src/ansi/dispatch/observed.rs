@@ -49,6 +49,12 @@ where
         super::dispatch_unhook(self.state, self.handler);
     }
 
+    // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort flag set.
+    #[inline]
+    fn notify_dcs_abort(&mut self) {
+        self.state.dcs_aborted = true;
+    }
+
     #[inline]
     fn apc_start(&mut self) {
         self.observer.observe(&PerformAction::ApcStart);

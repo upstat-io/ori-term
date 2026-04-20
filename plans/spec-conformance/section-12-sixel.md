@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "12.1"
     title: "Verify sixel parser+decoder state machine end-to-end (DCS q, raster attrs, color ops, repeat, CR/NL, data, abort)"
-    status: not-started
+    status: complete
   - id: "12.2"
     title: "Verify background modes + palette-lifetime + repeat-clamp invariants"
     status: not-started
@@ -150,27 +150,27 @@ sections:
 
 **What to test (catalog rows driven to `verified` by this subsection — the per-operator + abort rows from §12.0):**
 
-- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
-- [ ] **DCS q introducer** — feed `ESC P <Ps1> ; <Ps2> ; <Ps3> q` prefixes with the full P1×P2×P3 cartesian product. Observe via the spec_chain parser rung that the DCS dispatch reaches `Term::handle_sixel_start(params)` with the correct P1/P2/P3 values captured, and observe via the state-effect rung that P2 drives the resulting `SixelBgMode` distinctly (`DeviceDefault` / `NoChange` / `SetToBg`). Do NOT assert on the private `SixelParser::new` constructor signature — that is an internal implementation detail; the observable dispatch call + output-state difference is what the chain pins.
-- [ ] **Raster attributes `"`** — feed `" <Pan> ; <Pad> ; <Ph> ; <Pv>` before data, assert width/height are set from Ph/Pv (note Pan/Pad currently ignored — `oriterm_core/src/image/sixel/mod.rs:311-330` reads only `params[2]` / `params[3]` inside `apply_raster_attrs` — this is a documented divergence the audit row captures).
-- [ ] **Color define Pu=2 (RGB)** — feed `#n;2;Px;Py;Pz`, assert `palette[n] = [Px, Py, Pz]` scaled from 0-100 to 0-255.
-- [ ] **Color define Pu=1 (HLS)** — feed `#n;1;Ph;Pl;Ps`, assert `palette[n]` matches libsixel's `hls_to_rgb` at `oriterm_core/src/image/sixel/color.rs:41` (the `hue - 120.0` rotation verified correct in Pass 1).
-- [ ] **Color select `#n`** — feed `#n` without follow-on params, assert `current_color = n`.
-- [ ] **Repeat `!n`** — feed `!5?`, assert 5 consecutive columns of the same sixel data byte are emitted.
-- [ ] **CR `$`** — feed data, `$`, more data, assert second data band starts at `x = 0` with `y` unchanged.
-- [ ] **NL `-`** — feed data, `-`, more data, assert second data band starts at `x = 0` with `y += 6`.
-- [ ] **Sixel data byte `?`..`~`** — for every byte in the 63-code range, assert the 6-bit pixel column is decoded per `byte - 0x3F`.
-- [ ] **Intermixed `#` mid-data** — feed `<data>#5<data>`, assert the second data band uses `current_color = 5` on live placement (forces dispatch on live `SixelParser` state, not just setup).
-- [ ] **`!` repeat interacts with palette** — feed `#3!5?`, assert all 5 columns use palette index 3 (forces repeat to read `current_color` at emission time, not at `!` time).
-- [ ] **Raster-before-data** — feed `"1;1;10;20<data>`, assert dimensions set before first pixel.
-- [ ] **Raster-mid-stream** — feed `<data>"5;5;100;100<data>`, assert the documented behavior (ignored vs re-dimensions). Audit file row captures the choice.
-- [ ] **Negative pin — abort path** — feed `ESC P q <data> <CAN>`, drive through `crates/vte/src/lib.rs:341-355` `Performer::unhook` → `dispatch/mod.rs:118-131` → `Term::handle_sixel_end` at `oriterm_core/src/term/handler/image/sixel.rs:34-64`, assert:
-  - No entry added to `ImageCache` (today `handle_sixel_end` stores unconditionally — if this test fails, file BUG-12-* via `/add-bug` and treat the fix as an in-scope deliverable of §12.1, not deferred).
-  - Same test shape with SUB (0x1A) and ESC-mid-DCS.
-- [ ] Matrix count assertion: `assert_eq!(cells_visited, OPS.len() * INTERMIX_SCENARIOS.len())` per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
-- [ ] Update per-operator + per-abort catalog rows (from §12.0 expansion) to `verified`.
-- [ ] Verify all tests pass in both debug AND release builds.
-- [ ] **Validation:** state-machine rung green; parser + decoder seam proven coupled.
+- [x] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [x] **DCS q introducer** — feed `ESC P <Ps1> ; <Ps2> ; <Ps3> q` prefixes with the full P1×P2×P3 cartesian product. Observe via the spec_chain parser rung that the DCS dispatch reaches `Term::handle_sixel_start(params)` with the correct P1/P2/P3 values captured, and observe via the state-effect rung that P2 drives the resulting `SixelBgMode` distinctly (`DeviceDefault` / `NoChange` / `SetToBg`). Do NOT assert on the private `SixelParser::new` constructor signature — that is an internal implementation detail; the observable dispatch call + output-state difference is what the chain pins.
+- [x] **Raster attributes `"`** — feed `" <Pan> ; <Pad> ; <Ph> ; <Pv>` before data, assert width/height are set from Ph/Pv (note Pan/Pad currently ignored — `oriterm_core/src/image/sixel/mod.rs:311-330` reads only `params[2]` / `params[3]` inside `apply_raster_attrs` — this is a documented divergence the audit row captures).
+- [x] **Color define Pu=2 (RGB)** — feed `#n;2;Px;Py;Pz`, assert `palette[n] = [Px, Py, Pz]` scaled from 0-100 to 0-255.
+- [x] **Color define Pu=1 (HLS)** — feed `#n;1;Ph;Pl;Ps`, assert `palette[n]` matches libsixel's `hls_to_rgb` at `oriterm_core/src/image/sixel/color.rs:41` (the `hue - 120.0` rotation verified correct in Pass 1).
+- [x] **Color select `#n`** — feed `#n` without follow-on params, assert `current_color = n`.
+- [x] **Repeat `!n`** — feed `!5?`, assert 5 consecutive columns of the same sixel data byte are emitted.
+- [x] **CR `$`** — feed data, `$`, more data, assert second data band starts at `x = 0` with `y` unchanged.
+- [x] **NL `-`** — feed data, `-`, more data, assert second data band starts at `x = 0` with `y += 6`.
+- [x] **Sixel data byte `?`..`~`** — for every byte in the 63-code range, assert the 6-bit pixel column is decoded per `byte - 0x3F`.
+- [x] **Intermixed `#` mid-data** — feed `<data>#5<data>`, assert the second data band uses `current_color = 5` on live placement (forces dispatch on live `SixelParser` state, not just setup).
+- [x] **`!` repeat interacts with palette** — feed `#3!5?`, assert all 5 columns use palette index 3 (forces repeat to read `current_color` at emission time, not at `!` time).
+- [x] **Raster-before-data** — feed `"1;1;10;20<data>`, assert dimensions set before first pixel.
+- [x] **Raster-mid-stream** — feed `<data>"5;5;100;100<data>`, assert the documented behavior (ignored vs re-dimensions). Audit file row captures the choice.
+- [x] **Negative pin — abort path** — feed `ESC P q <data> <CAN>`, drive through `crates/vte/src/lib.rs:341-355` `Performer::unhook` → `dispatch/mod.rs:118-131` → `Term::handle_sixel_end` at `oriterm_core/src/term/handler/image/sixel.rs:34-64`, assert:
+  - No entry added to `ImageCache` — **BUG fix landed in-scope of §12.1**. Root cause: `handle_sixel_end` stored unconditionally because the VTE parser could not distinguish abort from ST completion. Fix: added `Perform::notify_dcs_abort` callback + `ProcessorState::dcs_aborted` flag + new `DcsEscape` VTE state that defers the unhook decision until the byte after ESC is seen (so `ESC \` normal ST stays a normal ST; any other ESC sequence is an abort); threaded the flag through `Handler::sixel_end(aborted: bool)` → `Term::handle_sixel_end(aborted)` → early return when aborted. CAN/SUB/ESC mid-DCS all pinned.
+  - Same test shape with SUB (0x1A) and ESC-mid-DCS — green.
+- [x] Matrix count assertion: `assert_eq!(cells_visited, OPS.len() * INTERMIX_SCENARIOS.len())` per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
+- [x] Update per-operator + per-abort catalog rows (from §12.0 expansion) to `verified`.
+- [x] Verify all tests pass in both debug AND release builds.
+- [x] **Validation:** state-machine rung green; parser + decoder seam proven coupled.
 
 ---
 

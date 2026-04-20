@@ -45,6 +45,49 @@ Added `Handler` trait methods and dispatcher arms for OSC sub-ops the upstream
   `reset_highlight_fg_color`. OSC L and OSC l reuse `set_icon_name` /
   `set_title` via the shared `join_title_payload` helper.
 
+### Section 12 — Sixel DCS Abort Plumbing (2026-04)
+
+Added a two-byte-lookahead state plus a `Perform`-level abort callback plus a
+dispatch-level abort flag so the DCS consumer can distinguish a normal `ST`
+(`ESC \` or `0x9C`) finish from a CAN / SUB / ESC-to-new-sequence abort per
+DEC STD 070 §6.4. Without this, `sixel_end()` fires the same way in both
+cases and the handler cannot tell whether to commit or discard the in-flight
+image — a real bug surfaced by the §12.1 conformance tests (`dcs_abort_*`
+scenarios in `oriterm_core/tests/spec_chain/sixel/state_machine.rs`).
+
+- **Parser state machine** (`src/lib.rs`): new `State::DcsEscape` variant +
+  `advance_dcs_escape()` handler. In `advance_dcs_passthrough`, ESC
+  (`0x1B`) mid-DCS no longer calls `unhook()` immediately — it transitions
+  to `DcsEscape` so the NEXT byte decides: `0x5C` (`\`) completes the
+  2-byte ST (normal `unhook`), anything else calls `notify_dcs_abort` +
+  `unhook` + re-dispatches through `advance_esc` so the new sequence
+  begins cleanly. CAN (`0x18`) and SUB (`0x1A`) unchanged except they now
+  call `notify_dcs_abort()` before `unhook()`.
+- **`Perform` trait** (`src/lib.rs`): new `notify_dcs_abort()` default-empty
+  callback. Implementors that don't care about abort distinction ignore
+  it; the dispatch-layer `Performer` uses it to flip
+  `ProcessorState::dcs_aborted = true`.
+- **`ProcessorState`** (`src/ansi/processor.rs`): new `dcs_aborted: bool`
+  field. Set by `Perform::notify_dcs_abort`, read by `dispatch_unhook`,
+  reset to `false` after every unhook so the next DCS starts clean.
+- **`Handler` trait** (`src/ansi/handler/core_methods.rs`): `sixel_end()`
+  signature changed to `sixel_end(&mut self, aborted: bool)`. The
+  dispatch layer reads `state.dcs_aborted` and passes it in. DECRQSS /
+  DECRSPS were left unchanged — they are query/response sequences and
+  their current handler stubs log + ignore, so abort semantics for
+  those are functionally equivalent today; when a real DECRSPS restore
+  lands it must check `aborted` before applying.
+- **`ObservedPerformer`** (`src/ansi/dispatch/observed.rs`): mirrors the
+  `notify_dcs_abort` impl on `Performer` so the observation-enabled
+  dispatch path sees the same abort signal.
+
+### Upstreaming
+
+DCS abort plumbing is a general terminal-emulator concern (not
+oriterm-specific) — the `Perform::notify_dcs_abort` + `DcsEscape` state
+pattern is a candidate for upstreaming if the maintainers want to pin the
+DEC STD 070 §6.4 abort contract. In the interim this is a vendored patch.
+
 ### Section 09A — DEC Private CSI Extensions (2026-04)
 
 Added `Handler` trait methods and dispatch arms for the DEC private

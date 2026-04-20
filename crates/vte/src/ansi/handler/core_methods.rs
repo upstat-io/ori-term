@@ -301,8 +301,16 @@ macro_rules! handler_core_methods {
         /// Called for each byte of sixel data within an active DCS sixel sequence.
         fn sixel_put(&mut self, _byte: u8) {}
 
-        /// Called when the DCS sixel sequence ends (ST terminator).
-        fn sixel_end(&mut self) {}
+        // VENDORED PATCH (oriterm): spec-conformance §12 — sixel_end takes
+        // `aborted: bool` so the handler can discard CAN/SUB/ESC-aborted
+        // DCS payloads instead of committing them (DEC STD 070 §6.4).
+        /// Called when the DCS sixel sequence ends.
+        ///
+        /// `aborted` is `true` when the DCS was terminated by CAN (0x18),
+        /// SUB (0x1A), or an ESC (0x1B) that began a new escape sequence
+        /// mid-DCS — the decoded image MUST be discarded in that case.
+        /// `aborted` is `false` on a normal ST (0x9C / `ESC \`) finish.
+        fn sixel_end(&mut self, _aborted: bool) {}
 
         /// DECRQSS: Request Status String (DCS $ q ... ST).
         ///

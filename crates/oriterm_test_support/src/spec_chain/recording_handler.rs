@@ -47,6 +47,13 @@ pub enum DispatchArgs {
     IdentifyTerminal { intermediate: Option<char> },
     /// `Handler::device_status(n)`.
     DeviceStatus { n: usize },
+    /// `Handler::sixel_start(params)` — captures P1/P2/P3 (and any
+    /// trailing DCS parameters the parser collected).
+    SixelStart { params: Vec<u16> },
+    /// `Handler::sixel_end(aborted)` — captures the abort bit so
+    /// abort-plumbing tests can verify the dispatch-rung argument, not
+    /// just the end-to-end `ImageCache` state.
+    SixelEnd { aborted: bool },
     /// Fallback for methods not yet given typed args.
     Other { method: &'static str },
 }
@@ -297,12 +304,21 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
     }
 
     fn sixel_start(&mut self, params: &[u16]) {
-        self.record_other("sixel_start");
+        self.record(
+            "sixel_start",
+            DispatchArgs::SixelStart {
+                params: params.to_vec(),
+            },
+        );
         Handler::sixel_start(&mut self.term, params);
     }
 
     delegate_other!(sixel_put, byte: u8);
-    delegate_other!(sixel_end);
+
+    fn sixel_end(&mut self, aborted: bool) {
+        self.record("sixel_end", DispatchArgs::SixelEnd { aborted });
+        Handler::sixel_end(&mut self.term, aborted);
+    }
 
     fn decrqss(&mut self, query: &[u8]) {
         self.record_other("decrqss");
