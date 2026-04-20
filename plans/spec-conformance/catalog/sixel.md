@@ -7,7 +7,7 @@ owner_section: "01 (bootstrap), 12 (verification)"
 
 # Sixel Graphics Catalog
 
-DCS q sixel introducer + payload. Section 12 (Sixel) is blocked until the `kitty.rs` BLOAT split lands (see `plans/bug-tracker/section-08-core-terminal.md`). Section 01 populates the rows so the blocker is visible against a concrete catalog target.
+DCS q sixel introducer + payload. Section 01 populates the rows; Section 12 (Sixel) drives them to `verified`. Section 12 is NOT blocked by BUG-08-8 — sixel logic lives in `oriterm_core/src/term/handler/image/sixel.rs` (140 lines) and `oriterm_core/src/image/sixel/mod.rs` (438 lines), not `kitty.rs`. BUG-08-8 continues to block §13 (Kitty Graphics) whose implementation targets `kitty.rs` directly.
 
 | ID | Spec source | Sequence | Description | Implementation | Apex layer | Test chain | Verification | De-facto ref | Notes |
 |---|---|---|---|---|---|---|---|---|---|
