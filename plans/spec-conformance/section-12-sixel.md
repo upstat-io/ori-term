@@ -1,7 +1,8 @@
 ---
 section: "12"
 title: "Sixel"
-status: not-started
+status: in-progress
+
 reviewed: false
 goal: "Drive every catalog row in `catalog/sixel.md` from `implemented-unverified` to `verified` via the spec_chain harness — first full visual stack section, exercising the entire pipeline (DCS-state parser → state-machine operator dispatch → image cache → GPU image render → golden image). Close the parser/decoder state-machine seam end-to-end, pin DCS-abort + palette-lifetime + background-mode semantics, and establish occlusion + mixed-protocol cross-stack hand-offs that downstream sections (§13 Kitty, §14 iTerm2) can rely on."
 success_criteria:
@@ -27,12 +28,16 @@ inspired_by:
   - "wezterm `term/src/terminalstate/sixel.rs` — production reference for HLS rotation, raster attrs, transparency"
 depends_on: ["05", "07", "08"]
 third_party_review:
-  status: none
-  updated: null
-review_pipeline:
-  stage: editor-done
-  next_step: 6
+  status: findings
   updated: 2026-04-20
+  notes: "12 findings verified + fixed inline across rounds 0-2 (commits 54041ae6, e5a19364, fcc2f258); round 3 returned clean from both reviewers. All findings resolved; see §12.R for the tracked log."
+review_pipeline:
+  stage: tpr-done
+  next_step: 7
+  updated: 2026-04-20
+  rounds_completed: 4
+  last_round_commit: fcc2f258
+  last_round_findings: 0
 sections:
   - id: "12.0"
     title: "Top-down spec audit (BLOCKING) — per-operator + behavioral rows"
@@ -54,7 +59,8 @@ sections:
     status: not-started
   - id: "12.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: in-progress
+
   - id: "12.N"
     title: "Completion Checklist"
     status: not-started
@@ -284,7 +290,25 @@ sections:
 
 ## 12.R Third Party Review Findings
 
-- None — populated by `/tpr-review` at the §12.3 and §12.5 checkpoints and the §12.N final gate. Every unchecked finding here MUST be resolved (fix or file+resolve via `/fix-bug`) before this section can close, per `CLAUDE.md §NEVER reason out of TPR findings`.
+Populated by `/tpr-review` at the §12.3 and §12.5 checkpoints and the §12.N final gate. Every unchecked finding here MUST be resolved (fix or file+resolve via `/fix-bug`) before this section can close, per `CLAUDE.md §NEVER reason out of TPR findings`.
+
+### Review 1 — Pre-implementation plan review via `/review-plan` (2026-04-20)
+
+Twelve verified findings across four rounds (rounds 0–2 produced fixes; round 3 converged clean). All fixed inline via plan edits — no open items remain.
+
+- [x] `[TPR-12-001-codex+gemini][high]` `plans/spec-conformance/section-12-sixel.md:80,227,229` — `oriterm/src/gpu/frame_prep.rs` path wrong (actual `oriterm/src/gpu/window_renderer/frame_prep.rs`) AND §12.4 GPU-apex tests specified in `oriterm_core/tests/` (wrong crate per `.claude/rules/crate-boundaries.md`). Resolved in commit `54041ae6`: corrected frame_prep path; relocated §12.4 pilots to `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_<scenario>.rs`; split §12.3 occlusion goldens into GPU-crate pilots.
+- [x] `[TPR-12-002-codex][high]` `plans/spec-conformance/section-12-sixel.md:19` — lifecycle `success_criteria` said sixel "survives" scrollback eviction + ED + EL — inverts §07 semantics (eviction/ED/EL should REMOVE, alt-screen/resize should PRESERVE/remap). Resolved in commit `54041ae6`: rewrote the criterion to distinguish remove from preserve/remap per §07's handler contract.
+- [x] `[TPR-12-003-codex][medium]` `plans/spec-conformance/section-12-sixel.md:28,89` — `depends_on: ["05", "07"]` omitted §08 per `00-overview.md` Quick Reference line 739 (`12 Sixel ... 05, 07, 08`). Resolved in commit `54041ae6`: added "08" to frontmatter + body.
+- [x] `[TPR-12-004-codex+gemini][medium]` `plans/spec-conformance/section-12-sixel.md:20,272` — `ImageCache::extract_images` API does not exist. Resolved in commit `54041ae6`: switched to `Term::extract_images`; later revised in `fcc2f258` to the public `Term::renderable_content()` per reviewer F3 below.
+- [x] `[TPR-12-005-codex][low]` `plans/spec-conformance/section-12-sixel.md:21` — `success_criteria` gate "All existing teseq sixel tests pass" was vacuous (no sixel teseq suite exists; `oriterm_core/tests/teseq/` has no sixel scenarios). Resolved in commit `54041ae6`: replaced with falsifiable `sixel_minimal.rs` §04 pilot anchor + note about §23.5 owning teseq archival.
+- [x] `[TPR-12-006-codex+gemini][medium]` `plans/spec-conformance/section-12-sixel.md:306` — §12.N checklist still contained the vacuous teseq gate that Round 0 had scrubbed from the `success_criteria` frontmatter. Resolved in commit `e5a19364`: §12.N mirror replaced with the same `sixel_minimal.rs` anchor.
+- [x] `[TPR-12-007-gemini][medium]` `plans/spec-conformance/section-12-sixel.md:14,75,189` — repeat-clamp citations at `mod.rs:335-360` drifted; actual site is `oriterm_core/src/image/sixel/mod.rs:336` (`count.min(MAX_DIMENSION)` inside `emit_sixel`; `MAX_DIMENSION` const at `:17`). Resolved in commit `fcc2f258`.
+- [x] `[TPR-12-008-gemini][medium]` `plans/spec-conformance/section-12-sixel.md:75,156` — raster-attrs-ignored citations at `mod.rs:78-85,310-329` and `mod.rs:310-329` drifted (the `78-85` range is `SixelParser::new`, not raster attrs). Actual: `oriterm_core/src/image/sixel/mod.rs:311-330` is the `apply_raster_attrs` body. Resolved in commit `fcc2f258`.
+- [x] `[TPR-12-009-codex][medium]` `plans/spec-conformance/section-12-sixel.md:155` — §12.1 DCS q introducer bullet asserted on the private `SixelParser::new` constructor-param spy rather than the chain's observable dispatch rung. Resolved in commit `fcc2f258`: rewrote to observe `Term::handle_sixel_start(params)` dispatch + P2-driven `SixelBgMode` state-effect difference.
+- [x] `[TPR-12-010-codex][low]` `plans/spec-conformance/section-12-sixel.md:193` — pixel-buffer-cap bullet cited `mod.rs:64` as abort site (that's the struct field declaration) and named the error variant `ImageError::TooLarge`. Actual: abort sites at `oriterm_core/src/image/sixel/mod.rs:318` and `:323` inside `apply_raster_attrs`; real variant is `ImageError::OversizedImage`. Resolved in commit `fcc2f258`.
+- [x] `[TPR-12-011-codex][medium]` `plans/spec-conformance/section-12-sixel.md:20,79,229,272` — §12.5 hand-off test and supporting citations named the private `Term::extract_images` helper (`oriterm_core/src/term/snapshot.rs:243`) as the observed surface. Violates `.claude/rules/code-hygiene.md` §Visibility — private helpers are not the chain's state-effect rung. Resolved in commit `fcc2f258`: switched to public `Term::renderable_content()` (`:33`) and `renderable_content_into()` (`:79`).
+
+**Convergence.** Round 3 verification returned `status: clean` from both reviewers (one informational positive-confirmation entry dropped at verification as non-actionable). All 12 findings tracked; all fixed inline. Exit reason: `clean`.
 
 ---
 
