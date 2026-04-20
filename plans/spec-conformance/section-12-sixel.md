@@ -16,16 +16,16 @@ success_criteria:
   - "Sixel grid integration verified: SIXEL_SCROLLING mode 80 cursor positioning, SIXEL_CURSOR_RIGHT mode 8452 cursor positioning, image placement creation at `(cell_col, stable_row)` with `z_index: 0`, orphan cleanup via `prune_scrollback`."
   - "Sixel GPU rendering verified via golden image apex on the deterministic lane from §05 — five expanded scenarios: (a) solid rectangle, (b) multi-color palette-switch mid-image, (c) `!` repeat optimization, (d) `$` CR + `-` NL banding interaction, (e) transparency composite against the deterministic background without sub-pixel jitter, PLUS (f) SIXEL_SCROLLING OFF goldens, (g) SIXEL_CURSOR_RIGHT ON goldens so §12.3's behavioral bullets are visually pinned."
   - "Sixel + unicode/subcell occlusion verified: sixel placements use `z_index: 0` (`oriterm_core/src/term/handler/image/sixel.rs:79-97`) and non-negative images render above text (`oriterm/src/gpu/prepare/emit.rs:264-285`). Goldens pin z-order against §11 glyph families — sixel + wide-CJK, sixel + ZWJ cluster, sixel + half-blocks/quadrants/sextants."
-  - "Sixel + image lifecycle interactions verified: sixel image survives scrollback eviction, ED/EL erase, alt-screen toggle, resize (consumes §07's `ImageCache::on_resize` + `remap_placements` — §07 is `status: complete`)."
-  - "Sixel ↔ Kitty cross-stack hand-off proven at `ImageCache` + placement level: a shared-cache regression test places a sixel image, then a kitty image into the same `ImageCache` instance, and asserts both `extract_images()` entries are independently addressable (deeper mixed-protocol rendering interference is delegated to §13.6 via an explicit DEFERRED-TO-DOWNSTREAM cross-link)."
-  - "All existing teseq sixel tests pass without modification."
+  - "Sixel + image lifecycle handled correctly per §07 (consumes §07's handlers — §07 is `status: complete`): scrollback eviction **removes** sixel placements via `prune_scrollback`; ED / EL erase **remove** placements in the erased region via `remove_placements_in_region`; alt-screen toggle **preserves** the primary-cache placement across enter/exit (alt cache is separate); resize (column shrink) **removes** column-out-of-bounds placements via `ImageCache::on_resize`; resize with reflow **remaps** placement `StableRowIndex` values via `remap_placements`; font-size / DPI change **recomputes** `FixedPixels` cell coverage via `SetCellDimensions`."
+  - "Sixel ↔ Kitty cross-stack hand-off proven at `ImageCache` + placement level: a shared-cache regression test places a sixel image, then a kitty image into the same `ImageCache` instance on a `Term`, and asserts both placements are independently addressable in the snapshot vector produced by `Term::extract_images` (`oriterm_core/src/term/snapshot.rs:243`) → `RenderableContent::images` (deeper mixed-protocol rendering interference is delegated to §13.6 via an explicit DEFERRED-TO-DOWNSTREAM cross-link)."
+  - "All existing spec_chain sixel tests stay green without modification — specifically `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (the §04 sixel pilot) continues to pass. No sixel-specific teseq suite exists (`oriterm_core/tests/teseq/` has no sixel scenarios); this section does not introduce one, and the broader teseq infrastructure is archived by §23.5 once the spec-conformance chain covers its scenarios."
   - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release."
   - "Section's mission criterion connection: contributes to **Verification chain complete per row** and (for lifecycle rung) **Image lifecycle correct under resize/reflow/scrollback/alt-screen**."
 inspired_by:
   - "DEC STD 070 — primary spec; defines DCS q semantics, P1-P6 raster attrs, color operators"
   - "libsixel `src/decoder.c` — reference implementation for parsing edge cases (palette reset, repeat clamping, abort path)"
   - "wezterm `term/src/terminalstate/sixel.rs` — production reference for HLS rotation, raster attrs, transparency"
-depends_on: ["05", "07"]
+depends_on: ["05", "07", "08"]
 third_party_review:
   status: none
   updated: null
@@ -77,7 +77,7 @@ sections:
 - `crates/vte/src/lib.rs:341-355` — VTE `Performer::unhook` drives DCS finalize; CAN/SUB/ESC-mid-DCS route through the same `unhook` callback.
 - `crates/vte/src/ansi/dispatch/mod.rs:118-131` — dispatch routes `DcsState::Sixel` unhook to `Term::sixel_end` regardless of whether the DCS was finalized or aborted.
 - `oriterm_core/src/term/snapshot.rs:243-339` — `Term::extract_images` produces the `RenderableContent::images` vector that flows into GPU.
-- `oriterm/src/gpu/frame_prep.rs:149-173` + `oriterm/src/gpu/image_render/mod.rs:67-151` + `oriterm/src/gpu/prepare/emit.rs:262-285` — image-render prepare path shared with §13 Kitty; `z_index >= 0` draws above text.
+- `oriterm/src/gpu/window_renderer/frame_prep.rs:149-173` + `oriterm/src/gpu/image_render/mod.rs:67-151` + `oriterm/src/gpu/prepare/emit.rs:262-285` — image-render prepare path shared with §13 Kitty; `z_index >= 0` draws above text.
 
 **NO BUG-08-8 blocker on §12.** Earlier plan drafts pre-blocked Section 12 on the `kitty.rs` BLOAT split. That gate is **factually wrong** and is removed:
 - Section 12's implementation surface is `oriterm_core/src/term/handler/image/sixel.rs` (140 lines) + `oriterm_core/src/image/sixel/mod.rs` (438 lines) — NOT `kitty.rs`.
@@ -86,7 +86,7 @@ sections:
 
 **Reference implementations:** see frontmatter.
 
-**Depends on:** Section 05 (deterministic golden lane — `status: complete`), Section 07 (image lifecycle handlers — `status: complete`).
+**Depends on:** Section 05 (deterministic golden lane — `status: complete`), Section 07 (image lifecycle handlers — `status: complete`), Section 08 (ECMA-48 baseline correct — `status: complete`).
 
 **Cross-section hand-offs (downstream consumers):**
 - §13.6 (Kitty + sixel cross-stack regression) consumes §12.5's shared-`ImageCache` handshake test. Deep mixed-protocol rendering interference (sixel + kitty in same grid row, same cell, overlapping placements) is **DEFERRED-TO-DOWNSTREAM** to §13.6 and called out in §12.N.
@@ -200,7 +200,7 @@ sections:
 
 ## 12.3 Verify sixel grid integration + §11 occlusion
 
-**File(s):** `oriterm_core/tests/spec_chain/sixel/grid_integration.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/sixel/grid_integration.rs` (new) for the non-GPU bullets (cursor positioning, placement creation, orphan cleanup, z_index negative-pin at the snapshot level); plus the §11 OCCLUSION golden-image bullets belong in the GPU crate as new pilots alongside `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (e.g. `sixel_occlusion_wide_cjk.rs`, `sixel_occlusion_zwj.rs`, `sixel_occlusion_subcell.rs`) with goldens at `oriterm/tests/references/sixel_occlusion_<family>.png` per `.claude/rules/crate-boundaries.md` — grid-state assertions stay in `oriterm_core`, pixel-golden assertions stay in `oriterm`.
 
 **Depends on code paths:** `oriterm_core/src/term/handler/image/sixel.rs:68-139` (placement creation + cursor advance); `oriterm/src/gpu/prepare/emit.rs:262-285` (z-order emission); §11 unicode/subcell payloads.
 
@@ -224,9 +224,9 @@ sections:
 
 ## 12.4 Verify sixel GPU rendering via golden image apex
 
-**File(s):** `oriterm_core/tests/spec_chain/sixel/golden_render.rs` (new), goldens in `crates/oriterm_test_support/tests/references/spec_chain/sixel/`
+**File(s):** new per-scenario pilots under `oriterm/src/gpu/visual_regression/spec_chain/pilots/` alongside the existing `sixel_minimal.rs` (e.g. `sixel_palette_switch.rs`, `sixel_repeat.rs`, `sixel_cr_nl_banding.rs`, `sixel_transparency.rs`, `sixel_scrolling_off.rs`, `sixel_cursor_right.rs`), with goldens committed as flat PNGs at `oriterm/tests/references/sixel_<scenario>.png` (matching the existing `sixel_minimal.png` naming convention). GPU-apex work MUST live in the `oriterm` crate per `.claude/rules/crate-boundaries.md` — `oriterm_core/tests/` is non-GPU; the existing `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` is the canonical pattern.
 
-**Depends on code paths:** `oriterm_core/src/term/snapshot.rs:243-339` (`Term::extract_images`); `oriterm/src/gpu/frame_prep.rs:149-173`; `oriterm/src/gpu/image_render/mod.rs:67-151`; `oriterm/src/gpu/prepare/emit.rs:262-285`. Deterministic lane from §05 (`status: complete`).
+**Depends on code paths:** `oriterm_core/src/term/snapshot.rs:243-339` (`Term::extract_images`); `oriterm/src/gpu/window_renderer/frame_prep.rs:149-173`; `oriterm/src/gpu/image_render/mod.rs:67-151`; `oriterm/src/gpu/prepare/emit.rs:262-285`. Deterministic lane from §05 (`status: complete`).
 
 - [ ] Write failing test matrix BEFORE implementation.
 - [ ] Capture goldens via `ORITERM_UPDATE_GOLDEN=1` using the deterministic lane (llvmpipe, grayscale hinting, pinned cell metrics) from §05.
@@ -269,7 +269,7 @@ sections:
 - [ ] **CROSS-STACK ImageCache hand-off** — in `cross_stack_handoff.rs`:
   - Place a sixel image at `(row=5, col=0)`.
   - Place a kitty image at `(row=10, col=0)` by driving the kitty transmit+place action through `oriterm_core/src/term/handler/image/kitty.rs` (read-only — no `kitty.rs` edits, which keeps BUG-08-8's kitty-scope gate intact).
-  - Assert `ImageCache::extract_images` returns both placements independently addressable in `RenderableContent::images`.
+  - Assert `Term::extract_images` (`oriterm_core/src/term/snapshot.rs:243`) returns both placements independently addressable in the resulting `RenderableContent::images` vector.
   - Assert neither image corrupts the other's pixel data (sixel RGBA buffer unchanged, kitty PNG-decoded RGBA buffer unchanged).
   - **This is a handshake test, not a full cross-stack rendering regression.** Deep mixed-protocol rendering interference (overlapping placements, z-order interleaving, shared-eviction races) is explicitly DEFERRED-TO-DOWNSTREAM to §13.6 — recorded as a cross-link here and in §12.N.
 - [ ] Negative pin — `ImageCache::on_resize` on a cache with no sixel placements must be a no-op (proves the handler fires only on relevant placements).
