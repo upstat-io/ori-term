@@ -129,7 +129,7 @@ The `Section 04.9 UncatalogedDetector` (at `crates/oriterm_test_support/src/spec
 
 The lint contract (from `plans/spec-conformance/audits/README.md`) enforces:
 
-1. **Existence** — every not-started section in the Quick Reference table has a corresponding audit file. Integration sections (21, 22, 24, 25) are exempted via `canonical_spec_sources: []` with a body comment.
+1. **Existence** — every `in-progress` section in the Quick Reference table has a corresponding audit file, per `plans/spec-conformance/audits/README.md:59`. `not-started` sections are exempted until §NN.0 execution time; `complete` sections have their audit file permanently committed. Integration sections (21, 22, 24, 25) still get the existence check when they reach `in-progress` — their audit file uses `canonical_spec_sources: []` with a body comment so the mapping-resolution check no-ops.
 2. **Mapping resolution** — every `Decision: mapped` row cites a catalog row ID that exists in some `catalog/*.md` file. A mapping to a non-existent row ID fails the lint.
 3. **Schema conformance** — every audit file frontmatter parses; every row has all 4 columns; every `not-targeted` row has a non-empty rationale.
 4. **Freshness** — `last_walked` is present and parses as YYYY-MM-DD. CI does not gate on staleness — that is a `/review-bugs` triage check.
@@ -380,7 +380,7 @@ The per-row `Field | Value` blocks below are PRESERVED here ONLY as a per-row di
 | **Test chain** | parser:pending dispatch:pending state:pending effect:pending |
 | **Verification** | missing |
 | **De-facto ref** | xterm patch-336 (algorithm); esctest2 `DECRQCRA` suite (coordinate clamping) |
-| **Notes** | Reply format: `DCS Pi ! ~ XXXX ST` (4-hex-digit checksum); synchronous emission via PtyEffect::Write (NOT HostRequest); algorithm: xor-folded 16-bit sum of attribute-selected cell data |
+| **Notes** | Reply format: `DCS Pi ! ~ XXXX ST` (4-hex-digit checksum); synchronous emission via PtyEffect::Write (NOT HostRequest); algorithm: xterm sum-then-negate of attribute-selected cell data per xterm/screen.c:3136 (see §09A.5) |
 
 ---
 
@@ -704,8 +704,9 @@ Add ALL missing CSI dispatch arms to `crates/vte/src/ansi/dispatch/csi.rs` for t
 
 ### Files touched
 
-- `crates/vte/src/ansi/dispatch/csi.rs` — add 19 new match arms
-- `crates/vte/src/ansi/tests.rs` — add parser + dispatch tests for each new arm
+- `crates/vte/src/ansi/dispatch/csi.rs` — convert to directory module (`dispatch/csi/mod.rs`) so it can host a sibling `tests.rs`; add 19 new match arms to the body
+- `crates/vte/src/ansi/dispatch/csi/tests.rs` — new sibling test file per `test-organization.md §Sibling tests.rs Pattern`; every dispatch arm gets a parse-test + unhandled-negative-pin pair
+- Parser-level tests in `crates/vte/src/ansi/tests.rs` remain owned by `ansi/mod.rs`; do NOT add dispatch-arm tests there
 
 ### Existing dispatch table reference
 
@@ -781,8 +782,9 @@ Add default (no-op) implementations in `crates/vte/src/ansi/handler.rs` for ever
 ### Files touched
 
 - `crates/vte/src/ansi/handler.rs` — add ~19 new default trait methods
-- `oriterm_core/src/term/handler/` — new submodule `rect_ops.rs` and `presentation.rs` (or extend `mod.rs` if within 500-line limit)
-- `crates/vte/src/ansi/dispatch/esc.rs` (or equivalent) — add ESC 6 (DECBI) and ESC 9 (DECFI) arms plus handler method calls
+- `oriterm_core/src/term/handler/rect_ops/mod.rs` and `oriterm_core/src/term/handler/presentation/mod.rs` — new directory modules (directory-module form is mandatory so sibling `tests.rs` files are allowed per `test-organization.md` rule 1)
+- `oriterm_core/src/term/handler/rect_ops/tests.rs` + `oriterm_core/src/term/handler/presentation/tests.rs` — sibling test files
+- `crates/vte/src/ansi/dispatch/mod.rs` — add ESC 6 (DECBI) and ESC 9 (DECFI) arms inside the existing `esc_dispatch` function (~line 261). There is NO standalone `dispatch/esc.rs` — ESC dispatch lives inline in `dispatch/mod.rs`
 
 ### Handler method signatures (canonical form)
 
@@ -1093,8 +1095,8 @@ Extend the existing DCS dispatcher in `crates/vte/src/ansi/dispatch/mod.rs` (`di
 
 `oriterm_core/src/term/handler/tests/dcs.rs:94-168` already exercises DECRQSS end-to-end through the DCS path — the DCS hook/put/unhook pipeline is live. §09A.9's actual work is SCOPE-LIMITED:
 
-- Enumerate which DECRQSS target response formats are already implemented (walk `oriterm_core/src/term/handler/status.rs` `status_decrqss` — the production handler per `handler/mod.rs:460-461` delegate — plus `oriterm_core/src/term/handler/tests/dcs.rs:94-168` for observable coverage), and which are missing. Do NOT walk `handler/dcs.rs` — no such trait-impl module exists today (only `tests/dcs.rs` under the tests tree).
-- Add only the missing Pt-target branches (e.g., `q`=DECSCUSR, `m`=SGR, `r`=DECSTBM, `s`=DECSLRM) that the DCS hook doesn't yet recognize
+- Enumerate which DECRQSS target response formats are already implemented (walk `oriterm_core/src/term/handler/status.rs` `status_decrqss` — the production DECRQSS handler per `handler/mod.rs:460-461` delegate — plus `oriterm_core/src/term/handler/tests/dcs.rs:94-168` for observable coverage), and which are missing. `oriterm_core/src/term/handler/dcs.rs` also exists but owns DCS-adjacent features (DECSCUSR cursor style, Kitty keyboard mode stack); it does NOT own DECRQSS dispatch. §09A.9 extends `status.rs`, not `dcs.rs`.
+- Baseline coverage at HEAD (verified from `status.rs:218-253`): `"p"` (DECSCL), `r` (DECSTBM), `m` (SGR), `s` (DECSLRM) are ALREADY implemented. The genuinely missing Pt targets are `q` (DECSCUSR) and `"q"` (DECSCA) — §09A.9 adds ONLY those branches plus any other xterm-published targets the baseline walk reveals are absent. Do NOT re-implement the existing four branches
 - Add DECRSPS dispatch if absent — parse-and-acknowledge stub acceptable
 
 **Do NOT phrase §09A.9 as "creating a DCS dispatch path" — the path exists.** The plan's completion criterion is "new DECRQSS targets enumerated against the current DCS test coverage at `tests/dcs.rs:94-168`, gap list produced, each gap row gets a dispatch branch and a spec_chain test in the same commit, unknown Pt values explicitly reply `DCS 0 $ r ST`."
@@ -1103,12 +1105,12 @@ Extend the existing DCS dispatcher in `crates/vte/src/ansi/dispatch/mod.rs` (`di
 
 - `crates/vte/src/ansi/dispatch/mod.rs` — extend `dispatch_hook` / `dispatch_unhook` with DECRQSS and DECRSPS Pt-routing (no new file, no new module)
 - `crates/vte/src/ansi/handler.rs` — `decrqss(&mut self, _query: &[u8])` already exists at `handler.rs:310-314` with the `&[u8]` signature (NOT `&str`); §09A.9 extends the existing trait method via richer default parsing if needed, and adds ONLY the missing `decrsps(&mut self, _ps: u16, _pt: &[u8])` default method. Preserve the byte-oriented signature — the parser emits the `Pt` bytes before UTF-8 validation, so a `&str` signature would force an upstream decode that doesn't exist
-- `oriterm_core/src/term/handler/status.rs` — extend the existing `status_decrqss` helper with new Pt-target branches. The current delegate at `oriterm_core/src/term/handler/mod.rs:460-461` routes `decrqss(&[u8])` to `self.status_decrqss(query)` in `status.rs`; DO NOT move the delegate to `dcs.rs`. (There is no `oriterm_core/src/term/handler/dcs.rs` trait-impl module today — tests live at `tests/dcs.rs` but the production handler path is via `status.rs`.) Add a new `status_decrsps` helper in the same file for symmetry
+- `oriterm_core/src/term/handler/status.rs` — extend the existing `status_decrqss` helper with new Pt-target branches. The current delegate at `oriterm_core/src/term/handler/mod.rs:460-461` routes `decrqss(&[u8])` to `self.status_decrqss(query)` in `status.rs`; DO NOT move the delegate to `dcs.rs`. `handler/dcs.rs` exists today but owns DCS-adjacent things (DECSCUSR cursor style in `dcs_set_cursor_style` / `dcs_set_cursor_shape`, Kitty keyboard mode stack); it is NOT the DECRQSS dispatch home. Add a new `status_decrsps` helper in `status.rs` for symmetry
 - `oriterm_core/src/term/handler/presentation/mod.rs` — only if CSI-path state needs to be READ by DCS-path handlers; in that case, add accessor methods, do not duplicate state
 
 ### Implementation notes
 
-**DECRQSS** (`DCS $ q Pt ST`): The `Pt` string names a CSI/DCS function (e.g. `q` for DECSCUSR, `m` for SGR). The terminal replies with `DCS 1 $ r Pt ST` if the function is recognized, or `DCS 0 $ r ST` if not. Start from the inventory of targets already implemented at `oriterm_core/src/term/handler/status.rs` `status_decrqss` (production handler) plus `tests/dcs.rs:94-168` (observable coverage) — the list of ALREADY-HANDLED Pt values is the baseline. There is no `handler/dcs.rs` trait-impl module. For the additional common targets (`q` DECSCUSR, `m` SGR, `r` DECSTBM, `s` DECSLRM, `"p"` DECSCL, `"q"` DECSCA): recognize and reply with `DCS 1 $ r <echo-of-Pt>;<current-value> ST`. Unknown Pt: reply `DCS 0 $ r ST`. Mark `verified-with-deviation` if fewer than all published xterm DECRQSS targets are implemented; list the deviations in the catalog Notes.
+**DECRQSS** (`DCS $ q Pt ST`): The `Pt` string names a CSI/DCS function. The terminal replies with `DCS 1 $ r Pt ST` if the function is recognized, or `DCS 0 $ r ST` if not. Baseline at HEAD (verify at `oriterm_core/src/term/handler/status.rs:218-253`): the four targets `"p"` (DECSCL), `r` (DECSTBM), `m` (SGR), `s` (DECSLRM) already reply with `DCS 1 $ r <echo-of-Pt>;<current-value> ST`. §09A.9 adds ONLY the missing targets — `q` (DECSCUSR) and `"q"` (DECSCA), plus any additional xterm-published targets the baseline walk identifies as absent. Unknown Pt continues to reply `DCS 0 $ r ST` per the existing `_ => "\x1bP0$r\x1b\\"` branch. Mark `verified-with-deviation` if fewer than all published xterm DECRQSS targets are implemented; list the deviations in the catalog Notes.
 
 **DECRSPS** (`DCS Ps $ t Pt ST`): Restores presentation state previously reported by DECRQPSR. For initial implementation, parse and acknowledge but do not implement full state restoration. `verified-with-deviation`: "DECRSPS parse-and-acknowledge stub — full state restoration not implemented".
 
