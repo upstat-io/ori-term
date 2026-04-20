@@ -38,12 +38,12 @@ Skip entirely for `[low]` severity findings with clearly-scoped symbols (test he
 
 Protocol:
 
-1. Availability probe — run `scripts/intel-query.sh status`. If `status != "ok"`, skip this step; calibration falls back to in-file reading of the cited code.
-2. For each qualifying finding, run `scripts/intel-query.sh --human callers "<symbol>" --repo ori` on the finding's cited symbol.
+1. Availability probe — run _(intel-query not available in this project; use Grep/Glob)_. If `status != "ok"`, skip this step; calibration falls back to in-file reading of the cited code.
+2. For each qualifying finding, run _(intel-query not available in this project; use Grep/Glob)_ on the finding's cited symbol.
 3. Cap at 5 queries total across the triage run. Do NOT query every finding.
 4. Treat results as DISCOVERY, not authority — verify caller counts against actual code before letting them influence Step 3.
 5. Never cite a graph result as resolution evidence. Resolutions in Step 3 §5 must cite actual `file:line`, test name, or spec clause.
-6. Never open-code Neo4j access. Always use `scripts/intel-query.sh`.
+6. Never open-code Neo4j access. Always use _(intel-query not available in this project; use Grep/Glob)_.
 
 Calibration heuristics:
 

@@ -13,7 +13,7 @@
 - Read `plans/bug-tracker/section-{NN}-*.md` files (tracker path)
 - Read `plans/<plan-name>/section-{NN}-*.md` files (inline path)
 - Append to the target plan file (markdown writes)
-- Run `scripts/intel-query.sh` for blast-radius (shell commands)
+- Run _(intel-query not available in this project; use Grep/Glob)_ for blast-radius (shell commands)
 - Run quick grep/test to confirm the bug exists (shell commands)
 
 ---
@@ -202,12 +202,8 @@ Same as Step T4 — do just enough to write a useful subsection:
 
 1. Confirm the bug exists
 2. Identify approximate location (crate + file)
-3. Note repro (existing test file, or 2-3 line Ori snippet)
-4. Intelligence graph blast-radius check per the SSOT protocol:
-
-   @.claude/skills/query-intel/compose-intel-summary.md
-
-   Per SSOT Step F — same queries as tracker path: `callers "<buggy function>" --repo ori` + `file-symbols "<subsystem path>" --repo ori`.
+3. Note repro (existing test file, or minimal repro steps)
+4. Optional blast-radius check: Grep for the affected function/type and note the caller count in the bug entry. No intelligence graph in this project — Grep/Glob is the SSOT.
 
 ## Step I3: Append Subsection to Plan Section File
 

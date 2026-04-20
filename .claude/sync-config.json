@@ -16,7 +16,10 @@
     "docs/ori_lang/":       "",
     "Ori snippet":          "minimal repro",
     "Ori language":         "ori_term",
-    "ori_lang":             "ori_term"
+    "ori_lang":             "ori_term",
+    "@\\.claude/skills/query-intel/compose-intel-summary\\.md\\s*": "",
+    "\\.claude/skills/query-intel/compose-intel-summary\\.md": "(intel graph not available in this project; use Grep/Glob)",
+    "scripts/intel-query\\.sh": "(intel-query not available in this project)"
   },
   "include": {
     "$comment": "What to pull from canonical. If a category is missing, defaults to 'all tailorable + all portable from that category'.",

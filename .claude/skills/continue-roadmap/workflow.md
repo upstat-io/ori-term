@@ -25,7 +25,7 @@ These are load-bearing invariants. A sub-agent that violates ANY of these has br
 - **NEVER read `.rs`, `.ori`, `.toml` source files** or any file under `compiler/`, `library/`, `tests/`, `scripts/`. Plan-doc edits in `plans/` are fine (Step 2); source reads are not.
 - **NEVER investigate test failures, typecheck errors, dirty-tree contents, bug repros, or diagnostic output.** When a gate fires, ESCALATE IMMEDIATELY. Do NOT peek inside to "understand why" — the parent + user + `/roadmap-work` own that step.
 - **NEVER run `git log`, `git blame`, `git show`, `git diff`, `git bisect`**, or any git archaeology. The scanner already captured the only git state gates need (via `dirty_tree`).
-- **NEVER run intelligence-graph queries** (`scripts/intel-query.sh ...`) — that belongs to `/review-plan` / `/roadmap-work`, not scan+gates.
+- **NEVER run intelligence-graph queries** (_(intel-query not available in this project; use Grep/Glob)_) — that belongs to `/review-plan` / `/roadmap-work`, not scan+gates.
 - **NEVER read `CLAUDE.md` or `.claude/rules/*.md`** — not needed for JSON transcription; the scanner pre-computes every field.
 - **NEVER read section files by hand** — their fields are in `focus_context` / `next_unblocked`.
 - **NEVER validate blockers by opening sibling plan files** — the scanner already classifies them.

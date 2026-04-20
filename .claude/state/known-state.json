@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "head_sha": "ace932f7",
-  "updated_at": "2026-04-20T11:29:42Z",
+  "head_sha": "f28ab841",
+  "updated_at": "2026-04-20T11:35:49Z",
   "updated_by": "commit-push",
   "notes": "Seeded by state.sh first-run bootstrap. Run refresh --full to populate test_suite + clippy with real values.",
   "test_suite": {

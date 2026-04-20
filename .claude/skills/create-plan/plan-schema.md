@@ -319,14 +319,14 @@ test failures, or design flaws. 2-4 sentences.}
 
 Queries run {YYYY-MM-DD}:
 
-- `scripts/intel-query.sh --human <preset>` — {one-line outcome}. For compiler sections use the matching preset per `.claude/rules/intelligence.md` §Subsystem Mapping (`ori-arc`, `ori-inference`, `ori-codegen`, `ori-patterns`, `ori-diagnostics`). For non-compiler plans (meta-tooling, docs, build scripts) use `search "<key terms>"` — no preset applies.
-- `scripts/intel-query.sh --human file-symbols "<path-fragment>" --repo ori` — {one-line outcome} (skip for non-Rust targets; the Ori code-symbol index is Rust-only today)
-- `scripts/intel-query.sh --human callers "<symbol>" --repo ori` — {one-line outcome} (blast radius for every public API the section changes)
-- `scripts/intel-query.sh --human similar "<symbol>" --repo rust,swift,koka --limit 5` — {one-line outcome} (cross-repo prior art for design decisions)
+- `(intel-query not available) --human <preset>` — {one-line outcome}. For compiler sections use the matching preset per _(intelligence graph rule not applicable in this project)_. For non-compiler plans (meta-tooling, docs, build scripts) use `search "<key terms>"` — no preset applies.
+- `(intel-query not available) --human file-symbols "<path-fragment>" --repo ori` — {one-line outcome} (skip for non-Rust targets; the Ori code-symbol index is Rust-only today)
+- `(intel-query not available) --human callers "<symbol>" --repo ori` — {one-line outcome} (blast radius for every public API the section changes)
+- `(intel-query not available) --human similar "<symbol>" --repo rust,swift,koka --limit 5` — {one-line outcome} (cross-repo prior art for design decisions)
 
 Results summary (≤500 chars) [ori]: {bounded paragraph citing blast radius, cross-repo prior art, relevant symbols. Use `[ori]` for Ori-repo claims, `[rust#N]` / `[swift#N]` / `[koka#N]` / etc. for cross-repo issue citations, and `[repo:path]` for symbol results — the same grammar used by `compose-intel-summary.md` Step D (lines 64-82) and by §07's hook injection. Maximum 5 bullets, 500 characters. If the graph is unavailable, record the unavailability state as freeform prose (e.g. `"Graph was unavailable at YYYY-MM-DD when this section was authored"`) — do NOT silently omit the block; the block MUST still exist with the date and a note about unavailability so the validator recognizes it as intentional rather than forgotten.}
 
-See `.claude/skills/query-intel/compose-intel-summary.md` for the full query protocol (SSOT — do NOT `@`-include in plan files; plan markdown is not harness-expanded, so the include would be a dead literal).
+See _(intel graph not available in this project; use Grep/Glob)_ for the full query protocol (SSOT — do NOT `@`-include in plan files; plan markdown is not harness-expanded, so the include would be a dead literal).
 
 ---
 
@@ -337,9 +337,9 @@ NOT captured by the numbered {NN}.X subsection sequence alone:
 1. **Unnumbered `## Intelligence Reconnaissance` block** — placed after
    the section framing (Goal / Success Criteria / Context / Reference
    implementations / Depends on) and BEFORE `## {NN}.1`. Records the
-   literal `scripts/intel-query.sh` commands the author ran, a
+   literal `(intel-query not available)` commands the author ran, a
    ≤500-char results summary (using the same `[ori]` / `[repo#N]`
-   citation grammar as `.claude/skills/query-intel/compose-intel-summary.md`
+   citation grammar as _(intel graph not available in this project; use Grep/Glob)_
    Step D, lines 64-82), and the date. Coexists with §07's runtime hook:
    the hook omits the summary entirely when graph is unavailable; the
    plan-resident block records unavailability as freeform prose. Enforced
@@ -596,7 +596,7 @@ Compiler template completion checklist (Section File Template §NN.N) has ~11 ga
   - [ ] `index.md` Section {NN} status → `Complete`
 - [ ] **Repo hygiene check** — run `diagnostics/repo-hygiene.sh --check`; clean any detected temp/scratch files before final commit.
 
-**Exit Criteria:** {Practical measurable condition — e.g., "`pytest tests/foo.py` passes all N tests; `scripts/intel-query.sh <subcommand>` smoke test exits 0; `cargo test --all` green."}
+**Exit Criteria:** {Practical measurable condition — e.g., "`pytest tests/foo.py` passes all N tests; `(intel-query not available) <subcommand>` smoke test exits 0; `cargo test --all` green."}
 ```
 
 **What is NOT present** compared to the full template:

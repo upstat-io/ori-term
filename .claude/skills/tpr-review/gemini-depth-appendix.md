@@ -29,8 +29,8 @@ Enforcement rules:
 ## Rule 3 — Read files IN FULL, not in slices
 
 - Every file you cite: Read IN FULL. A 20-line window around the suspicious line misses the surrounding invariant.
-- Every function you reason about: also read its callers and callees via `scripts/intel-query.sh callers "<symbol>" --repo ori` and `scripts/intel-query.sh callees "<symbol>" --repo ori`.
-- Every trait or enum variant cited: read the registration site(s) via `scripts/intel-query.sh symbols "<name>" --repo ori`.
+- Every function you reason about: also read its callers and callees via _(intel-query not available in this project; use Grep/Glob)_ and _(intel-query not available in this project; use Grep/Glob)_.
+- Every trait or enum variant cited: read the registration site(s) via _(intel-query not available in this project; use Grep/Glob)_.
 - Record every file read — including traced callers/callees — in `files_read`.
 
 ## Rule 4 — Trace, do not infer
@@ -58,7 +58,7 @@ Shell access via `--approval-mode yolo` is for read-only verification. Use it:
 - `cargo check` / `cargo c` — verify a typecheck claim.
 - `timeout 150 cargo test -p <crate>` — verify a behavior claim (timeout mandatory per CLAUDE.md §MANDATORY TEST TIMEOUTS).
 - `cargo test --all` — full suite; expensive but authoritative.
-- `scripts/intel-query.sh` — graph queries (191K+ symbols; ~100× faster than grep). See `.claude/rules/intelligence.md` for the full capability surface.
+- _(intel-query not available in this project; use Grep/Glob)_ — graph queries (191K+ symbols; ~100× faster than grep). See _(intelligence graph rule not applicable in this project)_.
 - `git log`, `git diff`, `git show` — provenance for "recent changes" claims.
 - `grep` / `rg` — only after the intel graph cannot answer the question.
 
@@ -71,7 +71,7 @@ A finding backed by one tool-run that confirms the claim outranks ten findings b
 - `rule_violated:` names a rule file absent from your `rules_consulted`.
 - `recommended_fix:` is longer than the evidence block.
 - Finding inferred from file names, path structure, or "usual patterns" without opening the file.
-- Reference-repo citation (rust, swift, koka, etc.) by URL only, without running `scripts/intel-query.sh similar` and reading the actual source at the returned path.
+- Reference-repo citation (rust, swift, koka, etc.) by URL only, without running _(intel-query not available in this project; use Grep/Glob)_ and reading the actual source at the returned path.
 
 ## Rule 8 — Methodical self-interrogation before returning
 

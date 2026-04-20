@@ -66,7 +66,7 @@ Every tool must be documented in its **canonical doc surface** (the single sourc
 
 | Tool location | Canonical doc surface | Secondary surfaces |
 |---|---|---|
-| `diagnostics/*.sh` | `diagnostics/README.md` (full reference: usage, flags, workflows) | `.claude/rules/diagnostic.md` §Diagnostic Scripts (quick-reference table — MAY lag canonical), `CLAUDE.md` §Commands (key scripts only) |
+| `diagnostics/*.sh` | `diagnostics/README.md` (full reference: usage, flags, workflows) | `CLAUDE.md` §Commands (key scripts only) |
 | `scripts/` (commonly-needed: `perf-baseline.sh`, `cow-benchmark.sh`, `cache-doctor.sh`, `bump-build.sh`, `sync-version.sh`) | `CLAUDE.md` §Commands | Script's own `--help` |
 | `scripts/` (maintenance/migration: `extract_tests.py`, `pgo-build.sh`, `release.sh`, etc.) | Script's own `--help` | Not required in CLAUDE.md — these are infrequently needed and would bloat the curated Commands section |
 | Root harnesses (`test-all.sh`, `clippy-all.sh`, `fmt-all.sh`, `build-all.sh`) | `CLAUDE.md` §Commands | — |

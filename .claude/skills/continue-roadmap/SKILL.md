@@ -174,11 +174,9 @@ Mandatory on every subsection iteration. Context compression may drop rules betw
 
 Read `<plan-path>/<section-file>` for the current `<subsection-id>`. Identify the specific `- [ ]` items. Inline (plan-doc read).
 
-### 6.2 — Intelligence recon
+### 6.2 — Blast-radius check (optional)
 
-@.claude/skills/query-intel/compose-intel-summary.md
-
-Per SSOT Step F: `file-symbols`, `callers`/`callees`, `similar` on section-body symbols for blast radius. Dispatch via `Agent()` when the subsection touches a broad symbol surface; inline when the query is a single `callers` lookup.
+Before touching code: Grep/Glob the section's cited symbols/paths to inventory callers. Skip for tightly-scoped subsections (test helpers, single-file widgets). Dispatch via `Agent()` when the subsection touches a broad symbol surface; inline for 1-2 call-site checks. No intelligence graph in this project — Grep/Glob is the SSOT.
 
 ### 6.3 — Read affected source
 

@@ -70,7 +70,7 @@ You run with elevated tool access (`--full-auto` for codex, `--approval-mode yol
 **ALLOWED** (use freely to verify findings):
   - Read / view file contents.
   - Grep / search the codebase.
-  - Bash for tests, builds, intelligence-graph queries: `cargo test`, `cargo b`, `cargo c`, `cargo test --all`, `cargo clippy --all -- -D warnings`, `scripts/intel-query.sh ...`, `git log`, `git diff`, `git show`, `git status`, any read-only diagnostic.
+  - Bash for tests, builds, intelligence-graph queries: `cargo test`, `cargo b`, `cargo c`, `cargo test --all`, `cargo clippy --all -- -D warnings`, _(intel-query not available in this project; use Grep/Glob)_, `git log`, `git diff`, `git show`, `git status`, any read-only diagnostic.
 
 **FORBIDDEN** — under all circumstances, even if you are certain you know the fix:
   - Edit, Write, apply_patch, NotebookEdit, or any tool that modifies file contents.
@@ -196,7 +196,7 @@ elevated tool access. That access is for **reading and running diagnostics
 only** while you compose advice.
 
 ALLOWED: Read, Grep, Bash for read-only commands (`cargo c`, `cargo b`,
-`cargo test --all`, `scripts/intel-query.sh ...`, `git log`, `git diff`,
+`cargo test --all`, _(intel-query not available in this project; use Grep/Glob)_, `git log`, `git diff`,
 `git show`, `git status`).
 
 FORBIDDEN under all circumstances: Edit, Write, apply_patch,

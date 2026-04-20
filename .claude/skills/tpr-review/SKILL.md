@@ -575,7 +575,7 @@ Note: the sub-agent prompt carries ONLY `{REVIEWER}` and `{SCRATCH_DIR}` placeho
   - `pre-dispatch-status.txt` / `pre-dispatch-head.txt` / `post-dispatch-status.txt` / `shadow-edit-diff.txt` / `shadow-edit-stat.txt` / `shadow-edits.patch` — §8a/§8e shadow-edit detection artifacts.
   - `{codex,gemini}-{stdout,stderr,report}.txt` — per-reviewer CLI capture artifacts.
 
-**Step 8e — Detect shadow edits (post-dispatch, BEFORE §4 verification).** Reviewer CLIs run with file-write authority (`codex --full-auto`, `gemini --approval-mode yolo` — both required so reviewers can run `cargo test` / `cargo test --all` / `scripts/intel-query.sh` to verify their findings against actual behavior). The prompt forbids file edits per `compose-round-prompt.md` "Read and run, do NOT write", but prompts can be ignored. This step enforces the contract.
+**Step 8e — Detect shadow edits (post-dispatch, BEFORE §4 verification).** Reviewer CLIs run with file-write authority (`codex --full-auto`, `gemini --approval-mode yolo` — both required so reviewers can run `cargo test` / `cargo test --all` / _(intel-query not available in this project; use Grep/Glob)_ to verify their findings against actual behavior). The prompt forbids file edits per `compose-round-prompt.md` "Read and run, do NOT write", but prompts can be ignored. This step enforces the contract.
 
 ```
 Bash: git status --porcelain > "$scratch/post-dispatch-status.txt"
