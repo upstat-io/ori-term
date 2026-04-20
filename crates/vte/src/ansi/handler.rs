@@ -524,4 +524,10 @@ pub trait Handler {
 
     /// DECDC — Delete Column (CSI Ps ' ~).
     fn decdc(&mut self, _count: u16) {}
+
+    /// DECBI — Back Index (ESC 6). VT420 and up.
+    fn decbi(&mut self) {}
+
+    /// DECFI — Forward Index (ESC 9). VT420 and up.
+    fn decfi(&mut self) {}
 }
