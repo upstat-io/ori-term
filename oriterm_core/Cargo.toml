@@ -13,6 +13,7 @@ image-protocol = ["dep:image"]
 base64 = "0.22"
 bitflags = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
+indexmap = "2"
 log = "0.4"
 parking_lot = "0.12"
 regex = "1"

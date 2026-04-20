@@ -134,15 +134,6 @@ impl App {
             } => {
                 self.clipboard.store(clipboard_type, &text);
             }
-            MuxNotification::ClipboardLoad {
-                pane_id,
-                clipboard_type,
-                formatter,
-            } => {
-                let text = self.clipboard.load(clipboard_type);
-                let response = formatter(&text);
-                self.write_pane_input(pane_id, response.as_bytes());
-            }
             MuxNotification::DesktopNotification {
                 pane_id: _pane_id,
                 title,

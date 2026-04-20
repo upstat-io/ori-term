@@ -5,6 +5,8 @@ status: not-started
 reviewed: false
 goal: "Drive every catalog row in `catalog/mouse.md` from `implemented-unverified` to `verified` — every numbered mouse protocol (X10/9, normal/1000, locator/1001, button-event/1002, any-event/1003, focus/1004, UTF-8/1005, SGR/1006, URXVT/1015, SGR pixels/1016) including the encoding side."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-16-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (xterm `ctlseqs.txt` §Mouse Tracking + URXVT mouse docs + DEC locator extensions DECEFR/DECELR/DECSLE/DECRQLP) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
+  - "DEC locator extensions catalogued: `catalog/mouse.md` includes new rows for DECEFR (`CSI Pt;Pl;Pb;Pr ' w`), DECELR (`CSI Ps;Pu ' z`), DECSLE (`CSI Pm ' {`), and DECRQLP (`CSI Ps ' \\|`). These 4 sequences were discovered during Section 09A's top-down audit but routed to Section 16's ownership because they are mouse/locator protocol extensions, NOT rectangle or presentation ops. Each reaches `verified` status via the standard mouse-protocol verification chain."
   - "Every row in `catalog/mouse.md` is `verified`"
   - "Every mouse encoding format (X10/Normal, UTF-8, SGR, URXVT, SGR pixels) verified via Effect transcript apex (`PtyEffect::Write { kind: PtyWriteKind::MouseEvent, bytes }`)"
   - "Modifier encoding verified: shift +4, alt +8, ctrl +16; verified for every protocol that supports modifiers"
@@ -22,6 +24,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "16.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "16.1"
     title: "Verify X10 / Normal / Button-event / Any-event encoding"
     status: not-started
@@ -54,9 +59,37 @@ sections:
 
 **Context:** Pass 1 confirmed mouse encoders exist for X10/UTF-8/SGR/URXVT. Section 09 verified the mode toggles (1000-1016). This section verifies the encoding via spec_chain. Locator mode (1001) was not found in Pass 1; this section IMPLEMENTS it per the xterm spec — no defer-vs-implement fork.
 
+**OSC 22 push-vs-poll handoff (from Section 10.5 / scope clarification E):** Section 10 exposed `Term::mouse_cursor_icon` as a polling getter consumed via `RenderableContent::mouse_cursor_icon` (embedded path) and `PaneSnapshot::mouse_cursor_icon` (daemon path). UI consumers read this on every frame or render signal. A push-style alternative (`Effect::Ui(UiEffect::MouseCursorChanged(icon))`) would let UI consumers update lazily — but the architecturally correct home for that decision is Section 16, because this section owns the broader "what mouse-facing state does the UI consume, and via what interface" question (OSC 22 cursor-icon, mouse-mode toggles 1000–1016, locator mode 1001, mouse encoders). If Section 16 decides to switch to push semantics, it owns the migration: the polling surface MUST stay live until every UI consumer is converted so mid-migration consumers are not stranded. No action required at Section 16 kickoff — OSC 22 remains `verified` via the polling path regardless of Section 16's eventual decision.
+
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 08 (baseline correct, basic CSI parsing solid).
+
+---
+
+## 16.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-16-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** xterm `ctlseqs.txt` §Mouse Tracking (numbered protocols X10/9, Normal/1000, Locator/1001, Button-event/1002, Any-event/1003, Focus/1004, UTF-8/1005, SGR/1006, URXVT/1015, SGR pixels/1016) + URXVT mouse docs (1015 extension) + xterm `ctlseqs.txt` §DEC Locator (DECEFR `CSI Pt;Pl;Pb;Pr ' w`, DECELR `CSI Ps;Pu ' z`, DECSLE `CSI Pm ' {`, DECRQLP `CSI Ps ' \|`).
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-16-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/mouse.md` (open new rows for DECEFR, DECELR, DECSLE, DECRQLP — 4 sequences discovered during Section 09A's top-down audit and assigned to Section 16's ownership per §09A.12)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-16-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [ ] Every row has a `Decision` of `mapped` (cites catalog row ID) or `not-targeted` (with rationale).
+- [ ] Every `mapped` row resolves to a real catalog row.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` and `walked_by` set.
+- [ ] Any new catalog rows use the canonical 10-column schema.
+- [ ] New `catalog/mouse.md` rows created for DECEFR (`MOUSE-DECEFR`), DECELR (`MOUSE-DECELR`), DECSLE (`MOUSE-DECSLE`), and DECRQLP (`MOUSE-DECRQLP`).
+
+**No other subsection in this section can begin work until §16.0 is complete.**
 
 ---
 

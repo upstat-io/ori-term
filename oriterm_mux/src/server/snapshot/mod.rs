@@ -145,6 +145,23 @@ fn fill_metadata_from_renderable(
     render_buf: &RenderableContent,
     out: &mut PaneSnapshot,
 ) {
+    fill_wire_metadata_from_renderable(render_buf, out);
+    fill_pane_metadata(pane, out);
+}
+
+/// Fill the `RenderableContent`-derived portion of snapshot metadata.
+///
+/// All fields here are scalars or wire-index encodings of IO-thread state
+/// (cursor, palette, modes, dimensions, OSC 22 mouse cursor icon, search).
+/// Pane-specific fields (title, `icon_name`, cwd, `has_unseen_output`) are
+/// filled separately by [`fill_pane_metadata`]. Splitting keeps this
+/// half independently testable — the daemon wire contract between
+/// `RenderableContent` and `PaneSnapshot` is verified without needing
+/// a real [`Pane`].
+pub(crate) fn fill_wire_metadata_from_renderable(
+    render_buf: &RenderableContent,
+    out: &mut PaneSnapshot,
+) {
     // Cursor.
     out.cursor = WireCursor {
         col: u16::try_from(render_buf.cursor.column.0).unwrap_or(u16::MAX),
@@ -159,18 +176,7 @@ fn fill_metadata_from_renderable(
         .reserve(270usize.saturating_sub(out.palette.capacity()));
     out.palette.extend_from_slice(&render_buf.palette_snapshot);
 
-    // Title.
-    out.title.clear();
-    out.title.push_str(pane.effective_title());
-
-    // Icon name.
-    out.icon_name = pane.icon_name().map(str::to_owned);
-
-    // CWD.
-    out.cwd = pane.cwd().map(str::to_owned);
-
-    // Scalar fields.
-    out.has_unseen_output = pane.has_unseen_output();
+    // Scalar fields derived from RenderableContent.
     out.modes = render_buf.mode.bits();
     out.scrollback_len = u32::try_from(render_buf.scrollback_len).unwrap_or(u32::MAX);
     out.display_offset = u32::try_from(render_buf.display_offset).unwrap_or(u32::MAX);
@@ -180,6 +186,19 @@ fn fill_metadata_from_renderable(
 
     // Search state from RenderableContent (filled by IO thread).
     fill_search_from_renderable(render_buf, out);
+}
+
+/// Fill the [`Pane`]-derived portion of snapshot metadata.
+///
+/// Separated from [`fill_wire_metadata_from_renderable`] so the wire
+/// mapping of `RenderableContent` → `PaneSnapshot` can be unit-tested
+/// without needing a full `Pane` (PTY + threads).
+fn fill_pane_metadata(pane: &Pane, out: &mut PaneSnapshot) {
+    out.title.clear();
+    out.title.push_str(pane.effective_title());
+    out.icon_name = pane.icon_name().map(str::to_owned);
+    out.cwd = pane.cwd().map(str::to_owned);
+    out.has_unseen_output = pane.has_unseen_output();
 }
 
 /// Fill search state in a [`PaneSnapshot`] from [`RenderableContent`] fields.
@@ -223,3 +242,6 @@ fn rgb_to_wire(rgb: Rgb) -> WireRgb {
 fn cursor_shape_to_wire(shape: CursorShape) -> WireCursorShape {
     WireCursorShape::from(shape)
 }
+
+#[cfg(test)]
+mod tests;

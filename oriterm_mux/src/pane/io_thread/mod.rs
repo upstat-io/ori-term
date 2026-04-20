@@ -10,7 +10,6 @@
 
 mod commands;
 mod effect_router;
-pub(crate) mod event_proxy;
 mod handle;
 mod handler;
 mod response_poll;
@@ -58,9 +57,8 @@ const MAX_PARSE_CHUNK: usize = 0x1_0000; // 64 KB
 /// Terminal IO thread — owns `Term<S>` and processes commands + PTY bytes.
 ///
 /// Generic over `S: EffectSink` so the IO thread's `Term` can use
-/// `LegacyEventSink<IoThreadEventProxy>` (suppresses metadata during
-/// dual-Term migration) while the old path uses
-/// `LegacyEventSink<MuxEventProxy>`.
+/// `QueueingEffectSink` (the production path post effect-cutover §01.1)
+/// or any other `EffectSink` impl in tests.
 pub struct PaneIoThread<S: EffectSink + 'static> {
     /// The terminal state machine — exclusively owned by this thread.
     terminal: Term<S>,
@@ -99,7 +97,8 @@ pub struct PaneIoThread<S: EffectSink + 'static> {
     double_buffer: SnapshotDoubleBuffer,
     /// Work buffer for snapshot production — reused across frames.
     snapshot_buf: RenderableContent,
-    /// Set by `IoThreadEventProxy` when VTE parsing sets grid dirty.
+    /// Set when VTE parsing produces new state — the effect router
+    /// reads it to decide whether `produce_snapshot` should fire.
     grid_dirty: Arc<AtomicBool>,
     /// PTY control handle for resize (SIGWINCH).
     pty_control: Option<PtyControl>,

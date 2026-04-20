@@ -108,3 +108,61 @@ fn apex_layer_determines_applicable_rungs() {
     assert_eq!(ApexLayer::EffectClipboard.rung_chain().len(), 3);
     assert_eq!(ApexLayer::EffectHostTitle.rung_chain().len(), 3);
 }
+
+/// Pin §10.0 REGISTRATION SYNC: every `Handler::iterm2_*` non-image
+/// sub-op added in §10.0 MUST surface through `SpecHarness` as a
+/// recorded dispatch call on `outcome().dispatched_calls`. Table-driven
+/// over all seven sub-ops so a future add/remove cannot silently
+/// regress sync between `crates/vte`'s `Handler` trait and
+/// `oriterm_test_support`'s `RecordingHandler`. The completeness assert
+/// at the end pins the matrix size — adding a row without bumping the
+/// count is a compile-passing test bug per
+/// `.claude/rules/tests.md` §Self-verifying matrix completeness.
+#[test]
+fn spec_harness_records_all_iterm2_non_image_dispatches() {
+    const OSC_1337_NON_IMAGE_SYNC: &[(&[u8], &str)] = &[
+        (b"\x1b]1337;SetMark\x1b\\", "iterm2_set_mark"),
+        (b"\x1b]1337;ReportCellSize\x1b\\", "iterm2_report_cell_size"),
+        (
+            b"\x1b]1337;RemoteHost=user@host\x1b\\",
+            "iterm2_remote_host",
+        ),
+        (
+            b"\x1b]1337;CurrentDir=/home/user\x1b\\",
+            "iterm2_current_dir",
+        ),
+        (b"\x1b]1337;Copy=:SGVsbG8=\x1b\\", "iterm2_copy"),
+        (
+            b"\x1b]1337;SetUserVar=NAME=dmFsdWU=\x1b\\",
+            "iterm2_set_user_var",
+        ),
+        (
+            b"\x1b]1337;ShellIntegrationVersion=15\x1b\\",
+            "iterm2_shell_integration_version",
+        ),
+    ];
+
+    let mut count = 0;
+    for &(bytes, expected_method) in OSC_1337_NON_IMAGE_SYNC {
+        let mut harness = SpecHarness::new();
+        harness.feed(bytes);
+        let recorded: Vec<&str> = harness
+            .outcome()
+            .dispatched_calls
+            .iter()
+            .map(|c| c.method)
+            .collect();
+        assert!(
+            recorded.iter().any(|m| *m == expected_method),
+            "RecordingHandler dropped {expected_method} for OSC bytes {bytes:?} — \
+             registration sync broken between crates/vte Handler trait and \
+             oriterm_test_support RecordingHandler. Got methods: {recorded:?}"
+        );
+        count += 1;
+    }
+    assert_eq!(
+        count,
+        OSC_1337_NON_IMAGE_SYNC.len(),
+        "matrix completeness pin — adding a sync row requires bumping the count"
+    );
+}

@@ -4,6 +4,11 @@
 //! - `// Catalog row: <ID>` (line comment)
 //! - `//! Catalog row: <ID>` (inner doc comment)
 //! - `/// Catalog row: <ID>` (outer doc comment)
+//! - `Catalog rows: <ID>, <ID>, …` (plural form — comma-separated list
+//!   after any of the three comment prefixes). Each trimmed non-empty
+//!   piece becomes its own citation. The plural form exists so a test
+//!   file that covers multiple catalog rows can cite them on one doc
+//!   line without a silent-miss when the natural-English plural is used.
 //! - `catalog_row_id: "<ID>"` (const field in `SpecScenario`)
 //!
 //! Also scans `src/` directories because visual `spec_chain` tests live
@@ -74,19 +79,26 @@ fn scan_file(path: &Path, citations: &mut Vec<Citation>) -> Result<(), CoverageE
     for line in content.lines() {
         let trimmed = line.trim();
 
-        // Pattern 1: comment citation — `// Catalog row: ID`
-        // Also matches `//! Catalog row: ID` and `/// Catalog row: ID`
-        if let Some(rest) = trimmed
-            .strip_prefix("// Catalog row: ")
-            .or_else(|| trimmed.strip_prefix("//! Catalog row: "))
-            .or_else(|| trimmed.strip_prefix("/// Catalog row: "))
-        {
-            let id = rest.trim();
-            if !id.is_empty() {
-                citations.push(Citation {
-                    row_id: id.to_string(),
-                    file_path: path.to_path_buf(),
-                });
+        // Pattern 1: comment citation — `// Catalog row: ID` (singular)
+        // or `// Catalog rows: A, B, C` (plural, comma-separated). Both
+        // forms support `//`, `//!`, and `///` comment prefixes.
+        let prefixes = [
+            "// Catalog row: ",
+            "//! Catalog row: ",
+            "/// Catalog row: ",
+            "// Catalog rows: ",
+            "//! Catalog rows: ",
+            "/// Catalog rows: ",
+        ];
+        if let Some(rest) = prefixes.iter().find_map(|p| trimmed.strip_prefix(p)) {
+            for piece in rest.split(',') {
+                let id = piece.trim();
+                if !id.is_empty() {
+                    citations.push(Citation {
+                        row_id: id.to_string(),
+                        file_path: path.to_path_buf(),
+                    });
+                }
             }
         }
 

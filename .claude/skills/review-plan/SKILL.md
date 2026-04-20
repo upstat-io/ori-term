@@ -1,6 +1,6 @@
 ---
 name: review-plan
-description: Review and improve a plan via a 6-phase pipeline. Steps 2–5 and 7+8 run as sub-agents via Agent({}); Step 6 runs inline in main context by invoking /tpr-review via the Skill tool; the parent handles path normalization, cross-plan invalidation, and the final verdict.
+description: Review and improve a plan via a 6-phase pipeline. Steps 2, 3, 5 and 7+8 run as sub-agents via Agent({}); Step 4 (/tp-help blind-spots) and Step 6 (/tpr-review) run inline in main context via the Skill tool; the parent handles path normalization, cross-plan invalidation, and the final verdict.
 argument-hint: "<plan-path>"
 ---
 
@@ -8,14 +8,14 @@ argument-hint: "<plan-path>"
 
 `/review-plan <plan-path>` — review and improve a plan. `plan-path` is a plan directory (whole-plan mode) or a single section file (single-section mode).
 
-The parent does Step 1 inline, dispatches Steps 2–5 and Step 7+8 as independent `Agent({})` sub-agents reading step-specific `.md` protocol files, runs Step 6 inline in main context (invoking `/tpr-review` via the Skill tool), then handles Steps 8.5 and 9 inline.
+The parent does Step 1 inline, dispatches Steps 2, 3, 5 and 7+8 as independent `Agent({})` sub-agents reading step-specific `.md` protocol files, runs Step 4 (/tp-help blind-spots) and Step 6 (/tpr-review) inline in main context via the Skill tool, then handles Steps 8.5 and 9 inline.
 
 ## Reviewed-field semantics
 
 - **Single-section mode** (file path): after the FULL pipeline clean pass, Step 7+8 flips `reviewed: true` on `{target_section}`. If unresolved issues remain, leaves `reviewed: false`.
 - **Whole-plan mode** (directory path): NEVER touch `reviewed` fields. Fix content issues only.
 
-## Step 1 — Path Normalization + Scratch Dir (parent, inline)
+## Step 1 — Path Normalization + Scratch Dir + Resume Detection (parent, inline)
 
 Inspect `$ARGUMENTS`:
 
@@ -24,7 +24,56 @@ Inspect `$ARGUMENTS`:
 
 If the path does not exist, stop and report.
 
-**Create an orchestrator-owned scratch dir BEFORE any sub-agent dispatch** (matches `/tpr-review` §8 invariant I1 — per-invocation `mktemp -d` prevents cross-session collision; the `${repo}` prefix makes parallel sessions in different repos visually distinguishable in `/tmp/` listings):
+### Step 1a — Resume detection (plan file is the SSOT)
+
+The **plan file is the single source of truth for pipeline state.** Every step writes a `review_pipeline:` marker block to the target section's frontmatter recording `stage`, `next_step`, and `updated`. On invocation, probe for an existing marker BEFORE creating a scratch dir or dispatching any step.
+
+**Single-section mode:** read the section file's YAML frontmatter. Look for a top-level `review_pipeline:` block:
+
+```yaml
+review_pipeline:
+  stage: <stage-name>        # precheck-done | audit-done | blind-spots-done | editor-done | tpr-done
+  next_step: <int>           # 3, 4, 5, 6, or 7
+  updated: <YYYY-MM-DD>
+  note: <freeform>           # optional — e.g. "Paused at Step 6 context-pressure pause on <date>"
+```
+
+**Whole-plan mode:** read `<plan_dir>/.review-pipeline-state.yaml` (a plan-owned dotfile with the same schema). Whole-plan mode uses this file because it never touches section frontmatters (§Reviewed-field semantics).
+
+If a marker is present AND `next_step` is valid, this is a resumable pipeline — invoke Step 1b. Otherwise it's a fresh run — invoke Step 1c.
+
+### Step 1b — Resume path
+
+Invoke `AskUserQuestion` per `.claude/rules/ask-user-question.md`:
+
+```
+AskUserQuestion(questions=[{
+    "question": f"Section {target_section_name} is mid-pipeline at stage '{marker.stage}' (last updated {marker.updated}). How do you want to proceed?",
+    "header": "Resume mid-pipeline",
+    "multiSelect": False,
+    "options": [
+        {"label": f"Resume from Step {marker.next_step} (Recommended)",
+         "description": f"Recommended because the plan file records the pipeline reached stage '{marker.stage}' on {marker.updated}. Re-running completed steps is wasted work: Step 4 (/tp-help) alone costs ~20–45 min of reviewer wall-clock. Resume dispatches Step {marker.next_step} immediately against the plan's current state (Steps 2..{marker.next_step - 1} already edited the plan; their outputs are baked into what you see now).",
+         "recommended": True},
+        {"label": "Start over fresh (clear the marker)",
+         "description": "Clear the review_pipeline marker and re-run every step from Step 2. Pick when the plan section changed materially since the prior run (e.g., the mission was rewritten) OR when you suspect the prior pipeline's Step 5 edits introduced correctness issues that need re-validation from scratch."},
+    ],
+}])
+```
+
+On **resume**: proceed directly to the dispatch block for `marker.next_step`. Emit a one-line header:
+
+```
+## Resuming /review-plan on {target_section_name} from Step {next_step} (prior stage: {marker.stage}, updated: {marker.updated})
+```
+
+On **start-over**: remove the `review_pipeline` block from the section frontmatter (or delete `.review-pipeline-state.yaml` in whole-plan mode), then proceed as Step 1c fresh.
+
+**Edge case — step 5 resume without intermediate JSONs:** if `next_step == 5` (editor), the Step 5 agent reads Steps 2/3/4 handoff summaries to inform its edits. Those summaries are NOT in the plan file; the transient scratch dir from the prior session is gone. The agent re-runs Steps 2-4 internally to regenerate those summaries — documented in `step-5-editor.md`. This is the only resume point where work is duplicated; all other resume points (Steps 6, 7+8) read the plan directly and do not need prior-step JSONs.
+
+### Step 1c — Fresh-run path + scratch dir
+
+Create a per-invocation scratch dir for transient intermediate JSONs (handoff payloads between Steps 2 and 5 consumed by the editor; not required for resume):
 
 ```bash
 repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
@@ -43,11 +92,30 @@ Write `$RUN_DIR/context.json`:
 }
 ```
 
+The scratch dir is ephemeral by design — `/tmp/` is fine because the **plan file carries resume state**, not the scratch. This matches the simpler "plan is SSOT" model from the 2026-04-18 fix.
+
 Capture `$RUN_DIR` in orchestrator state and pass it to every sub-agent dispatch below as the `{RUN_DIR}` placeholder.
 
-## Steps 2–5 and 7+8 — Sequential Sub-agent Dispatch
+### Step 1d — Per-step marker-write contract (MANDATORY)
 
-Invoke five Agents in order (Steps 2, 3, 4, 5, then 7+8 — Step 6 is inline, see below). Each dispatch follows the same shape; only `description`, the step `.md` file, and model differ. After each Agent returns, read `$RUN_DIR/{step}.json` for the summary + any escalation payload, then proceed.
+Every step (2, 3, 4, 5, 6) MUST update the `review_pipeline` marker on the plan file before yielding. Step 7+8 on clean exit (reviewed: true) removes the marker entirely. The marker write is an `Edit` on the section file (single-section) or on `<plan_dir>/.review-pipeline-state.yaml` (whole-plan):
+
+| After step | `stage` value | `next_step` value |
+|---|---|---|
+| 2 (precheck) | `precheck-done` | `3` |
+| 3 (audit) | `audit-done` | `4` |
+| 4 (blind-spots) | `blind-spots-done` | `5` |
+| 5 (editor) | `editor-done` | `6` |
+| 6 (tpr) | `tpr-done` | `7` |
+| 7+8 (verify + reviewed flip) | remove `review_pipeline` block entirely | — |
+
+**Why this matters:** `/clear` + `/continue-roadmap` has ONLY the plan file to go on. Without this marker, /continue-roadmap sees `reviewed: false` and fires the `unreviewed_plan` gate, recommending a fresh `/review-plan` invocation — which then re-runs every step including Step 4's ~20–45 min /tp-help. This pattern has burned two prior sessions; closing it is the entire point of the 2026-04-18 fix (see `review-plan-design.md §4`).
+
+Sub-agents for Steps 2, 3, 5, 7+8 receive the marker-write requirement as part of their dispatch prompt (below). Inline Steps 4 and 6 perform the marker update in the parent's own `Edit` call after writing their handoff JSON.
+
+## Steps 2, 3, 5 and 7+8 — Sequential Sub-agent Dispatch
+
+Invoke four Agents in order (Steps 2, 3, 5, then 7+8 — Steps 4 and 6 run inline, see below). Each dispatch follows the same shape; only `description`, the step `.md` file, and model differ. After each Agent returns, read `$RUN_DIR/{step}.json` for the summary + any escalation payload, then proceed.
 
 **Dispatch template** (substitute `<STEP>`, `<PROTOCOL_FILE>`, `<MODEL>`, and `$RUN_DIR`):
 
@@ -72,6 +140,26 @@ Write your own handoff to <RUN_DIR>/<STEP>.json per the protocol's
 "Output" section. Never read CLAUDE.md unless the protocol explicitly
 requires it (only Step 5 does).
 
+AFTER writing your handoff JSON, you MUST update the target section's
+`review_pipeline` frontmatter block to record the new stage. This is
+MANDATORY per SKILL.md §Step 1d — without it, `/clear` + /continue-roadmap
+cannot detect the mid-pipeline state on resume, and the pipeline silently
+restarts from Step 2 on the next invocation (burning ~20–45 min of Step 4
+/tp-help reviewer wall-clock needlessly). Use the Edit tool on the section
+file to set:
+
+  review_pipeline:
+    stage: <your-step-name>-done        # precheck-done | audit-done | blind-spots-done | editor-done | tpr-done
+    next_step: <next-step-number>       # 3 after Step 2, 4 after Step 3, 5 after Step 4, 6 after Step 5, 7 after Step 6
+    updated: <today's date YYYY-MM-DD>
+
+If the block does not yet exist in frontmatter, insert it above the
+`sections:` field (preserving the YAML document's field ordering). If it
+exists (from a prior step), replace the block wholesale with the new
+values — do NOT merge or preserve prior fields. In whole-plan mode
+(target_section == null), write to <plan_dir>/.review-pipeline-state.yaml
+instead (dotfile owned by the plan; same schema).
+
 Commits via /commit-push only — never run git commit directly.
 
 Touch only plan docs (plans/**/*.md) unless the protocol explicitly
@@ -90,11 +178,24 @@ handoff JSON (escalate: true) and stop. The parent handles escalations.
 |---|---|---|---|---|
 | 2 | `2-precheck` | `step-2-precheck.md` | `opus` | `$RUN_DIR/precheck.json` |
 | 3 | `3-audit` | `step-3-audit.md` | `sonnet` | `$RUN_DIR/audit.json` |
-| 4 | `4-blind-spots` | `step-4-blind-spots.md` | `sonnet` | `$RUN_DIR/blind-spots.json` |
 | 5 | `5-editor` | `step-5-editor.md` | `opus` | `$RUN_DIR/editor.json` |
 | 7+8 | `7-8-verify` | `step-7-8-verify.md` | `sonnet` | `$RUN_DIR/verify.json` |
 
-Step 6 is NOT in this table — it runs inline in main context. Run Step 6 after Step 5 returns and before dispatching Step 7+8. See `## Step 6 — /tpr-review Convergence (inline)` below.
+Steps 4 and 6 are NOT in this table — they run inline in main context. Run Step 4 after Step 3 returns and before dispatching Step 5. Run Step 6 after Step 5 returns and before dispatching Step 7+8. See `## Step 4 — /tp-help Blind-spots (inline, main context)` and `## Step 6 — /tpr-review Convergence (inline, main context)` below.
+
+## Step 4 — /tp-help Blind-spots (inline, main context)
+
+After Step 3 returns and its handoff is clean, run Step 4 inline in main context. Do NOT wrap this in an `Agent({})` sub-agent.
+
+**Why inline:** `/tp-help` dispatches Codex + Gemini CLIs concurrently; each reviewer runs 20–45 minutes wall-clock and streams partial output mid-run. When Step 4 was wrapped in a Sonnet sub-agent (the prior design), the sub-agent exited prematurely before the reviewers completed — its monitoring loops and the Skill-tool synchronous-wait semantics are invisible across the `Agent({})` boundary (same class of failure that moved Step 6 inline on 2026-04-17). Running inline lets the main context hold the `/tp-help` Skill invocation open until both reviewers return, then synthesize findings using the parent's Opus context (richer blind-spot distillation than Sonnet would produce).
+
+1. Read `.claude/skills/review-plan/step-4-blind-spots.md` and follow it end-to-end inline.
+2. Invoke `/tp-help` via the Skill tool with a prompt containing: the plan's mission (from `{plan_dir}/00-overview.md`), the section list with goals/statuses, the scope (crates/subsystems), review mode (single-section vs whole-plan), and the three specific questions listed in `step-4-blind-spots.md §Dispatch /tp-help`. In single-section mode, include the target section body.
+3. Wait for `/tp-help` to return (synchronous in-context — the Skill invocation blocks until both reviewers complete).
+4. Distill the concatenated reviewer output per `step-4-blind-spots.md §Distill the response` — bounded bullet lists (≤10 blind spots, ≤5 architectural risks, ≤5 cross-cutting concerns), each bullet ≤200 chars and anchored to a specific file/section/risk.
+5. Write `$RUN_DIR/blind-spots.json` per the Output schema in `step-4-blind-spots.md`. Always `escalate: false` — this phase is advisory and never escalates.
+6. **Update the frontmatter marker** per §Step 1f: set `stage: blind-spots-done`, `next_step: 5`, `updated: <today>` on the target section (single-section) or `<plan_dir>/.review-pipeline-state.yaml` (whole-plan). MANDATORY — without this the pipeline silently restarts on /clear + /continue-roadmap.
+7. Proceed to Step 5 dispatch.
 
 ## Step 6 — /tpr-review Convergence (inline, main context)
 
@@ -103,12 +204,13 @@ After Step 5 returns and its escalation (if any) is resolved, run Step 6 inline 
 1. Read `.claude/skills/review-plan/step-6-tpr.md` and follow it end-to-end inline.
 2. Invoke `/tpr-review` via the Skill tool with `--skill review-plan` plus the scope (`{target_section}` in single-section mode, `{plan_dir}` in whole-plan mode).
 3. When `/tpr-review` returns, observe its terminal `exit_reason` (Step 6 runs inline; no file handoff is required from `/tpr-review`) and write `$RUN_DIR/tpr.json` per the branch schemas in `step-6-tpr.md`. The current `status` set — defined by `/tpr-review/SKILL.md §5`'s `exit_reason` values — is `clean` / `iter_cap_reached` / `meta_cap_reached` / `user_accepted` / `escalated` / `both_reviewer_failure`.
-4. Apply the same escalation handling described in the next section, reading `$RUN_DIR/tpr.json` as if it came from a sub-agent.
-5. Proceed to Step 7+8 once the escalation resolves.
+4. **Update the `review_pipeline` marker** per §Step 1d: `Edit` the section file to set `stage: tpr-done`, `next_step: 7`, `updated: <today>`. MANDATORY — a `/clear` + /continue-roadmap without this marker restarts the pipeline. In whole-plan mode, write to `<plan_dir>/.review-pipeline-state.yaml`.
+5. Apply the same escalation handling described in the next section, reading `$RUN_DIR/tpr.json` as if it came from a sub-agent.
+6. Proceed to Step 7+8 once the escalation resolves.
 
 ## Escalation handling (MANDATORY)
 
-After each Agent returns (Steps 2–5, 7+8) or after Step 6 writes its inline handoff, read `$RUN_DIR/{step}.json`. If `"escalate": true`:
+After each Agent returns (Steps 2, 3, 5, 7+8) or after Step 4 / Step 6 writes its inline handoff, read `$RUN_DIR/{step}.json`. If `"escalate": true`:
 
 1. Invoke `AskUserQuestion` with the sub-agent's `question` + `options` verbatim. Never dump as prose.
 2. Branch on the selected option using the dispatch table below. The table enumerates every option-key semantic category emitted by the step protocols (`step-2-precheck.md`, `step-5-editor.md`, `step-6-tpr.md`, `step-7-8-verify.md`). Unknown keys MUST re-prompt via `AskUserQuestion` rather than silently no-op.
@@ -235,7 +337,7 @@ Read the `summary` line from each `$RUN_DIR/*.json` (not the full handoffs) and 
 
 ## Critical Rules
 
-1. **Sequential phases** — each step completes before the next starts (Steps 2–5, 7+8 are Agents; Step 6 is inline). Handoffs flow via `$RUN_DIR/*.json` files (the orchestrator-owned scratch dir created in Step 1).
+1. **Sequential phases** — each step completes before the next starts (Steps 2, 3, 5, 7+8 are Agents; Steps 4 and 6 are inline). Handoffs flow via `$RUN_DIR/*.json` files (the orchestrator-owned scratch dir created in Step 1).
 2. **`reviewed` flip is LAST** — only in single-section mode, only after Step 6 either converges clean OR the user explicitly accepts a cap-exit via an `applies_user_accepted: true` option (see `step-6-tpr.md` Branch 2/3 and the `user_accepted == true` flip branch in `step-7-8-verify.md §Step 7`). Handled by Step 7+8's agent, never inside the editor.
 3. **Whole-plan mode never touches `reviewed`** — not even to add missing ones.
 4. **NEVER scope down — always expand** — grow the plan if it doesn't fulfill its mission.
@@ -248,9 +350,9 @@ Read the `summary` line from each `$RUN_DIR/*.json` (not the full handoffs) and 
 - `SKILL.md` (this file) — parent dispatcher + Steps 1, 8.5, 9.
 - `step-2-precheck.md` — Step 2 protocol (effectively-complete detection).
 - `step-3-audit.md` — Step 3 protocol (plan-audit.py orchestration).
-- `step-4-blind-spots.md` — Step 4 protocol (/tp-help dispatch + distill).
+- `step-4-blind-spots.md` — Step 4 protocol (/tp-help dispatch + distill — read and executed inline by the parent, NOT dispatched as an Agent).
 - `step-5-editor.md` — Step 5 protocol (4-lens editor).
 - `step-6-tpr.md` — Step 6 protocol (/tpr-review convergence loop — read and executed inline by the parent, NOT dispatched as an Agent).
 - `step-7-8-verify.md` — Steps 7+8 protocol (reviewed flip + audit verify loop).
 
-None of `step-*.md` files are registered as skills. They are reference documents: `step-2` through `step-5` and `step-7-8` are read by dispatched Agents; `step-6-tpr.md` is read by the parent inline in main context.
+None of `step-*.md` files are registered as skills. They are reference documents: `step-2-precheck.md`, `step-3-audit.md`, `step-5-editor.md`, and `step-7-8-verify.md` are read by dispatched Agents; `step-4-blind-spots.md` and `step-6-tpr.md` are read by the parent inline in main context.

@@ -318,4 +318,36 @@ impl<S: EffectSink> Handler for RecordingHandler<S> {
         self.record_other("iterm2_file");
         Handler::iterm2_file(&mut self.term, params);
     }
+
+    // Registration sync for the OSC 1337 non-image sub-ops added in §10.0
+    // (plans/spec-conformance/section-10-osc-suite.md §10.0 REGISTRATION
+    // SYNC). Without these arms, SpecHarness silently drops the new
+    // Handler::iterm2_* dispatches and §10.7's spec_chain tests cannot
+    // observe them.
+    delegate_other!(iterm2_set_mark);
+    delegate_other!(iterm2_remote_host, host: &[u8]);
+    delegate_other!(iterm2_current_dir, path: &[u8]);
+    delegate_other!(iterm2_copy, data: &[u8]);
+    delegate_other!(iterm2_report_cell_size);
+    delegate_other!(iterm2_set_user_var, name: &[u8], value: &[u8]);
+    delegate_other!(iterm2_shell_integration_version, version: &[u8]);
+
+    // Registration sync for the OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 /
+    // 114 / 117 / 119 Handler methods added in §10.9.
+    delegate_other!(set_x11_property, payload: &[u8]);
+    delegate_other!(set_special_color, index: usize, color: vte::ansi::Rgb);
+    delegate_other!(query_special_color, index: usize, terminator: &str);
+    delegate_other!(set_tab_title_color, color: vte::ansi::Rgb);
+    delegate_other!(set_mouse_fg_color, color: vte::ansi::Rgb);
+    delegate_other!(set_mouse_bg_color, color: vte::ansi::Rgb);
+    delegate_other!(set_highlight_bg_color, color: vte::ansi::Rgb);
+    delegate_other!(set_highlight_fg_color, color: vte::ansi::Rgb);
+    delegate_other!(query_mouse_fg_color, terminator: &str);
+    delegate_other!(query_mouse_bg_color, terminator: &str);
+    delegate_other!(query_highlight_bg_color, terminator: &str);
+    delegate_other!(query_highlight_fg_color, terminator: &str);
+    delegate_other!(reset_mouse_fg_color);
+    delegate_other!(reset_mouse_bg_color);
+    delegate_other!(reset_highlight_bg_color);
+    delegate_other!(reset_highlight_fg_color);
 }

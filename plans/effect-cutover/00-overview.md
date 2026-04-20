@@ -1,7 +1,7 @@
 ---
 plan: effect-cutover
 title: "Effect Cutover — Migrate Legacy Event Consumers to Effect"
-status: in-progress
+status: complete
 ---
 
 # Effect Cutover
@@ -20,7 +20,7 @@ This plan completes the migration by moving each legacy consumer from `Event` su
 - Remove the `Term::drain_notifications()` thin shim (preserve `InProcessMux::drain_notifications` — distinct method).
 - All consumers process effects via `drain_into()` — no separate notification drain.
 - Add an idle-wake channel so a fulfilled `ResponseToken` unblocks the IO thread's `crossbeam_channel::select!` without requiring unrelated PTY or command activity (fixes TPR-03-001-codex).
-- Resolve the daemon-mode `HostRequest` IPC incompatibility by EITHER designing the request-ID + reply PDU in scope (Path A), OR filing a tracked `/add-bug` artifact with a cross-link (Path B), OR spinning out a new plan (Path C). Section 01 §01.4 executes exactly one path.
+- Resolve the daemon-mode `HostRequest` IPC incompatibility. **Path B chosen** — daemon-mode `HostRequest` round-trip is explicitly OUT of this plan's scope, tracked as bug-tracker `BUG-11-11` ("Daemon-mode `HostRequest` round-trip not implemented — OSC 52 / OSC 10/11/12 silently dropped on remote panes", `plans/bug-tracker/section-11-mux.md`). The daemon-client boundary drops `NotifyClipboardLoad` PDUs with a logged warning until BUG-11-11 lands the request-ID + reply-PDU design.
 
 ## Mission Success Criteria
 

@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every VECTOR-GRAPHICS catalog row in `catalog/historical.md` to `verified` by IMPLEMENTING the ReGIS command language interpreter, the Tektronix 4010/4014 vector mode interpreter, and a shared `vector_raster` helper module that both interpreters rasterize through. Split out from Section 19 because the vector stacks depend on Section 05 (deterministic golden lane for rasterizer goldens) and Section 07 (image lifecycle for the `ImageCache` placements these interpreters emit) in addition to Section 08 — the legacy-control stacks in Section 19 depend only on 08."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-26-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (two sub-stacks — DEC ReGIS manual EK-VT250-RM Appendix A for ReGIS, Tektronix 4010/4014 programmer's reference manual for Tek 4010/4014, cross-referenced against xterm `graphics/regis.c`) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "**Shared `vector_raster` helper IMPLEMENTED** at `oriterm_core/src/vector_raster/`: Bresenham line, midpoint circle, midpoint arc, Catmull-Rom curve, even-odd fill polygon, stroke text. Public API: `VectorCanvas::{new, clear, move_to, line_to, draw_circle, draw_arc, draw_curve, fill_polygon, draw_text, to_image_placement}`. Both ReGIS and Tek interpreters rasterize through this helper."
   - "**ReGIS** IMPLEMENTED: `oriterm_core/src/regis/` (new module) parses ReGIS command language (screen commands, position commands, write commands, arc/circle/curve commands, text commands, macro definitions), rasterizes vector output into the existing `ImageCache` placement model via `vector_raster::VectorCanvas`, and renders via the existing GPU image pipeline. The interpreter is minimal (2D vector primitives + simple raster) but COMPLETE for the documented DEC ReGIS reference manual sequences."
   - "**Tek 4010/4014 vector mode** IMPLEMENTED: `oriterm_core/src/tektronix/` (new module) parses Tek 4014 byte-pair coordinate addressing, draw/move modes, alpha (character) mode vs graphics mode switching, and status-reply sequences. The interpreter rasterizes the vector output into an `ImageCache` placement through the shared `vector_raster::VectorCanvas`."
@@ -27,6 +28,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "26.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "26.1"
     title: "Implement shared vector-to-raster helper (VectorCanvas + primitives)"
     status: not-started
@@ -63,6 +67,31 @@ sections:
 - **Section 08** (baseline solid — parser/dispatch infrastructure in place for DCS/CSI routing)
 - **Section 07** (image lifecycle — `ImageCache::on_resize` exists so rasterized placements survive grid mutations)
 - **Section 05** (deterministic golden lane — `headless_env_with_pinned_software_rasterizer` exists so rasterizer goldens are reproducible cross-machine)
+
+---
+
+## 26.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-26-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up (audit existing dispatch + add tack/teseq-discovered items), which is incomplete by construction — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** Two sub-stacks — DEC ReGIS technical manual (EK-VT250-RM Appendix A — ReGIS Reference), cross-referenced against xterm `graphics/regis.c`; Tektronix 4010/4014 Programmer's Reference Manual (byte-pair coordinate format, graphics/alpha mode switching). The audit stub pre-populates a separate sub-table per sub-stack.
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-26-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/historical.md` (open new rows for any vector-graphics sequences that should be `mapped` but aren't catalogued yet — use the canonical schema per `plans/spec-conformance/00-overview.md §Catalog Row Schema`; legacy-control rows in `catalog/historical.md` are owned by Section 19)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-26-top-down-inventory.md` is populated with every sequence in the canonical spec source(s) across both sub-stacks (ReGIS and Tek 4010/4014).
+- [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
+- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
+- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
+
+**No other subsection in this section can begin work until §26.0 is complete.** This is a hard gate.
 
 ---
 

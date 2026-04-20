@@ -37,6 +37,64 @@ fn scan_test_citations_finds_inner_doc_comment_citation() {
 }
 
 #[test]
+fn scan_test_citations_finds_plural_form() {
+    // Regression: §10.2 retrospective — the scanner used to silently
+    // drop `//! Catalog rows: A, B, C` (plural + comma list), producing
+    // a false-missing coverage report. Plural form must emit one
+    // citation per trimmed non-empty piece.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "//! Catalog rows: OSC-52-STORE, OSC-52-LOAD\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    assert_eq!(citations.len(), 2);
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert!(ids.contains(&"OSC-52-STORE"));
+    assert!(ids.contains(&"OSC-52-LOAD"));
+}
+
+#[test]
+fn scan_test_citations_plural_form_all_comment_prefixes() {
+    // Matrix pin: plural form must work with `//`, `//!`, and `///`.
+    for prefix in ["//", "//!", "///"] {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.rs");
+        let content = format!("{prefix} Catalog rows: A, B, C\nfn test() {{}}\n");
+        std::fs::write(&file, content).unwrap();
+
+        let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+        assert_eq!(
+            citations.len(),
+            3,
+            "prefix {prefix:?} must emit 3 citations"
+        );
+        let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+        assert!(ids.contains(&"A"), "prefix {prefix:?} missing A: {ids:?}");
+        assert!(ids.contains(&"B"), "prefix {prefix:?} missing B: {ids:?}");
+        assert!(ids.contains(&"C"), "prefix {prefix:?} missing C: {ids:?}");
+    }
+}
+
+#[test]
+fn scan_test_citations_plural_form_skips_empty_pieces() {
+    // Defensive: a trailing comma or double comma must not emit an
+    // empty citation.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(&file, "//! Catalog rows: A,, B, \nfn test() {}\n").unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    assert_eq!(citations.len(), 2);
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert!(ids.contains(&"A"));
+    assert!(ids.contains(&"B"));
+}
+
+#[test]
 fn scan_test_citations_finds_const_field_citation() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.rs");

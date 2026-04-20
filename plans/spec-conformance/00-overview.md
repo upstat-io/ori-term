@@ -24,14 +24,14 @@ This is an open-ended, multi-year mission. The plan is structured to accept inde
 
 Each criterion is concrete and testable. Together they prove the mission is complete. Every criterion traces to at least one section that delivers it.
 
-- [ ] **Catalog complete** — Every published terminal protocol spec ori_term targets is enumerated under `plans/spec-conformance/catalog/`. No row is `MISSING` without a tracked decision. Delivered by section 01 (one-time bottom-up + top-down bootstrap) + per-stack additions in sections 08–20 + the continuous-delta safety net in section 04.9 (`UncatalogedDetector`) which appends any harness-observed or capture-replayed tuple not in the catalog to `plans/spec-conformance/uncataloged-backlog.md`. CI fails if the backlog is non-empty without an accompanying catalog-update PR — this is the "you can't forget to add a row" guarantee.
+- [ ] **Catalog complete (top-down enforced)** — Every published terminal protocol spec ori_term targets is enumerated under `plans/spec-conformance/catalog/` AND every sequence in each stack's canonical spec source maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. No row is `MISSING` without a tracked decision. Top-down enforcement is delivered by per-section audit files at `plans/spec-conformance/audits/section-NN-top-down-inventory.md` (introduced by Section 09A; required by the verbiage rewrite of every not-started section). `spec-coverage-report --check audit-files` is wired into CI (Section 23) and fails if any audit-file mapping does not resolve to a real catalog row. The continuous-delta safety net in section 04.9 (`UncatalogedDetector`) remains as a SECONDARY catch (it appends any harness-observed or capture-replayed tuple not in the catalog to `plans/spec-conformance/uncataloged-backlog.md`); the audits/ SSOT is the PRIMARY gate. Delivered by section 01 (one-time bottom-up + top-down bootstrap) + section 09A (audits/ SSOT introduction + DEC Private CSI Extensions backfill) + per-stack additions and audit-file commits in sections 08–20 + section 04.9 (continuous delta).
 - [ ] **Verification chain complete per row** — Every applicable catalog row reaches `verified` status (parser → dispatch → state/effect → apex test ladder, all green). Delivered by sections 08–20 + section 26 (historical vector stacks).
 - [ ] **Coverage report green** — `cargo run -p oriterm_test_support --bin spec-coverage-report` produces 100% verified status for every in-scope stack AND the gating CI metric (the ABSOLUTE count of `verified` rows per stack) only ever increases. The percentage metric is advisory and may drop temporarily when the 04.9 continuous-delta detector adds uncataloged rows to the denominator — this is expected and is NOT a regression. The absolute-verified count, however, is strictly monotonic (except during an intentional demotion documented in the PR description). Delivered by section 04 (generator + catalog walker + citation scanner + safety net) + section 23 (CI integration).
 - [ ] **`notcurses-demo` runs cleanly** — All 28 scenes pass against per-scene correctness criteria with zero visual glitches, zero tearing, zero ghosting on the canonical golden lane (Linux/x86_64 + llvmpipe). Delivered by section 24.
 - [ ] **Real-app E2E milestones pass** — vim, htop, btop, tmux, aerc, helix, ncmpcpp, less, nvim all run a recorded session through ori_term and produce a snapshot identical to the golden. Delivered by section 25.
 - [ ] **Cross-stack regression sweep green** — Every PR runs every stack's verification chain in CI. A row dropping from `verified` to any lower status is a build failure. Delivered by section 23.
 - [ ] **Zero external tool dependencies for tests** — Legacy test suites (teseq, tack, vttest) that depend on platform-specific binaries are deleted once the self-contained spec verification chain fully covers their scenarios. `cargo test --workspace` runs identically on Linux/macOS/Windows with no external tools installed and zero `SKIP:` messages. Delivered by section 23.5.
-- [ ] **Effect/State separation enforced** — The `oriterm_core::effect::Effect` type is the production interface for all boundary-crossing side effects. VTE handler files no longer construct `Arc<dyn Fn…>` closures for `ClipboardLoad`/`ColorRequest`; those closures now live only inside the `LegacyEventSink` adapter shim for one migration phase. `Term::pending_notifications` bypass is absorbed into `EffectSink::drain_into()`. Delivered by section 03.
+- [ ] **Effect/State separation enforced** — The `oriterm_core::effect::Effect` type is the production interface for all boundary-crossing side effects. VTE handler files no longer construct `Arc<dyn Fn…>` closures for `ClipboardLoad`/`ColorRequest`; those closures now live only inside the `LegacyEventSink` adapter shim for one migration phase. `Term::pending_notifications` bypass is absorbed into `EffectSink::drain_into()`. Delivered by section 03. Section 10.2 added OSC-52-specific consumer-side coverage on top of the already-live `response_poll` pipeline (activation landed under effect-cutover §01.1; Section 10 is a consumer of the pipeline, not an activator).
 - [ ] **Deprecated closure Event variants scheduled for deletion** — `Event::ClipboardLoad` and `Event::ColorRequest` are marked deprecated in `oriterm_core/src/event/mod.rs`. Section 03 delivers the LegacyEventSink adapter shim containing the last closure constructions.
   - Closed when: (a) the `LegacyEventSink` adapter shim is the ONLY location that constructs the closure variants (verified by grep — see section 03.N gate), AND (b) a concrete follow-up plan directory exists at `plans/effect-cutover/` with an index, overview, and at least one section file describing the migration of each current legacy consumer to subscribe to `Effect::HostRequest` directly (the section's `reviewed: false` gate triggers when the cutover plan is picked up for implementation, not at Section 03 close-out). Filing the plan IS an in-scope deliverable of spec-conformance, NOT a deferral dodge — section 03.N explicitly requires the plan directory to exist before section 03 can be marked complete.
   - **Explicit anti-deferral**: "we'll file a plan someday" is not acceptable. The follow-up plan directory must be committed alongside the spec-conformance work that closes this mission criterion.
@@ -230,6 +230,20 @@ Group A (parallel — pure data + handler stacks):
   │              │  │ FTCS, OSC 8, │  │                  │
   │              │  │ OSC 52, ...) │  │                  │
   └──────────────┘  └──────────────┘  └──────────────────┘
+  ┌──────────────────────────────────┐
+  │ 09A DEC private CSI extensions   │
+  │ (rect ops + presentation +       │
+  │  audits/ SSOT introduction —     │
+  │  closes the bottom-up catalog    │
+  │  gap that hid DECRQCRA;          │
+  │  wires every section 11-26       │
+  │  into the audit-files lint)      │
+  └──────────────────────────────────┘
+  └─ depends on 04 (verification harness); is itself a parallel
+     peer to 09/10/11 in Phase 3 Group A. Section 09A's verbiage
+     rewrite of sections 11-26 means every subsequent section
+     INHERITS the audits/ SSOT gate as a §NN.0 BLOCKING precondition
+     before any verification work in that section can begin.
 
 Group B (sequential — image stack):
   ┌──────────────┐
@@ -784,7 +798,8 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Complete    |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Complete    |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Complete    |
-| 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | In Progress |
+| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | Not Started |
+| 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | Complete    |
 | 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Not Started |
 | 12 | Sixel                                                  | `section-12-sixel.md`                                | Not Started |
 | 13 | Kitty Graphics Protocol                                | `section-13-kitty-graphics.md`                       | Not Started |
@@ -812,12 +827,12 @@ Every catalog row is a markdown table with this explicit column order. The schem
 
 | Column             | Required | Content syntax                                                                                       |
 |---                 |---       |---                                                                                                   |
-| **ID**             | yes      | Stable row ID in backticks: ``` `ECMA48-CUP` ```. Stack prefix `ECMA48/DEC/OSC/SIXEL/KG/KKBD/ITERM2/MOUSE/CHSET/HIST/AUDIO/SHINT/DFCT` followed by a hyphen-separated mnemonic. Unique across every catalog file.       |
+| **ID**             | yes      | Stable row ID in backticks: ``` `ECMA48-CUP` ```. Stack prefix `ECMA48/DEC/DECRECT/DECPRES/OSC/SIXEL/KG/KKBD/ITERM2/MOUSE/CHSET/HIST/AUDIO/SHINT/DFCT` followed by a hyphen-separated mnemonic. Unique across every catalog file. `DECRECT` covers `catalog/dec-rectangle-ops.md` (added by Section 09A); `DECPRES` covers `catalog/dec-presentation.md` (added by Section 09A); `DEC` continues to cover `catalog/dec-private-modes.md` (numeric DECSET/DECRST modes only).       |
 | **Spec source**    | yes      | `<Document> §<section>`. Example: `ECMA-48 §8.3.21`, `xterm ctlseqs.html CSI H`, `DEC STD 070 §6.3`. |
 | **Sequence**       | yes      | Canonical backticked form: ``` `CSI Ps;Ps H` ```, ``` `DCS Pid q … ST` ```, ``` `OSC 52 ; c ; <b64> BEL|ST` ```. Use `Ps` for numeric, `Pt` for text, `…` for variable middle, `BEL\|ST` for terminator alternatives. |
 | **Description**    | yes      | One-line behavior summary, sentence case, no period.                                                 |
 | **Implementation** | yes      | **Stable symbol PRIMARY, file path is metadata, line number is regenerated metadata only.** Canonical form: `` `<Type::method>` (`<file_path>`) `` or `` `<module_path>` (`<file_path>`) ``. Example: `` `TermHandler::goto` (`oriterm_core/src/term/handler/mod.rs`) ``. Line numbers (`:<line>`) MAY be appended to the file path as regenerated metadata emitted by a helper script, and they are NEVER the primary anchor. Rationale: line numbers drift on every edit; stable symbols don't. Reference implementations (`wezterm docs/escape-sequences.md`, `alacritty docs/escape_support.md`, `ghostty src/lib_vt.zig`) also anchor on symbols, never on line numbers. If implementation is missing, use `MISSING — to be added by Section NN`. If a dispatch arm routes to a handler method, cite BOTH as a chain: `` `csi_dispatch::<arm>` → `TermHandler::goto` (`crates/vte/src/ansi/dispatch/csi.rs`, `oriterm_core/src/term/handler/mod.rs`) ``. |
-| **Apex layer**     | yes      | One of the canonical `ApexLayer` enum values (matches `spec_chain::ApexLayer`): `parser-only`, `dispatch`, `state-snapshot`, `renderable-snapshot`, `frame-input`, `gpu-instance`, `texture-render`, `golden-image`, `effect-pty-write`, `effect-clipboard`, `effect-host-title`, `effect-host-notification`, `effect-mode-state`, `effect-presentation-commit`, `effect-audio`. |
+| **Apex layer**     | yes      | One of the canonical `ApexLayer` enum values (matches `spec_chain::ApexLayer`): `parser-only`, `dispatch`, `state-snapshot`, `renderable-snapshot`, `frame-input`, `gpu-instance`, `texture-render`, `golden-image`, `effect-pty-write`, `effect-clipboard`, `effect-host-title`, `effect-host-notification`, `effect-host-command`, `effect-mode-state`, `effect-presentation-commit`, `effect-audio`. |
 | **Test chain**     | yes      | Space-separated per-rung statuses: `parser:pass dispatch:pass state:pass snapshot:pass`. Use `fail`/`missing`/`skipped` where appropriate. Test chain MUST reach the apex layer; intermediate rungs may be omitted for non-visual apices. |
 | **Verification**   | yes      | One of `missing`, `stub`, `implemented-unverified`, `verified-partial`, `verified`, `verified-with-deviation`. Only `verified` and `verified-with-deviation` count toward conformance. |
 | **De-facto ref**   | conditional | Required when: (a) the spec is ambiguous and a reference impl is the tiebreaker, OR (b) the row's authority ladder in 00-overview.md names a reference impl as authoritative, OR (c) the row is in `de-facto-behaviors.md`. Blank (`—`) when the spec source is unambiguous and the authority ladder doesn't name a reference tiebreaker. |
@@ -858,6 +873,15 @@ plans/spec-conformance/catalog/
 ├── xterm-ctlseqs.md                — xterm extensions: window manipulation,
 │                                     focus events, bracketed paste, DECRQM/DECRPM
 ├── dec-private-modes.md            — every numbered DECSET/DECRST private mode
+├── dec-rectangle-ops.md            — DEC private CSI rectangular-area ops:
+│                                     DECRQCRA, DECCRA, DECFRA, DECERA, DECSERA,
+│                                     DECRARA, DECCARA, DECSACE, XTCHECKSUM,
+│                                     XTREPORTSGR (added by Section 09A)
+├── dec-presentation.md             — DEC private CSI presentation/column ops +
+│                                     DCS-path presentation queries: DECIC, DECDC,
+│                                     DECBI, DECFI, DECRQPSR, DECRQUPSS, DECRQDE,
+│                                     DECSCL, DECSCA, DECSASD, DECSSDT, DECRQSS,
+│                                     DECRSPS (added by Section 09A)
 ├── osc.md                          — OSC registry: 0, 1, 2, 4, 7, 8, 9, 10, 11,
 │                                     12, 22, 50, 52, 99, 104, 110, 111, 112, 133,
 │                                     633, 777, 1337, plus xterm OSC range
@@ -911,7 +935,10 @@ plans/spec-conformance/specs/
 ├── unicode-uax-9.txt               — UAX #9 (Bidi) snapshot
 ├── unicode-uax-11.txt              — UAX #11 (East Asian Width) snapshot
 ├── unicode-uax-29.txt              — UAX #29 (Grapheme Clustering) snapshot
-├── unicode-symbols-legacy.pdf      — U+1FB00 + U+1CD00 chart PDFs
+├── unicode_chart_u2580.pdf         — manifest-backed fetch-on-demand (U+2580 Block Elements)
+├── unicode_chart_u1fb00.pdf        — manifest-backed fetch-on-demand (U+1FB00 Symbols for Legacy Computing)
+├── unicode_chart_u1cc00.pdf        — manifest-backed fetch-on-demand (U+1CC00 Symbols for Legacy Computing Supplement — octants at U+1CD00–U+1CDE5)
+├── unicode_chart_u2800.pdf         — manifest-backed fetch-on-demand (U+2800 Braille Patterns)
 ├── dec-std-070.pdf                 — IF redistributable; manifest entry otherwise
 ├── vt-series-manuals/              — DEC user manuals (verify license per file)
 └── manifest-fetch.sh               — script that downloads restricted-license

@@ -2,7 +2,6 @@
 
 use super::{RecordedListener, assert_mode_not_contains, cell_bg_at, run_scenario};
 use oriterm_core::TermMode;
-use oriterm_core::effect::LegacyEventSink;
 
 #[test]
 fn edge_rapid_mode_toggle() {
@@ -77,13 +76,7 @@ fn edge_chunked_osc() {
     use super::super::harness::RecordedEvent;
     use oriterm_core::{Term, Theme};
     let listener = RecordedListener::new();
-    let mut term = Term::new(
-        24,
-        80,
-        0,
-        Theme::default(),
-        LegacyEventSink::new(listener.clone()),
-    );
+    let mut term = Term::new(24, 80, 0, Theme::default(), listener.clone());
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
     // Split an OSC title sequence across two advance() calls.
     let chunk1 = b"\x1b]0;MyT";
@@ -103,13 +96,7 @@ fn edge_chunked_osc() {
 fn edge_chunked_csi() {
     use oriterm_core::{Term, Theme};
     let listener = RecordedListener::new();
-    let mut term = Term::new(
-        24,
-        80,
-        0,
-        Theme::default(),
-        LegacyEventSink::new(listener.clone()),
-    );
+    let mut term = Term::new(24, 80, 0, Theme::default(), listener.clone());
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
     // Split CSI CUP 5;10H across two advance() calls.
     let chunk1 = b"\x1b[5;";

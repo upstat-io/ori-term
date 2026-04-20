@@ -1,10 +1,12 @@
 # Step 4 — /tp-help blind-spot analysis
 
-Read by a Sonnet sub-agent dispatched from `/review-plan`. Not a registered skill.
+Read by the **parent inline in main context** from `/review-plan` — NOT dispatched as an `Agent({})` sub-agent. Not a registered skill.
+
+**Why inline:** `/tp-help` spawns Codex + Gemini CLIs concurrently; each reviewer runs 20–45 minutes wall-clock with streaming output. A sub-agent wrapping cannot hold the Skill-tool invocation open across that wall-clock, and its monitoring loops are invisible across the `Agent({})` boundary (same root-cause failure that moved Step 6 inline on 2026-04-17; see `.claude/skills/improve-tooling/review-plan-design.md §4`). Running inline lets the parent's Opus context hold the call open and synthesize richer blind-spot distillation than Sonnet would produce.
 
 ## Input
 
-The parent orchestrator passed the scratch-dir path as `{RUN_DIR}`. Read `{RUN_DIR}/context.json` for `mode`, `plan_dir`, `target_section`.
+The parent already has `{RUN_DIR}` in scope from Step 1. Read `{RUN_DIR}/context.json` for `mode`, `plan_dir`, `target_section` (even though the parent already has them in memory — the read keeps this protocol self-contained and resumable).
 
 Read the plan to build context for /tp-help:
 

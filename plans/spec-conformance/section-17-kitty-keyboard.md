@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every catalog row in `catalog/kitty-keyboard.md` from `implemented-unverified` to `verified`, and IMPLEMENT the missing PTY encoding side — Pass 1 confirmed kitty keyboard modes are PARSED but no PTY encoding exists. Also fix modifyOtherKeys (CSI > 4 m) and Win32 Input (mode 9001) which are stubs."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-17-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (sw.kovidgoyal.net/kitty/keyboard-protocol/ + kitty source `keys.py` cross-ref) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "Every row in `catalog/kitty-keyboard.md` is `verified`"
   - "Kitty keyboard ENCODING implemented: a key press with the appropriate disambiguation modes set produces the expected byte sequence emitted via `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::KeyboardEvent })`"
   - "All 5 disambiguation modes verified: DISAMBIGUATE_ESC_CODES, REPORT_EVENT_TYPES, REPORT_ALTERNATE_KEYS, REPORT_ALL_KEYS_AS_ESC, REPORT_ASSOCIATED_TEXT"
@@ -24,6 +25,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "17.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "17.1"
     title: "Implement kitty keyboard encoder (oriterm/src/key_encoding/kitty.rs)"
     status: not-started
@@ -75,6 +79,31 @@ variants as sibling tests in the same directory. Canonical absorption policy:
 see [plans/spec-conformance/00-overview.md §Tack Absorption Strategy](./00-overview.md#tack-absorption-strategy-delivered-by-section-02).
 
 **Depends on:** Section 16 (mouse encoding pattern established; kitty keyboard reuses similar Effect::Pty / encoder scaffolding).
+
+---
+
+## 17.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-17-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** sw.kovidgoyal.net/kitty/keyboard-protocol/ (primary — kitty source is canonical for the protocol definition; covers mode push/pop stack `CSI > u`/`CSI < u`/`CSI = u`/`CSI ? u`, all 5 disambiguation flags, key encoding format for every key class) + kitty source `~/projects/reference_repos/console_repos/kitty/kitty/keys.py` cross-reference.
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-17-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/kitty-keyboard.md` (open new rows for any sequences present in the spec but not yet catalogued)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-17-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [ ] Every row has a `Decision` of `mapped` (cites catalog row ID) or `not-targeted` (with rationale).
+- [ ] Every `mapped` row resolves to a real catalog row.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` and `walked_by` set.
+- [ ] Any new catalog rows use the canonical 10-column schema.
+
+**No other subsection in this section can begin work until §17.0 is complete.**
 
 ---
 

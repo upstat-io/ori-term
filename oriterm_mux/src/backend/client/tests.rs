@@ -520,26 +520,21 @@ mod transport_tests {
         );
     }
 
-    /// `NotifyClipboardLoad` converts to `ClipboardLoad` with a reconstructed formatter.
+    /// `NotifyClipboardLoad` is dropped at the daemon-client wire boundary
+    /// after effect-cutover §01.3 — the legacy `MuxNotification::ClipboardLoad`
+    /// closure-carrier is gone and `HostRequest` IPC support is tracked
+    /// separately as bug-tracker BUG-11-11. Confirm the PDU produces no
+    /// notification today.
     #[test]
-    fn notify_clipboard_load() {
+    fn notify_clipboard_load_dropped_until_bug_11_11() {
         let pdu = MuxPdu::NotifyClipboardLoad {
             pane_id: PaneId::from_raw(7),
             clipboard_type: 0,
         };
-        let notif = pdu_to_notification(pdu).unwrap();
-        match notif {
-            MuxNotification::ClipboardLoad {
-                pane_id, formatter, ..
-            } => {
-                assert_eq!(pane_id, PaneId::from_raw(7));
-                // The reconstructed formatter produces a valid OSC 52 response.
-                let response = formatter("test");
-                assert!(response.starts_with("\x1b]52;c;"));
-                assert!(response.ends_with('\x07'));
-            }
-            other => panic!("expected ClipboardLoad, got {other:?}"),
-        }
+        assert!(
+            pdu_to_notification(pdu).is_none(),
+            "daemon-mode OSC 52 load drops at the wire boundary until BUG-11-11 lands"
+        );
     }
 
     /// Non-notification PDUs return `None`.

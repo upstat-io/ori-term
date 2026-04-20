@@ -920,6 +920,88 @@ def crawl_workspace(repo_root: Path, explicit_plan_dir: Path | None = None) -> W
     return ws
 
 
+def _resolve_dependency_ref(ref: str, ws: Workspace) -> "Section | None":
+    """Resolve a `depends_on` entry to a `Section` across the workspace.
+
+    Supports two ref shapes:
+
+    1. Path-like (contains `/`) — matched against `Section.path` resolved
+       relative to repo root. Used for cross-plan deps such as
+       ``"plans/effect-cutover/section-01-migrate-mux-consumer.md"``.
+    2. Bare section ID (e.g. `"03"`, `"08"`) — matched against
+       `Section.number`, scoped to the focus plan first, then to any plan
+       in the workspace. Quotes in the ref are stripped.
+
+    Returns the resolved `Section`, or `None` if no match is found.
+    """
+    ref = ref.strip().strip('"').strip("'")
+    if not ref:
+        return None
+    if "/" in ref:
+        ref_path = (ws.repo_root / ref).resolve()
+        for plan in ws.all_plans.values():
+            for sec in plan.sections:
+                try:
+                    if sec.path.resolve() == ref_path:
+                        return sec
+                except OSError:
+                    continue
+        return None
+    plans_to_try: list[Plan] = []
+    if ws.focus_plan is not None:
+        plans_to_try.append(ws.focus_plan)
+    plans_to_try.extend(
+        p for p in ws.all_plans.values() if p is not ws.focus_plan
+    )
+    for plan in plans_to_try:
+        for sec in plan.sections:
+            if sec.number == ref or sec.number.strip('"') == ref:
+                return sec
+    return None
+
+
+def _follow_unmet_deps_chain(
+    start: "Section", ws: "Workspace"
+) -> tuple["Section", list["Section"]]:
+    """Walk `depends_on` transitively to the first section with no unmet deps.
+
+    Deps take precedence over ordering: if `start` has an incomplete
+    dependency, the dependency is the actual next work item. If THAT
+    dependency has its own incomplete dependency, keep walking until we
+    reach a section whose deps are all `complete` (or unresolvable — those
+    surface via the `unmet_dependencies` info gate, not here).
+
+    Returns ``(terminal, hops)`` where ``hops`` is the ordered list of
+    sections traversed (start → penultimate, excluding the terminal). If
+    ``start`` itself has no unmet deps, returns ``(start, [])``.
+
+    Cycle guard: if we revisit a section, stop and return the revisit as
+    terminal — a dep cycle is a broken graph and the gate layer is
+    responsible for surfacing it.
+    """
+    hops: list["Section"] = []
+    visited: set[Path] = set()
+    current = start
+    while True:
+        if current.path in visited:
+            return current, hops
+        visited.add(current.path)
+        if not current.depends_on:
+            return current, hops
+        blocker: "Section | None" = None
+        for ref in current.depends_on:
+            dep = _resolve_dependency_ref(ref, ws)
+            if dep is None:
+                continue
+            if dep.status != "complete":
+                blocker = dep
+                break
+        if blocker is None:
+            return current, hops
+        hops.append(current)
+        current = blocker
+
+
 # ─── Analysis ─────────────────────────────────────────────────────────────────
 
 
@@ -1871,32 +1953,102 @@ def _build_gates(ws: Workspace) -> dict:
         )
         plan_dir = str(ws.focus_plan.dir) if ws.focus_plan else ""
         review_target = section_path or plan_dir
-        if plan_reviewed and not section_reviewed_false:
-            question_text = (
-                f"Plan {ws.focus_plan.name!r} has `reviewed: false` at the "
-                f"plan level (reroute). Its assumptions have not been "
-                f"validated against the current codebase. How do you want "
-                f"to proceed?"
+
+        # Check for a mid-pipeline `review_pipeline` marker on the focus
+        # section (single-section mode) or <plan_dir>/.review-pipeline-state.yaml
+        # (whole-plan mode). If present, the /review-plan pipeline was paused
+        # mid-flight and can be resumed from the recorded stage instead of
+        # restarting from Step 2 — saves ~20-45 min of Step 4 /tp-help reviewer
+        # wall-clock per resume. See review-plan/SKILL.md §Step 1a.
+        review_pipeline_marker: dict | None = None
+        if (
+            ws.focus_section is not None
+            and section_reviewed_false
+            and isinstance(ws.focus_section.frontmatter.get("review_pipeline"), dict)
+        ):
+            rp = ws.focus_section.frontmatter["review_pipeline"]
+            if isinstance(rp.get("next_step"), int) and 2 <= rp["next_step"] <= 7:
+                review_pipeline_marker = rp
+        elif plan_reviewed and ws.focus_plan is not None:
+            dotfile = ws.focus_plan.dir / ".review-pipeline-state.yaml"
+            if dotfile.exists():
+                try:
+                    import yaml as _yaml  # local import; yaml already used above
+
+                    parsed = _yaml.safe_load(dotfile.read_text())
+                    if (
+                        isinstance(parsed, dict)
+                        and isinstance(parsed.get("next_step"), int)
+                        and 2 <= parsed["next_step"] <= 7
+                    ):
+                        review_pipeline_marker = parsed
+                except Exception:
+                    review_pipeline_marker = None
+
+        if review_pipeline_marker is not None:
+            stage = review_pipeline_marker.get("stage", "?")
+            next_step = review_pipeline_marker["next_step"]
+            updated = review_pipeline_marker.get("updated", "?")
+            note = review_pipeline_marker.get("note", "")
+            scope_kind = "Plan" if plan_reviewed and not section_reviewed_false else "Section"
+            scope_label = (
+                ws.focus_plan.name if plan_reviewed and not section_reviewed_false
+                else (ws.focus_section.number if ws.focus_section is not None else "?")
             )
+            question_text = (
+                f"{scope_kind} {scope_label!r} is mid-pipeline at `review_pipeline.stage: {stage}` "
+                f"(last updated {updated}). How do you want to proceed?"
+            )
+            resume_description = (
+                f"Recommended because the plan file records pipeline progress through "
+                f"stage '{stage}' on {updated}. Re-running completed steps wastes ~20-45 min "
+                f"of Step 4 (/tp-help) reviewer wall-clock. Resume dispatches Step {next_step} "
+                f"immediately against the plan's current state — Steps 2..{next_step - 1} "
+                f"already edited the plan and those edits are preserved."
+            )
+            if note:
+                resume_description += f" Marker note: {note}"
+            options = [
+                {"key": "resume-review-plan",
+                 "label": f"Resume /review-plan from Step {next_step}",
+                 "recommended": True,
+                 "next_skill": "review-plan",
+                 "next_skill_arg": review_target,
+                 "description": resume_description},
+                {"key": "review-plan-fresh",
+                 "label": "Restart /review-plan from Step 2 (clear marker first)",
+                 "recommended": False,
+                 "next_skill": "review-plan",
+                 "next_skill_arg": review_target,
+                 "description": (
+                     "Pick when the plan section content changed materially since the marker "
+                     "was written (e.g. the mission was rewritten) OR when you suspect prior "
+                     "pipeline edits introduced correctness issues needing re-validation from "
+                     "scratch. /review-plan's Step 1b AskUserQuestion will let you confirm."
+                 )},
+                {"key": "pick-different",
+                 "label": "Pick a different section",
+                 "recommended": False, "next_skill": None,
+                 "description": "Leave the mid-pipeline state in place and work on a different section."},
+            ]
         else:
-            section_num = (
-                ws.focus_section.number if ws.focus_section is not None else "?"
-            )
-            question_text = (
-                f"Section {section_num} has `reviewed: false`. Its "
-                f"assumptions have not been validated against the current "
-                f"codebase. How do you want to proceed?"
-            )
-        reviewed_payload = {
-            "section": (
-                ws.focus_section.number if ws.focus_section is not None else None
-            ),
-            "section_path": section_path,
-            "plan": ws.focus_plan.name if ws.focus_plan else None,
-            "plan_reviewed_false": plan_reviewed,
-            "section_reviewed_false": section_reviewed_false,
-            "question": question_text,
-            "options": [
+            if plan_reviewed and not section_reviewed_false:
+                question_text = (
+                    f"Plan {ws.focus_plan.name!r} has `reviewed: false` at the "
+                    f"plan level (reroute). Its assumptions have not been "
+                    f"validated against the current codebase. How do you want "
+                    f"to proceed?"
+                )
+            else:
+                section_num = (
+                    ws.focus_section.number if ws.focus_section is not None else "?"
+                )
+                question_text = (
+                    f"Section {section_num} has `reviewed: false`. Its "
+                    f"assumptions have not been validated against the current "
+                    f"codebase. How do you want to proceed?"
+                )
+            options = [
                 {"key": "review-plan", "label": "Run /review-plan now",
                  "recommended": True,
                  "next_skill": "review-plan",
@@ -1905,7 +2057,23 @@ def _build_gates(ws: Workspace) -> dict:
                  "recommended": False, "next_skill": None},
                 {"key": "pick-different", "label": "Pick a different section",
                  "recommended": False, "next_skill": None},
-            ],
+            ]
+        reviewed_payload = {
+            "section": (
+                ws.focus_section.number if ws.focus_section is not None else None
+            ),
+            "section_path": section_path,
+            "plan": ws.focus_plan.name if ws.focus_plan else None,
+            "plan_reviewed_false": plan_reviewed,
+            "section_reviewed_false": section_reviewed_false,
+            "review_pipeline_stage": (
+                review_pipeline_marker.get("stage") if review_pipeline_marker else None
+            ),
+            "review_pipeline_next_step": (
+                review_pipeline_marker.get("next_step") if review_pipeline_marker else None
+            ),
+            "question": question_text,
+            "options": options,
         }
     gates["unreviewed_plan"] = {
         "fires": reviewed_fires,

@@ -344,10 +344,11 @@ fn pty_session_drain_writes_osc_responses_back() {
     //
     // Why palette-inspection proves the round-trip. The only path that
     // sets palette[10] to 0xabcdef is: (1) child echoes query bytes back
-    // through PTY read → (2) VTE parses OSC 10 query → (3) Term fires
-    // `Event::ColorRequest(10, formatter)` → (4) PtyResponder calls
-    // `formatter(TEST_COLOR)` and buffers the canonical response into
-    // `osc_responses` → (5) `drain_blocking`'s `write_osc_responses_back`
+    // through PTY read → (2) VTE parses OSC 10 query → (3) Term emits
+    // `Effect::HostRequest(HostRequest::ColorQuery { prefix: "10", .. })`
+    // → (4) PtyResponder formats the canonical reply for `TEST_COLOR`
+    // and buffers it into `osc_responses` → (5) `drain_blocking`'s
+    // `write_osc_responses_back`
     // writes that response through `self.writer` → (6) child echoes
     // response bytes back → (7) VTE parses the response as an OSC 10
     // *set* and calls `palette.set_indexed(10, TEST_COLOR)`. Any broken

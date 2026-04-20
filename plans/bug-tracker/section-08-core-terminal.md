@@ -11,6 +11,26 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
 
 ## Open Bugs
 
+- [ ] `[BUG-08-16][high]` **Default ANSI palette is Tango, not xterm — yellow looks orange, bright green looks lime, colors over-saturated** — found by manual.
+  Repro: Run a colored `ls`, `htop`, neovim with default theme, or `for i in {0..15}; do printf "\e[3${i}m█████\e[0m "; done; echo` — yellow (color 3) renders as mustard/orange, bright green (color 10) renders as lime/light green, colors generally appear more saturated than expected when compared side-by-side with xterm, alacritty (default), wezterm (default), or Windows Terminal Campbell.
+  Subsystem: `oriterm_core/src/color/palette/mod.rs:17-80` (`ANSI_COLORS` constant).
+  Analysis: The `const ANSI_COLORS: [Rgb; 16]` array is labeled `// Standard xterm ANSI colors (indices 0–15)` but the values are the **Tango** color scheme from GNOME Terminal / Ubuntu (vte-based), not xterm. Concrete divergences observed:
+  - Yellow (3): ours `0xc4a000` (Tango "Butter Dark" — mustard/orange); xterm default `0xcdcd00`.
+  - Bright Green (10): ours `0x8ae234` (Tango "Chameleon Light" — lime); xterm default `0x00ff00`.
+  - Bright Yellow (11): ours `0xfce94f` (Tango "Butter Light"); xterm default `0xffff00`.
+  - Bright Red (9), Bright Blue (12), Bright Magenta (13), Bright Cyan (14), White (7), Bright Black (8), Black (0), Red (1), Green (2), Blue (4), Magenta (5), Cyan (6): similar Tango-vs-xterm drift on every entry.
+
+  The comment claim ("Standard xterm") is wrong; the values are Tango. Users who expect xterm/VGA conventions (the broad default across Alacritty / WezTerm / Windows Terminal / iTerm2 / Ghostty / Kitty, all of which ship non-Tango defaults) see the mismatch as "yellow is orange, bright green is lime, colors are over-saturated."
+
+  Fix options (pick one — both require alignment with `oriterm_core/src/color/palette/tests.rs`):
+  1. Replace the `ANSI_COLORS` values with the xterm defaults (recommended — matches user mental model and the existing code comment).
+  2. Keep Tango values but fix the comment and document the theme choice in `oriterm_core/src/color/palette/mod.rs` module docs; expose both as named themes and make xterm the default. This is the broader fix if the goal is "user-selectable palette themes."
+
+  Secondary cause to rule out during fix: GPU shader sRGB-vs-linear blending. Surface format is `Bgra8UnormSrgb` / `Rgba8UnormSrgb` (see `oriterm/src/gpu/state/`). If the fragment shaders pass sRGB-encoded palette bytes directly into a linear-blend render pass without decoding to linear first, the result is over-saturation that the user might describe as "certain colors seem overly saturated." The palette-values fix alone should be verified visually after landing; if saturation still looks wrong, add a second fix in `oriterm/src/gpu/shaders/*.wgsl` (subpixel_fg.wgsl / color_fg.wgsl) to convert sRGB palette bytes → linear before blending, or switch the render target to the non-sRGB sibling and do gamma in shader. Cross-ref: `plans/bug-tracker/section-06-rendering-perf.md` if the secondary cause is confirmed.
+
+  Found: 2026-04-19 | Source: manual
+  Note: Palette values are exercised in `oriterm_core/src/color/palette/tests.rs` — those assertions must be updated in the same commit to stay in sync. Teseq SGR combination tests (`oriterm_core/tests/teseq/sgr/combinations.rs`) and resets tests (`oriterm_core/tests/teseq/sgr/resets.rs`) reference palette indices but not RGB values, so they should not require updates. If roadmap has a theming roadmap section, prefer Fix Option 2 so the switch to xterm-default lands alongside user-theme selection.
+
 - [ ] `[BUG-08-1][medium]` **Audible bell not implemented — `printf '\a'` produces no sound** — found by manual.
   Repro: Run `printf '\a'` in the terminal. Expected: audible beep or system sound. Actual: silence.
   Detail: VTE handler emits `Event::Bell` correctly (`oriterm_core/src/term/handler/mod.rs:112`). App handler in `oriterm/src/app/mux_pump/mod.rs:103` triggers visual tab bar pulse via `ring_bell()` but plays no system sound. `BellConfig` (`oriterm/src/config/bell.rs`) only covers visual bell (animation, duration, color). No audible bell or OS notification exists. Roadmap section 27 plans `behavior.bell = "none" | "visual" | "notification"` but is not yet implemented.

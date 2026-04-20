@@ -258,10 +258,10 @@ impl<S: EffectSink> PaneIoThread<S> {
     }
 }
 
-/// Map the new [`ClipboardSelection`] enum to the legacy `ClipboardType`
-/// used by `MuxEvent::ClipboardStore`. `Primary` and `Select` both map
-/// to `Selection` — matches `LegacyEventSink::selection_to_legacy` for
-/// SSOT.
+/// Map the [`ClipboardSelection`] enum (X11-aware: `Clipboard` /
+/// `Primary` / `Select`) to the platform-clipboard [`ClipboardType`]
+/// (`Clipboard` / `Selection`) used by `MuxEvent::ClipboardStore`.
+/// `Primary` and `Select` both collapse to `Selection`.
 fn selection_to_clipboard_type(selection: ClipboardSelection) -> ClipboardType {
     match selection {
         ClipboardSelection::Clipboard => ClipboardType::Clipboard,
