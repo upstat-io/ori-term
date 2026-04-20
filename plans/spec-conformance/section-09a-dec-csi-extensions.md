@@ -28,7 +28,7 @@ inspired_by:
   - "ThomasDickey/esctest2 — top-down conformance suite that surfaced this gap (esctest is a SPEC SOURCE for top-down enumeration; never a runtime CI dependency)"
 depends_on: ["04"]
 third_party_review:
-  status: findings
+  status: resolved
   updated: 2026-04-19
   notes: "user-accepted at iter_cap_reached after 3 rounds; 15 findings fixed inline (0 remain as - [ ] items). Non-convergent cadence (6→3→6) — residual drift risk accepted; §09A.N completion gates own implementation-time verification."
 sections:
