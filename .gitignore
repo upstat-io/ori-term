@@ -18,3 +18,8 @@ diagnostics/**/*.bak.*
 
 # Claude scheduled-task lock file (local-only runtime state).
 .claude/scheduled_tasks.lock
+
+# Local state cache written by diagnostics/state.sh (per-machine HEAD tracking,
+# test/clippy/hygiene status). Regenerated on refresh; would otherwise churn
+# on every commit-push via the Step 8 sha-only refresh.
+.claude/state/known-state.json
