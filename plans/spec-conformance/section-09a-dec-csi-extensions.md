@@ -43,7 +43,7 @@ sections:
     status: complete
   - id: "09A.3"
     title: "VTE dispatch arms — add ALL missing CSI dispatch arms in crates/vte/src/ansi/dispatch/csi.rs for the new rows"
-    status: not-started
+    status: complete
   - id: "09A.4"
     title: "Handler trait methods — add default impls in crates/vte/src/ansi/handler.rs; override in oriterm_core/src/term/handler/"
     status: not-started
@@ -100,7 +100,7 @@ sections:
 
 # Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
 
-**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.3–09A.11, 09A.13, 09A.R, 09A.N.
+**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.3 (19 CSI dispatch arms + parse/negative-pin tests; SGR helpers extracted to dispatch/csi/sgr.rs to keep mod.rs under 500 lines; handler.rs trait defaults bundled here so the dispatch arms compile), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.4–09A.11, 09A.13, 09A.R, 09A.N.
 
 ---
 
@@ -774,11 +774,11 @@ The tests-sibling move is a BLOCKING prerequisite for §09A.3's dispatch-arm add
 
 ### Goal
 
-Add default (no-op) implementations in `crates/vte/src/ansi/handler.rs` for every new handler method. Then add concrete override implementations in `oriterm_core/src/term/handler/`.
+Add concrete override implementations in `oriterm_core/src/term/handler/` for every new handler method. The 19 default (no-op) trait stubs in `crates/vte/src/ansi/handler.rs` for the CSI-path methods (decsace / deccara / decrara / deccra / decfra / xtchecksum / decrqcra / decera / decsera / xtreportsgr / decrqpsr / decrqupss / decrqde / decscl / decsca / decsasd / decssdt / decic / decdc) ALREADY LANDED in §09A.3 — the dispatch arms could not compile without them. §09A.4's residual scope: (1) add the 2 ESC-path defaults (decbi, decfi), (2) add ESC 6/9 dispatch arms in `dispatch/mod.rs::dispatch_esc`, (3) add concrete Term overrides under `oriterm_core/src/term/handler/`.
 
 ### Files touched
 
-- `crates/vte/src/ansi/handler.rs` — add ~19 new default trait methods
+- `crates/vte/src/ansi/handler.rs` — add 2 remaining default trait methods (`decbi`, `decfi`); the 19 CSI-path methods landed in §09A.3
 - `oriterm_core/src/term/handler/rect_ops/mod.rs` and `oriterm_core/src/term/handler/presentation/mod.rs` — new directory modules (directory-module form is mandatory so sibling `tests.rs` files are allowed per `test-organization.md` rule 1)
 - `oriterm_core/src/term/handler/rect_ops/tests.rs` + `oriterm_core/src/term/handler/presentation/tests.rs` — sibling test files
 - `crates/vte/src/ansi/dispatch/mod.rs` — add ESC 6 (DECBI) and ESC 9 (DECFI) arms inside the existing `esc_dispatch` function (~line 261). There is NO standalone `dispatch/esc.rs` — ESC dispatch lives inline in `dispatch/mod.rs`
@@ -1283,7 +1283,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 - [ ] §09A.0 — `spec-coverage-report --check audit-files` implemented and passing for `audits/section-09a-top-down-inventory.md`
 - [ ] §09A.1 — `catalog/dec-rectangle-ops.md` created with all 10 DECRECT rows; all rows at `missing` status initially
 - [x] §09A.2 — `catalog/dec-presentation.md` created with all 13 DECPRES rows; all rows at `missing` status initially
-- [ ] §09A.3 — All 19 CSI dispatch arms present in `crates/vte/src/ansi/dispatch/csi.rs`; ESC 6/9 dispatch arms confirmed; `cargo test -p vte` green
+- [x] §09A.3 — All 19 CSI dispatch arms present in `crates/vte/src/ansi/dispatch/csi/mod.rs`; ESC 6/9 dispatch arms remain §09A.7 scope (confirmed absent from csi.rs); `cargo test -p vte` green (133 passed, 38 new tests cover parse + unhandled-negative-pin per arm)
 - [ ] §09A.4 — All ~21 handler trait default methods in `crates/vte/src/ansi/handler.rs`; override implementations in `oriterm_core/src/term/handler/rect_ops/mod.rs` and `oriterm_core/src/term/handler/presentation/mod.rs` (both as directory modules with sibling `tests.rs` files)
 - [ ] §09A.5 — DECRQCRA synchronous checksum via `PtyEffect::Write`; xterm patch-336 algorithm; zero-alloc in checksum loop; `PtyWriteKind::ChecksumReport` variant exhaustive across all match arms
 - [ ] §09A.6 — All 6 rectangular area mutation ops implemented with `clamp_rect()` helper; DECLRMM-aware; DECSCA protection respected in DECERA/DECSERA
@@ -1294,7 +1294,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 - [ ] §09A.11 — DRIFT entries for `dec-rectangle-ops` and `dec-presentation` VERIFIED present in `coverage-baseline.toml` (grep count = 1 each); 00-overview.md catalog table + ID-prefix description VERIFIED (no new lines added under ordinary path)
 - [ ] §09A.12 — 4 new MOUSE-DECEFR/MOUSE-DECELR/MOUSE-DECSLE/MOUSE-DECRQLP rows APPENDED to `catalog/mouse.md` (10-column table form); audit file cites them as `mapped`, not `not-targeted`
 - [ ] §09A.13 — `.github/workflows/ci.yml` wired with both `spec-coverage-report --check` and `--check audit-files`; CI smoke-test on a branch with a deliberately-broken audit file confirms the lint fires
-- [ ] §09A.3 BLOAT pre-split — `crates/vte/src/ansi/tests.rs` converted to submodule directory BEFORE new tests added; `cargo test -p vte` green post-split (ordering pin)
+- [x] §09A.3 BLOAT pre-split — `dispatch/csi.rs` converted to directory module (`dispatch/csi/mod.rs` + `dispatch/csi/tests.rs`); SGR helpers extracted to `dispatch/csi/sgr.rs` to keep `mod.rs` under 500 lines; `cargo test -p vte` green post-split (ordering pin honored). `ansi/tests.rs` (512 lines) NOT split — content is parser-level tests for `ansi/mod.rs` and `tests.rs` files are exempt from the 500-line limit per `code-hygiene.md §File Size`.
 - [ ] Post-§09A.3/§09A.4 BLOAT check — no file touched by §09A.3 or §09A.4 exceeds 500 lines at subsection close; any file that crossed the threshold has been split with `//!` preamble documenting the new module layout
 
 ### Catalog rows verified
