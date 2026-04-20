@@ -63,8 +63,8 @@ sections:
 
 # Section 12: Sixel
 
-**Status:** Not Started
-**Goal:** Sixel is the first full visual stack — its verification chain exercises the entire pipeline from DCS byte parsing through GPU composition. This section drives every sixel catalog row to `verified`, closes the parser/decoder state-machine seam end-to-end, and pins three invariants that the current 5-row catalog does not cover: background-mode distinction, palette reset per DCS q, and DCS abort correctness.
+**Status:** In Progress (§12.0, §12.1, §12.2, §12.R complete; §12.3-.5 + §12.N remain)
+**Goal:** Sixel is the first full visual stack — its verification chain exercises the entire pipeline from DCS byte parsing through GPU composition. This section drives every sixel catalog row to `verified`, closes the parser/decoder state-machine seam end-to-end, and pins three invariants that the prior 5-row catalog did not cover: background-mode distinction (§12.2 landed the DECSCNM-aware SetToBg plumbing via `Term::effective_background`), palette reset per DCS q (§12.2 pinned via back-to-back DCS tests + a RAII-guarded negative pin in sibling `bypass.rs`), and DCS abort correctness (§12.1 added the `DcsEscape` state + `Handler::sixel_end(aborted)` drop path).
 
 **Success Criteria:** see frontmatter.
 

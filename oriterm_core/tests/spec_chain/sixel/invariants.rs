@@ -18,7 +18,7 @@
 use oriterm_test_support::spec_chain::SpecHarness;
 use vte::ansi::Rgb;
 
-// ── Test helpers ────────────────────────────────────────────────────
+// Test helpers.
 
 /// Grab the most-recently-placed image's pixel buffer (RGBA) and dimensions.
 fn last_image_pixels(harness: &SpecHarness) -> (Vec<u8>, u32, u32) {
@@ -44,7 +44,7 @@ fn set_terminal_bg(harness: &mut SpecHarness, r: u8, g: u8, b: u8) {
         .set_background(Rgb { r, g, b });
 }
 
-// ── Background-mode invariants ──────────────────────────────────────
+// Background-mode invariants.
 
 /// Catalog rows: `SIXEL-BG-DeviceDefault` + `SIXEL-BG-SetToBg`.
 ///
@@ -161,7 +161,7 @@ fn bg_mode_set_to_bg_honors_decscnm_reverse_video() {
     );
 }
 
-// ── Palette reset per DCS q (semantic pin) ──────────────────────────
+// Palette reset per DCS q (semantic pin).
 
 /// Catalog row: `SIXEL-PALETTE-RESET-PER-DCS`.
 ///
@@ -216,7 +216,7 @@ fn palette_vt340_fingerprint_reappears_on_fresh_dcs() {
     );
 }
 
-// ── Repeat clamp (de-facto DoS protection) ──────────────────────────
+// Repeat clamp (de-facto DoS protection).
 
 /// Catalog row: `SIXEL-REPEAT-CLAMP`.
 ///
@@ -249,7 +249,7 @@ fn repeat_clamps_at_max_dimension_without_allocation_spike() {
     assert!(w >= 1, "at least one column must exist");
 }
 
-// ── Pixel buffer cap (DoS protection) ───────────────────────────────
+// Pixel buffer cap (DoS protection).
 
 /// Catalog row: `SIXEL-PIXEL-BUFFER-CAP`.
 ///
@@ -271,7 +271,7 @@ fn raster_attrs_exceeding_max_pixel_bytes_aborts_cleanly() {
     );
 }
 
-// ── Self-verifying matrix completeness ──────────────────────────────
+// Self-verifying matrix completeness.
 
 /// Structural matrix-completeness pin for §12.2.
 ///
