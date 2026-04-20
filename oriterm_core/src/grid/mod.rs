@@ -149,7 +149,10 @@ impl Grid {
     }
 
     /// Immutable reference to tab stops.
-    #[cfg(test)]
+    ///
+    /// Each index `i` is `true` when column `i` is a tab stop. Exposed
+    /// at crate scope so `term::handler::presentation` can serialize
+    /// tab-stop positions for the DECRQPSR (CSI Ps $ w) mode-2 reply.
     pub(crate) fn tab_stops(&self) -> &[bool] {
         &self.tab_stops
     }

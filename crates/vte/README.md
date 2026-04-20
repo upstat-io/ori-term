@@ -45,6 +45,31 @@ Added `Handler` trait methods and dispatcher arms for OSC sub-ops the upstream
   `reset_highlight_fg_color`. OSC L and OSC l reuse `set_icon_name` /
   `set_title` via the shared `join_title_payload` helper.
 
+### Section 09A — DEC Private CSI Extensions (2026-04)
+
+Added `Handler` trait methods and dispatch arms for the DEC private
+rectangular-area and presentation ops that the upstream `Handler` trait does
+not expose. Also added the DCS-path DECRQSS / DECRSPS reply stubs.
+
+- **DCS-path queries**: `decrqss` Pt branches extended for `q` (DECSCUSR) and
+  `"q` (DECSCA); new `decrsps(ps, pt)` default wired through
+  `dispatch/mod.rs::dispatch_hook`/`dispatch_unhook` with a Ps-preserving
+  `DcsState::Decrsps { ps }`.
+- **ESC-path index ops**: `decbi` (ESC 6) and `decfi` (ESC 9) dispatcher arms
+  + handler defaults.
+- **CSI-path column ops**: `decic` (CSI Ps ' }) and `decdc` (CSI Ps ' ~).
+- **CSI-path rectangular-area ops**: `decsace`, `deccara`, `decrara`,
+  `deccra`, `decfra`, `xtchecksum`, `decrqcra`, `decera`, `decsera`,
+  `xtreportsgr`.
+- **CSI-path presentation ops**: `decrqpsr`, `decrqupss`, `decrqde`, `decscl`,
+  `decsca`, `decsasd`, `decssdt`.
+- **`Handler` trait split**: `ansi/handler.rs` converted to directory module
+  `ansi/handler/` (`mod.rs` + `core_methods.rs` + `vendored_osc_methods.rs` +
+  `dec_private_methods.rs`). The trait body is assembled by three
+  `macro_rules!` items-level macros so each source file stays under the
+  500-line hygiene cap; consumers still implement exactly one `Handler`
+  trait (no new super-traits, no API change).
+
 ### Upstreaming
 
 These patches are oriterm-specific protocol coverage and are NOT upstreamable

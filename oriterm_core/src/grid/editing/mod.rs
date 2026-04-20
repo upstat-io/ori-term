@@ -4,7 +4,9 @@
 //! primitives the VTE handler calls for writing text and manipulating
 //! grid content.
 
+mod column;
 mod erase;
+pub mod rect;
 mod wide_char;
 
 use unicode_width::UnicodeWidthChar;

@@ -36,9 +36,9 @@ pub use selection::{
     SelectionPoint, logical_line_end, logical_line_start,
 };
 pub use term::{
-    DamageLine, Notification, PromptMarker, PromptState, RenderableCell, RenderableContent,
-    RenderableCursor, RenderableImageData, RenderablePlacement, Term, TermDamage, TermMode,
-    maybe_shrink_vec,
+    AceMode, DamageLine, Notification, PromptMarker, PromptState, RenderableCell,
+    RenderableContent, RenderableCursor, RenderableImageData, RenderablePlacement, Term,
+    TermDamage, TermMode, maybe_shrink_vec,
 };
 pub use theme::Theme;
 pub use unicode::is_emoji_presentation;

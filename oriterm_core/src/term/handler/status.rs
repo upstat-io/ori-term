@@ -7,12 +7,13 @@
 //! All methods take `&mut self` because the `Handler` trait requires it,
 //! even though these only read state and send events.
 
-use log::debug;
+use log::{debug, info};
 use vte::ansi::{Color, Mode, NamedColor, NamedMode, PrivateMode};
 
 use crate::cell::CellFlags;
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, PtyWriteKind};
+use crate::grid::CursorShape;
 use crate::term::{Term, TermMode};
 
 use super::helpers::{crate_version_number, mode_report_value, named_private_mode_flag};
@@ -237,6 +238,21 @@ impl<S: EffectSink> Term<S> {
                 let (left, right) = self.grid().left_right_margins();
                 format!("\x1bP1$r{};{}s\x1b\\", left + 1, right + 1)
             }
+            // DECSCUSR: cursor style. Report shape + blink per xterm mapping:
+            //   1 = blink block,     2 = steady block,
+            //   3 = blink underline, 4 = steady underline,
+            //   5 = blink bar,       6 = steady bar.
+            b" q" => {
+                let blinking = self.mode.contains(TermMode::CURSOR_BLINKING);
+                let ps = decscusr_param(self.cursor_shape, blinking);
+                format!("\x1bP1$r{ps} q\x1b\\")
+            }
+            // DECSCA: character protection attribute.
+            //   1 = protected, 2 = unprotected (default per xterm).
+            b"\"q" => {
+                let ps = if self.char_protection { 1 } else { 2 };
+                format!("\x1bP1$r{ps}\"q\x1b\\")
+            }
             // Unrecognized query: report invalid.
             _ => {
                 debug!(
@@ -250,5 +266,60 @@ impl<S: EffectSink> Term<S> {
             bytes: response.into_bytes(),
             kind: PtyWriteKind::StatusString,
         }));
+    }
+
+    /// DECRSPS: Restore Presentation Status (DCS Ps $ t Pt ST).
+    ///
+    /// Parse-and-acknowledge stub. Full state restoration (DECCIR cursor
+    /// info and DECTABSR tab stops) is not yet implemented. The handler
+    /// logs the request so PTY traffic remains observable via the log
+    /// sink without mutating terminal state or emitting any reply —
+    /// DECRSPS has no acknowledgement per the xterm spec.
+    #[expect(
+        clippy::unused_self,
+        reason = "stub — will mutate presentation state when Ps=1/Ps=2 restoration lands"
+    )]
+    pub(super) fn status_decrsps(&mut self, ps: u16, pt: &[u8]) {
+        info!(
+            "DECRSPS stub: Ps={ps}, Pt bytes={} (state restoration not implemented)",
+            pt.len()
+        );
+    }
+}
+
+/// Map `(CursorShape, blinking)` to the DECSCUSR Ps parameter per xterm.
+///
+/// Returned values mirror the DECSCUSR *setter* accepted in
+/// `crates/vte/src/ansi/types.rs`:
+///   1 = blink block,      2 = steady block,
+///   3 = blink underline,  4 = steady underline,
+///   5 = blink bar (Beam), 6 = steady bar.
+///
+/// `HollowBlock` and `Hidden` are ori-extensions with no DECSCUSR encoding;
+/// they report as the nearest steady block (Ps=2) so consumers receive a
+/// well-formed reply.
+fn decscusr_param(shape: CursorShape, blinking: bool) -> u16 {
+    match shape {
+        CursorShape::Block | CursorShape::HollowBlock | CursorShape::Hidden => {
+            if blinking {
+                1
+            } else {
+                2
+            }
+        }
+        CursorShape::Underline => {
+            if blinking {
+                3
+            } else {
+                4
+            }
+        }
+        CursorShape::Bar => {
+            if blinking {
+                5
+            } else {
+                6
+            }
+        }
     }
 }

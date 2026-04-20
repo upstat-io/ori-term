@@ -11,6 +11,22 @@ Terminal emulation behavior — VTE handler, bell, escape sequences, terminal mo
 
 ## Open Bugs
 
+- [ ] `[BUG-08-20][low]` **`oriterm_core/src/term/mod.rs` is 571 lines, 71 over the 500-line limit** — found by §09A.N post-split file-size sweep.
+  Repro: `wc -l oriterm_core/src/term/mod.rs` prints `571`.
+  Subsystem: `oriterm_core/src/term/mod.rs`.
+  Analysis: Pre-existing BLOAT — file exceeds the `.claude/rules/code-hygiene.md §File Size` 500-line cap. `Term` struct carries the full terminal state: mode stacks, cursor save, alt-screen swap, image-cache routing, keyboard-mode stack, color palette, charsets, C1-7bit / conformance-level fields, tab stops, selection, snapshot buffers, effect sink wiring. Natural split points: cursor save/restore + alt-screen swap helpers into `term/screen_swap.rs`; snapshot/effect plumbing into `term/effects.rs`; leave `Term::new` and the top-level field definitions in `mod.rs`.
+  TDD matrix: no new tests required — existing `term/tests/` directory (core.rs, modes.rs, osc.rs, etc.) covers the behavior. Split must preserve every test's observable behavior.
+
+- [ ] `[BUG-08-19-b][low]` **`oriterm_mux/src/pane/io_thread/mod.rs` is 566 lines, 66 over the 500-line limit** — found by §09A.N post-split file-size sweep. (Numbered `-b` to avoid colliding with the just-closed BUG-08-19.)
+  Repro: `wc -l oriterm_mux/src/pane/io_thread/mod.rs` prints `566`.
+  Subsystem: `oriterm_mux/src/pane/io_thread/mod.rs`.
+  Analysis: Pre-existing BLOAT — the IO thread loop (read-event dispatch, snapshot production, response-poll pump, PaneIoCommand dispatch, SetCellDimensions plumbing) mixes concerns. Natural split points: PaneIoCommand dispatch arms into `io_thread/commands.rs`; snapshot production + dirty-tracking into `io_thread/snapshot.rs`; keep the top-level `run()` loop in `mod.rs`.
+  TDD matrix: no new tests required — `oriterm_mux/tests/e2e.rs` + `oriterm_mux/tests/contract.rs` cover the IO thread behavior end-to-end.
+
+- [x] `[BUG-08-19][low]` **`crates/vte/src/ansi/handler.rs` is 543 lines, 43 over the 500-line limit** — found while landing §09A.9 (DCS-path DECRQSS / DECRSPS).
+  Found: 2026-04-19 | Source: §09A.9 close-out file-size audit.
+  Fixed: 2026-04-20 — §09A.N completion. `crates/vte/src/ansi/handler.rs` converted to directory module `crates/vte/src/ansi/handler/` with the single-trait surface preserved via `macro_rules!` items-level macros. `handler/mod.rs` (55 lines) declares `pub trait Handler` and invokes three method-group macros in the trait body: `handler_core_methods!()` (from `core_methods.rs`, 339 lines — upstream/core methods), `handler_vendored_osc_methods!()` (from `vendored_osc_methods.rs`, 123 lines — Section 10.0/10.9 vendored OSC), and `handler_dec_private_methods!()` (from `dec_private_methods.rs`, 111 lines — Section 09A DEC private rect + presentation). Every source file is under the 500-line cap. `macro_rules!` is the canonical Rust mechanism for items-level splitting of a trait body (unlike `include!` which is expression-level-only and rejected inside a trait). No API change: consumers implement exactly one `Handler` trait, no new super-traits. Verified: `cargo test -p vte` green (147 tests), `cargo test -p oriterm_core` green post-split. `crates/vte/README.md` updated with Section 09A vendored-patch entry describing the split mechanism.
+
 - [ ] `[BUG-08-18][low]` **`oriterm_core/src/grid/resize/mod.rs` is 569 lines, 69 over the 500-line limit** — found by /impl-hygiene-review on BUG-08-17 fix.
   Repro: `wc -l oriterm_core/src/grid/resize/mod.rs` prints `569`.
   Subsystem: `oriterm_core/src/grid/resize/mod.rs`.

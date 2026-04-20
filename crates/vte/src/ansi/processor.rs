@@ -25,6 +25,11 @@ pub(super) enum DcsState {
     Sixel,
     /// DECRQSS: Request Status String (DCS `$q` ... ST).
     Decrqss,
+    /// DECRSPS: Restore Presentation Status (DCS Ps `$t` Pt ST).
+    ///
+    /// Carries the `Ps` selector (1 = DECCIR cursor-info, 2 = DECTABSR
+    /// tab-stops) alongside the payload accumulated via `put`.
+    Decrsps { ps: u16 },
 }
 
 /// Internal state for VTE processor.
@@ -44,6 +49,9 @@ pub(super) struct ProcessorState<T: Timeout> {
 
     /// Buffer for DECRQSS data bytes (the status type being queried).
     pub(super) decrqss_buf: Vec<u8>,
+
+    /// Buffer for DECRSPS payload bytes (state-restore Pt body).
+    pub(super) decrsps_buf: Vec<u8>,
 }
 
 /// State for synchronized terminal updates.

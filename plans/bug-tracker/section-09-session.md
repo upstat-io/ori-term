@@ -11,6 +11,21 @@ Bugs in tab lifecycle, window management, tab movement, split trees, floating pa
 
 ## Open Bugs
 
+- [ ] `[BUG-09-4][low]` **`oriterm/src/app/init/mod.rs` is 611 lines, 111 over the 500-line limit** — found by §09A.N post-split file-size sweep.
+  Repro: `wc -l oriterm/src/app/init/mod.rs` prints `611`.
+  Subsystem: `oriterm/src/app/init/mod.rs`.
+  Analysis: Pre-existing BLOAT — mixes window creation, GPU init, initial-tab construction, handoff-tab creation, mux wiring, font pipeline boot, session bootstrap. Natural split points: GPU+font boot into `app/init/boot.rs`; handoff-tab creation into `app/init/handoff.rs`; session bootstrap into `app/init/session.rs`; keep the top-level `App::init()` orchestration in `mod.rs`.
+
+- [ ] `[BUG-09-5][low]` **`oriterm/src/app/mod.rs` is 543 lines, 43 over the 500-line limit** — found by §09A.N post-split file-size sweep.
+  Repro: `wc -l oriterm/src/app/mod.rs` prints `543`.
+  Subsystem: `oriterm/src/app/mod.rs`.
+  Analysis: Pre-existing BLOAT — `App` struct carries the aggregate application state and the file mixes struct definition with helper methods (focused_ctx, cell metrics broadcast, directional nav plumbing). Natural split: accessors + helpers into `app/accessors.rs`; keep `App` struct definition + `App::new()` + event-loop entry in `mod.rs`.
+
+- [ ] `[BUG-09-6][low]` **`oriterm/src/cli/mod.rs` is 535 lines, 35 over the 500-line limit** — found by §09A.N post-split file-size sweep.
+  Repro: `wc -l oriterm/src/cli/mod.rs` prints `535`.
+  Subsystem: `oriterm/src/cli/mod.rs`.
+  Analysis: Pre-existing BLOAT — CLI arg parsing + subcommand dispatch share one file. Natural split: per-subcommand handlers into `cli/commands/` directory.
+
 - [ ] `[BUG-09-1][high]` **"Move to New Window" context menu action creates blank window** — found by manual.
   Repro: Right-click a tab > "Move to New Window" > new window appears blank. Dragging the same tab off (tear-off) works correctly.
   Subsystem: `oriterm/src/app/tab_management/move_ops.rs` (`move_tab_to_new_window_embedded`)

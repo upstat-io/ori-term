@@ -12,6 +12,7 @@
 //! `--test-threads=1`.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -26,6 +27,44 @@ use oriterm_core::{Term, Theme};
 static COUNTING: AtomicBool = AtomicBool::new(false);
 static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
 static BYTES_ALLOCATED: AtomicU64 = AtomicU64::new(0);
+
+/// Process-wide serialization lock for every allocation-sensitive test in
+/// this binary.
+///
+/// The counting allocator is process-wide and shared by all test threads.
+/// Any allocation from any thread while `COUNTING=true` contributes to the
+/// shared `ALLOC_COUNT` counter — including allocations made by a sibling
+/// test's setup code running in parallel. Tight-budget tests (e.g.
+/// `decrqcra_no_alloc_in_checksum_loop` with its 1000-iteration window) flake
+/// in release mode when sibling tests' setup allocations overlap the measure
+/// window.
+///
+/// Every test in this file holds this mutex for its entire body (via the
+/// `allocation_sensitive_test!` helper below) so no two test bodies can ever
+/// run concurrently. The single-threaded discipline the file header
+/// recommends (`--test-threads=1`) is thereby enforced structurally rather
+/// than by external convention.
+///
+/// Poisoning is ignored: the `COUNTING` flag and counter are reset inside
+/// each `measure()` call before any counting begins, so a prior panic cannot
+/// corrupt the count we are about to take.
+static MEASURE_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII guard acquired at the top of every allocation-sensitive test. Holds
+/// `MEASURE_LOCK` for the full test body so sibling tests cannot allocate
+/// concurrently with any counting window inside the body.
+#[must_use]
+struct AllocTestGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl AllocTestGuard {
+    fn new() -> Self {
+        Self {
+            _lock: MEASURE_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
+        }
+    }
+}
 
 struct CountingAlloc;
 
@@ -56,6 +95,12 @@ struct AllocMeasurement {
 
 /// Measure allocations during `f()`. Enables counting, runs the closure,
 /// disables counting, and returns both allocation count and bytes.
+///
+/// Callers MUST hold an `AllocTestGuard` on `MEASURE_LOCK` before invoking
+/// `measure()`; every test body in this file acquires the guard at the top
+/// to guarantee serialized execution. `debug_assert!(COUNTING=false)` would
+/// ideally catch misuse but rustc's test harness does not expose a pre-test
+/// hook; the convention is enforced by every test body holding a guard.
 fn measure(f: impl FnOnce()) -> AllocMeasurement {
     ALLOC_COUNT.store(0, Ordering::SeqCst);
     BYTES_ALLOCATED.store(0, Ordering::SeqCst);
@@ -90,6 +135,7 @@ const ZERO_ALLOC_THRESHOLD: u64 = 300;
 /// (plain ASCII content, no images, no combining marks).
 #[test]
 fn snapshot_extraction_zero_alloc_steady_state() {
+    let _guard = AllocTestGuard::new();
     let term = make_term();
     let mut out = term.renderable_content();
 
@@ -115,6 +161,7 @@ fn snapshot_extraction_zero_alloc_steady_state() {
 /// appear under repeated use (e.g., HashSet rehash, Vec realloc).
 #[test]
 fn hundred_frames_zero_alloc_after_warmup() {
+    let _guard = AllocTestGuard::new();
     let mut term = make_term();
     let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
 
@@ -150,6 +197,7 @@ fn hundred_frames_zero_alloc_after_warmup() {
 /// — well under 50 MB — proving no quadratic blowup or unbounded growth.
 #[test]
 fn rss_stability_under_sustained_output() {
+    let _guard = AllocTestGuard::new();
     let mut term = make_term();
     let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
     let line = "A".repeat(79) + "\r\n";
@@ -189,6 +237,7 @@ fn rss_stability_under_sustained_output() {
 /// `Term::input()` → `Grid::put_char_ascii()`.
 #[test]
 fn vte_1mb_ascii_zero_alloc_after_warmup() {
+    let _guard = AllocTestGuard::new();
     let mut term = make_term();
     let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
 
@@ -221,6 +270,7 @@ fn vte_1mb_ascii_zero_alloc_after_warmup() {
 /// Simulates the `SnapshotDoubleBuffer::flip_swap()` + `swap_front()` cycle.
 #[test]
 fn snapshot_swap_path_zero_alloc_after_warmup() {
+    let _guard = AllocTestGuard::new();
     let term = make_term();
 
     // Simulate IO thread's snapshot buffer and main thread's render cache.
@@ -262,6 +312,7 @@ fn snapshot_swap_path_zero_alloc_after_warmup() {
 /// pin — any alloc inside the loop trips it immediately.
 #[test]
 fn decrqcra_no_alloc_in_checksum_loop() {
+    let _guard = AllocTestGuard::new();
     let mut term = make_term();
     let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
 

@@ -28,6 +28,11 @@ sections:
 
 ## 06.1 Active Bugs
 
+- [ ] `[BUG-06-015][low]` **`oriterm/src/gpu/window_renderer/helpers.rs` is 549 lines, 49 over the 500-line limit** — found by §09A.N post-split file-size sweep.
+  Repro: `wc -l oriterm/src/gpu/window_renderer/helpers.rs` prints `549`.
+  Subsystem: `oriterm/src/gpu/window_renderer/helpers.rs`.
+  Analysis: Pre-existing BLOAT. A `helpers.rs` file exceeding the cap is also a `code-hygiene.md` single-responsibility violation — helpers files should be split by concern, not grow monotonically. Natural split: identify the distinct concerns the helpers cover (cell metrics helpers, glyph cache helpers, damage helpers, viewport helpers) and extract each into its own sibling file under `window_renderer/`.
+
 - [x] **BUG-06.1**: Noticeable input lag during key repeat — worse at smaller window widths
   - **Severity**: critical
   - **Found**: 2026-03-29 — manual, user report

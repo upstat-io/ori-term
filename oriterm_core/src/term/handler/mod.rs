@@ -438,6 +438,7 @@ impl<S: EffectSink> Handler for Term<S> {
     delegate_osc!(iterm2_set_user_var(name: &[u8], value: &[u8]) => osc_iterm2_set_user_var);
     delegate_osc!(iterm2_shell_integration_version(version: &[u8]) => osc_iterm2_shell_integration_version);
     delegate_osc!(decrqss(query: &[u8]) => status_decrqss);
+    delegate_osc!(decrsps(ps: u16, pt: &[u8]) => status_decrsps);
 
     // §10.9 OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119
     // delegates — each forwards to its `osc_*` helper in `handler/osc.rs`.
