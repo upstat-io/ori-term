@@ -20,7 +20,7 @@
 
 use oriterm_test_support::spec_chain::{DispatchArgs, SpecHarness};
 
-// ── Test helpers ────────────────────────────────────────────────────
+// Test helpers.
 
 /// Count recorded `sixel_start` dispatch calls in the outcome.
 fn sixel_start_count(harness: &SpecHarness) -> usize {
@@ -102,7 +102,7 @@ fn dcs_envelope(p1: u16, p2: u16, p3: u16, body: &[u8]) -> Vec<u8> {
     buf
 }
 
-// ── DCS q introducer — P1×P2×P3 cartesian product ────────────────────
+// DCS q introducer — P1×P2×P3 cartesian product.
 
 /// Catalog rows: SIXEL-DCS-q, SIXEL-P1-ASPECT, SIXEL-P3-HGRID,
 /// SIXEL-BG-DeviceDefault, SIXEL-BG-NoChange, SIXEL-BG-SetToBg.
@@ -201,7 +201,7 @@ fn dcs_q_introducer_p1_p2_p3_cartesian_product() {
     );
 }
 
-// ── Raster attributes ────────────────────────────────────────────────
+// Raster attributes.
 
 /// Catalog rows: SIXEL-RASTER-ATTRS, SIXEL-RASTER-ATTRS-PH-PV,
 /// SIXEL-RASTER-ATTRS-PAN-PAD, SIXEL-RASTER-BEFORE-DATA.
@@ -248,7 +248,7 @@ fn raster_attributes_mid_stream_redimensions() {
     assert_eq!(h, 100, "mid-stream raster re-dimensions height to Pv=100");
 }
 
-// ── Color definition + selection ────────────────────────────────────
+// Color definition + selection.
 
 /// Catalog rows: SIXEL-COLOR-DEFINE-RGB.
 ///
@@ -326,7 +326,7 @@ fn color_select_bare_pins_current_color() {
     assert_eq!(pixels[3], 255);
 }
 
-// ── Repeat / CR / NL ─────────────────────────────────────────────────
+// Repeat / CR / NL.
 
 /// Catalog rows: SIXEL-REPEAT.
 ///
@@ -414,7 +414,7 @@ fn nl_resets_x_advances_y_by_six() {
     assert_eq!(h, 12, "NL advances y by 6 → two bands = 12 rows");
 }
 
-// ── Intermix `#` mid-data ────────────────────────────────────────────
+// Intermix `#` mid-data.
 
 /// Catalog rows: SIXEL-COLOR-SELECT (mid-data dispatch).
 ///
@@ -438,7 +438,7 @@ fn intermixed_color_select_mid_data() {
     assert_eq!(pixels[6], 255, "col1 B");
 }
 
-// ── Sixel data byte matrix (`?`..`~`) ────────────────────────────────
+// Sixel data byte matrix (`?`..`~`).
 
 /// Catalog rows: SIXEL-DATA-BYTE.
 ///
@@ -500,7 +500,7 @@ fn data_byte_range_decodes_six_bit_column() {
     );
 }
 
-// ── Abort path (negative pins — currently expected to FAIL) ──────────
+// Abort path (negative pins).
 
 /// Catalog rows: SIXEL-ABORT-CAN.
 ///
@@ -585,7 +585,7 @@ fn dcs_abort_esc_commits_no_placement() {
     );
 }
 
-// ── DcsEscape C0 / DEL pass-through (new branches from the abort fix) ─
+// DcsEscape C0 / DEL pass-through (new branches from the abort fix).
 
 /// Catalog rows: SIXEL-DCS-q (coverage of the DcsEscape state transition
 /// table added by the §12.1 abort fix at `crates/vte/src/lib.rs`
@@ -665,7 +665,7 @@ fn dcs_escape_del_is_ignored_transparently() {
     );
 }
 
-// ── Structural matrix count over operator categories ─────────────────
+// Structural matrix count over operator categories.
 
 /// Catalog rows: structural matrix-completeness pin for §12.1.
 ///

@@ -1,3 +1,13 @@
+//! Unit tests for the sixel decoder (`SixelParser`).
+//!
+//! Covers per-operator behavior (palette define/select, repeat, CR/NL,
+//! raster attrs, data bytes), the §12.2 bg-mode + palette-reset invariants
+//! (`set_to_bg_uses_terminal_background_not_black`,
+//! `device_default_and_set_to_bg_diverge_under_non_black_terminal_bg`,
+//! `palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint`),
+//! and oversized-input rejection. The integration-level spec_chain pins
+//! for §12.2 live at `oriterm_core/tests/spec_chain/sixel/invariants.rs`.
+
 use super::bypass::BypassVt340ResetGuard;
 use super::*;
 
