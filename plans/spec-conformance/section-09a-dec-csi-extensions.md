@@ -31,8 +31,8 @@ third_party_review:
   status: pending
   updated: null
 review_pipeline:
-  stage: editor-done
-  next_step: 6
+  stage: tpr-done
+  next_step: 7
   updated: 2026-04-19
 sections:
   - id: "09A.0"
