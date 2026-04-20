@@ -20,7 +20,7 @@ That single call delegates the entire workflow to `/tpr-review`:
 
 - Parallel Agent dispatch (codex + gemini) via `.claude/skills/tpr-review/tp_agent_prompt.md`.
 - Verification-against-code for every finding (Codex HIGH trust / Gemini LOWER trust).
-- Round loop with stop gates (iteration cap 5, meta-only streak cap 2).
+- Round loop with stop gates (iteration cap per `/tpr-review §1 --max-rounds` — default 3, overridable 1-10; meta-only streak cap 2, always).
 - Finding-handling policy (`CLAUDE.md §The One Rule`, banned-response list).
 - Spec/grammar gate, plan-TPR frontmatter integration, coordinator render contract.
 

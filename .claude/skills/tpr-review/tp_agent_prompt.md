@@ -54,29 +54,25 @@ Gemini depth-suffix concatenation rules:
 - When the file is absent (help-mode, or any round where the orchestrator did not write it), fall through to the base gemini invocation.
 - Do NOT compose, edit, or invent the suffix — it is orchestrator-owned per `compose-round-prompt.md §Gemini depth appendix`.
 
-Do NOT use `run_in_background: true`. Do NOT pipe through `Monitor`. Do NOT retry on non-zero exit. Do NOT modify CLI flags. Do NOT read or alter either prompt file.
+Do NOT use `run_in_background: true`. Do NOT pipe through `Monitor`. Do NOT retry on non-zero exit. Do NOT read or alter either prompt file.
 
-`tee` stdout to disk so the orchestrator can recover the report if your return message is truncated (dual-path transport). Output files inside `$RUN` are namespaced by `{REVIEWER}` so both sub-agents writing into the same shared dir do not collide.
+The CLI invocation is encapsulated in a hardcoded wrapper script — you MUST invoke the script verbatim. Do NOT inline the CLI command, do NOT substitute a different model, do NOT add or remove flags, do NOT `cat` or inspect the script to "verify" it. The script's contents are not your concern; its interface is.
+
+Run exactly ONE of the following (matched to `{REVIEWER}`) in a single Bash call with `timeout: 2700000`:
 
 **If `{REVIEWER}` == codex:**
 
 ```
-PROMPT="$(printf 'You are codex.\n\n'; cat "$RUN/prompt.md")"
-codex exec --full-auto --json --ephemeral "$PROMPT" \
-  2>"$RUN/codex-stderr.txt" | tee "$RUN/codex-stdout.txt"
+bash .claude/skills/tpr-review/invoke-codex.sh "$RUN"
 ```
 
 **If `{REVIEWER}` == gemini:**
 
 ```
-if [ -f "$RUN/prompt-gemini-depth.md" ]; then
-  PROMPT="$(printf 'You are gemini.\n\n'; cat "$RUN/prompt.md"; printf '\n\n'; cat "$RUN/prompt-gemini-depth.md")"
-else
-  PROMPT="$(printf 'You are gemini.\n\n'; cat "$RUN/prompt.md")"
-fi
-gemini -m gemini-3.1-pro-preview --approval-mode yolo --output-format stream-json \
-  -p "$PROMPT" 2>"$RUN/gemini-stderr.txt" | tee "$RUN/gemini-stdout.txt"
+bash .claude/skills/tpr-review/invoke-gemini.sh "$RUN"
 ```
+
+The wrapper script handles prompt composition, identity-header prepending, gemini depth-suffix concatenation (when `$RUN/prompt-gemini-depth.md` exists), CLI invocation with the pinned model/flags, and `tee`ing stdout to `$RUN/{REVIEWER}-stdout.txt` so the orchestrator can recover the report if your return message is truncated (dual-path transport). Output files inside `$RUN` are namespaced by `{REVIEWER}` so both sub-agents writing into the same shared dir do not collide.
 
 The CLI's full stdout is preserved in `$RUN/{REVIEWER}-stdout.txt` — but you do NOT return it. You extract ONLY the TPR-REPORT block in Step 3.
 
@@ -86,14 +82,59 @@ CLIs do not always follow instructions — the sentinels may be missing, one-sid
 
 The hard rule: **content between the sentinels is byte-identical to what the CLI emitted.** If you find yourself "improving" a finding's `title` or "fixing" its YAML indent, STOP — that's translation, which is banned.
 
-### Tier 1 — Both sentinels present (happy path)
+### Tier 0 — Flatten JSON-stream output to plain text FIRST (mandatory when stdout is JSON-streamed)
+
+Both reviewer CLIs emit structured JSON by default (`codex exec --json`, `gemini --output-format stream-json`). The stream is one JSON event per line, including a `user` event that **echoes the prompt verbatim** — which means the literal tokens `<<<TPR-REPORT` and `TPR-REPORT>>>` appear embedded inside JSON strings on line 1 AS PART OF THE RETURN-FORMAT INSTRUCTIONS. A naive `sed -n '/<<<TPR-REPORT/,/TPR-REPORT>>>/p'` on the raw stream captures the prompt echo as if it were the report — garbage.
+
+**Always run Tier 0 first when the stdout is JSON.** Detect by checking whether the first non-empty line begins with `{"type":` or `{"id":` or similar JSON. If it does, flatten to plain text by extracting the concatenation of all assistant-authored message content (ignoring the `user`-echoed prompt, tool-use events, tool-results, and metadata).
+
+Canonical flattener — run in Bash (uses `python3` which is available on the harness):
 
 ```
-sed -n '/<<<TPR-REPORT/,/TPR-REPORT>>>/p' "$RUN/{REVIEWER}-stdout.txt" \
+python3 - <<'EOF' > "$RUN/{REVIEWER}-flattened.txt"
+import json, sys
+path = "$RUN/{REVIEWER}-stdout.txt"
+out = []
+with open(path, errors="replace") as f:
+    for line in f:
+        line = line.strip()
+        if not line or not (line.startswith("{") or line.startswith("[")):
+            out.append(line); continue  # tolerate plain-text lines
+        try:
+            ev = json.loads(line)
+        except Exception:
+            out.append(line); continue
+        # Codex: {"type":"item.completed","item":{"type":"agent_message","text":"..."}}
+        if ev.get("type") == "item.completed":
+            it = ev.get("item") or {}
+            if it.get("type") == "agent_message" and isinstance(it.get("text"), str):
+                out.append(it["text"])
+        # Gemini: {"type":"message","role":"assistant","content":"..."}
+        elif ev.get("type") == "message" and ev.get("role") == "assistant":
+            c = ev.get("content")
+            if isinstance(c, str):
+                out.append(c)
+        # Ignore user-echoes, tool_use, tool_result, turn.completed, usage events.
+print("\n".join(out))
+EOF
+```
+
+Now run every subsequent tier against `$RUN/{REVIEWER}-flattened.txt` instead of `$RUN/{REVIEWER}-stdout.txt`. If `$RUN/{REVIEWER}-flattened.txt` is empty (no assistant content found — e.g., the CLI crashed before emitting any), fall through to Tier 3/4 against the raw stdout as a last resort, or to Tier 5 failed-stub.
+
+If the first line was NOT JSON (CLI emitted plain text directly), skip Tier 0 — point `$RUN/{REVIEWER}-flattened.txt` at the raw stdout (`cp` or symlink) and run Tier 1 on it.
+
+### Tier 1 — Both sentinels present (happy path)
+
+Run against the flattened text from Tier 0:
+
+```
+sed -n '/<<<TPR-REPORT/,/TPR-REPORT>>>/p' "$RUN/{REVIEWER}-flattened.txt" \
   > "$RUN/{REVIEWER}-report.txt"
 ```
 
 If the output contains both sentinels and non-empty content between them, you are done. Byte-for-byte as `sed` produced. Skip to Step 4.
+
+**Sanity check** — if the extracted content does NOT contain a `reviewer:` YAML key AND a `status:` YAML key both near the top, the extraction is garbage (probably matched an instruction-text occurrence rather than the real emission). Discard and fall through to Tier 2.
 
 ### Tier 2 — One sentinel missing (partial block)
 
@@ -176,5 +217,5 @@ A brief mechanical comment between the two required elements (e.g., "CLI exit 0;
 4. You use the verbatim CLI flags in Step 2. No retries. No flag changes. No `run_in_background: true`. Single foreground Bash call, `timeout: 2700000`. Prepend the 1-line identity header described in Step 2 — this is how the CLI knows its identity. Trust tier is orchestrator-only metadata and must NEVER appear in the header, the prompt, or the return schema.
 5. You extract with the `sed` pattern in Step 3. No regex changes. No post-processing.
 6. If extraction fails, you emit a `status: failed` stub — you DO NOT invent findings to fill the gap.
-7. You do NOT file findings into plan sections. You do NOT commit code. You do NOT edit files other than `$RUN/{REVIEWER}-{stdout,stderr,report}.txt`.
+7. You do NOT file findings into plan sections. You do NOT commit code. You do NOT edit files other than `$RUN/{REVIEWER}-{stdout,stderr,report,flattened}.txt` (the four reviewer-scoped scratch outputs — `flattened.txt` is the Tier 0 JSON-stream flattener target).
 8. You do NOT call `AskUserQuestion`, `Agent`, or any skill. You are a transport wrapper.

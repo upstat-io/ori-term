@@ -546,7 +546,11 @@ For rounds N>0, the orchestrator prepends a Prior-Round State block (findings al
 
 This is editorial work — it requires judgment about what the prior round found and where reviewers should sharpen focus this round. Keeping it in main context (Opus) keeps the judgment at the right model tier. Pushing it into a Sonnet sub-agent loses round-over-round convergence pressure.
 
-**Step 8c — Dispatch BOTH reviewers in a SINGLE assistant message.** Foreground only on the Agent call itself — never `run_in_background: true`. Both sub-agents get the SAME `{SCRATCH_DIR}` (the per-round shared dir from step 8a); they differ only in their `{REVIEWER}` identity value. Trust tier is orchestrator-only metadata (codex HIGH, gemini LOWER) and MUST NOT appear as a placeholder, in the header, in the prompt, or in the return schema — per invariant I16. Sub-agents are thin CLI transports — they read `$SCRATCH_DIR/prompt.md` (which you wrote in step 8b), prepend their 1-line identity header (`You are {REVIEWER}.`), and — if reviewer is gemini AND `$SCRATCH_DIR/prompt-gemini-depth.md` exists — concatenate that depth appendix after the shared prompt. Then invoke the CLI, `sed`-extract the TPR-REPORT block, and return ONLY that block. They do NOT translate, reinterpret, or summarize findings. See `tp_agent_prompt.md`.
+**Step 8c — Dispatch BOTH reviewers as two `Agent()` tool calls in a SINGLE assistant message.** Foreground only on each Agent call — **`run_in_background: true` is FORBIDDEN** per the user's "foreground mandatory in sequential review pipelines" discipline (incident 2026-04-15). Multiple tool calls in one assistant message run concurrently per the Claude Code parallel-tool-call pattern — wall-clock per round is `max(codex, gemini)`, not the sum. Both sub-agents get the SAME `{SCRATCH_DIR}` (the per-round shared dir from step 8a); they differ only in their `{REVIEWER}` identity value. Trust tier is orchestrator-only metadata (codex HIGH, gemini LOWER) and MUST NOT appear as a placeholder, in the header, in the prompt, or in the return schema — per invariant I16.
+
+Sub-agents are thin CLI transports with split concerns:
+1. **CLI invocation is NOT in the sub-agent prompt.** The sub-agent runs `bash .claude/skills/tpr-review/invoke-{REVIEWER}.sh "$SCRATCH_DIR"` verbatim. The wrapper script owns the exact `codex exec …` / `gemini -m …` command including the pinned model `gemini-3.1-pro-preview` and all flags. The sub-agent CANNOT substitute a different model — the wrapper is opaque to it. Per invariant I21.
+2. **Stream-json extraction + retry DOES live in the sub-agent.** Sub-agent uses tier 0 / 1 / 2 / 3 judgment to locate the `<<<TPR-REPORT … TPR-REPORT>>>` block in the JSON-streamed CLI output (both CLIs emit JSON events by default — `codex exec --json`, `gemini --output-format stream-json` — and raw `sed` cannot parse them). See `tp_agent_prompt.md` Step 3 for the tiered extraction protocol. Retry on non-zero extraction exit, up to N=2, before returning a failed-stub.
 
 ```
 Agent({
@@ -566,7 +570,7 @@ Agent({
 })
 ```
 
-Note: the sub-agent prompt carries ONLY `{REVIEWER}` and `{SCRATCH_DIR}` placeholders. `{OBJECTIVE}` / `{SCOPE}` live in `$SCRATCH_DIR/prompt.md`, which the orchestrator wrote in step 8b. `{TRUST_TIER}` is orchestrator-only and never reaches the sub-agent prompt (I16).
+Note: the sub-agent prompt carries ONLY `{REVIEWER}` and `{SCRATCH_DIR}` placeholders. `{OBJECTIVE}` / `{SCOPE}` live in `$SCRATCH_DIR/prompt.md`, which the orchestrator wrote in step 8b. `{TRUST_TIER}` is orchestrator-only and never reaches the sub-agent prompt (I16). The sub-agent's Step 2 invokes the hardcoded wrapper `invoke-{REVIEWER}.sh` — it never constructs `codex exec …` or `gemini -m …` strings itself (I21).
 
 **Step 8d — Remember the path.** Keep the single `scratch` value in orchestrator state across the round so §9 stranded-report recovery can read `$scratch/codex-report.txt` or `$scratch/gemini-report.txt` if a sub-agent returns without an inline TPR-REPORT block. Both sub-agents write into the same scratch dir with per-reviewer file namespacing (`{codex,gemini}-{stdout,stderr,report}.txt`) so there is no collision. The scratch-dir inventory for a review-mode round is:
 
