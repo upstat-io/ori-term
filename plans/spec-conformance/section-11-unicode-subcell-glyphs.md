@@ -1,7 +1,7 @@
 ---
 section: "11"
 title: "Unicode Subcell Glyphs (incl. octants)"
-status: in-progress
+status: complete
 
 reviewed: true
 goal: "Drive every catalog row in `catalog/unicode-subcell.md` from `implemented-unverified` to `verified`, and ADD the missing octant implementation (U+1CD00–U+1CDE5, Unicode 16, inside the Symbols for Legacy Computing Supplement block U+1CC00–U+1CEBF) which is currently NOT implemented per Pass 1."
@@ -39,15 +39,15 @@ sections:
     status: complete
   - id: "11.R"
     title: "Third Party Review Findings"
-    status: not-started
+    status: complete
   - id: "11.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 11: Unicode Subcell Glyphs
 
-**Status:** In Progress — §11.0, §11.1, §11.2 complete; §11.R TPR + §11.N closeout remaining.
+**Status:** Complete — all 5 subsections (§11.0 audit, §11.1 octants, §11.2 spec_chain tests, §11.R TPR, §11.N checklist) closed.
 **Goal:** Verify every subcell glyph catalog row + add the missing octant implementation. Octants are required by notcurses `keller`/`uniblock` blitter exhaustive tests (section 24 / 21 milestones).
 
 **Success Criteria:** see frontmatter.
@@ -192,27 +192,27 @@ A separate 3-round /tpr-review cycle ran against the §11.2 implementation work 
 
 ## 11.N Completion Checklist
 
-- [ ] §11.0 audit populated + octant block/range drift normalized across `plans/spec-conformance/` + canonical octant bitmask mapping artifact committed + Unicode chart PDF entries added to `plans/spec-conformance/specs/manifest.toml` (see §11.0 + §11.2 prerequisites).
-- [ ] Failing test matrix written FIRST.
-- [ ] **Matrix dimensions**: glyph family (box / half / quad / sext / oct / braille) × {sparse-golden, exhaustive-raster, font-precedence, adjacency} × apex (visual golden for golden-pin / semantic-bitmask for raster / visual for font-precedence + adjacency).
-- [ ] **Semantic pins**: octant canonical-mapping guard test + braille-vs-octant rendering-model check + font-precedence test (per family, including box drawing) + braille/octant adjacency test are each a distinct regression guard; removing any one of them must cause a test failure in the crate it lives in.
-- [ ] `VisualSpecHarness` font-injection extension landed in `oriterm/src/gpu/visual_regression/spec_chain/visual_harness.rs` — the font-precedence test would be unimplementable without it.
-- [ ] Octants U+1CD00–U+1CDE5 implemented in `oriterm/src/gpu/builtin_glyphs/legacy_computing/octants.rs` driven by the canonical §11.0 artifact.
-- [ ] Octants wired into the `builtin_glyphs::rasterize` match arm list (`oriterm/src/gpu/builtin_glyphs/mod.rs:60-69`) AND `font::is_builtin` range match (`oriterm/src/font/mod.rs:485-496`) — built-in renderer is unconditionally selected for U+1CD00..=U+1CDE5; font shaper never handles those codepoints.
-- [ ] Every subcell glyph family has: (a) a sparse golden pin, (b) an exhaustive semantic raster sweep over every codepoint, (c) a font-precedence test, (d) the braille/octant adjacency test covers both 2×4 families.
-- [ ] All goldens assert exact 0-pixel diff (no "tiny tolerance" fallback).
-- [ ] Visual tests live in `oriterm/src/gpu/visual_regression/spec_chain/glyphs/` (the `oriterm` crate), not in `oriterm_core` — crate-boundary correctness per Section 05 + `.claude/rules/crate-boundaries.md`.
-- [ ] Visual tests use `render_frame_cached()` via `VisualSpecHarness` — the production render path.
-- [ ] Tests in `legacy_computing/tests.rs` are wired from `legacy_computing/mod.rs` via `#[cfg(test)] mod tests;` (semicolon form, no inline body) per `.claude/rules/test-organization.md §Sibling tests.rs Pattern`.
-- [ ] Catalog rows in `catalog/unicode-subcell.md` all `verified`: USC-BLOCKS, USC-BOX, USC-BRAILLE, USC-LEGACY-SEXTANT, USC-LEGACY-OCTANT.
-- [ ] All existing visual_regression glyph tests pass without modification.
-- [ ] Alloc regression unchanged.
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release.
-- [ ] Plan annotation cleanup.
-- [ ] Section frontmatter `status` → `complete`.
-- [ ] `00-overview.md` Quick Reference + mission criteria updated.
-- [ ] `index.md` section 11 status updated.
-- [ ] `/tpr-review` passed.
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean).
+- [x] §11.0 audit populated + octant block/range drift normalized across `plans/spec-conformance/` + canonical octant bitmask mapping artifact committed + Unicode chart PDF entries added to `plans/spec-conformance/specs/manifest.toml` (§11.0 complete 2026-04-19).
+- [x] Failing test matrix written FIRST — sparse goldens + exhaustive raster + precedence + adjacency were authored before their reference PNGs existed; §11.1 canonical-mapping guard test was authored before `OCTANT_MASKS` was committed.
+- [x] **Matrix dimensions**: glyph family (box / half / quad / sext / oct / braille) × {sparse-golden, exhaustive-raster, font-precedence, adjacency} × apex — covered by 6 sparse-golden tests + 9 semantic-raster tests (5 exhaustive sweeps + 4 bit-decomposition pins) + 5 precedence tests + 1 adjacency test = 21 §11.2 tests.
+- [x] **Semantic pins**: `legacy_computing::tests::octants_table_matches_canonical_artifact` (octant canonical-mapping guard, §11.1), `legacy_computing::tests::braille_and_octant_rendering_models_are_distinct` (§11.1), 5 precedence tests (§11.2), `braille_and_octant_adjacent_in_same_row_pixel_exact_golden` (§11.2 adjacency), `sextants_bit_decomposition_matches_canonical_formula` (§11.2), `block_elements_non_quadrant_fill_regions_match_unicode_spec` (§11.2), `quadrant_subcells_match_codepoint_semantics` (§11.2), `braille_dot_bits_match_codepoint_low_byte` (§11.2). Each is a distinct regression guard.
+- [x] `VisualSpecHarness` font-injection extension landed — `GoldenLaneConfig::font_override: Option<FontSet>` + `with_font_override` builder in `oriterm/src/gpu/visual_regression/golden_lane_config/mod.rs`; consumed by `headless_env_with_pinned_software_rasterizer` in `oriterm/src/gpu/visual_regression/mod.rs`. (Placed on `GoldenLaneConfig` rather than directly on `VisualSpecHarness` because that config already threads through the harness constructor — `VisualSpecHarness::with_config(config_with_override)` is the builder call site.)
+- [x] Octants U+1CD00–U+1CDE5 implemented in `oriterm/src/gpu/builtin_glyphs/legacy_computing/octants.rs` (§11.1, driven by `plans/spec-conformance/specs/octant-bitmask-mapping.md` canonical artifact).
+- [x] Octants wired into `builtin_glyphs::rasterize` and `font::is_builtin` — built-in renderer unconditionally selected for U+1CD00..=U+1CDE5; font shaper never handles those codepoints (§11.1).
+- [x] Every subcell glyph family has (a) sparse golden pin, (b) exhaustive semantic raster sweep, (c) font-precedence test, (d) adjacency test covers both 2×4 families (braille + octant). §11.2 delivered all of these.
+- [x] All goldens assert exact 0-pixel diff — `compare_with_reference_strict` with `pixel_tolerance: 0` + `max_diff_percent: 0.0`. No "tiny tolerance" fallback.
+- [x] Visual tests live in `oriterm/src/gpu/visual_regression/spec_chain/glyphs/` (the `oriterm` crate), not in `oriterm_core`.
+- [x] Visual tests use `render_frame_cached()` via `VisualSpecHarness::run_visual_scenario` — production render path.
+- [x] Tests in `legacy_computing/tests.rs` are wired from `legacy_computing/mod.rs` via `#[cfg(test)] mod tests;` (semicolon form, §11.1).
+- [x] Catalog rows in `catalog/unicode-subcell.md` all `verified`: USC-BLOCKS, USC-BOX, USC-BRAILLE, USC-LEGACY-SEXTANT, USC-LEGACY-OCTANT — notes cite the specific §11.2 tests anchoring each row.
+- [x] All existing visual_regression glyph tests pass without modification — 11 deterministic-lane tests green including `cached_render_produces_identical_output_across_runs`.
+- [x] Alloc regression unchanged — `oriterm_core/tests/alloc_regression.rs` green (`./test-all.sh`).
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release + `x86_64-pc-windows-gnu` cross-compile.
+- [x] Plan annotation cleanup — `scripts/plan-cleanup.py` runs pre-commit; post-§11.2 commit tree clean.
+- [x] Section frontmatter `status` → `complete` (flipped with this checkbox).
+- [x] `00-overview.md` Quick Reference + mission criteria updated — Section 11 status flipped to Complete in the section-progress table; "Octants not implemented" known gap updated to Fixed with §11.2 verification note.
+- [x] `index.md` section 11 status updated to Complete.
+- [x] `/tpr-review` passed — 3 rounds (audit trail in §11.R); all verified findings fixed inline; zero outstanding. §11.2 implementation-TPR cycle documented 2026-04-20.
+- [x] `/impl-hygiene-review last commit` — inline hygiene sweep (LEAK/DRIFT/GAP/WASTE/EXPOSURE/BLOAT) clean: no side logic, cfg(test) gating appropriate for test-only types, every file under 500-line limit, no new `pub` exposure of internals, `FontSet` fields stay `pub(super)`. Test code is scoped out of full rigor per CLAUDE.md §"HYGIENE / CODING RULES SCOPE — COMPILER ONLY"; inline sweep documents this for the `golden_lane_config` + `font_override` additions (the only production-touching changes, both gated via `Option<FontSet>` default-None).
 
 **Exit Criteria:** Every Unicode subcell glyph catalog row is `verified` (including USC-BOX); octants implemented and exhaustively tested (sparse goldens + per-codepoint semantic raster + font-precedence + braille/octant adjacency); octant block/range citations are normalized across every plan-file; `VisualSpecHarness` supports font injection; Unicode chart PDFs are registered in `specs/manifest.toml`; the built-in renderer is canonical and the font shaper never handles U+1CD00..=U+1CDE5.
