@@ -26,10 +26,10 @@ Determine the distinct crates or phase boundaries to review based on the target 
 
 For full project mode or when 3+ crates are in scope, spawn an agent to trace the key data flows end-to-end through the pipeline:
 
-1. **Type flow**: How do types get defined (registry) → checked (ori_types) → evaluated (ori_eval) → compiled (ori_llvm)?
-2. **Method dispatch flow**: Where is the canonical dispatch table? How does a method call route from parse → typecheck → eval/codegen?
-3. **Error flow**: How do errors propagate across phase boundaries? Where do they get accumulated, deduplicated, formatted?
-4. **Memory/RC flow**: How do ownership decisions flow from AIMS analysis → ARC pass → codegen emission → runtime?
+1. **Bytes → cells flow**: How do PTY bytes arrive (`oriterm_mux` IO thread) → get parsed (vendored `vte`) → mutate grid cells (`oriterm_core`) → become snapshots?
+2. **Snapshot → render flow**: How does the GUI pick up snapshots (`oriterm` session) → lower the grid into instance data → emit GPU draw calls (`oriterm/src/gpu/`)?
+3. **Input → command flow**: How do winit events (`oriterm`) → widget interaction (`oriterm_ui`) → pane-server commands (`oriterm_mux`) round-trip back to the PTY?
+4. **IPC flow**: How do `oriterm_ipc` messages cross the daemon/client boundary (Unix sockets on Linux/macOS, named pipes on Windows) and get dispatched to pane-server handlers?
 
 This agent produces a **flow map** — a brief summary of how each major data category crosses the phase boundaries. This map is passed to all subsequent review agents as context.
 

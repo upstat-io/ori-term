@@ -519,39 +519,40 @@ OUTPUT FORMAT:
   EXISTING_BUGS: {bugs found in tests, spec compliance, or hygiene}
 ```
 
-#### Agent 3: Runtime & Codegen State (if the plan touches runtime/LLVM)
+#### Agent 3: GPU & Rendering State (if the plan touches the render pipeline)
 
 ```
-You are researching the ori_term codebase for plan creation. Your job is to understand the runtime and codegen state for {topic/scope}.
+You are researching the ori_term codebase for plan creation. Your job is to understand the GPU render pipeline and terminal-rendering state for {topic/scope}.
 
 Read CLAUDE.md first.
 
 INSTRUCTIONS:
-1. Read the relevant runtime code in crates/rt/src/:
-   - What C-ABI functions exist for this feature?
-   - What data layouts are used?
-   - What memory management patterns (RC inc/dec, COW, SSO)?
-2. Read the relevant codegen code in crates/llvm/src/:
-   - How is this feature lowered to LLVM IR?
-   - What builtins are emitted?
-   - How does the ARC pipeline interact?
-3. Read the ARC pipeline if relevant (crates/arc/src/):
-   - How does the optimizer analyze this feature?
-   - What contracts/lattice states apply?
-   - What rewrite rules fire?
-4. Check for eval/LLVM divergence:
-   - Compare ori_eval handling with ori_llvm handling
+1. Read the relevant GPU code in oriterm/src/gpu/:
+   - What render passes / pipelines exist for this feature?
+   - What buffer / texture / atlas resources does it own?
+   - What wgpu surface + queue patterns are in use?
+2. Read the relevant cell-loop / draw_frame code:
+   - How is the grid lowered into instance data?
+   - What glyph-cache / atlas interaction happens per frame?
+   - What damage / invalidation model applies?
+3. Read the VTE / oriterm_core path if relevant:
+   - How does the vendored vte crate deliver events?
+   - What grid mutations / snapshot production happens?
+   - What invariants apply to scrollback / visible rows?
+4. Check for widget ↔ render divergence:
+   - Compare oriterm_ui widget paint with oriterm GPU draw
    - Are there known behavioral differences?
    - Grep for TODO|FIXME|HACK|WORKAROUND in relevant files
-5. Check diagnostic scripts:
-   - What diagnostic tools exist for this area?
+5. Check diagnostic scripts / test harnesses:
+   - What diagnostic tools exist for this area (teseq, tack, vttest, GPU visual regression)?
    - What environment variables control debugging?
 
 OUTPUT FORMAT:
-  RUNTIME_FUNCTIONS: {C-ABI functions with signatures}
-  CODEGEN_PATTERNS: {how LLVM IR is generated}
-  ARC_INTERACTION: {optimizer analysis and rewrites}
-  EVAL_LLVM_DIVERGENCE: {known differences}
+  RENDER_PASSES: {pipeline stages with resource ownership}
+  GPU_RESOURCES: {buffers, textures, atlases}
+  CELL_LOWERING: {how grid cells become instance data}
+  DAMAGE_MODEL: {invalidation + frame-budget policy}
+  WIDGET_GPU_DIVERGENCE: {known differences}
   DEBUG_TOOLS: {relevant diagnostic scripts/env vars}
   UNCLEAR: {anything ambiguous}
   EXISTING_BUGS: {bugs found while reading}
@@ -583,24 +584,23 @@ You are studying implementation patterns in the ori_term. Your job is to trace a
 Read CLAUDE.md first.
 
 INSTRUCTIONS:
-1. Identify 2-3 features ALREADY IMPLEMENTED in the compiler that are structurally similar to {topic}. Examples:
-   - If adding a new collection type: trace how Map or Set was implemented
-   - If adding a new trait: trace how Comparable or Hashable was implemented
-   - If adding a new expression form: trace how match or for-yield was implemented
-   - If adding codegen support: trace how an existing feature flows through ori_llvm
+1. Identify 2-3 features ALREADY IMPLEMENTED in ori_term that are structurally similar to {topic}. Examples:
+   - If adding a new widget: trace how an existing widget (tab bar, status bar, button) was implemented
+   - If adding a new escape-sequence handler: trace how SGR or CSI cursor handling flows from vte → core grid
+   - If adding a new GPU render pass: trace how an existing render pass was added
+   - If adding a new pane-lifecycle event: trace how pane create/resize/close flows through oriterm_mux
 
-2. For EACH analogous feature, trace the COMPLETE implementation through every compiler phase:
-   a. Lexer: What tokens? (crates/lexer/src/)
-   b. Parser: What AST nodes? (crates/parse/src/)
-   c. IR: What IR representation? (crates/ir/src/)
-   d. Type checker: What type rules? (crates/types/src/)
-   e. Registry: What method/type registrations? (crates/registry/src/)
-   f. Evaluator: What evaluation logic? (crates/eval/src/)
-   g. ARC pipeline: What memory analysis? (crates/arc/src/)
-   h. LLVM codegen: What IR generation? (crates/llvm/src/)
-   i. Runtime: What C-ABI support? (crates/rt/src/)
-   j. Stdlib: What library support? ()
-   k. Tests: What test files and patterns? (tests/spec/, */tests.rs)
+2. For EACH analogous feature, trace the COMPLETE implementation through every subsystem it touches:
+   a. VTE (vendored): What parser events? (crates/vte/src/)
+   b. Core grid: What cell / selection / search mutations? (oriterm_core/src/)
+   c. UI framework: What widget / interaction / pipeline state? (oriterm_ui/src/)
+   d. Pane server: What PTY / mux / snapshot production? (oriterm_mux/src/)
+   e. IPC transport: What message types / socket or pipe frames? (oriterm_ipc/src/)
+   f. Application shell: What winit event / session / layout plumbing? (oriterm/src/)
+   g. GPU render: What pipeline / buffer / atlas resource? (oriterm/src/gpu/)
+   h. Font pipeline: What swash / skrifa usage? (oriterm/src/font/)
+   i. Session model: What tab / window / split-tree / floating / nav interaction? (oriterm/src/session/)
+   j. Tests: What test files and patterns? (sibling tests.rs, teseq / tack / vttest, GPU visual regression)
 
 3. For each phase, READ THE ACTUAL CODE. Report:
    - Exact file path and function/type names
@@ -875,7 +875,7 @@ If issues are found, Edit the section file directly to fix them. Then proceed to
   - **Matrix dimensions**: Identify ALL types and ALL control-flow patterns that flow through the changed code path. The plan must name these explicitly (e.g., "test with str, [int], Option<str>, closures, structs, maps" and "test full iteration, break, yield, guard, nested, two-call"). Missing cells are future regressions.
   - **Semantic pin**: At least one test per behavioral change that ONLY passes with the new semantics — a permanent regression guard. The plan must describe what the pin tests.
   - **TDD ordering**: "Write failing test matrix BEFORE implementation" as the section's FIRST checklist item; "Verify all tests pass in debug and release" as the LAST item.
-  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, Ori spec tests in `tests/spec/`, AOT tests in `ori_llvm/tests/aot/`, Valgrind tests in `tests/valgrind/`).
+  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, terminal-conformance tests under `oriterm_core/tests/` via `teseq` / `tack` / `vttest`, GPU visual-regression tests under `oriterm/src/gpu/visual_regression/`, UI-framework tests under `oriterm_ui/`).
   - A section without explicit matrix dimensions and semantic pin requirements is NOT executable.
 - **Dependencies on prior sections**: Explicitly reference what earlier sections provide. "This section uses the {type} defined in Section {N} ({file path})."
 - **What this section provides to later sections**: State what downstream sections will depend on. "Section {M} will use the {API/type/pattern} established here."
@@ -1170,22 +1170,22 @@ If the detection returns zero stale sections, report: "No cross-plan review inva
 
 ## Example
 
-**Input:** `/create-plan error-recovery "Improve compiler error messages and recovery"`
+**Input:** `/create-plan selection-rework "Rework selection semantics and rendering"`
 
-**Phase 1**: Read CLAUDE.md. Ask user about scope ("Which crates? Which error types?").
+**Phase 1**: Read CLAUDE.md. Ask user about scope ("Which crates? Rectangular vs. stream selection? Clipboard integration?").
 
 **Phase 2**:
-- *Pass 1*: Launch 2 parallel agents — (1) survey `ori_diagnostic`, `ori_types` errors, `ori_parse` recovery, all error-related files; (2) audit tests, spec error codes, hygiene state.
-- *Pass 2*: Deep-read the 12 most critical files. Understand how `DiagnosticQueue` dedup works, how `ErrorGuaranteed` propagates, how recovery tokens are chosen.
-- *Pass 3*: Trace how `E2029` (Hashable-without-Eq) was implemented end-to-end — from type checker detection through diagnostic emission to test coverage. Trace how `E0860` (break-value-in-while) was implemented. Document the exact pattern.
-- *Pass 4*: Study Elm's error diffing (`Reporting/Error/Type.hs`), Roc's `to_diff` pattern, Rust's `DiagnosticBuilder` chain pattern. Recommend approaches for Ori.
+- *Pass 1*: Launch 2 parallel agents — (1) survey `oriterm_core/src/selection/`, `oriterm_ui` selection interaction, all files that call `Grid::selection`; (2) audit tests in `oriterm_core/tests/`, GPU visual-regression snapshots for selection highlight, hygiene state.
+- *Pass 2*: Deep-read the 10 most critical files. Understand how `Selection::update()` handles scroll-while-selecting, how the GPU cell loop paints the highlight overlay, how clipboard integration differs per platform.
+- *Pass 3*: Trace how the existing stream-selection code was implemented end-to-end — from `mousedown` hit-test in `oriterm_ui` → selection state mutation in `oriterm_core` → highlight overlay pass in `oriterm`'s GPU renderer. Document the exact pattern.
+- *Pass 4*: Study Alacritty's `selection.rs`, WezTerm's `selection.rs` + mux integration, Ghostty's selection model. Recommend approaches for ori_term.
 
-**Phase 3**: Design architecture. Write `00-overview.md` with data flow, design decisions (Elm-style diffing vs Rust-style chaining), dependency graph. Present to user: "Found 117 error codes, 64 with docs. The E2029 pattern shows {pattern}. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
+**Phase 3**: Design architecture. Write `00-overview.md` with data flow, design decisions (stream + rectangular as two enum variants vs. trait-object), dependency graph. Present to user: "Found {N} selection call-sites, {M} tests. The existing pattern routes mouse → UI → core. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
 
 **Phase 4**: After user approves architecture, write sections sequentially:
-- Section 01 (error types) → read it → write Section 02 (recovery strategies, building on 01's types) → read both → write Section 03 (user-facing messages, building on 01+02).
+- Section 01 (selection types) → read it → write Section 02 (hit-test + mutation, building on 01) → read both → write Section 03 (GPU highlight pass, building on 01+02).
 
-**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/error-recovery/`.
+**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/selection-rework/`.
 
 **Creates:**
 ```
@@ -1392,31 +1392,31 @@ This is not optional cleanup — it's a mandatory part of existing plan mode. Ev
 ### Existing Plan Mode: Impediment Resolution Example
 
 **Input** (from `/continue-roadmap` Step 2.6):
-`/create-plan add "ARC IR Function Metadata" subsection to plans/repr-opt`
+`/create-plan add "Damage-region SSOT" subsection to plans/rendering-perf`
 
-**Phase 1**: Read CLAUDE.md. Read `plans/repr-opt/00-overview.md` and the section containing blocked items (e.g., `section-03-range-analysis.md`). Identify that §03.5 has 6 items blocked by "ARC IR lacks visibility/trait/closure metadata."
+**Phase 1**: Read CLAUDE.md. Read `plans/rendering-perf/00-overview.md` and the section containing blocked items (e.g., `section-02-frame-budget.md`). Identify that §02.4 has 4 items blocked by "damage regions are computed in three places with slightly different semantics."
 
 **Phase 2**:
-- *Pass 1*: Survey `ArcFunction` fields in `ori_arc/src/ir/mod.rs`. Find `FunctionSig.is_public` in `ori_types`. Check `lower_to_arc()` in `oric/src/arc_lowering.rs`.
-- *Pass 2*: Deep-read the lowering path. Discover `is_public` exists upstream but is dropped. `num_captures > 0` already identifies closures. Only `is_trait_method` needs inference from `impl_sigs`.
+- *Pass 1*: Survey `damage_rect` call-sites across `oriterm_core/src/grid/` (grid mutation producers), `oriterm_ui/src/widgets/` (widget paint), and `oriterm/src/gpu/renderer.rs` (cell loop). Find two divergent Rect representations and one inlined bounding-box merge.
+- *Pass 2*: Deep-read each producer. Discover two sites round to cell boundaries differently, and the GPU cell loop re-inflates the region for safety margin.
 
-**Phase 3**: Design subsection `03.5b ARC IR Function Metadata`. Scope: add `is_public` and `is_trait_method` to `ArcFunction`, thread through lowering, use in `propagate_ranges()`. Update §03 frontmatter with new subsection entry. Present to user with list of 6 items that will be unblocked.
+**Phase 3**: Design subsection `02.4b Damage-region SSOT`. Scope: single `DamageRegion` type in `oriterm_core`, producers emit it, consumers read it; GPU safety margin moves to a documented constant. Update §02 frontmatter with new subsection entry. Present to user with the 4 items that will be unblocked.
 
-**Phase 4**: Write the `## 03.5b` block in `section-03-range-analysis.md`. Remove `<!-- blocked: ... -->` comments from the 6 items. Update §03 frontmatter sections array.
+**Phase 4**: Write the `## 02.4b` block in `section-02-frame-budget.md`. Remove `<!-- blocked: ... -->` comments from the 4 items. Update §02 frontmatter sections array.
 
-**Phase 5**: Cohesion check against §03 and §04 (which also consumes range data). Verify no contradictions.
+**Phase 5**: Cohesion check against §02 and §03 (which also consumes damage). Verify no contradictions.
 
 ### Existing Plan Mode: Roadmap Example
 
-**Input:** `/create-plan add pattern matching exhaustiveness to roadmap`
+**Input:** `/create-plan add sixel image support to roadmap`
 
-**Phase 1**: Read CLAUDE.md. Read the entire roadmap (overview + all sections). Identify that this relates to type checker work, probably depends on existing Section 07 (type inference), and might affect Section 12 (verification).
+**Phase 1**: Read CLAUDE.md. Read the entire roadmap (overview + all sections). Identify that this relates to VT parser + GPU texture upload, probably depends on existing Section 04 (escape-sequence coverage), and might affect Section 09 (GPU pipeline).
 
 **Phase 2**:
-- *Pass 1*: Survey exhaustiveness checking code in `ori_types`, find that `ori_types/src/check/exhaustiveness.rs` exists with 340 lines. Find that Section 07 touches `ori_types/src/check/` but doesn't cover exhaustiveness.
-- *Pass 2*: Deep-read `exhaustiveness.rs` and the 3 existing roadmap sections most related. Discover that Section 07's completion assumes exhaustiveness works, but the current implementation has gaps for nested patterns.
-- *Pass 3*: Trace how Gleam's exhaustiveness checker works end-to-end (`compiler-core/src/exhaustiveness.rs`).
-- *Pass 4*: Compare Elm's exhaustiveness approach (algebraic, provably complete) vs Rust's (witness-based).
+- *Pass 1*: Survey sixel-adjacent code in `crates/vte` (vendored) — does the vendored parser already deliver sixel events, or only intermediate-byte state? Find that Section 04 touches VTE coverage but doesn't cover sixel image payloads.
+- *Pass 2*: Deep-read the VTE dispatcher in `oriterm_core` and the current GPU texture-upload path in `oriterm/src/gpu/`. Discover Section 04's completion assumes no out-of-band image payloads, so a new section must bridge VTE → a new image cache → the GPU pipeline.
+- *Pass 3*: Trace how WezTerm's sixel pipeline works end-to-end (`wezterm-term/src/terminalstate/image.rs` + renderer glue).
+- *Pass 4*: Compare WezTerm's cache-per-pane approach vs. Ghostty's atlas-extension approach.
 
 **Phase 3**: Design the new section. Determine it should be Section 08 (after type inference, before integration). Update `00-overview.md` dependency graph. Present to user: "The new section depends on 07, and Section 12 should depend on it. Here's the impact..."
 

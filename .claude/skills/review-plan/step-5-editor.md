@@ -74,7 +74,7 @@ Results are for DISCOVERY, not replacement — always verify against actual code
 
 1. Cross-reference every technical claim against the codebase:
    - Do referenced files / types / functions / modules exist?
-   - Are crate dependency assumptions correct? (`ori_lexer → ori_parse → ori_ir → ori_types → ori_eval → ori_llvm → oric`)
+   - Are crate dependency assumptions correct? (`oriterm_core → oriterm_ui → oriterm`, and `oriterm_ipc → oriterm_mux → oriterm`; `oriterm_core` is standalone)
    - Are code patterns described accurately?
 2. Check claims against the spec (`docs/spec/` — `grammar.ebnf`, `operator-rules.md`, clause files)
 3. EDIT inaccuracies directly — don't flag, fix.

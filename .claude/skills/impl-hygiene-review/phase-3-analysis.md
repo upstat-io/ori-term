@@ -163,11 +163,11 @@ This pass reads the code *locally* — each file on its own terms.
 - [ ] Active plan annotations (classification `active-scaffolding`) are acceptable only while the specific finding checkbox is `[ ]`; flip to stale the instant the checkbox becomes `[x]`
 - [ ] Spec references (`Spec: Clause N.M`), `AIMS Section N`, and `eval_v2 Section N` are permanent and always acceptable (classified as `permanent` / `arch-internal` by the tool)
 
-**Unsafe & FFI (for ori_llvm, ori_rt, oric):**
-- [ ] Every unsafe block has a `// SAFETY:` comment?
-- [ ] Unsafe scope minimized?
-- [ ] FFI exports use `ori_` prefix, `#[no_mangle]`, `extern "C"`?
-- [ ] C types use `std::ffi` (c_char, c_int), never raw primitives?
+**Unsafe & FFI (ori_term enforces `unsafe_code = "deny"` workspace-wide — unsafe is allowed ONLY in vendored deps `crates/vte`, `crates/portable-pty`, `crates/wgpu-hal`):**
+- [ ] If an `unsafe` block appears in a non-vendored crate, flag it as a workspace-lint violation — do NOT accept a `// SAFETY:` justification; the correct fix is to remove the unsafe entirely.
+- [ ] For vendored deps: every unsafe block has a `// SAFETY:` comment and the scope is minimized.
+- [ ] No new FFI surface in workspace crates (ori_term has no runtime FFI); FFI flagged as a potential EXPOSURE finding unless explicitly sanctioned by the per-crate rules under `.claude/rules/oriterm*.md`.
+- [ ] Any platform bindings (winit, wgpu, platform-native clipboards) route through the `#[cfg(target_os = ...)]` gates in each crate, never raw `extern "C"`.
 
 **Naming, Comments, Visibility, Style:**
 - [ ] Phase-specific verb prefixes used? (cook_, parse_, check_, eval_, emit_)
