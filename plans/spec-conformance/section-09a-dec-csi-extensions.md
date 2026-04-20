@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "09A.5"
     title: "DECRQCRA implementation — synchronous checksum from grid state; emit DCS Pid !~ <hex> ST via PtyEffect::Write directly"
-    status: not-started
+    status: complete
   - id: "09A.6"
     title: "DECCRA / DECFRA / DECERA / DECSERA / DECRARA / DECCARA — rectangular area ops with DECLRMM-aware coordinate clamping"
     status: not-started
@@ -100,7 +100,7 @@ sections:
 
 # Section 09A: DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT)
 
-**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.3 (19 CSI dispatch arms + parse/negative-pin tests; SGR helpers extracted to dispatch/csi/sgr.rs to keep mod.rs under 500 lines; handler.rs trait defaults bundled here so the dispatch arms compile), 09A.4 (ESC 6/9 dispatch arms + DECBI/DECFI trait defaults + rect_ops/ + presentation/ directory modules with stub Term overrides and sibling tests.rs pinning no-op semantics; compressed 13 existing mod.rs wrappers via delegate_osc! to free budget for 21 new DEC delegates), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.5–09A.11, 09A.13, 09A.R, 09A.N.
+**Status:** In progress. Complete: 09A.0 (audits/ SSOT + lint), 09A.1 (dec-rectangle-ops.md 10-col rewrite), 09A.2 (dec-presentation.md 13-row catalog parse-verified), 09A.3 (19 CSI dispatch arms + parse/negative-pin tests; SGR helpers extracted to dispatch/csi/sgr.rs to keep mod.rs under 500 lines; handler.rs trait defaults bundled here so the dispatch arms compile), 09A.4 (ESC 6/9 dispatch arms + DECBI/DECFI trait defaults + rect_ops/ + presentation/ directory modules with stub Term overrides and sibling tests.rs pinning no-op semantics; compressed 13 existing mod.rs wrappers via delegate_osc! to free budget for 21 new DEC delegates), 09A.5 (DECRQCRA synchronous checksum via `PtyEffect::Write` + `PtyWriteKind::ChecksumReport` exhaustive across all match arms; xterm sum-then-negate algorithm; XTCHECKSUM flag storage on Term; 6 spec_chain scenarios + alloc-regression pin; RecordingHandler delegates wired for all §09A.3/§09A.4 Handler methods), 09A.12 (catalog/mouse.md locator gate rows). Remaining: 09A.6–09A.11, 09A.13, 09A.R, 09A.N.
 
 ---
 
@@ -1285,7 +1285,7 @@ The following items surfaced during Phase 2 blind-spots review (codex + gemini /
 - [x] §09A.2 — `catalog/dec-presentation.md` created with all 13 DECPRES rows; all rows at `missing` status initially
 - [x] §09A.3 — All 19 CSI dispatch arms present in `crates/vte/src/ansi/dispatch/csi/mod.rs`; ESC 6/9 dispatch arms remain §09A.7 scope (confirmed absent from csi.rs); `cargo test -p vte` green (133 passed, 38 new tests cover parse + unhandled-negative-pin per arm)
 - [ ] §09A.4 — All ~21 handler trait default methods in `crates/vte/src/ansi/handler.rs`; override implementations in `oriterm_core/src/term/handler/rect_ops/mod.rs` and `oriterm_core/src/term/handler/presentation/mod.rs` (both as directory modules with sibling `tests.rs` files)
-- [ ] §09A.5 — DECRQCRA synchronous checksum via `PtyEffect::Write`; xterm patch-336 algorithm; zero-alloc in checksum loop; `PtyWriteKind::ChecksumReport` variant exhaustive across all match arms
+- [x] §09A.5 — DECRQCRA synchronous checksum via `PtyEffect::Write`; xterm patch-336 algorithm; zero-alloc in checksum loop; `PtyWriteKind::ChecksumReport` variant exhaustive across all match arms
 - [ ] §09A.6 — All 6 rectangular area mutation ops implemented with `clamp_rect()` helper; DECLRMM-aware; DECSCA protection respected in DECERA/DECSERA
 - [ ] §09A.7 — DECIC/DECDC column ops; DECBI/DECFI ESC-path ops; DECLRMM-aware for all four
 - [ ] §09A.8 — All 7 CSI-path presentation queries stubbed; DECSCA protection flag propagates to `CellFlags::PROTECTED`; DECRQDE reply contains correct grid dimensions

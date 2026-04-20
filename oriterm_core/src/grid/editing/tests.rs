@@ -25,15 +25,11 @@ fn put_char_wide_writes_pair() {
     grid.put_char('\u{597d}');
     let line = crate::index::Line(0);
     assert_eq!(grid[line][Column(0)].ch, '\u{597d}');
-    assert!(
-        grid[line][Column(0)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::WIDE_CHAR));
     assert!(
         grid[line][Column(1)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
     assert_eq!(grid.cursor().col(), Column(2));
 }
@@ -63,11 +59,7 @@ fn overwrite_spacer_clears_wide_char() {
     let line = crate::index::Line(0);
     // The wide char at col 0 should be cleared.
     assert_eq!(grid[line][Column(0)].ch, ' ');
-    assert!(
-        !grid[line][Column(0)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(!grid[line][Column(0)].flags.contains(CellFlags::WIDE_CHAR));
     assert_eq!(grid[line][Column(1)].ch, 'X');
 }
 
@@ -85,7 +77,7 @@ fn overwrite_wide_char_clears_spacer() {
     assert!(
         !grid[line][Column(1)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
 }
 
@@ -253,14 +245,14 @@ fn put_char_inherits_template_attributes() {
     let mut grid = Grid::new(24, 80);
     grid.cursor_mut().template.fg = Color::Indexed(1);
     grid.cursor_mut().template.bg = Color::Indexed(2);
-    grid.cursor_mut().template.flags = crate::cell::CellFlags::BOLD;
+    grid.cursor_mut().template.flags = CellFlags::BOLD;
     grid.put_char('A');
 
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'A');
     assert_eq!(cell.fg, Color::Indexed(1));
     assert_eq!(cell.bg, Color::Indexed(2));
-    assert!(cell.flags.contains(crate::cell::CellFlags::BOLD));
+    assert!(cell.flags.contains(CellFlags::BOLD));
 }
 
 #[test]
@@ -476,11 +468,7 @@ fn wrap_flag_set_on_wrapped_line() {
     }
     // The last cell of line 0 should have the WRAP flag.
     let line0 = crate::index::Line(0);
-    assert!(
-        grid[line0][Column(4)]
-            .flags
-            .contains(crate::cell::CellFlags::WRAP)
-    );
+    assert!(grid[line0][Column(4)].flags.contains(CellFlags::WRAP));
 }
 
 #[test]
@@ -719,11 +707,7 @@ fn insert_blank_splits_wide_char_at_cursor() {
     let line = crate::index::Line(0);
     // The wide char at col 4 should be cleared (spacer was displaced).
     assert_eq!(grid[line][Column(4)].ch, ' ');
-    assert!(
-        !grid[line][Column(4)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(!grid[line][Column(4)].flags.contains(CellFlags::WIDE_CHAR));
 }
 
 #[test]
@@ -740,11 +724,7 @@ fn insert_blank_wide_char_pushed_to_right_edge_clears() {
     // Wide char base pushed to col 9, spacer off-screen. Base should
     // be cleared to a space without WIDE_CHAR flag.
     assert_eq!(grid[line][Column(9)].ch, ' ');
-    assert!(
-        !grid[line][Column(9)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(!grid[line][Column(9)].flags.contains(CellFlags::WIDE_CHAR));
 }
 
 #[test]
@@ -765,7 +745,7 @@ fn delete_chars_at_wide_char_spacer_boundary() {
     assert!(
         !grid[line][Column(2)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
 }
 
@@ -786,7 +766,7 @@ fn delete_chars_removes_wide_char_leaves_spacer_orphan() {
     assert!(
         !grid[line][Column(4)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER),
+            .contains(CellFlags::WIDE_CHAR_SPACER),
         "orphaned spacer should be cleaned up"
     );
 }
@@ -802,11 +782,7 @@ fn erase_line_right_splits_wide_char_at_start() {
     let line = crate::index::Line(0);
     // Base at col 4 should be cleared (its spacer was erased).
     assert_eq!(grid[line][Column(4)].ch, ' ');
-    assert!(
-        !grid[line][Column(4)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(!grid[line][Column(4)].flags.contains(CellFlags::WIDE_CHAR));
     // Col 5 and beyond should be erased.
     assert!(grid[line][Column(5)].is_empty());
 }
@@ -825,7 +801,7 @@ fn erase_line_left_splits_wide_char_at_end() {
     assert!(
         !grid[line][Column(5)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
 }
 
@@ -839,11 +815,7 @@ fn erase_chars_splits_wide_char_at_start_boundary() {
 
     let line = crate::index::Line(0);
     assert_eq!(grid[line][Column(4)].ch, ' ');
-    assert!(
-        !grid[line][Column(4)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(!grid[line][Column(4)].flags.contains(CellFlags::WIDE_CHAR));
     // Erased range is clean.
     assert!(grid[line][Column(5)].is_empty());
     assert!(grid[line][Column(6)].is_empty());
@@ -864,7 +836,7 @@ fn erase_chars_splits_wide_char_at_end_boundary() {
     assert!(
         !grid[line][Column(7)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
 }
 
@@ -896,15 +868,11 @@ fn erase_chars_covers_entire_wide_char() {
     assert!(grid[line][Column(4)].is_empty());
     assert!(grid[line][Column(5)].is_empty());
     // No stale flags.
-    assert!(
-        !grid[line][Column(4)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(!grid[line][Column(4)].flags.contains(CellFlags::WIDE_CHAR));
     assert!(
         !grid[line][Column(5)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
 }
 
@@ -920,27 +888,19 @@ fn insert_blank_between_consecutive_wide_chars() {
 
     let line = crate::index::Line(0);
     // First wide char at cols 0-1 should be untouched.
-    assert!(
-        grid[line][Column(0)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::WIDE_CHAR));
     assert!(
         grid[line][Column(1)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
     // Col 2 should be a blank (inserted).
     assert_eq!(grid[line][Column(2)].ch, ' ');
+    assert!(!grid[line][Column(2)].flags.contains(CellFlags::WIDE_CHAR));
     assert!(
         !grid[line][Column(2)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
-    assert!(
-        !grid[line][Column(2)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
 }
 
@@ -959,15 +919,11 @@ fn delete_chars_between_consecutive_wide_chars() {
     let line = crate::index::Line(0);
     // Second wide char shifted to cols 0-1.
     assert_eq!(grid[line][Column(0)].ch, '\u{4f60}');
-    assert!(
-        grid[line][Column(0)]
-            .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR)
-    );
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::WIDE_CHAR));
     assert!(
         grid[line][Column(1)]
             .flags
-            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+            .contains(CellFlags::WIDE_CHAR_SPACER)
     );
     assert_eq!(grid[line][Column(2)].ch, 'E');
 }
@@ -1345,5 +1301,210 @@ fn dch_with_cursor_right_of_right_margin_is_noop() {
     for col in 0..10 {
         let expected = (b'0' + col as u8) as char;
         assert_eq!(grid[crate::index::Line(0)][Column(col)].ch, expected);
+    }
+}
+
+// ---- BUG-08-17 regression tests: CHARDRAWN via CellFlags::DRAWN ----
+//
+// xterm's CHARDRAWN bit is set on every application write and cleared
+// on every erase/reset. ori_term mirrors this via CellFlags::DRAWN.
+// These tests pin the flag's lifecycle across every relevant write
+// path, reset path, and structural operation.
+
+use crate::cell::CellFlags;
+
+#[test]
+fn put_char_ascii_sets_drawn() {
+    let mut grid = Grid::new(1, 3);
+    grid.put_char_ascii('A');
+    assert!(
+        grid[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::DRAWN)
+    );
+}
+
+/// Regression: BUG-08-17 — the specific repro from the bug entry.
+/// Application writes a plain space with default SGR → cell must carry
+/// DRAWN so DECRQCRA sees it as a written cell, not pristine.
+#[test]
+fn put_char_ascii_space_sets_drawn() {
+    let mut grid = Grid::new(1, 3);
+    grid.put_char_ascii(' ');
+    assert!(
+        grid[crate::index::Line(0)][Column(0)]
+            .flags
+            .contains(CellFlags::DRAWN),
+        "plain space write MUST set DRAWN — this is the BUG-08-17 repro"
+    );
+}
+
+#[test]
+fn put_char_slow_wide_sets_drawn_on_both_cells() {
+    let mut grid = Grid::new(1, 4);
+    grid.put_char('\u{597d}'); // Chinese char — width 2
+    let row_line = crate::index::Line(0);
+    assert!(grid[row_line][Column(0)].flags.contains(CellFlags::DRAWN));
+    assert!(grid[row_line][Column(1)].flags.contains(CellFlags::DRAWN));
+    assert!(
+        grid[row_line][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+/// Wide char at the last column wraps and inserts a
+/// LEADING_WIDE_CHAR_SPACER boundary cell at (col_last). That boundary
+/// cell is a synthesized blank but IS drawn per xterm semantics.
+#[test]
+fn put_char_slow_leading_wide_spacer_sets_drawn() {
+    let mut grid = Grid::new(2, 4);
+    // Fill cols 0..3 so the wide char at col 3 has to wrap.
+    for _ in 0..3 {
+        grid.put_char('A');
+    }
+    assert_eq!(grid.cursor().col(), Column(3));
+    grid.put_char('\u{597d}'); // wraps to next line; col 3 becomes leading spacer
+    let boundary = &grid[crate::index::Line(0)][Column(3)];
+    assert!(boundary.flags.contains(CellFlags::LEADING_WIDE_CHAR_SPACER));
+    assert!(
+        boundary.flags.contains(CellFlags::DRAWN),
+        "LEADING_WIDE_CHAR_SPACER boundary cell is synthesized-but-drawn; must carry DRAWN"
+    );
+}
+
+/// Regression: BUG-08-17 gemini F1 — combining-mark modification on a
+/// cell IS a draw operation. Even though push_zerowidth mutates `extra`
+/// (not `ch` or `flags`), we explicitly set DRAWN on the target cell
+/// so it survives future callers that might target an undrawn cell.
+#[test]
+fn push_zerowidth_sets_drawn_on_target() {
+    let mut grid = Grid::new(1, 3);
+    grid.put_char('a');
+    // After put_char, cell (0,0) already has DRAWN. Push a combining
+    // mark; confirm DRAWN still set (not accidentally cleared) AND the
+    // combining mark lands in extra.zerowidth.
+    grid.push_zerowidth('\u{0301}'); // combining acute
+    let cell = &grid[crate::index::Line(0)][Column(0)];
+    assert!(cell.flags.contains(CellFlags::DRAWN));
+    let extra = cell
+        .extra
+        .as_ref()
+        .expect("combining mark must allocate extra");
+    assert_eq!(extra.zerowidth, vec!['\u{0301}']);
+}
+
+/// insert_blank shifts existing drawn cells rightward and inserts
+/// undrawn (DRAWN-clear) blanks at the cursor. Shifted cells must
+/// retain DRAWN; inserted blanks must have DRAWN clear.
+#[test]
+fn insert_blank_preserves_shifted_drawn_and_inserts_undrawn() {
+    let mut grid = Grid::new(1, 5);
+    grid.put_char('A');
+    grid.put_char('B');
+    grid.put_char('C');
+    grid.cursor_mut().set_col(Column(1));
+    grid.insert_blank(2);
+    // After insert: "A", _, _, "B", "C" (B and C shifted to cols 3, 4).
+    let line = crate::index::Line(0);
+    assert_eq!(grid[line][Column(0)].ch, 'A');
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::DRAWN));
+    assert_eq!(grid[line][Column(1)].ch, ' ');
+    assert!(
+        !grid[line][Column(1)].flags.contains(CellFlags::DRAWN),
+        "inserted blank MUST be DRAWN-clear"
+    );
+    assert_eq!(grid[line][Column(2)].ch, ' ');
+    assert!(!grid[line][Column(2)].flags.contains(CellFlags::DRAWN));
+    assert_eq!(grid[line][Column(3)].ch, 'B');
+    assert!(
+        grid[line][Column(3)].flags.contains(CellFlags::DRAWN),
+        "shifted cell MUST preserve DRAWN"
+    );
+    assert_eq!(grid[line][Column(4)].ch, 'C');
+    assert!(grid[line][Column(4)].flags.contains(CellFlags::DRAWN));
+}
+
+/// delete_chars shifts cells left and fills the right edge with blanks.
+/// Shifted cells retain DRAWN; new tail blanks have DRAWN clear.
+#[test]
+fn delete_chars_preserves_shifted_drawn_and_fills_undrawn() {
+    let mut grid = Grid::new(1, 5);
+    for ch in ['A', 'B', 'C', 'D'] {
+        grid.put_char(ch);
+    }
+    grid.cursor_mut().set_col(Column(1));
+    grid.delete_chars(2);
+    // After delete: "A", "D", _, _, _
+    let line = crate::index::Line(0);
+    assert_eq!(grid[line][Column(0)].ch, 'A');
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::DRAWN));
+    assert_eq!(grid[line][Column(1)].ch, 'D');
+    assert!(
+        grid[line][Column(1)].flags.contains(CellFlags::DRAWN),
+        "shifted cell MUST preserve DRAWN"
+    );
+    assert_eq!(grid[line][Column(2)].ch, ' ');
+    assert!(
+        !grid[line][Column(2)].flags.contains(CellFlags::DRAWN),
+        "tail blank MUST be DRAWN-clear"
+    );
+}
+
+/// erase_chars clears DRAWN on the erased range (BCE-aware; erased
+/// cells are restored to a DRAWN-clear template).
+#[test]
+fn erase_chars_clears_drawn() {
+    let mut grid = Grid::new(1, 5);
+    for ch in ['A', 'B', 'C', 'D', 'E'] {
+        grid.put_char(ch);
+    }
+    grid.cursor_mut().set_col(Column(1));
+    grid.erase_chars(3);
+    let line = crate::index::Line(0);
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::DRAWN)); // 'A' intact
+    assert!(!grid[line][Column(1)].flags.contains(CellFlags::DRAWN));
+    assert!(!grid[line][Column(2)].flags.contains(CellFlags::DRAWN));
+    assert!(!grid[line][Column(3)].flags.contains(CellFlags::DRAWN));
+    assert!(grid[line][Column(4)].flags.contains(CellFlags::DRAWN)); // 'E' intact
+}
+
+/// clear_line (EL) clears DRAWN on the erased line range.
+#[test]
+fn erase_in_line_clears_drawn() {
+    let mut grid = Grid::new(1, 5);
+    for ch in ['A', 'B', 'C', 'D', 'E'] {
+        grid.put_char(ch);
+    }
+    grid.cursor_mut().set_col(Column(2));
+    grid.erase_line(LineEraseMode::Right); // erase from col 2 to end
+    let line = crate::index::Line(0);
+    assert!(grid[line][Column(0)].flags.contains(CellFlags::DRAWN));
+    assert!(grid[line][Column(1)].flags.contains(CellFlags::DRAWN));
+    assert!(!grid[line][Column(2)].flags.contains(CellFlags::DRAWN));
+    assert!(!grid[line][Column(3)].flags.contains(CellFlags::DRAWN));
+    assert!(!grid[line][Column(4)].flags.contains(CellFlags::DRAWN));
+}
+
+/// clear_screen (ED) clears DRAWN on the erased display region.
+#[test]
+fn erase_in_display_clears_drawn() {
+    let mut grid = Grid::new(2, 3);
+    grid.put_char('A');
+    grid.put_char('B');
+    grid.linefeed();
+    grid.carriage_return();
+    grid.put_char('C');
+    grid.cursor_mut().set_col(Column(0));
+    grid.erase_display(DisplayEraseMode::All);
+    for line_idx in 0..2 {
+        for col in 0..3 {
+            assert!(
+                !grid[crate::index::Line(line_idx)][Column(col)]
+                    .flags
+                    .contains(CellFlags::DRAWN),
+                "line {line_idx} col {col} must have DRAWN clear after ED All"
+            );
+        }
     }
 }

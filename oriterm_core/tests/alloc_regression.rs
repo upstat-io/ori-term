@@ -250,6 +250,48 @@ fn snapshot_swap_path_zero_alloc_after_warmup() {
     );
 }
 
+/// `DECRQCRA` (`CSI * y`) checksum computation must not allocate inside
+/// the per-cell folding loop. `compute_rect_checksum()` is invoked
+/// directly here (bypassing VTE parse + reply-string `format!()`) so
+/// the measurement window isolates the inner loop from the caller's
+/// single reply allocation.
+///
+/// A real per-cell regression on a 24×80 grid would be ~1920 allocs
+/// per call; 1000 calls ≫ `ZERO_ALLOC_THRESHOLD`. The tight budget
+/// (`ZERO_ALLOC_THRESHOLD` alone, not × iterations) is the correctness
+/// pin — any alloc inside the loop trips it immediately.
+#[test]
+fn decrqcra_no_alloc_in_checksum_loop() {
+    let mut term = make_term();
+    let mut proc: vte::ansi::Processor = vte::ansi::Processor::new();
+
+    // Fill the grid with printable content so the checksum loop has
+    // real cells to fold, not default blanks.
+    let line = "Fill the grid with steady content for checksum folding.\n";
+    for _ in 0..24 {
+        proc.advance(&mut term, line.as_bytes());
+    }
+
+    // Warmup: two direct calls to stabilize the CPU caches (no alloc
+    // paths are expected in the function itself, but the counting
+    // allocator still picks up ambient noise on the first iteration).
+    let _ = term.compute_rect_checksum(1, 1, 24, 80);
+    let _ = term.compute_rect_checksum(1, 1, 24, 80);
+
+    // Measure: 1000 direct dispatches over the full 24×80 rectangle.
+    let allocs = measure_allocs(|| {
+        for _ in 0..1000 {
+            let _ = std::hint::black_box(term.compute_rect_checksum(1, 1, 24, 80));
+        }
+    });
+
+    assert!(
+        allocs < ZERO_ALLOC_THRESHOLD,
+        "1000 compute_rect_checksum calls produced {allocs} allocations \
+         (expected < {ZERO_ALLOC_THRESHOLD}; per-cell regression would be ~1,920,000+)"
+    );
+}
+
 // --- Profiling tests (Section 23.3) ---
 
 /// Profile memory consumed by blank rows in scrollback.
