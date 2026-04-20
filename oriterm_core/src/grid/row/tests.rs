@@ -288,6 +288,69 @@ fn is_blank_false_after_write() {
     assert!(!row.is_blank());
 }
 
+/// Regression: BUG-08-17 TPR round-1 codex F1. A row of cells with
+/// ONLY `CellFlags::DRAWN` set (no visible content beyond the DRAWN
+/// write-history bit) MUST still be `is_blank()` — DRAWN is the xterm
+/// CHARDRAWN analog consumed by DECRQCRA, but `is_blank`/`content_len`
+/// are visual-empty queries consumed by reflow at
+/// `oriterm_core/src/grid/resize/mod.rs:222` (`count_trimmable_rows`)
+/// and `:407` (content_len for reflow). Reflow must NOT treat app-
+/// written plain-space rows differently from pristine rows.
+#[test]
+fn is_blank_true_for_drawn_only_cells() {
+    let mut row = Row::new(10);
+    let mut cell = Cell::default();
+    cell.flags = CellFlags::DRAWN;
+    for col in 0..10 {
+        row.append(Column(col), &cell);
+    }
+    assert!(
+        row.is_blank(),
+        "DRAWN-only row MUST be is_blank — DRAWN is orthogonal to visual emptiness"
+    );
+}
+
+/// Regression: BUG-08-17 TPR round-1 codex F1. `content_len` is
+/// visual-empty only. A row of DRAWN-only cells has no visual content,
+/// so `content_len() == 0`. Reflow relies on this to decide effective
+/// row lengths (`resize/mod.rs:407`).
+#[test]
+fn content_len_zero_for_drawn_only_row() {
+    let mut row = Row::new(10);
+    let mut cell = Cell::default();
+    cell.flags = CellFlags::DRAWN;
+    for col in 0..10 {
+        row.append(Column(col), &cell);
+    }
+    assert_eq!(
+        row.content_len(),
+        0,
+        "DRAWN-only row has no visual content; content_len must be 0"
+    );
+}
+
+/// Regression: BUG-08-17 TPR round-1 codex F1. A row mixing DRAWN-only
+/// cells with a single visible char still reports content_len that
+/// ignores the DRAWN-only cells. "A<space><space>" where the spaces
+/// carry DRAWN: content_len should be 1 (just 'A'), NOT 3.
+#[test]
+fn content_len_ignores_drawn_only_trailing_cells() {
+    let mut row = Row::new(10);
+    let mut drawn_blank = Cell::default();
+    drawn_blank.flags = CellFlags::DRAWN;
+    let mut a_cell = Cell::default();
+    a_cell.ch = 'A';
+    a_cell.flags = CellFlags::DRAWN;
+    row.append(Column(0), &a_cell);
+    row.append(Column(1), &drawn_blank);
+    row.append(Column(2), &drawn_blank);
+    assert_eq!(
+        row.content_len(),
+        1,
+        "content_len ignores DRAWN-only trailing blanks (they're visually empty)"
+    );
+}
+
 #[test]
 fn is_blank_true_after_reset() {
     let mut row = Row::new(10);
