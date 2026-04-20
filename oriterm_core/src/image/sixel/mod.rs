@@ -9,9 +9,15 @@
 
 mod color;
 
+#[cfg(test)]
+mod bypass;
+
 use crate::image::ImageError;
 
 use color::{VT340_PALETTE, hls_to_rgb};
+
+#[cfg(test)]
+use bypass::BYPASS_VT340_RESET;
 
 /// Maximum dimensions to prevent OOM from malicious input.
 const MAX_DIMENSION: usize = 10_000;
@@ -75,42 +81,6 @@ pub struct SixelParser {
     params: [u32; 5],
     /// Current parameter index.
     param_idx: usize,
-}
-
-/// RAII guard for the test-only VT340 palette-rebuild bypass.
-///
-/// Construct via `BypassVt340ResetGuard::enable()` at the start of a test
-/// that wants to verify what happens when `SixelParser::new` skips the
-/// VT340 default copy. The guard flips the thread-local flag to `true`
-/// on construction and restores it to `false` on `Drop` — so a panic in
-/// the test body cannot leak the flag into other tests sharing the
-/// thread. Exclusively for the negative-pin palette-leak test in
-/// `sixel/tests.rs`; if the rebuild guard regresses, the test with this
-/// guard installed asserts the VT340 fingerprint no longer appears,
-/// proving the rebuild is load-bearing.
-#[cfg(test)]
-pub(super) struct BypassVt340ResetGuard {
-    _priv: (),
-}
-
-#[cfg(test)]
-impl BypassVt340ResetGuard {
-    pub(super) fn enable() -> Self {
-        BYPASS_VT340_RESET.with(|cell| cell.set(true));
-        Self { _priv: () }
-    }
-}
-
-#[cfg(test)]
-impl Drop for BypassVt340ResetGuard {
-    fn drop(&mut self) {
-        BYPASS_VT340_RESET.with(|cell| cell.set(false));
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    static BYPASS_VT340_RESET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 impl SixelParser {

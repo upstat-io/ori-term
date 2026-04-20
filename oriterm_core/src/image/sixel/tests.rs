@@ -1,3 +1,4 @@
+use super::bypass::BypassVt340ResetGuard;
 use super::*;
 
 /// Feed a byte slice to the parser.
