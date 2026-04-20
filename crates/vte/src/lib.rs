@@ -194,6 +194,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             State::DcsIntermediate => self.advance_dcs_intermediate(performer, byte),
             State::DcsParam => self.advance_dcs_param(performer, byte),
             State::DcsPassthrough => self.advance_dcs_passthrough(performer, byte),
+            State::DcsEscape => self.advance_dcs_escape(performer, byte),
             State::Escape => self.advance_esc(performer, byte),
             State::EscapeIntermediate => self.advance_esc_intermediate(performer, byte),
             State::OscString => self.advance_osc_string(performer, byte),
@@ -339,14 +340,19 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         match byte {
             0x00..=0x17 | 0x19 | 0x1C..=0x7E => performer.put(byte),
             0x18 | 0x1A => {
+                performer.notify_dcs_abort();
                 performer.unhook();
                 performer.execute(byte);
                 self.state = State::Ground
             },
+            // ESC mid-DCS is ambiguous at this byte: it could begin the
+            // 2-byte ST terminator (`ESC \` = 0x1B 0x5C) — a normal
+            // finish — or any other escape sequence, which aborts the
+            // DCS per DEC STD 070 §6.4. Defer the decision to
+            // DcsEscape so unhook can fire with the correct `aborted`
+            // flag once the next byte arrives.
             0x1B => {
-                performer.unhook();
-                self.reset_params();
-                self.state = State::Escape
+                self.state = State::DcsEscape;
             },
             0x7F => (),
             0x9C => {
@@ -354,6 +360,49 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.state = State::Ground
             },
             _ => (),
+        }
+    }
+
+    // VENDORED PATCH (oriterm): spec-conformance §12 — DcsEscape state.
+    // Deferred ESC-mid-DCS unhook so `ESC \` ST termination is not
+    // conflated with abort. Entered from advance_dcs_passthrough.
+    /// Handle the byte following an ESC (0x1B) encountered mid-DCS.
+    ///
+    /// `0x5C` completes the 2-byte ST terminator — the DCS finishes
+    /// normally (no abort). C0 controls (`0x00..=0x17 | 0x19 |
+    /// 0x1C..=0x1F`) execute transparently and the state remains
+    /// DcsEscape (per DEC ANSI parser state machine — C0 controls pass
+    /// through escape sequences). DEL (`0x7F`) is ignored (same rule).
+    /// Any other byte starts a new escape sequence, which aborts the
+    /// in-flight DCS per DEC STD 070 §6.4: the abort is signaled,
+    /// unhook fires with `aborted = true`, and the byte is
+    /// re-dispatched through the Escape state so the new sequence
+    /// begins cleanly.
+    #[inline(always)]
+    fn advance_dcs_escape<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        match byte {
+            // C0 controls pass through — execute, stay in DcsEscape.
+            0x00..=0x17 | 0x19 | 0x1C..=0x1F => performer.execute(byte),
+            // DEL is ignored in escape/DcsEscape state.
+            0x7F => (),
+            // ESC `\` completes the 2-byte ST terminator.
+            0x5C => {
+                performer.unhook();
+                self.state = State::Ground;
+            }
+            // Anything else (including a second ESC `0x1B`): abort the
+            // DCS and re-dispatch the byte through advance_esc so the
+            // new escape sequence begins. The first ESC `0x1B` could
+            // not have been an ST-introducer (ST is `ESC \`), so any
+            // non-`\` successor means the DCS must abort per
+            // DEC STD 070 §6.4.
+            _ => {
+                performer.notify_dcs_abort();
+                performer.unhook();
+                self.reset_params();
+                self.state = State::Escape;
+                self.advance_esc(performer, byte);
+            }
         }
     }
 
@@ -831,6 +880,7 @@ enum State {
     CsiIntermediate,
     CsiParam,
     DcsEntry,
+    DcsEscape,
     DcsIgnore,
     DcsIntermediate,
     DcsParam,
@@ -883,6 +933,20 @@ pub trait Perform {
     /// The previously selected handler should be notified that the DCS has
     /// terminated.
     fn unhook(&mut self) {}
+
+    // VENDORED PATCH (oriterm): spec-conformance §12 — DCS abort plumbing.
+    // Added so the dispatch layer can distinguish a normal ST finish from
+    // a CAN/SUB/ESC-to-new-sequence abort per DEC STD 070 §6.4.
+    /// Called by the parser immediately before `unhook()` when the DCS
+    /// was terminated by CAN (0x18), SUB (0x1A), or an ESC (0x1B) that
+    /// started a new escape sequence mid-DCS.
+    ///
+    /// The dispatch layer uses this hook to flag the pending unhook as
+    /// an abort so semantic handlers (sixel, DECRQSS, DECRSPS) can
+    /// discard the in-flight payload instead of committing it. Default
+    /// impl is empty — implementors that do not care about abort
+    /// distinction can ignore it.
+    fn notify_dcs_abort(&mut self) {}
 
     /// Dispatch an operating system command.
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}

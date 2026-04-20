@@ -15,3 +15,4 @@ mod dec_rect_ops;
 mod osc;
 mod pilots;
 mod private_modes;
+mod sixel;

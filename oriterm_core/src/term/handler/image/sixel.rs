@@ -31,10 +31,22 @@ impl<S: EffectSink> Term<S> {
     }
 
     /// Finalize sixel image: decode, store in cache, place at cursor.
-    pub(in crate::term::handler) fn handle_sixel_end(&mut self) {
+    ///
+    /// `aborted` is `true` when the DCS was terminated by CAN (0x18),
+    /// SUB (0x1A), or an ESC (0x1B) mid-DCS. The parser buffer is
+    /// dropped without committing a placement — per DEC STD 070 §6.4
+    /// the aborted image MUST NOT reach the grid.
+    pub(in crate::term::handler) fn handle_sixel_end(&mut self, aborted: bool) {
         let Some(parser) = self.sixel_parser.take() else {
             return;
         };
+
+        if aborted {
+            // Discard the in-flight parser state — no placement, no
+            // cache entry, no cursor advance. The DEC STD 070 §6.4
+            // invariant is that aborted DCS commits nothing.
+            return;
+        }
 
         let (rgba, w, h) = match parser.finish() {
             Ok(result) => result,
