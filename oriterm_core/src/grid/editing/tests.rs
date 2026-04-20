@@ -1508,3 +1508,228 @@ fn erase_in_display_clears_drawn() {
         }
     }
 }
+
+// ── §09A.6 rectangular-area primitives ──────────────────────────────
+
+mod rect_tests {
+    use vte::ansi::Color;
+
+    use crate::cell::{Cell, CellFlags};
+    use crate::grid::Grid;
+    use crate::index::{Column, Line};
+    use crate::term::AceMode;
+
+    /// Seed a 3×5 grid with "ABCDE" / "FGHIJ" / "KLMNO".
+    fn seed_3x5() -> Grid {
+        let mut grid = Grid::new(3, 5);
+        for ch in "ABCDE".chars() {
+            grid.put_char(ch);
+        }
+        grid.linefeed();
+        grid.carriage_return();
+        for ch in "FGHIJ".chars() {
+            grid.put_char(ch);
+        }
+        grid.linefeed();
+        grid.carriage_return();
+        for ch in "KLMNO".chars() {
+            grid.put_char(ch);
+        }
+        grid
+    }
+
+    #[test]
+    fn fill_rect_writes_template_with_drawn() {
+        let mut grid = seed_3x5();
+        let mut tmpl = Cell::default();
+        tmpl.ch = 'Q';
+        grid.fill_rect(0, 1, 1, 3, &tmpl);
+        // Inside the rect: 'Q' + DRAWN.
+        for (line, col) in [(0, 1), (0, 3), (1, 2)] {
+            let cell = &grid[Line(line)][Column(col)];
+            assert_eq!(cell.ch, 'Q', "line={line} col={col}");
+            assert!(cell.flags.contains(CellFlags::DRAWN));
+        }
+        // Outside: unchanged.
+        assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+        assert_eq!(grid[Line(0)][Column(4)].ch, 'E');
+        assert_eq!(grid[Line(2)][Column(0)].ch, 'K');
+    }
+
+    #[test]
+    fn fill_rect_single_cell_edge_case() {
+        let mut grid = Grid::new(2, 2);
+        let mut tmpl = Cell::default();
+        tmpl.ch = '*';
+        grid.fill_rect(0, 0, 0, 0, &tmpl);
+        assert_eq!(grid[Line(0)][Column(0)].ch, '*');
+        assert_eq!(grid[Line(0)][Column(1)].ch, ' ');
+        assert_eq!(grid[Line(1)][Column(0)].ch, ' ');
+    }
+
+    #[test]
+    fn erase_rect_all_ignores_protected() {
+        let mut grid = seed_3x5();
+        // Mark A (line 0, col 0) and K (line 2, col 0) PROTECTED.
+        grid[Line(0)][Column(0)].flags.insert(CellFlags::PROTECTED);
+        grid[Line(2)][Column(0)].flags.insert(CellFlags::PROTECTED);
+        grid.erase_rect_all(0, 0, 2, 4, Color::Named(vte::ansi::NamedColor::Background));
+        // Every cell is wiped — even the PROTECTED ones.
+        for line in 0..3 {
+            for col in 0..5 {
+                assert_eq!(
+                    grid[Line(line)][Column(col)].ch,
+                    ' ',
+                    "line={line} col={col}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn erase_rect_unprotected_preserves_protected() {
+        let mut grid = seed_3x5();
+        grid[Line(0)][Column(0)].flags.insert(CellFlags::PROTECTED);
+        grid[Line(2)][Column(4)].flags.insert(CellFlags::PROTECTED);
+        grid.erase_rect_unprotected(0, 0, 2, 4, Color::Named(vte::ansi::NamedColor::Background));
+        // Protected cells survive with original content.
+        assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+        assert_eq!(grid[Line(2)][Column(4)].ch, 'O');
+        // Unprotected cells wipe.
+        assert_eq!(grid[Line(0)][Column(1)].ch, ' ');
+        assert_eq!(grid[Line(1)][Column(2)].ch, ' ');
+    }
+
+    #[test]
+    fn apply_sgr_rect_rectangle_mode_clips_every_row() {
+        let mut grid = seed_3x5();
+        // Rectangle mode: every row is clipped to cols [1..=2].
+        grid.apply_sgr_rect(0, 1, 2, 2, &[1 /* BOLD */], AceMode::Rectangle);
+        // Inside rect: BOLD set.
+        assert!(grid[Line(0)][Column(1)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(1)][Column(2)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(2)][Column(1)].flags.contains(CellFlags::BOLD));
+        // Outside rect cols: BOLD NOT set.
+        assert!(!grid[Line(0)][Column(0)].flags.contains(CellFlags::BOLD));
+        assert!(!grid[Line(1)][Column(3)].flags.contains(CellFlags::BOLD));
+    }
+
+    #[test]
+    fn apply_sgr_rect_stream_mode_wraps_rows() {
+        let mut grid = seed_3x5();
+        // Stream mode: row 0 starts at col 1; row 1 spans full width;
+        // row 2 ends at col 2. Col 4 of row 0 and cols 3-4 of row 2
+        // lie outside the "stream" and stay untouched.
+        grid.apply_sgr_rect(0, 1, 2, 2, &[1 /* BOLD */], AceMode::Stream);
+        // Row 0: BOLD set from col 1 to col 4 (right edge).
+        assert!(!grid[Line(0)][Column(0)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(0)][Column(1)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(0)][Column(4)].flags.contains(CellFlags::BOLD));
+        // Row 1 (middle): BOLD set over the entire row.
+        assert!(grid[Line(1)][Column(0)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(1)][Column(4)].flags.contains(CellFlags::BOLD));
+        // Row 2: BOLD set from col 0 to col 2.
+        assert!(grid[Line(2)][Column(0)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(2)][Column(2)].flags.contains(CellFlags::BOLD));
+        assert!(!grid[Line(2)][Column(3)].flags.contains(CellFlags::BOLD));
+    }
+
+    #[test]
+    fn apply_sgr_rect_sgr_0_resets_flags() {
+        let mut grid = seed_3x5();
+        // Seed BOLD + UNDERLINE on every cell.
+        for line in 0..3 {
+            for col in 0..5 {
+                grid[Line(line)][Column(col)]
+                    .flags
+                    .insert(CellFlags::BOLD | CellFlags::UNDERLINE);
+            }
+        }
+        grid.apply_sgr_rect(0, 1, 1, 3, &[0], AceMode::Rectangle);
+        // Inside rect: reset (neither BOLD nor UNDERLINE).
+        assert!(!grid[Line(0)][Column(1)].flags.contains(CellFlags::BOLD));
+        assert!(
+            !grid[Line(0)][Column(1)]
+                .flags
+                .contains(CellFlags::UNDERLINE)
+        );
+        // Outside rect: flags preserved.
+        assert!(grid[Line(0)][Column(0)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(2)][Column(0)].flags.contains(CellFlags::BOLD));
+    }
+
+    #[test]
+    fn reverse_sgr_rect_toggles_flags() {
+        let mut grid = seed_3x5();
+        // Pre-set BOLD on half the rect.
+        grid[Line(0)][Column(1)].flags.insert(CellFlags::BOLD);
+        grid.reverse_sgr_rect(0, 1, 1, 2, &[1 /* BOLD */], AceMode::Rectangle);
+        // Cell that had BOLD: toggled off.
+        assert!(!grid[Line(0)][Column(1)].flags.contains(CellFlags::BOLD));
+        // Cell that did not have BOLD: toggled on.
+        assert!(grid[Line(0)][Column(2)].flags.contains(CellFlags::BOLD));
+        assert!(grid[Line(1)][Column(1)].flags.contains(CellFlags::BOLD));
+        // Outside rect: unchanged.
+        assert!(!grid[Line(2)][Column(0)].flags.contains(CellFlags::BOLD));
+    }
+
+    #[test]
+    fn copy_rect_non_overlapping() {
+        let mut grid = seed_3x5();
+        // Copy (0, 0)-(0, 2) = "ABC" to (2, 2).
+        grid.copy_rect(0, 0, 0, 2, 2, 2);
+        assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+        assert_eq!(grid[Line(2)][Column(2)].ch, 'A');
+        assert_eq!(grid[Line(2)][Column(3)].ch, 'B');
+        assert_eq!(grid[Line(2)][Column(4)].ch, 'C');
+        // Destination col 0-1 of line 2 untouched: still "KL".
+        assert_eq!(grid[Line(2)][Column(0)].ch, 'K');
+        assert_eq!(grid[Line(2)][Column(1)].ch, 'L');
+    }
+
+    #[test]
+    fn copy_rect_overlapping_dest_before_source() {
+        // Overlapping copy: dest col 0, source col 1..=2. Contents at
+        // cols 0..=1 must match the ORIGINAL cols 1..=2 after the copy
+        // (not a post-write read of already-mutated cells).
+        let mut grid = Grid::new(1, 4);
+        for ch in "ABCD".chars() {
+            grid.put_char(ch);
+        }
+        // Copy cols 1..=2 ("BC") to col 0.
+        grid.copy_rect(0, 1, 0, 2, 0, 0);
+        assert_eq!(grid[Line(0)][Column(0)].ch, 'B');
+        assert_eq!(grid[Line(0)][Column(1)].ch, 'C');
+        // Cols 2..=3 unchanged by the overlap.
+        assert_eq!(grid[Line(0)][Column(2)].ch, 'C');
+        assert_eq!(grid[Line(0)][Column(3)].ch, 'D');
+    }
+
+    #[test]
+    fn copy_rect_overlapping_dest_after_source() {
+        // Copy cols 0..=1 ("AB") to col 1 — destination overlaps source
+        // on col 1. After the copy, cols 1..=2 should hold "AB".
+        let mut grid = Grid::new(1, 4);
+        for ch in "ABCD".chars() {
+            grid.put_char(ch);
+        }
+        grid.copy_rect(0, 0, 0, 1, 0, 1);
+        assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+        assert_eq!(grid[Line(0)][Column(1)].ch, 'A');
+        assert_eq!(grid[Line(0)][Column(2)].ch, 'B');
+        assert_eq!(grid[Line(0)][Column(3)].ch, 'D');
+    }
+
+    #[test]
+    fn copy_rect_clips_dest_to_grid() {
+        let mut grid = seed_3x5();
+        // Copy (0, 0)-(0, 4) = "ABCDE" to (2, 3) — destination would
+        // end at col 7 but the grid has only 5 cols, so cols 3-4 hold
+        // "AB" and cells (src cols 2..=4) fall off the right edge.
+        grid.copy_rect(0, 0, 0, 4, 2, 3);
+        assert_eq!(grid[Line(2)][Column(3)].ch, 'A');
+        assert_eq!(grid[Line(2)][Column(4)].ch, 'B');
+        // Dest cols 0..=2 of line 2 stay "KLM" (outside dest rect).
+        assert_eq!(grid[Line(2)][Column(0)].ch, 'K');
+    }
+}

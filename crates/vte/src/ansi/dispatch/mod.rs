@@ -69,6 +69,15 @@ fn dispatch_hook<H: Handler, T: Timeout>(
             state.decrqss_buf.clear();
             state.dcs_state = DcsState::Decrqss;
         },
+        't' if intermediates == [b'$'] => {
+            // DCS Ps $ t ... ST = DECRSPS (Restore Presentation Status).
+            // Ps selects the format (1 = DECCIR cursor info, 2 = DECTABSR
+            // tab stops). Default is 0 (invalid) when no param is given —
+            // the handler stub logs and ignores.
+            let ps = params.iter().next().and_then(|sub| sub.first().copied()).unwrap_or(0);
+            state.decrsps_buf.clear();
+            state.dcs_state = DcsState::Decrsps { ps };
+        },
         _ => {
             debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
@@ -93,6 +102,14 @@ fn dispatch_put<H: Handler, T: Timeout>(
                 state.decrqss_buf.push(byte);
             }
         },
+        DcsState::Decrsps { .. } => {
+            // Collect the presentation-state payload. Cap matches MAX_APC_LEN
+            // to bound memory against malicious input; DECRSPS payloads are
+            // typically small (cursor info or tab-stop vector).
+            if state.decrsps_buf.len() < MAX_APC_LEN {
+                state.decrsps_buf.push(byte);
+            }
+        },
         DcsState::None => debug!("[unhandled put] byte={:?}", byte),
     }
 }
@@ -104,6 +121,10 @@ fn dispatch_unhook<H: Handler, T: Timeout>(state: &mut ProcessorState<T>, handle
         DcsState::Decrqss => {
             let query: Vec<u8> = state.decrqss_buf.drain(..).collect();
             handler.decrqss(&query);
+        },
+        DcsState::Decrsps { ps } => {
+            let payload: Vec<u8> = state.decrsps_buf.drain(..).collect();
+            handler.decrsps(ps, &payload);
         },
         DcsState::None => debug!("[unhandled unhook]"),
     }

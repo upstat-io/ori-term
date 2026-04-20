@@ -107,6 +107,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: test-linux
+      - name: Spec coverage lint
+        run: cargo run -p oriterm_test_support --bin spec-coverage-report -- --check
+      - name: Audit-files lint
+        run: cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files
       - name: Run tests
         id: tests
         continue-on-error: true

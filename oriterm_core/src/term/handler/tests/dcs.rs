@@ -167,3 +167,90 @@ fn decrqss_unknown_reports_invalid() {
         "DECRQSS unknown query should report invalid (0$r): {events:?}"
     );
 }
+
+#[test]
+fn decrqss_decscusr_reports_default_blink_block() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS $ q <SP> q ST — request cursor style.
+    feed(&mut t, b"\x1bP$q q\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r1 q\x1b\\)"),
+        "DECRQSS DECSCUSR at default should be blink block (Ps=1): {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_decscusr_reports_steady_bar_after_decscusr_6() {
+    let (mut t, listener) = term_with_recorder();
+    // DECSCUSR 6 = steady bar.
+    feed(&mut t, b"\x1b[6 q");
+    feed(&mut t, b"\x1bP$q q\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r6 q\x1b\\)"),
+        "DECRQSS DECSCUSR after `CSI 6 SP q` should be Ps=6: {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_decsca_reports_unprotected_at_default() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1bP$q\"q\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r2\"q\x1b\\)"),
+        "DECRQSS DECSCA at default should report unprotected (Ps=2): {events:?}"
+    );
+}
+
+#[test]
+fn decrqss_decsca_reports_protected_after_decsca_1() {
+    let (mut t, listener) = term_with_recorder();
+    // DECSCA 1 = protected.
+    feed(&mut t, b"\x1b[1\"q");
+    feed(&mut t, b"\x1bP$q\"q\x1b\\");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e == "PtyWrite(\x1bP1$r1\"q\x1b\\)"),
+        "DECRQSS DECSCA after `CSI 1 \" q` should report Ps=1: {events:?}"
+    );
+}
+
+// --- DECRSPS tests (DCS Ps $ t ... ST) ---
+
+#[test]
+fn decrsps_ps1_is_accepted_without_reply_or_state_change() {
+    let (mut t, listener) = term_with_recorder();
+    let cursor_shape_before = t.cursor_shape();
+    // DCS 1 $ t ... ST — Ps=1 DECCIR cursor-info restore.
+    feed(&mut t, b"\x1bP1$tdata\x1b\\");
+
+    // Stub: no reply emitted (DECRSPS has no acknowledgement per xterm spec),
+    // and no presentation state mutated.
+    let events = listener.events();
+    let pty_writes: Vec<_> = events.iter().filter(|e| e.contains("PtyWrite")).collect();
+    assert!(
+        pty_writes.is_empty(),
+        "DECRSPS stub should emit no PTY write: {pty_writes:?}"
+    );
+    assert_eq!(t.cursor_shape(), cursor_shape_before);
+}
+
+#[test]
+fn decrsps_ps2_is_accepted_without_reply_or_state_change() {
+    let (mut t, listener) = term_with_recorder();
+    // DCS 2 $ t ... ST — Ps=2 DECTABSR tab-stop restore.
+    feed(&mut t, b"\x1bP2$t1/9/17\x1b\\");
+
+    let events = listener.events();
+    let pty_writes: Vec<_> = events.iter().filter(|e| e.contains("PtyWrite")).collect();
+    assert!(
+        pty_writes.is_empty(),
+        "DECRSPS Ps=2 stub should emit no PTY write: {pty_writes:?}"
+    );
+}

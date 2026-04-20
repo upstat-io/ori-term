@@ -19,6 +19,8 @@ mod snapshot;
 
 pub use charset::CharsetState;
 pub use mode::TermMode;
+// `AceMode` is declared below next to the `Term` struct so keep its
+// re-export close to the rest of `term/mod.rs`'s public surface.
 pub use renderable::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
     RenderablePlacement, TermDamage, maybe_shrink_vec,
@@ -182,6 +184,62 @@ pub struct Term<S: EffectSink> {
     /// negate-on, attribs-included, trim, DEC-translate — which matches
     /// xterm's default DECRQCRA reply.
     checksum_flags: u16,
+    /// DECSCA per-character protection for SUBSEQUENTLY written cells.
+    ///
+    /// `false` (default) = cells written unprotected. `true` = cells
+    /// written with `CellFlags::PROTECTED` set, surviving DECSERA.
+    /// Flipped by DECSCA (`CSI Ps " q`): Ps=0 or 2 → false, Ps=1 → true.
+    char_protection: bool,
+    /// DECSCL conformance level (VT100/VT200/VT300/VT400).
+    ///
+    /// Observable state only — the parser's C1 dispatch is not gated
+    /// on this field (parser scope is out of Term's reach per §09A.8).
+    /// Default `64` matches the DA1 response (VT420 conformance).
+    conformance_level: u16,
+    /// DECSCL C1 mode: `false` = 8-bit C1 (Pc=0 or 2), `true` = 7-bit
+    /// C1 (Pc=1). Observable only — does not suppress parser C1
+    /// recognition; see §09A.8 deviation note.
+    c1_7bit: bool,
+    /// DECSASD active status display target.
+    ///
+    /// 0 = main display (default), 1 = status line. `ori_term` does
+    /// not render a status line; the field is stored as observable
+    /// state only.
+    active_status_display: u16,
+    /// DECSSDT status line type.
+    ///
+    /// 0 = off (default), 1 = indicator, 2 = host-writable.
+    /// `ori_term` does not render a status line; stored as observable
+    /// state only.
+    status_line_type: u16,
+    /// DECSACE (`CSI Ps * x`) attribute-change extent mode.
+    ///
+    /// Governs whether DECCARA / DECRARA operate on a stream of cells
+    /// (Ps=0 or 1 — default, wraps across row boundaries inside the
+    /// rectangle's top/bottom rows) or a strict rectangle (Ps=2 — every
+    /// affected cell lies within the rectangle's left/right columns).
+    /// Stored on Term per the §09A.6/09A.8 LEAK guard: this is a mode
+    /// concern, never a grid concern.
+    ace_mode: AceMode,
+}
+
+/// DECSACE attribute-change extent mode.
+///
+/// Selects how DECCARA / DECRARA distribute their effect across the
+/// rectangle:
+///
+/// - `Stream` (Ps=0 or 1, default): wrap across row boundaries so only
+///   the first row's left column and the last row's right column clamp
+///   the stream; intermediate rows span the full width.
+/// - `Rectangle` (Ps=2): strict rectangular block — every row is clipped
+///   to `[left, right]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AceMode {
+    /// Stream mode (DECSACE Ps=0 or 1).
+    #[default]
+    Stream,
+    /// Rectangle mode (DECSACE Ps=2).
+    Rectangle,
 }
 
 impl<S: EffectSink> Term<S> {
@@ -229,6 +287,12 @@ impl<S: EffectSink> Term<S> {
             iterm2_state: Iterm2State::new(),
             colors_state: TermColorsState::new(),
             checksum_flags: 0,
+            char_protection: false,
+            conformance_level: 64,
+            c1_7bit: true,
+            active_status_display: 0,
+            status_line_type: 0,
+            ace_mode: AceMode::default(),
         }
     }
 
@@ -270,6 +334,42 @@ impl<S: EffectSink> Term<S> {
     /// Set the bold-as-bright behavior.
     pub fn set_bold_is_bright(&mut self, enabled: bool) {
         self.bold_is_bright = enabled;
+    }
+
+    /// DECSCA per-character protection flag (true = subsequent writes
+    /// carry `CellFlags::PROTECTED`).
+    pub fn char_protection(&self) -> bool {
+        self.char_protection
+    }
+
+    /// DECSCL-reported conformance level (e.g. 64 = VT420).
+    pub fn conformance_level(&self) -> u16 {
+        self.conformance_level
+    }
+
+    /// DECSCL C1 mode: `true` when 7-bit C1 control encoding was
+    /// selected (observable state; does not gate parser dispatch).
+    pub fn c1_7bit(&self) -> bool {
+        self.c1_7bit
+    }
+
+    /// DECSASD active status display target (0 = main, 1 = status).
+    pub fn active_status_display(&self) -> u16 {
+        self.active_status_display
+    }
+
+    /// DECSSDT status line type (0 = off, 1 = indicator, 2 = host).
+    pub fn status_line_type(&self) -> u16 {
+        self.status_line_type
+    }
+
+    /// DECSACE attribute-change extent mode (stream vs rectangle).
+    ///
+    /// Consumed by DECCARA / DECRARA when distributing SGR mutations
+    /// across the rectangle. Default `Stream` matches xterm's Ps=0/1
+    /// baseline; Ps=2 switches to strict `Rectangle` mode.
+    pub fn ace_mode(&self) -> AceMode {
+        self.ace_mode
     }
 
     /// Whether grid content was modified since the last check.

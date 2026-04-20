@@ -58,44 +58,91 @@ fn assert_seed_intact(t: &Term<VoidEffectSink>) {
     assert_eq!(t.grid().cursor().col().0, 0);
 }
 
+/// DECSACE Ps=2 flips Term into rectangle extent mode; other values
+/// (including the default 0) restore stream mode. Grid content is not
+/// mutated — only the mode is.
 #[test]
-fn decsace_stub_is_noop() {
+fn decsace_updates_ace_mode_on_term() {
+    use crate::term::AceMode;
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[2*x"); // DECSACE rectangular mode
+    assert_eq!(t.ace_mode(), AceMode::Stream);
+    feed(&mut t, b"\x1b[2*x");
+    assert_eq!(t.ace_mode(), AceMode::Rectangle);
+    feed(&mut t, b"\x1b[0*x");
+    assert_eq!(t.ace_mode(), AceMode::Stream);
+    // Grid content untouched by DECSACE alone.
     assert_seed_intact(&t);
 }
 
+/// DECCARA with SGR 7 (reverse) applies the INVERSE flag to every
+/// cell inside the clamped rectangle. Negative pin: cells OUTSIDE the
+/// rectangle must not be touched.
 #[test]
-fn deccara_stub_is_noop() {
+fn deccara_sets_reverse_flag_in_rect() {
+    use crate::cell::CellFlags;
+    use crate::index::{Column, Line};
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[1;1;5;5;7$r"); // DECCARA with SGR 7 (reverse)
-    assert_seed_intact(&t);
+    feed(&mut t, b"\x1b[1;1;1;2;7$r"); // DECCARA row 1, cols 1..=2, SGR 7
+    let row = &t.grid()[Line(0)];
+    assert!(row[Column(0)].flags.contains(CellFlags::INVERSE));
+    assert!(row[Column(1)].flags.contains(CellFlags::INVERSE));
+    assert!(!row[Column(2)].flags.contains(CellFlags::INVERSE)); // 'C' untouched
 }
 
+/// DECRARA with SGR 1 (bold) toggles the BOLD flag on every cell in
+/// the rectangle. Applying it twice should be a no-op (XOR idempotence).
 #[test]
-fn decrara_stub_is_noop() {
+fn decrara_toggles_bold_flag_in_rect() {
+    use crate::cell::CellFlags;
+    use crate::index::{Column, Line};
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[1;1;5;5;1$t"); // DECRARA toggling SGR 1 (bold)
-    assert_seed_intact(&t);
+    feed(&mut t, b"\x1b[1;1;1;3;1$t"); // DECRARA toggling SGR 1
+    let row = &t.grid()[Line(0)];
+    assert!(row[Column(0)].flags.contains(CellFlags::BOLD));
+    assert!(row[Column(2)].flags.contains(CellFlags::BOLD));
+    feed(&mut t, b"\x1b[1;1;1;3;1$t"); // toggle back
+    let row = &t.grid()[Line(0)];
+    assert!(!row[Column(0)].flags.contains(CellFlags::BOLD));
+    assert!(!row[Column(2)].flags.contains(CellFlags::BOLD));
 }
 
+/// DECCRA copies a source rectangle to a destination position.
+/// Non-overlapping copy: source remains intact, destination mirrors it.
 #[test]
-fn deccra_stub_is_noop() {
+fn deccra_copies_rect_to_destination() {
+    use crate::index::{Column, Line};
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[1;1;3;3;1;10;10;1$v"); // DECCRA copy
-    assert_seed_intact(&t);
+    // Copy row 1 cols 1..=3 to row 2 col 1.
+    feed(&mut t, b"\x1b[1;1;1;3;1;2;1;1$v");
+    let src = &t.grid()[Line(0)];
+    let dst = &t.grid()[Line(1)];
+    assert_eq!(src[Column(0)].ch, 'A');
+    assert_eq!(dst[Column(0)].ch, 'A');
+    assert_eq!(dst[Column(2)].ch, 'C');
 }
 
+/// DECFRA fills a rectangle with character Pc (ASCII 'X' = 0x58) +
+/// current SGR. Negative pin: cells OUTSIDE the rect are unchanged.
 #[test]
-fn decfra_stub_is_noop() {
+fn decfra_fills_rect_with_character() {
+    use crate::index::{Column, Line};
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[88;1;1;5;5$x"); // DECFRA fill with 'X'
-    assert_seed_intact(&t);
+    feed(&mut t, b"\x1b[88;2;1;3;5$x"); // Fill rows 2..=3, cols 1..=5 with 'X' (0x58)
+    let row2 = &t.grid()[Line(1)];
+    let row3 = &t.grid()[Line(2)];
+    assert_eq!(row2[Column(0)].ch, 'X');
+    assert_eq!(row2[Column(4)].ch, 'X');
+    assert_eq!(row3[Column(2)].ch, 'X');
+    // Row 1 (the seeded "ABC" line) is outside the rect and stays intact.
+    let row1 = &t.grid()[Line(0)];
+    assert_eq!(row1[Column(0)].ch, 'A');
+    assert_eq!(row1[Column(1)].ch, 'B');
+    assert_eq!(row1[Column(2)].ch, 'C');
 }
 
 /// XTCHECKSUM `csPOSITIVE` (bit 1) suppresses the final negation.
@@ -291,26 +338,49 @@ fn decrqcra_emits_synchronous_pty_write_only() {
     assert_eq!(kind, PtyWriteKind::ChecksumReport);
 }
 
+/// DECERA erases every cell in the rectangle unconditionally — even
+/// cells that were written (DRAWN + content). The seeded "ABC" line
+/// falls inside the rectangle and is wiped to spaces.
 #[test]
-fn decera_stub_is_noop() {
+fn decera_erases_all_cells_in_rect() {
+    use crate::index::{Column, Line};
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[1;1;5;5$z"); // DECERA
-    assert_seed_intact(&t);
+    feed(&mut t, b"\x1b[1;1;5;5$z"); // DECERA rect (1,1)-(5,5)
+    let row = &t.grid()[Line(0)];
+    assert_eq!(row[Column(0)].ch, ' ');
+    assert_eq!(row[Column(1)].ch, ' ');
+    assert_eq!(row[Column(2)].ch, ' ');
 }
 
+/// DECSERA preserves PROTECTED cells (DECSCA Ps=1). Write two
+/// protected cells then an unprotected cell, run DECSERA: protected
+/// ones survive, unprotected wipes.
 #[test]
-fn decsera_stub_is_noop() {
+fn decsera_preserves_protected_cells() {
+    use crate::cell::CellFlags;
+    use crate::index::{Column, Line};
     let mut t = term_24x80();
-    seed_abc(&mut t);
-    feed(&mut t, b"\x1b[1;1;5;5${"); // DECSERA
-    assert_seed_intact(&t);
+    feed(&mut t, b"\x1b[1;1H"); // home
+    feed(&mut t, b"\x1b[1\"q"); // DECSCA Ps=1 (PROTECTED on)
+    feed(&mut t, b"AB");
+    feed(&mut t, b"\x1b[0\"q"); // DECSCA Ps=0 (PROTECTED off)
+    feed(&mut t, b"C");
+    feed(&mut t, b"\x1b[1;1;1;3${"); // DECSERA rect (1,1)-(1,3)
+    let row = &t.grid()[Line(0)];
+    // Protected cells survive.
+    assert_eq!(row[Column(0)].ch, 'A');
+    assert_eq!(row[Column(1)].ch, 'B');
+    assert!(row[Column(0)].flags.contains(CellFlags::PROTECTED));
+    // Unprotected cell wipes.
+    assert_eq!(row[Column(2)].ch, ' ');
+    assert!(!row[Column(2)].flags.contains(CellFlags::PROTECTED));
 }
 
 #[test]
 fn xtreportsgr_stub_is_noop() {
     let mut t = term_24x80();
     seed_abc(&mut t);
-    feed(&mut t, b"\x1b[1;1;5;5#|"); // XTREPORTSGR
+    feed(&mut t, b"\x1b[1;1;5;5#|"); // XTREPORTSGR — stub, out of §09A.6 scope
     assert_seed_intact(&t);
 }
