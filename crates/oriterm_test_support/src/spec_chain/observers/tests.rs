@@ -2,10 +2,11 @@
 
 use super::*;
 use crate::spec_chain::{
-    DispatchExpectation, EffectExpectation, ParserExpectation, SpecHarness, StateExpectation,
+    DispatchExpectation, EffectExpectation, ParserExpectation, RenderableExpectation, SpecHarness,
+    StateExpectation,
 };
 
-// ── Parser observer ─────────────────────────────────────────────────
+// Parser observer
 
 #[test]
 fn parser_observer_matches_csi_action() {
@@ -112,7 +113,7 @@ fn parser_observer_distinguishes_osc_commands() {
     );
 }
 
-// ── Dispatch observer ───────────────────────────────────────────────
+// Dispatch observer
 
 #[test]
 fn dispatch_observer_matches_method_name() {
@@ -141,7 +142,7 @@ fn dispatch_observer_fails_on_wrong_method() {
     );
 }
 
-// ── State observer ──────────────────────────────────────────────────
+// State observer
 
 #[test]
 fn state_observer_matches_cursor_position() {
@@ -177,7 +178,7 @@ fn state_observer_fails_on_wrong_col() {
     assert!(!result.passed, "state observer should fail for wrong col");
 }
 
-// ── Effect observer ─────────────────────────────────────────────────
+// Effect observer
 
 #[test]
 fn effect_observer_matches_pty_effect() {
@@ -246,5 +247,151 @@ fn effect_observer_fails_on_wrong_sub_variant() {
     assert!(
         !result.passed,
         "effect observer should fail for wrong sub-variant"
+    );
+}
+
+// Renderable observer
+//
+// Stub-regression pins. With the original `RungResult::pass(rung)`-only
+// stub, the mismatch tests below would PASS the assertion (stub returned
+// `passed: true`), so the test would FAIL — the negative pin is what
+// proves the observer actually inspects the snapshot. After the observer
+// implementation lands, both the matching and the mismatched expectations
+// behave correctly: positive case passes, negative case fails.
+
+#[test]
+fn renderable_observer_hyperlink_matches() {
+    let mut harness = SpecHarness::new();
+    // OSC 8 ; ; http://right.com ST X OSC 8 ; ; ST — attach URI, write 'X', clear.
+    harness.feed(b"\x1b]8;;http://right.com\x1b\\X\x1b]8;;\x1b\\");
+
+    let expected = RenderableExpectation {
+        hyperlink_at: Some((0, 0, "http://right.com")),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        result.passed,
+        "renderable observer should match correct hyperlink URI: {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn renderable_observer_fails_on_wrong_hyperlink_uri() {
+    // STUB-REGRESSION PIN: if `observe_renderable` regresses to the
+    // `RungResult::pass(rung)`-only stub, this assertion FAILS — the stub
+    // returns `passed: true` against any expectation, including a wrong
+    // URI. The observer MUST detect the mismatch and return `passed: false`.
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b]8;;http://right.com\x1b\\X\x1b]8;;\x1b\\");
+
+    let expected = RenderableExpectation {
+        hyperlink_at: Some((0, 0, "http://wrong.com")),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        !result.passed,
+        "renderable observer must fail when expected URI differs from snapshot URI \
+         (if this passes, the observer regressed to the stub)"
+    );
+}
+
+#[test]
+fn renderable_observer_fails_when_hyperlink_absent() {
+    // Negative pin: cell exists but has NO hyperlink attached; expecting
+    // one must fail (the stub would have passed this too).
+    let mut harness = SpecHarness::new();
+    harness.feed(b"X");
+
+    let expected = RenderableExpectation {
+        hyperlink_at: Some((0, 0, "http://example.com")),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        !result.passed,
+        "renderable observer must fail when cell has no hyperlink but expectation does"
+    );
+}
+
+#[test]
+fn renderable_observer_cursor_position_matches() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[5;10H"); // CUP row 5 col 10 → 0-based (4, 9)
+
+    let expected = RenderableExpectation {
+        cursor_position: Some((4, 9)),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        result.passed,
+        "renderable observer should match cursor at (4,9): {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn renderable_observer_fails_on_wrong_cursor_position() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"\x1b[5;10H");
+
+    let expected = RenderableExpectation {
+        cursor_position: Some((0, 0)),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        !result.passed,
+        "renderable observer must fail when cursor position differs from snapshot"
+    );
+}
+
+#[test]
+fn renderable_observer_cell_char_matches() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"X");
+
+    let expected = RenderableExpectation {
+        cells: Some(&[(0, 0, 'X')]),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        result.passed,
+        "renderable observer should match cell 'X' at (0,0): {:?}",
+        result.failure
+    );
+}
+
+#[test]
+fn renderable_observer_fails_on_wrong_cell_char() {
+    let mut harness = SpecHarness::new();
+    harness.feed(b"X");
+
+    let expected = RenderableExpectation {
+        cells: Some(&[(0, 0, 'Y')]),
+        ..Default::default()
+    };
+    let result = observe_renderable(harness.term(), expected);
+    assert!(
+        !result.passed,
+        "renderable observer must fail when expected cell char differs from snapshot"
+    );
+}
+
+#[test]
+fn renderable_observer_default_expectation_passes() {
+    // Empty expectation (no fields set) must always pass — there is
+    // nothing to disprove. This guards against an over-eager observer
+    // that fails on `Default::default()`.
+    let harness = SpecHarness::new();
+    let result = observe_renderable(harness.term(), RenderableExpectation::default());
+    assert!(
+        result.passed,
+        "renderable observer with empty expectation must pass: {:?}",
+        result.failure
     );
 }

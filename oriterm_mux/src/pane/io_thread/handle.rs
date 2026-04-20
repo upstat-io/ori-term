@@ -150,7 +150,8 @@ pub struct IoThreadConfig<S: EffectSink + 'static> {
     pub shutdown: Arc<AtomicBool>,
     /// Wakeup callback — signals the main thread on new state.
     pub wakeup: Arc<dyn Fn() + Send + Sync>,
-    /// Grid dirty flag (shared with `IoThreadEventProxy`).
+    /// Grid dirty flag — set by the IO thread when VTE parsing produces
+    /// new state, cleared after snapshot publication.
     pub grid_dirty: Arc<AtomicBool>,
     /// PTY control handle for resize (SIGWINCH). `None` in tests and
     /// for adopted (default-terminal handoff) panes.

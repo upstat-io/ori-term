@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every catalog row in `catalog/charsets.md` from `implemented-unverified` to `verified`, IMPLEMENT the missing NRCS variants (currently only ASCII + Special Graphics exist per Pass 1), implement ISO 2022 multibyte set switching, and verify Unicode policy compliance against UAX #11 (East Asian Width), UAX #29 (Grapheme Clustering), UAX #9 (Bidi), variation selectors VS15/VS16, and emoji ZWJ sequences."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-18-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (ISO 2022 charset designations; ISO 8859 family; DEC technical manuals NRCS variants; Unicode UAX #9 Bidi, #11 East Asian Width, #29 Grapheme Clustering; DEC special-graphics + line-drawing + technical + supplemental + dingbats charts) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "Every row in `catalog/charsets.md` is `verified`"
   - "**NRCS variants implemented**: every NRCS variant in scope (ANSI X3.4, BS, DE, FI, FR, FR_CA, IT, NL, NO, PT, SE, SP, SU, CH, JIS Roman, JIS Kana, KOR, ARA, GREEK, HEB, RUS, TUR) added to `crates/vte/src/ansi/attr.rs::StandardCharset` enum and dispatched correctly"
   - "ISO 2022 multibyte set switching verified: G0/G1/G2/G3 designation via `ESC ( <intermediate> <final>` sequences, locking shifts (LS2/LS3/LS1R/LS2R/LS3R), single shifts (SS2/SS3) all work for multibyte sets (JIS X 0208, GB 2312, KSC 5601)"
@@ -28,6 +29,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "18.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "18.1"
     title: "Implement NRCS variant enum + dispatch (single-byte NRCS)"
     status: not-started
@@ -82,6 +86,31 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 08 (baseline charset designation handlers verified — section 08 doesn't expand charsets, so this section is the first to add new variants).
+
+---
+
+## 18.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-18-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** ISO 2022 (row-by-row enumerator for G0/G1/G2/G3 designation sequences — every `ESC ( <final>`, `ESC ) <final>`, `ESC * <final>`, `ESC + <final>`, `ESC $ <final>` maps to a catalog row); ISO 8859 parts 1-16 (single-byte upper-half charsets); DEC technical manuals (NRCS variant tables for British/German/French/FrenchCanadian/Italian/Dutch/NorwegianDanish/Portuguese/Swedish/Spanish/Finnish/Swiss + JIS Roman/Katakana + DEC special-graphics/line-drawing/technical/supplemental/dingbats); Unicode UAX #9 (Bidi), UAX #11 (East Asian Width), UAX #29 (Grapheme Clustering).
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-18-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/charsets.md` (open new rows for any designation sequences present in the spec but not yet catalogued)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-18-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [ ] Every row has a `Decision` of `mapped` (cites catalog row ID) or `not-targeted` (with rationale).
+- [ ] Every `mapped` row resolves to a real catalog row.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` and `walked_by` set.
+- [ ] Any new catalog rows use the canonical 10-column schema.
+
+**No other subsection in this section can begin work until §18.0 is complete.**
 
 ---
 

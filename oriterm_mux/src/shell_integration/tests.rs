@@ -5,7 +5,7 @@ use std::path::Path;
 use super::scripts::ensure_scripts_on_disk;
 use super::{Shell, detect_shell};
 
-// --- Shell detection ---
+// Shell detection
 
 #[test]
 fn detect_shell_unix_paths() {
@@ -58,7 +58,7 @@ fn detect_shell_windows_full_paths() {
     );
 }
 
-// --- Version stamping and script writing ---
+// Version stamping and script writing
 
 #[test]
 fn ensure_scripts_writes_all_files() {
@@ -144,7 +144,7 @@ fn scripts_contain_osc_sequences() {
     assert!(ps.contains("]7;"), "pwsh script must emit OSC 7");
 }
 
-// --- Injection configuration ---
+// Injection configuration
 
 #[test]
 fn setup_injection_bash_returns_posix_flag() {
@@ -191,9 +191,11 @@ fn setup_injection_wsl_returns_none() {
     assert_eq!(extra, None);
 }
 
-// --- Raw interceptor ---
+// Raw interceptor
 
-use oriterm_core::effect::{Effect, EffectSink, HostEffect, QueueingEffectSink};
+use oriterm_core::effect::{
+    Effect, EffectSink, HostEffect, NotificationSource, PtyEffect, QueueingEffectSink,
+};
 use oriterm_core::{PromptState, Term, Theme};
 
 /// Helper: create a minimal terminal for interceptor tests.
@@ -210,6 +212,7 @@ fn intercept(term: &mut Term<QueueingEffectSink>, bytes: &[u8]) {
 
 /// Test-local notification record for readable assertions.
 struct TestNotification {
+    source: NotificationSource,
     title: String,
     body: String,
 }
@@ -222,8 +225,16 @@ fn drain_desktop_notifications(term: &Term<QueueingEffectSink>) -> Vec<TestNotif
     let mut notifs = Vec::new();
     for effect in effects {
         match effect {
-            Effect::Host(HostEffect::DesktopNotification { title, body, .. }) => {
-                notifs.push(TestNotification { title, body });
+            Effect::Host(HostEffect::DesktopNotification {
+                source,
+                title,
+                body,
+            }) => {
+                notifs.push(TestNotification {
+                    source,
+                    title,
+                    body,
+                });
             }
             Effect::Host(HostEffect::ClearPendingNotifications) => notifs.clear(),
             _ => {}
@@ -312,7 +323,7 @@ fn interceptor_osc777_ignores_non_notify() {
     assert!(notifs.is_empty());
 }
 
-// --- Effective title resolution ---
+// Effective title resolution
 
 #[test]
 fn effective_title_prefers_explicit() {
@@ -362,7 +373,7 @@ fn effective_title_empty_fallback() {
     assert_eq!(term.effective_title(), "");
 }
 
-// --- Prompt row tracking ---
+// Prompt row tracking
 
 #[test]
 fn mark_prompt_row_records_position() {
@@ -424,7 +435,7 @@ fn interceptor_osc7_path_parsing() {
     assert_eq!(parse_osc7_path("file://host"), "host");
 }
 
-// --- Command timing ---
+// Command timing
 
 #[test]
 fn osc133c_records_command_start() {
@@ -485,7 +496,7 @@ fn command_duration_updates_on_new_command() {
     assert!(dur2.as_millis() >= 10);
 }
 
-// --- Gap analysis tests ---
+// Gap analysis tests
 
 // OSC 7: percent-encoded paths (Fish and some shells percent-encode URIs).
 
@@ -599,17 +610,20 @@ fn interceptor_osc133d_with_nonzero_exit_code() {
     assert_eq!(term.prompt_state(), PromptState::None);
 }
 
-// OSC 99: Kitty notification protocol.
+// OSC 99: Kitty notification protocol. Kitty's spec mandates
+// `OSC 99 ; metadata ; payload ST` (two semicolons even when metadata is
+// empty); the payload lives at params[2]. Default `p=title` routes the
+// payload into the `title` field — only `p=body` routes into `body`.
 
 #[test]
 fn interceptor_osc99_kitty_notification() {
     let mut term = make_term();
-    intercept(&mut term, b"\x1b]99;Build complete\x07");
+    intercept(&mut term, b"\x1b]99;;Build complete\x07");
 
     let notifs = drain_desktop_notifications(&term);
     assert_eq!(notifs.len(), 1);
-    assert_eq!(notifs[0].body, "Build complete");
-    assert!(notifs[0].title.is_empty());
+    assert_eq!(notifs[0].title, "Build complete");
+    assert!(notifs[0].body.is_empty());
 }
 
 // Script writing: nonexistent parent directory returns error.
@@ -691,7 +705,7 @@ fn prompt_navigation_scrolls_to_next() {
     );
 }
 
-// --- Gap analysis: extra content after OSC 133 action letter ---
+// Gap analysis: extra content after OSC 133 action letter
 
 #[test]
 fn interceptor_osc133_extra_content_after_action_letter() {
@@ -712,7 +726,7 @@ fn interceptor_osc133_extra_content_after_d() {
     assert_eq!(term.prompt_state(), PromptState::None);
 }
 
-// --- Gap analysis: negative exit code in OSC 133;D ---
+// Gap analysis: negative exit code in OSC 133;D
 
 #[test]
 fn interceptor_osc133d_with_negative_exit_code() {
@@ -726,7 +740,7 @@ fn interceptor_osc133d_with_negative_exit_code() {
     assert!(term.last_command_duration().is_some());
 }
 
-// --- Gap analysis: exit code with option suffix ---
+// Gap analysis: exit code with option suffix
 
 #[test]
 fn interceptor_osc133d_with_exit_code_and_aid() {
@@ -740,7 +754,7 @@ fn interceptor_osc133d_with_exit_code_and_aid() {
     assert!(term.last_command_duration().is_some());
 }
 
-// --- Gap analysis: OSC 133;A with trailing semicolons/bare keys ---
+// Gap analysis: OSC 133;A with trailing semicolons/bare keys
 
 #[test]
 fn interceptor_osc133a_trailing_semicolon() {
@@ -759,7 +773,7 @@ fn interceptor_osc133a_bare_key_option() {
     assert_eq!(term.prompt_state(), PromptState::PromptStart);
 }
 
-// --- Gap analysis: OSC 7 with empty URI ---
+// Gap analysis: OSC 7 with empty URI
 
 #[test]
 fn interceptor_osc7_empty_uri() {
@@ -782,7 +796,7 @@ fn interceptor_osc7_file_scheme_only() {
     assert!(term.cwd().is_none());
 }
 
-// --- Gap analysis: OSC 9 single-character body ---
+// Gap analysis: OSC 9 single-character body
 
 #[test]
 fn interceptor_osc9_single_char_body() {
@@ -794,7 +808,7 @@ fn interceptor_osc9_single_char_body() {
     assert_eq!(notifs[0].body, "X");
 }
 
-// --- Gap analysis: command timing very fast ---
+// Gap analysis: command timing very fast
 
 #[test]
 fn command_timing_very_fast_command() {
@@ -808,7 +822,7 @@ fn command_timing_very_fast_command() {
     assert!(dur.as_secs() == 0);
 }
 
-// --- Gap analysis: RIS clears shell state (end-to-end via interceptor) ---
+// Gap analysis: RIS clears shell state (end-to-end via interceptor)
 
 #[test]
 fn ris_clears_cwd_and_effective_title() {
@@ -871,7 +885,7 @@ fn ris_clears_pending_notifications() {
     );
 }
 
-// --- Gap analysis: multiple A markers without B/C/D ---
+// Gap analysis: multiple A markers without B/C/D
 
 #[test]
 fn multiple_osc133a_without_completion_creates_separate_markers() {
@@ -895,67 +909,57 @@ fn multiple_osc133a_without_completion_creates_separate_markers() {
     assert!(term.prompt_markers()[0].output.is_none());
 }
 
-// --- XTVERSION (CSI > q) ---
+// XTVERSION (CSI > q)
 
-/// Event listener that records all events for assertions.
-#[derive(Clone)]
+/// Effect sink that records `PtyEffect::Write` payloads for assertions.
+#[derive(Clone, Default)]
 struct RecordingListener {
-    events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    pty_writes: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl RecordingListener {
     fn new() -> Self {
-        Self {
-            events: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-        }
+        Self::default()
     }
 
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("lock poisoned").clone()
+    fn pty_writes(&self) -> Vec<String> {
+        self.pty_writes.lock().expect("lock poisoned").clone()
     }
 }
 
-impl oriterm_core::EventListener for RecordingListener {
-    fn send_event(&self, event: oriterm_core::Event) {
-        self.events
-            .lock()
-            .expect("lock poisoned")
-            .push(format!("{event:?}"));
+impl EffectSink for RecordingListener {
+    fn push(&self, effect: Effect) {
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect {
+            let s = String::from_utf8_lossy(&bytes).into_owned();
+            self.pty_writes.lock().expect("lock poisoned").push(s);
+        }
     }
+
+    fn drain_into(&self, _out: &mut Vec<Effect>) {}
 }
 
 #[test]
 fn xtversion_responds_with_oriterm_version() {
-    use oriterm_core::effect::LegacyEventSink;
-
     let listener = RecordingListener::new();
-    let mut term = Term::new(
-        24,
-        80,
-        100,
-        Theme::Dark,
-        LegacyEventSink::new(listener.clone()),
-    );
+    let mut term = Term::new(24, 80, 100, Theme::Dark, listener.clone());
 
     // CSI > q — XTVERSION request.
     let mut parser = vte::Parser::new();
     let mut interceptor = super::interceptor::RawInterceptor::new(&mut term);
     parser.advance(&mut interceptor, b"\x1b[>q");
 
-    let events = listener.events();
-    let pty_write = events.iter().find(|e| e.contains("PtyWrite"));
+    let writes = listener.pty_writes();
     assert!(
-        pty_write.is_some(),
-        "XTVERSION should produce a PtyWrite event, got: {events:?}"
+        !writes.is_empty(),
+        "XTVERSION should produce a PtyWrite payload, got: {writes:?}"
     );
-    let pty_write = pty_write.unwrap();
     assert!(
-        pty_write.contains("oriterm"),
-        "XTVERSION response should contain 'oriterm', got: {pty_write}"
+        writes.iter().any(|w| w.contains("oriterm")),
+        "XTVERSION response should contain 'oriterm', got: {writes:?}"
     );
 }
 
-// --- OSC 7 non-UTF-8 edge case ---
+// OSC 7 non-UTF-8 edge case
 
 #[test]
 fn interceptor_osc7_non_utf8_bytes_returns_empty_path() {
@@ -981,4 +985,789 @@ fn interceptor_osc7_non_utf8_bytes_returns_empty_path() {
             "CWD should not contain non-UTF-8 garbage, got: {cwd:?}"
         );
     }
+}
+
+// spec_chain_helper: production-order dual-pass byte feed.
+//
+// `spec_chain_helper::feed_mux_and_proc` encapsulates the production
+// "interceptor FIRST, processor SECOND" byte-feed order so downstream
+// spec_chain tests for OSC 7 / 9 / 99 / 133 / 633 / 777 cannot accidentally
+// reorder the two passes (a silent false-green source). It lives in the
+// sibling unit-test module because `RawInterceptor` is `pub(crate)` and
+// integration tests in `oriterm_mux/tests/` cannot reach it.
+//
+// The high-level `vte::ansi::Processor` silently drops OSC 133 / 9 / 99 / 777
+// (no `Handler` trait route exists for them), so a test that calls only
+// `Processor::advance` would observe NO state mutation for those sequences
+// — exactly the behavior the production path avoids by running the
+// interceptor FIRST. The TDD pair below pins this contract.
+
+mod spec_chain_helper {
+    use oriterm_core::Term;
+    use oriterm_core::effect::QueueingEffectSink;
+    use vte::Parser;
+    use vte::ansi::{Processor, StdSyncHandler};
+
+    use crate::shell_integration::interceptor::RawInterceptor;
+
+    /// Feed `bytes` through the production-order parser chain:
+    /// the raw `vte::Parser` + `RawInterceptor` runs first, then the
+    /// high-level `vte::ansi::Processor` runs on the same bytes.
+    ///
+    /// Both passes mutate `term`. The interceptor handles OSC 7 / 9 / 99
+    /// / 133 / 633 / 777 (and CSI > q), and the high-level processor
+    /// drives every other OSC, CSI, ESC, and DCS sequence.
+    pub(super) fn feed_mux_and_proc(term: &mut Term<QueueingEffectSink>, bytes: &[u8]) {
+        // Scope the interceptor so its `&mut term` borrow ends before the
+        // processor takes its own `&mut term` borrow on the next line.
+        {
+            let mut interceptor = RawInterceptor::new(term);
+            let mut raw_parser = Parser::new();
+            raw_parser.advance(&mut interceptor, bytes);
+        }
+        let mut processor = Processor::<StdSyncHandler>::new();
+        processor.advance(term, bytes);
+    }
+}
+
+/// TDD RED side: feeding OSC 133;A through ONLY the high-level
+/// `vte::ansi::Processor` (no `RawInterceptor` pass) leaves `prompt_state`
+/// unchanged. Proves the high-level processor really drops OSC 133, so
+/// the mux interceptor is load-bearing for the production path.
+#[test]
+fn osc133a_via_processor_only_does_not_change_prompt_state() {
+    use oriterm_core::PromptState;
+
+    let mut term = make_term();
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert_eq!(
+        term.prompt_state(),
+        PromptState::None,
+        "high-level Processor must NOT route OSC 133 to a Handler hook \
+         — if this assertion ever fires, OSC 133 was added to the \
+         high-level dispatcher and would be double-handled in production"
+    );
+    assert!(
+        !term.prompt_mark_pending(),
+        "high-level Processor must NOT set prompt_mark_pending for OSC 133"
+    );
+}
+
+/// TDD GREEN side: feeding OSC 133;A via the production-order
+/// `spec_chain_helper::feed_mux_and_proc` drives the interceptor's OSC
+/// 133 handler, which transitions `prompt_state` to `PromptStart`. This
+/// is the contract every downstream §10.3/§10.4/§10.8 mux-intercepted
+/// OSC test relies on.
+#[test]
+fn osc133a_via_spec_chain_helper_sets_prompt_start() {
+    use oriterm_core::PromptState;
+
+    let mut term = make_term();
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert_eq!(
+        term.prompt_state(),
+        PromptState::PromptStart,
+        "production-order dual-pass MUST drive OSC 133;A through the \
+         interceptor — if this assertion fails, the interceptor pass \
+         was dropped and downstream spec_chain tests would silently \
+         pass against a parser that never saw the sequence"
+    );
+    assert!(
+        term.prompt_mark_pending(),
+        "OSC 133;A via interceptor must set prompt_mark_pending"
+    );
+}
+
+// §10.3 — OSC 9 / 99 / 777 desktop notifications.
+//
+// These tests pin the `NotificationSource` discriminator that the mux
+// interceptor produces for each OSC variant, plus a negative pin proving
+// the high-level `vte::ansi::Processor` does NOT route OSC 9 to a
+// notification effect (mux interceptor is load-bearing).
+
+/// §10.3 — OSC 9 simple body: source=Osc9, title="", body preserved.
+/// OSC 9 (Growl-style, iTerm2/Windows Terminal) has no title field.
+#[test]
+fn osc9_simple_body_fires_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;Build complete\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc9);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "Build complete");
+}
+
+/// §10.3 — OSC 99 spec-conformant simple form (`OSC 99 ;; payload ST` —
+/// two semicolons mandatory per Kitty's spec even when metadata is empty).
+/// Default `p=title` (no `p` key in metadata) routes the payload into the
+/// `title` field per Kitty `desktop-notifications.rst` line 472. Pinning
+/// the source discriminator prevents a future refactor from collapsing
+/// the OSC 9 / OSC 99 arms in `handle_notification_simple`.
+#[test]
+fn osc99_default_payload_routes_to_title() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;;kitty payload\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc99);
+    assert_eq!(
+        notifs[0].title, "kitty payload",
+        "Kitty OSC 99 default p=title: payload at params[2] must route into title."
+    );
+    assert_eq!(notifs[0].body, "");
+}
+
+/// §10.3 — Kitty's OSC 99 two-parameter form with metadata that does NOT
+/// include a `p=` key (here `i=1:t=info`): the default `p=title` still
+/// applies; the payload routes into `title`; metadata is recognised as
+/// opaque and silently discarded. Pins the deviation tracked in
+/// `plans/spec-conformance/catalog/osc.md::OSC-99` — only the `p=` key
+/// is honoured; chunking (`i=` chunk id, `d=` done), base64 (`e=1`), type
+/// (`t=`), application (`f=`), urgency (`u=`), sound (`s=`), and other
+/// metadata keys are not honoured.
+#[test]
+fn osc99_metadata_form_default_p_routes_payload_to_title() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;i=1:t=info;hello\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc99);
+    assert_eq!(
+        notifs[0].title, "hello",
+        "metadata without `p=` defaults to p=title; payload routes to title."
+    );
+    assert_eq!(notifs[0].body, "");
+}
+
+/// §10.3 — Kitty's OSC 99 with `p=body` in the metadata: payload routes to
+/// `body` (not `title`). Pins the only metadata key the implementation
+/// actually parses (`p=`).
+#[test]
+fn osc99_p_body_routes_payload_to_body() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;p=body;hello\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc99);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "hello");
+}
+
+/// §10.3 — Kitty's OSC 99 with both empty metadata and empty payload
+/// (`OSC 99 ;; ST`): per Kitty's spec rule "A notification with not title
+/// and no body is ignored", the notification is dropped — no
+/// `DesktopNotification` effect is emitted.
+#[test]
+fn osc99_empty_payload_drops_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;;\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "Kitty OSC 99 with empty payload (no title, no body) must be dropped"
+    );
+}
+
+/// §10.3 — Kitty's OSC 99 with `p=close` (or any other unknown payload kind
+/// — `icon`, `?`, `alive`, `buttons`): per Kitty spec "Terminal emulators
+/// should ignore payloads of unknown type", the notification is dropped.
+#[test]
+fn osc99_unsupported_payload_kind_drops_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;p=close;something\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "Kitty OSC 99 with p=close (or any unknown p value) must be dropped"
+    );
+}
+
+/// §10.3 — OSC 777 with `notify` action, title, and body: source=Osc777.
+#[test]
+fn osc777_notify_title_body() {
+    let mut term = make_term();
+    intercept(
+        &mut term,
+        b"\x1b]777;notify;Build;completed successfully\x1b\\",
+    );
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc777);
+    assert_eq!(notifs[0].title, "Build");
+    assert_eq!(notifs[0].body, "completed successfully");
+}
+
+/// §10.3 — OSC 777 with a non-`notify` action is filtered out; no
+/// notification effect is emitted.
+#[test]
+fn osc777_non_notify_action_dropped() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]777;BAD_ACTION;title;body\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "OSC 777 with action != 'notify' must not emit a desktop notification"
+    );
+}
+
+/// §10.3 — OSC 9 with empty body still emits a notification (body="").
+#[test]
+fn osc9_empty_body() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc9);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "");
+}
+
+/// §10.3 — OSC 777 with an empty title field: title="", body preserved.
+#[test]
+fn osc777_missing_title() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]777;notify;;body-only\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].source, NotificationSource::Osc777);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "body-only");
+}
+
+/// §10.3 — Semantic pin: OSC 9 (Growl form) and OSC 99 (Kitty form, default
+/// `p=title`) fed in the same scenario produce *distinct* `NotificationSource`
+/// variants AND distinct field-routing semantics — OSC 9 routes payload into
+/// `body` (no title), OSC 99 routes payload into `title` (default `p=title`).
+/// A refactor that collapses the OSC 9 / 99 detection in
+/// `handle_notification_simple` would fail this assertion immediately. The
+/// OSC 99 input uses Kitty-conformant `;;` form per spec.
+#[test]
+fn osc9_and_osc99_use_different_sources() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;first\x1b\\");
+    intercept(&mut term, b"\x1b]99;;second\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert_eq!(notifs.len(), 2);
+    assert_eq!(notifs[0].source, NotificationSource::Osc9);
+    assert_eq!(notifs[0].title, "");
+    assert_eq!(notifs[0].body, "first");
+    assert_eq!(notifs[1].source, NotificationSource::Osc99);
+    assert_eq!(notifs[1].title, "second");
+    assert_eq!(notifs[1].body, "");
+    assert_ne!(
+        notifs[0].source, notifs[1].source,
+        "OSC 9 and OSC 99 must produce distinct NotificationSource variants"
+    );
+}
+
+/// §10.3 — Negative pin: feeding OSC 9 through the high-level
+/// `vte::ansi::Processor` ALONE (no `RawInterceptor` pass) does NOT emit a
+/// desktop notification. Proves the mux interceptor is load-bearing for
+/// OSC 9; if someone accidentally adds OSC 9 to the high-level dispatcher
+/// too, this test fails (double-dispatch detection). Mirrors
+/// `osc133a_via_processor_only_does_not_change_prompt_state`.
+#[test]
+fn osc9_via_processor_without_mux_drops() {
+    let mut term = make_term();
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]9;X\x1b\\");
+
+    let notifs = drain_desktop_notifications(&term);
+    assert!(
+        notifs.is_empty(),
+        "high-level Processor must NOT route OSC 9 to a notification \
+         effect — if this assertion fires, OSC 9 was added to the \
+         high-level dispatcher and would be double-handled in production"
+    );
+}
+
+// §10.4 — OSC 133 semantic prompt + OSC 633 VS Code shell integration.
+//
+// Both OSC 133 and OSC 633 drive the same `PromptState` state machine through
+// the mux interceptor. OSC 633 additionally records the raw command line via
+// `E` and routes property settings (`P;Cwd=...`) through `Term::set_cwd` —
+// the same SSOT OSC 7 writes to. Negative pins confirm the high-level
+// `vte::ansi::Processor` does NOT dispatch either OSC, so a future refactor
+// that accidentally duplicates a dispatch arm on the high-level side is
+// detected immediately.
+
+use oriterm_core::PromptMarker;
+
+/// Drain `HostEffect::CommandComplete` effects from the terminal's queue.
+/// Used by OSC 133;D / OSC 633;D tests to assert the effect landed.
+fn drain_command_complete(term: &Term<QueueingEffectSink>) -> Vec<std::time::Duration> {
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+    let mut out = Vec::new();
+    for effect in effects {
+        if let Effect::Host(HostEffect::CommandComplete { duration }) = effect {
+            out.push(duration);
+        }
+    }
+    out
+}
+
+/// §10.4 — OSC 133;A drives `PromptState` to `PromptStart` and sets
+/// `prompt_mark_pending`. Matches the dispatch at
+/// `oriterm_mux/src/shell_integration/interceptor.rs` `handle_osc133` `b'A'`
+/// arm. Uses `feed_mux_and_proc` so the production-order dual-pass is pinned.
+#[test]
+fn osc133_a_sets_prompt_state() {
+    let mut term = make_term();
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::PromptStart);
+    assert!(term.prompt_mark_pending());
+}
+
+/// §10.4 — OSC 133;B drives `PromptState` to `CommandStart` and sets
+/// `command_start_mark_pending`.
+#[test]
+fn osc133_b_sets_command_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;B\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::CommandStart);
+    assert!(term.command_start_mark_pending());
+}
+
+/// §10.4 — OSC 133;C drives `PromptState` to `OutputStart` and sets
+/// `output_start_mark_pending`. Command-start time is stored with a live
+/// wall-clock `Instant` per interceptor.rs `b'C'` arm; the exact value is
+/// not asserted because there is no injectable-clock seam at the C step
+/// (the Option A seam only covers the D step via `finish_command(now)`).
+#[test]
+fn osc133_c_sets_output_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::OutputStart);
+    assert!(term.output_start_mark_pending());
+}
+
+/// §10.4 — OSC 133;D after a full A→B→C lifecycle clears `PromptState` to
+/// `None` AND emits a `HostEffect::CommandComplete` with a non-negative
+/// duration. The deferred-mark helpers are invoked between feeds so the
+/// `PromptMarker` for the completed lifecycle carries A/B/C fields — this
+/// mirrors `post_parse_housekeeping` in production.
+///
+/// The exhaustive match on `PromptMarker { prompt, command, output }` is a
+/// semantic pin: if a future refactor adds a fourth field (e.g. `complete`),
+/// this test MUST be updated explicitly — it will not silently compile. This
+/// is the catch for scope clarification D ("`PromptMarker` has no D-field").
+#[test]
+fn osc133_d_clears_state_and_emits_command_complete() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;B\x1b\\");
+    term.mark_command_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;C\x1b\\");
+    term.mark_output_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;D\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+
+    let durations = drain_command_complete(&term);
+    assert_eq!(
+        durations.len(),
+        1,
+        "OSC 133;D after C must emit exactly one HostEffect::CommandComplete"
+    );
+    assert!(durations[0] >= std::time::Duration::ZERO);
+
+    let marker = term
+        .prompt_markers()
+        .last()
+        .expect("deferred-mark helpers populate the marker");
+    let PromptMarker {
+        prompt: _,
+        command,
+        output,
+    } = marker;
+    assert!(
+        command.is_some(),
+        "B-marked command row must survive into the completed lifecycle"
+    );
+    assert!(
+        output.is_some(),
+        "C-marked output row must survive into the completed lifecycle"
+    );
+}
+
+/// §10.4 — Two OSC 133;A feeds without intervening B/C/D produce TWO
+/// `PromptMarker`s, each with `command == None` and `output == None`. The
+/// deferred-mark helper is called after each A so the pending flag flushes
+/// into the marker vec (mirrors production `post_parse_housekeeping`). Uses
+/// the high-level `Processor` between A feeds to move the cursor so the
+/// de-duplication logic in `mark_prompt_row` does NOT coalesce the rows.
+#[test]
+fn osc133_a_without_b_does_not_record_command() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+
+    // Move cursor to a new row so the second A marks a distinct position.
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\r\n");
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+
+    let markers = term.prompt_markers();
+    assert_eq!(
+        markers.len(),
+        2,
+        "two A feeds at distinct rows must produce two markers"
+    );
+    for (i, marker) in markers.iter().enumerate() {
+        assert!(
+            marker.command.is_none(),
+            "marker {i}: no B feed means command must remain None"
+        );
+        assert!(
+            marker.output.is_none(),
+            "marker {i}: no C feed means output must remain None"
+        );
+    }
+}
+
+/// §10.4 — OSC 133;D without a preceding C is a no-op: no
+/// `HostEffect::CommandComplete` is emitted because `finish_command()`
+/// returns `None` when `command_start` is unset (interceptor.rs `b'D'` arm
+/// wraps the push in `if let Some(duration) = ...`). Pins the
+/// `set_prompt_state(None) + finish_command() == None → skip effect` path.
+#[test]
+fn osc133_command_complete_without_c_is_noop() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;D\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    let durations = drain_command_complete(&term);
+    assert!(
+        durations.is_empty(),
+        "OSC 133;D without a preceding C must not emit CommandComplete"
+    );
+}
+
+/// §10.4 — A full A→B→C→D lifecycle with deferred-mark helpers populates
+/// one `PromptMarker` whose `prompt`, `command`, and `output` rows all
+/// correspond to distinct absolute positions (advanced via `\r\n` between
+/// steps). Verifies the marker-flush plumbing end-to-end.
+#[test]
+fn osc133_full_lifecycle_records_markers() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]133;A\x1b\\");
+    term.mark_prompt_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\x1b]133;B\x1b\\");
+    term.mark_command_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\x1b]133;C\x1b\\");
+    term.mark_output_start_row();
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\r\n\x1b]133;D\x1b\\");
+
+    let markers = term.prompt_markers();
+    assert_eq!(
+        markers.len(),
+        1,
+        "single A→B→C→D lifecycle records exactly one marker"
+    );
+    let marker = &markers[0];
+    let cmd = marker.command.expect("B must fill command row");
+    let out = marker.output.expect("C must fill output row");
+    assert!(
+        marker.prompt < cmd && cmd < out,
+        "prompt < command < output must hold after \\r\\n-advanced lifecycle: \
+         got prompt={}, command={cmd}, output={out}",
+        marker.prompt,
+    );
+}
+
+// ── OSC 633 (VS Code shell integration) ─────────────────────────────
+
+/// §10.4 — OSC 633;A mirrors OSC 133;A: drives `PromptState::PromptStart`
+/// and sets `prompt_mark_pending`. VS Code's `shellIntegrationAddon.ts`
+/// uses the same `A` sub-command semantics as Final Term OSC 133.
+#[test]
+fn osc633_a_sets_prompt_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;A\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::PromptStart);
+    assert!(term.prompt_mark_pending());
+}
+
+/// §10.4 — OSC 633;B mirrors OSC 133;B.
+#[test]
+fn osc633_b_sets_command_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;B\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::CommandStart);
+    assert!(term.command_start_mark_pending());
+}
+
+/// §10.4 — OSC 633;C mirrors OSC 133;C.
+#[test]
+fn osc633_c_sets_output_state() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::OutputStart);
+    assert!(term.output_start_mark_pending());
+}
+
+/// §10.4 — OSC 633;D after C emits `HostEffect::CommandComplete` and
+/// clears `PromptState` — same contract as OSC 133;D.
+#[test]
+fn osc633_d_emits_command_complete() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;C\x1b\\");
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;D\x1b\\");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    let durations = drain_command_complete(&term);
+    assert_eq!(
+        durations.len(),
+        1,
+        "OSC 633;D after C must emit one CommandComplete"
+    );
+    assert!(durations[0] >= std::time::Duration::ZERO);
+}
+
+/// §10.4 — OSC 633;E records the raw command line text on
+/// `Term::last_command_line`. This is the VS Code-specific sub-op that has
+/// no OSC 133 counterpart.
+#[test]
+fn osc633_e_records_command_line() {
+    let mut term = make_term();
+    assert!(term.last_command_line().is_none());
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;E;git status\x1b\\");
+
+    assert_eq!(term.last_command_line(), Some("git status"));
+}
+
+/// §10.4 — OSC 633;P;Cwd=<path> routes through `Term::set_cwd` — the SAME
+/// canonical field OSC 7 writes to (scope clarification H: CWD SSOT). Pins
+/// that VS Code's CWD reporting shares the single source of truth with the
+/// Final Term / iTerm2 OSC 7 path.
+#[test]
+fn osc633_p_cwd_sets_term_cwd() {
+    let mut term = make_term();
+    assert!(term.cwd().is_none());
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;P;Cwd=/home/user/project\x1b\\");
+
+    assert_eq!(term.cwd(), Some("/home/user/project"));
+    assert!(
+        term.is_title_dirty(),
+        "OSC 633;P;Cwd must mark the title dirty, same as OSC 7"
+    );
+    assert!(!term.has_explicit_title());
+}
+
+/// §10.4 — OSC 633;P with an unknown key (e.g. `IsWindows=True`) is
+/// silently dropped — only `Cwd=` is honoured. Pins the forward-compat
+/// behavior called out in `shellIntegrationAddon.ts`: unknown `P` keys do
+/// NOT mutate state.
+#[test]
+fn osc633_p_unknown_key_dropped() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]633;P;IsWindows=True\x1b\\");
+
+    assert!(term.cwd().is_none(), "unknown P key must not set CWD");
+    assert!(
+        !term.is_title_dirty(),
+        "unknown P key must not mark the title dirty"
+    );
+}
+
+/// §10.4 — Negative pin: feeding OSC 633;A through the high-level
+/// `vte::ansi::Processor` ALONE (no `RawInterceptor` pass) does NOT mutate
+/// `PromptState`. Proves OSC 633 dispatch is interceptor-only — if someone
+/// adds a `b"633"` arm to `crates/vte/src/ansi/dispatch/osc.rs`, this test
+/// fails (double-dispatch detection). Mirrors
+/// `osc133a_via_processor_only_does_not_change_prompt_state`.
+#[test]
+fn osc633_via_high_level_processor_drops() {
+    let mut term = make_term();
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]633;A\x1b\\");
+
+    assert_eq!(
+        term.prompt_state(),
+        PromptState::None,
+        "high-level Processor must NOT route OSC 633;A — if this assertion \
+         fires, OSC 633 was added to the high-level dispatcher and would be \
+         double-handled in production"
+    );
+    assert!(!term.prompt_mark_pending());
+}
+
+// §10.8 — OSC 7 CWD via production-order dual-pass.
+//
+// OSC 7 is interceptor-handled: the high-level `vte::ansi::Processor`
+// does NOT route it to a `Handler` method (the default
+// `Handler::set_working_directory` is a no-op, and `Term` does not
+// override it). The canonical path runs `RawInterceptor` FIRST, which
+// parses the `file://hostname/path` URI, strips the hostname,
+// percent-decodes the path, and writes it to `Term::set_cwd`. These
+// tests drive the sequence through `spec_chain_helper::feed_mux_and_proc`
+// so both passes execute in production order.
+
+/// §10.8 — Canonical OSC 7 input: `file://host/path`. The `parse_osc7_path`
+/// helper strips the hostname and returns `/path`, which reaches
+/// `Term::set_cwd` via the interceptor. The high-level processor pass
+/// on the same bytes is a no-op for this sequence.
+#[test]
+fn osc7_file_uri_sets_cwd() {
+    let mut term = make_term();
+    assert!(term.cwd().is_none());
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;file:///home/user/project\x1b\\");
+
+    assert_eq!(
+        term.cwd(),
+        Some("/home/user/project"),
+        "production dual-pass must drive OSC 7 through the interceptor's \
+         parse_osc7_path → percent_decode → Term::set_cwd pipeline"
+    );
+}
+
+/// §10.8 — OSC 7 with an explicit hostname (`file://myhost.example.com/path`):
+/// the interceptor's `parse_osc7_path` skips the hostname portion and
+/// returns only the absolute path segment (`/path/to/dir`).
+#[test]
+fn osc7_file_uri_with_hostname() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(
+        &mut term,
+        b"\x1b]7;file://myhost.example.com/path/to/dir\x1b\\",
+    );
+
+    assert_eq!(
+        term.cwd(),
+        Some("/path/to/dir"),
+        "hostname segment must be stripped — parse_osc7_path returns the path after the hostname"
+    );
+}
+
+/// §10.8 — OSC 7 URI-encoded bytes (`%20` for space) round-trip through
+/// `percent_decode` in the interceptor. Final CWD contains a literal
+/// space, not the `%20` escape.
+#[test]
+fn osc7_percent_decoded() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;file:///home/user/my%20folder\x1b\\");
+
+    assert_eq!(
+        term.cwd(),
+        Some("/home/user/my folder"),
+        "percent_decode must convert %20 → space in the CWD payload"
+    );
+}
+
+/// §10.8 — OSC 7 emits `Effect::Host(HostEffect::CwdSet { cwd })` on
+/// the effect transcript. The consumer-side test for mux clients reads
+/// this effect to update session-level state. The scenario asserts
+/// exactly one CwdSet was emitted and its payload matches the set CWD.
+#[test]
+fn osc7_emits_host_effect_cwd_set() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;file:///home/user/project\x1b\\");
+
+    let mut effects = Vec::new();
+    term.effect_sink().drain_into(&mut effects);
+
+    let mut cwd_sets = effects.iter().filter_map(|eff| match eff {
+        Effect::Host(HostEffect::CwdSet { cwd }) => Some(cwd.clone()),
+        _ => None,
+    });
+    let first = cwd_sets
+        .next()
+        .expect("OSC 7 must emit exactly one CwdSet effect");
+    assert_eq!(first, "/home/user/project");
+    assert!(
+        cwd_sets.next().is_none(),
+        "OSC 7 must emit exactly one CwdSet; found a second"
+    );
+}
+
+/// §10.8 — Relative-path payload (no `file://` prefix) flows through
+/// `strip_uri_suffix` unchanged. The path is non-empty, so the
+/// interceptor writes it verbatim to `Term::set_cwd`. This pins the
+/// behavior documented in `parse_osc7_path` at
+/// `interceptor.rs:289-303` — a future regression that rejected
+/// non-URI payloads would break this contract.
+#[test]
+fn osc7_relative_path_passed_through() {
+    let mut term = make_term();
+
+    spec_chain_helper::feed_mux_and_proc(&mut term, b"\x1b]7;relative/path\x1b\\");
+
+    assert_eq!(
+        term.cwd(),
+        Some("relative/path"),
+        "parse_osc7_path passes non-URI payloads through strip_uri_suffix unchanged"
+    );
+}
+
+/// §10.8 — Negative pin: feeding OSC 7 through the high-level
+/// `vte::ansi::Processor` ALONE (no `RawInterceptor` pass) does NOT
+/// set CWD. Proves OSC 7 is interceptor-only in production — `Term`
+/// does not override `Handler::set_working_directory` (the default is
+/// a no-op). Mirrors `osc9_via_processor_without_mux_drops` /
+/// `osc633_via_high_level_processor_drops`.
+#[test]
+fn osc7_via_high_level_processor_drops() {
+    let mut term = make_term();
+    assert!(term.cwd().is_none());
+
+    let mut processor = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    processor.advance(&mut term, b"\x1b]7;file:///home/user/project\x1b\\");
+
+    assert!(
+        term.cwd().is_none(),
+        "high-level Processor must NOT route OSC 7 — Term does not override \
+         Handler::set_working_directory; the canonical path is the interceptor. \
+         If this assertion fires, a `b\"7\"` arm with a non-default handler \
+         override was added, which would create a second dispatch path \
+         and cause double-handling in production"
+    );
 }

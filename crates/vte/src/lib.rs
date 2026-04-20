@@ -23,6 +23,17 @@
 //! * OSC Strings can be terminated by 0x07
 //! * Only supports 7-bit codes
 //!
+//! # ori_term vendored divergence
+//!
+//! This crate is a vendored fork maintained by the ori_term workspace. It
+//! extends the upstream `Handler` trait with OSC 1337 non-image sub-ops and
+//! OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119 / L / l
+//! dispatch arms + trait methods so `Term` can observe dispatches the
+//! upstream parser routes to `unhandled`. These patches are oriterm-specific
+//! and are not intended for upstream. Every divergence carries a
+//! `VENDORED PATCH (oriterm)` comment naming the owning roadmap section —
+//! see `crates/vte/README.md` for the scope and rebase discipline.
+//!
 //! [`Parser`]: struct.Parser.html
 //! [`Perform`]: trait.Perform.html
 //! [Paul Williams' ANSI parser state machine]: https://vt100.net/emu/dec_ansi_parser

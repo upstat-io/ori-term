@@ -81,18 +81,6 @@ pub fn notification_to_pdu(
             },
         )),
 
-        MuxNotification::ClipboardLoad {
-            pane_id,
-            clipboard_type,
-            ..
-        } => Some((
-            TargetClients::PaneSubscribers(*pane_id),
-            MuxPdu::NotifyClipboardLoad {
-                pane_id: *pane_id,
-                clipboard_type: clipboard_type_to_wire(*clipboard_type),
-            },
-        )),
-
         // PaneOutput is intercepted by drain_mux_events before reaching
         // this function. NewTab comes from IPC dispatch, not PTY events.
         // DesktopNotification / ClearPendingDesktopNotifications / HostClipboardLoad /

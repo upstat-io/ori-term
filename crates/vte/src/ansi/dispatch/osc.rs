@@ -42,13 +42,7 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
         // Set window title and/or icon name.
         b"0" | b"1" | b"2" => {
             if params.len() >= 2 {
-                let text = params[1..]
-                    .iter()
-                    .flat_map(|x| str::from_utf8(x))
-                    .collect::<Vec<&str>>()
-                    .join(";")
-                    .trim()
-                    .to_owned();
+                let text = join_title_payload(&params[1..]);
                 match params[0] {
                     b"0" => {
                         handler.set_title(Some(text.clone()));
@@ -66,24 +60,15 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
             unhandled(params);
         },
 
-        // Set working directory (shell integration).
-        b"7" => {
-            if params.len() >= 2 {
-                let uri = params[1..]
-                    .iter()
-                    .flat_map(|x| str::from_utf8(x))
-                    .collect::<Vec<&str>>()
-                    .join(";")
-                    .trim()
-                    .to_owned();
-                if uri.is_empty() {
-                    handler.set_working_directory(None);
-                } else {
-                    handler.set_working_directory(Some(uri));
-                }
+        // VENDORED PATCH (oriterm): OSC 3 — set X11 window property (Section 10.9).
+        // Per xterm ctlseqs: `OSC 3 ; Pt BEL|ST`. `Pt` is a single payload
+        // `prop[=value]`. The `=` split happens in `Handler::set_x11_property`.
+        b"3" => {
+            if params.len() < 2 {
+                unhandled(params);
                 return;
             }
-            unhandled(params);
+            handler.set_x11_property(params[1]);
         },
 
         // Set color index.
@@ -111,6 +96,45 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
                     unhandled(params);
                 }
             }
+        },
+
+        // VENDORED PATCH (oriterm): OSC 5 — special color set/query (Section 10.9).
+        // `OSC 5 ; Ps ; spec` set a special color slot (Ps ∈ 0..=4 per
+        // xterm: bold / underline / blink / reverse / italics). `spec = ?`
+        // queries the slot — handler replies over PTY. Malformed forms
+        // (<3 params, non-numeric Ps, unparseable color) route to `unhandled`
+        // without mutating state.
+        b"5" => {
+            if params.len() < 3 {
+                unhandled(params);
+                return;
+            }
+            let Some(index) = parse_number(params[1]) else {
+                unhandled(params);
+                return;
+            };
+            if params[2] == b"?" {
+                handler.query_special_color(index as usize, terminator);
+            } else if let Some(color) = xparse_color(params[2]) {
+                handler.set_special_color(index as usize, color);
+            } else {
+                unhandled(params);
+            }
+        },
+
+        // VENDORED PATCH (oriterm): OSC 6 — iTerm2 change title tab color (Section 10.9).
+        // ori_term follows the iTerm2 interpretation (tab color), not the
+        // xterm special-color enable/disable semantic. Parse `spec` with
+        // `xparse_color`; a parse failure (e.g. bare `0`) leaves the field
+        // unchanged — pinned by `osc6_xterm_disable_form_is_treated_as_color_parse_failure`.
+        b"6" => {
+            if params.len() >= 2 {
+                if let Some(color) = xparse_color(params[1]) {
+                    handler.set_tab_title_color(color);
+                    return;
+                }
+            }
+            unhandled(params);
         },
 
         // Hyperlink.
@@ -172,6 +196,40 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
                     }
                     return;
                 }
+            }
+            unhandled(params);
+        },
+
+        // VENDORED PATCH (oriterm): OSC 13 / 14 / 17 / 19 — set/query
+        // mouse and highlight colors (Section 10.9).
+        //
+        // Each variant accepts `spec` (set) or `?` (query). Malformed
+        // `spec` values route to `unhandled` without mutating state.
+        b"13" | b"14" | b"17" | b"19" => {
+            if params.len() < 2 {
+                unhandled(params);
+                return;
+            }
+            let spec = params[1];
+            if spec == b"?" {
+                match params[0] {
+                    b"13" => handler.query_mouse_fg_color(terminator),
+                    b"14" => handler.query_mouse_bg_color(terminator),
+                    b"17" => handler.query_highlight_bg_color(terminator),
+                    b"19" => handler.query_highlight_fg_color(terminator),
+                    _ => unreachable!("OSC 13/14/17/19 arm matched an unexpected code"),
+                }
+                return;
+            }
+            if let Some(color) = xparse_color(spec) {
+                match params[0] {
+                    b"13" => handler.set_mouse_fg_color(color),
+                    b"14" => handler.set_mouse_bg_color(color),
+                    b"17" => handler.set_highlight_bg_color(color),
+                    b"19" => handler.set_highlight_fg_color(color),
+                    _ => unreachable!("OSC 13/14/17/19 arm matched an unexpected code"),
+                }
+                return;
             }
             unhandled(params);
         },
@@ -244,6 +302,34 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
         // Reset text cursor color.
         b"112" => handler.reset_color(NamedColor::Cursor as usize),
 
+        // VENDORED PATCH (oriterm): OSC 113 / 114 / 117 / 119 — reset
+        // mouse and highlight colors (Section 10.9).
+        b"113" => handler.reset_mouse_fg_color(),
+        b"114" => handler.reset_mouse_bg_color(),
+        b"117" => handler.reset_highlight_bg_color(),
+        b"119" => handler.reset_highlight_fg_color(),
+
+        // VENDORED PATCH (oriterm): OSC L / OSC l — Sun console aliases
+        // for OSC 1 (icon name) / OSC 2 (window title) respectively
+        // (Section 10.9). Historical; wezterm does not implement either,
+        // but the catalog promises `verified-with-deviation` for
+        // compatibility with older consoles.
+        b"L" => {
+            if params.len() >= 2 {
+                handler.set_icon_name(Some(join_title_payload(&params[1..])));
+                return;
+            }
+            unhandled(params);
+        },
+        b"l" => {
+            if params.len() >= 2 {
+                handler.set_title(Some(join_title_payload(&params[1..])));
+                return;
+            }
+            unhandled(params);
+        },
+
+        // VENDORED PATCH (oriterm): refactored b"1337" arm into sub-dispatcher (Section 10.0).
         // iTerm2 proprietary sequences.
         b"1337" => {
             if params.len() < 2 {
@@ -257,6 +343,24 @@ pub(super) fn dispatch<H: Handler>(handler: &mut H, params: &[&[u8]], bell_termi
     }
 }
 
+/// Join a title/icon-name payload split by the VTE parser on `;`.
+///
+/// OSC 0/1/2 and the Sun-console aliases OSC L / OSC l share the same
+/// payload shape: a single string that may contain semicolons. The VTE
+/// parser splits the raw bytes on `;` so we rebuild with the same
+/// separator, `from_utf8`-filter non-UTF-8 fragments, and trim leading
+/// and trailing whitespace to match the existing OSC 0/1/2 behavior.
+fn join_title_payload(parts: &[&[u8]]) -> String {
+    parts
+        .iter()
+        .flat_map(|x| str::from_utf8(x))
+        .collect::<Vec<&str>>()
+        .join(";")
+        .trim()
+        .to_owned()
+}
+
+// VENDORED PATCH (oriterm): OSC 1337 sub-dispatcher helper (Section 10.0).
 /// Route an OSC 1337 sub-command to the matching `Handler` method.
 ///
 /// The first sub-op is expected to be `key[=value]`. `File=...` still routes

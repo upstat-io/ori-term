@@ -1,7 +1,6 @@
 //! Mode combination workflow tests (base + multi-size variants).
 
 use oriterm_core::TermMode;
-use oriterm_core::effect::LegacyEventSink;
 
 use super::{
     RecordedListener, assert_cell_flags_contain, assert_mode_contains, assert_mode_not_contains,
@@ -268,13 +267,7 @@ fn deccolm_lifecycle_intermediate_assertions() {
     use oriterm_core::{Term, Theme};
 
     let listener = RecordedListener::new();
-    let mut term = Term::new(
-        24,
-        80,
-        0,
-        Theme::default(),
-        LegacyEventSink::new(listener.clone()),
-    );
+    let mut term = Term::new(24, 80, 0, Theme::default(), listener.clone());
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
 
     // Enable DECCOLM support (mode 40).
@@ -361,7 +354,7 @@ fn decsc_sidecar_isolation_across_alt_screen() {
     use oriterm_core::{Term, TermMode, Theme};
 
     let listener = RecordedListener::new();
-    let mut term = Term::new(24, 80, 0, Theme::default(), LegacyEventSink::new(listener));
+    let mut term = Term::new(24, 80, 0, Theme::default(), listener);
     let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
 
     // On primary: set DEC Special Graphics + origin mode, then DECSC.

@@ -95,7 +95,7 @@ impl PtySession {
     /// [`Self::drain`] and [`Self::drain_blocking`].
     fn feed_and_flush(&mut self, data: &[u8]) -> usize {
         self.proc.advance(&mut self.term, data);
-        for resp in self.term.effect_sink().listener().take_responses() {
+        for resp in self.term.effect_sink().take_responses() {
             // Best-effort: writer errors close the test session naturally
             // via Drop, so swallowing here is correct for test setup.
             let _ = self.writer.write_all(resp.as_bytes());
@@ -116,7 +116,7 @@ impl PtySession {
     /// test session's lifecycle is driven by `Drop`, not by fallible
     /// write surfaces inside drain.
     fn write_osc_responses_back(&mut self) {
-        for resp in self.term.effect_sink().listener().take_osc_responses() {
+        for resp in self.term.effect_sink().take_osc_responses() {
             let _ = self.writer.write_all(resp.as_bytes());
         }
     }
@@ -314,7 +314,7 @@ impl PtySession {
                 bytes_consumed += 1;
                 // Flush any captured PTY responses promptly so
                 // tack's DA/DSR handshakes complete in lockstep.
-                for resp in self.term.effect_sink().listener().take_responses() {
+                for resp in self.term.effect_sink().take_responses() {
                     let _ = self.writer.write_all(resp.as_bytes());
                 }
                 // Mirror the OSC response flush — a query that fires

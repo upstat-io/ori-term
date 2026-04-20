@@ -1977,6 +1977,7 @@ dependencies = [
  "bitflags 2.11.1",
  "criterion",
  "image",
+ "indexmap",
  "insta",
  "libc",
  "log",

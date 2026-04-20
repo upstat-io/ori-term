@@ -5,7 +5,6 @@
 //! `NotifyPaneSnapshot` are intercepted in the reader loop (stored in
 //! the `pushed_snapshots` shared map) and never reach this function.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use oriterm_core::ClipboardType;
@@ -19,27 +18,6 @@ fn wire_to_clipboard_type(wire: u8) -> ClipboardType {
         1 => ClipboardType::Selection,
         _ => ClipboardType::Clipboard,
     }
-}
-
-/// Build an OSC 52 response formatter for a clipboard type.
-///
-/// The formatter base64-encodes the clipboard text and wraps it in the
-/// standard OSC 52 response with BEL terminator. This is used when the
-/// original formatter closure was lost over the IPC boundary.
-fn osc52_response_formatter(
-    clipboard_type: ClipboardType,
-) -> Arc<dyn Fn(&str) -> String + Send + Sync> {
-    use base64::Engine;
-    use base64::engine::general_purpose::STANDARD as B64;
-
-    let letter = match clipboard_type {
-        ClipboardType::Clipboard => 'c',
-        ClipboardType::Selection => 's',
-    };
-    Arc::new(move |text: &str| {
-        let encoded = B64.encode(text.as_bytes());
-        format!("\x1b]52;{letter};{encoded}\x07")
-    })
 }
 
 /// Convert a daemon push PDU into a [`MuxNotification`].
@@ -74,16 +52,18 @@ pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
             clipboard_type: wire_to_clipboard_type(clipboard_type),
             text,
         }),
-        MuxPdu::NotifyClipboardLoad {
-            pane_id,
-            clipboard_type,
-        } => {
-            let ct = wire_to_clipboard_type(clipboard_type);
-            Some(MuxNotification::ClipboardLoad {
-                pane_id,
-                clipboard_type: ct,
-                formatter: osc52_response_formatter(ct),
-            })
+        MuxPdu::NotifyClipboardLoad { pane_id, .. } => {
+            // Daemon-mode HostRequest replies require a request-ID +
+            // reply-PDU design that has not landed yet (tracked in
+            // bug-tracker BUG-11-11). The legacy `MuxNotification::ClipboardLoad`
+            // closure-carrier was deleted in effect-cutover §01.3 and there
+            // is no in-process equivalent for daemon clients to drive a reply.
+            // Drop with a logged warning until BUG-11-11 is implemented.
+            log::warn!(
+                "daemon-mode OSC 52 clipboard load (pane {pane_id}) dropped — \
+                 BUG-11-11 (HostRequest IPC) not yet implemented"
+            );
+            None
         }
         MuxPdu::NotifyNewTab => Some(MuxNotification::NewTab),
         other => {

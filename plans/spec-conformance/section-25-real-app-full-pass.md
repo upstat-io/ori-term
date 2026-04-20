@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every documented daily-driver real-application scenario through the harness from section 22 and verify each app's recorded session replays cleanly to a stable golden snapshot. Apps in scope: vim, neovim, helix, htop, btop, tmux, aerc, ncmpcpp, less."
 success_criteria:
+  - "Audit input committed at `plans/spec-conformance/audits/section-25-top-down-inventory.md`. The audit input is a CORPUS MANIFEST (not an external control-sequence spec — this is an integration section). Every entry in the corpus has a corresponding harness wiring + per-entry pass criterion. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file (integration-section variant: validates corpus completeness against harness wiring). Section 09A introduced the `audits/` SSOT; this section adapts it for integration scope per `plans/spec-conformance/audits/README.md` integration-section guidance."
   - "Every app in scope has at least one recorded scenario that passes via the section 22 harness"
   - "Each scenario produces a stable text snapshot (and optionally a pixel golden) that survives back-to-back runs with 0-byte diff"
   - "Per-app scenarios committed under `crates/oriterm_test_support/tests/data/real_app_captures/<app>/`"
@@ -22,6 +23,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "25.0"
+    title: "Audit input verification (BLOCKING) — commit audits/section-25-top-down-inventory.md (Section 22 harness corpus + per-app session goldens)"
+    status: not-started
   - id: "25.1"
     title: "Drive vim + neovim daily-driver scenarios to pass"
     status: not-started
@@ -59,6 +63,28 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Sections 08, 10, 11, 16, 17 (baseline + OSC + glyphs + mouse + keyboard verified — the per-stack sections that real apps exercise), Section 22 (harness scaffolding).
+
+---
+
+## 25.0 Audit input verification (BLOCKING — precedes all other subsections)
+
+**Goal:** Verify the audit-input corpus manifest at `plans/spec-conformance/audits/section-25-top-down-inventory.md` is populated and that every entry has corresponding harness wiring + per-entry pass criterion.
+
+**Integration-section scope:** This section is NOT a protocol-stack section — it does not walk a control-sequence spec source. Its "audit input" is a CORPUS MANIFEST: Section 22's harness corpus (vim, htop, btop, tmux, aerc, helix, ncmpcpp, less, nvim, etc.) + per-app session goldens. The `audits/` SSOT introduced by Section 09A (per `plans/spec-conformance/audits/README.md`) adapts to integration sections by treating the corpus manifest as the top-down enumerator. The completeness check is: every corpus entry has harness wiring + a per-entry pass criterion.
+
+**Why this exists:** Section 09A closed the bottom-up catalog gap that hid DECRQCRA via the per-section audit file pattern. Integration sections inherit the same enforcement shape — the audit file IS the corpus manifest, and `spec-coverage-report --check audit-files` validates that every entry has the required wiring (not catalog-row mapping, since integration sections don't add catalog rows).
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-25-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+
+**Completion criteria:**
+
+- [ ] Audit file is populated with every entry in the corpus manifest (every app × scenario + their committed golden sessions).
+- [ ] Every entry has a `harness_wiring` reference (file path + test name) + a `pass_criterion` description.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes (integration-section variant — validates corpus completeness, not catalog-row mapping).
+- [ ] Audit file `last_walked` and `walked_by` set.
+
+**No other subsection in this section can begin work until §25.0 is complete.**
 
 ---
 

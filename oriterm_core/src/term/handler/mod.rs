@@ -27,6 +27,15 @@ mod osc;
 mod sgr;
 mod status;
 
+/// Generate a one-line `Handler` trait method that delegates to an
+/// inherent helper on `Term<S>`. Keeps the §10.9 Handler delegate block
+/// compact enough to stay within the 500-line file budget.
+macro_rules! delegate_osc {
+    ($method:ident($($arg:ident : $ty:ty),*) => $helper:ident) => {
+        fn $method(&mut self, $($arg: $ty),*) { self.$helper($($arg),*); }
+    };
+}
+
 impl<S: EffectSink> Handler for Term<S> {
     #[inline]
     fn input(&mut self, c: char) {
@@ -427,9 +436,51 @@ impl<S: EffectSink> Handler for Term<S> {
     fn iterm2_file(&mut self, params: &[&[u8]]) {
         self.handle_iterm2_file(params);
     }
+    fn iterm2_set_mark(&mut self) {
+        self.osc_iterm2_set_mark();
+    }
+    fn iterm2_remote_host(&mut self, host: &[u8]) {
+        self.osc_iterm2_remote_host(host);
+    }
+    fn iterm2_current_dir(&mut self, path: &[u8]) {
+        self.osc_iterm2_current_dir(path);
+    }
+    fn iterm2_copy(&mut self, data: &[u8]) {
+        self.osc_iterm2_copy(data);
+    }
+    fn iterm2_report_cell_size(&mut self) {
+        self.osc_iterm2_report_cell_size();
+    }
+    fn iterm2_set_user_var(&mut self, name: &[u8], value: &[u8]) {
+        self.osc_iterm2_set_user_var(name, value);
+    }
+    fn iterm2_shell_integration_version(&mut self, version: &[u8]) {
+        self.osc_iterm2_shell_integration_version(version);
+    }
     fn decrqss(&mut self, query: &[u8]) {
         self.status_decrqss(query);
     }
+
+    // §10.9 OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 / 113 / 114 / 117 / 119
+    // delegates — each forwards to its `osc_*` helper in `handler/osc.rs`.
+    // Compressed via `delegate_osc!` to keep the trait impl under the
+    // 500-line file budget (see `.claude/rules/code-hygiene.md`).
+    delegate_osc!(set_x11_property(payload: &[u8]) => osc_set_x11_property);
+    delegate_osc!(set_special_color(index: usize, color: Rgb) => osc_set_special_color);
+    delegate_osc!(query_special_color(index: usize, terminator: &str) => osc_query_special_color);
+    delegate_osc!(set_tab_title_color(color: Rgb) => osc_set_tab_title_color);
+    delegate_osc!(set_mouse_fg_color(color: Rgb) => osc_set_mouse_fg_color);
+    delegate_osc!(set_mouse_bg_color(color: Rgb) => osc_set_mouse_bg_color);
+    delegate_osc!(set_highlight_bg_color(color: Rgb) => osc_set_highlight_bg_color);
+    delegate_osc!(set_highlight_fg_color(color: Rgb) => osc_set_highlight_fg_color);
+    delegate_osc!(query_mouse_fg_color(terminator: &str) => osc_query_mouse_fg_color);
+    delegate_osc!(query_mouse_bg_color(terminator: &str) => osc_query_mouse_bg_color);
+    delegate_osc!(query_highlight_bg_color(terminator: &str) => osc_query_highlight_bg_color);
+    delegate_osc!(query_highlight_fg_color(terminator: &str) => osc_query_highlight_fg_color);
+    delegate_osc!(reset_mouse_fg_color() => osc_reset_mouse_fg_color);
+    delegate_osc!(reset_mouse_bg_color() => osc_reset_mouse_bg_color);
+    delegate_osc!(reset_highlight_bg_color() => osc_reset_highlight_bg_color);
+    delegate_osc!(reset_highlight_fg_color() => osc_reset_highlight_fg_color);
 }
 
 #[cfg(test)]

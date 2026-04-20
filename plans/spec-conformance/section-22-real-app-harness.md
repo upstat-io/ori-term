@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Build the real-application PTY recording / replay harness, the snapshot capture pipeline, and the first app smoke test (vim simple session). LANDS EARLY — sibling track to section 21, NOT depending on it. Section 25 (full-pass) depends on this section."
 success_criteria:
+  - "Audit input committed at `plans/spec-conformance/audits/section-22-top-down-inventory.md`. The audit input is a CORPUS MANIFEST (not an external control-sequence spec — this is an integration section). Every entry in the corpus has a corresponding harness wiring + per-entry pass criterion. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file (integration-section variant: validates corpus completeness against harness wiring). Section 09A introduced the `audits/` SSOT; this section adapts it for integration scope per `plans/spec-conformance/audits/README.md` integration-section guidance."
   - "`crates/oriterm_test_support/src/real_app_harness/mod.rs` exists with PTY recording + replay infrastructure"
   - "Snapshot capture pipeline: a recorded PTY trace replays through ori_term, the final grid state is captured as a golden snapshot, and the diff is reported on mismatch"
   - "First app smoke test passes: `vim +q` (open and quit) — drives a small set of catalog rows and produces a stable snapshot golden"
@@ -25,6 +26,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "22.0"
+    title: "Audit input verification (BLOCKING) — commit audits/section-22-top-down-inventory.md (corpus manifest of real-app sessions)"
+    status: not-started
   - id: "22.1"
     title: "Build PTY recording + replay infrastructure for real apps"
     status: not-started
@@ -57,6 +61,28 @@ sections:
 **Reference implementations:** see frontmatter.
 
 **Depends on:** Section 04 (verification chain harness exists).
+
+---
+
+## 22.0 Audit input verification (BLOCKING — precedes all other subsections)
+
+**Goal:** Verify the audit-input corpus manifest at `plans/spec-conformance/audits/section-22-top-down-inventory.md` is populated and that every entry has corresponding harness wiring + per-entry pass criterion.
+
+**Integration-section scope:** This section is NOT a protocol-stack section — it does not walk a control-sequence spec source. Its "audit input" is a CORPUS MANIFEST: real-app session corpus manifest (vim, htop, btop, tmux, aerc, helix, ncmpcpp, less, nvim, etc.). The `audits/` SSOT introduced by Section 09A (per `plans/spec-conformance/audits/README.md`) adapts to integration sections by treating the corpus manifest as the top-down enumerator. The completeness check is: every corpus entry has harness wiring + a per-entry pass criterion.
+
+**Why this exists:** Section 09A closed the bottom-up catalog gap that hid DECRQCRA via the per-section audit file pattern. Integration sections inherit the same enforcement shape — the audit file IS the corpus manifest, and `spec-coverage-report --check audit-files` validates that every entry has the required wiring (not catalog-row mapping, since integration sections don't add catalog rows).
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-22-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+
+**Completion criteria:**
+
+- [ ] Audit file is populated with every entry in the corpus manifest.
+- [ ] Every entry has a `harness_wiring` reference (file path + test name) + a `pass_criterion` description.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes (integration-section variant — validates corpus completeness, not catalog-row mapping).
+- [ ] Audit file `last_walked` and `walked_by` set.
+
+**No other subsection in this section can begin work until §22.0 is complete.**
 
 ---
 

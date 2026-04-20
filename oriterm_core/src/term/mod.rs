@@ -7,8 +7,10 @@
 
 mod alt_screen;
 pub mod charset;
+mod colors_state;
 mod handler;
 mod image_config;
+mod iterm2_state;
 pub mod mode;
 pub mod renderable;
 mod resize;
@@ -21,6 +23,7 @@ pub use renderable::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, RenderableImageData,
     RenderablePlacement, TermDamage, maybe_shrink_vec,
 };
+pub use shell_state::{Notification, PendingMarks, PromptMarker, PromptState};
 
 use std::collections::{HashMap, VecDeque};
 
@@ -33,48 +36,9 @@ use crate::effect::{Effect, PtyEffect, PtyWriteKind};
 use crate::grid::{CursorShape, Grid};
 use crate::image::ImageCache;
 use crate::image::sixel::SixelParser;
+use crate::term::colors_state::TermColorsState;
+use crate::term::iterm2_state::Iterm2State;
 use crate::theme::Theme;
-
-/// Shell integration prompt lifecycle state.
-///
-/// Tracks transitions from OSC 133 sub-parameters:
-/// `None` → `PromptStart` (A) → `CommandStart` (B) → `OutputStart` (C) → `None` (D).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PromptState {
-    /// No prompt activity or command completed (after D marker).
-    #[default]
-    None,
-    /// Prompt is being displayed (after A marker).
-    PromptStart,
-    /// User is typing a command (after B marker).
-    CommandStart,
-    /// Command output is being produced (after C marker).
-    OutputStart,
-}
-
-/// A single prompt lifecycle's boundary rows (absolute row indices).
-///
-/// Associates the OSC 133 sub-marker rows for one prompt: where the prompt
-/// started (A), where the command line started (B), and where command output
-/// started (C). Used for semantic zone navigation and selection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PromptMarker {
-    /// Absolute row where OSC 133;A (prompt start) was received.
-    pub prompt: usize,
-    /// Absolute row where OSC 133;B (command start) was received.
-    pub command: Option<usize>,
-    /// Absolute row where OSC 133;C (output start) was received.
-    pub output: Option<usize>,
-}
-
-/// Desktop notification from the shell (OSC 9/99/777).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Notification {
-    /// Notification title (may be empty for OSC 9/99).
-    pub title: String,
-    /// Notification body text.
-    pub body: String,
-}
 
 /// Maximum depth for title stack (xterm push/pop title).
 ///
@@ -87,23 +51,6 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 /// Prevents OOM from malicious PTY input. Matches Alacritty's cap.
 /// Enforced in the VTE handler's `push_keyboard_mode`.
 pub(crate) const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
-
-bitflags::bitflags! {
-    /// Deferred OSC 133 marking actions.
-    ///
-    /// These flags are set when the corresponding OSC 133 sequence arrives
-    /// and cleared after both VTE parsers finish processing, when the actual
-    /// grid row marking occurs.
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-    pub struct PendingMarks: u8 {
-        /// OSC 133;A received — prompt row marking deferred.
-        const PROMPT = 1;
-        /// OSC 133;B received — command start row marking deferred.
-        const COMMAND_START = 2;
-        /// OSC 133;C received — output start row marking deferred.
-        const OUTPUT_START = 4;
-    }
-}
 
 /// The terminal state machine.
 ///
@@ -215,6 +162,19 @@ pub struct Term<S: EffectSink> {
     /// `None` until the application sets an icon. The renderer reads this
     /// via `RenderableContent::mouse_cursor_icon` and updates the OS pointer.
     mouse_cursor_icon: Option<CursorIcon>,
+    /// Last command line reported by VS Code OSC 633;E.
+    ///
+    /// `None` until the shell integration sends OSC 633;E with the raw typed
+    /// command. The `E` sub-command is interceptor-only — it is NOT routed
+    /// through the `Handler` trait because the high-level `vte::ansi::Processor`
+    /// does not dispatch OSC 633.
+    last_command_line: Option<String>,
+    /// iTerm2 OSC 1337 non-image sub-op state (`RemoteHost`, user variables,
+    /// shell integration version). See `iterm2_state.rs`.
+    iterm2_state: Iterm2State,
+    /// OSC 3 / 5 / 6 / 13 / 14 / 17 / 19 terminal-level color + property
+    /// state. See `colors_state.rs`.
+    colors_state: TermColorsState,
 }
 
 impl<S: EffectSink> Term<S> {
@@ -258,6 +218,9 @@ impl<S: EffectSink> Term<S> {
             image_protocol_enabled: true,
             deccolm_default_cols: cols,
             mouse_cursor_icon: None,
+            last_command_line: None,
+            iterm2_state: Iterm2State::new(),
+            colors_state: TermColorsState::new(),
         }
     }
 
@@ -272,6 +235,18 @@ impl<S: EffectSink> Term<S> {
     /// Override the mouse cursor icon (raw interceptor / OSC 22 path).
     pub fn set_mouse_cursor_icon(&mut self, icon: Option<CursorIcon>) {
         self.mouse_cursor_icon = icon;
+    }
+
+    /// Last command line reported by VS Code OSC 633;E.
+    ///
+    /// `None` if no OSC 633;E sequence has been received yet.
+    pub fn last_command_line(&self) -> Option<&str> {
+        self.last_command_line.as_deref()
+    }
+
+    /// Record the raw command line text (OSC 633;E path, interceptor-only).
+    pub fn set_last_command_line(&mut self, line: Option<String>) {
+        self.last_command_line = line;
     }
 
     /// Effect sink for boundary-crossing side effects.

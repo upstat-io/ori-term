@@ -129,8 +129,8 @@ impl LocalDomain {
         // 4. Create the single Term with a QueueingEffectSink. The IO
         //    thread drains the sink after every VTE parse chunk and
         //    routes effects to MuxEvents via the effect router
-        //    (effect-cutover 01.1). The legacy `IoThreadEventProxy` +
-        //    `LegacyEventSink` bridge is no longer used on this path.
+        //    (effect-cutover 01.1). This is the only event path —
+        //    legacy adapters were removed in §01.3.
         let io_term = Term::new(
             usize::from(config.rows),
             usize::from(config.cols),

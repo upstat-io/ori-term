@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender};
 
-use oriterm_core::effect::{QueueingEffectSink, ResponseToken};
+use oriterm_core::effect::{QueueingEffectSink, ResponseToken, format_clipboard_reply};
 use oriterm_core::{Term, TermMode, Theme};
 
 use super::super::{IoThreadConfig, PaneIoHandle, new_with_handle};
@@ -425,6 +425,64 @@ fn multiple_fulfills_collapse_to_one_wake() {
         seen.len(),
         3,
         "all three coalesced fulfills must surface as PtyWrite (got {seen:?})"
+    );
+
+    handle.shutdown();
+}
+
+/// §10.2 canonical OSC-52-bytes-in → PTY-write end-to-end pin.
+///
+/// Drives OSC 52 load bytes (ST-terminated, distinct from the
+/// BEL-terminated `\x07` form the other tests use) through the
+/// production `PaneIoThread` pipeline: `byte_tx` → parser → dispatch →
+/// `effect_router::register_host_request_response` → `poll_pending_
+/// responses` → `PtyEffect::Write`. Fulfills the token directly via
+/// `token.fulfill(..)` (NOT via `handle.fulfill_clipboard_load`, which
+/// is already exercised by the sibling tests) and asserts the emitted
+/// PtyWrite bytes are BYTE-IDENTICAL to `format_clipboard_reply(..)` —
+/// the canonical reply formatter at `oriterm_core/src/effect/families/
+/// host_request/mod.rs:304`. Re-implementing the format inline would be
+/// a LEAK against SSOT.
+///
+/// A second byte is sent after the direct fulfill to unblock the
+/// IO-thread `select!` (same pattern as
+/// `fulfill_before_register_still_delivers` and
+/// `no_wake_signal_drops_late_fulfill`).
+#[test]
+fn osc52_register_poll_roundtrip() {
+    let (mut handle, mux_rx, _exit_tx, _shutdown) = spawn_queueing_pair();
+
+    // ST-terminated OSC 52 load: ESC ] 52 ; c ; ? ESC \
+    let osc52 = b"\x1b]52;c;?\x1b\\";
+    handle
+        .byte_sender()
+        .send(osc52.to_vec())
+        .expect("byte send must succeed");
+
+    let token = await_host_clipboard_load(&mux_rx, Duration::from_secs(5));
+
+    // Fulfill via the token's own `fulfill` — bypasses the wake-tx pulse
+    // that `handle.fulfill_clipboard_load` would emit. Pull-based polling
+    // must still surface the value on the next `select!` iteration.
+    token
+        .fulfill("example-text".to_string())
+        .expect("fresh fulfill must succeed");
+
+    // Unrelated wake — a no-op space byte — to drive the next poll cycle.
+    handle.byte_sender().send(b" ".to_vec()).unwrap();
+
+    let data = await_pty_write(&mux_rx, Duration::from_secs(5));
+
+    // SSOT: the emitted PTY bytes must equal `format_clipboard_reply`'s
+    // output for the same (text, clipboard_char, terminator) triple.
+    let expected = format_clipboard_reply("example-text", b'c', "\x1b\\");
+    assert_eq!(
+        data,
+        expected,
+        "PtyWrite must be byte-identical to format_clipboard_reply — no \
+         ad-hoc reply formatting at the call site. got {:?}, want {:?}",
+        String::from_utf8_lossy(&data),
+        String::from_utf8_lossy(&expected),
     );
 
     handle.shutdown();

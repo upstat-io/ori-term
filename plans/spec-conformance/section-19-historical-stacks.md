@@ -5,6 +5,7 @@ status: not-started
 reviewed: false
 goal: "Drive every LEGACY CONTROL catalog row in `catalog/historical.md` to `verified` by IMPLEMENTING every legacy control stack in scope (VT52, DEC LK201 keyboard, Wyse 50/60, ADM-3A, IBM PC ANSI.SYS, Microsoft Console VT). Vector stacks (ReGIS, Tek 4014) are delivered by Section 26 — they depend on Section 05 (deterministic golden lane) and Section 07 (image lifecycle) in addition to Section 08, and are split out to keep the dependency graph clean."
 success_criteria:
+  - "Top-down spec audit committed at `plans/spec-conformance/audits/section-19-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (multiple legacy stacks — VT52 EK-VT52-RM, VT100 EK-VT100-TM, VT220 EK-VT220-RM, VT320 EK-VT320-RM, VT420 EK-VT420-RM, VT520 EK-VT520-RM, LK201 keyboard ref, Wyse 50/60 manuals, ADM-3A operator's manual, IBM PC ANSI.SYS ref, MS Console VT docs) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
   - "Every legacy-control row in `catalog/historical.md` is `verified` (NOT `verified-with-deviation` — see goal statement). `verified-with-deviation` is reserved for rows where ori_term intentionally deviates from an ambiguous spec, not for rows where the implementation was skipped. Vector stack rows are owned by Section 26."
   - "**VT52 mode** verified: ESC `<` enters VT52, ESC A/B/C/D arrow keys, ESC F/G enter/exit graphics, ESC H home, ESC I reverse linefeed, ESC J/K erase, ESC Y row;col cursor positioning, ESC Z device attribute reply"
   - "**DEC LK201 keyboard protocol** verified: the LK201 keyboard emits a defined set of scan codes + key reports that the VT220/320/420/520 terminals expected. Section 17 covers modern keyboard encoding (kitty/modifyOtherKeys/Win32); this section covers the LK201 historical encoding that DEC-compatible apps still emit queries for. Verify the LK201 response bytes for the DA2 (secondary device attribute) reply identify ori_term as LK201-compatible, and verify the LK201 key codes that the authority-ladder DEC technical manual documents."
@@ -25,6 +26,9 @@ third_party_review:
   status: none
   updated: null
 sections:
+  - id: "19.0"
+    title: "Top-down spec audit (BLOCKING)"
+    status: not-started
   - id: "19.1"
     title: "Implement VT52 mode (ESC < entry, navigation, graphics, device reply)"
     status: not-started
@@ -68,6 +72,31 @@ sections:
 - **Wyse WY-50/WY-60 Reference Manual** — attribute byte encoding, protected mode, status line ESC F, function key programming
 
 **Depends on:** Section 08 (baseline solid).
+
+---
+
+## 19.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-19-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up (audit existing dispatch + add tack/teseq-discovered items), which is incomplete by construction — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+
+**Canonical spec source(s):** DEC user manuals (VT52 EK-VT52-RM, VT100 EK-VT100-TM, VT220 EK-VT220-RM, VT320 EK-VT320-RM, VT420 EK-VT420-RM, VT520 EK-VT520-RM); LK201 keyboard reference; Wyse 50/60 reference manuals; Lear-Siegler ADM-3A operator's manual; IBM PC ANSI.SYS reference (DOS 6.22 manual); MS Console VT (Microsoft Documentation `console-virtual-terminal-sequences.md`). The audit stub pre-populates a separate sub-table per stack — each sub-table is walked independently.
+
+**Files touched:**
+- `plans/spec-conformance/audits/section-19-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
+- `plans/spec-conformance/catalog/historical.md` (open new rows for any legacy-control sequences that should be `mapped` but aren't catalogued yet — use the canonical schema per `plans/spec-conformance/00-overview.md §Catalog Row Schema`; vector-graphics rows in `catalog/historical.md` are owned by Section 26)
+
+**Completion criteria:**
+
+- [ ] Audit file `plans/spec-conformance/audits/section-19-top-down-inventory.md` is populated with every sequence in the canonical spec source(s) across all legacy stacks.
+- [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
+- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
+- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
+
+**No other subsection in this section can begin work until §19.0 is complete.** This is a hard gate.
 
 ---
 

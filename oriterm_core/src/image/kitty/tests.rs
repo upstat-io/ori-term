@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use vte::ansi::Processor;
 
 use super::parse::{KittyAction, KittyError, KittyTransmission, parse_kitty_command};
-use crate::effect::LegacyEventSink;
-use crate::event::{Event, EventListener};
+use crate::effect::sink::EffectSink;
+use crate::effect::{Effect, PtyEffect};
 use crate::image::ImageId;
 use crate::term::Term;
 use crate::theme::Theme;
@@ -235,49 +235,37 @@ fn source_rect_params() {
 
 // --- Handler-level tests (Term + VTE processor) ---
 
-/// Event listener that records PtyWrite events for response verification.
-#[derive(Clone)]
+/// Effect sink that records PtyWrite payloads for response verification.
+#[derive(Clone, Default)]
 struct RecordingListener {
     events: Arc<Mutex<Vec<String>>>,
 }
 
 impl RecordingListener {
     fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self::default()
     }
 
     fn pty_writes(&self) -> Vec<String> {
-        self.events
-            .lock()
-            .expect("lock poisoned")
-            .iter()
-            .filter_map(|e| e.strip_prefix("pty:").map(String::from))
-            .collect()
+        self.events.lock().expect("lock poisoned").clone()
     }
 }
 
-impl EventListener for RecordingListener {
-    fn send_event(&self, event: Event) {
-        let s = match &event {
-            Event::PtyWrite(data) => format!("pty:{data}"),
-            other => format!("{other:?}"),
-        };
-        self.events.lock().expect("lock poisoned").push(s);
+impl EffectSink for RecordingListener {
+    fn push(&self, effect: Effect) {
+        if let Effect::Pty(PtyEffect::Write { bytes, .. }) = effect {
+            let s = String::from_utf8_lossy(&bytes).into_owned();
+            self.events.lock().expect("lock poisoned").push(s);
+        }
     }
+
+    fn drain_into(&self, _out: &mut Vec<Effect>) {}
 }
 
-fn term_with_recorder() -> (Term<LegacyEventSink<RecordingListener>>, RecordingListener) {
-    let listener = RecordingListener::new();
-    let term = Term::new(
-        24,
-        80,
-        100,
-        Theme::default(),
-        LegacyEventSink::new(listener.clone()),
-    );
-    (term, listener)
+fn term_with_recorder() -> (Term<RecordingListener>, RecordingListener) {
+    let recorder = RecordingListener::new();
+    let term = Term::new(24, 80, 100, Theme::default(), recorder.clone());
+    (term, recorder)
 }
 
 fn feed(term: &mut impl vte::ansi::Handler, bytes: &[u8]) {

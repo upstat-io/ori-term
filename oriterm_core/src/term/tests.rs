@@ -1624,7 +1624,7 @@ fn ris_clears_command_timing() {
 }
 
 #[test]
-fn ris_clears_pending_notifications() {
+fn ris_emits_clear_pending_notifications_effect() {
     let mut term = make_queuing_term();
     term.effect_sink()
         .push(Effect::Host(HostEffect::DesktopNotification {
@@ -1645,13 +1645,16 @@ fn ris_clears_pending_notifications() {
 
     feed(&mut term, b"\x1bc");
 
+    // RIS emits `ClearPendingNotifications`, which the local
+    // `drain_desktop_notifications` helper applies as preceding-clear
+    // semantics — every queued notification is dropped.
     assert!(drain_desktop_notifications(&term).is_empty());
 }
 
-// --- Drain notifications idempotent ---
+// --- Effect drain idempotency ---
 
 #[test]
-fn drain_notifications_returns_empty_on_second_call() {
+fn drain_into_returns_empty_on_second_call() {
     let term = make_queuing_term();
     term.effect_sink()
         .push(Effect::Host(HostEffect::DesktopNotification {
