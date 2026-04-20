@@ -62,7 +62,9 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
         '\u{2580}'..='\u{259F}' => blocks::draw_block(&mut canvas, ch),
         '\u{2800}'..='\u{28FF}' => braille::draw_braille(&mut canvas, ch),
         '\u{E0B0}'..='\u{E0B4}' | '\u{E0B6}' => powerline::draw_powerline(&mut canvas, ch),
-        '\u{1FB00}'..='\u{1FB9F}' => legacy_computing::draw(&mut canvas, ch),
+        '\u{1FB00}'..='\u{1FB9F}' | '\u{1CD00}'..='\u{1CDE5}' => {
+            legacy_computing::draw(&mut canvas, ch)
+        }
         '\u{F5D0}'..='\u{F60D}' => branch::draw_branch(&mut canvas, ch),
         '\u{25A0}'..='\u{25FF}' => geometric_shapes::draw_geometric(&mut canvas, ch),
         _ => false,

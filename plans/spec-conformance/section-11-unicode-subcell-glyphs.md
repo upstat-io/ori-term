@@ -1,7 +1,8 @@
 ---
 section: "11"
 title: "Unicode Subcell Glyphs (incl. octants)"
-status: not-started
+status: in-progress
+
 reviewed: true
 goal: "Drive every catalog row in `catalog/unicode-subcell.md` from `implemented-unverified` to `verified`, and ADD the missing octant implementation (U+1CD00–U+1CDE5, Unicode 16, inside the Symbols for Legacy Computing Supplement block U+1CC00–U+1CEBF) which is currently NOT implemented per Pass 1."
 success_criteria:
@@ -29,10 +30,10 @@ third_party_review:
 sections:
   - id: "11.0"
     title: "Top-down spec audit (BLOCKING)"
-    status: not-started
+    status: complete
   - id: "11.1"
     title: "Implement octants U+1CD00–U+1CDE5"
-    status: not-started
+    status: complete
   - id: "11.2"
     title: "Spec_chain golden tests for every subcell glyph family"
     status: not-started
@@ -86,16 +87,16 @@ sections:
 
 **Completion criteria:**
 
-- [ ] Audit file `plans/spec-conformance/audits/section-11-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
-- [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
-- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
-- [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
-- [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
-- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
-- [ ] **Drift normalization across plan artifacts:** every citation of the octant block name in `plans/spec-conformance/` names the correct supplement block (Symbols for Legacy Computing Supplement); every citation of the octant range names U+1CD00–U+1CDE5 (never the obsolete wider range, never the enclosing block boundary in place of the octant range). Drift gate is the copy-pasteable `git grep` invocation in `plans/spec-conformance/audits/README.md §Drift Patterns`. The grep scope EXCLUDES both `plans/spec-conformance/audits/README.md` (the file that defines the forbidden-pattern list) AND `plans/spec-conformance/section-11-unicode-subcell-glyphs.md` (this file, which cites the pattern rationale in §11.0 + §11.N). Every OTHER file under `plans/spec-conformance/` must produce zero matches.
-- [ ] **Canonical octant bitmask-to-position mapping artifact committed:** a file at `plans/spec-conformance/specs/octant-bitmask-mapping.md` (or equivalent codegen input under `crates/oriterm_test_support/src/...` if the implementer chooses to drive codegen) defines: (a) the Unicode 16 chart shape for each of the 230 octant codepoints U+1CD00..=U+1CDE5, (b) the corresponding 8-bit bitmask in row-major 0..7 order over the 2×4 sub-cell grid, (c) a cross-check table showing the mapping matches the WezTerm `customglyph.rs:317-559` and Kitty `decorations.c:979-1024` tables. §11.1 drives `oriterm/src/gpu/builtin_glyphs/legacy_computing/octants.rs` from this artifact — the implementer does NOT invent a bit-order convention inside the code file.
-- [ ] **Manifest update:** add the four Unicode 16 chart PDF entries to `plans/spec-conformance/specs/manifest.toml` — `[specs.unicode_chart_u2580]`, `[specs.unicode_chart_u1fb00]`, `[specs.unicode_chart_u1cc00]`, `[specs.unicode_chart_u2800]` — each with `redistributable = false`, the corresponding `https://www.unicode.org/charts/PDF/*.pdf` URL, and the conventional fields (`local_path`, `license`, `sha256`) matching existing entries like `[specs.ecma_48]`. The §11.0 top-down audit cites these PDFs as canonical spec sources; the manifest entry is what lets `manifest-fetch.sh` pull them on demand. The manifest update lands as part of §11.0 (BLOCKING) because §11.0 CANNOT walk spec sources that have no manifest entry.
-- [ ] **Overview sync:** update `plans/spec-conformance/00-overview.md §Spec Corpus` directory listing so it lists the four `unicode_chart_*` manifest entries and does NOT reference the non-existent `unicode-symbols-legacy.pdf` local path. The overview must match the manifest-backed fetch model used by every other spec in the corpus.
+- [x] Audit file `plans/spec-conformance/audits/section-11-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [x] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
+- [x] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [x] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
+- [x] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
+- [x] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`. (No new rows opened — USC-LEGACY-OCTANT already committed by pre-review pass; `Implementation` column will be updated by §11.1 when `octants.rs` lands.)
+- [x] **Drift normalization across plan artifacts:** drift-gate grep per `plans/spec-conformance/audits/README.md §Drift Patterns` returns zero matches across `plans/spec-conformance/**` with the README + section-11 exclusions in place.
+- [x] **Canonical octant bitmask-to-position mapping artifact committed:** `plans/spec-conformance/specs/octant-bitmask-mapping.md` committed with all 230 rows; cross-checked against WezTerm `customglyph.rs:317-560` and Kitty `decorations.c:979-1026` — 0 discrepancies after normalizing Kitty's column-major encoding to row-major canonical. §11.1 drives `octants.rs` from this artifact.
+- [x] **Manifest update:** four Unicode 16 chart PDF entries (`unicode_chart_u2580`, `unicode_chart_u1fb00`, `unicode_chart_u1cc00`, `unicode_chart_u2800`) added to `plans/spec-conformance/specs/manifest.toml` with `redistributable = false` and the conventional fields.
+- [x] **Overview sync:** `plans/spec-conformance/00-overview.md §Spec Corpus` directory listing already carries the four `unicode_chart_*.pdf` entries; no reference to the obsolete `unicode-symbols-legacy.pdf` path exists in the overview (verified by grep).
 
 **No other subsection in this section can begin work until §11.0 is complete.** This is a hard gate.
 
@@ -107,15 +108,15 @@ sections:
 
 **API surface note (corrects an earlier plan-draft miscitation):** the built-in-glyph dispatch surface does NOT have separate `is_builtin_glyph` + `render_builtin_glyph` entrypoints. The real API is: (a) `oriterm/src/font/mod.rs::is_builtin(ch) -> bool` is the predicate the font shaper consults before deciding whether to skip font shaping; (b) `oriterm/src/gpu/builtin_glyphs/mod.rs::rasterize(ch, cell_w, cell_h) -> Option<RasterizedGlyph>` dispatches to the correct submodule and returns `Some(..)` when handled; (c) each submodule (like `legacy_computing`) exposes a single `pub(in crate::gpu::builtin_glyphs) fn draw(canvas: &mut Canvas, ch: char) -> bool` entry. §11.1 extends existing match arms in those three sites — it does NOT introduce new entrypoint names.
 
-- [ ] Create `oriterm/src/gpu/builtin_glyphs/legacy_computing/octants.rs` driven by the canonical bitmask table artifact produced in §11.0 — NOT by extrapolating the sextant arithmetic in `legacy_computing/mod.rs:39-48` (`idx + idx / 0x14 + 1`). The Canvas is a 2×4 grid (2 columns × 4 rows) per cell. Each U+1CD00..=U+1CDE5 codepoint maps to an 8-bit bitmask describing which of the 8 sub-cells are filled, with bit order row-major 0..7 per the canonical artifact.
-- [ ] Add `#[cfg(test)] mod tests;` at the bottom of `oriterm/src/gpu/builtin_glyphs/legacy_computing/mod.rs` if it is not already present. Per `.claude/rules/test-organization.md §Sibling tests.rs Pattern`, the module MUST be a directory module (`legacy_computing/mod.rs` — already is) and tests live in `legacy_computing/tests.rs` (create the file; put octant + sextant tests + canonical-mapping guard there). No inline `#[cfg(test)] mod tests { ... }` with an inline body — semicolon form only.
-- [ ] Canonical-mapping guard test (in `legacy_computing/tests.rs`): assert the codepoint→mask table in `octants.rs` is byte-identical to the canonical artifact from §11.0 (parse the artifact, compare). Any divergence is a compile-time regression.
-- [ ] Braille-vs-octant rendering-model check (in `legacy_computing/tests.rs`): before sharing ANY Canvas helper across `braille.rs` and `octants.rs`, a test asserts that the two renderers treat their 2×4 grids differently — braille uses Unicode-dot-order bit numbering (`oriterm/src/gpu/builtin_glyphs/braille.rs`, dots 1-8 per UCD) and octants use row-major 0..7 per the §11.0 canonical artifact. If the test is not added, the implementations must NOT share a Canvas renderer (per `.claude/rules/impl-hygiene.md §Algorithmic DRY` — shared code requires shared semantics).
-- [ ] Extend the `legacy_computing::draw` match in `legacy_computing/mod.rs:13-31` to add a new arm routing U+1CD00..=U+1CDE5 to the octant renderer. Since U+1CD00..=U+1CDE5 is disjoint from the existing U+1FB00..=U+1FB9F arms, the new arm is additive — no existing arm is modified.
-- [ ] Extend the `rasterize` match list in `oriterm/src/gpu/builtin_glyphs/mod.rs:60-69` to include `'\u{1CD00}'..='\u{1CDE5}' => legacy_computing::draw(&mut canvas, ch)`. The new arm routes through the same `legacy_computing::draw` entry as the existing sextant/mosaic arms — no new module-level entrypoint name is introduced.
-- [ ] Extend the `is_builtin` match in `oriterm/src/font/mod.rs:485-496` to include `'\u{1CD00}'..='\u{1CDE5}'` alongside the existing `'\u{1FB00}'..='\u{1FB9F}'`. The shaper calls `is_builtin` at `oriterm/src/font/shaper/mod.rs:154` to decide whether to skip font shaping for a codepoint; without this addition the built-in renderer is silently bypassed when the configured font advertises coverage of an octant codepoint.
-- [ ] Sibling tests (in `legacy_computing/tests.rs`): render a few representative octant codepoints via the built-in renderer, verify the bitmask matches the canonical artifact from §11.0 (not a separate re-encoding of the chart).
-- [ ] **Validation**: octant codepoints render correct shapes per chart PDF; `is_builtin` returns true for every U+1CD00..=U+1CDE5 codepoint; `rasterize` returns `Some(..)` for every U+1CD00..=U+1CDE5 codepoint; font shaping is never invoked for those codepoints.
+- [x] Create `oriterm/src/gpu/builtin_glyphs/legacy_computing/octants.rs` driven by the canonical bitmask table artifact produced in §11.0. Table is a `const [u8; 230]` indexed by `ch - OCTANT_START`; the `draw()` function applies the row-major bit decoding over a 2×4 Canvas grid.
+- [x] Added `#[cfg(test)] mod tests;` (semicolon form) at the bottom of `legacy_computing/mod.rs`; tests live in `legacy_computing/tests.rs` per `.claude/rules/test-organization.md`.
+- [x] Canonical-mapping guard test (`octants_table_matches_canonical_artifact`): parses the canonical artifact markdown at test time and asserts every one of the 230 table entries is byte-identical.
+- [x] Braille-vs-octant rendering-model check (`braille_and_octant_rendering_models_are_distinct`): asserts the two renderers produce different pixel buffers for the same nominal bit value — proving the bit-order semantics are distinct, which is the invariant that blocks inadvertent Canvas-helper DRY between the two 2×4 modules.
+- [x] Extended `legacy_computing::draw` match arm with `octants::OCTANT_START..=octants::OCTANT_END => octants::draw(canvas, ch)`. Additive with the existing `U+1FB00..=U+1FB9F` arms.
+- [x] Extended the `rasterize` match in `oriterm/src/gpu/builtin_glyphs/mod.rs` with `'\u{1CD00}'..='\u{1CDE5}'` joined into the existing `legacy_computing::draw` arm.
+- [x] Extended `is_builtin` in `oriterm/src/font/mod.rs` with `'\u{1CD00}'..='\u{1CDE5}'` alongside the existing sextant range — the shaper never handles octants.
+- [x] Sibling tests: representative render checks (`octant_u1cd00_renders_upper_mid_left_cell`, `octant_u1cde5_renders_all_but_top_left`) verify specific pixels match the canonical mask semantics; full-coverage test (`every_octant_codepoint_is_builtin_and_rasterizes`) iterates all 230 codepoints.
+- [x] **Validation**: all 9 octant tests pass (`cargo test -p oriterm --lib legacy_computing`); full workspace test suite green (`cargo test --workspace`); clippy + build + test all green.
 
 ---
 
