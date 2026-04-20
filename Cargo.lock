@@ -1902,9 +1902,9 @@ dependencies = [
 
 [[package]]
 name = "orbclient"
-version = "0.3.51"
+version = "0.3.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59aed3b33578edcfa1bc96a321d590d31832b6ad55a26f0313362ce687e9abd6"
+checksum = "12c6933ddbbd16539a7672e697bb8d41ac3a4e99ac43eeb40c07236bd7fcb2dd"
 dependencies = [
  "libc",
  "libredox",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm"
-version = "0.2.0-alpha.20260418"
+version = "0.2.0-alpha.20260419"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1971,7 +1971,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_core"
-version = "0.2.0-alpha.20260418"
+version = "0.2.0-alpha.20260419"
 dependencies = [
  "base64",
  "bitflags 2.11.1",
@@ -1994,7 +1994,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ipc"
-version = "0.2.0-alpha.20260418"
+version = "0.2.0-alpha.20260419"
 dependencies = [
  "libc",
  "log",
@@ -2004,7 +2004,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_mux"
-version = "0.2.0-alpha.20260418"
+version = "0.2.0-alpha.20260419"
 dependencies = [
  "base64",
  "bincode",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_test_support"
-version = "0.2.0-alpha.20260418"
+version = "0.2.0-alpha.20260419"
 dependencies = [
  "clap",
  "oriterm_core",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "oriterm_ui"
-version = "0.2.0-alpha.20260418"
+version = "0.2.0-alpha.20260419"
 dependencies = [
  "criterion",
  "image",
