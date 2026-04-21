@@ -801,7 +801,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | Complete    |
 | 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | Complete    |
 | 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Complete    |
-| 12 | Sixel                                                  | `section-12-sixel.md`                                | Not Started |
+| 12 | Sixel                                                  | `section-12-sixel.md`                                | Complete    |
 | 13 | Kitty Graphics Protocol                                | `section-13-kitty-graphics.md`                       | Not Started |
 | 14 | iTerm2 Inline Images                                   | `section-14-iterm2-images.md`                        | Not Started |
 | 15 | Cell-Level Alpha + Transparency                        | `section-15-cell-level-alpha.md`                     | Not Started |

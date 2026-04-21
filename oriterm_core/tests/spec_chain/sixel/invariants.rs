@@ -16,6 +16,7 @@
 //!   aborts via `ImageError::OversizedImage` with no 900 MB allocation.
 
 use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::sixel_fixtures::placement_count;
 use vte::ansi::Rgb;
 
 // Test helpers.
@@ -28,11 +29,6 @@ fn last_image_pixels(harness: &SpecHarness) -> (Vec<u8>, u32, u32) {
         .last()
         .expect("at least one image should be present");
     (data.data.as_ref().clone(), data.width, data.height)
-}
-
-/// Count placements visible in the public renderable snapshot.
-fn placement_count(harness: &SpecHarness) -> usize {
-    harness.term().renderable_content().images.len()
 }
 
 /// Configure a distinguishable terminal bg color on the harness — used
