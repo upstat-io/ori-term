@@ -6,6 +6,8 @@
 //! semantic-raster sweep in `semantic_raster.rs` proves per-codepoint correctness;
 //! these sparse pins are the visual golden anchors that also catch regressions
 //! in the GPU pipeline (cell metrics, glyph quad placement, alpha blending).
+//!
+//! Catalog rows: USC-BLOCKS, USC-BOX, USC-BRAILLE, USC-LEGACY-SEXTANT
 
 use super::super::visual_harness::VisualSpecHarness;
 use super::run_glyph_scenario;

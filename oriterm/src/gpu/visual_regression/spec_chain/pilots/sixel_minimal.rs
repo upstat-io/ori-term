@@ -1,6 +1,6 @@
 //! Sixel visual pilot — minimal raster fill through every rung.
 //!
-//! Catalog row: SIXEL-DCS-Q-MINIMAL
+//! Catalog row: SIXEL-DCS-q
 //! Apex: GoldenImage
 //!
 //! Drives a minimal sixel sequence (DCS q ... ST that paints a solid
@@ -40,7 +40,7 @@ fn sixel_minimal_drives_every_rung_green() {
     };
 
     let scenario = SpecScenario {
-        catalog_row_id: "SIXEL-DCS-Q-MINIMAL",
+        catalog_row_id: "SIXEL-DCS-q",
         bytes: SIXEL_BYTES,
         apex_layer: ApexLayer::GoldenImage,
         setup: b"",

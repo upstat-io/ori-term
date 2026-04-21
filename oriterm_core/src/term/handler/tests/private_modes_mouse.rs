@@ -1,3 +1,6 @@
+//! Catalog rows: DEC-X10-MOUSE, DEC-MOUSE-CLICKS, DEC-MOUSE-DRAG, DEC-MOUSE-MOTION,
+//! DEC-UTF8-MOUSE, DEC-SGR-MOUSE, DEC-URXVT-MOUSE
+
 use crate::term::{Term, TermMode};
 use crate::theme::Theme;
 

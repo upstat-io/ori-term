@@ -95,6 +95,191 @@ fn scan_test_citations_plural_form_skips_empty_pieces() {
 }
 
 #[test]
+fn scan_test_citations_strips_trailing_period() {
+    // Regression: BUG-07-016 — `//! Catalog rows: OSC-0, OSC-1, OSC-2.`
+    // used to register `OSC-2.` (with period) as a distinct row ID,
+    // producing spurious UNCATALOGED CITATIONS + FALSE VERIFIED pairs.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "//! Catalog rows: OSC-0, OSC-1, OSC-2.\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert_eq!(ids.len(), 3, "expected 3 IDs, got {ids:?}");
+    assert!(ids.contains(&"OSC-0"));
+    assert!(ids.contains(&"OSC-1"));
+    assert!(
+        ids.contains(&"OSC-2"),
+        "trailing period not stripped: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"OSC-2."),
+        "period-suffixed variant must not appear: {ids:?}"
+    );
+}
+
+#[test]
+fn scan_test_citations_strips_surrounding_backticks() {
+    // Regression: BUG-07-016 — `` /// Catalog row: `SIXEL-BG-NoChange`.``
+    // used to register a backtick-wrapped, period-suffixed id.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "/// Catalog row: `SIXEL-BG-NoChange`.\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert_eq!(ids, vec!["SIXEL-BG-NoChange"]);
+}
+
+#[test]
+fn scan_test_citations_strips_parenthetical_qualifier() {
+    // Regression: BUG-07-016 — `/// Catalog row: SIXEL-REPEAT (§12.4 GPU-apex)`
+    // used to register the entire prose as a row ID.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "/// Catalog row: SIXEL-REPEAT (§12.4 GPU-apex)\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert_eq!(ids, vec!["SIXEL-REPEAT"]);
+}
+
+#[test]
+fn scan_test_citations_cuts_trailing_prose_after_sentence_boundary() {
+    // Regression: BUG-07-016 —
+    // `//! Catalog rows: OSC-4-SET, OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
+    // used to register `OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`
+    // as an id.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "//! Catalog rows: OSC-4-SET, OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert_eq!(ids.len(), 2, "expected 2 IDs, got {ids:?}");
+    assert!(ids.contains(&"OSC-4-SET"));
+    assert!(ids.contains(&"OSC-4-QUERY"));
+}
+
+#[test]
+fn scan_test_citations_combined_backtick_and_parenthetical() {
+    // `` /// Catalog row: `SIXEL-BG-SetToBg` (DECSCNM interaction).``
+    // must normalize to `SIXEL-BG-SetToBg`.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "/// Catalog row: `SIXEL-BG-SetToBg` (DECSCNM interaction).\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert_eq!(ids, vec!["SIXEL-BG-SetToBg"]);
+}
+
+#[test]
+fn scan_test_citations_handles_multi_line_continuation() {
+    // Regression: BUG-07-016 — when a long plural form wraps across lines
+    // via trailing comma, the scanner used to drop lines 2+, producing
+    // false-verified entries for every row after the first line.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "//! Catalog rows: OSC-3, OSC-5-SET, OSC-5-QUERY, OSC-6, OSC-13-SET,\n\
+         //! OSC-13-QUERY, OSC-14-SET, OSC-14-QUERY, OSC-17-SET, OSC-17-QUERY,\n\
+         //! OSC-19-SET, OSC-19-QUERY, OSC-113, OSC-114, OSC-117, OSC-119, OSC-L,\n\
+         //! OSC-l.\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    assert_eq!(ids.len(), 18, "expected 18 IDs across 4 lines, got {ids:?}");
+    for expected in [
+        "OSC-3",
+        "OSC-5-SET",
+        "OSC-5-QUERY",
+        "OSC-6",
+        "OSC-13-SET",
+        "OSC-13-QUERY",
+        "OSC-14-SET",
+        "OSC-14-QUERY",
+        "OSC-17-SET",
+        "OSC-17-QUERY",
+        "OSC-19-SET",
+        "OSC-19-QUERY",
+        "OSC-113",
+        "OSC-114",
+        "OSC-117",
+        "OSC-119",
+        "OSC-L",
+        "OSC-l",
+    ] {
+        assert!(ids.contains(&expected), "missing {expected}: {ids:?}");
+    }
+}
+
+#[test]
+fn scan_test_citations_silently_drops_prose() {
+    // Author-error citations (prose used where an ID was expected) must
+    // NOT produce spurious UNCATALOGED entries — they're dropped silently
+    // because prose cannot match any catalog row by construction.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "/// Catalog row: sixel lifecycle — scrollback eviction.\nfn test() {}\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    assert!(
+        citations.is_empty(),
+        "prose must not produce citations: {citations:?}"
+    );
+}
+
+#[test]
+fn scan_test_citations_continuation_stops_on_non_comment_line() {
+    // Continuation lines must be comments. A bare fn line terminates the
+    // continuation without consuming it.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("test.rs");
+    std::fs::write(
+        &file,
+        "//! Catalog rows: A, B,\nfn interloper() {}\n//! Catalog row: C\n",
+    )
+    .unwrap();
+
+    let citations = super::scan_test_citations(&[dir.path().to_path_buf()], &[]).unwrap();
+    let ids: Vec<_> = citations.iter().map(|c| c.row_id.as_str()).collect();
+    // A, B stop at the fn line (continuation ended); C is a separate
+    // standalone citation.
+    assert!(ids.contains(&"A"));
+    assert!(ids.contains(&"B"));
+    assert!(ids.contains(&"C"));
+    assert_eq!(ids.len(), 3, "unexpected IDs: {ids:?}");
+}
+
+#[test]
 fn scan_test_citations_finds_const_field_citation() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.rs");

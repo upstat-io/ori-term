@@ -17,6 +17,8 @@
 //! SIXEL-REPEAT, SIXEL-CR, SIXEL-NL, SIXEL-DATA-BYTE, SIXEL-ABORT-CAN,
 //! SIXEL-ABORT-SUB, SIXEL-ABORT-ESC, SIXEL-RASTER-BEFORE-DATA,
 //! SIXEL-RASTER-MID-STREAM.
+//!
+//! Catalog rows: SIXEL-DCS-put
 
 use oriterm_test_support::spec_chain::{DispatchArgs, SpecHarness};
 
