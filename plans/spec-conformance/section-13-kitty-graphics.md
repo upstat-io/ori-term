@@ -27,7 +27,7 @@ inspired_by:
   - "wezterm `term/src/terminalstate/kitty.rs` — production reference for chunked transmission, animation, frame composition"
 depends_on: ["12"]
 third_party_review:
-  status: findings
+  status: clean
   updated: 2026-04-21
   notes: "user-accepted at iter_cap_reached after 3 rounds; 10 findings fixed inline (zero outstanding); survivor-mode all 3 rounds (gemini 429 persistent)"
 sections:
