@@ -22,17 +22,6 @@ fn placement_count(harness: &SpecHarness) -> usize {
     harness.term().renderable_content().images.len()
 }
 
-/// Return the last-placed image's z_index from the renderable snapshot.
-fn last_placement_z_index(harness: &SpecHarness) -> i32 {
-    harness
-        .term()
-        .renderable_content()
-        .images
-        .last()
-        .expect("at least one placement expected")
-        .z_index
-}
-
 /// Return the cursor's (line, col) on the active grid.
 fn cursor_line_col(harness: &SpecHarness) -> (usize, usize) {
     let grid = harness.term().grid();
@@ -170,24 +159,37 @@ fn sixel_cursor_right_priority_over_sixel_scrolling() {
 // Placement creation attributes.
 
 /// Catalog row: placement-creation — `z_index: 0` + `FixedPixels`
-/// sizing + cell-cursor anchoring.
+/// sizing.
 ///
 /// Every sixel `handle_sixel_end` commits a placement via
 /// `sixel_create_placement`. The snapshot-exposed
 /// `RenderablePlacement::z_index` must be `0` so z-order is neutral
 /// (non-negative draws above text per the GPU emit path; negative draws
-/// below). Kitty placements set z_index via their own protocol; sixel
-/// pins z_index to 0 here.
+/// below). `FixedPixels` sizing is observable through
+/// `RenderablePlacement::display_width`/`display_height`: the decoded
+/// sixel's pixel dimensions flow through verbatim — no cell-based
+/// stretching (which would be the `CellCount` sizing branch). A
+/// 5-column × 6-row sixel at `dcs_n_cols_wide(5)` renders at exactly
+/// 5.0 × 6.0 pixels, proving FixedPixels is live.
 #[test]
-fn sixel_placement_creation_sets_z_index_zero() {
+fn sixel_placement_creation_sets_z_index_zero_and_fixed_pixels_sizing() {
     let mut h = SpecHarness::new();
     h.feed(&dcs_n_cols_wide(5));
 
     assert_eq!(placement_count(&h), 1);
+    let snap = h.term().renderable_content();
+    let p = snap.images.last().expect("placement present");
     assert_eq!(
-        last_placement_z_index(&h),
-        0,
+        p.z_index, 0,
         "sixel placements use z_index: 0 (non-negative → above text)",
+    );
+    assert_eq!(
+        p.display_width, 5.0,
+        "FixedPixels sizing — display_width matches decoded sixel pixels",
+    );
+    assert_eq!(
+        p.display_height, 6.0,
+        "FixedPixels sizing — display_height matches decoded sixel pixels",
     );
 }
 
@@ -267,7 +269,7 @@ fn grid_integration_category_matrix_completeness() {
         "sixel_scrolling_off_decrst_80",
         "sixel_cursor_right_decset_8452",
         "sixel_cursor_right_priority",
-        "placement_z_index_zero",
+        "placement_z_index_zero_and_fixed_pixels_sizing",
         "placement_anchor_at_cursor",
         "placement_pruned_on_scrollback_eviction",
     ];
