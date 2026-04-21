@@ -28,16 +28,16 @@ inspired_by:
   - "wezterm `term/src/terminalstate/kitty.rs` — production reference for chunked transmission, animation, frame composition"
 depends_on: ["12"]
 third_party_review:
-  status: clean
+  status: findings
   updated: 2026-04-21
-  notes: "user-accepted at iter_cap_reached after 3 rounds; 10 findings fixed inline (zero outstanding); survivor-mode all 3 rounds (gemini 429 persistent)"
+  notes: "§13.0.5 TPR: user-accepted at iter_cap_reached after 3 rounds; 10 in-scope findings fixed inline with 12 regression pins in `delete/tests.rs`; 2 out-of-scope findings filed as `- [ ]` in §13.R (v=0 animate → §13.3 owner; LRU FIFO snapshot → future). §13.0 section-wide TPR: user-accepted at iter_cap_reached after 3 rounds; 10 findings fixed inline (zero outstanding); survivor-mode all 3 rounds (gemini 429 persistent)."
 sections:
   - id: "13.0"
     title: "Top-down spec audit + catalog row carve-out (BLOCKING)"
     status: complete
   - id: "13.0.5"
     title: "BUG-08-7 + BUG-08-8 closure (BLOCKING precondition for 13.1+)"
-    status: not-started
+    status: complete
   - id: "13.1"
     title: "Verify kitty action + format + transmission combinations (t=d/f/t, f=24/32/100, a=t/T/p/q)"
     status: not-started
@@ -156,21 +156,24 @@ sections:
 
 **Completion criteria:**
 
-- [ ] **Write failing test matrix BEFORE implementation** (TDD per `.claude/rules/tests.md` §TDD for Bugs). Per-specifier red tests for all 22 `d=` arms — the 18 existing-but-broken arms (`a`/`A`/`i`/`I`/`p`/`P`/`c`/`C`/`x`/`X`/`y`/`Y`/`z`/`Z`/`r`/`R`/`n`/`N`) AND the 4 missing arms that §13.0.5 implements (`q`/`Q`/`f`/`F`). Tests live at `oriterm_core/src/term/handler/image/kitty/delete/tests.rs` (sibling `tests.rs` per `.claude/rules/test-organization.md`). Tests encode the protocol-spec behavior per `sw.kovidgoyal.net/kitty/graphics-protocol/` and wezterm `term/src/terminalstate/kitty.rs`, NOT the current broken / absent behavior. Every one of the 22 red tests MUST fail against the pre-fix code — the 18 broken arms assert the corrected behavior; the 4 missing arms fail because the dispatch is absent. Confirm by running the suite before implementing §13.0.5's fixes.
-- [ ] **Fix BUG-08-7's 4 wrong specifier arms** per `plans/bug-tracker/section-08-core-terminal.md:85-90`:
-  - `d=a`: per spec, deletes VISIBLE placements only (not ALL images+placements); current code at `kitty.rs:187` calls `cache.clear()` which is wrong.
-  - `d=c`: per spec, uses cursor POSITION (cell intersection), not cursor column alone; current code at `kitty.rs:213` uses `cursor_col` alone.
-  - `d=p`: per spec, deletes at cell POSITION (x,y intersection), not by placement-ID; current code at `kitty.rs:198-203` uses `placement_id` lookup.
-  - `d=r`: per spec, deletes images in an ID RANGE (x≤id≤y), not at cursor position; current code at `kitty.rs:235-239` uses cursor-position deletion.
-- [ ] **Implement the missing specifiers** per BUG-08-7: `d=q` (delete at cell + z_index), `d=Q` (delete at cell + z_index + prune image data), `d=f` (delete animation frame), `d=F` (delete animation frame + prune image data). `d=n`/`d=N` (delete by image number) may stay as `debug!("not yet implemented")` ONLY if §13.0's audit file captures them as `not-targeted` with rationale; otherwise implement.
-- [ ] **Close BUG-08-8 via the split diagrammed in `plans/bug-tracker/section-08-core-terminal.md:92-100`**: extract per-action handlers into submodules at `oriterm_core/src/term/handler/image/kitty/`. Every resulting file ≤ 200 lines. `kitty/mod.rs` is the dispatch entry — reads `KittyCommand::action` and routes. Follow the sibling `tests.rs` pattern per `.claude/rules/test-organization.md` — each submodule that has tests gets its own `tests.rs`.
-- [ ] **No file in the split exceeds the 500-line hard limit** per `.claude/rules/code-hygiene.md` §File Size. Assert via `wc -l oriterm_core/src/term/handler/image/kitty/*.rs` — every output line ≤ 500.
-- [ ] **Semantic pins** — at least one test per fixed specifier that ONLY passes with the corrected behavior. Per `.claude/rules/tests.md` §Matrix Clamping, each semantic pin has a negative counterpart that rejects the old broken behavior: e.g., `d=a_deletes_visible_placements_only_not_image_data` pairs with `d=a_negative_pin_does_not_clear_image_data`.
-- [ ] **Matrix dimension**: specifier × case (lower vs upper = placement-only vs image+placement) × presence (id provided vs not) × image_state (present vs absent). `d=` matrix count assertion per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
-- [ ] **Update catalog** — flip every per-specifier row opened in §13.0 (`KG-DELETE-{a,A,i,I,p,P,c,C,x,X,y,Y,z,Z,r,R,q,Q,f,F}`) from `stub` / `missing` to `verified` with citations to the new `delete/mod.rs` and its `delete/tests.rs` sibling.
-- [ ] **Bug tracker entries flipped**: `plans/bug-tracker/section-08-core-terminal.md:85` (BUG-08-7) and `:92` (BUG-08-8) BOTH marked `- [x]` with fix commit SHAs recorded in each entry's body.
-- [ ] Verify all tests pass in both debug AND release builds — `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` all green.
-- [ ] **TPR checkpoint** — `/tpr-review` covering §13.0.5 alone. Structural change (file split) + semantic change (delete arms) is the exact shape of code that benefits from third-party review: reviewers will spot missed call-sites, test coverage gaps, and file-ordering regressions. Findings recorded in §13.R.
+- [x] **Write failing test matrix BEFORE implementation** (TDD per `.claude/rules/tests.md` §TDD for Bugs). Per-specifier red tests for all 22 `d=` arms — the 18 existing-but-broken arms (`a`/`A`/`i`/`I`/`p`/`P`/`c`/`C`/`x`/`X`/`y`/`Y`/`z`/`Z`/`r`/`R`/`n`/`N`) AND the 4 missing arms that §13.0.5 implements (`q`/`Q`/`f`/`F`). Tests live at `oriterm_core/src/term/handler/image/kitty/delete/tests.rs` (29 tests — 22 per-arm coverage + 4 negative pins for BUG-08-7 regressions + `delete_specifier_matrix_completeness` + `delete_case_pair_contract_lowercase_keeps_data_uppercase_frees`). Red-phase confirmed: 20 of 29 failed against pre-fix code.
+- [x] **Fix BUG-08-7's 4 wrong specifier arms** — all corrected in `oriterm_core/src/term/handler/image/kitty/delete/mod.rs`:
+  - `d=a`: now `remove_visible_placements(viewport_top, viewport_bottom)` (keeps off-screen + image data for lowercase); `cache.clear()` path removed.
+  - `d=c`: now `remove_by_position(cursor_col, cursor_row)` via `kitty_delete_at_position`; column-only match path removed.
+  - `d=p`: now `remove_by_position((x-1), (y-1))` via `kitty_delete_at_cell`; ignores `i=`/`p=` keys per spec.
+  - `d=r`: now `remove_placements_in_id_range(ImageId(x), ImageId(y))`; cursor-position deletion path removed.
+- [x] **Implement the missing specifiers** — all 4 BUG-08-7 arms plus d=n/d=N:
+  - `d=q`/`d=Q`: new `ImageCache::remove_placements_at_cell_with_z(col, row, z)`.
+  - `d=f`/`d=F`: new `ImageCache::has_extra_animation_frames` + `remove_animation_frame(id, frame_number)`; `d=F` on a static image removes the image entirely per kitty graphics.c:1696.
+  - `d=n`/`d=N`: new `ImageData::image_number: Option<u32>` threaded from `KittyCommand.image_number` → `KittyStoreParams::image_number` → `ImageData::image_number`. New `ImageCache::newest_by_image_number(number) -> Option<ImageId>` resolves the newest image by `last_accessed`. Audit at `plans/spec-conformance/audits/section-13-top-down-inventory.md:111-112` maps d=n/d=N to `KG-DELETE-n`/`KG-DELETE-N` (not `not-targeted`), so §13.0.5 implements rather than stubs.
+- [x] **Close BUG-08-8 via the split** — landed in commit `4d46d793` (pre-dating §13.0.5 implementation): `kitty/mod.rs` + `kitty/{transmit,place,delete/mod,store,query,response,frame,animate}.rs`. `delete/` is a directory module because it has a sibling `tests.rs` (§13.0.5 added the tests).
+- [x] **No file in the split exceeds the 500-line hard limit** — verified via `wc -l oriterm_core/src/term/handler/image/kitty/*.rs oriterm_core/src/term/handler/image/kitty/delete/mod.rs`: mod.rs=130, delete/mod.rs=198, store.rs=132, place.rs=91, frame.rs=75, animate.rs=66, transmit.rs=51, response.rs=23, query.rs=13. Every file ≤ 200 lines; well below the 500 hard limit.
+- [x] **Semantic pins** — negative pins for all 4 BUG-08-7 regressions land in `delete/tests.rs`: `delete_a_negative_pin_does_not_clear_entire_cache`, `delete_p_negative_pin_ignores_placement_id_key`, `delete_c_negative_pin_does_not_delete_entire_cursor_column`, `delete_r_negative_pin_does_not_use_cursor_position`. Each would fail if the pre-fix broken code returned.
+- [x] **Matrix dimension** — `delete_specifier_matrix_completeness` iterates all 22 specifiers and asserts `count == 22`; `delete_case_pair_contract_lowercase_keeps_data_uppercase_frees` enumerates 9 case-pairs (i/I, p/P, c/C, x/X, y/Y, z/Z, r/R, n/N, q/Q) and pins the lowercase-keeps-data / uppercase-frees-data invariant end-to-end.
+- [x] **Update catalog** — `plans/spec-conformance/catalog/kitty-graphics.md` `KG-ACTION-DELETE` + all 22 `KG-DELETE-{a,A,i,I,p,P,c,C,x,X,y,Y,z,Z,r,R,q,Q,f,F,n,N}` flipped to `verified`. `KG-ACTION-FALLBACK-TRANSMITANDPLACE`, `KG-TRANSMIT-SHARED-MEM-REJECTED`, `KG-COMPRESSION-OZ-IGNORED` (§13.0 opened as `verified-with-deviation` but uncited) now cited by new parser/handler tests in `oriterm_core/src/image/kitty/tests.rs`.
+- [x] **Bug tracker entries flipped** — `plans/bug-tracker/section-08-core-terminal.md` BUG-08-7 (:85) and BUG-08-8 (:92) both marked `- [x]` with full fix body. BUG-08-8's entry cites commit `4d46d793`; BUG-08-7's cites §13.0.5 anchors.
+- [x] Verify all tests pass in both debug AND release builds — `./build-all.sh` green (debug + release + x86_64-pc-windows-gnu cross-compile), `./test-all.sh` green (1968 lib tests + spec-coverage + catalog-coverage), `./clippy-all.sh` green.
+- [x] **TPR checkpoint** — `/tpr-review` ran 3 rounds (iter_cap_reached, user-accepted 2026-04-21). Codex surfaced 9 findings across rounds (high→low); gemini surfaced 8 (critical→low; round 0 clean). 10 in-scope findings fixed inline with 12 regression-test pins in `delete/tests.rs` (41 tests total); 2 out-of-scope findings (v=0 animate ownership → §13.3; LRU snapshot render-touching → future) filed in §13.R as `- [ ]` items per `CLAUDE.md §NEVER reason out of TPR findings`. Agreement findings (round 1 F2 / round 2 F2) attributed to both reviewers.
 
 **No other verification subsection (§13.1–§13.6) can begin work until §13.0.5 is complete.** This is a hard gate. The §13.1 per-specifier verification matrix runs against the post-fix code.
 
@@ -351,7 +354,44 @@ The crate split is mandated by `.claude/rules/crate-boundaries.md`: `oriterm_mux
 
 Populated by `/tpr-review` at the §13.0.5, §13.3, and §13.6 checkpoints and the §13.N final gate. Every unchecked finding here MUST be resolved (fix or file+resolve via `/fix-bug`) before this section can close, per `CLAUDE.md §NEVER reason out of TPR findings`.
 
-- None yet.
+### §13.0.5 checkpoint (user-accepted at iter_cap_reached after 3 rounds; 2026-04-21)
+
+All in-scope findings fixed inline with regression tests; 2 out-of-scope findings filed below.
+
+**Round-0 (all in-scope, all fixed inline with regression tests):**
+- `[TPR-13.0.5-R0-F1-codex][high]` — `d=p`/`d=c` used origin-cell equality, not span intersection. Fix: new `ImageCache::remove_placements_intersecting_cell` with span-intersection predicate. Test: `delete_p_removes_placement_when_target_cell_is_inside_span` + `delete_c_removes_placement_when_cursor_is_inside_span`.
+- `[TPR-13.0.5-R0-F2-codex][high]` — `d=q` used origin-cell equality. Fix: `remove_placements_at_cell_with_z` now uses span-intersection. Test: `delete_q_removes_placement_when_target_cell_is_inside_span_and_z_matches`.
+- `[TPR-13.0.5-R0-F3-codex][high]` — `d=n/N` used `last_accessed` (LRU recency) instead of creation order. Fix: new `store_order: HashMap<ImageId, u64>` + monotonic counter; `newest_by_image_number` reads `store_order`. Test: `delete_n_resolves_by_creation_order_not_lru_recency`.
+- `[TPR-13.0.5-R0-F4-codex][medium]` — `d=f/F` ignored `I=` fallback. Fix: `kitty_delete_frame` falls back to `newest_by_image_number(image_number)` when `image_id` is absent. Test: `delete_f_uppercase_accepts_image_number_when_image_id_absent`.
+- `[TPR-13.0.5-R0-F5-codex][medium]` — frame-index adjustment order (clamp before decrement) double-adjusted on root-frame removal. Fix: pre-decrement first, then size update + clamp. Test: `delete_f_root_frame_leaves_current_frame_pointing_at_same_logical_frame`.
+
+**Round-1 (all in-scope, all fixed inline with regression tests):**
+- `[TPR-13.0.5-R1-F1-codex][high]` — delete commands did not abort in-flight chunked upload. Fix: `kitty_delete` clears `self.loading_image` at entry per kitty/graphics.c:2093. Test: `delete_aborts_in_flight_chunked_upload`.
+- `[TPR-13.0.5-R1-F2-codex][medium] + [TPR-13.0.5-R1-F1-gemini][critical]` (agreement) — root-frame deletion clobbered displayed frame buffer when current_frame > 0. Fix: `remove_animation_frame` syncs `ImageData.data` to `frames[current_frame]` post-adjustment. Test: `delete_f_root_syncs_image_data_to_surviving_current_frame`.
+- `[TPR-13.0.5-R1-F2-gemini][medium]` — `remove_animation_frame` left stale `frame_starts[id]` timer. Fix: clear `frame_starts` on any frame removal. Test: `delete_f_resets_frame_starts_so_animation_timer_reinitializes`.
+- `[TPR-13.0.5-R1-F3-codex][low] + [TPR-13.0.5-R1-F4-gemini][low]` (agreement) — zero-span placements counted as intersecting a cell. Fix: `placement_intersects_cell` returns false for `cols==0 || rows==0`. Test: `delete_p_does_not_match_zero_span_placement`.
+
+**Round-2 (all in-scope, all fixed inline with regression tests):**
+- `[TPR-13.0.5-R2-F1-codex][medium] + [TPR-13.0.5-R2-F2-gemini][low]` (agreement) — `ImagePlacement::intersects_viewport` had the same zero-span bug. Fix: mirror the `cols==0 || rows==0 → false` guard. Test: `delete_a_does_not_match_zero_height_placement`.
+- `[TPR-13.0.5-R2-F1-gemini][critical]` — `remove_image` memory accounting drifted when `current_frame > 0` on an animated image. Fix: use `animation_frames` as SSOT (sum all frame bytes) when present, else `img.data`. Test: `delete_animated_image_after_advance_correctly_releases_memory` (stages frames of unequal sizes; asserts `memory_used == 0` after removal).
+- `[TPR-13.0.5-R2-F4-gemini][low]` — `oriterm_core/src/image/cache/mod.rs` at 572 lines exceeded the 500-line hard limit. Fix: extract per-specifier delete-dispatch helpers into `oriterm_core/src/image/cache/deletion.rs` (cache/mod.rs = 409 lines; deletion.rs = 183 lines).
+
+**Outstanding findings (out-of-scope for §13.0.5 delete-specifier closure; filed here for tracked follow-up):**
+
+- [ ] `[TPR-13.0.5-R1-F3-gemini][medium]` `oriterm_core/src/term/handler/image/kitty/animate.rs:31` — `kitty_animate` ignores `v=0` (infinite loops) because `source_height` is a `u32` that cannot distinguish "absent" from "0". Evidence: `if cmd.source_height > 0 { self.image_cache_mut().set_animation_loops(id, cmd.source_height) }` skips the `v=0` case entirely. Per kitty graphics-protocol.rst §Animation control, `v=0` means infinite loops and must call `set_animation_loops(0)` which in turn maps to `loop_count = None`. Recommended fix: change `KittyCommand::source_height` to `Option<u32>` (or add a separate `loop_count: Option<u32>` field) so the animate handler can distinguish absent vs zero. **Disposition:** Owned by §13.3 animation subsection. Not a §13.0.5 regression (pre-existing in `animate.rs`, unmodified by §13.0.5's delete work).
+- [ ] `[TPR-13.0.5-R2-F3-gemini][medium]` `oriterm_core/src/term/snapshot.rs` — `ImageCache` LRU is effectively FIFO because snapshot extraction uses `cache.get_no_touch(id)` in production, never bumping `last_accessed`. Evidence: `get()` (which bumps `access_counter`) is `#[cfg(test)]`-gated; no production call path touches `last_accessed` after `store()`. Recommended fix (one option): replace `get_no_touch` with `get` in the snapshot extraction path and promote `get` to non-test, so rendering DOES update LRU recency. Alternative: rename `last_accessed` to `store_time` to reflect actual semantics. **Disposition:** Design decision about LRU semantics in the image cache; not a §13.0.5 delete-dispatcher concern. Owned by future snapshot/rendering review (§07 successor or dedicated plan).
+
+### §13.3 checkpoint
+
+Not yet run.
+
+### §13.6 checkpoint
+
+Not yet run.
+
+### §13.N final gate
+
+Not yet run.
 
 ---
 

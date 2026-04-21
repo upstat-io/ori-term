@@ -32,7 +32,7 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 ///
 /// IDs start at `2_147_483_647` (mid-range u32) for auto-assigned images
 /// to avoid collisions with client-assigned IDs that typically start at 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImageId(pub(crate) u32);
 
 impl ImageId {
@@ -78,6 +78,12 @@ pub struct ImageData {
     pub source: ImageSource,
     /// Monotonic counter for LRU eviction ordering.
     pub last_accessed: u64,
+    /// Client-supplied image number (`I=` in kitty graphics protocol).
+    ///
+    /// Distinct from `id`: clients can transmit multiple images with the
+    /// same `I=` and the newest one is resolved by `d=n/N` deletes.
+    /// `None` for non-kitty sources or kitty commands without `I=`.
+    pub image_number: Option<u32>,
 }
 
 /// How a placement's display dimensions are determined on resize.
@@ -139,12 +145,20 @@ pub struct ImagePlacement {
 
 impl ImagePlacement {
     /// Whether this placement overlaps the viewport row range `[top, bottom]`.
+    ///
+    /// Zero-width or zero-height placements occupy no cells and therefore
+    /// overlap no viewport — returns `false` without applying the
+    /// `saturating_sub(1)` origin-row fallback (which would falsely claim
+    /// the origin row is occupied).
     pub(crate) fn intersects_viewport(
         &self,
         viewport_top: StableRowIndex,
         viewport_bottom: StableRowIndex,
     ) -> bool {
-        let bottom = StableRowIndex(self.cell_row.0 + self.rows.saturating_sub(1) as u64);
+        if self.cols == 0 || self.rows == 0 {
+            return false;
+        }
+        let bottom = StableRowIndex(self.cell_row.0 + (self.rows - 1) as u64);
         self.cell_row <= viewport_bottom && bottom >= viewport_top
     }
 }
