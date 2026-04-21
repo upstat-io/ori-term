@@ -305,16 +305,37 @@ oriterm/src/gpu/image_render/mod.rs
 kitty graphics, APC _G, kitty graphics protocol
 key=value pairs, a, q, t, f, m, c, r, w, h, X, Y, z, C
 i, I, p, d, U, q, e, S, P, V
+subsections 13.0 13.0.5 13.1 13.2 13.3 13.4 13.5 13.6 13.R 13.N
+13.0 top-down audit catalog carve-out per-arm row expansion
+13.0.5 BUG-08-7 BUG-08-8 blocking precondition delete specifier file split
+kitty/mod.rs kitty/transmit.rs kitty/place.rs kitty/delete.rs kitty/query.rs
+kitty/store.rs kitty/response.rs kitty/frame_compose.rs kitty/animate.rs kitty/placeholder.rs
 chunked transmission, base64 accumulator, coalesce, decode
-direct, direct binary, file, temporary file, shared memory
-RGB f=24, RGBA f=32, PNG f=100, zlib o=z
+malformed base64 reply path EINVAL silent drop implementation decision
+direct, direct binary, file, temporary file, shared memory EINVAL rejection
+RGB f=24, RGBA f=32, PNG f=100, zlib o=z unconsumed carve-out
 delete actions, transmit, place, animate, virtual placement
+per-specifier d=a d=A d=i d=I d=p d=P d=c d=C d=x d=X d=y d=Y d=z d=Z d=r d=R d=q d=Q d=f d=F d=n d=N
 animation, frame composition, transmit frame, compose frame
+a=f frame a=a animate a=c compose fallback to TransmitAndPlace
 Overwrite, AlphaBlend, AnimRgba8
-unicode placeholder protocol, virtual placements
+animation timer RenderScheduler advance_animations IO thread wiring
+Term::advance_animations oriterm_mux io_thread paced redraw deadline
+unicode placeholder protocol, virtual placements, U=1, U+10EEEE
+placeholder cell diacritic row column encoding image_id lookup render time
+placeholder reflow scroll ED EL alt-screen lifecycle carved from §07
+effect transcript apex Effect::Pty PtyEffect::Write ImageProtocolReply
+effect_router not response_poll kitty reply routing
+PtyWriteKind::ImageProtocolReply effect_router/mod.rs:87-93
+cross-stack regression overlapping placements z-order interleaving
+shared-eviction races LRU pressure mixed-protocol coexistence
+§12.5 cross_stack_handoff downstream deep regression sweep
 oriterm_core/src/image/kitty/parse.rs
-oriterm_core/src/term/handler/image/kitty.rs
+oriterm_core/src/term/handler/image/kitty.rs (480 lines → split in 13.0.5)
 oriterm_core/src/term/handler/image/kitty_animation.rs
+oriterm_core/src/term/image_config.rs:65 advance_animations no production caller
+oriterm_mux/src/pane/io_thread/effect_router/mod.rs:87-93 Effect::Pty arm
+oriterm_ui/src/animation/scheduler/mod.rs RenderScheduler
 ```
 
 ---
