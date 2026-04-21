@@ -149,7 +149,8 @@ sections:
 - `oriterm_core/src/term/handler/image/kitty/mod.rs` (NEW — dispatch entry; reads `KittyCommand::action` and routes to per-action submodule).
 - `oriterm_core/src/term/handler/image/kitty/transmit.rs` (NEW — `kitty_transmit`, `kitty_transmit_and_place`, `kitty_finalize_payload`, `kitty_accumulate_chunk`).
 - `oriterm_core/src/term/handler/image/kitty/place.rs` (NEW — `kitty_place`, `kitty_create_placement`).
-- `oriterm_core/src/term/handler/image/kitty/delete.rs` (NEW — `kitty_delete` with the corrected specifier logic per BUG-08-7's spec citations).
+- `oriterm_core/src/term/handler/image/kitty/delete/mod.rs` (NEW — `kitty_delete` with the corrected specifier logic per BUG-08-7's spec citations; directory module per `.claude/rules/test-organization.md` §Sibling `tests.rs` Pattern because the module has tests — NO file-module `delete.rs` alongside `delete/`).
+- `oriterm_core/src/term/handler/image/kitty/delete/tests.rs` (NEW — sibling tests for every delete specifier arm).
 - `oriterm_core/src/term/handler/image/kitty/store.rs` (NEW — `kitty_store_image`, `kitty_decode_pixels`, `kitty_store_from_file`).
 - `oriterm_core/src/term/handler/image/kitty/query.rs` (NEW — `kitty_query`).
 - `oriterm_core/src/term/handler/image/kitty/response.rs` (NEW — `kitty_respond`).
@@ -157,7 +158,7 @@ sections:
 
 **Completion criteria:**
 
-- [ ] **Write failing test matrix BEFORE implementation** (TDD per `.claude/rules/tests.md` §TDD for Bugs). Per-specifier red tests for all 18 `d=` arms (`a`/`A`/`i`/`I`/`p`/`P`/`c`/`C`/`x`/`X`/`y`/`Y`/`z`/`Z`/`r`/`R`/`n`/`N`) — tests live at `oriterm_core/src/term/handler/image/kitty/delete/tests.rs` (sibling `tests.rs` per `.claude/rules/test-organization.md`). Tests encode the protocol-spec behavior per `sw.kovidgoyal.net/kitty/graphics-protocol/` and wezterm `term/src/terminalstate/kitty.rs`, NOT the current broken behavior. Tests MUST fail against the pre-fix code — confirm by running the suite before implementing §13.0.5's fixes.
+- [ ] **Write failing test matrix BEFORE implementation** (TDD per `.claude/rules/tests.md` §TDD for Bugs). Per-specifier red tests for all 22 `d=` arms — the 18 existing-but-broken arms (`a`/`A`/`i`/`I`/`p`/`P`/`c`/`C`/`x`/`X`/`y`/`Y`/`z`/`Z`/`r`/`R`/`n`/`N`) AND the 4 missing arms that §13.0.5 implements (`q`/`Q`/`f`/`F`). Tests live at `oriterm_core/src/term/handler/image/kitty/delete/tests.rs` (sibling `tests.rs` per `.claude/rules/test-organization.md`). Tests encode the protocol-spec behavior per `sw.kovidgoyal.net/kitty/graphics-protocol/` and wezterm `term/src/terminalstate/kitty.rs`, NOT the current broken / absent behavior. Every one of the 22 red tests MUST fail against the pre-fix code — the 18 broken arms assert the corrected behavior; the 4 missing arms fail because the dispatch is absent. Confirm by running the suite before implementing §13.0.5's fixes.
 - [ ] **Fix BUG-08-7's 4 wrong specifier arms** per `plans/bug-tracker/section-08-core-terminal.md:85-90`:
   - `d=a`: per spec, deletes VISIBLE placements only (not ALL images+placements); current code at `kitty.rs:187` calls `cache.clear()` which is wrong.
   - `d=c`: per spec, uses cursor POSITION (cell intersection), not cursor column alone; current code at `kitty.rs:213` uses `cursor_col` alone.
@@ -168,7 +169,7 @@ sections:
 - [ ] **No file in the split exceeds the 500-line hard limit** per `.claude/rules/code-hygiene.md` §File Size. Assert via `wc -l oriterm_core/src/term/handler/image/kitty/*.rs` — every output line ≤ 500.
 - [ ] **Semantic pins** — at least one test per fixed specifier that ONLY passes with the corrected behavior. Per `.claude/rules/tests.md` §Matrix Clamping, each semantic pin has a negative counterpart that rejects the old broken behavior: e.g., `d=a_deletes_visible_placements_only_not_image_data` pairs with `d=a_negative_pin_does_not_clear_image_data`.
 - [ ] **Matrix dimension**: specifier × case (lower vs upper = placement-only vs image+placement) × presence (id provided vs not) × image_state (present vs absent). `d=` matrix count assertion per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
-- [ ] **Update catalog** — flip every per-specifier row opened in §13.0 (`KG-DELETE-{a,A,i,I,p,P,c,C,x,X,y,Y,z,Z,r,R,q,Q,f,F}`) from `stub` / `missing` to `verified` with citations to the new `delete.rs` and its `tests.rs` sibling.
+- [ ] **Update catalog** — flip every per-specifier row opened in §13.0 (`KG-DELETE-{a,A,i,I,p,P,c,C,x,X,y,Y,z,Z,r,R,q,Q,f,F}`) from `stub` / `missing` to `verified` with citations to the new `delete/mod.rs` and its `delete/tests.rs` sibling.
 - [ ] **Bug tracker entries flipped**: `plans/bug-tracker/section-08-core-terminal.md:85` (BUG-08-7) and `:92` (BUG-08-8) BOTH marked `- [x]` with fix commit SHAs recorded in each entry's body.
 - [ ] Verify all tests pass in both debug AND release builds — `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` all green.
 - [ ] **TPR checkpoint** — `/tpr-review` covering §13.0.5 alone. Structural change (file split) + semantic change (delete arms) is the exact shape of code that benefits from third-party review: reviewers will spot missed call-sites, test coverage gaps, and file-ordering regressions. Findings recorded in §13.R.
@@ -225,7 +226,7 @@ sections:
 
 ## 13.3 Verify animation (a=f + a=a) with RenderScheduler-driven paced redraw
 
-**File(s):** `oriterm_core/tests/spec_chain/kitty/animation.rs` (new). Implementation edits: `oriterm_mux/src/pane/io_thread/mod.rs` (new `advance_animations` tick in the IO-thread loop) + `oriterm/src/app/event_loop_helpers/mod.rs` (wire the returned deadline into the `RenderScheduler` deferred-repaint slot).
+**File(s):** `oriterm_core/tests/spec_chain/kitty/animation.rs` (new). Implementation edits: `oriterm_ui/src/animation/scheduler/mod.rs` (new `request_frame_at(wake_at)` API + sibling `tests.rs` pin) + `oriterm_mux/src/pane/io_thread/mod.rs` (new `advance_animations` tick in the IO-thread loop) + `oriterm/src/app/event_loop.rs` (populate `ControlFlowInput.scheduler_wake` from `WindowRoot::scheduler().next_wake_time()` at the construction site — currently hardcoded `None` at `event_loop.rs:480`). `oriterm/src/app/event_loop_helpers/mod.rs` stays untouched as the pure control-flow consumer.
 
 **Depends on code paths:** post-split `kitty/frame_compose.rs` (or `kitty_animation.rs` if unmoved) — `kitty_frame` + `kitty_animate`. `Term::advance_animations` at `oriterm_core/src/term/image_config.rs:65` returning `Option<Instant>` next-frame-deadline. `ImageCache::advance_animations` at `oriterm_core/src/image/cache/animation.rs:109`. `RenderScheduler` at `oriterm_ui/src/animation/scheduler/mod.rs:40` owned by `WindowRoot` at `oriterm_ui/src/window_root/mod.rs:65`.
 
