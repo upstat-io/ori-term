@@ -25,7 +25,7 @@ set -uo pipefail
 RUN="${1:?usage: invoke-gemini.sh SCRATCH_DIR}"
 [ -f "$RUN/prompt.md" ] || { echo "ERROR: $RUN/prompt.md missing" >&2; exit 1; }
 
-GEMINI_MODEL="gemini-3.1-pro-preview"
+GEMINI_MODEL="gemini-3-flash-preview"
 MAX_ATTEMPTS=5
 INITIAL_BACKOFF=5   # seconds; doubled per retry: 5, 10, 20, 40 (75s max cumulative)
 

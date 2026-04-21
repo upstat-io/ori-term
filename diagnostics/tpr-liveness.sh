@@ -59,8 +59,8 @@ Exit codes:
   3   usage or infrastructure error (missing args, missing stdout file, etc.).
 
 Example:
-  tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 codex --human
-  tpr-liveness.sh /tmp/tpr-round-ori_lang-abc123 gemini --grace-seconds 120 --json
+  tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 codex --human
+  tpr-liveness.sh /tmp/tpr-round-ori_term-abc123 gemini --grace-seconds 120 --json
 
 See also:
   .claude/skills/tpr-review/SKILL.md §9 — retry/abort decision path.
