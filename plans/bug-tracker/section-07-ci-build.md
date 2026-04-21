@@ -28,6 +28,18 @@ sections:
 
 ## 07.1 Active Bugs
 
+- [ ] `[BUG-07-017][low]` **`.claude/skills/impl-hygiene-review/plan-annotations.py` crashes with `NameError: name 'AIMS_SECTION_RE' is not defined`** — found by §12.2 impl-hygiene-review Phase 0.
+  Repro: invoke the impl-hygiene-review skill against any scope; Phase 0 runs `plan-annotations.py` and it crashes before producing output. The other three Phase-0 tools (`hygiene-lint.py`, `enum-drift.py`, `fn-rename.py`) still run successfully — this is an isolated bug in the plan-annotations linter.
+  Subsystem: `.claude/skills/impl-hygiene-review/plan-annotations.py` (around line 631 — reference to undefined regex constant).
+  Analysis: Pre-existing tool bug. The constant `AIMS_SECTION_RE` was presumably renamed or removed during prior tooling work without updating a reference. Fix: find the actual regex the code intends (likely `SECTION_RE` or similar) and rename the reference, or restore the deleted constant.
+  Found: 2026-04-20 | Source: impl-hygiene-review Phase 0.
+
+- [ ] `[BUG-07-018][low]` **`.claude/skills/impl-hygiene-review/hygiene-lint.py` nesting-depth rule overfires on test files despite `impl-hygiene.md §Guard Clauses` scoping to non-test code** — found by §12.2 impl-hygiene-review Phase 3 / Phase 4 cross-check.
+  Repro: test files with deep nesting (e.g., `dcs_q_introducer_p1_p2_p3_cartesian_product` in `oriterm_core/tests/spec_chain/sixel/state_machine.rs`, a three-level cartesian-product loop that is test-appropriate) trigger a BLOAT/minor finding; codex + gemini both verified the rule's `non-test code` scope and confirmed the linter's overfire.
+  Subsystem: `.claude/skills/impl-hygiene-review/hygiene-lint.py` (nesting-depth check).
+  Analysis: Linter walks every `.rs` file without a test-file filter. Fix: skip paths matching `tests.rs` / `tests/**/*.rs` or any module reached under `#[cfg(test)]`. Test files still get other hygiene checks — just not the production-code nesting-depth cap.
+  Found: 2026-04-20 | Source: impl-hygiene-review Phase 3/4 cross-check.
+
 - [ ] `[BUG-07-016][medium]` **`spec-coverage-report --check` fails with 80+ pre-existing FALSE VERIFIED rows and 6 UNCATALOGED CITATIONS (trailing-period artifacts)** — found by §09A.N gate run.
   Repro: `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check` exits 1 with `FALSE VERIFIED (catalog says verified but no test cites): DEC-DECSCNM, DEC-X10-MOUSE, …` listing 80+ rows across dec-private-modes / ecma-48 / iterm2 / osc / shell-integration / xterm-ctlseqs stacks, plus UNCATALOGED CITATIONS `OSC-2.`, `OSC-112.`, `OSC-4-QUERY. Apex: state-snapshot / effect-pty-write.`, `OSC-50.`, `SIXEL-DCS-Q-MINIMAL`, `OSC-8 (\`plans/spec-conformance/catalog/osc.md\`).`.
   Subsystem: `crates/oriterm_test_support/src/spec_chain/coverage/scan.rs` (citation scanner) + `plans/spec-conformance/catalog/*.md` (stale `verified` status vs. scanner-recognizable citations).
