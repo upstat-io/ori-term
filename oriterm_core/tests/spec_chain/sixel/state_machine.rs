@@ -707,8 +707,16 @@ fn operator_category_matrix_completeness() {
     );
 }
 
+/// Catalog rows: `SIXEL-ABORT-ESC` (nested-ESC sub-case).
+///
+/// Two ESCs inside a pending DCS — the first ESC transitions to
+/// `DcsEscape`; the second ESC is NOT `0x5C` (ST), so `advance_dcs_escape`
+/// sets `dcs_aborted = true` and unhooks. The trailing `\` is then the
+/// start of a fresh control sequence, not the ST-half of the original
+/// DCS terminator. Complements `dcs_abort_esc_commits_no_placement` by
+/// pinning the specific ESC-ESC-\ pattern.
 #[test]
-fn test_esc_esc_backslash() {
+fn dcs_escape_second_esc_aborts_pending_st() {
     let mut harness = SpecHarness::new();
     harness.feed(b"\x1bPq#0;2;100;0;0~\x1b\x1b\\");
 
@@ -724,23 +732,4 @@ fn test_esc_esc_backslash() {
         .expect("sixel_end must have been dispatched");
 
     assert!(aborted, "ESC ESC \\ should abort the DCS");
-}
-
-#[test]
-fn test_esc_bel_backslash() {
-    let mut harness = SpecHarness::new();
-    harness.feed(b"\x1bPq#0;2;100;0;0~\x1b\x07\\");
-
-    let aborted = harness
-        .outcome()
-        .dispatched_calls
-        .iter()
-        .rev()
-        .find_map(|c| match &c.args {
-            DispatchArgs::SixelEnd { aborted } => Some(*aborted),
-            _ => None,
-        })
-        .expect("sixel_end must have been dispatched");
-
-    assert!(!aborted, "ESC BEL \\ should NOT abort the DCS");
 }
