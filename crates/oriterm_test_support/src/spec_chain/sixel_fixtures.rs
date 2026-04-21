@@ -1,13 +1,23 @@
-//! Shared sixel DCS fixtures for spec-conformance tests.
+//! Shared sixel DCS fixtures + protocol-neutral placement helper for
+//! `spec_chain` tests.
 //!
-//! SSOT for the common sixel DCS byte builders + renderable-snapshot
-//! placement-count helper consumed by the §12 sixel `spec_chain` tests
-//! (state machine, grid integration, lifecycle, cross-stack hand-off).
-//! Extracting here removes the duplication flagged by the §12.4-§12.5
-//! bundled TPR round 0 + bundled hygiene round (`placement_count`
-//! 3-site duplicate) and matches the sibling-file helper contract in
-//! `.claude/rules/test-organization.md` §6 and
-//! `.claude/rules/impl-hygiene.md` §Algorithmic DRY.
+//! Two concerns live here:
+//!
+//! 1. **Sixel-specific builders** (`dcs_n_bands_tall`, `dcs_n_cols_wide`):
+//!    DCS prefix + payload helpers for §12 sixel tests (state machine,
+//!    grid integration, lifecycle, cross-stack hand-off).
+//!
+//! 2. **Protocol-neutral `placement_count`**: snapshot-length probe
+//!    reused across §12 sixel AND §13 kitty tests (via `pub(super) use`
+//!    from `oriterm_core/tests/spec_chain/kitty/fixtures.rs`). The
+//!    helper operates on `SpecHarness::term().renderable_content().images`
+//!    which is protocol-agnostic — it counts any `RenderablePlacement`
+//!    regardless of origin.
+//!
+//! The module is NOT renamed (yet) because all non-`placement_count`
+//! helpers are sixel-specific; a split to `image_fixtures.rs` is tracked
+//! under §13.1's Hygiene Findings block for when §14 iterm2 becomes the
+//! third protocol consumer.
 
 use super::SpecHarness;
 
