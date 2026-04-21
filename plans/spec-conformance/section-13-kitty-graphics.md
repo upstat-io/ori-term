@@ -3,21 +3,24 @@ section: "13"
 title: "Kitty Graphics Protocol"
 status: not-started
 reviewed: false
-goal: "Drive every catalog row in `catalog/kitty-graphics.md` from `implemented-unverified` to `verified` — full APC `_G` protocol including chunked transmission, animation, virtual placements, and unicode placeholders."
+goal: "Drive every catalog row in `catalog/kitty-graphics.md` from `implemented-unverified`/`missing`/`stub` to `verified` — full APC `_G` protocol including chunked transmission, animation, virtual placements, and unicode placeholders. This section is the canonical home for the kitty graphics verification chain AND for the unicode-placeholder rendering implementation (currently `missing` in the catalog)."
 success_criteria:
   - "Top-down spec audit committed at `plans/spec-conformance/audits/section-13-top-down-inventory.md`. Every sequence in the canonical spec source(s) for this stack (sw.kovidgoyal.net/kitty/graphics-protocol/ docs (primary, kitty source is the de facto SPEC for this protocol) + kitty source `kittens/icat/icat.py` cross-reference) maps to a catalog row ID OR carries an explicit `not-targeted` decision with rationale. `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file. This is enforced PER `plans/spec-conformance/audits/README.md` lint contract — added by Section 09A as the SSOT for top-down catalog coverage to prevent the bottom-up gap that hid DECRQCRA from the catalog."
-  - "Every row in `catalog/kitty-graphics.md` is `verified`"
-  - "Every kitty action (a=t transmit, a=p place, a=d delete, a=f frame, a=c compose, a=q query — verified by Pass 1 to be implemented at parse.rs:197) verified via spec_chain"
-  - "Every transmission format (f=24 RGB, f=32 RGBA, f=100 PNG) verified"
-  - "Chunked transmission (m=1 more chunks, m=0 final) verified — feed split chunks, assert coalesced + decoded correctly"
-  - "Animation (a=f TransmitFrame, a=c ComposeFrame) with both Overwrite and AlphaBlend modes verified — Pass 1 confirmed both modes are implemented at kitty_animation.rs:58-62"
-  - "Virtual placements (U=1 unicode placeholders) verified"
-  - "Image protocol replies (kitty ACK/error) verified via Effect transcript apex (`PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply }`) — emission point at handler/image/kitty.rs:465 confirmed by Pass 2"
-  - "Kitty graphics + image lifecycle interactions verified (depends on section 07 fix)"
-  - "Kitty + sixel cross-stack regression: placing kitty image then sixel image into the same grid does NOT corrupt either; verified in spec_chain"
-  - "All existing teseq kitty tests pass without modification"
-  - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release"
-  - "Section's mission criterion connection: contributes to **Verification chain complete per row**"
+  - "`catalog/kitty-graphics.md` is expanded in §13.0 from 9 coarse rows into per-action / per-format / per-transmission / per-specifier / per-error-code rows (KG-TRANSMIT-{DIRECT,FILE,TEMPFILE,SHARED-MEM-REJECTED}, KG-TRANSMIT-FORMAT-{24,32,100}, KG-COMPRESSION-{OZ-IGNORED,OZ-REJECTED}, KG-DELETE-{a,A,i,I,p,P,c,C,x,X,y,Y,z,Z,r,R,n,N}, KG-FRAME-{TRANSMIT,COMPOSITE-OVERWRITE,COMPOSITE-ALPHABLEND}, KG-ANIMATE-{STOP,RUN-WAIT,RUN}, KG-RESPONSE-{OK,EBADF,EBIG,EINVAL,ENOENT,ENOMEM,EIO}, KG-ACTION-COMPOSE-UNKNOWN)."
+  - "Every row in `catalog/kitty-graphics.md` (after the §13.0 expansion) is `verified`, `verified-with-deviation` (for intentional spec divergences like shared-memory rejection or `o=z` unconsumed), or `not-targeted` with rationale. No `missing`, `stub`, or `implemented-unverified` rows remain."
+  - "Every kitty action (a=t transmit, a=T transmit+place, a=p place, a=d delete, a=f frame, a=a animate, a=q query) verified via spec_chain. NOTE: the prior plan body referenced `a=c` (Compose) as a standalone action — the current `KittyAction` enum in `oriterm_core/src/image/kitty/parse.rs:59-74` has NO `Compose` variant. Unknown `a=` values fall back to `TransmitAndPlace` per `apply_key_value` at `parse.rs:189-200`. `a=c` is surfaced through the `a=f` frame path with `cell_x_offset == 1` meaning `CompositionMode::Overwrite` (`kitty_animation.rs:58-62`) — §13.0 audit file MUST document this as either `not-targeted` (with rationale that composition flows through a=f) OR opens a concrete catalog + implementation row for a dedicated `a=c` arm."
+  - "Every transmission mode (t=d Direct, t=f File, t=t TempFile, t=s SharedMemory) verified. SharedMemory is parsed at `parse.rs:207-213` but rejected with `EINVAL` at `kitty.rs:289-291`. The catalog row KG-TRANSMIT-SHARED-MEM-REJECTED captures this as `verified-with-deviation` — the rejection IS the verified behavior."
+  - "Every transmission format (f=24 RGB, f=32 RGBA, f=100 PNG) verified + the format-dispatch matrix at `kitty.rs:314-345` pinned by per-format rows."
+  - "Compression (o=z) is parsed at `parse.rs:215` into `cmd.compression` but NEVER consumed downstream (`kitty.rs:255-345` does not decompress). §13.0 MUST open a catalog row that either codifies the no-op as `not-targeted` (with rationale) OR this section MUST implement zlib decompression. Survivor-mode `verified` on an aggregated KG-TRANSMIT row that ignores `o=z` would hide this gap."
+  - "Chunked transmission (m=1 more chunks, m=0 final) verified — feed split chunks, assert coalesced + decoded correctly. Malformed-base64-mid-chunk path verified: prior plan asserted an error reply; `parse_kitty_command` currently returns `Err(KittyError::InvalidBase64)` which `handle_kitty_graphics` drops via `warn!` at `kitty.rs:39-42` with no reply emitted. §13.2 MUST EITHER implement reply-on-parse-error at that call site OR document the silent-drop as `verified-with-deviation` against the spec."
+  - "Animation (a=f TransmitFrame, composition via `cell_x_offset == 1` → `CompositionMode::Overwrite`, default → `CompositionMode::AlphaBlend`) verified — Pass 1 confirmed both modes are implemented at `kitty_animation.rs:58-62`. §13.3 MUST include timer-driven redraw wiring: `Term::advance_animations` at `oriterm_core/src/term/image_config.rs:65` has NO caller in `oriterm/` or `oriterm_mux/` production code (verified by grep). Animation verification is only meaningful once the IO thread or render loop drives `advance_animations` on each frame deadline returned by the cache."
+  - "Virtual placements (U=1 unicode placeholders) verified — §13.4 is implementation + verification because the cell-level placeholder rendering is currently absent. `catalog/kitty-graphics.md` lists KG-UNICODE-PLACEHOLDER as `missing` (not `implemented-unverified`): the handler suppresses placement on `U=1` at `kitty.rs:106-108` but `U+10EEEE` placeholder cells do NOT resolve back to the stored image at render time. §13.4 owns adding the cell-level placeholder rendering path AND its reflow/ED/EL behavior per §07's carve-out that explicitly routed placeholder lifecycle to §13.4."
+  - "Image protocol replies (kitty ACK/error) verified via Effect transcript apex. Emission point: `Term::kitty_respond` at `oriterm_core/src/term/handler/image/kitty.rs:466-479` pushes `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, bytes })` onto the `EffectSink`. Routing point: the generic `Effect::Pty(PtyEffect::Write { bytes, .. })` arm at `oriterm_mux/src/pane/io_thread/effect_router/mod.rs:87-93` forwards the reply into `MuxEvent::PtyWrite { pane_id, data: bytes }`. `response_poll` is NOT in this path — `oriterm_mux/src/pane/io_thread/response_poll/mod.rs:33-54` handles ONLY `HostRequest::{ClipboardLoad, ColorQuery}`, per blind-spot verification."
+  - "Kitty graphics + image lifecycle interactions verified (depends on section 07 non-placeholder handling). Placeholder lifecycle (U=1) is OWNED by this section per §07's carve-out at `plans/spec-conformance/section-07-image-lifecycle-correctness.md:84` (reflow, ED, EL, scroll against cells carrying `U+10EEEE`)."
+  - "Kitty + sixel cross-stack regression: §13.6 extends §12.5's already-green `cross_stack_handoff.rs` handshake (which proved coexistence at the `ImageCache`/`RenderableContent` snapshot level) with the deep mixed-protocol rendering regressions (overlapping placements, z-order interleaving with both protocols present, shared-eviction races under LRU pressure) that §12.5 explicitly DEFERRED-TO-DOWNSTREAM. §13.6 does NOT re-prove coexistence and does NOT duplicate §07 lifecycle."
+  - "Existing teseq kitty scenarios remain green (zero-count today — `oriterm_core/tests/teseq/main.rs:57` has no kitty family module; this criterion is a non-regression baseline for any kitty teseq scenarios that land in §23.5 archival work)."
+  - "`./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release (workspace + `x86_64-pc-windows-gnu` cross-compile)."
+  - "Section's mission criterion connection: contributes to **Verification chain complete per row** AND **Image lifecycle correct under resize/reflow/scrollback/alt-screen** (placeholder-cell reflow is part of the lifecycle invariant)."
 inspired_by:
   - "kitty source itself — `~/projects/reference_repos/console_repos/kitty/kitty/graphics.py` — kitty IS the spec"
   - "sw.kovidgoyal.net/kitty/graphics-protocol/ — public protocol documentation"
@@ -26,27 +29,34 @@ depends_on: ["12"]
 third_party_review:
   status: none
   updated: null
+review_pipeline:
+  stage: editor-done
+  next_step: 6
+  updated: 2026-04-21
 sections:
   - id: "13.0"
-    title: "Top-down spec audit (BLOCKING)"
+    title: "Top-down spec audit + catalog row carve-out (BLOCKING)"
+    status: not-started
+  - id: "13.0.5"
+    title: "BUG-08-7 + BUG-08-8 closure (BLOCKING precondition for 13.1+)"
     status: not-started
   - id: "13.1"
-    title: "Verify kitty action + format combinations (transmit/place/delete/query)"
+    title: "Verify kitty action + format + transmission combinations (t=d/f/t, f=24/32/100, a=t/T/p/q)"
     status: not-started
   - id: "13.2"
-    title: "Verify chunked transmission (m=1 / m=0 coalesce + decode)"
+    title: "Verify chunked transmission (m=1 / m=0 coalesce + decode + malformed-base64 reply path)"
     status: not-started
   - id: "13.3"
-    title: "Verify animation (a=f, a=c with Overwrite + AlphaBlend modes)"
+    title: "Verify animation (a=f + a=a) with RenderScheduler-driven paced redraw"
     status: not-started
   - id: "13.4"
-    title: "Verify virtual placements (U=1 unicode placeholders)"
+    title: "Implement + verify virtual placements (U=1 unicode placeholders — currently `missing`)"
     status: not-started
   - id: "13.5"
-    title: "Verify image protocol replies via Effect transcript apex"
+    title: "Verify image protocol replies via Effect transcript apex (Effect::Pty at effect_router)"
     status: not-started
   - id: "13.6"
-    title: "Verify kitty + sixel cross-stack regression"
+    title: "Verify kitty + sixel cross-stack mixed-protocol rendering regressions (extends §12.5)"
     status: not-started
   - id: "13.R"
     title: "Third Party Review Findings"
@@ -54,150 +64,315 @@ sections:
   - id: "13.N"
     title: "Completion Checklist"
     status: not-started
-# TPR Checkpoint Placement: 13.3 (after action+chunked+animation — covers .1-.3),
-# 13.6 (after virtual+reply+cross-stack — covers .4-.6), final in 13.N
+# TPR Checkpoint Placement: 13.0.5 (after BUG-08-7/8 closure — structural gate),
+# 13.3 (after action+chunked+animation — covers §13.0 through §13.3),
+# 13.6 (after placeholder+reply+cross-stack — covers §13.4 through §13.6),
+# final in 13.N
 ---
 
 # Section 13: Kitty Graphics Protocol
 
 **Status:** Not Started
-**Goal:** Verify every kitty graphics catalog row. Kitty is the second full visual stack and shares the image cache + GPU image pipeline with sixel; cross-stack regression sweeps catch interactions.
+**Goal:** Verify every kitty graphics catalog row AND implement the currently-missing U=1 unicode placeholder rendering. Kitty is the second full visual stack and shares the image cache + GPU image pipeline with sixel; cross-stack regression sweeps catch interactions.
 
 **Success Criteria:** see frontmatter.
 
-**Context:** Pass 1 confirmed kitty graphics is implemented end-to-end at `oriterm_core/src/image/kitty/parse.rs:141-291` + `oriterm_core/src/term/handler/image/kitty.rs` + `oriterm_core/src/term/handler/image/kitty_animation.rs`. The audit memory's "kitty q=1 query NOT IMPLEMENTED" claim is stale — Pass 1 confirmed the query IS handled (parse.rs:197 + kitty.rs:320). Animation supports both Overwrite and AlphaBlend modes (kitty_animation.rs:58-62). The image protocol replies (ACK/error) emit via `Event::PtyWrite` at kitty.rs:465 — after section 03's migration, these are `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply })`.
+**Code seam this section owns (in-crate anchors):**
 
-**Blocker note:** Additionally blocked by `BUG-08-8` (kitty.rs BLOAT split — 476 lines, ≤24 lines from the hard 500-line limit) — see `plans/bug-tracker/section-08-core-terminal.md` for the bug entry. Section 13's implementation work targets `oriterm_core/src/term/handler/image/kitty.rs` directly (the per-action handlers for transmit / place / delete / query / animate / frame compose); any new code added on top of the current 476-line baseline would push the file through the 500-line hard limit defined in `.claude/rules/code-hygiene.md` §File Size. This blocker is intentionally NOT recorded in frontmatter `depends_on:` because that field takes section-number tokens, not bug-tracker IDs; `/continue-roadmap` Step 1.92 surfaces BUG-08-8 to implementers when Section 13 becomes focus. Section 13's own completion checklist (see `## 13.N` below) contains a scanner-parsed gate on BUG-08-8 closure. BUG-08-7 (a separate semantic-correctness bug on the delete specifiers) ALSO targets the same file; the two bugs should ideally be fixed in the same sitting — the split from BUG-08-8 creates the natural file structure that makes BUG-08-7's delete-arm fix straightforward.
+- Parser — `oriterm_core/src/image/kitty/parse.rs` (`parse_kitty_command`, `apply_key_value`, `KittyAction` enum at lines 59-74, `KittyTransmission` enum at lines 77-87, `decode_base64` at 253-291).
+- Dispatcher — `oriterm_core/src/term/handler/image/kitty.rs` (`handle_kitty_graphics` at 33-62, per-action arms `kitty_query`/`kitty_transmit`/`kitty_transmit_and_place`/`kitty_place`/`kitty_delete`/`kitty_store_image`/`kitty_respond`). **480 lines** as of this plan write — 20-line headroom against the 500-line hard limit in `.claude/rules/code-hygiene.md` §File Size (BUG-08-8 gates this structural split).
+- Animation — `oriterm_core/src/term/handler/image/kitty_animation.rs` (`kitty_frame`, `kitty_animate`; composition-mode decision at 58-62).
+- Animation timer — `oriterm_core/src/term/image_config.rs:65` (`Term::advance_animations`). **HAS NO PRODUCTION CALLER** — verified by grep across `oriterm/` and `oriterm_mux/`. §13.3 wires this up.
+- Placeholder-mode site — `oriterm_core/src/term/handler/image/kitty.rs:106-108` (U=1 suppresses `kitty_create_placement`; the stored image is never reached at render time because no cell-level lookup of `U+10EEEE` exists). §13.4 owns the implementation.
+- Reply emission — `Term::kitty_respond` at `oriterm_core/src/term/handler/image/kitty.rs:466-479` constructs `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, bytes })`.
+- Reply routing — `Effect::Pty(PtyEffect::Write { bytes, .. })` arm at `oriterm_mux/src/pane/io_thread/effect_router/mod.rs:87-93` forwards as `MuxEvent::PtyWrite`. NOT via `response_poll` (that module handles only `HostRequest::ClipboardLoad`/`ColorQuery`).
 
-**Reference implementations:** see frontmatter.
+**Context:** Pass 1 confirmed kitty graphics is implemented end-to-end at the paths above. The audit memory's "kitty q=1 query NOT IMPLEMENTED" claim is stale — the query IS handled (`parse.rs:197` + `kitty.rs:65-68`). Animation supports both Overwrite and AlphaBlend modes (`kitty_animation.rs:58-62`). The image protocol replies emit via `Term::kitty_respond` at `kitty.rs:466-479` onto the `EffectSink`; Section 03's effect boundary migration has already made this the production path.
 
-**Depends on:** Section 12 (sixel landed; image cache + GPU pipeline shared with kitty; section 12's lifecycle tests cover the shared infrastructure).
+**Blockers encoded as subsection gates (NOT as frontmatter `depends_on:`, which takes section-number tokens, not bug IDs):**
+
+- **BUG-08-8** (kitty.rs BLOAT split) — `oriterm_core/src/term/handler/image/kitty.rs` is currently **480 lines** (verified via `wc -l` at plan-write time, 2026-04-21). The 500-line hard limit in `.claude/rules/code-hygiene.md` §File Size leaves 20 lines of headroom. Any per-action implementation or new-handler work landed on this baseline pushes the file through the limit, which would force a mid-subsection mechanical refactor at the worst time (feature work mixed with file moves). §13.0.5 is the blocking precondition that closes BUG-08-8 with the canonical `kitty/mod.rs` + per-action submodule split (`transmit.rs`, `place.rs`, `delete.rs`, `frame_compose.rs`, `animate.rs`, `query.rs`, `response.rs`). The split is a PRECONDITION for §13.1; verification against the pre-split monolith is disallowed.
+- **BUG-08-7** (kitty delete specifier correctness) — `kitty_delete` at `oriterm_core/src/term/handler/image/kitty.rs:168-253` has 4 wrong specifier mappings (`d=a`, `d=c`, `d=p`, `d=r` all diverge from the protocol spec per BUG-08-7's detail in `plans/bug-tracker/section-08-core-terminal.md:85-90`) AND is missing `d=q`/`d=Q`/`d=f`/`d=F`/`d=n`/`d=N`. §13.1's per-specifier verification against broken code is meaningless — a green delete test against the wrong arm is a worse outcome than a red test. §13.0.5 is the blocking precondition that closes BUG-08-7 alongside BUG-08-8 (the file split creates the natural `delete.rs` home where the corrected specifier logic lives).
+- The line-count reference in this paragraph (480 / 20-line headroom) is written with a tolerance: if `wc -l` at §13.0.5 entry returns any count ≥ 450, the §13.0.5 implementation plan and the completion-checklist line-count assertion MUST reflect the actual count at that moment. The 480 number is the plan-write baseline, not a frozen claim.
+
+**Reference implementations:** see frontmatter. In particular, wezterm's `term/src/terminalstate/kitty.rs` is the production reference for chunked transmission, animation, frame composition, AND the unicode placeholder rendering path (the wezterm implementation is feature-complete on U=1; ori_term is not yet).
+
+**Depends on:** Section 12 (sixel landed; image cache + GPU pipeline shared with kitty; §12.5's `cross_stack_handoff.rs` handshake is the coexistence baseline that §13.6 builds on). Section 07 (image lifecycle for non-placeholder placements; placeholder lifecycle is carved OUT to §13.4 per §07's body at line 84).
 
 ---
 
-## 13.0 Top-down spec audit (BLOCKING — precedes all other subsections)
+## 13.0 Top-down spec audit + catalog row carve-out (BLOCKING — precedes all other subsections)
 
-**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-13-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale.
+**Goal:** Walk the canonical spec source(s) for this stack TOP-DOWN. Every sequence the spec defines gets a row in this section's audit file at `plans/spec-conformance/audits/section-13-top-down-inventory.md`, mapped to either an existing catalog row ID or an explicit `not-targeted` decision with rationale. **Expand `catalog/kitty-graphics.md` from its current 9 coarse rows into fine-grained per-arm rows** so broken branches cannot hide inside a green aggregate.
 
-**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap that hid DECRQCRA (and the entire DEC private rectangular-ops family) from the catalog. The original Section 01 catalog bootstrap was bottom-up (audit existing dispatch + add tack/teseq-discovered items), which is incomplete by construction — sequences absent from both the catalog AND the test corpus are invisible. The per-section audit file makes top-down coverage mechanically lintable: `spec-coverage-report --check audit-files` fails CI if any audit-file mapping does not resolve to a real catalog row.
+**Why this exists:** Section 09A introduced the `audits/` SSOT to close the bottom-up catalog construction gap. The current `catalog/kitty-graphics.md` has only 9 rows (7 core actions + 1 unicode-placeholder + 1 response), each collapsing multiple semantics into one row — `KG-TRANSMIT` covers 3 transmission modes × 3 formats × compression flag × chunked state (36 cells minimum); `KG-DELETE` covers 18 specifiers (`a`/`A`/`i`/`I`/`p`/`P`/`c`/`C`/`x`/`X`/`y`/`Y`/`z`/`Z`/`r`/`R`/`n`/`N`); `KG-FRAME` and `KG-ANIMATE` each collapse multiple sub-operations; `KG-RESPONSE` collapses 6+ distinct error codes. At this granularity, a per-specifier bug (BUG-08-7, 4 wrong arms) can sit inside a "verified" `KG-DELETE` row indefinitely. The §13.0 expansion forces the row granularity that makes per-arm failure visible.
 
-**Canonical spec source(s):** sw.kovidgoyal.net/kitty/graphics-protocol/ docs (primary, kitty source is the de facto SPEC for this protocol) + kitty source `kittens/icat/icat.py` cross-reference
+**Canonical spec source(s):** sw.kovidgoyal.net/kitty/graphics-protocol/ docs (primary, kitty source is the de facto SPEC for this protocol) + kitty source `kittens/icat/icat.py` cross-reference + wezterm `term/src/terminalstate/kitty.rs` behavior reference.
 
 **Files touched:**
-- `plans/spec-conformance/audits/section-13-top-down-inventory.md` (NEW — stub created by Section 09A's §09A.10; populated by this subsection)
-- `plans/spec-conformance/catalog/kitty-graphics.md` (open new rows for any sequences that should be `mapped` but aren't catalogued yet — use the canonical schema per `plans/spec-conformance/00-overview.md §Catalog Row Schema`)
+- `plans/spec-conformance/audits/section-13-top-down-inventory.md` (POPULATE — currently a stub at `audits/section-13-top-down-inventory.md:19-21` with a TODO row and `last_walked: null`).
+- `plans/spec-conformance/catalog/kitty-graphics.md` (EXPAND — open new fine-grained rows using the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`).
 
 **Completion criteria:**
 
-- [ ] Audit file `plans/spec-conformance/audits/section-13-top-down-inventory.md` is populated with every sequence in the canonical spec source(s).
+- [ ] Audit file `plans/spec-conformance/audits/section-13-top-down-inventory.md` is populated with every sequence + every key-value arm in the canonical spec source(s). The table has one row per (action, parameter, value) triple the spec names.
+- [ ] Audit file contains **per-action rows** for every `a=` value: `a=t` (Transmit), `a=T` (TransmitAndPlace, parsed as the fallback arm in `parse.rs:198-199` rather than a distinct match arm — document this), `a=p` (Place), `a=d` (Delete), `a=f` (Frame), `a=a` (Animate), `a=q` (Query). For `a=c` (Compose), audit decision MUST be either (a) `not-targeted` with rationale that composition is expressed through `a=f` + `cell_x_offset == 1` → `CompositionMode::Overwrite` at `kitty_animation.rs:58-62`, OR (b) `mapped` with a new concrete `KittyAction::Compose` variant + implementation task. NO silent fallback to `TransmitAndPlace` — the current behavior at `parse.rs:189-200` where unknown `a=` values default to `TransmitAndPlace` MUST be captured as a `KG-ACTION-COMPOSE-UNKNOWN` catalog row (decision: `verified-with-deviation` if kept as fallback, OR `verified` after implementing a proper Compose arm).
+- [ ] Audit file contains **per-transmission rows** for every `t=` value: `t=d` (Direct), `t=f` (File), `t=t` (TempFile), `t=s` (SharedMemory). For `t=s`, audit decision MUST capture the EINVAL rejection at `kitty.rs:289-291` as `verified-with-deviation` with rationale "ori_term does not implement shared-memory transport; rejection IS the spec-compliant response on a platform that lacks the transport" — a bare `verified` on an aggregated KG-TRANSMIT would wrongly codify the rejection.
+- [ ] Audit file contains **per-format rows** for every `f=` value: `f=24` (RGB), `f=32` (RGBA), `f=100` (PNG), `f=<other>` (explicit UnsupportedFormat error per `parse.rs:97-106` — a new KG-FORMAT-UNSUPPORTED row capturing the error-reply path).
+- [ ] Audit file contains **per-specifier rows** for every `d=` delete value in BUG-08-7's scope: `d=a`, `d=A`, `d=i`, `d=I`, `d=p`, `d=P`, `d=c`, `d=C`, `d=x`, `d=X`, `d=y`, `d=Y`, `d=z`, `d=Z`, `d=r`, `d=R`, `d=n`, `d=N`. `d=q`, `d=Q`, `d=f`, `d=F` (missing per BUG-08-7) get dedicated `missing` rows that §13.0.5 / §13.1 drive to `verified`.
+- [ ] Audit file contains **per-compression rows**: `o=z` (zlib — currently parsed at `parse.rs:215` but NEVER consumed; audit decision MUST be either (a) `not-targeted` with rationale "clients using compression see ENOMEM or garbled payload; ori_term does not decompress", OR (b) `mapped` to a concrete KG-COMPRESSION-OZ row that §13 must implement). Silent no-op consumption is NOT a valid decision.
+- [ ] Audit file contains **per-frame-action rows** for `a=f`: distinct catalog rows for `KG-FRAME-TRANSMIT` (append new frame), `KG-FRAME-REPLACE` (`c=` replace frame N), `KG-FRAME-EDIT` (`r=` edit frame N), `KG-FRAME-COMPOSITE-OVERWRITE` (cell_x_offset == 1), `KG-FRAME-COMPOSITE-ALPHABLEND` (default).
+- [ ] Audit file contains **per-animate-action rows** for `a=a`: distinct catalog rows for `KG-ANIMATE-STOP` (s=1), `KG-ANIMATE-RUN-WAIT` (s=2), `KG-ANIMATE-RUN` (s=3), `KG-ANIMATE-LOOP-COUNT` (v=), `KG-ANIMATE-SET-CURRENT-FRAME` (r= and c=), `KG-ANIMATE-SET-FRAME-GAP` (z=).
+- [ ] Audit file contains **per-response-code rows**: `KG-RESPONSE-OK`, `KG-RESPONSE-EBADF`, `KG-RESPONSE-EBIG`, `KG-RESPONSE-EINVAL`, `KG-RESPONSE-ENOENT`, `KG-RESPONSE-ENOMEM`, `KG-RESPONSE-EIO` + quiet-level gating (q=0/q=1/q=2) captured in a separate `KG-RESPONSE-QUIET` behavioral row.
+- [ ] Audit file contains **per-placeholder-arm rows** for U=1: `KG-UNICODE-PLACEHOLDER-TRANSMIT-U1` (transmit suppresses placement), `KG-UNICODE-PLACEHOLDER-PLACE-U1` (place suppresses), `KG-UNICODE-PLACEHOLDER-CELL-RESOLVE` (U+10EEEE + diacritic row/column encoding → image lookup at render time — currently MISSING, §13.4 implements), `KG-UNICODE-PLACEHOLDER-REFLOW` (placeholder cells move with text under reflow/scroll — currently MISSING, §13.4 implements).
+- [ ] Audit file contains **`not-targeted` rows with written rationale** for any key-value arms the plan intentionally excludes (e.g., experimental kitty keys not in the stable protocol, kittens/icat-specific client-only sequences).
 - [ ] Every row in the audit-file table has a `Decision` of `mapped` (cites a catalog row ID) or `not-targeted` (with one-line rationale).
-- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/`.
+- [ ] Every `mapped` row resolves to a real catalog row that exists in `plans/spec-conformance/catalog/kitty-graphics.md` — if the row does not exist yet, THIS subsection adds it.
 - [ ] `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` passes for this audit file.
 - [ ] Audit file `last_walked` frontmatter is set to today's date and `walked_by` to the implementer's handle.
-- [ ] Any new catalog rows opened in this subsection use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema`.
+- [ ] New catalog rows in `catalog/kitty-graphics.md` use the canonical 10-column schema from `plans/spec-conformance/00-overview.md §Catalog Row Schema` (frozen v1.0 — 2026-04-13).
+- [ ] `catalog/kitty-graphics.md` row count grows from 9 (pre-expansion) to ≥ 40 post-expansion (minimum: 7 action + 4 transmission + 4 format + 18 delete-specifier + 6 response-code + 5 frame-action + 6 animate-action + 4 placeholder-arm ≈ 54 concrete rows, plus behavioral rows). The exact count MUST be asserted by the §13.N completion checklist grep.
 
-**No other subsection in this section can begin work until §13.0 is complete.** This is a hard gate.
+**No other subsection in this section can begin work until §13.0 is complete.** This is a hard gate. The audit file IS the row set §13.1–§13.6 drive to `verified`.
 
 ---
 
-## 13.1 Verify kitty action + format combinations
+## 13.0.5 BUG-08-7 + BUG-08-8 closure (BLOCKING precondition for §13.1+)
+
+**Goal:** Close BUG-08-7 (delete-specifier correctness) and BUG-08-8 (`kitty.rs` BLOAT split) BEFORE any verification subsection runs. Both bugs directly block the §13.1 per-specifier + per-action matrix — a verified checkbox against either unfixed bug would encode broken behavior as spec-compliant.
+
+**Why this is a subsection and not a trailing completion gate:** The prior plan body gated BUG-08-7 / BUG-08-8 in §13.N (final completion checklist), which makes their fix "work done last" — verification work in §13.1 would run against broken code, then the fix in §13.N would either (a) regress the §13.1 tests, forcing rework, or (b) fix the bug but leave the §13.1 tests asserting the old broken semantics (because writing tests against broken code and then fixing the code forces a test rewrite). Both outcomes are worse than closing the bugs first. Per `.claude/rules/tests.md` §TDD for Bugs, the fix is written before its verification; §13.0.5 restores that ordering.
+
+**Files touched:**
+- `plans/bug-tracker/section-08-core-terminal.md` (flip BUG-08-7 and BUG-08-8 entries from `- [ ]` to `- [x]` with fix citations — these are the scanner gates `/continue-roadmap` Step 1.92 reads).
+- `oriterm_core/src/term/handler/image/kitty.rs` (delete the monolithic file after the split lands; the replacement is `kitty/mod.rs` per BUG-08-8's proposed fix).
+- `oriterm_core/src/term/handler/image/kitty/mod.rs` (NEW — dispatch entry; reads `KittyCommand::action` and routes to per-action submodule).
+- `oriterm_core/src/term/handler/image/kitty/transmit.rs` (NEW — `kitty_transmit`, `kitty_transmit_and_place`, `kitty_finalize_payload`, `kitty_accumulate_chunk`).
+- `oriterm_core/src/term/handler/image/kitty/place.rs` (NEW — `kitty_place`, `kitty_create_placement`).
+- `oriterm_core/src/term/handler/image/kitty/delete.rs` (NEW — `kitty_delete` with the corrected specifier logic per BUG-08-7's spec citations).
+- `oriterm_core/src/term/handler/image/kitty/store.rs` (NEW — `kitty_store_image`, `kitty_decode_pixels`, `kitty_store_from_file`).
+- `oriterm_core/src/term/handler/image/kitty/query.rs` (NEW — `kitty_query`).
+- `oriterm_core/src/term/handler/image/kitty/response.rs` (NEW — `kitty_respond`).
+- `oriterm_core/src/term/handler/image/kitty_animation.rs` (may stay in place as a sibling, OR move to `kitty/frame_compose.rs` + `kitty/animate.rs` if BUG-08-8's proposed fix diagram is followed verbatim; editor decision deferred to §13.0.5 implementation).
+
+**Completion criteria:**
+
+- [ ] **Write failing test matrix BEFORE implementation** (TDD per `.claude/rules/tests.md` §TDD for Bugs). Per-specifier red tests for all 18 `d=` arms (`a`/`A`/`i`/`I`/`p`/`P`/`c`/`C`/`x`/`X`/`y`/`Y`/`z`/`Z`/`r`/`R`/`n`/`N`) — tests live at `oriterm_core/src/term/handler/image/kitty/delete/tests.rs` (sibling `tests.rs` per `.claude/rules/test-organization.md`). Tests encode the protocol-spec behavior per `sw.kovidgoyal.net/kitty/graphics-protocol/` and wezterm `term/src/terminalstate/kitty.rs`, NOT the current broken behavior. Tests MUST fail against the pre-fix code — confirm by running the suite before implementing §13.0.5's fixes.
+- [ ] **Fix BUG-08-7's 4 wrong specifier arms** per `plans/bug-tracker/section-08-core-terminal.md:85-90`:
+  - `d=a`: per spec, deletes VISIBLE placements only (not ALL images+placements); current code at `kitty.rs:187` calls `cache.clear()` which is wrong.
+  - `d=c`: per spec, uses cursor POSITION (cell intersection), not cursor column alone; current code at `kitty.rs:213` uses `cursor_col` alone.
+  - `d=p`: per spec, deletes at cell POSITION (x,y intersection), not by placement-ID; current code at `kitty.rs:198-203` uses `placement_id` lookup.
+  - `d=r`: per spec, deletes images in an ID RANGE (x≤id≤y), not at cursor position; current code at `kitty.rs:235-239` uses cursor-position deletion.
+- [ ] **Implement the missing specifiers** per BUG-08-7: `d=q` (delete at cell + z_index), `d=Q` (delete at cell + z_index + prune image data), `d=f` (delete animation frame), `d=F` (delete animation frame + prune image data). `d=n`/`d=N` (delete by image number) may stay as `debug!("not yet implemented")` ONLY if §13.0's audit file captures them as `not-targeted` with rationale; otherwise implement.
+- [ ] **Close BUG-08-8 via the split diagrammed in `plans/bug-tracker/section-08-core-terminal.md:92-100`**: extract per-action handlers into submodules at `oriterm_core/src/term/handler/image/kitty/`. Every resulting file ≤ 200 lines. `kitty/mod.rs` is the dispatch entry — reads `KittyCommand::action` and routes. Follow the sibling `tests.rs` pattern per `.claude/rules/test-organization.md` — each submodule that has tests gets its own `tests.rs`.
+- [ ] **No file in the split exceeds the 500-line hard limit** per `.claude/rules/code-hygiene.md` §File Size. Assert via `wc -l oriterm_core/src/term/handler/image/kitty/*.rs` — every output line ≤ 500.
+- [ ] **Semantic pins** — at least one test per fixed specifier that ONLY passes with the corrected behavior. Per `.claude/rules/tests.md` §Matrix Clamping, each semantic pin has a negative counterpart that rejects the old broken behavior: e.g., `d=a_deletes_visible_placements_only_not_image_data` pairs with `d=a_negative_pin_does_not_clear_image_data`.
+- [ ] **Matrix dimension**: specifier × case (lower vs upper = placement-only vs image+placement) × presence (id provided vs not) × image_state (present vs absent). `d=` matrix count assertion per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
+- [ ] **Update catalog** — flip every per-specifier row opened in §13.0 (`KG-DELETE-{a,A,i,I,p,P,c,C,x,X,y,Y,z,Z,r,R,q,Q,f,F}`) from `stub` / `missing` to `verified` with citations to the new `delete.rs` and its `tests.rs` sibling.
+- [ ] **Bug tracker entries flipped**: `plans/bug-tracker/section-08-core-terminal.md:85` (BUG-08-7) and `:92` (BUG-08-8) BOTH marked `- [x]` with fix commit SHAs recorded in each entry's body.
+- [ ] Verify all tests pass in both debug AND release builds — `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` all green.
+- [ ] **TPR checkpoint** — `/tpr-review` covering §13.0.5 alone. Structural change (file split) + semantic change (delete arms) is the exact shape of code that benefits from third-party review: reviewers will spot missed call-sites, test coverage gaps, and file-ordering regressions. Findings recorded in §13.R.
+
+**No other verification subsection (§13.1–§13.6) can begin work until §13.0.5 is complete.** This is a hard gate. The §13.1 per-specifier verification matrix runs against the post-fix code.
+
+---
+
+## 13.1 Verify kitty action + format + transmission combinations
 
 **File(s):** `oriterm_core/tests/spec_chain/kitty/actions.rs` (new)
 
-- [ ] For each kitty action (a=t, a=p, a=d, a=f, a=c, a=q), spec_chain test that drives the action through every applicable rung (parser, dispatch, state, effect for replies, golden image for visual placements).
-- [ ] For each format (f=24, f=32, f=100), test transmit + display.
-- [ ] Update catalog rows to `verified`.
+**Depends on code paths:** post-split `kitty/mod.rs` + `kitty/transmit.rs` + `kitty/place.rs` + `kitty/query.rs` + `kitty/delete.rs` from §13.0.5. Parser at `oriterm_core/src/image/kitty/parse.rs`.
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **Per-action rung** — for each action in the post-13.0.5 `KittyAction` enum (`Transmit`, `TransmitAndPlace`, `Place`, `Delete`, `Frame`, `Animate`, `Query`), spec_chain test drives the action through parser → dispatch → state-or-effect rung. For `Query`, the apex is the `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, bytes: b"\x1b_Gi=<id>;OK\x1b\\" })` observation. For `Place`, the apex is `RenderableContent::images` containing the placement at the expected cell. For `Delete`, the apex is the pre/post placement count (§13.0.5's delete tests cover the per-specifier matrix; §13.1's delete test is a smoke that confirms the dispatch reaches `kitty_delete` — the heavy lifting is in §13.0.5).
+- [ ] **Per-format rung** — for each format at `oriterm_core/src/term/handler/image/kitty/store.rs` `kitty_decode_pixels` (post-split), drive `f=24` (RGB) + `f=32` (RGBA) + `f=100` (PNG) transmit + place. Payload sizing assertions pin the expected-vs-actual bytes error path at `store.rs` lines corresponding to the current `kitty.rs:326-332` check. A bad-payload-length transmit asserts the reply is `Effect::Pty(PtyEffect::Write { bytes: b"\x1b_Gi=<id>;EINVAL: RGBA payload size ...\x1b\\" })`.
+- [ ] **Per-transmission rung** — drive `t=d` (Direct, the common path), `t=f` (File, reads from a tempfile fixture; path-traversal guard at `kitty.rs:355-359` pinned by a `..`-in-path negative test), `t=t` (TempFile — verify the source file is removed after read via `std::fs::remove_file` at `kitty.rs:367-369,373-375`), `t=s` (SharedMemory — verify `Effect::Pty(PtyEffect::Write { bytes: b"...;EINVAL: shared memory ..." })` reply and NO placement created — this IS the `verified-with-deviation` behavior from §13.0's catalog row).
+- [ ] **Matrix count assertion** — `action_format_transmission_matrix_completeness` test asserts `ACTIONS.len() * FORMATS.len() * TRANSMISSIONS.len()` cells exercised per `.claude/rules/tests.md` §Self-Verifying Matrix Completeness.
+- [ ] **Semantic pin** — at least one test that ONLY passes with the post-13.0.5 code (e.g., `transmit_and_place_unknown_action_key_falls_back_to_TransmitAndPlace` pinning the `parse.rs:189-200` fallback behavior if §13.0 kept it as `verified-with-deviation`, OR failing if §13.0 implemented a distinct `KittyAction::Compose` variant).
+- [ ] **Negative pin** — `a=<invalid>` unknown-value test that proves the fallback arm is exercised: the test MUST fail if `apply_key_value` at `parse.rs:189-200` is changed to `return Err(...)` instead of defaulting to `TransmitAndPlace`.
+- [ ] Update catalog rows opened in §13.0 (`KG-TRANSMIT-DIRECT`, `KG-TRANSMIT-FILE`, `KG-TRANSMIT-TEMPFILE`, `KG-TRANSMIT-SHARED-MEM-REJECTED`, `KG-TRANSMIT-FORMAT-24/32/100`, `KG-FORMAT-UNSUPPORTED`, `KG-ACTION-{TRANSMIT,TRANSMIT-AND-PLACE,PLACE,QUERY,COMPOSE-UNKNOWN}`) to `verified` (or `verified-with-deviation` for the SharedMemory rejection and the Compose fallback).
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** parser → dispatch → state/effect rung green across the full action × format × transmission matrix.
 
 ---
 
-## 13.2 Verify chunked transmission
+## 13.2 Verify chunked transmission + malformed-base64 reply path
 
-**File(s):** `oriterm_core/tests/spec_chain/kitty/chunked.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/kitty/chunked.rs` (new). Implementation edit: `oriterm_core/src/term/handler/image/kitty/mod.rs` (post-split `handle_kitty_graphics`) for the malformed-base64 reply wiring.
 
-- [ ] Test: feed an image transmission split across N chunks (m=1, m=1, ..., m=0). Assert the coalesced + decoded image matches the expected pixel data.
-- [ ] Test: feed chunks out of order (verify the kitty parser's accumulator handles or rejects this per spec).
-- [ ] Test: feed a chunk with malformed base64; assert the parser emits an error reply via `HostRequest`/effect and discards the partial image.
-- [ ] Update rows to `verified`.
+**Depends on code paths:** post-split `kitty/transmit.rs::kitty_accumulate_chunk` + `kitty/store.rs::kitty_store_image`. Parser at `oriterm_core/src/image/kitty/parse.rs` — `decode_base64` at 253-291 produces `KittyError::InvalidBase64`.
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **Chunked coalesce + decode** — feed an image transmission split across N chunks (`m=1`, `m=1`, ..., `m=0`). Assert via `RenderableContent::image_data` that the coalesced + decoded image matches the expected pixel data. Payload-independence pin per §12.5's handshake pattern: the expected image has a distinct identifying shape (e.g., 4×4 RGBA with specific color bands) so mis-coalesced chunks fail loudly.
+- [ ] **Chunked out-of-order rejection** — feed chunks out of order. Assert the behavior matches spec: kitty protocol does NOT define per-chunk ordering, so ori_term's current `kitty_accumulate_chunk` at `kitty.rs:256-280` (post-split: `kitty/transmit.rs`) appends in arrival order. The audit file row captures this as `verified-with-deviation` if §13.0's decision was "append in arrival order; rely on sender"; the test pins this behavior as load-bearing.
+- [ ] **Chunked size-limit rejection** — feed chunks that exceed `max_single_image_bytes` at `kitty.rs:257` (post-split: `kitty/transmit.rs`). Assert the loading-image state is discarded + `warn!` logged. No reply is emitted on this path (current code); audit decision captured in §13.0.
+- [ ] **Malformed-base64 reply path (IMPLEMENTATION + verification)** — current behavior at `kitty.rs:37-42` (post-split: `kitty/mod.rs::handle_kitty_graphics`) on `parse_kitty_command` error:
+  ```
+  Err(e) => { warn!("kitty graphics parse error: {e}"); return; }
+  ```
+  This silently drops the chunk with no reply emitted. Per the kitty protocol spec, a malformed payload SHOULD emit an error reply so the client can recover. §13.2 MUST make a concrete decision:
+  - **Option A (implement reply):** Modify `handle_kitty_graphics` to construct an `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, bytes: b"\x1b_Gi=0;EINVAL: base64 decode failed\x1b\\" })` reply when `parse_kitty_command` returns `Err(KittyError::InvalidBase64)`. The i=0 fallback is because the image_id is never extracted on parse failure; audit file documents the deviation from kitty's image-id-echo convention. Test asserts the effect emission via the `oriterm_core` test harness's `EffectSink` transcript.
+  - **Option B (document silent drop):** Leave the silent drop as is. §13.0's catalog row decision MUST be `verified-with-deviation` with rationale "ori_term drops malformed payloads silently; kitty protocol is silent on whether a reply is required". Test asserts NO effect is emitted AND the `warn!` path is reached (via a test-only log observer).
+  - §13.2 MUST pick ONE of these options in its opening bullet and drive it end-to-end. The prior plan wording ("assert the parser emits an error reply") presumed Option A without noting the implementation gap; this rewrite forces the decision.
+- [ ] **Matrix count assertion** — `chunked_category_matrix_completeness` test asserts the 4 categories above are all exercised.
+- [ ] **Semantic pin** — at least one test that ONLY passes with the chosen Option (A or B). For Option A: `malformed_base64_emits_EINVAL_reply`. For Option B: `malformed_base64_silent_drop_emits_no_reply`.
+- [ ] **Negative pin** — at least one test that asserts the opposite behavior to Option (A or B) does NOT occur. Per `.claude/rules/tests.md` §Matrix Clamping, this pairs with the semantic pin.
+- [ ] Update catalog rows opened in §13.0 for chunked + base64-error arms to `verified` (or `verified-with-deviation` per Option B if selected).
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** chunked coalesce + malformed-payload path pinned by semantic + negative pins; the chosen reply-or-drop behavior is load-bearing.
 
 ---
 
-## 13.3 Verify animation (a=f, a=c with Overwrite + AlphaBlend)
+## 13.3 Verify animation (a=f + a=a) with RenderScheduler-driven paced redraw
 
-**File(s):** `oriterm_core/tests/spec_chain/kitty/animation.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/kitty/animation.rs` (new). Implementation edits: `oriterm_mux/src/pane/io_thread/mod.rs` (new `advance_animations` tick in the IO-thread loop) + `oriterm/src/app/event_loop_helpers/mod.rs` (wire the returned deadline into the `RenderScheduler` deferred-repaint slot).
 
-- [ ] Transmit a base frame (a=t)
-- [ ] Transmit additional frames (a=f) with frame numbers
-- [ ] Compose frames (a=c) with both Overwrite mode (cell_x_offset == 1) and AlphaBlend mode (default) — verify the composition matches kitty's reference behavior
-- [ ] Test frame durations (the animation timing field)
-- [ ] Update rows to `verified`.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 13.1–13.3.
+**Depends on code paths:** post-split `kitty/frame_compose.rs` (or `kitty_animation.rs` if unmoved) — `kitty_frame` + `kitty_animate`. `Term::advance_animations` at `oriterm_core/src/term/image_config.rs:65` returning `Option<Instant>` next-frame-deadline. `ImageCache::advance_animations` at `oriterm_core/src/image/cache/animation.rs:109`. `RenderScheduler` at `oriterm_ui/src/animation/scheduler/mod.rs:40` owned by `WindowRoot` at `oriterm_ui/src/window_root/mod.rs:65`.
+
+**Why implementation + verification, not just verification:** `Term::advance_animations` exists (with passing unit tests at `oriterm_core/src/image/tests.rs:746-837`) but has NO production caller in `oriterm/src/` or `oriterm_mux/src/` — verified by `grep -r advance_animations`. The cache will happily advance frames when called from tests, but no frame deadline ever reaches the main render loop. Verification of "animation works" at the snapshot level is meaningless without the timer-driven path that actually shows the next frame on screen.
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **Implement the animation timer** — wire `Term::advance_animations` into the pane IO thread:
+  - In `oriterm_mux/src/pane/io_thread/mod.rs`, on each loop iteration (between VTE parse batches and snapshot production), call `term.advance_animations(Instant::now())`.
+  - The returned `Option<Instant>` deadline is forwarded to the main thread as a new `MuxEvent::NextAnimationDeadline { pane_id, deadline }` (or equivalent wiring — editor note: final event variant may land as a `HostEffect` or `UiEffect` depending on the IO-thread event channel shape at implementation time; the invariant is that the deadline reaches the main thread without blocking).
+  - In `oriterm/src/app/event_loop_helpers/mod.rs`, feed the deadline into `WindowRoot::scheduler_mut().request_frame_at(deadline)` so the `RenderScheduler` wakes up the event loop at the right time.
+  - Cross-platform discipline per `.claude/rules/tests.md` §Cross-Platform Verification: the wiring lives in crate-internal code with no `#[cfg(target_os)]` branches, so Linux/macOS/Windows parity is automatic.
+- [ ] **Frame transmit + composition modes** — transmit a base frame (`a=t` with `f=32` RGBA), then append frames via `a=f` with distinct pixel data. Composition matrix: `cell_x_offset == 1` (Overwrite) vs default (AlphaBlend). Assert via `RenderableContent::image_data` that the post-composition pixel buffer matches the expected blend.
+- [ ] **Animation playback (`a=a`)** — `s=1` stop, `s=2` run-wait, `s=3` run. Assert `RenderableContent::images` current-frame index advances correctly over time (use a fake clock in tests — the harness exposes a `Term::advance_animations_at(instant)` testing entry point).
+- [ ] **Frame gap timing (`z=` in a=f context, per `kitty_animation.rs:55-56`)** — assert that `ImageCache::advance_animations` returns the correct next-deadline based on frame durations.
+- [ ] **Timer-driven redraw integration test** — assert end-to-end that (a) a frame deadline returned from `Term::advance_animations` reaches `RenderScheduler`, (b) the scheduler wakes the event loop at or after the deadline, (c) the next rendered frame reflects the advanced frame index. This test lives in `oriterm/src/app/event_loop_helpers/tests.rs` (cross-crate integration; Term+scheduler composition requires the `oriterm` app-layer test surface).
+- [ ] **Semantic pin** — `animation_advances_only_when_production_timer_is_wired`: a test that fails if `Term::advance_animations` is never called from the IO thread (can be implemented as a compile-time check via `#[cfg(test)] static TIMER_WIRED: AtomicBool` that the IO thread sets on each tick; test asserts non-zero after running a pane for a bounded duration).
+- [ ] **Negative pin** — `animation_frame_index_does_not_advance_without_timer_tick`: with a paused-time harness, advance the image cache manually but NOT via the IO thread tick — assert the `RenderableContent::images[0]` current-frame stays at 0 (proves the timer-driven path is the load-bearing path, not an internal auto-advance).
+- [ ] **Matrix count assertion** — `animation_category_matrix_completeness` asserts 4 composition-mode × action × frame-count × gap-ms cells.
+- [ ] Update catalog rows opened in §13.0 (`KG-FRAME-TRANSMIT`, `KG-FRAME-COMPOSITE-OVERWRITE`, `KG-FRAME-COMPOSITE-ALPHABLEND`, `KG-ANIMATE-{STOP,RUN-WAIT,RUN}`, `KG-ANIMATE-LOOP-COUNT`, `KG-ANIMATE-SET-CURRENT-FRAME`, `KG-ANIMATE-SET-FRAME-GAP`) to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **TPR checkpoint** — `/tpr-review` covering §13.0 through §13.3 (catalog carve-out + BUG-08-7/8 split + action/format/transmission matrix + chunked + animation-with-timer-wiring). Findings recorded in §13.R.
 
 ---
 
-## 13.4 Verify virtual placements (U=1 unicode placeholders)
+## 13.4 Implement + verify virtual placements (U=1 unicode placeholders)
 
-**File(s):** `oriterm_core/tests/spec_chain/kitty/virtual_placements.rs` (new)
+**File(s):** Implementation: `oriterm_core/src/term/handler/image/kitty/placeholder.rs` (NEW — cell-level placeholder resolution) + possible edits in `oriterm_core/src/term/renderable/mod.rs` (expose placeholder cells in snapshot) + `oriterm/src/gpu/prepare/emit.rs` (emit image quads for placeholder-cell rows). Tests: `oriterm_core/tests/spec_chain/kitty/virtual_placements.rs` (new) + GPU-apex pilots at `oriterm/src/gpu/visual_regression/spec_chain/pilots/kitty_placeholder_*.rs` (new).
 
-Virtual placements use the Unicode placeholder protocol: the terminal rasterizes the image but the cells use the unicode placeholder codepoints to position the image. This is how kitty supports image placement without scrolling.
+**Depends on code paths:** `oriterm_core/src/term/handler/image/kitty/transmit.rs` + `place.rs` (post-13.0.5 split) suppress `kitty_create_placement` on `cmd.unicode_placeholder` at `kitty.rs:106-108,161-164`. Image cache stores the image but no cell → image mapping exists yet. §07 explicitly carves placeholder lifecycle OUT at `section-07-image-lifecycle-correctness.md:84`.
 
-- [ ] Test: transmit image with `U=1`, then write the unicode placeholder codepoints at the cells where the image should appear. Verify the image is rendered at those cells.
-- [ ] Test: scrolling moves the placeholder cells but the image stays attached
-- [ ] Update rows to `verified`.
+**Scope vs §07:** §07 owns non-placeholder (cache-coordinate) image lifecycle — reflow translates `StableRowIndex` through `ReflowMapping::first_output_row`, ED/EL call `remove_placements_in_region`, scrollback eviction calls `prune_scrollback`. Those handlers do NOT touch placeholder cells because placeholder cells are grid cells carrying `U+10EEEE` glyphs — they move with the text under reflow/scroll automatically (the grid-cell data structure is reflow-aware). §13.4 owns:
+- The cell-level placeholder glyph lookup at render time: `U+10EEEE` + diacritic row/column encoding → `image_id` → `ImageCache::get` → image bytes.
+- The cell-level reflow/ED/EL behavior that asserts placeholder cells continue to resolve to the correct image after a grid mutation.
+
+**Scope vs kitty's reference implementation:** kitty's `U=1` protocol uses U+10EEEE base codepoint with row/column/image-id diacritics encoded as Unicode combining marks (see kitty source `kittens/unicode_input/unicode_placeholder.py` + graphics-protocol docs). The implementation here MUST follow that encoding exactly — deviations are spec violations.
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **Implement placeholder cell encoding** — new module `oriterm_core/src/term/handler/image/kitty/placeholder.rs`:
+  - Parser for `U+10EEEE + diacritic` sequences as written into the grid by the client.
+  - Lookup: given a grid cell carrying the placeholder, return `(image_id, row_index, col_index)` so the GPU layer can map the cell to the image bytes.
+- [ ] **Expose placeholder cells in snapshot** — `RenderableContent::images` carries `image_id`s; add a parallel field (or extend the existing cell metadata) so the snapshot surfaces which cells carry placeholder glyphs. Zero-allocation discipline per `.claude/rules/oriterm_core.md` §Performance Invariants — reuse existing buffers via `.clear()` + capacity retention; no `Vec::new()` per frame.
+- [ ] **GPU emit path** — `oriterm/src/gpu/prepare/emit.rs` emits image quads at the placeholder-cell rect with texture source = the stored image. This reuses the existing `emit_image_quads` path used for non-placeholder kitty + sixel.
+- [ ] **Reflow pin** — test: place placeholder cells at (row=5, col=10..20), resize columns to trigger reflow, assert the placeholder cells move with the text AND still resolve to the same `image_id`. The grid-cell-based SSOT for location (§07's carve-out at line 84) is the load-bearing invariant.
+- [ ] **Scroll pin** — place placeholder cells, scroll the viewport, assert the image follows the cell to its new absolute row.
+- [ ] **ED pin (erase display)** — `CSI 2 J` over a region containing placeholder cells: the cells are cleared (standard grid-cell erase); the stored image is NOT automatically evicted from the cache (§07's invariants hold for the image data; only the placeholder cells erase).
+- [ ] **EL pin (erase line)** — `CSI K` over a line containing placeholder cells: same as ED at line granularity.
+- [ ] **Alt-screen toggle pin** — placeholder cells on primary screen survive an alt-screen toggle + back; placeholder cells on alt-screen are cleared on alt-screen exit. Cross-reference §07's `BUG-08-10`-fixed primary/alt cache routing.
+- [ ] **GPU-apex golden pilot** — `kitty_placeholder_basic.rs` drives transmit `a=t,U=1` + write placeholder cells at row=5,col=10..20 via stdout, assert the GPU renders the image at those cells via golden image (0-pixel diff; deterministic lane per §05).
+- [ ] **Matrix count assertion** — `placeholder_category_matrix_completeness` asserts 7 categories (encoding, snapshot, emit, reflow, scroll, ED, EL, alt-screen).
+- [ ] **Semantic pin** — `placeholder_cells_resolve_to_stored_image_after_reflow`: a test that ONLY passes when the grid-cell-based SSOT is wired (fails if §13.4 stops at cache mutation without the cell-resolve path).
+- [ ] **Negative pin** — `placeholder_cell_without_image_renders_as_glyph_not_quad`: a cell carrying a bare `U+10EEEE` without a diacritic encoding MUST render as the glyph, NOT as an image quad. Proves the lookup gates on the full (base + diacritic) pattern, not just the base codepoint.
+- [ ] Update catalog rows opened in §13.0 (`KG-UNICODE-PLACEHOLDER-TRANSMIT-U1`, `KG-UNICODE-PLACEHOLDER-PLACE-U1`, `KG-UNICODE-PLACEHOLDER-CELL-RESOLVE`, `KG-UNICODE-PLACEHOLDER-REFLOW`) from `missing` / `stub` to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** placeholder rendering green at GPU-apex golden; reflow/scroll/ED/EL lifecycle green.
 
 ---
 
 ## 13.5 Verify image protocol replies via Effect transcript apex
 
-**File(s):** `oriterm_core/tests/spec_chain/kitty/replies.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/kitty/replies.rs` (new).
 
-- [ ] For each kitty action that produces a reply (q=query, error replies on bad input, OK replies on success), spec_chain test that observes the `PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, bytes: ... }` in the effect transcript.
-- [ ] Verify the bytes match the kitty protocol response format (`OK`, `EBADF`, `EBIG`, `EINVAL`, `ENOENT`).
-- [ ] Update rows to `verified`.
+**Depends on code paths:** `Term::kitty_respond` at `oriterm_core/src/term/handler/image/kitty.rs:466-479` (post-split: `kitty/response.rs`) pushes `Effect::Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, bytes })` onto `EffectSink`. The reply is routed by the generic `Effect::Pty(PtyEffect::Write { bytes, .. })` arm at `oriterm_mux/src/pane/io_thread/effect_router/mod.rs:87-93` — which forwards as `MuxEvent::PtyWrite { pane_id, data: bytes }`. **`response_poll` is NOT in this path** — `oriterm_mux/src/pane/io_thread/response_poll/mod.rs:33-54` wraps ONLY `HostRequest::ClipboardLoad` + `HostRequest::ColorQuery`. Prior plan incorrectly cited `response_poll`; corrected.
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **Per-response-code rung** — for each reply code the kitty protocol defines, a spec_chain test that observes the `EffectSink` transcript:
+  - `KG-RESPONSE-OK` — successful transmit/place/query emits `b"\x1b_Gi=<id>;OK\x1b\\"` (quiet q=0); q=1 suppresses OK; q=2 suppresses all.
+  - `KG-RESPONSE-EBADF` — path-traversal guard at `kitty.rs:355-359` (post-split: `store.rs`) is currently phrased as `"EINVAL: path traversal not allowed"` — audit file decision in §13.0 captures whether this stays as EINVAL or is reworked to EBADF; test asserts the actual emitted string.
+  - `KG-RESPONSE-EBIG` — file exceeds `max_single_image_bytes` at `kitty.rs:366-371` (post-split: `store.rs`) emits `ENOMEM` currently; audit decision captured.
+  - `KG-RESPONSE-EINVAL` — malformed payload / unsupported format / shared-memory rejection / missing `s=`/`v=` emits `EINVAL` with specific suffix text.
+  - `KG-RESPONSE-ENOENT` — place or frame with unknown image_id at `kitty.rs:150-153,155-157` (post-split: `place.rs` / `frame_compose.rs`) emits `ENOENT`.
+  - `KG-RESPONSE-ENOMEM` — cache store overflow at `kitty.rs:305-308,395-397` (post-split: `store.rs`) emits `ENOMEM: <message>`.
+  - `KG-RESPONSE-EIO` — `fs::read` failure at `kitty.rs:363-364` (post-split: `store.rs`) emits `EIO: failed to read file: <error>`.
+- [ ] **Routing pin** — assert the end-to-end effect routing: `Term` pushes `Effect::Pty(...)` onto `EffectSink` → `effect_router::route_effect_batch` at `oriterm_mux/src/pane/io_thread/effect_router/mod.rs:87-93` converts to `MuxEvent::PtyWrite { pane_id, data }`. Test observes both halves: the raw effect at the `Term` boundary AND the `MuxEvent::PtyWrite` at the mux boundary. A regression that rewires the reply through `response_poll` (whether correctly or incorrectly) would fail this pin.
+- [ ] **Quiet-level gating** — for each reply code above, test with `q=0`, `q=1`, `q=2`. Assert `q=1` suppresses OK replies (current behavior at `kitty.rs:469-471`, post-split: `response.rs`) but still emits error replies. Assert `q=2` suppresses everything.
+- [ ] **Bytes-format pin** — assert the exact bytes of each reply match the kitty protocol format: `\x1b_Gi=<id>;<msg>\x1b\\` per `kitty.rs:474` (post-split: `response.rs`). Wezterm reference at `term/src/terminalstate/kitty.rs` confirms this framing.
+- [ ] **Matrix count assertion** — `response_code_matrix_completeness` asserts `(7 error codes) × (3 quiet levels)` = 21 cells.
+- [ ] **Semantic pin** — `reply_flows_via_effect_pty_write_not_host_request`: asserts the emitted `Effect` is `Pty(PtyEffect::Write { kind: PtyWriteKind::ImageProtocolReply, .. })`, NOT `HostRequest::*`. This pin rejects any future refactor that mis-routes kitty replies through the HostRequest/response_poll path.
+- [ ] **Negative pin** — `response_poll_does_not_handle_image_protocol_replies`: a test that enumerates the `register_host_request_response` match arms in `oriterm_mux/src/pane/io_thread/response_poll/mod.rs:33-54` and asserts NO arm accepts `PtyWriteKind::ImageProtocolReply`. If `response_poll` is extended to handle replies in the future, this test forces a conscious decision + plan update.
+- [ ] Update catalog rows opened in §13.0 (`KG-RESPONSE-OK`, `KG-RESPONSE-EBADF`, `KG-RESPONSE-EBIG`, `KG-RESPONSE-EINVAL`, `KG-RESPONSE-ENOENT`, `KG-RESPONSE-ENOMEM`, `KG-RESPONSE-EIO`, `KG-RESPONSE-QUIET`) to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **Validation:** every reply code + quiet level pinned at both the `Term` emission boundary AND the mux routing boundary; response_poll bypass pinned as a negative invariant.
 
 ---
 
-## 13.6 Verify kitty + sixel cross-stack regression
+## 13.6 Verify kitty + sixel cross-stack mixed-protocol rendering regressions
 
-**File(s):** `oriterm_core/tests/spec_chain/kitty/cross_stack_regression.rs` (new)
+**File(s):** `oriterm_core/tests/spec_chain/kitty/cross_stack_regression.rs` (new) + GPU-apex pilots at `oriterm/src/gpu/visual_regression/spec_chain/pilots/kitty_sixel_mixed_*.rs` (new).
 
-Sixel and kitty share the image cache + GPU pipeline. A bug in either can corrupt the other. Cross-stack tests catch this.
+**Depends on code paths:** §12.5's `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` (status: complete; catalog row `SIXEL-CROSS-STACK-HANDOFF` verified) proved both protocols' placements coexist in a single `ImageCache` with distinct `image_id`s + `viewport_x`/`viewport_y` + `image_data` payloads at the public-snapshot level. §07's lifecycle handlers (`on_resize`, `remap_placements`, `prune_scrollback`, `remove_placements_in_region`) are the shared lifecycle infrastructure. §13.4's placeholder-cell resolve path is the newly-landed shared surface.
 
-**Depends on §12.5's handshake test** — `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` (status: complete, catalog row `SIXEL-CROSS-STACK-HANDOFF`) proved both protocols' placements coexist in a single `ImageCache` with distinct `image_id`s / `viewport_x`/`viewport_y` / `image_data` payloads at the public-snapshot level. §13.6 extends that handshake to the deep mixed-protocol rendering regressions (overlapping placements, z-order interleaving, shared-eviction races) that §12.5 explicitly DEFERRED-TO-DOWNSTREAM. Without the §12.5 handshake's coexistence proof, any §13.6 failure would be ambiguous between "kitty bug" and "sixel contamination". The handshake is the precondition; 13.6 is the regression sweep.
+**Scope (what §13.6 owns):** The deep mixed-protocol rendering regressions that §12.5 explicitly DEFERRED-TO-DOWNSTREAM:
+- **Overlapping placements** — a sixel image and a kitty image occupying the SAME cell at different `z_index` values (one below text, one above). Assert GPU render produces the correct z-ordered composite.
+- **Z-order interleaving** — sixel + kitty + text glyphs all competing for the same cells. `emit_image_quads` at `oriterm/src/gpu/prepare/emit.rs:262-285` (§12.3-verified) splits by `z_index < 0` into `image_quads_below` vs `image_quads_above` for text — verify this split handles mixed-protocol inputs correctly.
+- **Shared-eviction races** — LRU eviction under memory pressure affects both protocols' images. Transmit N sixel + N kitty images to exceed the cache's memory limit, assert the eviction policy drops images in arrival order regardless of protocol, assert the remaining placements still resolve to their images.
+- **Mixed-protocol placeholder + cache-coordinate coexistence** (post-§13.4) — a kitty U=1 placeholder cell and a sixel cache-coordinate placement in the same viewport render correctly; neither leaks state into the other.
 
-- [ ] Test: place a kitty image at row 5, then place a sixel image at row 10, verify both are rendered correctly via golden image apex
-- [ ] Test: place a sixel image at row 5, then place a kitty image at row 5 (same cell), verify the kitty image overwrites or stacks (per protocol semantics)
-- [ ] Test: rapid alternation of sixel + kitty image transmits stress-tests the image cache eviction policy
-- [ ] Update rows to `verified`.
-- [ ] **TPR checkpoint** — `/tpr-review` covering 13.4–13.6.
+**Scope (what §13.6 does NOT own):**
+- **Coexistence at the snapshot level** — already proven by §12.5's `cross_stack_handoff.rs`. §13.6 does NOT re-run that handshake.
+- **§07 lifecycle matrix** — non-placeholder image lifecycle is §07's 42-scenario matrix, already complete. §13.6 does NOT re-prove reflow/ED/EL/scroll/alt-screen on cache-coordinate placements.
+- **§13.4 placeholder lifecycle** — placeholder-specific reflow/scroll/ED/EL is §13.4's responsibility. §13.6 only tests the CROSS-PROTOCOL case where a placeholder cell and a cache-coordinate placement are both present.
+
+- [ ] Write failing test matrix BEFORE implementation (TDD per `.claude/rules/tests.md` §TDD for Bugs).
+- [ ] **Overlapping placements at same cell, different z_index** — place a sixel image at row=5,col=10 with `z=-1` (below text) and a kitty image at row=5,col=10 with `z=1` (above text). Assert GPU render produces sixel-below-text-above-kitty-top. GPU-apex golden at `oriterm/tests/references/kitty_sixel_mixed_z_order.png` (0-pixel diff).
+- [ ] **Z-order interleaving with text** — 3-layer composition: sixel at `z=-1`, text glyphs, kitty at `z=1`. Verify via `emit_image_quads` split inspection (unit test at `oriterm/src/gpu/prepare/tests.rs` — extend existing z-split tests to cover mixed-protocol inputs) + golden at `oriterm/tests/references/kitty_sixel_mixed_with_text.png`.
+- [ ] **Shared-eviction race** — transmit enough sixel + kitty images to exceed `ImageCache` memory limit. Assert: (a) eviction fires without panic; (b) evicted images are dropped in LRU order regardless of protocol; (c) remaining placements still resolve correctly; (d) no orphan placements point to evicted images (the existing `prune_if_orphaned` path at `oriterm_core/src/image/cache/*.rs` handles this — test proves it covers both protocols).
+- [ ] **Rapid alternation stress test** — loop: transmit sixel → transmit kitty → delete sixel → place kitty → etc. for N iterations. Assert no memory leak (RSS before/after bounded per `oriterm_core/tests/rss_regression.rs`) + no panic + final state consistent.
+- [ ] **Placeholder + cache-coordinate coexistence** — (depends on §13.4) place a kitty U=1 placeholder spanning row=5,col=10..20 + a sixel cache-coordinate placement at row=10,col=0. Assert both render correctly at the GPU apex. Golden at `oriterm/tests/references/kitty_placeholder_sixel_coexist.png`.
+- [ ] **Matrix count assertion** — `cross_stack_regression_category_matrix_completeness` asserts 5 cross-protocol categories.
+- [ ] **Semantic pin** — `sixel_and_kitty_z_order_independent_of_transmit_order`: transmit sixel-then-kitty vs kitty-then-sixel at the same z-config; assert both produce the same GPU output (proves z-ordering is driven by `z_index`, not transmit sequence).
+- [ ] **Negative pin** — `mixed_protocol_eviction_does_not_cross_pollinate_image_data`: assert a kitty image's eviction does NOT free a sixel image's RGBA bytes (or vice versa) — proves cache eviction is per-`image_id`, not per-protocol.
+- [ ] Update catalog rows for cross-stack regression (likely `KG-CROSS-STACK-SIXEL-MIXED-Z-ORDER`, `KG-CROSS-STACK-SIXEL-MIXED-EVICTION`, `KG-CROSS-STACK-SIXEL-PLACEHOLDER-COEXIST` — opened in §13.0) to `verified`.
+- [ ] Verify all tests pass in both debug AND release builds.
+- [ ] **TPR checkpoint** — `/tpr-review` covering §13.4 through §13.6 (placeholder implementation + reply chain + cross-stack regressions). Findings recorded in §13.R.
 
 ---
 
 ## 13.R Third Party Review Findings
 
-- None.
+Populated by `/tpr-review` at the §13.0.5, §13.3, and §13.6 checkpoints and the §13.N final gate. Every unchecked finding here MUST be resolved (fix or file+resolve via `/fix-bug`) before this section can close, per `CLAUDE.md §NEVER reason out of TPR findings`.
+
+- None yet.
 
 ---
 
 ## 13.N Completion Checklist
 
-- [ ] `BUG-08-8` (kitty.rs BLOAT split) is CLOSED in `plans/bug-tracker/section-08-core-terminal.md` — verified by grepping the bug entry for `[x]`. This gate is MANDATORY: Section 13 cannot close while `oriterm_core/src/term/handler/image/kitty.rs` remains above the 500-line hard limit in `.claude/rules/code-hygiene.md` §File Size. See the `**Blocker note:**` in the Context paragraph above for the full rationale. Section 13's per-action implementation targets the split files, not the monolithic `kitty.rs` — closing the split is a prerequisite for any per-action code lands here.
-- [ ] `BUG-08-7` (kitty delete dispatch — 4 wrong specifier mappings + missing d=q/Q/f/F) is CLOSED in `plans/bug-tracker/section-08-core-terminal.md`. This is a semantic-correctness bug on the delete arm of kitty graphics dispatch — Section 13's delete-action verification would be meaningless against the broken specifier mappings. Ideally fixed in the same sitting as BUG-08-8 (the file split creates the natural `delete.rs` file where the corrected specifier logic lives).
-- [ ] Failing test matrix written FIRST
-- [ ] **Matrix dimensions**: action × format × chunked-state × animation-mode × placement-type × reply-status
-- [ ] **Semantic pin**: cross-stack regression test (sixel + kitty mixed) is the SSOT regression guard for the shared image infrastructure
-- [ ] Every row in `catalog/kitty-graphics.md` is `verified`
-- [ ] All actions, formats, chunked transmission, animation modes verified
-- [ ] Virtual placements verified
-- [ ] Image protocol replies verified via Effect apex
-- [ ] Cross-stack regression verified (sixel + kitty don't corrupt each other)
-- [ ] All existing teseq kitty tests pass
-- [ ] Alloc regression unchanged
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green
-- [ ] Plan annotation cleanup
-- [ ] Section frontmatter `status` → `complete`
-- [ ] `00-overview.md` Quick Reference + mission criteria updated
-- [ ] `index.md` section 13 status updated
-- [ ] `/tpr-review` passed
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean)
+- [ ] **§13.0.5 gate**: `plans/bug-tracker/section-08-core-terminal.md` entry for BUG-08-7 is `- [x]` with the fix-commit SHA in its body; BUG-08-8 entry is `- [x]` with the fix-commit SHA in its body. Confirm via `grep -E '^- \[x\] .\[BUG-08-(7|8)\]'` returning both entries.
+- [ ] **File-size invariant**: `wc -l oriterm_core/src/term/handler/image/kitty/*.rs` every output line ≤ 500 (the hard limit in `.claude/rules/code-hygiene.md` §File Size). `wc -l oriterm_core/src/term/handler/image/kitty.rs` returns an error (the monolith is gone — the directory module replaced it).
+- [ ] Failing test matrix written FIRST (per subsection, flipped `[x]` on entry to each sub-§).
+- [ ] **Matrix dimensions**: action × format × transmission × chunked-state × animation-mode × placement-type × reply-status × z-index-layer × protocol-neighbor — covered across the six new test files under `oriterm_core/tests/spec_chain/kitty/` + the GPU pilots under `oriterm/src/gpu/visual_regression/spec_chain/pilots/kitty_*.rs`.
+- [ ] **Semantic pins (≥5 — one per invariant)**: (a) unknown `a=` falls back to TransmitAndPlace (or is implemented as Compose per §13.0 decision); (b) malformed-base64 reply path per §13.2's chosen Option A or B; (c) animation advances ONLY when IO-thread timer is wired (§13.3); (d) placeholder cells resolve to stored image after reflow (§13.4); (e) reply flows via `Effect::Pty(PtyEffect::Write)`, NOT via `HostRequest`/`response_poll` (§13.5); (f) sixel + kitty z-order independent of transmit order (§13.6).
+- [ ] **Negative pins (≥5)**: (a) `a=c` silent-fallback does NOT route to `Transmit` (§13.1); (b) malformed-base64 does NOT emit the opposite-of-chosen behavior (§13.2); (c) animation frame does NOT advance without timer tick (§13.3); (d) bare `U+10EEEE` without diacritic does NOT render as quad (§13.4); (e) `response_poll` does NOT handle `PtyWriteKind::ImageProtocolReply` (§13.5); (f) mixed-protocol eviction does NOT cross-pollinate image data (§13.6).
+- [ ] **Catalog row count**: `grep -c '^| KG-' plans/spec-conformance/catalog/kitty-graphics.md` returns ≥ 40 (§13.0 expansion from 9 coarse rows to fine-grained per-arm rows).
+- [ ] **Catalog status invariant**: `grep -cE 'stub|missing|implemented-unverified' plans/spec-conformance/catalog/kitty-graphics.md` returns 0. Every row is `verified`, `verified-with-deviation`, or `not-targeted` (with rationale) — the `not-targeted` count MUST be ≤ `grep -c 'not-targeted' audits/section-13-top-down-inventory.md` (audit file is the source of truth for not-targeted decisions).
+- [ ] **Audit file verification**: `cargo run -p oriterm_test_support --bin spec-coverage-report -- --check audit-files` returns green for `audits/section-13-top-down-inventory.md`. `last_walked` is set to the §13.N-close date; `walked_by` is set.
+- [ ] **Animation production wiring**: `grep -r advance_animations oriterm/ oriterm_mux/` returns ≥ 1 production call site (confirms §13.3's timer wiring landed in non-test code).
+- [ ] **Reply routing invariant**: `grep -r 'PtyWriteKind::ImageProtocolReply' oriterm_mux/src/pane/io_thread/response_poll/` returns 0 matches (confirms §13.5's negative pin — response_poll does NOT touch image-protocol replies).
+- [ ] All existing teseq kitty tests pass (currently zero; baseline for §23.5 archival work).
+- [ ] Alloc regression unchanged (`oriterm_core/tests/alloc_regression.rs`) — green via `./test-all.sh`.
+- [ ] RSS stability regression green (`oriterm_core/tests/rss_regression.rs` `rss_stability_under_sustained_output`) — per §13.6's rapid-alternation stress test, the mixed-protocol path MUST NOT introduce unbounded growth.
+- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release (workspace + `x86_64-pc-windows-gnu` cross-compile).
+- [ ] Plan annotation cleanup — `plan-annotations.py` scan returns 0 stale annotations.
+- [ ] Section frontmatter `status` → `complete`.
+- [ ] `00-overview.md` Quick Reference — §13 row flipped `Not Started` → `Complete`. Mission success criteria contributes to **Verification chain complete per row** (every kitty catalog row now `verified` / `verified-with-deviation` / `not-targeted`) + **Image lifecycle correct under resize/reflow/scrollback/alt-screen** (§13.4 placeholder lifecycle + §13.6 cross-stack regressions).
+- [ ] `index.md` section 13 status flipped `Not Started` → `Complete`.
+- [ ] Next section `depends_on` verification — §14 (iTerm2) and §15 (Cell-Level Alpha) inherit §13's z_index + transparency + animation-timer plumbing. Confirm §14's frontmatter `depends_on:` references §13 if iTerm2's OSC 1337 animation path shares the timer.
+- [ ] `/tpr-review` passed (final, full-section).
+- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean).
 
-**Exit Criteria:** Every kitty graphics catalog row is `verified`; cross-stack regression with sixel green.
+**Exit Criteria:** Every kitty graphics catalog row (post-§13.0 expansion) is `verified` / `verified-with-deviation` / `not-targeted`; U=1 placeholder rendering implemented end-to-end; animation timer wired into production IO thread; mixed-protocol regression matrix green; BUG-08-7 and BUG-08-8 closed.
