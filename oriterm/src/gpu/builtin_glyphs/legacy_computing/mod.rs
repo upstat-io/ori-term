@@ -1,9 +1,14 @@
-//! Symbols for Legacy Computing (U+1FB00–U+1FB9F).
+//! Symbols for Legacy Computing (U+1FB00–U+1FB9F) + Octants
+//! (U+1CD00–U+1CDE5, Symbols for Legacy Computing Supplement).
 //!
 //! Sextants, smooth mosaics, fractional blocks, edge triangles, wedges,
-//! shade patterns, and checkerboard fills. Follows Ghostty's
-//! `symbols_for_legacy_computing.zig` as reference.
+//! shade patterns, checkerboard fills, and octants. Follows Ghostty's
+//! `symbols_for_legacy_computing.zig` as reference for the `U+1FB*`
+//! range; the octant range follows the canonical artifact at
+//! `plans/spec-conformance/specs/octant-bitmask-mapping.md`
+//! (cross-checked against `WezTerm` and `Kitty`).
 
+mod octants;
 mod smooth_mosaics;
 mod triangles;
 
@@ -25,6 +30,7 @@ pub(in crate::gpu::builtin_glyphs) fn draw(canvas: &mut Canvas, ch: char) -> boo
         '\u{1FB95}'..='\u{1FB97}' => draw_checkerboard(canvas, ch),
         '\u{1FB98}'..='\u{1FB99}' => draw_diagonal_fill(canvas, ch),
         '\u{1FB9A}'..='\u{1FB9F}' => triangles::draw_combined(canvas, ch),
+        octants::OCTANT_START..=octants::OCTANT_END => octants::draw(canvas, ch),
         _ => return false,
     }
     true
@@ -267,3 +273,6 @@ fn draw_diagonal_fill(canvas: &mut Canvas, ch: char) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

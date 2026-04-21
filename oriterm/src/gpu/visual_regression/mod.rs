@@ -164,8 +164,12 @@ pub(crate) fn headless_env_with_pinned_software_rasterizer(
     );
 
     let pipelines = GpuPipelines::new(&gpu);
+    let font_set = config
+        .font_override
+        .clone()
+        .unwrap_or_else(FontSet::embedded);
     let font_collection = FontCollection::new(
-        FontSet::embedded(),
+        font_set,
         config.font_size_pt,
         config.dpi,
         config.glyph_format,

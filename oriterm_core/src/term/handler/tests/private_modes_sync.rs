@@ -1,3 +1,6 @@
+//! Catalog rows: DEC-DECSCNM, DEC-DECNRCM, DEC-SIXEL-SCROLLING, DEC-BRACKETED-PASTE,
+//! DEC-SIXEL-CURSOR-RIGHT
+
 use crate::term::{Term, TermMode};
 use crate::theme::Theme;
 

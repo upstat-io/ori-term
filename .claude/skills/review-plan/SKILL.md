@@ -32,11 +32,18 @@ The **plan file is the single source of truth for pipeline state.** Every step w
 
 ```yaml
 review_pipeline:
-  stage: <stage-name>        # precheck-done | audit-done | blind-spots-done | editor-done | tpr-done
-  next_step: <int>           # 3, 4, 5, 6, or 7
+  stage: <stage-name>           # precheck-done | audit-done | blind-spots-done | editor-done | tpr-done
+  next_step: <int>              # 3, 4, 5, 6, or 7
   updated: <YYYY-MM-DD>
-  note: <freeform>           # optional — e.g. "Paused at Step 6 context-pressure pause on <date>"
+  # --- Step-6-only fields (present any time Step 6 has run ≥1 round) ---
+  rounds_completed: <N>         # cumulative TPR rounds done; /tpr-review initializes iteration_counter from this on resume
+  last_round_commit: <sha>      # SHA of the last round's fix commit (`/tpr-review §7 fix-and-commit`)
+  last_round_findings: <N>      # verified findings count from the last round (all dispositions)
+  note: <freeform>              # optional — e.g. "paused mid-loop" or "<exit_reason>" for cap-exits
 ```
+
+- `rounds_completed` / `last_round_commit` / `last_round_findings` are MANDATORY any time Step 6 has run ≥1 round (clean, paused, or cap-exit). Absent ≡ Step 6 hasn't started ≡ `iteration_counter` starts at 0 on next entry.
+- Omitting these after a round ran loses round-count provenance → duplicate work on resume (2026-04-19 pause-without-round-count incident).
 
 **Whole-plan mode:** read `<plan_dir>/.review-pipeline-state.yaml` (a plan-owned dotfile with the same schema). Whole-plan mode uses this file because it never touches section frontmatters (§Reviewed-field semantics).
 
@@ -202,9 +209,22 @@ After Step 3 returns and its handoff is clean, run Step 4 inline in main context
 After Step 5 returns and its escalation (if any) is resolved, run Step 6 inline in main context. Do NOT wrap this in an `Agent({})` sub-agent.
 
 1. Read `.claude/skills/review-plan/step-6-tpr.md` and follow it end-to-end inline.
-2. Invoke `/tpr-review` via the Skill tool with `--skill review-plan` plus the scope (`{target_section}` in single-section mode, `{plan_dir}` in whole-plan mode).
+2. Invoke `/tpr-review` via the Skill tool with `--skill review-plan` plus the scope (`{target_section}` in single-section mode, `{plan_dir}` in whole-plan mode). **On resume entry** (Step 6 invoked with `rounds_completed > 0` in the marker): ALSO pass `--resume-from-rounds=<rounds_completed>` so `/tpr-review` initializes `iteration_counter = rounds_completed`. First dispatched round becomes Round `<rounds_completed>`, not Round 0. Flag syntax per `/tpr-review SKILL.md §1` composable flags.
 3. When `/tpr-review` returns, observe its terminal `exit_reason` (Step 6 runs inline; no file handoff is required from `/tpr-review`) and write `$RUN_DIR/tpr.json` per the branch schemas in `step-6-tpr.md`. The current `status` set — defined by `/tpr-review/SKILL.md §5`'s `exit_reason` values — is `clean` / `iter_cap_reached` / `meta_cap_reached` / `user_accepted` / `escalated` / `both_reviewer_failure`.
-4. **Update the `review_pipeline` marker** per §Step 1d: `Edit` the section file to set `stage: tpr-done`, `next_step: 7`, `updated: <today>`. MANDATORY — a `/clear` + /continue-roadmap without this marker restarts the pipeline. In whole-plan mode, write to `<plan_dir>/.review-pipeline-state.yaml`.
+4. **Update the `review_pipeline` marker** per §Step 1d. MANDATORY on EVERY exit_reason. Wholesale-replace the block. In whole-plan mode, write to `<plan_dir>/.review-pipeline-state.yaml`.
+
+   Read rounds state from `/tpr-review`'s exit surface: `iteration_counter` (→ `rounds_completed`), last `commit_sha` from `fix_and_commit` (→ `last_round_commit`), last-round `len(verified)` (→ `last_round_findings`). `/tpr-review §5` MUST surface these in its main-context return.
+
+   Branch by `exit_reason`:
+
+   | `exit_reason` | `stage` | `next_step` | Extra fields |
+   |---|---|---|---|
+   | `clean` | `tpr-done` | `7` | `rounds_completed: <N>`, `updated: <today>` |
+   | `user_accepted_at_*` / `autonomous_accept_at_*` | `tpr-done` | `7` | `rounds_completed: <N>`, `note: "<exit_reason>"`, `updated: <today>` |
+   | `user_pause_and_resume` | `editor-done` (Step 6 still pending) | `6` | `rounds_completed: <N>`, `last_round_commit: <sha>`, `last_round_findings: <N>`, `note: "paused mid-loop"`, `updated: <today>` |
+   | `iter_cap_reached` / `meta_cap_reached` / `both_reviewer_failure` / `escalated_to_plan_at_*` / `autonomous_exit_substantive_at_*` / `autonomous_transport_failure` | `editor-done` (stays at Step 6) | `6` | `rounds_completed: <N>`, `last_round_commit: <sha>`, `last_round_findings: <N>`, `note: "<exit_reason>"`, `updated: <today>` |
+
+   Resume flag handoff is specified in step 2 above (`--resume-from-rounds=<rounds_completed>`).
 5. Apply the same escalation handling described in the next section, reading `$RUN_DIR/tpr.json` as if it came from a sub-agent.
 6. Proceed to Step 7+8 once the escalation resolves.
 

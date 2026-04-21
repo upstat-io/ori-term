@@ -1,7 +1,7 @@
 ---
 name: verify-tpr
-model: opus
-description: "Triage TPR findings in a plan section with full codebase validation. Invoked by /continue-roadmap when third_party_review.status is 'findings'. Validates each finding against actual code, spec, and plan — accepts or rejects with rigor."
+model: sonnet
+description: "Triage TPR findings in a plan section — validates each unchecked finding against actual code, spec, and tests, accepting or rejecting with rigor. Invoked by /continue-roadmap when third_party_review.status is 'findings'."
 argument-hint: "<section-file-path>"
 ---
 
@@ -30,18 +30,26 @@ Read the entire section file. Identify:
 
 If there are no unchecked findings, report "No open TPR findings" and exit.
 
-### Step 2.5: Blast-Radius Query on High-Signal Findings (MANDATORY)
+### Step 2.5 — Blast-radius calibration via intelligence graph (bounded, inlined)
 
-Before triaging findings in Step 3, identify which findings are high-severity
-or cite symbols whose blast radius is ambiguous (i.e., you cannot tell from
-the finding text alone whether the cited symbol is called by 2 or 200 sites).
-For such findings use code search (Glob/Grep) to inventory callers and
-callees before deciding accept/reject — a finding against a symbol with 20+
-callers deserves more scrutiny than one with 2 callers.
+Applies to findings that are `[high]` severity OR cite a symbol whose blast radius is ambiguous from the text alone.
 
-Skip this step for [low]-severity findings with clearly-scoped symbols
-(e.g., a test helper function, a local formatting issue). The goal is
-informed triage, not query exhaustion.
+Skip entirely for `[low]` severity findings with clearly-scoped symbols (test helpers, local formatters, single-callsite utilities).
+
+Protocol:
+
+1. Availability probe — run _(intel-query not available in this project; use Grep/Glob)_. If `status != "ok"`, skip this step; calibration falls back to in-file reading of the cited code.
+2. For each qualifying finding, run _(intel-query not available in this project; use Grep/Glob)_ on the finding's cited symbol.
+3. Cap at 5 queries total across the triage run. Do NOT query every finding.
+4. Treat results as DISCOVERY, not authority — verify caller counts against actual code before letting them influence Step 3.
+5. Never cite a graph result as resolution evidence. Resolutions in Step 3 §5 must cite actual `file:line`, test name, or spec clause.
+6. Never open-code Neo4j access. Always use _(intel-query not available in this project; use Grep/Glob)_.
+
+Calibration heuristics:
+
+- Symbol with 20+ callers → raise scrutiny; REJECT requires stronger evidence when the affected surface is large.
+- Symbol with ≤2 callers → lower scrutiny; local findings rarely justify cross-crate investigation.
+- Symbol not indexed (empty result) → the finding may reference test-only code, a renamed symbol, or a deleted symbol; validate by reading the cited file directly.
 
 ### Step 3: Triage Each Finding
 
@@ -54,7 +62,7 @@ For EACH unchecked finding:
 2. **Validate against the codebase** — does the issue described in the finding actually exist?
    - Check the specific code paths mentioned
    - Check if the issue has already been fixed since the finding was filed
-   - Check the spec (`docs/spec/`) if the finding concerns language semantics
+   - Check the protocol / reference (XTerm ctlseqs, ECMA-48, terminfo, vt100.net) if the finding concerns terminal-conformance semantics
    - Check tests — are there existing tests that cover this? Are they sufficient?
 
 3. **Determine: ACCEPT or REJECT**
@@ -142,4 +150,6 @@ TPR Triage Complete: <section-file>
 
 ## Quality Standard
 
-The entire point of this skill is to prevent soft accepts — findings marked `[x]` with deferral language instead of actual fixes or properly-anchored blocked tasks. Every resolution must either change code or point to a concrete, verifiable blocker. "We'll handle it later" is not a resolution.
+- Prevent soft accepts — findings marked `[x]` with deferral language instead of actual fixes or properly-anchored blocked tasks.
+- Every resolution must either change code or point to a concrete, verifiable blocker.
+- "We'll handle it later" is not a resolution.

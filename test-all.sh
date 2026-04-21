@@ -5,6 +5,29 @@ set -euo pipefail
 # lint failures that RUSTFLAGS="-D warnings" catches in GitHub Actions.
 export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings"
 
+# The uncataloged-sequence spool is populated by tests via
+# `UncatalogedDetector::serialize_to_dir`. Clear it so
+# `spec-coverage-report --check` runs against an empty spool and matches
+# CI's "lint-before-tests" ordering (where the rust-cache otherwise
+# restores stale spool entries across runs). This is load-bearing:
+# `build_catalog_signature_set` canonicalizes OSC rows with the BEL/ST
+# terminator in `final_byte`, while the runtime observer puts the OSC
+# numeric id there — every OSC tuple falsely reports as uncataloged
+# until that signature-alignment bug is fixed. See BUG-07-019.
+rm -rf target/spec-chain-uncataloged
+
+# Spec-conformance coverage gates run FIRST — same ordering as CI's
+# `test-linux` job ("Spec coverage lint" + "Audit-files lint" before
+# "Run tests"). Fail-fast on catalog drift so we don't burn a 5-minute
+# test run before discovering the citation scanner missed a row.
+echo "=== spec-coverage-report --check (static gates) ==="
+cargo run --quiet -p oriterm_test_support --bin spec-coverage-report -- --check
+
+echo ""
+echo "=== spec-coverage-report --check audit-files ==="
+cargo run --quiet -p oriterm_test_support --bin spec-coverage-report -- --check audit-files
+
+echo ""
 echo "=== cargo test --workspace --features oriterm/gpu-tests ==="
 cargo test --workspace --features oriterm/gpu-tests
 

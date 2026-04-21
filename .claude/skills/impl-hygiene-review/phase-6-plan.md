@@ -19,7 +19,7 @@ Spawn a **separate Agent** to generate the fix plan. This agent should use `/cre
 
    **Rules:**
    - Frame as the **architectural destination**, not a task manifest — "cohesive architecture with clean design and correct solutions", not "eliminate N LEAKs"
-   - Describe each area's **design problem** — "scattered cow_mode checks with no canonical dispatch", not "5 LEAK findings in ori_rt"
+   - Describe each area's **design problem** — "scattered damage-region checks with no canonical dispatch", not "5 LEAK findings in oriterm_core"
    - Finding counts, category breakdowns, and priority ordering belong in `## Metrics`, NOT in the mission
    - The mission must read as a design vision that someone could evaluate the code against when the work is done
 

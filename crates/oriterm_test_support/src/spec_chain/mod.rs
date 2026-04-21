@@ -12,6 +12,7 @@ pub mod coverage;
 pub mod observers;
 mod recording_handler;
 mod scenario;
+pub mod sixel_fixtures;
 pub mod uncataloged;
 
 pub use api::{RungResult, SpecHarness, SpecOutcome};

@@ -1,10 +1,10 @@
-//! OSC 1337 sub-dispatcher parse pins.
+//! Dispatch-layer parse pins.
 //!
-//! Verifies that the refactored `b"1337"` arm routes each sub-op to the
-//! correct `Handler` method. The existing `iterm2_file` path stays wired;
-//! the seven non-image sub-ops (`SetMark`, `RemoteHost=`, `CurrentDir=`,
-//! `Copy=`, `ReportCellSize`, `SetUserVar=`, `ShellIntegrationVersion=`)
-//! reach their own hooks.
+//! Covers routes that live inline in `dispatch/mod.rs`: the OSC 1337
+//! sub-dispatcher (seven non-image sub-ops plus the `iterm2_file` fallback)
+//! and the ESC-path dispatch table (DECBI / DECFI / etc.). CSI-specific
+//! parse pins live in `dispatch/csi/tests.rs`; parser-level pins in
+//! `crates/vte/src/ansi/tests.rs`.
 
 extern crate alloc;
 
@@ -15,7 +15,9 @@ use core::cell::RefCell;
 use crate::ansi::Processor;
 use crate::ansi::handler::Handler;
 
-/// Records every iTerm2 sub-op the dispatcher routed to us.
+/// Records dispatch-layer routes we care about in this file:
+/// iTerm2 OSC 1337 sub-ops (counters + payload buffers) and ESC-path
+/// DECBI / DECFI (counters).
 #[derive(Default)]
 struct RecordingHandler {
     set_mark_calls: u32,
@@ -26,6 +28,8 @@ struct RecordingHandler {
     set_user_var: Vec<(Vec<u8>, Vec<u8>)>,
     shell_integration_version: Vec<Vec<u8>>,
     iterm2_file_calls: u32,
+    decbi_calls: u32,
+    decfi_calls: u32,
 }
 
 impl Handler for RecordingHandler {
@@ -52,6 +56,12 @@ impl Handler for RecordingHandler {
     }
     fn iterm2_shell_integration_version(&mut self, version: &[u8]) {
         self.shell_integration_version.push(version.to_vec());
+    }
+    fn decbi(&mut self) {
+        self.decbi_calls += 1;
+    }
+    fn decfi(&mut self) {
+        self.decfi_calls += 1;
     }
 }
 
@@ -146,4 +156,38 @@ fn osc1337_unknown_sub_op_is_dropped() {
     assert_eq!(h.set_mark_calls, 0);
     assert_eq!(h.iterm2_file_calls, 0);
     assert_eq!(h.remote_host.len(), 0);
+}
+
+/// ESC 6 routes to `Handler::decbi` (DECBI, Back Index — xterm
+/// `ctlseqs.txt:397`).
+#[test]
+fn esc_6_routes_to_decbi() {
+    let h = feed(b"\x1b6");
+    assert_eq!(h.decbi_calls, 1);
+    assert_eq!(h.decfi_calls, 0);
+}
+
+/// ESC 9 routes to `Handler::decfi` (DECFI, Forward Index — xterm
+/// `ctlseqs.txt:403`).
+#[test]
+fn esc_9_routes_to_decfi() {
+    let h = feed(b"\x1b9");
+    assert_eq!(h.decfi_calls, 1);
+    assert_eq!(h.decbi_calls, 0);
+}
+
+/// ESC 6 with an intermediate byte is NOT a DECBI — falls through to
+/// `unhandled!()` without firing `decbi`.
+#[test]
+fn esc_6_with_intermediate_does_not_route_to_decbi() {
+    let h = feed(b"\x1b#6");
+    assert_eq!(h.decbi_calls, 0);
+}
+
+/// ESC 9 with an intermediate byte is NOT a DECFI — falls through to
+/// `unhandled!()` without firing `decfi`.
+#[test]
+fn esc_9_with_intermediate_does_not_route_to_decfi() {
+    let h = feed(b"\x1b#9");
+    assert_eq!(h.decfi_calls, 0);
 }

@@ -31,37 +31,37 @@ Once you have read the plan, you know exactly what files, types, functions, and 
 Check graph availability first — skip silently if unavailable:
 
 ```bash
-scripts/intel-query.sh status
+(intel-query not available) status
 ```
 
 If `status == "ok"`, run these categories of queries based on what the plan touches:
 
 1. **Blast radius** — for each high-signal symbol the plan proposes to add, rename, remove, or significantly change, run BOTH directions:
    ```bash
-   scripts/intel-query.sh --human callers "<symbol>" --repo ori
-   scripts/intel-query.sh --human callees "<symbol>" --repo ori
+   (intel-query not available) --human callers "<symbol>" --repo ori
+   (intel-query not available) --human callees "<symbol>" --repo ori
    ```
    Use results to (a) catch unplanned cross-section touches — if a symbol the plan modifies is called by code in a different subsystem, either the plan needs a cross-link or the blast radius changes the structural decomposition; (b) size rules-weaving work — every caller site needs an embedded checklist item, not a vague "update callers".
 
 2. **Module inventory** — for each crate the plan operates on, list existing symbols so you do not re-invent or collide:
    ```bash
-   scripts/intel-query.sh --human file-symbols "<path-fragment>" --repo ori
+   (intel-query not available) --human file-symbols "<path-fragment>" --repo ori
    ```
 
 3. **Prior art** — for each architectural decision the plan makes, check how other compilers solved the same problem:
    ```bash
-   scripts/intel-query.sh --human similar "<concept or symbol>" --repo rust,swift,go,koka --limit 5
+   (intel-query not available) --human similar "<concept or symbol>" --repo rust,swift,go,koka --limit 5
    ```
    Similarity uses vector embeddings and can return empty for Ori-specific terms — that is fine, the structural queries above still work. When it returns hits, use them as pointers to READ the reference repos under `~/projects/reference_repos/lang_repos/` for verification. Never cite a `similar` result as authoritative without verifying the actual source.
 
 4. **Topic/symbol search** — if the plan introduces a new concept, check the ori repo for existing partial implementations:
    ```bash
-   scripts/intel-query.sh --human symbols "<topic keyword>" --repo ori --limit 20
+   (intel-query not available) --human symbols "<topic keyword>" --repo ori --limit 20
    ```
 
 Keep reconnaissance bounded — typically 4–8 queries total. The queries inform your editing decisions; they are not a pre-written report. If a query returns nothing useful, move on.
 
-Results are for DISCOVERY, not replacement — always verify against actual code before citing in a plan edit. Per `.claude/rules/intelligence.md`: "Never cite a Neo4j result without verifying against the actual code."
+Results are for DISCOVERY, not replacement — always verify against actual code before citing in a plan edit. Per _(intelligence graph rule not applicable in this project)_."
 
 ## Edit scope
 
@@ -74,9 +74,9 @@ Results are for DISCOVERY, not replacement — always verify against actual code
 
 1. Cross-reference every technical claim against the codebase:
    - Do referenced files / types / functions / modules exist?
-   - Are crate dependency assumptions correct? (`ori_lexer → ori_parse → ori_ir → ori_types → ori_eval → ori_llvm → oric`)
+   - Are crate dependency assumptions correct? (`oriterm_core → oriterm_ui → oriterm`, and `oriterm_ipc → oriterm_mux → oriterm`; `oriterm_core` is standalone)
    - Are code patterns described accurately?
-2. Check claims against the spec (`docs/spec/` — `grammar.ebnf`, `operator-rules.md`, clause files)
+2. Check claims against the protocol / reference sources: XTerm control-sequence docs, ECMA-48, terminfo/termcap, vt100.net, and the vendored VTE / PTY crates under `crates/`. ori_term has no internal language spec.
 3. EDIT inaccuracies directly — don't flag, fix.
 4. For each section, assess whether the implementation approach will actually work:
    - Can each checklist item be implemented as described?

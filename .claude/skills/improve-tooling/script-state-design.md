@@ -38,7 +38,7 @@ Changing any of these without a concrete plan risks re-introducing the bugs the 
 
 | # | Invariant | Why (which failure mode it prevents) |
 |---|-----------|--------------------------------------|
-| S1 | `state.sh` never writes when `--sha-only` is passed on a MISSING state file | First-time setup must use `refresh --full` or manual creation. `--sha-only` on missing would create a state file with no meaningful content but the illusion of cached data. |
+| S1 | `state.sh refresh` on a missing state file auto-seeds a schema-v1 skeleton with every content block set to `status: "unknown"` before applying the mode's normal update | Fail-safe semantics come from the per-block `status` field (consumers already refuse to trust non-`"clean"` statuses), not from the file's existence. Dying on missing file blocked `/commit-push` Step 8 on every first-time setup and produced spurious error output on every downstream project's first sync. See §6 entry 2026-04-20. |
 | S2 | `state.sh check` exits 0 ONLY when SHA matches HEAD AND tree is clean | Any weaker definition of "fresh" invites consumers to trust stale state on a dirty tree. |
 | S3 | The `known_failing_files` list is authoritative about the plan-documented failing set, NOT the current test-all.sh output | A diff between the cached list and current output = a finding the plan doesn't cover → consumer must investigate, not silently accept. |
 | S4 | Atomic write via `$STATE_FILE.tmp.$$` + `mv` | Parallel sessions can trigger concurrent writes; without atomicity the cache can end up half-written and crash `jq` on next read. |
@@ -51,7 +51,7 @@ Changing any of these without a concrete plan risks re-introducing the bugs the 
 
 ## §3 — File Inventory (canonical)
 
-Active files as of 2026-04-18:
+Active files:
 
 | Path | Lines (~) | Role |
 |------|-----------|------|
@@ -96,6 +96,7 @@ Active files as of 2026-04-18:
 - [x] 2026-04-18 — `/commit-push` workflow.md wired to call `state.sh refresh --sha-only --by commit-push` as Step 8 (after Step 7 push). Failure is non-fatal — consumers fall back to actual runs when cache is obsolete.
 - [x] 2026-04-18 — `/continue-roadmap` wired as first consumer: new Step 1.5 reads `state.sh show --json` and carries cached state through to the handoff's new "Cached repo state" block. Hard-bans list carved out for read-only state.sh operations (show / check / known-failing) — they don't compile or run tests, just cat JSON. The scanner's JSON plus state.sh is the sub-agent's complete world-state.
 - [x] 2026-04-18 — **Self-exclusion in `is_tree_dirty()`**: after `refresh --sha-only`, the state file itself is uncommitted, which would make `check` report STALE forever even when everything else is clean. Fix in `is_tree_dirty()`: grep-exclude `.claude/state/known-state.json` from `git status --porcelain` output. Load-bearing for `/commit-push` Step 8 — without it, the post-push refresh produces a perpetually-STALE cache that consumers always mistrust, defeating the tool's point. Surfaced during the same session as the tool's creation (FRESH path never demonstrable without it).
+- [x] 2026-04-20 — **First-run auto-seed + `--json` exit-code fix.** Two linked bugs surfaced by ori_term's first `/commit-push` Step 8 call: (1) `cmd_refresh` died with exit 3 when the state file didn't exist, so every first-time setup in a downstream project emitted an error despite the workflow declaring Step 8 non-fatal. `--full` was the only escape hatch but it takes ~3 min. Fix: `seed_skeleton_state()` helper writes a schema-v1 skeleton with `status: "unknown"` on every content block; every `refresh` mode runs it when the file is missing, then layers its real values on top. Invariant S1 amended — fail-safe semantics come from per-block status, not file existence. (2) Every `refresh` mode ended in `[[ "$OUTPUT" == "json" ]] && printf ...; [[ "$OUTPUT" == "human" ]] && echo ...` — in `--json` mode the trailing human check evaluated false and became the function's last expression, leaking exit 1 despite a successful seed. Fix: converted all three refresh branches (sha-only, hygiene-only, full) to explicit `if/else`. Commit: pending.
 
 ## §7 — How To Use This File In Future Sessions
 

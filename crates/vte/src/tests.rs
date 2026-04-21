@@ -1,3 +1,5 @@
+//! Catalog rows: ECMA48-C1-8BIT
+
 use std::vec::Vec;
 
 use super::*;

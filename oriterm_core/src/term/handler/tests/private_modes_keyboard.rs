@@ -3,6 +3,8 @@
 //! Section 09.4 scope: verifies DECSET/DECRST flag toggle and DECRQM for
 //! both keyboard-related private modes. DECNKM shares `TermMode::APP_KEYPAD`
 //! with ESC =/ESC > (DECKPAM/DECKPNM); reconciliation cells verify SSOT.
+//!
+//! Catalog rows: DEC-DECNKM, DEC-DECBKM
 
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect, QueueingEffectSink};

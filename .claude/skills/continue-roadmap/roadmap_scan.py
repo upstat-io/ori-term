@@ -1839,7 +1839,7 @@ def _build_gates(ws: Workspace) -> dict:
     # referenced section must be `complete` before this section is ready to
     # work on. Without this gate, the scanner can route to a section whose
     # dependency is still in-progress — wasting any /review-plan or
-    # /roadmap-work dispatched against it, since the dependent's scope can
+    # /continue-roadmap Step 6 work dispatched against it, since the dependent's scope can
     # shift once the dep lands. Path-like refs (containing `/`) are matched
     # against `section.path` relative to repo root; bare IDs (e.g., "03") are
     # matched against `section.number` scoped to the focus plan first, then

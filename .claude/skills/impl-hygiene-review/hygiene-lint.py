@@ -52,7 +52,11 @@ from pathlib import Path
 from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-COMPILER_DIR = REPO_ROOT / "compiler"
+# ori_term's workspace crates live at the repo root (not under a compiler/ dir).
+# Treat the repo root as the crate-scanning base so each workspace-member dir
+# (oriterm_core, oriterm_ui, oriterm_mux, oriterm_ipc, oriterm) becomes
+# rel.parts[0] in the phase-bleeding check.
+COMPILER_DIR = REPO_ROOT
 
 # ─── Color helpers ───────────────────────────────────────────
 
@@ -98,32 +102,32 @@ CHECK_DEFS: dict[str, tuple[str, str, bool, str]] = {
 ALL_CHECK_IDS = set(CHECK_DEFS.keys())
 
 
-# Pure crates that MUST have #![deny(unsafe_code)]
+# Pure crates that MUST have #![deny(unsafe_code)] — every ori_term crate
+# per `unsafe_code = "deny"` in the workspace lints config.
 PURE_CRATES = {
-    "ori_ir", "ori_diagnostic", "ori_types", "ori_eval", "ori_patterns",
-    "ori_parse", "ori_lexer", "ori_registry",
+    "oriterm_core", "oriterm_ipc", "oriterm_ui", "oriterm_mux", "oriterm",
+    "oriterm_test_support",
 }
 
 # Crate dependency order (lower number = lower level).
-# A crate may only import from crates with LOWER numbers.
+# A crate may only import from crates with LOWER numbers. Source: SSOT in
+# `.claude/rules/crate-boundaries.md`.
 CRATE_ORDER: dict[str, int] = {
-    "ori_ir": 0, "ori_diagnostic": 0, "ori_registry": 0,
-    "ori_lexer_core": 1, "ori_lexer": 2,
-    "ori_parse": 3,
-    "ori_patterns": 4, "ori_types": 4,
-    "ori_eval": 5, "ori_arc": 5, "ori_repr": 5, "ori_canon": 5,
-    "ori_llvm": 6, "ori_compiler": 6,
-    "ori_fmt": 4, "ori_lsp": 7, "ori_stack": 1,  # shared utility, used by ori_parse+
-    "oric": 8, "ori_rt": 0,
+    "oriterm_core": 0,
+    "oriterm_ipc": 0,
+    "oriterm_ui": 1,    # depends on oriterm_core
+    "oriterm_mux": 1,   # depends on oriterm_core + oriterm_ipc
+    "oriterm": 2,       # application shell — consumes all
+    "oriterm_test_support": 0,  # test helpers — no prod deps
 }
 
 # Sync-point enums — shared between catch-all-arms check and enum-drift.py
-# These are the IR enums where catch-all `_ =>` arms hide cross-phase drift
-SYNC_POINT_ENUMS = {
-    "CanExpr", "ExprKind", "TypeTag", "DerivedTrait",
-    "TokenKind", "CollectionMethod", "IteratorValue",
-    "StmtKind", "BinaryOp", "UnaryOp",
-}
+# These are enums where catch-all `_ =>` arms hide cross-module drift.
+# Empty for ori_term today — populate when a genuine cross-crate sync-point
+# enum appears (e.g., a pane-lifecycle event matched in both oriterm_mux
+# and oriterm, or a render primitive matched in oriterm_ui and oriterm's
+# GPU cell loop). Until then the catch-all-arms check is a no-op.
+SYNC_POINT_ENUMS: set[str] = set()
 
 
 # ─── Finding ─────────────────────────────────────────────────
@@ -542,12 +546,13 @@ def check_bare_todo(path: Path, lines: list[str]) -> list[Finding]:
 def check_catch_all_arms(path: Path, lines: list[str]) -> list[Finding]:
     """GAP: _ => unreachable!()/todo!() catch-all arms.
 
-    Only flags catch-alls near sync-point enum references (CanExpr::,
-    ExprKind::, TypeTag::, DerivedTrait::, TokenKind::, etc.) to avoid
-    flagging local refinement matches like `match char_kind { ... }`.
+    Only flags catch-alls near sync-point enum references (populated
+    via SYNC_POINT_ENUMS — empty for ori_term today). This keeps the
+    check from flagging local refinement matches like
+    `match char_kind { ... }`.
     """
-    # Sync-point enums — SSOT shared with enum-drift.py KNOWN_ENUMS
-    # These are the IR enums whose catch-alls indicate cross-phase drift
+    # Sync-point enums — SSOT shared with enum-drift.py KNOWN_ENUMS.
+    # When this set is empty, the catch-all-arms check is a no-op.
     sync_enums = SYNC_POINT_ENUMS
     findings: list[Finding] = []
     text = "\n".join(lines)
@@ -689,8 +694,8 @@ USE_CRATE_RE = re.compile(r"^\s*use\s+(?:crate::)?(\w+)")
 def check_phase_bleeding(path: Path, lines: list[str]) -> list[Finding]:
     """LEAK: crate imports from a higher-level crate (upward dependency).
 
-    Uses CRATE_ORDER to detect when a low-level crate (e.g., ori_lexer)
-    imports from a higher-level crate (e.g., ori_parse).
+    Uses CRATE_ORDER to detect when a low-level crate (e.g., oriterm_core)
+    imports from a higher-level crate (e.g., oriterm_ui).
     """
     findings: list[Finding] = []
     src_crate = ""
@@ -708,8 +713,8 @@ def check_phase_bleeding(path: Path, lines: list[str]) -> list[Finding]:
         m = USE_CRATE_RE.match(line)
         if m:
             target = m.group(1)
-            # Only check ori_* crate imports
-            if not target.startswith("ori_"):
+            # Only check oriterm_* workspace crate imports
+            if not target.startswith("oriterm"):
                 continue
             # Skip self-imports (crate:: within the same crate)
             if target == src_crate:
@@ -717,7 +722,7 @@ def check_phase_bleeding(path: Path, lines: list[str]) -> list[Finding]:
             target_level = CRATE_ORDER.get(target, -1)
             if target_level < 0:
                 continue
-            # Level-0 crates (ori_ir, ori_diagnostic, ori_registry, ori_rt)
+            # Level-0 crates (oriterm_core, oriterm_ipc, oriterm_test_support)
             # are all peers — allow cross-imports between them
             if src_level == 0 and target_level == 0:
                 continue

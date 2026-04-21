@@ -523,6 +523,26 @@ for row in grid.visible_rows() {
 - Cross-crate changes that must be in sync go in a single commit
 - Large refactors broken into phases: (1) add new API alongside old, (2) migrate consumers, (3) remove old API. Never break the build between phases.
 
+## Test Function Naming
+
+Test functions follow the shape `<subject>_<scenario>_<expected>`. The name encodes WHAT is tested, UNDER WHICH CONDITION, and WHAT OUTCOME is pinned — so a failure message alone tells a reader what regressed without them reading the body.
+
+- `subject`: the unit under test — the function, struct, operator, catalog row, or invariant being exercised. Examples: `dcs_escape`, `bg_mode_set_to_bg`, `sixel_parser_finish`, `effective_background`.
+- `scenario`: the distinguishing input / state / mode. Examples: `second_esc`, `under_non_black_terminal_bg`, `on_oversized_raster`, `with_reverse_video_active`.
+- `expected`: the pinned outcome. Examples: `aborts_pending_st`, `fills_undrawn_with_terminal_bg`, `returns_oversized_image_error`, `honors_decscnm`.
+
+Banned prefixes (they add nothing and dilute the subject-scenario-expected shape):
+
+- `test_` — `#[test]` attribute already marks the function as a test; `test_foo` → `foo`.
+- `should_` / `can_` / `is_` / `it_` — subjective, imperative, or narrative framing. Prefer the assertion outcome itself.
+- Ephemeral identifiers — plan names, section numbers, bug IDs (`tpr_12_2_`, `bug_08_20_`, `section_09a_`) in function names. Provenance belongs in `///` doc comments only; the test name must stay stable across plans.
+
+Good: `dcs_escape_second_esc_aborts_pending_st`, `bg_mode_set_to_bg_honors_decscnm_reverse_video`, `palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint`.
+
+Bad: `test_esc_esc_backslash` (banned prefix + opaque scenario + no expected), `should_abort_on_bad_input` (subjective prefix), `tpr_12_2_decscnm_regression_test` (plan identifier + banned prefix).
+
+Every `#[test]` MUST have a `///` doc comment that states what is pinned and cites the spec clause / catalog row / regression anchor. The doc comment is where provenance and rationale live; the function name is the one-line contract.
+
 ## Technical Debt
 
 - Fix when you find it. If it can't be fixed in the current change, add an entry to the active plan or create a roadmap item. No untracked debt.

@@ -1,8 +1,8 @@
 ---
 name: fix-bug
-description: Fix a bug with full plan-section rigor — root cause analysis, TDD matrix, implementation, TPR review, and impl-hygiene review. Creates a fix-BUG-XX-NNN.md file in the bug tracker. TRIGGER when picking up a bug for fixing from /review-bugs or when explicitly told to fix a specific bug.
+description: Fix a bug with full plan-section rigor (root cause analysis, TDD matrix, implementation, TPR review, impl-hygiene review) against either a tracker entry (`BUG-XX-NNN` → `fix-BUG-XX-NNN.md`) or an inline plan-blocker subsection (`inline:<plan-section>#<subsection-id>` → in-place on the subsection body); TRIGGER when picking up a bug from /review-bugs, when explicitly told to fix a specific bug, or when `/add-bug --inline` has seeded a plan-blocker subsection that needs rigor applied.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash, Agent, AskUserQuestion, Skill
-argument-hint: "[BUG-XX-NNN or description]"
+argument-hint: "[BUG-XX-NNN | inline:<plan-section>#<subsection-id> | description]"
 ---
 
 # Fix Bug
@@ -12,11 +12,17 @@ Fix a bug with the same rigor as a plan section: investigation, root cause analy
 ## Usage
 
 ```
-/fix-bug BUG-04-033
-/fix-bug BUG-02-005
-/fix-bug [description of the bug if ID unknown]
-/fix-bug --autopilot BUG-04-033    (called by /fix-next-bug in autopilot mode)
+/fix-bug BUG-04-033                                                  — tracker mode
+/fix-bug BUG-02-005                                                  — tracker mode
+/fix-bug [description of the bug if ID unknown]                      — tracker mode (description search)
+/fix-bug --autopilot BUG-04-033                                      — tracker mode, called by /fix-next-bug
+/fix-bug inline:plans/foo/section-04-X.md#04.BLOCKER-1               — INLINE mode, plan-blocker subsection
+/fix-bug plans/foo/section-04-X.md#04.BLOCKER-1                      — INLINE mode (shorthand, no `inline:` prefix)
 ```
+
+**Tracker mode** (the original, default flow): the fix artifact is `plans/bug-tracker/fix-BUG-XX-NNN.md`.
+
+**Inline mode** (new, paired with `/add-bug --inline`): the fix artifact is the subsection body inside `<plan-section-path>`. No separate `fix-BUG-XX-NNN.md` file is created; every phase mutates the subsection body + the subsection's entry in the plan-section frontmatter `sections:` list. See §Inline Mode Phase Overrides below.
 
 ## How this skill runs
 
@@ -43,12 +49,16 @@ Agent({
 You are the bug-context agent for /fix-bug. Read .claude/skills/fix-bug/workflow.md
 in full and execute Phase 0.
 
-Bug ID or description from the user: <ARGS>
+Arg from the user: <ARGS>
 
 Rules:
-- Execute Phase 0 Steps 1-5 only. Return the handoff block in the EXACT format
-  specified at the end of workflow.md.
-- Read plans/bug-tracker/ files ONLY. Never open compiler/, library/, tests/.
+- Start at workflow.md "Phase 0 — Step 0: Dispatch Mode Detection". If the arg
+  is an inline-subsection target (inline:<path>#<id> or <path>#<id>), execute
+  Inline Mode (Steps 1b + 2b) and return the [INLINE] handoff. Otherwise execute
+  Tracker Mode (Steps 1-5) and return the standard handoff.
+- Tracker mode: read plans/bug-tracker/ files ONLY.
+- Inline mode: read the single plan-section file named in the arg ONLY.
+- Never open compiler/, library/, tests/.
 - Do NOT investigate root cause, write code, or proceed beyond Phase 0.
   `
 })
@@ -58,7 +68,16 @@ Rules:
 
 ## Part 2: After the Handoff
 
-Read the handoff and act based on its status flags. **Precedence (first match stops):** ERROR > Already resolved > **Superseded by** > Lifecycle markers > Resume mode > Phase -1 fresh start.
+Read the handoff and act based on its status flags.
+
+**Mode dispatch (first match wins):**
+
+1. **`## Handoff ... Phase 0 [INLINE]`** present → **Inline Mode**. See §Inline Mode Phase Overrides below. Skip the tracker precedence chain. Still execute Phase -1 (grounding) per standard flow.
+2. **`## Handoff ... Phase 0 INLINE ERROR`** present → inline validation failed. Report the `**Reason**` field to the user and STOP. Do NOT fall through to tracker mode — the caller asked for a specific inline target and it couldn't be resolved.
+3. **`## Handoff ... Phase 0 ERROR`** (tracker) → tracker ERROR path. Report and stop.
+4. **`## Handoff to parent (Opus) — fix-bug Phase 0`** (plain tracker handoff) → **Tracker Mode**. Apply the precedence chain below.
+
+**Tracker-mode precedence (first match stops):** ERROR > Already resolved > **Superseded by** > Lifecycle markers > Resume mode > Phase -1 fresh start.
 
 **ERROR handoff (bug not found)**:
 - Report: "Bug `{ID}` not found in the tracker." If description was given, offer `/add-bug`.
@@ -94,6 +113,55 @@ Read the handoff and act based on its status flags. **Precedence (first match st
 
 ---
 
+## Inline Mode Phase Overrides
+
+- Authoritative when the handoff is `[INLINE]`.
+- Every Phase below (-1 through 6) runs with the same rigor as tracker mode — only the **artifact** changes.
+- Read each override AGAINST the phase of the same number — this table tells you what differs, not what's shared.
+
+**Artifact:** the subsection body inside `<plan-section-path>` (captured verbatim in the handoff's `**Full subsection body**`). NO `plans/bug-tracker/fix-BUG-XX-NNN.md` file is created or read. NO `BUG-XX-NNN` ID is minted.
+
+**Inline handoff branch from routing:** when the INLINE handoff arrives, first evaluate `**Status flags**`:
+
+| Flag state | Action |
+|---|---|
+| `Already resolved: yes` | Report and stop (same as tracker). The subsection is already `status: complete` and `§R` is populated. |
+| `Resume mode: yes — pick up at Phase N` | Re-read CLAUDE.md + relevant rules (Phase -1), then jump to Phase N. Skeleton state in the handoff tells you which subsection sections are already populated. |
+| `Resume mode: no — fresh start` | Phase -1 → Phase 1. Subsection body is all "pending" placeholders from `/add-bug --inline`. |
+
+### Per-Phase Overrides
+
+| Phase | Tracker behavior | Inline override |
+|---|---|---|
+| **-1 Ground Truth** | Re-read CLAUDE.md + subsystem rules | Unchanged. Mandatory for every REAL fix path — inline subsections are REAL fixes. |
+| **0 Locate Bug** | Use handoff; if not found, create from description | Use `[INLINE]` handoff; no tracker entry to locate or create. If the handoff is `INLINE ERROR`, stop — do NOT fall through. |
+| **1 Investigation** | Read affected code, reproduce, consult spec, identify affected paths | Unchanged. Write findings into the subsection body's `### 1. Root Cause Analysis` block via `Edit` against `<plan-section-path>` — replace the pending-placeholder bullets. |
+| **1.5 Scope Assessment + Severity Reclassification** | Point fix / plan escalation / blocked | Point-fix check: scoping that's actually a plan was already made during `/add-bug --inline`'s Step 0. If investigation reveals this is BIGGER than a plan-section blocker (cross-plan architectural change), STOP, report to user, and escalate via `AskUserQuestion` — the user decides whether to `/create-plan` a new plan or widen the current plan's scope. **Severity reclassification**: update the subsection body's `**Severity:**` line (NOT a fix-section frontmatter — there is no fix-section file). Also update the frontmatter `sections:` entry's `severity:` field if one was added. |
+| **1.6 Create Fix Section File** | Create `plans/bug-tracker/fix-BUG-XX-NNN.md` from template | **SKIPPED.** The subsection body IS the fix section. It was created by `/add-bug --inline` and already carries the template shape. Nothing to create. Set the frontmatter `sections:` entry's `status:` to `in-progress` now. |
+| **1.75 `/tp-help` Consensus** | Record in fix-section §1.5 | Same, but Edit the subsection body's `### 1.5 Fix Consensus` block — replace "Pending" placeholder with Round-1/-2/-3 structure per template. |
+| **2 Finalize Fix Section** | Update fix-section §1.5/§2/§3 | Edit the subsection body's `### 1.5` / `### 2. TDD Matrix` / `### 3. Implementation` blocks. No separate file. |
+| **2.5 Plan TPR Gate** | Run if severity+subsystem triggers; record in fix-section §2.5 | Same gate criteria. Record in the subsection body's `### 2.5 Fix Plan TPR` block. Invoke `/tpr-review` with the subsection body path + fragment as the review target (`<plan-section-path>#<subsection-id>`). |
+| **3 TDD** | Write matrix tests | Unchanged. Tests live in the normal test-file locations (`tests/spec/...`, `compiler/<crate>/tests/...`) — NOT inside the subsection body. The subsection body's `### 2. TDD Matrix` block links to the test file paths. |
+| **4 Implementation** | Implement fix; run tests; commit via `/commit-push` | Unchanged. Update the subsection body's `### 3. Implementation` block with implementation notes + file list. Commit bundles the code changes + subsection body updates. |
+| **5 Completion Checklist** | Update bug entry + fix-section status + overview count; run `/tpr-review` + `/impl-hygiene-review` + `/improve-tooling`; run `/sync-claude`; final `/commit-push` | Mostly unchanged — the reviews are the same, Phase 5's `Skill` invocation discipline is the same. **What differs** (steps 7, 8, 9): flip the frontmatter `sections:` entry's `status:` to `complete`; update the subsection body's `### R. TPR Findings` block with final verdict; tick every box in `### N. Completion Checklist`. **Cross-ref closure:** if the handoff's `**Tracker cross-ref**` is a real BUG-XX-NNN, also mark that tracker entry `- [x]` with `Resolved: fixed inline on {YYYY-MM-DD}. See plans/{plan}/section-{NN}-*.md#{subsection-id}.` and decrement the overview count for that tracker section. If `Tracker cross-ref: none`, no bug-tracker changes. |
+| **6 Report** | Fix summary with fix-section path | Report the subsection reference instead: `plan-section-path#subsection-id`. No fix-section path. |
+
+### Inline-Mode Invariants
+
+- **One plan section file** is written during the entire fix: `<plan-section-path>`. Frontmatter `sections:` list entry + body subsection.
+- **Zero `plans/bug-tracker/fix-BUG-XX-NNN.md`** created in inline mode. If you catch yourself reaching for the template, stop — that template is for tracker mode only.
+- **Tracker entry closure ONLY IF a cross-ref exists** in the subsection body. Never mint a new tracker entry during inline-mode closure.
+- **Kind-guard at Phase 0:** the Sonnet sub-agent already verified `kind: plan-blocker-inline`. Inline mode does NOT apply to arbitrary plan subsections (e.g., `04.2`, `04.TPR-A`) — those are planned work, not blocker fixes. Attempting to dispatch against a non-blocker subsection returns `INLINE ERROR` from Phase 0.
+- **Re-open refusal at Phase 0:** if the parent plan section's `status:` is `complete`, Phase 0 returns `INLINE ERROR`. Reopening a closed plan section is a decision outside `/fix-bug`'s scope — the user must reopen the plan section first, or re-route via tracker-mode `/add-bug`.
+
+### Autopilot Interaction
+
+- Inline mode + `--autopilot` is permitted.
+- All tracker-mode autopilot rules apply: no `AskUserQuestion`, zero pausing, full rigor.
+- Phase 1.5 plan-escalation in autopilot STILL cannot invoke `/create-plan` — if investigation reveals the inline scope is wrong, record the finding in the subsection body's §1 and return an escalated outcome to the caller (same pattern as tracker autopilot).
+
+---
+
 ## Autopilot Mode
 
 When invoked with `--autopilot` (by `/fix-next-bug` in autopilot mode), the following rules apply:
@@ -110,11 +178,16 @@ When NOT in autopilot mode, `AskUserQuestion` is available as normal for genuine
 
 ## Flaky Tests ARE Bugs — ALWAYS
 
-If a test passes sometimes and fails sometimes, that is a bug — not noise. Do NOT retry and move on. Research the root cause (race condition, timing dependency, temp file collision, state leakage, non-deterministic ordering, filesystem caching) and fix it so the test is deterministic. If discovered during a different bug fix, file via `/add-bug` immediately.
+- A test that passes sometimes and fails sometimes is a bug — not noise.
+- Do NOT retry and move on.
+- Research the root cause (race condition, timing dependency, temp file collision, state leakage, non-deterministic ordering, filesystem caching) and fix until deterministic.
+- If discovered during a different bug fix, file via `/add-bug` immediately.
 
 ## NEVER Investigate "Pre-existing?" — BANNED
 
-Do NOT use `git checkout`, `git stash`, `git bisect`, `git log --diff-filter`, or any git archaeology to determine whether a bug or test failure existed before your changes. **It does not matter.** The question "was this pre-existing?" is banned. The only valid question is: "is it fixed?"
+- BANNED: `git checkout`, `git stash`, `git bisect`, `git log --diff-filter`, or any git archaeology to determine whether a bug or test failure existed before your changes.
+- The question "was this pre-existing?" is banned — it does not matter.
+- The only valid question is: "is it fixed?"
 
 ---
 
@@ -125,7 +198,8 @@ Do NOT use `git checkout`, `git stash`, `git bisect`, `git log --diff-filter`, o
 1. **Read `CLAUDE.md`** (project root) — the One Rule, ownership, deferral, TDD, fix completeness, stabilization discipline, coding guidelines, commands
 2. **Read `.claude/rules/` files relevant to the bug's subsystem** — e.g., `.claude/rules/tests.md` for test patterns, `.claude/rules/registry.md` for registry bugs, `.claude/rules/arc.md` for ARC/memory bugs
 
-This is NOT optional. Context drift across long sessions causes rule violations. Re-reading ensures every fix follows the same standard regardless of when it runs in a session.
+- NOT optional — context drift across long sessions causes rule violations.
+- Re-reading ensures every fix follows the same standard regardless of when it runs in a session.
 
 ## Phase 0: Locate the Bug (DONE by Sonnet — use handoff)
 
@@ -161,7 +235,7 @@ The handoff from the Sonnet sub-agent already contains the full bug entry text, 
       ```
    6. **Stop** — do NOT proceed to Phase 1.5 or beyond. The bug is resolved.
 
-3. **Consult the spec** — check `docs/spec/` for the intended behavior. The spec is authoritative.
+3. **Consult the protocol / reference** — for terminal-conformance bugs, check XTerm control-sequence docs, ECMA-48, terminfo/termcap, or the vt100.net reference. For bugs in the vendored crates (`crates/vte`, `crates/portable-pty`, `crates/wgpu-hal`), check upstream semantics. There is no internal ori_term spec.
 
 4. **Root cause analysis** — trace the bug to its *root cause*, not just the symptom. Follow the chain:
    - What was observed? (symptom)
@@ -185,7 +259,7 @@ Before scope assessment, **re-evaluate the bug's severity** based on what Phase 
 
 **Reclassify upward when ANY of these are true:**
 - **Blast radius is wider than expected** — the bug affects more code paths, types, or features than the original entry described
-- **Root cause is in a complexity-elevated subsystem** (AIMS, CodeGen, LLVM, AOT, Runtime) but severity was rated `medium` or `low` — elevate to at least `high`
+- **Root cause is in a complexity-elevated subsystem** (GPU render pipeline, VTE parser / core grid, mux IO thread, IPC transport, platform-specific cfg branch) but severity was rated `medium` or `low` — elevate to at least `high`
 - **Silent corruption** — the bug produces wrong results without error/crash (more dangerous than a crash)
 - **Cross-crate root cause** — the bug's fix requires changes in 3+ crates, indicating systemic scope
 - **Downstream cascade** — fixing this bug would surface or interfere with other known bugs
@@ -257,7 +331,9 @@ Before scope assessment, **re-evaluate the bug's severity** based on what Phase 
 
 When NOT in autopilot mode, invoke `/create-plan` normally per the escalation protocol above.
 
-Autopilot means autonomous, not reckless. Correctly identifying that a bug needs a plan and deferring the plan creation to the interactive user IS the correct autonomous decision. The key: always return to the caller — never just "document and stop."
+- Autopilot means autonomous, not reckless.
+- Correctly identifying that a bug needs a plan and deferring plan creation to the interactive user IS the correct autonomous decision.
+- Always return to the caller — never just "document and stop."
 
 ## Phase 1.6: Create Fix Section File — IMMEDIATELY After Scope Confirmation
 
@@ -280,7 +356,9 @@ Create `plans/bug-tracker/fix-BUG-{section}-{ordinal}.md` using the template in 
 
 **Before writing tests or code, get independent dual-source consensus on the proposed fix approach.** This catches wrong-approach errors BEFORE they are locked into the test matrix or the implementation. The fix section file already exists (Phase 1.6) — this phase fills in its §1.5 Fix Consensus section.
 
-This is NOT `/tp-help`'s usual "stuck help" use case — it is **design consensus**. You have investigation + root cause (Phase 1) + a confirmed point-fix scope (Phase 1.5) + a written fix plan (Phase 1.6) + a proposed approach. You are about to commit to implementation. Get Codex and Gemini to independently pressure-test the approach before you lock it in.
+- NOT `/tp-help`'s usual "stuck help" use case — this is **design consensus**.
+- Preconditions at this phase: investigation + root cause (Phase 1), confirmed point-fix scope (Phase 1.5), written fix plan (Phase 1.6), proposed approach.
+- Goal: get Codex and Gemini to pressure-test the approach before you commit to implementation.
 
 **Skip only when:** Phase 1.5 escalated to `/create-plan` or marked blocked. EVERY other bug runs through consensus.
 
@@ -337,11 +415,11 @@ The fix section file already exists from Phase 1.6. After `/tp-help` consensus (
 
 | Subsystem | Crate/Path Pattern | Why Elevated |
 |-----------|-------------------|--------------|
-| **AIMS** | `crates/arc/`, `crates/rt/src/rc/` | 7-dimension lattice, interprocedural fixpoints, pass ordering dependencies, RC invariants |
-| **CodeGen** | `crates/llvm/src/codegen/` | IR generation touches types, ABI, optimization levels; silent wrong-output bugs |
-| **LLVM integration** | `crates/llvm/` (broadly) | Debug/release divergence (FastISel vs SelectionDAG), LLVM pass interactions |
-| **AOT** | `crates/llvm/tests/aot/`, AOT compilation paths | End-to-end: type system → IR → LLVM → linking → runtime; failures can be anywhere in the chain |
-| **Runtime** | `crates/rt/` | FFI boundary, RC internals, platform-specific behavior; bugs here corrupt memory silently |
+| **GPU render pipeline** | `oriterm/src/gpu/` | Frame-budget invariants, atlas lifetimes, surface reconfigure races, device-loss timing; silent wrong-render bugs are hard to unit test |
+| **VTE / core grid** | `oriterm_core/`, `crates/vte/` (vendored) | Absolute-row indexing across scrollback + visible rows, UTF-8 width classification, selection update under scroll; corruption here surfaces far from the cause |
+| **Mux / IO thread** | `oriterm_mux/` | Owns `Term` + VTE state + snapshot double-buffer; threading bugs between IO thread and main thread corrupt visible grid silently |
+| **IPC transport** | `oriterm_ipc/`, `crates/portable-pty/` (vendored) | Cross-platform framing (Unix sockets vs named pipes); partial reads / protocol drift produce non-deterministic failures |
+| **Platform-specific cfg** | Any `#[cfg(target_os = "...")]` branch | Missing branch on one platform ships a panic or wrong behavior only on that target — not caught by WSL/Linux dev loop |
 
 **SKIP (Plan TPR not required) when ALL of these are true:**
 - Bug severity is `medium` or `low`
@@ -442,7 +520,9 @@ Fixed: [BUG-{section}-{ordinal}][{severity}] {title}
 
 Fixing a bug often uncovers other bugs. **You MUST invoke `/add-bug` immediately** whenever you encounter a new bug during any phase of this workflow.
 
-Do NOT gloss over these as "not my bug" or "separate issue" — file them via `/add-bug` so they enter the tracker. Then decide: if the new bug **blocks** this fix (interference), shelve this fix and `/fix-bug` the blocker first (per fix-interference rules). If it's independent, continue with the current fix.
+- BANNED: glossing over them as "not my bug" or "separate issue" — file them via `/add-bug` so they enter the tracker.
+- If the new bug **blocks** this fix (interference), shelve this fix and `/fix-bug` the blocker first (per fix-interference rules).
+- If it's independent, continue with the current fix.
 
 ## Integration Points
 

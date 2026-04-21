@@ -2,35 +2,31 @@
 """
 enum-drift.py — Cross-file enum coverage analyzer for ori_term.
 
-Finds all variants of key IR enums (CanExpr, ExprKind, TypeTag, etc.),
-locates every match expression on those enums across the codebase, and
+Finds all variants of user-declared sync-point enums (populated via
+KNOWN_ENUMS below or `--enum <name>` ad-hoc), locates every match
+expression on those enums across the codebase, and
 compares arm coverage. Flags missing variants, catch-all arms, and
 arm-count mismatches between files.
 
-This is the highest-value hygiene tool: Rust's exhaustive match only
-catches missing arms within a single crate. When CanExpr is defined in
-ori_ir but matched in ori_eval and ori_llvm, adding a variant to ori_ir
-compiles fine — the other crates hit their `_ => unreachable!()` at
-runtime.
+This is the highest-value hygiene tool when a codebase has cross-crate
+exhaustive matches: Rust's exhaustive match only catches missing arms
+within a single crate, so an enum defined in one crate but matched in
+others can grow a variant without surfacing a compile error in the
+consumers — they hit their `_ => unreachable!()` at runtime.
 
-Known Enums (auto-discovered or --enum flag):
-
-  CanExpr       Canonical expression IR (ori_ir → ori_eval, ori_llvm)
-  ExprKind      AST expression variants (ori_ir → ori_canon, ori_fmt)
-  TypeTag       Type identity discriminant (ori_registry → ori_types,
-                ori_eval, ori_llvm, ori_arc)
-  DerivedTrait  Derivable traits (ori_ir → ori_types, ori_eval, ori_llvm)
-  TokenKind     Lexer token types (ori_ir → ori_parse)
-  CollectionMethod  Iterator/collection dispatch (ori_eval internal)
-  IteratorValue Iterator state variants (ori_patterns → ori_eval)
+ori_term has no curated KNOWN_ENUMS list today (the vendored VTE / PTY /
+wgpu-hal crates own their own enum taxonomies). Use `--enum <name>` to
+analyze a specific enum ad-hoc. When a new workspace enum with cross-
+crate match discipline appears (e.g., a pane-lifecycle event matched in
+both oriterm_mux and oriterm), add it to KNOWN_ENUMS below.
 
 Usage:
 
-  enum-drift.py                      # Analyze all known enums
-  enum-drift.py --enum TypeTag       # Analyze specific enum
-  enum-drift.py --scope crates/eval/  # Restrict match search
-  enum-drift.py --json               # Machine-readable output
-  enum-drift.py --summary            # Counts only
+  enum-drift.py                          # Analyze KNOWN_ENUMS (empty today)
+  enum-drift.py --enum PaneEvent         # Analyze specific enum ad-hoc
+  enum-drift.py --scope oriterm_mux/src  # Restrict match search
+  enum-drift.py --json                   # Machine-readable output
+  enum-drift.py --summary                # Counts only
 
 Exit codes: 0 = no drift, 1 = drift found
 """
@@ -47,7 +43,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-COMPILER_DIR = REPO_ROOT / "compiler"
+# ori_term's workspace crates live at the repo root, not under compiler/.
+COMPILER_DIR = REPO_ROOT
 
 # ─── Color helpers ───────────────────────────────────────────
 
@@ -78,58 +75,12 @@ class EnumDef:
     # parser can't extract variants (e.g., define_derived_traits! macro).
     manual_variants: list[str] | None = None
 
-KNOWN_ENUMS: dict[str, EnumDef] = {
-    "CanExpr": EnumDef(
-        "CanExpr",
-        "crates/ir/src/canon/expr.rs",
-        "ori_ir",
-        ["ori_eval", "ori_llvm", "ori_arc", "ori_canon"],
-        "Canonical expression IR — matched in evaluator and LLVM codegen",
-    ),
-    "ExprKind": EnumDef(
-        "ExprKind",
-        "crates/ir/src/ast/expr.rs",
-        "ori_ir",
-        ["ori_canon", "ori_fmt", "ori_parse"],
-        "AST expression variants — matched in canonicalization and formatting",
-    ),
-    "TypeTag": EnumDef(
-        "TypeTag",
-        "crates/registry/src/tags/mod.rs",
-        "ori_registry",
-        ["ori_types", "ori_eval", "ori_llvm", "ori_arc"],
-        "Type identity discriminant — matched in all downstream phases",
-    ),
-    "DerivedTrait": EnumDef(
-        "DerivedTrait",
-        "crates/ir/src/derives/mod.rs",
-        "ori_ir",
-        ["ori_types", "ori_eval", "ori_llvm", "ori_arc"],
-        "Derivable trait list — 4 sync points must stay aligned",
-        manual_variants=["Eq", "Clone", "Hashable", "Printable", "Debug", "Default", "Comparable"],
-    ),
-    "TokenKind": EnumDef(
-        "TokenKind",
-        "crates/ir/src/token/kind.rs",
-        "ori_ir",
-        ["ori_parse", "ori_lexer", "ori_fmt"],
-        "Lexer token types — matched in parser",
-    ),
-    "CollectionMethod": EnumDef(
-        "CollectionMethod",
-        "crates/eval/src/interpreter/resolvers/mod.rs",
-        "ori_eval",
-        [],
-        "Collection/iterator method dispatch — internal to evaluator",
-    ),
-    "IteratorValue": EnumDef(
-        "IteratorValue",
-        "crates/patterns/src/value/iterator/mod.rs",
-        "ori_patterns",
-        ["ori_eval"],
-        "Iterator state variants — matched in evaluator iterator dispatch",
-    ),
-}
+# KNOWN_ENUMS is empty for ori_term — no multi-crate sync-point enums have
+# been identified yet. The tool still accepts `--enum <name>` for ad-hoc
+# analysis. Add entries here as cross-crate sync points emerge (e.g., a
+# pane-lifecycle event matched in oriterm_mux AND oriterm, or a render
+# primitive matched in oriterm_ui AND oriterm's GPU cell loop).
+KNOWN_ENUMS: dict[str, EnumDef] = {}
 
 
 # ─── Data structures ────────────────────────────────────────

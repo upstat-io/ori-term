@@ -41,12 +41,46 @@ bitflags! {
         const SUPERSCRIPT       = 1 << 17;
         const SUBSCRIPT         = 1 << 18;
 
+        /// Cell has been written by the application (xterm CHARDRAWN
+        /// equivalent). Set at every put_char / wide-spacer / leading-
+        /// wide-spacer / DECALN / reflow-synthesized-spacer /
+        /// push_zerowidth write site; cleared at every reset path via
+        /// template copy (templates must never carry DRAWN — enforced
+        /// by `debug_assert!` in the Grid write paths). Consumed by
+        /// DECRQCRA (`CSI * y`) to distinguish application-written
+        /// blanks from pristine cells per xterm `screen.c:3178-3180`.
+        const DRAWN             = 1 << 19;
+
+        /// DECSCA per-character protection attribute. Set on cells
+        /// written while `Term::char_protection == true` (DECSCA Ps=1).
+        /// Consumed by DECSERA (`CSI $ {`) — protected cells survive
+        /// selective erase. DECERA (`CSI $ z`) erases unconditionally.
+        /// This is a semantic per-character attribute (spec-defined),
+        /// NOT a structural internal-state bit; it does NOT join
+        /// `INTERNAL_CELL_STATE` and cells may legitimately carry it
+        /// without violating the cursor-template invariant.
+        const PROTECTED         = 1 << 20;
+
         /// Union of all underline variants for mutual exclusion.
         const ALL_UNDERLINES = Self::UNDERLINE.bits()
             | Self::DOUBLE_UNDERLINE.bits()
             | Self::CURLY_UNDERLINE.bits()
             | Self::DOTTED_UNDERLINE.bits()
             | Self::DASHED_UNDERLINE.bits();
+
+        /// Internal cell-state bits that must NEVER appear on a
+        /// `cursor.template.flags` value. SGR attributes (BOLD /
+        /// UNDERLINE / COLORED / …) are template-legal; these
+        /// structural bits are set only by concrete cell-write paths
+        /// and would corrupt written cells if they leaked via the
+        /// template. `Grid::put_char_ascii` and `Grid::put_char_slow`
+        /// debug_assert that `cursor.template.flags & INTERNAL_CELL_STATE`
+        /// is empty on every write.
+        const INTERNAL_CELL_STATE = Self::DRAWN.bits()
+            | Self::WRAP.bits()
+            | Self::WIDE_CHAR.bits()
+            | Self::WIDE_CHAR_SPACER.bits()
+            | Self::LEADING_WIDE_CHAR_SPACER.bits();
     }
 }
 
@@ -158,6 +192,26 @@ impl From<Color> for Cell {
 }
 
 impl Cell {
+    /// Test helper: construct a drawn cell carrying the given character
+    /// with default SGR + `CellFlags::DRAWN` set.
+    ///
+    /// Cuts the `Cell { ch: 'X', flags: CellFlags::DRAWN, ..Cell::default() }`
+    /// boilerplate that appears repeatedly in grid/rect-op/row tests.
+    /// Use this (not bare `Cell::default` + flag insert) whenever a
+    /// test needs to construct a cell that behaves like it was written
+    /// by the application — so `compute_rect_checksum` and
+    /// `Row::is_blank`/`content_len` see the correct write-history
+    /// state per BUG-08-17.
+    #[cfg(test)]
+    #[must_use]
+    pub fn drawn(ch: char) -> Self {
+        Self {
+            ch,
+            flags: CellFlags::DRAWN,
+            ..Self::default()
+        }
+    }
+
     /// Reset this cell to match the given template.
     pub fn reset(&mut self, template: &Self) {
         self.ch = template.ch;
@@ -167,12 +221,26 @@ impl Cell {
         self.extra.clone_from(&template.extra);
     }
 
-    /// Returns `true` if this cell is visually empty (space, default colors, no flags).
+    /// Returns `true` if this cell is visually empty (space, default
+    /// colors, no visible SGR flags).
+    ///
+    /// `CellFlags::DRAWN` is MASKED OUT of the flags check: it's the
+    /// xterm CHARDRAWN analog (write history, consumed by DECRQCRA)
+    /// and is orthogonal to visual emptiness. A cell that was written
+    /// by the application as a plain space under default SGR still
+    /// LOOKS empty — so `is_empty()` returns true. Consumers that
+    /// need the "never written" semantic (`compute_rect_checksum`)
+    /// must query `flags.contains(CellFlags::DRAWN)` directly.
+    ///
+    /// `CellFlags::PROTECTED` is similarly masked out: DECSCA
+    /// protection is a semantic attribute consumed by DECSERA, with
+    /// no visual effect. A blank cell marked PROTECTED still LOOKS
+    /// empty.
     pub fn is_empty(&self) -> bool {
         self.ch == ' '
             && self.fg == Color::Named(vte::ansi::NamedColor::Foreground)
             && self.bg == Color::Named(vte::ansi::NamedColor::Background)
-            && self.flags.is_empty()
+            && (self.flags - (CellFlags::DRAWN | CellFlags::PROTECTED)).is_empty()
             && self.extra.is_none()
     }
 

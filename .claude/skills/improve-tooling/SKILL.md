@@ -40,6 +40,10 @@ Finally, this skill triggers for **documentation awareness gaps** — the invisi
 13. **Tooling unawareness** — during the session, you manually did something that an existing tool already automates, but you didn't know the tool existed because it wasn't documented where you looked
 14. **New tool without docs** — a tool was created or significantly modified during this session but its documentation wasn't updated across all canonical surfaces
 
+Finally, this skill triggers for **prose creep in authored `.md`** — the failure mode where skills and rules rot from prescriptive into narrative:
+
+15. **Prose in authored `.md`** — editing a skill, command, rule, or design log and encountering dated narrative, rationale paragraphs, "previously X, now Y" history, trailing "— this is because..." phrases, editorial "we/our/us" voice, or any paragraph >2 sentences inside a rule or step. Strip per §No Prose in Authored .md Files
+
 ## Tooling Scope
 
 These are the tools you own and must improve:
@@ -62,7 +66,7 @@ Every tool must be documented in its **canonical doc surface** (the single sourc
 
 | Tool location | Canonical doc surface | Secondary surfaces |
 |---|---|---|
-| `diagnostics/*.sh` | `diagnostics/README.md` (full reference: usage, flags, workflows) | `.claude/rules/diagnostic.md` §Diagnostic Scripts (quick-reference table — MAY lag canonical), `CLAUDE.md` §Commands (key scripts only) |
+| `diagnostics/*.sh` | `diagnostics/README.md` (full reference: usage, flags, workflows) | `CLAUDE.md` §Commands (key scripts only) |
 | `scripts/` (commonly-needed: `perf-baseline.sh`, `cow-benchmark.sh`, `cache-doctor.sh`, `bump-build.sh`, `sync-version.sh`) | `CLAUDE.md` §Commands | Script's own `--help` |
 | `scripts/` (maintenance/migration: `extract_tests.py`, `pgo-build.sh`, `release.sh`, etc.) | Script's own `--help` | Not required in CLAUDE.md — these are infrequently needed and would bloat the curated Commands section |
 | Root harnesses (`test-all.sh`, `clippy-all.sh`, `fmt-all.sh`, `build-all.sh`) | `CLAUDE.md` §Commands | — |
@@ -172,7 +176,94 @@ Now use the improved tool for your original task. The improvement must actually 
 
 ## Anti-Patterns (BANNED)
 
-The canonical list of banned tooling workarounds lives in `CLAUDE.md` §"ALWAYS improve tooling, NEVER work around it". All of those anti-patterns trigger this skill. In summary: any action that works *around* a tool's limitation instead of *fixing* the tool is banned — piping/grepping output, running multiple commands for one answer, manually interpreting output, ignoring wrong output, writing one-off scripts, or saying "the tool doesn't support X" and moving on.
+Two categories of bans:
+
+- **Tooling workarounds** — canonical list in `CLAUDE.md` §"ALWAYS improve tooling, NEVER work around it". Any action that works *around* a tool's limitation instead of *fixing* the tool is banned: piping/grepping output, chaining commands for one answer, manual interpretation of output, ignoring wrong output, one-off scripts, "the tool doesn't support X" dismissals.
+- **Prose in authored `.md`** — see §No Prose in Authored .md Files below.
+
+## No Prose in Authored .md Files — ABSOLUTE
+
+Scope:
+
+- Skills (`.claude/skills/*/SKILL.md` + `step-*.md`).
+- Slash commands (`.claude/commands/*.md`).
+- Rules (`.claude/rules/*.md`).
+- Design logs (`.claude/skills/improve-tooling/*-design.md`) — §4 Lessons and §6 Recently-closed allow prose; see §Exceptions.
+- Rule applies to the FILE AFTER EACH EDIT, not just to new additions.
+- Strip-as-you-go is MANDATORY, not best-effort.
+
+### Banned patterns
+
+- **Dated in-text references** — "as of 2026-04-19", "since 2026-04-16", "today this is …".
+- **History-of-the-design paragraphs** — "this was originally X; we changed it because…".
+- **Rationale tails** — "…— this is because the reviewer would otherwise…". Rationale belongs in design-log §4 Lessons only.
+- **"Previously X, now Y" comparisons** inside prescriptive sections.
+- **Background / Context / Overview prose** above the first bullet or table.
+- **Incident-recap paragraphs** — "The 2026-04-19 session surfaced…".
+- **Editorial voice** — "we", "our", "us" in rules text.
+- **Restoring / defeating intent language** — "restoring the X intent", "defeating the Y purpose".
+- **Any paragraph >2 sentences** inside a rule, step, option description, or table cell.
+
+### Required form
+
+- Bullets for enumerations.
+- Tables for mappings (condition → action, option → effect, field → semantics).
+- Imperative sentences ("Do X", "Never Y").
+- One rule per line, ≤120 characters.
+- Section headers short and scannable (`## Step N — <verb phrase>`).
+- Paragraph >2 sentences → convert to bullets or cut.
+
+### Strip-as-you-go (MANDATORY)
+
+Rule: when editing ANY paragraph inside an authored skill/command/rule/design-log `.md`, strip encountered prose EVEN IF it predates the edit and falls outside the immediate change target. "Leave for another pass" is how prose compounds across rewrites.
+
+On-sight removal targets:
+
+- Trailing "— this is because…" / "— restoring the X intent" phrases.
+- Dated narrative inside prescriptive sections. Durable content → move to design-log §6 Recently closed; ephemeral → delete.
+- "Previously this was …, now it is …" comparisons.
+- Single-sentence paragraphs that re-state what a nearby bullet list already says.
+- Multi-sentence intros before a bullet list or table — convert to a 1-line lead-in or delete.
+
+### Exceptions (prose ALLOWED)
+
+| Location | Form allowed |
+|---|---|
+| Design-log §4 Lessons | Dated incident retrospectives — prose IS the format |
+| Design-log §6 Improvement Log `- [x]` entries | Short rationale inside the entry |
+| Literal `CHANGELOG.md` / HISTORY-block files | History text by definition |
+| Plan files where prose prevents repeating a prior mistake (per CLAUDE.md §NO PROSE) | Constrained to the mistake context |
+
+Authored skill/command/rule `.md` files themselves do NOT qualify for these exceptions outside their design-log sidecars.
+
+### Pre-commit verification
+
+Preferred path — use the tool:
+
+```
+python3 scripts/prose-lint.py [<file>...]       # default scope: .claude/skills .claude/commands .claude/rules
+python3 scripts/prose-lint.py --json            # programmatic consumption
+python3 scripts/prose-lint.py --max-paragraph-sentences 2   # threshold (default 2)
+```
+
+The tool handles all exemptions listed in the §Exceptions table above, plus hyphenated compound adjectives (`previously-failing` etc.) and state-label definitions (`**CONFIRMED** — previously …`). Run before every `/commit-push` that touches authored `.md`. Exit 0 = clean; exit 1 = violations.
+
+Fallback grep (tool unavailable or spot-check):
+
+```
+grep -nE '\b(because|previously|originally|restoring|defeating|was (originally|previously))\b|\bas of 20[0-9]{2}\b|\bsince 20[0-9]{2}\b|— causes\b' <file>
+```
+
+- Any hit OUTSIDE the Exceptions table → violation, strip.
+- Re-read the diff: every paragraph >2 sentences → violation, convert to bullets or cut.
+- Hits on this SKILL.md itself (rule-definition file) are expected and are the only legitimate false positives — skip them.
+- Design log for the tool: `.claude/skills/improve-tooling/script-prose-lint-design.md`.
+
+### Cross-references
+
+- Global CLAUDE.md §NO PROSE IN AUTHORED .md FILES — ABSOLUTE.
+- Memory entry `feedback_no_prose_in_authored_md.md`.
+- Reviewers (`/tpr-review`, `/impl-hygiene-review`) flag prose-heavy authored `.md` as a hygiene violation.
 
 ## Quality Standards for Tool Improvements
 

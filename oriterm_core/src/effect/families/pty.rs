@@ -29,5 +29,7 @@ pub enum PtyWriteKind {
     MouseEvent,
     KeyboardEvent,
     FocusEvent,
+    /// DECRQCRA (CSI * y) checksum reply — DCS Pi ! ~ XXXX ST.
+    ChecksumReport,
     Other,
 }

@@ -100,8 +100,8 @@ Row names below are LITERAL copies of the step headers later in this file — no
 | 3 | Step 8B: Architecture Sanity Check via /tp-help | → `/tp-help` Model Policy | |
 | 3 | Step 9: User Review of Architecture (MANDATORY — DO NOT SKIP) | Opus (session) | Judgment: user-facing checkpoint |
 | 4 | Step 10: Create Directory Structure | Sonnet | Orchestration: shell / file creation |
-| 4 | Step 11: Write Sections Sequentially via Sonnet Subagents | **Sonnet** (`model: "sonnet"`) | Mechanical-writing: expand Opus-authored architecture into section templates — already annotated |
-| 4 | Step 12: Update Overview and Index | Sonnet | Mechanical-writing: index reflects the known section list decided in Phase 3 |
+| 4 | Step 11: Write Sections Sequentially (MAIN-AGENT INLINE — NO SUBAGENTS) | **Main agent (Opus)** — inline Write | Judgment-writing: section text encodes architectural decisions; no subagent dispatch |
+| 4 | Step 12: Update Overview and Index | **Main agent (Opus)** — inline Edit | Judgment-writing: overview/index mutations co-decided with sections |
 | 5 | Step 13: Cohesion Check (NEW — before /review-plan) | **Sonnet** (`model: "sonnet"`) | Orchestration / research reading — already annotated |
 | 5 | Step 14: Self-Check Before Review | Opus (session) | Judgment: is the plan ready? |
 | 5 | Step 15: Report Progress | Sonnet | Mechanical-writing: summary from known state |
@@ -110,22 +110,26 @@ Row names below are LITERAL copies of the step headers later in this file — no
 | 5 | Step 18: Reroute Lifecycle Setup — MANDATORY | **Opus** (session) | Judgment-writing: plan-graph reordering |
 | 5 | Step 19: Cross-Plan Review Invalidation (MANDATORY) | **Opus** (session) | Judgment-writing: cross-plan reasoning |
 
-**Rule of thumb:** Opus decides the architecture; Sonnet subagents expand each section from the architecture Opus handed them. Step 11 writes section files, Step 12 updates the overview, and Step 15 writes the progress report — but all three mutate text whose shape was already fixed by the Opus phases (architecture + `00-overview.md` + section list). That's mechanical-writing, not judgment-writing, and running it on Opus would be Opus waste.
+**Rule of thumb:**
+
+- Sonnet subagents run ONLY for research/orchestration (Steps 3–6 research passes, Step 13 cohesion read-only scan).
+- Every plan-content mutation (section files, `00-overview.md`, `index.md`) runs inline in the main agent. Plan text is judgment-writing: each section resolves architectural ambiguities that surface only while writing — sync-point enumeration, cross-section dependency phrasing, semantic-pin wording. Delegating that to Sonnet produces scope drift (pre-implementing described code) and template drift (hallucinated file paths, mis-referenced prior sections).
+- Context pressure from in-line section writing is acceptable — the main agent reads files via Read and writes one section at a time, releasing intermediate context between sections.
 
 ## Phase 0: Fork Decision — Heavy Plan vs. Light Plan (RUN FIRST, BEFORE ANYTHING ELSE)
 
-**Before reading CLAUDE.md or doing any Phase 1 work, decide which path this plan takes.** The heavy `/create-plan` workflow (Phases 1–5 below) is calibrated for compiler work where correctness invariants — phase purity, ARC soundness, AIMS lattice coherence, spec conformance — are load-bearing. For non-compiler work that has already reached design consensus, that rigor is overkill and actively slows useful work.
+**Before reading CLAUDE.md or doing any Phase 1 work, decide which path this plan takes.** The heavy `/create-plan` workflow (Phases 1–5 below) is calibrated for application work where correctness invariants — terminal-emulation conformance, GPU frame-budget rules, widget-pipeline invariants, platform-specific cfg gates — are load-bearing. For non-application work that has already reached design consensus, that rigor is overkill and actively slows useful work.
 
 ### The Fork Gate — ALL THREE must be true to take the light path
 
-1. **Scope check — non-compiler only.** The work touches ONLY files outside the compiler/runtime/spec surface:
-   - **Eligible domains**: `.claude/skills/`, `.claude/rules/`, `.claude/hooks/`, `.claude/commands/`, `diagnostics/`, `scripts/`, `.codex/`, `.gemini/`, top-level workflow files (`lefthook.yml`, `.github/workflows/`, etc.), non-spec documentation (`README.md`, `docs/development/`, `docs/compiler/design/` prose-only changes).
-   - **Ineligible domains** (force heavy path): any file under `compiler/`, ``, `docs/spec/`, `tests/spec/`, `tests/valgrind/`, `tests/alive2/`, `runtime/`, `tests/benchmarks/`.
+1. **Scope check — non-application only.** The work touches ONLY files outside the workspace-crate / vendored-dep surface:
+   - **Eligible domains**: `.claude/skills/`, `.claude/rules/`, `.claude/hooks/`, `.claude/commands/`, `diagnostics/`, `scripts/`, `.codex/`, `.gemini/`, top-level workflow files (`lefthook.yml`, `.github/workflows/`, etc.), non-source documentation (`README.md`, prose-only changes in `docs/`).
+   - **Ineligible domains** (force heavy path): any file under the workspace crates (`oriterm_core/`, `oriterm_ui/`, `oriterm_mux/`, `oriterm_ipc/`, `oriterm/`, `crates/`), vendored deps (`crates/vte/`, `crates/portable-pty/`, `crates/wgpu-hal/`), or `tests/`.
    - **Mixed changes force heavy path.** If the work touches even one ineligible file, use the heavy path. Do not split a coherent mission across two paths to qualify for light.
 
 2. **Rigor check — no correctness-critical invariants.** The work does NOT:
-   - introduce or modify phase-purity rules, ARC soundness invariants, AIMS lattice dimensions, or any `impl-hygiene.md` cross-phase contract
-   - alter test-gate behavior (`test-all.sh`, `clippy-all.sh`, `fmt-all.sh`, `build-all.sh`, `llvm-test.sh`, `full-check.sh`, or pre-commit / commit-msg hooks that enforce correctness)
+   - introduce or modify frame-budget / damage-region / scrollback / VT-conformance invariants, widget-pipeline contracts, GPU-resource-lifetime rules, or any `impl-hygiene.md` cross-module contract
+   - alter test-gate behavior (`test-all.sh`, `clippy-all.sh`, `fmt-all.sh`, `build-all.sh`, or pre-commit / commit-msg hooks that enforce correctness)
    - change how bug fixes are enforced (`/fix-bug` phase structure, hygiene review, TPR gates)
    - modify the plan schema itself (`plan-schema.md`, plan-audit rules) — meta-plan-system changes go through heavy path
 
@@ -169,28 +173,26 @@ The heavy path is the default. The light path is an explicit opt-out for a narro
 
 Once Phase 0 has decided heavy path (or the user forced heavy path via override), **classify the plan's TYPE** before entering Phase 1. The type drives template selection, completion-checklist rigor, `reviewed:` frontmatter defaults, and subagent prompt constraints throughout the workflow. Classifying after the fact — after sections are already written — guarantees post-hoc cleanup (manual stripping of compiler rigor that doesn't apply, manual flipping of `reviewed:` defaults, manual removal of `§NN.R` blocks). Classifying up front is cheaper and prevents drift.
 
-**The three plan types:**
+**The two plan types:**
 
 | Type | Scope | Rigor | Use when |
 |---|---|---|---|
-| **`compiler`** | Touches `compiler/`, ``, `runtime/`, `tests/spec/`, `tests/valgrind/`, `tests/alive2/`, `tests/benchmarks/` — any correctness-critical source | Full compiler rigor: `/tpr-review`, `/impl-hygiene-review`, TPR checkpoints, matrix testing + semantic/negative pins, `§NN.R Third Party Review Findings` blocks, `/improve-tooling` per-subsection retrospectives, `/sync-claude` retrospectives, `/review-plan` final consensus. `reviewed: false` default. | Compiler features, bug fixes, codegen changes, AIMS/ARC work, type checker changes, spec-conformant library work. |
-| **`skill-infra-docs`** | Touches ONLY `.claude/`, `scripts/`, `diagnostics/`, `~/projects/lang_intelligence/` (sibling repo), `.codex/`, `.gemini/`, top-level workflow files, non-spec documentation, tooling/test-harness improvements | Reduced rigor: basic tests (if applicable), `plan_corpus check` clean, `cargo test --all` green (regression canary), `diagnostics/repo-hygiene.sh --check`. No TPR checkpoints, no §NN.R blocks, no matrix testing, no semantic/negative pins, no retrospective sweeps baked into every subsection, no `/review-plan` final consensus required. `reviewed: true` default (no pre-implementation re-review gate needed — these plans are low-correctness-risk). | Skill additions, rules updates, diagnostic-script improvements, `lang_intelligence` pipeline work, `.claude/hooks/` changes, doc-only plans, plan-schema/plan-audit tooling work. |
-| **`spec-grammar`** | Modifies `docs/spec/`, `grammar.ebnf`, `operator-rules.md`, or any spec-clause content | Spec-specialist rigor: mandatory `/create-draft-proposal` → `/review-draft-proposal` precursor (spec-grammar proposal gate per CLAUDE.md), plus `/sync-spec` + `/sync-grammar` + `/tpr-review` on aggregate changes. `reviewed: false` default (spec changes are correctness-critical). | Spec clause additions, grammar edits, operator-rule changes, new language features at the spec surface. |
+| **`application`** | Touches workspace crates (`oriterm_core/`, `oriterm_ui/`, `oriterm_mux/`, `oriterm_ipc/`, `oriterm/`, `crates/`), vendored deps (`crates/vte/`, `crates/portable-pty/`, `crates/wgpu-hal/`), or `tests/` — any correctness-critical source | Full application rigor: `/tpr-review`, `/impl-hygiene-review`, TPR checkpoints, matrix testing + semantic/negative pins, `§NN.R Third Party Review Findings` blocks, `/improve-tooling` per-subsection retrospectives, `/sync-claude` retrospectives, `/review-plan` final consensus. `reviewed: false` default. | Terminal-emulation features, bug fixes, GPU/render changes, VT conformance work, mux/IPC changes, widget-pipeline changes, vendored-crate patches. |
+| **`skill-infra-docs`** | Touches ONLY `.claude/`, `scripts/`, `diagnostics/`, `.codex/`, `.gemini/`, top-level workflow files, or non-source documentation | Reduced rigor: basic tests (if applicable), `plan_corpus check` clean, `./test-all.sh` green (regression canary), `diagnostics/repo-hygiene.sh --check`. No TPR checkpoints, no §NN.R blocks, no matrix testing, no semantic/negative pins, no retrospective sweeps baked into every subsection, no `/review-plan` final consensus required. `reviewed: true` default (no pre-implementation re-review gate needed — these plans are low-correctness-risk). | Skill additions, rules updates, diagnostic-script improvements, `.claude/hooks/` changes, doc-only plans, plan-schema/plan-audit tooling work. |
 
 **Banned classifications:**
-- "Mixed plan" — if the work crosses type boundaries, it IS a `compiler` plan and takes the highest-rigor template. Do NOT split a coherent mission across two plans to avoid the higher rigor.
+- "Mixed plan" — if the work crosses type boundaries, it IS an `application` plan and takes the highest-rigor template. Do NOT split a coherent mission across two plans to avoid the higher rigor.
 - "I'll classify later" — classification MUST happen before Phase 1B Mission Expansion. Later classification produces post-hoc cleanup debt.
 
 **How to classify:**
 1. Look at the user's scope description and the list of files/directories the plan will touch.
-2. If ANY file under `compiler/`, ``, `runtime/`, or compiler test trees: type = `compiler`.
-3. Else if ANY file under `docs/spec/`, `grammar.ebnf`, or `operator-rules.md`: type = `spec-grammar`.
-4. Else (only `.claude/`, `scripts/`, `diagnostics/`, sibling infra repos, non-spec docs): type = `skill-infra-docs`.
-5. When in doubt between `compiler` and `skill-infra-docs`, pick `compiler`. Applying compiler rigor to skill work wastes time; applying skill rigor to compiler work ships skipped design steps.
+2. If ANY file under the workspace crates, vendored deps, or `tests/`: type = `application`.
+3. Else (only `.claude/`, `scripts/`, `diagnostics/`, non-source docs): type = `skill-infra-docs`.
+4. When in doubt between `application` and `skill-infra-docs`, pick `application`. Applying application rigor to skill work wastes time; applying skill rigor to application work ships skipped design steps.
 
-**Carry classification forward:** the plan type MUST appear in `00-overview.md` frontmatter as `plan_type: <compiler|skill-infra-docs|spec-grammar>`. This is machine-readable and drives template selection in Phase 4 section writing.
+**Carry classification forward:** the plan type MUST appear in `00-overview.md` frontmatter as `plan_type: <application|skill-infra-docs>`. This is machine-readable and drives template selection in Phase 4 section writing.
 
-**If the user force-invokes `/create-plan --type=<type>`:** skip the classification logic and use the user's declared type. This is an escape hatch for cases where the heuristic is wrong (e.g., "this TOUCHES `compiler/` via a docstring change only — take skill-infra-docs").
+**If the user force-invokes `/create-plan --type=<type>`:** skip the classification logic and use the user's declared type. This is an escape hatch for cases where the heuristic is wrong (e.g., "this TOUCHES `oriterm_core/` via a docstring change only — take skill-infra-docs").
 
 ---
 
@@ -467,16 +469,16 @@ Read CLAUDE.md first, then read .claude/rules/impl-hygiene.md and .claude/rules/
 
 PART A — Tests & Spec:
 1. Find ALL existing tests related to {topic}:
-   - Rust unit tests (tests.rs files)
-   - Rust integration tests (ori_llvm/tests/aot/)
-   - Ori spec tests (tests/spec/)
-   - Valgrind tests (tests/valgrind/)
+   - Rust unit tests (sibling `tests.rs` files)
+   - Terminal-conformance tests (`teseq` / `tack` / `vttest` under `oriterm_core/tests/`)
+   - GPU visual-regression tests (`oriterm/src/gpu/visual_regression/`)
+   - UI-framework tests (`oriterm_ui/` test modules)
    - Read the actual test code, not just file names
-2. Check the spec:
-   - Read relevant sections of docs/spec/
-   - Read grammar.ebnf for syntax rules
-   - Read operator-rules.md if operators are involved
-   - Report what the spec says about this topic
+2. Check the protocol / reference:
+   - XTerm control-sequence docs, ECMA-48, terminfo/termcap, vt100.net for terminal-conformance topics
+   - Vendored crate docs under `crates/vte`, `crates/portable-pty`, `crates/wgpu-hal` for their covered semantics
+   - Reference-repo sources under `~/projects/reference_repos/console_repos/` (alacritty, wezterm, ghostty, tmux) for prior art
+   - Report what the authoritative sources say about this topic
 3. Check existing plans:
    - Read plans/ directory for related or superseded plans
    - Report any existing plan items that overlap with this topic
@@ -515,39 +517,40 @@ OUTPUT FORMAT:
   EXISTING_BUGS: {bugs found in tests, spec compliance, or hygiene}
 ```
 
-#### Agent 3: Runtime & Codegen State (if the plan touches runtime/LLVM)
+#### Agent 3: GPU & Rendering State (if the plan touches the render pipeline)
 
 ```
-You are researching the ori_term codebase for plan creation. Your job is to understand the runtime and codegen state for {topic/scope}.
+You are researching the ori_term codebase for plan creation. Your job is to understand the GPU render pipeline and terminal-rendering state for {topic/scope}.
 
 Read CLAUDE.md first.
 
 INSTRUCTIONS:
-1. Read the relevant runtime code in crates/rt/src/:
-   - What C-ABI functions exist for this feature?
-   - What data layouts are used?
-   - What memory management patterns (RC inc/dec, COW, SSO)?
-2. Read the relevant codegen code in crates/llvm/src/:
-   - How is this feature lowered to LLVM IR?
-   - What builtins are emitted?
-   - How does the ARC pipeline interact?
-3. Read the ARC pipeline if relevant (crates/arc/src/):
-   - How does the optimizer analyze this feature?
-   - What contracts/lattice states apply?
-   - What rewrite rules fire?
-4. Check for eval/LLVM divergence:
-   - Compare ori_eval handling with ori_llvm handling
+1. Read the relevant GPU code in oriterm/src/gpu/:
+   - What render passes / pipelines exist for this feature?
+   - What buffer / texture / atlas resources does it own?
+   - What wgpu surface + queue patterns are in use?
+2. Read the relevant cell-loop / draw_frame code:
+   - How is the grid lowered into instance data?
+   - What glyph-cache / atlas interaction happens per frame?
+   - What damage / invalidation model applies?
+3. Read the VTE / oriterm_core path if relevant:
+   - How does the vendored vte crate deliver events?
+   - What grid mutations / snapshot production happens?
+   - What invariants apply to scrollback / visible rows?
+4. Check for widget ↔ render divergence:
+   - Compare oriterm_ui widget paint with oriterm GPU draw
    - Are there known behavioral differences?
    - Grep for TODO|FIXME|HACK|WORKAROUND in relevant files
-5. Check diagnostic scripts:
-   - What diagnostic tools exist for this area?
+5. Check diagnostic scripts / test harnesses:
+   - What diagnostic tools exist for this area (teseq, tack, vttest, GPU visual regression)?
    - What environment variables control debugging?
 
 OUTPUT FORMAT:
-  RUNTIME_FUNCTIONS: {C-ABI functions with signatures}
-  CODEGEN_PATTERNS: {how LLVM IR is generated}
-  ARC_INTERACTION: {optimizer analysis and rewrites}
-  EVAL_LLVM_DIVERGENCE: {known differences}
+  RENDER_PASSES: {pipeline stages with resource ownership}
+  GPU_RESOURCES: {buffers, textures, atlases}
+  CELL_LOWERING: {how grid cells become instance data}
+  DAMAGE_MODEL: {invalidation + frame-budget policy}
+  WIDGET_GPU_DIVERGENCE: {known differences}
   DEBUG_TOOLS: {relevant diagnostic scripts/env vars}
   UNCLEAR: {anything ambiguous}
   EXISTING_BUGS: {bugs found while reading}
@@ -579,24 +582,23 @@ You are studying implementation patterns in the ori_term. Your job is to trace a
 Read CLAUDE.md first.
 
 INSTRUCTIONS:
-1. Identify 2-3 features ALREADY IMPLEMENTED in the compiler that are structurally similar to {topic}. Examples:
-   - If adding a new collection type: trace how Map or Set was implemented
-   - If adding a new trait: trace how Comparable or Hashable was implemented
-   - If adding a new expression form: trace how match or for-yield was implemented
-   - If adding codegen support: trace how an existing feature flows through ori_llvm
+1. Identify 2-3 features ALREADY IMPLEMENTED in ori_term that are structurally similar to {topic}. Examples:
+   - If adding a new widget: trace how an existing widget (tab bar, status bar, button) was implemented
+   - If adding a new escape-sequence handler: trace how SGR or CSI cursor handling flows from vte → core grid
+   - If adding a new GPU render pass: trace how an existing render pass was added
+   - If adding a new pane-lifecycle event: trace how pane create/resize/close flows through oriterm_mux
 
-2. For EACH analogous feature, trace the COMPLETE implementation through every compiler phase:
-   a. Lexer: What tokens? (crates/lexer/src/)
-   b. Parser: What AST nodes? (crates/parse/src/)
-   c. IR: What IR representation? (crates/ir/src/)
-   d. Type checker: What type rules? (crates/types/src/)
-   e. Registry: What method/type registrations? (crates/registry/src/)
-   f. Evaluator: What evaluation logic? (crates/eval/src/)
-   g. ARC pipeline: What memory analysis? (crates/arc/src/)
-   h. LLVM codegen: What IR generation? (crates/llvm/src/)
-   i. Runtime: What C-ABI support? (crates/rt/src/)
-   j. Stdlib: What library support? ()
-   k. Tests: What test files and patterns? (tests/spec/, */tests.rs)
+2. For EACH analogous feature, trace the COMPLETE implementation through every subsystem it touches:
+   a. VTE (vendored): What parser events? (crates/vte/src/)
+   b. Core grid: What cell / selection / search mutations? (oriterm_core/src/)
+   c. UI framework: What widget / interaction / pipeline state? (oriterm_ui/src/)
+   d. Pane server: What PTY / mux / snapshot production? (oriterm_mux/src/)
+   e. IPC transport: What message types / socket or pipe frames? (oriterm_ipc/src/)
+   f. Application shell: What winit event / session / layout plumbing? (oriterm/src/)
+   g. GPU render: What pipeline / buffer / atlas resource? (oriterm/src/gpu/)
+   h. Font pipeline: What swash / skrifa usage? (oriterm/src/font/)
+   i. Session model: What tab / window / split-tree / floating / nav interaction? (oriterm/src/session/)
+   j. Tests: What test files and patterns? (sibling tests.rs, teseq / tack / vttest, GPU visual regression)
 
 3. For each phase, READ THE ACTUAL CODE. Report:
    - Exact file path and function/type names
@@ -800,81 +802,66 @@ Create the plan directory under the plan root:
 
 Where `{plan_root}` is `${ORI_PLAN_ROOT:-plans}`. When `ORI_PLAN_ROOT` is not set, this resolves to the standard `plans/{name}/`.
 
-### Step 11: Write Sections Sequentially via Sonnet Subagents
+### Step 11: Write Sections Sequentially (MAIN-AGENT INLINE — NO SUBAGENTS)
 
-**Context-saving architecture**: Each section is written by a **Sonnet subagent** (`model: "sonnet"`), not by the main Opus agent. This keeps section text — which can be thousands of tokens per section — out of the main Opus context window. By the time a plan has 8 sections, the savings are massive: Opus holds only the architecture + brief per-section confirmations, not the full text of every section.
+**Main-agent inline writing — no Sonnet subagents, no Agent dispatch.** Section files are plan content. Plan content is judgment-writing: each section resolves architectural ambiguities that surface only while writing (sync-point enumeration, cross-section dependency phrasing, semantic-pin wording). Delegating to a Sonnet subagent produces scope drift (pre-implementing described code into sibling repos) and template drift (hallucinated file paths, mis-referenced prior sections). The main agent (Opus) writes every section itself using the Write tool.
 
-**Why Sonnet works here**: By this point, the architecture is designed (Phase 3) and user-approved (Step 9). Section writing is structured document generation following a well-defined template, grounded in specific research findings. This is Sonnet-grade work. Opus made the architectural judgment calls; Sonnet executes the structured writing.
+For each section, in order from 01 to N — one at a time, never batched:
 
-For each section, in order from 01 to N:
+**Step 11a: Gather section-writing context.** Before writing section `{NN}`, the main agent assembles in its own context:
 
-**Step 11a: Prepare the Sonnet agent prompt.** The main agent (Opus) assembles:
-- The full `00-overview.md` architecture
-- ALL previously written section files (read from disk — the main agent doesn't need to hold them in context, just pass their paths/content to the subagent)
-- The relevant research findings for this section's scope (from Phases 2 agent results)
-- The plan template from `.claude/skills/create-plan/plan-schema.md`
-- The section-specific grounding requirements (listed below)
-- Any relevant rule files for this section's domain (e.g., `.claude/rules/tests.md`, `.claude/rules/compiler.md`, `.claude/rules/registry.md`)
+- The full `00-overview.md` architecture (already written in Step 8 — re-read if not already in context)
+- ALL previously-written section files for this plan (Read each from disk in order — `section-01-*.md` through `section-{NN-1}-*.md`)
+- The relevant research findings for this section's scope (from Phase 2 agent results already in context)
+- The plan template from `.claude/skills/create-plan/plan-schema.md` (re-read — it is the SSOT for structure)
+- Any rule files whose constraints apply to this section's domain (e.g., `.claude/rules/tests.md`, `.claude/rules/compiler.md`, `.claude/rules/registry.md`, `.claude/rules/arc.md`)
+- The PLAN TYPE classification from Phase 0.5 (`compiler` | `skill-infra-docs` | `spec-grammar`) — drives template branching below
 
-**Step 11b: Launch the Sonnet subagent** (`model: "sonnet"`) with a prompt structured as:
+Context-release discipline:
 
-```
-## CRITICAL SCOPE CONSTRAINT — READ FIRST (MANDATORY PREAMBLE)
+- After writing section `{NN}` and verifying it (Step 11d), do NOT retain the full text of section `{NN}` in active context when moving to section `{NN+1}`.
+- Re-Read prior sections on-demand when cross-reference checks need them.
+- Read-on-demand replaces subagent delegation as the context-pressure relief mechanism — no scope-drift boundary to cross.
 
-You are writing a PLAN DOCUMENT. This means:
+**Step 11b: Select the template by PLAN TYPE.**
 
-1. You write EXACTLY ONE file: `{plan_root}/{name}/section-{NN}-{slug}.md`.
-2. You DO NOT modify any other file. No edits to source code, scripts, rule files, CLAUDE.md, or sibling repos.
-3. You DO NOT run `git add`, `git commit`, or any destructive git command.
-4. Plans describe FORWARD-LOOKING work. All checkboxes in the section you write should be `- [ ]` (not-started), not `- [x]`. Subsection statuses should be `not-started`. Section status should be `not-started`.
-5. The work described in this plan will be EXECUTED later by `/continue-roadmap` or explicit implementation. You DO NOT pre-implement anything.
+| PLAN TYPE | Template | Completion checklist |
+|---|---|---|
+| `compiler` | Full Section File Template (`plan-schema.md` §Section File Template) | TPR checkpoints, `§NN.R` block, matrix testing, semantic/negative pins, `/tpr-review`, `/impl-hygiene-review`, `/improve-tooling` section-close sweep, `/sync-claude` section-close doc sync. `reviewed: false` default. |
+| `skill-infra-docs` | Skill/Infra/Docs Plan Variant (`plan-schema.md` §Skill/Infra/Docs Plan Variant) | Practical verification only: tests pass (if applicable), `plan_corpus check` clean, `cargo test --all` green, `repo-hygiene.sh --check`. OMIT §NN.R blocks, TPR checkpoints, matrix testing, semantic/negative pins, retrospective sweeps. `reviewed: true` default. |
+| `spec-grammar` | Full Section File Template PLUS spec gates | All `compiler` items PLUS `/create-draft-proposal` → `/review-draft-proposal` precursor gate + `/sync-spec` + `/sync-grammar` + full-aggregate `/tpr-review`. `reviewed: false` default. |
 
-Violations of this scope fence produce stranded commits in sibling repos, premature "complete" statuses in plans that haven't been approved yet, and post-hoc cleanup debt. If you find yourself writing code outside the plan file, STOP.
+**Step 11c: Write the section file inline.** The main agent calls Write with:
 
----
+- Path: `{plan_root}/{name}/section-{NN}-{slug}.md`
+- Content: assembled per the Step 11b template, filled from the Step 11a context
 
-You are writing Section {NN} of a plan for the ori_term. You will WRITE the section file to disk using the Write tool.
+Writing discipline — these are main-agent responsibilities, not subagent preamble:
 
-PLAN TYPE: {plan_type}  # one of: compiler | skill-infra-docs | spec-grammar
-  - If `compiler`: use the full Section File Template with TPR checkpoints, §NN.R block, matrix testing, semantic/negative pins, and the full compiler-rigor completion checklist. `reviewed: false` default.
-  - If `skill-infra-docs`: use the Skill/Infra/Docs Plan Variant template (see plan-schema.md §Skill/Infra/Docs Plan Variant). Omit §NN.R blocks, TPR checkpoints, matrix testing, semantic/negative pins, `/improve-tooling` per-subsection retrospectives, `/sync-claude` per-subsection retrospectives, and `/tpr-review` / `/impl-hygiene-review` / `/improve-tooling section-close sweep` / `/sync-claude section-close doc sync` items from the completion checklist. Keep practical verification (tests pass, plan-corpus check, repo-hygiene). `reviewed: true` default.
-  - If `spec-grammar`: full compiler rigor PLUS `/create-draft-proposal` → `/review-draft-proposal` precursor gate + `/sync-spec` + `/sync-grammar` + `/tpr-review` on aggregate. `reviewed: false` default.
+- **One file per Step 11 iteration.** Never Write to any path other than the current section file.
+- **No code edits, no git commands.** Plan writing NEVER touches `compiler/`, `scripts/`, `.claude/` (other than the plan directory being created), or any sibling repo. Never run `git add`, `git commit`, or any destructive git operation during plan writing.
+- **Forward-looking checkboxes.** Every `- [ ]` in the new section stays unchecked. Subsection statuses are `not-started`. Section status is `not-started`. The work is EXECUTED later by `/continue-roadmap`; `/create-plan` never pre-implements.
+- **Exact paths and symbols.** Use EXACT paths from research (Glob-verified), EXACT type signatures (copied from source), EXACT function names. No paraphrased or invented identifiers.
+- **Sync point enumeration.** For any new enum variant / type / registry entry the section introduces, list ALL sync points from research. A missing sync point is a silent regression source.
+- **Analogous pattern reference.** Cite the analogous feature's implementation pattern — "Follow the same pattern as {feature} in {files}".
+- **Rules woven in.** Embed applicable CLAUDE.md + `.claude/rules/*.md` constraints directly into checklist items, not as an appendix. Example: "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)".
+- **Test strategy per code-modifying section.** Explicit matrix dimensions (types × patterns), semantic pin requirements, TDD ordering ("failing tests first" as the first checklist item, "debug + release green" as the last), test categories (Rust unit tests, Ori spec tests, AOT tests, Valgrind tests).
+- **Dependencies stated both directions.** Reference what prior sections provide AND state what this section provides to downstream sections.
+- **Success criteria concrete and traced.** Every section MUST have detailed success criteria (testable conditions, not "implement X"). Each criterion must connect upward to ≥1 mission success criterion in `00-overview.md`.
 
-ARCHITECTURE (from 00-overview.md):
-{paste overview content}
+**Step 11d: Self-verify the section before proceeding.** After Write completes, the main agent spot-checks its own output:
 
-PRIOR SECTIONS (read these for cross-references and to avoid contradictions):
-{paste prior section content or instruct agent to read files from disk}
+- File paths referenced in this section exist (Glob)
+- Type/function names referenced exist (Grep)
+- References to prior sections are accurate (compare against the Read'd prior sections)
+- No contradictions with `00-overview.md` or prior sections
+- All required frontmatter fields present (id, title, status, goal, success_criteria, reviewed, inspired_by, depends_on, third_party_review)
+- All checkboxes are `- [ ]` (forward-looking)
+- Completion checklist matches the PLAN TYPE branch from Step 11b
 
-RESEARCH FINDINGS FOR THIS SECTION:
-{paste relevant research excerpts}
+If issues are found, Edit the section file directly to fix them. Then proceed to section `{NN+1}`.
 
-SECTION REQUIREMENTS:
-- Title: {title}
-- Goal: {goal from architecture}
-- Files touched: {from research}
-- Depends on: {prior sections}
-
-TEMPLATE: Follow the format in .claude/skills/create-plan/plan-schema.md (read it). Branch to the Skill/Infra/Docs Plan Variant OR full Section File Template based on PLAN TYPE above.
-
-RULES TO WEAVE IN: Read {list of applicable rule files} and embed applicable constraints into checklist items.
-
-Write the section file to: {plan_root}/{name}/section-{NN}-{slug}.md
-Return a 2-line summary: total lines + confirmation that all checkboxes are `- [ ]`.
-```
-
-The subagent writes the file directly to disk and returns a summary. The main-agent MUST verify (Step 11c) that no files outside the plan directory were modified — if the subagent drifted, fix the plan file and revert any stray changes before proceeding to the next section.
-
-**Step 11c: Opus reviews the result.** The main agent reads the written section file and verifies:
-- File paths referenced in this section exist (spot-check with Glob)
-- Type/function names referenced exist (spot-check with Grep)
-- References to prior sections are accurate
-- No contradictions with the overview or prior sections
-- Section has all required elements (frontmatter, success criteria, matrix testing, completion checklist)
-
-If issues are found, either fix them directly or re-prompt the Sonnet agent with corrections. Then proceed to the next section.
-
-**Section grounding requirements** (the Sonnet agent's prompt MUST include these):
+**Section grounding requirements** (re-summary for auditability):
 
 - **File paths**: Use EXACT paths from research (verified to exist)
 - **Type signatures**: Use EXACT signatures from research (copy from source)
@@ -886,13 +873,13 @@ If issues are found, either fix them directly or re-prompt the Sonnet agent with
   - **Matrix dimensions**: Identify ALL types and ALL control-flow patterns that flow through the changed code path. The plan must name these explicitly (e.g., "test with str, [int], Option<str>, closures, structs, maps" and "test full iteration, break, yield, guard, nested, two-call"). Missing cells are future regressions.
   - **Semantic pin**: At least one test per behavioral change that ONLY passes with the new semantics — a permanent regression guard. The plan must describe what the pin tests.
   - **TDD ordering**: "Write failing test matrix BEFORE implementation" as the section's FIRST checklist item; "Verify all tests pass in debug and release" as the LAST item.
-  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, Ori spec tests in `tests/spec/`, AOT tests in `ori_llvm/tests/aot/`, Valgrind tests in `tests/valgrind/`).
+  - **Test types**: Specify which test categories (Rust unit tests in sibling `tests.rs`, terminal-conformance tests under `oriterm_core/tests/` via `teseq` / `tack` / `vttest`, GPU visual-regression tests under `oriterm/src/gpu/visual_regression/`, UI-framework tests under `oriterm_ui/`).
   - A section without explicit matrix dimensions and semantic pin requirements is NOT executable.
 - **Dependencies on prior sections**: Explicitly reference what earlier sections provide. "This section uses the {type} defined in Section {N} ({file path})."
 - **What this section provides to later sections**: State what downstream sections will depend on. "Section {M} will use the {API/type/pattern} established here."
 
 - **Success criteria**: Every section MUST have detailed success criteria — concrete, testable conditions that prove the section's work is done. Not "implement X" but "X produces Y when Z is run." Each criterion must connect upward to at least one mission success criterion in `00-overview.md`. A section without success criteria is not executable.
-- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. The Sonnet agent reads the relevant rule files and embeds the applicable constraints directly into the section's tasks. For example: if a section adds an enum variant, the checklist item should say "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
+- **Rules woven in**: Every section must embed the CLAUDE.md and `.claude/rules/*.md` rules that apply to its work — not as a "rules" appendix, but woven organically into checklist items, constraints, and callouts. The main agent reads the relevant rule files (Read tool) and embeds applicable constraints directly into the section's tasks. Example: if a section adds an enum variant, the checklist item should say "Add `FooVariant` to `BarEnum` in `file.rs` — update ALL match arms (see `other_file.rs:123`, `third_file.rs:456`)" rather than "Add variant (remember to check sync points)." The plan is a self-contained execution document — the implementer should not need to consult external rule files to know what a section requires.
 
 **Frontmatter includes (all plan types):**
 - Section ID, title, status: not-started, goal, `success_criteria` list
@@ -916,7 +903,7 @@ If issues are found, either fix them directly or re-prompt the Sonnet agent with
 - **`spec-grammar` plan sections**: `reviewed: false` at creation — same rationale as compiler.
 - **`skill-infra-docs` plan sections**: `reviewed: true` at creation — these plans are low-correctness-risk (no compiler invariants at stake) and don't undergo pre-implementation re-review. Flipping to `true` up front prevents unnecessary `/review-plan` cycles that would delay skill/infra execution.
 
-**After the Sonnet subagent writes each section**, Step 11c's verification pass (described above) is mandatory before proceeding to the next section. Do NOT skip the verification — the Sonnet subagent might hallucinate file paths or mis-reference prior sections, and the main Opus agent is the single authority catching these before the error propagates into subsequent sections.
+**After each section is written**, Step 11d's self-verification pass (described above) is mandatory before proceeding to the next section. Do NOT skip it — the main agent is still the single authority catching hallucinated file paths or mis-referenced prior sections before the error propagates into subsequent sections.
 
 Then proceed to the next section.
 
@@ -1181,22 +1168,22 @@ If the detection returns zero stale sections, report: "No cross-plan review inva
 
 ## Example
 
-**Input:** `/create-plan error-recovery "Improve compiler error messages and recovery"`
+**Input:** `/create-plan selection-rework "Rework selection semantics and rendering"`
 
-**Phase 1**: Read CLAUDE.md. Ask user about scope ("Which crates? Which error types?").
+**Phase 1**: Read CLAUDE.md. Ask user about scope ("Which crates? Rectangular vs. stream selection? Clipboard integration?").
 
 **Phase 2**:
-- *Pass 1*: Launch 2 parallel agents — (1) survey `ori_diagnostic`, `ori_types` errors, `ori_parse` recovery, all error-related files; (2) audit tests, spec error codes, hygiene state.
-- *Pass 2*: Deep-read the 12 most critical files. Understand how `DiagnosticQueue` dedup works, how `ErrorGuaranteed` propagates, how recovery tokens are chosen.
-- *Pass 3*: Trace how `E2029` (Hashable-without-Eq) was implemented end-to-end — from type checker detection through diagnostic emission to test coverage. Trace how `E0860` (break-value-in-while) was implemented. Document the exact pattern.
-- *Pass 4*: Study Elm's error diffing (`Reporting/Error/Type.hs`), Roc's `to_diff` pattern, Rust's `DiagnosticBuilder` chain pattern. Recommend approaches for Ori.
+- *Pass 1*: Launch 2 parallel agents — (1) survey `oriterm_core/src/selection/`, `oriterm_ui` selection interaction, all files that call `Grid::selection`; (2) audit tests in `oriterm_core/tests/`, GPU visual-regression snapshots for selection highlight, hygiene state.
+- *Pass 2*: Deep-read the 10 most critical files. Understand how `Selection::update()` handles scroll-while-selecting, how the GPU cell loop paints the highlight overlay, how clipboard integration differs per platform.
+- *Pass 3*: Trace how the existing stream-selection code was implemented end-to-end — from `mousedown` hit-test in `oriterm_ui` → selection state mutation in `oriterm_core` → highlight overlay pass in `oriterm`'s GPU renderer. Document the exact pattern.
+- *Pass 4*: Study Alacritty's `selection.rs`, WezTerm's `selection.rs` + mux integration, Ghostty's selection model. Recommend approaches for ori_term.
 
-**Phase 3**: Design architecture. Write `00-overview.md` with data flow, design decisions (Elm-style diffing vs Rust-style chaining), dependency graph. Present to user: "Found 117 error codes, 64 with docs. The E2029 pattern shows {pattern}. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
+**Phase 3**: Design architecture. Write `00-overview.md` with data flow, design decisions (stream + rectangular as two enum variants vs. trait-object), dependency graph. Present to user: "Found {N} selection call-sites, {M} tests. The existing pattern routes mouse → UI → core. Propose these sections in this order: {list}. The key design decision is {X} — I recommend {Y} because {evidence}."
 
 **Phase 4**: After user approves architecture, write sections sequentially:
-- Section 01 (error types) → read it → write Section 02 (recovery strategies, building on 01's types) → read both → write Section 03 (user-facing messages, building on 01+02).
+- Section 01 (selection types) → read it → write Section 02 (hit-test + mutation, building on 01) → read both → write Section 03 (GPU highlight pass, building on 01+02).
 
-**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/error-recovery/`.
+**Phase 5**: Cohesion check → self-check → report → run `/review-plan plans/selection-rework/`.
 
 **Creates:**
 ```
@@ -1403,31 +1390,31 @@ This is not optional cleanup — it's a mandatory part of existing plan mode. Ev
 ### Existing Plan Mode: Impediment Resolution Example
 
 **Input** (from `/continue-roadmap` Step 2.6):
-`/create-plan add "ARC IR Function Metadata" subsection to plans/repr-opt`
+`/create-plan add "Damage-region SSOT" subsection to plans/rendering-perf`
 
-**Phase 1**: Read CLAUDE.md. Read `plans/repr-opt/00-overview.md` and the section containing blocked items (e.g., `section-03-range-analysis.md`). Identify that §03.5 has 6 items blocked by "ARC IR lacks visibility/trait/closure metadata."
+**Phase 1**: Read CLAUDE.md. Read `plans/rendering-perf/00-overview.md` and the section containing blocked items (e.g., `section-02-frame-budget.md`). Identify that §02.4 has 4 items blocked by "damage regions are computed in three places with slightly different semantics."
 
 **Phase 2**:
-- *Pass 1*: Survey `ArcFunction` fields in `ori_arc/src/ir/mod.rs`. Find `FunctionSig.is_public` in `ori_types`. Check `lower_to_arc()` in `oric/src/arc_lowering.rs`.
-- *Pass 2*: Deep-read the lowering path. Discover `is_public` exists upstream but is dropped. `num_captures > 0` already identifies closures. Only `is_trait_method` needs inference from `impl_sigs`.
+- *Pass 1*: Survey `damage_rect` call-sites across `oriterm_core/src/grid/` (grid mutation producers), `oriterm_ui/src/widgets/` (widget paint), and `oriterm/src/gpu/renderer.rs` (cell loop). Find two divergent Rect representations and one inlined bounding-box merge.
+- *Pass 2*: Deep-read each producer. Discover two sites round to cell boundaries differently, and the GPU cell loop re-inflates the region for safety margin.
 
-**Phase 3**: Design subsection `03.5b ARC IR Function Metadata`. Scope: add `is_public` and `is_trait_method` to `ArcFunction`, thread through lowering, use in `propagate_ranges()`. Update §03 frontmatter with new subsection entry. Present to user with list of 6 items that will be unblocked.
+**Phase 3**: Design subsection `02.4b Damage-region SSOT`. Scope: single `DamageRegion` type in `oriterm_core`, producers emit it, consumers read it; GPU safety margin moves to a documented constant. Update §02 frontmatter with new subsection entry. Present to user with the 4 items that will be unblocked.
 
-**Phase 4**: Write the `## 03.5b` block in `section-03-range-analysis.md`. Remove `<!-- blocked: ... -->` comments from the 6 items. Update §03 frontmatter sections array.
+**Phase 4**: Write the `## 02.4b` block in `section-02-frame-budget.md`. Remove `<!-- blocked: ... -->` comments from the 4 items. Update §02 frontmatter sections array.
 
-**Phase 5**: Cohesion check against §03 and §04 (which also consumes range data). Verify no contradictions.
+**Phase 5**: Cohesion check against §02 and §03 (which also consumes damage). Verify no contradictions.
 
 ### Existing Plan Mode: Roadmap Example
 
-**Input:** `/create-plan add pattern matching exhaustiveness to roadmap`
+**Input:** `/create-plan add sixel image support to roadmap`
 
-**Phase 1**: Read CLAUDE.md. Read the entire roadmap (overview + all sections). Identify that this relates to type checker work, probably depends on existing Section 07 (type inference), and might affect Section 12 (verification).
+**Phase 1**: Read CLAUDE.md. Read the entire roadmap (overview + all sections). Identify that this relates to VT parser + GPU texture upload, probably depends on existing Section 04 (escape-sequence coverage), and might affect Section 09 (GPU pipeline).
 
 **Phase 2**:
-- *Pass 1*: Survey exhaustiveness checking code in `ori_types`, find that `ori_types/src/check/exhaustiveness.rs` exists with 340 lines. Find that Section 07 touches `ori_types/src/check/` but doesn't cover exhaustiveness.
-- *Pass 2*: Deep-read `exhaustiveness.rs` and the 3 existing roadmap sections most related. Discover that Section 07's completion assumes exhaustiveness works, but the current implementation has gaps for nested patterns.
-- *Pass 3*: Trace how Gleam's exhaustiveness checker works end-to-end (`compiler-core/src/exhaustiveness.rs`).
-- *Pass 4*: Compare Elm's exhaustiveness approach (algebraic, provably complete) vs Rust's (witness-based).
+- *Pass 1*: Survey sixel-adjacent code in `crates/vte` (vendored) — does the vendored parser already deliver sixel events, or only intermediate-byte state? Find that Section 04 touches VTE coverage but doesn't cover sixel image payloads.
+- *Pass 2*: Deep-read the VTE dispatcher in `oriterm_core` and the current GPU texture-upload path in `oriterm/src/gpu/`. Discover Section 04's completion assumes no out-of-band image payloads, so a new section must bridge VTE → a new image cache → the GPU pipeline.
+- *Pass 3*: Trace how WezTerm's sixel pipeline works end-to-end (`wezterm-term/src/terminalstate/image.rs` + renderer glue).
+- *Pass 4*: Compare WezTerm's cache-per-pane approach vs. Ghostty's atlas-extension approach.
 
 **Phase 3**: Design the new section. Determine it should be Section 08 (after type inference, before integration). Update `00-overview.md` dependency graph. Present to user: "The new section depends on 07, and Section 12 should depend on it. Here's the impact..."
 

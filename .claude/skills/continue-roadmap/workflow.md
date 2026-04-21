@@ -21,15 +21,15 @@
 
 These are load-bearing invariants. A sub-agent that violates ANY of these has broken the skill's speed contract and has wandered into /roadmap-work's territory.
 
-- **NEVER run any compiler/test/build binary.** Banned commands include (non-exhaustive): `cargo`, `cargo check`, `cargo run`, `cargo test`, `cargo clippy`, `cargo b`, `cargo t`, `cargo st`, `cargo stf`, `cargo test --all`, `cargo clippy --all -- -D warnings`, `cargo build --all`, `cargo test --all`, `cargo test --all && cargo clippy --all`, `ori`, `oric`, `./target/debug/ori`, `./target/release/ori`, `~/.local/bin/ori`, any script under `diagnostics/` **except `diagnostics/state.sh show` / `check` / `known-failing`** (read-only cache reads, no compilation), any script under `scripts/` that invokes the compiler. The scanner's JSON is the complete world-state you are allowed to observe.
-- **NEVER read `.rs`, `.ori`, `.toml` source files** or any file under `compiler/`, `library/`, `tests/`, `scripts/`. Plan-doc edits in `plans/` are fine (Step 2); source reads are not.
+- **NEVER run any test/build/lint binary.** Banned commands include (non-exhaustive): `cargo`, `cargo check`, `cargo run`, `cargo test`, `cargo clippy`, `cargo build`, `cargo fmt`, `./test-all.sh`, `./build-all.sh`, `./clippy-all.sh`, `./fmt-all.sh`, `./target/debug/oriterm`, `./target/release/oriterm`, any cross-compiled `oriterm.exe` under `target/x86_64-pc-windows-gnu/`, any script under `diagnostics/` **except `diagnostics/state.sh show` / `check` / `known-failing`** (read-only cache reads, no compilation), any script under `scripts/` that invokes the build. The scanner's JSON is the complete world-state you are allowed to observe.
+- **NEVER read `.rs`, `.toml`, or `.wgsl` source files** or any file under the workspace crates (`oriterm_core/`, `oriterm_ui/`, `oriterm_mux/`, `oriterm_ipc/`, `oriterm/`, `crates/`, `tests/`, `scripts/`). Plan-doc edits in `plans/` are fine (Step 2); source reads are not.
 - **NEVER investigate test failures, typecheck errors, dirty-tree contents, bug repros, or diagnostic output.** When a gate fires, ESCALATE IMMEDIATELY. Do NOT peek inside to "understand why" — the parent + user + `/roadmap-work` own that step.
 - **NEVER run `git log`, `git blame`, `git show`, `git diff`, `git bisect`**, or any git archaeology. The scanner already captured the only git state gates need (via `dirty_tree`).
-- **NEVER run intelligence-graph queries** (`scripts/intel-query.sh ...`) — that belongs to `/review-plan` / `/roadmap-work`, not scan+gates.
+- **NEVER run intelligence-graph queries** (_(intel-query not available in this project; use Grep/Glob)_) — that belongs to `/review-plan` / `/roadmap-work`, not scan+gates.
 - **NEVER read `CLAUDE.md` or `.claude/rules/*.md`** — not needed for JSON transcription; the scanner pre-computes every field.
 - **NEVER read section files by hand** — their fields are in `focus_context` / `next_unblocked`.
 - **NEVER validate blockers by opening sibling plan files** — the scanner already classifies them.
-- **NEVER edit `.rs`, `.ori`, or any file under `compiler/`, `library/`, `tests/`.**
+- **NEVER edit `.rs`, `.toml`, or `.wgsl` files, or anything under the workspace crates (`oriterm_core/`, `oriterm_ui/`, `oriterm_mux/`, `oriterm_ipc/`, `oriterm/`, `crates/`, `tests/`).**
 - **NEVER run `git add` / `git commit` directly** — commits go through `/commit-push`.
 
 **You DO:**

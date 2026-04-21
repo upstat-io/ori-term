@@ -3,6 +3,8 @@
 //! Tests the `Term::set_theme()` notification hook and mode flag directly,
 //! complementing the spec_chain tests in `oriterm_core/tests/spec_chain/
 //! private_modes/mode_2031.rs`.
+//!
+//! Catalog rows: DEC-COLOR-SCHEME-UPDATE
 
 use crate::effect::sink::EffectSink;
 use crate::effect::{Effect, PtyEffect};

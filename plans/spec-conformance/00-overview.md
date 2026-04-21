@@ -773,7 +773,7 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | BLOAT: `oriterm/src/gpu/prepare/dirty_skip/mod.rs` (506→378 lines)                                        | Split completed by Section 04. Now under 500-line limit.                                                                                                                | Section 04   | Complete    |
 | DECLRMM (left/right margins) recognized but not enforced                                                  | Fixed: Full DECLRMM mode plumbing + grid enforcement + extended operations. 50+ margin-aware cursor/edit tests. | Section 08   | Complete |
 | 8-bit C1 controls not handled                                                                             | Fixed: VTE parser detects all 7 C1 introducers (0x90-0x9F) in both ground and mid-sequence contexts. 23 C1 matrix tests. | Section 08   | Complete |
-| Octants (U+1CD00–U+1CDE5, Unicode 16) not implemented                                                     | `oriterm/src/gpu/builtin_glyphs/legacy_computing/` has sextants but no octants. Required by notcurses `keller`/`uniblock` blitter exhaustive tests.                    | Section 11   | Not Started |
+| Octants (U+1CD00–U+1CDE5, Unicode 16) not implemented                                                     | Fixed: Octants implemented in `oriterm/src/gpu/builtin_glyphs/legacy_computing/octants.rs` (230-entry canonical mask table). §11.2 verified every subcell-glyph family via spec_chain tests (21 tests, 706 codepoints covered). | Section 11   | Complete |
 | NRCS variants not implemented                                                                             | Only `StandardCharset::Ascii` and `StandardCharset::SpecialCharacterAndLineDrawing` exist. Every NRCS variant (DE, FI, FR, FR_CA, IT, NL, NO, PT, SE, SP, SU, CH, JIS Roman, JIS Kana, KOR, etc.) is missing. | Section 18   | Not Started |
 | ANSI music (CSI M) not implemented                                                                        | No handler. Required for full PC ANSI.SYS conformance.                                                                                                                 | Section 20   | Not Started |
 | DECPS (DEC play sound) not implemented                                                                    | No handler. Optional DEC feature.                                                                                                                                      | Section 20   | Not Started |
@@ -798,10 +798,10 @@ Bugs and architectural gaps discovered during the research phase (Pass 1-4 + Cod
 | 07 | Image Lifecycle Correctness                            | `section-07-image-lifecycle-correctness.md`          | Complete    |
 | 08 | ECMA-48 Baseline                                       | `section-08-ecma-48-baseline.md`                     | Complete    |
 | 09 | DEC Private Modes (full)                               | `section-09-dec-private-modes.md`                    | Complete    |
-| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | Not Started |
+| 09A | DEC Private CSI Extensions (rect ops + presentation + audits/ SSOT) | `section-09a-dec-csi-extensions.md` | Complete    |
 | 10 | OSC Suite (full)                                       | `section-10-osc-suite.md`                            | Complete    |
-| 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Not Started |
-| 12 | Sixel                                                  | `section-12-sixel.md`                                | Not Started |
+| 11 | Unicode Subcell Glyphs (incl. octants)                 | `section-11-unicode-subcell-glyphs.md`               | Complete    |
+| 12 | Sixel                                                  | `section-12-sixel.md`                                | Complete    |
 | 13 | Kitty Graphics Protocol                                | `section-13-kitty-graphics.md`                       | Not Started |
 | 14 | iTerm2 Inline Images                                   | `section-14-iterm2-images.md`                        | Not Started |
 | 15 | Cell-Level Alpha + Transparency                        | `section-15-cell-level-alpha.md`                     | Not Started |

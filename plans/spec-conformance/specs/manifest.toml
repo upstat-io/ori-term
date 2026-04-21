@@ -165,3 +165,54 @@ local_path = "specs/sixel-vt3xx.html"
 license = "Manufacturer documentation — Digital Equipment Corporation copyright"
 redistributable = false
 sha256 = ""
+
+# -----------------------------------------------------------------
+# Unicode 16 chart — Block Elements (U+2580..=U+259F)
+# -----------------------------------------------------------------
+# Shape reference for half blocks, eighths, shades, quadrants.
+# Consumed by Section 11 (Unicode Subcell Glyphs) audit + golden tests.
+[specs.unicode_chart_u2580]
+url = "https://www.unicode.org/charts/PDF/U2580.pdf"
+local_path = "specs/unicode-chart-u2580.pdf"
+license = "Unicode Terms of Use — reference only, no redistribution"
+redistributable = false
+sha256 = ""
+
+# -----------------------------------------------------------------
+# Unicode 16 chart — Symbols for Legacy Computing (U+1FB00..=U+1FBFF)
+# -----------------------------------------------------------------
+# Shape reference for sextants (U+1FB00..=U+1FB3B) + additional legacy
+# computing glyphs. Consumed by Section 11 + existing legacy_computing
+# built-in renderer tests.
+[specs.unicode_chart_u1fb00]
+url = "https://www.unicode.org/charts/PDF/U1FB00.pdf"
+local_path = "specs/unicode-chart-u1fb00.pdf"
+license = "Unicode Terms of Use — reference only, no redistribution"
+redistributable = false
+sha256 = ""
+
+# -----------------------------------------------------------------
+# Unicode 16 chart — Symbols for Legacy Computing Supplement
+# (U+1CC00..=U+1CEBF, octants at U+1CD00..=U+1CDE5)
+# -----------------------------------------------------------------
+# Shape reference for octants (Unicode 16, September 2024). Consumed
+# by Section 11 — the canonical codepoint→8-bit-mask mapping artifact
+# at specs/octant-bitmask-mapping.md cross-checks against this chart.
+[specs.unicode_chart_u1cc00]
+url = "https://www.unicode.org/charts/PDF/U1CC00.pdf"
+local_path = "specs/unicode-chart-u1cc00.pdf"
+license = "Unicode Terms of Use — reference only, no redistribution"
+redistributable = false
+sha256 = ""
+
+# -----------------------------------------------------------------
+# Unicode 16 chart — Braille Patterns (U+2800..=U+28FF)
+# -----------------------------------------------------------------
+# Shape reference for 8-dot Braille (used by notcurses, btop, etc.).
+# Consumed by Section 11 + existing braille.rs built-in renderer tests.
+[specs.unicode_chart_u2800]
+url = "https://www.unicode.org/charts/PDF/U2800.pdf"
+local_path = "specs/unicode-chart-u2800.pdf"
+license = "Unicode Terms of Use — reference only, no redistribution"
+redistributable = false
+sha256 = ""

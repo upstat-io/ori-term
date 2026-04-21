@@ -47,16 +47,21 @@ Changing any of these without a concrete plan risks re-introducing the bugs the 
 | I11 | `/improve-tooling` retrospective at Phase 5 step 5 is MANDATORY | Pain memory decays within hours; retrospectives at finer granularity (per-bug-fix) capture more than per-section sweeps |
 | I12 | Bug entries route via `/fix-bug` ONLY when not superseded; superseded routes via `/continue-roadmap` | Routing a superseded bug through `/fix-bug` re-creates the recovery-playbook fossil that the supersede declaration was meant to retire |
 | I13 | Phase 4 step 7 commits via `/commit-push` only — never raw `git commit` | `/commit-push` enforces conventional-commit format, lefthook hooks, and re-grounding on hook failure — bypassing it loses those guarantees |
+| I14 | Inline mode Phase 0 validates `kind: plan-blocker-inline` on the frontmatter `sections:` entry before proceeding | Prevents `/fix-bug inline:...#04.2` style misdispatch against planned subsections (which are implementation scope, not blocker fixes); without this gate, a user typo routes `/fix-bug` at a subsection with no fix-section template skeleton, and Phase 1+ edits would corrupt planned-work content |
+| I15 | Inline mode refuses dispatch when the parent plan section's `status: complete` | Reopening a closed plan section is a large-blast-radius decision outside `/fix-bug`'s scope; silently appending new findings to a closed section backdates its closure commit and confuses `/verify-roadmap` / `/review-plan` state |
+| I16 | Inline mode creates ZERO `plans/bug-tracker/fix-BUG-XX-NNN.md` files | The subsection body IS the fix artifact; minting a sibling tracker fix-file breaks the "plan-owned, not tracker-owned" contract the user explicitly required at 2026-04-19 design confirmation ("no, because it's no longer a bug tracker bug, it's a plan owned bug") |
+| I17 | Inline mode's Phase -1 grounding runs for every REAL fix (only the Phase 0 INLINE ERROR branch skips it) | Mirrors tracker mode I6 — context drift affects inline fixes identically to tracker fixes; skipping Phase -1 for "small" inline blockers re-creates the same rules-violation failure mode that I6 was added to prevent |
+| I18 | Inline mode's Phase 5 tracker cross-ref closure is CONDITIONAL on the subsection carrying a `**Cross-ref:**` line | Never-mint-tracker rule (I16) has a corollary: never-close-tracker-without-existing-ref. A Phase 5 that aggressively searches the tracker for "matching" entries to close would invent false relationships; closures happen only where `/add-bug --inline` Step I4 already recorded the link |
 
 ## §3 — File Inventory (canonical)
 
-Active files (2026-04-16):
+Active files:
 
 | Path | Lines (~) | Role |
 |------|-----------|------|
-| `.claude/skills/fix-bug/SKILL.md` | 280 | Two-part dispatcher + Opus inline workflow (Phases -1 through 6) |
-| `.claude/skills/fix-bug/workflow.md` | 130 | Sonnet Phase 0 sub-agent: bug context lookup, status-flag computation, handoff format |
-| `.claude/skills/fix-bug/fix-section-template.md` | ~150 | Template for `plans/bug-tracker/fix-BUG-XX-NNN.md` files |
+| `.claude/skills/fix-bug/SKILL.md` | ~560 | Two-part dispatcher + Opus inline workflow (Phases -1 through 6); includes §Inline Mode Phase Overrides for `/add-bug --inline` companion dispatch |
+| `.claude/skills/fix-bug/workflow.md` | ~240 | Sonnet Phase 0 sub-agent: Step 0 dispatch mode detection + Tracker Steps 1–5 + Inline Steps 1b/2b |
+| `.claude/skills/fix-bug/fix-section-template.md` | ~150 | Template for `plans/bug-tracker/fix-BUG-XX-NNN.md` files (tracker mode only — inline mode uses the subsection body from `/add-bug --inline` directly) |
 
 SSOT cross-references (these files describe `/fix-bug`'s contract from outside):
 
@@ -124,6 +129,30 @@ While investigating the BUG-04-074 incident, observed that BUG-04-042 has a reco
 
 BUG-04-084 contains `**BLOCKER**:` impact-statement text that triggers the same false-positive substring match. Per the new workflow.md Step 3 distinction, Phase 0 should now skip this — but only if Sonnet correctly applies the marker-vs-impact distinction. Needs verification on next invocation.
 
+### 2026-04-19 — Inline-subsection dispatch (paired with `/add-bug --inline`)
+
+**Motivation.** Same-session companion to the `/add-bug --inline` feature landed in `add-bug-design.md` §4. That feature created plan-blocker subsections with the full `/fix-bug` template skeleton inside plan sections. Without matching `/fix-bug` dispatch support, callers had to apply Phases -1 through 6 manually against the subsection body — an obvious friction point flagged as `[p1]` in `add-bug-design.md` §6 Open items at feature-land time. The user's continuation prompt ("continue") explicitly invoked the follow-up pass to close that gap.
+
+**Design (four-part split mirroring tracker mode):**
+
+1. **Argument form** — `/fix-bug` accepts two new argument shapes: `inline:<plan-section-path>#<subsection-id>` (explicit prefix) and `<plan-section-path>#<subsection-id>` (shorthand, detected when arg starts with `plans/` and contains `#`). Tracker shapes (`BUG-XX-NNN`, free-form description) are unchanged.
+2. **Phase 0 (Sonnet sub-agent) branch** — `workflow.md` gains a "Step 0: Dispatch Mode Detection" block at the top. Inline mode routes to new Steps 1b + 2b; tracker mode routes to the original Steps 1–5 unchanged. Inline Phase 0 does three things: (a) parse path + subsection id, (b) validate `kind: plan-blocker-inline` on the frontmatter `sections:` entry AND parent `status:` ≠ `complete`, (c) extract the body subsection + parse skeleton state per §-block to determine Resume-mode phase. Returns a new `[INLINE]` handoff format or an `INLINE ERROR` handoff.
+3. **Part 2 (Opus) mode dispatch** — a new mode-dispatch layer sits above the existing tracker precedence chain. `[INLINE]` handoff → Inline Mode. `INLINE ERROR` handoff → report and stop (refuse fallthrough to tracker). Plain tracker handoff → tracker precedence chain unchanged.
+4. **§Inline Mode Phase Overrides** — tabulated per-phase deltas. The key differences: Phase 1.6 (create fix-section-file) is SKIPPED (the subsection body IS the fix section); Phases 1/1.5/1.75/2/2.5/3/4/5 edit the subsection body in-place; Phase 5 closure flips the frontmatter `sections:` entry `status:` to `complete`, fills §R/§N in the body, and closes any tracker cross-ref the `/add-bug --inline` Step I4 recorded. No fix-BUG-XX-NNN.md file is created — honoring the user's explicit "no, because it's no longer a bug tracker bug, it's a plan owned bug" decision.
+
+**What this feature does NOT change:**
+- Tracker-mode behavior is entirely untouched. Every precedence rule, handoff field, and phase step works exactly as before for `BUG-XX-NNN` invocations.
+- Phase -1 grounding is still mandatory for inline mode — inherited from I6 and strengthened by new invariant I17. The only Phase -1 skip remains Superseded (I3 + §1 #3).
+- `fix-section-template.md` is unchanged. Inline mode doesn't use it — the subsection body was written by `/add-bug --inline` with the same shape embedded.
+
+**Cross-reference:** the user's design confirmation answers drove four explicit decisions recorded in the §Inline Mode Phase Overrides table:
+- Subsection lands under the currently-active section (Option b) — enforced by `/add-bug --inline` Step I1 parsing.
+- No `BUG-XX-NNN` ID minted — enforced by invariant I16.
+- Full `/fix-bug` rigor — enforced by "every phase runs with same rigor as tracker mode; only the artifact changes" preamble.
+- Big-picture analysis as `/add-bug` Step 0 — orthogonal, belongs to `/add-bug`, not `/fix-bug`; `/fix-bug` inherits the classification via `kind: plan-blocker-inline`.
+
+**Verification.** Dogfood: next time `/add-bug --inline` seeds a blocker subsection, run `/fix-bug inline:<path>#<id>` and observe: (a) Phase 0 Sonnet returns an `[INLINE]` handoff, (b) Phase -1 + Phase 1 run unchanged, (c) Phase 1.6 is SKIPPED and no `fix-BUG-*.md` appears in `plans/bug-tracker/`, (d) Phase 5 closure edits only the plan-section file + (if cross-refs) the tracker file.
+
 ## §5 — Regressions To Watch For
 
 Pre-edit sanity check before changing `/fix-bug` SKILL.md or workflow.md. If any of these patterns is true, you're about to re-introduce a known regression:
@@ -138,6 +167,12 @@ Pre-edit sanity check before changing `/fix-bug` SKILL.md or workflow.md. If any
 - [ ] Marking a fix complete without capability-regression tracking — re-introduces silent deferral
 - [ ] Routing a superseded bug through `/fix-bug` execution instead of `/continue-roadmap` — wastes work the plan owns
 - [ ] Allowing `/fix-bug --autopilot` to skip TDD or TPR — autopilot is autonomous, not abbreviated
+- [ ] Inline mode falling through to tracker mode when the `[INLINE]` handoff arrives — mode dispatch must halt the tracker precedence chain; fallthrough would route an inline target through bug-tracker lookup logic that doesn't apply
+- [ ] Inline mode creating a `plans/bug-tracker/fix-BUG-XX-NNN.md` file in Phase 1.6 under a future "consistency" refactor — see I16; the user's explicit decision is that inline subsections are plan-owned, not tracker-owned
+- [ ] Inline mode's `kind: plan-blocker-inline` validation being relaxed ("be forgiving and work with planned subsections too") — see I14; this re-opens the door to corrupting planned-work subsections during a fix
+- [ ] Inline mode ignoring the parent section's `status: complete` gate — see I15; silent reopening of closed plan sections
+- [ ] Inline mode's Phase 5 minting tracker cross-refs where `/add-bug --inline` didn't record them — see I18; breaks the "never-mint-tracker" contract from the companion feature
+- [ ] An `INLINE ERROR` handoff triggering a fallthrough to tracker mode under the description-search branch — `INLINE ERROR` must stop the invocation; the user asked for a specific inline target, and substituting a different one (or no target) is wrong behavior, not graceful degradation
 
 ## §6 — Improvement Log
 
@@ -151,6 +186,7 @@ Pre-edit sanity check before changing `/fix-bug` SKILL.md or workflow.md. If any
 
 ### Recently closed
 
+- [x] **2026-04-19** — **Inline-subsection dispatch (companion to `/add-bug --inline`).** Extended `/fix-bug` to accept `inline:<plan-section-path>#<subsection-id>` (and path-shorthand) as a target argument. Changes: `workflow.md` gained "Phase 0 — Step 0: Dispatch Mode Detection" and new Steps 1b/2b for inline extraction (parse + `kind: plan-blocker-inline` + parent-`status` validation, body extraction, skeleton-state Resume-mode inference); `SKILL.md` Part 1 dispatcher instruction updated to route via Step 0, Part 2 gained a mode-dispatch layer above the tracker precedence chain (matches `[INLINE]` / `INLINE ERROR` / tracker handoffs), and a new `§Inline Mode Phase Overrides` block tabulates per-phase deltas. Key design decisions (from user confirmation earlier in session): Phase 1.6 SKIPPED in inline mode, no `fix-BUG-XX-NNN.md` minted, subsection body is the fix artifact, Phase 5 closure edits only the plan-section file (+ tracker cross-ref if one exists). New invariants I14–I18 added to §2. New §4 Lessons entry "Inline-subsection dispatch". New §5 regression rows (7 total). Strip-as-you-go prose-lint pass cleaned 6 pre-existing paragraph violations alongside the new content. Companion entry in `add-bug-design.md` §6 Recently closed (closes the `[p1]` Open item that the `/add-bug --inline` feature had left pointing here). Commit: pending.
 - [x] **2026-04-16** — **Round 3 audit (user-prompted schema codification + auto-fix automation):** elevated the `Superseded by:` marker from "documented in two scanners" to first-class schema enforced programmatically.
   - **New SSOT module:** `scripts/plan_corpus/bug_markers.py` (~250 lines) — marker regex constants, `BugEntry` dataclass, `parse_bug_entries()` generator, `classify_bug_exclusion()` precedence-ordered classifier, `extract_supersede_target()`, `extract_repro()`, `extract_subsystem()`, `normalize_severity()` (handles `[critical→medium]` reclassification). Header regex tolerates trailing text after `**Title**` (closes the BUG-04-042 false-negative I introduced in Round 2's first-cut header regex).
   - **New validator module:** `scripts/plan_corpus/bug_validators.py` (~250 lines) — `find_supersede_drift()` cross-checks plan frontmatter `supersedes:` declarations against bug-entry `Superseded by:` markers in both directions; `plan_auto_fixes()` generates `PlannedEdit` objects for missing markers (auto-fixable); orphan markers surfaced for manual review (NOT auto-fixed — plan frontmatter is the SSOT). `apply_planned_edits()` is idempotent.

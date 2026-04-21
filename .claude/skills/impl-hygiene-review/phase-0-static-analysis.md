@@ -30,14 +30,15 @@ Covers 15 project-specific checks (clippy handles the rest): file-length, fn-len
 #### 0b. Run enum-drift.py (cross-crate enum coverage — ~0.5s)
 
 ```bash
-# All known IR enums:
+# All KNOWN_ENUMS (empty for ori_term today — no-op):
 enum-drift.py --summary
 
-# Specific enum:
-enum-drift.py --enum CanExpr TypeTag
+# Ad-hoc analysis of a specific enum (e.g., a pane-lifecycle event
+# matched in both oriterm_mux and oriterm):
+enum-drift.py --enum PaneEvent --scope oriterm_mux/src oriterm/src
 ```
 
-Detects match arms missing for enum variants across crate boundaries — the most dangerous drift pattern (Rust's exhaustive match only catches within a single crate).
+Detects match arms missing for enum variants across crate boundaries — the most dangerous drift pattern (Rust's exhaustive match only catches within a single crate). Seed `KNOWN_ENUMS` in `enum-drift.py` when a genuine cross-crate sync-point enum appears.
 
 #### 0c. Run plan-annotations.py (stale plan refs — ~1s)
 

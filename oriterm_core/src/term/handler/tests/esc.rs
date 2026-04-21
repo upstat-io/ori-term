@@ -576,3 +576,27 @@ fn decaln_clears_cell_attributes() {
             .contains(crate::cell::CellFlags::BOLD)
     );
 }
+
+/// Regression: BUG-08-17. DECALN (`ESC # 8`) fills every visible cell
+/// with 'E'. Those cells are application-written and MUST carry
+/// `CellFlags::DRAWN` so DECRQCRA sees them as drawn. Before the fix,
+/// DECALN called `cell.reset(&default_template)` then `cell.ch = 'E'`
+/// without setting DRAWN, so a post-DECALN DECRQCRA skipped every 'E'
+/// and returned 0 instead of the 'E'-sum.
+#[test]
+fn decaln_sets_drawn_on_every_filled_cell() {
+    let mut t = term();
+    feed(&mut t, b"\x1b#8");
+
+    let grid = t.grid();
+    for line in 0..grid.lines() {
+        for col in 0..grid.cols() {
+            assert!(
+                grid[crate::index::Line(line as i32)][Column(col)]
+                    .flags
+                    .contains(crate::cell::CellFlags::DRAWN),
+                "DECALN-filled cell at ({line}, {col}) must carry DRAWN"
+            );
+        }
+    }
+}

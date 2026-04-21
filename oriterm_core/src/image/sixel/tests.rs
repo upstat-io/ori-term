@@ -1,3 +1,14 @@
+//! Unit tests for the sixel decoder (`SixelParser`).
+//!
+//! Covers per-operator behavior (palette define/select, repeat, CR/NL,
+//! raster attrs, data bytes), the §12.2 bg-mode + palette-reset invariants
+//! (`set_to_bg_uses_terminal_background_not_black`,
+//! `device_default_and_set_to_bg_diverge_under_non_black_terminal_bg`,
+//! `palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint`),
+//! and oversized-input rejection. The integration-level spec_chain pins
+//! for §12.2 live at `oriterm_core/tests/spec_chain/sixel/invariants.rs`.
+
+use super::bypass::BypassVt340ResetGuard;
 use super::*;
 
 /// Feed a byte slice to the parser.
@@ -7,14 +18,19 @@ fn feed_all(parser: &mut SixelParser, data: &[u8]) {
     }
 }
 
-/// Create a parser with default params.
+/// Create a parser with default params and a black terminal bg.
 fn default_parser() -> SixelParser {
-    SixelParser::new(&[0, 0, 0])
+    SixelParser::new(&[0, 0, 0], [0, 0, 0])
 }
 
 /// Create a transparent-background parser (P2=1).
 fn transparent_parser() -> SixelParser {
-    SixelParser::new(&[0, 1, 0])
+    SixelParser::new(&[0, 1, 0], [0, 0, 0])
+}
+
+/// Create a `SetToBg` parser (P2=2) with an explicit terminal bg.
+fn set_to_bg_parser(terminal_bg: [u8; 3]) -> SixelParser {
+    SixelParser::new(&[0, 2, 0], terminal_bg)
 }
 
 #[test]
@@ -209,4 +225,105 @@ fn raster_attributes_set_dimensions() {
     // Dimensions should be at least the declared size.
     assert_eq!(w, 20);
     assert_eq!(h, 12);
+}
+
+// §12.2 — SetToBg plumbing + palette-leak negative pin.
+
+/// §12.2: `SixelBgMode::SetToBg` fills undrawn pixels with the terminal
+/// bg captured at DCS-hook time — NOT opaque black. DeviceDefault
+/// continues to render as opaque black per VT340 spec.
+#[test]
+fn set_to_bg_uses_terminal_background_not_black() {
+    let terminal_bg: [u8; 3] = [0, 128, 255]; // distinguishable blue-ish
+    let mut p = set_to_bg_parser(terminal_bg);
+    feed_all(&mut p, b"#0;2;100;0;0@"); // red @ (0,0); rows 1..5 undrawn
+    let (pixels, w, h) = p.finish().unwrap();
+    assert_eq!(w, 1);
+    assert_eq!(h, 6);
+    assert_eq!(&pixels[0..4], &[255, 0, 0, 255], "drawn pixel must be red");
+    // Undrawn row 1: α=255, RGB = terminal bg (NOT [0,0,0]).
+    assert_eq!(
+        &pixels[4..8],
+        &[terminal_bg[0], terminal_bg[1], terminal_bg[2], 255],
+        "SetToBg undrawn pixel must carry terminal bg, not black",
+    );
+}
+
+/// §12.2 semantic pin: `DeviceDefault` and `SetToBg` must diverge on
+/// identical pixel data when the terminal bg is not black. If both
+/// render identically, the bg-mode invariant is broken.
+#[test]
+fn device_default_and_set_to_bg_diverge_under_non_black_terminal_bg() {
+    let terminal_bg: [u8; 3] = [12, 34, 56];
+
+    let mut default = SixelParser::new(&[0, 0, 0], terminal_bg);
+    feed_all(&mut default, b"#0;2;100;0;0@");
+    let (default_pixels, ..) = default.finish().unwrap();
+
+    let mut set_bg = SixelParser::new(&[0, 2, 0], terminal_bg);
+    feed_all(&mut set_bg, b"#0;2;100;0;0@");
+    let (set_bg_pixels, ..) = set_bg.finish().unwrap();
+
+    // Drawn pixel identical; undrawn differs.
+    assert_eq!(
+        &default_pixels[0..4],
+        &set_bg_pixels[0..4],
+        "drawn pixel must be identical across bg modes",
+    );
+    assert_ne!(
+        &default_pixels[4..8],
+        &set_bg_pixels[4..8],
+        "DeviceDefault and SetToBg must diverge on undrawn pixels",
+    );
+    assert_eq!(&default_pixels[4..8], &[0, 0, 0, 255]);
+    assert_eq!(
+        &set_bg_pixels[4..8],
+        &[terminal_bg[0], terminal_bg[1], terminal_bg[2], 255]
+    );
+}
+
+/// §12.2 negative pin — palette-leak guard is live.
+///
+/// Under normal operation, `SixelParser::new` rebuilds VT340 defaults so
+/// a selector `#5` (no definition) maps to cyan `[51, 204, 204]`. Under
+/// the test-only `BypassVt340ResetGuard`, the rebuild is skipped and
+/// `palette[5]` stays zeroed — the selector maps to black.
+///
+/// If the production rebuild loop were ever removed, this test would
+/// fail — proving the regression guard is load-bearing rather than a
+/// coincidence of zero-init. The guard's `Drop` impl restores the
+/// thread-local flag even if an assertion panics between bypass-enable
+/// and end-of-test, per `.claude/rules/impl-hygiene.md §Temporal
+/// Coupling & RAII Guards`.
+#[test]
+fn palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint() {
+    // Baseline: no bypass — `#5@` yields VT340 cyan.
+    let mut baseline = default_parser();
+    feed_all(&mut baseline, b"#5@");
+    let (baseline_pixels, ..) = baseline.finish().unwrap();
+    assert_eq!(
+        &baseline_pixels[0..4],
+        &[51, 204, 204, 255],
+        "VT340 default palette[5] must be cyan",
+    );
+
+    // Bypass: palette is all-zero — `#5@` yields opaque black.
+    // The RAII guard restores the flag even if an assert below panics.
+    let bypassed_pixels = {
+        let _guard = BypassVt340ResetGuard::enable();
+        let mut bypassed = default_parser();
+        feed_all(&mut bypassed, b"#5@");
+        bypassed.finish().unwrap().0
+    };
+
+    assert_eq!(
+        &bypassed_pixels[0..4],
+        &[0, 0, 0, 255],
+        "bypassed palette rebuild must expose all-zero palette[5]",
+    );
+    assert_ne!(
+        &baseline_pixels[0..4],
+        &bypassed_pixels[0..4],
+        "baseline and bypassed pixels must diverge — the VT340 rebuild is load-bearing",
+    );
 }

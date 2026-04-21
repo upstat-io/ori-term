@@ -1,24 +1,27 @@
-//! CSI dispatch handler and SGR attribute parsing.
+//! CSI dispatch handler.
+//!
+//! SGR attribute parsing lives in [`sgr`]; everything else dispatches inline
+//! against `(action, intermediates)` tuples.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::convert::TryFrom;
-use core::iter;
 
 use log::debug;
 
-use crate::ansi::colors::Rgb;
 use crate::ansi::handler::Handler;
 use crate::ansi::processor::Timeout;
 use crate::ansi::types::{
-    Attr, ClearMode, Color, CursorShape, CursorStyle, KeyboardModes,
-    KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedColor,
-    NamedPrivateMode, PrivateMode, ScpCharPath, ScpUpdateMode, TabulationClearMode,
+    Attr, ClearMode, CursorShape, CursorStyle, KeyboardModes,
+    KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedPrivateMode,
+    PrivateMode, ScpCharPath, ScpUpdateMode, TabulationClearMode,
 };
-use crate::{Params, ParamsIter};
+use crate::Params;
 
 use super::SYNC_UPDATE_TIMEOUT;
+
+mod sgr;
+use sgr::attrs_from_sgr_parameters;
 
 /// Dispatch a CSI escape sequence to the handler.
 #[allow(clippy::cognitive_complexity)]
@@ -233,6 +236,12 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             let mode = next_param_or(0);
             handler.report_private_mode(PrivateMode::new(mode));
         },
+        ('p', [b'"']) => {
+            // DECSCL — Set Conformance Level (CSI Pl;Pc " p).
+            let level = next_param_or(0);
+            let c1_mode = next_param_or(0);
+            handler.decscl(level, c1_mode);
+        },
         ('q', [b' ']) => {
             // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
             let cursor_style_id = next_param_or(0);
@@ -251,6 +260,10 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
 
             handler.set_cursor_style(cursor_style);
         },
+        ('q', [b'"']) => {
+            // DECSCA — Select Character Protection Attribute (CSI Ps " q).
+            handler.decsca(next_param_or(0));
+        },
         ('r', []) => {
             let top = next_param_or(1) as usize;
             let bottom =
@@ -262,6 +275,15 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             // XTRESTORE: restore saved private mode values.
             let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();
             handler.restore_private_mode_values(&modes);
+        },
+        ('r', [b'$']) => {
+            // DECCARA — Change Attributes in Rectangular Area (CSI Pt;Pl;Pb;Pr;Pm $ r).
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            let attrs: Vec<u16> = params_iter.map(|p| p[0]).collect();
+            handler.deccara(top, left, bot, right, &attrs);
         },
         ('S', []) => handler.scroll_up(next_param_or(1) as usize),
         ('s', []) => {
@@ -297,6 +319,15 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             23 => handler.pop_title(),
             _ => unhandled!(),
         },
+        ('t', [b'$']) => {
+            // DECRARA — Reverse Attributes in Rectangular Area (CSI Pt;Pl;Pb;Pr;Pm $ t).
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            let attrs: Vec<u16> = params_iter.map(|p| p[0]).collect();
+            handler.decrara(top, left, bot, right, &attrs);
+        },
         ('u', [b'?']) => handler.report_keyboard_mode(),
         ('u', [b'=']) => {
             let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
@@ -317,127 +348,80 @@ pub(super) fn dispatch<H: Handler, T: Timeout>(
             handler.pop_keyboard_modes(next_param_or(1));
         },
         ('u', []) => handler.restore_cursor_position(),
+        ('u', [b'&']) => handler.decrqupss(),
+        ('v', [b'$']) => {
+            // DECCRA — Copy Rectangular Area
+            // (CSI Pts;Pls;Pbs;Prs;Pps;Ptd;Pld;Ppd $ v).
+            let st = next_param_or(1);
+            let sl = next_param_or(1);
+            let sb = next_param_or(1);
+            let sr = next_param_or(1);
+            let sp = next_param_or(1);
+            let dt = next_param_or(1);
+            let dl = next_param_or(1);
+            let dp = next_param_or(1);
+            handler.deccra(st, sl, sb, sr, sp, dt, dl, dp);
+        },
+        ('v', [b'"']) => handler.decrqde(),
+        ('w', [b'$']) => handler.decrqpsr(next_param_or(0)),
         ('X', []) => handler.erase_chars(next_param_or(1) as usize),
+        ('x', [b'*']) => handler.decsace(next_param_or(0)),
+        ('x', [b'$']) => {
+            // DECFRA — Fill Rectangular Area (CSI Pc;Pt;Pl;Pb;Pr $ x).
+            let ch = next_param_or(0x20);
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            handler.decfra(ch, top, left, bot, right);
+        },
+        ('y', [b'#']) => handler.xtchecksum(next_param_or(0)),
+        ('y', [b'*']) => {
+            // DECRQCRA — Request Checksum of Rectangular Area
+            // (CSI Pi;Pg;Pt;Pl;Pb;Pr * y).
+            let id = next_param_or(0);
+            let page = next_param_or(1);
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            handler.decrqcra(id, page, top, left, bot, right);
+        },
         ('Z', []) => handler.move_backward_tabs(next_param_or(1)),
+        ('z', [b'$']) => {
+            // DECERA — Erase Rectangular Area (CSI Pt;Pl;Pb;Pr $ z).
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            handler.decera(top, left, bot, right);
+        },
         ('{', [b'#']) => handler.push_sgr(),
+        ('{', [b'$']) => {
+            // DECSERA — Selective Erase Rectangular Area (CSI Pt;Pl;Pb;Pr $ {).
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            handler.decsera(top, left, bot, right);
+        },
+        ('|', [b'#']) => {
+            // XTREPORTSGR — Report SGR attributes of Rectangular Area
+            // (CSI Pt;Pl;Pb;Pr # |).
+            let top = next_param_or(1);
+            let left = next_param_or(1);
+            let bot = next_param_or(1);
+            let right = next_param_or(1);
+            handler.xtreportsgr(top, left, bot, right);
+        },
         ('}', [b'#']) => handler.pop_sgr(),
+        ('}', [b'$']) => handler.decsasd(next_param_or(0)),
+        ('}', [b'\'']) => handler.decic(next_param_or(1)),
+        ('~', [b'$']) => handler.decssdt(next_param_or(0)),
+        ('~', [b'\'']) => handler.decdc(next_param_or(1)),
         _ => unhandled!(),
     }
 }
 
-#[inline]
-fn attrs_from_sgr_parameters<H: Handler>(handler: &mut H, params: &mut ParamsIter<'_>) {
-    while let Some(param) = params.next() {
-        let attr = match param {
-            [0] => Some(Attr::Reset),
-            [1] => Some(Attr::Bold),
-            [2] => Some(Attr::Dim),
-            [3] => Some(Attr::Italic),
-            [4, 0] => Some(Attr::CancelUnderline),
-            [4, 2] => Some(Attr::DoubleUnderline),
-            [4, 3] => Some(Attr::Undercurl),
-            [4, 4] => Some(Attr::DottedUnderline),
-            [4, 5] => Some(Attr::DashedUnderline),
-            [4, ..] => Some(Attr::Underline),
-            [5] => Some(Attr::BlinkSlow),
-            [6] => Some(Attr::BlinkFast),
-            [7] => Some(Attr::Reverse),
-            [8] => Some(Attr::Hidden),
-            [9] => Some(Attr::Strike),
-            [21] => Some(Attr::CancelBold),
-            [22] => Some(Attr::CancelBoldDim),
-            [23] => Some(Attr::CancelItalic),
-            [24] => Some(Attr::CancelUnderline),
-            [25] => Some(Attr::CancelBlink),
-            [27] => Some(Attr::CancelReverse),
-            [28] => Some(Attr::CancelHidden),
-            [29] => Some(Attr::CancelStrike),
-            [53] => Some(Attr::Overline),
-            [55] => Some(Attr::CancelOverline),
-            [73] => Some(Attr::Superscript),
-            [74] => Some(Attr::Subscript),
-            [75] => Some(Attr::CancelSuperSubscript),
-            [30] => Some(Attr::Foreground(Color::Named(NamedColor::Black))),
-            [31] => Some(Attr::Foreground(Color::Named(NamedColor::Red))),
-            [32] => Some(Attr::Foreground(Color::Named(NamedColor::Green))),
-            [33] => Some(Attr::Foreground(Color::Named(NamedColor::Yellow))),
-            [34] => Some(Attr::Foreground(Color::Named(NamedColor::Blue))),
-            [35] => Some(Attr::Foreground(Color::Named(NamedColor::Magenta))),
-            [36] => Some(Attr::Foreground(Color::Named(NamedColor::Cyan))),
-            [37] => Some(Attr::Foreground(Color::Named(NamedColor::White))),
-            [38] => {
-                let mut iter = params.map(|param| param[0]);
-                parse_sgr_color(&mut iter).map(Attr::Foreground)
-            },
-            [38, params @ ..] => handle_colon_rgb(params).map(Attr::Foreground),
-            [39] => Some(Attr::Foreground(Color::Named(NamedColor::Foreground))),
-            [40] => Some(Attr::Background(Color::Named(NamedColor::Black))),
-            [41] => Some(Attr::Background(Color::Named(NamedColor::Red))),
-            [42] => Some(Attr::Background(Color::Named(NamedColor::Green))),
-            [43] => Some(Attr::Background(Color::Named(NamedColor::Yellow))),
-            [44] => Some(Attr::Background(Color::Named(NamedColor::Blue))),
-            [45] => Some(Attr::Background(Color::Named(NamedColor::Magenta))),
-            [46] => Some(Attr::Background(Color::Named(NamedColor::Cyan))),
-            [47] => Some(Attr::Background(Color::Named(NamedColor::White))),
-            [48] => {
-                let mut iter = params.map(|param| param[0]);
-                parse_sgr_color(&mut iter).map(Attr::Background)
-            },
-            [48, params @ ..] => handle_colon_rgb(params).map(Attr::Background),
-            [49] => Some(Attr::Background(Color::Named(NamedColor::Background))),
-            [58] => {
-                let mut iter = params.map(|param| param[0]);
-                parse_sgr_color(&mut iter).map(|color| Attr::UnderlineColor(Some(color)))
-            },
-            [58, params @ ..] => {
-                handle_colon_rgb(params).map(|color| Attr::UnderlineColor(Some(color)))
-            },
-            [59] => Some(Attr::UnderlineColor(None)),
-            [90] => Some(Attr::Foreground(Color::Named(NamedColor::BrightBlack))),
-            [91] => Some(Attr::Foreground(Color::Named(NamedColor::BrightRed))),
-            [92] => Some(Attr::Foreground(Color::Named(NamedColor::BrightGreen))),
-            [93] => Some(Attr::Foreground(Color::Named(NamedColor::BrightYellow))),
-            [94] => Some(Attr::Foreground(Color::Named(NamedColor::BrightBlue))),
-            [95] => Some(Attr::Foreground(Color::Named(NamedColor::BrightMagenta))),
-            [96] => Some(Attr::Foreground(Color::Named(NamedColor::BrightCyan))),
-            [97] => Some(Attr::Foreground(Color::Named(NamedColor::BrightWhite))),
-            [100] => Some(Attr::Background(Color::Named(NamedColor::BrightBlack))),
-            [101] => Some(Attr::Background(Color::Named(NamedColor::BrightRed))),
-            [102] => Some(Attr::Background(Color::Named(NamedColor::BrightGreen))),
-            [103] => Some(Attr::Background(Color::Named(NamedColor::BrightYellow))),
-            [104] => Some(Attr::Background(Color::Named(NamedColor::BrightBlue))),
-            [105] => Some(Attr::Background(Color::Named(NamedColor::BrightMagenta))),
-            [106] => Some(Attr::Background(Color::Named(NamedColor::BrightCyan))),
-            [107] => Some(Attr::Background(Color::Named(NamedColor::BrightWhite))),
-            _ => None,
-        };
-
-        match attr {
-            Some(attr) => handler.terminal_attribute(attr),
-            None => continue,
-        }
-    }
-}
-
-/// Handle colon separated rgb color escape sequence.
-#[inline]
-fn handle_colon_rgb(params: &[u16]) -> Option<Color> {
-    let rgb_start = if params.len() > 4 { 2 } else { 1 };
-    let rgb_iter = params[rgb_start..].iter().copied();
-    let mut iter = iter::once(params[0]).chain(rgb_iter);
-
-    parse_sgr_color(&mut iter)
-}
-
-/// Parse a color specifier from list of attributes.
-fn parse_sgr_color(params: &mut dyn Iterator<Item = u16>) -> Option<Color> {
-    match params.next() {
-        Some(2) => Some(Color::Spec(Rgb {
-            r: u8::try_from(params.next()?).ok()?,
-            g: u8::try_from(params.next()?).ok()?,
-            b: u8::try_from(params.next()?).ok()?,
-        })),
-        Some(5) => Some(Color::Indexed(u8::try_from(params.next()?).ok()?)),
-        _ => None,
-    }
-}
+#[cfg(test)]
+mod tests;

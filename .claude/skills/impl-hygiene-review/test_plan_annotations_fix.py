@@ -265,7 +265,7 @@ CHECKBOX_SUBJECT_CASES: list[tuple[str, str | None]] = [
     ),
     # ─── Canonical bug-tracker form without severity ───
     (
-        "- [x] `[BUG-04-028]` **AIMS invoke RC analysis: merge block params**",
+        "- [x] `[BUG-04-028]` **IO-thread snapshot: merge damage regions**",
         "BUG-04-028",
     ),
     # ─── Dual-tpr wrapper form with reviewer-suffixed ID ───

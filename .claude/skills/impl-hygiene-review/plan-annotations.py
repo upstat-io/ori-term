@@ -14,7 +14,7 @@ Classifications
 
 PERMANENT
     Spec citations (`Spec: Clause N.M`) and architecture-internal
-    section numbering (`AIMS Section N`, `eval_v2 Section N`). Never
+    section numbering (project-specific permanent markers — none in ori_term today). Never
     flagged — these are load-bearing design references.
 
 ACTIVE_SCAFFOLDING
@@ -197,16 +197,16 @@ MASTER_GREP_PATTERN = (
 
 # Permanent (never flag) patterns
 SPEC_CLAUSE_RE = re.compile(r"Spec:\s*Clause\s+\d+", re.IGNORECASE)
-AIMS_SECTION_RE = re.compile(r"AIMS\s+Section\s+\d+", re.IGNORECASE)
-EVAL_V2_SECTION_RE = re.compile(r"eval_v2\s+Section\s+\d+", re.IGNORECASE)
+# ori_term has no permanent section-marker regexes today; add when a
+# domain convention emerges (e.g., "VT Section N" for VT-conformance
+# clauses that anchor multiple plan entries).
 FIPS_PHASE_RE = re.compile(r"\bfip(?:s)?\s+Phase\s+[A-C]\b", re.IGNORECASE)
 
 # Architecture-internal directories — section references inside these are
-# ALWAYS internal design docs, never plan refs.
-ARCH_DOC_DIRS = [
-    "crates/arc/src/aims",
-    "compiler/ori_canon",
-]
+# ALWAYS internal design docs, never plan refs. ori_term has no such
+# internal design-doc subtrees yet; keep the list empty and add entries
+# only when a genuine architecture-doc path appears under a crate.
+ARCH_DOC_DIRS: list[str] = []
 
 # Source scanning: exclude these top-level dirs regardless of mode.
 SCAN_EXCLUDE_DIRS = [
@@ -1756,12 +1756,12 @@ def build_argparser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "EXAMPLES:\n"
-            "  plan-annotations.py --scope crates/llvm/src/aot\n"
+            "  plan-annotations.py --scope oriterm_core/src\n"
             "  plan-annotations.py --all --count\n"
             "  plan-annotations.py --cleanup-only\n"
             "  plan-annotations.py --orphans-only\n"
             "  plan-annotations.py --plan bug-tracker --cleanup-only\n"
-            "  plan-annotations.py --json --scope compiler/ori_arc\n"
+            "  plan-annotations.py --json --scope oriterm/src/gpu\n"
         ),
     )
     mode = p.add_mutually_exclusive_group()

@@ -1083,9 +1083,26 @@ fn sgr_reset_clears_all_attributes() {
     assert!(x.flags.contains(CellFlags::HIDDEN));
     assert!(x.flags.contains(CellFlags::STRIKETHROUGH));
 
-    // Y after reset has no flags.
+    // Y after reset has no SGR flags. DRAWN remains (it's set on every
+    // cell write per BUG-08-17; SGR reset only clears SGR bits, not
+    // the structural write-history marker).
     let y = &content.cells[1];
-    assert!(y.flags.is_empty());
+    let sgr_mask = CellFlags::BOLD
+        | CellFlags::DIM
+        | CellFlags::ITALIC
+        | CellFlags::ALL_UNDERLINES
+        | CellFlags::BLINK
+        | CellFlags::INVERSE
+        | CellFlags::HIDDEN
+        | CellFlags::STRIKETHROUGH
+        | CellFlags::OVERLINE
+        | CellFlags::SUPERSCRIPT
+        | CellFlags::SUBSCRIPT;
+    assert!(
+        !y.flags.intersects(sgr_mask),
+        "SGR reset must clear every SGR attribute (found: {:?})",
+        y.flags
+    );
 }
 
 #[test]
