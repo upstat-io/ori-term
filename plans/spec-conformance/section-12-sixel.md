@@ -1,7 +1,7 @@
 ---
 section: "12"
 title: "Sixel"
-status: in-progress
+status: complete
 
 reviewed: true
 goal: "Drive every catalog row in `catalog/sixel.md` from `implemented-unverified` to `verified` via the spec_chain harness — first full visual stack section, exercising the entire pipeline (DCS-state parser → state-machine operator dispatch → image cache → GPU image render → golden image). Close the parser/decoder state-machine seam end-to-end, pin DCS-abort + palette-lifetime + background-mode semantics, and establish occlusion + mixed-protocol cross-stack hand-offs that downstream sections (§13 Kitty, §14 iTerm2) can rely on."
@@ -46,24 +46,24 @@ sections:
     status: complete
   - id: "12.4"
     title: "Verify sixel GPU rendering via golden image apex (expanded scenarios + cursor-mode goldens)"
-    status: not-started
+    status: complete
   - id: "12.5"
     title: "Verify sixel + image lifecycle interactions + sixel↔kitty ImageCache hand-off"
-    status: not-started
+    status: complete
   - id: "12.R"
     title: "Third Party Review Findings"
     status: complete
 
   - id: "12.N"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 # TPR Checkpoint Placement: 12.3 (after parser/decoder state machine + invariants + grid integration — covers .1-.3),
 # 12.5 (after GPU goldens + lifecycle + cross-stack hand-off — covers .4-.5), final in 12.N
 ---
 
 # Section 12: Sixel
 
-**Status:** In Progress (§12.0, §12.1, §12.2, §12.3, §12.R complete; §12.4, §12.5, §12.N remain)
+**Status:** Complete (all subsections §12.0–§12.5, §12.R, §12.N closed 2026-04-21; full TPR + hygiene review clean).
 **Goal:** Sixel is the first full visual stack — its verification chain exercises the entire pipeline from DCS byte parsing through GPU composition. This section drives every sixel catalog row to `verified`, closes the parser/decoder state-machine seam end-to-end, and pins three invariants that the prior 5-row catalog did not cover: background-mode distinction (§12.2 landed the DECSCNM-aware SetToBg plumbing via `Term::effective_background`), palette reset per DCS q (§12.2 pinned via back-to-back DCS tests + a RAII-guarded negative pin in sibling `bypass.rs`), and DCS abort correctness (§12.1 added the `DcsEscape` state + `Handler::sixel_end(aborted)` drop path).
 
 **Success Criteria:** see frontmatter.
@@ -224,21 +224,22 @@ sections:
 
 **Depends on code paths:** `oriterm_core/src/term/snapshot.rs:33` (`Term::renderable_content()` public API; populates `RenderableContent::images`); `oriterm/src/gpu/window_renderer/frame_prep.rs:149-173`; `oriterm/src/gpu/image_render/mod.rs:67-151`; `oriterm/src/gpu/prepare/emit.rs:262-285`. Deterministic lane from §05 (`status: complete`).
 
-- [ ] Write failing test matrix BEFORE implementation.
-- [ ] Capture goldens via `ORITERM_UPDATE_GOLDEN=1` using the deterministic lane (llvmpipe, grayscale hinting, pinned cell metrics) from §05.
-- [ ] **Scenario A — Solid rectangle, one color** (baseline parity with §04 pilot, explicit row in this section's directory).
-- [ ] **Scenario B — Palette-switch mid-image** — emit `#0;2;100;0;0<data>#1;2;0;100;0<data>`, assert the golden shows both color bands. Forces `#` dispatch on live placement (catches a parser-correct, decoder-wrong seam).
-- [ ] **Scenario C — Repeat optimization** — emit `!100?`, assert golden shows 100 equal-valued columns (no per-column decode drift).
-- [ ] **Scenario D — CR + NL banding interaction** — emit two bands separated by `$` and two bands separated by `-`, assert golden shows correct band stacking. Forces `$` + `-` operator semantics into the raster output, not just the state machine.
-- [ ] **Scenario E — Transparency composite** — P2=1 with partial coverage over the deterministic background from §05. **Explicit sub-pixel / AA gate:** assert 0-pixel diff against golden with zero AA jitter. Any non-zero diff on the deterministic lane IS a bug (either in transparency compositing in `oriterm/src/gpu/image_render/mod.rs` or in §05's cell-metrics pinning).
-- [ ] **Scenario F — SIXEL_SCROLLING OFF golden** — DECRST 80 + sixel, assert cursor-stays-at-home is visually pinned (image placed where cursor was, subsequent text overwrites image cells per no-scroll behavior). Pins §12.3's behavioral bullet visually, not just programmatically.
-- [ ] **Scenario G — SIXEL_CURSOR_RIGHT golden** — DECSET 8452 + sixel, assert cursor-to-right-of-image is visually pinned (subsequent text lands to the right of the image band).
-- [ ] Spec_chain tests assert goldens match on subsequent runs — 0-pixel diff tolerance on the deterministic lane.
-- [ ] Negative pin — run without deterministic-lane pinning (e.g., `ORITERM_FORCE_NONDETERMINISTIC=1` if available, or a different adapter); test should skip with `eprintln!("SKIP: ...")` per `.claude/rules/tests.md` §Graceful Skip Protocol, never falsely pass or crash.
-- [ ] Matrix count assertion.
-- [ ] Update GPU-rendering catalog rows to `verified`.
-- [ ] Verify all tests pass in both debug AND release builds.
-- [ ] **Validation:** golden tests pass; back-to-back runs produce 0-pixel diff; cursor-mode goldens visually pin §12.3's behavioral bullets.
+- [x] Write failing test matrix BEFORE implementation.
+- [x] Capture goldens via `ORITERM_UPDATE_GOLDEN=1` using the deterministic lane (llvmpipe, grayscale hinting, pinned cell metrics) from §05.
+- [x] **Scenario A — Solid rectangle, one color** (baseline parity with §04 pilot, explicit row in this section's directory) — `sixel_minimal.rs` doubles as the §12.4 Scenario A row; golden at `oriterm/tests/references/sixel_minimal.png`.
+- [x] **Scenario B — Palette-switch mid-image** — `sixel_palette_switch.rs` drives `#0;2;100;0;0#0!10~-#1;2;0;100;0#1!10~` through the GoldenImage apex; golden at `oriterm/tests/references/sixel_palette_switch.png`.
+- [x] **Scenario C — Repeat optimization** — `sixel_repeat.rs` drives `!100~` through the apex; golden at `oriterm/tests/references/sixel_repeat.png`.
+- [x] **Scenario D — CR + NL banding interaction** — `sixel_cr_nl_banding.rs` drives 4-band red/green/blue/yellow composition with `$` + `-` ops; golden at `oriterm/tests/references/sixel_cr_nl_banding.png`.
+- [x] **Scenario E — Transparency composite** — `sixel_transparency.rs` drives P2=1 with 10-filled / 10-transparent / 10-filled cols over PALETTE_BG `Rgb(1,1,1)`; 0-pixel diff gate; golden at `oriterm/tests/references/sixel_transparency.png`.
+- [x] **Scenario F — SIXEL_SCROLLING OFF golden** — `sixel_scrolling_off.rs` drives DECRST 80 + cursor (10,5) + sixel + "OVERWRITE" text; golden at `oriterm/tests/references/sixel_scrolling_off.png`.
+- [x] **Scenario G — SIXEL_CURSOR_RIGHT golden** — `sixel_cursor_right.rs` drives DECSET 8452 + cursor (10,5) + sixel + "FOLLOW" text; golden at `oriterm/tests/references/sixel_cursor_right.png`.
+- [x] **P2=2 SetToBg pilot** (added post-TPR per `[TPR-12-012-codex+gemini][high]`) — `sixel_set_to_bg.rs` drives `\x1bP0;2q#0;2;100;100;100#0!10~!10?#0!10~\x1b\\` (P2=2 with partial coverage); golden at `oriterm/tests/references/sixel_set_to_bg.png`. Required because DeviceDefault + NoChange pilots alone only bracket SetToBg structurally — a dedicated P2=2 golden is the only way to pin `SixelBgMode::SetToBg` + `Term::effective_background` plumbing at the GoldenImage rung.
+- [x] Spec_chain tests assert goldens match on subsequent runs — 0-pixel diff via `compare_with_reference_strict` (`pixel_tolerance = 0`, `max_diff_percent = 0.0` under `GoldenLaneConfig::SPEC_DEFAULT`); back-to-back runs confirmed green debug + release.
+- [x] Negative pin — Graceful Skip Protocol embedded per-pilot via the `let Some(mut harness) = VisualSpecHarness::new() else { eprintln!("SKIP: …"); return; };` guard that every §12.4 pilot opens with (8 sites). Removes the round-0 tautology `visual_harness_skip_protocol_never_panics_or_falsely_passes` per `[TPR-12-014-codex+gemini][medium]` — an assertion-less wrapper is not a test.
+- [x] Matrix count assertion — `sixel_12_4_matrix_has_expected_scenario_count` + `sixel_12_4_every_scenario_has_committed_golden` in `sixel_12_4_matrix.rs` assert `SCENARIOS.len() == 8` (A–G + P2=2) AND every scenario's golden PNG exists under `oriterm/tests/references/`. Adding/removing a scenario without updating both tests is a catalog drift.
+- [x] Update GPU-rendering catalog rows to `verified` — `catalog/sixel.md` rows SIXEL-DCS-unhook, SIXEL-BG-DeviceDefault, SIXEL-BG-NoChange, SIXEL-BG-SetToBg flipped from `texture-render` apex with `snapshot:pending frame-input:pending texture:pending` to `golden-image` apex with the full `snapshot:pass frame-input:pass gpu:pass texture:pass golden:pass` chain. SIXEL-BG-SetToBg cites the dedicated `sixel_set_to_bg.rs` pilot post-TPR round 0.
+- [x] Verify all tests pass in both debug AND release builds — `cargo test -p oriterm --features gpu-tests --lib -- spec_chain::pilots::sixel --test-threads=1` green in both; `./build-all.sh`, `./clippy-all.sh`, `./test-all.sh` all green.
+- [x] **Validation:** golden tests pass; back-to-back runs produce 0-pixel diff; cursor-mode goldens visually pin §12.3's behavioral bullets — confirmed.
 
 ---
 
@@ -254,27 +255,22 @@ sections:
 - `Term::resize` — invokes `remap_placements` → `prune_scrollback` → `on_resize` on primary cache; alt cache gets `on_resize` only.
 - `PaneIoCommand::SetCellDimensions` — the cell-metric runtime-config wire that feeds `FixedPixels` re-coverage.
 
-- [ ] Write failing test matrix BEFORE implementation.
-- [ ] **Scrollback eviction** — place sixel near top of scrollback, fill scrollback past eviction threshold, assert placement removed from cache via `prune_scrollback`.
-- [ ] **ED (erase display)** — place sixel, emit `CSI 2 J`, assert placement removed from the erased region via `remove_placements_in_region`.
-- [ ] **EL (erase line)** — place sixel, emit `CSI 2 K`, assert placement at that row removed.
-- [ ] **Alt-screen toggle** — place sixel in primary, enter alt screen (DECSET 1049), assert primary cache preserved AND alt cache is separate; exit alt screen, assert primary placement still intact.
-- [ ] **Resize shrink columns** — place sixel at col=90, resize grid to 80 cols, assert placement removed (consumes `on_resize`).
-- [ ] **Resize with reflow** — place sixel, resize with reflow enabled, assert placement's `StableRowIndex` updated via `remap_placements` (consumes §07's `ReflowMapping::first_output_row`).
-- [ ] **Font-size / DPI change** — place `FixedPixels` sixel, dispatch `PaneIoCommand::SetCellDimensions`, assert placement's `cols`/`rows` coverage recomputed.
-- [ ] **CROSS-STACK ImageCache hand-off** — in `cross_stack_handoff.rs`:
-  - Place a sixel image at `(row=5, col=0)`.
-  - Place a kitty image at `(row=10, col=0)` by driving the kitty transmit+place action through `oriterm_core/src/term/handler/image/kitty.rs` (read-only — no `kitty.rs` edits, which keeps BUG-08-8's kitty-scope gate intact).
-  - Call the public snapshot API `Term::renderable_content()` (`oriterm_core/src/term/snapshot.rs:33`) — or `renderable_content_into()` at `:79` for the hot-path no-alloc variant — and assert that `RenderableContent::images` contains BOTH placements, each independently addressable. (The internal helper `Term::extract_images` at `:243` is private; the chain's state-effect rung observes the public snapshot, not the private helper.)
-  - Assert neither image corrupts the other's pixel data (sixel RGBA buffer unchanged, kitty PNG-decoded RGBA buffer unchanged).
-  - **This is a handshake test, not a full cross-stack rendering regression.** Deep mixed-protocol rendering interference (overlapping placements, z-order interleaving, shared-eviction races) is explicitly DEFERRED-TO-DOWNSTREAM to §13.6 — recorded as a cross-link here and in §12.N.
-- [ ] Negative pin — `ImageCache::on_resize` on a cache with no sixel placements must be a no-op (proves the handler fires only on relevant placements).
-- [ ] Alloc regression unchanged — per `.claude/rules/tests.md` §Performance Invariants, lifecycle handlers must not allocate per placement beyond the `remove` cost already accounted for in §07.
-- [ ] Matrix count assertion.
-- [ ] Update lifecycle + cross-stack-handshake catalog rows to `verified`.
-- [ ] Verify all tests pass in both debug AND release builds.
-- [ ] **TPR checkpoint** — `/tpr-review` covering §12.4–§12.5 (GPU goldens + lifecycle + cross-stack hand-off).
-- [ ] **Validation:** lifecycle rung green; cross-stack hand-off proven at `ImageCache` level; downstream deferral to §13.6 recorded.
+- [x] Write failing test matrix BEFORE implementation — §12.5 is a pure consumption of §07's lifecycle handlers; the test matrix acts as regression pins that fail if §07's `prune_scrollback`, `remove_placements_in_region`, `on_resize`, or `remap_placements` paths regress.
+- [x] **Scrollback eviction** — `sixel_placement_removed_when_scrollback_evicts_its_row` in `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` emits 1100 linefeeds after placing a sixel; asserts `renderable_content().images.len() == 0` via `prune_scrollback`.
+- [x] **ED (erase display)** — `sixel_placement_removed_on_full_screen_ed` drives `CSI 2 J` and asserts placement removed via `remove_placements_in_region(first, last, None, None)`.
+- [x] **EL (erase line)** — `sixel_placement_removed_on_el_covering_its_row` drives `CSI 2 K` after CUP back to row 0; asserts placement on that row removed.
+- [x] **Alt-screen toggle** — `sixel_primary_placement_preserved_across_alt_screen_toggle` pins: primary placement present → DECSET 1049 shows 0 placements (alt cache distinct) → DECRST 1049 shows 1 placement (primary intact).
+- [x] **Resize shrink columns** — `sixel_placement_removed_on_resize_shrinking_past_column` uses `SpecHarness::with_size(24, 100)`, places sixel at col=90, calls `term.resize(24, 80, false)`; asserts `on_resize` removed the out-of-bounds placement. Paired with `sixel_placement_preserved_on_resize_expanding_columns` (positive pin: in-bounds placement survives column grow).
+- [x] **Resize with reflow** — `sixel_placement_survives_resize_with_reflow_when_column_in_bounds` in `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` places a sixel at col=0, calls `term.resize(24, 40, true)` with reflow enabled, and asserts the placement survives with unchanged `display_width`/`display_height` (remap preserves FixedPixels dims). Added post-TPR round 0 per `[TPR-12-013-codex+gemini]`; the round-0 "covered by §07 + empty-cache no-op" claim was a positive-pin gap. Paired with `resize_on_empty_cache_is_noop_no_phantom_placements` negative pin on the empty-cache reflow path.
+- [x] **Font-size / DPI change** — `sixel_placement_preserved_across_cell_dimension_change` calls `Term::set_cell_dimensions(16, 32)` and asserts the placement survives with `FixedPixels` `display_width` unchanged (the handler recomputes cell coverage but does not resize the image).
+- [x] **CROSS-STACK ImageCache hand-off** — `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` drives sixel at `(line=5, col=0)` + kitty (`a=T,i=1,f=32,s=1,v=1,q=2;AAAAAA==`) at `(line=10, col=5)` (distinct column to pin X-axis positional independence per TPR round 1); asserts `RenderableContent::images.len() >= 2` with distinct `image_id`s, `image_data.len() >= 2` with sixel 8×6 RGBA (192 bytes) + kitty 1×1 RGBA (4 bytes) payloads keyed by distinct IDs, and a second test pins each placement's own `viewport_x` (sixel=0.0, kitty=40.0) / `viewport_y` (sixel=80.0, kitty=160.0) / `z_index` / `display_width` / `display_height` — no cross-wiring. This is the handshake, not a rendering regression; deep mixed-protocol interference DEFERRED-TO-DOWNSTREAM §13.6 (recorded here and in §12.N).
+- [x] Negative pin — `resize_on_empty_cache_is_noop_no_phantom_placements` resizes an empty cache (both shrink without reflow and grow with reflow); asserts zero placements spawned — proves `on_resize` + `remap_placements` fire only on relevant placements.
+- [x] Alloc regression unchanged — `oriterm_core/tests/alloc_regression.rs` green via `./test-all.sh`; lifecycle tests consume handlers whose allocation profile was already accounted for in §07 (no new allocating paths introduced in this subsection).
+- [x] Matrix count assertion — `lifecycle_category_matrix_completeness` (10 categories: scrollback_eviction, ed_full_screen, el_full_line, alt_screen_toggle, resize_shrink_columns, resize_expand_columns, resize_with_reflow_preserves_in_bounds, resize_with_reflow_remaps_stable_row, cell_dimension_change, negative_pin_empty_cache_resize_noop) + `cross_stack_handoff_category_matrix_completeness` (2 handshake categories) in their respective files.
+- [x] Update lifecycle + cross-stack-handshake catalog rows to `verified` — `SIXEL-CROSS-STACK-HANDOFF` flipped from `implemented-unverified` to `verified` with pilot citations.
+- [x] Verify all tests pass in both debug AND release builds — `cargo test -p oriterm_core --test spec_chain -- sixel::lifecycle sixel::cross_stack_handoff --test-threads=1` green in both profiles; `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green.
+- [x] **TPR checkpoint** — `/tpr-review` covering §12.4–§12.5 (GPU goldens + lifecycle + cross-stack hand-off) — to run at §12.N boundary per plan TPR-checkpoint directive; findings recorded in §12.R.
+- [x] **Validation:** lifecycle rung green; cross-stack hand-off proven at the public snapshot level; downstream deferral to §13.6 recorded — confirmed.
 
 ---
 
@@ -300,33 +296,75 @@ Twelve verified findings across four rounds (rounds 0–2 produced fixes; round 
 
 **Convergence.** Round 3 verification returned `status: clean` from both reviewers (one informational positive-confirmation entry dropped at verification as non-actionable). All 12 findings tracked; all fixed inline. Exit reason: `clean`.
 
+### Review 2 — Bundled TPR checkpoint covering §12.4 + §12.5 (2026-04-21)
+
+Five verified findings (four agreement, one codex-only). Round 0 dispatched codex + gemini in parallel against the full §12.4 / §12.5 surface (GPU-apex pilots, non-GPU lifecycle + cross-stack handshake, catalog flips, plan body updates). All five resolved inline.
+
+- [x] `[TPR-12-012-codex+gemini][high]` `plans/spec-conformance/catalog/sixel.md:22` — `SIXEL-BG-SetToBg` row flipped to `golden-image` apex + `golden:pass` based on a bracketing argument ("DeviceDefault + NoChange pilots fully bracket the SetToBg blend") rather than a dedicated P2=2 GPU pilot. Rules violated: `.claude/rules/tests.md §Matrix Testing Rule` (missing semantic pin), plan/catalog coherence. Resolved inline: added `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_set_to_bg.rs` driving `\x1bP0;2q#0;2;100;100;100#0!10~!10?#0!10~\x1b\\` through the GoldenImage apex; committed golden at `oriterm/tests/references/sixel_set_to_bg.png`; updated `catalog/sixel.md:22` notes to cite the pilot directly instead of the bracketing argument; bumped §12.4 matrix count from 7 → 8.
+- [x] `[TPR-12-013-codex+gemini][medium]` `plans/spec-conformance/section-12-sixel.md:263` (pre-update line) — "Resize with reflow" checkbox flipped to `[x]` while only covered by the empty-cache no-op negative pin + §07's complete reflow suite; no sixel-side positive pin placed an image, resized with reflow, and observed the surviving placement. Rules violated: `.claude/rules/tests.md §Matrix Testing Rule / §Interaction Testing`; §12 success_criteria line 20 requires sixel-side reflow coverage. Resolved inline: added `sixel_placement_survives_resize_with_reflow_when_column_in_bounds` in `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` placing a sixel at col=0, calling `term.resize(24, 40, true)`, and asserting `renderable_content().images` still contains the placement with unchanged `display_width`/`display_height` (remap preserved FixedPixels dims). §12.5 matrix bumped 8 → 9 categories; matrix count assertion updated.
+- [x] `[TPR-12-014-codex+gemini][medium]` `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_12_4_matrix.rs:64` (pre-update line) — `visual_harness_skip_protocol_never_panics_or_falsely_passes` had no assertion — matched both `Some` and `None` branches of `VisualSpecHarness::new()` with `eprintln!` only. Rules violated: `.claude/rules/tests.md §Test Hygiene / §Negative Testing Protocol` (no orphan tests; assertion IS the test). Resolved inline: removed the tautological test. The structural negative pin lives embedded per-pilot via each pilot's `let Some(mut harness) = VisualSpecHarness::new() else { eprintln!("SKIP: …"); return; };` guard — Graceful Skip Protocol enforced at 8 sites (one per §12.4 pilot), not via a standalone wrapper. Module docs + §12.4 checkbox body updated to cite the per-pilot guard pattern.
+- [x] `[TPR-12-015-codex][medium]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs:118` (pre-update line) — `sixel_and_kitty_placements_retain_independent_attributes` only asserted `image_id != sixel.image_id` and z_index=0 on sixel; never checked any concrete kitty placement attribute. Rules violated: `.claude/rules/tests.md §Matrix Testing Rule` (semantic pin). Resolved inline: tightened assertions — sixel pinned at `viewport_y=80` (line 5 × cell_h 16), kitty pinned at `viewport_y=160` (line 10 × cell_h 16) with `kitty.viewport_y > sixel.viewport_y` positional-independence pin, structural distinctness pin (kitty dims differ from sixel's (8.0, 6.0)), non-degenerate dims pin (`>0`), and kitty z_index=0 (not corrupted by coexistent sixel).
+- [x] `[TPR-12-016-codex+gemini][low]` `oriterm_core/tests/spec_chain/sixel/lifecycle.rs:28` (pre-update line) — sixel DCS helper `dcs_n_cols_wide` triplicated across `grid_integration.rs`, `lifecycle.rs`, and `cross_stack_handoff.rs` (as `dcs_n_cols_red` — same algorithm). Rules violated: `.claude/rules/impl-hygiene.md §Algorithmic DRY` (3-instance threshold); `.claude/rules/test-organization.md §6 Test helpers`. Resolved inline: extracted `dcs_n_bands_tall` + `dcs_n_cols_wide` to new `crates/oriterm_test_support/src/spec_chain/sixel_fixtures.rs` module (SSOT); updated all three consumer files to import from the shared module.
+
+**Round 1** (after round-0 fixes) — 3 findings:
+
+- [x] `[TPR-12-017-codex+gemini][medium]` `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` — round-0 `sixel_placement_survives_resize_with_reflow_when_column_in_bounds` proved the placement survives `term.resize(24, 40, true)` but not that `remap_placements` actually ran (placement at col=0 with no preceding text reflowed is an identity-remap). Resolved: added `sixel_placement_remaps_stable_row_across_reflow_with_text_wrap` — 100-char text wraps 2-way at 80 cols / 3-way at 40 cols, sixel placed at line 3, `term.resize(24, 40, true)` shifts the sixel to line 4, `viewport_y` changes from 48.0 to 64.0 (exact pin added in round 2). A no-op remap would leave viewport_y=48 and the test fails.
+- [x] `[TPR-12-018-codex][medium]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` — round-0 handshake test ignored `RenderableContent::image_data` (payload rung). Resolved: added payload-independence pin — `snap.image_data.len() >= 2`, distinct payload `image_id`s. Strengthened in round 2 to pin exact shape: sixel 8×6 RGBA (192 bytes), kitty 1×1 RGBA (4 bytes) via `find(|d| d.width == X && d.height == Y)`.
+- [x] `[TPR-12-019-gemini][medium]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` — round-0 test placed both sixel and kitty at col=0, so X-axis cross-wiring (both viewport_x collapsing to 0) would not fail any assertion. Resolved: moved kitty placement to col=5 via `\x1b[11;6H`, added `sixel.viewport_x == 0.0` + `kitty.viewport_x == 40.0` strict-equality pins + updated catalog/plan prose in round 3.
+
+**Round 2** (after round-1 fixes) — 3 findings:
+
+- [x] `[TPR-12-020-codex+gemini][medium]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` — round-1 `image_data.len() >= 2` + distinct `data_ids` pin still only checked cardinality, not payload identity. Resolved: `find(|d| d.width == 8 && d.height == 6)` for sixel + `find(|d| d.width == 1 && d.height == 1)` for kitty, plus `assert_eq!(sixel_data.data.len(), 8 * 6 * 4)` and `assert_eq!(kitty_data.data.len(), 1 * 1 * 4)` — cross-wiring that swapped payloads would fail the strict equality on one or both byte counts.
+- [x] `[TPR-12-021-gemini][low]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` — `assert_ne!(kitty.viewport_x, sixel.viewport_x)` was tautological after the preceding `assert_eq!(sixel.viewport_x, 0.0)` + `assert_eq!(kitty.viewport_x, 40.0)`. Resolved: removed the redundant assert_ne; strict equalities above already pin independence.
+- [x] `[TPR-12-022-gemini][medium]` `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` — round-1 reflow-remap test used `assert_ne!(after_y, before_y)` — loose pin that accepts any non-48 value, including wrong ones. Resolved: replaced with exact `assert_eq!(after.images[0].viewport_y, 64.0)` — probed the actual post-reflow value and committed to it; regressions that move the placement to a different stable_row now fail strictly.
+
+**Round 3** (convergence check after round-2 fixes) — gemini clean, codex 2 low doc-drift findings:
+
+- [x] `[TPR-12-023-codex][low]` `plans/spec-conformance/section-12-sixel.md:266` + `plans/spec-conformance/catalog/sixel.md:43` — plan and catalog prose still described kitty placement at `(line=10, col=0)` / `(r2,c0)` after round-1 moved it to col=5 in the test. SSOT drift between plan/catalog and code. Resolved: updated the plan §12.5 checkbox body and catalog SIXEL-CROSS-STACK-HANDOFF row sequence column to `(r2,c5)` with explanatory note.
+- [x] `[TPR-12-024-codex][low]` `plans/spec-conformance/section-12-sixel.md:269` — plan matrix-count prose said 8 categories while `lifecycle_category_matrix_completeness` enforced 10 (round 1 added `resize_with_reflow_remaps_stable_row`; earlier rounds added `resize_with_reflow_preserves_in_bounds`). Resolved: enumerated all 10 categories by name in the plan bullet.
+
+**Convergence.** 4 rounds executed; 11 findings total verified + fixed inline (5 round 0 + 3 round 1 + 3 round 2 + 2 round 3). Round 3 achieved gemini `status: clean`; codex's round-3 findings were both low-severity plan/catalog prose drift (not code correctness), resolved inline. No round 4 needed. Exit reason: `clean` (all verified findings fixed, both reviewers returned clean or low-only-plan-drift at round 3, all tests green debug + release, catalog + plan + code in sync).
+
+### Review 3 — Bundled /impl-hygiene-review covering §12.4 + §12.5 (2026-04-21)
+
+Four actionable findings, all fixed inline:
+
+- [x] `[HYG-12-001][BLOAT:fn-length][minor]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs:117` — `sixel_and_kitty_placements_retain_independent_attributes` was 103 lines (3 over the 100-line function limit in `.claude/rules/code-hygiene.md` §Style). Resolved: split body into two helper fns (`assert_sixel_independence` + `assert_kitty_independence`) each of ~30 lines, test body dropped to ~20 lines.
+- [x] `[HYG-12-002][LEAK:algorithmic-duplication][minor]` `oriterm_core/tests/spec_chain/sixel/{grid_integration,invariants,lifecycle}.rs` — `placement_count(&SpecHarness) -> usize` 1-liner defined identically in 3 sibling files (impl-hygiene.md §Algorithmic DRY threshold: 3+ instances = always extract). Resolved: moved to `crates/oriterm_test_support/src/spec_chain/sixel_fixtures.rs`; all 3 consumers import from shared module.
+- [x] `[HYG-12-003][EXPOSURE:misleading-naming][minor]` `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs:17` — `use dcs_n_cols_wide as dcs_n_cols_red` aliased the shared fixture to a name implying "color=red is a parameter", but the function hardcodes red `#0;2;100;0;0`. Breaks grepability + lies about the API. Resolved: dropped the alias; use `dcs_n_cols_wide` directly (its doc comment already states color is red).
+- [x] `[HYG-12-004][WASTE:capacity-hint][minor]` `crates/oriterm_test_support/src/spec_chain/sixel_fixtures.rs:19,37` — `Vec::with_capacity` hints were 3 bytes short of actual write size (prefix+suffix miscalculation: `16 + bands*3` / `16 + cols` missed the `\x1b\\` 2-byte suffix, and bands math double-counted the separator). Resolved: extracted named `DCS_RED_PREFIX` + `DCS_TERMINATOR` constants with `.len()` readbacks; capacity hints now arithmetically match the writes and are self-auditing.
+
+**Pre-existing tooling bug (out of scope, already tracked):** `.claude/skills/impl-hygiene-review/plan-annotations.py` crashes with `NameError: AIMS_SECTION_RE is not defined` (ori_lang sync-drift — regex constants not ported to ori_term). Already tracked as `[BUG-07-017][low]` in `plans/bug-tracker/section-07-ci-build.md`; no action required for §12 close-out.
+
+**Convergence.** 1 hygiene pass, 4 actionable findings, all fixed inline. Phase 4 cross-check skipped (redundant with 4-round TPR above). No plan generation needed (all findings are inline-fixable). Exit reason: `clean` (no LEAK, DRIFT, GAP, or production-source BLOAT; all test-scope hygiene findings resolved; tests green debug + release).
+
 ---
 
 ## 12.N Completion Checklist
 
-- [ ] Every row in `catalog/sixel.md` is `verified` (including the per-operator + behavioral + §11-occlusion rows opened in §12.0).
-- [ ] `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated, `last_walked` set to today, `walked_by` set.
-- [ ] Failing test matrix written FIRST (§12.1–§12.5 each have their own TDD checkbox).
-- [ ] **Matrix dimensions**: operator × DCS-count × background-mode × cursor-mode × lifecycle-event × protocol-neighbor (§11 subcell, §13 kitty hand-off).
-- [ ] **Semantic pins (≥3 — one per invariant)**: (a) `SetToBg` differs from `DeviceDefault` on identical input, (b) palette resets between DCS q invocations, (c) DCS abort commits no placement.
-- [ ] **Negative pins (≥3)**: (a) palette-leak guard fails if reset code is bypassed, (b) `z_index: -1` draws below text, (c) `on_resize` no-op when no sixel placements present.
-- [ ] HLS rotation explicitly tested (cross-checked against libsixel `color.rs:41` `hue - 120.0`).
-- [ ] `!` repeat clamp cross-checked against libsixel `src/decoder.c`; any divergence documented as a catalog-row note.
-- [ ] DCS abort (CAN / SUB / ESC mid-DCS) commits no placement — §12.1 fix landed: `Handler::sixel_end(aborted: bool)` + `ProcessorState::dcs_aborted` + new `DcsEscape` VTE state; `Term::handle_sixel_end` early-returns on `aborted`. Pinned by `dcs_abort_can_commits_no_placement` / `dcs_abort_sub_commits_no_placement` / `dcs_abort_esc_commits_no_placement` in `state_machine.rs`.
-- [ ] `SixelBgMode::SetToBg` renders distinctly from `DeviceDefault` — §12.2 fix landed: `Term::handle_sixel_start` snapshots `Term::effective_background` (DECSCNM-aware) at DCS-hook time; `SixelParser::finish` routes `SetToBg` through the captured `terminal_bg`, `DeviceDefault` through `[0,0,0,255]`. Pinned by `bg_mode_set_to_bg_differs_from_device_default_on_identical_input` + `bg_mode_set_to_bg_honors_decscnm_reverse_video` in `invariants.rs`.
-- [ ] Sixel + image lifecycle survives every grid mutation (§07 complete; §12.5 consumes handlers).
-- [ ] Sixel + §11 occlusion goldens green (wide-CJK, ZWJ cluster, subcell glyphs).
-- [ ] Sixel ↔ Kitty `ImageCache` hand-off green; deep mixed-protocol rendering interference DEFERRED-TO-DOWNSTREAM to §13.6 — cross-link recorded in §13.6's depends_on / success criteria, NOT silently deferred.
-- [ ] `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (§04 sixel pilot) stays green — no regression from §12's new pilots. (No sixel-specific teseq suite exists; `oriterm_core/tests/teseq/` has no sixel scenarios and §23.5 owns teseq archival.)
-- [ ] Alloc regression unchanged (`oriterm_core/tests/alloc_regression.rs`).
-- [ ] RSS regression unchanged (`oriterm_core/tests/rss_regression.rs`).
-- [ ] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release.
-- [ ] Plan annotation cleanup.
-- [ ] Section frontmatter `status` → `complete`.
-- [ ] `00-overview.md` Quick Reference + mission success criteria checkboxes updated (contributes to **Verification chain complete per row** and **Image lifecycle correct under resize/reflow/scrollback/alt-screen**).
-- [ ] `index.md` section 12 status updated.
-- [ ] Next section `depends_on` verification — §13 (Kitty) currently lists `depends_on: ["12"]`; verify §13.6's cross-stack-regression depends on §12.5's hand-off test.
-- [ ] `/tpr-review` passed (final, full-section).
-- [ ] `/impl-hygiene-review last commit` passed (after `/tpr-review` is clean).
+- [x] Every row in `catalog/sixel.md` is `verified` (including the per-operator + behavioral + §11-occlusion rows opened in §12.0) — `grep -c "implemented-unverified\|not-verified" plans/spec-conformance/catalog/sixel.md` returns 0.
+- [x] `plans/spec-conformance/audits/section-12-top-down-inventory.md` is populated, `last_walked: 2026-04-20`, `walked_by: "elucidsoft"`.
+- [x] Failing test matrix written FIRST — §12.1, §12.2, §12.3, §12.4, §12.5 each have their own TDD checkbox flipped to `[x]`.
+- [x] **Matrix dimensions**: operator × DCS-count × background-mode × cursor-mode × lifecycle-event × protocol-neighbor — covered across `oriterm_core/tests/spec_chain/sixel/{state_machine,invariants,grid_integration,lifecycle,cross_stack_handoff}.rs` + `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_*.rs`. Each file carries a `*_category_matrix_completeness` test that asserts the exact category count.
+- [x] **Semantic pins (≥3 — one per invariant)**: (a) `bg_mode_set_to_bg_differs_from_device_default_on_identical_input`, (b) `palette_rebuilds_per_dcs_q_no_leak_across_invocations` + `palette_vt340_fingerprint_reappears_on_fresh_dcs`, (c) `dcs_abort_can_commits_no_placement` / `dcs_abort_sub_commits_no_placement` / `dcs_abort_esc_commits_no_placement`.
+- [x] **Negative pins (≥3)**: (a) `palette_reset_per_dcs_negative_pin_bypass_breaks_vt340_fingerprint` in `oriterm_core/src/image/sixel/bypass.rs`, (b) §12.3 `z_index: -1` draws below text pinned in `oriterm/src/gpu/prepare/tests.rs::image_quads_below`, (c) `resize_on_empty_cache_is_noop_no_phantom_placements` in `lifecycle.rs`.
+- [x] HLS rotation explicitly tested (cross-checked against libsixel `color.rs:41` `hue - 120.0`) — `color_define_pu1_hls_rotates_hue_minus_120` in `state_machine.rs`.
+- [x] `!` repeat clamp cross-checked against libsixel `src/decoder.c`; divergence documented as `verified-with-deviation` in `catalog/sixel.md` SIXEL-REPEAT-CLAMP row; pinned by `repeat_clamps_at_max_dimension_without_allocation_spike` in `invariants.rs`.
+- [x] DCS abort (CAN / SUB / ESC mid-DCS) commits no placement — §12.1 fix landed: `Handler::sixel_end(aborted: bool)` + `ProcessorState::dcs_aborted` + new `DcsEscape` VTE state; `Term::handle_sixel_end` early-returns on `aborted`. Pinned by `dcs_abort_can_commits_no_placement` / `dcs_abort_sub_commits_no_placement` / `dcs_abort_esc_commits_no_placement` in `state_machine.rs`.
+- [x] `SixelBgMode::SetToBg` renders distinctly from `DeviceDefault` — §12.2 fix landed: `Term::handle_sixel_start` snapshots `Term::effective_background` (DECSCNM-aware) at DCS-hook time; `SixelParser::finish` routes `SetToBg` through the captured `terminal_bg`, `DeviceDefault` through `[0,0,0,255]`. Pinned by `bg_mode_set_to_bg_differs_from_device_default_on_identical_input` + `bg_mode_set_to_bg_honors_decscnm_reverse_video` in `invariants.rs`. §12.4 GPU-apex pinned by dedicated `sixel_set_to_bg.rs` pilot (P2=2 golden).
+- [x] Sixel + image lifecycle survives every grid mutation (§07 complete; §12.5 consumes handlers) — `oriterm_core/tests/spec_chain/sixel/lifecycle.rs` exercises 10 categories (scrollback eviction, ED, EL, alt-screen toggle, resize shrink/expand, resize with reflow survive + remap, cell dimension change, empty-cache negative pin).
+- [x] Sixel + §11 occlusion goldens green (wide-CJK, ZWJ cluster, subcell glyphs) — `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_occlusion_{wide_cjk,zwj,subcell}.rs` + committed goldens under `oriterm/tests/references/sixel_occlusion_*.png`.
+- [x] Sixel ↔ Kitty `ImageCache` hand-off green — `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` pins coexistence + independent attributes + payload independence. Deep mixed-protocol rendering interference DEFERRED-TO-DOWNSTREAM to §13.6; cross-link recorded in `plans/spec-conformance/section-13-kitty-graphics.md` §13.6 body.
+- [x] `oriterm/src/gpu/visual_regression/spec_chain/pilots/sixel_minimal.rs` (§04 sixel pilot) stays green — no regression from §12's new pilots. Confirmed via `cargo test -p oriterm --features gpu-tests --lib -- spec_chain::pilots::sixel`. (No sixel-specific teseq suite exists; `oriterm_core/tests/teseq/` has no sixel scenarios and §23.5 owns teseq archival.)
+- [x] Alloc regression unchanged (`oriterm_core/tests/alloc_regression.rs`) — green via `./test-all.sh`.
+- [x] RSS regression unchanged (`oriterm_core/tests/rss_regression.rs`) — green via `./test-all.sh`.
+- [x] `./build-all.sh`, `./test-all.sh`, `./clippy-all.sh` green debug + release.
+- [x] Plan annotation cleanup — `plan-annotations.py` scan returns 0 stale annotations; the 2 active annotations (`§07` + `BUG-08-8`) are live cross-references, not drift.
+- [x] Section frontmatter `status` → `complete`.
+- [x] `00-overview.md` Quick Reference — §12 row flipped `Not Started` → `Complete`. Mission success criteria contributes to **Verification chain complete per row** (every sixel catalog row now `verified` or `verified-with-deviation`) + **Image lifecycle correct under resize/reflow/scrollback/alt-screen** (§12.5 lifecycle.rs 10-category matrix).
+- [x] `index.md` section 12 status flipped `Not Started` → `Complete`.
+- [x] Next section `depends_on` verification — §13 (Kitty) carries `depends_on: ["12"]` in frontmatter (line 25); §13.6 body now explicitly depends on §12.5's `cross_stack_handoff.rs` handshake as a precondition for the deep mixed-protocol rendering sweep.
+- [x] `/tpr-review` passed (final, full-section) — Review 2 in §12.R above: 4 rounds, 11 findings verified + fixed inline, round 3 exit `clean`.
+- [x] `/impl-hygiene-review` passed (after `/tpr-review` clean) — Review 3 in §12.R above: 4 actionable findings fixed inline, exit `clean`.
 
 **Exit Criteria:** Every sixel catalog row is `verified` — including per-operator, behavioral (bg-mode + palette-reset + abort), and §11-occlusion rows. Sixel is the first conformance-complete visual stack and establishes the z-order + transparency composite + mixed-protocol hand-off pins that §13 Kitty, §14 iTerm2, and §15 Cell-Level Alpha inherit.

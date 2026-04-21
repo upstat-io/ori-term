@@ -14,46 +14,16 @@
 //! pixel-golden assertions stay in `oriterm`").
 
 use oriterm_test_support::spec_chain::SpecHarness;
+use oriterm_test_support::spec_chain::sixel_fixtures::{
+    dcs_n_bands_tall, dcs_n_cols_wide, placement_count,
+};
 
 // Test helpers.
-
-/// Count placements in the renderable snapshot.
-fn placement_count(harness: &SpecHarness) -> usize {
-    harness.term().renderable_content().images.len()
-}
 
 /// Return the cursor's (line, col) on the active grid.
 fn cursor_line_col(harness: &SpecHarness) -> (usize, usize) {
     let grid = harness.term().grid();
     (grid.cursor().line(), grid.cursor().col().0)
-}
-
-/// Build a DCS-wrapped sixel body N pixel-bands tall (each band is
-/// 6 pixels = one `~` followed by a `-` newline between bands). The
-/// resulting image is 1 pixel wide × 6*N pixels tall.
-fn dcs_n_bands_tall(bands: usize) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(bands * 3 + 16);
-    buf.extend_from_slice(b"\x1bPq#0;2;100;0;0");
-    for i in 0..bands {
-        if i > 0 {
-            buf.push(b'-');
-        }
-        buf.push(b'~');
-    }
-    buf.extend_from_slice(b"\x1b\\");
-    buf
-}
-
-/// Build a DCS-wrapped sixel body N pixel-columns wide (N `~` in one band).
-/// The resulting image is N pixels wide × 6 pixels tall.
-fn dcs_n_cols_wide(cols: usize) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(cols + 16);
-    buf.extend_from_slice(b"\x1bPq#0;2;100;0;0");
-    for _ in 0..cols {
-        buf.push(b'~');
-    }
-    buf.extend_from_slice(b"\x1b\\");
-    buf
 }
 
 // SIXEL_SCROLLING (mode 80) — default ON.

@@ -280,7 +280,7 @@ hand-crafted goldens, Unicode chart PDFs
 ---
 
 ### Section 12: Sixel
-**File:** `section-12-sixel.md` | **Status:** Not Started
+**File:** `section-12-sixel.md` | **Status:** Complete
 
 ```
 sixel, DCS q, DEC STD 070, libsixel, saitoha

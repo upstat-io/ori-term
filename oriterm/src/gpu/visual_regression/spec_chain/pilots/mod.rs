@@ -4,7 +4,15 @@
 //! (1-8) and asserts all pass. Non-visual pilots (DA1) live under
 //! `oriterm_core/tests/spec_chain/pilots/` — they don't need GPU access.
 
+pub mod sixel_12_4_matrix;
+pub mod sixel_cr_nl_banding;
+pub mod sixel_cursor_right;
 pub mod sixel_minimal;
 pub mod sixel_occlusion_subcell;
 pub mod sixel_occlusion_wide_cjk;
 pub mod sixel_occlusion_zwj;
+pub mod sixel_palette_switch;
+pub mod sixel_repeat;
+pub mod sixel_scrolling_off;
+pub mod sixel_set_to_bg;
+pub mod sixel_transparency;

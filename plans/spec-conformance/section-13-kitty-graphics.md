@@ -162,6 +162,8 @@ Virtual placements use the Unicode placeholder protocol: the terminal rasterizes
 
 Sixel and kitty share the image cache + GPU pipeline. A bug in either can corrupt the other. Cross-stack tests catch this.
 
+**Depends on §12.5's handshake test** — `oriterm_core/tests/spec_chain/sixel/cross_stack_handoff.rs` (status: complete, catalog row `SIXEL-CROSS-STACK-HANDOFF`) proved both protocols' placements coexist in a single `ImageCache` with distinct `image_id`s / `viewport_x`/`viewport_y` / `image_data` payloads at the public-snapshot level. §13.6 extends that handshake to the deep mixed-protocol rendering regressions (overlapping placements, z-order interleaving, shared-eviction races) that §12.5 explicitly DEFERRED-TO-DOWNSTREAM. Without the §12.5 handshake's coexistence proof, any §13.6 failure would be ambiguous between "kitty bug" and "sixel contamination". The handshake is the precondition; 13.6 is the regression sweep.
+
 - [ ] Test: place a kitty image at row 5, then place a sixel image at row 10, verify both are rendered correctly via golden image apex
 - [ ] Test: place a sixel image at row 5, then place a kitty image at row 5 (same cell), verify the kitty image overwrites or stacks (per protocol semantics)
 - [ ] Test: rapid alternation of sixel + kitty image transmits stress-tests the image cache eviction policy
